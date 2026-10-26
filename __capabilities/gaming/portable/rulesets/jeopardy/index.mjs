@@ -1,3 +1,4 @@
+import { validateJeopardyScoringMetadata } from './scoringPolicy.mjs';
 import { commandContext, needsCommandContext, matchesCommandContext } from './commandContext.mjs';
 import { validateJeopardyScriptureMetadata } from "./content.mjs";
 import { defineRuleModule } from "../../kernel/index.mjs";
@@ -6,7 +7,7 @@ import { buzzersReady, reduceBuzzerSetup } from "./buzzerReadiness.mjs";
 import { adjustScore } from "../../mechanics/scoring.mjs";
 
 export function validateJeopardyDefinition(definition) {
-  const errors = validateJeopardyScriptureMetadata(definition);
+  const errors = [...validateJeopardyScriptureMetadata(definition), ...validateJeopardyScoringMetadata(definition)];
   if (!definition || typeof definition !== 'object') errors.push('definition is required');
   if (!Array.isArray(definition?.rounds) || definition.rounds.length === 0) errors.push('rounds are required');
   for (const [roundIndex, round] of (definition?.rounds || []).entries()) {
@@ -175,3 +176,5 @@ export * from "./content.mjs";
 export { buzzersReady, requiresBuzzers, BUZZER_LEASE_MS } from "./buzzerReadiness.mjs";
 
 export { commandContext, contextKey, matchesCommandContext, needsCommandContext } from './commandContext.mjs';
+
+export { jeopardyScoringPolicy } from './scoringPolicy.mjs';

@@ -1,0 +1,1160 @@
+[
+  {
+    "definition": {
+      "id": "legacy-dd",
+      "title": "Historical wager",
+      "rounds": [
+        {
+          "mode": "turns",
+          "penalize_wrong": false,
+          "categories": [
+            {
+              "name": "Before policy",
+              "clues": [
+                {
+                  "value": 300,
+                  "clue": "Historical prompt",
+                  "answer": "Historical answer",
+                  "daily_double": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "setup": {},
+    "initial": {
+      "set": {
+        "id": "legacy-dd",
+        "title": "Historical wager",
+        "rounds": [
+          {
+            "mode": "turns",
+            "penalize_wrong": false,
+            "categories": [
+              {
+                "name": "Before policy",
+                "clues": [
+                  {
+                    "value": 300,
+                    "clue": "Historical prompt",
+                    "answer": "Historical answer",
+                    "daily_double": true
+                  }
+                ]
+              }
+            ],
+            "multiplier": 1
+          }
+        ]
+      },
+      "teamIds": [
+        "blue",
+        "gold"
+      ],
+      "roundIndex": 0,
+      "phase": "round-intro",
+      "cursor": {
+        "cat": 0,
+        "row": 0
+      },
+      "used": {},
+      "active": null,
+      "isDailyDouble": false,
+      "wager": null,
+      "answeringTeamId": null,
+      "attempted": [],
+      "turnTeamId": "blue",
+      "revealed": false,
+      "finalWagers": {},
+      "finalJudged": {},
+      "scores": {
+        "blue": 0,
+        "gold": 0
+      },
+      "team_actors": {
+        "blue": [],
+        "gold": []
+      },
+      "status": "active"
+    },
+    "steps": [
+      {
+        "command": {
+          "type": "START_ROUND"
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 0,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1000
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "board",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": null,
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": null,
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "START_ROUND",
+              "revision": 1
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "START_ROUND",
+              "phase": "board"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "SELECT_AT",
+          "cat": 0,
+          "row": 0
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 1,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1001
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "wager",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 300,
+                "clue": "Historical prompt",
+                "answer": "Historical answer",
+                "daily_double": true
+              }
+            },
+            "isDailyDouble": true,
+            "wager": null,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "SELECT_AT",
+              "phase": "wager"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "SET_WAGER",
+          "amount": 300
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 2,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1002
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "clue",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 300,
+                "clue": "Historical prompt",
+                "answer": "Historical answer",
+                "daily_double": true
+              }
+            },
+            "isDailyDouble": true,
+            "wager": 300,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "SET_WAGER",
+              "phase": "clue"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "REVEAL"
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 3,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1003
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "judging",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 300,
+                "clue": "Historical prompt",
+                "answer": "Historical answer",
+                "daily_double": true
+              }
+            },
+            "isDailyDouble": true,
+            "wager": 300,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": true,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "REVEAL",
+              "phase": "judging"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "JUDGE",
+          "correct": false
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 4,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1004
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "done",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {
+              "0:0:0": true
+            },
+            "active": null,
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": null,
+            "attempted": [],
+            "turnTeamId": "gold",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "complete",
+            "acceptedAction": {
+              "type": "JUDGE",
+              "correct": false,
+              "revision": 5
+            }
+          },
+          "status": "complete",
+          "events": [
+            {
+              "type": "JUDGE",
+              "phase": "done",
+              "score_delta": {
+                "teamId": "blue",
+                "delta": 0
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "definition": {
+      "id": "legacy-dd",
+      "title": "Historical wager",
+      "rounds": [
+        {
+          "mode": "turns",
+          "penalize_wrong": false,
+          "categories": [
+            {
+              "name": "Before policy",
+              "clues": [
+                {
+                  "value": 300,
+                  "clue": "Historical prompt",
+                  "answer": "Historical answer",
+                  "daily_double": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "setup": {
+      "jeopardy_flow_version": 2
+    },
+    "initial": {
+      "set": {
+        "id": "legacy-dd",
+        "title": "Historical wager",
+        "rounds": [
+          {
+            "mode": "turns",
+            "penalize_wrong": false,
+            "categories": [
+              {
+                "name": "Before policy",
+                "clues": [
+                  {
+                    "value": 300,
+                    "clue": "Historical prompt",
+                    "answer": "Historical answer",
+                    "daily_double": true
+                  }
+                ]
+              }
+            ],
+            "multiplier": 1
+          }
+        ]
+      },
+      "teamIds": [
+        "blue",
+        "gold"
+      ],
+      "roundIndex": 0,
+      "phase": "round-intro",
+      "cursor": {
+        "cat": 0,
+        "row": 0
+      },
+      "used": {},
+      "active": null,
+      "isDailyDouble": false,
+      "wager": null,
+      "answeringTeamId": null,
+      "attempted": [],
+      "turnTeamId": "blue",
+      "revealed": false,
+      "finalWagers": {},
+      "finalJudged": {},
+      "jeopardyFlowVersion": 2,
+      "presentationSeq": 0,
+      "presentationEvents": [],
+      "scores": {
+        "blue": 0,
+        "gold": 0
+      },
+      "team_actors": {
+        "blue": [],
+        "gold": []
+      },
+      "status": "active"
+    },
+    "steps": [
+      {
+        "command": {
+          "type": "START_ROUND"
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 0,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1000
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "board",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": null,
+            "isDailyDouble": false,
+            "wager": null,
+            "answeringTeamId": null,
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 1,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "START_ROUND",
+              "revision": 1
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "START_ROUND",
+              "phase": "board"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "SELECT_AT",
+          "cat": 0,
+          "row": 0
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 1,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1001
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "wager",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 300,
+                "clue": "Historical prompt",
+                "answer": "Historical answer",
+                "daily_double": true
+              }
+            },
+            "isDailyDouble": true,
+            "wager": null,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 2,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT",
+                "reason": "daily-double"
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "SELECT_AT",
+              "phase": "wager"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "SET_WAGER",
+          "amount": 300
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 2,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1002
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "clue",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 300,
+                "clue": "Historical prompt",
+                "answer": "Historical answer",
+                "daily_double": true
+              }
+            },
+            "isDailyDouble": true,
+            "wager": 300,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": false,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 3,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT",
+                "reason": "daily-double"
+              },
+              {
+                "seq": 3,
+                "revision": 3,
+                "type": "SET_WAGER"
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "SET_WAGER",
+              "phase": "clue"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "REVEAL"
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 3,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1003
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "judging",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 300,
+                "clue": "Historical prompt",
+                "answer": "Historical answer",
+                "daily_double": true
+              }
+            },
+            "isDailyDouble": true,
+            "wager": 300,
+            "answeringTeamId": "blue",
+            "attempted": [],
+            "turnTeamId": "blue",
+            "revealed": true,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 4,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT",
+                "reason": "daily-double"
+              },
+              {
+                "seq": 3,
+                "revision": 3,
+                "type": "SET_WAGER"
+              },
+              {
+                "seq": 4,
+                "revision": 4,
+                "type": "REVEAL"
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "SELECT_AT",
+              "revision": 2
+            },
+            "answerReview": {
+              "teamId": "blue",
+              "correct": null,
+              "scoreDelta": 0,
+              "judgmentPending": true
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "REVEAL",
+              "phase": "judging"
+            }
+          ]
+        }
+      },
+      {
+        "command": {
+          "type": "JUDGE",
+          "correct": false
+        },
+        "context": {
+          "actorId": "host",
+          "revision": 4,
+          "recordedAt": "2026-10-25T00:00:00.000Z",
+          "logicalTime": 1004
+        },
+        "result": {
+          "state": {
+            "set": {
+              "id": "legacy-dd",
+              "title": "Historical wager",
+              "rounds": [
+                {
+                  "mode": "turns",
+                  "penalize_wrong": false,
+                  "categories": [
+                    {
+                      "name": "Before policy",
+                      "clues": [
+                        {
+                          "value": 300,
+                          "clue": "Historical prompt",
+                          "answer": "Historical answer",
+                          "daily_double": true
+                        }
+                      ]
+                    }
+                  ],
+                  "multiplier": 1
+                }
+              ]
+            },
+            "teamIds": [
+              "blue",
+              "gold"
+            ],
+            "roundIndex": 0,
+            "phase": "answer-review",
+            "cursor": {
+              "cat": 0,
+              "row": 0
+            },
+            "used": {},
+            "active": {
+              "cat": 0,
+              "row": 0,
+              "clue": {
+                "value": 300,
+                "clue": "Historical prompt",
+                "answer": "Historical answer",
+                "daily_double": true
+              }
+            },
+            "isDailyDouble": true,
+            "wager": 300,
+            "answeringTeamId": "blue",
+            "attempted": [
+              "blue"
+            ],
+            "turnTeamId": "blue",
+            "revealed": true,
+            "finalWagers": {},
+            "finalJudged": {},
+            "jeopardyFlowVersion": 2,
+            "presentationSeq": 5,
+            "presentationEvents": [
+              {
+                "seq": 1,
+                "revision": 1,
+                "type": "START_ROUND"
+              },
+              {
+                "seq": 2,
+                "revision": 2,
+                "type": "SELECT_AT",
+                "reason": "daily-double"
+              },
+              {
+                "seq": 3,
+                "revision": 3,
+                "type": "SET_WAGER"
+              },
+              {
+                "seq": 4,
+                "revision": 4,
+                "type": "REVEAL"
+              },
+              {
+                "seq": 5,
+                "revision": 5,
+                "type": "JUDGE",
+                "correct": false
+              }
+            ],
+            "scores": {
+              "blue": 0,
+              "gold": 0
+            },
+            "team_actors": {
+              "blue": [],
+              "gold": []
+            },
+            "status": "active",
+            "acceptedAction": {
+              "type": "JUDGE",
+              "correct": false,
+              "revision": 5
+            },
+            "answerReview": {
+              "teamId": "blue",
+              "correct": false,
+              "scoreDelta": 0,
+              "judgmentPending": false
+            }
+          },
+          "status": "active",
+          "events": [
+            {
+              "type": "JUDGE",
+              "phase": "answer-review",
+              "score_delta": {
+                "teamId": "blue",
+                "delta": 0
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

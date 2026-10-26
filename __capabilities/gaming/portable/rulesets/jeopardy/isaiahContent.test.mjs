@@ -70,3 +70,5 @@ describe('Isaiah open-book practice artifacts', () => {
   });
 
 });
+
+it('explicitly risks new family Daily Double wagers', () => { expect(load('content.yml').rounds.map(round => round.daily_double_penalize_wrong)).toEqual([true,true]); });

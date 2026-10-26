@@ -1,3 +1,4 @@
+import { validateJeopardyScoringMetadata } from './scoringPolicy.mjs';
 /**
  * Pure validation + normalization for Jeopardy content packs.
  * (data/content/games/<game>/<set-id>.yml). No I/O — callers load YAML
@@ -90,7 +91,7 @@ export function validateGameSet(raw) {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
     return { valid: false, errors: ['game set must be a mapping/object'], set: null };
   }
-  errors.push(...validateJeopardyScriptureMetadata(raw));
+  errors.push(...validateJeopardyScriptureMetadata(raw), ...validateJeopardyScoringMetadata(raw));
   if (typeof raw.id !== 'string' || !raw.id) errors.push('id is required');
   if (typeof raw.title !== 'string' || !raw.title) errors.push('title is required');
   if (!Array.isArray(raw.rounds) || raw.rounds.length === 0) errors.push('rounds must be a non-empty array');
@@ -129,6 +130,7 @@ export function validateGameSet(raw) {
       multiplier: typeof round.multiplier === 'number' && round.multiplier > 0 ? round.multiplier : 1,
       timer_seconds: typeof round.timer_seconds === 'number' ? round.timer_seconds : null,
       penalize_wrong: round.penalize_wrong !== false,
+      ...(Object.hasOwn(round, 'daily_double_penalize_wrong') ? { daily_double_penalize_wrong: round.daily_double_penalize_wrong } : {}),
       categories,
     };
   });

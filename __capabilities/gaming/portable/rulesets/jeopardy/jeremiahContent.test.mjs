@@ -36,3 +36,5 @@ describe('reviewed Jeremiah open-book pack', () => {
     expect(raw.final).toMatchObject({ category: 'Hope for the Future', scripture_reference: 'Jeremiah 32:15', answer: 'What are houses, fields, and vineyards?' });
   });
 });
+
+it('explicitly risks new family Daily Double wagers', () => { expect(raw.rounds.map(round => round.daily_double_penalize_wrong)).toEqual([true,true]); });

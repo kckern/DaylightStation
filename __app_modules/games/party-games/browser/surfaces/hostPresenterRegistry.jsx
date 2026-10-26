@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import MemberAvatar from "../../../../../__capabilities/gaming/browser/platform/ui/MemberAvatar.jsx";
 import { clampWager } from "../experiences/jeopardy/ui/wager.js";
 import BuzzerStatus from "../experiences/jeopardy/ui/BuzzerStatus.jsx";
-import { buzzersReady } from "../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs";
+import { buzzersReady, jeopardyScoringPolicy } from "../../../../../__capabilities/gaming/portable/rulesets/jeopardy/index.mjs";
 import { hostButtons } from "./hostView.js";
 
 const PHASE_LABELS = Object.freeze({
@@ -37,6 +37,8 @@ export function JeopardyHost({ state, set, teams, scores, send, pending, wagerDr
   useEffect(() => { const timer = setInterval(() => tick(value => value + 1), 1000); return () => clearInterval(timer); }, []);
   const round = set.rounds[state.roundIndex];
   const buttons = hostButtons(state);
+  const scoringPolicy = jeopardyScoringPolicy(round);
+  const wagerPreview = state.phase === 'wager' ? clampWager(wagerDraft, { score: Math.max(scores[state.answeringTeamId] ?? 0, 0), roundMax: roundMax(round) }) : 0;
   const teamName = (id) => teams.find((team) => team.id === id)?.name || id;
   return <>
     {state.phase !== 'round-intro' && <Scores teams={teams} scores={scores} />}
@@ -44,7 +46,10 @@ export function JeopardyHost({ state, set, teams, scores, send, pending, wagerDr
     {state.phase === 'round-decision' && <p>Round {state.roundIndex + 1} complete. Continue playing or finish with the current scores.</p>}
     {state.phase === 'answer-review' && <p>{state.answerReview?.judgmentPending ? `${teamName(state.answerReview.teamId)} answers. Listen, then mark Correct or Wrong.` : 'Review the answer together, then select Next question.'}</p>}
     {['clue', 'judging'].includes(state.phase) && <p>{state.answeringTeamId ? `${teamName(state.answeringTeamId)} answers. Listen, then mark Correct or Wrong.` : state.attempted?.length ? 'Wrong — another team can try.' : 'Read the question. Teams may buzz in.'}</p>}
-    {state.phase === 'wager' && <p>Only {teamName(state.answeringTeamId)} answers. Ask how many points to play for before showing the question. Allowed: 5–{Math.max(Math.max(scores[state.answeringTeamId] ?? 0, 0), roundMax(round))}. Right: +{clampWager(wagerDraft, { score: Math.max(scores[state.answeringTeamId] ?? 0, 0), roundMax: roundMax(round) })}. Wrong: {round?.penalize_wrong === false ? 'no points lost this round' : `−${clampWager(wagerDraft, { score: Math.max(scores[state.answeringTeamId] ?? 0, 0), roundMax: roundMax(round) })}`}.</p>}
+    {state.phase === 'wager' && <>
+      <p>Only {teamName(state.answeringTeamId)} answers. Choose 5–{Math.max(Math.max(scores[state.answeringTeamId] ?? 0, 0), roundMax(round))} points before showing the question. {scoringPolicy.dailyDoubleWrongDeducts ? 'Those points are on the line: a wrong answer loses the wager.' : 'A correct answer adds the wager.'}</p>
+      <p>Right: +{wagerPreview} · Wrong: {scoringPolicy.dailyDoubleWrongDeducts ? `−${wagerPreview}` : 'no points lost this round'}</p>
+    </>}
     {state.phase === 'final-wager' && <p>Choose each team's wager. Right adds the wager; wrong deducts it.</p>}
     {state.phase === 'round-intro' && <BuzzerStatus state={state} teams={teams} onReassign={teamId => send({ type: 'BUZZER_REASSIGN', teamId })} pending={pending} />}
     {state.phase === 'board' && <div className="gp-host__utility"><HostButton label={printStatus === 'printing' ? 'Printing…' : 'Print host packet'} disabled={printStatus === 'printing'} onClick={print} />{printStatus && printStatus !== 'printing' && <span>{printStatus}</span>}</div>}

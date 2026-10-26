@@ -13,6 +13,7 @@ rounds:
     mode: turns
     multiplier: 1
     penalize_wrong: false
+    daily_double_penalize_wrong: true
     categories:
       - name: Jeremiah’s Calling
         clues:
@@ -112,6 +113,7 @@ rounds:
     mode: turns
     multiplier: 2
     penalize_wrong: false
+    daily_double_penalize_wrong: true
     categories:
       - name: Promises and Tears
         clues:

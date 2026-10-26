@@ -1,3 +1,4 @@
+import { jeopardyScoringPolicy } from './scoringPolicy.mjs';
 // Pure Jeopardy phase machine. The RuleModule calls scoreDelta before reducing
 // a judgment and commits the score beside this transition. All three modes:
 //   hosted: buzz → host judges; wrong re-arms remaining teams
@@ -19,7 +20,9 @@ export function scoreDelta(state, correct) {
   if (!teamId || !state.active) return null;
   const base = state.isDailyDouble ? state.wager : state.active.clue.value * Number(currentRound(state)?.multiplier ?? 1);
   if (correct) return { teamId, delta: base };
-  return { teamId, delta: currentRound(state).penalize_wrong ? -base : 0 };
+  const policy = jeopardyScoringPolicy(currentRound(state));
+  const deducts = state.isDailyDouble ? policy.dailyDoubleWrongDeducts : policy.ordinaryWrongDeducts;
+  return { teamId, delta: deducts ? -base : 0 };
 }
 
 export function assignKidsTeams(set, teamIds) {
