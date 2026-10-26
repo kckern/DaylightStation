@@ -201,14 +201,24 @@ and a held report/renderer clear cannot be interpreted as natural completion.
 Backend source checks and repair still run within their existing bounded wait.
 
 The held overlay offers native, focusable Retry, Quality and Skip buttons. D-pad
-arrows move among these controls; Enter/Space use native button activation and do
-not reach page playback/skip handlers. Quality reuses `PlaybackQualityForm` and
+arrows move among these controls; OK/Enter/Space activates the focused action
+exactly once without reaching page playback/skip handlers. The inline Quality
+dialog uses scoped remote controls: arrows move between fields/actions; OK enters
+a native select or numeric field's value editing and returns to navigation.
+While editing, arrows change the value. Back leaves editing first, then closes
+Quality; Close also restores focus to the held Quality action. Quality reuses `PlaybackQualityForm` and
 existing guarded owner snapshot adoption; Media opens its existing quality sheet.
 Blackout still suppresses all overlays. Retry displays the remaining rolling-cap
 delay, keeps the current queue visit and intentional pause, and uses the same
 shared ledger as other recovery actions. The browser/screen transport action
 `retry` carries the expected RecoveryTarget as `value`; owner/visit mismatch rejects
-it, while newer pause intent in the same visit remains authoritative. Held outcome
+it, while newer pause intent in the same visit remains authoritative. Screen
+Retry observes the registry's optional `onResult` callback and emits
+`media:playback-applied` with the actual admission `{ok, code?, retryAfterMs}`.
+The command ACK publisher waits for that outcome for Retry only; stale/rolling-cap
+refusals produce negative ACKs and leave the held tray row in place. This is
+recovery admission, not renderer readiness or healthy playback. Other transport
+commands retain their existing receipt semantics. Held outcome
 tray Retry sends that owner action instead of replaying Play. Explicit Skip is the
 only terminal-failure action that advances the queue.
 

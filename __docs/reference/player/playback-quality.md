@@ -111,7 +111,11 @@ Recovery exhaustion keeps finite video on the current visit, including Media's
 Quality and Skip controls. Quality uses the same form and owner adoption as the
 normal controls, preserving queue, current position and deliberate pause. The
 Media bridge opens its existing Quality sheet; direct/screen Players render the
-shared form in place. An open direct/screen form rejects a superseded recovery
+shared form in place. The inline TV dialog has scoped D-pad navigation: arrows
+move focus, OK enters/leaves native value editing, and Back exits editing then
+closes the dialog. Apply and Close are reachable without a pointer; closing
+restores the held Quality action's focus. The shared form's desktop behavior is
+unchanged. An open direct/screen form rejects a superseded recovery
 target before changing the queue. Retry remains bounded by the rolling action
 cap and displays its remaining delay; it never replays a new Play command.
 Audio, live and continuous terminal behavior is unchanged.

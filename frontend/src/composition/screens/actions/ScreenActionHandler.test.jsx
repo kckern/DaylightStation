@@ -731,7 +731,7 @@ describe('ScreenActionHandler', () => {
       const target = { ownerId: 'screen', visitId: 'held', intentRevision: 2, rendererGeneration: 3 };
       const view = render(<ScreenOverlayProvider><ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} /></ScreenOverlayProvider>);
       act(() => getActionBus().emit('media:playback', { command: 'retry', commandId: 'held-retry', target }));
-      expect(owner).toHaveBeenCalledWith({ op: 'retry', commandId: 'held-retry', target });
+      expect(owner).toHaveBeenCalledWith(expect.objectContaining({ op: 'retry', commandId: 'held-retry', target, onResult: expect.any(Function) }));
       view.unmount();
     });
 

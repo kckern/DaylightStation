@@ -66,7 +66,6 @@ describe('finite movie terminal failure', () => {
     const button = view.getByRole('button', { name: /^Retry/ });
     button.focus();
     fireEvent.keyDown(button, { key: 'Enter' });
-    fireEvent.click(button);
     expect(retry).toHaveBeenCalledTimes(1);
     expect(state.frame.contentId).toBe('plex:1');
   });
@@ -130,6 +129,7 @@ it('D-pad focuses held controls and Enter never reaches broad playback keys', as
   retry.focus();
   fireEvent.keyDown(retry, { key: 'ArrowRight' });
   expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
+  fireEvent.keyDown(document.activeElement, { key: 'ArrowLeft' });
   const broadKey = vi.fn(); window.addEventListener('keydown', broadKey);
   fireEvent.keyDown(document.activeElement, { key: 'Enter' });
   window.removeEventListener('keydown', broadKey);
@@ -154,4 +154,48 @@ it('a held movie gives the remote an initial focus on the first available action
   await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
   exhausted('stall-jolt-exhausted');
   expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
+});
+
+const remoteKey = key => fireEvent.keyDown(document.activeElement, { key });
+const remoteOpenQuality = async view => {
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  exhausted('stall-jolt-exhausted');
+  expect(view.getByRole('button', { name: /^Retry/ })).toHaveFocus();
+  remoteKey('ArrowRight');
+  expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
+  remoteKey('Enter');
+};
+
+it('D-pad alone opens Quality, edits resolution, and applies without moving the movie visit', async () => {
+  const ref = React.createRef();
+  state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
+  const view = render(<MantineProvider><Player ref={ref} play={queue} /></MantineProvider>);
+  const target = ref.current.getRecoveryTarget();
+  await remoteOpenQuality(view);
+  const resolution = view.getByLabelText('Maximum resolution');
+  expect(resolution).toHaveFocus();
+  remoteKey('Enter'); // edit this native select, rather than navigating away
+  remoteKey('ArrowDown'); // default -> 1080
+  remoteKey('ArrowDown'); // 1080 -> 720
+  expect(resolution).toHaveValue('720');
+  remoteKey('Enter'); // finish editing
+  for (let next = 0; next < 5; next++) remoteKey('ArrowDown');
+  expect(view.getByRole('button', { name: 'Apply to current playback' })).toHaveFocus();
+  remoteKey('Enter');
+  await waitFor(() => expect(state.frame.maxResolution).toBe('720'));
+  expect(view.queryByRole('dialog')).toBeNull();
+  expect(ref.current.getRecoveryTarget().visitId).toBe(target.visitId);
+  expect(ref.current.getQueueSnapshot().items).toHaveLength(3);
+});
+
+it('D-pad alone reaches Close Quality and restores focus to the held Quality action', async () => {
+  state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
+  const view = render(<MantineProvider><Player play={queue} /></MantineProvider>);
+  await remoteOpenQuality(view);
+  remoteKey('ArrowUp'); // wrap to Close without changing a native select
+  expect(view.getByRole('button', { name: 'Close Quality' })).toHaveFocus();
+  remoteKey('Enter');
+  expect(view.queryByRole('dialog')).toBeNull();
+  expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
+  expect(state.frame.contentId).toBe('plex:1');
 });

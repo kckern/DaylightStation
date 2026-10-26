@@ -433,7 +433,7 @@ export function useMediaResilience({
     const result = triggerRecovery('user-retry-exhausted', { bypassCooldown: true, refreshUrl: true,
       forceRemount: true, userInitiated: true, resumePlayback: userIntent !== USER_INTENT.paused, seekToIntentMs: seekMs });
     const snapshot = getRecoveryLedger().snapshot(playbackSessionKey);
-    return { ok: result == null, ...(result != null ? { code: result } : {}), retryAfterMs: snapshot?.retryAfterMs ?? 0 };
+    return { ok: result == null, ...(result != null ? { code: result === 'exhausted' && snapshot?.retryAfterMs > 0 ? 'rolling-cap' : result } : {}), retryAfterMs: snapshot?.retryAfterMs ?? 0 };
   }, [consumeTargetTimeSeconds, recoveryIdentity, playbackSessionKey, targetTimeSeconds, playbackHealth.lastProgressSeconds, seconds, initialStart, triggerRecovery, userIntent]);
 
   // How a settled source wait becomes (at most) one reload. Assigned every

@@ -434,6 +434,11 @@ export function PlayerOverlayLoading({
       onKeyDown={(event) => {
         if (!event.target.closest('button')) return;
         event.stopPropagation();
+        if (['Enter', 'NumpadEnter', ' '].includes(event.key)) {
+          event.preventDefault();
+          if (!event.repeat) event.target.closest('button').click();
+          return;
+        }
         if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
           const buttons = [...event.currentTarget.querySelectorAll('button:not(:disabled)')];
           const index = buttons.indexOf(event.target.closest('button'));

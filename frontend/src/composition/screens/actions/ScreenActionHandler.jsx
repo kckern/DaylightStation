@@ -470,8 +470,18 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       }
       return;
     }
-    if ((transportOp === 'play' || transportOp === 'pause' || transportOp === 'toggle' || transportOp === 'retry')
-      && getPlayerQueueOpRegistry().dispatch({ op: transportOp, commandId: payload?.commandId, ...(transportOp === 'retry' ? { target: payload.target } : {}) })) {
+    if (transportOp === 'retry') {
+      const onResult = result => getActionBus().emit('media:playback-applied', {
+        command: 'retry', commandId: payload.commandId,
+        ...(result ?? { ok: false, code: 'UNCONFIRMED', error: 'Playback owner did not report Retry admission' }),
+      });
+      if (!getPlayerQueueOpRegistry().dispatch({ op: 'retry', commandId: payload.commandId, target: payload.target, onResult })) {
+        onResult({ ok: false, code: 'PLAYBACK_OWNER_UNAVAILABLE', error: 'No playback owner is available to retry' });
+      }
+      return;
+    }
+    if ((transportOp === 'play' || transportOp === 'pause' || transportOp === 'toggle')
+      && getPlayerQueueOpRegistry().dispatch({ op: transportOp, commandId: payload?.commandId })) {
       return;
     }
 

@@ -8,7 +8,7 @@ import { useQueueController } from './hooks/useQueueController.js';
 import { SinglePlayer } from './components/SinglePlayer.jsx';
 import { AudioLayer } from './components/AudioLayer.jsx';
 import { AmbientLayer } from './components/AmbientLayer.jsx';
-import { PlaybackQualityForm } from './components/PlaybackQualityForm.jsx';
+import { HeldPlaybackQualityDialog } from './components/HeldPlaybackQualityDialog.jsx';
 import { PlayerOverlayLoading } from './components/PlayerOverlayLoading.jsx';
 import { holdsAfterGaveUp } from './lib/sourceAvailability.js';
 import { useSourceWaitSkipKeys, playerIsHitTarget } from "../player-support/useSourceWaitSkipKeys.js";
@@ -2392,9 +2392,10 @@ const Player = forwardRef(function Player(props, ref) {
     return result ?? { ok: true };
   }, [resilienceControllerRef, recoveryIdentity, overlayProps?.onRetryFromExhausted]);
   const [heldQualityRequest, setHeldQualityRequest] = useState(null);
-  const focusHeldQuality = useCallback(node => node?.querySelector('select')?.focus(), []);
+  const heldQualityReturnFocus = useRef(null);
   const openHeldQuality = useCallback(() => {
     if (typeof props.onOpenPlaybackQuality === 'function') { props.onOpenPlaybackQuality(); return; }
+    heldQualityReturnFocus.current = document.activeElement;
     setHeldQualityRequest({ mode: 'playing', item: effectiveMeta,
       initial: normalizePlaybackQuality(effectiveMeta), target: recoveryIdentity.getTarget() });
   }, [props.onOpenPlaybackQuality, effectiveMeta, recoveryIdentity]);
@@ -2805,10 +2806,10 @@ const Player = forwardRef(function Player(props, ref) {
         suppressForBlackout={suppressOverlaysForBlackout}
         suppressPauseOverlay={props.suppressPauseOverlay}
       />
-      {heldQualityRequest && !suppressOverlaysForBlackout && <div ref={focusHeldQuality} className="player-held-quality" role="dialog" aria-label="Playback quality" data-no-fullscreen="true" onKeyDown={event => event.stopPropagation()}>
-        <PlaybackQualityForm request={heldQualityRequest} onApply={applyHeldQuality} />
-        <button type="button" onClick={() => setHeldQualityRequest(null)}>Close Quality</button>
-      </div>}
+      {heldQualityRequest && !suppressOverlaysForBlackout && <HeldPlaybackQualityDialog
+        request={heldQualityRequest} onApply={applyHeldQuality}
+        returnFocus={heldQualityReturnFocus.current} onClose={() => setHeldQualityRequest(null)}
+      />}
       <PlayerOverlayStateDebug {...overlayProps} />
       <PlayerOverlayAutoplayBlocked
         autoplayBlocked={mediaAccess.autoplayBlocked}
