@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { describeWaitKey } from '../lib/waitKeyLabel.js';
+import { contiguousRunwayMs, normalizeHealthSample, HEALTH_SAMPLE_INTERVAL_MS, HEALTH_SAMPLE_EXPIRY_MS } from '../lib/recovery/healthSample.js';
 import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';
 
 // Module-level lazy child logger (the hooks convention in CLAUDE.md): building
@@ -141,8 +142,8 @@ const readFrameMetrics = (mediaEl) => {
         return {
           supported: true,
           total: Number(quality.totalVideoFrames) || 0,
-          dropped: Number(quality.droppedVideoFrames) || 0,
-          corrupted: Number(quality.corruptedVideoFrames) || 0
+          dropped: Number.isFinite(quality.droppedVideoFrames) ? quality.droppedVideoFrames : null,
+          corrupted: Number.isFinite(quality.corruptedVideoFrames) ? quality.corruptedVideoFrames : null
         };
       }
     } catch (_) {
@@ -156,12 +157,24 @@ const readFrameMetrics = (mediaEl) => {
     return {
       supported: true,
       total: Number(vendorDecoded) || 0,
-      dropped: Number(vendorDropped) || 0,
+      dropped: Number.isFinite(vendorDropped) ? vendorDropped : null,
       corrupted: null
     };
   }
 
   return { supported: false };
+};
+
+// Copy native TimeRanges while the element is observable; a failed read is
+// unknown, whereas an empty successfully-read range list is a known gap.
+const readBufferedRanges = (mediaEl) => {
+  try {
+    const ranges = mediaEl?.buffered;
+    if (!ranges || !Number.isInteger(ranges.length) || ranges.length < 0) return null;
+    return Array.from({ length: ranges.length }, (_, i) => [ranges.start(i), ranges.end(i)]);
+  } catch (_) {
+    return null;
+  }
 };
 
 export function usePlaybackHealth({
@@ -175,7 +188,12 @@ export function usePlaybackHealth({
   mediaKey = null,
   mediaType: mediaTypeHint,
   playerFlavor: playerFlavorHint,
-  epsilonSeconds = 0.25
+  epsilonSeconds = 0.25,
+  intended,
+  phase,
+  sourceRefused = false,
+  autoplayBlocked = false,
+  target
 }) {
   const mediaType = coerceMediaType(mediaTypeHint);
   const playerFlavor = coercePlayerFlavor(playerFlavorHint, mediaType);
@@ -184,6 +202,9 @@ export function usePlaybackHealth({
   const [frameInfo, setFrameInfo] = useState(NO_FRAME_INFO);
   const [progressSignal, setProgressSignal] = useState(DEFAULT_PROGRESS_STATE);
   const [bufferRunwayMs, setBufferRunwayMs] = useState(null);
+  const [recoveryHealth, setRecoveryHealth] = useState(() => normalizeHealthSample({}, null, monotonicNowMs()));
+  const recoveryInputRef = useRef(null);
+  recoveryInputRef.current = { intended, phase, sourceRefused, autoplayBlocked, target };
   // Bumped whenever the underlying <video>/<audio> element is swapped out from
   // under us (softReinit bumps React's key → a brand-new element). The event
   // listeners and frame poll below capture the element at setup time, so they
@@ -373,12 +394,14 @@ export function usePlaybackHealth({
         return;
       }
       const t = Number(el.currentTime);
+      const nowMs = monotonicNowMs();
+      const visible = typeof document === 'undefined' || !document.hidden;
       const prev = advanceSampleRef.current;
       let isAdv = false;
-      if (Number.isFinite(prev) && !el.paused && !el.ended) {
-        isAdv = (t - prev) > ADVANCE_EPSILON;
+      if (prev && visible && prev.visible && nowMs - prev.atMs < HEALTH_SAMPLE_EXPIRY_MS && !el.paused && !el.ended && !el.seeking) {
+        isAdv = (t - prev.time) > ADVANCE_EPSILON;
       }
-      advanceSampleRef.current = t;
+      advanceSampleRef.current = { time: t, atMs: nowMs, visible };
       setAdvancing((cur) => (cur === isAdv ? cur : isAdv));
     };
     poll();
@@ -424,30 +447,11 @@ export function usePlaybackHealth({
       networkState: typeof mediaEl?.networkState === 'number' ? mediaEl.networkState : null
     });
 
-    const readBufferRunwayMs = () => {
-      if (!mediaEl || !mediaEl.buffered) return null;
-      const current = Number.isFinite(mediaEl.currentTime) ? mediaEl.currentTime : null;
-      if (!Number.isFinite(current)) return null;
-      try {
-        const ranges = mediaEl.buffered;
-        const count = Number(ranges?.length) || 0;
-        if (count === 0) return 0;
-        for (let i = 0; i < count; i += 1) {
-          const start = ranges.start(i);
-          const end = ranges.end(i);
-          if (Number.isFinite(start) && Number.isFinite(end) && current >= start && current <= end) {
-            return Math.max(0, (end - current) * 1000);
-          }
-        }
-        const lastEnd = Number.isFinite(ranges.end(count - 1)) ? ranges.end(count - 1) : null;
-        if (Number.isFinite(lastEnd) && lastEnd > current) {
-          return Math.max(0, (lastEnd - current) * 1000);
-        }
-      } catch (_) {
-        return null;
-      }
-      return 0;
-    };
+    const readBufferRunwayMs = () => contiguousRunwayMs({
+      ranges: readBufferedRanges(mediaEl),
+      currentTime: mediaEl.currentTime,
+      playbackRate: mediaEl.playbackRate
+    });
 
     const updateBufferRunway = () => {
       safeSetBufferRunway(readBufferRunwayMs());
@@ -578,7 +582,7 @@ export function usePlaybackHealth({
 
     let lastTotal = null;
     let intervalId = null;
-    const sampleInterval = playerFlavor === 'shaka' ? 350 : 500;
+    const sampleInterval = HEALTH_SAMPLE_INTERVAL_MS;
 
     const pollFrames = () => {
       const metrics = readFrameMetrics(mediaEl);
@@ -603,9 +607,8 @@ export function usePlaybackHealth({
           || prev.corrupted !== next.corrupted;
         return changed ? next : prev;
       });
-      if (progressed) {
-        recordProgress('frame', { details: metrics });
-      }
+      // Decoded counters remain diagnostic; only submitted frames establish
+      // presentation progress in recoveryHealth.
       if (Number.isFinite(metrics.total)) {
         lastTotal = metrics.total;
       }
@@ -621,6 +624,71 @@ export function usePlaybackHealth({
     };
   }, [mediaType, playerFlavor, waitKey, elementGeneration, recordProgress]);
 
+  useEffect(() => {
+    const mediaEl = typeof getMediaElRef.current === 'function' ? getMediaElRef.current() : null;
+    let destroyed = false;
+    let callbackId = null;
+    let previous = null;
+    const supportsPresentation = mediaType === 'video'
+      && typeof mediaEl?.requestVideoFrameCallback === 'function';
+    let presentedFrames = supportsPresentation ? 0 : null;
+
+    const onFrame = (_now, metadata) => {
+      if (destroyed || getMediaElRef.current?.() !== mediaEl) return;
+      presentedFrames = Number.isFinite(metadata?.presentedFrames)
+        ? metadata.presentedFrames : presentedFrames + 1;
+      callbackId = mediaEl.requestVideoFrameCallback(onFrame);
+    };
+    if (supportsPresentation) callbackId = mediaEl.requestVideoFrameCallback(onFrame);
+
+    const sample = () => {
+      if (destroyed) return;
+      const visible = typeof document === 'undefined' || !document.hidden;
+      // A stale callback/poll must never attribute an old element to its successor.
+      const current = getMediaElRef.current?.() === mediaEl ? mediaEl : null;
+      const metrics = mediaType === 'video' ? readFrameMetrics(current) : {};
+      const inputs = recoveryInputRef.current;
+      const next = normalizeHealthSample({
+        ...inputs,
+        currentTime: current?.currentTime,
+        playbackRate: current?.playbackRate,
+        ranges: readBufferedRanges(current),
+        visible,
+        intended: inputs.intended ?? (!current || current.ended ? 'stop' : current.paused ? 'pause' : 'play'),
+        phase: inputs.phase ?? (current?.ended ? 'ended' : current?.seeking ? 'seeking' : current?.readyState < 3 ? 'startup' : 'playing'),
+        presentedFrames: current ? presentedFrames : null,
+        totalFrames: metrics.total,
+        droppedFrames: metrics.dropped
+      }, previous, monotonicNowMs());
+      if (!previous || next.fresh !== previous.fresh || next.visible !== previous.visible) {
+        logHealthEvent('recovery-health-eligibility', {
+          fresh: next.fresh, visible: next.visible, intended: next.intended,
+          phase: next.phase, presentationSupported: supportsPresentation
+        });
+      }
+      previous = next;
+      setRecoveryHealth(next);
+      setBufferRunwayMs(next.contiguousRunwayMs);
+      if (!visible || (!next.fresh && next.playbackRate !== null)) setAdvancing(false);
+      if (next.presentationAdvancing === true) {
+        recordProgress('frame', { seconds: next.currentTime, details: { presentedFrames } });
+      }
+    };
+    sample();
+    const intervalId = setInterval(sample, HEALTH_SAMPLE_INTERVAL_MS);
+    // Invalidate immediately even when background timers are throttled. The
+    // first visible sample establishes a baseline, then the next may earn credit.
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', sample);
+    return () => {
+      destroyed = true;
+      clearInterval(intervalId);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', sample);
+      if (callbackId !== null && typeof mediaEl?.cancelVideoFrameCallback === 'function') {
+        mediaEl.cancelVideoFrameCallback(callbackId);
+      }
+    };
+  }, [mediaType, waitKey, elementGeneration, recordProgress, logHealthEvent]);
+
   return useMemo(() => ({
     progressToken: progressSignal.progressToken,
     lastProgressSource: progressSignal.lastProgressSource,
@@ -630,6 +698,7 @@ export function usePlaybackHealth({
     elementSignals,
     frameInfo,
     bufferRunwayMs,
+    recoveryHealth,
     isWaiting: Boolean(elementSignals.waiting || elementSignals.buffering),
     isStalledEvent: Boolean(elementSignals.stalled),
     // A media error we consider worth retrying (see RECOVERABLE_MEDIA_ERROR_CODES).
@@ -641,10 +710,10 @@ export function usePlaybackHealth({
     // user-intent classification in useMediaResilience.
     mediaErrorStoppedPlayback: RECOVERABLE_MEDIA_ERROR_CODES.includes(elementSignals.errorCode)
       && elementSignals.errorWhilePlaying === true,
-    isFrameAdvancing: frameInfo.supported ? frameInfo.advancing : null,
+    isFrameAdvancing: recoveryHealth.presentationAdvancing,
     // True when the media clock is genuinely moving forward right now. The
     // authority for "it's playing" — downstream resilience uses it to suppress
     // a spinner that lingers on stale waiting/buffering flags.
     isAdvancing: advancing
-  }), [elementSignals, frameInfo, progressSignal, bufferRunwayMs, advancing]);
+  }), [elementSignals, frameInfo, progressSignal, bufferRunwayMs, recoveryHealth, advancing]);
 }

@@ -101,6 +101,29 @@ repeated stalls), bounded replacements and a sustained healthy reset. It must
 respect explicit quality ceilings and `adaptive=false`. Parameter propagation
 and Plex adjustment alone do not implement that app policy.
 
+## Playback signal limits
+
+The player exposes `recoveryHealth` alongside its existing health fields. It
+samples native element observations every 500 ms using monotonic time; samples
+expire after 2 seconds. `contiguousRunwayMs` measures only the buffered range
+containing the playhead, divided by playback rate. A known gap yields zero;
+an absent or unreadable observation yields `null`.
+
+Clock progress and presentation progress are separate observations. Native
+`requestVideoFrameCallback` supplies submitted-frame evidence when supported;
+without that API, presentation progress remains `null`. Submitted frames do not
+prove the physical display showed them. Decoded and dropped counters remain
+available as diagnostics; increasing decoded counts alone cannot establish
+presentation progress. Dropped-frame ratios use counter deltas and stay unknown
+when either counter is unavailable or resets.
+
+Hidden intervals, scheduling gaps of 2 seconds or more, and the first sample on
+visibility return provide no progress or failure evidence. A subsequent fresh
+visible interval can establish progress again. Seeking, pause and stop provide
+no playing-progress credit. Consumers must check freshness and viewing intent
+before using these observations for automatic recovery or sustained success;
+the existing recovery ladder is still being migrated to this contract.
+
 ## HLS timeline and buffer units
 
 Plex decision and start requests use `secondsPerSegment=3`, matching the
