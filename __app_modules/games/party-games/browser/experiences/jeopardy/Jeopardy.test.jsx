@@ -153,3 +153,44 @@ it('hides pregame scores and renders durable answer review and round decision', 
  render(<Jeopardy sessionId="decision" seats={teams}/>);
  expect(await screen.findByText('Round 1 complete')).toBeVisible();
 });
+
+it('keeps a newer accepted buzzer result visible after an older refresh fails',async()=>{
+ let rejectOld,buzz;
+ const hosted={...set,rounds:[{...set.rounds[0],mode:'hosted'}]};
+ const clue={...base,set:hosted,phase:'clue',active:{cat:0,row:0,clue:hosted.rounds[0].categories[0].clues[0]}};
+ fetchSession.mockResolvedValueOnce({header:{revision:1},state:clue}).mockReturnValueOnce(new Promise((_,reject)=>{rejectOld=reject;}));
+ sendJeopardyCommand.mockResolvedValue({header:{revision:2},state:{...clue,phase:'judging',answeringTeamId:'team_1'}});
+ render(<Jeopardy sessionId="stale-error" seats={teams} gamingServices={{buzzers:{subscribe:fn=>{buzz=fn;return()=>{};},arm:vi.fn(),disarm:vi.fn()}}}/>);
+ await screen.findByTestId('clue-screen');
+ act(()=>ws.handler({kind:'session-updated',sessionId:'stale-error'}));
+ await act(async()=>buzz('team_1'));
+ await act(async()=>rejectOld(new Error('old request offline')));
+ expect(screen.queryByRole('button',{name:'Retry connection'})).toBeNull();
+ expect(screen.getByTestId('clue-screen')).toBeVisible();
+ expect(document.querySelector('.jeopardy')).toHaveAttribute('data-phase','judging');
+});
+it('coalesces a burst of TV refreshes and follows the latest notification once',async()=>{
+ let resolveFirst,resolveFollowup;
+ fetchSession.mockImplementation(()=>new Promise(()=>{})).mockResolvedValueOnce({header:{revision:1},state:base})
+  .mockReturnValueOnce(new Promise(resolve=>{resolveFirst=resolve;}))
+  .mockReturnValueOnce(new Promise(resolve=>{resolveFollowup=resolve;}));
+ render(<Jeopardy sessionId="burst" seats={teams}/>);await screen.findByTestId('jeopardy-board');
+ act(()=>{for(let i=0;i<20;i++)ws.handler({kind:'session-updated',sessionId:'burst'});});
+ expect(fetchSession).toHaveBeenCalledTimes(2);
+ await act(async()=>resolveFirst({header:{revision:2},state:base}));
+ expect(fetchSession).toHaveBeenCalledTimes(3);
+ await act(async()=>resolveFollowup({header:{revision:3},state:{...base,scores:{team_1:300}}}));
+ expect(screen.getByLabelText('Blue Team score')).toHaveTextContent('300');
+ expect(fetchSession).toHaveBeenCalledTimes(3);
+});
+it('ignores a failed refresh belonging to the previous unkeyed session',async()=>{
+ let rejectOld;
+ fetchSession.mockResolvedValueOnce({state:base}).mockReturnValueOnce(new Promise((_,reject)=>{rejectOld=reject;})).mockResolvedValueOnce({state:{...base,scores:{team_1:200}}});
+ const view=render(<Jeopardy sessionId="old-error" seats={teams}/>);await screen.findByTestId('jeopardy-board');
+ act(()=>ws.handler({kind:'session-updated',sessionId:'old-error'}));
+ view.rerender(<Jeopardy sessionId="new-error" seats={teams}/>);
+ await waitFor(()=>expect(screen.getByLabelText('Blue Team score')).toHaveTextContent('200'));
+ await act(async()=>rejectOld(new Error('old session offline')));
+ expect(screen.queryByRole('button',{name:'Retry connection'})).toBeNull();
+ expect(screen.getByTestId('jeopardy-board')).toBeVisible();
+});

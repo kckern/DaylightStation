@@ -54,13 +54,15 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   stateRef.current = state;
   const pendingCommands = useRef(new Map());
   const [pendingInputs,setPendingInputs] = useState([]);
-  const recoveryPending = useRef(false);
+  const recoveryPending = useRef(null);
   const armedWindow = useRef(null);
   const visibleWindow = buzzWindow(state, !selection && !error);
   const actionRef = useRef(() => {});
   const mounted = useRef(true);
   const activeSessionId = useRef(sessionId);
   activeSessionId.current = sessionId;
+  const snapshots = useRef({ sessionId, accepted: 0, inFlight: null, dirty: false, baseline: false });
+  if (snapshots.current.sessionId !== sessionId) snapshots.current = { sessionId, accepted: 0, inFlight: null, dirty: false, baseline: false };
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; clearTimeout(selectionTimer.current); }; }, []);
   useEffect(() => { latestRevision.current = -1; heardActionRevision.current = -1; presentationCursor.current = { seq: null }; stateRef.current = null; setState(null); setSet(null); armedWindow.current=null; pendingCommands.current.clear(); setPendingInputs([]); setSelection(null); return () => clearTimeout(selectionTimer.current); }, [sessionId]);
 
@@ -78,6 +80,7 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     const revision = session.header?.revision;
     if (revision != null && revision < latestRevision.current) return;
     if (revision != null) latestRevision.current = revision;
+    snapshots.current.accepted++;
     if (session.state.active?.clue.little_kids && !stateRef.current?.active) logger.info('jeopardy.assigned-clue', { teamId: session.state.answeringTeamId, roundIndex: session.state.roundIndex });
     const previous = stateRef.current;
     const next = session.state;
@@ -106,17 +109,41 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
 
   const buzzerHardware = useBuzzerSetup({ sessionId, state, revision: latestRevision.current, buzzers, acceptSession, audio, logger });
 
+  // Share one authoritative fetch; notifications arriving in flight request
+  // one follow-up. A failed older read cannot hide a newer accepted command.
+  const refreshSession = useCallback(({ baseline = false } = {}) => {
+    const token = snapshots.current;
+    if (token.sessionId !== sessionId) return Promise.resolve(null);
+    token.baseline ||= baseline;
+    if (token.inFlight) { token.dirty = true; return token.inFlight; }
+    const current = () => mounted.current && snapshots.current === token && activeSessionId.current === sessionId;
+    const load = async () => {
+      let value = null;
+      do {
+        token.dirty = false;
+        const accepted = token.accepted;
+        try {
+          const result = await fetchSession(sessionId);
+          if (!current()) return null;
+          if (token.baseline) { presentationCursor.current = { seq: null }; token.baseline = false; }
+          acceptSession(result); value = result;
+        } catch (cause) {
+          if (!current()) return null;
+          if (!token.dirty && token.accepted === accepted) {
+            logger.warn('jeopardy.snapshot-refresh-failed', { sessionId, revision: latestRevision.current, error: cause.message });
+            errorRef.current = cause.message; setError(cause.message);
+          } else logger.sampled?.('jeopardy.snapshot-refresh-superseded', { sessionId, revision: latestRevision.current }, { maxPerMinute: 5, aggregate: true });
+        }
+      } while (current() && token.dirty);
+      return value;
+    };
+    const pending = load().finally(() => { if (token.inFlight === pending) token.inFlight = null; });
+    token.inFlight = pending;
+    return pending;
+  }, [sessionId, acceptSession, logger]);
+
   // Load the coordinator projection, which includes the pinned content pack.
-  useEffect(() => {
-    let cancelled = false;
-    fetchSession(sessionId)
-      .then((session) => {
-        if (cancelled) return;
-        acceptSession(session);
-      })
-      .catch((err) => { if (cancelled) return; errorRef.current = err.message; setError(err.message); });
-    return () => { cancelled = true; };
-  }, [sessionId, setId, acceptSession]);
+  useEffect(() => { refreshSession(); }, [sessionId, setId, refreshSession]);
 
   // Hardware buzzers and timed trivia retain coordinator command dispatch.
   const applyAction = useCallback(async (action, expectedContext = commandContext(stateRef.current)) => {
@@ -147,20 +174,14 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
     }
   }, [sessionId,logger,acceptSession]);
   const recoverConnection = useCallback(async () => {
-    if (recoveryPending.current) return;
-    recoveryPending.current = true;
+    if (recoveryPending.current === sessionId) return;
+    recoveryPending.current = sessionId;
     logger.info('jeopardy.connection-retry', { sessionId });
     try {
-      const session = await fetchSession(sessionId);
-      presentationCursor.current = { seq: null };
-      acceptSession(session);
-      logger.info('jeopardy.connection-recovered', { phase: session.state.phase });
-    } catch (cause) {
-      if (!mounted.current) return;
-      logger.warn('jeopardy.connection-retry-failed', { error: cause.message });
-      errorRef.current = cause.message; setError(cause.message);
-    } finally { recoveryPending.current = false; }
-  }, [sessionId, logger, acceptSession]);
+      const session = await refreshSession({ baseline: true });
+      if (session && mounted.current && activeSessionId.current === sessionId) logger.info('jeopardy.connection-recovered', { phase: session.state.phase });
+    } finally { if (recoveryPending.current === sessionId) recoveryPending.current = null; }
+  }, [sessionId, logger, refreshSession]);
   actionRef.current = applyAction;
 
   // Window identity, not snapshot arrival, owns first-buzz arbitration.
@@ -178,9 +199,9 @@ export default function Jeopardy({ setId, seats = [], sessionId, config, gamingS
   // Host updates reload the authoritative projection.
   useWebSocketSubscription('gaming', (msg) => {
     if (msg?.kind === 'session-updated' && msg.sessionId === sessionId) {
-      fetchSession(sessionId).then((result) => { acceptSession(result); }).catch((cause) => { if (!mounted.current) return; errorRef.current = cause.message; setError(cause.message); });
+      refreshSession();
     }
-  }, [applyAction, sessionId, acceptSession]);
+  }, [sessionId, refreshSession]);
 
   // Finish
   useEffect(() => {

@@ -83,3 +83,23 @@ it('never retries an explicitly aborted request',async()=>{
  await expect(sendJeopardyCommand('abort:request',{type:'BUZZ',teamId:'red'})).rejects.toHaveProperty('name','AbortError');
  expect(DaylightAPI.mock.calls.filter(([, ,method])=>method==='POST')).toHaveLength(1);
 });
+
+it.each(['board','stale'])('does not rebase an uncommitted presence after %s invalidates readiness',async condition=>{
+ const ready=server('round-intro').snapshot();let posts=0,fresh=true;
+ DaylightAPI.mockImplementation(async(_,envelope,method)=>{
+  if(method!=='POST')return{...ready,header:{revision:1},state:{...ready.state,phase:condition==='board'?'board':'round-intro'}};
+  posts++;fresh=condition==='board';throw conflict();
+ });
+ await expect(sendJeopardyCommand('presence:'+condition,{type:'BUZZER_PRESENCE',epoch:'tv'},{expectedRevision:0,expectedContext:{phase:'round-intro'},canSend:state=>fresh&&(!state||state.phase==='round-intro')})).rejects.toHaveProperty('code','command_superseded');
+ expect(posts).toBe(1);
+});
+it('reconciles lost presence ACK with the exact envelope even after hardware becomes stale',async()=>{
+ const authority=server('round-intro');let committed,firstEnvelope,fresh=true,posts=0;
+ DaylightAPI.mockImplementation(async(_,envelope,method)=>{
+  if(method!=='POST')return authority.snapshot();posts++;
+  if(!committed){firstEnvelope=structuredClone(envelope);committed=authority.post(envelope);fresh=false;throw Object.assign(new Error('lost ACK'),{transient:true});}
+  expect(envelope).toEqual(firstEnvelope);return{...committed,duplicate:true};
+ });
+ const result=await sendJeopardyCommand('presence:lost',{type:'BUZZER_PRESENCE',epoch:'tv'},{canSend:()=>fresh});
+ expect(result.duplicate).toBe(true);expect(posts).toBe(2);
+});

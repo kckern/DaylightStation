@@ -58,6 +58,22 @@ export function useBuzzerSetup({ sessionId, state, revision, buzzers, acceptSess
       logger.info('jeopardy.buzzer.report-result', { sessionId, type: command.type, teamId: command.teamId, slot: command.slot, epoch: command.epoch, generation: command.generation, kind: command.kind, revision, commandId: receipt?.commandId, elapsedMs: performance.now() - (receipt?.startedAt ?? performance.now()), result: 'accepted' });
       if (command.kind === 'test') audio.play('buzz', { pack: 'jeopardy' });
     };
+    const presenceBlocker = (authority = latest.current) => {
+      if (pending.size) return 'safety-report-pending';
+      if (latest.current?.phase !== 'round-intro' || authority?.phase !== 'round-intro') return 'left-ready';
+      if (latest.current?.buzzerSetup?.epoch !== token || authority?.buzzerSetup?.epoch !== token) return 'setup-unconfirmed';
+      const presence = buzzers.presence?.() || { fresh: false, slots: [] };
+      if (!presence.fresh) return 'hardware-stale';
+      for (const current of [latest.current, authority]) {
+        if (current.teamIds.some(id => { const entry = current.buzzerSetup.teams[id]; return !entry?.connected || !entry.tested || !entry.slot || !presence.slots.includes(entry.slot); })) return 'hardware-not-ready';
+      }
+      return null;
+    };
+    const canRenew = authority => {
+      const reason = presenceBlocker(authority);
+      if (reason) logger.sampled?.('jeopardy.buzzer.presence-suppressed', { sessionId, reason }, { maxPerMinute: 5, aggregate: true });
+      return !reason;
+    };
     const send = command => {
       if (scheduled.has(command)) return queue.current;
       scheduled.add(command);
@@ -67,14 +83,11 @@ export function useBuzzerSetup({ sessionId, state, revision, buzzers, acceptSess
       queue.current = queue.current.then(async () => {
         if (!active) return false;
         // Never renew stale readiness while any safety transition lacks an ack.
-        if (command.type === 'BUZZER_PRESENCE' && (pending.size || latest.current?.phase !== 'round-intro')) {
-          logger.sampled?.('jeopardy.buzzer.presence-suppressed', { sessionId, reason: pending.size ? 'safety-report-pending' : 'left-ready' }, { maxPerMinute: 5, aggregate: true });
-          return false;
-        }
+        if (command.type === 'BUZZER_PRESENCE' && !canRenew()) return false;
         try {
           const receipt = receipts.get(command);
           if (command.type !== 'BUZZER_PRESENCE') logger.info('jeopardy.buzzer.report-sent', { sessionId, type: command.type, teamId: command.teamId, slot: command.slot, epoch: token, generation: command.generation, kind: command.kind, commandId: receipt.commandId });
-          const result = await sendJeopardyCommand(sessionId, command, { commandId: receipt.commandId, logicalTime: receipt.logicalTime, expectedRevision: acceptedRevision.current >= 0 ? acceptedRevision.current : undefined, expectedContext: commandContext(latest.current) });
+          const result = await sendJeopardyCommand(sessionId, command, { commandId: receipt.commandId, logicalTime: receipt.logicalTime, expectedRevision: acceptedRevision.current >= 0 ? acceptedRevision.current : undefined, expectedContext: commandContext(latest.current), ...(command.type === 'BUZZER_PRESENCE' ? { canSend: canRenew } : {}) });
           if (!active) return false;
           acceptedRevision.current = result.header?.revision;
           accept.current(result);
@@ -85,7 +98,7 @@ export function useBuzzerSetup({ sessionId, state, revision, buzzers, acceptSess
           if (pending.get(key) === command) pending.delete(key); feedback(command, result.header?.revision);
           return true;
         } catch (cause) {
-          if (!active) return false;
+          if (!active || cause.code === 'command_superseded') return false;
           // A lost response may have committed. Reconcile before retrying a
           // generation-changing disconnect or emitting successful feedback.
           try {

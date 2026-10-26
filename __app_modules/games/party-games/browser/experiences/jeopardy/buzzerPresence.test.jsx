@@ -73,3 +73,16 @@ it('drops queued Ready renewals when Start moves into active play',async()=>{
  await act(async()=>release());
  expect(sendJeopardyCommand.mock.calls.filter(([,c])=>c.type==='BUZZER_PRESENCE')).toHaveLength(1);
 });
+
+it.each(['stale', 'missing', 'reassigned'])('drops queued Ready renewals after hardware becomes %s',async condition=>{
+ const f=await fixture(),normal=sendJeopardyCommand.getMockImplementation();let release,first=true;
+ f.logger.sampled=vi.fn();
+ sendJeopardyCommand.mockImplementation((id,c,o)=>{if(c.type==='BUZZER_PRESENCE'&&first){first=false;return new Promise(resolve=>{release=()=>resolve(normal(id,c,o));});}return normal(id,c,o);});
+ await act(async()=>vi.advanceTimersByTimeAsync(15000));
+ if(condition==='stale')f.hardware.fresh=false;
+ else if(condition==='missing')f.hardware.slots=['gamepad:0:Pad'];
+ else await act(async()=>{f.current.buzzerSetup.epoch='replacement';f.view.result.current.setState({...f.current});});
+ await act(async()=>release());
+ expect(sendJeopardyCommand.mock.calls.filter(([,c])=>c.type==='BUZZER_PRESENCE')).toHaveLength(1);
+ expect(f.logger.sampled.mock.calls.some(([event,data])=>event==='jeopardy.buzzer.presence-suppressed'&&data.reason===({stale:'hardware-stale',missing:'hardware-not-ready',reassigned:'setup-unconfirmed'}[condition]))).toBe(true);
+});

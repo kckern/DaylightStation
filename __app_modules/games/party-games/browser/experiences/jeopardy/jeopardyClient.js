@@ -14,8 +14,12 @@ export async function sendJeopardyCommand(sessionId, command, options = {}) {
   });
   const key = `${sessionId}:${contextKey(captured)}`;
   const run = async () => {
-    let conflicts = 0, unknown = 0;
+    let conflicts = 0, unknown = 0, reconcileUnknown = false;
     for (;;) {
+      // A known-uncommitted command must still be appropriate after waiting in
+      // its lane or rebasing. An ambiguous ACK probes its exact receipt first.
+      if (!reconcileUnknown && options.canSend && !options.canSend(current?.state)) throw failure('command_superseded', 'The command is no longer applicable', current);
+      reconcileUnknown = false;
       try { return await postRuleEnvelope(sessionId, envelope, { signal: options.signal }); }
       catch (cause) {
         const code = cause?.code || cause?.body?.error;
@@ -27,12 +31,13 @@ export async function sendJeopardyCommand(sessionId, command, options = {}) {
         if (conflict && conflicts++ < 3) {
           const latest = await fetchSession(sessionId);
           if (scoped && !matchesCommandContext(latest.state, captured)) throw failure('stale_command_context', 'The question or answering turn changed; use the current controls', latest);
+          current = latest;
           envelope = { ...envelope, expected_revision: latest.header.revision };
           continue;
         }
         // A lost response may have committed. Probe with the IDENTICAL envelope,
         // including command id, revision and logical time, before changing it.
-        if (cause?.transient === true && cause.name !== 'AbortError' && unknown++ < 1) continue;
+        if (cause?.transient === true && cause.name !== 'AbortError' && unknown++ < 1) { reconcileUnknown = true; continue; }
         throw cause;
       }
     }
