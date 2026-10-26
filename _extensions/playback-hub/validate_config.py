@@ -89,6 +89,20 @@ def main(yml_path):
         if cls == "public" and not dev.get("ha_entity_id"):
             fail(f"public device {color!r} requires ha_entity_id")
 
+        if "wind_down" in dev:
+            profile = dev["wind_down"]
+            if not isinstance(profile, dict) or not profile.get("fallback_queue"):
+                fail(f"device {color!r} wind_down requires fallback_queue")
+            if not dev.get("queue") or dev.get("shuffle", False):
+                fail(f"device {color!r} wind_down requires ordered primary queue")
+            for field, default, minimum in (("max_session_seconds", 18000, 1),
+                                             ("reconnect_seconds", 120, 0)):
+                value = profile.get(field, default)
+                if type(value) is not int or value < minimum:
+                    fail(f"device {color!r} wind_down.{field} must be an integer >= {minimum}")
+            if dev.get("schedules") or dev.get("alternate_queue") or dev.get("bumper"):
+                fail(f"device {color!r} wind_down cannot also use schedules, alternate_queue or bumper")
+
         if "volume" in dev and dev["volume"] is not None:
             validate_volume(color, dev["volume"])
 

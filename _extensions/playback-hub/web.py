@@ -195,7 +195,22 @@ def in_time_window(start, end):
         return start_minutes <= now_minutes < end_minutes
     return now_minutes >= start_minutes or now_minutes < end_minutes
 
+def profile_session(device):
+    if not device.get("wind_down"):
+        return None
+    from session_policy import read_state
+    try:
+        return read_state(SLOTS_DIR / str(device["slot"]) / "session.json") or {}
+    except (OSError, ValueError, TypeError):
+        return {"phase": "ended", "reason": "invalid_state"}
+
+
 def selected_queue(device):
+    session = profile_session(device)
+    if session is not None:
+        raw = (device["wind_down"]["fallback_queue"] if session.get("phase") == "fallback"
+               else device.get("queue", ""))
+        return resolve_queue_url(raw)
     for entry in device.get("schedules", []):
         start = entry.get("start", "")
         end = entry.get("end", "")
@@ -212,6 +227,9 @@ def selected_queue(device):
     return resolve_queue_url(device.get("queue", ""))
 
 def selected_shuffle(device):
+    session = profile_session(device)
+    if session is not None:
+        return session.get("phase") == "fallback"
     for entry in device.get("schedules", []):
         start = entry.get("start", "")
         end = entry.get("end", "")
@@ -427,7 +445,11 @@ def slot_status(device):
     # from the armed sentinel (set by /api/play or scheduled fire) when
     # available; otherwise from the device's static `queue` field. Null
     # when nothing is playing.
+    session = profile_session(device)
     current_queue_id = armed_queue_id or device.get("queue") or None
+    if session is not None:
+        current_queue_id = (device["wind_down"]["fallback_queue"] if session.get("phase") == "fallback"
+                            else device.get("queue"))
     now_playing = None
     if playing and title and current_queue_id:
         now_playing = {
@@ -445,6 +467,7 @@ def slot_status(device):
     return {
         # ── Legacy keys (this hub's own /admin UI in this file consumes them) ──
         "slot": slot,
+        "session": session,
         "name": device.get("name", ""),
         "mac": device.get("mac", ""),
         "connected": connected,
@@ -1323,6 +1346,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cmd = cmd_map.get(action)
         if not cmd:
             return self._json({"ok": False, "error": "unknown action"}, 400)
+
+        devices = read_devices()
+        device = next((d for d in devices if d["slot"] == slot), None)
+        if device and device.get("wind_down"):
+            # Profile playlists are phase snapshots. Refreshing here would
+            # replace fallback with the primary before forwarding Next.
+            if action == "next":
+                cmd = ["script-message", "hub-next"]
+            elif action in ("play", "toggle"):
+                session = profile_session(device)
+                if session.get("phase") == "ended":
+                    return self._json({"ok": False, "error": "session ended; reconnect for a new session"}, 409)
+            r = mpv_command(sock_path, cmd)
+            return self._json({"ok": r is not None, "response": r})
 
         # On next/prev, refresh the queue first in case items were added
         if action in ("next", "prev"):

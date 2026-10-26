@@ -1332,8 +1332,10 @@ start_avrcp_dispatcher() {
     # WITHOUT a reconnect (e.g. red's 21:00 day→lullaby schedule switch while
     # still connected) never applies. `exec python3` makes $! the python pid so
     # avrcp.pid / stop_avrcp_dispatcher stay correct.
+    local profile_flags=()
+    if has_profile "$slot"; then profile_flags=(--wind-down); fi
     ( exec 9>&-; exec python3 "$BASE_DIR/avrcp_dispatch.py" "$event_path" "$socket" "$name" \
-        --min-volume "$vol_min" --max-volume "$vol_max" \
+        --min-volume "$vol_min" --max-volume "$vol_max" ${profile_flags[@]+"${profile_flags[@]}"} \
         >>"$dir/avrcp.log" 2>&1 ) &
     local pid=$!
     echo "$pid" > "$dir/avrcp.pid"
@@ -1410,8 +1412,91 @@ active_schedule_json() {
     return 1
 }
 
+# A wind-down profile is opt-in; unconfigured devices avoid policy IO entirely.
+has_profile() {
+    jq -e --argjson s "$1" '.devices[] | select(.slot == $s) | .wind_down != null' "$CONFIG_FILE" >/dev/null 2>&1
+}
+profile_policy() {
+    local slot="$1" action="$2"; shift 2
+    python3 "$_SCRIPT_DIR/session_policy.py" --base "$BASE_DIR" --slot "$slot" --action "$action" "$@"
+}
+profile_phase() {
+    jq -r '.phase // "primary"' "$(slot_dir "$1")/session.json" 2>/dev/null || echo primary
+}
+profile_resume_allowed() {
+    local slot="$1" state="$2"
+    jq -e --arg sid "$(jq -r '.session_id' <<< "$state")" \
+        --arg phase "$(jq -r '.phase' <<< "$state")" \
+        '.session_id == $sid and .phase == $phase' "$(slot_dir "$slot")/state.json" >/dev/null 2>&1
+}
+profile_record_player() {
+    local slot="$1" state="$2" tmp
+    tmp=$(mktemp "$(slot_dir "$slot")/player.XXXXXX")
+    jq '{session_id, phase}' <<< "$state" > "$tmp"
+    mv "$tmp" "$(slot_dir "$slot")/.player_identity.json"
+}
+profile_release() {
+    local slot="$1" tag="$2" mac="$3" path
+    end_session "$slot" "$tag"
+    if path=$(device_path_for_mac "$mac" 2>/dev/null); then
+        timeout 5 busctl --system call org.bluez "$path" org.bluez.Device1 Disconnect >/dev/null 2>&1 || true
+    fi
+}
+# Independent of downloads and the main watchdog: a missing player must not
+# leave a connected headset awake past the fixed session deadline.
+profile_loop() {
+    while true; do
+        local dev slot state mac tag path
+        while IFS= read -r dev; do
+            slot=$(jq -r '.slot' <<< "$dev")
+            state=$(profile_policy "$slot" tick) || continue
+            [[ "$(jq -r '.phase // "idle"' <<< "$state")" == ended ]] || continue
+            mac=$(jq -r '.mac' <<< "$dev")
+            if path=$(device_path_for_mac "$mac" 2>/dev/null) &&
+                [[ "$(busctl --system get-property org.bluez "$path" org.bluez.Device1 Connected 2>/dev/null)" == "b true" ]]; then
+                tag=$(jq -r '.color' <<< "$dev")
+                profile_release "$slot" "$tag" "$mac"
+            else
+                profile_policy "$slot" drop >/dev/null || true
+            fi
+        done < <(jq -c '.devices[] | select(.wind_down != null)' "$CONFIG_FILE" 2>/dev/null)
+        sleep 1
+    done
+}
+profile_fallback() (
+    # Keep the existing player alive (paused) and its deadline timer running
+    # throughout caching. One slot lock protects the entire in-place handoff.
+    local slot="$1" session_id="$2" state dev tag queue dir sock
+    dir=$(slot_dir "$slot"); sock="$dir/mpv-socket"
+    exec 9>"$dir/playback.lock"
+    flock 9
+    state=$(profile_policy "$slot" tick --session-id "$session_id") || return 1
+    [[ "$(jq -r '.accepted and .allowed and (.phase == "fallback")' <<< "$state")" == true ]] || return 1
+    dev=$(jq -c --argjson s "$slot" '.devices[] | select(.slot == $s)' "$CONFIG_FILE")
+    tag=$(jq -r '.color' <<< "$dev"); queue=$(selected_queue "$dev")
+    fetch_and_cache "$slot" "$tag" "$queue" true || return 1
+    state=$(profile_policy "$slot" tick --session-id "$session_id") || return 1
+    [[ "$(jq -r '.accepted and .allowed and (.phase == "fallback")' <<< "$state")" == true ]] || return 1
+    [[ -S "$sock" ]] || return 1
+    mpv_ipc "$sock" '{"command":["set_property","loop-playlist","inf"]}' >/dev/null || return 1
+    mpv_ipc "$sock" "{\"command\":[\"loadlist\",\"$dir/playlist.m3u\",\"replace\"]}" >/dev/null || return 1
+    profile_record_player "$slot" "$state"
+    save_position "$slot" "$tag" quiet
+    mpv_ipc "$sock" '{"command":["script-message","hub-fallback-loaded"]}' >/dev/null || return 1
+    mpv_ipc "$sock" '{"command":["set_property","pause",false]}' >/dev/null || return 1
+    touch "$dir/.bg_done"
+)
+
 selected_queue() {
     local device_json="$1"
+    if [[ "$(jq -r 'has("wind_down")' <<< "$device_json")" == true ]]; then
+        local slot phase raw
+        slot=$(jq -r '.slot' <<< "$device_json"); phase=$(profile_phase "$slot")
+        if [[ "$phase" == fallback ]]; then raw=$(jq -r '.wind_down.fallback_queue' <<< "$device_json")
+        else raw=$(jq -r '.queue' <<< "$device_json"); fi
+        resolve_queue_url "$raw"
+        return 0
+    fi
     local schedule_json raw
 
     if schedule_json=$(active_schedule_json "$device_json"); then
@@ -1457,6 +1542,10 @@ selected_bumper() {
 
 selected_shuffle() {
     local device_json="$1"
+    if [[ "$(jq -r 'has("wind_down")' <<< "$device_json")" == true ]]; then
+        [[ "$(profile_phase "$(jq -r '.slot' <<< "$device_json")")" == fallback ]] && echo true || echo false
+        return 0
+    fi
     local schedule_json
 
     if schedule_json=$(active_schedule_json "$device_json"); then
@@ -1485,7 +1574,8 @@ save_position() {
     local socket="$dir/mpv-socket"
 
     if [[ -S "$socket" ]]; then
-        local pos track
+        local pos track identity=""
+        if has_profile "$slot"; then identity=$(cat "$dir/.player_identity.json" 2>/dev/null) || return 0; fi
         pos=$(echo '{"command":["get_property","playback-time"]}' | socat - "$socket" 2>/dev/null | jq -r '.data // 0') || pos=0
         track=$(echo '{"command":["get_property","playlist-pos"]}' | socat - "$socket" 2>/dev/null | jq -r '.data // 0') || track=0
         # mpv returns null/empty for these right after launch (before the
@@ -1493,7 +1583,14 @@ save_position() {
         # resume point with 0 and yank playback back to the top of the queue.
         [[ -z "$pos" || "$pos" == "null" ]] && pos=0
         [[ -z "$track" || "$track" == "null" ]] && track=0
-        echo "{\"track\": $track, \"position\": $pos}" > "$dir/state.json"
+        if [[ -n "$identity" ]]; then
+            local tmp
+            tmp=$(mktemp "$dir/state.XXXXXX")
+            jq --argjson track "$track" --argjson pos "$pos" '. + {track:$track, position:$pos}' <<< "$identity" > "$tmp"
+            mv "$tmp" "$dir/state.json"
+        else
+            echo "{\"track\": $track, \"position\": $pos}" > "$dir/state.json"
+        fi
         # quiet = periodic watchdog persistence; don't spam the log every tick.
         [[ "$quiet" == "quiet" ]] || log "$name" "Saved position: track=$track pos=$pos"
     fi
@@ -1680,6 +1777,13 @@ rebuild_playlist_from_queue() {
     # CENTRAL cache via get_cached_path, writing their central paths to the
     # playlist. Skip (don't abort) any track that can't be cached.
     local primed=0 target_prime=$((LAZY_PRIME_COUNT < total ? LAZY_PRIME_COUNT : total))
+    local strict_primary=false
+    if has_profile "$slot" && [[ "$(profile_phase "$slot")" != fallback ]]; then
+        strict_primary=true
+        target_prime=$total
+    elif has_profile "$slot"; then
+        target_prime=$total
+    fi
     echo "#EXTM3U" > "$playlist_tmp"
     local i cpath
     for ((i=0; i<total && primed<target_prime; i++)); do
@@ -1688,6 +1792,10 @@ rebuild_playlist_from_queue() {
             primed=$((primed+1))
         else
             logev "$name" prime.skip plex_id="${track_ids[$i]}" reason=cache_fail
+            if [[ "$strict_primary" == true ]]; then
+                rm -f "$playlist_tmp"
+                return 1
+            fi
         fi
     done
     local first_pending_idx=$i
@@ -1747,7 +1855,8 @@ fetch_and_cache() {
 
     local queue_json
     if ! queue_json=$(curl_api "$queue_url"); then
-        if [[ -f "$dir/playlist.m3u" ]]; then
+        if [[ -f "$dir/playlist.m3u" ]] && { ! has_profile "$slot" ||
+            [[ "$(cat "$dir/.playlist_queue" 2>/dev/null)" == "$queue_url" ]]; }; then
             log "$name" "API unavailable, using cached playlist"
             return 0
         fi
@@ -2080,6 +2189,7 @@ start_playback() {
     local start_track=0 start_pos=0
     local audio_device
     local load_scripts="no"
+    local profile_state="" profile_session_id="" profile_start_phase="" profile_args=() loop_playlist=inf
 
     # Guardrail 1: per-slot lock prevents concurrent start_playback calls
     # (gdbus connect handler + watchdog can both fire at once). Without
@@ -2092,6 +2202,25 @@ start_playback() {
         log "$name" "start_playback skipped: another call already in progress"
         exec 9>&-
         return 0
+    fi
+
+    if has_profile "$slot"; then
+        profile_state=$(profile_policy "$slot" ensure) || { exec 9>&-; return 1; }
+        if [[ "$(jq -r '.allowed' <<< "$profile_state")" != true ]]; then
+            exec 9>&-
+            return 0
+        fi
+        local dev
+        dev=$(jq -c --argjson s "$slot" '.devices[] | select(.slot == $s)' "$CONFIG_FILE")
+        queue=$(selected_queue "$dev"); shuffle=$(selected_shuffle "$dev"); bumper=""
+        resume_queue=false
+        if profile_resume_allowed "$slot" "$profile_state"; then resume_queue=true; fi
+        resume_track="$resume_queue"
+        if [[ "$(jq -r '.phase' <<< "$profile_state")" == primary ]]; then loop_playlist=no; fi
+        profile_session_id=$(jq -r '.session_id' <<< "$profile_state")
+        profile_start_phase=$(jq -r '.phase' <<< "$profile_state")
+        profile_args=("--script=$_SCRIPT_DIR/wind_down.lua"
+            "--script-opts=wind_down-base=$BASE_DIR,wind_down-slot=$slot,wind_down-session_id=$(jq -r '.session_id' <<< "$profile_state")")
     fi
 
     # Guardrail 2: kill any orphan mpv processes targeting this slot's
@@ -2137,7 +2266,7 @@ start_playback() {
         return 1
     fi
 
-    if media_control_connected "$mac"; then
+    if ! has_profile "$slot" && media_control_connected "$mac"; then
         load_scripts="yes"
         log "$name" "MediaControl active for $mac; enabling MPRIS export"
     else
@@ -2193,6 +2322,11 @@ start_playback() {
     # added, removed, or reordered. Do NOT add --audio-fallback-to-null,
     # PIPEWIRE_PROPS/node.dont-reconnect, or any ao-mute (see README "Audio
     # flow troubleshooting" — that combination silently silences mpv).
+    if has_profile "$slot"; then
+        profile_state=$(profile_policy "$slot" tick --session-id "$profile_session_id") || { exec 9>&-; return 1; }
+        if [[ "$(jq -r '.accepted and .allowed' <<< "$profile_state")" != true ||
+              "$(jq -r '.phase' <<< "$profile_state")" != "$profile_start_phase" ]]; then exec 9>&-; return 0; fi
+    fi
     [[ -f "$dir/mpv.log" ]] && mv "$dir/mpv.log" "$dir/mpv.log.1"
     ( exec 9>&-; exec mpv --no-video --no-terminal \
         --msg-level=all=info,demuxer=warn,stream=warn,ao=warn,ffmpeg=warn \
@@ -2200,13 +2334,15 @@ start_playback() {
         --playlist="$dir/playlist.m3u" \
         --playlist-start="$start_track" \
         --start="+${start_pos}" \
-        --loop-playlist=inf \
+        --loop-playlist="$loop_playlist" \
+        ${profile_args[@]+"${profile_args[@]}"} \
         --pause=no \
         --volume="$vol_default" \
         --load-scripts="$load_scripts" \
         --audio-device="$audio_device" 2>"$dir/mpv.log" ) &
 
     echo $! > "$dir/mpv.pid"
+    if [[ -n "$profile_state" ]]; then profile_record_player "$slot" "$profile_state"; fi
     log "$name" "mpv started (pid $!)"
     logev "$name" mpv.start pid=$! resume_track="$start_track" resume_pos="$start_pos"
     # An override that has reached mpv is live: from here only its own clock
@@ -2244,7 +2380,7 @@ start_playback() {
     # already loaded the COMPLETE playlist and must NOT run this — removing
     # .bg_done here would break warm-reuse for the next flap, and there's nothing
     # left to download or reconcile.
-    if (( warm == 0 )); then
+    if (( warm == 0 )) && ! has_profile "$slot"; then
         rm -f "$dir/.bg_done"
         spawn_bg_downloader "$slot" "$name"
         # One-shot reconcile: when the bg finishes appending the full list to the
@@ -2261,6 +2397,10 @@ start_playback() {
                 file_count="$(grep -c '^/' "$dir/playlist.m3u" 2>/dev/null || echo 0)" ) &
     fi
 
+    if has_profile "$slot"; then
+        # Profiles use complete snapshots so manual Next always knows the true end.
+        touch "$dir/.bg_done"
+    fi
     # Release the per-slot playback lock (FD 9). Closing the FD lets a
     # future start_playback acquire flock; the lock file itself stays.
     exec 9>&-
@@ -2268,6 +2408,7 @@ start_playback() {
 
 stop_all() {
     # Kill background loops if running
+    [[ -n "${PROFILE_PID:-}" ]] && kill "$PROFILE_PID" 2>/dev/null || true
     [[ -n "${REFRESH_PID:-}" ]]   && kill "$REFRESH_PID"   2>/dev/null || true
     [[ -n "${WATCHDOG_PID:-}" ]]  && kill "$WATCHDOG_PID"  2>/dev/null || true
     [[ -n "${SCHEDULED_PID:-}" ]] && kill "$SCHEDULED_PID" 2>/dev/null || true
@@ -2298,6 +2439,8 @@ refresh_loop() {
         for ((idx=0; idx<count; idx++)); do
             local device_json slot name mac tag queue shuffle
             device_json=$(jq -c ".devices[$idx]" "$CONFIG_FILE")
+            # A profile playlist is a session snapshot; never reshuffle/reload mid-phase.
+            [[ "$(jq -r 'has("wind_down")' <<< "$device_json")" == true ]] && continue
             slot=$(jq -r '.slot' <<< "$device_json")
             name=$(jq -r '.name' <<< "$device_json")
             mac=$(jq -r '.mac' <<< "$device_json")
@@ -2386,6 +2529,8 @@ membership_tick() {
     for ((idx=0; idx<count; idx++)); do
         local device_json slot name mac tag queue shuffle dir
         device_json=$(jq -c ".devices[$idx]" "$CONFIG_FILE" 2>/dev/null) || continue
+            # A profile playlist is a session snapshot; never reshuffle/reload mid-phase.
+            [[ "$(jq -r 'has("wind_down")' <<< "$device_json")" == true ]] && continue
         slot=$(jq -r '.slot' <<< "$device_json")
         name=$(jq -r '.name' <<< "$device_json")
         mac=$(jq -r '.mac' <<< "$device_json")
@@ -2852,6 +2997,11 @@ mpv_watchdog() {
             resume_queue=$(jq -r 'if has("resume_queue") then .resume_queue else true end' <<< "$device_json")
             resume_track=$(jq -r 'if has("resume_track") then .resume_track else true end' <<< "$device_json")
             dir=$(slot_dir "$slot")
+            if has_profile "$slot"; then
+                local profile_state
+                profile_state=$(profile_policy "$slot" tick) || continue
+                [[ "$(jq -r '.phase // "idle"' <<< "$profile_state")" == ended ]] && continue
+            fi
 
             # Determine effective queue early. Armed slots (scheduled
             # fires, /play calls) override the device's static queue —
@@ -2884,6 +3034,7 @@ mpv_watchdog() {
             device_path=$(device_path_for_mac "$mac" 2>/dev/null) || continue
             conn=$(busctl --system get-property org.bluez "$device_path" org.bluez.Device1 Connected 2>/dev/null)
             if [[ "$conn" != "b true" ]]; then
+                if has_profile "$slot"; then profile_policy "$slot" drop >/dev/null || true; fi
                 # Device disconnected. The gdbus monitor normally fast-kills mpv
                 # here, but it can DROP disconnect events during BT flapping —
                 # leaving an orphaned mpv whose audio PipeWire migrates onto
@@ -2990,6 +3141,8 @@ mpv_watchdog() {
 }
 
 monitor() {
+    profile_loop &
+    PROFILE_PID=$!
     declare -A dbus_to_slot
     declare -A dbus_to_name
     declare -A dbus_to_device
@@ -3150,6 +3303,7 @@ monitor() {
                             continue
                         fi
                         connected_state[$dbus_id]=true
+                        if has_profile "$slot"; then profile_policy "$slot" connect >/dev/null || true; fi
                         local cls
                         cls=$(device_class "$device_json")
                         if [[ "$cls" == "public" ]] && ! is_armed_for_play "$slot"; then
@@ -3189,6 +3343,7 @@ monitor() {
                         log "$name" "Disconnected"
                         logev "$name" bt.disconnect mac="$(jq -r '.mac' <<< "$device_json")"
                         connected_state[$dbus_id]=false
+                        if has_profile "$slot"; then profile_policy "$slot" drop >/dev/null || true; fi
                         end_session "$slot" "$name" fast
                         # Fast-path reconnect: a transient RF blip during an active
                         # schedule window shouldn't wait up to CONNECT_CHECK_INTERVAL
@@ -3285,6 +3440,18 @@ handle_cmd() {
 
         case "$action" in
             play)
+                if has_profile "$slot"; then
+                    local ps
+                    ps=$(profile_policy "$slot" ensure) || { skipped=$((skipped+1)); continue; }
+                    if [[ "$(jq -r '.allowed' <<< "$ps")" != true ]]; then skipped=$((skipped+1)); continue; fi
+                    # Start/resume the profile; a remote play does not replace its queues or clock.
+                    if [[ -S "$(slot_dir "$slot")/mpv-socket" ]]; then
+                        mpv_ipc "$(slot_dir "$slot")/mpv-socket" '{"command":["set_property","pause",false]}' >/dev/null || true
+                    else
+                        start_playback "$slot" "$tag" "$mac" "$(selected_queue "$device_json")" false false false || true
+                    fi
+                    applied=$((applied+1)); continue
+                fi
                 if [[ -z "$content_id" ]]; then
                     echo "play requires content_id" >&2
                     skipped=$((skipped+1)); continue
@@ -3336,11 +3503,13 @@ handle_cmd() {
                 applied=$((applied+1))
                 ;;
             stop)
+                if has_profile "$slot"; then profile_policy "$slot" stop >/dev/null || true; fi
                 log "cmd" "stop target=$color slot=$slot"
                 end_session "$slot" "$tag"
                 applied=$((applied+1))
                 ;;
             disconnect)
+                if has_profile "$slot"; then profile_policy "$slot" stop >/dev/null || true; fi
                 # Hand the speaker back. `stop` only kills mpv — the daemon has
                 # no other Disconnect anywhere, so the A2DP link stays ours and
                 # a phone (or any other source) is locked out until the device
@@ -3373,6 +3542,11 @@ handle_cmd() {
                     applied=$((applied+1)) || skipped=$((skipped+1))
                 ;;
             next)
+                if has_profile "$slot"; then
+                    mpv_ipc "$(slot_dir "$slot")/mpv-socket" '{"command":["script-message","hub-next"]}' >/dev/null && \
+                        applied=$((applied+1)) || skipped=$((skipped+1))
+                    continue
+                fi
                 mpv_ipc "$(slot_dir "$slot")/mpv-socket" '{"command":["playlist-next"]}' >/dev/null && \
                     applied=$((applied+1)) || skipped=$((skipped+1))
                 ;;
@@ -3429,6 +3603,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
             ;;
         stop)    stop_all ;;
         cmd)     shift; handle_cmd "$@" ;;
+        profile-fallback) shift; profile_fallback "$@" ;;
         *)       echo "Usage: $0 {monitor|stop|cmd <action> <target> [args]}" ;;
     esac
 fi

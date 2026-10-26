@@ -126,6 +126,13 @@ def send_mpv(sock_path, command):
         return False
 
 
+def command_for_key(code, wind_down=False):
+    command = KEY_TO_MPV.get(code)
+    if wind_down and command == ["playlist-next"]:
+        return ["script-message", "hub-next"]
+    return command
+
+
 VOL_STEP = 5   # mpv volume change per VOL+/VOL- key press
 
 
@@ -183,6 +190,7 @@ def main():
     parser.add_argument("tag", nargs="?", default=None)
     parser.add_argument("--min-volume", type=int, default=0)
     parser.add_argument("--max-volume", type=int, default=100)
+    parser.add_argument("--wind-down", action="store_true")
     args, _ = parser.parse_known_args()
 
     event_path = args.event_path
@@ -229,7 +237,7 @@ def main():
             if ev_type != EV_KEY or ev_value != KEY_DOWN:
                 continue
 
-            cmd = KEY_TO_MPV.get(ev_code)
+            cmd = command_for_key(ev_code, args.wind_down)
             key_name = KEY_NAMES.get(ev_code, f"code={ev_code}")
             if cmd is None:
                 # Volume keys: actively manage mpv volume with clamps.

@@ -1,0 +1,9 @@
+devices:
+  - slot: 7
+    color: white
+    mac: 'AA:BB:CC:DD:EE:07'
+    queue: '767429'
+    shuffle: false
+    wind_down:
+      fallback_queue: '697317'
+      max_session_seconds: 0

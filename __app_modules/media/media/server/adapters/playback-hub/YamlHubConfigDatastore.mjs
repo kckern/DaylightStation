@@ -237,6 +237,25 @@ export class YamlHubConfigDatastore extends IHubConfigRepository {
         );
       }
 
+      // Optional ordered wind-down + shuffled fallback session profile.
+      if ('wind_down' in dev) {
+        const profile = dev.wind_down;
+        const invalid = (message) => {
+          throw new ValidationError(`config validation failed: device '${color}' ${message}`, {
+            code: 'INVALID_WIND_DOWN', color
+          });
+        };
+        if (!isPlainObject(profile) || !profile.fallback_queue) invalid('wind_down requires fallback_queue');
+        if (!dev.queue || dev.shuffle) invalid('wind_down requires ordered primary queue');
+        for (const [field, fallback, minimum] of [['max_session_seconds', 18000, 1], ['reconnect_seconds', 120, 0]]) {
+          const value = profile[field] === undefined ? fallback : profile[field];
+          if (!Number.isInteger(value) || value < minimum) invalid(`wind_down.${field} must be an integer >= ${minimum}`);
+        }
+        if ((dev.schedules?.length ?? 0) > 0 || dev.alternate_queue || dev.bumper) {
+          invalid('wind_down cannot also use schedules, alternate_queue or bumper');
+        }
+      }
+
       // Rule 7: volume bounds.
       if ('volume' in dev && dev.volume !== null && dev.volume !== undefined) {
         this.#validateVolume(color, dev.volume);

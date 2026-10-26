@@ -7,7 +7,7 @@
 
 ## Overview
 
-When a configured Bluetooth headset/speaker connects to the hub, the daemon fetches its assigned Plex playlist queue, caches the audio locally, and plays it on loop via mpv into a dedicated per-device PipeWire bluez sink. Saves playback position on disconnect, resumes on reconnect. Supports five independent slots, time-of-day alternate queues, scheduled "fire" events, REST control, and AVRCP headset-button forwarding to mpv.
+When a configured Bluetooth headset/speaker connects to the hub, the daemon fetches its assigned Plex playlist queue, caches the audio locally, and plays it on loop via mpv into a dedicated per-device PipeWire bluez sink. Saves playback position on disconnect, resumes on reconnect. Supports config-defined independent slots, time-of-day alternate queues, scheduled "fire" events, REST control, and AVRCP headset-button forwarding to mpv.
 
 Renamed from `headset-hub` to `playback-hub` on 2026-05-27 to reflect that the rig now drives non-headset BT outputs too (10-SYNC speaker bulb in slot 5).
 
@@ -16,7 +16,7 @@ Renamed from `headset-hub` to `playback-hub` on 2026-05-27 to reflect that the r
 ## Architecture
 
 ```
-Bluetooth device connects (red/yellow/green/blue headsets, white speaker)
+Bluetooth device connects (configured headbands, players, or speakers)
         |
         v
 playback-hub.sh (monitor loop, gdbus-based BT watcher)
@@ -46,6 +46,13 @@ External:
 - `sync_config.sh` (cron): pulls `devices.yml` from DaylightStation Dropbox SSOT every 60s
 
 ---
+
+## Network recovery
+
+An independent root timer can recover IPv4 lease loss and local network failures
+without depending on the playback daemon. It checks the LAN, reconnects Wi-Fi
+after repeated failures, and escalates to restarting NetworkManager with bounded
+commands and cooldown. See [network recovery setup and limits](docs/network-recovery.md).
 
 ## Cache self-heal tiers
 
@@ -128,6 +135,53 @@ Notes:
 - `queue` accepts a bare Plex ratingKey, a `plex:<id>` prefix, or a full URL. The bare form is expanded to `https://daylightlocal.{env.domain}/api/v1/queue/plex/<id>`.
 - `class: public` gates playback on a separate "public class enabled" toggle and turns on the linked HA entity when audio is firing.
 - A slot can have zero `schedules` (always-on with the fallback `queue`) or any number; the daemon iterates them in order on each refresh and uses the first window currently active.
+
+### Wind-down sessions
+
+An optional device profile plays its primary `queue` in order once, then stops
+and releases Bluetooth after natural completion. Pressing **Next** on the final
+primary track switches to the shuffled fallback instead. All Next controls
+(headband, dashboard, remote API) use the same transition.
+
+```yaml
+queue: '100001'              # ordered primary playlist
+shuffle: false
+resume_queue: false
+resume_track: false
+wind_down:
+  fallback_queue: '100002'   # shuffled and looped after manual skip past primary
+  max_session_seconds: 18000 # wall-clock maximum across both phases, including pause
+  reconnect_seconds: 120    # shorter dropouts resume the same session
+```
+
+The first connection starts primary track 1 at position zero. A dropout of at
+most `reconnect_seconds` resumes the phase/position and original deadline; a
+longer disconnection starts a fresh primary session. Intentional completion,
+manual stop, and timeout latch the session off: a new connection after the
+reconnect window is required to start again. Restarting services cannot clear
+that latch or extend the deadline. A remote Play resumes an active profile; it
+does not replace its queues or reset the deadline.
+
+Profile playlists are cached as complete phase snapshots; primary download
+failure refuses playback rather than silently removing a wind-down track.
+Periodic queue refresh does not reorder or replace an active profile snapshot.
+Do not combine profiles with continuous schedules, alternate queues, or bumpers.
+Devices without a profile retain their existing looping and recovery behavior.
+
+`session_policy.py` owns locked, atomically replaced `slots/<N>/session.json`.
+`wind_down.lua` distinguishes natural EOF from manual Next and checks the
+fixed deadline while mpv is running. A separate daemon loop releases Bluetooth
+on terminal sessions even if mpv has exited. Status includes the session phase,
+start, deadline, and terminal reason; phase transitions enter `events.jsonl`.
+Deploy **both new files** alongside the updated daemon, dispatcher, validator,
+and web server before enabling the profile in household config.
+
+Stopping and Bluetooth disconnection are software actions. Physical headband
+power-off depends on its firmware's inactivity behavior and must be checked on
+the actual device; no direct hardware power-off command is assumed.
+
+Verification: `python3 -m unittest discover -s _extensions/playback-hub -p 'test_*.py'`
+and, from this module directory, `lua test_wind_down.lua`.
 
 ### Adding a new device
 

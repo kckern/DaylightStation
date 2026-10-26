@@ -126,9 +126,13 @@ describe('HubStatusBroadcaster', () => {
     await broadcaster.stop();
 
     const warnEvents = logger.records.filter(r =>
-      r.level === 'warn' && r.event === 'playback-hub.broadcaster.fetch_failed'
+      r.level === 'warn' && r.event === 'playback-hub.broadcaster.offline'
     );
-    expect(warnEvents.length).toBeGreaterThanOrEqual(3);
+    expect(warnEvents).toHaveLength(1);
+    const probes = logger.records.filter(r =>
+      r.level === 'debug' && r.event === 'playback-hub.broadcaster.recovery_probe_failed'
+    );
+    expect(probes.length).toBeGreaterThanOrEqual(2);
 
     // Sleep schedule for failures 1..3: 3000*2^1=6000, 3000*2^2=12000, 3000*2^3=24000
     // (subtracting tiny elapsed time, so we expect "close to" these values).
