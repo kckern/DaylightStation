@@ -2113,7 +2113,7 @@ const Player = forwardRef(function Player(props, ref) {
   }, [advance, completionAssetId, currentMediaGuid, isQueue, onPlaybackCompleted, queuePosition, queueSnapshot, remainingVisitCount, repeatMode, restartNativeVisit, singleAdvance, playerInstanceId]);
 
   const onTerminalCandidate = useCallback(({ reason, nativeSeconds, target } = {}) => {
-    if (!target || !sameRecoveryTarget(target, recoveryIdentity.getTarget()) || heldForCurrentVisit) return { accepted: false };
+    if (ownerStoppedRef.current || !target || !sameRecoveryTarget(target, recoveryIdentity.getTarget()) || heldForCurrentVisit) return { accepted: false };
     const identity = currentMediaGuid ?? completionAssetId ?? 'player-media-unknown';
     const key = isQueue ? `${identity}@${queuePosition ?? 'unknown'}#${remainingVisitCount}` : identity;
     if (repeatRestartGateRef.current || completedMediaKeyRef.current === key) return { accepted: false };

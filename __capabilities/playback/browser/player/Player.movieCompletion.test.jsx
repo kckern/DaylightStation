@@ -222,4 +222,80 @@ describe('movie terminal candidates through Player, SinglePlayer and native cont
     expect(DaylightAPI.mock.calls.filter(([path]) => path === 'api/v1/play/log')).toHaveLength(0);
   });
 
+  it.each(['native-ended', 'clip-end', 'watchdog'])('accepts %s once after pause, resume and seek on the same renderer', async reason => {
+    const { node, container, ref, completed, clear } = await mount({
+      segment: reason === 'clip-end' ? { start: 4320, end: 4380 } : undefined,
+    });
+    const before = ref.current.getRecoveryTarget();
+    await act(async () => ref.current.pause());
+    await act(async () => ref.current.play());
+    act(() => ref.current.seek(4330));
+    expect(node.currentTime).toBe(4330);
+    act(() => { node.dispatchEvent(new Event('seeking')); node.dispatchEvent(new Event('seeked')); });
+    expect(container.querySelector('video')).toBe(node);
+    expect(ref.current.getRecoveryTarget().visitId).toBe(before.visitId);
+    expect(ref.current.getRecoveryTarget().intentRevision).toBeGreaterThan(before.intentRevision);
+    node.duration = 5895;
+    const end = reason === 'clip-end' ? 4380 : 5895;
+    if (reason === 'native-ended') emit(node, 'ended', end);
+    else emit(node, 'timeupdate', end);
+    if (reason === 'watchdog') act(() => vi.advanceTimersByTime(3100));
+    expect(completed).toHaveBeenCalledTimes(1);
+    emit(node, 'ended', end);
+    act(() => vi.advanceTimersByTime(3100));
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(ledger.dumpAll().sessions.every(session => session.count === 0)).toBe(true);
+  });
+
+  it('does not bless a superseded same-node renderer claim when later controls change intent', async () => {
+    const { node, ref, completed } = await mount();
+    const identity = ref.current.getRecoveryIdentity();
+    act(() => identity.beginRenderer(identity.getTarget()));
+    await act(async () => ref.current.pause());
+    await act(async () => ref.current.play());
+    node.duration = 5895;
+    emit(node, 'ended', 5895);
+    expect(completed).not.toHaveBeenCalled();
+    expect(ledger.dumpAll().sessions.every(session => session.count === 0)).toBe(true);
+  });
+
+  it('ignores queued old-node EOF while same-visit replacement is pending and after newer intent', async () => {
+    const listeners = vi.spyOn(HTMLMediaElement.prototype, 'addEventListener');
+    const { node, container, ref, completed } = await mount();
+    const oldEnded = listeners.mock.calls.flatMap(([type, listener], index) =>
+      type === 'ended' && listeners.mock.contexts[index] === node ? [listener] : []).at(-1);
+    expect(oldEnded).toBeTypeOf('function');
+    const visitId = ref.current.getRecoveryTarget().visitId;
+    const resolved = ref.current.getNowPlaying().item;
+    let resolveMedia;
+    const pending = new Promise(resolve => { resolveMedia = resolve; });
+    const api = DaylightAPI.getMockImplementation();
+    DaylightAPI.mockImplementation((path, ...args) => String(path).includes('/play/') && !String(path).includes('/play/log')
+      ? pending : api(path, ...args));
+    await act(async () => ref.current.beginRendererBoundary({ operationId: 'terminal-replacement',
+      expectedContentId: 'files:movie', targetSeconds: 4330, autoplay: false }));
+    expect(container.querySelector('video')).toBeNull();
+    expect(ref.current.getRecoveryTarget().visitId).toBe(visitId);
+    await act(async () => ref.current.pause());
+    await act(async () => ref.current.play());
+    node.currentTime = 5895;
+    act(() => oldEnded(new Event('ended')));
+    expect(completed).not.toHaveBeenCalled();
+    await act(async () => resolveMedia(resolved));
+    expect(container.querySelector('video')).not.toBe(node);
+    act(() => oldEnded(new Event('ended')));
+    expect(completed).not.toHaveBeenCalled();
+    expect(ledger.dumpAll().sessions.every(session => session.count === 0)).toBe(true);
+  });
+
+  it('keeps queued native EOF superseded by Stop from completing or spending recovery', async () => {
+    const { node, ref, completed } = await mount();
+    act(() => ref.current.stop());
+    expect(node.currentTime).toBe(0);
+    emit(node, 'ended', 0);
+    expect(completed).not.toHaveBeenCalled();
+    expect(ledger.dumpAll().sessions.every(session => session.count === 0)).toBe(true);
+  });
+
 });

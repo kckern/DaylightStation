@@ -32,7 +32,8 @@ function contentProgress(nativeSeconds, nativeDuration, meta, isVideo) {
   const clipStart = meta.segment?.start ?? timeline?.clipStartSeconds ?? 0;
   const clipEnd = meta.segment?.end ?? timeline?.clipEndSeconds;
   const catalogEnd = timeline?.expectedEndSeconds;
-  const knownEnd = Number.isFinite(catalogEnd) || Number.isFinite(clipEnd);
+  // Audio clips retain their native clock; only video requires verified origins.
+  const knownEnd = isVideo && (Number.isFinite(catalogEnd) || Number.isFinite(clipEnd));
   const mapped = toContentSeconds(nativeSeconds, timeline);
   const contentSeconds = mapped ?? (knownEnd ? null : nativeSeconds);
   const contentDuration = catalogEnd ?? nativeDuration;
@@ -193,6 +194,7 @@ export function useCommonMediaController({
   const recoveryHeldRef = useRef(recoveryHeld);
   recoveryHeldRef.current = recoveryHeld;
   const terminalHandlerRef = useRef(null);
+  const terminalBindingRef = useRef(null);
   const handleTerminalCandidate = useCallback(candidate => terminalHandlerRef.current?.(candidate)
     ?? { accepted: false }, []);
 
@@ -1089,7 +1091,7 @@ export function useCommonMediaController({
 
       // Segment end detection — advance when playback reaches segment boundary
       if (segEnd && progress.contentSeconds !== null && progress.contentSeconds >= segEnd) {
-        handleTerminalCandidate({ reason: 'clip-end' });
+        finishTerminal({ reason: 'clip-end' });
       }
     };
 
@@ -1099,11 +1101,32 @@ export function useCommonMediaController({
       if (mediaEl.duration > 0) lastDurationRef.current = mediaEl.duration;
     };
 
-    const terminalTarget = recoveryIdentity?.getTarget();
+    // Intent changes retain a committed native renderer. A generation-only
+    // renderer claim retires its target, even if the old node has not unmounted.
+    if (terminalBindingRef.current?.node !== mediaEl) {
+      terminalBindingRef.current = { node: mediaEl, target: recoveryIdentity?.getTarget() };
+    }
+    const terminalBinding = terminalBindingRef.current;
+    let active = true;
+    let observedTarget = recoveryIdentity?.getTarget();
+    const unsubscribeTerminalIntent = recoveryIdentity?.subscribe(target => {
+      const previous = observedTarget;
+      observedTarget = target;
+      if (active && terminalBindingRef.current === terminalBinding && getMediaEl() === mediaEl
+        && sameRecoveryTarget(terminalBinding.target, previous)
+        && target.ownerId === previous.ownerId && target.visitId === previous.visitId
+        && target.intentRevision === previous.intentRevision + 1
+        && target.rendererGeneration === previous.rendererGeneration + 1) {
+        terminalBinding.target = target;
+      }
+    });
     const finishTerminal = ({ reason = 'native-ended' } = {}) => {
       const s = stallStateRef.current;
-      if (s.hasEnded) return { accepted: false };
-      const result = terminalGateRef.current?.({ reason, nativeSeconds: mediaEl.currentTime, target: terminalTarget })
+      if (!active || terminalBindingRef.current !== terminalBinding || getMediaEl() !== mediaEl
+        || s.hasEnded || (recoveryIdentity && !sameRecoveryTarget(terminalBinding.target, recoveryIdentity.getTarget()))) {
+        return { accepted: false };
+      }
+      const result = terminalGateRef.current?.({ reason, nativeSeconds: mediaEl.currentTime, target: terminalBinding.target })
         ?? { accepted: true };
       // Rejection must precede EVERY terminal side effect, including progress logging.
       if (result.accepted !== true) return result;
@@ -1523,6 +1546,8 @@ export function useCommonMediaController({
     mediaEl.addEventListener('play', onResume);
 
     return () => {
+      active = false;
+      unsubscribeTerminalIntent?.();
       mediaEl.removeEventListener('timeupdate', onTimeUpdate);
       mediaEl.removeEventListener('durationchange', onDurationChange);
       mediaEl.removeEventListener('ended', onEnded);
@@ -1542,7 +1567,7 @@ export function useCommonMediaController({
     // 9-dependency media-listener effect in a file with hard-won "generation churn / storm"
     // caution comments elsewhere — already reviewed this session as too risky for a lint pass.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playbackRate, start, isVideo, meta, type, assetId, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation]);
+  }, [playbackRate, start, isVideo, meta, type, assetId, isStalled, volume, getMediaEl, markProgress, scheduleStallDetection, clearTimers, readStallState, elementKey, remountDiagnostics, rendererOperation, applyMountedPlaybackOperation, finishMountedPlaybackOperation, recoveryIdentity]);
 
   useEffect(() => {
     const mediaEl = getMediaEl();

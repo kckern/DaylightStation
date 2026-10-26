@@ -173,13 +173,19 @@ recovery budget, then holds the movie with Retry, Quality, and explicit Skip.
 Known catalog end with unknown mapping holds as `timeline-unverified`. Retry
 is explicit; held playback does not spend more automatic recovery attempts.
 Accepted terminal signals complete once per visit, including repeat-one.
+Pause, play, and seek retain completion ownership for the current native node.
+A renderer replacement claim retires the prior terminal target; old-node
+callbacks stay rejected while a replacement resolves and after newer controls.
+Stop supersedes pending terminal events without spending a recovery attempt.
 Without a catalog or clip end, ordinary EOF remains available and records
 `completion-unverified`; this does not validate the whole film.
 
 Progress and durable play logs use mapped content seconds and catalog duration,
 so a renderer ending at 4,370 seconds of a 5,895-second movie reports 74.1%,
-not a completed watch. Clip UI progress remains relative to the clip; its
-`contentSeconds` and durable resume logs remain in original movie seconds.
+not a completed watch. Video clip UI progress remains relative to the clip;
+its `contentSeconds` and durable resume logs remain in original movie seconds.
+Audio clips retain native track time for resume logs and use their configured
+clip window for UI progress and completion.
 Unknown mapping cannot publish a confirmed position or completed-watch log.
 Media and screen capture/Quality adoption prefer mapped content time and retain
 the prior confirmed position when mapping is unknown. The optional Player
