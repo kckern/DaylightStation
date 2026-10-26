@@ -28,7 +28,7 @@ import { Player as Player } from "../playback.mjs";
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { PlayerHostContext, PlayerHostPresentationContext } from "./playerHostContext.js";
 import { TIMING } from "../constants.js";
-import { registerTrackOwner, createTrackPreferenceStore } from "../../../../../__capabilities/playback/browser/contracts.mjs";
+import { registerTrackOwner, createTrackPreferenceStore, readContentPosition } from "../../../../../__capabilities/playback/browser/contracts.mjs";
 import { getLocalPlayerFeatures } from "./localPlayerFeatures.js";
 import { playLogOrigin } from "./playOrigin.js";
 
@@ -105,6 +105,11 @@ export function PlayerBridge() {
       setPlaybackRate: (rate) => playerRef.current?.setPlaybackRate?.(rate),
       setShader: (shader) => playerRef.current?.setShader?.(shader),
       getMediaElement: () => playerRef.current?.getMediaElement?.() ?? null,
+      getContentTime: () => {
+        const handle = playerRef.current;
+        if (typeof handle?.getContentTime === 'function') return handle.getContentTime();
+        return readContentPosition(handle?.getMediaElement?.()?.currentTime, controller.getSnapshot().currentItem?.contentTimeline);
+      },
       getMountedContentId: () => playerRef.current?.getMountedContentId?.() ?? null,
       getMountedMediaGeneration: () => playerRef.current?.getMountedMediaGeneration?.() ?? null,
       beginRendererBoundary: (request) => {
@@ -332,7 +337,8 @@ export function PlayerBridge() {
     }
     const positionSeconds = typeof payload === 'number'
       ? payload
-      : payload?.currentTime ?? payload?.seconds;
+      : Object.prototype.hasOwnProperty.call(payload ?? {}, 'contentSeconds')
+        ? payload.contentSeconds : payload?.currentTime ?? payload?.seconds;
     if (typeof positionSeconds !== 'number' || !Number.isFinite(positionSeconds)) return;
 
     const isPaused = typeof payload === 'object' && payload !== null ? payload.paused : false;
@@ -452,7 +458,8 @@ export function PlayerBridge() {
         // Reconcile its completed native position through the same hot/durable
         // path as Player progress, without publishing the requested target.
         onProgress({
-          currentTime: bound.currentTime,
+          currentTime: readContentPosition(bound.currentTime,
+            playerRef.current?.getNowPlaying?.()?.item?.contentTimeline ?? controller.getSnapshot().currentItem?.contentTimeline),
           duration: bound.duration,
           // seeked proves position completion, not resumed frames. A true
           // native pause is evidence; an unpaused decoder may still buffer.
@@ -466,7 +473,9 @@ export function PlayerBridge() {
         // The native position is already observable while the decoder seeks.
         // Update only the hot display; completion, durable position, and
         // playback state still require their own evidence.
-        controller.onPlayerPositionTick(bound.currentTime, contentId);
+        const contentSeconds = readContentPosition(bound.currentTime,
+          playerRef.current?.getNowPlaying?.()?.item?.contentTimeline ?? controller.getSnapshot().currentItem?.contentTimeline);
+        if (Number.isFinite(contentSeconds)) controller.onPlayerPositionTick(contentSeconds, contentId);
       };
       const observeTimeUpdate = () => { observeNative('timeupdate'); };
       const observeEnded = () => { observeNative('ended'); };

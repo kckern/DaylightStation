@@ -199,3 +199,28 @@ it('D-pad alone reaches Close Quality and restores focus to the held Quality act
   expect(view.getByRole('button', { name: /Quality/ })).toHaveFocus();
   expect(state.frame.contentId).toBe('plex:1');
 });
+
+it.each([
+  [{ expectedEndSeconds: 5895, provenance: 'catalog', rendererStartSeconds: 0, contentStartSeconds: 4320 }, 4370],
+  [{ expectedEndSeconds: 5895, provenance: 'catalog' }, 4320],
+])('held direct Quality adopts confirmed content position with timeline %j', async (contentTimeline, expected) => {
+  const ref = React.createRef();
+  state.overlay = { isExhausted: true, shouldRender: true, isVisible: true };
+  const items = [{ ...movie, duration: 5895, contentTimeline }, queue[1]];
+  const view = render(<MantineProvider><Player ref={ref} play={items} /></MantineProvider>);
+  await waitFor(() => expect(state.frame?.contentId).toBe('plex:1'));
+  const node = document.createElement('video');
+  Object.defineProperty(node, 'currentTime', { configurable: true, value: 50 });
+  act(() => {
+    state.frame.onResolvedMeta(items[0]);
+    state.frame.onMediaRef(node, { contentId: 'plex:1', rendererToken: Object.freeze({ tokenId: 'relative', node, resolvedContentId: 'plex:1' }) });
+    state.frame.onPlaybackMetrics({ seconds: 4320, isPaused: true, pauseIntent: 'user' });
+  });
+  exhausted('early-eof');
+  fireEvent.click(view.getByRole('button', { name: /Quality/ }));
+  fireEvent.change(view.getByLabelText('Maximum resolution'), { target: { value: '480' } });
+  fireEvent.click(view.getByRole('button', { name: 'Apply to current playback' }));
+  await waitFor(() => expect(state.frame.maxResolution).toBe('480'));
+  expect(state.frame.remountDiagnostics.rendererOperation.targetSeconds).toBe(expected);
+  expect(state.frame.remountDiagnostics.rendererOperation.autoplay).toBe(false);
+});

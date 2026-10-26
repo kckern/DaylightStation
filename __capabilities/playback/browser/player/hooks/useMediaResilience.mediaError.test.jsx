@@ -432,3 +432,22 @@ describe('useMediaResilience — a mid-playback media error is a stuck cause', (
     expect(args.onExhausted.mock.calls.length).toBe(exhaustsAtExhaustion);
   });
 });
+
+it.each([[4370, true, 'video'], [5895, false, 'video'], [4370, false, 'audio']])('native end at %s uses catalog completion to decide whether recovery remains eligible (%s/%s)', (nativeEnd, recovers, format) => {
+  installLedger();
+  const el = makeFakeEl({ currentTime: nativeEnd - 1, duration: nativeEnd, paused: false });
+  const args = baseArgs({ getMediaEl: () => el, seconds: nativeEnd - 1,
+    meta: { mediaKey: 'movie-timeline', format, contentTimeline: { expectedEndSeconds: 5895, provenance: 'catalog',
+      rendererStartSeconds: 0, contentStartSeconds: 0 } } });
+  const hook = renderHook(() => useMediaResilience(args));
+  act(() => el._fire('playing'));
+  advance(1000);
+  act(() => {
+    el.currentTime = nativeEnd; el.ended = true;
+    el.error = { code: 2, message: 'terminal stream lost' }; el._fire('error'); el._fire('ended');
+  });
+  hook.rerender();
+  advance(STALL_JOLT_GRACE_MS + 100);
+  if (recovers) expect(args.onReload).toHaveBeenCalledWith(expect.objectContaining({ reason: 'stall-jolt-refresh-url' }));
+  else expect(args.onReload).not.toHaveBeenCalled();
+});

@@ -2311,11 +2311,15 @@ export class PlexAdapter {
    * @returns {Promise<{ url: string|null, reason?: string }>}
    */
   describePlayback(item, quality = {}) {
+    // Native originals and the current DASH / zero-offset HLS streams expose
+    // the full content timeline. Resume seeks do not move either origin.
+    const contentTimeline = ['video', 'hls_video', 'dash_video'].includes(item.mediaType)
+      ? { rendererStartSeconds: 0, contentStartSeconds: 0 } : undefined;
     if (item.mediaType === 'audio' || !(quality.transcode === 'force'
-      || quality.maxResolution != null || quality.maxVideoBitrate != null)) return {};
+      || quality.maxResolution != null || quality.maxVideoBitrate != null)) return contentTimeline ? { contentTimeline } : {};
     const mediaType = this._determineMediaType(item.metadata?.type ?? item.type);
     if (!['video', 'hls_video', 'dash_video'].includes(mediaType)) return {};
-    return { mediaUrl: `${this.proxyPath}/stream/${item.localId}`, mediaType, format: mediaType };
+    return { mediaUrl: `${this.proxyPath}/stream/${item.localId}`, mediaType, format: mediaType, contentTimeline };
   }
 
   async getMediaUrl(id, opts = {}) {

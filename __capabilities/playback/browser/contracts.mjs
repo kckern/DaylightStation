@@ -8,3 +8,4 @@ export { resolveContentId, durationFromSeconds } from "./player/utils/mediaIdent
 export { guid } from "./player/lib/helpers.js";
 export { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget } from "./player/lib/recovery/recoveryIdentity.js";
 export { getRecoveryLedger } from "./player/lib/recoveryLedger.js";
+export { toContentSeconds, readContentPosition } from "./player/lib/recovery/contentTimeline.js";

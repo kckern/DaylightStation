@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SinglePlayer } from './SinglePlayer.jsx';
 import { fetchMediaInfo } from '../lib/api.js';
@@ -85,4 +85,14 @@ describe('SinglePlayer transport descriptor', () => {
     expect(await screen.findByTestId('video-transport')).toHaveTextContent('video|0-15');
     expect(fetchMediaInfo).not.toHaveBeenCalled();
   });
+});
+
+
+it('keeps excluded audio metadata on its existing native timeline', async () => {
+  fetchMediaInfo.mockResolvedValue({ id: 'files:audio', contentId: 'files:audio', title: 'Audio',
+    mediaUrl: '/audio.mp3', mediaType: 'audio', format: 'audio', duration: 300 });
+  const onResolvedMeta = vi.fn();
+  render(<SinglePlayer contentId="files:audio" onResolvedMeta={onResolvedMeta} clear={() => {}} advance={() => {}} />);
+  await waitFor(() => expect(onResolvedMeta).toHaveBeenCalled());
+  expect(onResolvedMeta.mock.calls.at(-1)[0]).not.toHaveProperty('contentTimeline');
 });

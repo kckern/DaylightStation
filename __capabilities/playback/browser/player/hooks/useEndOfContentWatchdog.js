@@ -24,6 +24,7 @@ export function useEndOfContentWatchdog({
   getMediaEl,            // dash-video hides the real <video> in a shadow root
   sourceKey,             // pass mainMediaUrl (or any value that changes per asset)
   onAdvance,
+  onTerminalCandidate,
   thresholdSeconds,
   idleMs,
   enabled = true
@@ -31,6 +32,8 @@ export function useEndOfContentWatchdog({
   const watchdogRef = useRef(null);
   const onAdvanceRef = useRef(onAdvance);
   onAdvanceRef.current = onAdvance;
+  const terminalGateRef = useRef(onTerminalCandidate);
+  terminalGateRef.current = onTerminalCandidate;
 
   // dash-video hides the real <video> in a shadow root, so callers pass
   // getMediaEl(); plain <video> callers pass a ref. Exactly one is required.
@@ -56,6 +59,7 @@ export function useEndOfContentWatchdog({
 
     watchdogRef.current = createEndOfContentWatchdog({
       onAdvance: () => onAdvanceRef.current?.(),
+      onTerminalCandidate: candidate => terminalGateRef.current?.(candidate) ?? { accepted: true },
       getMediaInfo: () => {
         const node = getMediaElRef.current();
         if (!node) return null;

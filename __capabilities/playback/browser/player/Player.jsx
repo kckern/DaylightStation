@@ -1,5 +1,6 @@
 import { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget } from './lib/recovery/recoveryIdentity.js';
 import { getRecoveryLedger } from './lib/recoveryLedger.js';
+import { createContentTimeline, toContentSeconds, readContentPosition, validateMovieCompletion } from './lib/recovery/contentTimeline.js';
 import { normalizePlaybackQuality, withPlaybackQuality, playbackQualityChange, supportsPlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
 import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import PropTypes from 'prop-types';
@@ -540,6 +541,7 @@ const Player = forwardRef(function Player(props, ref) {
   // from an automatic recovery attempt.
   const pendingRemountRef = useRef(null);
   const completedMediaKeyRef = useRef(null);
+  const completionEvidenceRef = useRef(null);
   const repeatRestartGateRef = useRef(null);
   const ownedNativeNodeRef = useRef(null);
   const retiredNativeNodesRef = useRef(new WeakSet());
@@ -1763,7 +1765,7 @@ const Player = forwardRef(function Player(props, ref) {
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     // A screen never gives a refused video up to its queue, even after the
     // maximum wait: it stays on "Tap to Retry" (and Skip) until someone decides.
-    if (finiteVideo || holdsAfterGaveUp({ reason, hold: holdRefusals })) {
+    if (finiteVideo || reason === 'early-eof' || reason === 'timeline-unverified' || holdsAfterGaveUp({ reason, hold: holdRefusals })) {
       playbackLog('resilience-exhausted-hold', {
         reason, attempts, ...describeWaitKey(exhaustedWaitKey), action: 'hold', queueRemaining: playQueue?.length ?? 0,
       }, { level: 'warn' });
@@ -1847,6 +1849,7 @@ const Player = forwardRef(function Player(props, ref) {
     // Stalled flag from useCommonMediaController to avoid duplicate detection
     externalStalled: effectiveMeta ? playbackMetrics.stalled : null,
     // Self-contained formats (titlecard) have no media element — disable resilience monitoring
+    held: heldForCurrentVisit,
     disabled: isSelfContainedFormat
   });
 
@@ -2048,7 +2051,9 @@ const Player = forwardRef(function Player(props, ref) {
     }
     completedMediaKeyRef.current = mediaKey;
 
-    const info = { reason: 'natural-end', assetId: completionAssetId };
+    const info = { reason: 'natural-end', assetId: completionAssetId,
+      ...(completionEvidenceRef.current ? { completion: completionEvidenceRef.current } : {}) };
+    completionEvidenceRef.current = null;
     const consumerRegistered = typeof onPlaybackCompleted === 'function';
     playbackLog('completion-dispatch', { assetId: completionAssetId, consumerRegistered }, { level: 'info' });
     if (consumerRegistered) {
@@ -2106,6 +2111,40 @@ const Player = forwardRef(function Player(props, ref) {
     }
     else singleAdvance();
   }, [advance, completionAssetId, currentMediaGuid, isQueue, onPlaybackCompleted, queuePosition, queueSnapshot, remainingVisitCount, repeatMode, restartNativeVisit, singleAdvance, playerInstanceId]);
+
+  const onTerminalCandidate = useCallback(({ reason, nativeSeconds, target } = {}) => {
+    if (!target || !sameRecoveryTarget(target, recoveryIdentity.getTarget()) || heldForCurrentVisit) return { accepted: false };
+    const identity = currentMediaGuid ?? completionAssetId ?? 'player-media-unknown';
+    const key = isQueue ? `${identity}@${queuePosition ?? 'unknown'}#${remainingVisitCount}` : identity;
+    if (repeatRestartGateRef.current || completedMediaKeyRef.current === key) return { accepted: false };
+    const descriptor = effectiveMeta?.contentTimeline;
+    const timeline = createContentTimeline({
+      catalogDurationSeconds: descriptor ? descriptor.expectedEndSeconds : effectiveMeta?.duration,
+      rendererStartSeconds: descriptor?.rendererStartSeconds,
+      contentStartSeconds: descriptor?.contentStartSeconds,
+      clipStartSeconds: effectiveMeta?.segment?.start ?? descriptor?.clipStartSeconds,
+      clipEndSeconds: effectiveMeta?.segment?.end ?? descriptor?.clipEndSeconds,
+    });
+    const isMovie = !effectiveMeta?.isLive && !singlePlayerProps?.continuous
+      && (['video', 'hls_video', 'dash_video'].includes(effectiveMeta?.format)
+        || ['video', 'hls_video', 'dash_video'].includes(effectiveMeta?.mediaType));
+    const verdict = isMovie ? validateMovieCompletion({ timeline, nativeSeconds })
+      : { complete: null, reason: 'completion-unverified' };
+    playbackLog('completion-candidate', { reason, nativeSeconds, completion: verdict.reason,
+      expectedEndSeconds: timeline.clipEndSeconds ?? timeline.expectedEndSeconds }, { level: 'info' });
+    if (verdict.reason === 'timeline-unverified') {
+      handleResilienceExhausted({ reason: verdict.reason, attempts: 0 });
+      return { accepted: false };
+    }
+    if (verdict.complete === false) {
+      requestRecovery(verdict.reason, { target, forceRemount: true, refreshUrl: true, deferDenied: true,
+        seekToIntentMs: toContentSeconds(nativeSeconds, timeline) * 1000 });
+      return { accepted: false };
+    }
+    completionEvidenceRef.current = verdict.reason;
+    return { accepted: true };
+  }, [recoveryIdentity, currentMediaGuid, completionAssetId, isQueue, queuePosition, remainingVisitCount,
+    effectiveMeta, singlePlayerProps?.continuous, handleResilienceExhausted, requestRecovery, heldForCurrentVisit]);
 
   // Renderers use this only for user-driven navigation and non-completion
   // failures. Keeping it separate from `naturalAdvance` is the contract that
@@ -2413,7 +2452,8 @@ const Player = forwardRef(function Player(props, ref) {
     const paused = overlayProps?.userIntent === 'paused'
       || (overlayProps?.userIntent == null && playbackMetrics.pauseIntent !== 'system' && playbackMetrics.isPaused === true);
     const snapshot = { sessionId: playerInstanceId, currentItem: item, queue: ownedQueue,
-      position: Number.isFinite(native?.currentTime) ? native.currentTime : playbackMetrics.seconds,
+      position: readContentPosition(native?.currentTime, effectiveMeta?.contentTimeline)
+        ?? (playbackMetrics.seconds > 0 ? playbackMetrics.seconds : explicitStartSeconds ?? 0),
       state: paused ? 'paused' : 'playing',
       config: { shuffle: shuffleOn, repeat: repeatMode, shader: effectiveShader,
         volume: sessionVolume * 100, playbackRate: sessionPlaybackRate },
@@ -2424,7 +2464,7 @@ const Player = forwardRef(function Player(props, ref) {
     if (adopted.ok) { setHeldQualityRequest(null); setHeldFailure(null); lastProblemRef.current = null; }
     return adopted;
   }, [heldQualityRequest, recoveryIdentity, effectiveMeta, queueSnapshot, currentMediaGuid, playbackMetrics,
-    playerInstanceId, shuffleOn, repeatMode, effectiveShader, sessionVolume, sessionPlaybackRate, adoptSessionSnapshot, overlayProps?.userIntent]);
+    playerInstanceId, shuffleOn, repeatMode, effectiveShader, sessionVolume, sessionPlaybackRate, adoptSessionSnapshot, overlayProps?.userIntent, explicitStartSeconds]);
   useImperativeHandle(isValidImperativeRef ? ref : null, () => ({
     retryMediaResilience: retryHeldPlayback,
     getRecoveryIdentity: () => recoveryIdentity,
@@ -2449,6 +2489,8 @@ const Player = forwardRef(function Player(props, ref) {
         else for (let i = 0; i < Math.max(1, count); i++) advanceFn();
       }
     },
+    // Original content time is opt-in; legacy transport getCurrentTime stays native.
+    getContentTime: () => readContentPosition(_getMediaElFallback()?.currentTime, nowPlayingRef.current?.item?.contentTimeline),
     getCurrentTime: () => {
       const t = withTransport((api) => api.getCurrentTime?.());
       if (Number.isFinite(t)) return t;
@@ -2852,6 +2894,8 @@ const Player = forwardRef(function Player(props, ref) {
     onRegisterMediaAccess: rendererRegistration.onRegisterMediaAccess,
     onRegisterResilienceBridge: handleRegisterResilienceBridge,
     onRequestRecovery: handleRequestRecovery,
+    onTerminalCandidate,
+    recoveryHeld: heldForCurrentVisit,
     seekToIntentSeconds: targetTimeSeconds,
     onSeekRequestConsumed: handleSeekRequestConsumed,
     remountDiagnostics: activeRemountContext,

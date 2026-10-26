@@ -156,6 +156,37 @@ Starting an offset manifest can require fetching many synthetic placeholder
 segments before metadata becomes available. Preserve the existing renderer's
 seek strategy when replacing a stream.
 
+Catalog movie duration is preserved in `/play.contentTimeline.expectedEndSeconds`
+with `provenance: catalog`, separately from observed renderer `duration`.
+The provider's presentation descriptor supplies verified renderer and content
+origins. The current Plex descriptor supplies zero origins for originals,
+full-timeline DASH, and zero-offset HLS. A resume offset in a stream URL does
+not establish a relative timeline. A verified relative renderer maps its time
+as `nativeSeconds - rendererStartSeconds + contentStartSeconds`; these origins
+belong to its renderer generation.
+
+Native EOF, clip completion, and the at-duration watchdog pass one completion
+gate before marking ended, clearing recovery timers, or advancing. Configured
+clip ends use original content seconds and take precedence over catalog end.
+A terminal signal more than three seconds early enters the shared bounded
+recovery budget, then holds the movie with Retry, Quality, and explicit Skip.
+Known catalog end with unknown mapping holds as `timeline-unverified`. Retry
+is explicit; held playback does not spend more automatic recovery attempts.
+Accepted terminal signals complete once per visit, including repeat-one.
+Without a catalog or clip end, ordinary EOF remains available and records
+`completion-unverified`; this does not validate the whole film.
+
+Progress and durable play logs use mapped content seconds and catalog duration,
+so a renderer ending at 4,370 seconds of a 5,895-second movie reports 74.1%,
+not a completed watch. Clip UI progress remains relative to the clip; its
+`contentSeconds` and durable resume logs remain in original movie seconds.
+Unknown mapping cannot publish a confirmed position or completed-watch log.
+Media and screen capture/Quality adoption prefer mapped content time and retain
+the prior confirmed position when mapping is unknown. The optional Player
+`getContentTime()` exposes this clock; legacy `getCurrentTime()` remains native.
+Provider-origin guarantees still require full-film verification on the target
+device; unit descriptor tests do not establish external stream behavior.
+
 A native-HLS workaround improved an incident where the encoder was ahead but
 three-second segment responses were held for six seconds. Several request and
 renderer variables changed together, so that observation does not establish

@@ -1,4 +1,4 @@
-import { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget, getRecoveryLedger } from '../../../../../__capabilities/playback/browser/contracts.mjs';
+import { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget, getRecoveryLedger, readContentPosition } from '../../../../../__capabilities/playback/browser/contracts.mjs';
 // frontend/src/modules/Media/session/LocalSessionController.js
 // The local half of the controller symmetry seam (controllerShape.js): a thin
 // facade composing the session store, the pure queue/advancement modules, the
@@ -44,6 +44,7 @@ function itemFromQueueEntry(entry) {
     ...(entry.artist != null ? { artist: entry.artist } : {}),
     ...(entry.album != null ? { album: entry.album } : {}),
     ...(entry.mediaType != null ? { mediaType: entry.mediaType } : {}),
+    ...(entry.contentTimeline ? { contentTimeline: { ...entry.contentTimeline } } : {}),
     ...(entry.isLive != null ? { isLive: !!entry.isLive } : {}),
     // PLAY.4a: an explicitly chosen start reaches the Player (see toQueueItem).
     ...(Number.isFinite(entry.seconds) ? { seconds: entry.seconds } : {}),
@@ -58,6 +59,7 @@ function observedItemPatch(observation = {}) {
   for (const key of ['format', 'mediaType', 'title', 'thumbnail']) {
     if (source[key] != null) patch[key] = source[key];
   }
+  if (source.contentTimeline && typeof source.contentTimeline === 'object') patch.contentTimeline = source.contentTimeline;
   if (typeof source.isLive === 'boolean') patch.isLive = source.isLive;
   if (source.isLive === true) patch.duration = null;
   else {
@@ -528,7 +530,10 @@ export function createLocalSessionController({
       && nativeBinding.resolvedContentId != null
       && String(currentEntry?.contentId ?? '') === nativeBinding.resolvedContentId
       && nativeBinding.ownerPlaybackRevision === playbackRevision;
-    const nativePosition = nativeMatchesCurrent ? native.currentTime : null;
+    const nativePosition = nativeMatchesCurrent
+      ? typeof player.getContentTime === 'function' ? player.getContentTime()
+        : readContentPosition(native.currentTime, current.currentItem?.contentTimeline ?? currentEntry?.contentTimeline)
+      : null;
     const hotPosition = Number.isFinite(nativePosition) && nativePosition >= 0
       ? nativePosition
       : position.get().seconds;

@@ -237,3 +237,27 @@ describe('held movie owner', () => {
     expect(controller.recoveryIdentity.getTarget().visitId).toBe(target.visitId);
   });
 });
+
+
+describe('authoritative movie timeline in the Media owner', () => {
+  it('keeps catalog end separate from observed native duration and holds timeline rejection without queue advance', () => {
+    const snapshot = movieSnapshot();
+    const timeline = { expectedEndSeconds: 5895, provenance: 'catalog', rendererStartSeconds: 0, contentStartSeconds: 0 };
+    snapshot.currentItem.contentTimeline = timeline;
+    snapshot.queue.items[0].contentTimeline = timeline;
+    const controller = createLocalSessionController({ clientId: 'timeline-owner', persistedSnapshot: snapshot });
+    mount(controller);
+    act(() => controller.transport.play());
+    expect(latestProps.play.contentTimeline).toMatchObject({ expectedEndSeconds: 5895 });
+    act(() => latestProps.onProgress({ currentTime: 4370, duration: 4370, paused: false }));
+    expect(controller.getSnapshot().currentItem.contentTimeline.expectedEndSeconds).toBe(5895);
+    act(() => latestProps.onProgress({ currentTime: 50, contentSeconds: 4370, nativeSeconds: 50, duration: 60, paused: false }));
+    expect(controller.position.get().seconds).toBe(4370);
+    const before = controller.getSnapshot();
+    act(() => latestProps.onResilienceEvent({ kind: 'resilience-held', reason: 'early-eof', attempts: 3,
+      target: controller.recoveryIdentity.getTarget(), retryAfterMs: 0 }));
+    expect(controller.getSnapshot().queue).toEqual(before.queue);
+    expect(controller.getSnapshot().position).toBe(4370);
+    expect(controller.problems.get()).toMatchObject({ kind: 'waiting', reason: 'early-eof' });
+  });
+});

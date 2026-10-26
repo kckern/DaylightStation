@@ -1,3 +1,4 @@
+import { validateMovieCompletion } from '../lib/recovery/contentTimeline.js';
 import { sameRecoveryTarget } from '../lib/recovery/recoveryIdentity.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playbackLog } from '../lib/playbackLogger.js';
@@ -83,6 +84,7 @@ export function useMediaResilience({
   externalStalled = null,
   // Self-contained formats (titlecard, etc.) have no media element — disable resilience monitoring
   disabled = false,
+  held = false,
   // The browser refused autoplay and is waiting for a tap: nothing is wrong with
   // the stream, so the deadline holds and no recovery attempt is spent.
   autoplayBlocked = false,
@@ -326,6 +328,7 @@ export function useMediaResilience({
   //   refreshUrl      — override the reason-derived URL-refresh decision.
   //   forceRemount    — escalate to a full React remount in onReload.
   const triggerRecovery = useCallback((reason, options = {}) => {
+    if (held && options.userInitiated !== true) return 'held';
     const expectedTarget = options.target ?? recoveryIdentity?.getTarget();
     if (options.target && (!recoveryIdentity || !sameRecoveryTarget(options.target, recoveryIdentity.getTarget()))) return 'superseded';
     // Reloading cannot fix a file the server refuses to read; the source wait
@@ -421,7 +424,7 @@ export function useMediaResilience({
     } else {
       ledger.completeAction({ sessionKey: playbackSessionKey, actionId: gate.actionId });
     }
-  }, [actions, waitKeyFields, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds, maxAttempts, recoveryIdentity]);
+  }, [actions, waitKeyFields, meta, onReload, onExhausted, statusRef, targetTimeSeconds, initialStart, waitKey, playbackSessionKey, maxSamePositionRetries, recoverySeekNudgeSeconds, maxAttempts, recoveryIdentity, held]);
 
   const retryFromExhausted = useCallback(() => {
     recoveryIdentity?.acceptUserIntent('Retry');
@@ -547,6 +550,13 @@ export function useMediaResilience({
   }, [triggerRecovery, waitKeyFields]);
 
   useEffect(() => {
+    if (held) {
+      clearTimeout(startupDeadlineRef.current);
+      startupDeadlineRef.current = null;
+      clearTimeout(deferredRecoveryRef.current);
+      if (status !== STATUS.exhausted) actions.setStatus(STATUS.exhausted);
+      return;
+    }
     // Self-contained formats (titlecard, etc.) have no media element —
     // skip resilience monitoring to avoid false startup-deadline-exceeded remounts.
     if (disabled) {
@@ -624,7 +634,7 @@ export function useMediaResilience({
         }, hardRecoverLoadingGraceMs);
       }
     }
-  }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce, sourceUnavailable, autoplayBlocked, sourceAvailability.healable, sourceAvailability.checkNow, recoverAndRearm]);
+  }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, held, hasMediaMeta, recoveryNonce, sourceUnavailable, autoplayBlocked, sourceAvailability.healable, sourceAvailability.checkNow, recoverAndRearm]);
 
   // Clean up timers on unmount or waitKey change
   useEffect(() => {
@@ -846,8 +856,14 @@ export function useMediaResilience({
   // 2026-05-23 audit; the jolt ladder must do the same. The queue-advance for
   // this state belongs to useEndOfContentWatchdog, not to recovery.
   const atEndEl = getMediaEl?.();
-  const atEnd = playbackHealth.elementSignals?.ended === true
-    || (!!atEndEl && (atEndEl.ended === true || isNearEnd(atEndEl.currentTime, atEndEl.duration)));
+  const terminalVerdict = validateMovieCompletion({ timeline: meta?.contentTimeline, nativeSeconds: atEndEl?.currentTime });
+  const validatesMovieEnd = !meta?.isLive && !meta?.continuous
+    && (['video', 'hls_video', 'dash_video'].includes(meta?.format)
+      || ['video', 'hls_video', 'dash_video'].includes(meta?.mediaType));
+  const terminalVerifiedOrUnspecified = !validatesMovieEnd || terminalVerdict.complete === true
+    || terminalVerdict.reason === 'completion-unverified';
+  const atEnd = terminalVerifiedOrUnspecified && (playbackHealth.elementSignals?.ended === true
+    || (!!atEndEl && (atEndEl.ended === true || isNearEnd(atEndEl.currentTime, atEndEl.duration))));
 
   // `hasMediaError` (declared up by usePlaybackHealth) is a FOURTH way to be
   // stuck, and the only one that produces no starvation signal at all: Chromium
@@ -860,7 +876,7 @@ export function useMediaResilience({
   // It belongs INSIDE the !clockAdvancing conjunct: once playback resumes the
   // clock advances and isStuck goes false even if the code has not cleared yet.
   // Hoisting it out would make a recovered stream read as permanently stuck.
-  const isStuck = hasEverPlayedRef.current && !isUserPaused && !clockAdvancing && !atEnd
+  const isStuck = !held && hasEverPlayedRef.current && !isUserPaused && !clockAdvancing && !atEnd
     && (isStalled || isBuffering || effectiveSeeking || hasMediaError);
 
   // Snapshot everything the ladder needs so its effect can depend only on `isStuck`

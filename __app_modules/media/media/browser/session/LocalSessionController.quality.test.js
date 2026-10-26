@@ -70,3 +70,29 @@ it('rejects quality adoption after the renderer claim was superseded', async () 
     .toMatchObject({ ok: false, code: 'PLAYBACK_CHANGED' });
   expect(controller.getSnapshot().currentItem.maxResolution).toBeUndefined();
 });
+
+
+it.each([
+  [{ expectedEndSeconds: 5895, provenance: 'catalog', rendererStartSeconds: 0, contentStartSeconds: 4320 }, 4370],
+  [{ expectedEndSeconds: 5895, provenance: 'catalog' }, 4320],
+])('captures and adopts quality at confirmed content position, respecting mapping %j', async (contentTimeline, expected) => {
+  const controller = createLocalSessionController({ clientId: 'timeline-quality' });
+  await controller.queue.playNow({ contentId: 'plex:42', format: 'video', contentTimeline });
+  controller.onPlayerPositionTick(4320);
+  const node = { currentTime: 50, duration: 1575, paused: false };
+  controller.setPlayerHandle({ getMediaElement: () => node, getMountedContentId: () => 'plex:42', getMountedMediaGeneration: () => 1 });
+  expect(controller.portability.capture().snapshot.position).toBe(expected);
+  expect(controller.quality.setOverrides({ contentId: 'plex:42', quality: { maxResolution: '480' } })).toMatchObject({ ok: true });
+  expect(controller.getSnapshot().position).toBe(expected);
+});
+
+it('does not write a durable owner transition for every tick of the same immutable timeline', async () => {
+  const controller = createLocalSessionController({ clientId: 'timeline-observation' });
+  await controller.queue.playNow({ contentId: 'plex:42', format: 'video' });
+  const contentTimeline = Object.freeze({ expectedEndSeconds: 5895, provenance: 'catalog', rendererStartSeconds: 0, contentStartSeconds: 0 });
+  const observation = { media: { contentTimeline }, duration: 5895 };
+  controller.onPlayerObservation('plex:42', observation);
+  const before = controller.getSnapshot();
+  controller.onPlayerObservation('plex:42', observation);
+  expect(controller.getSnapshot()).toBe(before);
+});

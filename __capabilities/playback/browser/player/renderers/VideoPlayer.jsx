@@ -139,7 +139,8 @@ export function VideoPlayer({
     getMediaEl,
     getContainerEl,
     beginMountedPlaybackOperation,
-    cancelMountedPlaybackOperation
+    cancelMountedPlaybackOperation,
+    handleTerminalCandidate
   } = useCommonMediaController({
     // ?goto overrides the start position so the transcode mints AT the target
     // (stall-free) and the saved resume can't fight it. Normal playback is unchanged.
@@ -147,6 +148,8 @@ export function VideoPlayer({
       : (media.segment ? media.segment.start : media.seconds),
     playbackRate: playbackRate || media.playbackRate || 1,
     onEnd: advance,
+    onTerminalCandidate: resilienceBridge?.onTerminalCandidate,
+    recoveryHeld: resilienceBridge?.held === true,
     onManualEnd: manualAdvance,
     onClear: clear,
     isAudio: false,
@@ -182,7 +185,7 @@ export function VideoPlayer({
   useEndOfContentWatchdog({
     getMediaEl,
     sourceKey: media?.mediaKey || media?.src || media?.mediaUrl,
-    onAdvance: advance,
+    onTerminalCandidate: handleTerminalCandidate,
     enabled: !!advance
   });
 
