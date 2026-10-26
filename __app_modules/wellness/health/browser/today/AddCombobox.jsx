@@ -34,6 +34,8 @@ import { shortlistPath, showCommittedFoodRows, provisionalFoodRow, settleProvisi
 import { localTodayISO, currentMealBucketId } from "./mealBuckets.js";
 import { addedRowIds, trackAddFlow } from "./addFlow.js";
 
+import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
+
 const logger = createAppLogger('health').child('add-combobox');
 
 
@@ -64,6 +66,7 @@ const visibleViewport = () => (typeof window === 'undefined' ? null
 
 export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods, onSentencePending = null,
   inline = false, label = null, focusRequest = 0, actions = null }) {
+  const operations = useHealthOperations();
   const [text, setText] = useState('');
   const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
@@ -201,15 +204,22 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     logger.info('quickadd.optimistic', { entry: entry.name, bucket: bucketId, surface });
     const submittedAt = performance.now();
     try {
-      const response = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', request, 'POST');
+      let response;
+      if (operations) {
+        operations.store.begin({ id: request.operationId, kind: 'quickadd', date: targetDate, bucket: bucketId, targetIds: [], label: entry.name,
+          provisionalRow: provisional, request: { path: 'api/v1/health/nutrition/catalog/quickadd', body: request, method: 'POST' } });
+        response = await operations.execute(request.operationId);
+        if (!operations.isActive()) return;
+      } else response = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', request, 'POST');
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface, saveMs: Math.round(performance.now() - submittedAt) });
       settleProvisionalRow(provisional, response?.item ?? null);
       trackAddFlow({ ids: addedRowIds(response), bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
       onDone?.();
     } catch (err) {
       logger.error('quickadd.failed', { error: err?.message });
+      if (operations && !operations.isActive()) return;
       settleProvisionalRow(provisional, null);
-      setText(typed); setError(err);
+      if (!operations) { setText(current => current || typed); setError(err); }
     }
   };
 
@@ -258,6 +268,13 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   };
 
   const submitSentence = async () => {
+    if (operations) {
+      const submitted = text.trim();
+      if (!submitted) return;
+      operations.submitSentence({ text: submitted, date: date || localTodayISO(), bucket: bucketId });
+      setText(''); setHighlight(-1); setError(null);
+      return;
+    }
     if (!text.trim() || submitting.current) return;
     submitting.current = true;
     setPhase('parsing'); setError(null);
@@ -302,6 +319,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
   };
 
   const onKeyDown = (e) => {
+    if (e.nativeEvent?.isComposing || e.isComposing || e.keyCode === 229) return;
     if (submitting.current) { e.preventDefault(); return; }
     if (e.key === 'Escape') {
       if (!inline) return onCancel();

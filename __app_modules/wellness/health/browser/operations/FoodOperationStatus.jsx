@@ -1,0 +1,23 @@
+import { Button } from '@mantine/core';
+import { CaptureProgress } from '../today/CaptureProgress.jsx';
+import { normalizeFoodOperationResult } from './healthOperationResults.js';
+import { useHealthOperations } from './HealthOperationsProvider.jsx';
+export function FoodOperationStatus({ operation }) {
+  const context = useHealthOperations();
+  if (operation.phase === 'succeeded') {
+    const destination = operation.normalizedResult?.destination;
+    return destination?.date && destination.date !== operation.date ? <p role="status">Added to {destination.date}</p> : null;
+  }
+  const acknowledged = operation.response && normalizeFoodOperationResult(operation, operation.response).outcome === 'committed';
+  const text = (operation.kind === 'sentence' ? operation.request?.body?.content : operation.label) || 'Food';
+  if (operation.error) return <div role="alert" className="health-row__error">
+    <span>{text}: {operation.error}</span>
+    {operation.response?.clarification?.choices?.map(choice => <Button key={choice.id} size="compact-xs" onClick={() => {
+      const id = context.submitSentence({ text, date: operation.date, bucket: operation.bucket, clarification: choice.id });
+      if (id) context.store.discard(operation.id);
+    }}>{choice.label}</Button>)}
+    {operation.phase !== 'conflict' && (!operation.response || acknowledged) && <Button size="compact-xs" onClick={() => context.retry(operation.id).catch(() => {})}>{operation.response ? 'Retry refresh' : 'Retry'}</Button>}
+    {!acknowledged && <Button size="compact-xs" variant="subtle" onClick={() => context.store.discard(operation.id)}>Dismiss</Button>}
+  </div>;
+  return <CaptureProgress startedAt={operation.startedAt} label="Food analysis" text={text}/>;
+}

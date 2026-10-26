@@ -1,3 +1,5 @@
+import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
+import { FoodOperationStatus } from "../operations/FoodOperationStatus.jsx";
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
@@ -37,6 +39,8 @@ function Section({
   const [selection, setSelection] = useState([]);
   const [localClarification, setClarification] = useState(null);
   const clarification = externalClarification === undefined ? localClarification : externalClarification;
+  const operations = useHealthOperations();
+  const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
   const [clarifying, setClarifying] = useState(false);
   const [clarifyError, setClarifyError] = useState(null);
   const selectedIds = selection.filter(id => rows.some(row => (row.uuid || row.id) === id));
@@ -85,7 +89,8 @@ function Section({
   // While a portion/numeric drag (or its save) is live, the order holds still
   // so the dragged row stays under the pointer; values still update. When the
   // order does change, rows glide to their new places (sectionOrder.js).
-  const portionDraft = Boolean(usePortionControl()?.draft);
+  const portionState = usePortionControl();
+  const portionDraft = Boolean(portionState?.drafts?.some(draft => draft.row.mealTime === bucket) || (!portionState?.drafts && portionState?.draft));
   const entries = useFrozenOrder(sortEntriesByCalories(groupRows(rows)), portionDraft);
   const sectionRef = useRef(null);
   const drop = useMealDropTarget(bucket);
@@ -203,7 +208,7 @@ function Section({
             {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,onChanged,child:true,lastChild:index===children.length-1 && !dishEditable,kcalShare:childShares[index],
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
             {isOpen && dishEditable ? <DishAddRow dishName={row.name || row.item || row.label} candidates={dishOptions(rows, key)}
-              busy={dish.busy === key} error={dish.error?.groupId === key ? dish.error.message : null} onAdd={foodId=>dish.add(key,foodId)}/> : null}
+              busy={dish.isBusy ? dish.isBusy(key) : dish.busy === key} error={dish.error?.groupId === key ? dish.error.message : null} onAdd={foodId=>dish.add(key,foodId)}/> : null}
           </div>
         );
       })}
@@ -216,6 +221,7 @@ function Section({
         <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`}/> : null}
       {/* The meal's add input is its last child, so a new food is typed right
           under the foods it joins. */}
+      {sentenceOperations.map(operation => <FoodOperationStatus key={operation.id} operation={operation} />)}
       {addRow}
     </section>
   );
