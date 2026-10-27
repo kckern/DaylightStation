@@ -41,6 +41,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   const operation = useRef(null);
   const [brokenPhoto, setBrokenPhoto] = useState(null);
   const portions = usePortionControl(row);
+  const saving = Boolean(portions?.saving || confirmation === 'saving');
   const { densityPlacement } = useHealthDisplayPreferences();
   const unsettled = row.settled === false || (isGroup && row.children?.some(item => item.settled === false));
   const name = row.name || row.item || row.label || '';
@@ -68,7 +69,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     } finally { pending.current = false; }
   };
   const openDetails = () => { if (portions?.draft || portions?.locked) return; preview.close(); onTap(row); };
-  return <><div ref={drag.ref} {...drag.handlers} onClick={event => { if (rowTapTarget(event)) openDetails(); }} className={['health-row-line', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} aria-busy={portions?.saving || row.provisional ? true : undefined} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
+  return <><div ref={drag.ref} {...drag.handlers} onClick={event => { if (rowTapTarget(event)) openDetails(); }} className={['health-row-line', saving && 'health-row-line--saving', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} aria-busy={saving || row.provisional ? true : undefined} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}
@@ -102,13 +103,14 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
         deletes — on a dish part too; "take out but keep" read as a duplicate
         (2026-10-01). */}
     <div className="health-row__action health-row__visual">
+      {saving ? <span className="health-row__saving-status" role="status" aria-label={`Saving ${name}`} /> : null}
       {confirmation === 'saved' ? <span className="health-row__verified" role="status" aria-label={`${name} verified`} title="Verified">✓</span> : null}
-      <Menu position="bottom-end" withinPortal shadow="md" disabled={Boolean(portions?.draft || portions?.locked)}>
+      <Menu position="bottom-end" withinPortal shadow="md" disabled={saving || Boolean(portions?.draft || portions?.locked)}>
         <Menu.Target>
-          <UnstyledButton className="health-row__menu" aria-label={`Actions for ${name}`} title="Actions" disabled={Boolean(portions?.draft || portions?.locked)}>
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+          <UnstyledButton className="health-row__menu" aria-label={`Actions for ${name}`} title={saving ? 'Saving' : 'Actions'} disabled={saving || Boolean(portions?.draft || portions?.locked)}>
+            {saving ? <svg className="health-row__saving-spinner" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="23 9" /></svg> : <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
               <circle cx="7" cy="2.5" r="1.4" fill="currentColor" /><circle cx="7" cy="7" r="1.4" fill="currentColor" /><circle cx="7" cy="11.5" r="1.4" fill="currentColor" />
-            </svg>
+            </svg>}
           </UnstyledButton>
         </Menu.Target>
         <Menu.Dropdown>
@@ -119,7 +121,6 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
         </Menu.Dropdown>
       </Menu>
     </div>
-    {portions?.saving ? <span role="status" className="health-row__verified">Saving…</span> : null}
     {error ? <span role="alert" className="health-row__error">{error}</span> : null}
     {portionAlertFor(portions, row) ? <PortionDraftAlert control={portions} className="health-portion-error health-portion-error--row" /> : null}
   </div>

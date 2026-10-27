@@ -106,18 +106,18 @@ describe('EquationStrip — macros', () => {
   });
 });
 
-describe('EquationStrip — the card follows the job', () => {
+describe('EquationStrip — goal position and energy balance', () => {
   const ranged = { budget: 1791, maintenance: 2291, range: { floor: 1200, top: 1791 }, declared: null, status: 'under' };
   const live = { date: '2026-09-25', today: '2026-09-25' };
   const sept25 = { ...ranged, food: 1470, exercise: 311, net: 1159, zone: 'in-range', remaining: 632 };
 
-  it('Afford: the 2026-09-25 day reads 321 free and prices the rest', () => {
+  it('shows goal membership separately from the estimated deficit', () => {
     strip({ ...live, budget: sept25 });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/321\s*kcal free/);
-    expect(screen.getByTestId('budget-sub').textContent).toBe('then 311 workout · 500 deficit · 1,132 to break even');
-    expect(screen.getByTestId('budget-ruler').querySelector('[data-budget-available="base"]')).toBeTruthy();
+    expect(screen.getByTestId('budget-headline')).toHaveTextContent('Within goal range');
+    expect(screen.getByTestId('budget-sub').textContent).toBe('1,132 kcal estimated deficit');
+    expect(screen.getByTestId('budget-ruler').querySelector('[data-budget-available]')).toBeNull();
     expect(screen.getByTestId('budget-ruler').getAttribute('aria-label'))
-      .toContain('log floor 1,200, base target 1,791, plan end 2,102, break even 2,602');
+      .toContain('goal start 1,200, base goal end 1,791, goal end 2,102, break even 2,602');
   });
 
   it('the terms line is only what was eaten and burned', () => {
@@ -130,42 +130,42 @@ describe('EquationStrip — the card follows the job', () => {
 
   it('the logging floor and budget boundaries have distinct key entries', () => {
     strip({ ...live, budget: sept25 });
-    expect(screen.getByTestId('budget-key')).toHaveTextContent('Log floor 1,200');
-    expect(screen.getByTestId('budget-key')).toHaveTextContent('Base target 1,791');
-    expect(screen.getByTestId('budget-key')).toHaveTextContent('Plan end 2,102');
+    expect(screen.getByTestId('budget-key')).toHaveTextContent('Goal start 1,200');
+    expect(screen.getByTestId('budget-key')).toHaveTextContent('Base goal end 1,791');
+    expect(screen.getByTestId('budget-key')).toHaveTextContent('Goal end 2,102');
     expect(screen.getByTestId('budget-key')).toHaveTextContent('Break even 2,602');
   });
 
-  it('Trust: under the floor, the free number leads and the ruler is dimmed', () => {
+  it('shows distance below the floor while the day is in progress', () => {
     const { container } = strip({ ...live, budget: { ...ranged, food: 800, exercise: 0, net: 800, zone: 'incomplete', remaining: 991 } });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/991\s*kcal free/);
-    expect(screen.getByTestId('budget-sub').textContent).toBe('400 under the 1,200 floor · prices assume the log is complete');
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/400\s*kcal under goal range/);
+    expect(screen.getByTestId('budget-sub').textContent).toBe('1,491 kcal estimated deficit');
     expect(container.querySelector('.health-budget__ruler--tentative')).toBeTruthy();
   });
 
-  it('Contain: past the plan, the headline counts down to break even and the base stays marked', () => {
+  it('shows over-goal distance and the remaining deficit independently', () => {
     const { container } = strip({ ...live, budget: { ...sept25, food: 2300, net: 1989, zone: 'over', remaining: 198, status: 'over' } });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/302\s*kcal to break even/);
-    expect(screen.getByTestId('budget-sub').textContent).toBe('198 over plan');
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/198\s*kcal over goal range/);
+    expect(screen.getByTestId('budget-sub').textContent).toBe('302 kcal estimated deficit');
     expect(container.querySelector('.health-budget__post--base')).toBeTruthy();
   });
 
-  it('Judge: a past day gives a verdict and names tiers as outcomes', () => {
+  it('keeps both comparisons on a finished day', () => {
     const { container } = strip({ budget: sept25 }); // strip() defaults to a past date
-    expect(screen.getByTestId('budget-headline').textContent).toBe('On plan');
-    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toContain('321 unused, 311 banked, 500 deficit');
+    expect(screen.getByTestId('budget-headline').textContent).toBe('Within goal range');
+    expect(screen.getByTestId('budget-ruler').getAttribute('aria-label')).toContain('Within goal range; 1,132 kcal estimated deficit');
     expect(container.querySelector('.health-budget__ruler--finished')).toBeTruthy();
   });
 
-  it('while a portion is dragged, the sub-line prices it', () => {
+  it('while a portion is dragged, the separate balance follows the preview', () => {
     strip({ ...live, baseline: sept25, budget: { ...sept25, food: 1900, net: 1589, remaining: 202 } });
-    expect(screen.getByTestId('budget-sub').textContent).toBe('this costs 321 free + 109 workout');
+    expect(screen.getByTestId('budget-sub').textContent).toBe('702 kcal estimated deficit');
   });
 
   it('the eaten cursor sits at the true eaten value', () => {
     strip({ ...live, budget: sept25 });
     const cursor = screen.getByTestId('budget-cursor');
-    const food = screen.getByTestId('budget-ruler').querySelector('[data-budget-consumed="base"]');
+    const food = screen.getByTestId('budget-ruler').querySelector('[data-budget-consumed="eaten"]');
     expect(parseFloat(cursor.style.left)).toBeCloseTo(parseFloat(food.style.left) + parseFloat(food.style.width), 1);
   });
 
@@ -178,22 +178,22 @@ describe('EquationStrip — the card follows the job', () => {
   it('a plan capped at break even: no base mark, and the goal says so', () => {
     const { container } = strip({ ...live, budget: { ...ranged, range: { floor: 1200, top: 1200 }, maintenance: 1100, food: 900, exercise: 0, net: 900, zone: 'incomplete', remaining: 300 } });
     expect(container.querySelector('.health-budget__post--base')).toBeNull();
-    expect(screen.getByTestId('budget-key')).toHaveTextContent('Plan end 1,100');
+    expect(screen.getByTestId('budget-key')).toHaveTextContent('Goal end 1,100');
     expect(screen.getByTestId('budget-key')).toHaveTextContent('Break even 1,100');
     expect(container.querySelector('.health-budget__detail').textContent).toContain('Configured base target 1,200');
   });
 
-  it('a story with no sub-line renders no sub element', () => {
+  it('missing maintenance explicitly leaves energy balance unknown', () => {
     // No maintenance, so no break even: over plan is the whole story.
     strip({ ...live, budget: { ...sept25, maintenance: 0, food: 2300, net: 1989, zone: 'over', remaining: 0, status: 'over' } });
-    expect(screen.getByTestId('budget-headline').textContent).toMatch(/198\s*kcal over plan/);
-    expect(screen.queryByTestId('budget-sub')).toBeNull();
+    expect(screen.getByTestId('budget-headline').textContent).toMatch(/198\s*kcal over goal range/);
+    expect(screen.getByTestId('budget-balance')).toHaveTextContent('Estimated calorie balance unavailable');
   });
 
   it('a missed-plan verdict carries the judge and over classes', () => {
     strip({ budget: { ...sept25, food: 2300, net: 1989, zone: 'over', remaining: 198, status: 'over' } });
     const headline = screen.getByTestId('budget-headline');
-    expect(headline.textContent).toBe('Missed plan by 198');
+    expect(headline.textContent).toBe('198 kcal over goal range');
     expect(headline.classList.contains('health-budget__headline--job-judge')).toBe(true);
     expect(headline.classList.contains('health-budget__headline--over')).toBe(true);
   });

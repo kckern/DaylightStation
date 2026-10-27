@@ -18,6 +18,18 @@ function withPlacement(ui, densityPlacement) {
 const baseRow = { uuid: 'row-1', name: 'Apple', calories: 95, amount: 1, unit: 'medium', color: 'green' };
 
 describe('EntryRow', () => {
+  it('keeps saving feedback inside the action cell without adding a grid item', () => {
+    const view = r(<PortionContext.Provider value={{ saving: false, locked: false }}><EntryRow row={baseRow} onTap={() => {}} /></PortionContext.Provider>);
+    const row = document.querySelector('.health-row-line');
+    const cells = row.children.length;
+    view.rerender(<MantineProvider><PortionContext.Provider value={{ saving: true, locked: true }}><EntryRow row={baseRow} onTap={() => {}} /></PortionContext.Provider></MantineProvider>);
+    expect(row.children).toHaveLength(cells);
+    expect(row).toHaveAttribute('aria-busy', 'true');
+    expect(row).toHaveClass('health-row-line--saving');
+    expect(screen.getByRole('status', { name: 'Saving Apple' }).closest('.health-row__action')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Actions for Apple' }).querySelector('.health-row__saving-spinner')).toBeTruthy();
+    expect(screen.queryByText('Saving…')).toBeNull();
+  });
   beforeEach(() => { apiMock.mockReset(); });
 
   it('keeps density and the edit-name control as siblings in the selected order', () => {

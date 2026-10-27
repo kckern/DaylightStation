@@ -1,6 +1,6 @@
-// One food-calorie scale. Position says how much was eaten; the colour of each
-// consumed interval says which budget tier it spent. Logging completeness is a
-// separate marker, never the start of a painted goal band.
+// One food-calorie scale with exact goal/expenditure boundaries. The renderer
+// colors a single eaten fill by its endpoint; tier geometry remains available
+// for allowance calculations and the consumed exercise hatch.
 import { priceLadder } from "../../portable/contracts/health/budgetTiers.mjs";
 
 const HEADROOM = 1.12;
@@ -40,9 +40,9 @@ export function budgetGeometry(budget, {
   } : null;
 
   const posts = [
-    ...(floor > 0 ? [{ key: 'floor', value: floor, label: 'Log floor' }] : []),
-    ...(plan > base ? [{ key: 'base', value: base, label: 'Base target' }] : []),
-    { key: 'plan', value: plan, label: 'Plan end' },
+    ...(floor > 0 ? [{ key: 'floor', value: floor, label: 'Goal start' }] : []),
+    ...(plan > base ? [{ key: 'base', value: base, label: 'Base goal end' }] : []),
+    { key: 'plan', value: plan, label: 'Goal end' },
     ...(even == null ? [] : [{ key: 'even', value: even, label: 'Break even' }]),
   ].map(post => ({ ...post, pct: pct(post.value) }));
   const postGroups = [];

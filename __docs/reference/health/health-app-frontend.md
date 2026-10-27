@@ -217,6 +217,24 @@ timing. Frontend events ship to the log store only at info and above:
 All carry `context.app: health`.
 
 
+## Calorie budget ruler
+
+The ruler uses food calories, with a fixed goal start from the configured range
+floor and a goal end extended by exercise credit. Estimated break-even is
+maintenance plus the same exercise credit. Goal start/end remain green marks;
+the base goal end and break-even remain independently marked and labeled.
+
+One consumed fill takes its color from its endpoint: blue below the floor while
+the day is in progress, green within the adjusted goal range, amber over goal
+while still below break-even, and red in surplus. Exact break-even and finished
+under-floor logs use a neutral fill. Uneaten space remains neutral. Diagonal
+hatching identifies only the consumed part of the exercise extension, over the
+same endpoint color. The goal-position label (under/within/over the range) and
+estimated deficit/surplus readout are separate; exceeding goal need not mean a
+surplus. Missing maintenance explicitly leaves the energy balance unavailable.
+The configured floor also remains the existing completeness threshold; this
+presentation does not change goal settings or backend completeness rules.
+
 ## Concurrent food entry and saving
 
 The Health shell owns a user-scoped operation session in
@@ -234,6 +252,11 @@ Clarifications and no-food outcomes remain attached to their submission.
 
 Only affected foods lock while saving. Group commands reserve their dependent
 members atomically; unrelated foods and capture controls remain available.
+Affected row content is greyed and a small SVG spinner replaces the dots icon
+inside its existing action button. Saving inserts no grid cell, adds no row
+height, and moves no columns or neighboring rows. An accessible saving status
+stays out of layout; reduced motion stops spinner rotation. Recovery controls
+remain fully readable.
 Already-open editors recheck reservations before sending. Pending catalog rows
 are visible but cannot be edited before the server assigns their real IDs.
 
