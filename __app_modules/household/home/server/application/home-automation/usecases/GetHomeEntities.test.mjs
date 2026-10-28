@@ -128,9 +128,20 @@ describe('GetHomeEntities', () => {
       .rejects.toMatchObject({ name: 'ConfigurationError', key: expect.stringMatching(/^mosaic\./) });
   });
 
-  it('a merge named like a real room is a configuration error with the merge id as its key', async () => {
-    await expect(makeUC({ config: { mosaic: { merge_rooms: [{ id: 'garage', rooms: ['office', 'kitchen'] }] } } }).execute())
-      .rejects.toMatchObject({ name: 'ConfigurationError', key: 'mosaic.merge_rooms[0].id', value: 'garage' });
+  it('a merge named like a real room keeps both groups and warns, rather than failing the page', async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const uc = new GetHomeEntities({
+      configRepository: { load: async () => ({ mosaic: { merge_rooms: [{ id: 'kitchen', label: 'Kitchen & office', rooms: ['office'] }] } }) },
+      clock: () => Date.parse('2026-10-27T23:00:00Z'),
+      entityGateway: { listReadings: async () => readings, listRooms: async () => rooms },
+      logger,
+    });
+    const out = await uc.execute();
+    const labels = out.mosaic.byRoom.map((g) => g.label);
+    expect(labels).toContain('Kitchen');
+    expect(labels).toContain('Kitchen & office');
+    expect(logger.warn).toHaveBeenCalledWith('home.mosaic.merge_shadows_room', { mergeId: 'kitchen', roomId: 'kitchen' });
+    expect(logger.warn.mock.calls.filter(([e]) => e === 'home.mosaic.merge_shadows_room')).toHaveLength(1);
   });
 
   it('arranges the mosaic from the mosaic policy', async () => {

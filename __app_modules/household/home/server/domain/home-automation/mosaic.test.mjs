@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MosaicPolicy, arrangeMosaic } from './MosaicPolicy.mjs';
+import { MosaicPolicy, arrangeMosaic, mergeShadows } from './MosaicPolicy.mjs';
 
 const room = (id, name) => ({ id, name });
 const e = (id, type, r = null, name = id) => ({ id, name, type, room: r });
@@ -47,11 +47,23 @@ describe('arrangeMosaic', () => {
     expect(() => MosaicPolicy.fromConfig({ merge_rooms: [{ id: 'up', rooms: ['a'] }, { id: 'down', rooms: ['up'] }] }))
       .toThrow(expect.objectContaining({ field: 'mosaic.merge_rooms[0].id', value: 'up' }));
   });
-  it('rejects a merge id that is a real room, so its squares cannot silently join the merge', () => {
-    const policy = MosaicPolicy.fromConfig({ merge_rooms: [{ id: 'outside', rooms: ['front_porch', 'yard'] }] });
-    expect(() => policy.assertMergeIdsAreNotRooms(['den', 'outside']))
-      .toThrow(expect.objectContaining({ name: 'ValidationError', field: 'mosaic.merge_rooms[0].id', value: 'outside' }));
-    expect(() => policy.assertMergeIdsAreNotRooms(['den', 'yard'])).not.toThrow();
+  it('a merge named like a real room never takes that room\'s squares: both groups draw, apart', () => {
+    const policy = MosaicPolicy.fromConfig({ merge_rooms: [{ id: 'outside', label: 'Porch & yard', rooms: ['front_porch', 'yard'] }] });
+    const shed = room('outside', 'Outside');
+    const { byRoom } = arrangeMosaic([...entities, e('light.shed', 'light', shed)], policy, { types });
+    const outside = byRoom.filter((g) => g.label === 'Outside' || g.label === 'Porch & yard');
+    expect(outside.map((g) => [g.label, g.entityIds])).toEqual([
+      ['Outside', ['light.shed']],
+      ['Porch & yard', ['light.porch', 'binary_sensor.yard_motion']],
+    ]);
+    expect(new Set(byRoom.map((g) => g.id)).size).toBe(byRoom.length);
+    // No collision: a merge keeps its own id.
+    expect(arrangeMosaic(entities, policy, { types }).byRoom.some((g) => g.id === 'outside')).toBe(true);
+  });
+  it('mergeShadows names each merge whose id is a real room', () => {
+    const policy = MosaicPolicy.fromConfig({ merge_rooms: [{ id: 'outside', rooms: ['yard'] }, { id: 'up', rooms: ['attic'] }] });
+    expect(mergeShadows(policy, ['den', 'outside'])).toEqual([{ mergeId: 'outside', roomId: 'outside' }]);
+    expect(mergeShadows(policy, ['den'])).toEqual([]);
   });
   it('rejects a duplicate merge id', () => {
     expect(() => MosaicPolicy.fromConfig({ merge_rooms: [{ id: 'a', rooms: ['x'] }, { id: 'a', rooms: ['y'] }] }))

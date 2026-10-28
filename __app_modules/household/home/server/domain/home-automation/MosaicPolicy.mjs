@@ -117,17 +117,6 @@ export class MosaicPolicy {
 
   isHidden(entityId) { return matchesAny(entityId, this.#p.hide); }
 
-  /**
-   * Throws `ValidationError` when a merge id is the id of a real room: that
-   * room's squares would silently join the merge under its label.
-   * @param {Iterable<string>} roomIds - the rooms the platform knows
-   */
-  assertMergeIdsAreNotRooms(roomIds) {
-    const known = new Set(roomIds);
-    this.#p.merges.forEach((merge, i) => {
-      if (known.has(merge.id)) throw invalid(`merge_rooms[${i}].id is the id of a real room`, `mosaic.merge_rooms[${i}].id`, merge.id);
-    });
-  }
 }
 
 const byText = (a, b) => String(a).localeCompare(String(b));
@@ -158,10 +147,20 @@ export function arrangeMosaic(entities, policy, { types = [] } = {}) {
       elsewhere.push(e);
     } else {
       const m = mergeOf.get(e.room.id);
-      const key = m ? m.id : e.room.id;
-      if (!roomGroups.has(key)) roomGroups.set(key, { id: key, label: m ? m.label : e.room.name, members: [] });
+      // Merges live in their own key space, so a real room that shares a
+      // merge's id keeps its own group instead of joining the merge.
+      const key = m ? `merge:${m.id}` : e.room.id;
+      if (!roomGroups.has(key)) roomGroups.set(key, { key, id: m ? m.id : e.room.id, label: m ? m.label : e.room.name, members: [] });
       roomGroups.get(key).members.push(e);
     }
+  }
+
+  // A merge keeps its own id as the group id unless a real room drawn
+  // alongside it has that id too; then the merge's is namespaced, so every
+  // group id stays unique.
+  const realRoomIds = new Set([...roomGroups.values()].filter((g) => !g.key.startsWith('merge:')).map((g) => g.id));
+  for (const g of roomGroups.values()) {
+    if (g.key.startsWith('merge:') && realRoomIds.has(g.id)) g.publicId = g.key;
   }
 
   const rank = (id) => {
@@ -180,7 +179,7 @@ export function arrangeMosaic(entities, policy, { types = [] } = {}) {
     .map(([t, members]) => toGroup(`type:${t}`, labelOf(t), members));
 
   const byRoom = [
-    ...rooms.map((g) => toGroup(g.id, g.label, g.members)),
+    ...rooms.map((g) => toGroup(g.publicId ?? g.id, g.label, g.members)),
     ...typeGroupList,
     ...(elsewhere.length ? [toGroup(ELSEWHERE.id, ELSEWHERE.label, elsewhere)] : []),
   ];
@@ -204,4 +203,17 @@ export function arrangeMosaic(entities, policy, { types = [] } = {}) {
     }));
 
   return { byRoom, byType };
+}
+
+/**
+ * The merges whose id is also a real room's id (the platform's rooms). Not a
+ * config error — the platform can add a room at any time — but worth a warning:
+ * `arrangeMosaic` keeps the two groups apart.
+ * @param {MosaicPolicy} policy
+ * @param {Iterable<string>} roomIds
+ * @returns {Array<{mergeId: string, roomId: string}>}
+ */
+export function mergeShadows(policy, roomIds) {
+  const known = new Set(roomIds);
+  return policy.merges.filter((m) => known.has(m.id)).map((m) => ({ mergeId: m.id, roomId: m.id }));
 }

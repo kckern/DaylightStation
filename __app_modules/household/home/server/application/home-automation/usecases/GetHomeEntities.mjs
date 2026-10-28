@@ -6,7 +6,7 @@
  */
 
 import {
-  EntityCatalogPolicy, HomeEntity, HouseSummaryPolicy, MosaicPolicy, STATE_CLASSES, resolveRoom, summarizeHouse, arrangeMosaic,
+  EntityCatalogPolicy, HomeEntity, HouseSummaryPolicy, MosaicPolicy, STATE_CLASSES, resolveRoom, summarizeHouse, arrangeMosaic, mergeShadows,
 } from "../../../domain/home-automation/index.mjs";
 import { toConfigurationError } from './configErrors.mjs';
 import { loadRoomContext } from './roomContext.mjs';
@@ -43,10 +43,10 @@ export class GetHomeEntities {
     // the (more expensive) room template.
     const readings = await this.#entityGateway.listReadings();
     const roomCtx = await loadRoomContext(this.#entityGateway, policy, this.#logger);
-    try {
-      mosaicPolicy.assertMergeIdsAreNotRooms(roomCtx.roomNames.keys());
-    } catch (error) {
-      toConfigurationError(error, 'mosaic');
+    // The platform can add a room named like a merge at any time: warn (once
+    // per load) and keep the groups apart, never fail the page over it.
+    for (const shadow of mergeShadows(mosaicPolicy, roomCtx.roomNames.keys())) {
+      this.#logger.warn?.('home.mosaic.merge_shadows_room', shadow);
     }
 
     const entities = [];

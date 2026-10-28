@@ -107,8 +107,8 @@ function HouseViews({ view }) {
   // with nothing to show is a dead end.
   if (!hasData && error) return <ErrorState error={error} onRetry={reload} label="Home Assistant" />;
 
-  const shared = { entities, rooms, types, haUrl, toggle };
-  if (view === 'rooms') return <RoomsView {...shared} summary={summary} turnOff={turnOff} />;
+  const shared = { entities, rooms, haUrl, toggle };
+  if (view === 'rooms') return <RoomsView {...shared} types={types} summary={summary} turnOff={turnOff} />;
   if (view === 'mosaic') return <MosaicView {...shared} mosaic={mosaic} summary={summary} />;
   return <TodayView {...shared} summary={summary} />;
 }

@@ -134,7 +134,7 @@ describe('EntityDetailSheet facts', () => {
   });
 
   it('no Kind row; an inferred room is italic without a "guessed" note; the id sits under the link', () => {
-    wrap(<EntityDetailSheet entity={entity('light.den', { room: { id: 'den', name: 'Den', source: 'inferred' } })} haUrl="https://ha.example" onClose={() => {}} typeLabel="Lights" />);
+    wrap(<EntityDetailSheet entity={entity('light.den', { room: { id: 'den', name: 'Den', source: 'inferred' } })} haUrl="https://ha.example" onClose={() => {}} />);
     const facts = document.querySelector('.home-detail__facts');
     expect([...facts.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['Room']);
     const room = facts.querySelector('dd');

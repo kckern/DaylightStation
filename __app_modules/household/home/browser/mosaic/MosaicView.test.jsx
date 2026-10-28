@@ -31,7 +31,6 @@ const entities = [
   entity('sensor.remote_battery', { name: 'Remote battery', type: 'battery', stateClass: 'reading', state: '9', unit: '%', room: office }),
   entity('binary_sensor.hall_motion', { name: 'Hall motion', type: 'presence', stateClass: 'unavailable', state: 'unavailable' }),
 ];
-const types = [{ id: 'light', label: 'Lights' }, { id: 'power', label: 'Power' }, { id: 'climate', label: 'Climate' }, { id: 'presence', label: 'Motion & presence' }, { id: 'openings', label: 'Doors & windows' }, { id: 'battery', label: 'Batteries' }];
 const summary = {
   on: ['light.kitchen', 'light.kitchen_table', 'switch.den_tv_plug'],
   open: ['binary_sensor.office_door'],
@@ -53,7 +52,7 @@ const mosaic = {
 
 const renderMosaic = (props = {}) => render(
   <MantineProvider><DismissStackProvider>
-    <MosaicView entities={entities} mosaic={mosaic} summary={summary} types={types} haUrl="https://ha.example" toggle={vi.fn()} {...props} />
+    <MosaicView entities={entities} mosaic={mosaic} summary={summary} haUrl="https://ha.example" toggle={vi.fn()} {...props} />
   </DismissStackProvider></MantineProvider>,
 );
 const squares = () => [...document.querySelectorAll('.home-square')];
