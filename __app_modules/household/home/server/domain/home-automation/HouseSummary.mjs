@@ -183,10 +183,13 @@ export function summarizeHouse(entities, policy, { now } = {}) {
   const wholeHouse = pickWholeHouse(powerMeters, policy);
   const energyToday = pickEnergy(energyMeters, policy.energyToday, wholeHouse, '_energy_today');
   const energyThisMonth = pickEnergy(energyMeters, policy.energyThisMonth, wholeHouse, '_energy_this_month');
+  // A meter reading as much as the whole house, or more, is another panel
+  // total (a mirror or the feed), not a circuit under it.
+  const wholeWatts = wholeHouse ? wattsOf(wholeHouse) : null;
   const topConsumers = powerMeters
     .filter((e) => e !== wholeHouse && !policy.isExcludedFromPower(e.id))
     .map((e) => ({ entityId: e.id, watts: wattsOf(e) }))
-    .filter((c) => c.watts > 0)
+    .filter((c) => c.watts > 0 && (wholeWatts == null || c.watts < wholeWatts))
     .sort((a, b) => b.watts - a.watts)
     .slice(0, policy.top);
 

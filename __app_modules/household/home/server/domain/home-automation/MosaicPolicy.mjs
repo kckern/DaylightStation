@@ -43,7 +43,7 @@ function typeList(value, field) {
   return items;
 }
 
-function parseMerge(raw, i, seen) {
+function parseMerge(raw, i, seen, claimed) {
   const at = (key) => `mosaic.merge_rooms[${i}].${key}`;
   if (!raw || typeof raw !== 'object') throw invalid(`merge_rooms[${i}] must be an object`, `mosaic.merge_rooms[${i}]`, raw);
   if (typeof raw.id !== 'string' || !SLUG.test(raw.id)) throw invalid(`${at('id')} must be a slug`, at('id'), raw.id);
@@ -53,6 +53,10 @@ function parseMerge(raw, i, seen) {
     throw invalid(`${at('rooms')} must be a non-empty list`, at('rooms'), raw.rooms);
   }
   const rooms = slugList(raw.rooms, at('rooms'));
+  // A room in two merges would land in whichever came first.
+  const twice = rooms.find((r) => claimed.has(r));
+  if (twice !== undefined) throw invalid(`${at('rooms')} lists a room an earlier merge already takes`, at('rooms'), twice);
+  for (const r of rooms) claimed.add(r);
   let label = raw.id;
   if (raw.label != null) {
     if (typeof raw.label !== 'string' || !raw.label) throw invalid(`${at('label')} must be a string`, at('label'), raw.label);
@@ -88,11 +92,17 @@ export class MosaicPolicy {
     const m = mosaic || {};
     const mergesRaw = list(m.merge_rooms, 'mosaic.merge_rooms');
     const seen = new Set();
+    const claimed = new Set();
     const typeOrder = typeList(m.type_order, 'mosaic.type_order');
+    const merges = mergesRaw.map((r, i) => parseMerge(r, i, seen, claimed));
+    // A merge named like a room would share that room's group key.
+    merges.forEach((merge, i) => {
+      if (claimed.has(merge.id)) throw invalid(`merge_rooms[${i}].id is also a room a merge lists`, `mosaic.merge_rooms[${i}].id`, merge.id);
+    });
     return new MosaicPolicy({
       hide: Object.freeze(stringList(m.hide, 'mosaic.hide')),
       roomOrder: Object.freeze(slugList(m.room_order, 'mosaic.room_order')),
-      merges: Object.freeze(mergesRaw.map((r, i) => parseMerge(r, i, seen))),
+      merges: Object.freeze(merges),
       typeGroups: Object.freeze(typeList(m.type_groups, 'mosaic.type_groups')),
       // Listed types first; unlisted ones keep their default order after them.
       typeOrder: Object.freeze([...typeOrder, ...TYPE_IDS.filter((id) => !typeOrder.includes(id))]),
@@ -106,6 +116,18 @@ export class MosaicPolicy {
   get typeOrder() { return this.#p.typeOrder; }
 
   isHidden(entityId) { return matchesAny(entityId, this.#p.hide); }
+
+  /**
+   * Throws `ValidationError` when a merge id is the id of a real room: that
+   * room's squares would silently join the merge under its label.
+   * @param {Iterable<string>} roomIds - the rooms the platform knows
+   */
+  assertMergeIdsAreNotRooms(roomIds) {
+    const known = new Set(roomIds);
+    this.#p.merges.forEach((merge, i) => {
+      if (known.has(merge.id)) throw invalid(`merge_rooms[${i}].id is the id of a real room`, `mosaic.merge_rooms[${i}].id`, merge.id);
+    });
+  }
 }
 
 const byText = (a, b) => String(a).localeCompare(String(b));

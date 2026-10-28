@@ -43,6 +43,11 @@ export class GetHomeEntities {
     // the (more expensive) room template.
     const readings = await this.#entityGateway.listReadings();
     const roomCtx = await loadRoomContext(this.#entityGateway, policy, this.#logger);
+    try {
+      mosaicPolicy.assertMergeIdsAreNotRooms(roomCtx.roomNames.keys());
+    } catch (error) {
+      toConfigurationError(error, 'mosaic');
+    }
 
     const entities = [];
     for (const reading of readings) {

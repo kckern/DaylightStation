@@ -135,11 +135,18 @@ describe('summarizeHouse', () => {
     expect(s.power.wholeHouse).toEqual({ entityId: 'sensor.office_power', watts: 302 });
     expect(s.power.energyToday).toEqual({ entityId: 'sensor.office_energy_today', kwh: 8.7 });
     expect(s.power.energyThisMonth).toBeNull();
-    expect(s.power.topConsumers.map((c) => c.entityId)).toEqual(['sensor.panel_total_power', 'sensor.heater_power']);
+    // The panel total reads more than the named meter, so it is no circuit under it.
+    expect(s.power.topConsumers.map((c) => c.entityId)).toEqual(['sensor.heater_power', 'sensor.furnace_power']);
     expect(s.on).toEqual(['light.nightlight', 'media_player.tv']);
     expect(s.lowBattery).toEqual([{ entityId: 'sensor.remote_battery', pct: 9 }]);
     expect(s.motion).toEqual(['binary_sensor.office_presence', 'binary_sensor.hall_presence', 'binary_sensor.kitchen_motion', 'binary_sensor.garage_motion']);
     expect(s.unavailable).toEqual(['binary_sensor.driveway_motion']);
+  });
+
+  it('a second panel-total meter (as much as the whole house, or more) is not ranked as a circuit', () => {
+    const twin = [...house, meter('sensor.panel_mirror_power', 505.4), meter('sensor.panel_feed_power', 506)];
+    const s = summarizeHouse(twin, HouseSummaryPolicy.fromConfig({ power: { whole_house: 'sensor.panel_total_power' } }), { now: NOW });
+    expect(s.power.topConsumers.map((c) => c.entityId)).toEqual(['sensor.office_power', 'sensor.heater_power', 'sensor.ups_real_power', 'sensor.furnace_power']);
   });
 
   it('refuses to guess the time', () => {

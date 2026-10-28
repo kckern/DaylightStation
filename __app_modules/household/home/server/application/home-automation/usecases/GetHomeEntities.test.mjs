@@ -112,7 +112,8 @@ describe('GetHomeEntities', () => {
       power: { whole_house: 'sensor.office_power' },
     } }).execute();
     expect(summary.power.wholeHouse).toEqual({ entityId: 'sensor.office_power', watts: 302 });
-    expect(summary.power.topConsumers).toEqual([{ entityId: 'sensor.panel_total_power', watts: 505.4 }]);
+    // The panel total reads more than the named meter: another total, not a circuit.
+    expect(summary.power.topConsumers).toEqual([]);
     expect(summary.on).toEqual([]);
     expect(summary.lowBattery).toEqual([]);
   });
@@ -125,6 +126,11 @@ describe('GetHomeEntities', () => {
   it('reports a malformed mosaic section as a configuration error with its dotted key', async () => {
     await expect(makeUC({ config: { mosaic: { type_groups: 'battery' } } }).execute())
       .rejects.toMatchObject({ name: 'ConfigurationError', key: expect.stringMatching(/^mosaic\./) });
+  });
+
+  it('a merge named like a real room is a configuration error with the merge id as its key', async () => {
+    await expect(makeUC({ config: { mosaic: { merge_rooms: [{ id: 'garage', rooms: ['office', 'kitchen'] }] } } }).execute())
+      .rejects.toMatchObject({ name: 'ConfigurationError', key: 'mosaic.merge_rooms[0].id', value: 'garage' });
   });
 
   it('arranges the mosaic from the mosaic policy', async () => {
