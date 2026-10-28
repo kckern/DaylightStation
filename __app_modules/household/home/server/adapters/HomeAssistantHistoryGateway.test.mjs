@@ -13,12 +13,18 @@ describe('HomeAssistantHistoryGateway', () => {
     const out = await gw.readHistory(['sensor.p'], { startMs: Date.parse('2026-10-28T07:00:00Z'), endMs: null });
     expect(out.get('sensor.p')).toEqual([{ t: Date.parse('2026-10-28T07:00:00Z'), v: 5 }, { t: Date.parse('2026-10-28T07:01:00Z'), v: null }]);
   });
-  it('omits endIso for an open window so the platform cache key is stable', async () => {
-    const { gw, gateway } = make(new Map());
-    await gw.readHistory(['a.b'], { startMs: 0, endMs: null });
+  it('an open window runs to the next whole minute: the platform would end it one day after the start', async () => {
+    const gateway = { getHistory: vi.fn().mockResolvedValue(new Map()) };
+    let now = Date.parse('2026-10-28T19:34:29.500Z');
+    const gw = new HomeAssistantHistoryGateway({}, { gateway, logger: { warn: vi.fn() }, clock: () => now });
+    const weekAgo = now - 7 * 864e5;
+    await gw.readHistory(['a.b'], { startMs: weekAgo, endMs: null });
+    now += 20e3; // same minute: the same request, so the platform cache key holds
+    await gw.readHistory(['a.b'], { startMs: weekAgo, endMs: null });
     await gw.readHistory(['a.b'], { startMs: 0, endMs: 3600e3 });
-    expect(gateway.getHistory.mock.calls[0][1]).toEqual({ sinceIso: '1970-01-01T00:00:00.000Z' });
-    expect(gateway.getHistory.mock.calls[1][1]).toEqual({ sinceIso: '1970-01-01T00:00:00.000Z', endIso: '1970-01-01T01:00:00.000Z' });
+    expect(gateway.getHistory.mock.calls[0][1]).toEqual({ sinceIso: new Date(weekAgo).toISOString(), endIso: '2026-10-28T19:35:00.000Z' });
+    expect(gateway.getHistory.mock.calls[1][1]).toEqual(gateway.getHistory.mock.calls[0][1]);
+    expect(gateway.getHistory.mock.calls[2][1]).toEqual({ sinceIso: '1970-01-01T00:00:00.000Z', endIso: '1970-01-01T01:00:00.000Z' });
   });
   it('warns when the platform returns nothing for a real request', async () => {
     const { gw, logger } = make(new Map());
