@@ -1069,12 +1069,16 @@ say what the household saw. The warning overlay (life meter + offender chips,
 
 | Event | Level | When |
 |---|---|---|
-| `governance.warning_overlay.shown` | info | meter + chips mount (`rows`: chip keys) |
+| `governance.warning_overlay.shown` | info | chips mount (`rows`: chip keys), with the meter when `quiet:false` |
 | `governance.warning_overlay.hidden` | info | they unmount, with `visibleMs` |
 | `governance.warning_overlay.rows_changed` | info | the riders named in the chips change |
 | `governance.warning_overlay.paint_check` | info | first check of each showing |
 | `governance.warning_overlay.dimmed` | **warn** | the meter/chips become dimmed |
 | `governance.warning_overlay.undimmed` | info | they are clean again |
+
+Every `warning_overlay.*` event carries `quiet`: `false` for a real warning
+(meter, scrim and chips), `true` for the cooldown's chips-only overlay (no
+meter, no scrim). A quiet overlay with no rows mounts nothing and logs nothing.
 
 A run of short `shown`/`hidden` pairs is what a "thrashing" warning looks like
 on screen. The paint check (`overlayPaintCheck.js`, every 2s while shown) reports
