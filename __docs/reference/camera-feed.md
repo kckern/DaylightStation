@@ -43,14 +43,14 @@ driveway-camera:
   type: ip-camera
   manufacturer: Reolink
   model: F760P
-  host: 10.0.0.56
+  host: <camera-host>
   auth_ref: reolink          # references data/household/auth/reolink.yml
   streams:
     main:
-      url: rtsp://{username}:{password}@10.0.0.56/h264Preview_01_main
+      url: rtsp://{username}:{password}@<camera-host>/h264Preview_01_main
       resolution: 4K
     sub:
-      url: rtsp://{username}:{password}@10.0.0.56/h264Preview_01_sub
+      url: rtsp://{username}:{password}@<camera-host>/h264Preview_01_sub
       resolution: 640x480
   homeassistant:              # optional HA entity mappings
     camera: camera.driveway_camera_fluent
@@ -91,8 +91,8 @@ All under `/api/v1/camera/`.
 | `/camera/:id/live/stream.m3u8` | GET | HLS playlist for live stream (starts transcoding) |
 | `/camera/:id/live` | DELETE | Stop the live stream transcoding session |
 | `/camera/:id/state` | GET | Detection state (motion, person, vehicle, animal) |
-| `/camera/:id/clips?day=YYYY-MM-DD` | GET | The day's recorded clips: `{camera, day, clips: [{start, end, name, labels}]}`, ascending (404 unknown camera, 400 bad `day`) |
-| `/camera/:id/clips/file?name=…` | GET | One recorded clip as range-aware MP4 (400 bad name, 502 `{error: 'Clip unavailable'}` when the camera fetch fails) |
+| `/camera/:id/clips?day=YYYY-MM-DD` | GET | The day's recorded clips: `{camera, day, clips: [{start, end, name, labels}]}`, ascending (404 unknown camera, 400 bad `day`, 503 when no clip library is wired) |
+| `/camera/:id/clips/file?name=…` | GET | One recorded clip as range-aware MP4, `Cache-Control: private, max-age=3600` (404 unknown camera, 400 missing or bad name, 503 when no clip library is wired, 502 `{error: 'Clip unavailable'}` when the camera fetch fails) |
 
 ### Recorded Clips
 
@@ -100,21 +100,32 @@ All under `/api/v1/camera/`.
 clip routes behind the `ICameraClipLibrary` port:
 
 - **List.** Ledger records (`CameraLedgerStore`, `camera-archive` `storage.ledgerPaths`)
-  that carry a `clip.name`. When the ledger has none for the day (today, before the
+  that carry a `clip.name`. A ledger that cannot be read (a torn final line while the
+  ledger job is mid-append) logs `camera.clips.ledger_unreadable` and is treated as
+  empty, never a 500. When the ledger has none for the day (today, before the
   nightly ledger job), it searches the camera itself (the archive plan's camera-side
-  source) and caches that answer for 2 minutes per camera and day. A failed search
-  logs `camera.clips.search_failed` and returns `[]`, never an error.
-- **File.** The name must be a recorder path (`[/mnt/sdX/]Mp4Record/YYYY-MM-DD/<file>.mp4`).
-  The clip is downloaded once into `/tmp/camera-clips/<camera>/` (via a `.part` file, so an
-  interrupted download is never served), the cache is pruned to the 40 newest clips, and
-  later requests are served from disk with Express range handling.
+  source) and caches that answer for 2 minutes per camera and day; expired entries
+  are evicted on each new search. A failed search logs `camera.clips.search_failed`
+  and returns `[]`, never an error.
+- **File.** The name must be a recorder path (`[/mnt/sdX/]Mp4Record/YYYY-MM-DD/<file>.mp4`)
+  and the camera id a slug. The clip is downloaded once into `/tmp/camera-clips/<camera>/`
+  (via a `.part` file, so an interrupted download is never served; a second viewer of the
+  same clip waits on the first download). After each download the directory is pruned:
+  `.part` files older than an hour that no download is writing are swept, and the cache
+  keeps the 40 most recently **used** clips (a cache hit touches the file, so pruning is
+  LRU, not FIFO). Later requests are served from disk with Express range handling; a
+  seek or a closed player aborting the transfer is not logged as a fault.
 - A camera that is not in the `camera-archive` plan, or missing NVR credentials, has no
   clip source: lists come back empty and file requests answer 502
   (`camera.clips.source_unavailable` is logged).
 
 Events: `camera.clips.listed` (debug, `{camera, day, source, count}`),
 `camera.clips.fetched` (info, `{camera, name, bytes}`), `camera.clips.search_failed`,
-`camera.clips.source_unavailable`, `camera.clips.fetch_failed` (warn).
+`camera.clips.ledger_unreadable`, `camera.clips.source_unavailable`,
+`camera.clips.fetch_failed`, `camera.clips.send_failed` (warn).
+
+The `/home` dashboard's doorbell drawer is the consumer: it matches each ring to the
+nearest clip edge within 120 s (see [home/README.md](home/README.md)).
 
 ### Snapshot Parameters
 
@@ -131,7 +142,7 @@ Events: `camera.clips.listed` (debug, `{camera, day, source, count}`),
   "cameras": [
     {
       "id": "driveway-camera",
-      "host": "10.0.0.56",
+      "host": "<camera-host>",
       "manufacturer": "Reolink",
       "model": "F760P",
       "capabilities": ["snapshot", "live"],
