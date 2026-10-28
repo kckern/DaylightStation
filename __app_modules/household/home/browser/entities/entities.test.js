@@ -63,17 +63,18 @@ describe('filterEntities', () => {
 
 describe('formatEntityState', () => {
   it.each([
-    [{ domain: 'light', state: 'on', stateClass: 'on', attributes: { brightness: 128 } }, 'On · 50%'],
+    [{ domain: 'light', state: 'on', stateClass: 'on', detail: { brightnessPct: 50 } }, 'On · 50%'],
     [{ domain: 'switch', state: 'off', stateClass: 'off' }, 'Off'],
     [{ domain: 'binary_sensor', state: 'on', stateClass: 'on', deviceClass: 'motion' }, 'Motion'],
     [{ domain: 'binary_sensor', state: 'off', stateClass: 'off', deviceClass: 'door' }, 'Closed'],
     [{ domain: 'sensor', state: '71.4567', stateClass: 'reading', unit: '°F' }, '71.5 °F'],
     [{ domain: 'sensor', state: '1234.5', stateClass: 'reading', unit: 'W' }, '1,235 W'],
     [{ domain: 'sensor', state: 'Window/door is open', stateClass: 'reading' }, 'Window/door is open'],
-    [{ domain: 'climate', state: 'heat', stateClass: 'on', attributes: { current_temperature: 68.2, hvac_action: 'heating' } }, '68.2° · Heating'],
-    [{ domain: 'media_player', state: 'playing', stateClass: 'on', attributes: { media_title: 'Song' } }, 'Playing · Song'],
+    [{ domain: 'climate', state: 'heat', stateClass: 'on', detail: { currentTemperature: 68.2, hvacAction: 'heating' } }, '68.2° · Heating'],
+    [{ domain: 'media_player', state: 'playing', stateClass: 'on', detail: { mediaTitle: 'Song' } }, 'Playing · Song'],
     [{ domain: 'cover', state: 'open', stateClass: 'on' }, 'Open'],
     [{ domain: 'light', state: 'unavailable', stateClass: 'unavailable' }, 'Unavailable'],
+    [{ domain: 'sensor', state: '', stateClass: 'reading', unit: 'W' }, ''],
   ])('%j → %s', (entity, expected) => {
     expect(formatEntityState(entity)).toBe(expected);
   });

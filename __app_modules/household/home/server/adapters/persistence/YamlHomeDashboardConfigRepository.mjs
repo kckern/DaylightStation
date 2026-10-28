@@ -6,10 +6,13 @@
  * data/household[-{id}]/home/dashboard.yml via DataService.
  *
  * Read through `dataService.household.read()`, NOT the household app-config
- * union, so this file is deliberately absent from HOUSEHOLD_APP_CONFIGS. The
- * file does not exist in any household today — the dashboard runs on defaults
- * either way — so moving the literal is behaviour-neutral and just keeps this
- * reader off the `config/` directory a later phase deletes.
+ * union, so this file is deliberately absent from HOUSEHOLD_APP_CONFIGS.
+ *
+ * Sections: `summary` and `rooms` (the hand-curated room dashboard) and
+ * `entities` (the entity policy for /home: which Home Assistant entities are
+ * shown, their types and rooms, and which may be switched — validated by
+ * EntityCatalogPolicy). Every section is optional; an absent file means
+ * defaults throughout.
  *
  * @module adapters/persistence/yaml/YamlHomeDashboardConfigRepository
  */

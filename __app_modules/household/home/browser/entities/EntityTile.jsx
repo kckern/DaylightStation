@@ -43,8 +43,11 @@ export function EntityTile({ entity, view, haUrl, onToggle }) {
       <div className="home-entity__body">
         <div className="home-entity__name" title={entity.id}>{entity.name}</div>
         <div className="home-entity__meta">
-          {context ? <span>{context}{entity.room?.source === 'inferred' ? ' ·' : ''}</span> : null}
-          {context && entity.room?.source === 'inferred' ? <span className="home-entity__inferred">by name</span> : null}
+          {context ? (
+            <span title={entity.room?.source === 'inferred' ? 'Room guessed from the entity name' : undefined}>
+              {context}{entity.room?.source === 'inferred' ? <span className="home-entity__inferred"> (by name)</span> : null}
+            </span>
+          ) : null}
           {age ? <span>{age}</span> : null}
         </div>
       </div>
@@ -54,6 +57,7 @@ export function EntityTile({ entity, view, haUrl, onToggle }) {
           className="home-entity__switch"
           checked={entity.stateClass === 'on'}
           onChange={() => onToggle(entity)}
+          disabled={Boolean(entity.pending)}
           aria-label={`${entity.name}: turn ${entity.stateClass === 'on' ? 'off' : 'on'}`}
           size="md"
         />

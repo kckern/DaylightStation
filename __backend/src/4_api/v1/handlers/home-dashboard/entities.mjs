@@ -26,7 +26,7 @@ export function presentHomeEntity(entity) {
     deviceClass: entity.deviceClass,
     lastChanged: entity.lastChanged,
     controllable: entity.controllable,
-    attributes: { ...entity.attributes },
+    detail: { ...entity.detail },
   };
 }
 

@@ -2,13 +2,14 @@
 /**
  * Live API integration test: POST /api/v1/home-dashboard/toggle
  *
- * Verifies the whitelist guard: toggling an entityId that is NOT declared
- * in the dashboard YAML (i.e., not on any room's `lights` list) must be
+ * Verifies the allowlist guard: an entity may be switched only if it is a
+ * room light in the dashboard YAML, or a REAL entity (Home Assistant knows
+ * it) that the YAML's entity policy makes controllable. Anything else is
  * rejected with HTTP 403.
  *
- * This test uses an obviously-fake entity ID (`light.not_on_dashboard_xxx`)
- * that no real YAML config would list, so it exercises the whitelist
- * rejection path deterministically.
+ * This test uses an obviously-fake light (`light.not_on_dashboard_xyz`): the
+ * policy would allow its domain and type, so it is the existence check that
+ * must refuse it — deterministic whether Home Assistant is up or down.
  *
  * Preconditions:
  * - Dev server must be running on the configured app port (harness ensures this).

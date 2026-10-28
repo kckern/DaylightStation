@@ -4,7 +4,7 @@ import { homeDashboardEntitiesHandler, presentHomeEntity } from './entities.mjs'
 const entity = {
   id: 'light.kitchen', domain: 'light', name: 'Kitchen', state: 'on', stateClass: 'on', type: 'light',
   room: { id: 'kitchen', name: 'Kitchen', source: 'provider' }, unit: null, deviceClass: null,
-  lastChanged: 't1', controllable: true, attributes: { brightness: 200 },
+  lastChanged: 't1', controllable: true, detail: { brightnessPct: 78 },
 };
 
 describe('homeDashboardEntitiesHandler', () => {

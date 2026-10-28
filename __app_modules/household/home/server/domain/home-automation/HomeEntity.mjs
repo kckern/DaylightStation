@@ -24,8 +24,6 @@ const ACTIVE_STATES = {
   media_player: ['playing', 'paused', 'on', 'buffering'],
   vacuum: ['cleaning', 'returning'],
 };
-// Attributes a tile can use; the rest of a provider's attribute bag stays behind.
-const KEPT_ATTRIBUTES = ['brightness', 'current_temperature', 'temperature', 'hvac_action', 'media_title', 'percentage'];
 
 /**
  * @param {string} domain
@@ -44,9 +42,15 @@ export class HomeEntity {
   #p;
 
   constructor({ id, name, state, type, room = null, unit = null, deviceClass = null,
-    lastChanged = null, controllable = false, attributes = {} }) {
+    lastChanged = null, controllable = false, detail = {} }) {
     if (typeof id !== 'string' || !id.includes('.')) {
       throw new ValidationError('HomeEntity id must be "domain.object_id"', { code: 'INVALID_ENTITY_ID', field: 'id', value: id });
+    }
+    if (typeof type !== 'string' || !type) {
+      throw new ValidationError('HomeEntity needs a type', { code: 'INVALID_ENTITY_TYPE', field: 'type', value: type });
+    }
+    if (room && (typeof room.id !== 'string' || typeof room.name !== 'string')) {
+      throw new ValidationError('HomeEntity room needs an id and a name', { code: 'INVALID_ENTITY_ROOM', field: 'room', value: room });
     }
     const domain = id.split('.')[0];
     const stateClass = stateClassOf(domain, state);
@@ -56,34 +60,32 @@ export class HomeEntity {
       unit, deviceClass, lastChanged,
       // Switching something that is not answering would only queue a surprise.
       controllable: Boolean(controllable) && stateClass !== 'unavailable',
-      attributes: Object.freeze({ ...attributes }),
+      detail: Object.freeze({ ...detail }),
     });
     Object.freeze(this);
   }
 
   /**
-   * @param {{entityId: string, state: string, attributes?: Object, lastChanged?: string}} reading
+   * @param {{entityId: string, state: string|null, name: string|null, deviceClass: string|null,
+   *   unit: string|null, lastChanged: string|null, detail?: Object}} reading - an EntityReading
    * @param {Object} ctx
    * @param {import('./EntityCatalogPolicy.mjs').EntityCatalogPolicy} ctx.policy
    * @param {{id: string, name: string, source: string}|null} ctx.room
    * @returns {HomeEntity}
    */
   static fromReading(reading, { policy, room }) {
-    const attrs = reading.attributes || {};
-    const deviceClass = attrs.device_class || null;
-    const kept = {};
-    for (const key of KEPT_ATTRIBUTES) if (attrs[key] != null) kept[key] = attrs[key];
+    const { deviceClass = null } = reading;
     return new HomeEntity({
       id: reading.entityId,
-      name: policy.nameFor(reading.entityId) || attrs.friendly_name,
+      name: policy.nameFor(reading.entityId) || reading.name,
       state: reading.state,
       type: policy.typeOf(reading.entityId, { deviceClass }),
       room,
-      unit: attrs.unit_of_measurement || null,
+      unit: reading.unit || null,
       deviceClass,
       lastChanged: reading.lastChanged || null,
       controllable: policy.isControllable(reading.entityId, { deviceClass }),
-      attributes: kept,
+      detail: reading.detail || {},
     });
   }
 
@@ -98,7 +100,7 @@ export class HomeEntity {
   get unit() { return this.#p.unit; }
   get deviceClass() { return this.#p.deviceClass; }
   get lastChanged() { return this.#p.lastChanged; }
-  get attributes() { return this.#p.attributes; }
+  get detail() { return this.#p.detail; }
 }
 
 export default HomeEntity;

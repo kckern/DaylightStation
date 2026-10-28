@@ -1,20 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GetHomeEntities } from './GetHomeEntities.mjs';
 
+const r = (entityId, state, over = {}) => ({ entityId, state, name: null, deviceClass: null, unit: null, lastChanged: null, detail: {}, ...over });
 const readings = [
-  { entityId: 'light.kitchen', state: 'on', attributes: { friendly_name: 'Kitchen' } },
-  { entityId: 'switch.office_tv_plug', state: 'off', attributes: { friendly_name: 'Office TV Plug' } },
-  { entityId: 'sensor.office_temperature', state: '71.4', attributes: { friendly_name: 'Office Temp', device_class: 'temperature', unit_of_measurement: '°F' } },
-  { entityId: 'sensor.plug_voltage', state: '120', attributes: { device_class: 'voltage' } },
-  { entityId: 'automation.morning', state: 'on', attributes: {} },
-  { entityId: 'binary_sensor.hall_motion', state: 'unavailable', attributes: { device_class: 'motion', friendly_name: 'Hall Motion' } },
+  r('light.kitchen', 'on', { name: 'Kitchen' }),
+  r('switch.office_tv_plug', 'off', { name: 'Office TV Plug' }),
+  r('sensor.office_temperature', '71.4', { name: 'Office Temp', deviceClass: 'temperature', unit: '°F' }),
+  r('sensor.plug_voltage', '120', { deviceClass: 'voltage' }),
+  r('automation.morning', 'on'),
+  r('binary_sensor.hall_motion', 'unavailable', { deviceClass: 'motion', name: 'Hall Motion' }),
 ];
-const rooms = { rooms: [{ id: 'kitchen', name: 'Kitchen' }, { id: 'office', name: 'Office' }, { id: 'garage', name: 'Garage' }], assignments: { 'light.kitchen': 'kitchen' } };
+const rooms = { rooms: [{ id: 'office', name: 'Office' }, { id: 'kitchen', name: 'Kitchen' }, { id: 'garage', name: 'Garage' }], assignments: { 'light.kitchen': 'kitchen' } };
 
 function makeUC({ config = {}, catalog = {} } = {}) {
   return new GetHomeEntities({
     configRepository: { load: async () => config },
-    entityCatalog: {
+    entityGateway: {
       listReadings: catalog.listReadings || (async () => readings),
       listRooms: catalog.listRooms || (async () => rooms),
     },
@@ -34,7 +35,7 @@ describe('GetHomeEntities', () => {
     expect(byId['binary_sensor.hall_motion']).toMatchObject({ type: 'presence', stateClass: 'unavailable', room: null });
   });
 
-  it('lists only the rooms and types that hold something, in platform order', async () => {
+  it('lists only the rooms and types that hold something, rooms alphabetically', async () => {
     const result = await makeUC().execute();
     expect(result.rooms).toEqual([{ id: 'kitchen', name: 'Kitchen' }, { id: 'office', name: 'Office' }]);
     expect(result.types.map((t) => t.id)).toEqual(['light', 'power', 'climate', 'presence']);
@@ -70,6 +71,12 @@ describe('GetHomeEntities', () => {
   it('surfaces an unreachable platform', async () => {
     const down = Object.assign(new Error('Home Assistant returned no entities'), { code: 'HOME_PLATFORM_UNREACHABLE' });
     await expect(makeUC({ catalog: { listReadings: async () => { throw down; } } }).execute()).rejects.toBe(down);
+  });
+
+  it('does not ask for rooms when the readings fail', async () => {
+    const listRooms = vi.fn();
+    await expect(makeUC({ catalog: { listReadings: async () => { throw new Error('down'); }, listRooms } }).execute()).rejects.toThrow('down');
+    expect(listRooms).not.toHaveBeenCalled();
   });
 
   it('reports a malformed config section as a configuration error', async () => {

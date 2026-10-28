@@ -13,13 +13,13 @@ camera grid is the fourth view.
 | Domain | `__app_modules/household/home/server/domain/home-automation/EntityCatalogPolicy.mjs` | Value object built from the YAML `entities:` section: which entities are shown, each one's type, which are switchable. Defaults when the section is absent. |
 | Domain | `…/domain/home-automation/HomeEntity.mjs` | Value object for one entity: id, name, state, **state class** (`on` / `off` / `reading` / `unavailable`), type, room, controllable. Getters only; no `toJSON` (serialization is the API's job). |
 | Domain | `…/domain/home-automation/resolveRoom.mjs` | Pure room resolution, by authority: `config` (YAML override) → `provider` (HA area, including through the device) → `inferred` (the entity id starts with a room's id, name or alias, e.g. `switch.office_tv_plug` → Office). |
-| Application | `…/application/home-automation/ports/IHomeEntityCatalog.mjs` | Port: `listReadings()` (throws when the platform is unreachable) and `listRooms()` (empty, never failing, when room data is unavailable). |
-| Application | `…/application/home-automation/usecases/GetHomeEntities.mjs` | Applies the policy to every reading; lists only the rooms and types that hold something. A malformed YAML section surfaces as `ConfigurationError`. |
+| Application | `…/application/home-automation/ports/IHomeEntityGateway.mjs` | Port: `listReadings()` returns provider-neutral `EntityReading`s (`name`, `deviceClass`, `unit`, `detail` — no platform attribute keys) and throws when the platform is unreachable; `listRooms()` is empty, never failing, when room data is unavailable. |
+| Application | `…/application/home-automation/usecases/GetHomeEntities.mjs` | Applies the policy to every reading; lists only the rooms (alphabetically) and types that hold something; asks for rooms only after the readings succeed. A `ValidationError` from the YAML surfaces as `ConfigurationError`; any other error is left as it is. |
 | Application | `…/usecases/ToggleDashboardEntity.mjs` | Allows a configured room light, or a real entity (checked with `getState`) that the policy makes controllable. |
-| Adapter | `…/adapters/HomeAssistantEntityCatalog.mjs` | Implements the port over the injected `IHomeAutomationGateway`, in the shape of `HomeAssistantDeviceAdapter` (no HTTP client of its own). Caches room data for 5 minutes; treats an empty state read as unreachable. |
+| Adapter | `…/adapters/HomeAssistantEntityGateway.mjs` | The anti-corruption layer: implements the port over the injected `IHomeAutomationGateway`, in the shape of `HomeAssistantDeviceAdapter` (no HTTP client of its own), and translates HA's attribute bag (`friendly_name`, `brightness` 0–255…) into `EntityReading`. Caches room data for 5 minutes (a failed lookup for 1 minute); treats an empty state read as unreachable. |
 | Capability | `__capabilities/home-control/server/adapters/homeassistant/HomeAssistantAdapter.mjs` | `listAreaAssignments()` renders one Jinja template (`area_id()` / `area_name()`), because HA's REST API has no area registry. |
 | API | `__backend/src/4_api/v1/handlers/home-dashboard/entities.mjs` | `GET /api/v1/home-dashboard/entities`; presents each `HomeEntity` as the response DTO; `Cache-Control: no-store`. |
-| Browser | `__app_modules/household/home/browser/entities/` | `groupEntities` / `filterEntities` / `formatEntityState` (pure), `useHomeEntities` (10 s poll while visible, optimistic toggles), `EntityTile`, `EntityDashboard`. |
+| Browser | `__app_modules/household/home/browser/entities/` | `groupEntities` / `filterEntities` / `formatEntityState` (pure), `useHomeEntities` (10 s poll while visible; a toggle sends an explicit `on`/`off`, shows the expected state until a reading agrees or 5 s pass, and blocks a second tap meanwhile), `EntityTile`, `EntityDashboard`. `HomeApp` uses `AppChrome`: bottom tabs on mobile, rail on tablet-up. |
 
 ## Configuration — `household/home/dashboard.yml`
 
@@ -46,8 +46,10 @@ entities:
   device class is something a person reads (temperature, humidity, power,
   energy, battery, illuminance, air quality…). Voltage, frequency, signal
   strength and unclassed sensors are hidden unless HA put them in a room.
-- **Types:** a `switch` named for a light (`*light*`, `*lamp*`, `*sconce*`) is a
-  light; one named `*plug*` / `*outlet*` is power.
+- **Types:** a `switch` named for a light, by whole word (`*_light`, `*_lights`,
+  `*_light_switch`, `*_lamp`, `*_sconce`…), is a light; one named `*plug*` /
+  `*outlet*` is power. Camera IR emitters, backlights, status LEDs, LED rings
+  and volume levels exposed as lights are excluded by default.
 - **Control:** only lights. A plug can be feeding a TV, a set-top box or a
   speaker someone is using, so plugs need `controllable` or `controllable_types`.
   Only on/off domains can ever be switched; a lock or cover named in

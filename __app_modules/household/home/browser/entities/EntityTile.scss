@@ -1,3 +1,5 @@
+@use '../../../../../frontend/src/styles/breakpoints' as bp;
+
 .home-entity {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;
@@ -59,4 +61,18 @@
   }
 
   &--pending { opacity: 0.75; }
+
+  // Phone width: the state drops under the name instead of squeezing it out.
+  @include bp.mobile-only {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "icon body switch link"
+      "icon state switch link";
+
+    .home-entity__icon { grid-area: icon; }
+    .home-entity__body { grid-area: body; }
+    .home-entity__state { grid-area: state; text-align: left; max-width: none; }
+    .home-entity__switch { grid-area: switch; }
+    .home-entity__link { grid-area: link; }
+  }
 }

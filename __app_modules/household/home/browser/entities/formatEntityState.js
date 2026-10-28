@@ -26,6 +26,8 @@ const BINARY_WORDS = {
 const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : s);
 
 function formatNumber(raw) {
+  // Number('') is 0 — an empty reading is not a zero.
+  if (raw == null || (typeof raw === 'string' && raw.trim() === '')) return null;
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;
   const abs = Math.abs(n);
@@ -35,27 +37,27 @@ function formatNumber(raw) {
 
 /**
  * @param {{domain: string, state: string|null, stateClass: string, unit?: string|null,
- *   deviceClass?: string|null, attributes?: Object}} entity
+ *   deviceClass?: string|null, detail?: Object}} entity
  * @returns {string}
  */
 export function formatEntityState(entity) {
-  const { domain, state, stateClass, unit, deviceClass, attributes = {} } = entity;
+  const { domain, state, stateClass, unit, deviceClass, detail = {} } = entity;
   if (stateClass === 'unavailable') return 'Unavailable';
   if (domain === 'binary_sensor') {
     const words = BINARY_WORDS[deviceClass];
     if (words) return state === 'on' ? words[0] : words[1];
     return state === 'on' ? 'On' : 'Off';
   }
-  if (domain === 'light' && state === 'on' && Number.isFinite(attributes.brightness)) {
-    return `On · ${Math.round((attributes.brightness / 255) * 100)}%`;
+  if (domain === 'light' && state === 'on' && Number.isFinite(detail.brightnessPct)) {
+    return `On · ${detail.brightnessPct}%`;
   }
   if (domain === 'climate') {
-    const current = formatNumber(attributes.current_temperature);
-    const mode = capitalize(attributes.hvac_action || state);
+    const current = formatNumber(detail.currentTemperature);
+    const mode = capitalize(detail.hvacAction || state);
     return current ? `${current}° · ${mode}` : mode;
   }
-  if (domain === 'media_player' && state === 'playing' && attributes.media_title) {
-    return `Playing · ${attributes.media_title}`;
+  if (domain === 'media_player' && state === 'playing' && detail.mediaTitle) {
+    return `Playing · ${detail.mediaTitle}`;
   }
   if (stateClass === 'reading') {
     const n = formatNumber(state);

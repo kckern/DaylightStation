@@ -4,6 +4,7 @@
  */
 
 import { ConfigurationError } from '#apps/common/errors/SemanticErrors.mjs';
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import {
   EntityCatalogPolicy, HomeEntity, STATE_CLASSES, resolveRoom, buildRoomPrefixes,
 } from "../../../domain/home-automation/index.mjs";
@@ -12,14 +13,14 @@ const NO_ROOMS = Object.freeze({ rooms: [], assignments: {} });
 
 export class GetHomeEntities {
   #configRepository;
-  #entityCatalog;
+  #entityGateway;
   #logger;
 
-  constructor({ configRepository, entityCatalog, logger }) {
+  constructor({ configRepository, entityGateway, logger }) {
     if (!configRepository) throw new Error('GetHomeEntities: configRepository required');
-    if (!entityCatalog)    throw new Error('GetHomeEntities: entityCatalog required');
+    if (!entityGateway)    throw new Error('GetHomeEntities: entityGateway required');
     this.#configRepository = configRepository;
-    this.#entityCatalog = entityCatalog;
+    this.#entityGateway = entityGateway;
     this.#logger = logger || console;
   }
 
@@ -28,13 +29,13 @@ export class GetHomeEntities {
    */
   async execute() {
     const policy = await this.#loadPolicy();
-    const [readings, roomData] = await Promise.all([
-      this.#entityCatalog.listReadings(),
-      this.#entityCatalog.listRooms().catch((error) => {
-        this.#logger.warn?.('home.entities.rooms.failed', { error: error.message });
-        return NO_ROOMS;
-      }),
-    ]);
+    // Readings first: when the platform is down there is no point rendering
+    // the (more expensive) room template.
+    const readings = await this.#entityGateway.listReadings();
+    const roomData = await this.#entityGateway.listRooms().catch((error) => {
+      this.#logger.warn?.('home.entities.rooms.failed', { error: error.message });
+      return NO_ROOMS;
+    });
 
     const roomNames = new Map(roomData.rooms.map((r) => [r.id, r.name]));
     const roomCtx = {
@@ -47,7 +48,7 @@ export class GetHomeEntities {
     const entities = [];
     for (const reading of readings) {
       const id = reading.entityId;
-      const deviceClass = reading.attributes?.device_class || null;
+      const { deviceClass } = reading;
       const hasRoom = Boolean(roomCtx.overrides[id] || roomCtx.assignments[id]);
       if (!policy.admits(id, { deviceClass, hasRoom })) continue;
       entities.push(HomeEntity.fromReading(reading, { policy, room: resolveRoom(id, roomCtx) }));
@@ -55,13 +56,10 @@ export class GetHomeEntities {
     entities.sort((a, b) => a.name.localeCompare(b.name));
 
     // Rooms and types that have nothing in them are not views anyone wants.
-    const usedRooms = new Set(entities.map((e) => e.room?.id).filter(Boolean));
-    const rooms = [
-      ...roomData.rooms.filter((r) => usedRooms.has(r.id)),
-      ...[...usedRooms].filter((id) => !roomNames.has(id))
-        .map((id) => entities.find((e) => e.room?.id === id).room)
-        .map(({ id, name }) => ({ id, name })),
-    ];
+    // Rooms read alphabetically: the platform's order is when each was created.
+    const roomsById = new Map();
+    for (const e of entities) if (e.room && !roomsById.has(e.room.id)) roomsById.set(e.room.id, { id: e.room.id, name: e.room.name });
+    const rooms = [...roomsById.values()].sort((a, b) => a.name.localeCompare(b.name));
     const usedTypes = new Set(entities.map((e) => e.type));
 
     this.#logger.debug?.('home.entities.listed', {
@@ -83,6 +81,8 @@ export class GetHomeEntities {
     try {
       return EntityCatalogPolicy.fromConfig(config.entities);
     } catch (error) {
+      // Only a rejected config is a config problem; anything else is a bug.
+      if (!(error instanceof ValidationError)) throw error;
       throw new ConfigurationError(`home dashboard config: ${error.message}`, { key: `entities.${error.field}`, value: error.value });
     }
   }

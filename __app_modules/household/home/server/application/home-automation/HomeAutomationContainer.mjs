@@ -6,17 +6,17 @@ import {
 export class HomeAutomationContainer {
   #configRepository;
   #haGateway;
-  #entityCatalog;
+  #entityGateway;
   #logger;
 
   #getConfig; #getState; #getHistory; #toggle; #activateScene; #getEntities;
 
-  constructor({ configRepository, haGateway, entityCatalog = null, logger }) {
+  constructor({ configRepository, haGateway, entityGateway = null, logger }) {
     if (!configRepository) throw new Error('HomeAutomationContainer: configRepository required');
     if (!haGateway)        throw new Error('HomeAutomationContainer: haGateway required');
     this.#configRepository = configRepository;
     this.#haGateway = haGateway;
-    this.#entityCatalog = entityCatalog;
+    this.#entityGateway = entityGateway;
     this.#logger = logger || console;
   }
 
@@ -65,11 +65,11 @@ export class HomeAutomationContainer {
     return this.#activateScene;
   }
   getHomeEntities() {
-    if (!this.#entityCatalog) throw new Error('HomeAutomationContainer: entityCatalog required for getHomeEntities');
+    if (!this.#entityGateway) throw new Error('HomeAutomationContainer: entityGateway required for getHomeEntities');
     if (!this.#getEntities) {
       this.#getEntities = new GetHomeEntities({
         configRepository: this.#configRepository,
-        entityCatalog: this.#entityCatalog, logger: this.#logger,
+        entityGateway: this.#entityGateway, logger: this.#logger,
       });
     }
     return this.#getEntities;

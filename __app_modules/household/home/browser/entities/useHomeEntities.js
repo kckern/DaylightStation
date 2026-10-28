@@ -5,6 +5,10 @@ import homeLogger from '../homeLogger.js';
 
 const PATH = 'api/v1/home-dashboard/entities';
 const REFRESH_MS = 10_000;
+// How long a toggle's expected state is shown without the platform agreeing.
+// Zigbee/MQTT state lags the service call; a poll already in flight when the
+// switch was tapped answers with the old state.
+const PENDING_MS = 5_000;
 
 const logger = homeLogger.child({ component: 'home-entities' });
 
@@ -14,7 +18,7 @@ const logger = homeLogger.child({ component: 'home-entities' });
  */
 export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
   const { data, loading, error, reload, revalidating } = useApiResource(PATH, { label: 'home entities', logger, swr: true });
-  // entityId -> stateClass we expect after a toggle the server has not reported yet
+  // entityId -> { expected: stateClass, until: ms } for toggles not yet confirmed
   const [pending, setPending] = useState({});
 
   useEffect(() => {
@@ -26,19 +30,49 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, [reload, refreshMs]);
 
-  // A fresh reading retires every guess.
-  useEffect(() => { setPending({}); }, [data]);
+  // A reading retires a guess only when it agrees with it; a guess that the
+  // platform never confirms expires, and the real state shows.
+  useEffect(() => {
+    setPending((current) => {
+      const ids = Object.keys(current);
+      if (!ids.length) return current;
+      const byId = new Map((data?.entities || []).map((e) => [e.id, e]));
+      const now = Date.now();
+      const next = {};
+      for (const id of ids) {
+        const reading = byId.get(id);
+        if (reading && reading.stateClass === current[id].expected) continue;
+        if (now >= current[id].until) continue;
+        next[id] = current[id];
+      }
+      return next;
+    });
+  }, [data]);
+
+  // Expire guesses even when no poll lands (tab hidden, platform slow).
+  useEffect(() => {
+    const ids = Object.keys(pending);
+    if (!ids.length) return undefined;
+    const soonest = Math.min(...ids.map((id) => pending[id].until));
+    const timer = setTimeout(() => {
+      setPending((current) => Object.fromEntries(Object.entries(current).filter(([, p]) => p.until > Date.now())));
+    }, Math.max(0, soonest - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [pending]);
 
   useEffect(() => {
     if (data) logger.debug('home.entities.loaded', { count: data.entities?.length ?? 0, rooms: data.rooms?.length ?? 0 });
   }, [data]);
 
   const toggle = useCallback(async (entity) => {
+    if (entity.pending) return false;
     const expected = entity.stateClass === 'on' ? 'off' : 'on';
-    setPending((p) => ({ ...p, [entity.id]: expected }));
+    setPending((p) => ({ ...p, [entity.id]: { expected, until: Date.now() + PENDING_MS } }));
     logger.info('home.entities.toggle', { entityId: entity.id, from: entity.stateClass, to: expected });
     try {
-      await DaylightAPI('api/v1/home-dashboard/toggle', { entityId: entity.id, desiredState: 'toggle' }, 'POST');
+      // An explicit target, not 'toggle': a change someone else made between
+      // render and tap must not be inverted.
+      await DaylightAPI('api/v1/home-dashboard/toggle', { entityId: entity.id, desiredState: expected }, 'POST');
       return true;
     } catch (err) {
       logger.warn('home.entities.toggle.failed', { entityId: entity.id, error: err.message });
@@ -50,7 +84,7 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
   }, [reload]);
 
   const entities = useMemo(() => (data?.entities || []).map((e) => (
-    pending[e.id] ? { ...e, stateClass: pending[e.id], state: pending[e.id], pending: true } : e
+    pending[e.id] ? { ...e, stateClass: pending[e.id].expected, state: pending[e.id].expected, pending: true } : e
   )), [data, pending]);
 
   return {

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionIcon, SegmentedControl } from '@mantine/core';
+import { ActionIcon } from '@mantine/core';
+import { IconCategory, IconHome, IconToggleRight, IconVideo } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import {
-  AppThemeProvider, SectionCard, LoadingState, ErrorState, EmptyState,
+  AppThemeProvider, AppChrome, SectionCard, LoadingState, ErrorState, EmptyState,
 } from '@/lib/ui';
 import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import CameraFeed from "../../camera/browser/feed.mjs";
@@ -10,17 +11,25 @@ import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js
 import homeLogger from './homeLogger.js';
 import { EntityDashboard } from './entities/EntityDashboard.jsx';
 import { VIEWS } from './entities/groupEntities.js';
+import './HomeApp.scss';
 
 const logger = homeLogger;
 
-const TABS = [...VIEWS.map((v) => ({ value: v.id, label: v.label })), { value: 'cameras', label: 'Cameras' }];
+const TAB_ICONS = { type: IconCategory, room: IconHome, state: IconToggleRight };
+const TABS = [
+  ...VIEWS.map((v) => {
+    const Icon = TAB_ICONS[v.id];
+    return { id: v.id, label: v.label, icon: <Icon size={20} stroke={1.75} aria-hidden="true" /> };
+  }),
+  { id: 'cameras', label: 'Cameras', icon: <IconVideo size={20} stroke={1.75} aria-hidden="true" /> },
+];
 const VIEW_KEY = 'home.view';
 
 // The last view is a per-viewer convenience; storage may be unavailable.
 function readSavedView() {
   try {
     const saved = window.localStorage.getItem(VIEW_KEY);
-    return TABS.some((t) => t.value === saved) ? saved : 'type';
+    return TABS.some((t) => t.id === saved) ? saved : 'type';
   } catch { return 'type'; }
 }
 function saveView(view) {
@@ -78,7 +87,7 @@ function CameraGrid() {
     return <EmptyState title="No cameras configured" hint="Add a camera in devices.yml to see it here." />;
   }
   return (
-    <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))' }}>
+    <div className="home-app__cameras">
       {cameras.map((cam) => <CameraCard key={cam.id} camId={cam.id} />)}
     </div>
   );
@@ -103,13 +112,11 @@ function HomeApp() {
 
   return (
     <AppThemeProvider pack="home">
-      <div style={{ padding: '1rem', maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-          <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Home</h1>
-          <SegmentedControl value={view} onChange={changeView} data={TABS} aria-label="Home view" />
+      <AppChrome title="Home" tabs={TABS} activeTab={view} onTabChange={changeView}>
+        <div className="home-app__page">
+          {view === 'cameras' ? <CameraGrid /> : <EntityDashboard view={view} />}
         </div>
-        {view === 'cameras' ? <CameraGrid /> : <EntityDashboard view={view} />}
-      </div>
+      </AppChrome>
     </AppThemeProvider>
   );
 }

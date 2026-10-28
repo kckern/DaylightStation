@@ -20,7 +20,7 @@ import { resetApiResourceCache } from "../../../../frontend/src/lib/hooks/useApi
 
 const entity = (id, over = {}) => ({
   id, domain: id.split('.')[0], name: id, state: 'off', stateClass: 'off', type: 'light',
-  room: null, unit: null, deviceClass: null, lastChanged: null, controllable: false, attributes: {}, ...over,
+  room: null, unit: null, deviceClass: null, lastChanged: null, controllable: false, detail: {}, ...over,
 });
 
 const entitiesPayload = {
@@ -71,7 +71,7 @@ describe('HomeApp — entity dashboard', () => {
     render(<HomeApp />);
     await waitFor(() => expect(screen.getByText('Kitchen light')).toBeTruthy());
     fireEvent.click(screen.getByLabelText('Hide unavailable'));
-    fireEvent.click(screen.getByText('By room'));
+    fireEvent.click(screen.getByRole('link', { name: /By room/ }));
     expect(groupTitles()).toEqual(['Kitchen', 'Office', 'No room']);
     expect(window.localStorage.getItem('home.view')).toBe('room');
   });
@@ -80,7 +80,7 @@ describe('HomeApp — entity dashboard', () => {
     routeApi();
     render(<HomeApp />);
     await waitFor(() => expect(screen.getByText('Kitchen light')).toBeTruthy());
-    fireEvent.click(screen.getByText('By state'));
+    fireEvent.click(screen.getByRole('link', { name: /By state/ }));
     expect(groupTitles()).toEqual(['On / active', 'Off / idle', 'Readings', 'Unavailable']);
     expect(screen.getByText('Hall motion')).toBeTruthy();
   });
@@ -100,9 +100,29 @@ describe('HomeApp — entity dashboard', () => {
     await waitFor(() => expect(screen.getByText('Kitchen light')).toBeTruthy());
     expect(screen.queryByLabelText(/Office TV plug: turn/)).toBeNull();
     fireEvent.click(screen.getByLabelText('Kitchen light: turn off'));
+    // An explicit target, so a change made by someone else is never inverted.
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
-      'api/v1/home-dashboard/toggle', { entityId: 'light.kitchen', desiredState: 'toggle' }, 'POST',
+      'api/v1/home-dashboard/toggle', { entityId: 'light.kitchen', desiredState: 'off' }, 'POST',
     ));
+  });
+
+  it('holds the new switch position while the platform has not caught up, and blocks a second tap', async () => {
+    let entitiesCalls = 0;
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('home-dashboard/entities')) { entitiesCalls += 1; return entitiesPayload; } // still reports "on"
+      if (path.includes('home-dashboard/toggle')) return { ok: true };
+      return { cameras: [] };
+    });
+    render(<HomeApp />);
+    await waitFor(() => expect(screen.getByText('Kitchen light')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText('Kitchen light: turn off'));
+    // The reload after the toggle still says "on"; the switch keeps showing off.
+    await waitFor(() => expect(entitiesCalls).toBeGreaterThan(1));
+    const sw = screen.getByLabelText('Kitchen light: turn on');
+    expect(sw.checked).toBe(false);
+    expect(sw.disabled).toBe(true);
+    fireEvent.click(sw);
+    expect(apiMock.mock.calls.filter(([p]) => p.includes('toggle'))).toHaveLength(1);
   });
 
   it('links each entity to Home Assistant when the config names a URL', async () => {

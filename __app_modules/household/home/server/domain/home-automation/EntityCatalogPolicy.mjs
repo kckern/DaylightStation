@@ -35,7 +35,13 @@ const DEFAULTS = Object.freeze({
     'carbon_dioxide', 'pm25', 'pm10', 'pressure', 'gas', 'moisture', 'aqi', 'volatile_organic_compounds'],
   binarySensorDeviceClasses: ['motion', 'occupancy', 'presence', 'door', 'window', 'opening',
     'garage_door', 'moisture', 'smoke', 'gas', 'problem', 'safety', 'lock', 'plug', 'power', 'running'],
-  exclude: ['*_led_state', '*permit_join*', '*_linkquality', '*_rssi', '*_signal_strength', '*_do_not_disturb'],
+  // Device-setting noise that is never a room device. Camera IR emitters and
+  // display backlights are named like lights, so they would otherwise land in
+  // Lights with a working switch.
+  exclude: ['*_led_state', '*permit_join*', '*_linkquality', '*_rssi', '*_signal_strength', '*_do_not_disturb',
+    'switch.*_ir_light*', 'switch.*_infrared*', 'switch.*_backlight*', 'switch.*_status_led*',
+    // Indicator LEDs and volume levels some integrations expose as lights.
+    'light.*_status_led*', 'light.*_led_ring*', 'light.*_scan_led*', 'light.*_volume*'],
   include: [],
   // Only lights by default. A plug can be feeding a TV, a set-top box or a
   // speaker someone is using; the household opts those in by type or by id.
@@ -45,7 +51,10 @@ const DEFAULTS = Object.freeze({
   // First match wins; household rules are tried before these.
   typeRules: [
     { type: 'light', domains: ['light'] },
-    { type: 'light', domains: ['switch'], match: ['*light*', '*lamp*', '*sconce*', '*chandelier*'] },
+    // Whole words only: "nightlight_plug" is a plug, "lighting_scene" is not a light.
+    { type: 'light', domains: ['switch'],
+      match: ['*_light', '*_lights', 'light_*', '*_light_switch', '*_lights_switch',
+        '*_lamp', '*_lamps', '*_sconce', '*_sconces', '*_chandelier', '*_chandeliers'] },
     { type: 'power', domains: ['switch'], match: ['*plug*', '*outlet*', '*socket*'] },
     { type: 'power', domains: ['sensor'], deviceClasses: ['power', 'energy', 'current', 'voltage', 'apparent_power'] },
     { type: 'battery', domains: ['sensor'], deviceClasses: ['battery'] },
@@ -89,10 +98,19 @@ function stringList(value, key) {
 
 function stringMap(value, key) {
   if (value == null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new ValidationError(`dashboard entities.${key} must be a map`, { code: 'INVALID_ENTITY_POLICY', field: key, value });
+  if (typeof value !== 'object' || Array.isArray(value)
+    || Object.values(value).some((v) => typeof v !== 'string' || !v)) {
+    throw new ValidationError(`dashboard entities.${key} must map names to text`, { code: 'INVALID_ENTITY_POLICY', field: key, value });
   }
   return { ...value };
+}
+
+function optionalBoolean(value, key) {
+  if (value == null) return null;
+  if (typeof value !== 'boolean') {
+    throw new ValidationError(`dashboard entities.${key} must be true or false`, { code: 'INVALID_ENTITY_POLICY', field: key, value });
+  }
+  return value;
 }
 
 function normalizeRule(rule, index) {
@@ -131,7 +149,7 @@ export class EntityCatalogPolicy {
       include: stringList(cfg.include, 'include') ?? DEFAULTS.include,
       controllableTypes: stringList(cfg.controllable_types, 'controllable_types') ?? DEFAULTS.controllableTypes,
       controllable: stringList(cfg.controllable, 'controllable') ?? DEFAULTS.controllable,
-      inferRooms: cfg.infer_rooms ?? DEFAULTS.inferRooms,
+      inferRooms: optionalBoolean(cfg.infer_rooms, 'infer_rooms') ?? DEFAULTS.inferRooms,
       roomAliases: stringMap(cfg.room_aliases, 'room_aliases'),
       roomOverrides: stringMap(cfg.rooms, 'rooms'),
       names: stringMap(cfg.names, 'names'),

@@ -14,6 +14,19 @@ describe('EntityCatalogPolicy defaults', () => {
     expect(policy.typeOf('light.kitchen')).toBe('light');
   });
 
+  it('matches light switches by whole word, and keeps camera IR / backlights out', () => {
+    expect(policy.typeOf('switch.nightlight_plug')).toBe('power');
+    expect(policy.typeOf('switch.living_room_lighting_scene')).toBe('switch');
+    expect(policy.typeOf('switch.porch_light')).toBe('light');
+    expect(policy.typeOf('switch.kitchen_table_light_switch')).toBe('light');
+    expect(policy.typeOf('switch.kitchen_lights_kitchen_lights_switch')).toBe('light');
+    for (const id of ['switch.doorbell_ir_lights', 'switch.office_monitor_backlight', 'switch.garage_infrared_lights',
+      'light.driveway_camera_status_led', 'light.voice_0985dd_led_ring', 'light.living_room_siren_volume_dimmer']) {
+      expect(policy.admits(id)).toBe(false);
+      expect(policy.isControllable(id)).toBe(false);
+    }
+  });
+
   it('types sensors by device class', () => {
     expect(policy.typeOf('sensor.dryer_power', { deviceClass: 'power' })).toBe('power');
     expect(policy.typeOf('sensor.office_temperature', { deviceClass: 'temperature' })).toBe('climate');
@@ -87,9 +100,17 @@ describe('EntityCatalogPolicy from household config', () => {
     expect(opted.isControllable('lock.front_door')).toBe(false);
   });
 
-  it('rejects a malformed list instead of guessing', () => {
+  it('rejects a malformed config instead of guessing', () => {
     expect(() => EntityCatalogPolicy.fromConfig({ exclude: 'switch.*' })).toThrow(/exclude must be a list/);
     expect(() => EntityCatalogPolicy.fromConfig({ types: [{ domains: ['switch'] }] })).toThrow(/needs a type/);
+    expect(() => EntityCatalogPolicy.fromConfig({ infer_rooms: 'yes' })).toThrow(/true or false/);
+    expect(() => EntityCatalogPolicy.fromConfig({ room_aliases: { bedroom1: 7 } })).toThrow(/map names to text/);
+  });
+
+  it('lets a named controllable entity through even when an exclude glob hits it', () => {
+    const p = EntityCatalogPolicy.fromConfig({ exclude: ['switch.office_*'], controllable: ['switch.office_fan_plug'] });
+    expect(p.isControllable('switch.office_fan_plug')).toBe(true);
+    expect(p.isControllable('switch.office_tv_plug')).toBe(false);
   });
 });
 
@@ -134,25 +155,27 @@ describe('resolveRoom', () => {
 });
 
 describe('HomeEntity.fromReading', () => {
-  it('classifies, names and keeps only tile attributes', () => {
+  it('classifies and names a normalized reading, keeping its detail', () => {
     const entity = HomeEntity.fromReading(
-      { entityId: 'light.kitchen', state: 'on', attributes: { friendly_name: 'Kitchen', brightness: 200, icon: 'mdi:x' }, lastChanged: 't1' },
+      { entityId: 'light.kitchen', state: 'on', name: 'Kitchen', deviceClass: null, unit: null, lastChanged: 't1', detail: { brightnessPct: 78 } },
       { policy, room: { id: 'kitchen', name: 'Kitchen', source: 'provider' } },
     );
     expect(entity).toMatchObject({
       id: 'light.kitchen', domain: 'light', name: 'Kitchen', state: 'on', stateClass: 'on', type: 'light',
-      room: { id: 'kitchen', source: 'provider' }, controllable: true, attributes: { brightness: 200 },
+      room: { id: 'kitchen', source: 'provider' }, controllable: true, detail: { brightnessPct: 78 }, lastChanged: 't1',
     });
-    expect(entity.attributes.icon).toBeUndefined();
+    expect(Object.isFrozen(entity.detail)).toBe(true);
   });
 
   it('is not controllable while unavailable', () => {
-    const entity = HomeEntity.fromReading({ entityId: 'switch.office_tv_plug', state: 'unavailable' }, { policy, room: null });
+    const entity = HomeEntity.fromReading({ entityId: 'switch.office_tv_plug', state: 'unavailable', name: null }, { policy, room: null });
     expect(entity.stateClass).toBe('unavailable');
     expect(entity.controllable).toBe(false);
   });
 
-  it('rejects an id without a domain', () => {
+  it('rejects an id without a domain, a missing type, or a malformed room', () => {
     expect(() => new HomeEntity({ id: 'kitchen', state: 'on', type: 'light' })).toThrow(/domain.object_id/);
+    expect(() => new HomeEntity({ id: 'light.kitchen', state: 'on' })).toThrow(/needs a type/);
+    expect(() => new HomeEntity({ id: 'light.kitchen', state: 'on', type: 'light', room: { id: 'k' } })).toThrow(/room needs/);
   });
 });
