@@ -582,7 +582,15 @@ For each evaluate():
 - Unlock: immediate once all requirements are satisfied
 - Grace period: configurable per-policy (default from `grace_period_seconds`)
 - Warning cooldown: after returning to `unlocked` from `warning` or `locked`,
-  `warning_cooldown_seconds` suppresses immediate re-entry into `warning`
+  `warning_cooldown_seconds` suppresses immediate re-entry into `warning`.
+  The phase stays `unlocked` while a floor is unmet; the display marks it
+  `quiet` (`resolveGovernanceDisplay`: shown, unlocked, no locking challenge,
+  obligations present) and the overlay renders rider chips only, with no life
+  meter, scrim or audio (`governance-progress-overlay--quiet`; the
+  `warning_overlay.shown`/`hidden` events carry `quiet`). The engine logs
+  `governance.warning_suppressed` once per suppression episode. The player
+  clears governance media on unmount so the engine returns to idle and stops
+  evaluating once it closes.
 
 ---
 

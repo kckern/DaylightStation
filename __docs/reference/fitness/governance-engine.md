@@ -164,7 +164,9 @@ steady for 3s before it commits, and a downgrade is suppressed while HR stays
 within 5 bpm of the committed zone's floor. The engine reads those stabilized
 zones, so it can unlock at once without flickering. On the way down, the
 grace period (`warning` phase) and the post-recovery warning cooldown
-(`warning_cooldown_seconds`) keep a brief dip from locking the video.
+(`warning_cooldown_seconds`) keep a brief dip from locking the video; during
+the cooldown the overlay shows quiet chips only (see
+`governance-system-architecture.md`, warning cooldown).
 
 ### satisfiedOnce Flag
 
