@@ -48,24 +48,45 @@ function createEngine({ participants = [], grace = 30 } = {}) {
   return { engine, zoneRankMap, zoneInfoMap };
 }
 
-describe('GovernanceEngine — ghost participant filtering', () => {
-  it('should exclude participants with no zone data from governance evaluation', () => {
+describe('GovernanceEngine — participants without zone data (no ghost filter)', () => {
+  it('should keep active participants with no zone data in governance evaluation (no ghost filter)', () => {
+    // Contract since 15afc57498: the ghost filter (zone-data presence as an
+    // activity proxy) was removed. isActive from ParticipantRoster is the
+    // authority — a connected participant whose zone has not arrived yet is
+    // still a participant, so 'all active' is NOT met on the other two alone.
     const participants = ['alice', 'bob', 'ghost'];
-    // ghost has no entry in userZoneMap — disconnected
+    // ghost has no entry in userZoneMap — zone not yet known, but roster says isActive
     const userZoneMap = { alice: 'active', bob: 'active' };
     const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
 
     engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
 
-    // ghost should not appear in requirement summaries
+    expect(engine.requirementSummary?.activeCount).toBe(3);
+    const allMissing = (engine.requirementSummary?.requirements || [])
+      .flatMap(r => r.missingUsers || []);
+    expect(allMissing).toContain('ghost');
+    expect(allMissing).not.toContain('alice');
+    expect(allMissing).not.toContain('bob');
+
+    const allSatisfied = (engine.requirementSummary?.requirements || [])
+      .every(r => r.satisfied);
+    expect(allSatisfied).toBe(false);
+    expect(engine.phase).toBe('pending');
+  });
+
+  it('should drop a participant the roster marks inactive (isActive is the authority)', () => {
+    const participants = ['alice', 'bob', 'ghost'];
+    const userZoneMap = { alice: 'active', bob: 'active' };
+    const { engine, zoneRankMap, zoneInfoMap } = createEngine({ participants, grace: 30 });
+    engine.session.roster.find(e => e.id === 'ghost').isActive = false;
+
+    engine.evaluate({ activeParticipants: participants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount: 3 });
+
     const allMissing = (engine.requirementSummary?.requirements || [])
       .flatMap(r => r.missingUsers || []);
     expect(allMissing).not.toContain('ghost');
-
-    // With 2 active participants meeting "all active", requirements should be satisfied
-    const allSatisfied = (engine.requirementSummary?.requirements || [])
-      .every(r => r.satisfied);
-    expect(allSatisfied).toBe(true);
+    expect(engine.requirementSummary?.activeCount).toBe(2);
+    expect(engine.phase).toBe('unlocked');
   });
 
   it('should not filter participants who have zone data', () => {

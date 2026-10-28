@@ -21,6 +21,24 @@ const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitne
  * @param {number} options.grace - Grace period in seconds
  * @param {Object} options.zoneData - Map of participantId -> zoneId for ZoneProfileStore
  */
+/**
+ * Canonical participant state, as ParticipantRoster.getActiveParticipantState()
+ * returns it. Since 15afc57498 a no-args evaluate() (the _triggerPulse path)
+ * reads ONLY this method — never session.roster or ZoneProfileStore. The
+ * roster already carries ZoneProfileStore zones (ParticipantRoster
+ * _buildZoneLookup), so the zoneData below reaches the engine through here.
+ */
+function canonicalState(roster) {
+  const participants = [];
+  const zoneMap = {};
+  for (const entry of roster) {
+    if (!entry?.isActive) continue;
+    participants.push(entry.id);
+    if (entry.zoneId) zoneMap[entry.id] = String(entry.zoneId).toLowerCase();
+  }
+  return { participants, zoneMap, totalCount: participants.length };
+}
+
 function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
   const zoneConfig = [
     { id: 'cool', name: 'Cool', color: '#3399ff' },
@@ -28,8 +46,10 @@ function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
     { id: 'warm', name: 'Warm', color: '#ffaa00' },
     { id: 'hot', name: 'Hot', color: '#ff0000' },
   ];
+  const roster = participants.map(id => ({ id, isActive: true, zoneId: zoneData[id] ?? null }));
   const mockSession = {
-    roster: participants.map(id => ({ id, isActive: true })),
+    roster,
+    getActiveParticipantState: () => canonicalState(roster),
     zoneProfileStore: Object.keys(zoneData).length > 0 ? {
       getProfile: (userId) => {
         const zoneId = zoneData[userId];
@@ -119,7 +139,7 @@ describe('GovernanceEngine — end-to-end phase stability', () => {
     });
 
     // Call evaluate() with NO args (simulates _triggerPulse path)
-    // Engine should read from session.roster + ZoneProfileStore
+    // Engine reads session.getActiveParticipantState() (canonical roster state)
     engine.evaluate();
     expect(engine.phase).toBe('unlocked');
 
