@@ -44,9 +44,9 @@ export function EntityTile({ entity, view, haUrl, onToggle }) {
         <div className="home-entity__name" title={entity.id}>{entity.name}</div>
         <div className="home-entity__meta">
           {context ? (
-            <span title={entity.room?.source === 'inferred' ? 'Room guessed from the entity name' : undefined}>
-              {context}{entity.room?.source === 'inferred' ? <span className="home-entity__inferred"> (by name)</span> : null}
-            </span>
+            entity.room?.source === 'inferred'
+              ? <span className="home-entity__inferred" title="Room guessed from the entity name">{context}</span>
+              : <span>{context}</span>
           ) : null}
           {age ? <span>{age}</span> : null}
         </div>
