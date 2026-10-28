@@ -116,6 +116,14 @@ describe('FitnessPlayer live content gates', () => {
     expectNoLiveScan();
   });
 
+  it('clears governance media when the player unmounts', async () => {
+    const view = renderPlayer();
+    await waitFor(() => expect(screen.getByTestId('playback')).toBeInTheDocument());
+    expect(fixture.context.setGovernanceMedia).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'plex:673797' }));
+    view.unmount();
+    expect(fixture.context.setGovernanceMedia).toHaveBeenLastCalledWith(null);
+  });
+
   it('releases KidsFun playback when exercise governance unlocks without a content scan', async () => {
     const view = renderPlayer();
     fixture.context = { ...fixture.context, governanceState: UNLOCKED };

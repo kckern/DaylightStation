@@ -72,4 +72,26 @@ describe('GovernanceEngine — warning cooldown suppression logging', () => {
       engine.destroy();
     }
   });
+
+  it('resets to idle on the next evaluate after media is cleared mid-warning', () => {
+    const { engine, clock, evaluate } = buildEngine();
+    const onPhaseChange = vi.fn();
+    engine.setCallbacks({ onPhaseChange, onPulse: () => {}, onStateChange: () => {} });
+    try {
+      evaluate('active');
+      clock.t += 1000; evaluate('cool');
+      expect(engine.phase).toBe('warning');
+
+      engine.setMedia(null);
+      clock.t += 1000; evaluate('cool');
+      expect(['warning', 'locked']).not.toContain(engine.phase);
+
+      // Well past the grace period: still no lock with no media.
+      clock.t += 60000; evaluate('cool');
+      expect(engine.phase).not.toBe('locked');
+      expect(onPhaseChange.mock.calls.flat()).not.toContain('locked');
+    } finally {
+      engine.destroy();
+    }
+  });
 });

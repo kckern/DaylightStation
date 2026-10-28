@@ -568,6 +568,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     });
   }, [currentItem, setGovernanceMedia]);
 
+  // Closing the player must stop governance evaluating; the effect above only
+  // clears when currentItem becomes null while still mounted.
+  useEffect(() => () => {
+    setGovernanceMedia?.(null);
+  }, [setGovernanceMedia]);
+
   // Governance lock decision is now solely from GovernanceEngine.state.videoLocked (SSoT)
   // Removed: local label/type matching that duplicated GovernanceEngine._mediaIsGoverned()
 
