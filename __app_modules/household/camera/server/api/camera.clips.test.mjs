@@ -4,10 +4,11 @@ import express from 'express';
 import request from 'supertest';
 import { describe, it, expect, vi } from 'vitest';
 import { createCameraRouter } from './camera.mjs';
+import { InvalidInputError } from '#apps/common/errors/SemanticErrors.mjs';
 import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
 const app = (cameraService) => { const a = express(); a.use('/camera', createCameraRouter({ cameraService, cameraEvents: { publish: vi.fn() }, logger: { error: vi.fn(), warn: vi.fn() } })); a.use(errorHandlerMiddleware()); return a; };
-const service = (over = {}) => ({ hasCamera: (id) => id === 'doorbell', listClips: vi.fn().mockResolvedValue([]), getClip: vi.fn(), ...over });
+const service = (over = {}) => ({ hasCamera: (id) => id === 'doorbell', listClips: vi.fn(async (id, day) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new InvalidInputError('day must be YYYY-MM-DD'); return []; }), getClip: vi.fn(), ...over });
 
 describe('camera clip routes', () => {
   it('lists a day of clips', async () => {

@@ -1,12 +1,13 @@
 // @vitest-environment node
 // CameraClipLibrary.test.mjs
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, utimesSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { CameraClipLibrary } from './CameraClipLibrary.mjs';
 
 const NAME = 'Mp4Record/2026-10-27/RecS07_20261027_233456_233522_0_3914808000_10AF19.mp4';
+const age = (file, secondsAgo) => { const t = new Date(Date.now() - secondsAgo * 1000); utimesSync(file, t, t); };
 let dir; afterEach(() => dir && rmSync(dir, { recursive: true, force: true }));
 const lib = ({ ledger = [], search = vi.fn().mockResolvedValue([]), fetch = vi.fn(async ({ destPath }) => { writeFileSync(destPath, 'mp4'); return 3; }) } = {}) => {
   dir = mkdtempSync(path.join(tmpdir(), 'clips-'));
@@ -48,10 +49,11 @@ describe('CameraClipLibrary', () => {
     dir = mkdtempSync(path.join(tmpdir(), 'clips-'));
     const fetch = vi.fn(async ({ destPath }) => { writeFileSync(destPath, 'mp4'); return 3; });
     const library = new CameraClipLibrary({ ledgerStore: { read: () => [] }, openSource: () => ({ search: vi.fn(), fetch }), cacheDir: dir, maxCached: 2, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } });
-    for (const n of ['a', 'b', 'c']) {
+    for (const [i, n] of ['a', 'b'].entries()) {
       await library.openClip({ cameraId: 'cam', name: `Mp4Record/2026-10-27/${n}.mp4` });
-      await new Promise((r) => setTimeout(r, 15));
+      age(path.join(dir, 'cam', `${n}.mp4`), 100 - i * 10);
     }
+    await library.openClip({ cameraId: 'cam', name: 'Mp4Record/2026-10-27/c.mp4' });
     expect(['a', 'b', 'c'].map((n) => existsSync(path.join(dir, 'cam', `${n}.mp4`)))).toEqual([false, true, true]);
   });
   it('maps a camera search through toClip, ascending, and caches it for the day', async () => {
@@ -67,5 +69,46 @@ describe('CameraClipLibrary', () => {
     expect(clips[0]).toEqual({ start: new Date(2026, 9, 28, 8, 0, 0).toISOString(), end: new Date(2026, 9, 28, 8, 1, 0).toISOString(), name: 'Mp4Record/2026-10-28/a.mp4', labels: [] });
     await library.listClips({ cameraId: 'cam', day: '2026-10-28' });
     expect(search).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a recently watched clip when pruning (touch on cache hit)', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'clips-'));
+    const fetch = vi.fn(async ({ destPath }) => { writeFileSync(destPath, 'mp4'); return 3; });
+    const library = new CameraClipLibrary({ ledgerStore: { read: () => [] }, openSource: () => ({ search: vi.fn(), fetch }), cacheDir: dir, maxCached: 2, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } });
+    const open = (n) => library.openClip({ cameraId: 'cam', name: `Mp4Record/2026-10-27/${n}.mp4` });
+    await open('a'); age(path.join(dir, 'cam', 'a.mp4'), 300);
+    await open('b'); age(path.join(dir, 'cam', 'b.mp4'), 200);
+    await open('a'); // cache hit: a is now the most recently used
+    await open('c');
+    expect(['a', 'b', 'c'].map((n) => existsSync(path.join(dir, 'cam', `${n}.mp4`)))).toEqual([true, false, true]);
+  });
+  it('removes orphaned .part files older than an hour, not fresh ones', async () => {
+    const { library } = lib();
+    mkdirSync(path.join(dir, 'cam'), { recursive: true });
+    const old = path.join(dir, 'cam', 'old.mp4.part'); const fresh = path.join(dir, 'cam', 'fresh.mp4.part');
+    writeFileSync(old, 'x'); writeFileSync(fresh, 'x'); age(old, 2 * 3600);
+    await library.openClip({ cameraId: 'cam', name: NAME });
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+  });
+  it('falls through to the camera search when the ledger line is torn, and warns', async () => {
+    const warn = vi.fn();
+    const search = vi.fn().mockResolvedValue([]);
+    const library = new CameraClipLibrary({ ledgerStore: { read: () => { throw new SyntaxError('Unexpected end of JSON input'); } }, openSource: () => ({ search, fetch: vi.fn() }), cacheDir: '/tmp/unused-clips', logger: { debug: vi.fn(), info: vi.fn(), warn } });
+    expect(await library.listClips({ cameraId: 'cam', day: '2026-10-28' })).toEqual([]);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('camera.clips.ledger_unreadable', expect.objectContaining({ camera: 'cam', day: '2026-10-28', error: 'Unexpected end of JSON input' }));
+  });
+  it('drops an expired search-cache entry and searches again', async () => {
+    let t = 1_000_000;
+    const search = vi.fn().mockResolvedValue([]);
+    const library = new CameraClipLibrary({ ledgerStore: { read: () => [] }, openSource: () => ({ search, fetch: vi.fn() }), cacheDir: '/tmp/unused-clips', now: () => t, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } });
+    await library.listClips({ cameraId: 'cam', day: '2026-10-28' });
+    await library.listClips({ cameraId: 'cam', day: '2026-10-28' });
+    expect(search).toHaveBeenCalledTimes(1);
+    t += 3 * 60 * 1000;
+    await library.listClips({ cameraId: 'cam', day: '2026-10-27' });
+    expect(library.searchCacheSize).toBe(1);
+    await library.listClips({ cameraId: 'cam', day: '2026-10-28' });
+    expect(search).toHaveBeenCalledTimes(3);
   });
 });

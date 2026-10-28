@@ -1,6 +1,6 @@
 import path from 'node:path';
 import {
-  ensureDir, fileExists, listFiles, getFileStats, deleteFile, renameFile,
+  ensureDir, fileExists, listFiles, getFileStats, deleteFile, renameFile, setFileTimes,
 } from '#system/utils/FileIO.mjs';
 import { createLocalFileResource } from '#system/http/streamFile.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
@@ -10,6 +10,7 @@ import { toClip } from '../domain/selection.mjs';
 /** A camera recording path as the recorder names it; anything else is refused. */
 const CLIP_NAME_RE = /^(\/mnt\/sd[a-z]*\/)?Mp4Record\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_.-]+\.mp4$/;
 const SEARCH_TTL_MS = 2 * 60 * 1000;
+const STALE_PART_MS = 60 * 60 * 1000;
 
 /**
  * Camera clip library: the day's clips from the detection ledger, else a live
@@ -32,8 +33,18 @@ export class CameraClipLibrary extends ICameraClipLibrary {
     this.#now = now;
   }
 
+  /** Entries held in the search cache (diagnostics and tests). */
+  get searchCacheSize() { return this.#searchCache.size; }
+
   async listClips({ cameraId, day }) {
-    const fromLedger = (this.#ledgerStore.read({ camera: cameraId, day }) || [])
+    let records = [];
+    try {
+      records = this.#ledgerStore.read({ camera: cameraId, day }) || [];
+    } catch (error) {
+      // A torn final line (ledger job mid-append) must not 500 the listing.
+      this.#logger.warn?.('camera.clips.ledger_unreadable', { camera: cameraId, day, error: error.message });
+    }
+    const fromLedger = records
       .filter((record) => record?.clip?.name)
       .map((record) => ({
         start: record.ts,
@@ -54,7 +65,10 @@ export class CameraClipLibrary extends ICameraClipLibrary {
   async #searchCamera(cameraId, day) {
     const key = `${cameraId}|${day}`;
     const cached = this.#searchCache.get(key);
-    if (cached && this.#now() - cached.at < SEARCH_TTL_MS) return cached.clips;
+    if (cached) {
+      if (this.#now() - cached.at < SEARCH_TTL_MS) return cached.clips;
+      this.#searchCache.delete(key);
+    }
     try {
       const source = this.#openSource(cameraId);
       if (!source) return [];
@@ -63,7 +77,9 @@ export class CameraClipLibrary extends ICameraClipLibrary {
         .map((record) => toClip(record, { date: day }))
         .filter((clip) => clip.name)
         .map((clip) => ({ start: clip.start.toISOString(), end: clip.end.toISOString(), name: clip.name, labels: [] })));
-      this.#searchCache.set(key, { at: this.#now(), clips });
+      const at = this.#now();
+      for (const [k, v] of this.#searchCache) if (at - v.at >= SEARCH_TTL_MS) this.#searchCache.delete(k);
+      this.#searchCache.set(key, { at, clips });
       return clips;
     } catch (error) {
       this.#logger.warn?.('camera.clips.search_failed', { camera: cameraId, day, error: error.message });
@@ -89,6 +105,9 @@ export class CameraClipLibrary extends ICameraClipLibrary {
         this.#inflight.set(filePath, pending);
       }
       await pending;
+    } else {
+      // Touch on use so pruning keeps what is being watched (LRU, not FIFO).
+      try { const now = new Date(); setFileTimes(filePath, now, now); } catch { /* best effort */ }
     }
     return createLocalFileResource(filePath, { mimeType: 'video/mp4' });
   }
@@ -111,6 +130,15 @@ export class CameraClipLibrary extends ICameraClipLibrary {
   }
 
   #prune(dir) {
+    const nowMs = this.#now();
+    for (const file of listFiles(dir)) {
+      if (!file.endsWith('.part')) continue;
+      const full = path.join(dir, file);
+      if (this.#inflight.has(full.slice(0, -'.part'.length))) continue;
+      try {
+        if (nowMs - getFileStats(full).mtimeMs > STALE_PART_MS) deleteFile(full);
+      } catch { /* vanished */ }
+    }
     const files = listFiles(dir)
       .filter((file) => file.endsWith('.mp4'))
       .map((file) => {

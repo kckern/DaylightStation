@@ -3,7 +3,6 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function createCameraRouter({ cameraService, cameraEvents, logger = console }) {
   const router = express.Router();
@@ -65,10 +64,8 @@ export function createCameraRouter({ cameraService, cameraEvents, logger = conso
     if (!cameraService.hasCamera(id)) {
       return res.status(404).json({ error: 'Camera not found', cameraId: id });
     }
+    // Day format is validated once, in CameraService.listClips (InvalidInputError -> 400).
     const day = typeof req.query.day === 'string' ? req.query.day : '';
-    if (!DAY_RE.test(day)) {
-      return res.status(400).json({ error: 'day must be YYYY-MM-DD', cameraId: id });
-    }
     try {
       const clips = await cameraService.listClips(id, day);
       res.json({ camera: id, day, clips });
