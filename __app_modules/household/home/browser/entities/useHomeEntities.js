@@ -60,7 +60,7 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
     return () => clearTimeout(timer);
   }, [pending]);
 
-  // When the figures on screen were read; the Now view says so under its sentence.
+  // When the figures on screen were read.
   const [fetchedAt, setFetchedAt] = useState(null);
   useEffect(() => {
     if (!data) return;
@@ -107,7 +107,9 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
     types: data?.types || [],
     stateClasses: data?.stateClasses || [],
     haUrl: data?.haUrl || null,
-    // Absent on a server that predates the Now view; the views degrade to the list.
+    // The mosaic's groups (byRoom / byType); absent on an older server.
+    mosaic: data?.mosaic || null,
+    // Absent on an older server; the views degrade without it.
     summary: data?.summary || null,
     fetchedAt,
     hasData: Boolean(data),

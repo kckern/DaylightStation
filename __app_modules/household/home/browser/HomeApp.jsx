@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon } from '@mantine/core';
-import { IconBolt, IconDoor, IconHome, IconList, IconVideo } from '@tabler/icons-react';
+import { IconDoor, IconLayoutGrid, IconTimeline, IconVideo } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, SectionCard, LoadingState, ErrorState, EmptyState,
@@ -10,33 +10,31 @@ import CameraFeed from "../../camera/browser/feed.mjs";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import homeLogger from './homeLogger.js';
 import { useHomeEntities } from './entities/useHomeEntities.js';
-import { NowView } from './now/NowView.jsx';
+import { TodayView } from './today/TodayView.jsx';
+import { MosaicView } from './mosaic/MosaicView.jsx';
 import { RoomsView } from './rooms/RoomsView.jsx';
-import { PowerView } from './power/PowerView.jsx';
-import { BrowseView } from './browse/BrowseView.jsx';
 import './HomeApp.scss';
 
 const logger = homeLogger;
 
 const icon = (Icon) => <Icon size={20} stroke={1.75} aria-hidden="true" />;
 const TABS = [
-  { id: 'now', label: 'Now', icon: icon(IconHome) },
+  { id: 'today', label: 'Today', icon: icon(IconTimeline) },
+  { id: 'mosaic', label: 'Mosaic', icon: icon(IconLayoutGrid) },
   { id: 'rooms', label: 'Rooms', icon: icon(IconDoor) },
-  { id: 'power', label: 'Power', icon: icon(IconBolt) },
-  { id: 'browse', label: 'Browse', icon: icon(IconList) },
   { id: 'cameras', label: 'Cameras', icon: icon(IconVideo) },
 ];
 const VIEW_KEY = 'home.view';
 // Views that lived under the old tab ids open where their content went.
-const LEGACY_VIEWS = { type: 'browse', room: 'rooms', state: 'browse' };
+const LEGACY_VIEWS = { now: 'today', browse: 'mosaic', power: 'today', type: 'mosaic', room: 'rooms', state: 'mosaic' };
 
 // The last view is a per-viewer convenience; storage may be unavailable.
 function readSavedView() {
   try {
     const saved = window.localStorage.getItem(VIEW_KEY);
     const view = LEGACY_VIEWS[saved] || saved;
-    return TABS.some((t) => t.id === view) ? view : 'now';
-  } catch { return 'now'; }
+    return TABS.some((t) => t.id === view) ? view : 'today';
+  } catch { return 'today'; }
 }
 function saveView(view) {
   try { window.localStorage.setItem(VIEW_KEY, view); } catch { /* storage unavailable */ }
@@ -99,10 +97,10 @@ function CameraGrid() {
   );
 }
 
-/** The four entity views share one polled reading of the house. */
+/** Today, Mosaic and Rooms share one polled reading of the house. */
 function HouseViews({ view }) {
   const house = useHomeEntities();
-  const { entities, rooms, types, stateClasses, haUrl, summary, fetchedAt, hasData, loading, error, reload, toggle, turnOff } = house;
+  const { entities, rooms, types, mosaic, haUrl, summary, hasData, loading, error, reload, toggle, turnOff } = house;
 
   if (!hasData && loading) return <LoadingState label="the house" rows={6} />;
   // A failed poll keeps the last good reading on screen; only a first load
@@ -111,9 +109,8 @@ function HouseViews({ view }) {
 
   const shared = { entities, rooms, types, haUrl, toggle };
   if (view === 'rooms') return <RoomsView {...shared} summary={summary} turnOff={turnOff} />;
-  if (view === 'power') return <PowerView {...shared} summary={summary} />;
-  if (view === 'browse') return <BrowseView {...shared} stateClasses={stateClasses} />;
-  return <NowView {...shared} summary={summary} fetchedAt={fetchedAt} stale={Boolean(error)} turnOff={turnOff} />;
+  if (view === 'mosaic') return <MosaicView {...shared} mosaic={mosaic} summary={summary} />;
+  return <TodayView {...shared} summary={summary} />;
 }
 
 function HomeApp() {

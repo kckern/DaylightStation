@@ -8,7 +8,7 @@ import { Disclosure } from '../ui/Disclosure.jsx';
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
 import { formatAge, formatDegrees } from '../entities/formatEntityState.js';
-import { turnOffLabel } from '../now/NowView.jsx';
+import { turnOffLabel } from '../ui/turnOffLabel.js';
 import homeLogger from '../homeLogger.js';
 import '../ui/home-ui.scss';
 import './RoomsView.scss';

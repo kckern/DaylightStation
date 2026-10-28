@@ -58,83 +58,129 @@ const entitiesPayload = {
   },
 };
 
+const mosaicPayload = {
+  byRoom: [
+    { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen', 'light.kitchen_table'] },
+    { id: 'office', label: 'Office', entityIds: ['light.office_desk', 'switch.office_tv_plug', 'sensor.office_temperature', 'sensor.office_power', 'binary_sensor.office_door', 'sensor.remote_battery', 'binary_sensor.hall_motion'] },
+  ],
+  byType: [
+    { id: 'light', label: 'Lights', entityIds: ['light.kitchen', 'light.kitchen_table', 'light.office_desk'] },
+    { id: 'power', label: 'Power', entityIds: ['switch.office_tv_plug', 'sensor.panel_power', 'sensor.office_power'] },
+  ],
+};
+entitiesPayload.mosaic = mosaicPayload;
+
+const DAY = '2026-10-28';
+// Two lanes, one day: the shape GET home-dashboard/timeline answers with.
+const timelinePayload = (range) => ({
+  range, timeZone: 'America/Los_Angeles', generatedAt: `${DAY}T19:00:00.000Z`,
+  days: [{ day: DAY, startIso: `${DAY}T07:00:00.000Z`, endIso: `${DAY}T19:00:00.000Z` }],
+  lanes: [
+    { id: 'power', kind: 'power', label: 'Power', camera: null, entityIds: { primary: 'sensor.panel_power', energy: null },
+      days: [{ day: DAY, hasData: true, points: [{ t: Date.parse(`${DAY}T08:00:00Z`), v: 400, max: 500 }, { t: Date.parse(`${DAY}T09:00:00Z`), v: 900, max: 1200 }], total: { kwh: 16.34 } }],
+      total: { kwh: 16.34 } },
+    { id: 'doorbell', kind: 'events', label: 'Doorbell', camera: 'porch-cam', entityIds: { primary: 'binary_sensor.porch_visitor', energy: null },
+      days: [{ day: DAY, hasData: true, marks: [Date.parse(`${DAY}T17:00:00Z`)], total: { count: 1 } }],
+      total: { count: 1 } },
+  ],
+});
+
 function routeApi({ entities = entitiesPayload, cameras = { cameras: [] } } = {}) {
   apiMock.mockImplementation(async (path) => {
     if (path.includes('home-dashboard/entities')) {
       if (entities instanceof Error) throw entities;
       return entities;
     }
+    if (path.includes('home-dashboard/timeline')) return timelinePayload(path.split('range=')[1]);
+    if (path.includes('/history')) return { kind: 'line', points: [] };
     if (path.includes('home-dashboard/toggle')) return { ok: true };
+    if (/camera\/[^/]+\/clips/.test(path)) return { camera: 'porch-cam', day: DAY, clips: [] };
     if (path.includes('camera')) return cameras;
     throw new Error(`unexpected ${path}`);
   });
 }
 
 const openView = (name) => fireEvent.click(screen.getByRole('link', { name }));
-const sentence = () => plain(document.querySelector('.home-status').textContent);
-const sectionTitles = () => [...document.querySelectorAll('.home-section__title')].map((el) => el.textContent);
+const STATUS = 'The house is drawing 505 W, with 2 lights on and a door open in the office.';
+const statusLines = () => [...document.querySelectorAll('.home-today__now')].map((el) => plain(el.textContent));
+const laneLabels = () => [...document.querySelectorAll('.home-lane__label')].map((el) => el.textContent);
+const tabLabels = () => [...document.querySelectorAll('.ds-chrome__tab-label')].map((el) => el.textContent);
+const lanesShown = () => waitFor(() => expect(laneLabels()).toEqual(['Power', 'Doorbell']));
 
-describe('HomeApp — Now', () => {
+describe('HomeApp — Today', () => {
   beforeEach(() => {
     apiMock.mockReset();
     resetApiResourceCache();
     window.localStorage.clear();
   });
 
-  it('opens on Now with the house in a sentence and only the non-empty sections', async () => {
+  it('opens on Today: the house in one sentence, then the lanes', async () => {
     routeApi();
     render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    expect(sentence()).toBe('The house is drawing 505 W, with 2 lights on and a door open in the office.');
-    expect(sectionTitles()).toEqual(['On', 'Open', 'Needs attention', 'Climate']);
-    // Lit lamps by room, with a plain "Off" each and one for the whole room.
-    const kitchenGroup = screen.getByText('Kitchen').closest('.home-section__group');
-    expect(within(kitchenGroup).getByLabelText('Kitchen light: turn off')).toBeTruthy();
-    expect(within(kitchenGroup).getByLabelText('Turn off all 2 lights in Kitchen')).toBeTruthy();
-    // The plug is on but not controllable: counted, listed on demand, no switch.
-    expect(screen.getByText('Also on: 1 plug')).toBeTruthy();
-    expect(screen.queryByText('Office TV plug')).toBeNull();
-    fireEvent.click(screen.getByText('Also on: 1 plug'));
-    expect(screen.getByText('Office TV plug')).toBeTruthy();
-    expect(screen.queryByLabelText(/Office TV plug: turn/)).toBeNull();
-    // A sensor named after its state is named after its room.
-    expect(screen.getByText('Office door')).toBeTruthy();
-    expect(screen.getByText('1 battery low')).toBeTruthy();
-    expect(screen.getByText('1 device not answering')).toBeTruthy();
-    expect(screen.queryByText('Hall motion')).toBeNull();
+    await lanesShown();
+    expect(statusLines()).toEqual([STATUS]);
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today');
   });
 
-  it('turns off a room\'s lamps with one tap, each as an explicit off', async () => {
+  it('offers exactly Today, Mosaic, Rooms and Cameras', async () => {
     routeApi();
     render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    fireEvent.click(screen.getByLabelText('Turn off all 2 lights in Kitchen'));
-    await waitFor(() => expect(apiMock.mock.calls.filter(([p]) => p.includes('toggle'))).toHaveLength(2));
-    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/toggle', { entityId: 'light.kitchen', desiredState: 'off' }, 'POST');
-    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/toggle', { entityId: 'light.kitchen_table', desiredState: 'off' }, 'POST');
+    await lanesShown();
+    expect(tabLabels()).toEqual(['Today', 'Mosaic', 'Rooms', 'Cameras']);
   });
 
-  it('says so when the server sends no summary, and still shows the climate', async () => {
-    const { summary, ...withoutSummary } = entitiesPayload;
-    routeApi({ entities: withoutSummary });
+  it.each([
+    ['now', 'Today'], ['power', 'Today'], ['browse', 'Mosaic'], ['type', 'Mosaic'], ['state', 'Mosaic'], ['room', 'Rooms'],
+  ])('a saved home.view of "%s" opens %s', async (saved, opens) => {
+    window.localStorage.setItem('home.view', saved);
+    routeApi();
     render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    expect(sentence()).toBe('All quiet. Nothing is on.');
-    expect(screen.getByText(/does not report a house summary/)).toBeTruthy();
-    expect(sectionTitles()).toEqual(['Climate']);
+    if (opens === 'Today') await lanesShown();
+    if (opens === 'Mosaic') await waitFor(() => expect(document.querySelectorAll('.home-square').length).toBeGreaterThan(0));
+    if (opens === 'Rooms') await waitFor(() => expect(document.querySelectorAll('.home-room__row').length).toBeGreaterThan(0));
+    expect(screen.getByRole('link', { name: opens }).getAttribute('aria-current')).toBe('page');
   });
 
   it('shows ErrorState with a working retry when Home Assistant cannot be read', async () => {
     routeApi({ entities: new Error('Home Assistant returned no entities') });
     render(<HomeApp />);
     await waitFor(() => expect(screen.getByText(/returned no entities/)).toBeTruthy());
+    expect(document.querySelector('.home-today')).toBeNull();
     routeApi();
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
+    await lanesShown();
+    expect(statusLines()).toEqual([STATUS]);
   });
 });
 
-describe('HomeApp — Rooms, Power, Browse', () => {
+describe('HomeApp — Mosaic', () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    resetApiResourceCache();
+    window.localStorage.clear();
+    routeApi();
+  });
+
+  it('draws every grouped entity as a square and opens its drawer; Escape closes it', async () => {
+    render(<HomeApp />);
+    await lanesShown();
+    openView('Mosaic');
+    expect(window.localStorage.getItem('home.view')).toBe('mosaic');
+    expect(document.querySelectorAll('.home-square')).toHaveLength(9);
+    fireEvent.click(screen.getByRole('button', { name: /^Office TV plug:/ }));
+    const sheet = await screen.findByRole('dialog', { name: 'Office TV plug' });
+    expect(within(sheet).getByText('switch.office_tv_plug')).toBeTruthy();
+    expect(within(sheet).getByText('Open in Home Assistant').getAttribute('href'))
+      .toBe('https://ha.example/history?entity_id=switch.office_tv_plug');
+    // A plug is not controllable: no switch in its drawer.
+    expect(within(sheet).queryByRole('switch')).toBeNull();
+    // The app owns the one dismiss stack, so Escape anywhere closes it.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+describe('HomeApp — Rooms', () => {
   beforeEach(() => {
     apiMock.mockReset();
     resetApiResourceCache();
@@ -144,7 +190,7 @@ describe('HomeApp — Rooms, Power, Browse', () => {
 
   it('lists one row per room and opens a room in place, readings behind a disclosure', async () => {
     render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
+    await lanesShown();
     openView('Rooms');
     expect(window.localStorage.getItem('home.view')).toBe('rooms');
     const rows = [...document.querySelectorAll('.home-room__row')].map((r) => r.querySelector('.home-room__name').textContent);
@@ -162,63 +208,31 @@ describe('HomeApp — Rooms, Power, Browse', () => {
     expect(screen.getByText('Remote battery')).toBeTruthy();
   });
 
-  it('summarises power: the whole-house figure, then the top circuits with a bar', async () => {
+  it('turns off a room\'s lamps with one tap, each as an explicit off', async () => {
     render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    openView('Power');
-    expect(sentence()).toBe('Drawing 505 W right now.');
-    expect(screen.getByText('Measured by Panel Power')).toBeTruthy();
-    expect(screen.getByLabelText('Office, 302 W')).toBeTruthy();
-    expect(document.querySelector('.home-breakdown__fill').style.width).toBe('100%');
-  });
-
-  it('browses as a list grouped by type, room or state, remembering the grouping', async () => {
-    render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    openView('Browse');
-    const headings = () => [...document.querySelectorAll('.home-browse__heading > span:first-child')].map((el) => el.textContent);
-    expect(headings()).toEqual(['Lights', 'Power', 'Climate', 'Doors & windows', 'Batteries']);
-    expect(screen.queryByText('Hall motion')).toBeNull();
-    fireEvent.click(screen.getByText('Show 1 not answering'));
-    expect(screen.getByText('Hall motion')).toBeTruthy();
-    fireEvent.click(screen.getByRole('radio', { name: 'Room' }));
-    expect(headings()).toEqual(['Kitchen', 'Office', 'No room']);
-    expect(window.localStorage.getItem('home.browse.mode')).toBe('room');
-    fireEvent.click(screen.getByRole('radio', { name: 'State' }));
-    expect(headings()).toEqual(['On / active', 'Off / idle', 'Readings', 'Unavailable']);
-  });
-
-  it('filters the list by search across name and room', async () => {
-    render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    openView('Browse');
-    fireEvent.change(screen.getByLabelText('Find an entity'), { target: { value: 'office' } });
-    expect(screen.queryByText('Kitchen light')).toBeNull();
-    expect(screen.getByText('Office TV plug')).toBeTruthy();
-  });
-
-  it('switches lights inline in Browse, through the toggle endpoint, and nothing else', async () => {
-    render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    openView('Browse');
-    expect(screen.queryByLabelText(/Office TV plug: turn/)).toBeNull();
-    fireEvent.click(screen.getByLabelText('Kitchen light: turn off'));
-    // An explicit target, so a change made by someone else is never inverted.
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
-      'api/v1/home-dashboard/toggle', { entityId: 'light.kitchen', desiredState: 'off' }, 'POST',
-    ));
+    await lanesShown();
+    openView('Rooms');
+    fireEvent.click(document.querySelector('[data-room-id="kitchen"] .home-room__row'));
+    const off = screen.getByLabelText('Turn off all 2 lights in Kitchen');
+    expect(off.textContent).toBe('Turn off both');
+    fireEvent.click(off);
+    await waitFor(() => expect(apiMock.mock.calls.filter(([p]) => p.includes('toggle'))).toHaveLength(2));
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/toggle', { entityId: 'light.kitchen', desiredState: 'off' }, 'POST');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/toggle', { entityId: 'light.kitchen_table', desiredState: 'off' }, 'POST');
   });
 
   it('holds the new switch position while the platform has not caught up, and blocks a second tap', async () => {
     let entitiesCalls = 0;
-    apiMock.mockImplementation(async (path) => {
+    routeApi();
+    const routed = apiMock.getMockImplementation();
+    apiMock.mockImplementation(async (path, ...rest) => {
       if (path.includes('home-dashboard/entities')) { entitiesCalls += 1; return entitiesPayload; } // still reports "on"
-      if (path.includes('home-dashboard/toggle')) return { ok: true };
-      return { cameras: [] };
+      return routed(path, ...rest);
     });
     render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    openView('Browse');
+    await lanesShown();
+    openView('Rooms');
+    fireEvent.click(document.querySelector('[data-room-id="kitchen"] .home-room__row'));
     fireEvent.click(screen.getByLabelText('Kitchen light: turn off'));
     // The reload after the toggle still says "on"; the switch keeps showing off.
     await waitFor(() => expect(entitiesCalls).toBeGreaterThan(1));
@@ -227,33 +241,6 @@ describe('HomeApp — Rooms, Power, Browse', () => {
     expect(sw.disabled).toBe(true);
     fireEvent.click(sw);
     expect(apiMock.mock.calls.filter(([p]) => p.includes('toggle'))).toHaveLength(1);
-  });
-
-  it('opens a detail sheet from a row, with the Home Assistant link only there', async () => {
-    render(<HomeApp />);
-    await waitFor(() => expect(document.querySelector('.home-status')).toBeTruthy());
-    openView('Browse');
-    expect(document.querySelector('a[href*="ha.example"]')).toBeNull();
-    fireEvent.click(screen.getByLabelText('Office TV plug, On'));
-    const sheet = screen.getByRole('dialog', { name: 'Office TV plug' });
-    expect(within(sheet).getByText('Office (guessed from the name)')).toBeTruthy();
-    expect(within(sheet).getByText('switch.office_tv_plug')).toBeTruthy();
-    expect(within(sheet).getByText('Open in Home Assistant').getAttribute('href'))
-      .toBe('https://ha.example/history?entity_id=switch.office_tv_plug');
-    expect(within(sheet).queryByRole('switch')).toBeNull();
-    fireEvent.click(within(sheet).getByLabelText('Close'));
-    expect(screen.queryByRole('dialog')).toBeNull();
-    // Escape closes it too: the app owns the one dismiss stack.
-    fireEvent.click(screen.getByLabelText('Office TV plug, On'));
-    expect(screen.getByRole('dialog', { name: 'Office TV plug' })).toBeTruthy();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('opens the view an old saved tab id pointed at', async () => {
-    window.localStorage.setItem('home.view', 'type');
-    render(<HomeApp />);
-    await waitFor(() => expect(screen.getByLabelText('Find an entity')).toBeTruthy());
   });
 });
 

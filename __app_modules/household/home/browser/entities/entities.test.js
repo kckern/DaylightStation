@@ -1,70 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { BROWSE_MODES, groupEntities, filterEntities } from './groupEntities.js';
 import {
   displayName, formatEntityState, formatAge, formatSince, formatWatts, formatKwh, formatDegrees,
 } from './formatEntityState.js';
 
 const e = (id, over = {}) => ({
   id, domain: id.split('.')[0], name: over.name || id, state: 'off', stateClass: 'off', type: 'light', room: null, ...over,
-});
-
-const entities = [
-  e('light.kitchen', { name: 'Kitchen', state: 'on', stateClass: 'on', room: { id: 'kitchen', name: 'Kitchen' } }),
-  e('light.office', { name: 'Office', room: { id: 'office', name: 'Office' } }),
-  e('sensor.temp', { name: 'Temp', type: 'climate', stateClass: 'reading', state: '71' }),
-  e('switch.plug', { name: 'Plug', type: 'power', stateClass: 'unavailable', state: 'unavailable', room: { id: 'office', name: 'Office' } }),
-];
-const meta = {
-  rooms: [{ id: 'office', name: 'Office' }, { id: 'kitchen', name: 'Kitchen' }],
-  types: [{ id: 'light', label: 'Lights' }, { id: 'power', label: 'Power' }, { id: 'climate', label: 'Climate' }],
-  stateClasses: [{ id: 'on', label: 'On' }, { id: 'off', label: 'Off' }, { id: 'reading', label: 'Readings' }, { id: 'unavailable', label: 'Unavailable' }],
-};
-const shape = (groups) => groups.map((g) => [g.id, g.entities.map((x) => x.id)]);
-
-describe('groupEntities', () => {
-  it('offers type, room and state as grouping modes', () => {
-    expect(BROWSE_MODES.map((m) => m.id)).toEqual(['type', 'room', 'state']);
-  });
-
-  it('groups by type in the server type order, counting what is on', () => {
-    const groups = groupEntities(entities, 'type', meta);
-    expect(shape(groups)).toEqual([
-      ['light', ['light.kitchen', 'light.office']],
-      ['power', ['switch.plug']],
-      ['climate', ['sensor.temp']],
-    ]);
-    expect(groups[0]).toMatchObject({ label: 'Lights', onCount: 1 });
-  });
-
-  it('groups by room in room order with a trailing "No room" group', () => {
-    expect(shape(groupEntities(entities, 'room', meta))).toEqual([
-      ['office', ['light.office', 'switch.plug']],
-      ['kitchen', ['light.kitchen']],
-      ['__none__', ['sensor.temp']],
-    ]);
-  });
-
-  it('groups by state class and drops empty groups', () => {
-    expect(shape(groupEntities(entities, 'state', meta)).map(([id]) => id)).toEqual(['on', 'off', 'reading', 'unavailable']);
-    expect(groupEntities([entities[0]], 'state', meta).map((g) => g.id)).toEqual(['on']);
-  });
-
-  it('keeps an entity whose group the metadata does not know', () => {
-    const groups = groupEntities([e('vacuum.robo', { type: 'cleaning' })], 'type', meta);
-    expect(shape(groups)).toEqual([['cleaning', ['vacuum.robo']]]);
-  });
-});
-
-describe('filterEntities', () => {
-  it('matches name, id or room, case-insensitively', () => {
-    expect(filterEntities(entities, { query: 'KITCH' }).map((x) => x.id)).toEqual(['light.kitchen']);
-    expect(filterEntities(entities, { query: 'office' }).map((x) => x.id)).toEqual(['light.office', 'switch.plug']);
-    expect(filterEntities(entities, { query: 'sensor.' }).map((x) => x.id)).toEqual(['sensor.temp']);
-  });
-
-  it('can hide unavailable entities', () => {
-    expect(filterEntities(entities, { hideUnavailable: true }).map((x) => x.id)).not.toContain('switch.plug');
-  });
 });
 
 describe('formatEntityState', () => {
