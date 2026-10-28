@@ -9,3 +9,7 @@ export { EntityCatalogPolicy, ENTITY_TYPES } from './EntityCatalogPolicy.mjs';
 export { HomeEntity, STATE_CLASSES, stateClassOf } from './HomeEntity.mjs';
 export { resolveRoom, buildRoomPrefixes } from './resolveRoom.mjs';
 export { HouseSummaryPolicy, summarizeHouse } from './HouseSummary.mjs';
+export {
+  dayWindows, localMidnight, bucketLine, toIntervals, risingEdges, sumIntervalsMs,
+  dailyCounterTotal, counterDelta, integrateKwh,
+} from './historySeries.mjs';
