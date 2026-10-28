@@ -12,7 +12,8 @@
  * `entities` (the entity policy for /home: which Home Assistant entities are
  * shown, their types and rooms, and which may be switched — validated by
  * EntityCatalogPolicy), and `now` / `power` (what the Now view reports and
- * which meter is the whole house — validated by HouseSummaryPolicy). Every
+ * which meter is the whole house — validated by HouseSummaryPolicy), `timeline`
+ * (Today timeline lanes) and `mosaic` (Mosaic grouping). Every
  * section is optional; an absent file means defaults throughout.
  *
  * @module adapters/persistence/yaml/YamlHomeDashboardConfigRepository
@@ -50,13 +51,13 @@ export class YamlHomeDashboardConfigRepository extends IHomeDashboardConfigRepos
 
   /**
    * Load the home-dashboard config.
-   * @returns {Promise<{ summary: Object, rooms: Array, entities: Object, now: Object, power: Object }>}
+   * @returns {Promise<{ summary: Object, rooms: Array, entities: Object, now: Object, power: Object, timeline: Object, mosaic: Object }>}
    */
   async load() {
     const raw = this.#dataService.household.read(CONFIG_PATH, this.#householdId);
     if (!raw) {
       this.#logger.warn?.('home.dashboard.config.missing', { householdId: this.#householdId });
-      return { summary: {}, rooms: [], entities: {}, now: {}, power: {} };
+      return { summary: {}, rooms: [], entities: {}, now: {}, power: {}, timeline: {}, mosaic: {} };
     }
     return {
       summary: raw.summary || {},
@@ -67,6 +68,9 @@ export class YamlHomeDashboardConfigRepository extends IHomeDashboardConfigRepos
       // summary (which meter is the whole house); HouseSummaryPolicy validates.
       now: raw.now && typeof raw.now === 'object' ? raw.now : {},
       power: raw.power && typeof raw.power === 'object' ? raw.power : {},
+      // Today timeline lanes and mosaic grouping; their policies validate shape.
+      timeline: raw.timeline && typeof raw.timeline === 'object' ? raw.timeline : {},
+      mosaic: raw.mosaic && typeof raw.mosaic === 'object' ? raw.mosaic : {},
     };
   }
 }
