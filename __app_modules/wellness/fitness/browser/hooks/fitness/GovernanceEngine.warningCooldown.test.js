@@ -84,7 +84,7 @@ describe('GovernanceEngine — warning cooldown suppression logging', () => {
 
       engine.setMedia(null);
       clock.t += 1000; evaluate('cool');
-      expect(['warning', 'locked']).not.toContain(engine.phase);
+      expect(engine.phase).toBeNull();
 
       // Well past the grace period: still no lock with no media.
       clock.t += 60000; evaluate('cool');

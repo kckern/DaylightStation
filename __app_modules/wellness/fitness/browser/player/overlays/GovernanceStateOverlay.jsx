@@ -97,7 +97,7 @@ function useWarningOverlayObservability(containerRef, rowKeys, scrimStep, quiet 
         meter: root.querySelector('.governance-life-meter__frame'),
         chip: root.querySelector('.governance-progress-overlay__chip'),
       }, host.querySelector('.governance-warning-scrim'));
-      const payload = { ...result, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt };
+      const payload = { ...result, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt, quiet };
       if (lastDimmed === null) {
         warningLogger().info('governance.warning_overlay.paint_check', { ...payload, compositing: compositing() });
       }
@@ -118,7 +118,7 @@ function useWarningOverlayObservability(containerRef, rowKeys, scrimStep, quiet 
       const stats = probe.read();
       if (stats) {
         warningLogger().sampled('governance.warning_overlay.frame_stats',
-          { ...stats, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt },
+          { ...stats, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt, quiet },
           { maxPerMinute: 12 });
       }
     }, FRAME_STATS_MS);
@@ -129,12 +129,15 @@ function useWarningOverlayObservability(containerRef, rowKeys, scrimStep, quiet 
       const finalStats = probe.read();
       probe.stop();
       if (finalStats) {
-        warningLogger().info('governance.warning_overlay.frame_stats', { ...finalStats, final: true, rows: rowKeysRef.current });
+        warningLogger().info('governance.warning_overlay.frame_stats', { ...finalStats, final: true, rows: rowKeysRef.current, quiet });
       }
       warningLogger().info('governance.warning_overlay.hidden', {
         rows: rowKeysRef.current, visibleMs: Date.now() - shownAt, quiet,
       });
     };
+  // `quiet` is fixed for an instance's lifetime: the dispatch below remounts
+  // the overlay on a mode change (quiet <-> warning), so the mount-only effect
+  // never sees it change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef]);
 
@@ -276,7 +279,8 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
   // `notches` steps every ~0.5s while `countdown` (whole seconds) steps every
   // 1s — ignoring it dropped every other notch, so the meter fell two at a time.
   if (countdownDelta < 0.3 && prevProps.notches === nextProps.notches
-    && prevProps.rows === nextProps.rows && prevProps.offenders === nextProps.offenders) {
+    && prevProps.rows === nextProps.rows && prevProps.offenders === nextProps.offenders
+    && prevProps.quiet === nextProps.quiet) {
     return true; // props are equal, skip re-render
   }
   return false;
@@ -783,7 +787,7 @@ const GovernanceStateOverlay = ({
     // Cooldown: the engine is unlocked but a floor is unmet. Chips only; no
     // scrim, no meter, no panel, no audio over the playing video.
     if (display.quiet) {
-      return <GovernanceWarningOverlay quiet rows={warningRows} />;
+      return warningRows.length ? <GovernanceWarningOverlay quiet rows={warningRows} /> : null;
     }
 
     if (normalizedStatus === 'warning') {

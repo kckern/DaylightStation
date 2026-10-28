@@ -135,15 +135,17 @@ describe('GovernanceStateOverlay — quiet cooldown chips', () => {
     expect(view.container.querySelector('.governance-lock')).toBeNull();
     view.rerender(<GovernanceStateOverlay display={display([row()], 'warning')} />);
     expect(view.container.querySelector('.governance-life-meter')).toBeTruthy();
+    expect(view.container.querySelector('.governance-warning-scrim')).toBeTruthy();
     expect(view.container.querySelector('.governance-lock')).toBeNull();
   });
   it('a cycle-lock display (unlocked, quiet false) still renders the panel', () => {
     const { container } = render(<GovernanceStateOverlay display={{ ...display([], 'unlocked'), quiet: false, show: true }} />);
     expect(container.querySelector('.governance-lock')).toBeTruthy();
   });
-  it('quiet with zero rows renders no panel and does not crash', () => {
+  it('quiet with zero rows renders nothing at all', () => {
     const { container } = render(<GovernanceStateOverlay display={{ ...display([], 'unlocked'), videoLocked: false, quiet: true }} />);
     expect(container.querySelector('.governance-lock')).toBeNull();
-    expect(container.querySelectorAll('.governance-progress-overlay__chip')).toHaveLength(0);
+    expect(container.querySelector('.governance-progress-overlay')).toBeNull();
+    expect(container.firstChild).toBeNull();
   });
 });
