@@ -109,17 +109,22 @@ export function displayName(entity) {
   return entity.room ? `${entity.room.name} ${what}` : `${what.charAt(0).toUpperCase()}${what.slice(1)}`;
 }
 
-/** "3m ago" style age of the last change, or null. */
-export function formatAge(iso, now = Date.now()) {
+/**
+ * "3m ago" style age of the last change, or null. Never "now": that word is
+ * kept for what is on. `words` spells it out for prose: "3 minutes ago".
+ */
+export function formatAge(iso, now = Date.now(), { words = false } = {}) {
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return null;
   const s = Math.max(0, Math.round((now - t) / 1000));
-  if (s < 60) return 'just now';
+  // In prose the figure stays on the line with its noun (no-break space).
+  const unit = (n, short, long) => (words ? `${n}\u00a0${long}${n === 1 ? '' : 's'} ago` : `${n}${short} ago`);
+  if (s < 60) return words ? 'under a minute ago' : '<1m ago';
   const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return unit(m, 'm', 'minute');
   const h = Math.round(m / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
+  if (h < 48) return unit(h, 'h', 'hour');
+  return unit(Math.round(h / 24), 'd', 'day');
 }
 
 /** "8:29 pm" today, "yesterday 8:29 pm", or "Oct 20" — when something happened, as a person says it. */

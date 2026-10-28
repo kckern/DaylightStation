@@ -33,12 +33,12 @@
 
   &__more {
     display: flex;
-    gap: 1rem;
+    flex-wrap: wrap;
+    gap: 0 1rem;
     font-size: 0.8125rem;
     color: var(--ds-text-low);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-variant-numeric: tabular-nums;
+
+    > span { white-space: nowrap; }
   }
 }

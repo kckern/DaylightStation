@@ -61,8 +61,6 @@ $room-columns-phone: minmax(0, 1fr) 4.5rem 2.75rem 3.75rem 1rem;
   &__lights { display: inline-flex; align-items: center; gap: 0.4rem; }
   &__temp, &__motion { text-align: right; }
 
-  &__none { color: var(--ds-text-low); }
-
   // Lamplight: the one colour on the row.
   &__dot {
     display: inline-block;

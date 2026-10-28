@@ -120,10 +120,17 @@ describe('displayName', () => {
 describe('formatAge', () => {
   const now = Date.parse('2026-10-27T12:00:00Z');
   it.each([
-    ['2026-10-27T11:59:30Z', 'just now'], ['2026-10-27T11:55:00Z', '5m ago'],
+    ['2026-10-27T11:59:30Z', '<1m ago'], ['2026-10-27T11:55:00Z', '5m ago'],
     ['2026-10-27T09:00:00Z', '3h ago'], ['2026-10-20T12:00:00Z', '7d ago'], ['nope', null],
   ])('%s → %s', (iso, expected) => {
     expect(formatAge(iso, now)).toBe(expected);
+  });
+  it('spells the age out for prose, the figure bound to its noun', () => {
+    const words = (iso) => formatAge(iso, now, { words: true });
+    expect(words('2026-10-27T11:59:30Z')).toBe('under a minute ago');
+    expect(words('2026-10-27T11:59:00Z')).toBe('1\u00a0minute ago');
+    expect(words('2026-10-27T11:55:00Z')).toBe('5\u00a0minutes ago');
+    expect(words('2026-10-27T09:00:00Z')).toBe('3\u00a0hours ago');
   });
 });
 

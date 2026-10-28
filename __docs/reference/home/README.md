@@ -7,8 +7,8 @@ that are not empty — and keeps the full inventory one tab away.
 
 | View | What it shows |
 |---|---|
-| **Now** (default) | A live status sentence ("The house is drawing 505 W, with 9 lights on and a door open in the garage. Someone is in the office."), then sections that render only when they have something: **On** (lit lamps by room, each with a plain "Off" and a room-level "Turn off all N"; plugs and other devices that are on behind a disclosure, no switches), **Open** (doors, windows, covers, with when they opened), **Motion** (rooms with someone in them now, then the most recently seen), **Needs attention** (low batteries and devices not answering — counts first, lists on demand), **Climate** (one line per room with a temperature; the thermostat's action and humidity beside it; the outdoor reading in the heading). |
-| **Rooms** | One row per room: name, lights ("2 on" with an amber dot, "dark", or "no lights"), temperature, last motion. Tap a row to open the room in place: lights with switches (and a room-level off), then plugs / doors / media / fans, then "Show all N readings and switches" for sensors, batteries, meters and automation flags. Roomless entities gather under "Elsewhere", last. |
+| **Now** (default) | A live status sentence ("The house is drawing 505 W, with 9 lights on and a door open in the garage. Someone is in the office." — it names only rooms with someone in them right now; otherwise "The last movement was in the kitchen, 8 minutes ago."), then sections that render only when they have something: **On** (lit lamps by room, each with a plain "Off" and a room-level "Turn off all N"; plugs and other devices that are on behind a disclosure, no switches), **Open** (doors, windows, covers, with when they opened), **Motion** (rooms with someone in them now, then the most recently seen; a roomless presence flag such as "KC home" is listed as a person, not a room), **Needs attention** (presence sensors stuck "on", low batteries and devices not answering — counts first, lists on demand), **Climate** (one line per room with a temperature; the thermostat's action and humidity beside it; the outdoor reading in the heading). |
+| **Rooms** | One row per room: name, lights ("2 on" with an amber dot; a dark room says nothing), temperature, last motion — a cell is a figure or blank, never a dash. Tap a row to open the room in place: lights with switches (and a room-level off), then plugs / doors / media / fans, then "Show all N readings and switches" for sensors, batteries, meters and automation flags. Roomless entities gather under "Elsewhere", last. |
 | **Power** | One sentence of totals (current draw, today's and this month's kWh, and which meter says so), the top circuits as a ranked list with a proportional bar, plugs that are on, and every meter behind a disclosure. |
 | **Browse** | The inventory as a dense searchable list, grouped by **type**, **room** or **state** (remembered per viewer). Hairline rows, state right-aligned, inline switches on lights only. Unavailable entities are hidden until "Show N not answering" (never hidden in the state grouping). |
 | **Cameras** | The camera grid, unchanged. |
@@ -48,9 +48,9 @@ only where control is allowed *and* plausibly wanted.
   summary: {
     power: { wholeHouse: {entityId, watts}|null, energyToday: {entityId, kwh}|null,
              energyThisMonth: {entityId, kwh}|null, topConsumers: [{entityId, watts}] },
-    on: [entityId], open: [entityId], motion: [entityId],
+    on: [entityId], open: [entityId], motion: [entityId], stuck: [entityId],
     lowBattery: [{entityId, pct}], unavailable: [entityId],
-    thresholds: { lowBatteryPct, motionWindowMinutes } } }
+    thresholds: { lowBatteryPct, motionWindowMinutes, motionStaleHours } } }
 ```
 
 `summary` holds ids and numbers only. A browser that receives a payload
@@ -78,10 +78,12 @@ entities:
 now:                                        # what the Now view reports
   low_battery_pct: 20                       # a battery at or below this is "low"
   motion_window_minutes: 15                 # presence cleared this recently still counts as motion
+  motion_stale_hours: 24                    # presence "on" for longer than this is a stuck sensor:
+                                            #   listed under "Needs attention", not counted as motion
   on_types: [light, power, media]           # types whose "on" is news (not switch flags)
-  ignore: []                                # globs never reported on Now (an always-on plug,
-                                            #   a stuck occupancy sensor); "*_plug" also matches
-                                            #   the part after the domain
+  ignore: []                                # globs never reported on Now (an always-on plug);
+                                            #   "*_plug" also matches the part after the domain.
+                                            #   Not for a stuck sensor — that is a fault to see
 
 power:                                      # the Power view and the sentence's draw
   whole_house: null                         # a power sensor id; default: the largest W reading

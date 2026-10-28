@@ -30,6 +30,8 @@ const house = [
   e('binary_sensor.garage_door', { type: 'openings', deviceClass: 'door', state: 'on', stateClass: 'on' }),
   e('cover.blinds', { type: 'openings', state: 'closed', stateClass: 'off' }),
   e('binary_sensor.office_presence', { type: 'presence', state: 'on', stateClass: 'on', lastChanged: ago(40) }),
+  e('binary_sensor.bedroom_occupancy', { type: 'presence', state: 'on', stateClass: 'on', lastChanged: ago(49 * 60) }),
+  e('binary_sensor.hall_presence', { type: 'presence', state: 'on', stateClass: 'on', lastChanged: null }),
   e('binary_sensor.kitchen_motion', { type: 'presence', lastChanged: ago(5) }),
   e('binary_sensor.garage_motion', { type: 'presence', lastChanged: ago(50) }),
   e('binary_sensor.driveway_motion', { type: 'presence', state: 'unavailable', stateClass: 'unavailable' }),
@@ -45,6 +47,7 @@ describe('HouseSummaryPolicy', () => {
     const p = HouseSummaryPolicy.fromConfig();
     expect(p.lowBatteryPct).toBe(20);
     expect(p.motionWindowMinutes).toBe(15);
+    expect(p.motionStaleHours).toBe(24);
     expect(p.onTypes).toEqual(['light', 'power', 'media']);
     expect(p.wholeHouse).toBeNull();
     expect(p.top).toBe(5);
@@ -73,6 +76,7 @@ describe('HouseSummaryPolicy', () => {
   it.each([
     [{ now: { low_battery_pct: 120 } }, /low_battery_pct/],
     [{ now: { motion_window_minutes: 'soon' } }, /motion_window_minutes/],
+    [{ now: { motion_stale_hours: 0 } }, /motion_stale_hours/],
     [{ now: { on_types: 'light' } }, /on_types/],
     [{ now: { ignore: [1] } }, /ignore/],
     [{ power: { whole_house: 'not-an-id' } }, /whole_house/],
@@ -106,10 +110,20 @@ describe('summarizeHouse', () => {
 
   it('reports open openings, presence that is on or cleared within the window, low batteries and silence', () => {
     expect(summary.open).toEqual(['binary_sensor.garage_door']);
-    expect(summary.motion).toEqual(['binary_sensor.office_presence', 'binary_sensor.kitchen_motion']);
+    expect(summary.motion).toEqual(['binary_sensor.office_presence', 'binary_sensor.hall_presence', 'binary_sensor.kitchen_motion']);
     expect(summary.lowBattery).toEqual([{ entityId: 'sensor.remote_battery', pct: 9 }, { entityId: 'sensor.puck_battery', pct: 20 }]);
     expect(summary.unavailable).toEqual(['binary_sensor.driveway_motion', 'sensor.siren_battery']);
-    expect(summary.thresholds).toEqual({ lowBatteryPct: 20, motionWindowMinutes: 15 });
+    expect(summary.thresholds).toEqual({ lowBatteryPct: 20, motionWindowMinutes: 15, motionStaleHours: 24 });
+  });
+
+  it('a presence sensor "on" for longer than the stale limit is stuck, not motion', () => {
+    const summary = summarizeHouse(house, HouseSummaryPolicy.fromConfig(), { now: NOW });
+    expect(summary.stuck).toEqual(['binary_sensor.bedroom_occupancy']);
+    expect(summary.motion).not.toContain('binary_sensor.bedroom_occupancy');
+    // A longer limit from the household makes it motion again.
+    const lenient = summarizeHouse(house, HouseSummaryPolicy.fromConfig({ now: { motion_stale_hours: 72 } }), { now: NOW });
+    expect(lenient.stuck).toEqual([]);
+    expect(lenient.motion).toContain('binary_sensor.bedroom_occupancy');
   });
 
   it('applies the household policy: named meter, ignored entities, excluded meters, top N', () => {
@@ -124,7 +138,7 @@ describe('summarizeHouse', () => {
     expect(s.power.topConsumers.map((c) => c.entityId)).toEqual(['sensor.panel_total_power', 'sensor.heater_power']);
     expect(s.on).toEqual(['light.nightlight', 'media_player.tv']);
     expect(s.lowBattery).toEqual([{ entityId: 'sensor.remote_battery', pct: 9 }]);
-    expect(s.motion).toEqual(['binary_sensor.office_presence', 'binary_sensor.kitchen_motion', 'binary_sensor.garage_motion']);
+    expect(s.motion).toEqual(['binary_sensor.office_presence', 'binary_sensor.hall_presence', 'binary_sensor.kitchen_motion', 'binary_sensor.garage_motion']);
     expect(s.unavailable).toEqual(['binary_sensor.driveway_motion']);
   });
 

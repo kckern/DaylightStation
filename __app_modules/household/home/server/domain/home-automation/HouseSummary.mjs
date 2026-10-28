@@ -17,6 +17,10 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 const DEFAULTS = Object.freeze({
   lowBatteryPct: 20,
   motionWindowMinutes: 15,
+  // A presence sensor that has said "on" for longer than this is not reporting
+  // a person; it is stuck, and belongs under "needs attention", not "motion".
+  // A night's sleep under an mmWave sensor is well inside a day.
+  motionStaleHours: 24,
   // A light or a plug that is on is news; a wall switch feeding who-knows-what
   // and an input_boolean automation flag are not, unless the household says so.
   onTypes: ['light', 'power', 'media'],
@@ -89,6 +93,7 @@ export class HouseSummaryPolicy {
     return new HouseSummaryPolicy({
       lowBatteryPct: optionalNumber(n.low_battery_pct, 'now.low_battery_pct', { min: 0, max: 100 }) ?? DEFAULTS.lowBatteryPct,
       motionWindowMinutes: optionalNumber(n.motion_window_minutes, 'now.motion_window_minutes', { min: 0, max: 1440 }) ?? DEFAULTS.motionWindowMinutes,
+      motionStaleHours: optionalNumber(n.motion_stale_hours, 'now.motion_stale_hours', { min: 1, max: 24 * 30 }) ?? DEFAULTS.motionStaleHours,
       onTypes: optionalList(n.on_types, 'now.on_types') ?? DEFAULTS.onTypes,
       ignore: optionalList(n.ignore, 'now.ignore') ?? DEFAULTS.ignore,
       wholeHouse: optionalId(p.whole_house, 'power.whole_house') ?? DEFAULTS.wholeHouse,
@@ -101,6 +106,7 @@ export class HouseSummaryPolicy {
 
   get lowBatteryPct() { return this.#p.lowBatteryPct; }
   get motionWindowMinutes() { return this.#p.motionWindowMinutes; }
+  get motionStaleHours() { return this.#p.motionStaleHours; }
   get onTypes() { return this.#p.onTypes; }
   get wholeHouse() { return this.#p.wholeHouse; }
   get energyToday() { return this.#p.energyToday; }
@@ -185,10 +191,18 @@ export function summarizeHouse(entities, policy, { now } = {}) {
     .slice(0, policy.top);
 
   const windowMs = policy.motionWindowMinutes * 60_000;
+  const staleMs = policy.motionStaleHours * 3_600_000;
   const recent = (e) => {
     const t = Date.parse(e.lastChanged);
     return Number.isFinite(t) && now - t <= windowMs;
   };
+  // "On" with a last change older than the stale limit is a sensor that no
+  // longer sees anything; an unknown last change is given the benefit of the doubt.
+  const stuck = (e) => {
+    const t = Date.parse(e.lastChanged);
+    return Number.isFinite(t) && now - t > staleMs;
+  };
+  const presence = live.filter((e) => e.type === 'presence');
 
   return {
     power: {
@@ -199,14 +213,15 @@ export function summarizeHouse(entities, policy, { now } = {}) {
     },
     on: live.filter((e) => e.stateClass === 'on' && policy.onTypes.includes(e.type)).map((e) => e.id),
     open: live.filter((e) => e.type === 'openings' && e.stateClass === 'on').map((e) => e.id),
-    motion: live.filter((e) => e.type === 'presence' && (e.stateClass === 'on' || (e.stateClass === 'off' && recent(e)))).map((e) => e.id),
+    motion: presence.filter((e) => (e.stateClass === 'on' && !stuck(e)) || (e.stateClass === 'off' && recent(e))).map((e) => e.id),
+    stuck: presence.filter((e) => e.stateClass === 'on' && stuck(e)).map((e) => e.id),
     lowBattery: live
       .filter((e) => e.type === 'battery' && e.stateClass === 'reading')
       .map((e) => ({ entityId: e.id, pct: numberOf(e.state) }))
       .filter((b) => b.pct != null && b.pct <= policy.lowBatteryPct)
       .sort((a, b) => a.pct - b.pct),
     unavailable: live.filter((e) => e.stateClass === 'unavailable').map((e) => e.id),
-    thresholds: { lowBatteryPct: policy.lowBatteryPct, motionWindowMinutes: policy.motionWindowMinutes },
+    thresholds: { lowBatteryPct: policy.lowBatteryPct, motionWindowMinutes: policy.motionWindowMinutes, motionStaleHours: policy.motionStaleHours },
   };
 }
 

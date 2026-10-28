@@ -8,6 +8,7 @@ import { Disclosure } from '../ui/Disclosure.jsx';
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
 import { formatAge, formatDegrees } from '../entities/formatEntityState.js';
+import { turnOffLabel } from '../now/NowView.jsx';
 import homeLogger from '../homeLogger.js';
 import '../ui/home-ui.scss';
 import './RoomsView.scss';
@@ -22,8 +23,9 @@ function plural(n, one, many = `${one}s`) {
  * One row per room: name, lights, temperature, last motion. Tap to open the
  * room in place; its readings sit behind "Show all".
  */
-export function RoomsView({ entities, rooms, types, haUrl, toggle, turnOff }) {
-  const summaries = useMemo(() => summarizeRooms(entities, rooms), [entities, rooms]);
+export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turnOff }) {
+  const staleMs = (summary?.thresholds?.motionStaleHours ?? Infinity) * 3_600_000;
+  const summaries = useMemo(() => summarizeRooms(entities, rooms, { staleMs }), [entities, rooms, staleMs]);
   const [openId, setOpenId] = useState(null);
   const detail = useEntityDetail(entities);
   const typeLabel = (type) => types.find((t) => t.id === type)?.label;
@@ -54,14 +56,13 @@ export function RoomsView({ entities, rooms, types, haUrl, toggle, turnOff }) {
           <div key={room.id} className={`home-room${open ? ' home-room--open' : ''}${room.lightsOn ? ' home-room--lit' : ''}`} data-room-id={room.id}>
             <UnstyledButton className="home-room__row" onClick={() => toggleRoom(room)} aria-expanded={open}>
               <span className="home-room__name">{room.name}</span>
+              {/* A cell says something or stays blank: a column of "dark" and dashes is noise. */}
               <span className="home-room__lights">
-                {room.lights.length === 0 ? <span className="home-room__none">no lights</span>
-                  : room.lightsOn ? <><span className="home-room__dot" aria-hidden="true" />{room.lightsOn} on</>
-                    : <span className="home-room__none">dark</span>}
+                {room.lightsOn ? <><span className="home-room__dot" aria-hidden="true" />{room.lightsOn} on</> : null}
               </span>
-              <span className="home-room__temp">{room.temperature ? formatDegrees(room.temperature.value) : <span className="home-room__none">–</span>}</span>
+              <span className="home-room__temp">{room.temperature ? formatDegrees(room.temperature.value) : null}</span>
               <span className="home-room__motion">
-                {!room.motion ? <span className="home-room__none">–</span> : room.motion.now ? 'now' : formatAge(room.motion.at)}
+                {!room.motion ? null : room.motion.now ? 'now' : formatAge(room.motion.at)}
               </span>
               <IconChevronRight className="home-room__chevron" size={16} stroke={2} aria-hidden="true" />
             </UnstyledButton>
@@ -77,7 +78,7 @@ export function RoomsView({ entities, rooms, types, haUrl, toggle, turnOff }) {
                         onClick={() => { logger.info('home.room.off', { roomId: room.id, count: lit.length }); turnOff(lit); }}
                         aria-label={`Turn off all ${lit.length} lights in ${room.name}`}
                       >
-                        Turn off all {lit.length}
+                        {turnOffLabel(lit.length)}
                       </UnstyledButton>
                     ) : null}
                   </div>

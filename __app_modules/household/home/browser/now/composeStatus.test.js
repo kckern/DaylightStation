@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { composeNow, composeSentence, groupByRoom, listWords, othersWord, roomTemperature } from './composeStatus.js';
+import { composeNow, composeSentence, groupByRoom, hvacWord, listWords, othersWord, roomTemperature } from './composeStatus.js';
 
 const plain = (s) => s.replace(/ /g, ' ');
 const NOW = Date.parse('2026-10-27T23:00:00Z');
@@ -21,7 +21,11 @@ describe('composeSentence', () => {
     [{ watts: 505, lightsOn: 0, open: [office, office], motionRooms: ['Office', 'Garage'] },
       ['The house is drawing 505 W, with no lights on and 2 doors open.', 'Someone is in the office and the garage.']],
     [{ watts: 505, lightsOn: 2, open: [office, { ...office, deviceClass: 'window' }], motionRooms: ['Office', 'Garage', 'Kitchen'] },
-      ['The house is drawing 505 W, with 2 lights on and 2 doors and windows open.', 'Someone is in the office, the garage and 1 other room.']],
+      ['The house is drawing 505 W, with 2 lights on and 2 doors and windows open.', 'Someone is in the office, the garage and the kitchen.']],
+    [{ watts: 505, lightsOn: 0, open: [], motionRooms: ['Office', 'Garage', 'Kitchen', 'Hall'] },
+      ['The house is quiet, drawing 505 W with nothing on.', 'Someone is in the office, the garage and 2 more rooms.']],
+    [{ watts: 505, lightsOn: 0, open: [], motionRooms: [], lastSeen: { room: 'Kitchen', age: '8 minutes ago' } },
+      ['The house is quiet, drawing 505 W with nothing on.', 'The last movement was in the kitchen, 8 minutes ago.']],
     [{ watts: 180, lightsOn: 0, open: [], motionRooms: [] }, ['The house is quiet, drawing 180 W with nothing on.']],
     [{ watts: null, lightsOn: 3, open: [office], motionRooms: [] }, ['3 lights on, a door open in the office.']],
     [{ watts: null, lightsOn: 0, open: [], motionRooms: [] }, ['All quiet. Nothing is on.']],
@@ -66,6 +70,8 @@ describe('composeNow', () => {
     e('switch.tv_plug', { type: 'power', state: 'on', stateClass: 'on', room: rooms[2] }),
     e('binary_sensor.office_door', { name: 'Open', type: 'openings', domain: 'binary_sensor', deviceClass: 'door', state: 'on', stateClass: 'on', room: rooms[2], lastChanged: ago(90) }),
     e('binary_sensor.office_presence', { type: 'presence', state: 'on', stateClass: 'on', room: rooms[2], lastChanged: ago(30) }),
+    e('binary_sensor.kc_home', { name: 'KC Home', type: 'presence', deviceClass: 'presence', state: 'on', stateClass: 'on', lastChanged: ago(300) }),
+    e('binary_sensor.bedroom_occupancy', { type: 'presence', state: 'on', stateClass: 'on', room: rooms[0], lastChanged: ago(49 * 60) }),
     e('binary_sensor.kitchen_motion', { type: 'presence', room: rooms[1], lastChanged: ago(5) }),
     e('binary_sensor.garage_motion', { type: 'presence', room: rooms[0], lastChanged: ago(2) }),
     e('sensor.remote_battery', { type: 'battery', stateClass: 'reading', state: '9', room: rooms[2] }),
@@ -79,18 +85,31 @@ describe('composeNow', () => {
     power: { wholeHouse: { entityId: 'sensor.panel', watts: 505 }, energyToday: null, energyThisMonth: null, topConsumers: [] },
     on: ['light.garage', 'light.lamp', 'switch.tv_plug'],
     open: ['binary_sensor.office_door'],
-    motion: ['binary_sensor.office_presence', 'binary_sensor.kitchen_motion', 'binary_sensor.garage_motion'],
+    motion: ['binary_sensor.office_presence', 'binary_sensor.kc_home', 'binary_sensor.kitchen_motion', 'binary_sensor.garage_motion'],
+    stuck: ['binary_sensor.bedroom_occupancy'],
     lowBattery: [{ entityId: 'sensor.remote_battery', pct: 9 }],
     unavailable: ['binary_sensor.driveway'],
-    thresholds: { lowBatteryPct: 20, motionWindowMinutes: 15 },
+    thresholds: { lowBatteryPct: 20, motionWindowMinutes: 15, motionStaleHours: 24 },
   };
-  const now = composeNow({ entities, rooms, summary });
+  const now = composeNow({ entities, rooms, summary }, { now: NOW });
 
-  it('writes the sentence from the summary, rooms with someone in them first', () => {
+  it('writes the sentence from the summary, naming only the rooms with someone in them now', () => {
     expect(now.sentences.map(plain)).toEqual([
       'The house is drawing 505 W, with 2 lights on and a door open in the office.',
-      'Someone is in the office, the garage and 1 other room.',
+      'Someone is in the office.',
     ]);
+  });
+
+  it('says where the last movement was when nobody is seen right now', () => {
+    const quiet = composeNow({ entities, rooms, summary: { ...summary, motion: ['binary_sensor.kitchen_motion', 'binary_sensor.garage_motion'] } }, { now: NOW });
+    expect(quiet.sentences.map(plain)[1]).toBe('The last movement was in the garage, 2 minutes ago.');
+  });
+
+  it('keeps a person-at-home flag apart from the rooms, and a stuck sensor apart from motion', () => {
+    expect(now.people.map((x) => x.id)).toEqual(['binary_sensor.kc_home']);
+    expect(now.motion.map((r) => r.id)).not.toContain('__none__');
+    expect(now.attention.stuck.map((x) => x.id)).toEqual(['binary_sensor.bedroom_occupancy']);
+    expect(now.counts).toMatchObject({ people: 1, stuck: 1 });
   });
 
   it('groups what is on by room, roomless last, plugs apart from lights', () => {
@@ -115,6 +134,12 @@ describe('composeNow', () => {
   it('carries low batteries with their percentage and the silent ones', () => {
     expect(now.attention.lowBattery).toEqual([expect.objectContaining({ id: 'sensor.remote_battery', pct: 9 })]);
     expect(now.attention.unavailable.map((x) => x.id)).toEqual(['binary_sensor.driveway']);
+  });
+
+  it('names what a thermostat is doing, and nothing when it is idle', () => {
+    expect(hvacWord({ detail: { hvacAction: 'idle' }, state: 'heat' })).toBeNull();
+    expect(hvacWord({ detail: { hvacAction: 'heating' }, state: 'heat' })).toBe('heating');
+    expect(hvacWord({ detail: {}, state: 'off' })).toBe('thermostat off');
   });
 
   it('degrades to an empty report without a summary', () => {

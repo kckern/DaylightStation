@@ -5,8 +5,8 @@ import { Disclosure } from '../ui/Disclosure.jsx';
 import { EntityRow } from '../ui/EntityRow.jsx';
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
-import { composeNow } from './composeStatus.js';
-import { formatAge, formatDegrees, formatSince } from '../entities/formatEntityState.js';
+import { composeNow, hvacWord } from './composeStatus.js';
+import { formatAge, formatDegrees, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import homeLogger from '../homeLogger.js';
 import '../ui/home-ui.scss';
 import './NowView.scss';
@@ -15,6 +15,11 @@ const logger = homeLogger.child({ component: 'now' });
 
 function plural(n, one, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/** "Turn off both", "Turn off all 3" — the room's lamps, never the house's. */
+export function turnOffLabel(n) {
+  return n === 2 ? 'Turn off both' : `Turn off all ${n}`;
 }
 
 /**
@@ -60,7 +65,7 @@ export function NowView({ entities, rooms, types, summary, haUrl, fetchedAt, sta
                   onClick={() => { logger.info('home.room.off', { roomId: room.id, count: lit.length }); turnOff(lit); }}
                   aria-label={`Turn off all ${lit.length} lights in ${room.name}`}
                 >
-                  Turn off all {lit.length}
+                  {turnOffLabel(lit.length)}
                 </UnstyledButton>
               ) : null}
             </HomeGroup>
@@ -90,7 +95,7 @@ export function NowView({ entities, rooms, types, summary, haUrl, fetchedAt, sta
         ))}
       </HomeSection>
 
-      <HomeSection title="Motion" aside={plural(now.motion.length, 'room')} empty={!now.motion.length}>
+      <HomeSection title="Motion" aside={now.motion.length ? plural(now.motion.length, 'room') : undefined} empty={!now.motion.length && !now.people.length}>
         {now.motion.map((room) => (
           <div key={room.id} className="home-row home-row--tappable">
             <UnstyledButton className="home-row__main" onClick={() => detail.open(room.entities[0])} aria-label={`Motion in ${room.name}`}>
@@ -102,9 +107,24 @@ export function NowView({ entities, rooms, types, summary, haUrl, fetchedAt, sta
             </UnstyledButton>
           </div>
         ))}
+        {now.people.map((e) => (
+          <EntityRow key={e.id} entity={e} plain value={formatEntityState(e)} onOpen={detail.open} />
+        ))}
       </HomeSection>
 
-      <HomeSection title="Needs attention" empty={!now.counts.lowBattery && !now.counts.unavailable}>
+      <HomeSection title="Needs attention" empty={!now.counts.stuck && !now.counts.lowBattery && !now.counts.unavailable}>
+        {now.counts.stuck ? (
+          <Disclosure
+            label={`${plural(now.counts.stuck, 'sensor')} stuck on`}
+            onToggle={(open) => logger.debug('home.now.disclose', { section: 'stuck', open })}
+          >
+            <div className="home-rows--ruled">
+              {now.attention.stuck.map((e) => (
+                <EntityRow key={e.id} entity={e} plain sub={e.room?.name || null} value={formatSince(e.lastChanged) ? `on since ${formatSince(e.lastChanged)}` : 'on'} onOpen={detail.open} />
+              ))}
+            </div>
+          </Disclosure>
+        ) : null}
         {now.counts.lowBattery ? (
           <Disclosure
             label={`${plural(now.counts.lowBattery, 'battery', 'batteries')} low`}
@@ -138,7 +158,7 @@ export function NowView({ entities, rooms, types, summary, haUrl, fetchedAt, sta
               <span className="home-climate__room">{room.name}</span>
               <span className="home-climate__temp">{formatDegrees(room.temperature.value)}</span>
               <span className="home-climate__more">
-                {room.temperature.thermostat ? <span>{(room.temperature.thermostat.detail?.hvacAction || room.temperature.thermostat.state || '').replace(/_/g, ' ')}</span> : null}
+                {hvacWord(room.temperature.thermostat) ? <span>{hvacWord(room.temperature.thermostat)}</span> : null}
                 {room.humidity != null ? <span>{Math.round(room.humidity)}% humidity</span> : null}
               </span>
             </div>

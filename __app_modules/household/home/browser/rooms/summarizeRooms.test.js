@@ -19,22 +19,29 @@ const entities = [
   e('sensor.temp', { name: 'Temp', type: 'climate', domain: 'sensor', deviceClass: 'temperature', stateClass: 'reading', state: '78.5' }),
   e('sensor.battery', { name: 'Battery', type: 'battery', stateClass: 'reading', state: '46' }),
   e('binary_sensor.presence', { name: 'Presence', type: 'presence', lastChanged: ago(17) }),
+  e('binary_sensor.stuck', { name: 'Stuck', type: 'presence', state: 'on', stateClass: 'on', lastChanged: ago(49 * 60) }),
   e('light.hall', { name: 'Hall', type: 'light', room: null, state: 'on', stateClass: 'on', controllable: true }),
 ];
 
 describe('summarizeRooms', () => {
-  const [room, elsewhere] = summarizeRooms(entities, [office]);
+  const [room, elsewhere] = summarizeRooms(entities, [office], { staleMs: 24 * 3_600_000 });
 
   it('puts lights first (lit ones on top), then devices, and everything else behind "more"', () => {
     expect(room.lights.map((x) => x.id)).toEqual(['light.desk', 'light.ceiling', 'light.dead']);
     expect(room.devices.map((x) => x.id)).toEqual(['switch.tv_plug', 'binary_sensor.door']);
-    expect(room.more.map((x) => x.id)).toEqual(['sensor.battery', 'input_boolean.flag', 'binary_sensor.presence', 'sensor.temp']);
+    expect(room.more.map((x) => x.id)).toEqual(['sensor.battery', 'input_boolean.flag', 'binary_sensor.presence', 'binary_sensor.stuck', 'sensor.temp']);
   });
 
   it('reads the room at a glance', () => {
-    expect(room).toMatchObject({ id: 'office', name: 'Office', lightsOn: 1, devicesOn: 1, unavailable: 1, total: 9, humidity: null });
+    expect(room).toMatchObject({ id: 'office', name: 'Office', lightsOn: 1, devicesOn: 1, unavailable: 1, total: 10, humidity: null });
     expect(room.temperature).toMatchObject({ value: 78.5 });
+    // The sensor stuck "on" for two days does not make the room occupied.
     expect(room.motion).toEqual({ now: false, at: ago(17) });
+  });
+
+  it('without a stale limit, a sensor that is on is motion now', () => {
+    const [lenient] = summarizeRooms(entities, [office]);
+    expect(lenient.motion).toEqual({ now: true, at: null });
   });
 
   it('collects roomless entities as "Elsewhere", last', () => {

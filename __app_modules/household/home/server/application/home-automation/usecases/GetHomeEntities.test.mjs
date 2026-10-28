@@ -102,7 +102,8 @@ describe('GetHomeEntities', () => {
     expect(summary.on).toEqual(['light.kitchen']);
     expect(summary.lowBattery).toEqual([{ entityId: 'sensor.remote_battery', pct: 9 }]);
     expect(summary.unavailable).toEqual(['binary_sensor.hall_motion']);
-    expect(summary.thresholds).toEqual({ lowBatteryPct: 20, motionWindowMinutes: 15 });
+    expect(summary.stuck).toEqual([]);
+    expect(summary.thresholds).toEqual({ lowBatteryPct: 20, motionWindowMinutes: 15, motionStaleHours: 24 });
   });
 
   it('applies the now and power sections of the config', async () => {

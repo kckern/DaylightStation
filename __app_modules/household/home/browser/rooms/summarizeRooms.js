@@ -16,10 +16,11 @@ const isLight = (e) => e.type === 'light';
 /**
  * @param {Array} entities - entity JSON from /home-dashboard/entities
  * @param {Array} rooms - [{id, name}] in display order
+ * @param {{staleMs?: number}} [opts] - a presence sensor "on" longer than this is stuck, not motion
  * @returns {Array<{id, name, lightsOn: number, lights: Array, devices: Array, more: Array,
  *   temperature: Object|null, humidity: number|null, motion: Object|null, unavailable: number}>}
  */
-export function summarizeRooms(entities, rooms) {
+export function summarizeRooms(entities, rooms, { staleMs = Infinity } = {}) {
   return groupByRoom(entities, rooms).map((room) => {
     const lights = room.entities.filter(isLight);
     const devices = room.entities.filter((e) => !isLight(e) && isDevice(e));
@@ -35,7 +36,7 @@ export function summarizeRooms(entities, rooms) {
       more: more.slice().sort((a, b) => a.name.localeCompare(b.name)),
       temperature: roomTemperature(room.entities),
       humidity: roomHumidity(room.entities),
-      motion: roomMotion(room.entities),
+      motion: roomMotion(room.entities, { staleMs }),
       unavailable: room.entities.filter((e) => e.stateClass === 'unavailable').length,
       total: room.entities.length,
     };

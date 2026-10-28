@@ -151,7 +151,9 @@ describe('HomeApp — Rooms, Power, Browse', () => {
     expect(rows).toEqual(['Kitchen', 'Office', 'Elsewhere']);
     const officeRow = document.querySelector('[data-room-id="office"] .home-room__row');
     expect(officeRow.textContent).toContain('71°');
-    expect(officeRow.textContent).toContain('dark');
+    // A dark room says nothing in the lights column; only a lit one gets a figure.
+    expect(officeRow.querySelector('.home-room__lights').textContent).toBe('');
+    expect(document.querySelector('[data-room-id="kitchen"] .home-room__lights').textContent).toContain('2 on');
     fireEvent.click(officeRow);
     expect(screen.getByLabelText('Desk lamp: turn on')).toBeTruthy();
     expect(screen.getByText('Office TV plug')).toBeTruthy();

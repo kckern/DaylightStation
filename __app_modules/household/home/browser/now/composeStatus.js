@@ -4,7 +4,7 @@
  * Pure: the server decided what counts (policy); this decides how to say it.
  */
 
-import { displayName, formatWatts, openingWord } from '../entities/formatEntityState.js';
+import { displayName, formatAge, formatWatts, openingWord } from '../entities/formatEntityState.js';
 
 // A figure stays on the same line as its noun ("4 lights", "1.6 kW").
 const NBSP = '\u00a0';
@@ -44,7 +44,7 @@ export function groupByRoom(entities, rooms) {
  *
  * @returns {string[]} sentences, each ending in a full stop
  */
-export function composeSentence({ watts, lightsOn, open, motionRooms }) {
+export function composeSentence({ watts, lightsOn, open, motionRooms, lastSeen = null }) {
   const sentences = [];
   const parts = [];
   if (lightsOn > 0 || open.length > 0 || watts != null) {
@@ -71,13 +71,15 @@ export function composeSentence({ watts, lightsOn, open, motionRooms }) {
     sentences.push('All quiet. Nothing is on.');
   }
 
-  if (motionRooms.length === 1) {
-    sentences.push(`Someone is in ${inSentence(motionRooms[0])}.`);
-  } else if (motionRooms.length === 2) {
-    sentences.push(`Someone is in ${inSentence(motionRooms[0])} and ${inSentence(motionRooms[1])}.`);
-  } else if (motionRooms.length > 2) {
-    const others = motionRooms.length - 2;
-    sentences.push(`Someone is in ${inSentence(motionRooms[0])}, ${inSentence(motionRooms[1])} and ${plural(others, 'other room')}.`);
+  // Only rooms with someone in them right now; a sensor that cleared minutes
+  // ago says where the last movement was, not where a person is.
+  if (motionRooms.length > 0 && motionRooms.length <= 3) {
+    sentences.push(`Someone is in ${listWords(motionRooms.map(inSentence))}.`);
+  } else if (motionRooms.length > 3) {
+    const named = motionRooms.slice(0, 2).map(inSentence);
+    sentences.push(`Someone is in ${named.join(', ')} and ${plural(motionRooms.length - 2, 'more room')}.`);
+  } else if (lastSeen?.room) {
+    sentences.push(`The last movement was in ${inSentence(lastSeen.room)}, ${lastSeen.age}.`);
   }
   return sentences;
 }
@@ -96,14 +98,27 @@ export function roomTemperature(roomEntities) {
   return { value: Number(sensor.state), entityId: sensor.id, thermostat: null };
 }
 
+/** What a thermostat is doing, in a word a glance reads — nothing when it is merely idle. */
+export function hvacWord(thermostat) {
+  const raw = (thermostat?.detail?.hvacAction || thermostat?.state || '').replace(/_/g, ' ');
+  if (!raw || raw === 'idle' || raw === 'unknown') return null;
+  if (raw === 'off') return 'thermostat off';
+  return raw;
+}
+
 export function roomHumidity(roomEntities) {
   const sensor = roomEntities.find(isHumiditySensor);
   return sensor ? Number(sensor.state) : null;
 }
 
-/** Latest presence activity in a room: now, or when it was last seen. */
-export function roomMotion(roomEntities) {
-  const presence = roomEntities.filter((e) => e.type === 'presence' && e.stateClass !== 'unavailable');
+/**
+ * Latest presence activity in a room: now, or when it was last seen. A sensor
+ * "on" since before the stale limit (the server's `thresholds.motionStaleHours`)
+ * is stuck, and says nothing about the room.
+ */
+export function roomMotion(roomEntities, { staleMs = Infinity, now = Date.now() } = {}) {
+  const stuck = (e) => e.stateClass === 'on' && Number.isFinite(Date.parse(e.lastChanged)) && now - Date.parse(e.lastChanged) > staleMs;
+  const presence = roomEntities.filter((e) => e.type === 'presence' && e.stateClass !== 'unavailable' && !stuck(e));
   if (!presence.length) return null;
   if (presence.some((e) => e.stateClass === 'on')) return { now: true, at: null };
   const latest = presence.map((e) => Date.parse(e.lastChanged)).filter(Number.isFinite).sort((a, b) => b - a)[0];
@@ -118,24 +133,33 @@ export function othersWord(others) {
 
 /**
  * @param {{entities: Array, rooms: Array, summary: Object|null}} payload
- * @returns {{sentences: string[], on: {lights: Array, others: Array}, open: Array, motion: Array,
- *   attention: {lowBattery: Array, unavailable: Array}, climate: Array, counts: Object}}
+ * @param {{now?: number}} [opts] - the clock, for ages (tests pin it)
+ * @returns {{sentences: string[], on: {lights: Array, others: Array}, open: Array, motion: Array, people: Array,
+ *   attention: {stuck: Array, lowBattery: Array, unavailable: Array}, climate: Array, counts: Object}}
  */
-export function composeNow({ entities, rooms, summary }) {
+export function composeNow({ entities, rooms, summary }, { now = Date.now() } = {}) {
   const byId = new Map(entities.map((e) => [e.id, e]));
   const pick = (ids) => ids.map((id) => byId.get(id)).filter(Boolean);
-  const s = summary || { power: { wholeHouse: null }, on: [], open: [], motion: [], lowBattery: [], unavailable: [] };
+  const s = summary || { power: { wholeHouse: null }, on: [], open: [], motion: [], stuck: [], lowBattery: [], unavailable: [] };
+  const staleMs = (s.thresholds?.motionStaleHours ?? Infinity) * 3_600_000;
 
   const on = pick(s.on);
   const lights = on.filter((e) => e.type === 'light');
   const others = on.filter((e) => e.type !== 'light');
   const open = pick(s.open);
   const motion = pick(s.motion);
+  // A roomless presence flag is a person ("KC home"), not a room with motion.
+  const people = motion.filter((e) => !e.room && e.stateClass === 'on');
   // Rooms with someone in them now come first, then the most recently seen.
-  const motionByRoom = groupByRoom(motion, rooms).map((room) => ({ ...room, motion: roomMotion(room.entities) }))
+  const motionByRoom = groupByRoom(motion.filter((e) => e.room), rooms)
+    .map((room) => ({ ...room, motion: roomMotion(room.entities, { staleMs, now }) }))
+    .filter((room) => room.motion)
     .sort((a, b) => Number(Boolean(b.motion?.now)) - Number(Boolean(a.motion?.now))
       || (Date.parse(b.motion?.at) || 0) - (Date.parse(a.motion?.at) || 0));
-  const motionRooms = motionByRoom.filter((r) => r.id !== ROOMLESS.id).map((r) => r.name);
+  const motionRooms = motionByRoom.filter((r) => r.motion.now).map((r) => r.name);
+  const recent = motionByRoom.find((r) => !r.motion.now);
+  const lastSeen = !motionRooms.length && recent ? { room: recent.name, age: formatAge(recent.motion.at, now, { words: true }) } : null;
+  const stuck = pick(s.stuck || []);
   const lowBattery = s.lowBattery.map((b) => ({ ...byId.get(b.entityId), pct: b.pct })).filter((e) => e.id);
   const unavailable = pick(s.unavailable);
 
@@ -149,17 +173,18 @@ export function composeNow({ entities, rooms, summary }) {
   const outdoor = entities.find((e) => isTempSensor(e) && /_outdoor_/.test(e.id)) || null;
 
   return {
-    sentences: composeSentence({ watts: s.power.wholeHouse?.watts ?? null, lightsOn: lights.length, open, motionRooms }),
+    sentences: composeSentence({ watts: s.power.wholeHouse?.watts ?? null, lightsOn: lights.length, open, motionRooms, lastSeen }),
     on: { lights: groupByRoom(lights, rooms), others },
     open: open.map((e) => ({ ...e, label: displayName(e) })),
     motion: motionByRoom,
-    attention: { lowBattery, unavailable },
+    people,
+    attention: { stuck, lowBattery, unavailable },
     climate,
     outdoor: outdoor ? Number(outdoor.state) : null,
     counts: {
       lightsOn: lights.length, othersOn: others.length, othersWord: othersWord(others),
-      open: open.length, motionRooms: motionRooms.length,
-      lowBattery: lowBattery.length, unavailable: unavailable.length,
+      open: open.length, motionRooms: motionByRoom.length, people: people.length,
+      stuck: stuck.length, lowBattery: lowBattery.length, unavailable: unavailable.length,
     },
   };
 }

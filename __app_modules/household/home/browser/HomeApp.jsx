@@ -110,7 +110,7 @@ function HouseViews({ view }) {
   if (!hasData && error) return <ErrorState error={error} onRetry={reload} label="Home Assistant" />;
 
   const shared = { entities, rooms, types, haUrl, toggle };
-  if (view === 'rooms') return <RoomsView {...shared} turnOff={turnOff} />;
+  if (view === 'rooms') return <RoomsView {...shared} summary={summary} turnOff={turnOff} />;
   if (view === 'power') return <PowerView {...shared} summary={summary} />;
   if (view === 'browse') return <BrowseView {...shared} stateClasses={stateClasses} />;
   return <NowView {...shared} summary={summary} fetchedAt={fetchedAt} stale={Boolean(error)} turnOff={turnOff} />;
