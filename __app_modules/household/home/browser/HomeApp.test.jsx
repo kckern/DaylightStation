@@ -243,6 +243,11 @@ describe('HomeApp — Rooms, Power, Browse', () => {
     expect(within(sheet).queryByRole('switch')).toBeNull();
     fireEvent.click(within(sheet).getByLabelText('Close'));
     expect(screen.queryByRole('dialog')).toBeNull();
+    // Escape closes it too: the app owns the one dismiss stack.
+    fireEvent.click(screen.getByLabelText('Office TV plug, On'));
+    expect(screen.getByRole('dialog', { name: 'Office TV plug' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('opens the view an old saved tab id pointed at', async () => {

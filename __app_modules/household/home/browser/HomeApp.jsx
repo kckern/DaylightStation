@@ -3,7 +3,7 @@ import { ActionIcon } from '@mantine/core';
 import { IconBolt, IconDoor, IconHome, IconList, IconVideo } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import {
-  AppThemeProvider, AppChrome, SectionCard, LoadingState, ErrorState, EmptyState,
+  AppThemeProvider, AppChrome, DismissStackProvider, SectionCard, LoadingState, ErrorState, EmptyState,
 } from '@/lib/ui';
 import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import CameraFeed from "../../camera/browser/feed.mjs";
@@ -135,13 +135,16 @@ function HomeApp() {
 
   return (
     <AppThemeProvider pack="home">
-      <div className="home-app">
-        <AppChrome title="Home" tabs={TABS} activeTab={view} onTabChange={changeView}>
-          <div className="home-app__page">
-            {view === 'cameras' ? <CameraGrid /> : <HouseViews view={view} />}
-          </div>
-        </AppChrome>
-      </div>
+      {/* One Escape handler for the app: it closes the topmost drawer. */}
+      <DismissStackProvider>
+        <div className="home-app">
+          <AppChrome title="Home" tabs={TABS} activeTab={view} onTabChange={changeView}>
+            <div className="home-app__page">
+              {view === 'cameras' ? <CameraGrid /> : <HouseViews view={view} />}
+            </div>
+          </AppChrome>
+        </div>
+      </DismissStackProvider>
     </AppThemeProvider>
   );
 }
