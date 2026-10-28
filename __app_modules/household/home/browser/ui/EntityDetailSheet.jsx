@@ -32,7 +32,8 @@ export function haEntityLink(haUrl, entityId) {
  */
 function defaultExtra(history) {
   if (history?.kind !== 'events' || !history.camera) return null;
-  return <RingClips camera={history.camera} marks={history.marks || []} />;
+  // The server names the household zone; without it the browser's stands in.
+  return <RingClips camera={history.camera} marks={history.marks || []} timeZone={history.timeZone || undefined} />;
 }
 
 /** The history section: a 24 h / 7 d switch over the chart, or why there is none. */

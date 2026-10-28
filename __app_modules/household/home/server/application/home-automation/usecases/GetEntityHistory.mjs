@@ -42,6 +42,7 @@ export class GetEntityHistory {
   #entityGateway;
   #historyGateway;
   #clock;
+  #timeZone;
   #logger;
 
   /**
@@ -50,9 +51,11 @@ export class GetEntityHistory {
    * @param {Object} deps.entityGateway - IHomeEntityGateway
    * @param {Object} deps.historyGateway - IHomeHistoryGateway
    * @param {() => number} [deps.clock]
+   * @param {string} [deps.timeZone] - household IANA zone, named in the response so
+   *   a client files the history's instants under the household's local days
    * @param {Object} [deps.logger]
    */
-  constructor({ configRepository, entityGateway, historyGateway, clock = Date.now, logger }) {
+  constructor({ configRepository, entityGateway, historyGateway, clock = Date.now, timeZone = 'UTC', logger }) {
     if (!configRepository) throw new Error('GetEntityHistory: configRepository required');
     if (!entityGateway)    throw new Error('GetEntityHistory: entityGateway required');
     if (!historyGateway)   throw new Error('GetEntityHistory: historyGateway required');
@@ -60,6 +63,7 @@ export class GetEntityHistory {
     this.#entityGateway = entityGateway;
     this.#historyGateway = historyGateway;
     this.#clock = clock;
+    this.#timeZone = timeZone;
     this.#logger = logger || console;
   }
 
@@ -91,7 +95,7 @@ export class GetEntityHistory {
     const win = { startMs, endMs: nowMs };
     const lineWin = { startMs, endMs: startMs + spec.ms };
 
-    const base = { entityId, range, hasData: series.length > 0, sinceIso: new Date(startMs).toISOString(), endIso: new Date(nowMs).toISOString() };
+    const base = { entityId, range, timeZone: this.#timeZone, hasData: series.length > 0, sinceIso: new Date(startMs).toISOString(), endIso: new Date(nowMs).toISOString() };
     let out;
     // Only the lane's primary entity gets marks: the one other id an events
     // lane carries is its energy counter, which is a line.

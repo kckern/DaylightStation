@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@mantine/core';
-import { Skeleton, ErrorState } from '@/lib/ui';
+import { Skeleton } from '@/lib/ui';
 import { matchRingToClip } from './matchRingToClip.js';
 import { useRingClips } from './useRingClips.js';
 import homeLogger from '../homeLogger.js';
@@ -67,25 +67,34 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
 
   let body;
   if (!rings.length) body = <p className="home-rings__empty">No rings in this range</p>;
-  else if (error) body = <ErrorState error={error} onRetry={reload} label="Clips" />;
   else if (loading) body = <Skeleton height={120} radius="sm" />;
   else {
+    // A failed clip read still lists every ring with its time: the ring
+    // happened whether or not the camera answered.
     let players = 0;
     body = (
-      <ol className="home-rings__list">
-        {rings.map((t) => {
-          const clip = matchRingToClip(t, clips, { toleranceMs: TOLERANCE_MS });
-          const eager = clip ? players++ < EAGER_PLAYERS : false;
-          return (
-            <li key={t} className="home-rings__ring">
-              <time className="home-rings__time" dateTime={new Date(t).toISOString()}>{ringLabel(t, timeZone, withDay)}</time>
-              {clip
-                ? <RingClip camera={camera} clip={clip} ringMs={t} eager={eager} />
-                : <p className="home-rings__none">No recording near this ring</p>}
-            </li>
-          );
-        })}
-      </ol>
+      <>
+        {error ? (
+          <p className="home-rings__failed" role="alert">
+            <span>Clips could not be loaded.</span>
+            <Button size="compact-xs" variant="subtle" onClick={() => { logger.info('home.ring.clips.retry', { camera }); reload(); }}>Retry</Button>
+          </p>
+        ) : null}
+        <ol className="home-rings__list">
+          {rings.map((t) => {
+            const clip = error ? null : matchRingToClip(t, clips, { toleranceMs: TOLERANCE_MS });
+            const eager = clip ? players++ < EAGER_PLAYERS : false;
+            return (
+              <li key={t} className="home-rings__ring">
+                <time className="home-rings__time" dateTime={new Date(t).toISOString()}>{ringLabel(t, timeZone, withDay)}</time>
+                {clip
+                  ? <RingClip camera={camera} clip={clip} ringMs={t} eager={eager} />
+                  : <p className="home-rings__none">No recording near this ring</p>}
+              </li>
+            );
+          })}
+        </ol>
+      </>
     );
   }
   return (

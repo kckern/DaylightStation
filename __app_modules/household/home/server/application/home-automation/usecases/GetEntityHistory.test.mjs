@@ -15,7 +15,7 @@ const make = (history, config = null) => {
   const uc = new GetEntityHistory({
     configRepository: { load: async () => config ?? ({ entities: {}, timeline: { lanes: [{ id: 'door', kind: 'events', entity: 'binary_sensor.porch_visitor', camera: 'porch-cam' }] } }) },
     entityGateway: { listReadings: async () => readings, listRooms: async () => ({ rooms: [], assignments: {} }) },
-    historyGateway, clock: () => NOW, logger: { debug: vi.fn() },
+    historyGateway, clock: () => NOW, logger: { debug: vi.fn() }, timeZone: 'America/Los_Angeles',
   });
   return { uc, historyGateway };
 };
@@ -32,6 +32,10 @@ describe('GetEntityHistory', () => {
     expect((await make(new Map([['light.den', [{ t: NOW - 600e3, v: 'on' }]]])).uc.execute({ entityId: 'light.den', range: '24h' })).kind).toBe('state');
     const door = await make(new Map([['binary_sensor.porch_visitor', [{ t: NOW - 7200e3, v: 'off' }, { t: NOW - 600e3, v: 'on' }]]])).uc.execute({ entityId: 'binary_sensor.porch_visitor', range: '7d' });
     expect(door).toMatchObject({ kind: 'events', camera: 'porch-cam', marks: [NOW - 600e3] });
+  });
+  it('names the household time zone, so a drawer files rings under local days', async () => {
+    const door = await make(new Map([['binary_sensor.porch_visitor', [{ t: NOW - 600e3, v: 'on' }]]])).uc.execute({ entityId: 'binary_sensor.porch_visitor', range: '24h' });
+    expect(door.timeZone).toBe('America/Los_Angeles');
   });
   it('an entity the dashboard does not show is not found; a bad range is invalid', async () => {
     await expect(make(new Map()).uc.execute({ entityId: 'sensor.plug_voltage', range: '24h' })).rejects.toMatchObject({ name: 'NotFoundError' });

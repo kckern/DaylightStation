@@ -23,10 +23,17 @@ export function powerSentence(summary) {
   return head.endsWith('.') ? `${head} ${rest.join(', ')}.` : `${totals.join(', ')}.`;
 }
 
-/** The top circuits the summary names that the entity list still has. */
+/**
+ * The top circuits the summary names that the entity list still has — never
+ * the whole-house meter or its energy counters, which are the total the
+ * circuits divide, not one of them.
+ */
 export function topCircuits(entities, summary) {
+  const power = summary?.power || {};
   const byId = new Map(entities.map((e) => [e.id, e]));
-  return (summary?.power?.topConsumers || [])
+  const totals = new Set([power.wholeHouse, power.energyToday, power.energyThisMonth].map((m) => m?.entityId).filter(Boolean));
+  return (power.topConsumers || [])
+    .filter((c) => !totals.has(c.entityId))
     .map((c) => ({ ...c, entity: byId.get(c.entityId) }))
     .filter((c) => c.entity);
 }

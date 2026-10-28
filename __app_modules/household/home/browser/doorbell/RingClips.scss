@@ -38,6 +38,15 @@
     object-fit: contain;
   }
 
+  &__failed {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--ds-text-mid);
+  }
+
   &__none,
   &__empty {
     margin: 0;

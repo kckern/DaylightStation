@@ -80,7 +80,7 @@ describe('EntityDetailSheet history', () => {
     const ring = Date.parse('2026-10-28T17:00:00Z');
     apiMock.mockImplementation(async (path) => {
       if (path.includes('/history?range=')) {
-        return { entityId: 'binary_sensor.porch_visitor', range: '24h', kind: 'events', hasData: true, camera: 'porch-cam', marks: [ring], sinceIso: '2026-10-27T19:00:00.000Z', endIso: '2026-10-28T19:00:00.000Z' };
+        return { entityId: 'binary_sensor.porch_visitor', range: '24h', kind: 'events', hasData: true, camera: 'porch-cam', timeZone: 'Asia/Tokyo', marks: [ring], sinceIso: '2026-10-27T19:00:00.000Z', endIso: '2026-10-28T19:00:00.000Z' };
       }
       if (path.startsWith('api/v1/camera/porch-cam/clips?day=')) {
         return { camera: 'porch-cam', clips: [{ start: '2026-10-28T16:59:50.000Z', end: '2026-10-28T17:00:40.000Z', name: 'Rec/clip_a.mp4', labels: [] }] };
@@ -90,6 +90,8 @@ describe('EntityDetailSheet history', () => {
     wrap(<EntityDetailSheet entity={entity('binary_sensor.porch_visitor', { type: 'presence' })} onClose={() => {}} />);
     await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
     expect(document.querySelector('video').getAttribute('src')).toContain('/api/v1/camera/porch-cam/clips/file?name=');
+    // 17:00 UTC is 02:00 on the 29th in the history's zone: that day is the one asked for.
+    expect(apiMock).toHaveBeenCalledWith('api/v1/camera/porch-cam/clips?day=2026-10-29');
   });
 
   it('an events history with no camera adds nothing', async () => {

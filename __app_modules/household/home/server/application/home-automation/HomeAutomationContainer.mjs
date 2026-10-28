@@ -111,7 +111,8 @@ export class HomeAutomationContainer {
       this.#getEntityHistory = new GetEntityHistory({
         configRepository: this.#configRepository,
         entityGateway: this.#entityGateway,
-        historyGateway: this.#historyGateway, clock: this.#clock, logger: this.#logger,
+        historyGateway: this.#historyGateway,
+        timeZone: this.#timeZone, clock: this.#clock, logger: this.#logger,
       });
     }
     return this.#getEntityHistory;
