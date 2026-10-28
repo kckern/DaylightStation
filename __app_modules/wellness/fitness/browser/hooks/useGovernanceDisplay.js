@@ -150,8 +150,10 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
   const cycleHealthLock = cycleLocked && lockingChallenge.lockReason === 'health';
   const show = cycleHealthLock ? false : Boolean(selected?.rows.length || activityRequirements.length
     || cycleLocked || govState.status === 'locked' || govState.status === 'pending');
+  // `unlocked` with an unmet floor only happens inside warning_cooldown_seconds.
+  const quiet = show && govState.status === 'unlocked' && !lockingChallenge && obligations.length > 0;
   return {
-    show, status: govState.status,
+    show, quiet, status: govState.status,
     obligations,
     zone: selected?.zone || null, zoneLabel: selected?.zoneLabel || null,
     requiredCount: selected?.requiredCount ?? null, actualCount: selected?.actualCount ?? null,

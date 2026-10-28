@@ -488,3 +488,37 @@ describe('resolveGovernanceDisplay — playback pause vs floor backgrounding', (
     expect(result.challenge).toBeNull();
   });
 });
+
+describe('resolveGovernanceDisplay — warning cooldown (quiet)', () => {
+  const floor = { id: 'floor', zone: 'active', zoneLabel: 'Active', satisfied: false, missingUsers: ['rider-a'], metUsers: [], requiredCount: 2, actualCount: 1 };
+  const zones = { map: { cool: { id: 'cool', name: 'Cool', rank: 0 }, active: { id: 'active', name: 'Active', rank: 1 } } };
+  const riders = (heartRate = 94) => new Map([['rider-a', { displayName: 'Rider A', heartRate, zoneId: 'cool' }]]);
+  const run = (status, map = riders()) => resolveGovernanceDisplay(makeGovState({ status, requirements: [floor] }), map, zones);
+
+  it('is quiet when unlocked with an unmet floor (warning cooldown)', () => {
+    const result = run('unlocked');
+    expect(result.show).toBe(true);
+    expect(result.quiet).toBe(true);
+    expect(result.status).toBe('unlocked');
+    expect(result.rows[0].userId).toBe('rider-a');
+  });
+  it('is not quiet during warning', () => {
+    expect(run('warning').quiet).toBe(false);
+  });
+  it('is not quiet while pending', () => {
+    expect(run('pending').quiet).toBe(false);
+  });
+  it('is not quiet for a cycle init lock while unlocked', () => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'unlocked', requirements: [],
+      challenge: makeCycleChallenge({ cycleState: 'locked', lockReason: 'init' }),
+    }), new Map(), zones);
+    expect(result.show).toBe(true);
+    expect(result.quiet).toBe(false);
+  });
+  it('is not quiet when every missing rider is filtered out', () => {
+    const result = run('unlocked', riders(null));
+    expect(result.show).toBe(false);
+    expect(result.quiet).toBe(false);
+  });
+});
