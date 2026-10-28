@@ -239,7 +239,9 @@ describe('resolveGovernanceDisplay', () => {
     expect(result.rows[0].currentZone).toBeNull();
   });
 
-  test('includes challenge rows when challenge has missingUsers', () => {
+  // 6bb1f83d42 (2026-10-22): a PENDING challenge never supplies a lock
+  // explanation — only a failed (locking) challenge contributes rows.
+  test('a pending challenge contributes no rows, even while locked', () => {
     const displayMap = makeDisplayMap([
       {
         id: 'user-1', displayName: 'Alice', avatarSrc: '/img/a.jpg',
@@ -266,8 +268,8 @@ describe('resolveGovernanceDisplay', () => {
     );
 
     expect(result.show).toBe(true);
-    expect(result.rows.length).toBe(1);
-    expect(result.rows[0].targetZone.id).toBe('warm');
+    expect(result.rows).toEqual([]);
+    expect(result.challenge).toBeNull();
   });
 
   test('computes target-aware progress for COOL user targeting HOT', () => {
@@ -424,7 +426,8 @@ describe('resolveGovernanceDisplay', () => {
     expect(result.rows[0].targetZone.id).toBe('warm');
   });
 
-  test('includes pending challenge missingUsers (existing behavior preserved)', () => {
+  // 6bb1f83d42: superseded "pending challenge rows" — see the test above.
+  test('pending phase with only a pending challenge shows no challenge rows', () => {
     const displayMap = makeDisplayMap([
       {
         id: 'user_4', displayName: 'User_4', avatarSrc: '/img/user_4.jpg',
@@ -453,8 +456,7 @@ describe('resolveGovernanceDisplay', () => {
     );
 
     expect(result.show).toBe(true);
-    expect(result.rows.length).toBe(1);
-    expect(result.rows[0].userId).toBe('user_4');
+    expect(result.rows).toEqual([]);
   });
 
   test('warning phase does NOT include paused challenge missingUsers', () => {
@@ -540,7 +542,11 @@ describe('resolveGovernanceDisplay', () => {
   expect(rowUserIds).not.toContain('kid1');
 });
 
-  test('locked phase DOES include active (non-paused) challenge missingUsers', () => {
+  // 6bb1f83d42: an unmet floor owns the explanation. The failed challenge's
+  // obligation is not merged in; it returns only once the floor recovers
+  // (useGovernanceDisplay.test.js "restores the failed Warm obligation only
+  // after floor recovery").
+  test('locked with an unmet floor shows the floor rows, not the failed challenge rows', () => {
     const displayMap = makeDisplayMap([
       {
         id: 'dad', displayName: 'Dad', avatarSrc: '/img/dad.jpg',
@@ -575,7 +581,7 @@ describe('resolveGovernanceDisplay', () => {
 
     expect(result.show).toBe(true);
     const rowUserIds = result.rows.map(r => r.userId);
-    expect(rowUserIds).toContain('dad');
-    expect(rowUserIds).toContain('kid1');
+    expect(rowUserIds).toEqual(['dad']);
+    expect(result.challenge).toBeNull();
   });
 });

@@ -89,34 +89,30 @@ describe('GovernanceEngine canonical state consumption', () => {
     expect(mockSession.getParticipantProfile).not.toHaveBeenCalled();
   });
 
-  it('does NOT read session.roster when getActiveParticipantState is available', () => {
-    const rosterAccessor = vi.fn().mockReturnValue([]);
-    mockSession = {
-      getActiveParticipantState: vi.fn().mockReturnValue({
+  // The invariant is that WHO participates comes from the canonical state.
+  // session.roster may still be read to decorate evidence and lock logs with a
+  // display name and heart rate (_capturePlaybackEvidence, _getParticipantStates),
+  // so "roster is never touched" is the wrong guard. A roster that disagrees
+  // with the canonical state must not change the participant set.
+  it('takes participants from getActiveParticipantState even when session.roster disagrees', () => {
+    setupGovernedEngine({
+      participantState: {
         participants: ['alice'],
         zoneMap: { alice: 'active' },
         totalCount: 1
-      }),
-      get roster() { rosterAccessor(); return []; },
-      zoneProfileStore: { getProfile: () => null },
-      treasureBox: null,
-      getParticipantProfile: vi.fn().mockReturnValue(null)
-    };
-
-    engine = new GovernanceEngine(mockSession);
-    engine._governedLabelSet = new Set(['fitness']);
-    engine._governedTypeSet = new Set();
-    engine.media = { id: 'test-media', labels: ['fitness'], type: 'video' };
-    engine._latestInputs = {
-      zoneRankMap: { active: 3 },
-      zoneInfoMap: { active: {} }
-    };
+      },
+      roster: [
+        { id: 'alice', isActive: true, zoneId: 'active' },
+        { id: 'mallory', isActive: true, zoneId: 'rest' }
+      ]
+    });
+    engine.policies = [{ id: 'test-policy', minParticipants: 1, baseRequirement: {} }];
 
     engine.evaluate();
 
-    // GovernanceEngine should use getActiveParticipantState, not session.roster
     expect(mockSession.getActiveParticipantState).toHaveBeenCalled();
-    expect(rosterAccessor).not.toHaveBeenCalled();
+    expect(engine._latestInputs.activeParticipants).toEqual(['alice']);
+    expect(engine._latestInputs.totalCount).toBe(1);
   });
 
   it('still works when evaluate() is called with explicit args (snapshot path)', () => {
