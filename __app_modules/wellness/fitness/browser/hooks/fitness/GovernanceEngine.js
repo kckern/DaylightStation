@@ -330,6 +330,7 @@ export class GovernanceEngine {
     this._warningStartTime = null;
     this._lockStartTime = null;
     this._warningCooldownUntil = null;
+    this._cooldownSuppressionLogged = false;
 
     // Expose governance state globally for cross-component correlation
     this._updateGlobalState();
@@ -1602,6 +1603,7 @@ export class GovernanceEngine {
         const cooldownSeconds = Number(this.config?.warning_cooldown_seconds);
         if (Number.isFinite(cooldownSeconds) && cooldownSeconds > 0) {
           this._warningCooldownUntil = now + cooldownSeconds * 1000;
+          this._cooldownSuppressionLogged = false;
         }
       }
 
@@ -2060,6 +2062,7 @@ export class GovernanceEngine {
     this._pausedAt = null;
     this._remainingMs = null;
     this._warningCooldownUntil = null;
+    this._cooldownSuppressionLogged = false;
     this._activeRequirementIds.clear();
     this._cadenceFloorState.clear();
     this._unattendedPolicyState = { mediaId: this.media?.id ?? null, active: false, startupSatisfied: false };
@@ -2147,6 +2150,7 @@ export class GovernanceEngine {
     this._pausedAt = null;
     this._remainingMs = null;
     this._warningCooldownUntil = null;
+    this._cooldownSuppressionLogged = false;
     this._stateCache = null;
     this._activeRequirementIds.clear();
     this._cadenceFloorState.clear();
@@ -2907,6 +2911,7 @@ export class GovernanceEngine {
       this.meta.satisfiedOnce = true;
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
+      this._cooldownSuppressionLogged = false;
       this._setPhase('unlocked', evalContext);
     } else if (!this.meta.satisfiedOnce) {
       // Never been satisfied -> pending
@@ -2920,6 +2925,17 @@ export class GovernanceEngine {
       if (inCooldown) {
         // Stay in current phase (unlocked) during cooldown
         // Don't clear satisfiedOnce so next eval after cooldown works normally
+        if (!this._cooldownSuppressionLogged) {
+          this._cooldownSuppressionLogged = true;
+          const missingUsers = [...new Set(summaries
+            .filter((summary) => !summary.satisfied)
+            .flatMap((summary) => (Array.isArray(summary.missingUsers) ? summary.missingUsers : [])))];
+          getLogger().info('governance.warning_suppressed', {
+            contentId: this.media?.id ?? null,
+            cooldownRemainingMs: this._warningCooldownUntil - now,
+            missingUsers
+          });
+        }
       } else {
         let graceSeconds = baseGraceSeconds;
         if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
