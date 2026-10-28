@@ -25,8 +25,11 @@ function buildEngine({
   return engine;
 }
 
+// Cadence samples must carry `connected: true` and a fresh `ts` to count as
+// available (_hasAvailableCycleCadence, 2854d394ad); otherwise the filter
+// treats the sensor as lost and currentRpm reads 0.
 function baseActiveCycle(overrides = {}) {
-  return {
+  const active = {
     id: 'cyc_1',
     type: 'cycle',
     status: 'pending',
@@ -58,6 +61,13 @@ function baseActiveCycle(overrides = {}) {
     },
     ...overrides
   };
+  // _startCycleChallenge seeds the 500ms published-state debounce
+  // (7d268996b6). Model a challenge that has been stable in its current state,
+  // so the snapshot publishes cycleState immediately.
+  active._publishedCycleState = active.cycleState;
+  active._pendingCycleState = active.cycleState;
+  active._pendingSince = 0;
+  return active;
 }
 
 describe('GovernanceEngine cycle challenge snapshot', () => {
@@ -74,7 +84,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       initElapsedMs: 10000,
       initTotalMs: 60000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 25, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 25, ts: now, connected: true } };
     engine._latestInputs.activeParticipants = ['user_2'];
     engine._latestInputs.userZoneMap = { user_2: 'warm' };
 
@@ -111,7 +121,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       cycleState: 'ramp',
       rampElapsedMs: 6000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 50, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 50, ts: now, connected: true } };
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('ramp');
@@ -123,7 +133,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('snapshot during maintain — dimFactor = 0 when rpm at hi', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } }; // at hi
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now, connected: true } }; // at hi
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('maintain');
@@ -134,7 +144,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
   it('snapshot during maintain — dimFactor ~0.5 when rpm midway between lo and hi', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
     // lo=45, hi=60 → midway is 52.5
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 52.5, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 52.5, ts: now, connected: true } };
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('maintain');
@@ -145,7 +155,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
     // When RPM < lo we're below the dim band. _buildChallengeSnapshot branch only
     // computes a non-zero dim when rpm is within [lo, hi). Below lo it stays 0.
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.dimFactor).toBe(0);
   });
@@ -155,7 +165,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       cycleState: 'locked',
       lockReason: 'maintain'
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 30, ts: now, connected: true } };
 
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.cycleState).toBe('locked');
@@ -165,7 +175,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('swapAllowed: true in init', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.swapAllowed).toBe(true);
   });
@@ -176,32 +186,41 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       currentPhaseIndex: 0,
       rampElapsedMs: 1000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 40, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 40, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.swapAllowed).toBe(true);
   });
 
-  it('swapAllowed: false in maintain', () => {
+  // Tag-team rule (5f2b531ade): swap is allowed in every non-terminal cycle
+  // state, so the snapshot advertises it in maintain / later ramps / locked.
+  it('swapAllowed: true in maintain (tag-team)', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
-    expect(snap.swapAllowed).toBe(false);
+    expect(snap.swapAllowed).toBe(true);
   });
 
-  it('swapAllowed: false in phase-2 ramp (currentPhaseIndex > 0)', () => {
+  it('swapAllowed: true while locked (a teammate can take over)', () => {
+    engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'locked', lockReason: 'health' });
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now, connected: true } };
+    const snap = engine._buildChallengeSnapshot(now);
+    expect(snap.swapAllowed).toBe(true);
+  });
+
+  it('swapAllowed: true in phase-2 ramp (currentPhaseIndex > 0)', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({
       cycleState: 'ramp',
       currentPhaseIndex: 1,
       rampElapsedMs: 2000
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
-    expect(snap.swapAllowed).toBe(false);
+    expect(snap.swapAllowed).toBe(true);
   });
 
   it('swapEligibleUsers excludes current rider and cooldown users', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now, connected: true } };
     // Set user_3 on cooldown
     engine._cycleCooldowns = { user_3: now + 10000 };
     const snap = engine._buildChallengeSnapshot(now);
@@ -212,7 +231,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('swapEligibleUsers includes users whose cooldown has expired', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now, connected: true } };
     // user_3 cooldown expired (<= now)
     engine._cycleCooldowns = { user_3: now - 1000 };
     const snap = engine._buildChallengeSnapshot(now);
@@ -226,7 +245,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       cycleState: 'maintain',
       phaseProgressMs: 99999 // massively over maintainSeconds*1000 (30_000)
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.phaseProgressPct).toBe(1.0);
     // And the clamped entry in allPhasesProgress for current phase
@@ -239,7 +258,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       currentPhaseIndex: 1,
       phaseProgressMs: 22500 // half of phase[1].maintainSeconds*1000 (45_000)
     });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 70, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 70, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
     // phase 0 is past → 1.0; phase 1 is current → 0.5
     expect(snap.allPhasesProgress[0]).toBe(1.0);
@@ -248,7 +267,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
 
   it('boostMultiplier computed correctly with boosters and self-boost', () => {
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'maintain' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 60, ts: now, connected: true } };
     // user_2 (rider) is in fire (+1.0), user_3 is in hot (+0.5) → 1.0 + 1.0 + 0.5 = 2.5
     engine._latestInputs.userZoneMap = { user_2: 'fire', user_3: 'hot' };
     engine._latestInputs.activeParticipants = ['user_2', 'user_3'];
@@ -261,7 +280,7 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
   it('falls back to rider id as name when session.getParticipantProfile returns null', () => {
     engine = buildEngine({ nowValue: now, profiles: {} });
     engine.challengeState.activeChallenge = baseActiveCycle({ cycleState: 'init' });
-    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now } };
+    engine._latestInputs.equipmentCadenceMap = { cycle_ace: { rpm: 10, ts: now, connected: true } };
     const snap = engine._buildChallengeSnapshot(now);
     expect(snap.rider).toEqual({ id: 'user_2', name: 'user_2' });
   });
@@ -288,7 +307,9 @@ describe('GovernanceEngine cycle challenge snapshot', () => {
       selectionLabel: 'Zone Thing'
     };
     const snap = engine._buildChallengeSnapshot(now);
-    expect(snap.type).toBeUndefined(); // zone snapshots don't set type
+    // Since 4a744de097 every snapshot carries a type (zone is the default) so
+    // consumers can tell zone from other non-cycle challenge kinds.
+    expect(snap.type).toBe('zone');
     expect(snap.zone).toBe('hot');
     expect(snap.zoneLabel).toBe('Hot');
     expect(snap.requiredCount).toBe(2);

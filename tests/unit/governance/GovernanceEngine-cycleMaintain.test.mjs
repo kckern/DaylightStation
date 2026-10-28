@@ -24,6 +24,8 @@ describe('GovernanceEngine cycle maintain state', () => {
       phaseProgressMs: 0, rampElapsedMs: 0, initElapsedMs: 0, initTotalMs: 60000,
       totalLockEventsCount: 0, totalBoostedMs: 0,
       boostContributors: new Set(), status: 'pending',
+      // _startCycleChallenge seeds a full health pool (3000ms).
+      cycleHealthMs: 3000,
       _lastCycleTs: 30000
     };
   });
@@ -48,11 +50,10 @@ describe('GovernanceEngine cycle maintain state', () => {
     expect(active.cycleState).toBe('maintain');
   });
 
-  it('arms danger grace and stays in maintain on first below-lo tick', () => {
-    // The 2026-05-03 redesign wraps the maintain → locked transition in a
-    // 3-second grace window. The first below-lo tick stamps `dangerSinceMs`
-    // but does not lock — the lock fires only after 3 s of sustained
-    // sub-loRpm input.
+  // 81d2462f63 (2026-05-28) replaced the 3-second danger grace with a health
+  // pool: it depletes 1ms/ms below loRpm, regenerates 1.5ms/ms at >= hiRpm,
+  // holds in the amber band, and locks (lockReason 'health') when it empties.
+  it('depletes health and stays in maintain on the first below-lo tick', () => {
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
@@ -61,12 +62,14 @@ describe('GovernanceEngine cycle maintain state', () => {
     expect(active.cycleState).toBe('maintain');
     expect(active.lockReason).toBeFalsy();
     expect(active.totalLockEventsCount).toBe(0);
-    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+    expect(active.cycleHealthMs).toBeGreaterThan(0);
+    expect(active.cycleHealthMs).toBeLessThan(3000);
+    expect(active.phaseProgressMs).toBe(0);
   });
 
-  it('transitions to locked after sustained below-lo for ≥3 seconds', () => {
+  it('transitions to locked after sustained below-lo empties the health pool', () => {
     // Sustain rpm < lo across multiple ticks for >3 s. Drive the engine clock
-    // forward between ticks so the grace timer accumulates.
+    // forward between ticks so the pool drains.
     let lockObserved = false;
     for (let i = 0; i < 20; i += 1) {
       nowValue += 200; // 20 ticks × 200 ms = 4 s total
@@ -78,27 +81,30 @@ describe('GovernanceEngine cycle maintain state', () => {
     }
     expect(lockObserved).toBe(true);
     expect(active.cycleState).toBe('locked');
-    expect(active.lockReason).toBe('maintain');
+    expect(active.lockReason).toBe('health');
+    expect(active.cycleHealthMs).toBe(0);
     expect(active.totalLockEventsCount).toBe(1);
   });
 
-  it('clears the danger grace when rpm recovers within the 3-second window', () => {
-    // First tick below lo arms the grace.
+  it('regenerates health when rpm recovers above hi before the pool empties', () => {
+    // First tick below lo drains part of the pool.
     nowValue = 31000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 40, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
       userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
-    expect(Number.isFinite(active.dangerSinceMs)).toBe(true);
+    const drained = active.cycleHealthMs;
+    expect(drained).toBeLessThan(3000);
 
-    // 1 s later, rider recovers above hiRpm. Grace must clear.
+    // 1 s later, rider recovers above hiRpm. Health must regenerate, no lock.
     nowValue = 32000;
     engine._evaluateCycleChallenge(active, {
       equipmentRpm: 65, baseReqSatisfiedForRider: true, baseReqSatisfiedGlobal: true,
       userZoneMap: { user_2: 'warm' }, activeParticipants: ['user_2']
     });
-    expect(active.dangerSinceMs).toBeNull();
+    expect(active.cycleHealthMs).toBeGreaterThan(drained);
     expect(active.cycleState).toBe('maintain');
+    expect(active.totalLockEventsCount).toBe(0);
   });
 
   it('accrues at boosted rate when non-rider in hot', () => {

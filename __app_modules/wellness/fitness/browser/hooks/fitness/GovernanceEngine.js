@@ -6009,6 +6009,9 @@ export class GovernanceEngine {
    */
   _isCycleSwapAllowed(active) {
     if (!active || active.type !== 'cycle') return false;
+    // Terminal lives in `status`: success holds cycleState 'maintain' for the
+    // success-publish window, so cycleState alone would accept a swap there.
+    if (['success', 'failed', 'cancelled'].includes(active.status)) return false;
     return ['init', 'ramp', 'maintain', 'locked'].includes(active.cycleState);
   }
 

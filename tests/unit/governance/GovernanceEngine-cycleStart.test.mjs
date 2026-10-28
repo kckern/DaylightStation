@@ -64,14 +64,16 @@ describe('GovernanceEngine cycle challenge start', () => {
     expect(active.boostContributors instanceof Set).toBe(true);
   });
 
-  it('returns null when no eligible users available', () => {
+  it('rejects with equipment_not_found when the equipment has no catalog entry (no eligible users)', () => {
+    // Since 50a77af429 the start helper returns a { ok: false, reason } result
+    // instead of null so triggerChallenge can surface the specific reason.
     const selection = { ...sampleSelection(), equipment: 'nonexistent' };
-    expect(engine._startCycleChallenge(selection, {})).toBeNull();
+    expect(engine._startCycleChallenge(selection, {})).toEqual({ ok: false, reason: 'equipment_not_found' });
   });
 
   it('filters out riders on cooldown', () => {
     engine._cycleCooldowns = { user_2: nowValue + 5000, user_3: nowValue + 5000 };
-    expect(engine._startCycleChallenge(sampleSelection(), {})).toBeNull();
+    expect(engine._startCycleChallenge(sampleSelection(), {})).toEqual({ ok: false, reason: 'all_riders_on_cooldown' });
   });
 
   it('rider with expired cooldown is eligible', () => {
