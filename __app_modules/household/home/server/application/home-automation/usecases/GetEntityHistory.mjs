@@ -9,7 +9,7 @@
 
 import { InvalidInputError, MissingResourceError } from '#apps/common/errors/SemanticErrors.mjs';
 import {
-  EntityCatalogPolicy, TimelinePolicy, bucketLine, toIntervals, risingEdges, stateClassOf,
+  EntityCatalogPolicy, TimelinePolicy, bucketLine, toIntervals, risingEdges, stateClassOf, hasKnownValue,
 } from "../../../domain/home-automation/index.mjs";
 import { toConfigurationError } from './configErrors.mjs';
 import { loadRoomContext } from './roomContext.mjs';
@@ -23,6 +23,7 @@ const RANGES = Object.freeze({
 });
 export const ENTITY_HISTORY_RANGES = Object.freeze(Object.keys(RANGES));
 
+const NOOP_LOGGER = Object.freeze({ debug() {}, info() {}, warn() {}, error() {} });
 const isOnState = (v) => v === 'on';
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -64,7 +65,7 @@ export class GetEntityHistory {
     this.#historyGateway = historyGateway;
     this.#clock = clock;
     this.#timeZone = timeZone;
-    this.#logger = logger || console;
+    this.#logger = logger || NOOP_LOGGER;
   }
 
   /**
@@ -83,9 +84,11 @@ export class GetEntityHistory {
       throw new InvalidInputError('entityId is required', { code: 'INVALID_ENTITY_ID', details: { field: 'entityId', value: entityId } });
     }
 
-    const { catalog, timeline } = await this.#loadPolicies();
-    const lane = timeline.laneForEntity(entityId);
-    const reading = lane ? null : await this.#assertShown(entityId, catalog);
+    const config = await this.#configRepository.load();
+    const lane = this.#timelinePolicy(config).laneForEntity(entityId);
+    // The catalog is parsed only for an entity no lane reads: a bad
+    // `entities:` section must not take the timeline's own drawers down.
+    const reading = lane ? null : await this.#assertShown(entityId, this.#catalogPolicy(config));
     const domain = entityId.split('.')[0];
 
     const nowMs = this.#clock();
@@ -95,7 +98,7 @@ export class GetEntityHistory {
     const win = { startMs, endMs: nowMs };
     const lineWin = { startMs, endMs: startMs + spec.ms };
 
-    const base = { entityId, range, timeZone: this.#timeZone, hasData: series.length > 0, sinceIso: new Date(startMs).toISOString(), endIso: new Date(nowMs).toISOString() };
+    const base = { entityId, range, timeZone: this.#timeZone, hasData: hasKnownValue(series, win), sinceIso: new Date(startMs).toISOString(), endIso: new Date(nowMs).toISOString() };
     let out;
     // Only the lane's primary entity gets marks: the one other id an events
     // lane carries is its energy counter, which is a line.
@@ -125,16 +128,17 @@ export class GetEntityHistory {
     return reading;
   }
 
-  async #loadPolicies() {
-    const config = await this.#configRepository.load();
-    let catalog;
+  #catalogPolicy(config) {
     try {
-      catalog = EntityCatalogPolicy.fromConfig(config.entities);
+      return EntityCatalogPolicy.fromConfig(config.entities);
     } catch (error) {
       toConfigurationError(error, 'entities');
     }
+  }
+
+  #timelinePolicy(config) {
     try {
-      return { catalog, timeline: TimelinePolicy.fromConfig(config.timeline, { power: config.power }) };
+      return TimelinePolicy.fromConfig(config.timeline, { power: config.power });
     } catch (error) {
       toConfigurationError(error, 'timeline');
     }

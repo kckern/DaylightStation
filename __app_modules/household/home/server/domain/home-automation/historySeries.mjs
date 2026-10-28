@@ -93,6 +93,15 @@ function segments(series, startMs, endMs) {
 }
 
 /**
+ * True when the entity held a known (non-null) value at some instant inside
+ * the window, including a value carried in from before `startMs`. A window
+ * before the first point, or one the entity spent unavailable, has none.
+ */
+export function hasKnownValue(series, { startMs, endMs }) {
+  return segments(series, startMs, endMs).some((seg) => seg.v !== null && seg.v !== undefined);
+}
+
+/**
  * Down-samples a numeric series to a fixed bucket count. `v` is the
  * time-weighted mean of the held value, `max` the peak; unavailable time is
  * excluded, and a bucket with no numeric time is `{v: null, max: null}`.

@@ -39,4 +39,24 @@ describe('GetHomeTimeline', () => {
     await expect(make(new Map(), { timeline: { lanes: [{ id: 'x', kind: 'occupancy' }] } }).uc.execute({ range: 'today' }))
       .rejects.toMatchObject({ name: 'ConfigurationError' });
   });
+  it('in a week, days before an entity\'s first point have no data while later days do', async () => {
+    const third = MID - 4 * 24 * 3600e3; // local midnight starting the third day of the week
+    const { uc } = make(new Map([
+      ['binary_sensor.den_presence', [{ t: third + 3600e3, v: 'off' }]],
+      ['binary_sensor.porch_visitor', [{ t: third + 3600e3, v: 'off' }, { t: third + 7200e3, v: 'on' }]],
+    ]));
+    const out = await uc.execute({ range: 'week' });
+    expect(out.lanes[1].days.map((d) => d.hasData)).toEqual([false, false, true, true, true, true, true]);
+    expect(out.lanes[1].days[0].total).toEqual({ hours: null });
+    expect(out.lanes[1].days[3].total).toEqual({ hours: 0 });
+    expect(out.lanes[0].days.map((d) => d.total.count)).toEqual([null, null, 1, 0, 0, 0, 0]);
+    expect(out.lanes[0].total).toEqual({ count: 1 });
+  });
+  it('without an injected logger it never falls back to the console', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const uc = new GetHomeTimeline({ configRepository: { load: async () => config }, historyGateway: { readHistory: vi.fn().mockResolvedValue(new Map()) }, timeZone: 'America/Los_Angeles', clock: () => NOW });
+    await uc.execute({ range: 'today' });
+    expect(debug).not.toHaveBeenCalled();
+    debug.mockRestore();
+  });
 });

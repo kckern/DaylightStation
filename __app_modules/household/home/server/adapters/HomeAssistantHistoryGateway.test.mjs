@@ -41,4 +41,11 @@ describe('HomeAssistantHistoryGateway', () => {
   it('requires its gateway', () => {
     expect(() => new HomeAssistantHistoryGateway({}, {})).toThrow(/requires gateway/);
   });
+  it('without an injected logger it stays silent rather than writing to the console', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const gw = new HomeAssistantHistoryGateway({}, { gateway: { getHistory: vi.fn().mockResolvedValue(new Map()) } });
+    await gw.readHistory(['sensor.p'], { startMs: 0, endMs: 1 });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });

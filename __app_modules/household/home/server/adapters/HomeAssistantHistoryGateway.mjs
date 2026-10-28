@@ -18,6 +18,7 @@ import { IHomeHistoryGateway } from "../application/home-automation/ports/IHomeH
 
 const NON_VALUES = new Set(['unavailable', 'unknown', '']);
 const MINUTE_MS = 60e3;
+const NOOP_LOGGER = Object.freeze({ debug() {}, info() {}, warn() {}, error() {} });
 
 export class HomeAssistantHistoryGateway extends IHomeHistoryGateway {
   #gateway;
@@ -41,7 +42,7 @@ export class HomeAssistantHistoryGateway extends IHomeHistoryGateway {
       });
     }
     this.#gateway = deps.gateway;
-    this.#logger = deps.logger || console;
+    this.#logger = deps.logger || NOOP_LOGGER;
     this.#clock = deps.clock || Date.now;
   }
 

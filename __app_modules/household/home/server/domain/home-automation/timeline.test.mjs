@@ -48,4 +48,55 @@ describe('buildLaneDay', () => {
     const d = buildLaneDay(p.lanes[1], new Map(), w, { buckets: 12 });
     expect(d).toEqual({ day: '2026-10-28', hasData: false, marks: [], total: { count: null } });
   });
+
+  // A1: "has data" is judged inside the day's window, not over the whole range.
+  it('a day before the entity\'s first point has no data, for every lane kind', () => {
+    const late = 2 * 3600e3; // first point lands after this window ends
+    const h = new Map([
+      ['sensor.panel_power', [{ t: late, v: 500 }]],
+      ['binary_sensor.porch_visitor', [{ t: late, v: 'off' }]],
+      ['binary_sensor.den_presence', [{ t: late, v: 'on' }]],
+      ['sensor.den_tv_plug_power', [{ t: late, v: 120 }]],
+    ]);
+    expect(buildLaneDay(p.lanes[0], h, w, { buckets: 12 })).toMatchObject({ hasData: false, total: { kwh: null } });
+    expect(buildLaneDay(p.lanes[1], h, w, { buckets: 12 })).toMatchObject({ hasData: false, total: { count: null } });
+    expect(buildLaneDay(p.lanes[2], h, w, { buckets: 12 })).toMatchObject({ hasData: false, total: { hours: null } });
+    expect(buildLaneDay(p.lanes[3], h, w, { buckets: 12 })).toMatchObject({ hasData: false, total: { hours: null, kwh: null } });
+  });
+  it('a day where the entity was unavailable throughout has no data, not 0 h', () => {
+    const h = new Map([
+      ['binary_sensor.den_presence', [{ t: -60e3, v: null }]],
+      ['sensor.den_tv_plug_power', [{ t: 0, v: null }, { t: 1800e3, v: null }]],
+      ['sensor.panel_power', [{ t: 0, v: null }]],
+    ]);
+    expect(buildLaneDay(p.lanes[2], h, w, { buckets: 12 })).toMatchObject({ hasData: false, total: { hours: null } });
+    expect(buildLaneDay(p.lanes[3], h, w, { buckets: 12 })).toMatchObject({ hasData: false, total: { hours: null, kwh: null } });
+    expect(buildLaneDay(p.lanes[0], h, w, { buckets: 12 })).toMatchObject({ hasData: false, total: { kwh: null } });
+  });
+  it('a value carried in from before the window counts as data for the day', () => {
+    const h = new Map([['binary_sensor.den_presence', [{ t: -3600e3, v: 'off' }]]]);
+    expect(buildLaneDay(p.lanes[2], h, w, { buckets: 12 })).toMatchObject({ hasData: true, intervals: [], total: { hours: 0 } });
+  });
+  it('a power lane draws its line and takes kWh from the daily meter', () => {
+    const h = new Map([
+      ['sensor.panel_power', [{ t: 0, v: 1000 }, { t: 1800e3, v: 3000 }]],
+      ['sensor.panel_energy_today', [{ t: 0, v: 0.1 }, { t: 1800e3, v: 1.4 }]],
+    ]);
+    const d = buildLaneDay(p.lanes[0], h, w, { buckets: 2 });
+    expect(d).toMatchObject({ hasData: true, total: { kwh: 1.4 } });
+    expect(d.points.map((pt) => pt.v)).toEqual([1000, 3000]);
+  });
+  it('a power lane whose meter has nothing in the window integrates the line instead', () => {
+    const h = new Map([
+      ['sensor.panel_power', [{ t: 0, v: 1000 }]],
+      ['sensor.panel_energy_today', [{ t: 2 * 3600e3, v: 9 }]],
+    ]);
+    expect(buildLaneDay(p.lanes[0], h, w, { buckets: 2 }).total.kwh).toBeCloseTo(1);
+  });
+  it('an occupancy lane sums the hours someone was there', () => {
+    const h = new Map([['binary_sensor.den_presence', [{ t: 0, v: 'off' }, { t: 900e3, v: 'on' }, { t: 2700e3, v: 'off' }]]]);
+    const d = buildLaneDay(p.lanes[2], h, w, { buckets: 12 });
+    expect(d.intervals).toEqual([{ from: 900e3, to: 2700e3 }]);
+    expect(d.total.hours).toBeCloseTo(0.5);
+  });
 });

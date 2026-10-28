@@ -13,5 +13,5 @@ export { TimelinePolicy, buildLaneDay, LANE_KINDS } from './TimelinePolicy.mjs';
 export { MosaicPolicy, arrangeMosaic } from './MosaicPolicy.mjs';
 export {
   dayWindows, localMidnight, bucketLine, toIntervals, risingEdges, sumIntervalsMs,
-  dailyCounterTotal, counterDelta, integrateKwh,
+  dailyCounterTotal, counterDelta, integrateKwh, hasKnownValue,
 } from './historySeries.mjs';

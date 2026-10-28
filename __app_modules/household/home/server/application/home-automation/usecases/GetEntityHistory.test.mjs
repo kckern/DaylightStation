@@ -6,7 +6,7 @@ const readings = [
   { entityId: 'sensor.den_temperature', state: '70', deviceClass: 'temperature', unit: '°F', name: 'Den', lastChanged: null, detail: {} },
   { entityId: 'light.den', state: 'on', deviceClass: null, unit: null, name: 'Den lamp', lastChanged: null, detail: {} },
   { entityId: 'cover.garage_door', state: 'open', deviceClass: null, unit: null, name: 'Garage', lastChanged: null, detail: {} },
-  { entityId: 'lock.front_door', state: 'locked', deviceClass: null, unit: null, name: 'Front', lastChanged: null, detail: {} },
+  { entityId: 'lock.side_gate', state: 'locked', deviceClass: null, unit: null, name: 'Front', lastChanged: null, detail: {} },
   { entityId: 'media_player.den_tv', state: 'idle', deviceClass: null, unit: null, name: 'TV', lastChanged: null, detail: {} },
   { entityId: 'sensor.plug_voltage', state: '120', deviceClass: 'voltage', unit: 'V', name: null, lastChanged: null, detail: {} },
 ];
@@ -45,7 +45,7 @@ describe('GetEntityHistory', () => {
   it('covers, locks and media players draw their active states as intervals', async () => {
     const cover = await make(new Map([['cover.garage_door', [{ t: NOW - 900e3, v: 'closed' }, { t: NOW - 600e3, v: 'open' }]]])).uc.execute({ entityId: 'cover.garage_door', range: '24h' });
     expect(cover).toMatchObject({ kind: 'state', intervals: [{ from: NOW - 600e3, to: NOW }] });
-    const lock = await make(new Map([['lock.front_door', [{ t: NOW - 600e3, v: 'unlocked' }, { t: NOW - 300e3, v: 'locked' }]]])).uc.execute({ entityId: 'lock.front_door', range: '24h' });
+    const lock = await make(new Map([['lock.side_gate', [{ t: NOW - 600e3, v: 'unlocked' }, { t: NOW - 300e3, v: 'locked' }]]])).uc.execute({ entityId: 'lock.side_gate', range: '24h' });
     expect(lock.intervals).toEqual([{ from: NOW - 600e3, to: NOW - 300e3 }]);
     const tv = await make(new Map([['media_player.den_tv', [{ t: NOW - 600e3, v: 'playing' }]]])).uc.execute({ entityId: 'media_player.den_tv', range: '24h' });
     expect(tv.intervals).toEqual([{ from: NOW - 600e3, to: NOW }]);
@@ -82,5 +82,33 @@ describe('GetEntityHistory', () => {
       .rejects.toMatchObject({ name: 'ConfigurationError' });
     await expect(make(new Map(), { entities: { exclude: 'switch.*' }, timeline: {} }).uc.execute({ entityId: 'light.den', range: '24h' }))
       .rejects.toMatchObject({ name: 'ConfigurationError', key: 'entities.exclude' });
+  });
+
+  it('hasData is about the window: only points after it, or unavailable throughout, is no data', async () => {
+    const after = await make(new Map([['light.den', [{ t: NOW + 60e3, v: 'on' }]]])).uc.execute({ entityId: 'light.den', range: '24h' });
+    expect(after.hasData).toBe(false);
+    const dark = await make(new Map([['light.den', [{ t: NOW - 30 * 3600e3, v: null }, { t: NOW - 600e3, v: null }]]])).uc.execute({ entityId: 'light.den', range: '24h' });
+    expect(dark.hasData).toBe(false);
+    const carried = await make(new Map([['light.den', [{ t: NOW - 30 * 3600e3, v: 'off' }]]])).uc.execute({ entityId: 'light.den', range: '24h' });
+    expect(carried).toMatchObject({ hasData: true, intervals: [] });
+  });
+
+  it('a lane entity is readable even when the entities section is malformed', async () => {
+    const config = { entities: { exclude: 'switch.*' }, timeline: { lanes: [{ id: 'door', kind: 'events', entity: 'binary_sensor.porch_visitor', camera: 'porch-cam' }] } };
+    const door = await make(new Map([['binary_sensor.porch_visitor', [{ t: NOW - 600e3, v: 'off' }]]]), config).uc.execute({ entityId: 'binary_sensor.porch_visitor', range: '24h' });
+    expect(door).toMatchObject({ kind: 'events', hasData: true });
+    await expect(make(new Map(), config).uc.execute({ entityId: 'light.den', range: '24h' }))
+      .rejects.toMatchObject({ name: 'ConfigurationError', key: 'entities.exclude' });
+  });
+
+  it('runs without an injected logger and never falls back to the console', async () => {
+    const spies = ['debug', 'info', 'warn', 'log'].map((m) => vi.spyOn(console, m).mockImplementation(() => {}));
+    const uc = new GetEntityHistory({
+      configRepository: { load: async () => ({ entities: {}, timeline: {} }) },
+      entityGateway: { listReadings: async () => readings, listRooms: async () => ({ rooms: [], assignments: {} }) },
+      historyGateway: { readHistory: async () => new Map() }, clock: () => NOW,
+    });
+    await expect(uc.execute({ entityId: 'light.den', range: '24h' })).resolves.toMatchObject({ hasData: false });
+    for (const spy of spies) { expect(spy).not.toHaveBeenCalled(); spy.mockRestore(); }
   });
 });

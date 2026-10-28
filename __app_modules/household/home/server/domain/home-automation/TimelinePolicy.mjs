@@ -13,7 +13,7 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import {
   bucketLine, toIntervals, risingEdges, sumIntervalsMs,
-  dailyCounterTotal, counterDelta, integrateKwh,
+  dailyCounterTotal, counterDelta, integrateKwh, hasKnownValue,
 } from './historySeries.mjs';
 
 export const LANE_KINDS = Object.freeze(['power', 'events', 'occupancy', 'screen']);
@@ -130,14 +130,15 @@ const isOnState = (v) => v === 'on';
 
 /**
  * One lane's day, from `history` (entity id -> series).
- * `hasData` is false when the primary series has no point at all; totals are
+ * `hasData` is false when the primary series held no known value inside this
+ * day's window (before its first point, or unavailable all day); totals are
  * then null fields rather than zeros.
  */
 export function buildLaneDay(lane, history, window, { buckets } = {}) {
   const { day, startMs, endMs } = window;
   const win = { startMs, endMs };
   const get = (id) => (id ? history.get(id) ?? [] : []);
-  const has = (s) => s.length > 0;
+  const has = (s) => hasKnownValue(s, win);
 
   if (lane.kind === 'power') {
     const power = get(lane.power);

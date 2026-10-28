@@ -28,6 +28,8 @@ function sumTotals(days) {
   return total;
 }
 
+const NOOP_LOGGER = Object.freeze({ debug() {}, info() {}, warn() {}, error() {} });
+
 export class GetHomeTimeline {
   #configRepository;
   #historyGateway;
@@ -51,7 +53,7 @@ export class GetHomeTimeline {
     this.#historyGateway = historyGateway;
     this.#timeZone = timeZone;
     this.#clock = clock;
-    this.#logger = logger || console;
+    this.#logger = logger || NOOP_LOGGER;
   }
 
   /**

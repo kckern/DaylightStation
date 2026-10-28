@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { dayWindows, localMidnight, bucketLine, toIntervals, risingEdges, sumIntervalsMs,
-  dailyCounterTotal, counterDelta, integrateKwh } from './historySeries.mjs';
+  dailyCounterTotal, counterDelta, integrateKwh, hasKnownValue } from './historySeries.mjs';
 
 const TZ = 'America/Los_Angeles';
 const at = (iso) => Date.parse(iso);
@@ -22,6 +22,30 @@ describe('dayWindows', () => {
     const w = dayWindows('week', { nowMs: at('2026-10-28T18:30:00Z'), timeZone: TZ });
     expect(w.map((d) => d.day)).toEqual(['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28']);
     expect(w[6].endMs).toBe(at('2026-10-28T18:30:00Z'));
+  });
+  it('a week across the fall-back day keeps contiguous local-midnight windows, one of them 25 h', () => {
+    const w = dayWindows('week', { nowMs: at('2026-11-04T20:00:00Z'), timeZone: TZ });
+    expect(w.map((d) => d.day)).toEqual(['2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04']);
+    for (let i = 1; i < w.length; i += 1) expect(w[i].startMs).toBe(w[i - 1].endMs);
+    const lengths = w.slice(0, 6).map((d) => (d.endMs - d.startMs) / 3600e3);
+    expect(lengths).toEqual([24, 24, 24, 25, 24, 24]);
+    expect(w[3]).toMatchObject({ startMs: at('2026-11-01T07:00:00Z'), endMs: at('2026-11-02T08:00:00Z') });
+    // Something on all 25 hours sums to exactly the day's length, never more.
+    const allDay = [{ t: w[3].startMs - 1, v: 'on' }];
+    expect(sumIntervalsMs(toIntervals(allDay, { ...w[3], isOn }))).toBe(25 * 3600e3);
+  });
+});
+
+describe('hasKnownValue', () => {
+  const win = { startMs: 1000, endMs: 2000 };
+  it('a value carried in or landing inside the window counts', () => {
+    expect(hasKnownValue([{ t: 0, v: 'off' }], win)).toBe(true);
+    expect(hasKnownValue([{ t: 1500, v: 3 }], win)).toBe(true);
+  });
+  it('nothing before the first point, nothing after the window, and unavailable throughout do not', () => {
+    expect(hasKnownValue([{ t: 2000, v: 'on' }], win)).toBe(false);
+    expect(hasKnownValue([{ t: 0, v: null }, { t: 1500, v: null }], win)).toBe(false);
+    expect(hasKnownValue([], win)).toBe(false);
   });
 });
 
