@@ -122,6 +122,11 @@ describe('GetHomeEntities', () => {
       .rejects.toMatchObject({ name: 'ConfigurationError', key: 'now.low_battery_pct' });
   });
 
+  it('reports a malformed mosaic section as a configuration error with its dotted key', async () => {
+    await expect(makeUC({ config: { mosaic: { type_groups: 'battery' } } }).execute())
+      .rejects.toMatchObject({ name: 'ConfigurationError', key: expect.stringMatching(/^mosaic\./) });
+  });
+
   it('arranges the mosaic from the mosaic policy', async () => {
     const out = await makeUC({ config: { mosaic: { type_groups: ['battery'] } } }).execute();
     expect(out.mosaic.byRoom.at(-1).id).toBe('_elsewhere');
