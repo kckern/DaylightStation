@@ -3,7 +3,8 @@ import { W, intervalRects, linePath, markXs, xOf } from './laneGeometry.js';
 import { formatLaneTotal } from './formatLaneTotal.js';
 import './TodayView.scss';
 
-const WEEKDAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const MAX_MARK_R = 6;
+const WEEKDAY = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const weekdayOf = (day) => WEEKDAY[new Date(`${day}T12:00:00Z`).getUTCDay()];
 
 /** A lane with no readings on any day: say so, and claim no total. */
@@ -23,13 +24,25 @@ export function laneMax(lane) {
 function DayStrip({ kind, day, window, height, maxV, ticks }) {
   const nowX = window.nowMs != null ? xOf(window.nowMs, window) : null;
   let shapes = null;
+  let marks = null;
   if (day?.hasData) {
     if (kind === 'power') {
       shapes = <path className="home-lane__area" d={linePath(day.points, window, { height, maxV })} />;
     } else if (kind === 'events') {
-      shapes = markXs(day.marks, window).map((x, i) => (
-        <line key={i} className="home-lane__mark" x1={x} x2={x} y1={0} y2={height} vectorEffect="non-scaling-stroke" />
-      ));
+      // A ring is a dot at mid-height, not a full-height hairline that reads
+      // like the now line. The strip's own SVG stretches sideways, which would
+      // squash a circle, so the dots sit in an unstretched layer over it,
+      // placed by percentage.
+      // Half the strip less a pixel (3 px on a week row), capped at 6 px on
+      // the tall Today strip so neighbouring rings stay two dots, not a blob.
+      const r = Math.min(height / 2 - 1, MAX_MARK_R);
+      marks = (
+        <svg className="home-lane__marks" aria-hidden="true" focusable="false">
+          {markXs(day.marks, window).map((x, i) => (
+            <circle key={i} className="home-lane__mark" cx={`${x / 10}%`} cy={height / 2} r={r} />
+          ))}
+        </svg>
+      );
     } else {
       shapes = intervalRects(day.intervals, window).map((r, i) => (
         <rect key={i} className={`home-lane__bar home-lane__bar--${kind}`} x={r.x} width={r.width} y={0} height={height} />
@@ -37,15 +50,18 @@ function DayStrip({ kind, day, window, height, maxV, ticks }) {
     }
   }
   return (
-    <svg className="home-lane__svg" viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none" aria-hidden="true" focusable="false">
-      <rect className="home-lane__ground" x={0} y={0} width={nowX ?? W} height={height} />
-      {nowX != null ? <rect className="home-lane__ahead" x={nowX} y={0} width={W - nowX} height={height} /> : null}
-      {ticks.map((t) => (
-        <line key={t.label} className="home-lane__guide" x1={t.x} x2={t.x} y1={0} y2={height} vectorEffect="non-scaling-stroke" />
-      ))}
-      {shapes}
-      {nowX != null ? <line className="home-lane__now" x1={nowX} x2={nowX} y1={0} y2={height} vectorEffect="non-scaling-stroke" /> : null}
-    </svg>
+    <span className="home-lane__day">
+      <svg className="home-lane__svg" viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <rect className="home-lane__ground" x={0} y={0} width={nowX ?? W} height={height} />
+        {nowX != null ? <rect className="home-lane__ahead" x={nowX} y={0} width={W - nowX} height={height} /> : null}
+        {ticks.map((t) => (
+          <line key={t.label} className="home-lane__guide" x1={t.x} x2={t.x} y1={0} y2={height} vectorEffect="non-scaling-stroke" />
+        ))}
+        {shapes}
+        {nowX != null ? <line className="home-lane__now" x1={nowX} x2={nowX} y1={0} y2={height} vectorEffect="non-scaling-stroke" /> : null}
+      </svg>
+      {marks}
+    </span>
   );
 }
 

@@ -23,7 +23,7 @@ const entities = [
   entity('light.kitchen', { name: 'Kitchen light', state: 'on', stateClass: 'on', controllable: true, room: kitchen, lastChanged: '2026-10-27T20:29:00' }),
   entity('light.kitchen_table', { name: 'Table lamp', state: 'on', stateClass: 'on', controllable: true, room: kitchen }),
   entity('light.office_desk', { name: 'Desk lamp', controllable: true, room: office }),
-  entity('switch.office_tv_plug', { name: 'Office TV plug', type: 'power', state: 'on', stateClass: 'on', room: office }),
+  entity('switch.den_tv_plug', { name: 'Den TV plug', type: 'power', state: 'on', stateClass: 'on', room: office }),
   entity('sensor.office_temperature', { name: 'Office temperature', type: 'climate', stateClass: 'reading', state: '71.4', unit: '°F', deviceClass: 'temperature', room: office }),
   entity('sensor.panel_power', { name: 'Panel Power', type: 'power', stateClass: 'reading', state: '505', unit: 'W', deviceClass: 'power' }),
   entity('sensor.office_power', { name: 'Office Power', type: 'power', stateClass: 'reading', state: '302', unit: 'W', deviceClass: 'power', room: office }),
@@ -33,7 +33,7 @@ const entities = [
 ];
 const types = [{ id: 'light', label: 'Lights' }, { id: 'power', label: 'Power' }, { id: 'climate', label: 'Climate' }, { id: 'presence', label: 'Motion & presence' }, { id: 'openings', label: 'Doors & windows' }, { id: 'battery', label: 'Batteries' }];
 const summary = {
-  on: ['light.kitchen', 'light.kitchen_table', 'switch.office_tv_plug'],
+  on: ['light.kitchen', 'light.kitchen_table', 'switch.den_tv_plug'],
   open: ['binary_sensor.office_door'],
   motion: [],
   stuck: [],
@@ -43,11 +43,11 @@ const summary = {
 const mosaic = {
   byRoom: [
     { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen', 'light.kitchen_table'] },
-    { id: 'office', label: 'Office', entityIds: ['light.office_desk', 'switch.office_tv_plug', 'sensor.office_temperature', 'sensor.office_power', 'binary_sensor.office_door', 'sensor.remote_battery', 'binary_sensor.hall_motion'] },
+    { id: 'office', label: 'Office', entityIds: ['light.office_desk', 'switch.den_tv_plug', 'sensor.office_temperature', 'sensor.office_power', 'binary_sensor.office_door', 'sensor.remote_battery', 'binary_sensor.hall_motion'] },
   ],
   byType: [
     { id: 'light', label: 'Lights', entityIds: ['light.kitchen', 'light.kitchen_table', 'light.office_desk'] },
-    { id: 'power', label: 'Power', entityIds: ['switch.office_tv_plug', 'sensor.panel_power', 'sensor.office_power'] },
+    { id: 'power', label: 'Power', entityIds: ['switch.den_tv_plug', 'sensor.panel_power', 'sensor.office_power'] },
   ],
 };
 
@@ -98,7 +98,7 @@ describe('MosaicView', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
     fireEvent.click(square('Kitchen light'));
     const dialog = await screen.findByRole('dialog', { name: 'Kitchen light' });
-    expect(within(dialog).getByText('Lights')).toBeTruthy();
+    expect(within(dialog).getByText('Kitchen')).toBeTruthy();
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('light.kitchen')));
   });
 
@@ -169,11 +169,22 @@ describe('MosaicView', () => {
     expect(screen.queryByText('Kitchen')).toBeNull();
   });
 
-  it('marks a device that needs attention: not answering, or a low battery', () => {
+  it('a low battery gets the red ring; a device not answering is dimmed, not ringed', () => {
     renderMosaic();
-    expect(square('Hall motion').className).toContain('home-square--attention');
     expect(square('Remote battery').className).toContain('home-square--attention');
-    expect(square('Desk lamp').className).not.toContain('home-square--attention');
+    expect(square('Hall motion').className).toContain('home-square--silent');
+    expect(square('Hall motion').className).not.toContain('home-square--attention');
+    expect(square('Desk lamp').className).not.toMatch(/home-square--(attention|silent)/);
+  });
+
+  it('a device not answering says so in words, and the legend explains its look', () => {
+    renderMosaic();
+    expect(square('Hall motion').getAttribute('aria-label')).toBe('Hall motion: not answering');
+    fireEvent.mouseOver(square('Hall motion'));
+    expect(plain(screen.getByRole('tooltip').textContent)).toBe('Hall motion · not answering');
+    const legend = screen.getByRole('list', { name: 'What the colours mean' });
+    expect(within(legend).getByText('Not answering')).toBeTruthy();
+    expect(legend.querySelector('.home-mosaic__swatch--silent')).toBeTruthy();
   });
 
   it('says so when the server does not group the mosaic', () => {

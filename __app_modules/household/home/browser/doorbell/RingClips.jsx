@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button } from '@mantine/core';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, UnstyledButton } from '@mantine/core';
+import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { Skeleton } from '@/lib/ui';
 import { matchRingToClip } from './matchRingToClip.js';
 import { useRingClips } from './useRingClips.js';
@@ -33,20 +34,68 @@ function ringLabel(t, timeZone, withDay) {
   return new Date(t).toLocaleString(undefined, opts).replace(/\s?(AM|PM)$/i, (m) => m.toLowerCase());
 }
 
-function RingClip({ camera, clip, ringMs, eager }) {
+/**
+ * One ring's clip. Until tapped it is a picture — the clip's first frame,
+ * no native controls, one play button over it; the controls appear once it
+ * plays. A clip the camera cannot serve says so and offers a retry, which
+ * mounts a fresh player rather than leaving a broken one on screen.
+ */
+function RingClip({ camera, clip, ringMs, eager, label }) {
   const [shown, setShown] = useState(eager);
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const [started, setStarted] = useState(false);
+  const video = useRef(null);
   if (!shown) {
     return <Button size="xs" variant="light" onClick={() => setShown(true)}>Show clip</Button>;
   }
+  if (failed) {
+    return (
+      <p className="home-rings__failed" role="alert">
+        <span>Recording could not be loaded</span>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          onClick={() => {
+            logger.info('home.ring.clip.retry', { camera, ringMs, clip: clip.name, attempt: attempt + 1 });
+            setFailed(false);
+            setStarted(false);
+            setAttempt((n) => n + 1);
+          }}
+        >
+          Retry
+        </Button>
+      </p>
+    );
+  }
+  const play = () => {
+    setStarted(true);
+    try {
+      video.current?.play?.()?.catch?.(() => { /* the native controls are there now */ });
+    } catch { /* no media support (tests): the controls still appear */ }
+  };
   return (
-    <video
-      className="home-rings__video"
-      preload="metadata"
-      controls
-      playsInline
-      src={clipFileUrl(camera, clip.name)}
-      onPlay={() => logger.info('home.ring.play', { camera, ringMs, clip: clip.name })}
-    />
+    <div className="home-rings__player">
+      <video
+        key={attempt}
+        ref={video}
+        className="home-rings__video"
+        preload="metadata"
+        controls={started}
+        playsInline
+        src={clipFileUrl(camera, clip.name)}
+        onPlay={() => logger.info('home.ring.play', { camera, ringMs, clip: clip.name })}
+        onError={(e) => {
+          logger.warn('home.ring.clip.failed', { camera, ringMs, clip: clip.name, attempt, code: e.currentTarget?.error?.code ?? null });
+          setFailed(true);
+        }}
+      />
+      {started ? null : (
+        <UnstyledButton className="home-rings__play" onClick={play} aria-label={`Play the clip of the ${label} ring`}>
+          <IconPlayerPlayFilled className="home-rings__play-icon" aria-hidden="true" focusable="false" />
+        </UnstyledButton>
+      )}
+    </div>
   );
 }
 
@@ -88,7 +137,7 @@ export function RingClips({ camera, marks, timeZone = Intl.DateTimeFormat().reso
               <li key={t} className="home-rings__ring">
                 <time className="home-rings__time" dateTime={new Date(t).toISOString()}>{ringLabel(t, timeZone, withDay)}</time>
                 {clip
-                  ? <RingClip camera={camera} clip={clip} ringMs={t} eager={eager} />
+                  ? <RingClip camera={camera} clip={clip} ringMs={t} eager={eager} label={ringLabel(t, timeZone, withDay)} />
                   : <p className="home-rings__none">No recording near this ring</p>}
               </li>
             );

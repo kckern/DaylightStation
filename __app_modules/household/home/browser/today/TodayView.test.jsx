@@ -39,7 +39,7 @@ const lanesFor = (days) => [
   { id: 'doorbell', kind: 'events', label: 'Doorbell', camera: 'porch-cam', entityIds: { primary: 'binary_sensor.porch_visitor', energy: null },
     days: days.map((day) => ({ day, hasData: true, marks: day === DAY ? [ring1, ring2] : [], total: { count: day === DAY ? 2 : 0 } })),
     total: { count: 2 } },
-  { id: 'garage', kind: 'occupancy', label: 'Garage', camera: null, entityIds: { primary: 'binary_sensor.garage_occupancy', energy: null },
+  { id: 'den', kind: 'occupancy', label: 'Den', camera: null, entityIds: { primary: 'binary_sensor.den_presence', energy: null },
     days: days.map((day) => ({ day, hasData: false, intervals: [], total: { hours: null } })),
     total: { hours: null } },
 ];
@@ -75,11 +75,18 @@ describe('TodayView', () => {
     const sentence = 'The house is quiet, drawing 505 W with nothing on.';
     expect(screen.getAllByText((t) => plain(t) === sentence)).toHaveLength(1);
     const lanes = [...document.querySelectorAll('.home-lane')];
-    expect(lanes.map((l) => l.querySelector('.home-lane__label').textContent)).toEqual(['Power', 'Doorbell', 'Garage']);
+    expect(lanes.map((l) => l.querySelector('.home-lane__label').textContent)).toEqual(['Power', 'Doorbell', 'Den']);
     expect(lanes.map((l) => l.querySelector('.home-lane__total').textContent)).toEqual(['16.3 kWh', '2 rings', '']);
     expect(within(lanes[2]).getByText('No history')).toBeTruthy();
     expect(lanes[0].querySelector('path')).toBeTruthy();
-    expect(lanes[1].querySelectorAll('.home-lane__mark')).toHaveLength(2);
+    // A ring is a dot at mid-height, not a full-height hairline like the now line.
+    const marks = lanes[1].querySelectorAll('.home-lane__mark');
+    expect(marks).toHaveLength(2);
+    for (const m of marks) {
+      expect(m.tagName.toLowerCase()).toBe('circle');
+      expect(m.getAttribute('cy')).toBe('12');
+      expect(m.getAttribute('r')).toBe('6');
+    }
   });
 
   it('Week asks for a week and draws seven rows per lane', async () => {
@@ -89,12 +96,13 @@ describe('TodayView', () => {
     fireEvent.click(screen.getByText('Week'));
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=week'));
     await waitFor(() => expect(document.querySelectorAll('.home-lane')[0].querySelectorAll('.home-lane__week-row')).toHaveLength(7));
-    const [power, doorbell, garage] = document.querySelectorAll('.home-lane');
+    const [power, doorbell, den] = document.querySelectorAll('.home-lane');
     expect(power.querySelectorAll('.home-lane__week-row')).toHaveLength(7);
     expect(doorbell.querySelectorAll('.home-lane__week-row')).toHaveLength(7);
-    expect([...doorbell.querySelectorAll('.home-lane__weekday')].map((d) => d.textContent).join('')).toBe('TFSSMTW');
+    expect([...doorbell.querySelectorAll('.home-lane__weekday')].map((d) => d.textContent)).toEqual(['Th', 'Fr', 'Sa', 'Su', 'Mo', 'Tu', 'We']);
+    expect(doorbell.querySelector('.home-lane__mark').getAttribute('r')).toBe('3');
     // A lane with no history on any day says so once, not seven empty rows.
-    expect(within(garage).getByText('No history')).toBeTruthy();
+    expect(within(den).getByText('No history')).toBeTruthy();
     expect(window.localStorage.getItem('home.today.range')).toBe('week');
   });
 

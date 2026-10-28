@@ -31,7 +31,7 @@ const entitiesPayload = {
     entity('light.kitchen', { name: 'Kitchen light', state: 'on', stateClass: 'on', controllable: true, room: kitchen, detail: { brightnessPct: 40 } }),
     entity('light.kitchen_table', { name: 'Table lamp', state: 'on', stateClass: 'on', controllable: true, room: kitchen }),
     entity('light.office_desk', { name: 'Desk lamp', controllable: true, room: office }),
-    entity('switch.office_tv_plug', { name: 'Office TV plug', type: 'power', state: 'on', stateClass: 'on', room: office }),
+    entity('switch.den_tv_plug', { name: 'Den TV plug', type: 'power', state: 'on', stateClass: 'on', room: office }),
     entity('sensor.office_temperature', { name: 'Office temperature', type: 'climate', stateClass: 'reading', state: '71.4', unit: '°F', deviceClass: 'temperature', room: office }),
     entity('sensor.panel_power', { name: 'Panel Power', type: 'power', stateClass: 'reading', state: '505', unit: 'W', deviceClass: 'power' }),
     entity('sensor.office_power', { name: 'Office Power', type: 'power', stateClass: 'reading', state: '302', unit: 'W', deviceClass: 'power', room: office }),
@@ -49,7 +49,7 @@ const entitiesPayload = {
       energyToday: null, energyThisMonth: null,
       topConsumers: [{ entityId: 'sensor.office_power', watts: 302 }],
     },
-    on: ['light.kitchen', 'light.kitchen_table', 'switch.office_tv_plug'],
+    on: ['light.kitchen', 'light.kitchen_table', 'switch.den_tv_plug'],
     open: ['binary_sensor.office_door'],
     motion: [],
     lowBattery: [{ entityId: 'sensor.remote_battery', pct: 9 }],
@@ -61,11 +61,11 @@ const entitiesPayload = {
 const mosaicPayload = {
   byRoom: [
     { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen', 'light.kitchen_table'] },
-    { id: 'office', label: 'Office', entityIds: ['light.office_desk', 'switch.office_tv_plug', 'sensor.office_temperature', 'sensor.office_power', 'binary_sensor.office_door', 'sensor.remote_battery', 'binary_sensor.hall_motion'] },
+    { id: 'office', label: 'Office', entityIds: ['light.office_desk', 'switch.den_tv_plug', 'sensor.office_temperature', 'sensor.office_power', 'binary_sensor.office_door', 'sensor.remote_battery', 'binary_sensor.hall_motion'] },
   ],
   byType: [
     { id: 'light', label: 'Lights', entityIds: ['light.kitchen', 'light.kitchen_table', 'light.office_desk'] },
-    { id: 'power', label: 'Power', entityIds: ['switch.office_tv_plug', 'sensor.panel_power', 'sensor.office_power'] },
+    { id: 'power', label: 'Power', entityIds: ['switch.den_tv_plug', 'sensor.panel_power', 'sensor.office_power'] },
   ],
 };
 entitiesPayload.mosaic = mosaicPayload;
@@ -167,11 +167,11 @@ describe('HomeApp — Mosaic', () => {
     openView('Mosaic');
     expect(window.localStorage.getItem('home.view')).toBe('mosaic');
     expect(document.querySelectorAll('.home-square')).toHaveLength(9);
-    fireEvent.click(screen.getByRole('button', { name: /^Office TV plug:/ }));
-    const sheet = await screen.findByRole('dialog', { name: 'Office TV plug' });
-    expect(within(sheet).getByText('switch.office_tv_plug')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Den TV plug:/ }));
+    const sheet = await screen.findByRole('dialog', { name: 'Den TV plug' });
+    expect(within(sheet).getByText('switch.den_tv_plug')).toBeTruthy();
     expect(within(sheet).getByText('Open in Home Assistant').getAttribute('href'))
-      .toBe('https://ha.example/history?entity_id=switch.office_tv_plug');
+      .toBe('https://ha.example/history?entity_id=switch.den_tv_plug');
     // A plug is not controllable: no switch in its drawer.
     expect(within(sheet).queryByRole('switch')).toBeNull();
     // The app owns the one dismiss stack, so Escape anywhere closes it.
@@ -202,7 +202,7 @@ describe('HomeApp — Rooms', () => {
     expect(document.querySelector('[data-room-id="kitchen"] .home-room__lights').textContent).toContain('2 on');
     fireEvent.click(officeRow);
     expect(screen.getByLabelText('Desk lamp: turn on')).toBeTruthy();
-    expect(screen.getByText('Office TV plug')).toBeTruthy();
+    expect(screen.getByText('Den TV plug')).toBeTruthy();
     expect(screen.queryByText('Remote battery')).toBeNull();
     fireEvent.click(screen.getByText('Show all 3 readings and switches'));
     expect(screen.getByText('Remote battery')).toBeTruthy();

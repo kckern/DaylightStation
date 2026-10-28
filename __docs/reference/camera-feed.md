@@ -110,7 +110,11 @@ clip routes behind the `ICameraClipLibrary` port:
 - **File.** The name must be a recorder path (`[/mnt/sdX/]Mp4Record/YYYY-MM-DD/<file>.mp4`)
   and the camera id a slug. The clip is downloaded once into `/tmp/camera-clips/<camera>/`
   (via a `.part` file, so an interrupted download is never served; a second viewer of the
-  same clip waits on the first download). After each download the directory is pruned:
+  same clip waits on the first download). Someone is waiting on that download, so it
+  uses the library's **interactive** policy — give up after 30 s with no data and retry
+  once (`INTERACTIVE_CLIP_DOWNLOAD`; `createCameraServices({ clipDownloadPolicy })`
+  overrides it) — not the archive job's 300 s idle / 4 retries with backoff, which
+  suits an unattended backfill. After each download the directory is pruned:
   `.part` files older than an hour that no download is writing are swept, and the cache
   keeps the 40 most recently **used** clips (a cache hit touches the file, so pruning is
   LRU, not FIFO). Later requests are served from disk with Express range handling; a
@@ -125,7 +129,8 @@ Events: `camera.clips.listed` (debug, `{camera, day, source, count}`),
 `camera.clips.fetch_failed`, `camera.clips.send_failed` (warn).
 
 The `/home` dashboard's doorbell drawer is the consumer: it matches each ring to the
-nearest clip edge within 120 s (see [home/README.md](home/README.md)).
+nearest clip edge within 120 s, and a clip it cannot load reads "Recording could not
+be loaded" with a Retry (see [home/README.md](home/README.md)).
 
 ### Snapshot Parameters
 

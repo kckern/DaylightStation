@@ -10,18 +10,61 @@
 //   events — ring marks `marks: [ms]`
 //
 
+import { formatWatts } from '../entities/formatEntityState.js';
+
 const parseMs = (iso) => {
   const ms = iso ? Date.parse(iso) : NaN;
   return Number.isFinite(ms) ? ms : null;
 };
 
-/** Only the points with a reading: a series of gaps has nothing to draw. */
-export function hasReadings(history) {
-  if (!history) return false;
-  if (history.kind === 'line') return (history.points || []).some((p) => p.v !== null && p.v !== undefined);
-  if (history.kind === 'state') return (history.intervals || []).length > 0;
-  if (history.kind === 'events') return (history.marks || []).length > 0;
-  return false;
+const zoneFormats = new Map();
+function partsIn(ms, timeZone) {
+  const key = timeZone || '';
+  let fmt = zoneFormats.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || undefined, weekday: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hourCycle: 'h23',
+    });
+    zoneFormats.set(key, fmt);
+  }
+  const o = {};
+  for (const p of fmt.formatToParts(new Date(ms))) if (p.type !== 'literal') o[p.type] = p.value;
+  return { weekday: o.weekday, day: Number(o.day), hour: Number(o.hour) % 24, minute: Number(o.minute) };
+}
+
+/** "6 pm" / "6:30 pm" — the page's clock, lowercase, in the household zone. */
+export function formatClock(ms, timeZone) {
+  const { hour, minute } = partsIn(ms, timeZone);
+  const h = hour % 12 || 12;
+  const m = minute ? `:${String(minute).padStart(2, '0')}` : '';
+  return `${h}${m} ${hour < 12 ? 'am' : 'pm'}`;
+}
+
+/**
+ * An x-axis label in the same dialect as the Today scale: "6 pm" for a time,
+ * "Wed 28" for a day — and a local midnight on an hourly axis is its day.
+ */
+export function formatAxisTime(ms, unitName, timeZone) {
+  const p = partsIn(ms, timeZone);
+  const dayTick = unitName === 'day' || unitName === 'week' || unitName === 'month'
+    || (p.hour === 0 && p.minute === 0);
+  return dayTick ? `${p.weekday} ${p.day}` : formatClock(ms, timeZone);
+}
+
+/** "Wed 28, 6:30 pm" — a tooltip's moment. */
+function formatMoment(ms, timeZone) {
+  const p = partsIn(ms, timeZone);
+  return `${p.weekday} ${p.day}, ${formatClock(ms, timeZone)}`;
+}
+
+const isWatts = (unit) => unit === 'W';
+
+/** A reading's value with its unit: watts as W / kW, anything else as given. */
+function formatValue(value, unit, digits = 0) {
+  if (!Number.isFinite(value)) return '';
+  if (isWatts(unit)) return formatWatts(value);
+  const n = value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return unit ? `${n} ${unit}` : n;
 }
 
 /**
@@ -81,13 +124,15 @@ export function buildHistoryChartOptions({ history, tokens, height = 140, unit =
   const endMs = parseMs(history.endIso);
   const axisLabel = { color: tokens.textMid, fontSize: '0.68rem' };
   const isLine = kind !== 'state' && kind !== 'events';
-  const suffix = unit ? ` ${unit}` : '';
+  const timeZone = history.timeZone || null;
   return {
     chart: {
       backgroundColor: 'transparent', height, spacing: [8, 4, 4, 4],
       style: { fontFamily: 'inherit' }, animation: false,
     },
-    time: { useUTC: false },
+    // The household's zone when the server names it (the Today lanes use the
+    // same), else the browser's own.
+    time: timeZone ? { timezone: timeZone } : { useUTC: false },
     title: { text: null },
     legend: { enabled: false },
     credits: { enabled: false },
@@ -96,8 +141,10 @@ export function buildHistoryChartOptions({ history, tokens, height = 140, unit =
       enabled: kind !== 'state',
       backgroundColor: tokens.surface, borderColor: tokens.border,
       style: { color: tokens.textHigh || tokens.textMid, fontSize: '0.75rem' },
-      xDateFormat: '%a %b %e, %l:%M %p',
-      pointFormat: isLine ? `<b>{point.y:.1f}${suffix}</b>` : 'Rang',
+      formatter() {
+        const what = isLine ? `<b>${formatValue(this.y, unit, 1)}</b>` : 'Rang';
+        return `${formatMoment(this.x, timeZone)}<br/>${what}`;
+      },
     },
     xAxis: {
       type: 'datetime',
@@ -106,14 +153,16 @@ export function buildHistoryChartOptions({ history, tokens, height = 140, unit =
       // a lamp on all day is two points 24 h apart, which left one label.
       minTickInterval: 5 * 60e3,
       lineColor: tokens.border, tickColor: tokens.border,
-      labels: { style: axisLabel },
-      dateTimeLabelFormats: { minute: '%l:%M %p', hour: '%l %p', day: '%a %e', week: '%a %e' },
+      labels: {
+        style: axisLabel,
+        formatter() { return formatAxisTime(this.value, this.tickPositionInfo?.unitName, timeZone); },
+      },
     },
     yAxis: isLine
       ? {
         title: { text: null },
         gridLineColor: tokens.border,
-        labels: { style: axisLabel, format: `{value}${suffix}` },
+        labels: { style: axisLabel, formatter() { return formatValue(this.value, unit); } },
       }
       : { visible: false, min: kind === 'state' ? 0 : -1, max: 1, title: { text: null } },
     plotOptions: { series: { animation: false, states: { inactive: { enabled: false } } } },

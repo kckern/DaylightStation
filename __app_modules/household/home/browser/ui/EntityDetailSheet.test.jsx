@@ -33,19 +33,38 @@ describe('EntityDetailSheet history', () => {
     expect(screen.queryByRole('switch')).toBeNull();
   });
 
-  it('says when the range has no history, and shows the HA link last', async () => {
+  it('says when the range has no history, and shows the HA link last, over the muted id', async () => {
     apiMock.mockResolvedValue(line([]));
     wrap(<EntityDetailSheet entity={temperature} haUrl="https://ha.example" onClose={() => {}} />);
     expect(await screen.findByText('No history in this range')).toBeTruthy();
     expect(screen.queryByTestId('history-chart')).toBeNull();
     const body = document.querySelector('.home-detail');
-    expect(body.lastElementChild.textContent).toBe('Open in Home Assistant');
+    expect(body.lastElementChild.previousElementSibling.textContent).toBe('Open in Home Assistant');
+    expect(body.lastElementChild.textContent).toBe('sensor.den_temperature');
   });
 
-  it('a series of nulls only is no history too', async () => {
-    apiMock.mockResolvedValue({ ...line([{ t: 1, v: null, max: null }]), hasData: true });
+  it('a series of nulls with no known value (hasData false) is no history', async () => {
+    apiMock.mockResolvedValue({ ...line([{ t: 1, v: null, max: null }]), hasData: false });
     wrap(<EntityDetailSheet entity={temperature} onClose={() => {}} />);
     expect(await screen.findByText('No history in this range')).toBeTruthy();
+  });
+
+  it('a lamp that was off all day still draws its (flat) history', async () => {
+    apiMock.mockResolvedValue({ entityId: 'light.den', range: '24h', kind: 'state', hasData: true, camera: null, intervals: [], sinceIso: '2026-10-27T00:00:00.000Z', endIso: '2026-10-28T00:00:00.000Z' });
+    wrap(<EntityDetailSheet entity={entity('light.den')} onClose={() => {}} />);
+    expect((await screen.findByTestId('history-chart')).dataset.kind).toBe('state');
+    expect(screen.queryByText('No history in this range')).toBeNull();
+  });
+
+  it('a doorbell with no rings in range draws its axis, and the rings list says none', async () => {
+    apiMock.mockImplementation(async (path) => {
+      if (path.includes('/history?range=')) return { entityId: 'binary_sensor.porch_visitor', range: '24h', kind: 'events', hasData: true, camera: 'porch-cam', marks: [], sinceIso: '2026-10-27T19:00:00.000Z', endIso: '2026-10-28T19:00:00.000Z' };
+      throw new Error(`unexpected ${path}`);
+    });
+    wrap(<EntityDetailSheet entity={entity('binary_sensor.porch_visitor', { type: 'presence' })} onClose={() => {}} />);
+    expect((await screen.findByTestId('history-chart')).dataset.kind).toBe('events');
+    expect(screen.getByText('No rings in this range')).toBeTruthy();
+    expect(screen.queryByText('No history in this range')).toBeNull();
   });
 
   it('a failed read offers a retry', async () => {
@@ -67,7 +86,7 @@ describe('EntityDetailSheet history', () => {
     const iExtra = kids.findIndex((k) => k.querySelector('[data-testid="extra"]') || k.dataset.testid === 'extra');
     expect(iHistory).toBeGreaterThan(-1);
     expect(iExtra).toBeGreaterThan(iHistory);
-    expect(kids[kids.length - 1].textContent).toBe('Open in Home Assistant');
+    expect(kids[kids.length - 2].textContent).toBe('Open in Home Assistant');
   });
 
   it('opens as a side panel', () => {
@@ -99,5 +118,44 @@ describe('EntityDetailSheet history', () => {
     wrap(<EntityDetailSheet entity={entity('binary_sensor.hall_button')} onClose={() => {}} />);
     expect(await screen.findByTestId('history-chart')).toBeTruthy();
     expect(document.querySelector('.home-detail__extra')).toBeNull();
+  });
+});
+
+describe('EntityDetailSheet facts', () => {
+  const stateHistory = { range: '24h', kind: 'state', hasData: true, camera: null, intervals: [], sinceIso: '2026-10-27T00:00:00.000Z', endIso: '2026-10-28T00:00:00.000Z' };
+  beforeEach(() => apiMock.mockResolvedValue(stateHistory));
+
+  it('a controllable lamp carries its switch on the state line, and says its state once', () => {
+    wrap(<EntityDetailSheet entity={entity('light.den', { name: 'Den lamp', controllable: true })} onClose={() => {}} />);
+    const state = document.querySelector('.home-detail__state');
+    expect(state.querySelector('[role="switch"]')).toBeTruthy();
+    expect(document.querySelector('.home-detail__control')).toBeNull();
+    expect(screen.getAllByText('Off')).toHaveLength(1);
+  });
+
+  it('no Kind row; an inferred room is italic without a "guessed" note; the id sits under the link', () => {
+    wrap(<EntityDetailSheet entity={entity('light.den', { room: { id: 'den', name: 'Den', source: 'inferred' } })} haUrl="https://ha.example" onClose={() => {}} typeLabel="Lights" />);
+    const facts = document.querySelector('.home-detail__facts');
+    expect([...facts.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['Room']);
+    const room = facts.querySelector('dd');
+    expect(room.textContent).toBe('Den');
+    expect(room.classList.contains('home-inferred')).toBe(true);
+    expect(screen.queryByText(/guessed from the name/)).toBeNull();
+    const body = document.querySelector('.home-detail');
+    const last = body.lastElementChild;
+    expect(last.classList.contains('home-detail__id')).toBe(true);
+    expect(last.textContent).toBe('light.den');
+    expect(last.previousElementSibling.textContent).toBe('Open in Home Assistant');
+  });
+
+  it('a room set in Home Assistant reads plainly; no room means no Room row', () => {
+    const { unmount } = wrap(<EntityDetailSheet entity={entity('light.den', { room: { id: 'den', name: 'Den', source: 'provider' } })} onClose={() => {}} />);
+    const room = document.querySelector('.home-detail__facts dd');
+    expect(room.textContent).toBe('Den');
+    expect(room.classList.contains('home-inferred')).toBe(false);
+    unmount();
+    wrap(<EntityDetailSheet entity={entity('light.den')} onClose={() => {}} />);
+    expect(screen.queryByText('Room')).toBeNull();
+    expect(screen.queryByText('Not placed in a room')).toBeNull();
   });
 });

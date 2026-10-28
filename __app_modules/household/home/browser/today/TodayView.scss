@@ -8,7 +8,7 @@
 
 $lane-label: 8.5rem;
 $lane-total: 9rem;
-$weekday: 0.75rem;
+$weekday: 1.1rem;
 $weekday-gap: 0.375rem;
 
 .home-today {
@@ -35,7 +35,7 @@ $weekday-gap: 0.375rem;
     display: grid;
     gap: 0.125rem;
 
-    &--week { gap: 0.5rem; }
+    &--week { gap: 0.25rem; }
   }
 
   // The hour labels: on the strip's column, under the last lane.
@@ -122,6 +122,13 @@ $weekday-gap: 0.375rem;
     min-width: 0;
   }
 
+  &--week { padding: 0.35rem 0.5rem; }
+
+  &__day {
+    position: relative;
+    display: block;
+  }
+
   &__svg {
     display: block;
     width: 100%;
@@ -129,11 +136,21 @@ $weekday-gap: 0.375rem;
     overflow: visible;
   }
 
+  // The ring dots: an unstretched layer over the strip, the same size.
+  &__marks {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
   &--week &__svg { height: 8px; }
 
   &__week {
     display: grid;
-    gap: 3px; // a 10 px initial per 8 px row needs the extra pixel
+    // 2 px between 8 px rows: eight lanes of seven days fit a 900 px screen.
+    gap: 2px;
   }
 
   &__week-row {
@@ -144,7 +161,7 @@ $weekday-gap: 0.375rem;
   }
 
   &__weekday {
-    font-size: 0.625rem;
+    font-size: 0.5625rem;
     line-height: 8px;
     color: var(--ds-text-low);
     text-align: center;
@@ -174,10 +191,7 @@ $weekday-gap: 0.375rem;
 
   &__area { fill: color-mix(in srgb, var(--ds-accent) 70%, transparent); }
 
-  &__mark {
-    stroke: var(--ds-info);
-    stroke-width: 2px;
-  }
+  &__mark { fill: var(--ds-info); }
 
   &__bar--occupancy { fill: var(--ds-info); }
   &__bar--screen { fill: var(--ds-warning); }

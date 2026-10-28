@@ -5,7 +5,7 @@ import { displayName, formatEntityState, formatSince } from '../entities/formatE
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
 import homeLogger from '../homeLogger.js';
-import { isLively, squareTone, toneFlags } from './squareTone.js';
+import { isLively, isLoudAttention, squareTone, toneFlags } from './squareTone.js';
 import { iconFor } from './mosaicIcons.js';
 import './MosaicView.scss';
 
@@ -39,20 +39,31 @@ function buildGroups(groups, byId, flags) {
   }).filter((g) => g.items.length);
 }
 
+/** A square's state in words; a device that is not answering says exactly that. */
+function stateWords(entity) {
+  return entity.stateClass === 'unavailable' ? 'not answering' : formatEntityState(entity);
+}
+
 /** "Kitchen light · On · changed 8:29 pm" — what a square is, in words. */
 function tipText(entity) {
   const since = formatSince(entity.lastChanged);
-  return [displayName(entity), formatEntityState(entity), since ? `changed ${since}` : null].filter(Boolean).join(' · ');
+  return [displayName(entity), stateWords(entity), since ? `changed ${since}` : null].filter(Boolean).join(' · ');
+}
+
+function squareClass(tone) {
+  let cls = `home-square home-square--${tone.fill}`;
+  if (isLoudAttention(tone)) cls += ' home-square--attention';
+  else if (tone.attention === 'silent') cls += ' home-square--silent';
+  return cls;
 }
 
 const Square = memo(function Square({ entity, tone }) {
   const Icon = iconFor(entity);
-  const cls = `home-square home-square--${tone.fill}${tone.attention ? ' home-square--attention' : ''}`;
   return (
     <UnstyledButton
-      className={cls}
+      className={squareClass(tone)}
       data-entity-id={entity.id}
-      aria-label={`${displayName(entity)}: ${formatEntityState(entity)}`}
+      aria-label={`${displayName(entity)}: ${stateWords(entity)}`}
       style={tone.tempPct != null ? { '--tone-pct': tone.tempPct } : undefined}
     >
       <Icon className="home-square__icon" stroke={1.75} aria-hidden="true" focusable="false" />
@@ -119,7 +130,7 @@ function MosaicTooltip({ id, tip, text, boxRef }) {
  * first tap on a touch screen) and opens its drawer on a click (or a second
  * tap).
  */
-export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) {
+export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
   const [mode, setMode] = useState(readSavedMode);
   const [tip, setTip] = useState(null);
   const boxRef = useRef(null);
@@ -134,7 +145,6 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
     () => (mosaic ? buildGroups(mode === 'type' ? mosaic.byType : mosaic.byRoom, byId, flags) : []),
     [mosaic, mode, byId, flags],
   );
-  const typeLabels = useMemo(() => new Map((types || []).map((t) => [t.id, t.label])), [types]);
 
   useEffect(() => {
     logger.info('home.mosaic.mount', { mode, grouped: Boolean(mosaic) });
@@ -238,6 +248,7 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
           <li><span className="home-mosaic__swatch home-mosaic__swatch--open" aria-hidden="true" />Open</li>
           <li><span className="home-mosaic__swatch home-mosaic__swatch--temp" aria-hidden="true" />Temperature</li>
           <li><span className="home-mosaic__swatch home-mosaic__swatch--attention" aria-hidden="true" />Needs attention</li>
+          <li><span className="home-mosaic__swatch home-mosaic__swatch--silent" aria-hidden="true" />Not answering</li>
         </ul>
       </div>
       {groups.length ? (
@@ -266,7 +277,6 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
         haUrl={haUrl}
         onToggle={toggle}
         onClose={detail.close}
-        typeLabel={selected ? typeLabels.get(selected.type) : undefined}
       />
     </div>
   );

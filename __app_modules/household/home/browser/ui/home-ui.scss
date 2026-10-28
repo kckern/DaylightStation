@@ -2,12 +2,10 @@
 // entity drawer and its history. Rows are separated by
 // space, not boxes; the only lines are the ones that carry meaning.
 
-.home-section {
-  &__note {
-    margin: 0.5rem 0 0;
-    font-size: 0.875rem;
-    color: var(--ds-text-mid);
-  }
+.home-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: var(--ds-text-mid);
 }
 
 .home-row {
@@ -130,7 +128,12 @@
 }
 
 .home-detail {
+  // The state in large type; a switch, when there is one, at the line's end.
   &__state {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
     margin: 0 0 1rem;
     font-size: 1.5rem;
     font-weight: 400;
@@ -151,18 +154,6 @@
     dd { margin: 0; color: var(--ds-text-mid); overflow-wrap: anywhere; }
   }
 
-  &__control {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    margin: 1.25rem 0;
-    padding: 0.75rem 0;
-    border-top: 1px solid var(--ds-border);
-    border-bottom: 1px solid var(--ds-border);
-    color: var(--ds-text-high);
-  }
-
   &__extra { margin-top: 1.25rem; }
 
   &__link {
@@ -174,6 +165,14 @@
     text-underline-offset: 3px;
 
     &:hover { color: var(--ds-text-high); }
+  }
+
+  // The entity id: for whoever edits the config, out of everyone else's way.
+  &__id {
+    margin: 0.35rem 0 0;
+    font-size: 0.75rem;
+    color: var(--ds-text-low);
+    overflow-wrap: anywhere;
   }
 }
 

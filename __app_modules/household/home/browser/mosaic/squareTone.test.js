@@ -14,13 +14,15 @@ describe('squareTone', () => {
     expect(squareTone(e({ type: 'openings', stateClass: 'on' }), flags()).fill).toBe('open');
     expect(squareTone(e({ id: 'b.m', type: 'presence', stateClass: 'on' }), flags()).fill).toBe('motion');
   });
-  it('a stuck sensor is attention, not motion', () => {
+  it('a stuck sensor is attention ("stuck"), not motion', () => {
     const t = squareTone(e({ id: 'b.m', type: 'presence', stateClass: 'on' }), flags({ stuck: new Set(['b.m']) }));
-    expect(t).toMatchObject({ fill: 'quiet', attention: true });
+    expect(t).toMatchObject({ fill: 'quiet', attention: 'stuck' });
   });
-  it('unavailable and low battery are attention', () => {
-    expect(squareTone(e({ stateClass: 'unavailable' }), flags()).attention).toBe(true);
-    expect(squareTone(e({ id: 's.b', type: 'battery', stateClass: 'reading', state: '9' }), flags({ lowBattery: new Set(['s.b']) })).attention).toBe(true);
+  it('attention is graded: a low battery is "battery", a device not answering is the quieter "silent"', () => {
+    expect(squareTone(e({ stateClass: 'unavailable' }), flags()).attention).toBe('silent');
+    expect(squareTone(e({ id: 's.b', type: 'battery', stateClass: 'reading', state: '9' }), flags({ lowBattery: new Set(['s.b']) })).attention).toBe('battery');
+    // Stuck or a low battery outranks not answering: those are the loud ones.
+    expect(squareTone(e({ id: 's.b', stateClass: 'unavailable' }), flags({ lowBattery: new Set(['s.b']) })).attention).toBe('battery');
   });
   it('temperature tints from cool to warm, °C converted', () => {
     expect(squareTone(e({ type: 'climate', stateClass: 'reading', state: '70', unit: '°F', deviceClass: 'temperature' }), flags())).toMatchObject({ fill: 'temp', tempPct: 50 });

@@ -2,8 +2,10 @@
  * What colour a device's square is in the Mosaic. One rule, shared with the
  * Today lanes: amber something on, blue someone there, orange something
  * open, a cool-to-warm tint for a temperature, and dark for everything
- * quiet. A red outline, on top of any fill, says the device needs attention:
- * not answering, stuck, or a battery running low.
+ * quiet. Attention is graded: a red outline, on top of any fill, says a
+ * sensor is stuck or a battery is running low; a device not answering is
+ * dimmed with a faint red hairline instead — common enough on a big install
+ * that a full red ring on each would drown the ones that matter.
  */
 
 // Things that are "on" in the sense of drawing, lighting or playing.
@@ -42,11 +44,14 @@ function temperaturePct(entity) {
 /**
  * @param {{id: string, type: string, stateClass: string, state: string|null, deviceClass?: string|null, unit?: string|null}} entity
  * @param {{stuck: Set<string>, lowBattery: Set<string>, motion: Set<string>, open: Set<string>}} flags
- * @returns {{fill: 'on'|'motion'|'open'|'temp'|'quiet', attention: boolean, tempPct: number|null}}
+ * @returns {{fill: 'on'|'motion'|'open'|'temp'|'quiet', attention: 'stuck'|'battery'|'silent'|false, tempPct: number|null}}
  */
 export function squareTone(entity, flags) {
   const stuck = flags.stuck.has(entity.id);
-  const attention = entity.stateClass === 'unavailable' || stuck || flags.lowBattery.has(entity.id);
+  let attention = false;
+  if (stuck) attention = 'stuck';
+  else if (flags.lowBattery.has(entity.id)) attention = 'battery';
+  else if (entity.stateClass === 'unavailable') attention = 'silent';
   const on = entity.stateClass === 'on';
   let fill = 'quiet';
   let tempPct = null;
@@ -69,4 +74,9 @@ const LIVELY = new Set(['on', 'motion', 'open']);
 /** Whether a square counts toward its group's "N on". */
 export function isLively(tone) {
   return LIVELY.has(tone.fill);
+}
+
+/** The attention grades drawn as the loud red ring; "silent" is the quiet one. */
+export function isLoudAttention(tone) {
+  return tone.attention === 'stuck' || tone.attention === 'battery';
 }

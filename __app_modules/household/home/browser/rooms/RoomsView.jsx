@@ -99,14 +99,14 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
                   </Disclosure>
                 ) : null}
                 {!room.lights.length && !room.devices.length && !room.more.length ? (
-                  <p className="home-section__note">Nothing in this room is shown on the dashboard.</p>
+                  <p className="home-note">Nothing in this room is shown on the dashboard.</p>
                 ) : null}
               </div>
             ) : null}
           </div>
         );
       })}
-      <EntityDetailSheet entity={detail.selected} haUrl={haUrl} onToggle={toggle} onClose={detail.close} typeLabel={detail.selected ? typeLabel(detail.selected.type) : null} />
+      <EntityDetailSheet entity={detail.selected} haUrl={haUrl} onToggle={toggle} onClose={detail.close} />
     </div>
   );
 }

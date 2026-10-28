@@ -26,14 +26,17 @@ export function powerSentence(summary) {
 /**
  * The top circuits the summary names that the entity list still has — never
  * the whole-house meter or its energy counters, which are the total the
- * circuits divide, not one of them.
+ * circuits divide, and never a meter reading as much as the whole house (a
+ * second panel total), which is not one of them either.
  */
 export function topCircuits(entities, summary) {
   const power = summary?.power || {};
   const byId = new Map(entities.map((e) => [e.id, e]));
   const totals = new Set([power.wholeHouse, power.energyToday, power.energyThisMonth].map((m) => m?.entityId).filter(Boolean));
+  const whole = Number.isFinite(power.wholeHouse?.watts) ? power.wholeHouse.watts : null;
   return (power.topConsumers || [])
     .filter((c) => !totals.has(c.entityId))
+    .filter((c) => whole == null || c.watts < whole)
     .map((c) => ({ ...c, entity: byId.get(c.entityId) }))
     .filter((c) => c.entity);
 }

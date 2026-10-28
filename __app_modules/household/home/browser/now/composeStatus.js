@@ -55,7 +55,7 @@ export function composeSentence({ watts, lightsOn, open, motionRooms, lastSeen =
     parts.push(o.room ? `a ${openingWord(o)} open in ${inSentence(o.room.name)}` : `a ${openingWord(o)} open`);
   } else if (open.length > 1) {
     const words = new Set(open.map(openingWord));
-    parts.push(words.size === 1 ? `${plural(open.length, [...words][0])} open` : `${open.length} doors and windows open`);
+    parts.push(words.size === 1 ? `${plural(open.length, [...words][0])} open` : `${open.length} doors or windows open`);
   }
 
   if (watts != null) {

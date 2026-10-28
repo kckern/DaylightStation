@@ -2,29 +2,35 @@
 
 // Mosaic: the whole house as small squares — the page's one bold element.
 // The colours are the Today lanes' (amber on, blue someone there) plus
-// orange open, a cool-to-warm temperature tint, and a red outline for a
-// device that needs attention. Everything quiet is dark, so what is on
+// orange open, a cool-to-warm temperature tint, a red outline for a device
+// that needs attention (stuck, battery low) and a dimmed square with a faint
+// red hairline for one not answering. Everything quiet is dark, so what is on
 // reads from across the room. No words on the grid but the group names.
 
 $square: 22px;
-$square-coarse: 30px;
+$square-coarse: 34px;
 $icon: 14px;
-$icon-coarse: 18px;
+$icon-coarse: 20px;
 $gap: 3px;
+$gap-coarse: 4px;
 
 .home-mosaic {
   --home-sq: #{$square};
   --home-sq-icon: #{$icon};
+  --home-sq-gap: #{$gap};
   // Orange is between the amber "on" and the red "attention".
   --home-tone-open: color-mix(in srgb, var(--ds-warning) 55%, var(--ds-danger));
   // A temperature: blue at 55 °F, red at 85 °F. The ramp starts 12 % off pure
   // --ds-info so the coldest reading is not the "someone there" blue, and a
   // temperature is a round dot, not a square, so the two never read alike.
   --home-tone-cold: color-mix(in srgb, var(--ds-danger) 12%, var(--ds-info));
+  // Not answering: the quiet square's hairline, pulled a little toward red.
+  --home-tone-silent: color-mix(in srgb, var(--ds-danger) 40%, var(--ds-border));
 
   @media (pointer: coarse) {
     --home-sq: #{$square-coarse};
     --home-sq-icon: #{$icon-coarse};
+    --home-sq-gap: #{$gap-coarse};
   }
 
   &__bar {
@@ -72,6 +78,12 @@ $gap: 3px;
       background: var(--ds-surface-alt);
       box-shadow: inset 0 0 0 2px var(--ds-danger);
     }
+
+    &--silent {
+      background: var(--ds-surface-alt);
+      opacity: 0.45;
+      box-shadow: inset 0 0 0 1px var(--home-tone-silent);
+    }
   }
 
   // The board holds the groups and the one tooltip, which is set inside it.
@@ -115,7 +127,7 @@ $gap: 3px;
   &__squares {
     display: flex;
     flex-wrap: wrap;
-    gap: $gap;
+    gap: var(--home-sq-gap);
   }
 
   &__tip {
@@ -180,4 +192,11 @@ $gap: 3px;
   &--on:hover, &--motion:hover, &--open:hover, &--temp:hover { color: var(--ds-background); }
 
   &--attention { box-shadow: inset 0 0 0 2px var(--ds-danger); }
+
+  // Not answering: present but dimmed, so a house full of sleeping sensors
+  // does not out-shout the stuck one.
+  &--silent {
+    opacity: 0.45;
+    box-shadow: inset 0 0 0 1px var(--home-tone-silent);
+  }
 }

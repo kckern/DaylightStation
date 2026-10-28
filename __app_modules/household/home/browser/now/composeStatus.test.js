@@ -21,7 +21,7 @@ describe('composeSentence', () => {
     [{ watts: 505, lightsOn: 0, open: [office, office], motionRooms: ['Office', 'Garage'] },
       ['The house is drawing 505 W, with no lights on and 2 doors open.', 'Someone is in the office and the garage.']],
     [{ watts: 505, lightsOn: 2, open: [office, { ...office, deviceClass: 'window' }], motionRooms: ['Office', 'Garage', 'Kitchen'] },
-      ['The house is drawing 505 W, with 2 lights on and 2 doors and windows open.', 'Someone is in the office, the garage and the kitchen.']],
+      ['The house is drawing 505 W, with 2 lights on and 2 doors or windows open.', 'Someone is in the office, the garage and the kitchen.']],
     [{ watts: 505, lightsOn: 0, open: [], motionRooms: ['Office', 'Garage', 'Kitchen', 'Hall'] },
       ['The house is quiet, drawing 505 W with nothing on.', 'Someone is in the office, the garage and 2 more rooms.']],
     [{ watts: 505, lightsOn: 0, open: [], motionRooms: [], lastSeen: { room: 'Kitchen', age: '8 minutes ago' } },
