@@ -11,17 +11,28 @@ import { toClip } from '../domain/selection.mjs';
 const CLIP_NAME_RE = /^(\/mnt\/sd[a-z]*\/)?Mp4Record\/\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_.-]+\.mp4$/;
 const SEARCH_TTL_MS = 2 * 60 * 1000;
 const STALE_PART_MS = 60 * 60 * 1000;
+const NOOP_LOGGER = Object.freeze({ debug() {}, info() {}, warn() {}, error() {} });
+
+/**
+ * Download policy for a clip someone is waiting to watch: give up after 30 s
+ * of silence and retry once. The archive job's policy (300 s idle, 4 retries
+ * with backoff) suits an unattended backfill, not a person at a drawer.
+ */
+export const INTERACTIVE_CLIP_DOWNLOAD = Object.freeze({ timeoutMs: 30000, retries: 1, backoffMs: 1000 });
 
 /**
  * Camera clip library: the day's clips from the detection ledger, else a live
  * camera search; clip bytes fetched once from the camera into a bounded cache.
  */
 export class CameraClipLibrary extends ICameraClipLibrary {
-  #ledgerStore; #openSource; #cacheDir; #maxCached; #logger; #now;
+  #ledgerStore; #openSource; #cacheDir; #maxCached; #logger; #now; #downloadPolicy;
   #searchCache = new Map();
   #inflight = new Map();
 
-  constructor({ ledgerStore, openSource, cacheDir = '/tmp/camera-clips', maxCached = 40, logger = console, now = () => Date.now() } = {}) {
+  constructor({
+    ledgerStore, openSource, cacheDir = '/tmp/camera-clips', maxCached = 40, logger = NOOP_LOGGER, now = () => Date.now(),
+    downloadPolicy = INTERACTIVE_CLIP_DOWNLOAD,
+  } = {}) {
     super();
     if (!ledgerStore?.read) throw new TypeError('CameraClipLibrary requires ledgerStore.read');
     if (typeof openSource !== 'function') throw new TypeError('CameraClipLibrary requires openSource');
@@ -31,6 +42,7 @@ export class CameraClipLibrary extends ICameraClipLibrary {
     this.#maxCached = maxCached;
     this.#logger = logger;
     this.#now = now;
+    this.#downloadPolicy = Object.freeze({ ...downloadPolicy });
   }
 
   /** Entries held in the search cache (diagnostics and tests). */
@@ -119,7 +131,7 @@ export class CameraClipLibrary extends ICameraClipLibrary {
     // Download to a side file so an interrupted fetch is never served as a clip.
     const partPath = `${filePath}.part`;
     try {
-      const bytes = await source.fetch({ clip: { name }, destPath: partPath });
+      const bytes = await source.fetch({ clip: { name }, destPath: partPath, ...this.#downloadPolicy });
       renameFile(partPath, filePath);
       this.#logger.info?.('camera.clips.fetched', { camera: cameraId, name, bytes });
     } catch (error) {

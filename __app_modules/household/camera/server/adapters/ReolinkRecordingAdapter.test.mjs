@@ -85,6 +85,16 @@ describe('makeSource', () => {
     expect(makeSource({ kind: 'nvr', client, channel: 1 }).hasTriggerNames).toBe(false);
   });
 
+  it('a camera fetch forwards the caller\'s download policy; without one the client keeps its archive defaults', async () => {
+    const calls = [];
+    const client = { download: async (args) => { calls.push(args); return 1; } };
+    const source = makeSource({ kind: 'camera', client, channel: 0 });
+    await source.fetch({ clip: { name: 'Mp4Record/a.mp4' }, destPath: '/tmp/x', timeoutMs: 30000, retries: 1, backoffMs: 1000 });
+    await source.fetch({ clip: { name: 'Mp4Record/b.mp4' }, destPath: '/tmp/y' });
+    expect(calls[0]).toEqual({ source: 'Mp4Record/a.mp4', destPath: '/tmp/x', timeoutMs: 30000, retries: 1, backoffMs: 1000 });
+    expect(calls[1]).toEqual({ source: 'Mp4Record/b.mp4', destPath: '/tmp/y' });
+  });
+
   it('rejects an unknown source kind rather than failing later', () => {
     expect(() => makeSource({ kind: 'ftp', client: {}, channel: 0 })).toThrow(/Unknown source kind/);
   });

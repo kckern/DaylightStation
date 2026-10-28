@@ -111,4 +111,23 @@ describe('CameraClipLibrary', () => {
     await library.listClips({ cameraId: 'cam', day: '2026-10-28' });
     expect(search).toHaveBeenCalledTimes(3);
   });
+  it('without an injected logger it stays silent rather than writing to the console', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const library = new CameraClipLibrary({ ledgerStore: { read: () => { throw new Error('torn'); } }, openSource: () => ({ search: vi.fn().mockRejectedValue(new Error('down')), fetch: vi.fn() }), cacheDir: '/tmp/unused-clips' });
+    expect(await library.listClips({ cameraId: 'cam', day: '2026-10-28' })).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+  it('downloads a clip with the short interactive policy, not the archive job\'s', async () => {
+    const { library, fetch } = lib();
+    await library.openClip({ cameraId: 'cam', name: NAME });
+    expect(fetch.mock.calls[0][0]).toMatchObject({ clip: { name: NAME }, timeoutMs: 30000, retries: 1 });
+  });
+  it('takes the download policy from its composition', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'clips-'));
+    const fetch = vi.fn(async ({ destPath }) => { writeFileSync(destPath, 'mp4'); return 3; });
+    const library = new CameraClipLibrary({ ledgerStore: { read: () => [] }, openSource: () => ({ search: vi.fn(), fetch }), cacheDir: dir, downloadPolicy: { timeoutMs: 5000, retries: 0, backoffMs: 10 }, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } });
+    await library.openClip({ cameraId: 'cam', name: NAME });
+    expect(fetch.mock.calls[0][0]).toMatchObject({ timeoutMs: 5000, retries: 0, backoffMs: 10 });
+  });
 });

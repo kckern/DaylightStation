@@ -3,7 +3,7 @@ import { ReolinkCameraAdapter } from "./adapters/ReolinkCameraAdapter.mjs";
 import { HlsStreamManager } from "./adapters/HlsStreamManager.mjs";
 import { ReolinkStateAdapter } from "./adapters/ReolinkStateAdapter.mjs";
 import { HomeAssistantControlAdapter } from "./adapters/HomeAssistantControlAdapter.mjs";
-import { CameraClipLibrary } from "./adapters/CameraClipLibrary.mjs";
+import { CameraClipLibrary, INTERACTIVE_CLIP_DOWNLOAD } from "./adapters/CameraClipLibrary.mjs";
 import { CameraLedgerStore } from "./adapters/CameraLedgerStore.mjs";
 import { ReolinkClient, makeSource } from "./adapters/ReolinkRecordingAdapter.mjs";
 import { ConfiguredCameraJobRuntimeGateway } from "./composition/ConfiguredCameraJobRuntimeGateway.mjs";
@@ -36,7 +36,14 @@ export function createCameraClipSourceResolver({ configService, householdId, log
   };
 }
 
-export function createCameraServices({ configService, householdId, haGateway, logger = console } = {}) {
+/**
+ * @param {Object} deps
+ * @param {Object} [deps.clipDownloadPolicy] - `{timeoutMs, retries, backoffMs}` for a clip
+ *   fetched while someone waits on it; defaults to the short interactive policy
+ */
+export function createCameraServices({
+  configService, householdId, haGateway, logger = console, clipDownloadPolicy = INTERACTIVE_CLIP_DOWNLOAD,
+} = {}) {
   const devicesConfig = configService.getHouseholdDevices(householdId)?.devices || {};
   const getAuth = (authRef) => configService.getHouseholdAuth(authRef, householdId);
 
@@ -55,6 +62,7 @@ export function createCameraServices({ configService, householdId, haGateway, lo
     }),
     openSource: createCameraClipSourceResolver({ configService, householdId, logger: clipLogger }),
     logger: clipLogger,
+    downloadPolicy: clipDownloadPolicy,
   });
 
   const cameraService = new CameraService({
