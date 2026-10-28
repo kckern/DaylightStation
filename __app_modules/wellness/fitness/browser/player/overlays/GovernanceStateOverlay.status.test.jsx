@@ -118,3 +118,32 @@ describe('GovernanceStateOverlay — cause-scoped heading and faces', () => {
     expect(view.container.querySelectorAll('.governance-lock__row')).toHaveLength(2);
   });
 });
+
+describe('GovernanceStateOverlay — quiet cooldown chips', () => {
+  const quiet = () => ({ ...display([row()], 'unlocked'), videoLocked: false, quiet: true });
+  it('renders quiet chips with no meter, scrim or panel while unlocked in cooldown', () => {
+    const { container } = render(<GovernanceStateOverlay display={quiet()} />);
+    expect(container.querySelector('.governance-progress-overlay--quiet')).toBeTruthy();
+    expect(container.querySelectorAll('.governance-progress-overlay__chip')).toHaveLength(1);
+    expect(container.textContent).toContain('Rider A');
+    expect(container.querySelector('.governance-life-meter')).toBeNull();
+    expect(container.querySelector('.governance-warning-scrim')).toBeNull();
+    expect(container.querySelector('.governance-lock')).toBeNull();
+  });
+  it('hands quiet chips to the warning meter without a panel frame', () => {
+    const view = render(<GovernanceStateOverlay display={quiet()} />);
+    expect(view.container.querySelector('.governance-lock')).toBeNull();
+    view.rerender(<GovernanceStateOverlay display={display([row()], 'warning')} />);
+    expect(view.container.querySelector('.governance-life-meter')).toBeTruthy();
+    expect(view.container.querySelector('.governance-lock')).toBeNull();
+  });
+  it('a cycle-lock display (unlocked, quiet false) still renders the panel', () => {
+    const { container } = render(<GovernanceStateOverlay display={{ ...display([], 'unlocked'), quiet: false, show: true }} />);
+    expect(container.querySelector('.governance-lock')).toBeTruthy();
+  });
+  it('quiet with zero rows renders no panel and does not crash', () => {
+    const { container } = render(<GovernanceStateOverlay display={{ ...display([], 'unlocked'), videoLocked: false, quiet: true }} />);
+    expect(container.querySelector('.governance-lock')).toBeNull();
+    expect(container.querySelectorAll('.governance-progress-overlay__chip')).toHaveLength(0);
+  });
+});

@@ -66,7 +66,7 @@ const SCRIM_STEP_SETTLE_MS = 700;
  *   or GPU is struggling, not our JS — the signature of a paint-path thrash
  *   that no DOM listener can see (ops:docs/_wip/bugs/2026-10-23-fitness-governance-chip-layer-blur-thrash.md).
  */
-function useWarningOverlayObservability(containerRef, rowKeys, scrimStep) {
+function useWarningOverlayObservability(containerRef, rowKeys, scrimStep, quiet = false) {
   const rowKeysRef = useRef(rowKeys);
   rowKeysRef.current = rowKeys;
 
@@ -87,7 +87,7 @@ function useWarningOverlayObservability(containerRef, rowKeys, scrimStep) {
 
   useEffect(() => {
     const shownAt = Date.now();
-    warningLogger().info('governance.warning_overlay.shown', { rows: rowKeysRef.current });
+    warningLogger().info('governance.warning_overlay.shown', { rows: rowKeysRef.current, quiet });
     let lastDimmed = null;
     const check = () => {
       const root = containerRef.current;
@@ -132,9 +132,10 @@ function useWarningOverlayObservability(containerRef, rowKeys, scrimStep) {
         warningLogger().info('governance.warning_overlay.frame_stats', { ...finalStats, final: true, rows: rowKeysRef.current });
       }
       warningLogger().info('governance.warning_overlay.hidden', {
-        rows: rowKeysRef.current, visibleMs: Date.now() - shownAt,
+        rows: rowKeysRef.current, visibleMs: Date.now() - shownAt, quiet,
       });
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerRef]);
 
   const previousKeys = useRef(rowKeys);
@@ -146,7 +147,7 @@ function useWarningOverlayObservability(containerRef, rowKeys, scrimStep) {
 
   const previousStep = useRef(null);
   useEffect(() => {
-    if (previousStep.current === scrimStep) return;
+    if (quiet || previousStep.current === scrimStep) return;
     const from = previousStep.current;
     previousStep.current = scrimStep;
     if (from === null) return; // the first step rides on paint_check
@@ -162,7 +163,7 @@ function useWarningOverlayObservability(containerRef, rowKeys, scrimStep) {
   }, [scrimStep]);
 }
 
-const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders }) {
+const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders, quiet = false }) {
   // Use notches directly from the per-notch interval timer when available,
   // fall back to deriving from countdown for backward compatibility
   // No countdown yet = the warning began this frame (the hook learns the
@@ -184,7 +185,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
 
   const containerRef = useRef(null);
   const rowKeys = items.map((item) => item.key).join(',');
-  useWarningOverlayObservability(containerRef, rowKeys, scrimStep);
+  useWarningOverlayObservability(containerRef, rowKeys, quiet ? null : scrimStep, quiet);
 
   // The overlay owns its scrim, so the darkening and the chips mount and
   // unmount in the same commit (they used to come from two owners, 40-270ms
@@ -193,8 +194,8 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
   // through `.governance-warning-scrim ~ .fitness-video-mirror-wrap`.
   return (
     <>
-    <div className="governance-warning-scrim" data-step={scrimStep} aria-hidden="true" />
-    <div className="governance-progress-overlay" ref={containerRef}>
+    {quiet ? null : <div className="governance-warning-scrim" data-step={scrimStep} aria-hidden="true" />}
+    <div className={`governance-progress-overlay${quiet ? ' governance-progress-overlay--quiet' : ''}`} ref={containerRef}>
       {items.length > 0 ? (
         <div className="governance-progress-overlay__offenders">
           {items.map((item) => {
@@ -256,7 +257,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
           })}
         </div>
       ) : null}
-      <div className="governance-life-meter" aria-hidden="true">
+      {quiet ? null : <div className="governance-life-meter" aria-hidden="true">
         <div className="governance-life-meter__frame">
           {Array.from({ length: TOTAL_NOTCHES }, (_, i) => (
             <div
@@ -265,7 +266,7 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             />
           ))}
         </div>
-      </div>
+      </div>}
     </div>
     </>
   );
@@ -285,7 +286,8 @@ GovernanceWarningOverlay.propTypes = {
   countdown: PropTypes.number,
   countdownTotal: PropTypes.number,
   rows: PropTypes.array,
-  offenders: PropTypes.array
+  offenders: PropTypes.array,
+  quiet: PropTypes.bool
 };
 
 function normalizeRequiredCountFromRule(rule, totalCount) {
@@ -776,6 +778,14 @@ const GovernanceStateOverlay = ({
 
   // New path: dispatch on status
   if (useNewPath) {
+    const warningRows = display.obligations?.length > 1 ? display.obligations.flatMap((obligation) => obligation.rows.map((row) => ({ ...row, key: `${obligation.key}:${row.key}` }))) : display.rows;
+
+    // Cooldown: the engine is unlocked but a floor is unmet. Chips only; no
+    // scrim, no meter, no panel, no audio over the playing video.
+    if (display.quiet) {
+      return <GovernanceWarningOverlay quiet rows={warningRows} />;
+    }
+
     if (normalizedStatus === 'warning') {
       return (
         <>
@@ -784,13 +794,13 @@ const GovernanceStateOverlay = ({
             countdown={countdown}
             countdownTotal={display.gracePeriodTotal}
             notches={countdownNotches}
-            rows={display.obligations?.length > 1 ? display.obligations.flatMap((obligation) => obligation.rows.map((row) => ({ ...row, key: `${obligation.key}:${row.key}` }))) : display.rows}
+            rows={warningRows}
           />
         </>
       );
     }
 
-    // pending, locked, challenge-failed
+    // pending, locked, challenge-failed, cycle locks
     return (
       <>
         <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
