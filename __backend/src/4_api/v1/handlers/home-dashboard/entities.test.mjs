@@ -21,6 +21,14 @@ describe('homeDashboardEntitiesHandler', () => {
     expect(res.json.mock.calls[0][0]).toEqual({ entities: [entity], rooms: [{ id: 'kitchen', name: 'Kitchen' }], types: [], stateClasses: [], haUrl: null });
   });
 
+  it('passes the mosaic grouping through', async () => {
+    const mosaic = { byRoom: [], byType: [] };
+    const operation = { execute: vi.fn().mockResolvedValue({ entities: [entity], rooms: [], types: [], stateClasses: [], haUrl: null, mosaic }) };
+    const res = { set: vi.fn(), json: vi.fn() };
+    await homeDashboardEntitiesHandler({ operation })({}, res);
+    expect(res.json.mock.calls[0][0].mosaic).toEqual(mosaic);
+  });
+
   it('requires its use case', () => {
     expect(() => homeDashboardEntitiesHandler({})).toThrow(/operation required/);
   });

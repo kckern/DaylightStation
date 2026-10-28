@@ -39,11 +39,11 @@ export function presentHomeEntity(entity) {
 export function homeDashboardEntitiesHandler({ operation }) {
   if (!operation) throw new Error('homeDashboardEntitiesHandler: operation required');
   return async (_req, res) => {
-    const { entities, rooms, types, stateClasses, haUrl, summary } = await operation.execute();
+    const { entities, rooms, types, stateClasses, haUrl, summary, mosaic } = await operation.execute();
     // Readings change by the second; never let a proxy serve yesterday's lights.
     res.set('Cache-Control', 'no-store');
     // `summary` is already plain data (entity ids and numbers) from the use case.
-    res.json({ entities: entities.map(presentHomeEntity), rooms, types, stateClasses, haUrl, summary });
+    res.json({ entities: entities.map(presentHomeEntity), rooms, types, stateClasses, haUrl, summary, mosaic });
   };
 }
 

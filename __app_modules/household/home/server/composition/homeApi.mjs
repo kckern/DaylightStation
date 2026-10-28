@@ -14,6 +14,7 @@ import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherData
 import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '#shared/content/immich/photoLabels.mjs';
 import { HouseholdHomeStateRepository } from "../adapters/HouseholdHomeStateRepository.mjs";
 import { HomeAssistantEntityGateway } from "../adapters/HomeAssistantEntityGateway.mjs";
+import { HomeAssistantHistoryGateway } from "../adapters/HomeAssistantHistoryGateway.mjs";
 
 /**
  * Create home automation API router
@@ -120,6 +121,8 @@ export function createHomeDashboardApiRouter(config) {
     configRepository,
     haGateway,
     entityGateway: new HomeAssistantEntityGateway({}, { gateway: haGateway, logger }),
+    historyGateway: new HomeAssistantHistoryGateway({}, { gateway: haGateway, logger }),
+    timeZone: configService.getHouseholdTimezone(),
     logger,
   });
 
@@ -131,6 +134,8 @@ export function createHomeDashboardApiRouter(config) {
       toggleEntity: container.toggleDashboardEntity(),
       activateScene: container.activateDashboardScene(),
       getEntities: container.getHomeEntities(),
+      getTimeline: container.getHomeTimeline(),
+      getEntityHistory: container.getEntityHistory(),
     },
     logger,
   });
