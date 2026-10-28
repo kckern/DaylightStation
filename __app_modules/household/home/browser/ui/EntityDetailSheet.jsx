@@ -4,6 +4,7 @@ import { Sheet, Skeleton, ErrorState } from '@/lib/ui';
 import { displayName, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import { useEntityHistory } from '../history/useEntityHistory.js';
 import { hasReadings } from '../history/historyChart.js';
+import { RingClips } from '../doorbell/RingClips.jsx';
 import homeLogger from '../homeLogger.js';
 import './home-ui.scss';
 
@@ -24,13 +25,14 @@ export function haEntityLink(haUrl, entityId) {
 }
 
 /**
- * What the drawer shows below the history when the caller passes no `extra`.
- * A ring lane (`kind: 'events'` with a camera) gets its clips here in Task 10
- * (`<RingClips camera={history.camera} marks={history.marks} />`); until then,
- * nothing. Takes no argument yet: Task 10 adds the history it needs.
+ * What the drawer shows below the history when the caller passes no `extra`:
+ * a doorbell (an `events` history the server tied to a camera) gets the
+ * clips of the rings in the chart's range, so it reads the same opened from
+ * anywhere. Anything else adds nothing.
  */
-function defaultExtra() {
-  return null;
+function defaultExtra(history) {
+  if (history?.kind !== 'events' || !history.camera) return null;
+  return <RingClips camera={history.camera} marks={history.marks || []} />;
 }
 
 /** The history section: a 24 h / 7 d switch over the chart, or why there is none. */
@@ -87,7 +89,7 @@ function EntityDetailBody({ entity, haUrl, onToggle, typeLabel, extra }) {
   const silent = entity.stateClass === 'unavailable';
   const link = haEntityLink(haUrl, entity.id);
   const since = formatSince(entity.lastChanged);
-  const below = extra ?? defaultExtra();
+  const below = extra ?? defaultExtra(history);
   return (
     <div className={`home-detail${lit ? ' home-detail--lit' : ''}${silent ? ' home-detail--silent' : ''}`} data-entity-id={entity.id}>
       <p className="home-detail__state">{formatEntityState(entity)}</p>

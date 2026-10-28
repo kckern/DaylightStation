@@ -6,7 +6,8 @@ import { Disclosure } from '../ui/Disclosure.jsx';
 import { EntityRow } from '../ui/EntityRow.jsx';
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
-import { formatKwh, formatWatts } from '../entities/formatEntityState.js';
+import { formatWatts } from '../entities/formatEntityState.js';
+import { RankedCircuits, powerSentence, topCircuits } from '../today/PowerBreakdown.jsx';
 import homeLogger from '../homeLogger.js';
 import '../ui/home-ui.scss';
 import './PowerView.scss';
@@ -19,14 +20,10 @@ const wattsOf = (e) => {
   return (e.unit || '').toLowerCase() === 'kw' ? n * 1000 : n;
 };
 
-/** A short name for a circuit: the entity name with its trailing "Power" dropped. */
-function circuitName(entity) {
-  return entity.name.replace(/\s+(power|minute average)$/i, '');
-}
-
 /**
  * Where the power goes: one sentence of totals, the top circuits as a ranked
- * list with a proportional bar, and every meter behind a disclosure.
+ * list with a proportional bar (both shared with the Today view's Power lane
+ * drawer, in ../today/PowerBreakdown.jsx), and every meter behind a disclosure.
  */
 export function PowerView({ entities, types, summary, haUrl, toggle }) {
   const detail = useEntityDetail(entities);
@@ -43,19 +40,13 @@ export function PowerView({ entities, types, summary, haUrl, toggle }) {
   if (!summary) {
     return <EmptyState title="No power summary" hint="This server does not report a house summary yet." />;
   }
-  const { wholeHouse, energyToday, energyThisMonth, topConsumers } = summary.power;
+  const { wholeHouse } = summary.power;
   if (!wholeHouse && !meters.length) {
     return <EmptyState title="No power meters" hint="Add a power sensor in Home Assistant, or name one under power.whole_house in the home dashboard config." />;
   }
 
-  const top = topConsumers.map((c) => ({ ...c, entity: byId.get(c.entityId) })).filter((c) => c.entity);
-  const scale = top[0]?.watts || 1;
-  const totals = [
-    wholeHouse ? `Drawing ${formatWatts(wholeHouse.watts)} right now.` : null,
-    energyToday ? `${formatKwh(energyToday.kwh)} so far today` : null,
-    energyThisMonth ? `${formatKwh(energyThisMonth.kwh)} this month` : null,
-  ].filter(Boolean);
-  const sentence = totals.length > 1 ? `${totals[0]} ${totals.slice(1).join(', ')}.` : totals[0];
+  const top = topCircuits(entities, summary);
+  const sentence = powerSentence(summary);
 
   return (
     <div className="home-power">
@@ -69,19 +60,7 @@ export function PowerView({ entities, types, summary, haUrl, toggle }) {
       ) : null}
 
       <HomeSection title="Where it goes" aside={top.length ? `top ${top.length} circuits` : undefined} empty={!top.length}>
-        <ol className="home-power__ranked">
-          {top.map((c) => (
-            <li key={c.entityId} className="home-power__item">
-              <UnstyledButton className="home-power__circuit" onClick={() => detail.open(c.entity)} aria-label={`${circuitName(c.entity)}, ${formatWatts(c.watts)}`}>
-                <span className="home-power__name">{circuitName(c.entity)}</span>
-                <span className="home-power__watts">{formatWatts(c.watts)}</span>
-                <span className="home-power__bar" aria-hidden="true">
-                  <span className="home-power__fill" style={{ width: `${Math.max(2, Math.round((c.watts / scale) * 100))}%` }} />
-                </span>
-              </UnstyledButton>
-            </li>
-          ))}
-        </ol>
+        <RankedCircuits entities={entities} summary={summary} onOpen={detail.open} />
       </HomeSection>
 
       <HomeSection title="Plugs on" aside={String(plugsOn.length)} empty={!plugsOn.length}>

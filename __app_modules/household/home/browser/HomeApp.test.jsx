@@ -169,7 +169,7 @@ describe('HomeApp — Rooms, Power, Browse', () => {
     expect(sentence()).toBe('Drawing 505 W right now.');
     expect(screen.getByText('Measured by Panel Power')).toBeTruthy();
     expect(screen.getByLabelText('Office, 302 W')).toBeTruthy();
-    expect(document.querySelector('.home-power__fill').style.width).toBe('100%');
+    expect(document.querySelector('.home-breakdown__fill').style.width).toBe('100%');
   });
 
   it('browses as a list grouped by type, room or state, remembering the grouping', async () => {

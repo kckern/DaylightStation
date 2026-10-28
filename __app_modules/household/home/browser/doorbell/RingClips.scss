@@ -1,0 +1,47 @@
+// The rings in a drawer: a time, then the clip at the drawer's width. The
+// time is the row's label; the clip's first frame is its picture.
+
+.home-rings {
+  &__title {
+    margin: 0 0 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ds-text-low);
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+  }
+
+  &__ring {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  &__time {
+    font-size: 0.8125rem;
+    color: var(--ds-text-mid);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__video {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 8rem;
+    background: var(--ds-surface-alt);
+    border-radius: 6px;
+    object-fit: contain;
+  }
+
+  &__none,
+  &__empty {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--ds-text-low);
+  }
+}
