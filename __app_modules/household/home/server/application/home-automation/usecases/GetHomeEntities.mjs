@@ -5,13 +5,11 @@
  * and where the power goes), decided by the household's `now:` / `power:` policy.
  */
 
-import { ConfigurationError } from '#apps/common/errors/SemanticErrors.mjs';
-import { ValidationError } from '#domains/core/errors/index.mjs';
 import {
-  EntityCatalogPolicy, HomeEntity, HouseSummaryPolicy, STATE_CLASSES, resolveRoom, buildRoomPrefixes, summarizeHouse,
+  EntityCatalogPolicy, HomeEntity, HouseSummaryPolicy, MosaicPolicy, STATE_CLASSES, resolveRoom, summarizeHouse, arrangeMosaic,
 } from "../../../domain/home-automation/index.mjs";
-
-const NO_ROOMS = Object.freeze({ rooms: [], assignments: {} });
+import { toConfigurationError } from './configErrors.mjs';
+import { loadRoomContext } from './roomContext.mjs';
 
 export class GetHomeEntities {
   #configRepository;
@@ -37,32 +35,20 @@ export class GetHomeEntities {
 
   /**
    * @returns {Promise<{entities: HomeEntity[], rooms: Array, types: Array, stateClasses: Array, haUrl: string|null,
-   *   summary: ReturnType<typeof summarizeHouse>}>}
+   *   summary: ReturnType<typeof summarizeHouse>, mosaic: ReturnType<typeof arrangeMosaic>}>}
    */
   async execute() {
-    const { policy, summaryPolicy } = await this.#loadPolicy();
+    const { policy, summaryPolicy, mosaicPolicy } = await this.#loadPolicy();
     // Readings first: when the platform is down there is no point rendering
     // the (more expensive) room template.
     const readings = await this.#entityGateway.listReadings();
-    const roomData = await this.#entityGateway.listRooms().catch((error) => {
-      this.#logger.warn?.('home.entities.rooms.failed', { error: error.message });
-      return NO_ROOMS;
-    });
-
-    const roomNames = new Map(roomData.rooms.map((r) => [r.id, r.name]));
-    const roomCtx = {
-      roomNames,
-      assignments: roomData.assignments,
-      overrides: policy.roomOverrides,
-      prefixes: policy.inferRooms ? buildRoomPrefixes(roomData.rooms, policy.roomAliases) : null,
-    };
+    const roomCtx = await loadRoomContext(this.#entityGateway, policy, this.#logger);
 
     const entities = [];
     for (const reading of readings) {
       const id = reading.entityId;
       const { deviceClass } = reading;
-      const hasRoom = Boolean(roomCtx.overrides[id] || roomCtx.assignments[id]);
-      if (!policy.admits(id, { deviceClass, hasRoom })) continue;
+      if (!policy.admits(id, { deviceClass, hasRoom: roomCtx.hasRoom(id) })) continue;
       entities.push(HomeEntity.fromReading(reading, { policy, room: resolveRoom(id, roomCtx) }));
     }
     entities.sort((a, b) => a.name.localeCompare(b.name));
@@ -73,6 +59,7 @@ export class GetHomeEntities {
     for (const e of entities) if (e.room && !roomsById.has(e.room.id)) roomsById.set(e.room.id, { id: e.room.id, name: e.room.name });
     const rooms = [...roomsById.values()].sort((a, b) => a.name.localeCompare(b.name));
     const usedTypes = new Set(entities.map((e) => e.type));
+    const types = policy.types.filter((t) => usedTypes.has(t.id));
     const summary = summarizeHouse(entities, summaryPolicy, { now: this.#clock() });
 
     this.#logger.debug?.('home.entities.listed', {
@@ -86,10 +73,11 @@ export class GetHomeEntities {
     return {
       entities,
       rooms,
-      types: policy.types.filter((t) => usedTypes.has(t.id)),
+      types,
       stateClasses: STATE_CLASSES,
       haUrl: policy.haUrl,
       summary,
+      mosaic: arrangeMosaic(entities, mosaicPolicy, { types }),
     };
   }
 
@@ -99,13 +87,12 @@ export class GetHomeEntities {
       return {
         policy: EntityCatalogPolicy.fromConfig(config.entities),
         summaryPolicy: HouseSummaryPolicy.fromConfig({ now: config.now, power: config.power }),
+        mosaicPolicy: MosaicPolicy.fromConfig(config.mosaic),
       };
     } catch (error) {
-      // Only a rejected config is a config problem; anything else is a bug.
-      if (!(error instanceof ValidationError)) throw error;
-      // HouseSummaryPolicy's fields already carry their section ("now.x").
-      const key = error.field?.includes('.') ? error.field : `entities.${error.field}`;
-      throw new ConfigurationError(`home dashboard config: ${error.message}`, { key, value: error.value });
+      // EntityCatalogPolicy's fields are bare ("exclude"); the summary and
+      // mosaic policies' already carry their section ("now.x", "mosaic.hide").
+      toConfigurationError(error, 'entities');
     }
   }
 }

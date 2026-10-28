@@ -121,4 +121,11 @@ describe('GetHomeEntities', () => {
     await expect(makeUC({ config: { now: { low_battery_pct: 'low' } } }).execute())
       .rejects.toMatchObject({ name: 'ConfigurationError', key: 'now.low_battery_pct' });
   });
+
+  it('arranges the mosaic from the mosaic policy', async () => {
+    const out = await makeUC({ config: { mosaic: { type_groups: ['battery'] } } }).execute();
+    expect(out.mosaic.byRoom.at(-1).id).toBe('_elsewhere');
+    expect(out.mosaic.byRoom.some((g) => g.id === 'type:battery')).toBe(true);
+    expect(out.mosaic.byType.map((g) => g.id)).toContain('light');
+  });
 });
