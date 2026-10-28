@@ -91,6 +91,30 @@ All under `/api/v1/camera/`.
 | `/camera/:id/live/stream.m3u8` | GET | HLS playlist for live stream (starts transcoding) |
 | `/camera/:id/live` | DELETE | Stop the live stream transcoding session |
 | `/camera/:id/state` | GET | Detection state (motion, person, vehicle, animal) |
+| `/camera/:id/clips?day=YYYY-MM-DD` | GET | The day's recorded clips: `{camera, day, clips: [{start, end, name, labels}]}`, ascending (404 unknown camera, 400 bad `day`) |
+| `/camera/:id/clips/file?name=…` | GET | One recorded clip as range-aware MP4 (400 bad name, 502 `{error: 'Clip unavailable'}` when the camera fetch fails) |
+
+### Recorded Clips
+
+`CameraClipLibrary` (`__app_modules/household/camera/server/adapters/`) answers both
+clip routes behind the `ICameraClipLibrary` port:
+
+- **List.** Ledger records (`CameraLedgerStore`, `camera-archive` `storage.ledgerPaths`)
+  that carry a `clip.name`. When the ledger has none for the day (today, before the
+  nightly ledger job), it searches the camera itself (the archive plan's camera-side
+  source) and caches that answer for 2 minutes per camera and day. A failed search
+  logs `camera.clips.search_failed` and returns `[]`, never an error.
+- **File.** The name must be a recorder path (`[/mnt/sdX/]Mp4Record/YYYY-MM-DD/<file>.mp4`).
+  The clip is downloaded once into `/tmp/camera-clips/<camera>/` (via a `.part` file, so an
+  interrupted download is never served), the cache is pruned to the 40 newest clips, and
+  later requests are served from disk with Express range handling.
+- A camera that is not in the `camera-archive` plan, or missing NVR credentials, has no
+  clip source: lists come back empty and file requests answer 502
+  (`camera.clips.source_unavailable` is logged).
+
+Events: `camera.clips.listed` (debug, `{camera, day, source, count}`),
+`camera.clips.fetched` (info, `{camera, name, bytes}`), `camera.clips.search_failed`,
+`camera.clips.source_unavailable`, `camera.clips.fetch_failed` (warn).
 
 ### Snapshot Parameters
 

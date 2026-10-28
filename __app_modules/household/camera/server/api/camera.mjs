@@ -1,6 +1,9 @@
 // __backend/src/4_api/v1/routers/camera.mjs
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { sendLocalFileResource } from '#system/http/streamFile.mjs';
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function createCameraRouter({ cameraService, cameraEvents, logger = console }) {
   const router = express.Router();
@@ -54,6 +57,57 @@ export function createCameraRouter({ cameraService, cameraEvents, logger = conso
         res.status(502).json({ error: 'Failed to start stream', cameraId: id, details: err.message });
       }
     }
+  }));
+
+  // GET /:id/clips?day=YYYY-MM-DD — the day's recorded clips (ledger, else camera search)
+  router.get('/:id/clips', asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!cameraService.hasCamera(id)) {
+      return res.status(404).json({ error: 'Camera not found', cameraId: id });
+    }
+    const day = typeof req.query.day === 'string' ? req.query.day : '';
+    if (!DAY_RE.test(day)) {
+      return res.status(400).json({ error: 'day must be YYYY-MM-DD', cameraId: id });
+    }
+    try {
+      const clips = await cameraService.listClips(id, day);
+      res.json({ camera: id, day, clips });
+    } catch (err) {
+      if (err?.name === 'OperationUnavailableError') {
+        return res.status(503).json({ error: 'Camera clips not configured', cameraId: id });
+      }
+      throw err;
+    }
+  }));
+
+  // GET /:id/clips/file?name=… — one recorded clip as range-aware MP4
+  router.get('/:id/clips/file', asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!cameraService.hasCamera(id)) {
+      return res.status(404).json({ error: 'Camera not found', cameraId: id });
+    }
+    const name = typeof req.query.name === 'string' ? req.query.name : '';
+    if (!name) return res.status(400).json({ error: 'Missing clip name', cameraId: id });
+    let resource;
+    try {
+      resource = await cameraService.getClip(id, name);
+    } catch (err) {
+      if (err?.name === 'ValidationError') {
+        return res.status(400).json({ error: 'Invalid clip name', cameraId: id });
+      }
+      if (err?.name === 'OperationUnavailableError') {
+        return res.status(503).json({ error: 'Camera clips not configured', cameraId: id });
+      }
+      logger.warn?.('camera.clips.fetch_failed', { cameraId: id, name, error: err?.message });
+      return res.status(502).json({ error: 'Clip unavailable', cameraId: id });
+    }
+    res.set('Cache-Control', 'private, max-age=3600');
+    sendLocalFileResource(req, res, resource, (err) => {
+      // A seek or a closed player aborts the transfer; that is not a fault.
+      if (!err || err.code === 'ECONNABORTED') return;
+      logger.warn?.('camera.clips.send_failed', { cameraId: id, name, error: err.message });
+      if (!res.headersSent) res.status(502).json({ error: 'Clip unavailable', cameraId: id });
+    });
   }));
 
   // GET /:id/live/:segment — serve HLS .ts segment
