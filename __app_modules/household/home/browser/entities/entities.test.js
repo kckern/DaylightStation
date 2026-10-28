@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { groupEntities, filterEntities } from './groupEntities.js';
-import { formatEntityState, formatAge } from './formatEntityState.js';
+import { BROWSE_MODES, groupEntities, filterEntities } from './groupEntities.js';
+import {
+  displayName, formatEntityState, formatAge, formatSince, formatWatts, formatKwh, formatDegrees,
+} from './formatEntityState.js';
 
 const e = (id, over = {}) => ({
   id, domain: id.split('.')[0], name: over.name || id, state: 'off', stateClass: 'off', type: 'light', room: null, ...over,
@@ -20,6 +22,10 @@ const meta = {
 const shape = (groups) => groups.map((g) => [g.id, g.entities.map((x) => x.id)]);
 
 describe('groupEntities', () => {
+  it('offers type, room and state as grouping modes', () => {
+    expect(BROWSE_MODES.map((m) => m.id)).toEqual(['type', 'room', 'state']);
+  });
+
   it('groups by type in the server type order, counting what is on', () => {
     const groups = groupEntities(entities, 'type', meta);
     expect(shape(groups)).toEqual([
@@ -63,20 +69,51 @@ describe('filterEntities', () => {
 
 describe('formatEntityState', () => {
   it.each([
-    [{ domain: 'light', state: 'on', stateClass: 'on', detail: { brightnessPct: 50 } }, 'On · 50%'],
+    [{ domain: 'light', state: 'on', stateClass: 'on', detail: { brightnessPct: 50 } }, '50%'],
+    [{ domain: 'light', state: 'on', stateClass: 'on', detail: {} }, 'On'],
     [{ domain: 'switch', state: 'off', stateClass: 'off' }, 'Off'],
     [{ domain: 'binary_sensor', state: 'on', stateClass: 'on', deviceClass: 'motion' }, 'Motion'],
     [{ domain: 'binary_sensor', state: 'off', stateClass: 'off', deviceClass: 'door' }, 'Closed'],
     [{ domain: 'sensor', state: '71.4567', stateClass: 'reading', unit: '°F' }, '71.5 °F'],
     [{ domain: 'sensor', state: '1234.5', stateClass: 'reading', unit: 'W' }, '1,235 W'],
     [{ domain: 'sensor', state: 'Window/door is open', stateClass: 'reading' }, 'Window/door is open'],
-    [{ domain: 'climate', state: 'heat', stateClass: 'on', detail: { currentTemperature: 68.2, hvacAction: 'heating' } }, '68.2° · Heating'],
-    [{ domain: 'media_player', state: 'playing', stateClass: 'on', detail: { mediaTitle: 'Song' } }, 'Playing · Song'],
+    [{ domain: 'climate', state: 'heat', stateClass: 'on', detail: { currentTemperature: 68.2, hvacAction: 'heating' } }, '68.2°, heating'],
+    [{ domain: 'climate', state: 'heat_cool', stateClass: 'on', detail: {} }, 'Heat cool'],
+    [{ domain: 'media_player', state: 'playing', stateClass: 'on', detail: { mediaTitle: 'Song' } }, 'Playing: Song'],
     [{ domain: 'cover', state: 'open', stateClass: 'on' }, 'Open'],
     [{ domain: 'light', state: 'unavailable', stateClass: 'unavailable' }, 'Unavailable'],
     [{ domain: 'sensor', state: '', stateClass: 'reading', unit: 'W' }, ''],
   ])('%j → %s', (entity, expected) => {
     expect(formatEntityState(entity)).toBe(expected);
+  });
+});
+
+describe('figures', () => {
+  it('says watts below a kilowatt and kilowatts above', () => {
+    expect(formatWatts(505.4)).toBe('505 W');
+    expect(formatWatts(1691.5)).toBe('1.7 kW');
+    expect(formatWatts(NaN)).toBeNull();
+  });
+  it('says kilowatt-hours with one decimal until a hundred', () => {
+    expect(formatKwh(0.157)).toBe('0.2 kWh');
+    expect(formatKwh(40.03)).toBe('40.0 kWh');
+    expect(formatKwh(850.6)).toBe('851 kWh');
+  });
+  it('rounds degrees to the whole number a glance reads', () => {
+    expect(formatDegrees('79.286')).toBe('79°');
+    expect(formatDegrees('x')).toBeNull();
+  });
+});
+
+describe('displayName', () => {
+  it('names an opening after its room when the platform named it after its state', () => {
+    expect(displayName(e('binary_sensor.office_door', { name: 'Open', type: 'openings', deviceClass: 'door', room: { id: 'office', name: 'Office' } }))).toBe('Office door');
+    expect(displayName(e('binary_sensor.w', { name: 'Closed', type: 'openings', deviceClass: 'window', room: null }))).toBe('Window');
+    expect(displayName(e('cover.blinds', { name: 'Open', type: 'openings', deviceClass: 'shade', room: { id: 'office', name: 'Office' } }))).toBe('Office blinds');
+  });
+  it('leaves real names alone', () => {
+    expect(displayName(e('binary_sensor.g', { name: 'Garage Door Exterior', type: 'openings', deviceClass: 'door' }))).toBe('Garage Door Exterior');
+    expect(displayName(e('switch.x', { name: 'Open', type: 'switch' }))).toBe('Open');
   });
 });
 
@@ -87,5 +124,15 @@ describe('formatAge', () => {
     ['2026-10-27T09:00:00Z', '3h ago'], ['2026-10-20T12:00:00Z', '7d ago'], ['nope', null],
   ])('%s → %s', (iso, expected) => {
     expect(formatAge(iso, now)).toBe(expected);
+  });
+});
+
+describe('formatSince', () => {
+  const now = Date.parse('2026-10-27T23:30:00');
+  it('says a time today, "yesterday" with a time, or a date', () => {
+    expect(formatSince('2026-10-27T20:29:00', now)).toMatch(/^8:29 pm$/);
+    expect(formatSince('2026-10-26T20:29:00', now)).toMatch(/^yesterday 8:29 pm$/);
+    expect(formatSince('2026-10-20T20:29:00', now)).toMatch(/^Oct 20$/);
+    expect(formatSince('nope', now)).toBeNull();
   });
 });

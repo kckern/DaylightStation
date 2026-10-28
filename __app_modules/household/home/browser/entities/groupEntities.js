@@ -1,28 +1,28 @@
 /**
- * Group home entities for one dashboard view. The server has already decided
+ * Group home entities for the Browse list. The server has already decided
  * each entity's type, room and state class; this only arranges them.
  */
 
-export const VIEWS = Object.freeze([
-  Object.freeze({ id: 'type', label: 'By type' }),
-  Object.freeze({ id: 'room', label: 'By room' }),
-  Object.freeze({ id: 'state', label: 'By state' }),
+export const BROWSE_MODES = Object.freeze([
+  Object.freeze({ id: 'type', label: 'Type' }),
+  Object.freeze({ id: 'room', label: 'Room' }),
+  Object.freeze({ id: 'state', label: 'State' }),
 ]);
 
 const NO_ROOM = Object.freeze({ id: '__none__', label: 'No room' });
 
 /**
  * @param {Array} entities - entity JSON from /home-dashboard/entities
- * @param {'type'|'room'|'state'} view
+ * @param {'type'|'room'|'state'} mode
  * @param {{rooms?: Array, types?: Array, stateClasses?: Array}} meta
  * @returns {Array<{id: string, label: string, entities: Array, onCount: number}>}
  */
-export function groupEntities(entities, view, { rooms = [], types = [], stateClasses = [] } = {}) {
-  const order = view === 'room'
+export function groupEntities(entities, mode, { rooms = [], types = [], stateClasses = [] } = {}) {
+  const order = mode === 'room'
     ? [...rooms.map((r) => ({ id: r.id, label: r.name })), NO_ROOM]
-    : (view === 'state' ? stateClasses : types).map((g) => ({ id: g.id, label: g.label }));
-  const keyOf = view === 'room' ? (e) => e.room?.id || NO_ROOM.id
-    : view === 'state' ? (e) => e.stateClass
+    : (mode === 'state' ? stateClasses : types).map((g) => ({ id: g.id, label: g.label }));
+  const keyOf = mode === 'room' ? (e) => e.room?.id || NO_ROOM.id
+    : mode === 'state' ? (e) => e.stateClass
       : (e) => e.type;
 
   const buckets = new Map(order.map((g) => [g.id, []]));

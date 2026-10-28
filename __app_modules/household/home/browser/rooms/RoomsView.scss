@@ -1,0 +1,98 @@
+@use '../../../../../frontend/src/styles/breakpoints' as bp;
+
+// name | lights | temp | motion | chevron — the same columns on every row, so
+// the eye can run down one column.
+$room-columns: minmax(0, 1fr) 5.5rem 3.5rem 5rem 1.25rem;
+$room-columns-phone: minmax(0, 1fr) 4.5rem 2.75rem 3.75rem 1rem;
+
+.home-rooms {
+  margin-top: 0.75rem;
+
+  &__legend {
+    display: grid;
+    grid-template-columns: $room-columns;
+    column-gap: 0.75rem;
+    padding: 0.25rem 0 0.35rem;
+    font-size: 0.75rem;
+    color: var(--ds-text-low);
+    border-bottom: 1px solid var(--ds-border);
+
+    > span:nth-child(3) { text-align: right; }
+    > span:nth-child(4) { text-align: right; }
+
+    @include bp.mobile-only { grid-template-columns: $room-columns-phone; column-gap: 0.5rem; }
+  }
+}
+
+.home-room {
+  &__row {
+    display: grid;
+    grid-template-columns: $room-columns;
+    align-items: center;
+    column-gap: 0.75rem;
+    width: 100%;
+    min-height: 3rem;
+    padding: 0.35rem 0;
+    text-align: left;
+    color: inherit;
+    border-radius: 6px;
+
+    &:hover .home-room__name { color: var(--ds-text-high); }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+
+    @include bp.mobile-only { grid-template-columns: $room-columns-phone; column-gap: 0.5rem; }
+  }
+
+  &__name {
+    font-size: 0.9375rem;
+    color: var(--ds-text-high);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__lights, &__temp, &__motion {
+    font-size: 0.875rem;
+    color: var(--ds-text-mid);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__lights { display: inline-flex; align-items: center; gap: 0.4rem; }
+  &__temp, &__motion { text-align: right; }
+
+  &__none { color: var(--ds-text-low); }
+
+  // Lamplight: the one colour on the row.
+  &__dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--ds-warning);
+  }
+  &--lit &__lights { color: var(--ds-text-high); }
+
+  &__chevron {
+    color: var(--ds-text-low);
+    transition: transform var(--ds-motion-fast) var(--ds-motion-easing);
+  }
+  &--open &__chevron { transform: rotate(90deg); }
+
+  &--open &__row { border-bottom: 1px solid var(--ds-border); border-radius: 0; }
+  &--open { margin-bottom: 0.75rem; }
+
+  &__body {
+    padding: 0.25rem 0 0.5rem;
+    border-bottom: 1px solid var(--ds-border);
+
+    @include bp.tablet-up { padding-left: 1rem; }
+  }
+
+  &__block + &__block { margin-top: 0.75rem; }
+
+  &__off {
+    display: block;
+    margin: 0.1rem 0 0.25rem auto;
+  }
+}

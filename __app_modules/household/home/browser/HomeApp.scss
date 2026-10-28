@@ -1,6 +1,18 @@
+// One type family for the whole app, inputs included: IBM Plex Sans is loaded
+// by frontend/index.html and no other app claims it. Figures are tabular
+// wherever they sit in a column (set per element, not globally, so prose
+// keeps proportional digits).
+.home-app {
+  --mantine-font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  height: 100%;
+  min-height: 100vh;
+}
+
+// A report reads in one column; the eye should not have to travel 1200px.
 .home-app__page {
-  padding: 1rem;
-  max-width: 1200px;
+  padding: 0.25rem 0 2.5rem;
+  max-width: 56rem;
   margin: 0 auto;
 }
 

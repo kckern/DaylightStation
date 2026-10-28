@@ -60,8 +60,14 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
     return () => clearTimeout(timer);
   }, [pending]);
 
+  // When the figures on screen were read; the Now view says so under its sentence.
+  const [fetchedAt, setFetchedAt] = useState(null);
   useEffect(() => {
-    if (data) logger.debug('home.entities.loaded', { count: data.entities?.length ?? 0, rooms: data.rooms?.length ?? 0 });
+    if (!data) return;
+    setFetchedAt(Date.now());
+    logger.debug('home.entities.loaded', {
+      count: data.entities?.length ?? 0, rooms: data.rooms?.length ?? 0, summary: Boolean(data.summary),
+    });
   }, [data]);
 
   const toggle = useCallback(async (entity) => {
@@ -83,6 +89,14 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
     }
   }, [reload]);
 
+  /** Turn off every entity given (a room's lit lamps); one request each, together. */
+  const turnOff = useCallback(async (list) => {
+    const lit = list.filter((e) => e.stateClass === 'on' && e.controllable && !e.pending);
+    logger.info('home.entities.turn-off-many', { count: lit.length, entityIds: lit.map((e) => e.id) });
+    const results = await Promise.all(lit.map((e) => toggle(e)));
+    return results.every(Boolean);
+  }, [toggle]);
+
   const entities = useMemo(() => (data?.entities || []).map((e) => (
     pending[e.id] ? { ...e, stateClass: pending[e.id].expected, state: pending[e.id].expected, pending: true } : e
   )), [data, pending]);
@@ -93,8 +107,11 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
     types: data?.types || [],
     stateClasses: data?.stateClasses || [],
     haUrl: data?.haUrl || null,
+    // Absent on a server that predates the Now view; the views degrade to the list.
+    summary: data?.summary || null,
+    fetchedAt,
     hasData: Boolean(data),
-    loading, error, revalidating, reload, toggle,
+    loading, error, revalidating, reload, toggle, turnOff,
   };
 }
 

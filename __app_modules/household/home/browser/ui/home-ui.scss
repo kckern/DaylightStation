@@ -1,0 +1,250 @@
+@use '../../../../../frontend/src/styles/breakpoints' as bp;
+
+// The home app's shared vocabulary: the status sentence, a section with a
+// sentence-case title, a ledger row, and a disclosure. Rows are separated by
+// space, not boxes; the only lines are the ones that carry meaning.
+
+// The one memorable element: the house, described in a sentence.
+.home-status {
+  margin: 0.75rem 0 0;
+  max-width: 30ch;
+  font-size: 1.5rem;
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--ds-text-high);
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+
+  @include bp.tablet-up {
+    margin-top: 1.25rem;
+    font-size: 1.875rem;
+  }
+
+  &__asof {
+    margin: 0.5rem 0 0;
+    font-size: 0.8125rem;
+    color: var(--ds-text-low);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+
+.home-section {
+  margin-top: 2rem;
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--ds-border);
+    margin-bottom: 0.35rem;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--ds-text-high);
+  }
+
+  &__aside {
+    font-size: 0.8125rem;
+    color: var(--ds-text-low);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  // A sub-grouping inside a section (a room inside "On").
+  &__group {
+    display: grid;
+    grid-template-columns: 9rem minmax(0, 1fr);
+    column-gap: 1rem;
+    padding: 0.5rem 0;
+
+    @include bp.mobile-only { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  &__group-name {
+    margin: 0;
+    padding-top: 0.6rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--ds-text-mid);
+
+    @include bp.mobile-only { padding: 0.25rem 0 0; }
+  }
+
+  &__note {
+    margin: 0.5rem 0 0;
+    font-size: 0.875rem;
+    color: var(--ds-text-mid);
+  }
+}
+
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+
+  &__main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 1rem;
+    padding: 0.45rem 0;
+    text-align: left;
+    color: inherit;
+    border-radius: 6px;
+
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+  }
+
+  &--tappable &__main { cursor: pointer; }
+  &--tappable &__main:hover { color: var(--ds-text-high); }
+
+  &__text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: 0.9375rem;
+    color: var(--ds-text-high);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__sub {
+    font-size: 0.8125rem;
+    color: var(--ds-text-low);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__value {
+    font-size: 0.9375rem;
+    color: var(--ds-text-mid);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__action {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    min-width: 2.75rem;
+    justify-content: flex-end;
+  }
+
+  // The one colour the page uses for a state: a lamp that is lit.
+  &--lit &__value { color: var(--ds-warning); }
+  &--silent &__name { color: var(--ds-text-low); }
+  &--silent &__value { color: var(--ds-danger); }
+  &--pending { opacity: 0.6; }
+}
+
+// Dense mode: the Browse list and expanded rooms, where a hairline per row
+// keeps a long column legible.
+.home-rows--ruled .home-row + .home-row { border-top: 1px solid var(--ds-border); }
+
+// A room's name guessed from the entity id rather than set in the platform.
+.home-inferred { font-style: italic; }
+
+.home-disclosure {
+  &__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.75rem;
+    padding: 0 0.25rem 0 0;
+    font-size: 0.9375rem;
+    color: var(--ds-text-mid);
+    border-radius: 6px;
+
+    &:hover { color: var(--ds-text-high); }
+    &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+  }
+
+  &__chevron {
+    transition: transform var(--ds-motion-fast) var(--ds-motion-easing);
+    color: var(--ds-text-low);
+  }
+
+  &--open &__chevron { transform: rotate(90deg); }
+
+  &__body { padding-left: 1.25rem; }
+}
+
+// Plain-text action: "Off", "Turn off 3".
+.home-textaction {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 0.5rem;
+  font-size: 0.875rem;
+  color: var(--ds-text-mid);
+  border-radius: 6px;
+  text-align: center;
+
+  &:hover { color: var(--ds-text-high); background: var(--ds-surface); }
+  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+  &:disabled { color: var(--ds-text-low); cursor: default; }
+}
+
+.home-detail {
+  &__state {
+    margin: 0 0 1rem;
+    font-size: 1.5rem;
+    font-weight: 400;
+    color: var(--ds-text-high);
+    font-variant-numeric: tabular-nums;
+  }
+  &--lit &__state { color: var(--ds-warning); }
+  &--silent &__state { color: var(--ds-danger); }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.4rem 1rem;
+    margin: 0;
+    font-size: 0.875rem;
+
+    dt { color: var(--ds-text-low); }
+    dd { margin: 0; color: var(--ds-text-mid); overflow-wrap: anywhere; }
+  }
+
+  &__control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 1.25rem 0;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--ds-border);
+    border-bottom: 1px solid var(--ds-border);
+    color: var(--ds-text-high);
+  }
+
+  &__link {
+    display: inline-block;
+    margin-top: 1.25rem;
+    font-size: 0.875rem;
+    color: var(--ds-text-mid);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+
+    &:hover { color: var(--ds-text-high); }
+  }
+}

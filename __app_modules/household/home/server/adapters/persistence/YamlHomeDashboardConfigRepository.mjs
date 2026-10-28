@@ -11,8 +11,9 @@
  * Sections: `summary` and `rooms` (the hand-curated room dashboard) and
  * `entities` (the entity policy for /home: which Home Assistant entities are
  * shown, their types and rooms, and which may be switched — validated by
- * EntityCatalogPolicy). Every section is optional; an absent file means
- * defaults throughout.
+ * EntityCatalogPolicy), and `now` / `power` (what the Now view reports and
+ * which meter is the whole house — validated by HouseSummaryPolicy). Every
+ * section is optional; an absent file means defaults throughout.
  *
  * @module adapters/persistence/yaml/YamlHomeDashboardConfigRepository
  */
@@ -49,19 +50,23 @@ export class YamlHomeDashboardConfigRepository extends IHomeDashboardConfigRepos
 
   /**
    * Load the home-dashboard config.
-   * @returns {Promise<{ summary: Object, rooms: Array, entities: Object }>}
+   * @returns {Promise<{ summary: Object, rooms: Array, entities: Object, now: Object, power: Object }>}
    */
   async load() {
     const raw = this.#dataService.household.read(CONFIG_PATH, this.#householdId);
     if (!raw) {
       this.#logger.warn?.('home.dashboard.config.missing', { householdId: this.#householdId });
-      return { summary: {}, rooms: [], entities: {} };
+      return { summary: {}, rooms: [], entities: {}, now: {}, power: {} };
     }
     return {
       summary: raw.summary || {},
       rooms:   Array.isArray(raw.rooms) ? raw.rooms : [],
       // The entity catalog policy; EntityCatalogPolicy validates its shape.
       entities: raw.entities && typeof raw.entities === 'object' ? raw.entities : {},
+      // The Now-view policy (thresholds, what counts as news) and the power
+      // summary (which meter is the whole house); HouseSummaryPolicy validates.
+      now: raw.now && typeof raw.now === 'object' ? raw.now : {},
+      power: raw.power && typeof raw.power === 'object' ? raw.power : {},
     };
   }
 }

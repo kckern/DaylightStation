@@ -1,0 +1,44 @@
+@use '../../../../../frontend/src/styles/breakpoints' as bp;
+
+.home-now__room-off {
+  display: block;
+  margin: 0.1rem 0 0.25rem auto;
+}
+
+// One line per room that knows its temperature; figures in columns, words after.
+.home-climate {
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 3.5rem minmax(0, 1.2fr);
+    align-items: baseline;
+    column-gap: 1rem;
+    min-height: 2.5rem;
+    padding: 0.3rem 0;
+  }
+
+  &__room {
+    font-size: 0.9375rem;
+    color: var(--ds-text-high);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__temp {
+    font-size: 1.0625rem;
+    color: var(--ds-text-high);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__more {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8125rem;
+    color: var(--ds-text-low);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+}
