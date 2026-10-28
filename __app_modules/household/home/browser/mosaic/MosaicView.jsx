@@ -1,6 +1,6 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SegmentedControl, UnstyledButton } from '@mantine/core';
-import { EmptyState } from '@/lib/ui';
+import { CHROME_SCROLL_CLASS, EmptyState, useDismissLayer } from '@/lib/ui';
 import { displayName, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
@@ -80,7 +80,7 @@ const MosaicGroups = memo(function MosaicGroups({ groups }) {
 });
 
 /** The one shared tooltip, set over the square it describes and kept inside the mosaic. */
-function MosaicTooltip({ tip, text, boxRef }) {
+function MosaicTooltip({ id, tip, text, boxRef }) {
   const ref = useRef(null);
   const [place, setPlace] = useState(null);
   useLayoutEffect(() => {
@@ -103,7 +103,7 @@ function MosaicTooltip({ tip, text, boxRef }) {
     <div
       ref={ref}
       role="tooltip"
-      id="home-mosaic-tip"
+      id={id}
       className={`home-mosaic__tip${place?.below ? ' home-mosaic__tip--below' : ''}`}
       style={style}
     >
@@ -126,6 +126,7 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
   const tipIdRef = useRef(null);
   const touchRef = useRef({ at: 0, tipBefore: null });
   const detail = useEntityDetail(entities || []);
+  const tipDomId = useId();
 
   const byId = useMemo(() => new Map((entities || []).map((e) => [e.id, e])), [entities]);
   const flags = useMemo(() => toneFlags(summary), [summary]);
@@ -151,6 +152,19 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
   };
 
   const hideTip = useCallback(() => { tipIdRef.current = null; setTip(null); }, []);
+  // An open tooltip is a layer on the app's one Escape handler, so Escape hides
+  // it wherever focus is; with no tooltip open, Escape reaches the drawer.
+  useDismissLayer(Boolean(tip), hideTip);
+  // The square the tooltip describes names it (squares are memoised, so set it here).
+  const tipId = tip?.id ?? null;
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box || !tipId) return undefined;
+    const sq = [...box.querySelectorAll('.home-square[data-entity-id]')].find((el) => el.dataset.entityId === tipId);
+    if (!sq) return undefined;
+    sq.setAttribute('aria-describedby', tipDomId);
+    return () => sq.removeAttribute('aria-describedby');
+  }, [tipId, tipDomId]);
   const showTip = useCallback((el) => {
     const entity = byId.get(el.dataset.entityId);
     const box = boxRef.current;
@@ -159,8 +173,9 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
     const r = el.getBoundingClientRect();
     const b = box.getBoundingClientRect();
     tipIdRef.current = entity.id;
-    // The scroll region's top edge (the app header sits above it) is the ceiling.
-    const scroller = box.closest('.ds-chrome__main');
+    // The chrome's scroll region starts under the app header: that edge is the
+    // ceiling. Outside AppChrome nothing covers the page, so the viewport top is.
+    const scroller = box.closest(`.${CHROME_SCROLL_CLASS}`);
     const ceiling = scroller ? scroller.getBoundingClientRect().top : 0;
     setTip({
       id: entity.id, x: r.left - b.left + r.width / 2,
@@ -221,6 +236,7 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
           <li><span className="home-mosaic__swatch home-mosaic__swatch--on" aria-hidden="true" />On</li>
           <li><span className="home-mosaic__swatch home-mosaic__swatch--motion" aria-hidden="true" />Someone there</li>
           <li><span className="home-mosaic__swatch home-mosaic__swatch--open" aria-hidden="true" />Open</li>
+          <li><span className="home-mosaic__swatch home-mosaic__swatch--temp" aria-hidden="true" />Temperature</li>
           <li><span className="home-mosaic__swatch home-mosaic__swatch--attention" aria-hidden="true" />Needs attention</li>
         </ul>
       </div>
@@ -240,7 +256,7 @@ export function MosaicView({ entities, mosaic, summary, types, haUrl, toggle }) 
         >
           <MosaicGroups groups={groups} />
           {/* The words come from the live reading, so a poll updates an open tooltip. */}
-          <MosaicTooltip tip={tip} text={tip && byId.has(tip.id) ? tipText(byId.get(tip.id)) : null} boxRef={boxRef} />
+          <MosaicTooltip id={tipDomId} tip={tip} text={tip && byId.has(tip.id) ? tipText(byId.get(tip.id)) : null} boxRef={boxRef} />
         </div>
       ) : (
         <EmptyState title="No devices to show" hint="Home Assistant reported no devices in these groups." />

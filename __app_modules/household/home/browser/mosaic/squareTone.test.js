@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { IconBolt, IconBulb, IconDoor, IconDroplet, IconPlug, IconPoint, IconTemperature, IconWindow } from '@tabler/icons-react';
+import { IconPropeller, IconBolt, IconBulb, IconDoor, IconDroplet, IconPlug, IconPoint, IconTemperature, IconWindow } from '@tabler/icons-react';
 import { squareTone, isLively, toneFlags } from './squareTone.js';
 import { iconFor } from './mosaicIcons.js';
 
@@ -34,6 +34,15 @@ describe('squareTone', () => {
     expect(squareTone(e({ type: 'climate', stateClass: 'reading', state: 'unknown', unit: '°F', deviceClass: 'temperature' }), flags())).toEqual({ fill: 'quiet', attention: false, tempPct: null });
     expect(squareTone(e({ type: 'climate', stateClass: 'reading', state: '', unit: '°F', deviceClass: 'temperature' }), flags()).fill).toBe('quiet');
   });
+  it('only a Celsius unit is converted: a unit that merely contains a "c" is not', () => {
+    const t = (unit) => squareTone(e({ type: 'climate', stateClass: 'reading', state: '35', unit, deviceClass: 'temperature' }), flags()).tempPct;
+    expect(t('°C')).toBe(100);
+    expect(t('C')).toBe(100);
+    expect(t('℃')).toBe(100);
+    const f = (unit) => squareTone(e({ type: 'climate', stateClass: 'reading', state: '70', unit, deviceClass: 'temperature' }), flags()).tempPct;
+    expect(f('°F (calc)')).toBe(50);
+    expect(f('°F')).toBe(50);
+  });
   it('a cold reading clamps to 0 %, and a motion flag lights a sensor that reads clear', () => {
     expect(squareTone(e({ type: 'climate', stateClass: 'reading', state: '40', unit: '°F', deviceClass: 'temperature' }), flags()).tempPct).toBe(0);
     expect(squareTone(e({ id: 'b.m', type: 'presence', stateClass: 'off' }), flags({ motion: new Set(['b.m']) })).fill).toBe('motion');
@@ -66,5 +75,7 @@ describe('iconFor', () => {
     expect(iconFor({ type: 'climate', deviceClass: 'humidity' })).toBe(IconDroplet);
     expect(iconFor({ type: 'climate', deviceClass: 'temperature' })).toBe(IconTemperature);
     expect(iconFor({ type: 'other' })).toBe(IconPoint);
+    // A ceiling fan is filed under climate; it is not a thermometer.
+    expect(iconFor({ type: 'climate', domain: 'fan', deviceClass: null })).toBe(IconPropeller);
   });
 });

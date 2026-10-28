@@ -4,6 +4,13 @@
 // CSS-switched). Nav pattern adopted from Media's PrimaryNav.
 import './ds.scss';
 
+/**
+ * The class of the chrome's one scroll region (below the header). Content
+ * that positions overlays against what is on screen (a tooltip that must not
+ * slide under the header) finds it with `.closest('.' + CHROME_SCROLL_CLASS)`.
+ */
+export const CHROME_SCROLL_CLASS = 'ds-chrome__main';
+
 export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, footer, sidebarRef, sidebarActive = false, children }) {
   const actions = Array.isArray(headerActions) ? headerActions : (headerActions ? [headerActions] : []);
   if (actions.length > 3) {
@@ -32,7 +39,7 @@ export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActi
         ))}
         {sidebarRef ? <div ref={sidebarRef} className="ds-chrome__context" hidden={!sidebarActive} /> : null}
       </nav>
-      <main className="ds-chrome__main">{children}</main>
+      <main className={CHROME_SCROLL_CLASS}>{children}</main>
       {footer ? <div className="ds-chrome__footer">{footer}</div> : null}
     </div>
   );

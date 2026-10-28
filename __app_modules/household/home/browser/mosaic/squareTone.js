@@ -12,6 +12,9 @@ const ON_TYPES = new Set(['light', 'power', 'media', 'switch']);
 const TEMP_COLD_F = 55;
 const TEMP_SPAN_F = 30;
 
+// Celsius only when the unit says so: °C, C or ℃ (never any unit with a "c" in it).
+const CELSIUS = /^\s*(°\s*C|C|℃)\s*$/i;
+
 const idOf = (item) => (typeof item === 'string' ? item : item?.entityId ?? null);
 const idSet = (list) => new Set((Array.isArray(list) ? list : []).map(idOf).filter(Boolean));
 
@@ -31,7 +34,7 @@ function temperaturePct(entity) {
   if (raw == null || (typeof raw === 'string' && raw.trim() === '')) return null;
   let f = Number(raw);
   if (!Number.isFinite(f)) return null;
-  if (/c/i.test(entity.unit || '')) f = f * 9 / 5 + 32;
+  if (CELSIUS.test(entity.unit || '')) f = f * 9 / 5 + 32;
   const t = Math.min(1, Math.max(0, (f - TEMP_COLD_F) / TEMP_SPAN_F));
   return Math.round(t * 100);
 }

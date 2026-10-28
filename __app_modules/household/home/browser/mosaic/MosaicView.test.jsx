@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { DismissStackProvider } from '@/lib/ui';
 
 const apiMock = vi.fn();
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
@@ -51,9 +52,9 @@ const mosaic = {
 };
 
 const renderMosaic = (props = {}) => render(
-  <MantineProvider>
+  <MantineProvider><DismissStackProvider>
     <MosaicView entities={entities} mosaic={mosaic} summary={summary} types={types} haUrl="https://ha.example" toggle={vi.fn()} {...props} />
-  </MantineProvider>,
+  </DismissStackProvider></MantineProvider>,
 );
 const squares = () => [...document.querySelectorAll('.home-square')];
 const square = (label) => screen.getByRole('button', { name: new RegExp(`^${label}:`) });
@@ -99,6 +100,37 @@ describe('MosaicView', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Kitchen light' });
     expect(within(dialog).getByText('Lights')).toBeTruthy();
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('light.kitchen')));
+  });
+
+  it('Escape hides a hovered tooltip wherever focus is, and still closes a drawer when no tooltip is open', async () => {
+    renderMosaic();
+    fireEvent.mouseOver(square('Desk lamp'));
+    expect(screen.getByRole('tooltip')).toBeTruthy();
+    document.body.focus();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    fireEvent.click(square('Kitchen light'));
+    expect(await screen.findByRole('dialog', { name: 'Kitchen light' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('the square a tooltip describes points at it', () => {
+    renderMosaic();
+    fireEvent.mouseOver(square('Desk lamp'));
+    const id = screen.getByRole('tooltip').id;
+    expect(id).toBeTruthy();
+    expect(square('Desk lamp').getAttribute('aria-describedby')).toBe(id);
+    fireEvent.mouseOver(square('Kitchen light'));
+    expect(square('Kitchen light').getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id);
+    expect(square('Desk lamp').hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('the legend names the temperature ramp', () => {
+    renderMosaic();
+    const legend = screen.getByRole('list', { name: 'What the colours mean' });
+    expect(within(legend).getByText('Temperature')).toBeTruthy();
+    expect(legend.querySelector('.home-mosaic__swatch--temp')).toBeTruthy();
   });
 
   it('on a touch screen the first tap shows the tooltip and a second tap opens the drawer', async () => {

@@ -17,6 +17,10 @@ $gap: 3px;
   --home-sq-icon: #{$icon};
   // Orange is between the amber "on" and the red "attention".
   --home-tone-open: color-mix(in srgb, var(--ds-warning) 55%, var(--ds-danger));
+  // A temperature: blue at 55 °F, red at 85 °F. The ramp starts 12 % off pure
+  // --ds-info so the coldest reading is not the "someone there" blue, and a
+  // temperature is a round dot, not a square, so the two never read alike.
+  --home-tone-cold: color-mix(in srgb, var(--ds-danger) 12%, var(--ds-info));
 
   @media (pointer: coarse) {
     --home-sq: #{$square-coarse};
@@ -57,6 +61,12 @@ $gap: 3px;
     &--on { background: var(--ds-warning); }
     &--motion { background: var(--ds-info); }
     &--open { background: var(--home-tone-open); }
+
+    &--temp {
+      width: 22px;
+      border-radius: 5px;
+      background: linear-gradient(90deg, var(--home-tone-cold), var(--ds-danger));
+    }
 
     &--attention {
       background: var(--ds-surface-alt);
@@ -160,9 +170,10 @@ $gap: 3px;
   &--motion { background: var(--ds-info); color: var(--ds-background); }
   &--open { background: var(--home-tone-open); color: var(--ds-background); }
 
-  // A temperature: blue at 55 °F, red at 85 °F.
+  // A temperature: the ramp from --home-tone-cold to red, as a round dot.
   &--temp {
-    background: color-mix(in srgb, var(--ds-danger) calc(var(--tone-pct, 50) * 1%), var(--ds-info));
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ds-danger) calc(12% + var(--tone-pct, 50) * 0.88%), var(--ds-info));
     color: var(--ds-background);
   }
 
