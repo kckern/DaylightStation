@@ -242,7 +242,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Household economy (coins, payouts, early pass; the CoinIcon standard) | `__docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `__docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `__docs/reference/donow/README.md` |
-| Home dashboard (`/home`: HA entities by type/room/state, `household/home/dashboard.yml` entity policy, toggles, cameras view) | `__docs/reference/home/README.md` |
+| Home dashboard (`/home`: Today timeline lanes, device mosaic, history drawer, doorbell clips, rooms, cameras; `household/home/dashboard.yml` entities/timeline/mosaic policy) | `__docs/reference/home/README.md` |
 | Nutrition (scan-enriched food logging) | `__docs/reference/nutrition/README.md` |
 | Finance transaction categorization (rules, LLM naming, Jev category shadow/promote) | `__docs/reference/finance/categorization.md` |
 | Health app (log-first food logging, budget, medical) | `__docs/reference/health/README.md` |
