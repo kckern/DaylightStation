@@ -13,6 +13,7 @@ import { dataService } from "../../../../../__backend/src/5_composition/runtimeP
 import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '#shared/content/immich/photoLabels.mjs';
 import { HouseholdHomeStateRepository } from "../adapters/HouseholdHomeStateRepository.mjs";
+import { HomeAssistantEntityCatalog } from "../adapters/HomeAssistantEntityCatalog.mjs";
 
 /**
  * Create home automation API router
@@ -118,6 +119,7 @@ export function createHomeDashboardApiRouter(config) {
   const container = new HomeAutomationContainer({
     configRepository,
     haGateway,
+    entityCatalog: new HomeAssistantEntityCatalog({}, { gateway: haGateway, logger }),
     logger,
   });
 
@@ -128,6 +130,7 @@ export function createHomeDashboardApiRouter(config) {
       getHistory: container.getDashboardHistory(),
       toggleEntity: container.toggleDashboardEntity(),
       activateScene: container.activateDashboardScene(),
+      getEntities: container.getHomeEntities(),
     },
     logger,
   });

@@ -46,17 +46,19 @@ export class YamlHomeDashboardConfigRepository extends IHomeDashboardConfigRepos
 
   /**
    * Load the home-dashboard config.
-   * @returns {Promise<{ summary: Object, rooms: Array }>}
+   * @returns {Promise<{ summary: Object, rooms: Array, entities: Object }>}
    */
   async load() {
     const raw = this.#dataService.household.read(CONFIG_PATH, this.#householdId);
     if (!raw) {
       this.#logger.warn?.('home.dashboard.config.missing', { householdId: this.#householdId });
-      return { summary: {}, rooms: [] };
+      return { summary: {}, rooms: [], entities: {} };
     }
     return {
       summary: raw.summary || {},
       rooms:   Array.isArray(raw.rooms) ? raw.rooms : [],
+      // The entity catalog policy; EntityCatalogPolicy validates its shape.
+      entities: raw.entities && typeof raw.entities === 'object' ? raw.entities : {},
     };
   }
 }

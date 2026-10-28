@@ -15,6 +15,7 @@ import {
   homeDashboardHistoryHandler,
   homeDashboardToggleHandler,
   homeDashboardSceneHandler,
+  homeDashboardEntitiesHandler,
 } from '#api/v1/handlers/home-dashboard/index.mjs';
 
 /**
@@ -36,6 +37,7 @@ export function createHomeDashboardRouter({ operations } = {}) {
   router.get('/state', asyncHandler(homeDashboardStateHandler({ operation: operations.getState })));
   router.get('/history', asyncHandler(homeDashboardHistoryHandler({ operation: operations.getHistory })));
   router.post('/toggle', asyncHandler(homeDashboardToggleHandler({ operation: operations.toggleEntity })));
+  router.get('/entities', asyncHandler(homeDashboardEntitiesHandler({ operation: operations.getEntities })));
   router.post('/scene/:sceneId', asyncHandler(homeDashboardSceneHandler({ operation: operations.activateScene })));
 
   return router;

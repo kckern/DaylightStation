@@ -11,10 +11,20 @@ const config = {
   }],
 };
 
+// Entities that exist in the fake HA; anything else reads as missing.
+const existing = {
+  'light.hall': { state: 'off', attributes: {} },
+  'switch.study_main_lights': { state: 'off', attributes: {} },
+  'switch.living_room_shield_plug': { state: 'on', attributes: {} },
+};
+
 function makeUC({ callService } = {}) {
   return new ToggleDashboardEntity({
     configRepository: { load: async () => config },
-    haGateway: { callService: callService || vi.fn().mockResolvedValue({ ok: true }) },
+    haGateway: {
+      callService: callService || vi.fn().mockResolvedValue({ ok: true }),
+      getState: vi.fn(async (id) => existing[id] || null),
+    },
   });
 }
 
@@ -49,6 +59,19 @@ describe('ToggleDashboardEntity', () => {
       .rejects.toThrow(AuthorizationError);
     await expect(uc.execute({ entityId: 'light.hacker', desiredState: 'on' }))
       .rejects.toThrow(/not on dashboard/i);
+    expect(callService).not.toHaveBeenCalled();
+  });
+
+  it('allows a real light the room config never listed, via the entity policy', async () => {
+    const callService = vi.fn().mockResolvedValue({ ok: true });
+    await makeUC({ callService }).execute({ entityId: 'switch.study_main_lights', desiredState: 'toggle' });
+    expect(callService).toHaveBeenCalledWith('switch', 'toggle', { entity_id: 'switch.study_main_lights' });
+  });
+
+  it('refuses a real plug — plugs are not switchable unless the household opts them in', async () => {
+    const callService = vi.fn();
+    await expect(makeUC({ callService }).execute({ entityId: 'switch.living_room_shield_plug', desiredState: 'off' }))
+      .rejects.toThrow(AuthorizationError);
     expect(callService).not.toHaveBeenCalled();
   });
 

@@ -73,6 +73,11 @@ export function assertHomeAutomationGateway(obj) {
  *   Read all current entity states. Used by the concierge's friendly-name
  *   resolver to enumerate the full device surface for fuzzy matching.
  *
+ * listAreaAssignments(): Promise<AreaAssignments>   (optional capability)
+ *   The provider's rooms and which entity sits in which room. Callers must
+ *   treat a missing method or an empty result as "no room data", never as an
+ *   error. Returns { areas: [{ id, name }], assignments: { [entityId]: areaId } }.
+ *
  * getHistory(entityIds: string[], options: HistoryOptions): Promise<Map<string, HistoryPoint[]>>
  *   Fetch historical state values for a batch of entities since a given ISO timestamp.
  *   Returns a Map keyed by entityId -> array of { t: ISO timestamp, v: number|string }
@@ -128,6 +133,13 @@ export function assertHomeAutomationGateway(obj) {
  */
 
 /**
+ * Rooms and room membership as the provider knows them
+ * @typedef {Object} AreaAssignments
+ * @property {Array<{id: string, name: string}>} areas
+ * @property {Object.<string, string>} assignments - entityId -> area id
+ */
+
+/**
  * Wait result from waitForState
  * @typedef {Object} WaitResult
  * @property {boolean} reached - Whether desired state was reached
@@ -152,6 +164,9 @@ export function createNoOpGateway() {
     },
     async listAllStates() {
       return [];
+    },
+    async listAreaAssignments() {
+      return { areas: [], assignments: {} };
     },
     async callService(_domain, _service, _data) {
       return { ok: false, error: 'No home automation provider configured' };

@@ -8,3 +8,4 @@ export { homeDashboardStateHandler } from './state.mjs';
 export { homeDashboardHistoryHandler } from './history.mjs';
 export { homeDashboardToggleHandler } from './toggle.mjs';
 export { homeDashboardSceneHandler } from './scene.mjs';
+export { homeDashboardEntitiesHandler } from './entities.mjs';

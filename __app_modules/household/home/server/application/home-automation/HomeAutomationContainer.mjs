@@ -1,20 +1,22 @@
 import {
   GetDashboardConfig, GetDashboardState, GetDashboardHistory,
-  ToggleDashboardEntity, ActivateDashboardScene,
+  ToggleDashboardEntity, ActivateDashboardScene, GetHomeEntities,
 } from "./usecases/index.mjs";
 
 export class HomeAutomationContainer {
   #configRepository;
   #haGateway;
+  #entityCatalog;
   #logger;
 
-  #getConfig; #getState; #getHistory; #toggle; #activateScene;
+  #getConfig; #getState; #getHistory; #toggle; #activateScene; #getEntities;
 
-  constructor({ configRepository, haGateway, logger }) {
+  constructor({ configRepository, haGateway, entityCatalog = null, logger }) {
     if (!configRepository) throw new Error('HomeAutomationContainer: configRepository required');
     if (!haGateway)        throw new Error('HomeAutomationContainer: haGateway required');
     this.#configRepository = configRepository;
     this.#haGateway = haGateway;
+    this.#entityCatalog = entityCatalog;
     this.#logger = logger || console;
   }
 
@@ -61,6 +63,16 @@ export class HomeAutomationContainer {
       });
     }
     return this.#activateScene;
+  }
+  getHomeEntities() {
+    if (!this.#entityCatalog) throw new Error('HomeAutomationContainer: entityCatalog required for getHomeEntities');
+    if (!this.#getEntities) {
+      this.#getEntities = new GetHomeEntities({
+        configRepository: this.#configRepository,
+        entityCatalog: this.#entityCatalog, logger: this.#logger,
+      });
+    }
+    return this.#getEntities;
   }
 }
 export default HomeAutomationContainer;
