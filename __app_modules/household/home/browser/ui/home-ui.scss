@@ -218,7 +218,7 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     gap: 0.4rem 1rem;
-    margin: 0;
+    margin: 1.5rem 0 0;
     font-size: 0.875rem;
 
     dt { color: var(--ds-text-low); }
@@ -237,6 +237,8 @@
     color: var(--ds-text-high);
   }
 
+  &__extra { margin-top: 1.25rem; }
+
   &__link {
     display: inline-block;
     margin-top: 1.25rem;
@@ -246,5 +248,40 @@
     text-underline-offset: 3px;
 
     &:hover { color: var(--ds-text-high); }
+  }
+}
+
+// The drawer's history: a quiet header (title and the 24 h / 7 d switch) over
+// the chart. The chart carries the colour; nothing around it does.
+.home-history {
+  margin-top: 1.25rem;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--ds-text-low);
+  }
+
+  &__chart { min-width: 0; }
+
+  &__empty {
+    display: flex;
+    align-items: center;
+    min-height: 4.75rem;
+    margin: 0;
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--ds-text-low);
+    border: 1px dashed var(--ds-border);
+    border-radius: 6px;
   }
 }

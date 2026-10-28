@@ -1,0 +1,78 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+
+const apiMock = vi.fn();
+vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
+vi.mock("../history/HistoryChart.jsx", () => ({
+  default: ({ history }) => <div data-testid="history-chart" data-kind={history.kind} />,
+}));
+
+import { EntityDetailSheet } from './EntityDetailSheet.jsx';
+import { DismissStackProvider } from "../../../../../frontend/src/lib/ui/dismiss/DismissStackProvider.jsx";
+import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+
+const wrap = (ui) => render(<MantineProvider><DismissStackProvider>{ui}</DismissStackProvider></MantineProvider>);
+const entity = (id, over = {}) => ({
+  id, domain: id.split('.')[0], name: id, state: 'off', stateClass: 'off', type: 'light',
+  room: null, unit: null, deviceClass: null, lastChanged: null, controllable: false, detail: {}, ...over,
+});
+const temperature = entity('sensor.den_temperature', { name: 'Den temperature', type: 'climate', stateClass: 'reading', state: '70.1', unit: '°F' });
+const line = (points) => ({ entityId: 'x', range: '24h', kind: 'line', hasData: points.length > 0, camera: null, points, sinceIso: '2026-10-27T00:00:00.000Z', endIso: '2026-10-28T00:00:00.000Z' });
+
+beforeEach(() => { apiMock.mockReset(); resetApiResourceCache?.(); });
+
+describe('EntityDetailSheet history', () => {
+  it('loads 24 h of history, switches to 7 d, and keeps the switch only for a controllable entity', async () => {
+    apiMock.mockResolvedValue(line([{ t: 1, v: 70, max: 71 }]));
+    wrap(<EntityDetailSheet entity={temperature} haUrl="https://ha.example" onClose={() => {}} />);
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=24h');
+    expect((await screen.findByTestId('history-chart')).dataset.kind).toBe('line');
+    fireEvent.click(screen.getByText('7 d'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=7d'));
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('says when the range has no history, and shows the HA link last', async () => {
+    apiMock.mockResolvedValue(line([]));
+    wrap(<EntityDetailSheet entity={temperature} haUrl="https://ha.example" onClose={() => {}} />);
+    expect(await screen.findByText('No history in this range')).toBeTruthy();
+    expect(screen.queryByTestId('history-chart')).toBeNull();
+    const body = document.querySelector('.home-detail');
+    expect(body.lastElementChild.textContent).toBe('Open in Home Assistant');
+  });
+
+  it('a series of nulls only is no history too', async () => {
+    apiMock.mockResolvedValue({ ...line([{ t: 1, v: null, max: null }]), hasData: true });
+    wrap(<EntityDetailSheet entity={temperature} onClose={() => {}} />);
+    expect(await screen.findByText('No history in this range')).toBeTruthy();
+  });
+
+  it('a failed read offers a retry', async () => {
+    apiMock.mockRejectedValueOnce(new Error('boom'));
+    wrap(<EntityDetailSheet entity={temperature} onClose={() => {}} />);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    apiMock.mockResolvedValue(line([{ t: 1, v: 70, max: 71 }]));
+    fireEvent.click(screen.getByText('Retry'));
+    expect(await screen.findByTestId('history-chart')).toBeTruthy();
+  });
+
+  it('a lamp keeps its switch; extra renders between the history and the link', async () => {
+    apiMock.mockResolvedValue({ entityId: 'light.panel_lamp', range: '24h', kind: 'state', hasData: true, camera: null, intervals: [{ from: 1, to: 2 }], sinceIso: '2026-10-27T00:00:00.000Z', endIso: '2026-10-28T00:00:00.000Z' });
+    wrap(<EntityDetailSheet entity={entity('light.panel_lamp', { controllable: true })} haUrl="https://ha.example" onClose={() => {}} extra={<p data-testid="extra">lane</p>} />);
+    expect(screen.getByRole('switch')).toBeTruthy();
+    expect((await screen.findByTestId('history-chart')).dataset.kind).toBe('state');
+    const kids = [...document.querySelector('.home-detail').children];
+    const iHistory = kids.findIndex((k) => k.classList.contains('home-history'));
+    const iExtra = kids.findIndex((k) => k.querySelector('[data-testid="extra"]') || k.dataset.testid === 'extra');
+    expect(iHistory).toBeGreaterThan(-1);
+    expect(iExtra).toBeGreaterThan(iHistory);
+    expect(kids[kids.length - 1].textContent).toBe('Open in Home Assistant');
+  });
+
+  it('opens as a side panel', () => {
+    apiMock.mockResolvedValue(line([]));
+    wrap(<EntityDetailSheet entity={temperature} onClose={() => {}} />);
+    expect(document.querySelector('.ds-sheet').classList.contains('ds-sheet--side')).toBe(true);
+  });
+});
