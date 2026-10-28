@@ -27,9 +27,9 @@ export function haEntityLink(haUrl, entityId) {
  * What the drawer shows below the history when the caller passes no `extra`.
  * A ring lane (`kind: 'events'` with a camera) gets its clips here in Task 10
  * (`<RingClips camera={history.camera} marks={history.marks} />`); until then,
- * nothing.
+ * nothing. Takes no argument yet: Task 10 adds the history it needs.
  */
-function defaultExtra(history) {
+function defaultExtra() {
   return null;
 }
 
@@ -87,7 +87,7 @@ function EntityDetailBody({ entity, haUrl, onToggle, typeLabel, extra }) {
   const silent = entity.stateClass === 'unavailable';
   const link = haEntityLink(haUrl, entity.id);
   const since = formatSince(entity.lastChanged);
-  const below = extra ?? defaultExtra(history);
+  const below = extra ?? defaultExtra();
   return (
     <div className={`home-detail${lit ? ' home-detail--lit' : ''}${silent ? ' home-detail--silent' : ''}`} data-entity-id={entity.id}>
       <p className="home-detail__state">{formatEntityState(entity)}</p>

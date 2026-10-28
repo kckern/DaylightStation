@@ -13,6 +13,8 @@ describe('buildHistoryChartOptions', () => {
     const s = buildHistoryChartOptions({ history: { kind: 'state', sinceIso: '1970-01-01T00:00:00.000Z', endIso: '1970-01-01T00:00:10.000Z', intervals: [{ from: 2000, to: 5000 }] }, tokens });
     expect(s.series[0]).toMatchObject({ type: 'area', step: 'left', color: '#w' });
     expect(s.series[0].data).toEqual([[0, 0], [2000, 1], [5000, 0], [10000, 0]]);
+    // On is amber, solid: a translucent amber over a dark panel reads olive.
+    expect(s.series[0]).toMatchObject({ fillColor: '#w', fillOpacity: 1 });
     expect(s.yAxis.visible).toBe(false);
     const e = buildHistoryChartOptions({ history: { kind: 'events', marks: [3000] }, tokens });
     expect(e.series[0]).toMatchObject({ type: 'scatter', data: [[3000, 0]], color: '#i' });

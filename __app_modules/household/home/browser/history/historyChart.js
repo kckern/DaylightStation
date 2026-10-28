@@ -48,8 +48,10 @@ function seriesFor(history, tokens, unit) {
   const startMs = parseMs(history.sinceIso);
   const endMs = parseMs(history.endIso);
   if (history.kind === 'state') {
+    // Solid amber (the Mosaic's "on"): a translucent amber over the dark panel
+    // reads olive, not on.
     return [{
-      type: 'area', name: 'On', step: 'left', color: tokens.warning, fillOpacity: 0.5, lineWidth: 1,
+      type: 'area', name: 'On', step: 'left', color: tokens.warning, fillColor: tokens.warning, fillOpacity: 1, lineWidth: 0,
       data: stateSteps(history.intervals, startMs, endMs), marker: { enabled: false },
       enableMouseTracking: false,
     }];

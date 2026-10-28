@@ -26,6 +26,13 @@ describe('HomeAssistantHistoryGateway', () => {
     expect(gateway.getHistory.mock.calls[1][1]).toEqual(gateway.getHistory.mock.calls[0][1]);
     expect(gateway.getHistory.mock.calls[2][1]).toEqual({ sinceIso: '1970-01-01T00:00:00.000Z', endIso: '1970-01-01T01:00:00.000Z' });
   });
+  it('now exactly on a minute still ends at the NEXT minute, never at now itself', async () => {
+    const gateway = { getHistory: vi.fn().mockResolvedValue(new Map()) };
+    const now = Date.parse('2026-10-28T19:35:00.000Z');
+    const gw = new HomeAssistantHistoryGateway({}, { gateway, logger: { warn: vi.fn() }, clock: () => now });
+    await gw.readHistory(['a.b'], { startMs: now - 864e5, endMs: null });
+    expect(gateway.getHistory.mock.calls[0][1].endIso).toBe('2026-10-28T19:36:00.000Z');
+  });
   it('warns when the platform returns nothing for a real request', async () => {
     const { gw, logger } = make(new Map());
     expect((await gw.readHistory(['a.b'], { startMs: 0, endMs: null })).size).toBe(0);

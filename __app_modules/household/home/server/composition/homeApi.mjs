@@ -117,12 +117,16 @@ export function createHomeDashboardApiRouter(config) {
     logger,
   });
 
+  // One "now" for the history use cases and the history gateway: the window's
+  // floored start and an open window's ceiled end come from the same clock.
+  const clock = () => Date.now();
   const container = new HomeAutomationContainer({
     configRepository,
     haGateway,
     entityGateway: new HomeAssistantEntityGateway({}, { gateway: haGateway, logger }),
-    historyGateway: new HomeAssistantHistoryGateway({}, { gateway: haGateway, logger }),
+    historyGateway: new HomeAssistantHistoryGateway({}, { gateway: haGateway, logger, clock }),
     timeZone: configService.getHouseholdTimezone(),
+    clock,
     logger,
   });
 
