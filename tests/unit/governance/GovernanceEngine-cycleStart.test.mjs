@@ -71,6 +71,12 @@ describe('GovernanceEngine cycle challenge start', () => {
     expect(engine._startCycleChallenge(selection, {})).toEqual({ ok: false, reason: 'equipment_not_found' });
   });
 
+  it('rejects with no_eligible_riders when the catalog entry has no eligible users', () => {
+    engine.session._deviceRouter.getEquipmentCatalog = () => [{ id: 'cycle_empty', eligible_users: [] }];
+    const selection = { ...sampleSelection(), equipment: 'cycle_empty' };
+    expect(engine._startCycleChallenge(selection, {})).toEqual({ ok: false, reason: 'no_eligible_riders' });
+  });
+
   it('filters out riders on cooldown', () => {
     engine._cycleCooldowns = { user_2: nowValue + 5000, user_3: nowValue + 5000 };
     expect(engine._startCycleChallenge(sampleSelection(), {})).toEqual({ ok: false, reason: 'all_riders_on_cooldown' });

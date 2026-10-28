@@ -121,7 +121,7 @@ describe('GovernanceEngine.swapCycleRider', () => {
   // A finished challenge keeps cycleState 'maintain' and flips only `status`
   // to 'success' for the ~600ms success hold (CYCLE_SUCCESS_PUBLISH_MS). A swap
   // in that window must not drag it back to init.
-  it.each(['success', 'failed', 'cancelled'])('rejects a swap once status is %s, even with cycleState still maintain', (status) => {
+  it.each(['success', 'failed'])('rejects a swap once status is %s, even with cycleState still maintain', (status) => {
     const active = engine.challengeState.activeChallenge;
     active.cycleState = 'maintain';
     active.status = status;

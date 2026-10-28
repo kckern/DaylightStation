@@ -48,6 +48,11 @@ const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set([
 // Cycle challenge "health" pool: depletes while RPM is below loRpm, regenerates
 // while in the green zone (>= hiRpm). At zero the video pauses until the rider
 // is back in green. Replaces the old 3-second danger grace.
+// Terminal cycle statuses observable on activeChallenge.status. 'abandoned'
+// and 'cancelled' are never observable there: abandon records history and nulls
+// the challenge, and sensor-offline sets 'cancelled' then nulls it in the same
+// synchronous block.
+const CYCLE_TERMINAL_STATUSES = ['success', 'failed'];
 const CYCLE_HEALTH_MAX_MS = 3000;
 const CYCLE_SUCCESS_PUBLISH_MS = 600;
 const CYCLE_SENSOR_FRESHNESS_MS = 2000;
@@ -2584,10 +2589,11 @@ export class GovernanceEngine {
     // accidentally regress §4 by letting INACTIVE IDs leak into
     // base-requirement / min-participants evaluation.
     //
-    // The pulse path is intentionally skipped — getActiveParticipantState()
-    // is the canonical source there, and touching session.roster from this
-    // branch would violate the canonical-state invariant enforced by
-    // tests/isolated/domain/fitness/governance-canonical-state.unit.test.mjs.
+    // The pulse path is intentionally skipped — the participant SET comes from
+    // getActiveParticipantState() (canonical state), never from session.roster
+    // (enforced by tests/isolated/domain/fitness/governance-canonical-state.unit.test.mjs).
+    // The roster is read elsewhere only to decorate evidence/lock logs
+    // (_capturePlaybackEvidence, _getParticipantStates).
     if (this._lastEvaluatePath === 'snapshot'
         && Array.isArray(this.session?.roster)
         && activeParticipants.length > 0) {
@@ -2901,7 +2907,8 @@ export class GovernanceEngine {
     }
 
     if (challengeForcesRed && allSatisfied) {
-      // Failed challenge -> locked (regardless of base requirements)
+      // Failed challenge -> locked, but only once the floor is satisfied; an unmet
+      // floor owns the phase (6bb1f83d42).
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
@@ -4412,8 +4419,8 @@ export class GovernanceEngine {
     // (e.g. phaseProgressMs >= maintainSeconds*1000) and would otherwise
     // re-emit the same state_transition every tick.
     // Terminal challenges are held published for a brief window (success) or
-    // about to clear (failed/abandoned); do not re-process their state machine.
-    if (active.status === 'success' || active.status === 'failed' || active.status === 'abandoned') {
+    // about to clear (failed); do not re-process their state machine.
+    if (CYCLE_TERMINAL_STATUSES.includes(active.status)) {
       return;
     }
 
@@ -6011,7 +6018,7 @@ export class GovernanceEngine {
     if (!active || active.type !== 'cycle') return false;
     // Terminal lives in `status`: success holds cycleState 'maintain' for the
     // success-publish window, so cycleState alone would accept a swap there.
-    if (['success', 'failed', 'cancelled'].includes(active.status)) return false;
+    if (CYCLE_TERMINAL_STATUSES.includes(active.status)) return false;
     return ['init', 'ramp', 'maintain', 'locked'].includes(active.cycleState);
   }
 

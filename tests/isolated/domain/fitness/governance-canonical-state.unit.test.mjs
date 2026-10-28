@@ -102,7 +102,7 @@ describe('GovernanceEngine canonical state consumption', () => {
         totalCount: 1
       },
       roster: [
-        { id: 'alice', isActive: true, zoneId: 'active' },
+        { id: 'alice', isActive: false, zoneId: 'active' },
         { id: 'mallory', isActive: true, zoneId: 'rest' }
       ]
     });

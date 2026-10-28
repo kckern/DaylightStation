@@ -88,6 +88,7 @@ describe('GovernanceEngine.triggerChallenge with type=cycle', () => {
       seenAtEvaluate.push(engine.challengeState.forceStartRequest);
       return originalEvaluate(...args);
     };
+    expect(engine.phase).not.toBe('unlocked'); // unmet-floor precondition
     const result = engine.triggerChallenge({ label: 'something' });  // no type
     expect(result).toBeUndefined();
     expect(seenAtEvaluate[0]).toEqual({ requestedAt: nowValue, payload: { label: 'something' } });

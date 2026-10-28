@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { canonicalState } from './_canonicalState.mjs';
 
 vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
@@ -28,17 +29,6 @@ const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitne
  * roster already carries ZoneProfileStore zones (ParticipantRoster
  * _buildZoneLookup), so the zoneData below reaches the engine through here.
  */
-function canonicalState(roster) {
-  const participants = [];
-  const zoneMap = {};
-  for (const entry of roster) {
-    if (!entry?.isActive) continue;
-    participants.push(entry.id);
-    if (entry.zoneId) zoneMap[entry.id] = String(entry.zoneId).toLowerCase();
-  }
-  return { participants, zoneMap, totalCount: participants.length };
-}
-
 function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
   const zoneConfig = [
     { id: 'cool', name: 'Cool', color: '#3399ff' },

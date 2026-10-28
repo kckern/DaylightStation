@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { canonicalState } from './_canonicalState.mjs';
 
 vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
@@ -19,17 +20,6 @@ const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitne
  * no-args evaluate() (the _triggerPulse path) reads ONLY this method — never
  * session.roster or ZoneProfileStore — so "Path A" means this method.
  */
-function canonicalState(roster) {
-  const participants = [];
-  const zoneMap = {};
-  for (const entry of roster) {
-    if (!entry?.isActive) continue;
-    participants.push(entry.id);
-    if (entry.zoneId) zoneMap[entry.id] = String(entry.zoneId).toLowerCase();
-  }
-  return { participants, zoneMap, totalCount: participants.length };
-}
-
 function createEngine({ roster = [], grace = 30 } = {}) {
   const zoneConfig = [
     { id: 'cool', name: 'Cool', color: '#3399ff' },
