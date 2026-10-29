@@ -1360,31 +1360,32 @@ export class PlexAdapter {
    * @param {string[]} watched - Watched keys
    * @param {Object} log - Viewing history log
    * @param {boolean} [shuffle=false] - Whether to shuffle within category
-   * @returns {[string|null, number, number]} [key, seconds, percent]
+   * @returns {[string|null, number, number, boolean]} [key, seconds, percent, restarted]
+   *   `restarted` is true only when everything was watched and the pick starts over.
    * @private
    */
   _selectEpisodeByPriority(unwatched, inProgress, watched, log, shuffle = false) {
     // Priority 1: First unwatched
     if (unwatched.length > 0) {
       const selected = shuffle ? unwatched[Math.floor(Math.random() * unwatched.length)] : unwatched[0];
-      return [selected, 0, 0];
+      return [selected, 0, 0, false];
     }
 
     // Priority 2: First in-progress
     if (inProgress.length > 0) {
       const selected = shuffle ? inProgress[Math.floor(Math.random() * inProgress.length)] : inProgress[0];
       const entry = log[selected] || {};
-      return [selected, entry.playhead ?? 0, entry.percent ?? 0];
+      return [selected, entry.playhead ?? 0, entry.percent ?? 0, false];
     }
 
     // Priority 3: Restart from first watched (clear watch status)
     if (watched.length > 0) {
       this._clearWatchedItems(watched);
       const selected = watched[0];
-      return [selected, 0, 0];
+      return [selected, 0, 0, true];
     }
 
-    return [null, 0, 0];
+    return [null, 0, 0, false];
   }
 
   /**
@@ -1394,7 +1395,7 @@ export class PlexAdapter {
    * @param {string[]|Object[]} keys - Array of plex keys or items with .plex property
    * @param {boolean} [shuffle=false] - Whether to shuffle within category
    * @param {string} [storagePath='plex'] - Storage path for history lookup
-   * @returns {Promise<[string|null, number, number]>} [key, seconds, percent]
+   * @returns {Promise<[string|null, number, number, boolean]>} [key, seconds, percent, restarted]
    */
   async selectKeyToPlay(keys, shuffle = false, storagePath = 'plex') {
     // Normalize keys array
@@ -1454,8 +1455,32 @@ export class PlexAdapter {
     // Get plex keys from list
     const keys = list.map(i => i.id.replace('plex:', ''));
 
+    // Children that are themselves containers (a show's seasons) carry no
+    // progress of their own, so judging them as keys always picked the first
+    // one. Walk them in order and take the first whose own pick is not a
+    // restart; only when every child is finished does the whole thing restart.
+    if (!shuffle && list.every(i => i.itemType === 'container')) {
+      let firstRestart = null;
+      for (const childKey of keys) {
+        const pick = await this.loadPlayableItemFromKey(childKey, opts);
+        if (!pick) continue;
+        if (!pick.restarted) {
+          pick.listkey = key;
+          pick.listType = item.metadata?.type;
+          return pick;
+        }
+        firstRestart ??= pick;
+      }
+      if (firstRestart) {
+        firstRestart.listkey = key;
+        firstRestart.listType = item.metadata?.type;
+        this.logger.debug?.('plex.nextup.restarted', { key });
+      }
+      return firstRestart;
+    }
+
     // Use smart selection
-    const [selectedKey, seconds, percent] = await this.selectKeyToPlay(keys, shuffle, storagePath);
+    const [selectedKey, seconds, percent, restarted] = await this.selectKeyToPlay(keys, shuffle, storagePath);
     if (!selectedKey) return null;
 
     // Recursively load the selected item (may need to drill down further)
@@ -1463,6 +1488,10 @@ export class PlexAdapter {
     if (selectedItem) {
       selectedItem.listkey = key;
       selectedItem.listType = item.metadata?.type;
+      if (restarted) {
+        selectedItem.restarted = true;
+        this.logger.debug?.('plex.nextup.restarted', { key });
+      }
     }
 
     return selectedItem;
