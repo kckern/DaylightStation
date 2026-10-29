@@ -39,6 +39,7 @@ import { PianoMenu } from './PianoKiosk/PianoMenu.jsx';
 import PianoChallengePlacement from './PianoKiosk/PianoChallengePlacement.jsx';
 import { PianoPicker } from './PianoKiosk/PianoPicker.jsx';
 import { useRenderWatchdog } from './PianoKiosk/useRenderWatchdog.js';
+import { installBridgeWifiProbe } from './PianoKiosk/bridgeWifiProbe.js';
 import { useJankRebootPrompt } from './PianoKiosk/useJankRebootPrompt.js';
 import RebootPromptModal from './PianoKiosk/RebootPromptModal.jsx';
 import { applyPianoBodyTheme } from "./pianoBodyTheme.js";
@@ -269,6 +270,8 @@ function PianoShell() {
     return id ? { type: 'game', id } : null;
   }, [basePath, location.pathname]);
   useRenderWatchdog({ activity: watchdogActivity });
+  // Video stalls on this kiosk log the tablet's Wi-Fi link (bridge GET /wifi).
+  useEffect(() => installBridgeWifiProbe(), []);
 
   return (
       <PianoBreadcrumbProvider>

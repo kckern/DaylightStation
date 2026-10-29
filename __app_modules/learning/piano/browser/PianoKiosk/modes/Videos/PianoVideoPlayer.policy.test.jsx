@@ -50,7 +50,7 @@ const gateQuery = () => screen.queryByText(/Still there\?/i);
 
 describe('PianoVideoPlayer — per-user policy', () => {
   it('engagementGateEnabled=false keeps the gate closed on a sequential lecture', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     render(
       <PianoVideoPlayer
         lecture={lecture}
@@ -61,12 +61,19 @@ describe('PianoVideoPlayer — per-user policy', () => {
         engagementGateEnabled={false}
       />,
     );
+    // Same playing setup as the control below, so "closed" is not vacuous.
+    await screen.findByTestId('player-stub');
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    await act(async () => { fakeMedia.dispatchEvent(new Event('play')); });
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
     expect(gateQuery()).toBe(null);
   });
 
   it('the gate still opens by default (control)', async () => {
-    vi.useFakeTimers();
+    // Only intervals and the clock are faked: the lazy Player import and
+    // findBy* need real timeouts, or the stub never mounts and the player
+    // shows its "did not start" placeholder instead.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     render(
       <PianoVideoPlayer
         lecture={lecture}
@@ -76,6 +83,10 @@ describe('PianoVideoPlayer — per-user policy', () => {
         engagementTimeoutSeconds={90}
       />,
     );
+    await screen.findByTestId('player-stub');
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    // The gate only counts idle time while the lecture PLAYS.
+    await act(async () => { fakeMedia.dispatchEvent(new Event('play')); });
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
     expect(gateQuery()).not.toBe(null);
   });

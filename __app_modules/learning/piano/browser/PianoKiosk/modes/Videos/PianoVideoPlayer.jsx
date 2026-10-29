@@ -13,6 +13,7 @@ import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
 import FullscreenTransportOverlay from './FullscreenTransportOverlay.jsx';
 import { videoTapAction, TAP_SKIP_SECONDS } from './videoTapAction.js';
+import { createSkipGovernor, skipTarget } from './skipGovernor.js';
 import { usePlayerSessionBinding } from "../../../../../../../__capabilities/playback/browser/sessions.mjs";
 import Icon from '../../../ui/icons/Icon.jsx';
 import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
@@ -269,11 +270,22 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     getLogger().child({ component: 'piano-video-player' }).info('piano.video.restart');
   }, [ctrl]);
 
+  // A held/mashed skip can't fly through the lesson, and a sequential lesson
+  // can't skip past what was watched (the scrubber already clamps; the skip
+  // buttons did not). See skipGovernor.js — 2026-10-28.
+  const skipGovernorRef = useRef(null);
+  if (!skipGovernorRef.current) skipGovernorRef.current = createSkipGovernor();
+  const furthestWatchedRef = useRef(furthestWatched);
+  furthestWatchedRef.current = furthestWatched;
   const handleSkip = useCallback((delta) => {
+    const admitted = skipGovernorRef.current.admit(delta);
+    if (admitted === 0) {
+      getLogger().child({ component: 'piano-video-player' }).sampled('piano.video.skip-dropped', { contentId, delta }, { maxPerMinute: 10, aggregate: true });
+      return;
+    }
     const cur = ctrl.getCurrentTime() || 0;
-    const max = duration > 0 ? duration : cur + Math.abs(delta);
-    ctrl.seek(Math.max(0, Math.min(max, cur + delta)));
-  }, [ctrl, duration]);
+    ctrl.seek(skipTarget({ current: cur, delta: admitted, duration, isSequential, furthestWatched: furthestWatchedRef.current }));
+  }, [ctrl, duration, isSequential, contentId]);
 
   // Sequential: can't skip forward past the furthest point already reached
   // (1s tolerance) — mirrors the chrome's own calc (PianoVideoChrome.jsx:28).
