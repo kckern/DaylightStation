@@ -4,6 +4,31 @@ import { studyDayWindow, withinStudyWindow } from "../domain/studyDay.mjs";
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const deckRevision = (deck) => String(deck?.revision ?? '1');
 
+// The grown-up's review log keeps the most recent sessions per deck.
+const TEACHER_SESSIONS = 30;
+
+/** One deck's review events, grouped by study session, newest session first. */
+function reviewSessions(state, deckId, faces = new Map()) {
+  const bySession = new Map();
+  for (const event of state.events ?? []) {
+    if (event?.type !== 'flashcard_review' || event.deckId !== deckId) continue;
+    const key = event.sessionId ?? 'unknown';
+    if (!bySession.has(key)) bySession.set(key, []);
+    const face = faces.get(event.cardId) ?? {};
+    bySession.get(key).push({
+      at: event.at ?? null, cardId: event.cardId ?? null, rating: event.rating ?? null,
+      mode: event.mode ?? null, direction: event.direction ?? null, front: face.front ?? null, back: face.back ?? null,
+    });
+  }
+  return [...bySession.entries()].map(([sessionId, reviews]) => {
+    const session = state.sessions?.[sessionId] ?? null;
+    return {
+      sessionId, startedAt: session?.startedAt ?? reviews[0]?.at ?? null, lastActiveAt: session?.lastActiveAt ?? reviews.at(-1)?.at ?? null,
+      activeSeconds: session?.activeSeconds ?? null, reviews,
+    };
+  }).sort((a, b) => String(b.startedAt ?? '').localeCompare(String(a.startedAt ?? ''))).slice(0, TEACHER_SESSIONS);
+}
+
 /** Server-authoritative state transitions for rich flashcard study. */
 export class FlashcardStudyService {
   #store; #decks; #now; #id; #assignments; #grader; #timezone; #boundaryHour; #scheduler; #policies; #teacherGate;
@@ -104,7 +129,16 @@ export class FlashcardStudyService {
       const audits = (state.events ?? []).filter((event) => event.deckId === deck.id && ['flashcard_repair', 'flashcard_profile_migration'].includes(event.type));
       return { ...deck, cards, audits };
     });
-    return { learnerId, decks };
+    // Every rating the learner gave, by study session, newest first — read
+    // from the append-only review events, with each card's two faces so a
+    // grown-up sees what was on the card, not its id.
+    const reviewed = new Set((state.events ?? []).filter((event) => event.type === 'flashcard_review').map((event) => event.deckId));
+    const faces = new Map(await Promise.all([...reviewed].map(async (deckId) => {
+      const published = await this.#decks.getFlashcardDeck(deckId).catch(() => null);
+      return [deckId, new Map((published?.cards ?? []).map((card) => [card.cardId, { front: card.front ?? null, back: card.back ?? null }]))];
+    })));
+    const withSessions = decks.map((deck) => ({ ...deck, sessions: reviewSessions(state, deck.id, faces.get(deck.id)) }));
+    return { learnerId, decks: withSessions };
   }
   review({ userId, sessionId, cardId, rating, mode = 'review', direction = 'front_to_back' } = {}) {
     const now = new Date(this.#now()); let result;

@@ -852,6 +852,9 @@ try {
     // The same instance the study service was given above — see there.
     languageTranscription,
     studyGrants: dependencies.schoolStudyGrants,
+    // The console's grown-up read of a child's history (`/teacher/*`).
+    teacherGate: schoolTeacherGate,
+    teacherCapabilitySessions,
     logger: rootLogger.child({ module: 'school-language-api' })
   });
   v1Routers.school.use('/sentence-ladder', sentenceLadderRouter);

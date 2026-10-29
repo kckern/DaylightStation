@@ -115,6 +115,20 @@ function capabilityQuery(capabilities = {}) {
 
 const enc = encodeURIComponent;
 
+/** A recording's bytes. Same reporting as `req`; never throws. */
+async function blobAt(path, headers = {}) {
+  const startedAt = clock();
+  try {
+    const r = await fetch(`${BASE}${path}`, { headers: withRun(headers) });
+    const blob = r.ok ? await r.blob() : null;
+    reportSettled(path, 'GET', r.status, r.ok, startedAt, { bytes: blob?.size ?? null });
+    return { ok: r.ok, status: r.status, data: blob };
+  } catch (err) {
+    reportThrown(path, 'GET', startedAt, err);
+    return { ok: false, status: 0, data: null };
+  }
+}
+
 export const languageApi = {
   courses: () => req('/courses'),
 
@@ -211,21 +225,19 @@ export const languageApi = {
   /** A UI cue by role (`record` = the ding before the mic goes live). The day
    *  says which roles exist; nothing here guesses a file. */
   cueUrl: (name) => `${BASE}/cue/${enc(name)}`,
-  async recordingBlob(userId, corpus, seq, studyGrant) {
-    const path = `/recordings/${enc(userId)}/${enc(corpus)}/${enc(seq)}`;
-    const startedAt = clock();
-    try {
-      const r = await fetch(`${BASE}${path}`, {
-        headers: withRun({ [GRANT_HEADER]: studyGrant }),
-      });
-      const blob = r.ok ? await r.blob() : null;
-      reportSettled(path, 'GET', r.status, r.ok, startedAt, { bytes: blob?.size ?? null });
-      return { ok: r.ok, status: r.status, data: blob };
-    } catch (err) {
-      reportThrown(path, 'GET', startedAt, err);
-      return { ok: false, status: 0, data: null };
-    }
-  },
+  recordingBlob: (userId, corpus, seq, studyGrant) => blobAt(
+    `/recordings/${enc(userId)}/${enc(corpus)}/${enc(seq)}`, { [GRANT_HEADER]: studyGrant },
+  ),
+
+  // -- the teacher console's reads ----------------------------------------
+  // Same history, behind the console's capability cookie (sent by the
+  // browser on its own) instead of a launch grant. `by` names the picked
+  // teacher for a household with no PIN; the server prefers the cookie's.
+  teacherCourses: (learnerId, by) => req(`/teacher/${enc(learnerId)}/courses?by=${enc(by ?? '')}`),
+  teacherHistory: (learnerId, corpus, by) => req(`/teacher/${enc(learnerId)}/history?corpus=${enc(corpus)}&by=${enc(by ?? '')}`),
+  teacherRecordingBlob: (learnerId, corpus, seq, by) => blobAt(
+    `/teacher/${enc(learnerId)}/recordings/${enc(corpus)}/${enc(seq)}?by=${enc(by ?? '')}`,
+  ),
 };
 
 export const sentenceLadderApi = languageApi;

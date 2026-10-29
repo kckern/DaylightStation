@@ -562,7 +562,7 @@ export function createSchoolRouter({
   // card-ladder`. Its own module, like the teacher reading workspace.
   mountCardLadderRoutes({
     router, wrap, cardLadderStudy, cardLadderTest, stageScreen: cardLadderStageScreen, capabilityProof,
-    teacherCapabilitySessions, cardLadderTuning,
+    teacherCapabilitySessions, cardLadderTuning, sendFileResource,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
   });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {

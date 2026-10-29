@@ -80,3 +80,29 @@ describe('/api/v1/school/word-ladder — the pre-rename alias', () => {
     expect(tuning.adminTuning).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('/api/v1/school/card-ladder/admin day by day', () => {
+  it('serves the day list and one day, uncached, gated through the service', async () => {
+    const live = {
+      adminDays: vi.fn(async () => ({ days: [{ day: '2026-10-28' }] })),
+      adminDay: vi.fn(async () => ({ day: '2026-10-28', answers: [], recordings: [] })),
+    };
+    const server = app(live);
+    const list = await request(server).get('/api/v1/school/card-ladder/admin/days?learnerId=kid&deckId=d&actorId=parent').expect(200);
+    expect(list.headers['cache-control']).toBe('private, no-store');
+    expect(live.adminDays).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent', pin: null });
+    await request(server).get('/api/v1/school/card-ladder/admin/day?learnerId=kid&deckId=d&actorId=parent&day=2026-10-28').expect(200);
+    expect(live.adminDay).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent', pin: null, day: '2026-10-28' });
+  });
+  it('streams a kept take, and 404s one that is not on file', async () => {
+    const resource = { opaque: true };
+    const sendFileResource = vi.fn((_req, res) => res.send('voice'));
+    const live = { adminRecording: vi.fn(async ({ take }) => (take === '1' ? { resource, contentType: 'audio/webm' } : null)) };
+    const server = app(live, { sendFileResource });
+    const res = await request(server).get('/api/v1/school/card-ladder/admin/recording?learnerId=kid&deckId=d&actorId=parent&day=2026-10-28&wordId=pul&take=1').expect(200);
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.headers['content-type']).toMatch(/audio\/webm/);
+    expect(sendFileResource).toHaveBeenCalledWith(expect.anything(), expect.anything(), resource);
+    await request(server).get('/api/v1/school/card-ladder/admin/recording?learnerId=kid&deckId=d&actorId=parent&day=2026-10-28&wordId=pul&take=2').expect(404);
+  });
+});

@@ -3035,3 +3035,200 @@
   }
   &__empty { padding: 8px; color: #6d6455; text-align: left; }
 }
+
+// --- Evidence day by day: card ladder, flashcards, sentence ladder ----------
+// One collapsible row per day (or study session); opened, every answer in the
+// order it was given. Same observation palette as .teacher-card-ladder.
+.teacher-ladder-days {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.teacher-ladder-day {
+  border: 1px solid #ece5d6;
+  border-radius: 10px;
+  background: #fffdf8;
+
+  &.is-open { border-color: #d4c6af; }
+
+  &__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: #2b2620;
+    text-align: left;
+    cursor: pointer;
+
+    &:focus-visible { outline: 2px solid #6e4b20; outline-offset: -2px; border-radius: 10px; }
+  }
+
+  &__date { font-weight: 700; font-size: 14px; }
+  &__facts { font-size: 13px; color: #5f584c; }
+  &__missed {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #f8dfd8;
+    color: #813927;
+    font-size: 11px;
+    font-weight: 800;
+  }
+  &__chevron { margin-left: auto; color: #8a7c5c; }
+
+  &__detail { padding: 0 12px 12px; }
+
+  &__answers {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0 12px 12px;
+    list-style: none;
+
+    .teacher-ladder-day__detail > & { padding: 0; }
+  }
+
+  // Phone first: time + word on one line, the step and the answer under it,
+  // the verdict pinned right. Wider screens lay the five out as columns.
+  &__answer {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "time word verdict"
+      "time step verdict"
+      "time given verdict"
+      "time note note";
+    gap: 1px 10px;
+    padding: 8px 0;
+    border-top: 1px solid #f1ece0;
+    font-size: 13px;
+
+    &:first-child { border-top: 0; }
+    &.is-wrong .teacher-ladder-day__verdict { color: #93412c; }
+    &.is-right .teacher-ladder-day__verdict { color: #396034; }
+    &.is-ungraded .teacher-ladder-day__verdict { color: #a89d87; }
+    &.is-rating-again .teacher-ladder-day__given { color: #93412c; font-weight: 700; }
+    &.is-rating-hard .teacher-ladder-day__given { color: #6f5419; font-weight: 700; }
+    &.is-rating-good .teacher-ladder-day__given,
+    &.is-rating-easy .teacher-ladder-day__given { color: #396034; font-weight: 700; }
+
+    @media (min-width: 761px) {
+      grid-template-columns: 64px minmax(120px, 1.1fr) minmax(120px, 1fr) minmax(100px, 1fr) 28px;
+      grid-template-areas:
+        "time word step given verdict"
+        "time note note note note";
+      align-items: baseline;
+    }
+  }
+
+  &__time { grid-area: time; color: #8a7c5c; font-variant-numeric: tabular-nums; }
+  // keep-all: a Korean term wraps at spaces, never mid-word.
+  &__word {
+    grid-area: word;
+    word-break: keep-all;
+    small { display: block; color: #6b6255; }
+  }
+  &__step { grid-area: step; color: #5f584c; }
+  &__given { grid-area: given; word-break: keep-all; }
+  &__verdict { grid-area: verdict; font-size: 16px; font-weight: 800; text-align: right; }
+  &__expected,
+  &__judge { grid-column: 2 / -1; color: #5f584c; }
+  &__expected { color: #604521; font-weight: 700; }
+
+  &__takes {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ece5d6;
+
+    h4 { margin: 0 0 6px; font-size: 13px; small { font-weight: 400; color: #8a7c5c; } }
+    ul { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; }
+    label { display: inline-flex; align-items: center; gap: 6px; color: #6b6255; }
+    audio { height: 32px; max-width: 220px; }
+  }
+}
+
+.teacher-flashcard-deck {
+  & + & { margin-top: 14px; }
+  > h3 { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: #4a4335; }
+}
+
+// The child's own Review rendering (Programs/SentenceLadder/ReviewPanel.jsx),
+// restyled for the console: its classes, this console's type and palette.
+.teacher-sentences {
+  &__courses {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+
+    button {
+      padding: 4px 12px;
+      border: 1px solid #d4c6af;
+      border-radius: 999px;
+      background: #fffdf8;
+      color: #604521;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      &[aria-selected='true'] { background: #6e4b20; border-color: #6e4b20; color: #fffdf8; }
+    }
+  }
+
+  > .teacher-muted { margin: 0 0 10px; font-size: 13px; color: #6b6255; }
+
+  .lang-review {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+
+    &__status { margin: 0; color: #8a8272; font-size: 13px; p { margin: 0 0 6px; } }
+    &__status-inline { font-size: 12px; color: #8a8272; }
+    &__day-title { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: #4a4335; }
+    &__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+    &__item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 8px 10px;
+      border: 1px solid #ece5d6;
+      border-radius: 8px;
+      background: #fffdf8;
+      word-break: keep-all;
+    }
+    &__rung { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #8a7c5c; }
+    &__sentence { font-size: 14px; color: #2b2620; }
+    &__score { font-size: 12px; font-weight: 700; color: #4a4335; }
+    &__shown { font-size: 12px; font-style: italic; color: #6b6255; }
+    &__missing { font-size: 12px; color: #8a5a2a; }
+    audio { height: 32px; max-width: 260px; }
+  }
+
+  // Same reading as the child's: struck-through = what they left out (the
+  // thing to study); underlined = what they added. Readable without colour.
+  .lang-diff {
+    font-size: 15px;
+    word-break: keep-all;
+    &__same { color: #2b2620; }
+    &__added { color: #93412c; text-decoration: underline; }
+    &__removed { color: #8a5a2a; text-decoration: line-through; }
+  }
+
+  .lang-btn {
+    padding: 4px 12px;
+    border: 1px solid #d9bfae;
+    border-radius: 6px;
+    background: #fff;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+}

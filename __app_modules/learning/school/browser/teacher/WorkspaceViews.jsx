@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from "../schoolApi.js";
 import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
 import { usePanelFetch } from "./usePanelFetch.js";
@@ -37,6 +37,10 @@ import WeekGrid from "./panels/WeekGrid.jsx";
 import ReadingShelfPanel from "./panels/ReadingShelfPanel.jsx";
 import ReadingDetailPanel from "./panels/ReadingDetailPanel.jsx";
 import CardLadderWordsPanel, { cardLadderEnrollments } from "./panels/CardLadderWordsPanel.jsx";
+import CardLadderDaysPanel from "./panels/CardLadderDaysPanel.jsx";
+import FlashcardReviewsPanel from "./panels/FlashcardReviewsPanel.jsx";
+import SentenceLadderHistoryPanel from "./panels/SentenceLadderHistoryPanel.jsx";
+import { isCardLadderPolicy } from "../Programs/Flashcards/CardLadder/cardLadderMode.js";
 import { LessonIdentity, SubjectIdentity } from "./CurriculumIdentity.jsx";
 import { teacherBaseFor, teacherDayPath, teacherLearnerOpsPath } from "./teacherUrl.js";
 import { grownUpActionFor } from "./obligationCopy.js";
@@ -488,18 +492,38 @@ export function WordsView({ learnerId, learnerName }) {
     isEmpty: (d) => !cardLadderEnrollments(d?.programs).length,
   });
   const decks = cardLadderEnrollments(assignment.data?.programs);
+  // Ordinary flashcard decks — the same `programs` array, without the card-ladder policy.
+  const flashcardDeckIds = (Array.isArray(assignment.data?.programs) ? assignment.data.programs : [])
+    .filter((entry) => entry?.programId === 'flashcards' && entry?.deckId && !isCardLadderPolicy(entry?.policy))
+    .map((entry) => entry.deckId);
   // Each panel's new-word pool lists decks by name, its siblings' included.
   const deckTitles = Object.fromEntries(decks.filter((entry) => entry.title).map((entry) => [entry.deckId, entry.title]));
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Cards</p><h2>{learnerName}’s card ladder</h2><p>Every card this learner can meet, and the controls to reset, master, exclude, or re-grade one by hand.</p></div></div>
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Cards</p><h2>{learnerName}’s card ladder</h2><p>Every card this learner can meet, the controls to reset, master, exclude, or re-grade one by hand, and every answer they gave, day by day.</p></div></div>
       <PanelFrame title="Card-ladder decks" state={assignment.state} retry={assignment.retry}
         emptyCopy={`${learnerName ?? learnerId} is not enrolled in a card-ladder deck.`}
         unavailableCopy="Assignments are not enabled on this install.">
         {decks.map((entry) => (
-          <CardLadderWordsPanel key={entry.deckId} learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} deckTitles={deckTitles} />
+          <Fragment key={entry.deckId}>
+            <CardLadderWordsPanel learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} deckTitles={deckTitles} />
+            <CardLadderDaysPanel learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} />
+          </Fragment>
         ))}
       </PanelFrame>
+      {assignment.state !== 'loading' && (
+        <FlashcardReviewsPanel learnerId={learnerId} learnerName={learnerName} enrolledDeckIds={flashcardDeckIds} />
+      )}
+    </div>
+  );
+}
+
+/** One learner's sentence ladder, day by day (`SentenceLadderHistoryPanel`). */
+export function SentencesView({ learnerId, learnerName }) {
+  return (
+    <div className="teacher-view">
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Sentences</p><h2>{learnerName}’s sentence ladder</h2><p>Every sentence they worked, day by day: what they typed against what was expected, the answers they asked to see, and their recordings.</p></div></div>
+      <SentenceLadderHistoryPanel learnerId={learnerId} learnerName={learnerName} />
     </div>
   );
 }

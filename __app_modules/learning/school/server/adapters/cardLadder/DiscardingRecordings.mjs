@@ -12,5 +12,7 @@ export class DiscardingRecordings {
     return { take };
   }
   latest() { return null; }
+  list() { return []; }
+  open() { return null; }
 }
 export default DiscardingRecordings;

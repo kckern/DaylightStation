@@ -28,7 +28,7 @@ export {
 export { servedWhy, dayChanges, prereqChanges, signOffGaps } from "./observe.mjs";
 export { foldPaperAttempts } from "./foldPaperAttempts.mjs";
 export { formatTrace, canonicalTraceMsg } from "./trace.mjs";
-export { markMastered, typedAnswers } from "./admin.mjs";
+export { markMastered, typedAnswers, dayAnswers, daySummary } from "./admin.mjs";
 export {
   quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix, parseLearnerQuizId,
 } from "./quizId.mjs";

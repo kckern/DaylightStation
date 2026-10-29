@@ -69,4 +69,24 @@ describe('FlashcardStudyService', () => {
     await expect(migrated.migrateProfile({ learnerId: 'kid', deckId: deck.id, actorId: 'parent', dryRun: false })).resolves.toMatchObject({ dryRun: false, cards: 1 });
     expect(teacherGate.assert).toHaveBeenCalled(); expect(read().sessions).toEqual({});
   });
+  it('teacherReport lists every rating by session with the card faces, behind the teacher gate', async () => {
+    const faced = { ...deck, cards: [{ cardId: 'a', front: { blocks: [{ type: 'text', text: 'Cell' }] }, back: { blocks: [{ type: 'text', text: 'Unit of life' }] } }, { cardId: 'b' }] };
+    let state = { schema: 'school.flashcard-progress/v1', cards: {}, sessions: { s1: { sessionId: 's1', deckId: deck.id, startedAt: '2026-08-23T12:00:00.000Z', lastActiveAt: '2026-08-23T12:05:00.000Z', activeSeconds: 240 } }, events: [
+      { type: 'flashcard_review', at: '2026-08-23T12:01:00.000Z', sessionId: 's1', deckId: deck.id, cardId: 'a', rating: 'again', mode: 'review', direction: 'front_to_back' },
+      { type: 'flashcard_review', at: '2026-08-24T12:01:00.000Z', sessionId: 's2', deckId: deck.id, cardId: 'b', rating: 'good', mode: 'learn', direction: 'back_to_front' },
+      { type: 'flashcard_active_time', at: '2026-08-23T12:02:00.000Z', sessionId: 's1', deckId: deck.id, seconds: 30 },
+    ] };
+    const assert = vi.fn();
+    const service = new FlashcardStudyService({ ...deps, teacherGate: { assert }, progressStore: { update: (_u, fn) => { state = fn(state); return state; }, read: () => structuredClone(state) }, decks: { getFlashcardDeck: async () => faced, listFlashcardDecks: async () => [faced] } });
+    const report = await service.teacherReport({ learnerId: 'kid', actorId: 'parent', pin: null });
+    expect(assert).toHaveBeenCalledWith(expect.objectContaining({ userId: 'parent', action: 'flashcard-teacher-report', context: { learnerId: 'kid' } }));
+    const [only] = report.decks;
+    expect(only.sessions.map((session) => session.sessionId)).toEqual(['s2', 's1']);
+    expect(only.sessions[1]).toEqual({
+      sessionId: 's1', startedAt: '2026-08-23T12:00:00.000Z', lastActiveAt: '2026-08-23T12:05:00.000Z', activeSeconds: 240,
+      reviews: [{ at: '2026-08-23T12:01:00.000Z', cardId: 'a', rating: 'again', mode: 'review', direction: 'front_to_back', front: faced.cards[0].front, back: faced.cards[0].back }],
+    });
+    // A session that has aged out of `sessions` still reads from its events.
+    expect(only.sessions[0]).toMatchObject({ startedAt: '2026-08-24T12:01:00.000Z', activeSeconds: null, reviews: [{ cardId: 'b', rating: 'good', front: null }] });
+  });
 });

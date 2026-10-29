@@ -1,17 +1,8 @@
 // S/api/schoolDebrief.mjs
 import express from 'express';
 
-// The teacher capability cookie, as `createSchoolRouter` reads it (S/api/school.mjs:136):
-// the cookie's path is /api/v1/school, so it reaches this sub-router too.
-function capabilityProof(req) {
-  const raw = String(req.get('cookie') ?? '');
-  for (const part of raw.split(';')) {
-    const at = part.indexOf('=');
-    if (at < 0 || part.slice(0, at).trim() !== 'daylight_teacher_session') continue;
-    try { return { capabilityToken: decodeURIComponent(part.slice(at + 1).trim()), stepUpToken: req.get('X-Teacher-Step-Up') ?? null }; } catch { return null; }
-  }
-  return null;
-}
+import { capabilityProof } from "./teacherCapabilityProof.mjs";
+
 const AUDIO_FILE_RE = /^\d{4}-\d{2}-\d{2}-\d+\.(webm|ogg|m4a)$/;
 
 const STUDY_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;

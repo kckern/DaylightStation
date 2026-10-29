@@ -948,6 +948,79 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     expect(words.find((w) => w.wordId === 'pul').recentTyped).toEqual([]);
   });
 
+  it('adminDays lists opened days newest first, each at a glance', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'), doneAt: '2026-09-20T16:05:00-07:00', activeMs: 120000,
+      sittings: { s1: { deckId: DECK, openedAt: '2026-09-20T15:59:00-07:00', closedAt: '2026-09-20T16:06:00-07:00', reason: 'goal' } },
+      items: {
+        'rc:gawi': { at: '2026-09-20T16:00:00-07:00', response: { typed: '가이' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck' },
+        'r1:q:0': { at: '2026-09-20T16:01:00-07:00', response: { choice: '풀' }, result: { correct: true, answer: '풀' }, wordId: 'pul', task: '3.1', source: 'verify' },
+        'r1:q:1': { at: '2026-09-20T16:02:00-07:00', response: { choice: 'Rock' }, result: { correct: false, answer: 'Scissors' }, wordId: 'gawi', task: '2.2', source: 'verify' },
+        'r1:s:0': { at: '2026-09-20T16:03:00-07:00', response: { sort: 'familiar' }, result: { ok: true }, wordId: 'pul' },
+        summary: { at: '2026-09-20T16:05:00-07:00', response: { done: true }, result: { ok: true } },
+      },
+    };
+    store.s.days['2026-09-21'] = emptyDay('2026-09-21');
+    store.listDays = () => Object.keys(store.s.days).sort();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const before = structuredClone(store.s);
+    const { days } = await service.adminDays(who);
+    expect(days.map((d) => d.day)).toEqual(['2026-09-21', '2026-09-20']);
+    expect(days[1]).toEqual({
+      day: '2026-09-20', doneAt: '2026-09-20T16:05:00-07:00', activeMs: 120000,
+      sittings: [{ id: 's1', deckId: DECK, openedAt: '2026-09-20T15:59:00-07:00', closedAt: '2026-09-20T16:06:00-07:00', reason: 'goal' }],
+      // The summary card is not an answer; the sort is an answer but not graded.
+      answered: 4, graded: 3, correct: 1, missedWords: ['gawi'],
+    });
+    expect(store.s).toEqual(before);
+  });
+
+  it('adminDay gives every answer in order with its word, and the takes kept that day', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      drills: [{ id: 'd1', wordId: 'gawi', steps: ['look', 'say-after', 'tiles'] }],
+      items: {
+        'd1:2': { at: '2026-09-20T16:02:00-07:00', response: { tiles: ['가', '위'] }, result: { correct: true, answer: '가위' }, wordId: 'gawi', source: null },
+        'r1:i:pul:say': { at: '2026-09-20T16:00:00-07:00', response: { done: true }, result: { ok: true }, wordId: 'pul', source: null },
+        'rc:gawi': { at: '2026-09-20T16:01:00-07:00', response: { typed: '가이' }, result: { correct: false, answer: '가위', score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck', reason: 'one letter off' },
+      },
+    };
+    store.listDays = () => Object.keys(store.s.days).sort();
+    const recordings = { save: vi.fn(), list: vi.fn(() => [{ wordId: 'pul', take: 1, ext: 'webm' }]), open: vi.fn() };
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock(), recordings });
+    const out = await service.adminDay({ ...who, day: '2026-09-20' });
+    expect(out.answers.map((row) => [row.itemId, row.kind, row.step, row.correct])).toEqual([
+      ['r1:i:pul:say', 'intro', 'say', null],
+      ['rc:gawi', 'recheck', null, false],
+      ['d1:2', 'drill', 'tiles', true],
+    ]);
+    expect(out.answers[1]).toEqual(expect.objectContaining({
+      wordId: 'gawi', term: '가위', gloss: 'Scissors', task: '3.3', response: { typed: '가이' }, answer: '가위', score: 5, judge: 'model', reason: 'one letter off',
+    }));
+    expect(out.recordings).toEqual([{ wordId: 'pul', take: 1, ext: 'webm', term: '풀', gloss: 'Glue' }]);
+    expect(recordings.list).toHaveBeenCalledWith({ package: 'korean-vocab', learnerId: 'test-learner', day: '2026-09-20' });
+  });
+
+  it('adminDay refuses a malformed day and a day never opened', async () => {
+    const store = adminStore();
+    store.listDays = () => [];
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await expect(service.adminDay({ ...who, day: 'yesterday' })).rejects.toThrow(/YYYY-MM-DD/);
+    await expect(service.adminDay({ ...who, day: '2026-09-19' })).rejects.toThrow(/card-ladder day/);
+  });
+
+  it('adminDays / adminDay / adminRecording are teacher-gated', async () => {
+    const teacherGate = { assert: vi.fn(() => { throw new Error('Only a grown-up can do this.'); }) };
+    const store = adminStore();
+    store.listDays = () => [];
+    const { service } = make({ store, teacherGate, judgementCache: cacheMock(), recordings: { save: vi.fn(), list: vi.fn(), open: vi.fn() } });
+    await expect(service.adminDays(who)).rejects.toThrow(/grown-up/);
+    await expect(service.adminDay({ ...who, day: '2026-09-20' })).rejects.toThrow(/grown-up/);
+    await expect(service.adminRecording({ ...who, day: '2026-09-20', wordId: 'pul', take: 1 })).rejects.toThrow(/grown-up/);
+  });
+
   it('adminReset returns a word to new, clearing notYetCarry, and logs admin + transition', async () => {
     const store = adminStore();
     store.s.status.words.gawi.notYetCarry = true;

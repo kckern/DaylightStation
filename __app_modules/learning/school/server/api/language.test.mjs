@@ -515,3 +515,71 @@ describe('a spoken answer too short to be one', () => {
     expect((await post(app, 9000)).status).toBe(500);
   });
 });
+
+describe('Sentence Ladder grown-up reads (teacher console)', () => {
+  const COOKIE = 'daylight_teacher_session=cap-1';
+  function teacherApp({ assert = vi.fn(), sessionUser = 'parent', recordingAudio = notFound() } = {}) {
+    const service = {
+      listCourses: vi.fn(() => []),
+      summarize: vi.fn(() => [{ program: 'sentence-ladder', instanceId: 'korean', label: 'Korean', state: 'active', lastActivity: '2026-10-28', headline: 'en to ko' }]),
+      getHistory: vi.fn(() => ({ corpus: { id: 'korean' }, days: [{ day: 3, items: [] }] })),
+    };
+    const languageAudioResource = { getRecordingAudio: vi.fn().mockResolvedValue(recordingAudio), getPromptAudio: vi.fn(), getCueAudio: vi.fn(), listCues: vi.fn(() => []) };
+    const sessions = { status: vi.fn((token) => (token === 'cap-1' && sessionUser ? { active: true, userId: sessionUser } : { active: false })) };
+    const app = express();
+    app.use('/api/v1/school/sentence-ladder', createLanguageRouter({
+      languageStudyService: service, studyGrants: { verify: () => ({ ok: false }) }, languageAudioResource,
+      teacherGate: { assert }, teacherCapabilitySessions: sessions,
+      logger: { info() {}, warn() {}, error() {} },
+    }));
+    return { app, service, assert, languageAudioResource };
+  }
+
+  it('lists courses with the learner\'s standing, gated as the cookie\'s teacher', async () => {
+    const { app, assert } = teacherApp();
+    const res = await request(app).get('/api/v1/school/sentence-ladder/teacher/test-learner/courses?by=someone-else').set('Cookie', COOKIE);
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body.courses).toEqual([{ id: 'korean', label: 'Korean', state: 'active', lastActivity: '2026-10-28', headline: 'en to ko' }]);
+    // The cookie's session outranks a query that names someone else.
+    expect(assert).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'parent', action: 'school.sentence-ladder.read', context: { learnerId: 'test-learner' },
+      pin: { capabilityToken: 'cap-1', stepUpToken: null },
+    }));
+  });
+
+  it('serves the same history the child reads, without a study grant', async () => {
+    const { app, service } = teacherApp();
+    const res = await request(app).get('/api/v1/school/sentence-ladder/teacher/test-learner/history?corpus=korean').set('Cookie', COOKIE);
+    expect(res.status).toBe(200);
+    expect(service.getHistory).toHaveBeenCalledWith({ userId: 'test-learner', corpusId: 'korean' });
+    expect(res.body.days).toHaveLength(1);
+  });
+
+  it('refuses when the gate refuses, and reads nothing', async () => {
+    const refusing = vi.fn(() => { throw Object.assign(new Error('Only a listed teacher can do this.'), { name: 'GuestForbiddenError' }); });
+    const { app, service } = teacherApp({ assert: refusing, sessionUser: null });
+    const res = await request(app).get('/api/v1/school/sentence-ladder/teacher/test-learner/history?corpus=korean');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Only a listed teacher can do this.');
+    expect(service.getHistory).not.toHaveBeenCalled();
+  });
+
+  it('streams a recording privately, never cached', async () => {
+    const { app, languageAudioResource } = teacherApp({ recordingAudio: found(Buffer.from('voice'), 'audio/webm') });
+    const res = await request(app).get('/api/v1/school/sentence-ladder/teacher/test-learner/recordings/korean/7').set('Cookie', COOKIE);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('audio/webm');
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(languageAudioResource.getRecordingAudio).toHaveBeenCalledWith({ corpusId: 'korean', userId: 'test-learner', seq: '7' });
+  });
+
+  it('answers 503 when no teacher gate is wired', async () => {
+    const app = express();
+    app.use('/x', createLanguageRouter({
+      languageStudyService: { listCourses: () => [] }, languageAudioResource: {}, logger: { info() {}, warn() {}, error() {} },
+    }));
+    const res = await request(app).get('/x/teacher/test-learner/courses');
+    expect(res.status).toBe(503);
+  });
+});

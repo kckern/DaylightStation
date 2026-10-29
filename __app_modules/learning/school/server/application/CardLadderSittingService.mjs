@@ -30,7 +30,7 @@ import { addDays } from "../domain/termVerdict.mjs";
 import { curriculumPosterRef } from '#apps/common/resources/publicResourceRefs.mjs';
 import {
   applyGraded, addActiveTime, cueFor, currentItem, deckDirOf, deckProgress, emptyWordV3, introPlanLabel, introPreview, excludeWordFromDay, foldPaperAttempts, ladderLevel, markMastered, openDay, orderNewWords,
-  quizDocumentIdFor, respond, roundHasMatch, newWordsHeld, startPractice, learnMore, typedAnswers, withTunedValues, wordAssetIds, wordTransitions,
+  quizDocumentIdFor, respond, roundHasMatch, newWordsHeld, startPractice, learnMore, typedAnswers, dayAnswers, daySummary, withTunedValues, wordAssetIds, wordTransitions,
   servedWhy, dayChanges, prereqChanges, scriptFor, ruleForTarget, unreleasedWords,
 } from "../domain/cardLadder/index.mjs";
 
@@ -60,6 +60,9 @@ const RECORDING_EXTS = new Set(['webm', 'ogg', 'm4a', 'mp4', 'wav']);
 const NO_ASSETS = Object.freeze({ image: null, audio: null, glossAudio: null });
 // Grown-up word controls (spec §6): how far back a word's typed answers are listed.
 const ADMIN_TYPED_DAYS = 14;
+// How many study days the grown-up's day list goes back (newest first).
+const ADMIN_DAY_LIST = 60;
+const STUDY_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const REGRADE_REASON = 'Re-graded by a grown-up';
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1035,6 +1038,48 @@ export class CardLadderSittingService {
         };
       }),
     };
+  }
+
+  /**
+   * The days this learner opened in this package, newest first, each at a
+   * glance (when, how long, how the graded answers went). Read only — the
+   * grown-up's "day by day" list, never a write.
+   */
+  async adminDays({ learnerId, deckId, actorId = null, pin = null } = {}) {
+    const { pkg, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+    const days = store.listDays(learnerId, pkg).slice(-ADMIN_DAY_LIST).reverse();
+    return { learnerId, package: pkg, days: days.map((day) => daySummary(store.readDay(learnerId, pkg, day))) };
+  }
+
+  /**
+   * One day's every answer, in order, with each word's term and gloss, plus
+   * the spoken takes kept that day. Speaking is never graded, so a take is
+   * its own list (by word, take number) rather than a verdict on an answer.
+   */
+  async adminDay({ learnerId, deckId, day, actorId = null, pin = null } = {}) {
+    if (!STUDY_DAY.test(String(day ?? ''))) throw new ValidationError('day must be YYYY-MM-DD');
+    const { lexicon, pkg, store } = await this.#admin({ learnerId, deckId, actorId, pin });
+    if (!store.listDays(learnerId, pkg).includes(day)) throw new EntityNotFoundError('card-ladder day', day);
+    const dayFile = store.readDay(learnerId, pkg, day);
+    const word = (id) => {
+      const entry = id ? lexicon.entries.get(id) : null;
+      return { term: entry?.term ?? null, gloss: entry?.gloss ?? null };
+    };
+    const takes = typeof this.#recordings?.list === 'function'
+      ? this.#recordings.list({ package: pkg, learnerId, day }) : [];
+    return {
+      learnerId, package: pkg, ...daySummary(dayFile),
+      answers: dayAnswers(dayFile).map((row) => ({ ...row, ...word(row.wordId) })),
+      recordings: takes.map((take) => ({ ...take, ...word(take.wordId) })),
+    };
+  }
+
+  /** One kept take's audio, for the grown-up's player. Null when it is not on file. */
+  async adminRecording({ learnerId, deckId, day, wordId, take, actorId = null, pin = null } = {}) {
+    if (!STUDY_DAY.test(String(day ?? ''))) throw new ValidationError('day must be YYYY-MM-DD');
+    const { pkg } = await this.#admin({ learnerId, deckId, actorId, pin });
+    if (typeof this.#recordings?.open !== 'function') return null;
+    return this.#recordings.open({ package: pkg, learnerId, day, wordId, take: Number(take) });
   }
 
   /** Reset to new: a fresh record — nothing kept, `notYetCarry` included. */
