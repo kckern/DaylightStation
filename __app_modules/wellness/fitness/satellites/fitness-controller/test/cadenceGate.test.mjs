@@ -57,3 +57,28 @@ test('tracks devices independently', () => {
   assert.equal(g.gate('a', { calculatedCadence: 110, revolutionCount: 14, now: 3000 }), 0);
   assert.equal(g.gate('b', { calculatedCadence: 80, revolutionCount: 205, now: 3000 }), 80);
 });
+
+for (const rpm of [15, 20]) {
+  test(`keeps continuous ${rpm} RPM readings between complete turns, then detects a stop`, () => {
+    const g = createCadenceGate();
+    const period = 60000 / rpm;
+    for (let now = 0; now <= 20000; now += 250) {
+      assert.equal(g.gate('slow', { calculatedCadence: rpm, revolutionCount: Math.floor(now / period), now }), rpm, `false stop at ${now}ms`);
+    }
+    assert.equal(g.gate('slow', { calculatedCadence: rpm, revolutionCount: Math.floor(20000 / period), now: 27000 }), 0);
+  });
+}
+
+test('accepts slowing from fast to slow and low-cadence counter rollover', () => {
+  const g = createCadenceGate();
+  g.gate('slow', { calculatedCadence: 60, revolutionCount: 65535, now: 0 });
+  assert.equal(g.gate('slow', { calculatedCadence: 15, revolutionCount: 65535, now: 3500 }), 15);
+  assert.equal(g.gate('slow', { calculatedCadence: 15, revolutionCount: 0, now: 4000 }), 15);
+  assert.equal(g.gate('slow', { calculatedCadence: 15, revolutionCount: 0, now: 7750 }), 15);
+});
+
+test('bounds a stale tiny cadence so it cannot hold the bike moving forever', () => {
+  const g = createCadenceGate();
+  g.gate('slow', { calculatedCadence: 1, revolutionCount: 1, now: 0 });
+  assert.equal(g.gate('slow', { calculatedCadence: 1, revolutionCount: 1, now: 6250 }), 0);
+});

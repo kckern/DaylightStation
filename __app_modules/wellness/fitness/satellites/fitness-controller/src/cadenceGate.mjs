@@ -10,11 +10,11 @@
  *
  * This gate uses the cumulative revolution count as ground truth: cadence is only
  * real while the revolution count keeps changing. If it has not changed for longer
- * than `revStaleMs`, the crank has stopped and we report 0.
+ * than its cadence-aware bounded window, the crank has stopped and we report 0.
  *
  * Pure and deterministic — `now` is injected so it is fully unit-testable.
  */
-export function createCadenceGate({ revStaleMs = 2500 } = {}) {
+export function createCadenceGate({ revStaleMs = 2500, maxRevStaleMs = 6000 } = {}) {
   const state = new Map(); // deviceId -> { lastRevCount, lastRevChangeTs }
 
   return {
@@ -45,7 +45,12 @@ export function createCadenceGate({ revStaleMs = 2500 } = {}) {
 
       // Revolution count unchanged: real if still within a plausible inter-rev gap,
       // stopped (→ 0) once we exceed the staleness window.
-      if (now - prev.lastRevChangeTs > revStaleMs) return 0;
+      // Slow pedaling legitimately leaves several seconds between turns. Allow
+      // one expected turn plus 25% packet tolerance, with a finite stop bound.
+      // Held packets do not reset lastRevChangeTs, so they cannot mask a stop.
+      const expectedTurnMs = cadence > 0 ? 60000 / cadence : 0;
+      const staleMs = Math.max(revStaleMs, Math.min(maxRevStaleMs, expectedTurnMs * 1.25));
+      if (now - prev.lastRevChangeTs > staleMs) return 0;
       return cadence;
     }
   };
