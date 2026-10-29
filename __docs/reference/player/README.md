@@ -237,13 +237,13 @@ Rules are checked in order, first match wins:
 | Verdict | Condition |
 |---------|-----------|
 | `stuck: media-error` | The element has a recoverable media error |
-| `stuck: slow-link-budget-spent` | This playback session has already held for `SLOW_LINK_SESSION_BUDGET_MS` (5 min). The ladder then runs uninterrupted, so a trickling queue still exhausts and advances |
+| `stuck: slow-link-budget-spent` | This playback session has already held for `SLOW_LINK_SESSION_BUDGET_MS` (5 min) without 30 s of media playing in between. Any 30 s of playback after a hold refills the budget, so a slow but watchable lesson keeps its protection. A trickle that never yields media still exhausts and advances |
 | `stuck: slow-link-hold-expired` | This hold is over `SLOW_LINK_MAX_HOLD_MS` (120 s). One rung fires, then a new hold may start |
 | `slow-link: metadata-loading` / `stuck` | readyState 0: holds only if bytes (`progress` events) arrived within the quiet window |
 | `stuck: buffered-but-frozen` *(confirm)* | `SLOW_LINK_FROZEN_AHEAD_SEC` (5 s) or more buffered ahead of a frozen playhead. This is a decoder wedge, because progressive downloads keep going while the decoder is wedged |
 | `stuck: ready-but-frozen` *(confirm)* | readyState ≥ 3 and still frozen |
 | `slow-link: buffer-growing` | The buffered end gained ≥ `SLOW_LINK_MIN_GROWTH_SEC` (0.5 s) in `SLOW_LINK_WINDOW_MS` (6 s). After a hold has started, any growth within `SLOW_LINK_QUIET_MS` (15 s) also counts |
-| `slow-link: bytes-arriving` | Progressive only (not MSE/`blob:`): a `progress` event within the quiet window, even if under 0.5 s of media decoded |
+| `slow-link: bytes-arriving` | Progressive only (not MSE/`blob:`): a `progress` event within `SLOW_LINK_QUIET_MS` (15 s), even before a hold and even if under 0.5 s of media decoded. A 6–10 s Wi-Fi gap at the first check therefore does not fire a rung |
 | `stuck: no-download-progress` | None of the above |
 
 *Confirm*: a frozen verdict acts only after it has held for

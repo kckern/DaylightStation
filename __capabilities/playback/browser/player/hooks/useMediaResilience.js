@@ -24,6 +24,9 @@ import { sourceNoticeText, resolveSourceContentId } from '../lib/sourceAvailabil
 // and the verdict re-checked. 2026-10-28.
 export const SLOW_LINK_SAMPLE_MS = 1000;
 export const SLOW_LINK_RECHECK_MS = 2000;
+// Media seconds that must play after a hold before the session's slow-link
+// budget is refilled.
+export const SLOW_LINK_BUDGET_CREDIT_SEC = 30;
 
 export { DEFAULT_MEDIA_RESILIENCE_CONFIG, MediaResilienceConfigContext, mergeMediaResilienceConfig } from './useResilienceConfig.js';
 export { RESILIENCE_STATUS } from './useResilienceState.js';
@@ -311,10 +314,14 @@ export function useMediaResilience({
   // Frozen-verdict persistence ({ atMs, currentTime } of the first sighting).
   const wedgeSeenRef = useRef(null);
   // Time spent holding for a slow link this playback session.
-  const slowLinkBudgetRef = useRef({ sessionKey: null, heldMs: 0 });
+  // `anchorSeconds`: playhead when the last hold closed. Watchable progress
+  // past it (SLOW_LINK_BUDGET_CREDIT_SEC of media) refills the budget, so a slow
+  // but watchable lesson keeps its protection; only a trickle that never
+  // yields media spends it (re-review 2026-10-28).
+  const slowLinkBudgetRef = useRef({ sessionKey: null, heldMs: 0, anchorSeconds: null });
   const slowLinkSessionHeldMs = (now, sessionKey) => {
     const b = slowLinkBudgetRef.current;
-    if (b.sessionKey !== sessionKey) { slowLinkBudgetRef.current = { sessionKey, heldMs: 0 }; }
+    if (b.sessionKey !== sessionKey) { slowLinkBudgetRef.current = { sessionKey, heldMs: 0, anchorSeconds: null }; }
     const live = slowLinkHoldRef.current ? now - slowLinkHoldRef.current.startedAtMs : 0;
     return slowLinkBudgetRef.current.heldMs + live;
   };
@@ -323,6 +330,8 @@ export function useMediaResilience({
     const hold = slowLinkHoldRef.current;
     if (!hold) return;
     slowLinkBudgetRef.current.heldMs += Math.max(0, now - hold.startedAtMs);
+    const el = getMediaEl?.();
+    slowLinkBudgetRef.current.anchorSeconds = el && Number.isFinite(el.currentTime) ? el.currentTime : null;
     slowLinkHoldRef.current = null;
   };
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
@@ -616,6 +625,15 @@ export function useMediaResilience({
         : null;
       const { advanced, nextPos } = evaluatePlayheadProgress(observed, lastSuccessPosRef.current);
       lastSuccessPosRef.current = nextPos;
+      // Slow-link budget refills once real media has played since the last hold.
+      {
+        const b = slowLinkBudgetRef.current;
+        if (b.heldMs > 0 && Number.isFinite(observed) && Number.isFinite(b.anchorSeconds)
+          && observed - b.anchorSeconds >= SLOW_LINK_BUDGET_CREDIT_SEC) {
+          b.heldMs = 0;
+          b.anchorSeconds = null;
+        }
+      }
       if (advanced) {
         getRecoveryLedger().recordSuccess(playbackSessionKey);
         exhaustedNotifiedRef.current = false;
@@ -1005,6 +1023,7 @@ export function useMediaResilience({
         // jolt back to the pre-seek position. (Only while holding: a rung's
         // own reload can briefly read 0 before it re-seeks to the intent.)
         if (hold && Number.isFinite(reading.currentTime) && reading.currentTime > 1
+          && el && el.seeking !== true && reading.readyState !== 0
           && Number.isFinite(joltIntentRef.current)
           && Math.abs(reading.currentTime - joltIntentRef.current) > PLAYHEAD_JUMP_SEC) {
           playbackLog('resilience-slow-link-wait-ended', {

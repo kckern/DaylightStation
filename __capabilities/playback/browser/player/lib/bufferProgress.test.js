@@ -139,7 +139,7 @@ describe('decideStuckKind', () => {
     const r0 = { bufferAheadSec: 0, bufferedEndSec: 16, readyState: 0, networkState: 2 };
     expect(decideStuckKind({ ...base, reading: r0, growth: { growthSec: 0, lastGrowthAtMs: null }, networkProgressAtMs: base.now - 800 }))
       .toEqual({ kind: 'slow-link', reason: 'metadata-loading' });
-    expect(decideStuckKind({ ...base, reading: r0, growth: null, networkProgressAtMs: base.now - SLOW_LINK_WINDOW_MS - 1 }))
+    expect(decideStuckKind({ ...base, reading: r0, growth: null, networkProgressAtMs: base.now - SLOW_LINK_QUIET_MS - 1 }))
       .toEqual({ kind: 'stuck', reason: 'no-download-progress' });
     expect(decideStuckKind({ ...base, reading: r0, growth: null })).toEqual({ kind: 'stuck', reason: 'no-download-progress' });
     // The backstop bounds a pre-metadata hold too.
@@ -163,6 +163,11 @@ describe('decideStuckKind', () => {
 
   it('progressive: bytes arriving is life even when under half a second of media decoded', () => {
     const d = decideStuckKind({ ...base, growth: { growthSec: 0.1, lastGrowthAtMs: base.now - 500 }, networkProgressAtMs: base.now - 1000 });
+    expect(d).toEqual({ kind: 'slow-link', reason: 'bytes-arriving' });
+  });
+
+  it('progressive: a Wi-Fi gap shorter than the quiet window at the FIRST check still holds', () => {
+    const d = decideStuckKind({ ...base, growth: { growthSec: 0, lastGrowthAtMs: null }, networkProgressAtMs: base.now - 9000 });
     expect(d).toEqual({ kind: 'slow-link', reason: 'bytes-arriving' });
   });
 

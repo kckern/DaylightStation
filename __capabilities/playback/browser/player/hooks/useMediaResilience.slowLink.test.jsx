@@ -190,6 +190,38 @@ describe('jolt ladder on a slow link', () => {
     expect(args.onExhausted).toHaveBeenCalled();
   });
 
+  it('a slow but watchable lesson keeps its protection: playback between holds refills the budget', () => {
+    const { el, state, grow } = slowEl();
+    const args = {
+      onReload: vi.fn(), onExhausted: vi.fn(),
+      meta: { src: 'https://example.test/stream/1', mediaKey: 'plex:1' },
+      waitKey: 'wk-1', playbackSessionKey: 'session-watchable', disabled: false,
+      getMediaEl: () => el, seconds: 0, externalStalled: false,
+    };
+    const hook = renderHook((props) => useMediaResilience(props), { initialProps: args });
+    act(() => { hook.rerender({ ...args, seconds: 300 }); });
+    let props = { ...args, seconds: 300, waitKey: 'wk-2' };
+    const tick = grow(0.02);
+    const alive = (ms) => { tick(ms); act(() => { el._fire('progress'); }); };
+    // 8 cycles: 100 s held (bytes trickling), then 40 s of real playback.
+    for (let cycle = 0; cycle < 8; cycle += 1) {
+      act(() => { hook.rerender({ ...props, externalStalled: true }); });
+      advance(100_000, alive);
+      act(() => { hook.rerender({ ...props, externalStalled: false }); });
+      for (let s = 0; s < 40; s += 1) {
+        el.currentTime += 1;
+        state.ranges = [[0, el.currentTime + 0.3]];
+        props = { ...props, seconds: el.currentTime };
+        act(() => { el._fire('timeupdate'); hook.rerender({ ...props, externalStalled: false }); });
+        advance(1000);
+      }
+    }
+    // 800 s of holding in total — far past the 300 s budget — yet the
+    // protection never lapsed, because media kept playing between holds.
+    expect(args.onReload).not.toHaveBeenCalled();
+    expect(args.onExhausted).not.toHaveBeenCalled();
+  });
+
   it('an unbuffered, silent stall still jolts at the grace boundary (no regression)', () => {
     const { el } = slowEl();
     const { args } = renderStuck(el);

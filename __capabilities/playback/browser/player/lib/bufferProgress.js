@@ -194,8 +194,10 @@ export function decideStuckKind({
   if (num(holdStartedAtMs) != null && now - holdStartedAtMs > SLOW_LINK_MAX_HOLD_MS) {
     return { kind: 'stuck', reason: 'slow-link-hold-expired' };
   }
-  const quietMs = showedLife ? SLOW_LINK_QUIET_MS : SLOW_LINK_WINDOW_MS;
-  const bytesRecent = num(networkProgressAtMs) != null && now - networkProgressAtMs <= quietMs;
+  // Bytes arriving is judged over the long quiet window even before a hold:
+  // a 6–10 s Wi-Fi gap at the first check must not fire a rung that restarts
+  // a download which was alive moments ago (re-review 2026-10-28).
+  const bytesRecent = num(networkProgressAtMs) != null && now - networkProgressAtMs <= SLOW_LINK_QUIET_MS;
   // Before metadata (readyState 0) there is no buffered range to measure, so a
   // reload that is still fetching the header (an mp4 moov can be megabytes) is
   // judged by the element's own `progress` events — fired only when bytes
