@@ -129,8 +129,21 @@ function weekMet(rule, facts, ctx) {
   return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
 }
 
+// A unit is DONE when its work passed, or was graded with no pass bar at all
+// (`result` null). "Needs another try", failed, partial, voided and the rest
+// are not done — a failed worksheet paid a silver on 2026-10-28.
+const UNIT_DONE = new Set(['passed', 'satisfied']);
+const unitDone = (u) => u.result == null || UNIT_DONE.has(u.result);
+
 function unit(rule, facts, ctx) {
-  const matched = facts.units.filter((u) => matchesUnit(rule.match, u) && inEffect(rule.effective, u.day)).sort(byDay);
+  // ONE per unit per week, at its first passing day: a retake that passes is
+  // the same worksheet, not a second one (it paid twice on 2026-10-28).
+  const firstDone = new Map();
+  for (const u of [...facts.units].sort(byDay)) {
+    if (!unitDone(u) || !matchesUnit(rule.match, u) || !inEffect(rule.effective, u.day)) continue;
+    if (!firstDone.has(u.unitId)) firstDone.set(u.unitId, u);
+  }
+  const matched = [...firstDone.values()].sort(byDay);
   const evidence = matched.map((u) => ({ day: u.day, unitId: u.unitId, subject: u.subject ?? null, ref: ctx.ref(u.unitId) }));
   if (!matched.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'None this week' };
   return { status: 'earned', count: matched.length, amount: price(rule, matched.length), evidence, note: null };

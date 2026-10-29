@@ -305,6 +305,22 @@ describe('evaluateEarnings — school kinds', () => {
     expect(line(out, 'math-units')).toMatchObject({ status: 'earned', count: 2, amount: { silver: 2, gems: 0 } });
   });
 
+  it('unit pays nothing for a failed worksheet, and once for a unit retaken until it passed (2026-10-28)', () => {
+    const rs = ruleset([{ id: 'worksheet-done', kind: 'unit', match: {}, reward: 1 }]);
+    const out = evaluate(rs, { units: [
+      { day: '2026-10-26', unitId: 'atlas-us-p080-new-mexico', result: 'needs_remediation' },
+      { day: '2026-10-28', unitId: 'atlas-us-p080-new-mexico', result: 'passed' },
+      { day: '2026-10-26', unitId: 'cfm-w44-d1-jeremiah-31', result: 'passed' },
+      { day: '2026-10-27', unitId: 'atlas-us-p104-texas', result: 'failed' },
+      { day: '2026-10-27', unitId: 'em23-01', result: null },
+    ] });
+    const worksheets = line(out, 'worksheet-done');
+    expect(worksheets).toMatchObject({ status: 'earned', count: 3, amount: { silver: 3, gems: 0 } });
+    expect(worksheets.evidence.map((e) => [e.unitId, e.day])).toEqual([
+      ['cfm-w44-d1-jeremiah-31', '2026-10-26'], ['em23-01', '2026-10-27'], ['atlas-us-p080-new-mexico', '2026-10-28'],
+    ]);
+  });
+
   it('when School evidence is unavailable, every school line is indeterminate — never "not done"', () => {
     const rs = ruleset([
       { id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 },

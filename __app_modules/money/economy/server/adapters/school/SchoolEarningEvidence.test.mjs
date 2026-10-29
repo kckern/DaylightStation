@@ -51,6 +51,8 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
         { unitId: 'em23-03-01', studyDay: '2026-09-21', state: 'graded', outcome: { result: 'passed' } },
         { unitId: 'em23-03-02', studyDay: '2026-09-22', state: 'issued', outcome: null },
         { unitId: 'em23-02-09', studyDay: '2026-09-19', state: 'graded', outcome: { result: 'passed' } },
+        // A program's own session is credited by its own rule, never as a unit.
+        { unitId: 'sentence-ladder:glossika-korean', studyDay: '2026-09-21', state: 'rewarded', outcome: { result: 'passed' } },
       ]),
       unitInfo: async (unitId) => (unitId.startsWith('em23') ? { subject: 'math', courseId: 'elementary-math-2-3' } : null),
       logger: silent,

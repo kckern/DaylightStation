@@ -73,7 +73,11 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
 
   async #units(learnerId, inWeek) {
     const rows = await this.#sessions.execute({ learnerId });
-    const graded = (rows ?? []).filter((s) => inWeek(s.studyDay ?? s.day) && s.unitId && (s.outcome?.result || s.state === 'graded'));
+    // Curriculum work only. A program's own session (`sentence-ladder:<corpus>`,
+    // any `<program>:<instance>` id) is credited by that program's section-day
+    // rule; counting it here paid Korean twice, once as a "worksheet".
+    const graded = (rows ?? []).filter((s) => inWeek(s.studyDay ?? s.day) && s.unitId && !String(s.unitId).includes(':')
+      && (s.outcome?.result || s.state === 'graded'));
     // One lookup per unit, in parallel — a retried unit shares its answer.
     const infos = new Map();
     await Promise.all([...new Set(graded.map((s) => s.unitId))].map(async (unitId) => {
