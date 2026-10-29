@@ -650,6 +650,17 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   // owner ruling 2026-10-29). Absent when the economy is off or unread.
   // Green days are counted against the days that are over (today counts
   // only once it is green): "0 green days" on a Monday is not a verdict.
+  // Reading and piano beside the plan (audit 2026-10-29): what the day's
+  // digest already carries. An unread source says nothing, never a zero.
+  const reading = row.readingActivity?.status === 'ok' ? row.readingActivity : null;
+  const piano = row.pianoActivity?.status === 'ok' ? row.pianoActivity : null;
+  const pianoGameMinutes = Number.isFinite(piano?.gameSeconds) ? Math.round(piano.gameSeconds / 60) : 0;
+  const activityLine = [
+    reading ? (reading.minutes > 0 ? `Read ${reading.minutes} min`
+      : reading.bookCount > 0 ? `Read ${reading.bookCount} book${reading.bookCount === 1 ? '' : 's'}` : 'No reading yet') : null,
+    piano?.exercises > 0 ? `Piano ${piano.exercises} exercise${piano.exercises === 1 ? '' : 's'}${piano.passed ? ` (${piano.passed} passed)` : ''}` : null,
+    pianoGameMinutes > 0 ? `${pianoGameMinutes} min piano games` : null,
+  ].filter(Boolean).join(' · ');
   const coinLine = coins ? [
     `${coins.silver} silver this week`,
     coins.greenOf ? `${coins.green} of ${coins.greenOf} day${coins.greenOf === 1 ? '' : 's'} green` : null,
@@ -733,6 +744,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
         <span className="teacher-roster__identity">
           <span className="teacher-roster__name">{name}</span>
           {settled && summary && <span className="teacher-roster__stats">{summary}</span>}
+          {activityLine && <span className="teacher-roster__activity">{activityLine}</span>}
           {coinLine && <span className="teacher-roster__coins">{coinLine}</span>}
         </span>
         {/* THE DAY ITSELF — the row's primary content, not a decoration

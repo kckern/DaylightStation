@@ -391,6 +391,8 @@ try {
           listSessionsInRange: (from, to) => fitnessServices.sessionService
             .listSessionsInRange(from, to, householdId),
         },
+        // The piano beside the plan (Home rows): exercises and game minutes.
+        pianoDayActivity: dependencies.pianoDayActivity ?? null,
         timezone: configService.getTimezone?.() || null,
         planProjection: dependencies.schoolLifecycle.planProjection ?? null,
         logger: rootLogger.child({ module: 'school-teacher-today' })

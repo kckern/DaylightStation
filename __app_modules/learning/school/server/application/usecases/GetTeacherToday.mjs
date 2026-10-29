@@ -9,7 +9,7 @@ import {
 } from "../../domain/studyDay.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { projectReadingActivity } from "../../domain/readingActivity.mjs";
+import { projectReadingActivity, readingMinutes } from "../../domain/readingActivity.mjs";
 import { projectFitnessActivity } from "../../domain/fitnessActivity.mjs";
 import { curriculumPosterRef, schoolArtifactRef } from '#apps/common/resources/publicResourceRefs.mjs';
 
@@ -127,11 +127,11 @@ function remediationHoldItems(entries, { learnerId, statesById }) {
 
 export class GetTeacherToday {
   #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum; #bookLog;
-  #fitnessSessions; #timezone; #boundaryHour; #clock; #logger; #planProjection;
+  #fitnessSessions; #pianoDayActivity; #timezone; #boundaryHour; #clock; #logger; #planProjection;
 
   constructor({
     learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
-    curriculum = null, bookLog = null, fitnessSessions = null,
+    curriculum = null, bookLog = null, fitnessSessions = null, pianoDayActivity = null,
     timezone = null, boundaryHour = DEFAULT_BOUNDARY_HOUR,
     // The agenda's own `PlanProjection`, asked for teacher holds. Null: the
     // digest carries an empty `attention` list.
@@ -149,6 +149,7 @@ export class GetTeacherToday {
     this.#curriculum = curriculum;
     this.#bookLog = bookLog;
     this.#fitnessSessions = fitnessSessions;
+    this.#pianoDayActivity = pianoDayActivity;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
     this.#planProjection = planProjection;
@@ -302,6 +303,8 @@ export class GetTeacherToday {
           const items = await this.#bookLog.listForLearner(learner.id);
           readingActivity = {
             status: 'ok',
+            // Minutes logged today — beside the projection's counts, for Home.
+            minutes: readingMinutes(items, { studyDay: selectedStudyDay }),
             ...projectReadingActivity(items, {
               studyDay: selectedStudyDay,
               dayOf: (iso) => studyDayForInstant(Date.parse(iso), {
@@ -313,6 +316,21 @@ export class GetTeacherToday {
           this.#logger.warn?.('school.teacher-day.reading-activity-failed', {
             learnerId: learner.id, error: error?.message,
           });
+        }
+      }
+      // The piano, as evidence beside the plan: exercises attempted (and
+      // passed) in the study window, and minutes on the kiosk's games. A
+      // missing port or a failed read is `unavailable`, never a zero.
+      let pianoActivity = { status: 'unavailable', studyDay: selectedStudyDay };
+      if (isV2 && this.#pianoDayActivity) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const piano = await this.#pianoDayActivity.forLearnerDay({
+            learnerId: learner.id, studyDay: selectedStudyDay, fromMs: window.startAtMs, toMs: window.endAtMs,
+          });
+          pianoActivity = { status: 'ok', studyDay: selectedStudyDay, ...piano };
+        } catch (error) {
+          this.#logger.warn?.('school.teacher-day.piano-activity-failed', { learnerId: learner.id, error: error?.message });
         }
       }
       // Physical education is on nobody's plan, so this is pure evidence: a
@@ -367,7 +385,7 @@ export class GetTeacherToday {
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
         reflections,
-        ...(isV2 ? { readingActivity, fitnessActivity } : {}),
+        ...(isV2 ? { readingActivity, fitnessActivity, pianoActivity } : {}),
         // v1 compatibility fields. Attempt rows stay as the old count until all
         // historical attempts have a reliable work-session identity.
         attemptsToday: attempts.length,

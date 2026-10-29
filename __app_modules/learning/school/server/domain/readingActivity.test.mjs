@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectReadingActivity } from "./readingActivity.mjs";
+import { readingMinutes, projectReadingActivity } from "./readingActivity.mjs";
 
 const dayOf = (iso) => String(iso ?? '').slice(0, 10);
 const project = (items, studyDay = '2026-09-07') => projectReadingActivity(items, { studyDay, dayOf });
@@ -130,4 +130,17 @@ it('uses authoritative v2 finish state after teacher redate or withdrawal', () =
   expect(project([reading], '2026-09-06')).toMatchObject({ progressCount: 0, finishedCount: 1, bookCount: 1 });
   expect(project([{ ...reading, status: 'reading', finishedOn: null }], '2026-09-05'))
     .toMatchObject({ progressCount: 1, finishedCount: 0, bookCount: 1 });
+});
+
+describe('readingMinutes', () => {
+  it('sums the minutes a child logged against the day', () => {
+    const items = [{ itemId: 'kid:b:1', status: 'reading', entries: [
+      { on: '2026-09-07', kind: 'progress', minutes: 15, entryId: 'e1' },
+      { on: '2026-09-07', kind: 'progress', minutes: 10, entryId: 'e2' },
+      { on: '2026-09-06', kind: 'progress', minutes: 40, entryId: 'e3' },
+      { on: '2026-09-07', kind: 'progress', page: 30, entryId: 'e4' },
+    ] }];
+    expect(readingMinutes(items, { studyDay: '2026-09-07' })).toBe(25);
+    expect(readingMinutes(items, { studyDay: '2026-09-05' })).toBe(0);
+  });
 });

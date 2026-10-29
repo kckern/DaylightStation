@@ -86,7 +86,7 @@ describe('GetTeacherToday v2', () => {
     expect(bookLog.listForLearner).toHaveBeenCalledWith('learner4');
     expect(digest.learners[0].readingActivity).toEqual({
       status: 'ok', studyDay: '2026-08-24', hasActivity: true,
-      progressCount: 1, finishedCount: 1, bookCount: 1,
+      progressCount: 1, finishedCount: 1, bookCount: 1, minutes: 0,
     });
   });
 
@@ -319,3 +319,25 @@ describe('GetTeacherToday — remediation holds', () => {
     expect((await useCase().execute())[0].attention).toEqual([]);
   });
 });
+
+describe('GetTeacherToday piano evidence', () => {
+  it('reads one learner\'s piano study day through the port, inside the study window', async () => {
+    const port = { forLearnerDay: vi.fn(async () => ({ exercises: 4, passed: 3, gameSeconds: 1200 })) };
+    const digest = await useCase({ pianoDayActivity: port }).execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(port.forLearnerDay).toHaveBeenCalledWith(expect.objectContaining({ studyDay: '2026-08-24', fromMs: expect.any(Number), toMs: expect.any(Number) }));
+    const [call] = port.forLearnerDay.mock.calls[0];
+    expect(call.toMs - call.fromMs).toBe(24 * 60 * 60 * 1000);
+    expect(digest.learners[0].pianoActivity).toEqual({ status: 'ok', studyDay: '2026-08-24', exercises: 4, passed: 3, gameSeconds: 1200 });
+  });
+
+  it('is unavailable, never a zero, when the port is missing or throws', async () => {
+    const none = await useCase().execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(none.learners[0].pianoActivity).toEqual({ status: 'unavailable', studyDay: '2026-08-24' });
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const failing = await useCase({ logger, pianoDayActivity: { forLearnerDay: () => { throw new Error('disk'); } } })
+      .execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(failing.learners[0].pianoActivity.status).toBe('unavailable');
+    expect(logger.warn).toHaveBeenCalledWith('school.teacher-day.piano-activity-failed', expect.objectContaining({ error: 'disk' }));
+  });
+});
+

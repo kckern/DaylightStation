@@ -415,4 +415,17 @@ describe('grownUpHref — one unitId for every destination', () => {
     expect(grownUpHref('history', 'user_4', undefined, row, { attention }))
       .toMatch(/\/sessions\/ses_held/);
   });
+  it('shows reading and piano beside the plan, and says nothing for a source it could not read', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [] }));
+    const row = { ...ROW,
+      readingActivity: { status: 'ok', minutes: 25, bookCount: 1 },
+      pianoActivity: { status: 'ok', exercises: 4, passed: 3, gameSeconds: 1200 } };
+    const { unmount } = render(<RosterStrip rows={[row]} kids={KIDS} studyDay="2026-08-26" />);
+    expect(await screen.findByText('Read 25 min · Piano 4 exercises (3 passed) · 20 min piano games')).toBeInTheDocument();
+    unmount();
+    render(<RosterStrip rows={[{ ...ROW, readingActivity: { status: 'ok', minutes: 0, bookCount: 0 }, pianoActivity: { status: 'unavailable' } }]} kids={KIDS} studyDay="2026-08-26" />);
+    expect(await screen.findByText('No reading yet')).toBeInTheDocument();
+    expect(screen.queryByText(/Piano/)).toBeNull();
+  });
 });
+

@@ -146,6 +146,26 @@ export async function createPianoModule({configService, userService, rootLogger,
     timezone: configService.getTimezone?.() || null,
     logger: rootLogger.child({ component: 'piano-game-budget' }),
   });
+  // One learner's piano study day, for School's teacher digest (Home rows):
+  // exercises attempted / passed in the study window, and game seconds from
+  // the budget's own day file. Read only.
+  const pianoDayActivity = {
+    forLearnerDay({ learnerId, studyDay, fromMs, toMs }) {
+      const attempts = pianoAttemptStore.listRecent(learnerId, { limit: 400 })
+        .filter((attempt) => {
+          const at = Date.parse(attempt?.created_at ?? attempt?.createdAt ?? '');
+          return Number.isFinite(at) && at >= fromMs && at < toMs
+            && (attempt.status === 'completed' || attempt.status === 'timeout');
+        });
+      let gameSeconds = null;
+      try { gameSeconds = pianoGameBudgetStore.loadDay(studyDay)?.learners?.[learnerId]?.totalSeconds ?? 0; } catch { gameSeconds = null; }
+      return {
+        exercises: attempts.length,
+        passed: attempts.filter((attempt) => attempt?.verdict?.passed === true).length,
+        gameSeconds,
+      };
+    },
+  };
   const pianoChallengeProfileService = new PianoChallengeProfileService({
     datastore: pianoStudioDatastore,
   });
@@ -179,5 +199,5 @@ export async function createPianoModule({configService, userService, rootLogger,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
-  return {router, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate};
+  return {router, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate};
 }
