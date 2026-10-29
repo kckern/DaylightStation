@@ -80,6 +80,9 @@ const ready = async () => {
   await waitFor(() => expect(screen.getByRole('navigation', { name: 'Workspace' })).toBeTruthy());
 };
 
+/** A fold's head on the child's page, by the fold's section id. */
+const foldHead = (id) => document.querySelector(`.teacher-learner-fold[data-fold="${id}"] .teacher-learner-fold__head`);
+
 describe('TeacherConsole workspace', () => {
   describe('"Log a book"', () => {
     // No camera in the test browser: the typed number is the way in.
@@ -176,7 +179,7 @@ describe('TeacherConsole workspace', () => {
     act(() => { probe.dispatchEvent(event); });
     expect(event.defaultPrevented).toBe(true);
     expect(window.location.pathname).toBe('/school/teacher/students/user_2/history');
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'User_2 workspace' })).toBeTruthy());
+    await waitFor(() => expect(foldHead('history').getAttribute('aria-expanded')).toBe('true'));
   });
 
   it('re-reads the open reading when an in-console link changes only the query', async () => {
@@ -264,8 +267,10 @@ describe('TeacherConsole workspace', () => {
     // Picking a learner lands on their day record — the workspace's organizing
     // unit — not on the retired Overview tab.
     expect(window.location.pathname).toBe('/school/teacher/students/user_4/day');
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'User_4 workspace' })).toBeTruthy());
-    act(() => fireEvent.click(screen.getByRole('button', { name: 'History' })));
+    // One page per child: no tab strip, the day plus folds (ruling 2026-10-29).
+    await waitFor(() => expect(foldHead('history')).toBeTruthy());
+    expect(screen.queryByRole('navigation', { name: 'User_4 workspace' })).toBeNull();
+    act(() => fireEvent.click(foldHead('history')));
     expect(window.location.pathname).toBe('/school/teacher/students/user_4/history');
     await waitFor(() => expect(screen.getByText('No sessions recorded.')).toBeTruthy());
   });
@@ -273,18 +278,17 @@ describe('TeacherConsole workspace', () => {
   it('restores route state on browser navigation', async () => {
     await ready();
     act(() => { window.history.pushState({}, '', '/school/teacher/students/user_2/reports'); window.dispatchEvent(new PopStateEvent('popstate')); });
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'User_2 workspace' })).toBeTruthy());
-    expect(screen.getByRole('button', { name: 'Reports' }).getAttribute('aria-current')).toBe('page');
+    await waitFor(() => expect(foldHead('reports').getAttribute('aria-expanded')).toBe('true'));
   });
 
   it('redirects the retired /overview alias to the canonical short form (trim 5.6)', async () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/overview');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'User_4 workspace' })).toBeTruthy());
     // The bookmark is canonicalized to the bare learner path — the Day
     // record — not left sitting at the retired /overview URL.
-    expect(window.location.pathname).toBe('/school/teacher/students/user_4');
-    expect(screen.getByRole('button', { name: 'Day' }).getAttribute('aria-current')).toBe('page');
+    await waitFor(() => expect(window.location.pathname).toBe('/school/teacher/students/user_4'));
+    await waitFor(() => expect(foldHead('reading')).toBeTruthy());
+    expect(document.querySelectorAll('.teacher-learner-fold.is-open')).toHaveLength(0);
   });
 
   it('names an unknown bookmarked learner instead of blanking', async () => {
@@ -564,10 +568,11 @@ describe('TeacherConsole workspace', () => {
       window.history.pushState({}, '', '/school/teacher/students/user_4/operations?reason=program_unavailable&unit=unit-a');
       render(<TeacherConsole />);
       await waitFor(() => expect(screen.getByLabelText('Unit to attest').value).toBe('unit-a'));
-      // The learner tab strip's Operations (the rail has a school-wide one too).
-      const learnerNav = document.querySelector('.teacher-workspace__learner-nav');
-      act(() => fireEvent.click(within(learnerNav).getByRole('button', { name: 'Operations' })));
+      // Closing the Fix fold and opening it again starts a clean repair.
+      act(() => fireEvent.click(foldHead('operations')));
+      act(() => fireEvent.click(foldHead('operations')));
       expect(window.location.search).toBe('');
+      expect(window.location.pathname).toBe('/school/teacher/students/user_4/operations');
       await waitFor(() => expect(screen.queryByLabelText('Unit to attest')).toBeNull());
     } finally {
       schoolApi.curriculumUnits.mockImplementation(units);
@@ -745,24 +750,24 @@ describe('TeacherConsole workspace', () => {
     expect(screen.getByText('p. 84 / 184')).toBeTruthy();
   });
 
-  it('reaches the reading workspace from the learner tab strip', async () => {
+  it('reaches the reading workspace from its fold on the child\'s page', async () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/day');
     render(<TeacherConsole />);
-    const strip = await screen.findByRole('navigation', { name: 'User_4 workspace' });
-    fireEvent.click(within(strip).getByRole('button', { name: 'Reading' }));
+    await waitFor(() => expect(foldHead('reading')).toBeTruthy());
+    fireEvent.click(foldHead('reading'));
     expect(window.location.pathname).toBe('/school/teacher/students/user_4/reading');
     expect(await screen.findByText('User_4’s shelf')).toBeTruthy();
   });
 
-  it('shows Day first in the learner tab strip', async () => {
+  it('puts the day first, then one fold per program, closed and unloaded until opened', async () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/day');
     render(<TeacherConsole />);
-    // Scoped to the learner strip: the global rail also owns an "Operations"
-    // button, and it precedes this nav in document order.
-    const strip = await screen.findByRole('navigation', { name: 'User_4 workspace' });
-    const tabs = within(strip).getAllByRole('button');
-    expect(tabs[0]).toHaveTextContent('Day');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Day', 'Courses', 'History', 'Reading', 'Cards', 'Sentences', 'Debriefs', 'Coins', 'Reports', 'Operations']);
+    await waitFor(() => expect(foldHead('reading')).toBeTruthy());
+    const folds = [...document.querySelectorAll('.teacher-learner-fold')].map((node) => node.dataset.fold);
+    expect(folds).toEqual(['reading', 'words', 'sentences', 'debriefs', 'coins', 'courses', 'history', 'reports', 'operations']);
+    // The day sits above every fold; nothing below it has mounted yet.
+    expect(document.querySelector('.teacher-learner-page > .teacher-view')).toBeTruthy();
+    expect(document.querySelectorAll('.teacher-learner-fold__body')).toHaveLength(0);
   });
 
   it('enrolls from the learner\'s Courses tab, on a grid of that learner alone', async () => {

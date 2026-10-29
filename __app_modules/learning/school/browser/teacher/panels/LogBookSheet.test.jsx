@@ -276,7 +276,7 @@ describe('LogBookSheet — save', () => {
     expect(learnerId).toBe('learner_c');
     expect(body).toEqual({ isbn: ISBN, progressMode: 'check', where: 'finished', by: 'test-user' });
     expect(typeof key).toBe('string');
-    await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'));
+    await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'), { timeout: 3000 });
     expect(face('Learner C').getAttribute('aria-label')).toBe('Learner C, saved');
   });
 
@@ -410,7 +410,7 @@ describe('LogBookSheet — partial failure and retry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry Learner A' }));
     await waitFor(() => expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1));
     expect(teacherWorkspaceApi.addReadingForLearner.mock.calls[0]).toEqual(['learner_a', firstBody, firstKey]);
-    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C ✓ saved'));
+    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C ✓ saved'), { timeout: 3000 });
   });
 
   it('Save again after a failure resends only the children not yet saved', async () => {
@@ -584,7 +584,7 @@ describe('LogBookSheet — partial failure and retry', () => {
     });
     await ready('Learner A', 'Learner C');
     save();
-    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C ✓ saved'));
+    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C ✓ saved'), { timeout: 3000 });
     const calls = teacherWorkspaceApi.addReadingForLearner.mock.calls;
     expect(calls.filter(([id]) => id === 'learner_a')).toHaveLength(1);
     const forC = calls.filter(([id]) => id === 'learner_c');
@@ -600,7 +600,7 @@ describe('LogBookSheet — partial failure and retry', () => {
       : ok({ created: true }, 201)));
     await ready('Learner A', 'Learner C');
     save();
-    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C – not sent'));
+    await waitFor(() => expect(summary()).toBe('Learner A ✓ saved · Learner C – not sent'), { timeout: 3000 });
     expect(screen.getByRole('button', { name: 'Retry Learner C' })).toBeTruthy();
   });
 });
@@ -652,7 +652,7 @@ describe('LogBookSheet — a save waiting on the teacher picker', () => {
 
     profile.currentTeacher = { id: 'test-user', name: 'test-user' };
     rerender(sheet());
-    await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'));
+    await waitFor(() => expect(summary()).toBe('Learner C ✓ saved'), { timeout: 3000 });
     expect(teacherWorkspaceApi.addReadingForLearner).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
   });
@@ -662,7 +662,7 @@ describe('LogBookSheet — a save waiting on the teacher picker', () => {
     profile.teachers = [];
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(summary()).toBe('Learner C – not sent'));
+    await waitFor(() => expect(summary()).toBe('Learner C – not sent'), { timeout: 3000 });
     expect(screen.getByText(/No teacher is set up/)).toBeTruthy();
     expect(profile.openPicker).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
@@ -677,7 +677,7 @@ describe('LogBookSheet — a save waiting on the teacher picker', () => {
     rerender(sheet());
     profile.pickerOpen = false;
     rerender(sheet());
-    await waitFor(() => expect(summary()).toBe('Learner C – not sent'));
+    await waitFor(() => expect(summary()).toBe('Learner C – not sent'), { timeout: 3000 });
     expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
   });

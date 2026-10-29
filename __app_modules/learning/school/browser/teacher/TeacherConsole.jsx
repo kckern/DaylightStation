@@ -21,9 +21,9 @@ import {
 import { humanDate, localDay } from "./teacherDates.js";
 import TabErrorBoundary from "./TabErrorBoundary.jsx";
 import {
-  CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
-  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector, WordsView, SentencesView, DebriefsView, CoinsView, CoinsRosterView,
+  CurriculumView, DashboardView, OperationsView, QueueView, SessionInspector, CoinsRosterView,
 } from "./WorkspaceViews.jsx";
+import LearnerPage from "./LearnerPage.jsx";
 import "./Teacher.scss";
 
 // `short` is the phone tab label — a truthful abbreviation of the SAME word,
@@ -43,18 +43,6 @@ const GLOBAL_NAV = [
 const SECTION_LABEL = { ...Object.fromEntries(GLOBAL_NAV.map((item) => [item.id, item.label])), queue: 'Action queue', coins: 'Coins' };
 /** The phone layout's breakpoint (`Teacher.scss`): the rail becomes a drawer. */
 const PHONE_QUERY = '(max-width: 760px)';
-const LEARNER_NAV = [
-  { id: 'day', label: 'Day' },
-  { id: 'courses', label: 'Courses' },
-  { id: 'history', label: 'History' },
-  { id: 'reading', label: 'Reading' },
-  { id: 'words', label: 'Cards' }, // id kept: console links name the tab `words`
-  { id: 'sentences', label: 'Sentences' },
-  { id: 'debriefs', label: 'Debriefs' },
-  { id: 'coins', label: 'Coins' },
-  { id: 'reports', label: 'Reports' },
-  { id: 'operations', label: 'Operations' },
-];
 
 function TeacherShell({ PianoProgramsPanel }) {
   const {
@@ -177,23 +165,16 @@ function TeacherShell({ PianoProgramsPanel }) {
     view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids}
       backLabel={backLabel} onBack={onBack} />;
   } else if (route.kind === 'learner' && learner) {
-    const views = {
-      day: <LearnerDayScreen learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
-        onChangeStudyDay={goDay} onOpenSession={(sessionId) => goSession(sessionId, { from: 'day', studyDay })} />,
-      courses: <CoursesView learnerId={learner.id} learnerName={learner.name} courseId={route.courseId} kids={kids} PianoProgramsPanel={PianoProgramsPanel} />,
-      history: <HistoryView learnerId={learner.id} learnerName={learner.name}
-        onOpenSession={(sessionId) => goSession(sessionId, { from: 'history' })} />,
-      reading: <ReadingView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
-      words: <WordsView learnerId={learner.id} learnerName={learner.name} />,
-      sentences: <SentencesView learnerId={learner.id} learnerName={learner.name} />,
-      debriefs: <DebriefsView learnerId={learner.id} learnerName={learner.name} />,
-      coins: <CoinsView learnerId={learner.id} learnerName={learner.name} />,
-      reports: <ReportsView learnerId={learner.id} kids={kids} />,
-      // Keyed by the query: a different `?reason/unit/day` is a different
-      // repair context, and the panels below seed from it only on mount.
-      operations: <LearnerOperationsView key={`${learner.id}${window.location.search}`} learnerId={learner.id} learnerName={learner.name} kids={kids} />,
-    };
-    view = views[route.section] ?? views.day;
+    // One page per child (owner ruling 2026-10-29): the day, then folds. A
+    // section in the URL opens that fold; opening one writes it back.
+    view = <LearnerPage learner={learner} route={route} kids={kids} studyDay={studyDay}
+      onChangeStudyDay={goDay}
+      onOpenSession={(sessionId) => goSession(sessionId, { from: 'day', studyDay })}
+      onOpenSessionFrom={(sessionId, from) => goSession(sessionId, { from })}
+      onReplacePath={(section) => navigate(section === 'day' && route.studyDay
+        ? teacherDayPath(learner.id, route.studyDay, route.base)
+        : teacherLearnerPath(learner.id, section, null, route.base), true)}
+      PianoProgramsPanel={PianoProgramsPanel} />;
   } else {
     const views = {
       dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} backlog={backlog} onOpenQueue={() => goGlobal('queue')} />,
@@ -254,11 +235,6 @@ function TeacherShell({ PianoProgramsPanel }) {
                 {shellWarnings.roster && <span>Student roster unavailable. Navigation may be incomplete.</span>}
                 {backlog.failed && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
               </div>
-            )}
-            {learner && route.kind !== 'session' && (
-              <nav className="teacher-workspace__learner-nav" aria-label={`${learner.name} workspace`}>
-                {LEARNER_NAV.map((item) => <button key={item.id} type="button" aria-current={route.section === item.id ? 'page' : undefined} onClick={() => goLearner(learner.id, item.id)}>{item.label}</button>)}
-              </nav>
             )}
             <main className="teacher-console__body" id="teacher-main">
               {!learner && route.kind === 'learner' ? (

@@ -394,6 +394,9 @@ export default function CardLadderWordsPanel({ learnerId, deckId, title = null, 
       unavailableCopy="Card ladder is not available on this install."
     >
       <div className="teacher-card-ladder">
+        {/* Scrolls inside the panel: ten columns never fit a phone, and the
+            page itself must not scroll sideways (audit 2026-10-29). */}
+        <div className="teacher-card-ladder__scroll">
         <table className="teacher-card-ladder__table">
           <thead>
             <tr>
@@ -407,6 +410,7 @@ export default function CardLadderWordsPanel({ learnerId, deckId, title = null, 
             ))}
           </tbody>
         </table>
+        </div>
         <DeckPool decksSeen={decksSeen} droppableDecks={droppableDecks} learnerId={learnerId} deckId={deckId} deckLabel={deckLabel} run={run} busy={busy} errors={errors} />
         <TuningSection learnerId={learnerId} deckId={deckId} actorId={actorId} rawRun={rawRun} busy={busy} errors={errors} nameOf={nameOf} />
       </div>

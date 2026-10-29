@@ -504,8 +504,14 @@ export function WordsView({ learnerId, learnerName }) {
         unavailableCopy="Assignments are not enabled on this install.">
         {decks.map((entry) => (
           <Fragment key={entry.deckId}>
-            <CardLadderWordsPanel learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} deckTitles={deckTitles} />
+            {/* What they did first; the word table (state + grown-up controls)
+                after it — a parent reads the days far more often than they
+                reset a word (audit 2026-10-29, job 6). */}
             <CardLadderDaysPanel learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} />
+            <details className="teacher-manage-words">
+              <summary>Manage words — state, reset, master, exclude, re-grade</summary>
+              <CardLadderWordsPanel learnerId={learnerId} deckId={entry.deckId} title={entry.title ?? null} deckTitles={deckTitles} />
+            </details>
           </Fragment>
         ))}
       </PanelFrame>
