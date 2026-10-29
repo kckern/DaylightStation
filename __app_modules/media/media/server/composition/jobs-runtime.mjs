@@ -3,6 +3,7 @@ import {MediaJobExecutor} from '../application/MediaJobExecutor.mjs';
 import {MediaDownloadService} from '../application/services/MediaDownloadService.mjs';
 import {createFreshVideoJobHandler} from '../application/FreshVideoJobHandler.mjs';
 import {YtDlpAdapter} from '../adapters/YtDlpAdapter.mjs';
+import {CuratedPageVideoGateway} from '../adapters/CuratedPageVideoGateway.mjs';
 
 export async function createMediaJobsRuntime({rootLogger,mediaBasePath,loadFile}) {
   // Media job executor (YouTube downloads, etc.)
@@ -17,9 +18,14 @@ export async function createMediaJobsRuntime({rootLogger,mediaBasePath,loadFile}
     const { NewsMediaStore } = await import('../adapters/persistence/NewsMediaStore.mjs');
     const newsMediaStore = new NewsMediaStore({ mediaRoot: mediaBasePath });
 
-    const videoSourceGateway = new YtDlpAdapter({
-      downloadRoot: mediaPath,
-      logger: rootLogger.child({ module: 'ytdlp' })
+    // `type: page` sources (curated web pages) resolve to one embedded video
+    // before yt-dlp sees them; every other source passes straight through.
+    const videoSourceGateway = new CuratedPageVideoGateway({
+      inner: new YtDlpAdapter({
+        downloadRoot: mediaPath,
+        logger: rootLogger.child({ module: 'ytdlp' })
+      }),
+      logger: rootLogger.child({ module: 'freshvideo-page' })
     });
 
     mediaDownloadService = new MediaDownloadService({
@@ -41,6 +47,8 @@ export async function createMediaJobsRuntime({rootLogger,mediaBasePath,loadFile}
           platform: source.src || 'youtube',
           collectionType: String(source.type || 'playlist').toLowerCase(),
           locator: source.playlist,
+          linkPattern: source.link_pattern || null,
+          description: source.description || null,
         },
       })),
     };
