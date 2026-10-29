@@ -77,15 +77,6 @@ public final class WifiLinkPolicy {
         return s;
     }
 
-    /** SSID without Android's surrounding quotes, or null for "<unknown ssid>" / empty. */
-    public static String normalizeSsid(String s) {
-        if (s == null) return null;
-        String t = s.trim();
-        if (t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")) t = t.substring(1, t.length() - 1);
-        if (t.isEmpty() || "<unknown ssid>".equalsIgnoreCase(t)) return null;
-        return t;
-    }
-
     /** Comma-joined reasons ("rssi", "linkSpeed", "disconnected"), or null when healthy. */
     public static String degradedReason(boolean connected, int rssi, int linkSpeedMbps, Thresholds t) {
         if (!connected) return "disconnected";
@@ -105,8 +96,7 @@ public final class WifiLinkPolicy {
         public int rxLinkSpeedMbps = -1;
         public int txLinkSpeedMbps = -1;
         public int freqMhz = -1;
-        public String bssid;
-        public String ssid;
+        public String bssid;            // no SSID on purpose: the network name identifies the household
         public long rxBytes = -1;       // TrafficStats.getTotalRxBytes()
         public long txBytes = -1;
     }
@@ -116,7 +106,7 @@ public final class WifiLinkPolicy {
         public final long seq, epochMs;
         public final boolean connected;
         public final int rssi, linkSpeedMbps, rxLinkSpeedMbps, txLinkSpeedMbps, freqMhz;
-        public final String band, bssid, ssid;
+        public final String band, bssid;
         public final long rxKbps, txKbps;
         public final boolean degraded;
         public final String degradedReason;
@@ -125,7 +115,7 @@ public final class WifiLinkPolicy {
         public final int roamFromFreqMhz;
         public final int roamFromRssi;
 
-        Sample(long seq, Reading r, String bssid, String ssid, long rxKbps, long txKbps,
+        Sample(long seq, Reading r, String bssid, long rxKbps, long txKbps,
                String degradedReason, String roamFrom, int roamFromFreqMhz, int roamFromRssi) {
             this.seq = seq;
             this.epochMs = r.epochMs;
@@ -137,7 +127,6 @@ public final class WifiLinkPolicy {
             this.freqMhz = r.freqMhz;
             this.band = band(r.freqMhz);
             this.bssid = bssid;
-            this.ssid = ssid;
             this.rxKbps = rxKbps;
             this.txKbps = txKbps;
             this.degradedReason = degradedReason;
@@ -162,7 +151,6 @@ public final class WifiLinkPolicy {
                 o.put("freqMhz", freqMhz);
                 o.put("band", band);
                 o.put("bssid", bssid == null ? JSONObject.NULL : bssid);
-                o.put("ssid", ssid == null ? JSONObject.NULL : ssid);
                 o.put("rxKbps", rxKbps);
                 o.put("txKbps", txKbps);
                 o.put("degraded", degraded);
@@ -228,7 +216,7 @@ public final class WifiLinkPolicy {
                 lastFreqMhz = r.freqMhz;
                 lastRssi = r.rssi;
             }
-            Sample s = new Sample(++seq, r, bssid, normalizeSsid(r.ssid), rx, tx,
+            Sample s = new Sample(++seq, r, bssid, rx, tx,
                     degradedReason(r.connected, r.rssi, r.linkSpeedMbps, t), roamFrom, roamFromFreq, roamFromRssi);
             prev = r;
             if (ring.size() >= capacity) ring.pollFirst();
@@ -244,5 +232,55 @@ public final class WifiLinkPolicy {
             for (Sample s : ring) a.put(s.toJson());
             return a;
         }
+    }
+    /**
+     * Log lines waiting to be posted, oldest first, capped (oldest evicted first).
+     * Every line gets a monotonic id; {@link #ack} removes by id, so a line evicted or
+     * added while a post was in flight can never make an unsent line disappear.
+     * (The first cut removed "the first n" after the post — a concurrent add at
+     * capacity shifted the queue and that dropped never-sent lines.)
+     */
+    public static final class Backlog {
+        public static final class Batch {
+            public final String body;
+            final long lastId;
+            public final int lines;
+            Batch(String body, long lastId, int lines) { this.body = body; this.lastId = lastId; this.lines = lines; }
+        }
+
+        private static final class Entry {
+            final long id; final String line;
+            Entry(long id, String line) { this.id = id; this.line = line; }
+        }
+
+        private final int capacity;
+        private final ArrayDeque<Entry> q = new ArrayDeque<>();
+        private long nextId;
+        private int dropped;
+
+        public Backlog(int capacity) { this.capacity = Math.max(1, capacity); }
+
+        public synchronized void add(String line) {
+            q.addLast(new Entry(++nextId, line));
+            while (q.size() > capacity) { q.pollFirst(); dropped++; }
+        }
+
+        /** Everything queued now, as one jsonline body; null when empty. */
+        public synchronized Batch snapshot() {
+            if (q.isEmpty()) return null;
+            StringBuilder sb = new StringBuilder();
+            for (Entry e : q) sb.append(e.line);
+            return new Batch(sb.toString(), q.peekLast().id, q.size());
+        }
+
+        /** The batch was stored: drop every line it contained that is still queued. */
+        public synchronized void ack(Batch b) {
+            if (b == null) return;
+            while (!q.isEmpty() && q.peekFirst().id <= b.lastId) q.pollFirst();
+        }
+
+        public synchronized void clear() { q.clear(); }
+        public synchronized int size() { return q.size(); }
+        public synchronized int dropped() { return dropped; }
     }
 }

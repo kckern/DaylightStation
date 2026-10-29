@@ -233,7 +233,7 @@ Every `wifiSampleIntervalMs` (default 10000, minimum 2000) the payload reads
 
 | Event (`context.app:piano-bridge`) | Level | When | Fields (`data.*`) |
 |---|---|---|---|
-| `bridge.wifi` | `info`, or `warn` when degraded | every sample | `connected rssi linkSpeedMbps rxLinkSpeedMbps txLinkSpeedMbps freqMhz band bssid ssid rxKbps txKbps degraded degradedReason roamed roamFrom seq epochMs intervalMs backlog failures` |
+| `bridge.wifi` | `info`, or `warn` when degraded | every sample | `connected rssi linkSpeedMbps rxLinkSpeedMbps txLinkSpeedMbps freqMhz band bssid rxKbps txKbps degraded degradedReason roamed roamFrom seq epochMs intervalMs backlog failures` |
 | `bridge.wifi.roam` | `info` | the first sample on a new BSSID, even across a disconnected gap | `from to fromFreqMhz toFreqMhz fromBand toBand fromRssi toRssi roams` |
 | `bridge.heartbeat` | (unchanged) | every beat | adds `data.wifi.{rssi,linkSpeedMbps,freqMhz,band,bssid,rxKbps,degraded,ageMs}` |
 
@@ -244,10 +244,15 @@ Every `wifiSampleIntervalMs` (default 10000, minimum 2000) the payload reads
   below 20 Mbps (`wifiDegradedLinkMbps`), or no association at all. `degradedReason` is a
   comma list of `rssi`, `linkSpeed` or `disconnected`. Invalid readings (rssi -127, rate
   -1) never count as degraded on their own.
-- Android's redacted values (`<unknown ssid>`, `02:00:00:00:00:00`) are reported as `null`.
+- The SSID is never read, logged or served: the network name identifies the household.
+  The BSSID is kept, because roam detection needs it.
+- Android's redacted BSSID (`02:00:00:00:00:00`) is reported as `null`. On Android 10 that
+  happens whenever Location *services* are off, even with the permission granted, and a
+  null `bssid` leaves roam detection blind.
 - **Samples taken while the link is down are not lost.** Unsent lines wait in a backlog
   of up to 180 (about 30 min), stamped with the time they were *measured*, and go out
-  with the next post that succeeds. Failures are counted (`failures`, `/wifi`), not logged
+  with the next post that succeeds. Sent lines leave the queue by id, so a line added
+  or evicted while a post is in flight can never take an unsent line with it. Failures are counted (`failures`, `/wifi`), not logged
   on every tick.
 - `wifiTelemetryEnabled: false` turns it off. All four keys change live with `pbctl config set`.
 

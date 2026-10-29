@@ -499,6 +499,15 @@ How to read it:
   original timestamps, so a late batch of `data.connected:false` rows means the
   tablet really lost its association.
 
+Two blind spots:
+
+- **`data.bssid` is null:** Android 10 redacts the BSSID unless Location *services*
+  are switched on. Holding the location permission is not enough. While it is null,
+  roams cannot be seen at all, so a missing `bridge.wifi.roam` row proves nothing.
+  `data.band` and `data.freqMhz` still change on a roam between bands.
+- **Do not lean on `navigator.connection` in the WebView.** Its `downlink`/`rtt` are
+  coarse and capped, so they cannot show a collapse like this one. Use `rxKbps` here.
+
 On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=1`
 (CORS-open) and log the current sample together with the last 60. From a shell, run
 `pbctl wifi`.

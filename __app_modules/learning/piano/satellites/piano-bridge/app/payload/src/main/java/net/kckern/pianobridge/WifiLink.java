@@ -14,7 +14,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,8 +25,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * has an answer after the fact. Added in p34 after the 2026-10-28 lesson-video stalls,
  * where delivery to the tablet collapsed and nothing recorded why.
  *
- * Each tick reads WifiManager.getConnectionInfo() (rssi, link rates, frequency, BSSID,
- * SSID — ACCESS_FINE_LOCATION is granted, and the redacted placeholders are tolerated)
+ * Each tick reads WifiManager.getConnectionInfo() (rssi, link rates, frequency, BSSID —
+ * ACCESS_FINE_LOCATION is granted, and the redacted placeholder is tolerated; the SSID
+ * is deliberately never read, since the network name identifies the household)
  * plus TrafficStats total byte counters for real throughput, then:
  *  - posts {@code bridge.wifi} (level warn when degraded) — same envelope and sink as
  *    the heartbeat, so {@code context.app:piano-bridge} finds it;
@@ -56,9 +56,8 @@ public final class WifiLink {
     private long runningEveryMs;
 
     private final WifiLinkPolicy.Tracker tracker = new WifiLinkPolicy.Tracker(RING);
-    private final ArrayDeque<String> backlog = new ArrayDeque<>();
+    private final WifiLinkPolicy.Backlog backlog = new WifiLinkPolicy.Backlog(MAX_BACKLOG);
     private final AtomicInteger logStoreFailures = new AtomicInteger();
-    private final AtomicInteger dropped = new AtomicInteger();
     private final AtomicInteger roams = new AtomicInteger();
     private final AtomicLong lastOkAtMs = new AtomicLong();
     private volatile String lastError;
@@ -155,7 +154,6 @@ public final class WifiLink {
                 r.txLinkSpeedMbps = info.getTxLinkSpeedMbps();
                 r.freqMhz = info.getFrequency();
                 r.bssid = info.getBSSID();
-                r.ssid = info.getSSID();
             }
         } catch (Throwable t) {
             lastError = "read: " + t;
@@ -167,28 +165,18 @@ public final class WifiLink {
         return r;
     }
 
-    private void enqueue(String line) {
-        synchronized (backlog) {
-            backlog.addLast(line);
-            while (backlog.size() > MAX_BACKLOG) { backlog.pollFirst(); dropped.incrementAndGet(); }
-        }
-    }
+    private void enqueue(String line) { backlog.add(line); }
 
-    private int backlogSize() { synchronized (backlog) { return backlog.size(); } }
+    private int backlogSize() { return backlog.size(); }
 
     /** Post every queued line in one jsonline request; keep them on failure. */
     private void flush() {
         String url = cfg.heartbeatLogStoreUrl();
-        if (url == null || url.isEmpty()) { synchronized (backlog) { backlog.clear(); } return; }
-        int n;
-        StringBuilder sb = new StringBuilder();
-        synchronized (backlog) {
-            n = backlog.size();
-            if (n == 0) return;
-            for (String l : backlog) sb.append(l);
-        }
-        if (post(url, sb.toString())) {
-            synchronized (backlog) { for (int i = 0; i < n && !backlog.isEmpty(); i++) backlog.pollFirst(); }
+        if (url == null || url.isEmpty()) { backlog.clear(); return; }
+        WifiLinkPolicy.Backlog.Batch batch = backlog.snapshot();
+        if (batch == null) return;
+        if (post(url, batch.body)) {
+            backlog.ack(batch);   // by id: lines added/evicted mid-post are safe
             lastOkAtMs.set(System.currentTimeMillis());
         } else {
             logStoreFailures.incrementAndGet();
@@ -246,7 +234,7 @@ public final class WifiLink {
             o.put("thresholds", thresholds().toJson());
             o.put("roams", roams.get());
             o.put("backlog", backlogSize());
-            o.put("dropped", dropped.get());
+            o.put("dropped", backlog.dropped());
             o.put("failures", new JSONObject().put("logStore", logStoreFailures.get()));
             o.put("lastOkAgoMs", lastOkAtMs.get() == 0 ? -1 : System.currentTimeMillis() - lastOkAtMs.get());
             o.put("lastError", lastError == null ? JSONObject.NULL : lastError);

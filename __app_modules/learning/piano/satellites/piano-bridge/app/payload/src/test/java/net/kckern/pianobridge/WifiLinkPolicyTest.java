@@ -32,7 +32,6 @@ public class WifiLinkPolicyTest {
         r.txLinkSpeedMbps = link;
         r.freqMhz = freq;
         r.bssid = bssid;
-        r.ssid = "\"house\"";
         r.rxBytes = rx;
         r.txBytes = tx;
         return r;
@@ -80,18 +79,13 @@ public class WifiLinkPolicyTest {
 
     // --- identity normalization ---------------------------------------------
 
-    @Test public void placeholderBssidAndSsidAreNull() {
+    @Test public void placeholderBssidIsNull() {
         // Without location access Android redacts both; never report them as a real AP.
         assertNull(WifiLinkPolicy.normalizeBssid("02:00:00:00:00:00"));
         assertNull(WifiLinkPolicy.normalizeBssid(null));
         assertNull(WifiLinkPolicy.normalizeBssid(""));
         assertNull(WifiLinkPolicy.normalizeBssid("00:00:00:00:00:00"));
         assertEquals("aa:bb:cc:dd:ee:ff", WifiLinkPolicy.normalizeBssid("AA:BB:CC:DD:EE:FF"));
-        assertNull(WifiLinkPolicy.normalizeSsid("<unknown ssid>"));
-        assertNull(WifiLinkPolicy.normalizeSsid(null));
-        assertNull(WifiLinkPolicy.normalizeSsid("\"\""));
-        assertEquals("house", WifiLinkPolicy.normalizeSsid("\"house\""));
-        assertEquals("bare", WifiLinkPolicy.normalizeSsid("bare"));
     }
 
     // --- degraded verdict ---------------------------------------------------
@@ -129,7 +123,6 @@ public class WifiLinkPolicyTest {
         assertFalse(s.roamed);
         assertFalse(s.degraded);
         assertEquals("5GHz", s.band);
-        assertEquals("house", s.ssid);
     }
 
     @Test public void secondSampleCarriesRatesFromTheDelta() {
@@ -219,7 +212,7 @@ public class WifiLinkPolicyTest {
         assertEquals(2437, o.getInt("freqMhz"));
         assertEquals("2.4GHz", o.getString("band"));
         assertEquals("aa:aa:aa:aa:aa:02", o.getString("bssid"));
-        assertEquals("house", o.getString("ssid"));
+        assertFalse("the network name is household-identifying; never logged or served", o.has("ssid"));
         assertEquals(10, o.getLong("rxKbps"));
         assertEquals(0, o.getLong("txKbps"));
         assertTrue(o.getBoolean("connected"));
@@ -247,10 +240,47 @@ public class WifiLinkPolicyTest {
     @Test public void unknownIdentityIsJsonNullNotAPlaceholder() throws Exception {
         WifiLinkPolicy.Tracker tr = new WifiLinkPolicy.Tracker(60);
         WifiLinkPolicy.Reading r = reading(0, -55, 144, 5180, "02:00:00:00:00:00", 0, 0);
-        r.ssid = "<unknown ssid>";
         JSONObject o = tr.add(r, T).toJson();
         assertTrue(o.isNull("bssid"));
-        assertTrue(o.isNull("ssid"));
+    }
+
+    // --- backlog: unsent lines survive, sent lines leave, by identity ----
+
+    @Test public void ackRemovesExactlyTheLinesThatWereSent() {
+        WifiLinkPolicy.Backlog b = new WifiLinkPolicy.Backlog(10);
+        b.add("a"); b.add("b");
+        WifiLinkPolicy.Backlog.Batch batch = b.snapshot();
+        assertEquals("ab", batch.body);
+        b.add("c");                      // arrives while the post is in flight
+        b.ack(batch);
+        assertEquals(1, b.size());
+        assertEquals("c", b.snapshot().body);
+    }
+
+    @Test public void evictionDuringAPostNeverDropsAnUnsentLine() {
+        // Review finding: snapshot -> (concurrent enqueue at capacity evicts the
+        // oldest) -> "remove the first n" removed lines that were never sent.
+        WifiLinkPolicy.Backlog b = new WifiLinkPolicy.Backlog(3);
+        b.add("1"); b.add("2"); b.add("3");          // full
+        WifiLinkPolicy.Backlog.Batch batch = b.snapshot();   // sends 1,2,3
+        b.add("4");                                  // evicts 1 (sent anyway)
+        b.add("5");                                  // evicts 2
+        assertEquals(2, b.dropped());
+        b.ack(batch);                                // 3 was sent; 4,5 were not
+        assertEquals("45", b.snapshot().body);
+        assertEquals(2, b.size());
+    }
+
+    @Test public void failedPostKeepsEverything() {
+        WifiLinkPolicy.Backlog b = new WifiLinkPolicy.Backlog(10);
+        b.add("a");
+        b.snapshot();                    // post failed: no ack
+        b.add("b");
+        assertEquals("ab", b.snapshot().body);
+    }
+
+    @Test public void emptySnapshotIsNull() {
+        assertNull(new WifiLinkPolicy.Backlog(5).snapshot());
     }
 
     // --- log line timestamp -------------------------------------------------
