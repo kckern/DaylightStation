@@ -139,7 +139,16 @@ function TeacherShell({ PianoProgramsPanel }) {
   const goLearner = (learnerId, section = 'day', detail = null) => navigate(teacherLearnerPath(learnerId, section, detail, route.base));
   const goSession = (sessionId, origin = {}) => navigate(teacherSessionPath(route.learnerId, sessionId, route.base, origin));
   const studyDay = route.studyDay ?? localDay();
-  const goDay = (nextDay) => navigate(teacherDayPath(route.learnerId, nextDay, route.base));
+  // Stepping the day keeps the child's page as it was: the open fold and a
+  // Fix fold's repair context ride along on the new day's path.
+  const PAGE_PARAMS = ['fold', 'reason', 'subject', 'unit', 'day'];
+  const goDay = (nextDay) => {
+    const kept = new URLSearchParams();
+    const current = new URLSearchParams(window.location.search);
+    PAGE_PARAMS.forEach((key) => { if (current.get(key)) kept.set(key, current.get(key)); });
+    const search = kept.toString();
+    navigate(`${teacherDayPath(route.learnerId, nextDay, route.base)}${search ? `?${search}` : ''}`);
+  };
 
   if (status !== 'ready') return <div className="teacher-console-page"><div className="teacher-console teacher-console--loading">Loading teacher workspace…</div></div>;
 
@@ -177,7 +186,9 @@ function TeacherShell({ PianoProgramsPanel }) {
       onOpenSession={(sessionId) => goSession(sessionId, { from: 'day', studyDay })}
       onOpenSessionFrom={(sessionId, from) => goSession(sessionId, { from })}
       onReplaceUrl={(params) => {
-        const path = FOLD_SECTIONS.has(route.section)
+        // A course drill-in (`/courses/:courseId`) keeps its path: rewriting
+        // it to the day would drop the course the Courses fold is showing.
+        const path = FOLD_SECTIONS.has(route.section) && !route.courseId
           ? teacherDayPath(learner.id, route.studyDay, route.base)
           : window.location.pathname;
         const search = params.toString();

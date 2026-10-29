@@ -640,6 +640,13 @@ export function OperationsView({ kids }) {
   // open here, above the school-wide ones — the old learner Operations tab and
   // School → Operations each held half of one chooser.
   const [learner, setLearner] = useState(() => params.get('learner') ?? '');
+  // The rail's Fix (same path, no `?learner=`) and Back/Forward move the pick
+  // with the URL; the page is not remounted for them.
+  useEffect(() => {
+    const onPop = () => setLearner(new URLSearchParams(window.location.search).get('learner') ?? '');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const chosen = kids.find((kid) => kid.id === learner) ?? null;
   const pick = (id) => {
     setLearner(id);

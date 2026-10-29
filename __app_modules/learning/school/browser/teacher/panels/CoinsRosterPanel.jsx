@@ -10,9 +10,11 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { weekLabel, shiftWeek } from "./earningsModel.js";
 
-function greenDays(work) {
-  const school = (work?.days ?? []).filter((d) => d.state !== 'exempt');
-  return `${school.filter((d) => d.state === 'met').length} of ${school.length}`;
+// The same count Home shows: days that are over, plus today once it is green.
+function greenDays(work, today = null) {
+  const counted = (work?.days ?? []).filter((d) => d.state !== 'exempt'
+    && (!today || d.day < today || (d.day === today && d.state === 'met')));
+  return `${counted.filter((d) => d.state === 'met').length} of ${counted.length}`;
 }
 
 function pendingText(pending) {
@@ -51,7 +53,7 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
                   <td className="teacher-coins__amount">{l.totals.silver}</td>
                   <td>{l.totals.gems || ''}</td>
                   <td className="teacher-coins__pending">{pendingText(l.pending)}</td>
-                  <td>{greenDays(l.work)}</td>
+                  <td>{greenDays(l.work, data.today ?? null)}</td>
                   <td>{Number.isFinite(l.work?.rings) ? l.work.rings : (l.evidence?.rings === 'unavailable' ? '?' : '')}</td>
                   <td>
                     <button type="button" aria-label={`Open ${l.learnerName ?? l.learnerId}’s coins`} onClick={() => onSelectLearner?.(l.learnerId)}>Details</button>

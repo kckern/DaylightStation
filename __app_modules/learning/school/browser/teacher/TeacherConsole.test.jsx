@@ -575,6 +575,15 @@ describe('TeacherConsole workspace', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('carries the open fold to another day when the day is stepped', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/day/2026-10-27?fold=history');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(foldHead('history').getAttribute('aria-expanded')).toBe('true'));
+    fireEvent.change(screen.getByLabelText('Jump to'), { target: { value: '2026-10-26' } });
+    expect(window.location.pathname).toBe('/school/teacher/students/user_4/day/2026-10-26');
+    expect(window.location.search).toBe('?fold=history');
+  });
+
   it('keeps a preselected repair while another fold is opened (review 2026-10-29)', async () => {
     const units = schoolApi.curriculumUnits.getMockImplementation();
     schoolApi.curriculumUnits.mockImplementation(async () => ({ ok: true, status: 200, data: { units: [{ unitId: 'unit-a', title: 'Staccato', courseId: 'c1' }] } }));
