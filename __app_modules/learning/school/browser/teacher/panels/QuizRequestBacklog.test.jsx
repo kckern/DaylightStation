@@ -6,7 +6,7 @@ import PinPrompt from "./PinPrompt.jsx";
 
 vi.mock("../teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   authStatus: vi.fn(async () => {
-    const userId = sessionStorage.getItem('school-teacher-claim');
+    const userId = localStorage.getItem('school-teacher-claim');
     return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
   }),
   unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
@@ -36,9 +36,9 @@ const mount = (ui) => render(<TeacherProfileProvider>{ui}<PinPrompt /><ShellProb
 const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('teacher_1'));
 
 beforeEach(() => {
-  sessionStorage.clear();
+  localStorage.clear();
   vi.clearAllMocks();
-  sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+  localStorage.setItem('school-teacher-claim', 'teacher_1');
   schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] }));
   schoolApi.quizRequests.mockResolvedValue(ok([{ kind: 'retake', userId: 'user_4', unitId: 'unit-a', sessionId: 'ses_7', title: 'Fractions' }]));
   schoolApi.quizRequestDismiss.mockResolvedValue(ok({ dismissed: true }));

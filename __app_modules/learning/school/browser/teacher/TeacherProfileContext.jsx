@@ -1,7 +1,9 @@
 /**
  * Teacher identity + authorization container.
  *
- * The selected teacher is a soft, sessionStorage-backed UI claim. Authority is
+ * The selected teacher is a soft, localStorage-backed UI claim — remembered
+ * across reloads and tabs so a grown-up picks once, forgotten only by Lock or
+ * when the id leaves the teacher roster. Authority is
  * a short-lived, server-owned HttpOnly capability cookie. PINs only exist in
  * the PinPrompt input long enough to unlock or mint a one-use step-up grant;
  * they are never stored in this context or attached to ordinary writes.
@@ -12,6 +14,14 @@ import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
 import { teacherLog } from "./teacherLog.js";
 
 const STORAGE_KEY = 'school-teacher-claim';
+// Storage can be absent or throw (private window, blocked site data): the
+// claim is a convenience, so a failed read is "nobody picked" and a failed
+// write is silently not remembered.
+const claimStore = {
+  get() { try { return window.localStorage.getItem(STORAGE_KEY); } catch { return null; } },
+  set(id) { try { window.localStorage.setItem(STORAGE_KEY, id); } catch { /* not remembered */ } },
+  clear() { try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* nothing to clear */ } },
+};
 const TeacherProfileContext = createContext(null);
 
 const inactiveAuthorization = () => ({ active: false, userId: null, idleExpiresAt: null, absoluteExpiresAt: null });
@@ -53,7 +63,7 @@ export function TeacherProfileProvider({ children }) {
       pinRequiredRef.current = authResponse.data?.pinRequired !== false;
       const serverAuth = authResponse.ok && authResponse.data?.active ? authResponse.data : inactiveAuthorization();
       const authenticatedId = list.some((teacher) => teacher.id === serverAuth.userId) ? serverAuth.userId : null;
-      const stored = sessionStorage.getItem(STORAGE_KEY);
+      const stored = claimStore.get();
       const storedId = list.some((teacher) => teacher.id === stored) ? stored : null;
       const resolvedId = authenticatedId ?? storedId;
       if (resolvedId) {
@@ -62,11 +72,11 @@ export function TeacherProfileProvider({ children }) {
         // a still-null ref and incorrectly refuse the action.
         currentIdRef.current = resolvedId;
         setCurrentId(resolvedId);
-        sessionStorage.setItem(STORAGE_KEY, resolvedId);
+        claimStore.set(resolvedId);
         teacherLog.claim(authenticatedId ? 'session-restored' : 'restored', { teacherId: resolvedId });
       } else {
         currentIdRef.current = null;
-        sessionStorage.removeItem(STORAGE_KEY);
+        claimStore.clear();
       }
       const resolvedAuthorization = authenticatedId ? serverAuth : inactiveAuthorization();
       authorizationRef.current = resolvedAuthorization;
@@ -104,7 +114,7 @@ export function TeacherProfileProvider({ children }) {
     }
     setCurrentId(id);
     currentIdRef.current = id;
-    sessionStorage.setItem(STORAGE_KEY, id);
+    claimStore.set(id);
     setPickerOpen(false);
     teacherLog.claim('claimed', { teacherId: id });
   }, []);
@@ -115,7 +125,7 @@ export function TeacherProfileProvider({ children }) {
     setCurrentId(null);
     currentIdRef.current = null;
     setAuthorization(inactiveAuthorization());
-    sessionStorage.removeItem(STORAGE_KEY);
+    claimStore.clear();
     setPinPrompt({ open: false, busy: false, error: null, action: null, resource: null });
     teacherLog.claim('released', {});
   }, [settlePending]);

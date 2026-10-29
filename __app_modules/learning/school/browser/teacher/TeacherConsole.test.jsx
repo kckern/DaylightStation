@@ -42,7 +42,7 @@ vi.mock("../schoolApi.js", () => {
 });
 vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   authStatus: vi.fn(async () => {
-    const userId = sessionStorage.getItem('school-teacher-claim');
+    const userId = localStorage.getItem('school-teacher-claim');
     return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
   }),
   unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
@@ -72,7 +72,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
 const { teacherWorkspaceApi } = await import("./teacherWorkspaceApi.js");
 const { schoolApi } = await import("../schoolApi.js");
 
-beforeEach(() => { sessionStorage.clear(); window.history.pushState({}, '', '/school/teacher'); });
+beforeEach(() => { localStorage.clear(); window.history.pushState({}, '', '/school/teacher'); });
 afterEach(() => cleanup());
 
 const ready = async () => {
@@ -254,7 +254,7 @@ describe('TeacherConsole workspace', () => {
   });
 
   it('opens a persistent learner workspace with deep-linkable sections', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     await ready();
     act(() => fireEvent.click(screen.getByRole('navigation', { name: 'Students' }).querySelector('button')));
     // Picking a learner lands on their day record — the workspace's organizing
@@ -290,7 +290,7 @@ describe('TeacherConsole workspace', () => {
   });
 
   it('inspects a session and previews a grade correction before apply', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v1', sessionId: 'ses_1', revision: 4, artifactIds: ['art_1'],
       state: { learnerId: 'user_4', unitId: 'fractions', state: 'closed', machineGrade: { percent: 70 }, gradedPercent: 70 }, events: [],
@@ -321,7 +321,7 @@ describe('TeacherConsole workspace', () => {
   // The step-up first, then a link: opening a tab after an async PIN prompt
   // is what popup blockers refuse.
   it('shows the child\'s marked sheet after a step-up, as a link', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     const created = URL.createObjectURL;
     URL.createObjectURL = vi.fn(() => 'blob:x');
     try {
@@ -392,7 +392,7 @@ describe('TeacherConsole workspace', () => {
     [400, 'This sheet can\'t be drawn with marks.'],
     [501, 'Marked sheets aren\'t set up on this install.'],
   ])('a %s from the marked sheet reads plainly', async (status, copy) => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     teacherWorkspaceApi.session.mockResolvedValueOnce(markedSession('graded'));
     teacherWorkspaceApi.artifactPostview.mockResolvedValueOnce({ ok: false, status, data: { error: 'EntityNotFoundError: artifact a3 not found for ses_s' } });
     window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
@@ -406,7 +406,7 @@ describe('TeacherConsole workspace', () => {
   });
 
   it('a marked-sheet error the copy does not cover keeps the hook\'s own message', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     teacherWorkspaceApi.session.mockResolvedValueOnce(markedSession('graded'));
     teacherWorkspaceApi.artifactPostview.mockResolvedValueOnce({ ok: false, status: 500, data: null });
     window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_s');
@@ -419,7 +419,7 @@ describe('TeacherConsole workspace', () => {
   });
 
   it('revokes the marked sheet\'s blob URL when the inspector closes mid-fetch', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     const created = URL.createObjectURL;
     const revoked = URL.revokeObjectURL;
     URL.createObjectURL = vi.fn(() => 'blob:late');
@@ -495,7 +495,7 @@ describe('TeacherConsole workspace', () => {
   });
 
   it('previews and protects retraction of an existing grade correction', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v1', sessionId: 'ses_3', revision: 7, artifactIds: [],
       state: {
@@ -660,7 +660,7 @@ describe('TeacherConsole workspace', () => {
   });
 
   it('previews a bounded systematic regrade before a protected apply', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    localStorage.setItem('school-teacher-claim', 'teacher');
     schoolApi.regradeAttempts
       .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, checked: 12, changed: [{ attemptId: 'att_1' }], sessionsAffected: ['ses_1'] } })
       .mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true, checked: 12, changed: [{ attemptId: 'att_1' }], sessionsAffected: ['ses_1'] } });

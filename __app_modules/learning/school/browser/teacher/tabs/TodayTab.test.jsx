@@ -7,7 +7,7 @@ import PinPrompt from "../panels/PinPrompt.jsx";
 
 vi.mock("../teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   authStatus: vi.fn(async () => {
-    const userId = sessionStorage.getItem('school-teacher-claim');
+    const userId = localStorage.getItem('school-teacher-claim');
     return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
   }),
   unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
@@ -52,7 +52,7 @@ const mount = (ui) => render(
 );
 
 beforeEach(() => {
-  sessionStorage.clear();
+  localStorage.clear();
   // The open roster card lives in the URL (`?open=`); a test that opened one
   // must not start the next with that learner already open.
   window.history.replaceState({}, '', window.location.pathname);
@@ -530,7 +530,7 @@ describe('TodayTab', () => {
 describe('wave-2 mutations', () => {
   const claim = async () => {
     // Claim the teacher via the persisted-session path the provider restores.
-    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+    localStorage.setItem('school-teacher-claim', 'teacher_1');
   };
 
   const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('teacher_1'));
@@ -635,7 +635,7 @@ describe('wave-2 mutations', () => {
 describe('advocacy wave 6A', () => {
 
   it('review items show rubric, reason, and wait-age', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+    localStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [{
       sessionId: 'ses_1', itemId: 'q3', learnerId: 'user_4', prompt: 'Explain photosynthesis',
       given: 'plants eat light', questionNumber: 3, reason: 'free_response',
@@ -648,7 +648,7 @@ describe('advocacy wave 6A', () => {
   });
 
   it('an expired capability REPLAYS once after unlock without retaining the PIN', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+    localStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.resolveReview
       .mockResolvedValueOnce({ ok: false, status: 403, data: { ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' } } })
       .mockResolvedValue(ok({ verdict: 'correct' }));

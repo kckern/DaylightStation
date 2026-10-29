@@ -2438,11 +2438,11 @@ lists roster ids; `GET /api/v1/school/teachers` resolves them against the
 live roster per request (shape-only validation at boot; a typo or blank
 birthyear costs a picker entry and a warning, never the container) and
 answers `{configured, teachers: [{id, name}]}` — profile fields never leave
-the server. The console's soft claim (sessionStorage) is attribution only.
+the server. The console's soft claim (localStorage, kept until Lock) is attribution only.
 Authority lives in a server-side capability session represented by an
 HttpOnly, SameSite=Strict cookie: 10-minute idle expiry, 30-minute absolute
 expiry. PINs exist only in the prompt while unlocking or confirming an action;
-they are not stored in React state, sessionStorage, logs, or ordinary mutation
+they are not stored in React state, browser storage, logs, or ordinary mutation
 bodies. High-consequence writes—agenda dispatch, grade correction/retraction,
 bulk regrade, period supersession, postview artifact rendering, and settling a
 session by hand—also require a two-minute, one-use grant scoped to the exact

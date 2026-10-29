@@ -35,7 +35,7 @@ stateDiagram-v2
     Anonymous --> Claimed: pick a teacher in the profile picker
     note right of Claimed
         Attribution only.
-        sessionStorage. Buys nothing.
+        localStorage. Buys nothing.
     end note
     Claimed --> Unlocked: POST auth/unlock with the console PIN
     Unlocked --> Claimed: idle 10 min / absolute 30 min / Lock / server restart
@@ -46,12 +46,12 @@ stateDiagram-v2
 
 | Tier | Carrier | Lifetime | Buys |
 |---|---|---|---|
-| **Claim** | `sessionStorage`, client-side | until the tab closes | attribution on writes — nothing else |
+| **Claim** | `localStorage`, client-side | until Lock, or the id leaves the teacher roster (survives reloads and new tabs) | attribution on writes — nothing else |
 | **Capability** | HttpOnly `SameSite=Strict` cookie | 10 min idle, 30 min absolute | every ordinary teacher write |
 | **Step-up grant** | `X-Teacher-Step-Up` header | 2 min, **one use**, scoped to one action *and one resource id* | the nine high-consequence actions below |
 
 The PIN exists only inside the prompt. It is never held in shared state, never
-in `sessionStorage`, never in a log, and never in an ordinary mutation body; it
+in browser storage, never in a log, and never in an ordinary mutation body; it
 exists only in the prompt's own local state while it is being typed, and is
 cleared when the prompt closes.
 

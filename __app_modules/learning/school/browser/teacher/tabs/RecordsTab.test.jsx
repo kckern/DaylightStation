@@ -4,7 +4,7 @@ import RecordsTab from "./RecordsTab.jsx";
 
 vi.mock("../teacherWorkspaceApi.js", () => ({ teacherWorkspaceApi: {
   authStatus: vi.fn(async () => {
-    const userId = sessionStorage.getItem('school-teacher-claim');
+    const userId = localStorage.getItem('school-teacher-claim');
     return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
   }),
   unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
@@ -59,8 +59,8 @@ beforeEach(() => {
   ]));
   schoolApi.progress.mockResolvedValue(ok({ curriculumHistory: { roots: [], unscoped: { evidenceCount: 0 } } }));
   schoolApi.instructionalInsights.mockResolvedValue(ok(null));
-  sessionStorage.clear();
-  sessionStorage.setItem('school-teacher-claim', 'teacher-a');
+  localStorage.clear();
+  localStorage.setItem('school-teacher-claim', 'teacher-a');
   schoolApi.teachers.mockResolvedValue(ok({ configured: true, teachers: [{ id: 'teacher-a', name: 'Teacher A' }] }));
   schoolApi.progressReport.mockResolvedValue(ok({
     schema: 'school.progress-report/v1', learnerId: 'user_4',

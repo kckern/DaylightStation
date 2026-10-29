@@ -44,7 +44,7 @@ function Probe() {
 const mount = () => render(<TeacherProfileProvider><Probe /><PinPrompt /></TeacherProfileProvider>);
 
 beforeEach(() => {
-  sessionStorage.clear();
+  localStorage.clear();
   vi.clearAllMocks();
 });
 
@@ -60,7 +60,7 @@ describe('TeacherProfileContext', () => {
     expect(screen.getByTestId('configured').textContent).toBe('true');
   });
 
-  it('claim persists to sessionStorage and restores on remount', async () => {
+  it('claim persists to localStorage and restores on remount (a new tab or reload keeps the pick)', async () => {
     schoolApi.teachers.mockResolvedValue({
       ok: true, status: 200, data: { configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] },
     });
@@ -68,21 +68,21 @@ describe('TeacherProfileContext', () => {
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('ready'));
     act(() => screen.getByText('claim').click());
     expect(screen.getByTestId('current').textContent).toBe('teacher_1');
-    expect(sessionStorage.getItem('school-teacher-claim')).toBe('teacher_1');
+    expect(localStorage.getItem('school-teacher-claim')).toBe('teacher_1');
     unmount();
     mount();
     await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('teacher_1'));
   });
 
   it('a persisted id no longer in the list is dropped', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'departed');
+    localStorage.setItem('school-teacher-claim', 'departed');
     schoolApi.teachers.mockResolvedValue({
       ok: true, status: 200, data: { configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] },
     });
     mount();
     await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('ready'));
     expect(screen.getByTestId('current').textContent).toBe('none');
-    expect(sessionStorage.getItem('school-teacher-claim')).toBe(null);
+    expect(localStorage.getItem('school-teacher-claim')).toBe(null);
   });
 
   it('release clears the claim and the persisted key', async () => {
@@ -94,7 +94,7 @@ describe('TeacherProfileContext', () => {
     act(() => screen.getByText('claim').click());
     act(() => screen.getByText('release').click());
     expect(screen.getByTestId('current').textContent).toBe('none');
-    expect(sessionStorage.getItem('school-teacher-claim')).toBe(null);
+    expect(localStorage.getItem('school-teacher-claim')).toBe(null);
   });
 
   it('configured:false surfaces as configured false with empty teachers', async () => {
@@ -113,7 +113,7 @@ describe('TeacherProfileContext', () => {
   });
 
   it('restores the server-authorized teacher ahead of a stale soft claim', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher_2');
+    localStorage.setItem('school-teacher-claim', 'teacher_2');
     schoolApi.teachers.mockResolvedValue({ ok: true, status: 200,
       data: { configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }, { id: 'teacher_2', name: 'User_9' }] } });
     teacherWorkspaceApi.authStatus.mockResolvedValueOnce({ ok: true, status: 200,
@@ -121,7 +121,7 @@ describe('TeacherProfileContext', () => {
     mount();
     await waitFor(() => expect(screen.getByTestId('current').textContent).toBe('teacher_1'));
     expect(screen.getByTestId('authorized').textContent).toBe('true');
-    expect(sessionStorage.getItem('school-teacher-claim')).toBe('teacher_1');
+    expect(localStorage.getItem('school-teacher-claim')).toBe('teacher_1');
   });
 
   it('unlocks with a memory-only PIN and reports a refused unlock in the dialog', async () => {
@@ -141,11 +141,11 @@ describe('TeacherProfileContext', () => {
     fireEvent.click(screen.getByText('Continue'));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Teacher PIN' })).toBeNull());
     expect(teacherWorkspaceApi.unlock).toHaveBeenLastCalledWith('teacher_1', '4321');
-    expect(JSON.stringify(sessionStorage)).not.toContain('4321');
+    expect(JSON.stringify(localStorage)).not.toContain('4321');
   });
 
   it('mints a resource-scoped step-up grant even while the ordinary session is active', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+    localStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.teachers.mockResolvedValue({ ok: true, status: 200,
       data: { configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] } });
     teacherWorkspaceApi.authStatus.mockResolvedValueOnce({ ok: true, status: 200,
@@ -175,7 +175,7 @@ describe('TeacherProfileContext', () => {
  */
 describe('a step-up refusal always settles or stays retryable', () => {
   const activeSession = () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+    localStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.teachers.mockResolvedValue({ ok: true, status: 200,
       data: { configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] } });
     teacherWorkspaceApi.authStatus.mockResolvedValue({ ok: true, status: 200,
@@ -197,7 +197,7 @@ describe('a step-up refusal always settles or stays retryable', () => {
       ok: false, refused: true, status: 403, message: 'A valid step-up action and resource are required.',
     });
     expect(screen.queryByLabelText('PIN')).toBeNull();
-    expect(JSON.stringify(sessionStorage)).not.toContain('4321');
+    expect(JSON.stringify(localStorage)).not.toContain('4321');
   });
 
   it('keeps the dialog open for another try when the PIN is what was refused', async () => {
@@ -223,7 +223,7 @@ describe('a step-up refusal always settles or stays retryable', () => {
  */
 describe('a refused step-up with no PIN configured shows the server reason', () => {
   const noPinSession = () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher_1');
+    localStorage.setItem('school-teacher-claim', 'teacher_1');
     schoolApi.teachers.mockResolvedValue({ ok: true, status: 200,
       data: { configured: true, teachers: [{ id: 'teacher_1', name: 'Teacher One' }] } });
     teacherWorkspaceApi.authStatus.mockResolvedValue({ ok: true, status: 200,
