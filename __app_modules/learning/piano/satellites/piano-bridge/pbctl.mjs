@@ -20,6 +20,7 @@
 //   node pbctl.mjs reboot            # FKB-independent device restart via a11y (v28+)
 //   node pbctl.mjs midi "<hex>" [n] # raw MIDI/SysEx OUT to the piano (v26+)
 //   node pbctl.mjs speaker           # A2DP speaker + fail-closed audio-guard status
+//   node pbctl.mjs wifi [n]          # Wi-Fi link now (fresh sample) + last n samples (p34+)
 //   node pbctl.mjs bootstrap         # spend the one-time clamp window (drop→clamp→reconnect)
 //   node pbctl.mjs override [ms]     # reopen the SYNTH gate only, time-boxed (never unclamps)
 //   node pbctl.mjs update <apk-url>  # ADB-free self-update (one-tap confirm on device)
@@ -232,6 +233,22 @@ const cmds = {
     pretty(r);
   },
 
+  // --- Wi-Fi link telemetry (payload p34) -------------------------------------
+  async wifi([n]) {
+    const w = await req('GET', '/wifi?fresh=1');
+    if (w && w.ok === false) { pretty(w); process.exit(1); }
+    const row = (s) => `${new Date(s.epochMs).toISOString().slice(11, 19)}Z  ${String(s.rssi).padStart(4)} dBm  `
+      + `${String(s.linkSpeedMbps).padStart(4)} Mbps  ${s.band.padEnd(7)} ${s.bssid ?? '-'}  `
+      + `rx ${s.rxKbps < 0 ? '?' : s.rxKbps} kbps  tx ${s.txKbps < 0 ? '?' : s.txKbps} kbps`
+      + `${s.degraded ? '  DEGRADED(' + s.degradedReason + ')' : ''}${s.roamed ? '  ROAM from ' + s.roamFrom : ''}`;
+    const t = w.thresholds || {};
+    console.log(`wifi: every ${w.intervalMs}ms  degraded at rssi<=${t.degradedRssiDbm} or link<${t.degradedLinkSpeedMbps}Mbps  `
+      + `roams=${w.roams} backlog=${w.backlog} logStoreFailures=${w.failures?.logStore ?? 0}`);
+    if (w.lastError) console.log(`lastError: ${w.lastError}`);
+    const recent = (w.recent || []).slice(-(Number(n) || 12));
+    for (const s of recent) console.log('  ' + row(s));
+  },
+
   // --- A2DP speaker + fail-closed audio guard --------------------------------
   async speaker() {
     const s = await req('GET', '/speaker');
@@ -441,6 +458,7 @@ if (!name || !cmds[name]) {
   console.log('  audio: speaker | bootstrap | override [ms]   (A2DP+guard status / spend clamp window / time-boxed synth-gate reopen)');
   console.log('  wake:  update <apk-url> | quiet <HH:mm> <HH:mm>|off | suppress <ms>');
   console.log('  health: diag | kiosk | crashlog        (full snapshot / WebView watchdog / durable death log)');
+  console.log('  net:   wifi [n]                          (Wi-Fi link: fresh sample + last n of 60)');
   console.log('  kiosk:  kiosk-settings | kiosk-check | kiosk-disarm [min] | kiosk-rearm   (drift guard: show / force pass / pause / resume)');
   console.log('  diag:  logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]');
   console.log('  sys:   getsetting <ns> <k> | setsetting <ns> <k> <v>   (ns=secure|global|system)');

@@ -218,6 +218,53 @@ device no longer rebuilds the connectors (`ConnectPlan`).
 Both log to the log store: `bridge.a2dp.{disconnected,connected,reconnect-requested,error,hfp-disabled}`
 and `bridge.bt-cycle.{start,done}` (`context.app:piano-bridge`).
 
+### Wi-Fi link telemetry (payload p34 `p34-wifi-link`, 2026-10-28)
+
+**Why.** On 2026-10-28 lesson videos stalled on the tablet for seven minutes. The
+server, Plex and the LAN were all ruled out, and delivery to the tablet had fallen to
+0.01–1.2 Mbps against a 2.4 Mbps file. Interference, a roam, or Bluetooth A2DP sharing
+the 2.4 GHz radio were all plausible, and none could be shown, because nothing recorded
+the tablet's link. `WifiLink` records it now.
+
+Every `wifiSampleIntervalMs` (default 10000, minimum 2000) the payload reads
+`WifiManager.getConnectionInfo()` and the `TrafficStats` total byte counters. The rules
+(rates, band, roam, degraded) are pure code in `WifiLinkPolicy` and covered by
+`WifiLinkPolicyTest`.
+
+| Event (`context.app:piano-bridge`) | Level | When | Fields (`data.*`) |
+|---|---|---|---|
+| `bridge.wifi` | `info`, or `warn` when degraded | every sample | `connected rssi linkSpeedMbps rxLinkSpeedMbps txLinkSpeedMbps freqMhz band bssid ssid rxKbps txKbps degraded degradedReason roamed roamFrom seq epochMs intervalMs backlog failures` |
+| `bridge.wifi.roam` | `info` | the first sample on a new BSSID, even across a disconnected gap | `from to fromFreqMhz toFreqMhz fromBand toBand fromRssi toRssi roams` |
+| `bridge.heartbeat` | (unchanged) | every beat | adds `data.wifi.{rssi,linkSpeedMbps,freqMhz,band,bssid,rxKbps,degraded,ageMs}` |
+
+- `band` is `2.4GHz` \| `5GHz` \| `6GHz` \| `unknown`. `rxKbps`/`txKbps` are whole-device
+  throughput over the last interval. `-1` means unknown: the first sample, a counter
+  reset, or unsupported counters. It is never a negative rate.
+- **Degraded** means `rssi <= -75` dBm (`wifiDegradedRssiDbm`), or a negotiated link rate
+  below 20 Mbps (`wifiDegradedLinkMbps`), or no association at all. `degradedReason` is a
+  comma list of `rssi`, `linkSpeed` or `disconnected`. Invalid readings (rssi -127, rate
+  -1) never count as degraded on their own.
+- Android's redacted values (`<unknown ssid>`, `02:00:00:00:00:00`) are reported as `null`.
+- **Samples taken while the link is down are not lost.** Unsent lines wait in a backlog
+  of up to 180 (about 30 min), stamped with the time they were *measured*, and go out
+  with the next post that succeeds. Failures are counted (`failures`, `/wifi`), not logged
+  on every tick.
+- `wifiTelemetryEnabled: false` turns it off. All four keys change live with `pbctl config set`.
+
+`GET /wifi[?fresh=1]` returns `{ok, current, recent:[up to 60, oldest first], enabled,
+running, intervalMs, thresholds, roams, backlog, dropped, failures, lastOkAgoMs, lastError}`.
+`fresh=1` takes a sample first. That is the call the kiosk Player makes on a stall, from
+its https page to `http://localhost:8770`, so the response carries the same CORS headers
+as every route (`Access-Control-Allow-Origin: *`), and an `OPTIONS` preflight answers
+`{ok:true}`. Read it by hand with `pbctl wifi [n]`.
+
+```
+context.app:piano-bridge AND _msg:="bridge.wifi" AND _time:1h
+context.app:piano-bridge AND _msg:="bridge.wifi" AND data.degraded:true AND _time:24h
+context.app:piano-bridge AND _msg:="bridge.wifi.roam" AND _time:7d
+```
+(`_msg:="…"` is an exact match. A bare `_msg:bridge.wifi` also matches the roam rows.)
+
 ### Screen-wake on a played note (`ScreenWaker`)
 
 A BLE-MIDI note-on pokes Fully Kiosk's `screenOn` REST endpoint on `127.0.0.1:2323`,

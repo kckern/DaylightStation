@@ -121,7 +121,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p33-speaker-hardening";
+    public static final String BUILT_BY = "p34-wifi-link";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -181,6 +181,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /                      (HTML status page for a browser; JSON here for curl)")
                             .put("GET /log").put("POST /panic")
                             .put("GET|POST /beat               (outbound heartbeat state / send one now)")
+                            .put("GET /wifi[?fresh=1]          (Wi-Fi link: current sample + last 60; fresh=1 samples now)")
                             .put("GET|POST /loopback           (OUT assertion via piano ECHO: probe+wait / rolling state)")
                             .put("POST /reset                 (FORCE-RESET the BLE link, escalate to radio bounce, verify by echo)")
                             .put("GET /midi/tap               (raw bytes the read port delivered; running-status count)")
@@ -365,6 +366,15 @@ public class ControlServer extends NanoWSD {
                     }
                     o.put("audibility", "delivery is proven by the echo; SOUND still depends on the piano's own volume/headphones");
                     return json(o);
+                }
+                case "/wifi": {
+                    // Wi-Fi link telemetry (p34). The kiosk Player calls this from an
+                    // https page on a stall; json() carries the same CORS headers as
+                    // every other route, and a preflight gets an empty ok.
+                    if (method == NanoHTTPD.Method.OPTIONS) return json(ok());
+                    WifiLink wl = service.getWifiLink();
+                    if (wl == null) return json(err("wifi telemetry not started"));
+                    return json(wl.snapshot("1".equals(strParam(session, "fresh", "0"))));
                 }
                 case "/beat": {
                     // Outbound heartbeat: GET = its state, POST = send one NOW and return

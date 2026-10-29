@@ -467,6 +467,44 @@ Expect most real recoveries to report rung 4.
 
 ---
 
+## 7c. Lesson video stalls — is it the tablet's Wi-Fi? (2026-10-28)
+
+**Symptom:** a lesson video buffers over and over while the server, Plex and the LAN
+look healthy. On 2026-10-28, delivery to the tablet fell to 0.01–1.2 Mbps against a
+2.4 Mbps file for seven minutes. The tablet's link could not be checked because
+nothing recorded it.
+
+Since payload p34 the bridge samples the link every 10 s (bridge README, "Wi-Fi link
+telemetry"). Line up the stall window against it:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query -d 'query=context.app:piano-bridge
+  AND _msg:="bridge.wifi" AND _time:1h | sort by (_time desc) | limit 400'
+curl -s {env.log_store_url}/select/logsql/query -d 'query=context.app:piano-bridge
+  AND _msg:="bridge.wifi.roam" AND _time:24h'
+```
+
+How to read it:
+
+- **`data.rssi` and `data.linkSpeedMbps` stay healthy while `data.rxKbps` falls below
+  the video's bitrate:** the radio link is fine, so look upstream or at airtime
+  contention on the channel.
+- **`data.degraded:true` (level `warn`) during the stall:** a weak signal
+  (`rssi <= -75`) or a low PHY rate (`< 20` Mbps) on the tablet's side.
+- **A `bridge.wifi.roam` row, or a change of `data.band`, inside the window:** a roam.
+  A move from 5 GHz to 2.4 GHz also puts the video on the band that Bluetooth A2DP
+  (the piano speaker) shares.
+- **No `bridge.wifi` rows for the window:** check whether rows with a matching
+  `_time` arrived later. Samples taken while offline are queued and sent with their
+  original timestamps, so a late batch of `data.connected:false` rows means the
+  tablet really lost its association.
+
+On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=1`
+(CORS-open) and log the current sample together with the last 60. From a shell, run
+`pbctl wifi`.
+
+---
+
 ## 8. Still open
 
 - ~~**Nothing alerts.**~~ Closed 2026-09-30 by the backend bridge supervisor (§7a). It
