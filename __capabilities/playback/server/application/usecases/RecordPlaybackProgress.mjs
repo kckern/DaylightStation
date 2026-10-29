@@ -1,7 +1,10 @@
 import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from "../../domain/services/mediaSpots.mjs";
 import { isWatchComplete, DEFAULT_RULE } from "#shared/contracts/media/watchCompletion.mjs";
+import { observeHeartbeat } from "../../domain/services/skipInference.mjs";
 
 const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
+// Screens tracked for skip inference; unknown ids can arrive, so the map is capped.
+const MAX_SKIP_TRACKED_SCREENS = 200;
 
 /**
  * Record a playback heartbeat and coordinate its application-level side effects.
@@ -10,6 +13,9 @@ const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
  * this use case never interprets them as filesystem paths.
  */
 export class RecordPlaybackProgress {
+  // spotDevice -> skipInference reducer state (last heartbeat + pending skips).
+  #skipStateByScreen = new Map();
+
   constructor({
     contentCatalog,
     mediaProgressMemory = null,
@@ -52,6 +58,36 @@ export class RecordPlaybackProgress {
     this.nowEpoch = nowEpoch;
     this.nowIso = nowIso;
     this.logger = logger;
+  }
+
+  /**
+   * Feed this screen's heartbeat to the skip reducer and record any skip it
+   * confirms on the skipped item. Advisory: a failure never reaches play/log.
+   */
+  async #inferSkips(screenId, beat) {
+    const { state, skips } = observeHeartbeat(this.#skipStateByScreen.get(screenId) ?? null, beat);
+    this.#skipStateByScreen.delete(screenId);
+    this.#skipStateByScreen.set(screenId, state);
+    if (this.#skipStateByScreen.size > MAX_SKIP_TRACKED_SCREENS) {
+      this.#skipStateByScreen.delete(this.#skipStateByScreen.keys().next().value);
+    }
+    for (const skip of skips) {
+      try {
+        const previous = await this.mediaProgressMemory.findProgress(skip.assetId, skip.storagePath);
+        if (!previous || previous.skipped || previous.completedAt) continue;
+        await this.mediaProgressMemory.saveProgress(this.createMediaProgress({
+          ...previous,
+          percent: previous.percent,
+          skipped: true,
+          skippedAt: this.nowIso(),
+        }), skip.storagePath);
+        this.logger.info?.('play.skip.inferred', {
+          assetId: skip.assetId, deviceId: screenId, percent: previous.percent, namespace: skip.storagePath,
+        });
+      } catch (error) {
+        this.logger.warn?.('play.skip.record_failed', { assetId: skip.assetId, error: error.message });
+      }
+    }
   }
 
   async execute({
@@ -164,6 +200,15 @@ export class RecordPlaybackProgress {
 
     if (this.mediaProgressMemory) {
       await this.mediaProgressMemory.saveProgress(newState, progressNamespace);
+      // Writing a fresh state drops a stored skip: the viewer came back to it.
+      if (existingState?.skipped) {
+        this.logger.info?.('play.skip.cleared', { assetId: compoundId, deviceId: spotDevice });
+      }
+      if (spotDevice) {
+        await this.#inferSkips(spotDevice, {
+          assetId: compoundId, storagePath: progressNamespace, complete: watchComplete, atEpoch: this.nowEpoch(),
+        });
+      }
     }
 
     if (this.progressSyncSources?.has(type) && this.progressSyncService) {

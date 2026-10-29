@@ -188,7 +188,7 @@ export class QueueService {
    * re-serve it as in-progress or unwatched).
    *
    * Rule:
-   *   - explicit `watched` flag wins
+   *   - explicit `watched` flag wins, and so does `skipped` (a deliberate skip)
    *   - items shorter than SHORT_DURATION_THRESHOLD_S use SHORT_WATCHED_THRESHOLD
    *   - everything else uses WATCHED_THRESHOLD
    *
@@ -196,7 +196,7 @@ export class QueueService {
    * @returns {boolean}
    */
   static isWatched(item) {
-    if (item?.watched) return true;
+    if (item?.watched || item?.skipped) return true;
     const percent = item?.percent || 0;
     const duration = item?.duration;
     const threshold = (duration && duration < SHORT_DURATION_THRESHOLD_S)

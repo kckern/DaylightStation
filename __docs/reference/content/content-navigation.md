@@ -226,6 +226,14 @@ Watchlists track ordered content with progress and scheduling metadata:
 
 **Key fields**: `media_key` (content path within source), `src` (source adapter name), `wait_until`/`skip_after` (scheduling window), `priority`, `watched`/`progress` (watch state), `program` (grouping label).
 
+**Finished entries move on.** When an entry's next-up pick is a restart (every episode of a container watched — PlexAdapter marks it `restarted: true`), the watchlist drops it while any other entry still has something new, so a played-out course or series never replays ahead of the next one.
+
+**Course watchlists** (`watchlists/courses.yml`) list courses (Plex seasons) in the order they should be taken, with `metadata.pool` naming a show to draw new courses from. The nightly `course-sequence` job (system `jobs.yml`) marks a course `watched: true` / `completed: <date>` once every episode is watched or skipped, and when fewer than two unfinished courses remain it appends a random untouched season of the pool with `auto_picked: <date>` — visible, and swappable, before it starts. See `CourseSequenceService`.
+
+#### Skips count as decisions
+
+The play/log heartbeat carries no skip reason, so a skip is inferred per screen (`playback/server/domain/services/skipInference.mjs`, applied in `RecordPlaybackProgress`): a screen that reports a different item within 2 min of an unfinished one, and never reports the old one again for 30 s, has skipped it. The old item's progress gets `skipped: true` / `skippedAt` (`play.skip.inferred`). Every next-up choice — `QueueService.isWatched`, Plex next-up categorization, watchlist next-up — treats a skipped item as done, so whatever the viewer rejects stops winning the in-progress pick. Playing it again clears the flag (`play.skip.cleared`). Never a skip: a natural end, a screen going quiet (TV off), a late return, or two players on one screen alternating heartbeats (a pending skip is cancelled when the old item reports again).
+
 #### Programs
 
 Programs are sequenced content lists referencing multiple source types:
@@ -251,6 +259,10 @@ Programs are sequenced content lists referencing multiple source types:
 ```
 
 Programs reference diverse sources: `media:` (filesystem clips), `query:` (dynamic queries), `watchlist:` (watchlist selection), `plex:` (Plex content), `freshvideo:` (ingestion pipeline), `talk:` (conference talks), `app:` (interactive apps).
+
+**Slot options.** A single-pick slot (play, not queue) takes one next-up item per run. `strategy: <name>` picks through `ItemSelectionService` instead; `shuffle: true` on a single-pick slot means `strategy: rotation` (shuffle without repeats until the pool is exhausted) — it used to be ignored there. `days:` (`Weekdays`, `Weekend`, `M•W•F`, …) limits the slot to those days.
+
+**Order is a decision.** Programs are often abandoned before they end, so slots near the bottom rarely air (the office program's 12th slot played zero times in 27 days). Put what must be watched near the top.
 
 ---
 

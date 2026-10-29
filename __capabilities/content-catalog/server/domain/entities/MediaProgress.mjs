@@ -39,6 +39,10 @@ export class MediaProgress {
     this.lastPlayed = props.lastPlayed ?? null;
     this.watchTime = props.watchTime ?? 0;
     this.completedAt = props.completedAt ?? null;
+    // A deliberate skip: the viewer moved past this item unfinished. Counts as
+    // done for next-up choices until the item is played again.
+    this.skipped = props.skipped === true;
+    this.skippedAt = props.skippedAt ?? null;
     this._storedPercent = props.percent ?? null;
     // Undefined (not {}) means "this writer did not touch spots".
     this.spots = props.spots === undefined ? undefined : { ...(props.spots || {}) };

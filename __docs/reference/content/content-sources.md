@@ -625,7 +625,8 @@ Some content referenced in lists is not served by a dedicated driver. Instead, e
 
 `FreshVideoService` is an application-layer cron job that downloads videos from RSS feeds (news, TED-Ed, etc.) into `/media/video/news/{provider}/YYYYMMDD.mp4`. At query time, these files are served by a generic filesystem source instance. The `freshvideo:teded` prefix in program lists resolves via alias to the appropriate filesystem instance.
 
-- **Download**: `FreshVideoService` + `VideoSourceGateway` (yt-dlp)
+- **Download**: `FreshVideoService` + `VideoSourceGateway` (yt-dlp), wrapped by `CuratedPageVideoGateway`
+- **Source kinds** (`household/media/sources.yml`, `type:`): `Channel`, `playlist` (default), or `page` — a curated web page with no feed. A page source's `playlist:` is the listing URL and `link_pattern:` a regex for item links; the newest item is the first matching link, its page's first embedded YouTube video is downloaded as a single video, and the file is dated by the page's publish date (`datePublished`), not the video's upload date. Example: PBS NewsHour Classroom Daily News Lessons (`shortcode: pbs_lesson`). Events: `freshvideo.page.resolved` / `.no_link` / `.no_video` / `.fetch_failed`.
 - **Storage**: `/media/video/news/{provider}/YYYYMMDD.mp4`
 - **Retention**: Configurable days-to-keep, auto-cleanup of old files
 - **Query-time driver**: `filesystem` (generic, no `content_format`)

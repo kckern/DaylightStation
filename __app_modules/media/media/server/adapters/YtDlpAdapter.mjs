@@ -21,6 +21,8 @@ import { deleteFile, ensureDir, fileExists, getFileStats, readDirectory } from '
 import { IVideoSourceGateway } from "../application/ports/IVideoSourceGateway.mjs";
 
 const exec = promisify(child_process.exec);
+// yt-dlp's exit status when --max-downloads stops it after a successful download.
+const YTDLP_MAX_DOWNLOADS_EXIT = 101;
 const execFileAsync = promisify(execFile);
 
 /**
@@ -125,6 +127,10 @@ export class YtDlpAdapter extends IVideoSourceGateway {
       }
       if (type === 'playlist') {
         return `https://www.youtube.com/playlist?list=${id}`;
+      }
+      // A single video — what a curated page source resolves to.
+      if (type === 'video') {
+        return `https://www.youtube.com/watch?v=${id}`;
       }
     }
 
@@ -418,19 +424,27 @@ export class YtDlpAdapter extends IVideoSourceGateway {
    * @param {number} [options.maxHeight=720] - Maximum video height
    * @param {string} [options.preferredLang='en'] - Preferred audio language
    * @param {number} [options.timeoutMs=300000] - Download timeout
+   * @param {string} [options.fileDate] - YYYYMMDD to name the file by instead of
+   *   the video's upload date (curated page sources date by the page)
    * @returns {Promise<{kind: 'downloaded'|'failed', assetId?: string, uploadDate?: string, error?: string}>}
    */
   async downloadLatest(source, options) {
     const {
       maxHeight = 720,
       preferredLang = 'en',
-      timeoutMs = 300000
+      timeoutMs = 300000,
+      fileDate = null
     } = options;
 
     const outputDir = this.#providerDirectory(source.provider);
     const url = this.#buildUrl(source);
     const extractorArgs = this.#buildExtractorArgs(source, preferredLang);
-    const outputTemplate = `${outputDir}/%(upload_date)s.%(ext)s`;
+    const outputTemplate = /^\d{8}$/.test(fileDate || '')
+      ? `${outputDir}/${fileDate}.%(ext)s`
+      : `${outputDir}/%(upload_date)s.%(ext)s`;
+    // A single video needs no playlist limits; with them yt-dlp exits 101
+    // ("max downloads reached") after a successful download.
+    const isSingleVideo = (source.sourceRef || source).collectionType === 'video';
 
     // Ensure output directory exists
     ensureDir(outputDir);
@@ -449,8 +463,8 @@ export class YtDlpAdapter extends IVideoSourceGateway {
         extractorArgs,
         formatArgs,
         '--remux-video mp4',
-        '--max-downloads 1',
-        '--playlist-end 1',
+        isSingleVideo ? null : '--max-downloads 1',
+        isSingleVideo ? null : '--playlist-end 1',
         `-o "${outputTemplate}"`,
         `"${url}"`
       ].filter(Boolean).join(' ');
@@ -462,7 +476,13 @@ export class YtDlpAdapter extends IVideoSourceGateway {
       });
 
       try {
-        await this.#execWithTimeout(cmd, timeoutMs);
+        await this.#execWithTimeout(cmd, timeoutMs).catch((error) => {
+          // Exit 101 = "--max-downloads reached": the one download asked for
+          // succeeded. Treating it as a failure retried every codec and logged
+          // downloadFailed for every source while the file had landed.
+          if (error?.code === YTDLP_MAX_DOWNLOADS_EXIT) return;
+          throw error;
+        });
 
         // Small delay for filesystem sync
         await new Promise(r => setTimeout(r, 1000));
