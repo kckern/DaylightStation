@@ -385,6 +385,7 @@ behaviour exactly: wait up to 30 minutes, then the previous cap action
 | Event | Where | Meaning |
 |---|---|---|
 | `proxy.error-replaced` | backend | a media-file 404 became 503 after retries |
+| `proxy.stream.progress` / `proxy.stream.transfer` | backend | delivery rate of a direct-play part (`kbps`, `windowKbps`) and `backpressurePct`, the share of time the client side held the upstream back. Low kbps with high backpressure means the link to the client is slow (Wi-Fi, NPM). Low kbps with low backpressure means Plex/NAS is slow. Fields `client` and `part` identify the transfer. Short probes (<10 s and <4 MB) are not logged. Added 2026-10-28 |
 | `media.source.heal.not-a-leaf` | backend | the healer was asked about a container (show/season/...): the caller sent the wrong id |
 | `media.source.heal.part-resolved` | backend | an unindexed part was resolved through Plex (`via` = the library type that matched) |
 | `media.source.heal.proxy-refresh` | backend | the host refresh ran for a proxy-observed refusal although Plex said readable |

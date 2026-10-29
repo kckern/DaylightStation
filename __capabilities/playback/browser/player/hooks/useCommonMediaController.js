@@ -885,7 +885,9 @@ export function useCommonMediaController({
           // slow link an mp4's moov can take tens of seconds, and softReinit
           // would restart that fetch from zero (2026-10-28: 4 softReinits in a
           // 0.3x-realtime piano lesson). The resilience ladder still owns it —
-          // it holds while bytes arrive and jolts when they stop.
+          // it holds while bytes arrive and jolts when they stop (no progress
+          // for 6 s). Resilience is only `disabled` for formats with no media
+          // element, so every element that can reach this branch has a ladder.
           if (!Number.isFinite(mediaEl.duration) && mediaEl.readyState === 0 && mediaEl.networkState === 2) {
             mcLog().warn('playback.duration-pending-load', {
               mediaKey: assetId,

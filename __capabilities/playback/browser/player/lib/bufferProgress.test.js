@@ -7,6 +7,8 @@ import {
   SLOW_LINK_MIN_GROWTH_SEC,
   SLOW_LINK_FROZEN_AHEAD_SEC,
   SLOW_LINK_MAX_HOLD_MS,
+  SLOW_LINK_QUIET_MS,
+  SLOW_LINK_SESSION_BUDGET_MS,
 } from './bufferProgress.js';
 import { STALL_JOLT_GRACE_MS } from './stallJolt.js';
 
@@ -120,11 +122,11 @@ describe('decideStuckKind', () => {
 
   it('a frozen clock with plenty buffered is a wedged element, not starvation', () => {
     const d = decideStuckKind({ ...base, reading: { ...base.reading, bufferAheadSec: SLOW_LINK_FROZEN_AHEAD_SEC + 0.5 } });
-    expect(d).toEqual({ kind: 'stuck', reason: 'buffered-but-frozen' });
+    expect(d).toEqual({ kind: 'stuck', reason: 'buffered-but-frozen', confirm: true });
   });
 
   it('an element that has future data yet stays frozen is wedged, not starved', () => {
-    expect(decideStuckKind({ ...base, reading: { ...base.reading, readyState: 3 } })).toEqual({ kind: 'stuck', reason: 'ready-but-frozen' });
+    expect(decideStuckKind({ ...base, reading: { ...base.reading, readyState: 3 } })).toEqual({ kind: 'stuck', reason: 'ready-but-frozen', confirm: true });
     expect(decideStuckKind({ ...base, reading: { ...base.reading, readyState: 4 } }).kind).toBe('stuck');
   });
 
@@ -144,9 +146,46 @@ describe('decideStuckKind', () => {
     expect(decideStuckKind({ ...base, reading: r0, networkProgressAtMs: base.now, holdStartedAtMs: base.now - SLOW_LINK_MAX_HOLD_MS - 1 }).kind).toBe('stuck');
   });
 
+  it('measures the range just past or just ahead of a playhead outside every range (the incident geometry)', () => {
+    // currentTime a few ms past its range end
+    expect(readBufferWindow({ currentTime: 12.02, buffered: ranges([0, 12]) }).bufferedEndSec).toBe(12);
+    // a seek target whose first bytes are landing just ahead
+    const r = readBufferWindow({ currentTime: 13, buffered: ranges([0, 12], [13.4, 14.1]) });
+    expect(r.bufferedEndSec).toBe(14.1);
+    expect(r.bufferAheadSec).toBe(0);
+  });
+
+  it('flags MSE playback (blob: src or srcObject)', () => {
+    expect(readBufferWindow({ currentTime: 1, currentSrc: 'blob:https://x/1', buffered: ranges() }).mse).toBe(true);
+    expect(readBufferWindow({ currentTime: 1, srcObject: {}, buffered: ranges() }).mse).toBe(true);
+    expect(readBufferWindow({ currentTime: 1, currentSrc: 'https://x/file.mp4', buffered: ranges() }).mse).toBe(false);
+  });
+
+  it('progressive: bytes arriving is life even when under half a second of media decoded', () => {
+    const d = decideStuckKind({ ...base, growth: { growthSec: 0.1, lastGrowthAtMs: base.now - 500 }, networkProgressAtMs: base.now - 1000 });
+    expect(d).toEqual({ kind: 'slow-link', reason: 'bytes-arriving' });
+  });
+
+  it('MSE: element progress events are not trusted as life', () => {
+    const d = decideStuckKind({ ...base, reading: { ...base.reading, mse: true }, growth: { growthSec: 0, lastGrowthAtMs: null }, networkProgressAtMs: base.now - 500 });
+    expect(d.kind).toBe('stuck');
+  });
+
+  it('after life was seen, a quiet gap shorter than the quiet window still holds', () => {
+    const quietGrowth = { growthSec: 0, lastGrowthAtMs: base.now - (SLOW_LINK_QUIET_MS - 1000) };
+    expect(decideStuckKind({ ...base, growth: quietGrowth, showedLife: true }).kind).toBe('slow-link');
+    expect(decideStuckKind({ ...base, growth: quietGrowth, showedLife: false }).kind).toBe('stuck');
+    expect(decideStuckKind({ ...base, growth: { growthSec: 0, lastGrowthAtMs: base.now - SLOW_LINK_QUIET_MS - 1 }, showedLife: true }).kind).toBe('stuck');
+  });
+
+  it('a session that has spent its slow-link budget lets the ladder run', () => {
+    expect(decideStuckKind({ ...base, sessionHeldMs: SLOW_LINK_SESSION_BUDGET_MS + 1 })).toEqual({ kind: 'stuck', reason: 'slow-link-budget-spent' });
+  });
+
   it('no reading at all keeps the old behaviour (stuck)', () => {
     expect(decideStuckKind({ ...base, reading: null }).kind).toBe('stuck');
     expect(decideStuckKind({ ...base, growth: null }).kind).toBe('stuck');
+    expect(decideStuckKind({ ...base, reading: { ...base.reading, bufferAheadSec: null } }).kind).toBe('stuck');
   });
 
   it('thresholds hang together: the window fits inside the jolt grace, the hold is minutes', () => {

@@ -232,24 +232,47 @@ and 4 softReinits in seven minutes, then exhausted.
 `lib/bufferProgress.js` tells the two apart. It is pure and the thresholds are
 unit-tested:
 
+Rules are checked in order, first match wins:
+
 | Verdict | Condition |
 |---------|-----------|
 | `stuck: media-error` | The element has a recoverable media error |
-| `stuck: slow-link-hold-expired` | This episode has been held for over `SLOW_LINK_MAX_HOLD_MS` (120 s). One rung fires, then a new hold may start |
-| `slow-link: metadata-loading` | readyState 0, and bytes arrived in the last `SLOW_LINK_WINDOW_MS` (6 s) |
-| `stuck: buffered-but-frozen` | `SLOW_LINK_FROZEN_AHEAD_SEC` (5 s) or more buffered ahead of a frozen playhead. This is a decoder wedge, because progressive downloads keep going while the decoder is wedged |
-| `stuck: ready-but-frozen` | readyState ≥ 3 (`HAVE_FUTURE_DATA`) and still frozen at the first rung |
-| `stuck: no-download-progress` | Buffered end grew less than `SLOW_LINK_MIN_GROWTH_SEC` (0.5 s) in the window |
-| `slow-link: buffer-growing` | Anything else: the download is moving, so wait |
+| `stuck: slow-link-budget-spent` | This playback session has already held for `SLOW_LINK_SESSION_BUDGET_MS` (5 min). The ladder then runs uninterrupted, so a trickling queue still exhausts and advances |
+| `stuck: slow-link-hold-expired` | This hold is over `SLOW_LINK_MAX_HOLD_MS` (120 s). One rung fires, then a new hold may start |
+| `slow-link: metadata-loading` / `stuck` | readyState 0: holds only if bytes (`progress` events) arrived within the quiet window |
+| `stuck: buffered-but-frozen` *(confirm)* | `SLOW_LINK_FROZEN_AHEAD_SEC` (5 s) or more buffered ahead of a frozen playhead. This is a decoder wedge, because progressive downloads keep going while the decoder is wedged |
+| `stuck: ready-but-frozen` *(confirm)* | readyState ≥ 3 and still frozen |
+| `slow-link: buffer-growing` | The buffered end gained ≥ `SLOW_LINK_MIN_GROWTH_SEC` (0.5 s) in `SLOW_LINK_WINDOW_MS` (6 s). After a hold has started, any growth within `SLOW_LINK_QUIET_MS` (15 s) also counts |
+| `slow-link: bytes-arriving` | Progressive only (not MSE/`blob:`): a `progress` event within the quiet window, even if under 0.5 s of media decoded |
+| `stuck: no-download-progress` | None of the above |
+
+*Confirm*: a frozen verdict acts only after it has held for
+`WEDGE_CONFIRM_MS` (2 s) with `currentTime` unchanged. Chromium flips
+readyState, and often lands a burst of buffer, a beat before the clock visibly
+moves, and a rung fired in that instant would restart a download at the very
+moment it recovered.
+
+The quiet window is 6 s until a hold has started. After that it is 15 s,
+because degraded Wi-Fi routinely goes 6–10 s without delivering anything.
+
+The buffer reading follows the incident's geometry. When `currentTime` is in no
+range, it measures the range starting up to 2 s ahead (a seek target whose
+bytes are landing) or one ending up to 0.5 s behind (a starved progressive
+download). Chromium often reports the playhead a few ms past the buffered end.
+
+On MSE (dash.js, hls.js) the element's `progress` events say nothing reliable
+about the bytes the playhead needs, so there only buffered growth counts as
+life. That keeps a DASH seek past the transcoder head on the old jolt path.
+
+**A viewer seek during a hold** starts a new episode at the new position: the
+intent is re-captured and the 9.5 s grace re-armed. A rung never jumps back to
+the pre-seek point.
 
 The 6 s window fits inside the 9.5 s jolt grace, so the verdict is ready by the
-first rung. Chromium resumes a starved element with well under 5 s buffered: in
-the incident, playback resumed after 1–5 s of content had arrived. That makes
-the frozen-ahead mark slack, not a target. Combined with the growth floor, it
-also bounds a buffered hold to about 60 s.
+first rung.
 
 **Logs.**
-- `playback.stalled` now carries `bufferAheadSec`, `bufferedEndSec`, `readyState`, `networkState`, `bufferGrowthSec`, `bufferGrowthRate` (media seconds per wall second, where 1.0 is realtime), `bufferGrowthWindowMs` and `connection` (`navigator.connection`: `effectiveType`, `downlinkMbps`, `rttMs`).
+- `playback.stalled` now carries (measured over the window *before* the starvation, so read `bufferGrowthRate` together with `networkState`: 1 = the browser had idled the download) `bufferAheadSec`, `bufferedEndSec`, `readyState`, `networkState`, `bufferGrowthSec`, `bufferGrowthRate` (media seconds per wall second, where 1.0 is realtime), `bufferGrowthWindowMs` and `connection` (`navigator.connection`: `effectiveType`, `downlinkMbps`, `rttMs`).
 - A hold logs `playback.resilience-slow-link-wait` (warn) once per episode. `playback.resilience-slow-link-wait-ended` reports `outcome` and `waitedMs`.
 - The startup deadline logs `playback.startup-deadline-deferred-slow-link`.
 - The controller logs `playback.duration-pending-load` where it would previously have fired `duration-lost`.

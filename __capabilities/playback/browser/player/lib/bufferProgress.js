@@ -35,41 +35,84 @@ export const SLOW_LINK_FROZEN_AHEAD_SEC = 5;
 // slow link). The frozen-ahead mark normally ends a buffered hold first; this
 // is what bounds a pre-metadata (readyState 0) hold.
 export const SLOW_LINK_MAX_HOLD_MS = 120_000;
+// Backstop across a whole playback session: once this much time has been spent
+// holding for a slow link, the ladder runs uninterrupted again (a server-side
+// trickle must not hold a queue forever — exhaustion is what lets it advance).
+export const SLOW_LINK_SESSION_BUDGET_MS = 300_000;
+// Once an episode has shown life (a hold started), a quiet gap of this long —
+// no bytes and no growth — is needed before it is declared stuck. Degraded
+// Wi-Fi routinely goes 6–10 s without delivering anything (retries, roams).
+export const SLOW_LINK_QUIET_MS = 15_000;
+// A "frozen" verdict (buffered-but-frozen / ready-but-frozen) must persist this
+// long with the playhead unchanged before a rung may fire: Chromium sets
+// readyState 3/4 a beat before the clock visibly moves, and a rung fired in
+// that instant would restart a download at the moment it recovered.
+export const WEDGE_CONFIRM_MS = 2000;
 // HAVE_FUTURE_DATA: the element has data past the playhead. Still frozen at
 // the first rung (≥9.5 s stuck) means the pipeline, not the link, is stuck.
 const HAVE_FUTURE_DATA = 3;
 // A playhead move larger than this between two samples is a seek or element
 // swap: the buffered end jumps with it, and that jump is not download progress.
-const PLAYHEAD_JUMP_SEC = 3;
-// Tolerance for a playhead resting a hair before its range (seek landing).
+export const PLAYHEAD_JUMP_SEC = 3;
+// Tolerance for a playhead resting a hair before its range (seek landing), or a
+// hair past its end (Chromium often reports currentTime a few ms past it).
 const RANGE_SLACK_SEC = 0.25;
+const RANGE_PAST_END_SEC = 0.5;
+// A range starting this close ahead of the playhead is the one being filled
+// for it (a seek target whose first bytes are landing).
+const RANGE_AHEAD_SEC = 2;
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /**
  * Read the buffer around the playhead.
+ * `mse` is true for MediaSource/srcObject playback (dash.js, hls.js): there the
+ * element's `progress` events say nothing reliable about the bytes the
+ * playhead needs, so only buffered growth counts as life.
  * @returns {{currentTime:number|null, bufferAheadSec:number|null, bufferedEndSec:number|null,
- *           readyState:number|null, networkState:number|null}}
+ *           readyState:number|null, networkState:number|null, mse:boolean}}
  */
 export function readBufferWindow(el) {
-  const out = { currentTime: null, bufferAheadSec: null, bufferedEndSec: null, readyState: null, networkState: null };
+  const out = { currentTime: null, bufferAheadSec: null, bufferedEndSec: null, readyState: null, networkState: null, mse: false };
   if (!el) return out;
   try {
     out.readyState = num(el.readyState);
     out.networkState = num(el.networkState);
+    const src = String(el.currentSrc || el.src || '');
+    out.mse = src.startsWith('blob:') || el.srcObject != null;
     const ct = num(el.currentTime);
     out.currentTime = ct;
     if (ct == null) return out;
     const ranges = el.buffered;
     const count = Number(ranges?.length) || 0;
+    let ahead = null;
+    let justBehind = null;
     for (let i = 0; i < count; i += 1) {
       const start = ranges.start(i);
       const end = ranges.end(i);
-      if (Number.isFinite(start) && Number.isFinite(end) && ct >= start - RANGE_SLACK_SEC && ct <= end) {
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      if (ct >= start - RANGE_SLACK_SEC && ct <= end) {
         out.bufferedEndSec = end;
         out.bufferAheadSec = Math.max(0, end - ct);
         return out;
       }
+      if (start > ct && start - ct <= RANGE_AHEAD_SEC && (ahead == null || start < ahead.start)) ahead = { start, end };
+      if (end < ct && ct - end <= RANGE_PAST_END_SEC) justBehind = { start, end };
+    }
+    // Order matters: a range filling just ahead (the seek target) is the
+    // download the playhead waits for; a range ending just behind it is where
+    // a starved progressive download keeps appending.
+    if (!ahead && justBehind) {
+      out.bufferedEndSec = justBehind.end;
+      out.bufferAheadSec = 0;
+      return out;
+    }
+    if (ahead) {
+      // Not contiguous with the playhead, so nothing is playable yet — but its
+      // end moving is exactly the download the playhead is waiting for.
+      out.bufferedEndSec = ahead.end;
+      out.bufferAheadSec = 0;
+      return out;
     }
     out.bufferedEndSec = ct;
     out.bufferAheadSec = 0;
@@ -127,27 +170,53 @@ export function createBufferGrowthTracker({ windowMs = SLOW_LINK_WINDOW_MS } = {
 
 /**
  * Verdict for a stuck episode.
- * @returns {{kind:'slow-link'|'stuck', reason:string}}
+ * @param {object} p
+ * @param {number} p.now
+ * @param {object|null} p.reading            readBufferWindow() result
+ * @param {object|null} p.growth             tracker snapshot
+ * @param {boolean} [p.hasMediaError]
+ * @param {number|null} [p.holdStartedAtMs]  start of the current hold
+ * @param {number|null} [p.networkProgressAtMs] last element `progress` event (bytes arrived)
+ * @param {boolean} [p.showedLife]           this episode already held (life was seen)
+ * @param {number} [p.sessionHeldMs]         total held this playback session
+ * @returns {{kind:'slow-link'|'stuck', reason:string, confirm?:boolean}}
+ *   `confirm: true` — a frozen verdict the caller must see persist for
+ *   WEDGE_CONFIRM_MS (playhead unchanged) before acting on it.
  */
-export function decideStuckKind({ now, reading, growth, hasMediaError = false, holdStartedAtMs = null, networkProgressAtMs = null }) {
+export function decideStuckKind({
+  now, reading, growth, hasMediaError = false, holdStartedAtMs = null,
+  networkProgressAtMs = null, showedLife = false, sessionHeldMs = 0,
+}) {
   if (hasMediaError) return { kind: 'stuck', reason: 'media-error' };
+  if (num(sessionHeldMs) != null && sessionHeldMs > SLOW_LINK_SESSION_BUDGET_MS) {
+    return { kind: 'stuck', reason: 'slow-link-budget-spent' };
+  }
   if (num(holdStartedAtMs) != null && now - holdStartedAtMs > SLOW_LINK_MAX_HOLD_MS) {
     return { kind: 'stuck', reason: 'slow-link-hold-expired' };
   }
+  const quietMs = showedLife ? SLOW_LINK_QUIET_MS : SLOW_LINK_WINDOW_MS;
+  const bytesRecent = num(networkProgressAtMs) != null && now - networkProgressAtMs <= quietMs;
   // Before metadata (readyState 0) there is no buffered range to measure, so a
   // reload that is still fetching the header (an mp4 moov can be megabytes) is
   // judged by the element's own `progress` events — fired only when bytes
   // actually arrived. Re-requesting it would restart the header from zero.
   if (reading && reading.readyState === 0) {
-    const fetching = num(networkProgressAtMs) != null && now - networkProgressAtMs <= SLOW_LINK_WINDOW_MS;
-    return fetching ? { kind: 'slow-link', reason: 'metadata-loading' } : { kind: 'stuck', reason: 'no-download-progress' };
+    return bytesRecent ? { kind: 'slow-link', reason: 'metadata-loading' } : { kind: 'stuck', reason: 'no-download-progress' };
   }
-  if (!reading || !growth || num(reading.bufferAheadSec) == null) return { kind: 'stuck', reason: 'no-reading' };
-  if (reading.bufferAheadSec >= SLOW_LINK_FROZEN_AHEAD_SEC) return { kind: 'stuck', reason: 'buffered-but-frozen' };
-  if (num(reading.readyState) != null && reading.readyState >= HAVE_FUTURE_DATA) return { kind: 'stuck', reason: 'ready-but-frozen' };
-  const recent = num(growth.lastGrowthAtMs) != null && now - growth.lastGrowthAtMs <= SLOW_LINK_WINDOW_MS;
-  if (!recent || !(growth.growthSec >= SLOW_LINK_MIN_GROWTH_SEC)) return { kind: 'stuck', reason: 'no-download-progress' };
-  return { kind: 'slow-link', reason: 'buffer-growing' };
+  if (!reading || num(reading.bufferAheadSec) == null) return { kind: 'stuck', reason: 'no-reading' };
+  if (reading.bufferAheadSec >= SLOW_LINK_FROZEN_AHEAD_SEC) return { kind: 'stuck', reason: 'buffered-but-frozen', confirm: true };
+  if (num(reading.readyState) != null && reading.readyState >= HAVE_FUTURE_DATA) return { kind: 'stuck', reason: 'ready-but-frozen', confirm: true };
+  const lastGrowthAt = num(growth?.lastGrowthAtMs);
+  const growing = lastGrowthAt != null && (
+    (now - lastGrowthAt <= SLOW_LINK_WINDOW_MS && growth.growthSec >= SLOW_LINK_MIN_GROWTH_SEC)
+    // Once life was seen, any growth inside the quiet window keeps it alive.
+    || (showedLife && now - lastGrowthAt <= SLOW_LINK_QUIET_MS)
+  );
+  if (growing) return { kind: 'slow-link', reason: 'buffer-growing' };
+  // Progressive download: bytes arriving is life even when 150 KB has not yet
+  // decoded into half a second of media. MSE: element progress is not trusted.
+  if (!reading.mse && bytesRecent) return { kind: 'slow-link', reason: 'bytes-arriving' };
+  return { kind: 'stuck', reason: 'no-download-progress' };
 }
 
 /** Browser's own link estimate (Network Information API), when it has one. */

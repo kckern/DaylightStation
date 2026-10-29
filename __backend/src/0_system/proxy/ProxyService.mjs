@@ -17,6 +17,7 @@ import http from 'http';
 import https from 'https';
 import { URL } from 'url';
 import { sendPlaceholderSvg } from './placeholders.mjs';
+import { createStreamTransferMeter } from './streamTransferMeter.mjs';
 
 /**
  * ProxyService class
@@ -107,6 +108,47 @@ export class ProxyService {
     const timeout = adapter.getTimeout?.() || 30000;
 
     await this.#proxyWithRetry(adapter, req, res, retryConfig, timeout, 0);
+  }
+
+  /**
+   * Delivery-rate telemetry for a long media transfer (see streamTransferMeter).
+   * `proxy.stream.progress` every 30 s while open, `proxy.stream.transfer` at
+   * the end: kbps plus the share of time the CLIENT side held the upstream back
+   * (pipe backpressure), which tells a slow client link from a slow upstream.
+   * Never throws into the pipe.
+   * @private
+   */
+  #meterStream(adapter, req, proxyRes, res, path, serviceName) {
+    try {
+      if (typeof adapter.isMeteredStreamPath !== 'function' || !adapter.isMeteredStreamPath(path)) return;
+      const meter = createStreamTransferMeter();
+      const xff = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+      const base = {
+        service: serviceName,
+        part: String(path).split('?')[0].replace(/^.*\/library\/parts\//, ''),
+        range: req.headers?.range || null,
+        client: req.headers?.['x-real-ip'] || xff || req.socket?.remoteAddress || null,
+        userAgent: String(req.headers?.['user-agent'] || '').slice(0, 160) || null,
+      };
+      proxyRes.on('data', (chunk) => {
+        meter.data(chunk.length);
+        const row = meter.progressIfDue();
+        if (row) this.#logger.info?.('proxy.stream.progress', { ...base, ...row });
+      });
+      proxyRes.on('pause', () => meter.pause());
+      proxyRes.on('resume', () => meter.resume());
+      let done = false;
+      const finish = (completed) => {
+        if (done) return;
+        done = true;
+        const summary = meter.summary({ completed });
+        if (summary) this.#logger.info?.('proxy.stream.transfer', { ...base, ...summary });
+      };
+      proxyRes.on('end', () => finish(true));
+      res.on('close', () => finish(res.writableFinished));
+    } catch (error) {
+      this.#logger.warn?.('proxy.stream.meter-failed', { error: error?.message });
+    }
   }
 
   /**
@@ -297,6 +339,7 @@ export class ProxyService {
 
           res.writeHead(statusCode, responseHeaders);
         }
+        this.#meterStream(adapter, req, proxyRes, res, path, serviceName);
         proxyRes.pipe(res);
         proxyRes.on('end', resolve);
       });
@@ -407,6 +450,7 @@ export class ProxyService {
           if (cacheHeaders) Object.assign(responseHeaders, cacheHeaders);
           res.writeHead(statusCode, responseHeaders);
         }
+        this.#meterStream(adapter, req, proxyRes, res, targetUrl.pathname, serviceName);
         proxyRes.pipe(res);
         proxyRes.on('end', resolve);
       });
