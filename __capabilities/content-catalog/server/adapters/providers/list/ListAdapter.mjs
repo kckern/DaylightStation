@@ -1154,12 +1154,16 @@ export class ListAdapter {
           // Programs with play action: pick ONE "next up" item per slot
           const colonIdx = input.indexOf(':');
           const child = { id: input, source: colonIdx !== -1 ? input.substring(0, colonIdx) : 'files' };
-          if (item.strategy && resolved.adapter.resolvePlayables) {
+          // `shuffle: true` on a single-pick slot means rotation. It used to be
+          // read only by queue slots and was ignored here, so the slot served
+          // the same next-up item on every run.
+          const strategy = item.strategy || (item.shuffle ? 'rotation' : null);
+          if (strategy && resolved.adapter.resolvePlayables) {
             // Slot opted into an explicit selection strategy — bypass the
             // default in-progress / first-unwatched cascade and let
             // ItemSelectionService apply the named strategy. allowFallback
             // recycles the pool when fully watched so the slot never goes empty.
-            tasks.push(() => this._pickViaStrategy(item.strategy, resolved, child));
+            tasks.push(() => this._pickViaStrategy(strategy, resolved, child));
           } else {
             tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
           }
