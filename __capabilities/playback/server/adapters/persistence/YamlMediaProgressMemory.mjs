@@ -25,6 +25,10 @@ function dehydrateMediaProgress(state) {
     watchTime: state.watchTime
   };
   if (state.completedAt) record.completedAt = state.completedAt;
+  if (state.skipped) {
+    record.skipped = true;
+    if (state.skippedAt) record.skippedAt = state.skippedAt;
+  }
   if (state.bookmark) record.bookmark = state.bookmark;
   if (state.spots !== undefined) record.spots = { ...(state.spots || {}) };
   if (state.lastDevice) record.lastDevice = state.lastDevice;
@@ -134,6 +138,8 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       lastPlayed: data.lastPlayed ?? null,
       watchTime: data.watchTime ?? 0,
       completedAt: data.completedAt ?? null,
+      skipped: data.skipped === true,
+      skippedAt: data.skippedAt ?? null,
       bookmark: data.bookmark ?? null,
       spots: data.spots === undefined ? undefined : (data.spots || {}),
       lastDevice: data.lastDevice ?? null,

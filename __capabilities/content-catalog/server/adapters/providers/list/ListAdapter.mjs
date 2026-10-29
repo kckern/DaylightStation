@@ -607,7 +607,7 @@ export class ListAdapter {
     for (const item of items) {
       const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
-      if (percent > 1 && !QueueService.isWatched({ duration: item.duration, percent })) {
+      if (percent > 1 && !QueueService.isWatched({ duration: item.duration, percent, skipped: state?.skipped })) {
         return item;
       }
     }
@@ -616,7 +616,7 @@ export class ListAdapter {
     for (const item of items) {
       const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
-      if (!QueueService.isWatched({ duration: item.duration, percent })) {
+      if (!QueueService.isWatched({ duration: item.duration, percent, skipped: state?.skipped })) {
         return item;
       }
     }

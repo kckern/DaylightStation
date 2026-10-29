@@ -1279,7 +1279,8 @@ export class PlexAdapter {
           playhead: state.playhead || 0,
           duration: state.duration || 0,
           percent: state.percent || 0,
-          lastPlayed: state.lastPlayed || null
+          lastPlayed: state.lastPlayed || null,
+          skipped: state.skipped === true
         };
       }
       return history;
@@ -1340,7 +1341,7 @@ export class PlexAdapter {
       const duration = entry?.duration ?? 0;
       const percent = entry?.percent ?? (duration > 0 ? (playhead / duration) * 100 : 0);
 
-      if (this._isWatched({ percent, seconds: playhead })) {
+      if (entry?.skipped || this._isWatched({ percent, seconds: playhead })) {
         watched.push(key);
       } else if (percent > 0) {
         inProgress.push(key);
