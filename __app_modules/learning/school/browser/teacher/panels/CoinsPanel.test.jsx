@@ -71,6 +71,13 @@ describe('CoinsPanel', () => {
     expect(schoolApi.earningsPreview).toHaveBeenCalledWith('learner-a', null);
   });
 
+  it('reads a subject not done today as "not yet", never a ✗, until the day is over', async () => {
+    schoolApi.earningsPreview.mockResolvedValue(ok(preview({ today: '2026-09-22' })));
+    render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
+    expect(await screen.findByText(/not done yet today/)).toBeInTheDocument();
+    expect(screen.queryByText(/: not done$/)).toBeNull();
+  });
+
   it('draws the week\'s work: a day row and a row per subject, Monday to Sunday', async () => {
     render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
     const grid = await screen.findByRole('table', { name: /week's work/i });

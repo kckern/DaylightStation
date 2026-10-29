@@ -239,7 +239,9 @@ describe('TodayTab', () => {
     expect(screen.getByRole('link', { name: /Open active retry/ })).toHaveAttribute('href', expect.stringContaining('ses_retry'));
     fireEvent.click(screen.getByRole('button', { name: /Open the result receipt/ }));
     expect(open).toHaveBeenCalledWith('/issued/failed-receipt.png', '_blank', 'noopener');
-    expect(screen.getByText(/Sent to printer; printer confirmation unavailable/)).toBeInTheDocument();
+    // The ordinary "can't confirm" is a tooltip, not a line under every row.
+    expect(screen.queryByText(/Sent to printer; printer confirmation unavailable/)).toBeNull();
+    expect(screen.getByRole('button', { name: /Open the result receipt/ })).toHaveAttribute('title', 'Sent to printer; printer confirmation unavailable');
     open.mockRestore();
   });
 

@@ -99,14 +99,19 @@ export default function RecordsTab({ learnerId }) {
       <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />
       {periodId && <ReportCardView learnerId={learnerId} periodId={periodId} closed={closed} />}
       {periodId && <PacingPanel learnerId={learnerId} periodId={periodId} />}
-      <PanelFrame
-        title="Curriculum history"
-        state={history.state}
-        retry={history.retry}
-        emptyCopy="No recorded evidence yet."
-      >
-        {history.data?.curriculumHistory && <CurriculumHistoryOverview history={history.data.curriculumHistory} resolveTitle={resolveNodeTitle} />}
-      </PanelFrame>
+      {/* Every course, unit and lesson with recorded work — 100+ nodes for one
+          child, so it folds (audit 2026-10-29: Reports ran to ~15,000px). */}
+      <details className="teacher-records-history">
+        <summary>Curriculum history — every course, unit and lesson with recorded work</summary>
+        <PanelFrame
+          title="Curriculum history"
+          state={history.state}
+          retry={history.retry}
+          emptyCopy="No recorded evidence yet."
+        >
+          {history.data?.curriculumHistory && <CurriculumHistoryOverview history={history.data.curriculumHistory} resolveTitle={resolveNodeTitle} />}
+        </PanelFrame>
+      </details>
       <PanelFrame
         title="Tutor insights"
         state={insights.state}

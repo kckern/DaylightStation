@@ -1,3 +1,4 @@
+import "./ProgressOverview.scss";
 import { useMemo, useState } from 'react';
 import OverviewDetail from "./OverviewDetail.jsx";
 import { flattenCurriculumHistory } from "./curriculumHistoryFlatten.js";

@@ -129,7 +129,7 @@ describe('ReassignPanel — work with no machine attempts', () => {
     expect(screen.queryByText('Korean — day 11')).toBeNull();
 
     // Where the lesson stands, in words — never the lifecycle slug.
-    expect(within(sessionRows[0]).getByText('Completed')).toBeTruthy();
+    expect(within(sessionRows[0]).getByText('Done')).toBeTruthy();
     expect(within(sessionRows[0]).queryByText('rewarded')).toBeNull();
 
     const row = sessionRows[0];

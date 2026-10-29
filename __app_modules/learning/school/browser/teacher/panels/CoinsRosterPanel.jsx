@@ -41,6 +41,7 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
             <button type="button" aria-label="Next week" onClick={() => setWeek(shiftWeek(from, 1))}>›</button>
             {week && <button type="button" className="teacher-coins__today" onClick={() => setWeek(null)}>This week</button>}
           </div>
+          <div className="teacher-coins__scroll">
           <table className="teacher-coins__lines" aria-label="Everyone's week">
             <thead><tr><th scope="col">Learner</th><th scope="col">Silver</th><th scope="col">Gems</th><th scope="col">Pending</th><th scope="col">Green days</th><th scope="col">Rings</th><th scope="col"><span className="teacher-visually-hidden">Open</span></th></tr></thead>
             <tbody>
@@ -59,6 +60,7 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
               ))}
             </tbody>
           </table>
+          </div>
           {/* The rules revision rides along as a tooltip, not as copy. */}
           <p className="teacher-coins__fine" title={`Earning rules revision ${data.rulesRevision}`}>Preview — nothing is paid yet</p>
         </div>

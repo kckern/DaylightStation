@@ -229,7 +229,10 @@ export function DigestArtifactButtons({ session, onOpen = () => {} }) {
           <IconReceipt />
         </button>
       )}
-      {receiptStatus && <small className="teacher-lesson-card__print-state">{receiptStatus}</small>}
+      {/* Only a FAILED print is news. "Sent; the printer cannot confirm" is the
+          ordinary case and printed under every row (audit 2026-10-29); it
+          stays as the receipt button's tooltip. */}
+      {receipt?.printed === false && receiptStatus && <small className="teacher-lesson-card__print-state">{receiptStatus}</small>}
     </span>
   );
 }
@@ -457,18 +460,15 @@ function dotTone(row) {
   return 'idle';
 }
 
-// The chip's verdict in words: a percent beats any state; otherwise a short,
-// colour-free mark of how far along the lesson is.
-const CHIP_STATE = {
-  done: 'done', 'in-progress': 'started', planned: 'to do', deferred: 'later', blocked: 'stuck', unassigned: 'extra',
-};
-
+// The chip's verdict in words: a percent beats any state; otherwise the
+// console's ONE status vocabulary (`DAY_STATUS_LABEL`, the Day record's own
+// words), lower-cased for a chip (audit 2026-10-29: eight words for one fact).
 function chipResult(row) {
   const score = row.session?.effectiveScore;
   if (score?.percent != null) return `${Math.round(score.percent)}%`;
   if (row.session?.reviewStatus === 'pending') return 'to mark';
   if (needsAdult(row.obligation)) return 'needs you';
-  return CHIP_STATE[row.status] ?? '';
+  return (DAY_STATUS_LABEL[row.status] ?? '').toLowerCase();
 }
 
 /**

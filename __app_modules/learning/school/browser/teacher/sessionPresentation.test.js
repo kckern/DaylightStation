@@ -10,7 +10,7 @@ describe('presentSessionState', () => {
 
   it('distinguishes returned work from completed work', () => {
     expect(presentSessionState({ state: 'submitted' }).label).toBe('Awaiting review');
-    expect(presentSessionState({ state: 'rewarded', outcome: { result: 'passed' } }).label).toBe('Completed');
+    expect(presentSessionState({ state: 'rewarded', outcome: { result: 'passed' } }).label).toBe('Done');
   });
 
   it('says a remediation is assigned once its session has been opened', () => {

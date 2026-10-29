@@ -1,3 +1,4 @@
+import "./ProgressOverview.scss";
 import { useMemo } from 'react';
 import OverviewDetail from "./OverviewDetail.jsx";
 

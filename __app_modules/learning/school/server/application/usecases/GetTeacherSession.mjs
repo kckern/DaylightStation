@@ -117,9 +117,12 @@ export class GetTeacherSession {
       taxonomy: {
         subject: unit?.subject ?? course?.subject ?? null,
         subjectIcon: unit?.subject ?? course?.subject ?? 'school',
-        courseId, courseTitle: course?.title ?? 'Course title unavailable',
-        moduleId: unit?.module ?? null, moduleTitle: module?.title ?? 'Unit title unavailable',
-        lessonId: state.unitId, lessonTitle: unit?.title ?? 'Lesson title unavailable',
+        courseId, courseTitle: course?.title ?? null,
+        moduleId: unit?.module ?? null, moduleTitle: module?.title ?? null,
+        lessonId: state.unitId, // A session outside the curriculum catalog (a program's own session)
+          // names no unit: null, never a placeholder sentence — the console
+          // falls back to the day plan's own words for it.
+          lessonTitle: unit?.title ?? state.title ?? null,
         posterUrl: courseId ? curriculumPosterRef('teacher', courseId) : null,
       },
       capabilities: {

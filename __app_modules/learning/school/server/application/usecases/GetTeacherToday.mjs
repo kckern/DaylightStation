@@ -232,13 +232,16 @@ export class GetTeacherToday {
           learnerId: state.learnerId,
           unitId: state.unitId,
           lessonId: state.unitId,
-          lessonTitle: unit?.title ?? 'Lesson title unavailable',
+          // A session outside the curriculum catalog (a program's own session)
+          // names no unit: null, never a placeholder sentence — the console
+          // falls back to the day plan's own words for it.
+          lessonTitle: unit?.title ?? state.title ?? null,
           subject: unit?.subject ?? work?.subject ?? null,
           subjectIcon: unit?.subject ?? work?.subject ?? 'school',
           courseId,
-          courseTitle: work?.title ?? 'Course title unavailable',
+          courseTitle: work?.title ?? null,
           moduleId: unit?.module ?? null,
-          moduleTitle: module?.title ?? 'Unit title unavailable',
+          moduleTitle: module?.title ?? null,
           posterUrl: courseId ? curriculumPosterRef('teacher', courseId) : null,
           studyDay: originalStudyDay,
           createdAt,
