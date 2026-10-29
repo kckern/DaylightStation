@@ -7,8 +7,8 @@ const identity = { fitnessSessionId: 'fs-1', riderId: 'test-rider', equipmentId:
 describe('Skyline Glider checkpoint repository', () => {
   beforeEach(() => localStorage.clear());
   it('round-trips only an exactly compatible active checkpoint', () => {
-    writeFlightCheckpoint('test-rider', course, { identity, state: { courseTime: 75, collectedIds: ['a'] } });
-    expect(readFlightCheckpoint('test-rider', course, identity)).toMatchObject({ status: 'compatible', identity: { runId: 'run-1' }, state: { courseTime: 75 } });
+    writeFlightCheckpoint('test-rider', course, { identity, state: { courseTime: 75, collectedIds: ['a'], entityDamage: { target: 2 } } });
+    expect(readFlightCheckpoint('test-rider', course, identity)).toMatchObject({ status: 'compatible', identity: { runId: 'run-1' }, state: { courseTime: 75, entityDamage: { target: 2 } } });
     for (const [field, value] of [['fitnessSessionId', 'fs-2'], ['riderId', 'alex'], ['equipmentId', 'cycle_ace'], ['runId', 'run-2']]) {
       expect(readFlightCheckpoint('test-rider', course, { ...identity, [field]: value }).status).toBe('incompatible');
     }

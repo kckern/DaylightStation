@@ -26,6 +26,8 @@ function fireKeyAction(event) {
 
 export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad, onFire } = {}) {
   const queue = useRef([]);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
   const onGamepadRef = useRef(onGamepad);
   onGamepadRef.current = onGamepad;
   const onFireRef = useRef(onFire);
@@ -87,11 +89,19 @@ export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad, onFi
     return () => cancelAnimationFrame(frame);
   }, [enabled, getGamepads]);
 
-  return useCallback(() => {
+  const drain = useCallback(() => {
     const actions = queue.current;
     queue.current = [];
     return actions;
   }, []);
+  drain.enqueue = (actions, source = 'rider-button') => {
+    if (!enabledRef.current) return;
+    for (const action of actions) {
+      queue.current.push(action);
+      onFireRef.current?.({ action, source });
+    }
+  };
+  return drain;
 }
 
 export default useSkylineWeapons;

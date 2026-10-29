@@ -6,7 +6,7 @@ import { resolveAct } from './skylineGlider/resolveAct.mjs';
 // Bundled world: zones (art, sounds, entity classes) and acts (course layouts).
 // Household files under fitness/skyline-glider/ add to or replace them by id.
 const bundledRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), 'skylineGlider');
-const TYPES = new Set(['open', 'lower-terrain', 'upper-terrain', 'corridor', 'collectible-path', 'checkpoint', 'finish']);
+const TYPES = new Set(['open', 'lower-terrain', 'upper-terrain', 'corridor', 'lava', 'collectible-path', 'checkpoint', 'finish']);
 const ID = /^[a-z][a-z0-9-]+$/;
 
 function validateCourse(course) {

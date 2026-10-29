@@ -74,3 +74,16 @@
 @keyframes skyline-bell-pop { from { opacity: 1; transform: scale(.25); } to { opacity: 0; transform: scale(1.4); } }
 @keyframes skyline-banner { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
 @media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: 1rem 1rem auto 7rem; font-size: .85rem; } .skyline-glider__rpm-gauge { left: .5rem; width: 5rem; } }
+.skyline-glider__slope-edge { fill: none; stroke: #b6df7c; stroke-width: 8; stroke-linejoin: round; }
+.skyline-glider__lava rect { fill: #ef4f19; }
+.skyline-glider__lava path { fill: none; stroke: #ffd156; stroke-width: 8; }
+.skyline-glider__scene[data-theme="meadow"] .skyline-glider__parallax--far path { fill: #88b9a5; }
+.skyline-glider__scene[data-theme="meadow"] .skyline-glider__parallax--middle path { fill: #65a77f; }
+.skyline-glider__scene[data-theme="meadow"] .skyline-glider__parallax--near path { fill: #3c8b69; }
+.skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--far path { fill: #695279; }
+.skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--middle path { fill: #4f3f60; }
+.skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--near path { fill: #352f48; }
+.skyline-glider__shot[data-power="2"] { filter: drop-shadow(0 0 5px #ffdd66); }
+.skyline-glider__shot[data-power="3"] { filter: drop-shadow(0 0 8px #ff963c); }
+.skyline-glider__shot[data-power="4"] { filter: drop-shadow(0 0 12px #ff503c); }
+.skyline-glider__stop-warning { position: absolute; top: 7rem; left: 50%; transform: translateX(-50%); padding: .6rem 1.2rem; border-radius: 1rem; color: #fff5b8; background: #792e20; font-size: 1.4rem; font-weight: 800; }

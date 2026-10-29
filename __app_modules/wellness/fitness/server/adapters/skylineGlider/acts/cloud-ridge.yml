@@ -1,55 +1,145 @@
 schema: skyline-glider-course/v1
 id: cloud-ridge
-version: 1
+version: 2
 zone: alpine
 act: 2
 name: Cloud Ridge
-description: Clear the pines, dodge the boulders, and thread the ridge gap.
+description: Press your rider button to fire! Save bombs for marked barriers. Keep
+  pedaling above the lava.
 duration_s: 240
+rpm:
+  min: 15
+  max: 60
 motion:
   filter_s: 0.25
   deadband_rpm: 2
   response_s: 0.6
-  max_climb_rate: 0.30
-  max_descent_rate: 0.30
+  max_climb_rate: 0.3
+  max_descent_rate: 0.3
   coast_s: 1
   disconnect_grace_s: 0.75
   slow_signal_grace_s: 5
   inferred_slowdown_s: 0.5
+  stop_coast_s: 3
 rules:
   lives: 3
   invincibility_s: 1.25
   restart_delay_s: 2
+  weapons:
+    enabled: true
+    bombs: 5
+    blast_width_s: 3
+    blast_height: 0.16
+overrides:
+  palette:
+    theme: volcanic
+    sky: '#332c57'
+    horizon: '#cf786b'
+    rock: '#66505a'
+    rock_low: '#2c2c40'
 segments:
-  - { id: valley, type: open, start_s: 0, end_s: 240 }
-  - id: ridge-bells
-    type: collectible-path
-    start_s: 10
-    end_s: 230
-    collectibles:
-      - { id: cr-bell-01, at_s: 26, altitude: 0.36 }
-      - { id: cr-bell-02, at_s: 42, altitude: 0.36 }
-      - { id: cr-bell-03, at_s: 82, altitude: 0.50 }
-      - { id: cr-bell-04, at_s: 117, altitude: 0.34 }
-      - { id: cr-bell-05, at_s: 166, altitude: 0.44 }
-      - { id: cr-bell-06, at_s: 207, altitude: 0.30 }
-  - { id: pine-meadow, type: lower-terrain, start_s: 15, end_s: 50, top: 0.60 }
-  - { id: checkpoint-one, type: checkpoint, start_s: 62, restart_altitude: 0.50 }
-  - { id: cloud-shelf, type: upper-terrain, start_s: 75, end_s: 90, bottom: 0.40 }
-  - { id: boulder-field, type: lower-terrain, start_s: 100, end_s: 135, top: 0.62 }
-  - { id: checkpoint-two, type: checkpoint, start_s: 145, restart_altitude: 0.50 }
-  - { id: ridge-gap, type: corridor, start_s: 160, end_s: 172, ceiling: 0.25, floor: 0.62 }
-  - { id: checkpoint-three, type: checkpoint, start_s: 176, restart_altitude: 0.50 }
-  - { id: last-ridge, type: lower-terrain, start_s: 190, end_s: 225, top: 0.52 }
-  - { id: finish, type: finish, start_s: 240 }
+- id: ridge-sky
+  type: open
+  start_s: 0
+  end_s: 240
+- id: practice-ground
+  type: lower-terrain
+  start_s: 0
+  end_s: 100
+  top: 0.92
+- id: ridge-bells
+  type: collectible-path
+  start_s: 10
+  end_s: 235
+  collectibles:
+  - id: cr-bell-01
+    at_s: 12
+    altitude: 0.74
+  - id: cr-bell-02
+    at_s: 30
+    altitude: 0.6
+  - id: cr-bell-03
+    at_s: 48
+    altitude: 0.7
+  - id: cr-bell-04
+    at_s: 75
+    altitude: 0.76
+  - id: cr-bell-05
+    at_s: 118
+    altitude: 0.72
+  - id: cr-bell-06
+    at_s: 130
+    altitude: 0.6
+  - id: cr-bell-07
+    at_s: 165
+    altitude: 0.76
+  - id: cr-bell-08
+    at_s: 185
+    altitude: 0.62
+  - id: cr-bell-09
+    at_s: 228
+    altitude: 0.72
+- id: checkpoint-one
+  type: checkpoint
+  start_s: 60
+  restart_altitude: 0.5
+- id: first-lava
+  type: lava
+  start_s: 110
+  end_s: 140
+  top: 0.9
+- id: checkpoint-two
+  type: checkpoint
+  start_s: 150
+  restart_altitude: 0.5
+- id: barrier-ground
+  type: lower-terrain
+  start_s: 155
+  end_s: 215
+  top: 0.92
+- id: last-lava
+  type: lava
+  start_s: 215
+  end_s: 240
+  top: 0.9
+- id: checkpoint-three
+  type: checkpoint
+  start_s: 225
+  restart_altitude: 0.5
+- id: finish
+  type: finish
+  start_s: 240
 entities:
-  - { id: sign-start, entity: signpost, at_s: 6, altitude: 0.88 }
-  - { id: pine-01, entity: pine, at_s: 22, altitude: 0.60 }
-  - { id: pine-02, entity: pine, at_s: 30, altitude: 0.60 }
-  - { id: pine-03, entity: pine, at_s: 38, altitude: 0.60 }
-  - { id: pine-04, entity: pine, at_s: 46, altitude: 0.60 }
-  - { id: boulder-01, entity: boulder, at_s: 110, altitude: 0.62 }
-  - { id: chalet-01, entity: chalet, at_s: 117, altitude: 0.62 }
-  - { id: boulder-02, entity: boulder, at_s: 124, altitude: 0.62 }
-  - { id: pine-05, entity: pine, at_s: 200, altitude: 0.52 }
-  - { id: pine-06, entity: pine, at_s: 214, altitude: 0.52 }
+- id: target-01
+  entity: target
+  at_s: 25
+  altitude: 0.6
+  hit_points: 3
+- id: target-02
+  entity: target
+  at_s: 42
+  altitude: 0.55
+  hit_points: 3
+- id: bomb-gate-01
+  entity: bombwall
+  at_s: 90
+  altitude: 0.95
+  width_s: 1.2
+  height: 0.9
+  required_weapon: bomb
+  vulnerable_to:
+  - bomb
+- id: target-03
+  entity: target
+  at_s: 175
+  altitude: 0.6
+  hit_points: 4
+- id: bomb-gate-02
+  entity: bombwall
+  at_s: 200
+  altitude: 0.95
+  width_s: 1.2
+  height: 0.9
+  required_weapon: bomb
+  vulnerable_to:
+  - bomb

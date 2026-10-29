@@ -72,7 +72,7 @@ for (const rpm of [15, 20]) {
 test('accepts slowing from fast to slow and low-cadence counter rollover', () => {
   const g = createCadenceGate();
   g.gate('slow', { calculatedCadence: 60, revolutionCount: 65535, now: 0 });
-  assert.equal(g.gate('slow', { calculatedCadence: 15, revolutionCount: 65535, now: 3500 }), 15);
+  assert.equal(g.gate('slow', { calculatedCadence: 60, revolutionCount: 65535, now: 3500 }), 60);
   assert.equal(g.gate('slow', { calculatedCadence: 15, revolutionCount: 0, now: 4000 }), 15);
   assert.equal(g.gate('slow', { calculatedCadence: 15, revolutionCount: 0, now: 7750 }), 15);
 });

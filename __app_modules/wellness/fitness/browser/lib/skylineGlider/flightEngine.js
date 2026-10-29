@@ -6,6 +6,7 @@ import {
   pointOverlapsCraft,
   safeBandAt,
   terrainContact,
+  terrainOverlappingCraft,
 } from "./flightGeometry.js";
 import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
 
@@ -35,6 +36,7 @@ function applyCourseEvents(state, previousTime, course) {
         collectedIds: [...next.collectedIds],
         destroyedIds: [...(next.destroyedIds || [])],
         destroyedBy: { ...(next.destroyedBy || {}) },
+        entityDamage: { ...(next.entityDamage || {}) },
       },
     };
   }
@@ -83,7 +85,11 @@ function collide(state, course) {
   if (state.phase !== 'playing') return state;
   if (state.collisionProtected) return holdInsideTerrain(state, course);
   const terrain = terrainContact(course, state.courseTime, state.altitude);
-  if (terrain) return crash(state, course, { cause: 'terrain', segmentId: terrain.id });
+  if (terrain) {
+    if (course.rules.assist_terrain && terrain.type === 'lower-terrain') {
+      state = { ...holdInsideTerrain(state, course), verticalRate: Math.min(0, state.verticalRate) };
+    } else return crash(state, course, { cause: terrain.type === 'lava' ? 'lava' : 'terrain', segmentId: terrain.id });
+  }
   // Anything already destroyed (by a crash, laser or bomb) is gone for collision.
   const destroyed = new Set(state.destroyedIds || []);
   const touching = entitiesTouchingCraft(course, state.courseTime, state.altitude).filter((entity) => !destroyed.has(entity.id));
@@ -125,6 +131,7 @@ function restartAtCheckpoint(state, course) {
     collectedIds: [...state.checkpoint.collectedIds],
     destroyedIds: [...(state.checkpoint.destroyedIds || [])],
     destroyedBy: { ...(state.checkpoint.destroyedBy || {}) },
+    entityDamage: { ...(state.checkpoint.entityDamage || {}) },
     projectiles: [],
     blasts: [],
     bombsLeft: weaponRules(course).bombs,
@@ -192,9 +199,11 @@ function singleStep(state, input, dt, course) {
   if (!missing) targetAltitude = targetForRpm(rawRpm === 0 ? 0 : filteredRpm, state.calibration);
   if (disconnected) targetAltitude = targetForRpm(rawRpm, state.calibration);
 
+  const overLava = terrainOverlappingCraft(course, state.courseTime).some(s => s.type === 'lava');
+  if (overLava && !missing && rawRpm === 0 && zeroElapsed > (course.motion.stop_coast_s ?? 3)) targetAltitude = 1;
   const desiredRate = (targetAltitude - state.altitude) / course.motion.response_s;
   const rate = clamp(desiredRate, -course.motion.max_climb_rate, course.motion.max_descent_rate);
-  const altitude = clamp(state.altitude + rate * dt, HIGH_ALTITUDE, LOW_ALTITUDE);
+  const altitude = clamp(state.altitude + rate * dt, HIGH_ALTITUDE, overLava ? 1 : LOW_ALTITUDE);
   let next = {
     ...state,
     rawRpm,
@@ -211,7 +220,7 @@ function singleStep(state, input, dt, course) {
     invincibleRemaining: Math.max(0, state.invincibleRemaining - dt),
     courseTime: state.courseTime + dt,
   };
-  next = fireWeapons(next, input?.actions, course);
+  if (!missing) next = fireWeapons(next, input?.actions, course, input?.weaponPower);
   next = advanceWeapons(next, dt, course);
   next = applyCourseEvents(next, previousTime, course);
   return collide(next, course);
@@ -249,7 +258,7 @@ export function createFlightState(course, {
     collectedIds: [],
     destroyedIds: [],
     ...initialWeaponState(course),
-    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [], destroyedIds: [], destroyedBy: {} },
+    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [], destroyedIds: [], destroyedBy: {}, entityDamage: {} },
   };
 }
 

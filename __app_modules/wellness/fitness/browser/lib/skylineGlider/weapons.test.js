@@ -35,7 +35,7 @@ describe('weapon rules', () => {
 describe('firing', () => {
   it('fires one laser per cooldown from the craft nose', () => {
     const next = fireWeapons(flying(), ['laser', 'laser'], course);
-    expect(next.projectiles).toEqual([{ id: 'laser-1', kind: 'laser', at_s: 1.8, origin_s: 1.8, altitude: 0.6 }]);
+    expect(next.projectiles).toEqual([{ id: 'laser-1', kind: 'laser', power: 1, at_s: 1.8, origin_s: 1.8, altitude: 0.6 }]);
     expect(next.shotsFired).toBe(1);
     expect(next.laserCooldown).toBeCloseTo(0.3);
   });
@@ -122,4 +122,29 @@ describe('advancing shots', () => {
     expect(next.blasts).toHaveLength(1);
     expect(next.blasts[0].altitude).toBeGreaterThan(0.6);
   });
+});
+
+it('snapshots laser power and accumulates damage until a target breaks', () => {
+  const armored = { ...course, segments: [], entities: [{ ...course.entities[0], at_s: 2, hit_points: 3 }] };
+  let state = fireWeapons(flying(), ['laser'], armored, 2);
+  expect(state.projectiles[0].power).toBe(2);
+  state = advanceWeapons(state, .2, armored);
+  expect(state.destroyedIds).toEqual([]);
+  expect(state.entityDamage).toEqual({ tree: 2 });
+  state = fireWeapons({ ...state, laserCooldown: 0 }, ['laser'], armored, 1);
+  state = advanceWeapons(state, .2, armored);
+  expect(state.destroyedBy.tree).toBe('laser');
+});
+
+it('uses snapshotted bomb power for damage and blast coverage', () => {
+  const targets = { ...course, segments: [], entities: [
+    { id: 'armored', class: 'solid', at_s: 1.2, altitude: .9, width_s: .4, height: .2, hit_points: 4 },
+    { id: 'nearby', class: 'breakable', at_s: 2.05, altitude: .9, width_s: .1, height: .2 },
+  ] };
+  const shot = fireWeapons(flying({ altitude: .7 }), ['bomb'], targets, 4);
+  let state = shot;
+  for (let i = 0; i < 60 && !state.blasts.length; i++) state = advanceWeapons(state, 1 / 60, targets);
+  expect(state.destroyedBy).toEqual({ armored: 'bomb', nearby: 'bomb' });
+  expect(state.blasts[0]).toMatchObject({ power: 4, blast_width_s: 2.1, blast_height: .28 });
+  expect(state.bombsLeft).toBe(1);
 });

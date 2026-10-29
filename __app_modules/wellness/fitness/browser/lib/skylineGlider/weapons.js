@@ -40,11 +40,13 @@ export function initialWeaponState(course) {
     shotsFired: 0,
     bombsDropped: 0,
     destroyedBy: {},
+    entityDamage: {},
   };
 }
 
 /** Applies queued presses ('laser' | 'bomb'); cooldown and the bomb rack gate each one. */
-export function fireWeapons(state, actions, course) {
+export function fireWeapons(state, actions, course, power = 1) {
+  power = Math.max(1, Math.min(4, Math.floor(Number(power) || 1)));
   const rules = weaponRules(course);
   if (!rules.enabled || !actions?.length) return state;
   let next = state;
@@ -56,7 +58,7 @@ export function fireWeapons(state, actions, course) {
         ...next,
         shotsFired,
         laserCooldown: rules.laser_cooldown_s,
-        projectiles: [...next.projectiles, { id: `laser-${shotsFired}`, kind: 'laser', at_s: at, origin_s: at, altitude: next.altitude }],
+        projectiles: [...next.projectiles, { id: `laser-${shotsFired}`, kind: 'laser', power, at_s: at, origin_s: at, altitude: next.altitude }],
       };
     } else if (action === 'bomb' && !(next.bombCooldown > 0) && next.bombsLeft > 0) {
       const bombsDropped = next.bombsDropped + 1;
@@ -65,7 +67,7 @@ export function fireWeapons(state, actions, course) {
         bombsDropped,
         bombsLeft: next.bombsLeft - 1,
         bombCooldown: rules.bomb_cooldown_s,
-        projectiles: [...next.projectiles, { id: `bomb-${bombsDropped}`, kind: 'bomb', at_s: next.courseTime, altitude: next.altitude + SKYLINE_CRAFT_GEOMETRY.radius, fall: 0 }],
+        projectiles: [...next.projectiles, { id: `bomb-${bombsDropped}`, kind: 'bomb', power, at_s: next.courseTime, altitude: next.altitude + SKYLINE_CRAFT_GEOMETRY.radius, fall: 0 }],
       };
     }
   }
@@ -77,8 +79,16 @@ export function advanceWeapons(state, dt, course) {
   const rules = weaponRules(course);
   const destroyed = new Set(state.destroyedIds || []);
   const destroyedBy = { ...(state.destroyedBy || {}) };
+  const entityDamage = { ...(state.entityDamage || {}) };
   const targets = () => (course?.entities || []).filter((entity) => entity.class !== 'scenery' && !destroyed.has(entity.id));
-  const destroy = (entity, by) => { destroyed.add(entity.id); destroyedBy[entity.id] = by; };
+  const damage = (entity, by, power) => {
+    entityDamage[entity.id] = (entityDamage[entity.id] || 0) + (power || 1);
+    if (entityDamage[entity.id] >= (entity.hit_points || 1)) {
+      destroyed.add(entity.id);
+      destroyedBy[entity.id] = by;
+      delete entityDamage[entity.id];
+    }
+  };
   // Float residue would stretch a cooldown by one sub-step.
   const cool = (value) => { const left = (value || 0) - dt; return left > 1e-9 ? left : 0; };
   const blasts = (state.blasts || []).map((blast) => ({ ...blast, remaining: blast.remaining - dt })).filter((blast) => blast.remaining > 1e-9);
@@ -90,7 +100,7 @@ export function advanceWeapons(state, dt, course) {
       const end = Math.min(shot.at_s + (1 + rules.laser_speed_s) * dt, limit);
       const hit = firstHitAlong(targets(), course, shot.at_s, end, shot.altitude);
       if (hit) {
-        if (hit.entity && vulnerableTo(hit.entity, 'laser')) destroy(hit.entity, 'laser');
+        if (hit.entity && vulnerableTo(hit.entity, 'laser')) damage(hit.entity, 'laser', shot.power);
         continue;
       }
       if (end < limit) projectiles.push({ ...shot, at_s: end });
@@ -100,9 +110,10 @@ export function advanceWeapons(state, dt, course) {
     const moved = { ...shot, at_s: shot.at_s + dt, altitude: shot.altitude + fall * dt, fall };
     const hit = entityAtPoint(targets(), moved.at_s, moved.altitude) || terrainAtPoint(course, moved.at_s, moved.altitude) || moved.altitude >= 1;
     if (!hit) { projectiles.push(moved); continue; }
-    const blast = { id: moved.id, at_s: moved.at_s, altitude: Math.min(1, moved.altitude), remaining: rules.blast_s };
+    const scale = [1, 1, 1.25, 1.5, 1.75][moved.power || 1];
+    const blast = { power: moved.power || 1, blast_width_s: rules.blast_width_s * scale, blast_height: rules.blast_height * scale, id: moved.id, at_s: moved.at_s, altitude: Math.min(1, moved.altitude), remaining: rules.blast_s };
     blasts.push(blast);
-    for (const entity of targets()) if (vulnerableTo(entity, 'bomb') && blastTouches(entity, blast, rules)) destroy(entity, 'bomb');
+    for (const entity of targets()) if (vulnerableTo(entity, 'bomb') && blastTouches(entity, blast, blast)) damage(entity, 'bomb', moved.power);
   }
   return {
     ...state,
@@ -110,6 +121,7 @@ export function advanceWeapons(state, dt, course) {
     blasts,
     destroyedIds: [...destroyed],
     destroyedBy,
+    entityDamage,
     laserCooldown: cool(state.laserCooldown),
     bombCooldown: cool(state.bombCooldown),
   };

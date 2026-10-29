@@ -12,9 +12,12 @@
  * real while the revolution count keeps changing. If it has not changed for longer
  * than its cadence-aware bounded window, the crank has stopped and we report 0.
  *
+ * The default five-second minimum also covers fast-to-slow transitions:
+ * the old cadence is held until the next slow revolution arrives.
+ *
  * Pure and deterministic — `now` is injected so it is fully unit-testable.
  */
-export function createCadenceGate({ revStaleMs = 2500, maxRevStaleMs = 6000 } = {}) {
+export function createCadenceGate({ revStaleMs = 5000, maxRevStaleMs = 6000 } = {}) {
   const state = new Map(); // deviceId -> { lastRevCount, lastRevChangeTs }
 
   return {

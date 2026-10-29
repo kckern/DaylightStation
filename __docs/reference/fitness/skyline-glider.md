@@ -9,21 +9,25 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 - School learners may fly only when the fail-closed `fitness.skyline-glider` entitlement grants access from `school.day-complete`. The Fitness roster derives `schoolLearner` from the same authoritative School learner directory used by the other school-gated surfaces. Missing identity, Guest, unavailable, expired or indeterminate state all stay locked; household members marked `schoolLearner: false` are outside this gate. The client honors the decision's `validFrom`/`validUntil` window and suspends an active countdown or flight immediately when access is revoked, preserving a resumable checkpoint and releasing the bike for another rider.
 - An admin fingerprint can approve a pending physical-button start. The admin authorizes the flight but does not become its rider or reward recipient.
 - Localhost and `127.0.0.1` deep links retain touchscreen Start/Resume controls for development. A non-local deep link still enters the gated kiosk lobby.
-- Equipment `rpm.min` and `rpm.max` calibrate the altitude range; the safe fallback is 30–100 RPM.
-- Faster cadence climbs and slower cadence descends. Zero RPM coasts for one second before descending.
+- Act `rpm: { min, max }` takes precedence over equipment `skyline_glider.rpm`, then equipment `rpm`, then the 30–100 fallback. Both bundled acts use 15–60 RPM without changing shared calibration. Positive readings below the low endpoint still count as pedaling.
+- Faster cadence climbs and slower cadence descends. Zero lowers the glider safely in ordinary sky. Over lava, confirmed zero gives three seconds to recover, then the craft sinks into the lava. Missing transport remains protected.
+- The ANT bridge allows one expected crank interval plus 25% tolerance, bounded between 5 and 6 seconds, before reporting a stop. At 15 RPM this is 5 seconds plus packet delay; the game then adds its three-second lava grace. A once-per-turn sensor cannot promptly distinguish 1 RPM from stopping.
 - A missing or stalled cadence transport is collision-protected for 0.75 seconds, then freezes the course behind a reconnect overlay.
-- **Terrain and `solid` entities are walls.** Touching one is an immediate crash ("Wing down!"), invincible or not: a two-second pause, then a restart at the latest checkpoint with three lives. The craft can never pass through the ground. Only a sensor pause protects the rider, and then the craft is held inside the open band.
+- **Assisted hills:** Mountain Pass carries a low craft along the hillside without damage. Its first minute is open sky and bells; the whole act has no lava, lethal obstacles or weapons.
+- **Terrain and `solid` entities are walls outside assistance.** Touching one is an immediate crash ("Wing down!"), invincible or not: a two-second pause, then a restart at the latest checkpoint with three lives. The craft can never pass through the ground. Only a sensor pause protects the rider, and then the craft is held inside the open band.
 - **`breakable` entities** (trees, houses) shatter on contact and cost one life, followed by `invincibility_s` of blinking. Hits while blinking still shatter but cost nothing. Losing the last life is a crash. A checkpoint restart brings back anything broken after that checkpoint.
 - **`scenery` entities** never collide.
-- Mountain Pass (Alpine, Act 1) lasts five minutes and has checkpoints near 25%, 50%, and 75%. Cloud Ridge (Alpine, Act 2) adds pines, a chalet and boulders.
+- Mountain Pass (Alpine, Act 1) lasts five minutes, moving from open-sky bells to assisted meadow hills. Cloud Ridge (Alpine, Act 2) lasts four minutes, introducing safe target practice, marked bomb barriers and lava gaps with distinct dusk scenery.
+- Game score is unique bells plus weapon-destroyed targets; crash destruction earns no target point. Completion ring rewards remain based on bells.
 - Completion awards 10 rings plus one per unique collectible, capped at 30. Normal heart-rate rings continue independently.
 
 ## Weapons
 
-The rider can fire a laser and drop bombs from a gamepad or keyboard. Weapons never hurt the rider and cost nothing. They destroy placed entities.
+During flight, one fresh press of the locked rider’s bike button requests both a laser and a bomb. Each keeps its own cooldown. Bombs may be wasted in empty sky; an empty rack can cause failure at a bomb-only barrier. Other riders’ buttons retain normal assignment feedback. The active combat press suppresses its redundant assignment toast while still ingesting assignment. Countdown, crash and sensor-pause presses never replay later. Keyboard and gamepad inputs also remain available. Weapons never hurt the rider and cost nothing. They destroy placed entities.
 
 | Input | Laser | Bomb |
 |---|---|---|
+| Rider selector | Same press | Same press |
 | Gamepad (standard mapping) | A (0) or RT (7) | B (1), X (2) or LT (6) |
 | Keyboard | Space or F | B |
 
@@ -32,9 +36,10 @@ On the garage's 8BitDo SFC30 (standard mapping in Firefox), that is the bottom f
 - Each press fires once; holding does not autofire. A button already held when flight starts is ignored until released. A press on a frame where no time passes waits for the next frame. Presses during a sensor pause or crash are dropped.
 - **Laser:** leaves the craft nose at the craft's altitude and travels `laser_speed_s` course-seconds per second faster than the craft, for `laser_range_s`. Each step sweeps its whole path, so thin objects cannot be skipped. It stops at the first terrain or non-scenery entity it reaches, destroying that entity if it is vulnerable to the laser and being absorbed otherwise. It is unlimited, with a `laser_cooldown_s` cooldown.
 - **Bomb:** released under the craft, it keeps pace with the craft while falling under `bomb_gravity`. It detonates on terrain, a non-scenery entity, or the bottom of the screen. The blast (`blast_width_s` × `blast_height`, visible for `blast_s`) destroys every entity it touches that is vulnerable to bombs. The rack holds `bombs` and refills at every checkpoint crossed and on restart.
+- **Heart-rate power:** the locked rider’s trusted, eligible zone profile, at most ten seconds old, sets basic/warm/hot/fire damage to 1/2/3/4. Cool, active, missing, stale and unknown zones use basic power. Each shot snapshots its power. Bomb blast dimensions scale by 1/1.25/1.5/1.75. A monitor is optional; conserved basic bombs can clear mandatory barriers. More physical resistance can raise effort without changing cadence/altitude.
 - **Vulnerability** defaults by class: `breakable` → laser and bomb, `solid` → bomb only, `scenery` → nothing. An entity definition or placement can set `vulnerable_to: [laser, bomb]` (or `[]`). A destroyed solid stops being a wall.
 - A crash clears shots and blasts in flight. A checkpoint restart restores what was destroyed at that checkpoint, as it does for crash-broken breakables.
-- Kills are recorded per entity as `laser`, `bomb` or `crash`. The run saves `targets` (laser and bomb kills), `shots_fired` and `bombs_dropped` on `run` and in `result.metrics`. `targets` counts kills on the final run-through: a checkpoint restart rolls it back along with the destroyed entities, as it does collectibles. The shot counters are cumulative across restarts, like `collisions`. Reward rings do not change.
+- Kills are recorded per entity as `laser`, `bomb` or `crash`. The run saves `targets` (laser and bomb kills), `shots_fired` and `bombs_dropped` on `run` and in `result.metrics`. `targets` counts kills on the final run-through: a checkpoint restart rolls it back along with the destroyed entities, as it does collectibles. The shot counters are cumulative across restarts, like `collisions`. Game score adds weapon targets to bells; reward rings do not change. Positive integer `hit_points` supports tougher targets. Partial target damage persists and rolls back with checkpoints.
 - Fire keys are ignored with Ctrl, Cmd or Alt held and while typing in a field. A fire key never also activates a focused on-screen button.
 
 `rules.weapons` in an act overrides the defaults. Every field except `enabled` must be a non-negative number:
@@ -133,6 +138,16 @@ entities:                 # placed by name; they stand on `altitude`
 ```
 
 Give entities stable `id`s, and bump `version` whenever placements change: the id is what a checkpoint remembers as broken. Validation rejects unknown entities, duplicate ids, a solid entity that leaves no reachable gap, and a checkpoint whose `restart_altitude` sits inside terrain.
+
+### Slopes, lava and palettes
+
+A `lower-terrain` segment may use `profile: [{ at_s, altitude }, ...]`. Points strictly increase, span exactly `start_s`–`end_s`, and use altitude 0–1. Rendering, craft-footprint collisions and projectile sweeps share the same piecewise-linear surface. `rules.assist_terrain: true` carries beginners over lower terrain.
+
+A `lava` segment uses `start_s`, `end_s` and `top` below the safe flight band (greater than 0.815). Confirmed zero can descend below the ordinary minimum-height clamp into its actual rendered surface. `motion.stop_coast_s` sets the warning grace (three seconds in bundled acts).
+
+A solid placement with `required_weapon: bomb` explicitly allows an otherwise impassable barrier. Weapons must be enabled, the barrier bomb-vulnerable and the rack sufficient for basic damage. Author a reachable detonation surface and enough blast width to clear the wall before the craft nose arrives; validate a complete basic-power route. Ordinary solids still require a flyable gap. `hit_points` can be defined on a class or placement. Checkpoint retries refill ammunition and restore obstacles/damage; no rescue ammunition is provided.
+
+Zone `palette` (or act `overrides.palette`) accepts `theme`, `sky`, `horizon`, `rock`, `rock_low`; built-in themes `meadow` and `volcanic` also tint backdrop silhouettes. Texture and sprite slots still work. Bundled course versions were incremented, invalidating old active course layouts while retaining pending terminal saves and earned completion.
 
 ## Progression
 

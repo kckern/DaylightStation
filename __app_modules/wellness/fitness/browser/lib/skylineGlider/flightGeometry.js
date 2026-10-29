@@ -10,8 +10,18 @@ export const LOW_ALTITUDE = 0.78;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export function terrainBounds(segment) {
-  if (segment?.type === 'lower-terrain') return { top: 0, bottom: Number(segment.top) };
+export function terrainBounds(segment, atSeconds = null) {
+  if (segment?.type === 'lower-terrain') {
+    const points = segment.profile;
+    if (!points?.length) return { top: 0, bottom: Number(segment.top) };
+    if (atSeconds == null) return { top: 0, bottom: Math.min(...points.map(p => Number(p.altitude))) };
+    const right = points.findIndex(p => Number(p.at_s) >= atSeconds);
+    if (right <= 0) return { top: 0, bottom: Number(points[right < 0 ? points.length - 1 : 0].altitude) };
+    const a = points[right - 1], b = points[right];
+    const fraction = clamp((atSeconds - a.at_s) / (b.at_s - a.at_s), 0, 1);
+    return { top: 0, bottom: Number(a.altitude) + fraction * (b.altitude - a.altitude) };
+  }
+  if (segment?.type === 'lava') return { top: 0, bottom: Number(segment.top) };
   if (segment?.type === 'upper-terrain') return { top: Number(segment.bottom), bottom: 1 };
   if (segment?.type === 'corridor') return { top: Number(segment.ceiling), bottom: Number(segment.floor) };
   return null;
@@ -25,10 +35,20 @@ export function terrainOverlappingCraft(course, courseTime, geometry = SKYLINE_C
     && Number(segment.end_s ?? segment.start_s) >= from);
 }
 
+// A wing spans time as well as height: sample both ends and every slope knot.
+function boundsOverCraft(segment, courseTime, geometry) {
+  const from = Math.max(segment.start_s, courseTime - geometry.rearSeconds);
+  const to = Math.min(segment.end_s ?? segment.start_s, courseTime + geometry.frontSeconds);
+  const times = [from, to, ...(segment.profile || []).map(p => p.at_s).filter(t => t > from && t < to)];
+  return times.map(t => terrainBounds(segment, t)).reduce((band, bounds) => ({
+    top: Math.max(band.top, bounds.top), bottom: Math.min(band.bottom, bounds.bottom),
+  }), { top: 0, bottom: 1 });
+}
+
 /** First terrain segment the craft at `altitude` is touching, or null. */
 export function terrainContact(course, courseTime, altitude, geometry = SKYLINE_CRAFT_GEOMETRY) {
   return terrainOverlappingCraft(course, courseTime, geometry).find((segment) => {
-    const bounds = terrainBounds(segment);
+    const bounds = boundsOverCraft(segment, courseTime, geometry);
     return altitude - geometry.radius < bounds.top || altitude + geometry.radius > bounds.bottom;
   }) || null;
 }
@@ -36,7 +56,7 @@ export function terrainContact(course, courseTime, altitude, geometry = SKYLINE_
 /** The open band between every terrain segment under the craft. */
 export function safeBandAt(course, courseTime, geometry = SKYLINE_CRAFT_GEOMETRY) {
   return terrainOverlappingCraft(course, courseTime, geometry)
-    .map(terrainBounds)
+    .map(segment => boundsOverCraft(segment, courseTime, geometry))
     .reduce((band, bounds) => ({ top: Math.max(band.top, bounds.top), bottom: Math.min(band.bottom, bounds.bottom) }), { top: 0, bottom: 1 });
 }
 
@@ -65,7 +85,7 @@ export function entitiesTouchingCraft(course, courseTime, altitude, geometry = S
 /** The terrain segment covering the point (at_s, altitude), or null. */
 export function terrainAtPoint(course, atSeconds, altitude) {
   return (course?.segments || []).find((segment) => {
-    const bounds = terrainBounds(segment);
+    const bounds = terrainBounds(segment, atSeconds);
     if (!bounds) return false;
     if (atSeconds < Number(segment.start_s) || atSeconds > Number(segment.end_s ?? segment.start_s)) return false;
     return altitude < bounds.top || altitude > bounds.bottom;
@@ -96,9 +116,23 @@ export function firstHitAlong(entities, course, from, to, altitude) {
     if (altitude >= bounds.top && altitude <= bounds.bottom) consider({ entity }, bounds.start, bounds.end);
   }
   for (const segment of course?.segments || []) {
-    const bounds = terrainBounds(segment);
-    if (bounds && (altitude < bounds.top || altitude > bounds.bottom)) {
-      consider({ segment }, Number(segment.start_s), Number(segment.end_s ?? segment.start_s));
+    if (!terrainBounds(segment)) continue;
+    const start = Math.max(from, Number(segment.start_s));
+    const end = Math.min(to, Number(segment.end_s ?? segment.start_s));
+    if (start > end) continue;
+    const times = [start, ...(segment.profile || []).map(p => Number(p.at_s)).filter(t => t > start && t < end), end];
+    for (let i = 0; i < times.length - 1; i++) {
+      const a = times[i], b = times[i + 1];
+      const left = terrainBounds(segment, a), right = terrainBounds(segment, b);
+      if (altitude < left.top || altitude > left.bottom) { consider({ segment }, a, b); break; }
+      const crossings = [];
+      if (altitude < right.top) crossings.push(a + (b - a) * (altitude - left.top) / (right.top - left.top));
+      if (altitude > right.bottom) crossings.push(a + (b - a) * (altitude - left.bottom) / (right.bottom - left.bottom));
+      if (crossings.length) { consider({ segment }, Math.min(...crossings), b); break; }
+    }
+    if (start === end) {
+      const bounds = terrainBounds(segment, start);
+      if (altitude < bounds.top || altitude > bounds.bottom) consider({ segment }, start, end);
     }
   }
   return best;

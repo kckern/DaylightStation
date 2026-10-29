@@ -23,6 +23,7 @@ describe('Skyline Glider terminal result', () => {
 
   it('records targets destroyed by weapons and shots used', () => {
     const record = buildSkylineGliderRun({ runId: 'abc', course: { id: 'cloud-ridge', version: 1 }, riderId: 'dad', startedAt: '2026-10-23T17:00:00Z', endedAt: '2026-10-23T17:04:00Z', state: { courseTime: 240, collisions: 0, restarts: 0, collectedIds: [], shotsFired: 9, bombsDropped: 2, destroyedBy: { a: 'laser', b: 'bomb', c: 'crash' } }, status: 'completed' });
+    expect(record.result.outcome.score).toBe(2);
     expect(record.run).toMatchObject({ targets: 2, shots_fired: 9, bombs_dropped: 2 });
     expect(record.result.metrics).toMatchObject({ targets: 2, shots_fired: 9, bombs_dropped: 2 });
   });

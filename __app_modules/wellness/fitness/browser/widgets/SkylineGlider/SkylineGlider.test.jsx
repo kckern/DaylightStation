@@ -832,3 +832,57 @@ describe('FlightScene zones', () => {
     expect(screen.getByTestId('skyline-glider-blast-bomb-0').querySelector('svg')).toHaveAttribute('viewBox', '32 0 32 16');
   });
 });
+
+describe('one-button accessible flight', () => {
+  it('fires both weapons for the locked rider, wastes a bomb, and ignores other riders', async () => {
+    vi.useFakeTimers();
+    try {
+      render(<SkylineGlider />);
+      await act(async () => Promise.resolve());
+      fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+      act(() => vi.advanceTimersByTime(3200));
+      act(() => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'other', userId: 'dad' }));
+      act(() => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'other' }));
+      act(() => vi.advanceTimersByTime(100));
+      expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('5');
+      let handled;
+      act(() => { handled = mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }); });
+      expect(handled).toBe(true);
+      act(() => vi.advanceTimersByTime(100));
+      expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('4');
+      expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.weapon.fired', expect.objectContaining({ weapon: 'laser', count: 1 }));
+    } finally { vi.useRealTimers(); }
+  });
+  it('renders the actual slope path and lava surface', () => {
+    const slope = { id: 'slope', type: 'lower-terrain', start_s: 4, end_s: 12, top: .9, profile: [{ at_s: 4, altitude: .9 }, { at_s: 8, altitude: .5 }, { at_s: 12, altitude: .9 }] };
+    const lava = { id: 'lava', type: 'lava', start_s: 12, end_s: 20, top: .9 };
+    render(<FlightScene state={flightState} course={{ ...course, segments: [slope, lava] }} />);
+    expect(screen.getByTestId('course-segment-slope').querySelector('path[data-slope]')).toBeTruthy();
+    expect(screen.getByTestId('course-segment-lava').querySelector('[data-lava-surface]')).toBeTruthy();
+  });
+});
+
+it('waits for completion progression before a rider press can start the next act', async () => {
+ vi.useFakeTimers();
+ try {
+  const first = { ...course, duration_s: .1, segments: [{ id: 'finish', type: 'finish', start_s: .1 }] };
+  const second = { ...course, id: 'cloud-ridge', name: 'Cloud Ridge', act: 2 };
+  apiFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ courses: [first, second] }) }));
+  let finishWorld;
+  worldFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ next: 'mountain-pass', zones: [{ id: 'alpine', name: 'Alpine', acts: [{ id: 'mountain-pass', name: 'Mountain Pass', act: 1, status: 'open' }, { id: 'cloud-ridge', name: 'Cloud Ridge', act: 2, status: 'locked' }] }] }) });
+  worldFetch.mockImplementationOnce(() => new Promise(resolve => { finishWorld = resolve; }));
+  render(<SkylineGlider />);
+  await act(async () => Promise.resolve());
+  fireEvent.click(screen.getByTestId('skyline-glider-act-mountain-pass'));
+  fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
+  act(() => vi.advanceTimersByTime(3000));
+  await act(async () => vi.advanceTimersByTime(500));
+  expect(finishWorld).toBeTypeOf('function');
+  await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
+  expect(screen.queryByTestId('skyline-glider-countdown')).toBeNull();
+  await act(async () => finishWorld({ ok: true, json: async () => ({ next: 'cloud-ridge', zones: [{ id: 'alpine', name: 'Alpine', acts: [{ id: 'mountain-pass', name: 'Mountain Pass', act: 1, status: 'completed' }, { id: 'cloud-ridge', name: 'Cloud Ridge', act: 2, status: 'open' }] }] }) }));
+  await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
+  expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
+  expect(mockLog.info).toHaveBeenLastCalledWith('skyline_glider.flight.started', expect.objectContaining({ courseId: 'cloud-ridge' }));
+ } finally { vi.useRealTimers(); }
+});

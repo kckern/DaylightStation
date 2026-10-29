@@ -1,3 +1,4 @@
+import { dispatchRiderSelection } from '../lib/riderSelection.js';
 import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
@@ -291,8 +292,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const emitAppEvent = React.useCallback((eventType, payload, sourceAppId, options = {}) => {
     const event = { type: eventType, payload, source: sourceAppId, timestamp: Date.now() };
     const listeners = appEventListeners.current.get(eventType) || [];
-    listeners.forEach(cb => { try { cb(event); } catch (e) { console.error(e); } });
+    let consumed = false;
+    listeners.forEach(cb => { try { if (cb(event) === true) consumed = true; } catch (e) { getLogger().error('fitness.app_event.listener_failed', { eventType, error: e.message }); } });
     if (options.persist !== false) fitnessSessionRef.current?.logEvent?.('app_event', event);
+    return consumed;
   }, []);
 
   const subscribeToAppEvent = React.useCallback((eventType, callback) => {
@@ -1521,16 +1524,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             return;
           }
 
-          // Cosmetic rider-assignment toast (additive — must NOT return; the
-          // claim is still set by ingestData below).
           if (data?.topic === 'rider_select') {
-            riderToastRef.current?.(data);
-          }
-
-          session.ingestData(data);
-          if (data?.topic === 'rider_select') {
-            emitAppEvent('rider-select', data, data.equipmentId || 'rider-selector', { persist: false });
-          }
+            dispatchRiderSelection(data, {
+              ingest: (selection) => session.ingestData(selection),
+              emit: (selection) => emitAppEvent('rider-select', selection, selection.equipmentId || 'rider-selector', { persist: false }),
+              toast: (selection) => riderToastRef.current?.(selection),
+            });
+          } else session.ingestData(data);
           batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
         }
       );

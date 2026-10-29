@@ -48,7 +48,7 @@ export class ANTPlusManager {
 
     // Gate cadence on revolution-count advancement so a sensor that holds its
     // last CalculatedCadence after the crank stops reports 0 instead of a stuck value.
-    this._cadenceGate = createCadenceGate({ revStaleMs: 2500 });
+    this._cadenceGate = createCadenceGate();
 
     // Plausibility gate for heart rate. The ANT+ scanner pairs to ANY device
     // broadcasting an HR page (wildcard scan), so dying straps and bike sensors

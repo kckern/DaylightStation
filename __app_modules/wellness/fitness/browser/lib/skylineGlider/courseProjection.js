@@ -7,7 +7,7 @@ const DEFAULTS = Object.freeze({
 });
 
 const PROJECTED_TYPES = new Set([
-  'lower-terrain', 'upper-terrain', 'corridor', 'checkpoint', 'finish',
+  'lower-terrain', 'upper-terrain', 'corridor', 'lava', 'checkpoint', 'finish',
 ]);
 
 const round = (value) => Math.round(value * 100) / 100;
@@ -25,6 +25,7 @@ export function projectCourseWindow(course, courseTime, options = {}) {
       const endX = xForTime(segment.end_s ?? segment.start_s);
       return {
         ...segment,
+        ...(segment.profile ? { profilePoints: segment.profile.map(p => ({ x: round(xForTime(p.at_s)), y: round(Number(p.altitude) * view.height) })) } : {}),
         x: round(x),
         width: round(Math.max(0, endX - x)),
       };

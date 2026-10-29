@@ -6,10 +6,10 @@ import React from 'react';
 export const SCENE_WIDTH = 1000;
 export const SCENE_HEIGHT = 600;
 
-export function SceneDefs() {
+export function SceneDefs({ palette = {} }) {
   return <defs>
-    <linearGradient id="glider-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#78bce8"/><stop offset="1" stopColor="#f8d69a"/></linearGradient>
-    <linearGradient id="glider-rock" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#42685e"/><stop offset="1" stopColor="#193d38"/></linearGradient>
+    <linearGradient id="glider-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor={palette.sky || "#78bce8"}/><stop offset="1" stopColor={palette.horizon || "#f8d69a"}/></linearGradient>
+    <linearGradient id="glider-rock" x1="0" y1="0" x2="0" y2="1"><stop stopColor={palette.rock || "#42685e"}/><stop offset="1" stopColor={palette.rock_low || "#193d38"}/></linearGradient>
   </defs>;
 }
 
@@ -31,7 +31,16 @@ export function BackdropPreset({ draw, offset = 0 }) {
 
 export const hasBackdropPreset = (draw) => draw === 'alpine-sky' || draw in BACKDROP_PATHS;
 
-export function TerrainPreset({ segment }) {
+export function TerrainPreset({ segment, fill }) {
+  if (segment.type === 'lava') {
+    const y = segment.top * SCENE_HEIGHT;
+    return <g className="skyline-glider__lava"><rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_HEIGHT - y}/><path d={`M${segment.x} ${y} H${segment.x + segment.width}`} /></g>;
+  }
+  if (segment.profilePoints?.length) {
+    const points = segment.profilePoints;
+    const line = points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ');
+    return <><path data-slope d={`${line} L${points.at(-1).x} ${SCENE_HEIGHT} L${points[0].x} ${SCENE_HEIGHT} Z`} className="skyline-glider__terrain" fill={fill}/><path d={line} className="skyline-glider__slope-edge"/></>;
+  }
   const width = Math.max(4, segment.width);
   if (segment.type === 'lower-terrain') {
     const y = segment.top * SCENE_HEIGHT;
@@ -73,6 +82,8 @@ export function BellPreset() {
 
 // Entity drawings fill a 100×100 box stretched over the entity's hitbox.
 const ENTITY_DRAWINGS = {
+  barrier: <><rect x="0" y="0" width="100" height="100" fill="#625567" stroke="#e6b85f" strokeWidth="4"/><path d="M0 20 H100 M0 40 H100 M0 60 H100 M0 80 H100 M25 0 V20 M75 20 V40 M25 40 V60 M75 60 V80 M25 80 V100" fill="none" stroke="#392e45" strokeWidth="3"/></>,
+  target: <><circle cx="50" cy="50" r="44" fill="#f7d778" stroke="#593847" strokeWidth="6"/><circle cx="50" cy="50" r="27" fill="#db6655"/><circle cx="50" cy="50" r="10" fill="#fff2c6"/></>,
   pine: <>
     <rect x="44" y="78" width="12" height="22" className="skyline-glider__entity-trunk"/>
     <path d="M50 0 L80 38 H64 L88 66 H70 L96 84 H4 L30 66 H12 L36 38 H20Z" className="skyline-glider__entity-leaf"/>

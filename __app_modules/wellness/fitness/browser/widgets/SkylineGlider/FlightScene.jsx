@@ -98,7 +98,7 @@ function CourseSegment({ segment, zone, assets, time }) {
   const edge = assets.images.get(terrain.edge);
   const ceilingEdge = assets.images.get(terrain.ceiling_edge);
   return <g {...testProps}>
-    {fill || edge || ceilingEdge
+    {segment.profilePoints?.length || segment.type === 'lava' ? <TerrainPreset segment={segment} fill={fill ? 'url(#glider-terrain-fill)' : undefined}/> : fill || edge || ceilingEdge
       ? <SkinnedTerrain segment={segment} terrain={terrain} fill={fill} edge={edge} ceilingEdge={ceilingEdge}/>
       : <TerrainPreset segment={segment}/>}
   </g>;
@@ -110,6 +110,7 @@ function Entity({ entity, assets, time }) {
     {hasFrame(assets, name)
       ? <SpriteFrame assets={assets} name={name} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
       : <EntityPreset entity={entity}/>}
+    {entity.required_weapon === 'bomb' && <text x={entity.x + entity.width / 2} y={entity.y + 40} textAnchor="middle" fill="#fff1a8" fontSize="18" fontWeight="900">BOMB</text>}
   </g>;
 }
 
@@ -122,7 +123,7 @@ function Shot({ shot, x, y, zone, assets, time }) {
   // any frame aspect ratio keeps the tip there); a bomb sprite is centred.
   const laser = shot.kind === 'laser';
   const left = laser ? -size.width : -size.width / 2;
-  return <g data-testid={`skyline-glider-shot-${shot.id}`} data-kind={shot.kind} transform={`translate(${x} ${y})`} className={`skyline-glider__shot skyline-glider__shot--${shot.kind}`}>
+  return <g data-testid={`skyline-glider-shot-${shot.id}`} data-kind={shot.kind} data-power={shot.power || 1} transform={`translate(${x} ${y})`} className={`skyline-glider__shot skyline-glider__shot--${shot.kind}`}>
     {hasFrame(assets, name)
       ? <SpriteFrame assets={assets} name={name} x={left} y={-size.height / 2} width={size.width} height={size.height} align={laser ? 'xMaxYMid' : 'xMidYMid'}/>
       : laser ? <LaserPreset/> : <BombPreset/>}
@@ -162,11 +163,9 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
   const fill = assets.images.get(zone.terrain?.fill);
   const rules = weaponRules(course);
   const xAt = (atSeconds) => craftX + (atSeconds - time) * projected.unitsPerSecond;
-  const blastWidth = rules.blast_width_s * projected.unitsPerSecond;
-  const blastHeight = rules.blast_height * projected.height;
   const blastProgress = (blast) => (rules.blast_s > 0 ? clamp(1 - blast.remaining / rules.blast_s, 0, 1) : 1);
-  return <svg className={`skyline-glider__scene${zone.pixel_art ? ' skyline-glider__scene--pixel' : ''}`} data-zone={zone.id} viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`} role="img" aria-label={`${zone.name || 'Alpine'} flight course`}>
-    <SceneDefs/>
+  return <svg className={`skyline-glider__scene${zone.pixel_art ? ' skyline-glider__scene--pixel' : ''}`} data-zone={zone.id} data-theme={zone.palette?.theme || "alpine"} viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`} role="img" aria-label={`${zone.name || 'Alpine'} flight course`}>
+    <SceneDefs palette={zone.palette}/>
     {fill && <defs>
       <pattern id="glider-terrain-fill" patternUnits="userSpaceOnUse" width={fill.width} height={fill.height} patternTransform={`translate(${-(scroll % fill.width)} 0)`}>
         <image href={fill.url} width={fill.width} height={fill.height}/>
@@ -192,7 +191,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
       {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
       {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
     </g>
-    {(state.blasts || []).map((blast) => <Blast key={blast.id} blast={blast} x={xAt(blast.at_s)} y={blast.altitude * projected.height} width={blastWidth} height={blastHeight} progress={blastProgress(blast)} zone={zone} assets={assets}/>)}
+    {(state.blasts || []).map((blast) => <Blast key={blast.id} blast={blast} x={xAt(blast.at_s)} y={blast.altitude * projected.height} width={(blast.blast_width_s ?? rules.blast_width_s) * projected.unitsPerSecond} height={(blast.blast_height ?? rules.blast_height) * projected.height} progress={blastProgress(blast)} zone={zone} assets={assets}/>)}
     {layers.filter((layer) => layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
   </svg>;
 }

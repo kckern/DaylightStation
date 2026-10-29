@@ -30,6 +30,8 @@ collectible: { draw: bell }
 # only a bomb destroys it), scenery (never touched). Set
 # `vulnerable_to: [laser, bomb]` (or []) on a definition or placement to override.
 entities:
+  bombwall: { class: solid, draw: barrier, width_s: 1.2, height: 0.9, vulnerable_to: [bomb] }
+  target: { class: breakable, draw: target, width_s: 0.55, height: 0.16 }
   pine: { class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
   chalet: { class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }
   boulder: { class: solid, draw: boulder, width_s: 0.8, height: 0.12 }
