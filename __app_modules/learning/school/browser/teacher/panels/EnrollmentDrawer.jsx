@@ -71,19 +71,19 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
         <dl className="teacher-drawer__facts">
           <dt>Syllabus</dt>
           <dd>{cell.managed
-            ? <a href={teacherSectionPath('curriculum')} title="Edit on Curriculum → Syllabi">{cell.syllabusTitle}</a>
+            ? <a href={teacherSectionPath('curriculum')} title="Edit on Manage → Syllabi">{cell.syllabusTitle}</a>
             : <em>not managed by a syllabus</em>}</dd>
           <dt>Profile</dt>
           <dd>{cell.profile == null
             ? <em>none</em>
             : cell.managed
-              ? <a href={teacherSectionPath('curriculum')} title="Set by the syllabus — edit on Curriculum → Syllabi">{cell.profile}</a>
+              ? <a href={teacherSectionPath('curriculum')} title="Set by the syllabus — edit on Manage → Syllabi">{cell.profile}</a>
               : cell.profile}</dd>
           <dt>Pass bar</dt>
           <dd>{cell.passing == null
             ? <em>course default</em>
             : cell.managed
-              ? <a href={teacherSectionPath('curriculum')} title="Set by the syllabus — edit on Curriculum → Syllabi">{`${cell.passing}%`}</a>
+              ? <a href={teacherSectionPath('curriculum')} title="Set by the syllabus — edit on Manage → Syllabi">{`${cell.passing}%`}</a>
               : `${cell.passing}%`}</dd>
         </dl>
       )}

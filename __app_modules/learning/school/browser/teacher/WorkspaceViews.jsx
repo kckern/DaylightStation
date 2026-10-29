@@ -42,7 +42,7 @@ import FlashcardReviewsPanel from "./panels/FlashcardReviewsPanel.jsx";
 import SentenceLadderHistoryPanel from "./panels/SentenceLadderHistoryPanel.jsx";
 import { isCardLadderPolicy } from "../Programs/Flashcards/CardLadder/cardLadderMode.js";
 import { LessonIdentity, SubjectIdentity } from "./CurriculumIdentity.jsx";
-import { teacherBaseFor, teacherDayPath, teacherLearnerOpsPath } from "./teacherUrl.js";
+import { teacherBaseFor, teacherDayPath, teacherLearnerOpsPath, teacherLearnerPath } from "./teacherUrl.js";
 import { grownUpActionFor } from "./obligationCopy.js";
 import { teacherLog } from "./teacherLog.js";
 import { curriculumTitles } from "./curriculumTitles.js";
@@ -612,8 +612,16 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
       <CurriculumBrowser courseId={courseId} />
     </> : <>
       <CurriculumCatalog />
-      {/* Enrolling is the common job here; syllabus admin is the rare one. */}
-      <SchoolMatrix kids={kids} />
+      {/* Enrolling lives once, on each child's page (Courses fold — audit
+          2026-10-29: the same matrix rendered here and there). */}
+      {kids.length > 0 && (
+        <p className="teacher-manage-enroll">
+          Enroll or change a child’s courses:{' '}
+          {kids.map((kid, index) => (
+            <Fragment key={kid.id}>{index > 0 ? ' · ' : ''}<a href={teacherLearnerPath(kid.id, 'courses', null, teacherBaseFor(globalThis.location?.pathname ?? ''))}>{kid.name}</a></Fragment>
+          ))}
+        </p>
+      )}
       <SyllabiPanel />
       <EnrichmentPanel kids={kids} />
     </>}
@@ -628,8 +636,46 @@ export function CurriculumView({ kids, courseId = null, lessonId = null }) {
 export function OperationsView({ kids }) {
   const params = new URLSearchParams(globalThis.location?.search ?? '');
   const unit = params.get('unit') ?? '';
-  const learner = params.get('learner') ?? '';
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} lessonId={unit} learnerId={learner} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><SystemHealthPanel kids={kids} /></div>;
+  // ONE Fix page (owner ruling 2026-10-29): pick a child and their repairs
+  // open here, above the school-wide ones — the old learner Operations tab and
+  // School → Operations each held half of one chooser.
+  const [learner, setLearner] = useState(() => params.get('learner') ?? '');
+  const chosen = kids.find((kid) => kid.id === learner) ?? null;
+  const pick = (id) => {
+    setLearner(id);
+    teacherLog.nav('fix-learner', { learnerId: id || null });
+    try {
+      const url = new URL(window.location.href);
+      if (id) url.searchParams.set('learner', id); else url.searchParams.delete('learner');
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
+    } catch { /* jsdom */ }
+  };
+  return (
+    <div className="teacher-view">
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Fix</p><h2>What went wrong?</h2></div></div>
+      <div className="teacher-fix-picker" role="group" aria-label="For which child?">
+        <span>For</span>
+        <button type="button" aria-pressed={!chosen} onClick={() => pick('')}>the whole school</button>
+        {kids.map((kid) => (
+          <button key={kid.id} type="button" aria-pressed={chosen?.id === kid.id} onClick={() => pick(kid.id)}>{kid.name}</button>
+        ))}
+      </div>
+      <InterventionsIndex learnerId={chosen?.id ?? null} />
+      {chosen && (
+        <div className="teacher-fix-learner" key={chosen.id}>
+          <AttestationPanel learnerId={chosen.id} learnerName={chosen.name} initialUnitId={unit || null} />
+          <ProgramDayBypassPanel learnerId={chosen.id} learnerName={chosen.name} />
+          <ReassignPanel learnerId={chosen.id} learnerName={chosen.name} kids={kids} />
+        </div>
+      )}
+      <CurriculumExceptionPanel kids={kids} lessonId={unit} learnerId={chosen?.id ?? ''} />
+      <StaleSessions kids={kids} />
+      <ActiveOverrides kids={kids} />
+      <PeriodsTimeline />
+      <BulkRegradePanel />
+      <SystemHealthPanel kids={kids} />
+    </div>
+  );
 }
 
 function BulkRegradePanel() {

@@ -96,7 +96,7 @@ describe('AssignmentsView — the enrolled note points at its actual source', ()
 
     const note = await screen.findByText(/has an enrollment — order, profile, and pass bar come from its syllabus/);
     expect(note).toBeInTheDocument();
-    const link = screen.getByRole('link', { name: 'Curriculum → Syllabi' });
+    const link = screen.getByRole('link', { name: 'Manage → Syllabi' });
     expect(link).toHaveAttribute('href', '/school/teacher/curriculum');
     // The old dead-end sentence is gone.
     expect(screen.queryByText(/edited from The whole school/)).toBeNull();
@@ -148,7 +148,7 @@ describe('AssignmentsView — the enrolled note points at its actual source', ()
     fireEvent.click(await screen.findByRole('button', { name: /Edit assignments/i }));
 
     expect(await screen.findByText(/has a hand-authored enrollment — order, profile, and pass bar were set directly on the record/)).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Curriculum → Syllabi' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Manage → Syllabi' })).toBeNull();
   });
 });
 

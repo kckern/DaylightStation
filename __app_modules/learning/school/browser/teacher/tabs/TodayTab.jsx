@@ -112,15 +112,21 @@ export default function TodayTab({ kids = [], onOpenQueue = null, backlog = null
   const coinsByLearner = useMemo(() => {
     if (coins.state !== 'ok') return null;
     return Object.fromEntries((coins.data?.learners ?? []).map((learner) => {
-      const school = (learner.work?.days ?? []).filter((day) => day.state !== 'exempt');
+      const today = coins.data?.today ?? null;
+      // Days that are over, plus today once it is green; never a future day.
+      const counted = (learner.work?.days ?? []).filter((day) => day.state !== 'exempt'
+        && (!today || day.day < today || (day.day === today && day.state === 'met')));
       return [learner.learnerId, {
         silver: learner.totals?.silver ?? 0,
-        greenDays: school.length ? school.filter((day) => day.state === 'met').length : null,
+        green: counted.filter((day) => day.state === 'met').length,
+        greenOf: counted.length,
       }];
     }));
   }, [coins.state, coins.data]);
   const showBacklog = Boolean(onOpenQueue && backlog && backlog.total > 0);
-  const needsYou = needsGrownUp.count > 0 || needsGrownUp.unknown > 0 || showBacklog;
+  // A queue that could not be read is not a clear queue.
+  const backlogUnknown = Boolean(backlog?.failed);
+  const needsYou = needsGrownUp.count > 0 || needsGrownUp.unknown > 0 || showBacklog || backlogUnknown;
 
   return (
     <div className="teacher-tab teacher-tab--today">
@@ -132,6 +138,7 @@ export default function TodayTab({ kids = [], onOpenQueue = null, backlog = null
           waiting is one quiet line, not an empty panel. */}
       <section className={`teacher-needs${needsYou ? '' : ' is-clear'}`} aria-label="Needs you">
         <h2 className="teacher-needs__title">{needsYou ? 'Needs you' : 'Nothing needs you right now'}</h2>
+        {backlogUnknown && <p className="teacher-grownup-strip teacher-grownup-strip--unknown">Couldn’t check the action queue — open it to see what is waiting.</p>}
         {showBacklog && <BacklogStrip backlog={backlog} onOpenQueue={onOpenQueue} />}
         <GrownUpStrip count={needsGrownUp.count} items={needsGrownUp.items ?? []} unknown={needsGrownUp.unknown ?? 0} />
       </section>

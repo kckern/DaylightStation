@@ -217,7 +217,7 @@ describe('TeacherConsole workspace', () => {
   it('returns a lesson opened from school operations to operations', async () => {
     window.history.pushState({}, '', '/school/teacher/students/user_4/history/sessions/ses_x?from=operations');
     render(<TeacherConsole />);
-    const back = await screen.findByRole('button', { name: /Back to operations/ });
+    const back = await screen.findByRole('button', { name: /Back to Fix/ });
     act(() => fireEvent.click(back));
     expect(`${window.location.pathname}${window.location.search}`).toBe('/school/teacher/operations');
   });
@@ -271,7 +271,9 @@ describe('TeacherConsole workspace', () => {
     await waitFor(() => expect(foldHead('history')).toBeTruthy());
     expect(screen.queryByRole('navigation', { name: 'User_4 workspace' })).toBeNull();
     act(() => fireEvent.click(foldHead('history')));
-    expect(window.location.pathname).toBe('/school/teacher/students/user_4/history');
+    // The fold rides in the query; the path stays the day being read.
+    expect(window.location.pathname).toBe('/school/teacher/students/user_4/day');
+    expect(window.location.search).toBe('?fold=history');
     await waitFor(() => expect(screen.getByText('No sessions recorded.')).toBeTruthy());
   });
 
@@ -561,19 +563,31 @@ describe('TeacherConsole workspace', () => {
 
   // Reopening Operations without a query is a different repair context: the
   // panels seed from the query only on mount, so the view must remount.
-  it('drops a preselected repair when Operations is reopened without one', async () => {
+  it('keeps a past day when a fold is opened and closed (review 2026-10-29)', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/user_4/day/2026-10-27');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(foldHead('history')).toBeTruthy());
+    act(() => fireEvent.click(foldHead('history')));
+    expect(window.location.pathname).toBe('/school/teacher/students/user_4/day/2026-10-27');
+    expect(window.location.search).toBe('?fold=history');
+    act(() => fireEvent.click(foldHead('history')));
+    expect(window.location.pathname).toBe('/school/teacher/students/user_4/day/2026-10-27');
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps a preselected repair while another fold is opened (review 2026-10-29)', async () => {
     const units = schoolApi.curriculumUnits.getMockImplementation();
     schoolApi.curriculumUnits.mockImplementation(async () => ({ ok: true, status: 200, data: { units: [{ unitId: 'unit-a', title: 'Staccato', courseId: 'c1' }] } }));
     try {
       window.history.pushState({}, '', '/school/teacher/students/user_4/operations?reason=program_unavailable&unit=unit-a');
       render(<TeacherConsole />);
       await waitFor(() => expect(screen.getByLabelText('Unit to attest').value).toBe('unit-a'));
-      // Closing the Fix fold and opening it again starts a clean repair.
-      act(() => fireEvent.click(foldHead('operations')));
-      act(() => fireEvent.click(foldHead('operations')));
-      expect(window.location.search).toBe('');
-      expect(window.location.pathname).toBe('/school/teacher/students/user_4/operations');
-      await waitFor(() => expect(screen.queryByLabelText('Unit to attest')).toBeNull());
+      // Looking at Courses must not reset a half-filled "give credit" form.
+      act(() => fireEvent.click(foldHead('courses')));
+      expect(window.location.pathname).toBe('/school/teacher/students/user_4/day');
+      expect(new URLSearchParams(window.location.search).get('unit')).toBe('unit-a');
+      expect(new URLSearchParams(window.location.search).get('fold')).toBe('courses');
+      expect(screen.getByLabelText('Unit to attest').value).toBe('unit-a');
     } finally {
       schoolApi.curriculumUnits.mockImplementation(units);
     }
@@ -755,7 +769,8 @@ describe('TeacherConsole workspace', () => {
     render(<TeacherConsole />);
     await waitFor(() => expect(foldHead('reading')).toBeTruthy());
     fireEvent.click(foldHead('reading'));
-    expect(window.location.pathname).toBe('/school/teacher/students/user_4/reading');
+    expect(window.location.pathname).toBe('/school/teacher/students/user_4/day');
+    expect(window.location.search).toBe('?fold=reading');
     expect(await screen.findByText('User_4’s shelf')).toBeTruthy();
   });
 
@@ -780,11 +795,12 @@ describe('TeacherConsole workspace', () => {
     expect(within(matrix).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Course', 'User_4']);
   });
 
-  it('puts the enrollment grid above syllabus admin on the Curriculum page', async () => {
+  it('sends enrollment to each child\'s page instead of repeating the matrix on Manage', async () => {
     window.history.pushState({}, '', '/school/teacher/curriculum');
     render(<TeacherConsole />);
-    const matrix = await screen.findByRole('heading', { name: 'The whole school' });
-    const syllabi = await screen.findByRole('heading', { name: 'Syllabi' });
-    expect(matrix.compareDocumentPosition(syllabi) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await screen.findByRole('heading', { name: 'Syllabi' });
+    expect(screen.queryByRole('heading', { name: 'The whole school' })).toBeNull();
+    const enroll = (await screen.findByText(/Enroll or change a child/)).closest('p');
+    expect(within(enroll).getByRole('link', { name: 'User_4' })).toHaveAttribute('href', '/school/teacher/students/user_4/courses');
   });
 });

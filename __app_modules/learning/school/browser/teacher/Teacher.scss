@@ -3336,8 +3336,25 @@
   &__body .teacher-view__heading { display: none; }
 }
 .teacher-card-ladder__scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.teacher-learner-fold__body { min-width: 0; overflow-x: hidden; }
+.teacher-learner-fold__body { min-width: 0; }
 .teacher-manage-words {
   > summary { cursor: pointer; padding: 10px 4px; font-size: 13px; font-weight: 700; color: #604521; }
   &[open] > summary { margin-bottom: 6px; }
 }
+
+// --- Fix: one page, a child picker on top (owner ruling 2026-10-29) --------
+.teacher-fix-picker {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  > span { font-size: 13px; font-weight: 700; color: #4a4335; margin-right: 2px; }
+  button {
+    min-height: 36px; padding: 4px 14px; border: 1px solid #d4c6af; border-radius: 999px;
+    background: #fffdf8; color: #604521; font: inherit; font-size: 13px; cursor: pointer;
+    &[aria-pressed='true'] { background: #6e4b20; border-color: #6e4b20; color: #fffdf8; }
+  }
+}
+.teacher-fix-learner { display: flex; flex-direction: column; gap: 14px; }
+.teacher-manage-enroll { margin: 0; font-size: 13px; color: #5f584c; a { color: #604521; font-weight: 700; } }
+// The chevron stays on the name's line, never alone under the chips.
+.teacher-roster__card .teacher-roster__disclosure { order: -1; margin-left: auto; }
+.teacher-roster__card .teacher-roster__identity { order: -2; }
+.teacher-roster__card .teacher-roster__dots { flex: 1 0 100%; }

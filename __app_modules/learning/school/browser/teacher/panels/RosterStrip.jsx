@@ -460,7 +460,7 @@ function dotTone(row) {
 // The chip's verdict in words: a percent beats any state; otherwise a short,
 // colour-free mark of how far along the lesson is.
 const CHIP_STATE = {
-  done: 'done', 'in-progress': 'started', planned: 'to do', deferred: 'later', blocked: 'stuck',
+  done: 'done', 'in-progress': 'started', planned: 'to do', deferred: 'later', blocked: 'stuck', unassigned: 'extra',
 };
 
 function chipResult(row) {
@@ -487,8 +487,9 @@ function DayDots({ rows }) {
         const tone = dotTone(row);
         const score = row.session?.effectiveScore;
         const result = chipResult(row);
+        // One spoken label per chip: the subject's name, the lesson, its result.
         const label = [
-          row.subject ?? 'lesson',
+          subjectTitle(row.subject),
           row.session?.lessonTitle ?? row.planned,
           score?.percent != null ? `${Math.round(score.percent)}%` : DAY_STATUS_LABEL[row.status],
           row.unplanned ? 'not on the plan' : null,
@@ -496,9 +497,10 @@ function DayDots({ rows }) {
         ].filter(Boolean).join(' — ');
         return (
           <span key={row.key} className={`teacher-roster__dot teacher-roster__dot--${tone}`} title={label}>
-            {/* `Icon` draws NOTHING for a subject with no SVG; the initial stands in. */}
+            {/* `Icon` draws NOTHING for a subject with no SVG; the initial stands in.
+                Hidden from the accessible name: the label below says it once. */}
             {hasIcon(row.subject)
-              ? <SubjectIdentity subject={row.subject} iconOnly />
+              ? <span aria-hidden="true"><SubjectIdentity subject={row.subject} iconOnly /></span>
               : <span aria-hidden="true" className="teacher-roster__dot-initial">
                 {String(row.subject ?? '?')[0].toUpperCase()}
               </span>}
@@ -646,9 +648,11 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   ].filter(Boolean).join(' · ');
   // The week in coins, beside the day (the Coins roster folded into Home,
   // owner ruling 2026-10-29). Absent when the economy is off or unread.
+  // Green days are counted against the days that are over (today counts
+  // only once it is green): "0 green days" on a Monday is not a verdict.
   const coinLine = coins ? [
     `${coins.silver} silver this week`,
-    coins.greenDays != null ? `${coins.greenDays} green day${coins.greenDays === 1 ? '' : 's'}` : null,
+    coins.greenOf ? `${coins.green} of ${coins.greenOf} day${coins.greenOf === 1 ? '' : 's'} green` : null,
   ].filter(Boolean).join(' · ') : null;
   // The plan link is for a learner who has not begun. `scored` used to mean
   // "any machine-graded attempt today", which missed a day spent entirely on

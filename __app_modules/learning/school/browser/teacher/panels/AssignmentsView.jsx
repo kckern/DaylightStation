@@ -177,7 +177,7 @@ export default function AssignmentsView({ learnerId, learnerName, refreshKey = 0
                   {entry.syllabusId ? (
                     <>
                       {titles.course(entry.courseId)} has an enrollment — order, profile, and pass bar come from its syllabus. Edit it under{' '}
-                      <a href={teacherSectionPath('curriculum')}>Curriculum → Syllabi</a>.
+                      <a href={teacherSectionPath('curriculum')}>Manage → Syllabi</a>.
                     </>
                   ) : (
                     <>{titles.course(entry.courseId)} has a hand-authored enrollment — order, profile, and pass bar were set directly on the record, not by a syllabus.</>

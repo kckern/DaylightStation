@@ -9,11 +9,16 @@
  * A fold mounts its view only once it has been opened, so the page costs the
  * day's reads and nothing more until a parent asks. The old tab URLs
  * (`/students/:id/reading`, `/students/:id/words`, …) still land: they open
- * that fold and scroll to it, and opening a fold writes its URL back (with
- * `replace`, so Back still leaves the child), so a refresh or a pasted link
- * returns to the same place.
+ * that fold and scroll to it.
+ *
+ * WHICH FOLD IS OPEN RIDES IN THE QUERY (`?fold=`), NEVER THE PATH. The path
+ * is the day being read (`/students/:id/day/2026-10-27`); writing the fold
+ * into it threw a past day back to today, and dropping the query wiped a
+ * fold's own state — the Fix fold's preselected repair, an open reading.
+ * Opening a fold rewrites only `fold`, with `replace`, so Back still leaves
+ * the child and every other query value survives.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { teacherLog } from "./teacherLog.js";
 import TabErrorBoundary from "./TabErrorBoundary.jsx";
 import {
@@ -60,10 +65,12 @@ function Fold({ fold, open, onToggle, children }) {
 }
 
 export default function LearnerPage({
-  learner, route, kids, studyDay, onChangeStudyDay, onOpenSession, onOpenSessionFrom, onReplacePath, PianoProgramsPanel,
+  learner, route, kids, studyDay, onChangeStudyDay, onOpenSession, onOpenSessionFrom, onReplaceUrl, PianoProgramsPanel,
 }) {
-  const linked = FOLD_IDS.has(route.section) ? route.section : null;
-  // Folds stay open as a parent opens them; the URL names the last one opened.
+  const query = new URLSearchParams(globalThis.location?.search ?? '');
+  const queried = query.get('fold');
+  // A fold named by the old section path, or by `?fold=` (the current form).
+  const linked = FOLD_IDS.has(route.section) ? route.section : (FOLD_IDS.has(queried) ? queried : null);
   const [openFolds, setOpenFolds] = useState(() => new Set(linked ? [linked] : []));
   useEffect(() => {
     // A link to another section of the same child (an in-console anchor, or
@@ -74,17 +81,22 @@ export default function LearnerPage({
 
   const toggle = (id) => {
     const opening = !openFolds.has(id);
-    setOpenFolds((current) => {
-      const next = new Set(current);
-      if (opening) next.add(id); else next.delete(id);
-      return next;
-    });
+    const next = new Set(openFolds);
+    if (opening) next.add(id); else next.delete(id);
+    setOpenFolds(next);
     teacherLog.nav('learner-fold', { learnerId: learner.id, fold: id, open: opening });
-    // The URL follows the fold just opened; closing one returns it to the day.
-    onReplacePath?.(opening ? id : 'day');
+    // The URL names the fold just opened, else another still open, else none.
+    // The path stays the day being read; the rest of the query is untouched.
+    const named = opening ? id : [...next].at(-1) ?? null;
+    const params = new URLSearchParams(globalThis.location?.search ?? '');
+    if (named) params.set('fold', named); else params.delete('fold');
+    onReplaceUrl?.(params);
   };
 
-  const views = useMemo(() => ({
+  // A repair context is `?reason/subject/unit/day` — only those remount the
+  // Fix fold, so opening another fold never resets a half-filled form.
+  const repairKey = ['reason', 'subject', 'unit', 'day'].map((key) => query.get(key) ?? '').join('|');
+  const views = {
     reading: () => <ReadingView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     words: () => <WordsView learnerId={learner.id} learnerName={learner.name} />,
     sentences: () => <SentencesView learnerId={learner.id} learnerName={learner.name} />,
@@ -93,10 +105,8 @@ export default function LearnerPage({
     courses: () => <CoursesView learnerId={learner.id} learnerName={learner.name} courseId={route.courseId} kids={kids} PianoProgramsPanel={PianoProgramsPanel} />,
     history: () => <HistoryView learnerId={learner.id} learnerName={learner.name} onOpenSession={(sessionId) => onOpenSessionFrom(sessionId, 'history')} />,
     reports: () => <ReportsView learnerId={learner.id} kids={kids} />,
-    // Keyed by the query: a different `?reason/unit/day` is a different
-    // repair context, and the panels seed from it only on mount.
-    operations: () => <LearnerOperationsView key={`${learner.id}${globalThis.location?.search ?? ''}`} learnerId={learner.id} learnerName={learner.name} kids={kids} />,
-  }), [learner.id, learner.name, kids, route.courseId, PianoProgramsPanel, onOpenSessionFrom]);
+    operations: () => <LearnerOperationsView key={`${learner.id}|${repairKey}`} learnerId={learner.id} learnerName={learner.name} kids={kids} />,
+  };
 
   return (
     <div className="teacher-learner-page">

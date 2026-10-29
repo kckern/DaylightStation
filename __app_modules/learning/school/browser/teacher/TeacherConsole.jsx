@@ -23,7 +23,10 @@ import TabErrorBoundary from "./TabErrorBoundary.jsx";
 import {
   CurriculumView, DashboardView, OperationsView, QueueView, SessionInspector, CoinsRosterView,
 } from "./WorkspaceViews.jsx";
-import LearnerPage from "./LearnerPage.jsx";
+import LearnerPage, { LEARNER_FOLDS } from "./LearnerPage.jsx";
+
+/** Old learner tab sections that are folds now; their path becomes the day. */
+const FOLD_SECTIONS = new Set(LEARNER_FOLDS.map((fold) => fold.id));
 import "./Teacher.scss";
 
 // `short` is the phone tab label — a truthful abbreviation of the SAME word,
@@ -157,7 +160,7 @@ function TeacherShell({ PianoProgramsPanel }) {
       day: /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '') ? [`Back to ${humanDate(originDay)}`, () => goDay(originDay)] : null,
       today: ['Back to dashboard', dashboardBack],
       queue: ['Back to action queue', () => goGlobal('queue')],
-      operations: ['Back to operations', () => goGlobal('operations')],
+      operations: ['Back to Fix', () => goGlobal('operations')],
     };
     // Own keys only: `?from=constructor` must not reach Object.prototype.
     const [backLabel, onBack] = (Object.hasOwn(ORIGINS, from ?? '') ? ORIGINS[from] : null)
@@ -167,13 +170,19 @@ function TeacherShell({ PianoProgramsPanel }) {
   } else if (route.kind === 'learner' && learner) {
     // One page per child (owner ruling 2026-10-29): the day, then folds. A
     // section in the URL opens that fold; opening one writes it back.
-    view = <LearnerPage learner={learner} route={route} kids={kids} studyDay={studyDay}
+    // Keyed by child: another child's page starts with every fold closed.
+    // The fold rides in `?fold=` on the day's own path (see LearnerPage).
+    view = <LearnerPage key={learner.id} learner={learner} route={route} kids={kids} studyDay={studyDay}
       onChangeStudyDay={goDay}
       onOpenSession={(sessionId) => goSession(sessionId, { from: 'day', studyDay })}
       onOpenSessionFrom={(sessionId, from) => goSession(sessionId, { from })}
-      onReplacePath={(section) => navigate(section === 'day' && route.studyDay
-        ? teacherDayPath(learner.id, route.studyDay, route.base)
-        : teacherLearnerPath(learner.id, section, null, route.base), true)}
+      onReplaceUrl={(params) => {
+        const path = FOLD_SECTIONS.has(route.section)
+          ? teacherDayPath(learner.id, route.studyDay, route.base)
+          : window.location.pathname;
+        const search = params.toString();
+        navigate(`${path}${search ? `?${search}` : ''}`, true);
+      }}
       PianoProgramsPanel={PianoProgramsPanel} />;
   } else {
     const views = {
@@ -181,7 +190,10 @@ function TeacherShell({ PianoProgramsPanel }) {
       queue: <QueueView kids={kids} onChanged={backlog.refresh} />,
       curriculum: <CurriculumView kids={kids} courseId={route.courseId} lessonId={route.lessonId} />,
       coins: <CoinsRosterView onSelectLearner={(id) => goLearner(id, 'coins')} />,
-      operations: <OperationsView key={window.location.search} kids={kids} />,
+      // Keyed by the preselected lesson only: a link with a different `?unit=`
+      // is a fresh repair, but picking a child (`?learner=`) must not remount
+      // the page and drop a half-filled form.
+      operations: <OperationsView key={new URLSearchParams(window.location.search).get('unit') ?? ''} kids={kids} />,
     };
     view = views[route.section] ?? views.dashboard;
   }

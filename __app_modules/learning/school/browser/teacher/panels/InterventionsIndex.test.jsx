@@ -12,7 +12,7 @@ describe('InterventionsIndex', () => {
   it('links learner-scoped tools at the learner', () => {
     render(<InterventionsIndex learnerId="user_4" />);
     expect(screen.getByRole('link', { name: /Give credit for work you saw/ }))
-      .toHaveAttribute('href', '/school/teacher/students/user_4/operations');
+      .toHaveAttribute('href', '/school/teacher/operations?learner=user_4');
   });
 
   it('renders session-scoped tools as guidance, not dead links', () => {
