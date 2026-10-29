@@ -110,4 +110,51 @@ describe('usePianoWatchLog — lecture shorter than the browsing floor', () => {
 
     expect(logCalls()[0][1]).toMatchObject({ engaged: false });
   });
+
+  // 2026-10-28: a 77.5s lecture ends before a 90s gate can ever ask, so the
+  // child was filed unengaged, never credited, and left with a tail playhead.
+  it('counts a lecture shorter than the engagement gate timeout as engaged', () => {
+    const el = fakeEl({ currentTime: 77.5, duration: 77.547 });
+    const view = render(<WindowHarness mediaEl={el} askAfterSeconds={90} />);
+
+    view.unmount();
+
+    expect(logCalls()[0][1]).toMatchObject({ engaged: true, percent: 100 });
+  });
+
+  it('still reports unengaged when the gate had time to ask', () => {
+    const el = fakeEl({ currentTime: 120, duration: 130 });
+    const view = render(<WindowHarness mediaEl={el} askAfterSeconds={90} />);
+
+    view.unmount();
+
+    expect(logCalls()[0][1]).toMatchObject({ engaged: false });
+  });
+});
+
+function WindowHarness({ mediaEl, askAfterSeconds, resumeSeconds = 0 }) {
+  usePianoWatchLog({
+    mediaEl,
+    contentId: 'plex:695639',
+    title: 'Activity: Which Staff is the Real one?',
+    resumeSeconds,
+    userId: 'learner-1',
+    engagedRef: { current: false },
+    askAfterSeconds,
+  });
+  return null;
+}
+
+describe('usePianoWatchLog — resume', () => {
+  it('seeks to an in-progress playhead', () => {
+    const el = fakeEl({ currentTime: 0, duration: 77.547 });
+    render(<WindowHarness mediaEl={el} resumeSeconds={40} />);
+    expect(el.currentTime).toBe(40);
+  });
+
+  it('never seeks to the tail of the media, which would end it on open', () => {
+    const el = fakeEl({ currentTime: 0, duration: 77.547 });
+    render(<WindowHarness mediaEl={el} resumeSeconds={78} />);
+    expect(el.currentTime).toBe(0);
+  });
 });

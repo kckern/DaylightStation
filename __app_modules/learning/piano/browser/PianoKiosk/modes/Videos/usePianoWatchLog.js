@@ -3,11 +3,17 @@ import { useEffect, useRef } from 'react';
 import { DaylightAPI } from '../../../../../../../frontend/src/lib/api.mjs';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { buildWatchLogPayload } from './watchLog.js';
+import { isAtTail } from './lectureMeta.js';
 
 const LOG_INTERVAL_MS = 10000;
 
-/** Resume-on-load + throttled play/log posting for a piano lecture. */
-export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId, engagedRef }) {
+/**
+ * Resume-on-load + throttled play/log posting for a piano lecture.
+ * `askAfterSeconds` is how long the engagement gate waits before it asks for a
+ * play-along; media shorter than that is never asked (default: the 10s
+ * reporting floor, which is the reading Singalong relies on).
+ */
+export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId, engagedRef, askAfterSeconds = 10 }) {
   const logger = useRef(null);
   if (!logger.current) logger.current = getLogger().child({ component: 'piano-video-player' });
 
@@ -18,6 +24,12 @@ export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeco
     const apply = () => {
       if (done) return; done = true;
       try {
+        // Second line of defence behind resumeSecondsFor: the real media
+        // duration is only known here. Seeking to the tail ends it on open.
+        if (isAtTail(resumeSeconds, mediaEl.duration)) {
+          logger.current.warn('piano.video.resume-at-tail-skipped', { contentId, resumeSeconds, duration: mediaEl.duration });
+          return;
+        }
         if (mediaEl.currentTime < resumeSeconds - 1) mediaEl.currentTime = resumeSeconds;
         logger.current.info('piano.video.resume', { contentId, resumeSeconds });
       } catch (_) { /* element may detach during reload */ }
@@ -40,12 +52,12 @@ export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeco
       const nearlyComplete = duration > 0 && currentTime >= duration * 0.9;
       if (!(currentTime >= 10 || nearlyComplete)) return;
       // Completion needs engagement (a play-along), and the anti-AFK gate that
-      // DEMANDS one only opens after 90 seconds idle. A lecture shorter than
-      // the reporting floor never gives the child a chance to be asked, so
-      // recording `engaged:false` there files the absence of a question as a
-      // refusal — and makes such a lecture permanently uncompletable. Opening
-      // it counts, the same reading Singalong takes for a karaoke song.
-      const tooShortToAsk = duration > 0 && duration < 10;
+      // DEMANDS one only opens after `askAfterSeconds` idle. A lecture shorter
+      // than that never gives the child a chance to be asked, so recording
+      // `engaged:false` there files the absence of a question as a refusal —
+      // and makes such a lecture permanently uncompletable (a 77s lecture was,
+      // 2026-10-28). Opening it counts, the same reading Singalong takes.
+      const tooShortToAsk = duration > 0 && duration < Math.max(10, askAfterSeconds || 0);
       const payload = buildWatchLogPayload({
         contentId, title,
         seconds: mediaEl.currentTime,
@@ -60,5 +72,5 @@ export default function usePianoWatchLog({ mediaEl, contentId, title, resumeSeco
     };
     const id = setInterval(() => { if (!mediaEl.paused) post('progress'); }, LOG_INTERVAL_MS);
     return () => { clearInterval(id); post('close'); };
-  }, [mediaEl, contentId, title, userId, engagedRef]);
+  }, [mediaEl, contentId, title, userId, engagedRef, askAfterSeconds]);
 }

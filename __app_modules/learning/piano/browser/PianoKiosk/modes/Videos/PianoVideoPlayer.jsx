@@ -128,7 +128,11 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   ], [source, title, onBack]));
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
   const { rate, cycleRate: handleCycleRate } = useSyncedPlaybackRate(mediaEl, playerRef);
-  usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId: currentUser, engagedRef });
+  usePianoWatchLog({
+    mediaEl, contentId, title, resumeSeconds, userId: currentUser, engagedRef,
+    // The gate's own timeout: a lecture shorter than this is never asked.
+    askAfterSeconds: isSequential && engagementGateEnabled ? engagementTimeoutSeconds : undefined,
+  });
   useReloadGuard(isPlaying);
 
   // Player's clear callback is registered before this component's ended
