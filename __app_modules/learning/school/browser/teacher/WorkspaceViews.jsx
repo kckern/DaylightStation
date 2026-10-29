@@ -169,10 +169,8 @@ export function DashboardView({ kids, onSelectLearner: _onSelectLearner, backlog
   useEffect(() => { (backlog?.refreshIfStale ?? backlog?.refresh)?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading">
-        <div><p className="teacher-view__eyebrow">Household school</p><h2>Today at a glance</h2><p>Start with what needs a grown-up, then move into a learner’s day.</p></div>
-        <button type="button" className="teacher-primary" onClick={onOpenQueue}>Open action queue</button>
-      </div>
+      {/* No hero: the first thing on Home is what needs a grown-up, then the
+          children (audit 2026-10-29 — 470px of heading on a phone). */}
       <TodayTab kids={kids} backlog={backlog} onOpenQueue={onOpenQueue} />
     </div>
   );

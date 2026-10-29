@@ -103,13 +103,38 @@ export default function TodayTab({ kids = [], onOpenQueue = null, backlog = null
     [today.data],
   );
   const [needsGrownUp, setNeedsGrownUp] = useState({ count: 0, unknown: 0, items: [] });
+  // The week in silver for every child in ONE read (the Coins roster, folded
+  // into Home's rows). Optional: an install without the economy shows none.
+  const coins = usePanelFetch(() => (typeof schoolApi.earningsRoster === 'function'
+    ? schoolApi.earningsRoster() : Promise.resolve({ ok: false, status: 404, data: null })), {
+    panel: 'home-coins', notFoundAs: 'unavailable', isEmpty: (d) => !(d?.learners ?? []).length,
+  });
+  const coinsByLearner = useMemo(() => {
+    if (coins.state !== 'ok') return null;
+    return Object.fromEntries((coins.data?.learners ?? []).map((learner) => {
+      const school = (learner.work?.days ?? []).filter((day) => day.state !== 'exempt');
+      return [learner.learnerId, {
+        silver: learner.totals?.silver ?? 0,
+        greenDays: school.length ? school.filter((day) => day.state === 'met').length : null,
+      }];
+    }));
+  }, [coins.state, coins.data]);
+  const showBacklog = Boolean(onOpenQueue && backlog && backlog.total > 0);
+  const needsYou = needsGrownUp.count > 0 || needsGrownUp.unknown > 0 || showBacklog;
 
   return (
     <div className="teacher-tab teacher-tab--today">
       {lifecycleDown && (
         <p className="teacher-banner">School lifecycle is not enabled on this install — the daily digest needs it.</p>
       )}
-      <GrownUpStrip count={needsGrownUp.count} items={needsGrownUp.items ?? []} unknown={needsGrownUp.unknown ?? 0} />
+      {/* NEEDS YOU — everything waiting on a grown-up, in one place at the top
+          (the action queue's counts and the roster's stuck subjects). Nothing
+          waiting is one quiet line, not an empty panel. */}
+      <section className={`teacher-needs${needsYou ? '' : ' is-clear'}`} aria-label="Needs you">
+        <h2 className="teacher-needs__title">{needsYou ? 'Needs you' : 'Nothing needs you right now'}</h2>
+        {showBacklog && <BacklogStrip backlog={backlog} onOpenQueue={onOpenQueue} />}
+        <GrownUpStrip count={needsGrownUp.count} items={needsGrownUp.items ?? []} unknown={needsGrownUp.unknown ?? 0} />
+      </section>
       <PanelFrame
         title="Today"
         state={rosterState}
@@ -120,9 +145,8 @@ export default function TodayTab({ kids = [], onOpenQueue = null, backlog = null
       >
         <RosterStrip rows={rows} kids={kids}
           studyDay={Array.isArray(today.data) ? null : (today.data?.studyDay ?? null)}
-          onNeedsGrownUp={setNeedsGrownUp} />
+          onNeedsGrownUp={setNeedsGrownUp} coinsByLearner={coinsByLearner} />
       </PanelFrame>
-      {onOpenQueue && backlog && <BacklogStrip backlog={backlog} onOpenQueue={onOpenQueue} />}
     </div>
   );
 }

@@ -33,7 +33,7 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import { joinLearnerDay, DAY_STATUS_LABEL } from "../learnerDay.js";
 import { teacherBaseFor, teacherDayPath, teacherSessionPath, teacherLearnerPath, teacherLearnerOpsPath } from "../teacherUrl.js";
 import { localDay } from "../teacherDates.js";
-import { SubjectIdentity } from "../CurriculumIdentity.jsx";
+import { SubjectIdentity, subjectTitle } from "../CurriculumIdentity.jsx";
 import Icon from "../../home/icons/Icon.jsx";
 import { hasIcon } from "../../home/icons/iconRegistry.js";
 import { teacherLog } from "../teacherLog.js";
@@ -457,6 +457,28 @@ function dotTone(row) {
   return 'idle';
 }
 
+// The chip's verdict in words: a percent beats any state; otherwise a short,
+// colour-free mark of how far along the lesson is.
+const CHIP_STATE = {
+  done: 'done', 'in-progress': 'started', planned: 'to do', deferred: 'later', blocked: 'stuck',
+};
+
+function chipResult(row) {
+  const score = row.session?.effectiveScore;
+  if (score?.percent != null) return `${Math.round(score.percent)}%`;
+  if (row.session?.reviewStatus === 'pending') return 'to mark';
+  if (needsAdult(row.obligation)) return 'needs you';
+  return CHIP_STATE[row.status] ?? '';
+}
+
+/**
+ * THE DAY AS CHIPS — one per lesson, in plan order: the subject's mark, its
+ * short name, and its result (a percent, else "done" / "started" / "to do" /
+ * "stuck" / "needs you"). Icon-only discs made a parent hover each one to
+ * learn which subject was which and how it went (audit 2026-10-29, job 1);
+ * the words are the at-a-glance answer. Tone still colours the chip, never
+ * alone.
+ */
 function DayDots({ rows }) {
   if (!rows.length) return null;
   return (
@@ -464,6 +486,7 @@ function DayDots({ rows }) {
       {rows.map((row) => {
         const tone = dotTone(row);
         const score = row.session?.effectiveScore;
+        const result = chipResult(row);
         const label = [
           row.subject ?? 'lesson',
           row.session?.lessonTitle ?? row.planned,
@@ -473,17 +496,17 @@ function DayDots({ rows }) {
         ].filter(Boolean).join(' — ');
         return (
           <span key={row.key} className={`teacher-roster__dot teacher-roster__dot--${tone}`} title={label}>
-            {/* `Icon` draws NOTHING for a subject with no SVG, and here the
-                icon IS the content — an empty disc says neither which lesson
-                nor that anything is missing. The subject's initial stands in. */}
+            {/* `Icon` draws NOTHING for a subject with no SVG; the initial stands in. */}
             {hasIcon(row.subject)
               ? <SubjectIdentity subject={row.subject} iconOnly />
-              : <>
-                <span aria-hidden="true" className="teacher-roster__dot-initial">
-                  {String(row.subject ?? '?')[0].toUpperCase()}
-                </span>
-                <span className="teacher-visually-hidden">{label}</span>
-              </>}
+              : <span aria-hidden="true" className="teacher-roster__dot-initial">
+                {String(row.subject ?? '?')[0].toUpperCase()}
+              </span>}
+            {/* The subject's first word ("Math", "Scripture"): the full shelf name
+                ("Math & Money") wrapped five chips to five lines on a phone. */}
+            <span className="teacher-roster__dot-name" aria-hidden="true">{subjectTitle(row.subject).split(/\s+&\s+/)[0]}</span>
+            {result && <span className="teacher-roster__dot-result" aria-hidden="true">{result}</span>}
+            <span className="teacher-visually-hidden">{label}</span>
           </span>
         );
       })}
@@ -581,7 +604,7 @@ function attentionLabel(item) {
  * per session: that N+1 stays dead), and it is still GET-only and
  * non-recording.
  */
-function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeedsGrownUp }) {
+function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeedsGrownUp, coins = null }) {
   const learnerId = row.learnerId;
   const name = kids.find((k) => k.id === learnerId)?.name ?? learnerId;
   const panelId = `teacher-day-${String(learnerId).replace(/[^a-z0-9_-]/gi, '-')}`;
@@ -621,6 +644,12 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
     unplannedCount > 0 ? `${unplannedCount} extra` : null,
     markedToday.length > 0 ? `${markedToday.length} marked today` : null,
   ].filter(Boolean).join(' · ');
+  // The week in coins, beside the day (the Coins roster folded into Home,
+  // owner ruling 2026-10-29). Absent when the economy is off or unread.
+  const coinLine = coins ? [
+    `${coins.silver} silver this week`,
+    coins.greenDays != null ? `${coins.greenDays} green day${coins.greenDays === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(' · ') : null;
   // The plan link is for a learner who has not begun. `scored` used to mean
   // "any machine-graded attempt today", which missed a day spent entirely on
   // work that carries no score.
@@ -700,6 +729,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
         <span className="teacher-roster__identity">
           <span className="teacher-roster__name">{name}</span>
           {settled && summary && <span className="teacher-roster__stats">{summary}</span>}
+          {coinLine && <span className="teacher-roster__coins">{coinLine}</span>}
         </span>
         {/* THE DAY ITSELF — the row's primary content, not a decoration
             beside a number. One disc per assigned lesson, in plan order,
@@ -744,10 +774,10 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
 
       {/* A learner with nothing recorded is not a dead end: the plan for
           the day is the next thing a teacher wants to see. */}
-      {settled && !started && (
+      {settled && (
         <a className="teacher-btn teacher-btn--quiet teacher-roster__plan-link"
           href={teacherDayPath(learnerId, studyDay, base)}>
-          See today’s plan →
+          {started ? `Open ${name}’s day →` : 'See today’s plan →'}
         </a>
       )}
       {/* WORK ONLY A GROWN-UP CAN MOVE (`GetTeacherToday`'s `attention`): a
@@ -789,7 +819,7 @@ function RosterEntry({ row, kids, studyDay: studyDayProp, open, onToggle, onNeed
   );
 }
 
-export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownUp = null }) {
+export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownUp = null, coinsByLearner = null }) {
   // Which learner is open lives in the URL (`?open=`), so the trip to a
   // lesson and back — or a refresh — returns to the same open card.
   const [openId, setOpenId] = useState(() => new URLSearchParams(globalThis.location?.search ?? '').get('open'));
@@ -866,6 +896,7 @@ export default function RosterStrip({ rows, kids, studyDay = null, onNeedsGrownU
           open={openId === row.learnerId}
           onToggle={() => toggle(row.learnerId)}
           onNeedsGrownUp={reportGrownUp}
+          coins={coinsByLearner?.[row.learnerId] ?? null}
         />
       ))}
     </div>

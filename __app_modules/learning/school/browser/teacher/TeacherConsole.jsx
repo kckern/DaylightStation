@@ -29,13 +29,18 @@ import "./Teacher.scss";
 // `short` is the phone tab label — a truthful abbreviation of the SAME word,
 // never a different one ('Courses' for Curriculum collided with the student
 // Courses tab; UX audit F26).
+// Three sections (owner ruling 2026-10-29): Home carries the action queue's
+// counts ("Needs you") and each child's coins; Manage is curriculum and
+// enrollment; Fix is every repair. The queue and coins-roster pages keep their
+// URLs — Home links into them — but are no longer places to navigate to.
+// Ids are the URL segments, kept so bookmarks still land.
 const GLOBAL_NAV = [
-  { id: 'dashboard', label: 'Dashboard', short: 'Home' },
-  { id: 'queue', label: 'Action queue', short: 'Queue' },
-  { id: 'curriculum', label: 'Curriculum', short: 'Curric.' },
-  { id: 'coins', label: 'Coins', short: 'Coins' },
-  { id: 'operations', label: 'Operations', short: 'Ops' },
+  { id: 'dashboard', label: 'Home', short: 'Home' },
+  { id: 'curriculum', label: 'Manage', short: 'Manage' },
+  { id: 'operations', label: 'Fix', short: 'Fix' },
 ];
+/** The top bar's name for every section page, the off-menu ones included. */
+const SECTION_LABEL = { ...Object.fromEntries(GLOBAL_NAV.map((item) => [item.id, item.label])), queue: 'Action queue', coins: 'Coins' };
 /** The phone layout's breakpoint (`Teacher.scss`): the rail becomes a drawer. */
 const PHONE_QUERY = '(max-width: 760px)';
 const LEARNER_NAV = [
@@ -207,7 +212,7 @@ function TeacherShell({ PianoProgramsPanel }) {
         <header className="teacher-console__header teacher-workspace__topbar">
           <button type="button" ref={menuRef} className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
           <button type="button" className="teacher-workspace__brand" onClick={() => goGlobal('dashboard')}><span>School</span><strong>Teacher</strong></button>
-          <div className="teacher-workspace__context" title={learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}>{learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}</div>
+          <div className="teacher-workspace__context" title={learner ? learner.name : SECTION_LABEL[route.section] ?? 'Session'}>{learner ? learner.name : SECTION_LABEL[route.section] ?? 'Session'}</div>
           {noTeachers ? (
             <div className="teacher-console__no-teachers">{configured ? 'Configured teachers do not resolve to the roster.' : 'No teachers configured in school.yml.'}</div>
           ) : (
@@ -225,7 +230,7 @@ function TeacherShell({ PianoProgramsPanel }) {
             <nav className="teacher-workspace__global" aria-label="Workspace">
               {GLOBAL_NAV.map((item) => (
                 <button key={item.id} type="button" aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>
-                  <span>{item.label}</span>{item.id === 'queue' && backlog.total > 0 && <b aria-label={`${backlog.total} items waiting`}>{backlog.total}</b>}
+                  <span>{item.label}</span>{item.id === 'dashboard' && backlog.total > 0 && <b aria-label={`${backlog.total} items waiting`}>{backlog.total}</b>}
                 </button>
               ))}
               <button type="button" className="teacher-workspace__log-book" data-from="rail" onClick={openLogBook}>
@@ -266,7 +271,7 @@ function TeacherShell({ PianoProgramsPanel }) {
         </div>
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
-          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog.total > 0 && <b>{backlog.total}</b>}</button>)}
+          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'dashboard' && backlog.total > 0 && <b>{backlog.total}</b>}</button>)}
           <button type="button" data-from="tab-bar" onClick={openLogBook}>Log book</button>
         </nav>
         <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />

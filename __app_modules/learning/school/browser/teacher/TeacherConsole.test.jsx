@@ -223,8 +223,12 @@ describe('TeacherConsole workspace', () => {
     await ready();
     // Rail + labeled mobile tab both answer to the full name since the
     // truthful-abbreviation wave — at least one each.
-    for (const label of ['Dashboard', 'Action queue', 'Curriculum', 'Operations']) expect(screen.getAllByRole('button', { name: label }).length).toBeGreaterThan(0);
-    expect(screen.getByText('Today at a glance')).toBeTruthy();
+    // Three sections (owner ruling 2026-10-29); Queue and Coins are off the menu.
+    for (const label of ['Home', 'Manage', 'Fix']) expect(screen.getAllByRole('button', { name: label }).length).toBeGreaterThan(0);
+    for (const gone of ['Action queue', 'Coins', 'Dashboard']) expect(screen.queryAllByRole('button', { name: gone })).toHaveLength(0);
+    // No hero: Home opens on what needs a grown-up.
+    expect(screen.queryByText('Today at a glance')).toBeNull();
+    expect(await screen.findByRole('region', { name: 'Needs you' })).toBeTruthy();
   });
 
   it('surfaces shell read failures instead of silently showing an empty school', async () => {
@@ -249,7 +253,7 @@ describe('TeacherConsole workspace', () => {
     // Quiz requests count too — the badge used to leave them out.
     await waitFor(() => expect(screen.getByLabelText('4 items waiting').textContent).toBe('4'));
     const tabBar = document.querySelector('.teacher-workspace__mobile-nav');
-    expect(within(tabBar).getByRole('button', { name: 'Action queue' }).querySelector('b').textContent).toBe('4');
+    expect(within(tabBar).getByRole('button', { name: 'Home' }).querySelector('b').textContent).toBe('4');
     expect(screen.getByTestId('backlog-strip')).toHaveTextContent('1 to review · 1 print · 2 requests →');
   });
 
@@ -638,7 +642,7 @@ describe('TeacherConsole workspace', () => {
       await waitFor(() => expect(field('Lesson')?.value).toBe('unit-a'));
       expect(field('Student').value).toBe('user_4');
       const workspace = screen.getByRole('navigation', { name: 'Workspace' });
-      fireEvent.click(within(workspace).getByRole('button', { name: 'Operations' }));
+      fireEvent.click(within(workspace).getByRole('button', { name: 'Fix' }));
       await waitFor(() => expect(window.location.search).toBe(''));
       await waitFor(() => expect(field('Lesson')?.value).toBe(''));
       expect(field('Student').value).toBe('');

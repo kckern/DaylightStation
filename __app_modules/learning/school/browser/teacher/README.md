@@ -13,10 +13,11 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 
 | What you see | Component | File |
 |---|---|---|
-| "HOUSEHOLD SCHOOL / Today at a glance" heading + "Open action queue" | `TeacherConsole` | `TeacherConsole.jsx` |
+| The three-section nav (Home · Manage · Fix — ids `dashboard` / `curriculum` / `operations`; the backlog badge rides on Home). `queue` and `coins` keep their URLs, off the menu | `TeacherConsole` (`GLOBAL_NAV`, `SECTION_LABEL`) | `TeacherConsole.jsx` |
+| "Needs you" at the top of Home — the backlog strip and the "N subjects need a grown-up" list in one box; "Nothing needs you right now" when empty | `TodayTab` | `tabs/TodayTab.jsx` |
 | The "Today" card, its loading/empty/error frame | `TodayTab` → `PanelFrame` | `tabs/TodayTab.jsx`, `panels/PanelFrame.jsx` |
-| One collapsed row per learner (avatar, name, "6 / 6 correct", day dots, agenda icon, chevron) | `RosterEntry`, `DayDots` | `panels/RosterStrip.jsx` |
-| The expanded grid of lesson cards under a learner | `LearnerDayGrid` | `panels/RosterStrip.jsx` |
+| One collapsed row per learner (avatar, name, "n of m lessons done", the week's silver and green days, one chip per lesson — subject mark, short name, result: a percent or done / started / to do / stuck / needs you / to mark — then print · sheet · "See today's plan" / "Open X's day") | `RosterEntry`, `DayDots` | `panels/RosterStrip.jsx` (coins: one `schoolApi.earningsRoster()` read in `tabs/TodayTab.jsx`, passed down as `coinsByLearner`) |
+| The expanded grid of lesson cards under a learner — compact on Home (no poster column, no reserved heights: `.teacher-roster__details .teacher-lesson-card` in `Teacher.scss`) | `LearnerDayGrid` | `panels/RosterStrip.jsx` |
 | **One lesson card** — subject header band, breadcrumb, poster, title, footer chip/score/paper icons | `LessonCard` | `panels/RosterStrip.jsx` |
 | A card that says "This program can't start" / "Locked behind work nothing can reach" (red header/foot) | `LessonCard` (`teacher-lesson-card--faulted`) | `panels/RosterStrip.jsx` |
 | The muted excuse sentence / "Open Courses" / "Open repair tools" / "Open the lesson" link in a card's footer | `LessonCard` (words: `GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK`; link: `grownUpHref`) | `panels/RosterStrip.jsx` (copy: `obligationCopy.js`; learner Operations link: `teacherUrl.js`'s `teacherLearnerOpsPath`) |
