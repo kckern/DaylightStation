@@ -501,10 +501,15 @@ How to read it:
 
 Two blind spots:
 
-- **`data.bssid` is null:** Android 10 redacts the BSSID unless Location *services*
-  are switched on. Holding the location permission is not enough. While it is null,
-  roams cannot be seen at all, so a missing `bridge.wifi.roam` row proves nothing.
-  `data.band` and `data.freqMhz` still change on a roam between bands.
+- **Where `data.bssid` comes from.** Android 10 redacts the BSSID unless Location
+  *services* are on; holding the permission is not enough. Location services stay off
+  on purpose, because their scans load the link being diagnosed. Since p35 the bridge
+  falls back to Fully Kiosk's `deviceInfo` BSSID, and `data.bssidSource` says which
+  source was used (`wifimanager` or `fkb`). The FKB value is refreshed at most every
+  30 s, so a roam can show up to about 30 s late. If `data.bssid` is null (FKB is
+  unreachable or refusing the password as well), roams cannot be seen and a missing
+  `bridge.wifi.roam` row proves nothing. `data.band` and `data.freqMhz` still change
+  on a roam between bands.
 - **Do not lean on `navigator.connection` in the WebView.** Its `downlink`/`rtt` are
   coarse and capped, so they cannot show a collapse like this one. Use `rxKbps` here.
 

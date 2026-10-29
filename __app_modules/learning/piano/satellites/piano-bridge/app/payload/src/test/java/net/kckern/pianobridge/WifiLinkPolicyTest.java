@@ -244,6 +244,74 @@ public class WifiLinkPolicyTest {
         assertTrue(o.isNull("bssid"));
     }
 
+    // --- BSSID fallback (p35): FKB's deviceInfo when Android redacts it -----
+
+    @Test public void wifiManagerBssidWinsWhenPresent() {
+        String[] r = WifiLinkPolicy.resolveBssid("AA:AA:AA:AA:AA:01", "aa:aa:aa:aa:aa:09");
+        assertEquals("aa:aa:aa:aa:aa:01", r[0]);
+        assertEquals("wifimanager", r[1]);
+    }
+
+    @Test public void redactedBssidFallsBackToFkb() {
+        // Android 10 with Location services off returns the placeholder; FKB still knows.
+        String[] r = WifiLinkPolicy.resolveBssid("02:00:00:00:00:00", "16:98:8F:00:00:01");
+        assertEquals("16:98:8f:00:00:01", r[0]);
+        assertEquals("fkb", r[1]);
+        assertEquals("fkb", WifiLinkPolicy.resolveBssid(null, "16:98:8f:00:00:01")[1]);
+    }
+
+    @Test public void neitherSourceIsNullNotAPlaceholder() {
+        String[] r = WifiLinkPolicy.resolveBssid("02:00:00:00:00:00", "02:00:00:00:00:00");
+        assertNull(r[0]);
+        assertNull(r[1]);
+        assertNull(WifiLinkPolicy.resolveBssid(null, null)[0]);
+    }
+
+    @Test public void fkbRefreshIsRateLimited() {
+        assertTrue("never fetched", WifiLinkPolicy.fkbRefreshDue(100_000, 0, 30_000));
+        assertFalse(WifiLinkPolicy.fkbRefreshDue(120_000, 100_000, 30_000));
+        assertTrue(WifiLinkPolicy.fkbRefreshDue(130_000, 100_000, 30_000));
+    }
+
+    @Test public void staleFkbBssidIsNotUsed() {
+        // A cached answer from minutes ago would hide a roam behind an old AP.
+        assertTrue(WifiLinkPolicy.fkbFresh(100_000, 40_000, 90_000));
+        assertFalse(WifiLinkPolicy.fkbFresh(200_000, 100_000, 90_000));
+        assertFalse("never fetched", WifiLinkPolicy.fkbFresh(200_000, 0, 90_000));
+    }
+
+    @Test public void roamIsDetectedOffTheFkbFallback() {
+        WifiLinkPolicy.Tracker tr = new WifiLinkPolicy.Tracker(60);
+        WifiLinkPolicy.Reading a = reading(0, -60, 72, 2412, "02:00:00:00:00:00", 0, 0);
+        a.fkbBssid = "16:98:8f:00:00:01";
+        WifiLinkPolicy.Sample s1 = tr.add(a, T);
+        assertEquals("16:98:8f:00:00:01", s1.bssid);
+        assertEquals("fkb", s1.bssidSource);
+        WifiLinkPolicy.Reading b = reading(10_000, -66, 72, 5180, "02:00:00:00:00:00", 0, 0);
+        b.fkbBssid = "16:98:8f:00:00:02";
+        WifiLinkPolicy.Sample s2 = tr.add(b, T);
+        assertTrue(s2.roamed);
+        assertEquals("16:98:8f:00:00:01", s2.roamFrom);
+    }
+
+    @Test public void switchingSourceOnTheSameApIsNotARoam() {
+        WifiLinkPolicy.Tracker tr = new WifiLinkPolicy.Tracker(60);
+        WifiLinkPolicy.Reading a = reading(0, -60, 72, 2412, null, 0, 0);
+        a.fkbBssid = "16:98:8F:00:00:01";
+        tr.add(a, T);
+        WifiLinkPolicy.Sample s = tr.add(reading(10_000, -60, 72, 2412, "16:98:8f:00:00:01", 0, 0), T);
+        assertFalse(s.roamed);
+        assertEquals("wifimanager", s.bssidSource);
+    }
+
+    @Test public void bssidSourceIsInTheJson() throws Exception {
+        WifiLinkPolicy.Tracker tr = new WifiLinkPolicy.Tracker(60);
+        WifiLinkPolicy.Reading a = reading(0, -60, 72, 2412, null, 0, 0);
+        a.fkbBssid = "16:98:8f:00:00:01";
+        assertEquals("fkb", tr.add(a, T).toJson().getString("bssidSource"));
+        assertTrue(tr.add(reading(10_000, -60, 72, 2412, null, 0, 0), T).toJson().isNull("bssidSource"));
+    }
+
     // --- backlog: unsent lines survive, sent lines leave, by identity ----
 
     @Test public void ackRemovesExactlyTheLinesThatWereSent() {

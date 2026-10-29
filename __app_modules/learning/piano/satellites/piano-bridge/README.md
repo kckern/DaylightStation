@@ -218,7 +218,7 @@ device no longer rebuilds the connectors (`ConnectPlan`).
 Both log to the log store: `bridge.a2dp.{disconnected,connected,reconnect-requested,error,hfp-disabled}`
 and `bridge.bt-cycle.{start,done}` (`context.app:piano-bridge`).
 
-### Wi-Fi link telemetry (payload p34 `p34-wifi-link`, 2026-10-28)
+### Wi-Fi link telemetry (payload p34 `p34-wifi-link`, p35 `p35-wifi-bssid`, 2026-10-28)
 
 **Why.** On 2026-10-28 lesson videos stalled on the tablet for seven minutes. The
 server, Plex and the LAN were all ruled out, and delivery to the tablet had fallen to
@@ -233,7 +233,7 @@ Every `wifiSampleIntervalMs` (default 10000, minimum 2000) the payload reads
 
 | Event (`context.app:piano-bridge`) | Level | When | Fields (`data.*`) |
 |---|---|---|---|
-| `bridge.wifi` | `info`, or `warn` when degraded | every sample | `connected rssi linkSpeedMbps rxLinkSpeedMbps txLinkSpeedMbps freqMhz band bssid rxKbps txKbps degraded degradedReason roamed roamFrom seq epochMs intervalMs backlog failures` |
+| `bridge.wifi` | `info`, or `warn` when degraded | every sample | `connected rssi linkSpeedMbps rxLinkSpeedMbps txLinkSpeedMbps freqMhz band bssid bssidSource rxKbps txKbps degraded degradedReason roamed roamFrom seq epochMs intervalMs backlog failures` |
 | `bridge.wifi.roam` | `info` | the first sample on a new BSSID, even across a disconnected gap | `from to fromFreqMhz toFreqMhz fromBand toBand fromRssi toRssi roams` |
 | `bridge.heartbeat` | (unchanged) | every beat | adds `data.wifi.{rssi,linkSpeedMbps,freqMhz,band,bssid,rxKbps,degraded,ageMs}` |
 
@@ -246,9 +246,16 @@ Every `wifiSampleIntervalMs` (default 10000, minimum 2000) the payload reads
   -1) never count as degraded on their own.
 - The SSID is never read, logged or served: the network name identifies the household.
   The BSSID is kept, because roam detection needs it.
-- Android's redacted BSSID (`02:00:00:00:00:00`) is reported as `null`. On Android 10 that
-  happens whenever Location *services* are off, even with the permission granted, and a
-  null `bssid` leaves roam detection blind.
+- **BSSID source (p35).** Android 10 redacts WifiInfo's BSSID (`02:00:00:00:00:00`)
+  whenever Location *services* are off, even with the permission granted. They stay
+  off on purpose, because location scanning adds Wi-Fi scans to the very link being
+  diagnosed. The bridge then uses the `BSSID` from Fully Kiosk's `deviceInfo`, with the
+  configured `fkbPassword`. That value is fetched on the sampler's own thread at most
+  every 30 s and trusted for 90 s. `/wifi` only ever reads the cache.
+  `bssidSource` is `wifimanager`, `fkb` or `null`. Roam detection works on either
+  source, and a change of source on the same access point is not a roam. Failed FKB
+  fetches are counted in `/wifi` as `failures.fkbBssid`, with the cache age in
+  `fkbBssidAgeMs`. If both sources fail, `bssid` is `null` and roams cannot be seen.
 - **Samples taken while the link is down are not lost.** Unsent lines wait in a backlog
   of up to 180 (about 30 min), stamped with the time they were *measured*, and go out
   with the next post that succeeds. Sent lines leave the queue by id, so a line added
@@ -257,7 +264,8 @@ Every `wifiSampleIntervalMs` (default 10000, minimum 2000) the payload reads
 - `wifiTelemetryEnabled: false` turns it off. All four keys change live with `pbctl config set`.
 
 `GET /wifi[?fresh=1]` returns `{ok, current, recent:[up to 60, oldest first], enabled,
-running, intervalMs, thresholds, roams, backlog, dropped, failures, lastOkAgoMs, lastError}`.
+running, intervalMs, thresholds, roams, backlog, dropped, failures:{logStore,fkbBssid},
+fkbBssidAgeMs, lastOkAgoMs, lastError}`.
 `fresh=1` takes a sample first. That is the call the kiosk Player makes on a stall, from
 its https page to `http://localhost:8770`, so the response carries the same CORS headers
 as every route (`Access-Control-Allow-Origin: *`), and an `OPTIONS` preflight answers

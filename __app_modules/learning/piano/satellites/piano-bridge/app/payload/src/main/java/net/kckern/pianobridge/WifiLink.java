@@ -26,8 +26,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * where delivery to the tablet collapsed and nothing recorded why.
  *
  * Each tick reads WifiManager.getConnectionInfo() (rssi, link rates, frequency, BSSID —
- * ACCESS_FINE_LOCATION is granted, and the redacted placeholder is tolerated; the SSID
- * is deliberately never read, since the network name identifies the household)
+ * the SSID is deliberately never read, since the network name identifies the
+ * household). Android 10 redacts the BSSID while Location services are off, so since
+ * p35 the BSSID falls back to Fully Kiosk's deviceInfo (cached, refreshed at most
+ * every 30 s on this timer, never on the HTTP thread); {@code bssidSource} says which.
  * plus TrafficStats total byte counters for real throughput, then:
  *  - posts {@code bridge.wifi} (level warn when degraded) — same envelope and sink as
  *    the heartbeat, so {@code context.app:piano-bridge} finds it;
@@ -49,6 +51,9 @@ public final class WifiLink {
     static final int MAX_BACKLOG = 180;
     private static final int CONNECT_TIMEOUT_MS = 3000;
     private static final int READ_TIMEOUT_MS = 4000;
+    /** FKB deviceInfo (BSSID fallback) at most this often, and trusted this long. */
+    static final long FKB_REFRESH_MS = 30_000L;
+    static final long FKB_MAX_AGE_MS = 90_000L;
 
     private final BridgeCore core;
     private volatile DeviceConfig cfg;
@@ -61,6 +66,11 @@ public final class WifiLink {
     private final AtomicInteger roams = new AtomicInteger();
     private final AtomicLong lastOkAtMs = new AtomicLong();
     private volatile String lastError;
+    // BSSID fallback cache. Written only on the timer thread; read anywhere.
+    private volatile String fkbBssid;
+    private volatile long fkbFetchedAtMs;
+    private volatile long fkbAttemptAtMs;
+    private final AtomicInteger fkbFailures = new AtomicInteger();
 
     public WifiLink(BridgeCore core, DeviceConfig cfg) {
         this.core = core;
@@ -134,9 +144,36 @@ public final class WifiLink {
     }
 
     private void tick() {
+        refreshFkbBssid();
         sample();
         flush();
     }
+
+    /**
+     * Refresh FKB's BSSID if Android is redacting ours. Timer thread only, rate-limited
+     * to one deviceInfo per 30 s (FkbRest's 2.5 s / 4 s timeouts). The HTTP thread
+     * (/wifi?fresh=1) only ever reads the cache.
+     */
+    private void refreshFkbBssid() {
+        if (lastWifiManagerBssidPresent) return;   // nothing to fill in
+        long now = System.currentTimeMillis();
+        if (!WifiLinkPolicy.fkbRefreshDue(now, fkbAttemptAtMs, FKB_REFRESH_MS)) return;
+        fkbAttemptAtMs = now;
+        try {
+            JSONObject info = FkbRest.deviceInfo(cfg);
+            String b = info.optBoolean("authOk", false) ? info.optString("bssid", null) : null;
+            if (WifiLinkPolicy.normalizeBssid(b) != null) {
+                fkbBssid = b;
+                fkbFetchedAtMs = now;
+            } else {
+                fkbFailures.incrementAndGet();
+            }
+        } catch (Throwable t) {
+            fkbFailures.incrementAndGet();
+        }
+    }
+
+    private volatile boolean lastWifiManagerBssidPresent;
 
     private WifiLinkPolicy.Reading read() {
         WifiLinkPolicy.Reading r = new WifiLinkPolicy.Reading();
@@ -158,6 +195,8 @@ public final class WifiLink {
         } catch (Throwable t) {
             lastError = "read: " + t;
         }
+        lastWifiManagerBssidPresent = WifiLinkPolicy.normalizeBssid(r.bssid) != null;
+        if (WifiLinkPolicy.fkbFresh(r.epochMs, fkbFetchedAtMs, FKB_MAX_AGE_MS)) r.fkbBssid = fkbBssid;
         try {
             r.rxBytes = TrafficStats.getTotalRxBytes();
             r.txBytes = TrafficStats.getTotalTxBytes();
@@ -235,7 +274,8 @@ public final class WifiLink {
             o.put("roams", roams.get());
             o.put("backlog", backlogSize());
             o.put("dropped", backlog.dropped());
-            o.put("failures", new JSONObject().put("logStore", logStoreFailures.get()));
+            o.put("failures", new JSONObject().put("logStore", logStoreFailures.get()).put("fkbBssid", fkbFailures.get()));
+            o.put("fkbBssidAgeMs", fkbFetchedAtMs == 0 ? -1 : System.currentTimeMillis() - fkbFetchedAtMs);
             o.put("lastOkAgoMs", lastOkAtMs.get() == 0 ? -1 : System.currentTimeMillis() - lastOkAtMs.get());
             o.put("lastError", lastError == null ? JSONObject.NULL : lastError);
         } catch (Exception ignored) { }

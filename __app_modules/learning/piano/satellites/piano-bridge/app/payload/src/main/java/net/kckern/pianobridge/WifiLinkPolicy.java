@@ -77,6 +77,30 @@ public final class WifiLinkPolicy {
         return s;
     }
 
+    /**
+     * The BSSID to report and where it came from: {bssid, "wifimanager"|"fkb"} or
+     * {null, null}. Android 10 redacts WifiInfo's BSSID unless Location services are on
+     * (deliberately left off: location scanning adds Wi-Fi scans to the link under
+     * diagnosis), but Fully Kiosk's deviceInfo still reports it, so it is the fallback.
+     */
+    public static String[] resolveBssid(String wifiManagerBssid, String fkbBssid) {
+        String w = normalizeBssid(wifiManagerBssid);
+        if (w != null) return new String[] { w, "wifimanager" };
+        String f = normalizeBssid(fkbBssid);
+        if (f != null) return new String[] { f, "fkb" };
+        return new String[] { null, null };
+    }
+
+    /** At most one FKB deviceInfo call per {@code minGapMs}; due when never fetched. */
+    public static boolean fkbRefreshDue(long nowMs, long lastAttemptMs, long minGapMs) {
+        return lastAttemptMs <= 0 || nowMs - lastAttemptMs >= minGapMs;
+    }
+
+    /** A cached FKB BSSID is usable only while younger than {@code maxAgeMs}. */
+    public static boolean fkbFresh(long nowMs, long fetchedAtMs, long maxAgeMs) {
+        return fetchedAtMs > 0 && nowMs - fetchedAtMs <= maxAgeMs;
+    }
+
     /** Comma-joined reasons ("rssi", "linkSpeed", "disconnected"), or null when healthy. */
     public static String degradedReason(boolean connected, int rssi, int linkSpeedMbps, Thresholds t) {
         if (!connected) return "disconnected";
@@ -96,6 +120,7 @@ public final class WifiLinkPolicy {
         public int rxLinkSpeedMbps = -1;
         public int txLinkSpeedMbps = -1;
         public int freqMhz = -1;
+        public String fkbBssid;         // FKB deviceInfo fallback (fresh cache only), or null
         public String bssid;            // no SSID on purpose: the network name identifies the household
         public long rxBytes = -1;       // TrafficStats.getTotalRxBytes()
         public long txBytes = -1;
@@ -106,7 +131,7 @@ public final class WifiLinkPolicy {
         public final long seq, epochMs;
         public final boolean connected;
         public final int rssi, linkSpeedMbps, rxLinkSpeedMbps, txLinkSpeedMbps, freqMhz;
-        public final String band, bssid;
+        public final String band, bssid, bssidSource;
         public final long rxKbps, txKbps;
         public final boolean degraded;
         public final String degradedReason;
@@ -115,7 +140,7 @@ public final class WifiLinkPolicy {
         public final int roamFromFreqMhz;
         public final int roamFromRssi;
 
-        Sample(long seq, Reading r, String bssid, long rxKbps, long txKbps,
+        Sample(long seq, Reading r, String bssid, String bssidSource, long rxKbps, long txKbps,
                String degradedReason, String roamFrom, int roamFromFreqMhz, int roamFromRssi) {
             this.seq = seq;
             this.epochMs = r.epochMs;
@@ -127,6 +152,7 @@ public final class WifiLinkPolicy {
             this.freqMhz = r.freqMhz;
             this.band = band(r.freqMhz);
             this.bssid = bssid;
+            this.bssidSource = bssidSource;
             this.rxKbps = rxKbps;
             this.txKbps = txKbps;
             this.degradedReason = degradedReason;
@@ -151,6 +177,7 @@ public final class WifiLinkPolicy {
                 o.put("freqMhz", freqMhz);
                 o.put("band", band);
                 o.put("bssid", bssid == null ? JSONObject.NULL : bssid);
+                o.put("bssidSource", bssidSource == null ? JSONObject.NULL : bssidSource);
                 o.put("rxKbps", rxKbps);
                 o.put("txKbps", txKbps);
                 o.put("degraded", degraded);
@@ -203,7 +230,8 @@ public final class WifiLinkPolicy {
                 rx = kbps(prev.rxBytes, r.rxBytes, dt);
                 tx = kbps(prev.txBytes, r.txBytes, dt);
             }
-            String bssid = normalizeBssid(r.bssid);
+            String[] resolved = resolveBssid(r.bssid, r.fkbBssid);
+            String bssid = resolved[0];
             String roamFrom = null;
             int roamFromFreq = -1, roamFromRssi = INVALID_RSSI;
             if (r.connected && bssid != null) {
@@ -216,7 +244,7 @@ public final class WifiLinkPolicy {
                 lastFreqMhz = r.freqMhz;
                 lastRssi = r.rssi;
             }
-            Sample s = new Sample(++seq, r, bssid, rx, tx,
+            Sample s = new Sample(++seq, r, bssid, resolved[1], rx, tx,
                     degradedReason(r.connected, r.rssi, r.linkSpeedMbps, t), roamFrom, roamFromFreq, roamFromRssi);
             prev = r;
             if (ring.size() >= capacity) ring.pollFirst();

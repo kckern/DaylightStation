@@ -16,7 +16,7 @@ import net.kckern.pianobridge.api.ShellServices;
 public final class Main implements Payload {
 
     private static final String TAG = "PianoBridge";
-    private static final String VERSION = "p34-wifi-link";
+    private static final String VERSION = "p35-wifi-bssid";
 
     private BridgeCore core;
 
