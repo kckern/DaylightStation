@@ -1100,6 +1100,15 @@ export class ListAdapter {
         if (limit > 0 && playables.length >= limit) break;
       }
 
+      // A finished entry's next-up pick is a restart (see PlexAdapter
+      // loadPlayableItemFromKey). While any entry still has something new,
+      // finished ones are dropped so the list moves on instead of replaying.
+      if (playables.some(item => item?.restarted) && playables.some(item => !item?.restarted)) {
+        for (let i = playables.length - 1; i >= 0; i--) {
+          if (playables[i]?.restarted) playables.splice(i, 1);
+        }
+      }
+
       // Watchlist "never empty" fallback: if all items were filtered out
       // but the list has children, resolve the first child as fallback
       if (playables.length === 0 && list.children?.length > 0) {
