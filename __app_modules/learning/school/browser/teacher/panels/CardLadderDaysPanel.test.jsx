@@ -59,6 +59,25 @@ describe('CardLadderDaysPanel', () => {
     expect(sources).toEqual(['/rec/test-learner/2026-10-28/errand/1?actorId=parent', '/rec/test-learner/2026-10-28/errand/2?actorId=parent']);
   });
 
+  it('marks a re-graded answer by the grown-up\'s verdict, and says when older days are cut off', async () => {
+    api.days.mockResolvedValue(ok({ days: [SUMMARY], more: true }));
+    api.day.mockResolvedValue(ok({ ...DAY, answers: [{ ...DAY.answers[0], correct: true, engineCorrect: false, regraded: { pass: true } }], recordings: [] }));
+    render(<CardLadderDaysPanel learnerId="test-learner" deckId="d" />);
+    expect(await screen.findByText('Older days are not shown.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Wednesday, Oct 28/ }));
+    const row = (await screen.findByText('“ㅇ”')).closest('li');
+    expect(within(row).getByLabelText('Right')).toBeInTheDocument();
+    expect(within(row).queryByText(/Correct answer/)).toBeNull();
+    expect(within(row).getByText(/re-graded pass/)).toBeInTheDocument();
+  });
+
+  it('asks for a teacher instead of firing a refused read', () => {
+    profile.current = { currentTeacher: null };
+    render(<CardLadderDaysPanel learnerId="test-learner" deckId="d" />);
+    expect(screen.getByText('Pick a teacher to read this deck day by day.')).toBeInTheDocument();
+    expect(api.days).not.toHaveBeenCalled();
+  });
+
   it('says so when no day was ever opened', async () => {
     api.days.mockResolvedValue(ok({ days: [] }));
     render(<CardLadderDaysPanel learnerId="test-learner" deckId="d" />);

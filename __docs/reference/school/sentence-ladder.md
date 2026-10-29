@@ -986,6 +986,14 @@ All under `/api/v1/school/sentence-ladder`. Learner routes carry
 | GET | `/audio/:corpusId/:seq/:lang` | prompt audio (public) |
 | GET | `/cue/:name` | a UI cue such as the recording ding |
 | GET | `/recordings/:userId/:corpusId/:seq` | the learner's own take |
+| GET | `/teacher/:learnerId/courses?by=` | **teacher console** — every course with this learner's standing (`state`: `not-started` / `active` / `satisfied` / `idle` / `complete`) |
+| GET | `/teacher/:learnerId/history?corpus=&by=` | **teacher console** — the same Review history, behind the teacher gate (`school.sentence-ladder.read`) instead of a launch grant |
+| GET | `/teacher/:learnerId/recordings/:corpusId/:seq?by=` | **teacher console** — a take, `Cache-Control: no-store` |
+
+The three `/teacher/*` reads take the console's capability cookie; the acting
+teacher is the cookie session's own user, else `by`. They read only. The
+console renders them with the child's own `ReviewPanel` (handed a `source`),
+so a grown-up sees exactly the record the child does, with calendar dates.
 
 Capabilities are sent by the client as `microphone` and `textInput` (a list of
 language codes); the server filters the device chain and validates writes with

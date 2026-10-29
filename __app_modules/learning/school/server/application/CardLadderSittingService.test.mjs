@@ -965,7 +965,8 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     store.listDays = () => Object.keys(store.s.days).sort();
     const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
     const before = structuredClone(store.s);
-    const { days } = await service.adminDays(who);
+    const { days, more } = await service.adminDays(who);
+    expect(more).toBe(false);
     expect(days.map((d) => d.day)).toEqual(['2026-09-21', '2026-09-20']);
     expect(days[1]).toEqual({
       day: '2026-09-20', doneAt: '2026-09-20T16:05:00-07:00', activeMs: 120000,
@@ -1001,6 +1002,28 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     }));
     expect(out.recordings).toEqual([{ wordId: 'pul', take: 1, ext: 'webm', term: '풀', gloss: 'Glue' }]);
     expect(recordings.list).toHaveBeenCalledWith({ package: 'korean-vocab', learnerId: 'test-learner', day: '2026-09-20' });
+  });
+
+  it('adminDay reads a re-grade as the verdict, names practice steps by what was done, and drops menu taps', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: {
+        'rc:gawi': { at: '2026-09-20T16:00:00-07:00', response: { typed: '가위요' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', regraded: { at: 'x', actorId: 'parent', pass: true } },
+        'p1:0:1': { at: '2026-09-20T16:01:00-07:00', response: { typed: '풀' }, result: { correct: true }, wordId: 'pul', source: 'practice' },
+        'p1:0:2': { at: '2026-09-20T16:02:00-07:00', response: { tiles: ['가', '위'] }, result: { correct: true }, wordId: 'gawi', source: 'practice' },
+        'p2:21': { at: '2026-09-20T16:03:00-07:00', response: { menu: true }, result: { ok: true } },
+      },
+    };
+    store.listDays = () => Object.keys(store.s.days).sort();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const out = await service.adminDay({ ...who, day: '2026-09-20' });
+    expect(out.answers.map((row) => [row.itemId, row.step, row.correct, row.engineCorrect])).toEqual([
+      ['rc:gawi', null, true, false],
+      ['p1:0:1', 'type', true, true],
+      ['p1:0:2', 'tiles', true, true],
+    ]);
+    expect(out).toMatchObject({ answered: 3, graded: 3, correct: 3, missedWords: [] });
   });
 
   it('adminDay refuses a malformed day and a day never opened', async () => {

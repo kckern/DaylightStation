@@ -1,5 +1,6 @@
 /** Status-aware client for the additive teacher-workspace endpoints. */
 const BASE = '/api/v1/school/teacher';
+const byQuery = (by) => (by ? `?by=${encodeURIComponent(by)}` : '');
 
 async function request(path, { method = 'GET', body, headers = {} } = {}) {
   try {
@@ -52,14 +53,16 @@ export const teacherWorkspaceApi = {
   // One child's reading shelf, for a grown-up. The child reads the same view
   // through `/books/:learnerId/shelf` with a launch grant; a grown-up holds no
   // launch, so the learner is the URL's and the console capability is the gate.
-  readingShelf: (learnerId) => request(`/learners/${encodeURIComponent(learnerId)}/reading`),
+  // GETs carry the picked teacher as `?by=`: with no console PIN there is no
+  // capability cookie, and a read that names nobody is refused as a stranger.
+  readingShelf: (learnerId, by = null) => request(`/learners/${encodeURIComponent(learnerId)}/reading${byQuery(by)}`),
   // One reading, every entry, and the full `revisions` list the editor undoes
   // from — plus the `baseRevisionCount` every write below must carry back, and
   // the `countedWindow` a re-date is judged against. Both are served rather
   // than derived here: a second way to compute the value a save is judged on
   // is a second way to be wrong about it.
-  readingDetail: (learnerId, readingId) => request(
-    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}`,
+  readingDetail: (learnerId, readingId, by = null) => request(
+    `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}${byQuery(by)}`,
   ),
   // The nine edit verbs. Every one of them carries `baseRevisionCount` in its
   // body — the router reads it off `req.body`, so it belongs in the body and
@@ -91,7 +94,7 @@ export const teacherWorkspaceApi = {
   // One book, every enrolled learner: logged today, the open reading a
   // check-in or finish must land on, and the mode a new reading defaults to.
   // The quick-log sheet's read; the console works none of this out itself.
-  bookReaders: (isbn) => request(`/books/${encodeURIComponent(isbn)}/readers`),
+  bookReaders: (isbn, by = null) => request(`/books/${encodeURIComponent(isbn)}/readers${byQuery(by)}`),
   undoReadingRevision: (learnerId, readingId, body, grantToken = null) => request(
     `/learners/${encodeURIComponent(learnerId)}/reading/${encodeURIComponent(readingId)}/undo`,
     { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },

@@ -44,7 +44,7 @@ describe('ReadingShelfPanel — what a grown-up sees', () => {
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     render(<ReadingShelfPanel learnerId="User_4" />);
     await screen.findAllByText(/A Borrowed Title/);
-    expect(teacherWorkspaceApi.readingShelf).toHaveBeenCalledWith('User_4');
+    expect(teacherWorkspaceApi.readingShelf).toHaveBeenCalledWith('User_4', expect.toBeOneOf([null, expect.any(String)]));
   });
 
   it('shows the obligation and the three counts', async () => {

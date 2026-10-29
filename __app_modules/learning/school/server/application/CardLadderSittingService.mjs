@@ -1047,8 +1047,12 @@ export class CardLadderSittingService {
    */
   async adminDays({ learnerId, deckId, actorId = null, pin = null } = {}) {
     const { pkg, store } = await this.#admin({ learnerId, deckId, actorId, pin });
-    const days = store.listDays(learnerId, pkg).slice(-ADMIN_DAY_LIST).reverse();
-    return { learnerId, package: pkg, days: days.map((day) => daySummary(store.readDay(learnerId, pkg, day))) };
+    const all = store.listDays(learnerId, pkg);
+    const days = all.slice(-ADMIN_DAY_LIST).reverse();
+    return {
+      learnerId, package: pkg, more: all.length > days.length,
+      days: days.map((day) => daySummary(store.readDay(learnerId, pkg, day))),
+    };
   }
 
   /**

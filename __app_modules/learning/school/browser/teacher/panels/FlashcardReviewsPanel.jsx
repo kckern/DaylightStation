@@ -88,7 +88,7 @@ export default function FlashcardReviewsPanel({ learnerId, learnerName = null, e
   if (!actorId) return <p className="teacher-muted">Pick a teacher to read {learnerName ?? learnerId}’s flashcard reviews.</p>;
   // Not enrolled in any ordinary deck: a panel only once there is something
   // to read, so a learner without flashcards never sees a skeleton flash by.
-  if (!enrolledDeckIds.length && record.state !== 'ok') return null;
+  if (!enrolledDeckIds.length && (record.state === 'loading' || record.state === 'empty')) return null;
   return (
     <PanelFrame title="Flashcard reviews" state={record.state} retry={record.retry}
       emptyCopy="No flashcard reviews yet."

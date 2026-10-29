@@ -17,7 +17,7 @@ export const TASK_LABEL = Object.freeze({
 const STEP_LABEL = Object.freeze({
   flash: 'New card', copy: 'Copy-type', say: 'Say after', look: 'Look', 'say-after': 'Say after',
   match: 'Match', 'read-aloud': 'Read aloud', tiles: 'Syllable tiles', 'say-from-cue': 'Say from the cue',
-  type: 'Type from memory', dictation: 'Dictation',
+  type: 'Type from memory', dictation: 'Dictation', choice: 'Multiple choice', sort: 'Sort the card',
 });
 
 /** Why the step was there, in the sitting's own vocabulary. */

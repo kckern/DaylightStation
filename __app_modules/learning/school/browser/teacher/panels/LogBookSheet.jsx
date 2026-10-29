@@ -263,7 +263,7 @@ function BookStep({ isbn, onAnother, onSaving }) {
     if (disposedRef.current) return STOPPED;
     // Read the readers again at save time: the revision count an open
     // reading's edit must carry is only as fresh as the last read of it.
-    const fresh = await teacherWorkspaceApi.bookReaders(isbn);
+    const fresh = await teacherWorkspaceApi.bookReaders(isbn, currentTeacher?.id ?? null);
     if (disposedRef.current) return STOPPED;
     if (fresh.status === 403) return fresh;
     const current = fresh.ok && Array.isArray(fresh.data?.readers) ? fresh.data : view;

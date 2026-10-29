@@ -66,7 +66,9 @@ export function mountTeacherReadingRoutes({
     const session = proof ? teacherCapabilitySessions?.status(proof.capabilityToken) : null;
     const body = req.body ?? {};
     return {
-      by: (session?.active ? session.userId : null) ?? body.by ?? body.actorId ?? null,
+      // A GET has no body: its picked teacher rides the query (`?by=`), the
+      // same way the debrief and card-ladder reads name theirs.
+      by: (session?.active ? session.userId : null) ?? body.by ?? body.actorId ?? req.query?.by ?? null,
       pin: body.pin ?? proof ?? null,
     };
   };

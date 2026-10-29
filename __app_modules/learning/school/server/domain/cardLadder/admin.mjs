@@ -68,9 +68,18 @@ export function typedAnswers(dayFile) {
   return rows.sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
 }
 
-// Item ids that carry no answer: the post-goal summary card and a round's
-// drill offer (the drill's own steps follow it). Neither is evidence.
+// Item ids that carry no answer: the post-goal summary card. (A round's drill
+// offer IS listed — taking or skipping the drill is the child's choice.)
 const UNANSWERED = new Set(['summary']);
+
+// A practice item names no task or step; what the child did says which it was.
+function stepFromResponse(response) {
+  if (typeof response?.typed === 'string') return 'type';
+  if (Array.isArray(response?.tiles)) return 'tiles';
+  if (response?.choice != null || response?.dontKnow) return 'choice';
+  if (response?.sort) return 'sort';
+  return null;
+}
 
 /**
  * What kind of step an item id names, and its step within that kind.
@@ -107,16 +116,22 @@ export function dayAnswers(dayFile) {
   const rows = [];
   for (const [itemId, record] of Object.entries(dayFile?.items ?? {})) {
     if (UNANSWERED.has(itemId) || !record || typeof record !== 'object') continue;
+    // Opening the practice menu is navigation, not an answer.
+    if (record.response?.menu) continue;
     const legacy = record.wordId ? null : legacyMeta(dayFile, itemId);
-    const { kind, step } = itemKind(dayFile, itemId);
+    const kind = itemKind(dayFile, itemId).kind;
+    const step = itemKind(dayFile, itemId).step ?? (kind === 'practice' ? stepFromResponse(record.response) : null);
     const result = record.result ?? {};
+    const engineCorrect = typeof result.correct === 'boolean' ? result.correct : null;
     rows.push({
       itemId, at: record.at ?? null, kind, step,
       wordId: record.wordId ?? legacy?.wordId ?? null,
       task: record.task ?? legacy?.task ?? null,
       source: record.source ?? legacy?.source ?? null,
       response: record.response ?? null,
-      correct: typeof result.correct === 'boolean' ? result.correct : null,
+      // A grown-up's re-grade outranks the engine's verdict; both are kept.
+      correct: typeof record.regraded?.pass === 'boolean' ? record.regraded.pass : engineCorrect,
+      engineCorrect,
       answer: result.answer ?? null,
       score: result.score ?? null,
       judge: result.judge ?? null,

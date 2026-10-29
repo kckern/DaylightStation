@@ -884,6 +884,18 @@ no audio until the take; look / copy / say-after the full word card.
   `POST /card-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
   `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
   `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
+- Day by day, **live mount only**, teacher-gated like `admin/words` (cookie's teacher, else `actorId`), reads only:
+  `GET /card-ladder/admin/days?learnerId=&deckId=` → `{learnerId, package, days: [{day, doneAt, activeMs, sittings, answered, graded, correct, missedWords}], more}`
+  (the last 60 opened days, newest first, `more: true` when older ones exist; `daySummary`);
+  `GET /card-ladder/admin/day?learnerId=&deckId=&day=` → that summary plus `answers` — every item in answer order
+  (`dayAnswers`: `kind` recheck / intro / sort / quiz / match / offer / drill / practice, the drill or intro `step`
+  — inferred from the response for a practice item that names none — `task`, the verbatim `response`, `correct` —
+  null where the step is not graded, and a grown-up's re-grade where there is one, with the engine's own verdict
+  kept as `engineCorrect` — `answer`, and for a typed answer `score` / `judge` / `reason` / `regraded`, each with
+  the word's `term` and `gloss`) and `recordings` — every take kept that day (`[{wordId, take, ext, term, gloss}]`);
+  404 for a day never opened. Menu taps (`{menu: true}`) and the summary card are not answers and are left out;
+  `GET /card-ladder/admin/recording?learnerId=&deckId=&day=&wordId=&take=` → one take's audio (`private, no-store`).
+  The console's Cards tab shows these under each deck (`CardLadderDaysPanel`).
 - Tuning, **live mount only**, teacher-gated in `CardLadderTuningService`. The
   acting teacher is the capability session's own user when the cookie holds
   one, else the `actorId` given:

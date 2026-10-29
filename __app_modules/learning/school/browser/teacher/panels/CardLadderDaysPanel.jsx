@@ -122,6 +122,11 @@ function DayRow({ summary, open, onToggle, children }) {
 export default function CardLadderDaysPanel({ learnerId, deckId, title = null }) {
   const profile = useTeacherProfileOptional();
   const actorId = profile?.currentTeacher?.id ?? null;
+  if (!actorId) return <p className="teacher-muted">Pick a teacher to read this deck day by day.</p>;
+  return <Loaded learnerId={learnerId} deckId={deckId} title={title} actorId={actorId} />;
+}
+
+function Loaded({ learnerId, deckId, title, actorId }) {
   const record = usePanelFetch(() => cardLadderAdminApi.days(learnerId, deckId, actorId), {
     deps: [learnerId, deckId, actorId], panel: PANEL, notFoundAs: 'unavailable',
     isEmpty: (d) => !(d?.days ?? []).length,
@@ -143,6 +148,7 @@ export default function CardLadderDaysPanel({ learnerId, deckId, title = null })
           </DayRow>
         ))}
       </ol>
+      {record.data?.more && <p className="teacher-panel__empty">Older days are not shown.</p>}
     </PanelFrame>
   );
 }

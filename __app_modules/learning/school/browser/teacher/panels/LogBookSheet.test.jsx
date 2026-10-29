@@ -20,7 +20,7 @@ const profile = vi.hoisted(() => ({
   requestAuthorization: async () => ({ ok: true, grantToken: null }),
   invalidateAuthorization: () => {},
 }));
-vi.mock("../TeacherProfileContext.jsx", () => ({ useTeacherProfile: () => profile }));
+vi.mock("../TeacherProfileContext.jsx", () => ({ useTeacherProfile: () => profile, useTeacherProfileOptional: () => profile }));
 
 import LogBookSheet from "./LogBookSheet.jsx";
 import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
@@ -160,7 +160,7 @@ describe('LogBookSheet — the book and the readers', () => {
     expect(await screen.findByText('A Borrowed Title', { selector: 'strong' })).toBeTruthy();
     await screen.findByRole('button', { name: /^Learner A/ });
     expect(schoolApi.books.resolve).toHaveBeenCalledWith(ISBN);
-    expect(teacherWorkspaceApi.bookReaders).toHaveBeenCalledWith(ISBN);
+    expect(teacherWorkspaceApi.bookReaders).toHaveBeenCalledWith(ISBN, expect.anything());
     // Sequential: the readers view reads the length the lookup cached.
     expect(schoolApi.books.resolve.mock.invocationCallOrder[0])
       .toBeLessThan(teacherWorkspaceApi.bookReaders.mock.invocationCallOrder[0]);

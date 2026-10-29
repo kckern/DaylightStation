@@ -23,6 +23,7 @@
  * that lands in `error` with the server's own sentence where it gave one.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
@@ -384,8 +385,10 @@ export default function ReadingShelfPanel({
   // instead of saying only that something did.
   const faultRef = useRef(null);
 
+  // The picked teacher names the read (see teacherWorkspaceApi `byQuery`).
+  const actorId = useTeacherProfileOptional()?.currentTeacher?.id ?? null;
   const fetcher = useMemo(() => async () => {
-    const response = await teacherWorkspaceApi.readingShelf(learnerId);
+    const response = await teacherWorkspaceApi.readingShelf(learnerId, actorId);
     if (!response.ok) {
       faultRef.current = typeof response.data?.error === 'string' ? response.data.error : null;
       return response;
@@ -399,10 +402,10 @@ export default function ReadingShelfPanel({
     }
     faultRef.current = null;
     return response;
-  }, [learnerId]);
+  }, [learnerId, actorId]);
 
   const { state, data, retry } = usePanelFetch(fetcher, {
-    deps: [learnerId, refreshToken],
+    deps: [learnerId, refreshToken, actorId],
     isEmpty: (payload) => isShelf(payload) && payload.items.length === 0,
     notFoundAs: 'unavailable',
     panel: PANEL,

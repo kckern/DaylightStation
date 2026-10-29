@@ -81,7 +81,7 @@ describe('opening a reading from the shelf', () => {
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     mount();
     fireEvent.click(await screen.findByRole('button', { name: /^Open A Borrowed Title/ }));
-    await waitFor(() => expect(teacherWorkspaceApi.readingDetail).toHaveBeenCalledWith('learner_a', 'rd_1'));
+    await waitFor(() => expect(teacherWorkspaceApi.readingDetail).toHaveBeenCalledWith('learner_a', 'rd_1', expect.anything()));
     expect(window.location.search).toBe('?reading=rd_1');
     expect(await screen.findByRole('heading', { name: 'Identity', level: 3 })).toBeTruthy();
   });
@@ -90,7 +90,7 @@ describe('opening a reading from the shelf', () => {
     window.history.replaceState({}, '', '/school/teacher/students/learner_a/reading?reading=rd_1');
     teacherWorkspaceApi.readingShelf.mockResolvedValue(ok(shelf()));
     mount();
-    await waitFor(() => expect(teacherWorkspaceApi.readingDetail).toHaveBeenCalledWith('learner_a', 'rd_1'));
+    await waitFor(() => expect(teacherWorkspaceApi.readingDetail).toHaveBeenCalledWith('learner_a', 'rd_1', expect.anything()));
   });
 
   it('closing it takes the reading back out of the URL', async () => {

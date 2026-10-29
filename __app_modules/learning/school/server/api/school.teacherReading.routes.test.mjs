@@ -79,6 +79,14 @@ describe('GET /teacher/learners/:learnerId/reading', () => {
     });
   });
 
+  it('names the picked teacher from `?by=` when there is no console cookie (no PIN configured)', async () => {
+    const deps = wired();
+    await request(app(deps)).get(`${PATH}?by=test-user`).expect(200);
+    expect(deps.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'test-user', action: 'books.shelf.read', context: { learnerId: LEARNER },
+    }));
+  });
+
   it('refuses, and reads nothing at all, when the gate says no', async () => {
     const deps = wired({
       teacherGate: { assert: vi.fn(() => { throw new GuestForbiddenError('Only a listed teacher can do this.'); }) },

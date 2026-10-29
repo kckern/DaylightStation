@@ -19,6 +19,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from "../schoolApi.js";
+import { useTeacherProfileOptional } from "./TeacherProfileContext.jsx";
 import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
 import { teacherLog } from "./teacherLog.js";
 
@@ -40,6 +41,8 @@ export const IDLE_BOOK_FACTS = Object.freeze({ bookStatus: 'idle', book: null, r
  *   readersStatus: 'idle'|'loading'|'ok'|'locked'|'error', readers: object|null}}
  */
 export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
+  // The picked teacher names the readers read (see teacherWorkspaceApi `byQuery`).
+  const actorId = useTeacherProfileOptional()?.currentTeacher?.id ?? null;
   const [state, setState] = useState(IDLE_BOOK_FACTS);
   const resolvedFor = useRef(null);
 
@@ -66,7 +69,7 @@ export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
         teacherLog.read('book-facts', { isbn: isbn13, state: bookStatus });
       }
 
-      const readers = await settle(() => teacherWorkspaceApi.bookReaders(isbn13));
+      const readers = await settle(() => teacherWorkspaceApi.bookReaders(isbn13, actorId));
       if (!alive) return;
       const readable = readers?.ok && Array.isArray(readers.data?.readers);
       // A failed RELOAD keeps the last good answer: the saves already made
@@ -83,7 +86,7 @@ export function useBookFacts(isbn13, { reloadKey = 0 } = {}) {
       if (!readable) teacherLog.fetch('book-readers-failed', { isbn: isbn13, status: readers?.status ?? 0 });
     })();
     return () => { alive = false; };
-  }, [isbn13, reloadKey]);
+  }, [isbn13, reloadKey, actorId]);
 
   return state;
 }
