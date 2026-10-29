@@ -10,6 +10,12 @@ import { shouldArmStartupDeadline } from '../lib/shouldArmStartupDeadline.js';
 import { computeRecoverySeekMs } from './recoverySeek.js';
 import { decideWarmupRecovery } from '../lib/decideWarmupRecovery.js';
 import { stallJoltPlan, STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
+import { readBufferWindow, createBufferGrowthTracker, decideStuckKind, readConnectionInfo, SLOW_LINK_WINDOW_MS, SLOW_LINK_MAX_HOLD_MS } from '../lib/bufferProgress.js';
+
+// While a stuck episode is held as "slow link", how often the buffer is sampled
+// and the verdict re-checked. 2026-10-28.
+export const SLOW_LINK_SAMPLE_MS = 1000;
+export const SLOW_LINK_RECHECK_MS = 2000;
 import { getRecoveryLedger, RECOVERY_MAX_ATTEMPTS } from '../lib/recoveryLedger.js';
 import { evaluatePlayheadProgress } from '../lib/playheadProgress.js';
 import { isNearEnd } from '../lib/nearEnd.js';
@@ -291,6 +297,14 @@ export function useMediaResilience({
   const joltIntentRef = useRef(null);
   const joltTimerRef = useRef(null);
   const joltLatestRef = useRef(null);
+  // Slow-link discrimination for the jolt ladder: buffer growth sampled while
+  // stuck, and the current hold (null = not holding). See lib/bufferProgress.js.
+  const slowLinkTrackerRef = useRef(null);
+  const slowLinkSamplerRef = useRef(null);
+  const slowLinkHoldRef = useRef(null);
+  // First time the startup deadline was deferred for a slow load (null = not deferring).
+  const startupSlowSinceRef = useRef(null);
+  const [slowLinkWaiting, setSlowLinkWaiting] = useState(false);
   // Track repeated same-position recovery seeks so we can nudge past a poisoned segment.
   const recoverySeekTrackerRef = useRef({ lastSeekMs: null, sameCount: 0 });
   // Last playhead position that counted as a genuine recovery success. The
@@ -568,6 +582,7 @@ export function useMediaResilience({
       if (status !== STATUS.playing) actions.setStatus(STATUS.playing);
       // Mark that we've successfully played (used for loop detection)
       hasEverPlayedRef.current = true;
+      startupSlowSinceRef.current = null;
       recoverySeekTrackerRef.current = { lastSeekMs: null, sameCount: 0 };
       clearTimeout(startupDeadlineRef.current);
       startupDeadlineRef.current = null;
@@ -600,8 +615,26 @@ export function useMediaResilience({
     // Gate: only arm when we have media metadata (prevents phantom entry timers)
     if (status === STATUS.startup || status === STATUS.recovering) {
       if (!startupDeadlineRef.current && hasMediaMeta) {
-        startupDeadlineRef.current = setTimeout(() => {
+        const onDeadline = () => {
           startupDeadlineRef.current = null;
+          // Slow link: the element is still receiving bytes (a moov header on
+          // a 0.3x link can take tens of seconds). A reload would restart that
+          // fetch from zero, so defer — bounded by SLOW_LINK_MAX_HOLD_MS from
+          // the first deferral. 2026-10-28.
+          const lastNetAt = playbackHealth.getLastNetworkProgressAt?.();
+          const nowMs = Date.now();
+          if (Number.isFinite(lastNetAt) && nowMs - lastNetAt <= SLOW_LINK_WINDOW_MS) {
+            if (!startupSlowSinceRef.current) startupSlowSinceRef.current = nowMs;
+            const heldMs = nowMs - startupSlowSinceRef.current;
+            if (heldMs <= SLOW_LINK_MAX_HOLD_MS) {
+              playbackLog('startup-deadline-deferred-slow-link', {
+                ...waitKeyFields, heldMs, msSinceBytes: nowMs - lastNetAt, connection: readConnectionInfo(),
+              }, { level: heldMs === 0 ? 'warn' : 'debug' });
+              startupDeadlineRef.current = setTimeout(onDeadline, SLOW_LINK_RECHECK_MS * 2);
+              return;
+            }
+          }
+          startupSlowSinceRef.current = null;
           // A startup that never produced a frame may be a refused Plex file
           // whose error the element never surfaced. Ask first; only an answer
           // that says nothing about the source falls through to the ladder
@@ -613,7 +646,8 @@ export function useMediaResilience({
             return;
           }
           recoverAndRearm('startup-deadline-exceeded');
-        }, hardRecoverLoadingGraceMs);
+        };
+        startupDeadlineRef.current = setTimeout(onDeadline, hardRecoverLoadingGraceMs);
       }
     }
   }, [status, playbackHealth.progressToken, playbackHealth.lastProgressSeconds, userIntent, actions, triggerRecovery, hardRecoverLoadingGraceMs, playbackSessionKey, disabled, hasMediaMeta, recoveryNonce, sourceUnavailable, autoplayBlocked, sourceAvailability.healable, sourceAvailability.checkNow, recoverAndRearm]);
@@ -863,6 +897,8 @@ export function useMediaResilience({
     onReload, onExhausted, actions, statusRef, playbackSessionKey,
     sourceHealable: sourceAvailability.healable,
     checkSource: sourceAvailability.checkNow,
+    hasMediaError,
+    getNetworkProgressAt: playbackHealth.getLastNetworkProgressAt,
   };
 
   // Jolt ladder: while stuck, escalate refresh-url → remount, each re-seeking to
@@ -874,15 +910,40 @@ export function useMediaResilience({
   // frozen position must never clear the session. End-of-content is excluded
   // upstream by `atEnd`, so the ladder never chases a playhead parked at duration.
   useEffect(() => {
-    if (disabled) return undefined;
+    const stopSlowLink = (why) => {
+      if (slowLinkSamplerRef.current) { clearInterval(slowLinkSamplerRef.current); slowLinkSamplerRef.current = null; }
+      const hold = slowLinkHoldRef.current;
+      if (hold) {
+        const L = joltLatestRef.current || {};
+        playbackLog('resilience-slow-link-wait-ended', {
+          ...L.waitKeyFields, outcome: why, waitedMs: Date.now() - hold.startedAtMs, checks: hold.checks,
+        }, { level: 'info' });
+        slowLinkHoldRef.current = null;
+      }
+      slowLinkTrackerRef.current = null;
+      setSlowLinkWaiting(false);
+    };
+    if (disabled) { stopSlowLink('disabled'); return undefined; }
     if (!isStuck) {
       if (joltTimerRef.current) { clearTimeout(joltTimerRef.current); joltTimerRef.current = null; }
       joltStepRef.current = 0;
       joltIntentRef.current = null;
+      stopSlowLink('playing');
       return undefined;
     }
     if (joltTimerRef.current) return undefined; // ladder already scheduled
     if (statusRef.current === STATUS.exhausted) return undefined;
+
+    // Sample the buffer for the whole stuck episode, so the first rung can tell
+    // a slow link (buffered end still growing) from a dead stream.
+    slowLinkTrackerRef.current = createBufferGrowthTracker();
+    const sampleBuffer = () => {
+      const el = (joltLatestRef.current || {}).getMediaEl?.();
+      slowLinkTrackerRef.current?.sample(Date.now(), readBufferWindow(el));
+    };
+    sampleBuffer();
+    if (slowLinkSamplerRef.current) clearInterval(slowLinkSamplerRef.current);
+    slowLinkSamplerRef.current = setInterval(sampleBuffer, SLOW_LINK_SAMPLE_MS);
 
     // Capture the intent = the frozen playhead (the seek target we must not lose).
     {
@@ -899,6 +960,51 @@ export function useMediaResilience({
       if (sourceUnavailableRef.current) {
         joltTimerRef.current = setTimeout(fireRung, STALL_JOLT_STEP_MS);
         return;
+      }
+      // Slow link: the buffer is still growing, so a rung (which re-requests
+      // the stream and discards what has downloaded) would only make it
+      // slower. Hold — the element resumes on its own once it has data — and
+      // re-check. A hold is bounded per episode; past SLOW_LINK_MAX_HOLD_MS one
+      // rung may fire, and the hold restarts (at most one reload per window).
+      {
+        const now = Date.now();
+        const reading = readBufferWindow(L.getMediaEl?.());
+        const tracker = slowLinkTrackerRef.current;
+        tracker?.sample(now, reading);
+        const growth = tracker ? tracker.snapshot(now) : null;
+        const hold = slowLinkHoldRef.current;
+        const stuckKind = decideStuckKind({
+          now, reading, growth, hasMediaError: L.hasMediaError === true,
+          holdStartedAtMs: hold ? hold.startedAtMs : null,
+          networkProgressAtMs: L.getNetworkProgressAt?.() ?? null,
+        });
+        if (stuckKind.kind === 'slow-link') {
+          if (!hold) {
+            slowLinkHoldRef.current = { startedAtMs: now, checks: 1 };
+            setSlowLinkWaiting(true);
+            playbackLog('resilience-slow-link-wait', {
+              ...L.waitKeyFields, rung: joltStepRef.current,
+              bufferAheadSec: reading.bufferAheadSec, bufferedEndSec: reading.bufferedEndSec,
+              readyState: reading.readyState, networkState: reading.networkState,
+              bufferGrowthSec: growth?.growthSec, bufferGrowthRate: growth?.ratePerSec,
+              connection: readConnectionInfo(),
+            }, { level: 'warn' });
+          } else {
+            hold.checks += 1;
+          }
+          joltTimerRef.current = setTimeout(fireRung, SLOW_LINK_RECHECK_MS);
+          return;
+        }
+        if (hold) {
+          playbackLog('resilience-slow-link-wait-ended', {
+            ...L.waitKeyFields, outcome: stuckKind.reason, waitedMs: now - hold.startedAtMs, checks: hold.checks,
+            bufferAheadSec: reading.bufferAheadSec, bufferGrowthSec: growth?.growthSec,
+          }, { level: 'warn' });
+          // An expired hold buys exactly one rung; a still-growing buffer
+          // after it starts a fresh hold. Any other verdict ends the hold.
+          slowLinkHoldRef.current = null;
+          setSlowLinkWaiting(false);
+        }
       }
       const ledger = getRecoveryLedger();
       const declareExhausted = (attempts) => {
@@ -999,7 +1105,10 @@ export function useMediaResilience({
 
     // Grace before the first jolt so a slow-but-succeeding seek/buffer isn't cut off.
     joltTimerRef.current = setTimeout(fireRung, STALL_JOLT_GRACE_MS);
-    return () => { if (joltTimerRef.current) { clearTimeout(joltTimerRef.current); joltTimerRef.current = null; } };
+    return () => {
+      if (joltTimerRef.current) { clearTimeout(joltTimerRef.current); joltTimerRef.current = null; }
+      if (slowLinkSamplerRef.current) { clearInterval(slowLinkSamplerRef.current); slowLinkSamplerRef.current = null; }
+    };
     // Depend only on the boolean trigger; the ladder reads a per-render snapshot
     // (joltLatestRef) so a changing callback/scalar identity can't reset it mid-climb.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1057,6 +1166,8 @@ export function useMediaResilience({
     onRetryFromExhausted: retryFromExhausted,
     isExhausted,
     sourceNotice,
+    // Slow link (buffer growing, ladder holding): say why it is waiting.
+    linkNotice: slowLinkWaiting && !sourceNotice ? 'Slow connection — waiting for the video to download' : null,
     playerPositionDisplay: formatTime(Math.max(0, seconds)),
     intentPositionDisplay: (Number.isFinite(targetTimeSeconds) ? formatTime(Math.max(0, targetTimeSeconds)) : null)
       || (effectiveSeeking ? stickyIntentDisplayRef.current : null),
@@ -1106,6 +1217,7 @@ export function useMediaResilience({
     retryFromExhausted,
     isExhausted,
     sourceNotice,
+    slowLinkWaiting,
     sourceUnavailable,
     sourceAvailability.checkNow,
     targetTimeSeconds,

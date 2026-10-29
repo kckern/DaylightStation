@@ -3,6 +3,8 @@ import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import { getProgressPercent } from '../lib/helpers.js';
 import { shouldLogAtDurationStuck, buildAtDurationStuckPayload } from '../lib/atDurationStuck.js';
 import { decideStallVerdict, readVideoFrames } from '../lib/stallVerdict.js';
+import { readBufferWindow, createBufferGrowthTracker, readConnectionInfo } from '../lib/bufferProgress.js';
+import { hasPlaybackLinkProbe, probePlaybackLink } from '../lib/linkProbe.js';
 import {
   shouldTraceSeekAtDuration,
   captureSeekStack,
@@ -188,6 +190,11 @@ export function useCommonMediaController({
     // One-shot guard for `playback.at-duration-stuck` telemetry (audit 2026-05-23).
     atDurationStuckLogged: false
   });
+  // Buffered-end history sampled on every stall-check tick while playing, so
+  // `playback.stalled` can say whether the download was still moving when the
+  // playhead starved (slow link) or had stopped (stuck). 2026-10-28.
+  const bufferGrowthRef = useRef(null);
+  if (!bufferGrowthRef.current) bufferGrowthRef.current = createBufferGrowthTracker();
   const [stallState, setStallState] = useState(() => ({
     status: 'idle',
     since: null,
@@ -753,6 +760,8 @@ export function useCommonMediaController({
       }
       
       const videoFrames = readVideoFrames(mediaEl);
+      const bufferReading = readBufferWindow(mediaEl);
+      bufferGrowthRef.current.sample(Date.now(), bufferReading);
       const verdict = decideStallVerdict({
         now: Date.now(),
         lastProgressTs: s.lastProgressTs,
@@ -794,8 +803,12 @@ export function useCommonMediaController({
           return;
         }
         s.stallSuspicion = null;
-        // Prod telemetry: stall detected
+        // Prod telemetry: stall detected. The buffer fields answer "was the
+        // link delivering?" — bufferGrowthSec/Rate is media seconds downloaded
+        // over the last window (rate 1.0 = realtime; the 2026-10-28 piano
+        // stalls ran ~0.3). `connection` is the browser's own link estimate.
         const logger = getLogger();
+        const growth = bufferGrowthRef.current.snapshot(Date.now());
         logger.warn('playback.stalled', {
           title: meta?.title || meta?.name,
           artist: meta?.artist,
@@ -805,8 +818,24 @@ export function useCommonMediaController({
           mediaKey: assetId,
           currentTime: mediaEl.currentTime,
           duration: mediaEl.duration,
-          stallDurationMs: verdict.stallDurationMs
+          stallDurationMs: verdict.stallDurationMs,
+          bufferAheadSec: bufferReading.bufferAheadSec,
+          bufferedEndSec: bufferReading.bufferedEndSec,
+          readyState: bufferReading.readyState,
+          networkState: bufferReading.networkState,
+          bufferGrowthSec: growth.growthSec,
+          bufferGrowthRate: growth.ratePerSec,
+          bufferGrowthWindowMs: growth.spanMs,
+          connection: readConnectionInfo()
         });
+        // A host that can see the device's link (piano kiosk → bridge Wi-Fi)
+        // attaches it as a follow-up row with the same mediaKey/currentTime.
+        if (hasPlaybackLinkProbe()) {
+          const stallAt = { mediaKey: assetId, title: meta?.title || meta?.name, currentTime: mediaEl.currentTime, bufferAheadSec: bufferReading.bufferAheadSec };
+          probePlaybackLink().then((link) => {
+            mcLog().warn('playback.stalled.link', { ...stallAt, link });
+          });
+        }
         s.isStalled = true;
         if (!s.sinceTs) s.sinceTs = Date.now();
         s.status = 'stalled';
@@ -851,6 +880,20 @@ export function useCommonMediaController({
           // can't help a dead element. Gated through the ledger for session-cap
           // visibility, but with bypassCooldown so a recent jolt/resilience
           // recovery can't starve a hard element failure.
+          // A NaN duration on an element still fetching its header (readyState
+          // HAVE_NOTHING, networkState LOADING) is "not yet", not "lost": on a
+          // slow link an mp4's moov can take tens of seconds, and softReinit
+          // would restart that fetch from zero (2026-10-28: 4 softReinits in a
+          // 0.3x-realtime piano lesson). The resilience ladder still owns it —
+          // it holds while bytes arrive and jolts when they stop.
+          if (!Number.isFinite(mediaEl.duration) && mediaEl.readyState === 0 && mediaEl.networkState === 2) {
+            mcLog().warn('playback.duration-pending-load', {
+              mediaKey: assetId,
+              currentTime: mediaEl.currentTime,
+              stallDurationMs: s.sinceTs ? Date.now() - s.sinceTs : null
+            });
+            return;
+          }
           if (!Number.isFinite(mediaEl.duration)) {
             const gate = ledger.request({
               sessionKey: recoveryScopeKey,
@@ -1295,6 +1338,7 @@ export function useCommonMediaController({
       stallStateRef.current.lastObservedCurrentTime = null;  // bug 2026-05-23 §1: reset stall-verdict tracking for new asset
       stallStateRef.current.lastObservedVideoFrames = null;  // frame counter is per-element; new asset = new baseline (2026-07-09)
       stallStateRef.current.stallSuspicion = null;
+      bufferGrowthRef.current?.reset();
       // Don't set lastProgressTs here — let real playback progress (timeupdate
       // → markProgress) set it. Setting it at metadata-load time causes stall
       // detection to fire during initial buffering (after only softMs=1.2s),

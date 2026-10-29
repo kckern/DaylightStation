@@ -193,6 +193,7 @@ unaffected: a remount already starts a fresh watchdog.
 | **Fatal media error** | `MediaError` code 2 (`NETWORK`) or 3 (`DECODE`) mid-playback — a dead pipeline, which fires no `waiting`/`stalled` at all and can still report a full buffer | `usePlaybackHealth` exposes `hasMediaError`, which is a fourth cause in the jolt ladder's `isStuck`, so the ladder arms on a dead stream and not only a starved one. Mechanism, the pause-classification guard, and the three gaps it leaves: `README.media-resilience.md` |
 | **Refused source** | The media server will not read the file: Plex 404 on a direct-play part (NAS zeroed its mode, or Plex mid library scan), or the proxy's 503 `source-unreadable`. Mid-playback it can arrive as an unlabelled `Format error` / `PIPELINE_ERROR_READ`, which is checked with the backend; the jolt ladder also checks before exhausting, so a refused file waits instead of being skipped | The recovery ladder stands down, and `useSourceAvailability` waits on `POST /api/v1/media-source/check`, which runs the repair ladder. The Player remounts once when the file is readable. See `media-source-healing.md` |
 | **Resilience jolt ladder** | Unrecovered stall past the grace deadline | Rung 1: `hardReset({ refreshUrl })` in place → rung 2: full renderer remount. Each rung asks the ledger; a cooldown denial reschedules the rung at `waitMs` |
+| **Slow link hold** | A stuck episode whose buffered end is still growing (≥0.5 s of media per 6 s window), with under 5 s buffered ahead, readyState below `HAVE_FUTURE_DATA` and no media error; or, before metadata, an element still receiving bytes (`progress` events) | The jolt ladder holds instead of firing a rung (a rung re-requests the stream and throws the download away), re-checks every 2 s, and shows "Slow connection — waiting for the video to download". The startup deadline defers the same way while bytes arrive, and the controller's `duration-lost` softReinit stands down while the element is still loading its header. Every hold is bounded (120 s backstop; a frozen playhead passes 5 s ahead first). See [Slow links](#slow-links-wait-for-buffer-do-not-re-request) |
 | **Stall exhaustion** | Session cap reached | Enters `exhausted`, renders the retry button; `retryFromExhausted` resets the ledger and restarts |
 | **User forceReload** | Operator reload request | Records a ledger attempt like everything else — reload-hammering lands on the exhausted overlay (which still offers retry) instead of looping raw reloads |
 | **Autoplay block** | Browser `NotAllowedError` (Firefox won't fire `canplay`) | Click-to-play overlay; resumes from a user gesture |
@@ -217,6 +218,57 @@ The escalation ladder is deliberate: nudge in place → refresh the URL in place
 operator retry from the exhausted overlay. Each step is more disruptive than
 the last, the ledger paces every climb, and real progress (`recordSuccess`)
 resets the whole budget.
+
+### Slow links: wait for buffer, do not re-request
+
+A starved playhead on a link that is merely slow looks exactly like a stall:
+`waiting`, readyState 1–2, a frozen clock. Before 2026-10-28 every such stall
+past the 9.5 s grace fired the jolt ladder, whose rungs re-mint the URL and
+reload or remount the element. That discards what has downloaded and restarts
+the request on the same link, and a remount re-fetches the mp4 header (moov),
+so a 0.3x-realtime link went into a reload loop. A piano lesson logged 9 jolts
+and 4 softReinits in seven minutes, then exhausted.
+
+`lib/bufferProgress.js` tells the two apart. It is pure and the thresholds are
+unit-tested:
+
+| Verdict | Condition |
+|---------|-----------|
+| `stuck: media-error` | The element has a recoverable media error |
+| `stuck: slow-link-hold-expired` | This episode has been held for over `SLOW_LINK_MAX_HOLD_MS` (120 s). One rung fires, then a new hold may start |
+| `slow-link: metadata-loading` | readyState 0, and bytes arrived in the last `SLOW_LINK_WINDOW_MS` (6 s) |
+| `stuck: buffered-but-frozen` | `SLOW_LINK_FROZEN_AHEAD_SEC` (5 s) or more buffered ahead of a frozen playhead. This is a decoder wedge, because progressive downloads keep going while the decoder is wedged |
+| `stuck: ready-but-frozen` | readyState ≥ 3 (`HAVE_FUTURE_DATA`) and still frozen at the first rung |
+| `stuck: no-download-progress` | Buffered end grew less than `SLOW_LINK_MIN_GROWTH_SEC` (0.5 s) in the window |
+| `slow-link: buffer-growing` | Anything else: the download is moving, so wait |
+
+The 6 s window fits inside the 9.5 s jolt grace, so the verdict is ready by the
+first rung. Chromium resumes a starved element with well under 5 s buffered: in
+the incident, playback resumed after 1–5 s of content had arrived. That makes
+the frozen-ahead mark slack, not a target. Combined with the growth floor, it
+also bounds a buffered hold to about 60 s.
+
+**Logs.**
+- `playback.stalled` now carries `bufferAheadSec`, `bufferedEndSec`, `readyState`, `networkState`, `bufferGrowthSec`, `bufferGrowthRate` (media seconds per wall second, where 1.0 is realtime), `bufferGrowthWindowMs` and `connection` (`navigator.connection`: `effectiveType`, `downlinkMbps`, `rttMs`).
+- A hold logs `playback.resilience-slow-link-wait` (warn) once per episode. `playback.resilience-slow-link-wait-ended` reports `outcome` and `waitedMs`.
+- The startup deadline logs `playback.startup-deadline-deferred-slow-link`.
+- The controller logs `playback.duration-pending-load` where it would previously have fired `duration-lost`.
+
+**Host link probes.** A host that can see the device's own link registers a probe
+through `__capabilities/playback/browser/linkProbe.mjs`
+(`registerPlaybackLinkProbe(() => Promise<object>)`). On each `playback.stalled`
+the controller calls it, bounded to 1.5 s and with errors swallowed, and logs
+`playback.stalled.link` with the same `mediaKey`/`currentTime` and a `link`
+payload. The piano kiosk registers the bridge's `GET :8770/wifi` (RSSI, link
+speed, band, BSSID, recent throughput). See `__docs/runbooks/piano-kiosk-midi.md`
+§7c.
+
+```
+# Was the link delivering when it stalled? (rate < 1 = slower than realtime)
+query=_msg:"playback.stalled" AND _time:24h | fields _time, data.title, data.bufferAheadSec, data.bufferGrowthRate, data.readyState
+# The tablet's Wi-Fi at each piano stall
+query=_msg:"playback.stalled.link" AND _time:24h
+```
 
 ### A scheduled remount must not fire after playback recovered
 

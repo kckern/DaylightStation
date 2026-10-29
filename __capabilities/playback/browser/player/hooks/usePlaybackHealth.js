@@ -184,6 +184,12 @@ export function usePlaybackHealth({
   const [frameInfo, setFrameInfo] = useState(NO_FRAME_INFO);
   const [progressSignal, setProgressSignal] = useState(DEFAULT_PROGRESS_STATE);
   const [bufferRunwayMs, setBufferRunwayMs] = useState(null);
+  // When the element last reported bytes arriving (`progress`). Kept in a ref
+  // (no re-render per event) and read on demand by recovery: it is the only
+  // download signal before metadata, and lets a deadline tell a slow load from
+  // a dead one. 2026-10-28.
+  const lastNetworkProgressAtRef = useRef(null);
+  const getLastNetworkProgressAt = useCallback(() => lastNetworkProgressAtRef.current, []);
   // Bumped whenever the underlying <video>/<audio> element is swapped out from
   // under us (softReinit bumps React's key → a brand-new element). The event
   // listeners and frame poll below capture the element at setup time, so they
@@ -518,6 +524,9 @@ export function usePlaybackHealth({
     };
 
     const bufferEvents = ['timeupdate', 'progress', 'waiting', 'playing'];
+    lastNetworkProgressAtRef.current = null; // new element: its own download
+    const handleNetworkProgress = () => { lastNetworkProgressAtRef.current = Date.now(); };
+    mediaEl.addEventListener('progress', handleNetworkProgress);
 
     mediaEl.addEventListener('waiting', handleWaiting);
     mediaEl.addEventListener('playing', handlePlaying);
@@ -561,6 +570,7 @@ export function usePlaybackHealth({
       mediaEl.removeEventListener('ended', handleEnded);
       mediaEl.removeEventListener('error', handleError);
       bufferEvents.forEach((eventName) => mediaEl.removeEventListener(eventName, updateBufferRunway));
+      mediaEl.removeEventListener('progress', handleNetworkProgress);
     };
   }, [waitKey, elementGeneration, recordProgress, updateElementSignals, logHealthEvent]);
 
@@ -645,6 +655,7 @@ export function usePlaybackHealth({
     // True when the media clock is genuinely moving forward right now. The
     // authority for "it's playing" — downstream resilience uses it to suppress
     // a spinner that lingers on stale waiting/buffering flags.
-    isAdvancing: advancing
-  }), [elementSignals, frameInfo, progressSignal, bufferRunwayMs, advancing]);
+    isAdvancing: advancing,
+    getLastNetworkProgressAt
+  }), [elementSignals, frameInfo, progressSignal, bufferRunwayMs, advancing, getLastNetworkProgressAt]);
 }

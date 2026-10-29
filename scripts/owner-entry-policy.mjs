@@ -634,6 +634,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/playback/browser/contracts.mjs': null,
   '__capabilities/playback/browser/controller.mjs': null,
   '__capabilities/playback/browser/readalong.mjs': null,
+  '__capabilities/playback/browser/linkProbe.mjs': null,
   '__capabilities/playback/browser/remux.mjs': null,
   '__capabilities/playback/browser/music-behind.mjs': null,
   '__capabilities/playback/browser/lifecycle.mjs': null,
