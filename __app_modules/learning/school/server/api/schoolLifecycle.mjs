@@ -324,6 +324,8 @@ export function createSchoolLifecycleRouter({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
         studyDay: req.query.studyDay ?? null,
+        // The JSON answer carries no document, so it skips the bank line.
+        economy: req.query.format !== 'json',
       });
       // The teacher console's morning drill-in (advocacy A3): the same
       // dry-run plan as DATA — subject sections with next/served — instead

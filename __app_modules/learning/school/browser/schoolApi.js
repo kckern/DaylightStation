@@ -5,7 +5,30 @@
  */
 const BASE = '/api/v1/school';
 
-async function req(path, body, method, headers = {}) {
+// Identical GETs already on the wire, by path. Panels mount side by side and
+// several ask for the same read at once (the report card twice on Reports,
+// curriculum units on most pages, today's Day pair from both the record and
+// the week): one request answers them all. Only while in flight — nothing is
+// cached once it settles, so a later read is always fresh.
+const inFlight = new Map();
+
+function req(path, body, method, headers = {}) {
+  const plainGet = body === undefined && (!method || method === 'GET') && Object.keys(headers).length === 0;
+  if (!plainGet) return send(path, body, method, headers);
+  const pending = inFlight.get(path);
+  // Each caller gets its own copy: a panel that edits its data must not
+  // reach into another's.
+  if (pending) return pending.then((result) => ({ ...result, data: structuredCloneSafe(result.data) }));
+  const started = send(path, body, method, headers).finally(() => inFlight.delete(path));
+  inFlight.set(path, started);
+  return started;
+}
+
+function structuredCloneSafe(value) {
+  try { return value == null ? value : structuredClone(value); } catch { return value; }
+}
+
+async function send(path, body, method, headers = {}) {
   try {
     const opts = body === undefined
       ? { method: method || 'GET', credentials: 'same-origin', headers }
@@ -211,7 +234,12 @@ export const schoolApi = {
   teacherToday: () => req('/teacher/today'),
   // An omitted day means "today" to the server. Never serialize it as the
   // literal string `undefined`, which is rightly rejected as a malformed date.
-  teacherDay: (studyDay = null) => req(`/teacher/day${studyDay ? `?${new URLSearchParams({ studyDay })}` : ''}`),
+  // `learnerId` scopes the digest to one child (the per-learner Day and week);
+  // without it the server builds the whole household.
+  teacherDay: (studyDay = null, { learnerId = null } = {}) => {
+    const query = new URLSearchParams({ ...(studyDay ? { studyDay } : {}), ...(learnerId ? { learnerId } : {}) });
+    return req(`/teacher/day${query.size ? `?${query}` : ''}`);
+  },
   // Teacher console reads (teacher-console spec §4.3). `teachers` answers
   // `{configured, teachers: [{id, name}]}` — configured:false means the
   // school.yml `teachers:` key is absent entirely.

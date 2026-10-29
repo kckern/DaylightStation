@@ -1042,6 +1042,7 @@ export function createSchoolRouter({
     if (!getTeacherToday) throw new EntityNotFoundError('teacher day', 'not configured');
     res.set('Cache-Control', 'no-store').json(presentPublicResources(await getTeacherToday.execute({
       studyDay: req.query.studyDay == null ? null : requiredTextQuery(req.query.studyDay, 'studyDay'), version: 'v2',
+      learnerId: req.query.learnerId == null ? null : requiredTextQuery(req.query.learnerId, 'learnerId'),
     })));
   }));
   // A course with no published cover 404s. Every consumer here draws through

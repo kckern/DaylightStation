@@ -1006,6 +1006,14 @@ describe('the economy line', () => {
     expect(validateDocument(document).errors).toEqual([]);
   });
 
+  it('skips the bank line, never asking the economy, when the caller drops the document', async () => {
+    const asked = [];
+    build({ economy: { bankSummary: async (id) => { asked.push(id); return { silver: 7, next: null }; } } });
+    const { document } = await useCase.execute({ learnerId: 'kid1', economy: false });
+    expect(asked).toEqual([]);
+    expect(document.blocks[0]?.md ?? '').not.toMatch(/In the bank/);
+  });
+
   it('adds the reward when the next item pays silver', async () => {
     build({ economy: { bankSummary: async () => ({ silver: 7, next: { title: 'Math', reward: { silver: 2 } } }) } });
     const { document } = await useCase.execute({ learnerId: 'kid1' });

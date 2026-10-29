@@ -139,7 +139,7 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
   const agenda = usePanelFetch(() => schoolApi.agendaPreview(learnerId, studyDay), {
     deps: [learnerId, studyDay], panel: 'learner-day-agenda', notFoundAs: 'unavailable',
   });
-  const day = usePanelFetch(() => schoolApi.teacherDay(studyDay), {
+  const day = usePanelFetch(() => schoolApi.teacherDay(studyDay, { learnerId }), {
     deps: [learnerId, studyDay], panel: 'learner-day-record', notFoundAs: 'unavailable',
   });
   // A past (or future) day is a record to read, not a launch pad: no launch

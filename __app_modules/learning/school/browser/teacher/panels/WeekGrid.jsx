@@ -64,7 +64,7 @@ function afterFirstPaint() {
 
 async function readDay(learnerId, studyDay) {
   try {
-    const [agenda, digest] = await Promise.all([schoolApi.agendaPreview(learnerId, studyDay), schoolApi.teacherDay(studyDay)]);
+    const [agenda, digest] = await Promise.all([schoolApi.agendaPreview(learnerId, studyDay), schoolApi.teacherDay(studyDay, { learnerId })]);
     const rows = Array.isArray(digest?.data) ? digest.data : (digest?.data?.learners ?? []);
     const mine = rows.find((row) => row.learnerId === learnerId) ?? null;
     return {

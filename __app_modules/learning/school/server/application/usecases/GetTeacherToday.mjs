@@ -156,7 +156,7 @@ export class GetTeacherToday {
     this.#logger = logger;
   }
 
-  async execute({ studyDay = null, version = 'v1' } = {}) {
+  async execute({ studyDay = null, version = 'v1', learnerId = null } = {}) {
     const isV2 = version === 'v2' || studyDay !== null;
     const nowMs = this.#clock().getTime();
     const selectedStudyDay = studyDay ?? studyDayForInstant(nowMs, {
@@ -200,7 +200,10 @@ export class GetTeacherToday {
 
     const rows = [];
 
-    for (const learner of learners) {
+    // One learner's view (the console's per-child Day and week reads) builds
+    // only that learner: the rest of the household is the bulk of the cost.
+    const scoped = learnerId ? learners.filter((learner) => learner.id === learnerId) : learners;
+    for (const learner of scoped) {
       // eslint-disable-next-line no-await-in-loop
       const indexRows = await this.#sessions.listForLearner(learner.id);
       const attempts = uniqueAttempts(days.flatMap((day) => this.#datastore.readAttemptDay(learner.id, day) ?? [])

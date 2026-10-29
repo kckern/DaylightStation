@@ -237,7 +237,7 @@ export class BuildAgenda {
    *                     token: string, tokenClass: 'subject_next', label: string}>,
    *                     createdSessions: string[], document: object }>}
    */
-  async execute({ learnerId, learnerName = null, studyDay = null } = {}) {
+  async execute({ learnerId, learnerName = null, studyDay = null, economy = true } = {}) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       // No identity means no session and no records (§ guest path). The child
       // still gets paper — an explanation is the whole point of the slip.
@@ -777,9 +777,13 @@ export class BuildAgenda {
       } };
     });
 
+    // `economy: false` — a caller that drops the printed document (the teacher
+    // console's JSON preview) skips the bank line: it re-plans the learner to
+    // name "next", and it was the preview's slowest step, timing out at its
+    // 2 s deadline on nearly every console load.
     const [notes, economyLine] = await Promise.all([
       this.#collectNotes(learnerId, now.getTime()),
-      this.#economyLine(learnerId),
+      economy ? this.#economyLine(learnerId) : null,
     ]);
 
     return {
