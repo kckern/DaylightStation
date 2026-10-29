@@ -3807,7 +3807,18 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   });
 
 
-  const {mediaExecutor,mediaDownloadService}=await createMediaJobsRuntime({rootLogger,mediaBasePath,loadFile});
+  // Course watchlist job (jobs.yml: course-sequence) needs the content registry,
+  // progress memory and the data-root YAML store besides the media basics.
+  const {mediaExecutor,mediaDownloadService}=await createMediaJobsRuntime({
+    rootLogger,mediaBasePath,loadFile,
+    courseSequence: {
+      contentRegistry,
+      mediaProgressMemory,
+      documents: new HouseholdYamlDocumentStore({ householdDirectory: dataDir }),
+      timezone: configService.getTimezone?.() || null,
+      newUid: crypto.randomUUID,
+    },
+  });
 
   // Camera detection ledger (Pipeline C). Registered unconditionally: it needs
   // no media path and no NAS — only the Reolink search API — so it should keep
