@@ -878,6 +878,7 @@ it('waits for completion progression before a rider press can start the next act
   act(() => vi.advanceTimersByTime(3000));
   await act(async () => vi.advanceTimersByTime(500));
   expect(finishWorld).toBeTypeOf('function');
+  expect(screen.getByRole('button', { name: 'Fly again' })).toBeDisabled();
   await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
   expect(screen.queryByTestId('skyline-glider-countdown')).toBeNull();
   await act(async () => finishWorld({ ok: true, json: async () => ({ next: 'cloud-ridge', zones: [{ id: 'alpine', name: 'Alpine', acts: [{ id: 'mountain-pass', name: 'Mountain Pass', act: 1, status: 'completed' }, { id: 'cloud-ridge', name: 'Cloud Ridge', act: 2, status: 'open' }] }] }) }));
