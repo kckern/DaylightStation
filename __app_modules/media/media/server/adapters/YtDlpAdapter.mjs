@@ -21,6 +21,8 @@ import { deleteFile, ensureDir, fileExists, getFileStats, readDirectory } from '
 import { IVideoSourceGateway } from "../application/ports/IVideoSourceGateway.mjs";
 
 const exec = promisify(child_process.exec);
+// yt-dlp's exit status when --max-downloads stops it after a successful download.
+const YTDLP_MAX_DOWNLOADS_EXIT = 101;
 const execFileAsync = promisify(execFile);
 
 /**
@@ -474,7 +476,13 @@ export class YtDlpAdapter extends IVideoSourceGateway {
       });
 
       try {
-        await this.#execWithTimeout(cmd, timeoutMs);
+        await this.#execWithTimeout(cmd, timeoutMs).catch((error) => {
+          // Exit 101 = "--max-downloads reached": the one download asked for
+          // succeeded. Treating it as a failure retried every codec and logged
+          // downloadFailed for every source while the file had landed.
+          if (error?.code === YTDLP_MAX_DOWNLOADS_EXIT) return;
+          throw error;
+        });
 
         // Small delay for filesystem sync
         await new Promise(r => setTimeout(r, 1000));
