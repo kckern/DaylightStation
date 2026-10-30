@@ -79,6 +79,20 @@ Silver and gems stay whole coins; only gold may be fractional
   balances, the status board's gold figure. A coin shortfall reads in whole
   coins rounded **up** (`coinsShort`; the piano lock's "N more gold"): short
   by 0.4 reads "1 more gold", matching the floored 5 shown against a price of 6.
+- **Under one coin.** A real amount below one gold never reads "0": the
+  history sentence says "6 silver → less than 1 gold · Sunday", a signed
+  amount "+<1 gold", and the bank ledger's leg and balance "+<1" / "<1 gold"
+  (`displayCoinsText` on the server, `coinMagnitudeText` in the browser).
+  Otherwise the floor: 56 silver reads "→ 5 gold". The big balance cards and
+  the status board stay plain floored figures.
+- **Negatives.** `displayCoins`/`coinFigure` round toward zero, never past a
+  figure's size: −0.4 reads 0 (not −1), −5.6 reads −5, never "−0".
+- **Corrections.** `POST /api/v1/economy/users/:id/adjust` takes
+  `currency` (default `silver`; one of silver, gold, gems). Silver and gems
+  take whole deltas; gold any figure non-zero on the 6-place grid. A
+  `reverse:<ref>` adjust un-pays that ref in its own currency only. A ref is
+  used once across currencies: the same ref, delta and currency is a
+  duplicate; any other currency or delta under it is refused.
 - **Spending.** Prices stay whole. Affordability compares the **exact**
   balance: `balance >= price`. 5.6 gold buys a 5-gold pass (leaving 0.6) and
   cannot buy a 6-gold one (`PASS_UNAFFORDABLE`, `shortfall: 0.4`). What a

@@ -96,6 +96,16 @@ describe('economy router', () => {
     expect(rows.map((t) => [t.delta, t.source])).toEqual([[-3, 'admin']]);
   });
 
+  it('adjust passes currency through: gold takes a fraction, a bad currency is a 400', async () => {
+    const app = makeApp();
+    const gold = await request(app).post(`/api/v1/economy/users/${USER}/adjust`).send({ currency: 'gold', delta: 0.6, ref: 'adj:gold' }).expect(200);
+    expect(gold.body).toMatchObject({ currency: 'gold', adjusted: 0.6, balances: { gold: 0.6 } });
+    await request(app).post(`/api/v1/economy/users/${USER}/adjust`).send({ delta: 0.6, ref: 'adj:silver-half' }).expect(400);
+    await request(app).post(`/api/v1/economy/users/${USER}/adjust`).send({ currency: 'bronze', delta: 1, ref: 'adj:bronze' }).expect(400);
+    const rows = new YamlEconomyDatastore({ configService }).readAllTransactions(USER).filter((t) => t.kind === 'adjust');
+    expect(rows.map((t) => [t.currency, t.delta, t.source])).toEqual([['gold', 0.6, 'admin']]);
+  });
+
   it('maps domain errors to non-200s', async () => {
     const app = makeApp();
 

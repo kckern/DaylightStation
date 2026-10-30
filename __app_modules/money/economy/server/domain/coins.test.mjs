@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { convertedAmount, quantize, sumCoins, displayCoins, isCoinDelta } from './coins.mjs';
-import { coinFigure, coinMagnitude, coinsShort } from '../../../../../frontend/src/lib/coins/coinFigure.js';
+import { convertedAmount, quantize, sumCoins, displayCoins, displayCoinsText, isCoinDelta } from './coins.mjs';
+import { coinFigure, coinMagnitude, coinMagnitudeText, coinsShort } from '../../../../../frontend/src/lib/coins/coinFigure.js';
 
 describe('coins', () => {
   it('silver → gold at 0.1 is exact: 56 silver is 5.6 gold, 3 is 0.3', () => {
@@ -36,5 +36,20 @@ describe('coins', () => {
     expect(coinsShort(6, 5.6)).toBe(1);
     expect(coinsShort(5, 5.6)).toBe(0);
     expect(coinsShort(3, 1)).toBe(2);
+  });
+  it('a negative rounds toward zero, never below its size, never -0', () => {
+    for (const [n, shown] of [[-0.4, 0], [-5.6, -5], [-1, -1], [-0.0000001, 0], [-3, -3]]) {
+      expect(displayCoins(n)).toBe(shown);
+      expect(coinFigure(n)).toBe(shown);
+      expect(Object.is(coinFigure(n), -0)).toBe(false);
+      expect(Object.is(displayCoins(n), -0)).toBe(false);
+    }
+  });
+  it('under one coin reads "less than 1" / "<1", never 0; otherwise the floor', () => {
+    for (const [n, words, short] of [[0.6, 'less than 1', '<1'], [-0.6, 'less than 1', '<1'], [5.6, '5', '5'], [0, '0', '0'], [1, '1', '1'], [NaN, '0', '0']]) {
+      expect(displayCoinsText(n)).toBe(words);
+      expect(displayCoinsText(n, { short: true })).toBe(short);
+      expect(coinMagnitudeText(n)).toBe(short);
+    }
   });
 });

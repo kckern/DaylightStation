@@ -4,7 +4,7 @@
 // can reload the screen on its own.
 import { subjectLabel } from "../home/subjects.js";
 import { labelize } from "../teacher/labelize.js";
-import { coinFigure, coinMagnitude, coinsShort } from "../../../../../frontend/src/lib/coins/coinFigure.js";
+import { coinFigure, coinMagnitudeText, coinsShort } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 
 const DAY_MS = 86_400_000;
 const COINS = ['silver', 'gold'];
@@ -43,9 +43,10 @@ export function ledgerEntry(line) {
   const currencies = [...new Set(legs.map((l) => l.currency))];
   const balanceText = after && currencies.length
     ? currencies.map((c) => {
-      // Gold is fractional on the ledger; a kid sees whole coins (5.6 → 5).
+      // Gold is fractional on the ledger; a kid sees whole coins (5.6 → 5),
+      // and a real balance under one coin reads "<1 gold", never "0 gold".
       const n = coinFigure(after[c]);
-      return `${n} ${coinWord(c, n)}`;
+      return `${coinMagnitudeText(after[c])} ${coinWord(c, n)}`;
     }).join(' \u00b7 ')
     : null;
   const at = Date.parse(line?.at ?? '');
@@ -55,7 +56,7 @@ export function ledgerEntry(line) {
     time: Number.isFinite(at) ? new Date(at).toLocaleTimeString(undefined, TIME) : null,
     label: typeof line?.label === 'string' && line.label ? line.label : (line?.text ?? ''),
     detail: typeof line?.detail === 'string' && line.detail ? line.detail : null,
-    amounts: legs.map(({ currency, delta }) => ({ currency, delta, text: `${delta < 0 ? MINUS : '+'}${coinMagnitude(delta)} ${coinWord(currency, delta)}` })),
+    amounts: legs.map(({ currency, delta }) => ({ currency, delta, text: `${delta < 0 ? MINUS : '+'}${coinMagnitudeText(delta)} ${coinWord(currency, delta)}`, figure: `${delta < 0 ? MINUS : '+'}${coinMagnitudeText(delta)}` })),
     sign: legs.length === 1 ? Math.sign(legs[0].delta) : 0,
     balanceText,
   };

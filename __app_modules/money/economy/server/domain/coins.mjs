@@ -68,5 +68,26 @@ export function sumCoins(currency, values) {
   return fromUnits(values.reduce((s, v) => s + toUnits(v || 0), 0));
 }
 
-/** The whole coins a screen shows for `n` (5.6 gold reads 5). */
-export const displayCoins = (n) => (Number.isFinite(n) ? Math.floor(n + 1e-9) : 0);
+/**
+ * The whole coins a screen shows for `n`, rounded toward zero: 5.6 gold reads
+ * 5, −0.4 reads 0 (never −1), never −0. Mirrored by `coinFigure` in
+ * `frontend/src/lib/coins/coinFigure.js`.
+ */
+export const displayCoins = (n) => {
+  if (!Number.isFinite(n)) return 0;
+  const whole = n < 0 ? Math.ceil(n - 1e-9) : Math.floor(n + 1e-9);
+  return whole === 0 ? 0 : whole;
+};
+
+/**
+ * `n`'s size in words for a sentence: the floored whole coins, except that a
+ * real amount under one coin reads "less than 1" (6 silver at 10:1 is 0.6
+ * gold: "6 silver → less than 1 gold", never "→ 0 gold"). With `short`, the
+ * compact "<1" a figure column uses.
+ */
+export const displayCoinsText = (n, { short = false } = {}) => {
+  const size = Number.isFinite(n) ? Math.abs(n) : 0;
+  const whole = displayCoins(size);
+  if (whole === 0 && size > 1e-9) return short ? '<1' : 'less than 1';
+  return String(whole);
+};

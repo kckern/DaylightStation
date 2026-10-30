@@ -13,7 +13,7 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  * Routes (mounted at /api/v1/economy):
  *   GET  /users/:userId/wallet                          → { userId, balance, balances: {silver, gold, gems}, session }   (`balance` is the silver figure)
  *   POST /users/:userId/deposit                         → { userId, balance }
- *   POST /users/:userId/adjust  {delta, ref, note}      → { userId, adjusted, duplicate, balance } (signed, idempotent on ref)
+ *   POST /users/:userId/adjust  {delta, ref, note, currency='silver'} → { userId, currency, adjusted, duplicate, balance, balances } (signed, idempotent on ref; gold may be fractional)
  *   POST /users/:userId/earn                            → { userId, earned, capped, duplicate, balance }
  *   POST /users/:userId/sessions                        → { userId, sessionId, balance, drainPerSecond }
  *   POST /users/:userId/sessions/:sessionId/settle      → { userId, balance, depleted }   (coins = CUMULATIVE consumed)
@@ -64,8 +64,8 @@ export function createEconomyRouter({ economyService, bankService = null, logger
   // `reverse:<payout ref>`, which the payout then counts as un-paid).
   // Idempotent on `ref`; stamped `admin` whatever the body says.
   router.post('/users/:userId/adjust', asyncHandler(async (req, res) => {
-    const { delta, ref, note = null } = req.body || {};
-    res.json(await economyService.adjust(req.params.userId, { delta, ref, note, source: 'admin' }));
+    const { delta, ref, note = null, currency = 'silver' } = req.body || {};
+    res.json(await economyService.adjust(req.params.userId, { delta, ref, note, currency, source: 'admin' }));
   }));
   router.post('/users/:userId/earn', asyncHandler(async (req, res) => {
     const { action, ref, amount } = req.body || {};

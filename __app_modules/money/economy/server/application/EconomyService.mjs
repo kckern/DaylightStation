@@ -10,7 +10,7 @@
  */
 import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS, paidRefOf,
   passRef, parsePassRef, passesOn, findPass, priceIn, readCap, capUsed, consumedRef, refundedRef, refundRef, DEFAULT_MAX_ACTIVE_MS,
-  convertedAmount, isCoinAmount, quantize } from "../domain/index.mjs";
+  convertedAmount, isCoinAmount, isCoinDelta, quantize } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
 import { studyDayForInstant } from "../../../../learning/school/server/domain-study-day.mjs";
@@ -208,17 +208,27 @@ export class EconomyService {
    * Apply an auditable signed reconciliation outside earn caps. The ledger may
    * go below zero; foldBalances deliberately floors only the displayed wallet,
    * so later earnings repay that debt before becoming spendable.
+   *
+   * `currency` (default silver) picks the coin: silver and gems take whole
+   * numbers, gold any figure still non-zero on its 6-place grid (`isCoinDelta`).
+   * A `reverse:<payout ref>` adjust un-pays that ref in ITS currency only
+   * (`mint` sums `paidRefOf` per currency). A ref is used once across all
+   * currencies: replaying it with another currency or delta is refused.
    */
-  async adjust(userId, { delta, source, ref, note = null }) {
+  async adjust(userId, { delta, source, ref, note = null, currency = 'silver' }) {
     this.#assertUser(userId);
-    if (!Number.isInteger(delta)) throw new ValidationError('adjust delta must be an integer');
+    if (!CURRENCIES.includes(currency)) throw new ValidationError(`adjust currency must be one of ${CURRENCIES.join(', ')}, got ${currency}`);
+    if (!(delta === 0 || isCoinDelta(currency, delta))) {
+      throw new ValidationError(currency === 'gold' ? 'adjust delta must be a number' : 'adjust delta must be an integer');
+    }
+    delta = quantize(currency, delta);
     if (typeof source !== 'string' || !source.trim()) throw new ValidationError('adjust source is required');
     if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('adjust ref is required');
     return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       // Strict: a shard that does not parse could hold this very ref.
       const existing = this.#ds.readAllTransactions(userId, { strict: true }).find((txn) => txn.kind === 'adjust' && txn.ref === ref);
       if (existing) {
-        if (existing.delta !== delta || existing.source !== source) {
+        if (existing.delta !== delta || existing.source !== source || (existing.currency ?? 'silver') !== currency) {
           throw new ValidationError(`adjust ref was already used: ${ref}`);
         }
         const wallet = this.#snapshot(userId);
@@ -228,11 +238,11 @@ export class EconomyService {
         const wallet = this.#snapshot(userId);
         return { userId, adjusted: 0, duplicate: false, txnId: null, balance: wallet.balance };
       }
-      const txn = createTransaction({ id: this.#newTransactionId(), kind: 'adjust', delta, action: 'reward-reconciliation', source, ref, note, at: this.#now() });
+      const txn = createTransaction({ id: this.#newTransactionId(), kind: 'adjust', currency, delta, action: 'reward-reconciliation', source, ref, note, at: this.#now() });
       await this.#ds.appendTransaction(userId, txn);
       const wallet = this.#snapshot(userId);
-      this.#logger.info('economy-adjust', { userId, delta, source, ref, balance: wallet.balance });
-      return { userId, adjusted: delta, duplicate: false, txnId: txn.id, balance: wallet.balance };
+      this.#logger.info('economy-adjust', { userId, currency, delta, source, ref, balance: wallet.balance, balances: wallet.balances });
+      return { userId, currency, adjusted: delta, duplicate: false, txnId: txn.id, balance: wallet.balance, balances: wallet.balances };
     }), (out) => (out.adjusted !== 0 ? 'adjust' : null));
   }
 

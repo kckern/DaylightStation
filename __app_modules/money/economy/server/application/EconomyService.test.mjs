@@ -138,6 +138,52 @@ describe('EconomyService', () => {
   });
 });
 
+describe('adjust in a currency', () => {
+  it('defaults to silver and refuses a fractional silver delta', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const out = await svc.adjust(USER, { delta: -2, source: 'admin', ref: 'adj:silver' });
+    expect(out).toMatchObject({ currency: 'silver', adjusted: -2, balance: 8 });
+    await expect(svc.adjust(USER, { delta: 0.5, source: 'admin', ref: 'adj:half' })).rejects.toBeInstanceOf(ValidationError);
+  });
+  it('takes a fractional gold delta, stored on the 6-place grid', async () => {
+    const svc = makeService();
+    const out = await svc.adjust(USER, { currency: 'gold', delta: 0.6, source: 'admin', ref: 'adj:gold' });
+    expect(out).toMatchObject({ currency: 'gold', adjusted: 0.6, balance: 0, balances: { silver: 0, gold: 0.6, gems: 0 } });
+    const more = await svc.adjust(USER, { currency: 'gold', delta: 4.7, source: 'admin', ref: 'adj:gold-2' });
+    expect(more.balances.gold).toBe(5.3);
+    const rows = new YamlEconomyDatastore({ configService }).readAllTransactions(USER).filter((t) => t.kind === 'adjust');
+    expect(rows.map((t) => [t.currency, t.delta])).toEqual([['gold', 0.6], ['gold', 4.7]]);
+  });
+  it('refuses an unknown currency, a sub-grid gold delta and a non-number', async () => {
+    const svc = makeService();
+    await expect(svc.adjust(USER, { currency: 'bronze', delta: 1, source: 'admin', ref: 'a' })).rejects.toBeInstanceOf(ValidationError);
+    await expect(svc.adjust(USER, { currency: 'gold', delta: 1e-8, source: 'admin', ref: 'b' })).rejects.toBeInstanceOf(ValidationError);
+    await expect(svc.adjust(USER, { currency: 'gold', delta: '1', source: 'admin', ref: 'c' })).rejects.toBeInstanceOf(ValidationError);
+    await expect(svc.adjust(USER, { currency: 'gems', delta: 1.5, source: 'admin', ref: 'd' })).rejects.toBeInstanceOf(ValidationError);
+  });
+  it('a ref replayed in another currency is refused, in the same currency is a duplicate', async () => {
+    const svc = makeService();
+    await svc.adjust(USER, { currency: 'gold', delta: 1.5, source: 'admin', ref: 'adj:x' });
+    expect((await svc.adjust(USER, { currency: 'gold', delta: 1.5, source: 'admin', ref: 'adj:x' })).duplicate).toBe(true);
+    await expect(svc.adjust(USER, { delta: 1.5, source: 'admin', ref: 'adj:x' })).rejects.toBeInstanceOf(ValidationError);
+    await expect(svc.adjust(USER, { currency: 'silver', delta: 2, source: 'admin', ref: 'adj:x' })).rejects.toBeInstanceOf(ValidationError);
+  });
+  it('reverse:<ref> un-pays that ref in its own currency only', async () => {
+    const svc = makeService();
+    await svc.mint(USER, { currency: 'gold', amount: 3, ref: 'pay:g' });
+    // A silver reversal of the gold ref leaves the gold paid untouched.
+    await svc.adjust(USER, { currency: 'silver', delta: -1, source: 'admin', ref: 'reverse:pay:g' });
+    expect((await svc.mint(USER, { currency: 'gold', amount: 3, ref: 'pay:g' })).duplicate).toBe(true);
+    // A gold reversal un-pays 1 gold, so the ref pays it again from its true total.
+    await svc.mint(USER, { currency: 'gold', amount: 2, ref: 'pay:h' });
+    await svc.adjust(USER, { currency: 'gold', delta: -1, source: 'admin', ref: 'reverse:pay:h' });
+    const again = await svc.mint(USER, { currency: 'gold', amount: 2, ref: 'pay:h' });
+    expect(again).toMatchObject({ minted: 1, duplicate: false });
+    expect(again.balances.gold).toBe(5);
+  });
+});
+
 describe('multi-currency balances', () => {
   const ledgerDir = () => path.join(USER_DIR, 'apps', 'economy', 'ledger');
   const writeDay = (day, txns) => {

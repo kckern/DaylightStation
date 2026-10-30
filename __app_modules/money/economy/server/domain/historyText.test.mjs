@@ -178,6 +178,12 @@ describe('fractional gold', () => {
     expect(entrySentence(tx({ kind: 'convert', currency: 'gold', delta: 5.6 }), opts)).toBe('+5 gold · from a conversion · Sunday');
   });
 
+  it('a conversion under one gold reads "less than 1 gold", never "0 gold"; 56 reads 5', () => {
+    const lines = historyLines([...close('w2', 6, 0.6, '2026-10-25T23:00:00Z'), ...close('w1', 56, 5.6, '2026-10-18T23:00:00Z')], opts);
+    expect(lines.map((l) => l.text)).toEqual(['6 silver → less than 1 gold · Sunday', '56 silver → 5 gold · Sunday']);
+    expect(lines[0].legs).toEqual([{ currency: 'silver', delta: -6 }, { currency: 'gold', delta: 0.6 }]);
+    expect(entrySentence(tx({ kind: 'convert', currency: 'gold', delta: 0.6 }), opts)).toBe('+<1 gold · from a conversion · Sunday');
+  });
   it('the balance after accumulates gold exactly (5.6 + 4.7 = 10.3)', () => {
     const lines = historyLines(entries, opts);
     expect(lines[0].balanceAfter).toEqual({ silver: 0, gold: 10.3, gems: 0 });

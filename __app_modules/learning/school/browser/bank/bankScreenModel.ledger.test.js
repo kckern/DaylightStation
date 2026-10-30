@@ -4,6 +4,19 @@ import { ledgerEntry, NAPPING, coinWord } from './bankScreenModel.js';
 const line = (over) => ({ text: 't', at: '2026-10-21T16:00:00.000Z', kind: 'earn', ids: ['e'], ...over });
 
 describe('ledgerEntry — fractional gold', () => {
+  it('a gold leg and balance under one coin read "<1", never "+0" / "0 gold"', () => {
+    const e = ledgerEntry(line({ kind: 'convert', ids: ['g', 'o'], source: 'conversion', label: 'silver → gold',
+      legs: [{ currency: 'silver', delta: -6 }, { currency: 'gold', delta: 0.6 }], balanceAfter: { silver: 0, gold: 0.6, gems: 0 } }));
+    expect(e.amounts.map((a) => a.text)).toEqual(['\u22126 silver', '+<1 gold']);
+    expect(e.amounts.map((a) => a.figure)).toEqual(['\u22126', '+<1']);
+    expect(e.balanceText).toBe('0 silver \u00b7 <1 gold');
+  });
+  it('56 silver reads +5 gold on the leg', () => {
+    const e = ledgerEntry(line({ kind: 'convert', ids: ['g', 'o'], source: 'conversion', label: 'silver → gold',
+      legs: [{ currency: 'silver', delta: -56 }, { currency: 'gold', delta: 5.6 }], balanceAfter: { silver: 0, gold: 5.6, gems: 0 } }));
+    expect(e.amounts.map((a) => a.figure)).toEqual(['\u221256', '+5']);
+    expect(e.balanceText).toBe('0 silver \u00b7 5 gold');
+  });
   it('floors a fractional gold leg and balance: +5.6 reads +5, 10.3 reads 10', () => {
     const e = ledgerEntry(line({ kind: 'convert', ids: ['g', 'o'], source: 'conversion', label: 'silver → gold',
       legs: [{ currency: 'silver', delta: -56 }, { currency: 'gold', delta: 5.6 }], balanceAfter: { silver: 0, gold: 10.3, gems: 0 } }));
@@ -17,7 +30,7 @@ describe('ledgerEntry', () => {
   it('a payout: time, signed amount, label and what it was for, balance after in its own coin', () => {
     const at = '2026-10-21T16:00:00.000Z';
     expect(ledgerEntry(line({ source: 'payout', label: 'Korean', detail: 'Tuesday', legs: [{ currency: 'silver', delta: 2 }], balanceAfter: { silver: 5, gold: 12, gems: 1 } })))
-      .toEqual({ key: 'e', source: 'payout', time: new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }), label: 'Korean', detail: 'Tuesday', amounts: [{ currency: 'silver', delta: 2, text: '+2 silver' }], sign: 1, balanceText: '5 silver' });
+      .toEqual({ key: 'e', source: 'payout', time: new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }), label: 'Korean', detail: 'Tuesday', amounts: [{ currency: 'silver', delta: 2, text: '+2 silver', figure: '+2' }], sign: 1, balanceText: '5 silver' });
   });
 
   it('a spend is minus, with a true minus sign', () => {

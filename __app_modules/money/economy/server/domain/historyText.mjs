@@ -9,9 +9,11 @@
  *   −3 silver · early pass               a pass bought
  *   +3 silver · early pass refunded      its refund (both matched on `source: pass`)
  *   56 silver → 5 gold · Sunday          a week close: both convert halves, one line
+ *   6 silver → less than 1 gold · Sunday   …under one coin: never "→ 0 gold"
  *
  * Gold may be fractional (56 silver is 5.6 gold); every figure in a sentence
- * is `displayCoins` (floored: "5 gold"), while `legs` and `balanceAfter`
+ * is `displayCoinsText` (floored: "5 gold"; a real amount under one coin
+ * reads "less than 1", or "<1" after a sign), while `legs` and `balanceAfter`
  * carry the exact stored figures for a surface to floor itself.
  *
  * The part after the label (`detail`) comes from the `meta` PayoutService
@@ -33,7 +35,7 @@
  * preview. Pass markers (kind `pass`, delta 0) move no coin and are left out.
  */
 
-import { displayCoins, toUnits, fromUnits, isFractional } from './coins.mjs';
+import { displayCoinsText, toUnits, fromUnits, isFractional } from './coins.mjs';
 
 const MINUS = '−';
 // Only EconomyService's pass methods write `source: pass`.
@@ -46,7 +48,7 @@ const lookup = (labels, key) => {
 };
 
 const coinName = (currency, n) => (currency === 'gems' && Math.abs(n) === 1 ? 'gem' : currency);
-const amount = (delta, currency) => `${delta < 0 ? MINUS : '+'}${displayCoins(Math.abs(delta))} ${coinName(currency, delta)}`;
+const amount = (delta, currency) => `${delta < 0 ? MINUS : '+'}${displayCoinsText(delta, { short: true })} ${coinName(currency, delta)}`;
 const words = (action) => String(action ?? '').replace(/^payout:/, '').replace(/[-_]+/g, ' ').trim() || 'entry';
 const withNote = (phrase, note) => (typeof note === 'string' && note.trim() ? `${phrase}: ${note.trim()}` : phrase);
 
@@ -211,7 +213,7 @@ export function historyLines(entries, opts = {}) {
         const day = weekday(out.at, opts.timezone);
         const from = coinName(out.currency ?? 'silver', out.delta);
         const to = coinName(back.currency ?? 'silver', back.delta);
-        const text = `${displayCoins(-out.delta)} ${from} → ${displayCoins(back.delta)} ${to}${day ? ` · ${day}` : ''}`;
+        const text = `${displayCoinsText(out.delta)} ${from} → ${displayCoinsText(back.delta)} ${to}${day ? ` · ${day}` : ''}`;
         lines.push({
           text, at: t.at, kind: 'convert', ids: [t.id, list[j].id],
           source: 'conversion', label: `${from} → ${to}`, detail: null, legs: [leg(out), leg(back)], balanceAfter: after[Math.min(i, j)],
