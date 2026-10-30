@@ -636,7 +636,10 @@ configured `Friend`/`Family` visitors using their own monitors. `Primary` and
 
 With governed subjects present, all zone-challenge targets (`all`, `most`,
 `some`, and numeric counts) use only the subject count. Every active rider may
-fill the success tally. Continuous zone requirements are satisfied by subjects
+fill the success tally, and a guest (or exempt rider) who meets the zone can
+satisfy a challenge alone — there is no "a subject must also contribute" rule on
+the challenge path (owner ruling 2026-10-29: guests are never punished but do
+count toward winning). Continuous zone requirements are satisfied by subjects
 only; guests never enter their required or missing lists. When only guests
 remain, blocking challenges are skipped or cancelled neutrally, without a
 failure, success record, or reward for zero work.
@@ -649,12 +652,12 @@ hold an exempt household rider to an established ride.
 
 Configured household exemptions are permanent non-subjects: they are never
 required, blamed, or promoted into the governed subject set when everyone else
-leaves. An exempt participant may add positive credit to a group challenge, but
-cannot be its sole satisfier. At least one non-exempt subject must also satisfy
-the challenge. Likewise, an exempt-only roster never clears the continuous zone
-gate; it remains locked with `non_exempt_contributor_required` and no exempt
-user in `missingUsers`. This lets an exempt child race with the group without
-turning their monitor into a solo playback key.
+leaves. An exempt participant adds positive credit to a group challenge and
+can satisfy it alone, like a guest. The anti-cheat lives on the continuous zone
+gate: an exempt-only roster never clears it; it remains locked with
+`non_exempt_contributor_required` and no exempt user in `missingUsers`. So an
+exempt child races with the group without turning their monitor into a solo
+playback key.
 
 #### Unattended policy
 

@@ -47,3 +47,15 @@ describe('Logger — device identity in context', () => {
     window.localStorage.removeItem('daylight.log.deviceId');
   });
 });
+
+describe('Logger.sampled — aggregation survives a field changing type', () => {
+  it('does not throw when a field is a number in one sample and a string in the next', () => {
+    const log = getLogger().child({ component: 'sampled-mixed-test' });
+    const name = `sampled-mixed-${Date.now()}`;
+    expect(() => {
+      for (let i = 0; i < 6; i++) {
+        log.sampled(name, { rule: i % 2 ? 'some' : 1 }, { maxPerMinute: 1, aggregate: true });
+      }
+    }).not.toThrow();
+  });
+});

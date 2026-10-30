@@ -3823,9 +3823,8 @@ export class GovernanceEngine {
   /**
    * Challenge zone scoring. Unlike steady-state, the numerator counts EVERY
    * eligible participant who met the zone (subjects + guests + exempt) — a guest
-   * can fill the group tally. Household challenges also need a contributing
-   * subject; pure guest scoring retains its standalone tally. When subjects
-   * are present they set requiredCount, and only subjects appear in missingUsers.
+   * can fill the group tally, and can satisfy it alone. When subjects are
+   * present they set requiredCount, and only subjects appear in missingUsers.
    */
   evaluateChallengeZone(challenge, activeParticipants, userZoneMap, totalCount) {
     const zoneId = challenge.zone;
@@ -3867,8 +3866,13 @@ export class GovernanceEngine {
 
     const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
     const cls = this._classifyParticipants(activeParticipants);
-    const anchorMissing = (cls.subjects.length > 0 || cls.exempt.length > 0) && !metUsers.some(isSubject);
-    const satisfied = !anchorMissing && metUsers.length >= requiredCount;
+    // Owner ruling (2026-10-29): guests and exempt riders are never punished,
+    // but they DO count toward winning. A guest alone in the zone satisfies the
+    // challenge — there is no "a subject must also contribute" anchor here
+    // (that anchor cost three video locks while a household member rode as a
+    // guest). The steady-state anti-cheat in _evaluateZoneRequirement still
+    // stands: only subjects clear the always-on requirement.
+    const satisfied = metUsers.length >= requiredCount;
     const missingUsers = activeParticipants.filter((participantId) =>
       !metUsers.includes(participantId) && isSubject(participantId)
     );
@@ -3906,7 +3910,6 @@ export class GovernanceEngine {
       holdRemainingMs,
       holdProgressByUser,
       actualCount: metUsers.length,
-      ...(anchorMissing ? { reason: 'non_exempt_contributor_required' } : {}),
       requiredCount,
       zoneLabel: zoneInfo?.name || zoneId
     };

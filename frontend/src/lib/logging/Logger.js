@@ -159,13 +159,22 @@ const emit = (level, eventName, data = {}, options = {}) => {
  */
 const accumulateData = (aggregated, data) => {
   for (const [key, value] of Object.entries(data)) {
-    if (typeof value === 'number') {
-      aggregated[key] = (aggregated[key] || 0) + value;
-    } else if (typeof value === 'string') {
-      if (!aggregated[key]) aggregated[key] = {};
+    const existing = aggregated[key];
+    // A field can change type between samples (e.g. a governance `rule` that is
+    // 1 in one call and 'some' in the next). Never throw from a log call: a
+    // value whose type disagrees with what is already accumulated is counted
+    // in the string-count bucket under its stringified form.
+    if (typeof value === 'number' && (existing === undefined || typeof existing === 'number')) {
+      aggregated[key] = (existing || 0) + value;
+    } else if (typeof value === 'string' || typeof value === 'number') {
+      if (typeof existing === 'number') {
+        aggregated[key] = { [`sum:${existing}`]: 1 };
+      } else if (!existing || typeof existing !== 'object') {
+        aggregated[key] = {};
+      }
       const counts = aggregated[key];
       if (Object.keys(counts).length < 20) {
-        counts[value] = (counts[value] || 0) + 1;
+        counts[String(value)] = (counts[String(value)] || 0) + 1;
       } else {
         counts['__other__'] = (counts['__other__'] || 0) + 1;
       }
