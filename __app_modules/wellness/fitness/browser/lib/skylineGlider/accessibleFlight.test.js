@@ -25,9 +25,9 @@ describe('accessible flight', () => {
     expect(p.segments.find(s => s.id === 'hill').profilePoints[0]).toEqual({ x: 240, y: 540 });
     expect(p.segments.some(s => s.type === 'lava')).toBe(true);
   });
-  it('carries a slow or stopped beginner over hills without collisions', () => {
+  it('carries a slow pedaling beginner over hills without collisions', () => {
     const course = { ...base, rules: { ...base.rules, assist_terrain: true }, segments: [hill, ...base.segments] };
-    for (const rpm of [0, 1, 15]) {
+    for (const rpm of [1, 15, 30]) {
       const state = stepFlight(createFlightState(course, { calibration }), input(rpm), 20, course);
       expect(state.phase).toBe('completed');
       expect(state.collisions).toBe(0);
@@ -39,11 +39,11 @@ describe('accessible flight', () => {
     state = stepFlight(state, input(1), 10, course);
     expect(state.collisions).toBe(0);
     expect(state.altitude).toBeCloseTo(.78);
-    state = stepFlight(state, input(0), 2.9, course);
-    expect(state.phase).toBe('playing');
-    state = stepFlight(state, input(0), 1, course);
+    state = stepFlight(state, input(0), 1 / 60, course);
+    expect(state.stalled).toBe(true);
+    state = stepFlight(state, input(130), .5, course);
     expect(state.phase).toBe('crashed');
-    expect(state.crashCause).toBe('lava');
+    expect(state.crashCause).toBe('stall');
   });
   it('protects a transport outage above lava instead of treating it as a stop', () => {
     const course = { ...base, segments: [{ id: 'lava', type: 'lava', start_s: 0, end_s: 20, top: .9 }, ...base.segments] };

@@ -533,7 +533,7 @@ export default function SkylineGlider() {
       const ours = selection.equipmentId === equipment?.id && selection.userId === riderId;
       if (!ours) return false;
       const state = flightRef.current;
-      if (phase === 'flight' && state?.phase === 'playing' && !state.pausedForSensor && !state.collisionProtected) drainWeapons.enqueue(['laser', 'bomb']);
+      if (phase === 'flight' && state?.phase === 'playing' && !state.stalled && !state.pausedForSensor && !state.collisionProtected) drainWeapons.enqueue(['laser', 'bomb']);
       return true;
     }
     if (!['lobby', 'result'].includes(phase) || saveState.status === 'saving') return;
@@ -678,11 +678,11 @@ export default function SkylineGlider() {
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
     <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span>{!!armory.enabled && <span data-testid="skyline-glider-targets">◎ {Object.values(flight.destroyedBy || {}).filter(by => by === 'laser' || by === 'bomb').length}</span>}{!!armory.enabled && <span data-testid="skyline-glider-power">Power {weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}×</span>}{!!armory.enabled && <span data-testid="skyline-glider-bombs" aria-label="Bombs left">💣 {flight.bombsLeft ?? armory.bombs}</span>}</header>
-    {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>Wing down!</h2><p>Returning to the last windsock…</p></div>}
+    {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>{flight.crashCause === 'stall' ? 'Stall!' : 'Wing down!'}</h2><p>Returning to the last windsock…</p></div>}
     {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
     {effects.banner && <div className="skyline-glider__checkpoint-banner">{effects.banner}</div>}
-    {flight.zeroElapsed > 0 && !flight.pausedForSensor && course.segments.some(s => s.type === 'lava' && flight.courseTime >= s.start_s && flight.courseTime <= s.end_s) && <div className="skyline-glider__stop-warning" role="status">Keep pedaling! {Math.max(0, Math.ceil((course.motion.stop_coast_s ?? 3) - flight.zeroElapsed)) || 'Lava below'}</div>}
+    {flight.stalled && flight.phase === 'playing' && <div className="skyline-glider__stop-warning" role="status">Stalled! Returning to the checkpoint…</div>}
     <button className="skyline-glider__end" onClick={exitFlight}>End flight</button>
     <button className="skyline-glider__mute" aria-pressed={muted} onClick={() => setMuted((value) => { const next = !value; audioRef.current.setMuted(next); return next; })}>{muted ? 'Sound on' : 'Mute'}</button>
   </main>;

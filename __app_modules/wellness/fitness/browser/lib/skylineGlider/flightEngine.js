@@ -6,7 +6,6 @@ import {
   pointOverlapsCraft,
   safeBandAt,
   terrainContact,
-  terrainOverlappingCraft,
 } from "./flightGeometry.js";
 import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
 
@@ -126,6 +125,7 @@ function restartAtCheckpoint(state, course) {
     altitude: state.checkpoint.restartAltitude ?? 0.5,
     verticalRate: 0,
     zeroElapsed: 0,
+    stalled: false,
     invincibleRemaining: 0,
     crashCause: null,
     collectedIds: [...state.checkpoint.collectedIds],
@@ -141,12 +141,31 @@ function restartAtCheckpoint(state, course) {
   };
 }
 
+// A confirmed zero commits this attempt to a fall. Once latched, neither
+// renewed cadence, terrain assistance nor transport loss can recover it.
+function advanceStall(state, input, dt, course) {
+  const verticalRate = course.motion.max_descent_rate;
+  const altitude = Math.min(1, state.altitude + verticalRate * dt);
+  const next = {
+    ...state, stalled: true, altitude, targetAltitude: 1, verticalRate,
+    rawRpm: Math.max(0, Number(input?.rpm) || 0),
+    zeroElapsed: state.zeroElapsed + dt,
+    pausedForSensor: false, collisionProtected: false, inputMode: 'stalled',
+    projectiles: [], blasts: [],
+  };
+  const terrain = terrainContact(course, state.courseTime, altitude);
+  return terrain || altitude + SKYLINE_CRAFT_GEOMETRY.radius >= 1
+    ? crash(next, course, { cause: 'stall', segmentId: terrain?.id }) : next;
+}
+
 function singleStep(state, input, dt, course) {
   if (state.phase === 'completed') return state;
   if (state.phase === 'crashed') {
     const crashRemaining = Math.max(0, state.crashRemaining - dt);
     return crashRemaining === 0 ? restartAtCheckpoint({ ...state, crashRemaining }, course) : { ...state, crashRemaining };
   }
+
+  if (state.stalled) return advanceStall(state, input, dt, course);
 
   const transportStalled = !!input?.transportStalled;
   const disconnected = !input?.connected && !transportStalled;
@@ -181,6 +200,7 @@ function singleStep(state, input, dt, course) {
   }
 
   const previousTime = state.courseTime;
+  if (!missing && input?.rpm === 0) return advanceStall(state, input, dt, course);
   const measuredRpm = Math.max(0, Number(input?.rpm) || 0);
   const inferredFor = disconnected ? state.sensorMissingFor + dt : 0;
   const slowdownSeconds = Math.max(STEP, Number(course.motion.inferred_slowdown_s ?? 0.5));
@@ -196,14 +216,15 @@ function singleStep(state, input, dt, course) {
   }
 
   let targetAltitude = state.targetAltitude;
-  if (!missing) targetAltitude = targetForRpm(rawRpm === 0 ? 0 : filteredRpm, state.calibration);
+  if (!missing) {
+    const endpointRpm = rawRpm <= state.calibration.lowRpm || rawRpm >= state.calibration.highRpm;
+    targetAltitude = targetForRpm(endpointRpm ? rawRpm : filteredRpm, state.calibration);
+  }
   if (disconnected) targetAltitude = targetForRpm(rawRpm, state.calibration);
 
-  const overLava = terrainOverlappingCraft(course, state.courseTime).some(s => s.type === 'lava');
-  if (overLava && !missing && rawRpm === 0 && zeroElapsed > (course.motion.stop_coast_s ?? 3)) targetAltitude = 1;
   const desiredRate = (targetAltitude - state.altitude) / course.motion.response_s;
   const rate = clamp(desiredRate, -course.motion.max_climb_rate, course.motion.max_descent_rate);
-  const altitude = clamp(state.altitude + rate * dt, HIGH_ALTITUDE, overLava ? 1 : LOW_ALTITUDE);
+  const altitude = clamp(state.altitude + rate * dt, HIGH_ALTITUDE, LOW_ALTITUDE);
   let next = {
     ...state,
     rawRpm,
@@ -248,6 +269,7 @@ export function createFlightState(course, {
     invincibleRemaining: 0,
     crashRemaining: 0,
     zeroElapsed: 0,
+    stalled: false,
     sensorMissingFor: 0,
     pausedForSensor: false,
     collisionProtected: false,

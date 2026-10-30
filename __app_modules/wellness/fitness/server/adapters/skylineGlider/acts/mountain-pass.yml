@@ -1,6 +1,6 @@
 schema: skyline-glider-course/v1
 id: mountain-pass
-version: 5
+version: 6
 zone: alpine
 act: 1
 name: Mountain Pass
@@ -8,8 +8,8 @@ description: Chase bells in open sky, then float over gentle meadow hills. Every
   counts.
 duration_s: 300
 rpm:
-  min: 15
-  max: 60
+  min: 30
+  max: 130
 motion:
   filter_s: 0.25
   deadband_rpm: 2
@@ -20,7 +20,6 @@ motion:
   disconnect_grace_s: 0.75
   slow_signal_grace_s: 5
   inferred_slowdown_s: 0.5
-  stop_coast_s: 3
 rules:
   lives: 3
   invincibility_s: 1.25

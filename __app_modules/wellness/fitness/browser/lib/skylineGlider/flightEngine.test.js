@@ -53,13 +53,14 @@ describe('flight motion', () => {
     expect(state.altitude).toBeGreaterThanOrEqual(0.18);
   });
 
-  it('treats measured zero RPM as an immediate descent command', () => {
+  it('treats measured zero RPM as an immediate unrecoverable stall', () => {
     let state = createFlightState(openCourse, { calibration });
     state = stepFlight(state, fresh(80), 3, openCourse);
     const before = state.altitude;
     state = stepFlight(state, fresh(0), 0.25, openCourse);
     expect(state.altitude).toBeGreaterThan(before);
-    expect(state.targetAltitude).toBeCloseTo(0.78, 3);
+    expect(state.targetAltitude).toBe(1);
+    expect(state.stalled).toBe(true);
   });
 
   it('infers intentional slowdown for five seconds and keeps descending with course motion', () => {

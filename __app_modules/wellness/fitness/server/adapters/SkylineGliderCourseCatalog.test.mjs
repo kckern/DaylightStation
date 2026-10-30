@@ -19,21 +19,21 @@ describe('SkylineGliderCourseCatalog', () => {
     const acts = new SkylineGliderCourseCatalog({ configService: configService() }).list('home');
     expect(acts.map(a => a.id)).toEqual(['mountain-pass', 'cloud-ridge']);
     const [first, second] = acts;
-    expect(first).toMatchObject({ version: 5, duration_s: 300, rpm: { min: 15, max: 60 }, rules: { assist_terrain: true, weapons: { enabled: false } } });
+    expect(first).toMatchObject({ version: 6, duration_s: 300, rpm: { min: 30, max: 130 }, rules: { assist_terrain: true, weapons: { enabled: false } } });
     expect(first.segments.filter(s => terrainBounds(s) && s.start_s < 60)).toEqual([]);
     expect(first.entities).toEqual([]);
     expect(first.segments.some(s => s.type === 'lava')).toBe(false);
     expect(first.segments.filter(s => s.type === 'lower-terrain').every(s => s.profile?.length >= 3)).toBe(true);
-    expect(second).toMatchObject({ version: 2, duration_s: 240 });
+    expect(second).toMatchObject({ version: 3, duration_s: 240 });
     expect(second.zone.palette.theme).not.toBe(first.zone.palette.theme);
     expect(second.segments.filter(s => s.type === 'lava').every(s => s.start_s >= 60)).toBe(true);
     expect(second.entities.some(e => e.required_weapon === 'bomb')).toBe(true);
     for (const act of acts) expect(validateFrontendCourse(act).errors).toEqual([]);
   });
 
-  it('lets slow and stopped beginners complete all of act one without crashing', () => {
+  it('lets slow pedaling beginners complete all of act one without crashing', () => {
     const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[0]).course;
-    for (const rpm of [0, 1, 15, 30, 60]) {
+    for (const rpm of [1, 15, 30, 60, 130]) {
       const state = stepFlight(createFlightState(course, { calibration: resolveCalibration({}, course) }), { rpm, connected: true }, course.duration_s, course);
       expect(state.phase, `rpm=${rpm}`).toBe('completed');
       expect(state.collisions, `rpm=${rpm}`).toBe(0);
@@ -78,9 +78,11 @@ describe('SkylineGliderCourseCatalog', () => {
     let state = createFlightState(course, { calibration: resolveCalibration({}, course), courseTime: lava.start_s + 2 });
     state = stepFlight(state, { rpm: 1, connected: true }, 5, course);
     expect(state.collisions).toBe(0);
-    state = stepFlight(state, { rpm: 0, connected: true }, 4, course);
+    state = stepFlight(state, { rpm: 0, connected: true }, 1 / 60, course);
+    expect(state.stalled).toBe(true);
+    state = stepFlight(state, { rpm: 130, connected: true }, .5, course);
     expect(state.phase).toBe('crashed');
-    expect(state.crashCause).toBe('lava');
+    expect(state.crashCause).toBe('stall');
   });
 
   it('adds valid household overrides but ignores malformed and unreachable ones', () => {

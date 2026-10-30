@@ -26,6 +26,7 @@ function buildSample(next, input, course, courseSecond) {
     lives: next.lives,
     bombsLeft: next.bombsLeft ?? null,
     phase: next.phase,
+    stalled: !!next.stalled,
     visibleSegmentIds: visibleSegmentIds(course, next.courseTime),
     sensor: {
       connected: !!input?.connected,
@@ -67,6 +68,8 @@ export function collectFlightTelemetry({
       events.push({ type: 'inferred_slowdown.escalated', data: {} });
     }
   }
+
+  if (next.stalled && !previous.stalled) events.push({ type: 'stalled', data: { altitude: next.altitude, rawRpm: next.rawRpm } });
 
   const coastSeconds = Number(course?.motion?.coast_s) || 0;
   const wasCoasting = previous.zeroElapsed > coastSeconds;
@@ -153,7 +156,7 @@ export function collectFlightTelemetry({
 
   const courseSecond = Math.floor(next.courseTime);
   const rewound = next.courseTime < previous.courseTime || next.restarts > previous.restarts;
-  const shouldSample = rewound || courseSecond > lastSampleSecond;
+  const shouldSample = rewound || courseSecond > lastSampleSecond || !!next.stalled !== !!previous.stalled;
   return {
     sample: shouldSample ? buildSample(next, input, course, courseSecond) : null,
     events,
