@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-import { heal, mergeCell, foldOccupantSeries, resolveSessionPath, isValidDate, isValidSessionId, sweep, parseSinceArg, cutoffDateString } from "./heal.mjs";
+import { heal, mergeCell, foldOccupantSeries, resolveSessionPath, isValidDate, isValidSessionId, sweep, parseSinceArg, cutoffDateString, parseReassignArg } from "./heal.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(
@@ -452,5 +452,108 @@ describe('heal — list index', () => {
     expect(shard.days).not.toHaveProperty(DATE);
     expect(shard.days).toHaveProperty('2001-01-02');
     await rm(baseDir, { recursive: true, force: true });
+  });
+});
+
+
+// Audit 2026-10-29: a household rider whose strap died rode a spare strap as a
+// generic guest_<deviceId> (the picker had no option for them). The heal CLI
+// had no way to give the ride back: guest_ ids are never "known users", so no
+// planned merge touches them. --reassign=FROM:TO does it explicitly.
+describe('heal() --reassign gives a generic guest\'s ride to a household rider', () => {
+  const RDATE = '2026-07-02';
+  const RSESSION = '20260702120000';
+  let rBase;
+  let rFile;
+
+  const write = async (sessionObj) => {
+    rBase = await mkdtemp(path.join(tmpdir(), 'heal-fitness-reassign-'));
+    const dir = path.join(rBase, 'data', 'household', 'fitness', 'log', RDATE);
+    await mkdir(dir, { recursive: true });
+    rFile = path.join(dir, `${RSESSION}.yml`);
+    const cfgDir = path.join(rBase, 'data', 'household', 'fitness');
+    await writeFile(path.join(cfgDir, 'config.yml'), yaml.dump({ users: { primary: [{ id: 'rider_m', name: 'Rider M' }, { id: 'rider_f', name: 'Rider F' }] } }), 'utf8');
+    await writeFile(rFile, yaml.dump(sessionObj, { lineWidth: -1, noRefs: true }), 'utf8');
+  };
+  const base = (series, participants) => ({
+    version: 3,
+    sessionId: RSESSION,
+    session: { id: RSESSION, date: RDATE, start: '2026-07-02 12:00:00.000', end: '2026-07-02 12:00:30.000', duration_seconds: 30 },
+    timezone: 'UTC',
+    participants,
+    timeline: { series, interval_seconds: 5, tick_count: 6, encoding: 'rle' },
+    entities: [
+      { entityId: 'e-f', profileId: 'rider_f', deviceId: 'dF', startTime: 0, endTime: null, status: 'active' },
+      { entityId: 'e-g', profileId: 'guest_10266', deviceId: '10266', startTime: 5000, endTime: null, status: 'active', relabeledFrom: ['someone'] },
+    ],
+  });
+
+  afterEach(async () => { if (rBase) await rm(rBase, { recursive: true, force: true }); });
+
+  it('parses FROM:TO pairs and rejects malformed ones', () => {
+    expect(parseReassignArg('guest_1:rider_m')).toEqual([{ from: 'guest_1', to: 'rider_m' }]);
+    expect(parseReassignArg('a:b,c:d')).toHaveLength(2);
+    expect(parseReassignArg(undefined)).toEqual([]);
+    expect(() => parseReassignArg('guest_1')).toThrow();
+    expect(() => parseReassignArg('x:x')).toThrow();
+    expect(() => parseReassignArg(true)).toThrow();
+  });
+
+  it('dry run plans the merge without touching the file', async () => {
+    await write(base({
+      'rider_f:rings': [0, 10, 20, 30, 40, 50],
+      'guest_10266:rings': [null, 0, 100, 200, 300, 537],
+      'guest_10266:hr': [null, 120, 130, 140, 150, 160],
+    }, {
+      rider_f: { display_name: 'Rider F', hr_device: 'dF', is_primary: true },
+      guest_10266: { display_name: 'Guest', hr_device: '10266', is_guest: true, guest_profile: 'kid', base_user: 'Someone' },
+    }));
+    const before = await readFile(rFile, 'utf8');
+    const { plan, changed } = await heal(RDATE, RSESSION, { baseDir: rBase, reassign: [{ from: 'guest_10266', to: 'rider_m' }] });
+    expect(changed).toBe(false);
+    expect(plan.merges).toContainEqual({ from: 'guest_10266', to: 'rider_m', reason: 'manual-reassign' });
+    expect(plan.removedOccupants).toContain('guest_10266');
+    expect(await readFile(rFile, 'utf8')).toBe(before);
+  });
+
+  it('apply moves series, participant row, entity and summary to the rider', async () => {
+    await write(base({
+      'rider_f:rings': [0, 10, 20, 30, 40, 50],
+      'guest_10266:rings': [null, 0, 100, 200, 300, 537],
+      'guest_10266:hr': [null, 120, 130, 140, 150, 160],
+    }, {
+      rider_f: { display_name: 'Rider F', hr_device: 'dF', is_primary: true },
+      guest_10266: { display_name: 'Guest', hr_device: '10266', is_guest: true, guest_profile: 'kid', base_user: 'Someone' },
+    }));
+    const { out } = await heal(RDATE, RSESSION, { baseDir: rBase, apply: true, reassign: [{ from: 'guest_10266', to: 'rider_m' }] });
+    expect(out.participants.guest_10266).toBeUndefined();
+    expect(out.participants.rider_m).toEqual({ display_name: 'Rider M', hr_device: '10266', is_primary: true });
+    expect(out.entities.find((e) => e.entityId === 'e-g')).toMatchObject({ profileId: 'rider_m', relabeledFrom: ['someone', 'guest_10266'] });
+    expect(out.summary.participants.rider_m.rings).toBe(537);
+    expect(out.summary.participants.guest_10266).toBeUndefined();
+    const reread = yaml.load(await readFile(rFile, 'utf8'));
+    expect(Object.keys(reread.timeline.series).some((k) => k.startsWith('guest_10266:'))).toBe(false);
+    // Idempotent: nothing left to reassign, so a second plain heal is clean.
+    const again = await heal(RDATE, RSESSION, { baseDir: rBase });
+    expect(again.plan.needsHeal).toBe(false);
+  });
+
+  it('when the rider rode their own strap FIRST, their total carries into the guest stretch', async () => {
+    await write(base({
+      'rider_m:rings': [0, 40, null, null, null, null],
+      'guest_10266:rings': [null, null, 0, 100, 200, 300],
+    }, {
+      rider_m: { display_name: 'Rider M', hr_device: 'dM', is_primary: true },
+      guest_10266: { display_name: 'Guest', hr_device: '10266', is_guest: true },
+    }));
+    const { out } = await heal(RDATE, RSESSION, { baseDir: rBase, apply: true, reassign: [{ from: 'guest_10266', to: 'rider_m' }] });
+    expect(out.summary.participants.rider_m.rings).toBe(340);
+    expect(out.participants.rider_m.hr_device).toBe('dM'); // the rider's own row wins
+  });
+
+  it('refuses an id that is not in the session, or a guest_ target', async () => {
+    await write(base({ 'rider_f:rings': [0, 1, 2, 3, 4, 5] }, { rider_f: { display_name: 'Rider F', is_primary: true } }));
+    await expect(heal(RDATE, RSESSION, { baseDir: rBase, reassign: [{ from: 'guest_9', to: 'rider_m' }] })).rejects.toThrow(/not a participant/);
+    await expect(heal(RDATE, RSESSION, { baseDir: rBase, reassign: [{ from: 'rider_f', to: 'guest_2' }] })).rejects.toThrow(/not a household user/);
   });
 });

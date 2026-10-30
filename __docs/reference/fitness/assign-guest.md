@@ -439,6 +439,17 @@ backend `SessionIdentityHealer` (dry run by default). It:
 - patches `summary.participants` (rings, HR stats, zone minutes) and leaves
   every other summary section as the app wrote it.
 
+**Manual reassignment.** `… session heal <date> <sessionId> --reassign=FROM:TO
+[--apply]` gives FROM's whole ride to household user TO — for a rider who rode a
+spare strap as a generic `guest_<deviceId>` (the guest picker now offers every
+household member, but older sessions predate that). FROM's series fold into TO's
+in time order (whichever stretch started first carries its total forward), the
+participant row takes TO's id (TO's own row wins where both exist, guest-only
+fields dropped, flags re-derived), FROM's entity is relabelled to TO with FROM
+appended to `relabeledFrom`, and the summary is recomputed. Not available with
+`--sweep`. A relabelled-away name that is no longer listed and holds no series
+is not reported for removal, so a healed session stays `needsHeal: false`.
+
 ### Telemetry
 
 | Event | When emitted | Payload fields (key ones) |
