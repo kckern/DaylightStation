@@ -1203,6 +1203,14 @@ ambient_led:
     fire: scene.fitness_fire
     fire_all: scene.fitness_breathing   # All participants in fire zone
   throttle_ms: 2000                      # Minimum time between HA API calls
+  dark_mode:                             # Optional. Fire scenes put HA into "dark mode"
+    sensor: binary_sensor.room_dark_mode #   (white overhead kept off). On the transition
+    manual_override: input_boolean.room_overhead_manual_override  # INTO fire (not while
+    overhead_lights: [light.room_overhead]  # already dark), a manual override that is on
+                                         #   is stale (taken outside dark mode): it is
+                                         #   cleared BEFORE the scene call, then the
+                                         #   overhead is turned off after it. Logs
+                                         #   fitness.zone_led.stale_override_cleared.
 
 equipment:
   - id: bike_001

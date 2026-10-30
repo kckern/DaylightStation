@@ -411,4 +411,91 @@ describe('AmbientLedAdapter', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('stale manual override before fire (dark mode)', () => {
+    const darkConfig = {
+      ambient_led: {
+        ...defaultConfig.ambient_led,
+        scenes: { ...defaultConfig.ambient_led.scenes, fire_all: 'scene.led_red_breathe' },
+        dark_mode: {
+          sensor: 'binary_sensor.dark_mode',
+          manual_override: 'input_boolean.overhead_override',
+          overhead_lights: ['light.overhead']
+        }
+      }
+    };
+    let calls;
+    let states;
+
+    beforeEach(() => {
+      calls = [];
+      states = { 'input_boolean.overhead_override': 'on', 'binary_sensor.dark_mode': 'off' };
+      mockGateway = {
+        getState: vi.fn(async (id) => ({ entityId: id, state: states[id], lastChanged: 't0' })),
+        callService: vi.fn(async (domain, service, data) => {
+          calls.push(`${domain}.${service}:${[].concat(data.entity_id).join(',')}`);
+          return { ok: true };
+        }),
+        activateScene: vi.fn(async (scene) => { calls.push(`scene:${scene}`); return { ok: true }; })
+      };
+      mockLoadFitnessConfig = vi.fn().mockReturnValue(darkConfig);
+      adapter = new AmbientLedAdapter({ gateway: mockGateway, loadFitnessConfig: mockLoadFitnessConfig, logger: mockLogger });
+    });
+
+    const sync = (zoneId) => adapter.syncZone({ zones: [{ zoneId, isActive: true }], householdId: 'h' });
+
+    test('clears a stale override before the fire scene, then kills the overhead', async () => {
+      await sync('hot');
+      calls.length = 0;
+      adapter.lastActivatedAt = 0; // past the throttle window
+      await sync('fire');
+
+      expect(calls).toEqual([
+        'input_boolean.turn_off:input_boolean.overhead_override',
+        'scene:scene.led_red_breathe',
+        'light.turn_off:light.overhead'
+      ]);
+      expect(mockLogger.info).toHaveBeenCalledWith('fitness.zone_led.stale_override_cleared',
+        expect.objectContaining({ entity: 'input_boolean.overhead_override', previousScene: 'scene.led_orange' }));
+    });
+
+    test('does not clear while already dark (fire -> fire_all, or override taken during dark)', async () => {
+      await sync('fire');          // transition in: clears
+      calls.length = 0;
+      mockGateway.getState.mockClear();
+      states['input_boolean.overhead_override'] = 'on'; // re-taken during dark mode
+      adapter.lastActivatedAt = 0; // past the throttle window
+
+      await adapter.syncZone({ zones: [{ zoneId: 'fire' }, { zoneId: 'hot' }], householdId: 'h' }); // fire (not all)
+      expect(calls).toEqual(['scene:scene.led_red']);
+      expect(mockGateway.getState).not.toHaveBeenCalled();
+    });
+
+    test('does not clear when dark mode is already on via another path', async () => {
+      states['binary_sensor.dark_mode'] = 'on';
+      await sync('fire');
+      expect(calls).toEqual(['scene:scene.led_red_breathe']);
+    });
+
+    test('no-op when the override is off', async () => {
+      states['input_boolean.overhead_override'] = 'off';
+      await sync('fire');
+      expect(calls).toEqual(['scene:scene.led_red_breathe']);
+      expect(mockLogger.info).not.toHaveBeenCalledWith('fitness.zone_led.stale_override_cleared', expect.anything());
+    });
+
+    test('non-fire scenes never read or touch the override', async () => {
+      await sync('hot');
+      expect(mockGateway.getState).not.toHaveBeenCalled();
+      expect(calls).toEqual(['scene:scene.led_orange']);
+    });
+
+    test('a failed clear still activates the fire scene', async () => {
+      mockGateway.callService.mockResolvedValueOnce({ ok: false, error: 'boom' });
+      const result = await sync('fire');
+      expect(result.ok).toBe(true);
+      expect(mockGateway.activateScene).toHaveBeenCalledWith('scene.led_red_breathe');
+      expect(mockLogger.warn).toHaveBeenCalledWith('fitness.zone_led.stale_override_clear_failed', expect.anything());
+    });
+  });
 });

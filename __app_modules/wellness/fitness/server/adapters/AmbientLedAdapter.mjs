@@ -187,6 +187,83 @@ export class AmbientLedAdapter extends IZoneLedController {
   }
 
   /**
+   * Scenes that put the garage into HA dark mode (the red fire scenes).
+   * @private
+   */
+  #isDarkScene(scene, sceneConfig) {
+    if (!scene) return false;
+    return scene === sceneConfig.fire || scene === sceneConfig.fire_all;
+  }
+
+  /**
+   * HA's dark-mode enforcement skips killing the white overhead while the manual
+   * override boolean is on. Any override that exists BEFORE dark mode engages was
+   * taken outside dark mode (a walk-in tap) and is stale, so clear it on the
+   * transition into fire. Never runs while already dark, so an override taken
+   * DURING dark mode still wins. Awaited before the scene is activated: the scene
+   * turns the strips red, which flips binary_sensor.garage_dark_mode and fires
+   * HA's dark_on enforcement — the override must already read off by then.
+   *
+   * ambient_led.dark_mode: { sensor, manual_override, overhead_lights }
+   * @returns {Promise<boolean>} true when a stale override was cleared
+   * @private
+   */
+  async #clearStaleOverrideBeforeDark({ darkModeConfig, sceneConfig, targetScene }) {
+    const overrideEntity = darkModeConfig?.manual_override;
+    if (!overrideEntity) return false;
+    if (!this.#isDarkScene(targetScene, sceneConfig)) return false;
+    if (this.#isDarkScene(this.lastScene, sceneConfig)) return false; // already dark
+
+    try {
+      const [override, sensor] = await Promise.all([
+        this.#gateway.getState(overrideEntity),
+        darkModeConfig.sensor ? this.#gateway.getState(darkModeConfig.sensor) : null
+      ]);
+      // Dark mode already engaged another way (e.g. party mode): any override
+      // now held was taken during dark mode — leave it.
+      if (sensor?.state === 'on') return false;
+      if (override?.state !== 'on') return false;
+
+      const cleared = await this.#gateway.callService('input_boolean', 'turn_off', { entity_id: overrideEntity });
+      if (cleared && cleared.ok === false) throw new Error(cleared.error || 'input_boolean.turn_off failed');
+      this.#logger.info?.('fitness.zone_led.stale_override_cleared', {
+        entity: overrideEntity,
+        overrideSince: override.lastChanged || null,
+        targetScene,
+        previousScene: this.lastScene
+      });
+      return true;
+    } catch (error) {
+      // Never block the fire scene on this
+      this.#logger.warn?.('fitness.zone_led.stale_override_clear_failed', {
+        entity: overrideEntity,
+        error: error.message
+      });
+      return false;
+    }
+  }
+
+  /**
+   * After a stale override was cleared, turn the white overhead off ourselves
+   * too, in case HA's dark_on enforcement evaluated before the clear landed.
+   * @private
+   */
+  async #killOverheadAfterStaleOverride(darkModeConfig) {
+    const lights = darkModeConfig?.overhead_lights;
+    const entityIds = (Array.isArray(lights) ? lights : [lights]).filter(Boolean);
+    if (entityIds.length === 0) return;
+    try {
+      const res = await this.#gateway.callService('light', 'turn_off', { entity_id: entityIds });
+      if (res && res.ok === false) throw new Error(res.error || 'light.turn_off failed');
+    } catch (error) {
+      this.#logger.warn?.('fitness.zone_led.overhead_off_failed', {
+        entityIds,
+        error: error.message
+      });
+    }
+  }
+
+  /**
    * Sync zone LED state
    */
   async syncZone({ zones = [], sessionEnded = false, householdId }) {
@@ -365,8 +442,20 @@ export class AmbientLedAdapter extends IZoneLedController {
 
     // Activate scene via Home Assistant
     try {
+      // Entering fire (= HA dark mode): clear an overhead override left from
+      // before dark mode, then activate. Must finish before the scene lands.
+      const staleOverrideCleared = await this.#clearStaleOverrideBeforeDark({
+        darkModeConfig: fitnessConfig.ambient_led.dark_mode,
+        sceneConfig,
+        targetScene
+      });
+
       const activationStart = Date.now();
       const result = await this.#gateway.activateScene(targetScene);
+
+      if (result.ok && staleOverrideCleared) {
+        await this.#killOverheadAfterStaleOverride(fitnessConfig.ambient_led.dark_mode);
+      }
       const activationDuration = Date.now() - activationStart;
 
       if (result.ok) {
