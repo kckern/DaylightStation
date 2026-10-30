@@ -82,4 +82,47 @@ describe('a challenge already met at its start requires a hold', () => {
     h.evaluate({ first: 'warm', second: 'warm' });
     expect(h.engine.challengeState.activeChallenge?.status).toBe('success');
   });
+
+  it('a rider straddling the zone boundary still completes it (brief dips keep the hold)', () => {
+    const h = harness({ challenge_hold_seconds: 0 });
+    h.evaluate({ first: 'hot', second: 'hot' });
+    h.advance(180_000);
+    h.evaluate({ first: 'warm', second: 'warm' });
+    expect(h.engine.challengeState.activeChallenge).toMatchObject({ zone: 'warm', holdSeconds: 10 });
+    // 12s of samples every 500ms; the second rider dips to active for 1s every 2s.
+    for (let t = 500; t <= 12_000; t += 500) {
+      h.advance(500);
+      const dip = (t % 2000) >= 1000;
+      h.evaluate({ first: 'warm', second: dip ? 'active' : 'warm' });
+      if (h.engine.challengeState.activeChallenge?.status === 'success') break;
+    }
+    expect(h.engine.challengeState.activeChallenge?.status).toBe('success');
+  });
+
+  it('a rider who genuinely leaves the zone (longer than the grace) loses the hold', () => {
+    const h = harness({ challenge_hold_seconds: 0 });
+    h.evaluate({ first: 'hot', second: 'hot' });
+    h.advance(180_000);
+    h.evaluate({ first: 'warm', second: 'warm' });
+    // 4s below zone (grace is 3s), then back in zone.
+    for (let i = 0; i < 8; i++) { h.advance(500); h.evaluate({ first: 'warm', second: 'active' }); }
+    h.advance(500);
+    h.evaluate({ first: 'warm', second: 'warm' });
+    const challenge = h.engine.challengeState.activeChallenge;
+    expect(challenge?.status).toBe('pending');
+    // The second rider's hold restarted; the first rider's did not.
+    expect(challenge.zoneHold.second).toBeGreaterThan(challenge.zoneHold.first);
+  });
+
+  it('a configured challenge_hold_seconds keeps its strict reset on any dip', () => {
+    const eng = new GovernanceEngine(null, { now: () => clock });
+    let clock = 0;
+    eng.config = { challenge_hold_seconds: 5 };
+    eng._captureLatestInputs({ activeParticipants: ['a'], guestIds: [], zoneRankMap: ZONES.zoneRankMap });
+    const ch = { zone: 'warm', rule: 'all' };
+    eng.evaluateChallengeZone(ch, ['a'], { a: 'warm' }, 1);
+    clock = 1000;
+    eng.evaluateChallengeZone(ch, ['a'], { a: 'active' }, 1);
+    expect(ch.zoneHold.a).toBeUndefined();
+  });
 });

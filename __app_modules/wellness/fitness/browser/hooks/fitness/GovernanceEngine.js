@@ -3848,19 +3848,44 @@ export class GovernanceEngine {
     const holdMs = (Number.isFinite(holdSetting) && holdSetting >= 0 ? holdSetting : 0) * 1000;
     const now = this._now();
     challenge.zoneHold = challenge.zoneHold || {};
+    // The already-met hold (challenge.holdSeconds) exists only to keep a
+    // challenge from completing on its first tick. A rider whose HR straddles
+    // the zone boundary must not lose it to one sub-zone sample — that turned
+    // an instant win into a failed challenge and a video lock. Brief dips (up
+    // to challenge_hold_dip_grace_seconds, default 3) keep the hold; a longer
+    // one resets it. A configured challenge_hold_seconds keeps its strict
+    // reset-on-any-dip contract.
+    const dipGraceSetting = Number(this.config?.challenge_hold_dip_grace_seconds ?? 3);
+    const dipGraceMs = challenge.holdSeconds != null && Number.isFinite(dipGraceSetting) && dipGraceSetting > 0
+      ? dipGraceSetting * 1000
+      : 0;
+    challenge.zoneDipAt = challenge.zoneDipAt || {};
     const inZone = [];
     activeParticipants.forEach((participantId) => {
       const pRank = this._getZoneRank(userZoneMap[participantId]);
       if (Number.isFinite(pRank) && pRank >= requiredRank) {
         inZone.push(participantId);
+        delete challenge.zoneDipAt[participantId];
         if (challenge.zoneHold[participantId] == null) challenge.zoneHold[participantId] = now;
+      } else if (dipGraceMs > 0 && challenge.zoneHold[participantId] != null) {
+        if (challenge.zoneDipAt[participantId] == null) challenge.zoneDipAt[participantId] = now;
+        if (now - challenge.zoneDipAt[participantId] <= dipGraceMs) {
+          inZone.push(participantId); // a brief dip: the hold keeps running
+        } else {
+          delete challenge.zoneHold[participantId];
+          delete challenge.zoneDipAt[participantId];
+        }
       } else {
         delete challenge.zoneHold[participantId];
+        delete challenge.zoneDipAt[participantId];
       }
     });
     // Riders who left the session lose their hold too.
     Object.keys(challenge.zoneHold).forEach((id) => {
-      if (!activeParticipants.includes(id)) delete challenge.zoneHold[id];
+      if (!activeParticipants.includes(id)) {
+        delete challenge.zoneHold[id];
+        delete challenge.zoneDipAt[id];
+      }
     });
     const holdProgressByUser = Object.fromEntries(inZone.map((id) => {
       const elapsedMs = Math.min(holdMs, Math.max(0, now - challenge.zoneHold[id]));

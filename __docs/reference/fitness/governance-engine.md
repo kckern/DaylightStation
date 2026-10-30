@@ -635,11 +635,17 @@ configured `Friend`/`Family` visitors using their own monitors. `Primary` and
 `Secondary` household riders retain their existing governance policy.
 
 With governed subjects present, all zone-challenge targets (`all`, `most`,
-`some`, and numeric counts) use only the subject count. Every active rider may
-fill the success tally, and a guest (or exempt rider) who meets the zone can
-satisfy a challenge alone — there is no "a subject must also contribute" rule on
-the challenge path (owner ruling 2026-10-29: guests are never punished but do
-count toward winning). Continuous zone requirements are satisfied by subjects
+`majority`, `some`, and numeric counts) use only the subject count as the
+**target**, but guests and exempt riders who meet the zone **count toward**
+that target: an `all`/`majority`/`some` challenge is met when enough riders of
+any kind are in the zone, and an exempt adult (or a guest) alone can satisfy a
+challenge. There is no "a subject must also contribute" rule on the challenge
+path (owner ruling 2026-10-29: guests are never punished, but count toward
+winning). They are still never blamed — only subjects appear in `missingUsers`.
+
+A household member picked onto a borrowed strap from the Family tab is not a
+guest at all (`occupantType: 'member'`): they are a subject, held to challenges
+like anyone else (see `guest-mode.md`). Continuous zone requirements are satisfied by subjects
 only; guests never enter their required or missing lists. When only guests
 remain, blocking challenges are skipped or cancelled neutrally, without a
 failure, success record, or reward for zero work.
@@ -799,6 +805,12 @@ own hold (`activeChallenge.holdSeconds`, from
 zone that long, so the start cue plays and the challenge is a real ask. Logged
 as `governance.challenge.already_met_at_start`. (Audit 2026-10-29: 6 of 12
 challenges completed 1–158ms after starting and cut their own start sound.)
+This hold tolerates brief dips: a rider whose HR straddles the zone boundary
+keeps their hold through up to `challenge_hold_dip_grace_seconds` (default
+**3**) below the zone; a longer stretch out of the zone resets it. Without that,
+a single sub-zone sample reset the hold and an already-met challenge could fail
+and lock the video. A configured `challenge_hold_seconds` keeps its strict
+reset-on-any-dip contract.
 
 The evaluation result and composed challenge snapshot expose
 `holdProgressByUser[userId]: { elapsedMs, remainingMs, totalMs }`. The existing
@@ -848,6 +860,7 @@ governance:
   grace_period_seconds: 30
   challenge_hold_seconds: 0   # immediate zone credit; set 1 or 10 for an optional hold
   challenge_already_met_hold_seconds: 10   # hold asked of a challenge already met at its start
+  challenge_hold_dip_grace_seconds: 3      # brief dips that hold survives
   # superusers: retired and ignored; supervisors are profiles with type: owner or roles: [guardian]
   unattended_policy:
     enabled: true
