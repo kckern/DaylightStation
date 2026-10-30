@@ -42,6 +42,14 @@ describe('workoutGain', () => {
     expect(workoutGain(line, 's2').gained).toEqual({ silver: 4, gems: 1 });
   });
 
+  it('finds the ride by the live fs_-prefixed id or the bare saved id', () => {
+    const line = ringLine('learner-a', [session('20261029193815', 1000, 180)]);
+    expect(workoutGain(line, 'fs_20261029193815')).toEqual(workoutGain(line, '20261029193815'));
+    expect(workoutGain(line, 'fs_20261029193815')?.rings).toBe(180);
+    const prefixedLine = ringLine('learner-a', [session('fs_20261029193815', 1000, 180)]);
+    expect(workoutGain(prefixedLine, '20261029193815')?.rings).toBe(180);
+  });
+
   it('is null when the session is not on the line', () => {
     expect(workoutGain(ringLine('learner-a', [session('s1', 1000, 50)]), 'nope')).toBeNull();
     expect(workoutGain(null, 's1')).toBeNull();
@@ -65,6 +73,18 @@ describe('WorkoutEarningsService.workout', () => {
     const res = await svc.workout('s2');
     expect(res.mode).toBe('live');
     expect(res.learners).toEqual([{ learnerId: 'learner-a', learnerName: 'Learner A', rings: 120, gained: { silver: 4, gems: 0 }, total: { silver: 24 }, nextCoinIn: null }]);
+  });
+
+  it('accepts the fs_-prefixed id the coin ceremony sends (audit 2026-10-29)', async () => {
+    const svc = make({
+      learners,
+      balances: { 'learner-a': { silver: 20, gold: 0, gems: 0 } },
+      history: { 'learner-a': [{ kind: 'earn', currency: 'silver', ref: 'earn:learner-a:rings:2026-10-19:on-time', delta: 1 }] },
+    });
+    const bare = await svc.workout('s2');
+    const prefixed = await svc.workout('fs_s2');
+    expect(prefixed.learners).toEqual(bare.learners);
+    expect(prefixed.learners).toHaveLength(1);
   });
 
   it('total is just the wallet once the payout has minted', async () => {

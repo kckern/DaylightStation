@@ -27,10 +27,21 @@ function ringsToNextCoin(priced, rings) {
   return next == null ? null : next - rings;
 }
 
+/**
+ * A fitness session has two spellings: the live client's `fs_20261029193815`
+ * and the saved file's bare `20261029193815` (which the ring line carries).
+ * Compare on the bare form so either one finds the ride.
+ */
+export function normalizeWorkoutSessionId(sessionId) {
+  const id = String(sessionId ?? '').trim();
+  return id.startsWith('fs_') ? id.slice(3) : id;
+}
+
 export function workoutGain(line, sessionId) {
   if (!line?.priced || !Array.isArray(line.sessions)) return null;
   const sessions = line.sessions.filter((s) => Number.isFinite(s?.rings) && s.rings > 0).sort((a, b) => endOf(a) - endOf(b));
-  const at = sessions.findIndex((s) => s.sessionId === sessionId);
+  const want = normalizeWorkoutSessionId(sessionId);
+  const at = sessions.findIndex((s) => normalizeWorkoutSessionId(s.sessionId) === want);
   if (at < 0) return null;
   const before = sessions.slice(0, at).reduce((sum, s) => sum + s.rings, 0);
   const through = before + sessions[at].rings;
