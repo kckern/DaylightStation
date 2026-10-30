@@ -32,7 +32,10 @@ import { computeHistorySnapshotAction } from "./historyMode.js";
 import { shouldMarkRejoin, hasHeartRateData } from "./chartCache.js";
 import { assignIdentityColors } from "../../lib/participantColors.js";
 import { niceTicks } from "../../lib/chartScale.js";
+import { chartRosterKey, useStableChartRoster, useStableSeriesGetter, useLatestCallback, useThrottledValue } from "./chartLiveInputs.js";
 
+const LIVE_LEGEND_THROTTLE_MS = 1000;
+const EMPTY_META = new Map();
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
 // Last-resort avatar when a participant's asset 404s (the backend answers a JSON
@@ -887,22 +890,73 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 const RaceChartSvg = React.memo(RaceChartSvgBase);
 RaceChartSvg.displayName = 'RaceChartSvg';
 
+/**
+ * Context reader. The fitness context re-renders on every heart-rate sample;
+ * this thin wrapper turns that into chart-relevant changes only (see
+ * chartLiveInputs.js) and hands them to the memoised FitnessChartView, which
+ * does the real work. The render profiler lives on the view.
+ */
 const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessionData, primaryMediaKey, axisTicks, marks, avatarSizing = 'fixed', showFocusLegend = true, focusUserId, onFocusChange }) => {
+	const fitnessModule = useFitnessModule('fitness_chart');
+	const participants = useStableChartRoster(fitnessModule.participants);
+	const rosterKey = chartRosterKey(fitnessModule.participants);
+	const getUserTimelineSeries = useStableSeriesGetter(fitnessModule.getUserTimelineSeries, {
+		tickCount: Number(fitnessModule.timebase?.tickCount) || 0,
+		sessionId: fitnessModule.sessionId ?? null,
+		// A strap reassignment can move series between ids without a new tick.
+		versionKey: `${rosterKey}|${fitnessModule.transferredUsers ? Array.from(fitnessModule.transferredUsers).join(',') : ''}|${(fitnessModule.historicalParticipants || []).length}`,
+	});
+	// The focus legend's live HR/progress readout: 1 Hz is plenty.
+	const participantDisplayMap = useThrottledValue(fitnessModule.participantDisplayMap, LIVE_LEGEND_THROTTLE_MS);
+	const sessionParticipantsMeta = fitnessModule.sessionParticipantsMeta?.size
+		? fitnessModule.sessionParticipantsMeta
+		: EMPTY_META;
+	const stableOnMount = useLatestCallback(onMount);
+	const stableOnFocusChange = useLatestCallback(onFocusChange);
+	return (
+		<FitnessChartView
+			mode={mode}
+			sessionData={sessionData}
+			primaryMediaKey={primaryMediaKey}
+			axisTicks={axisTicks}
+			marks={marks}
+			avatarSizing={avatarSizing}
+			showFocusLegend={showFocusLegend}
+			focusUserId={focusUserId}
+			onMount={stableOnMount}
+			onFocusChange={stableOnFocusChange}
+			participants={participants}
+			historicalParticipants={fitnessModule.historicalParticipants}
+			getUserTimelineSeries={getUserTimelineSeries}
+			timebase={fitnessModule.timebase}
+			registerLifecycle={fitnessModule.registerLifecycle}
+			activityMonitor={fitnessModule.activityMonitor}
+			zoneConfig={fitnessModule.zoneConfig}
+			sessionId={fitnessModule.sessionId}
+			participantDisplayMap={participantDisplayMap}
+			sessionParticipantsMeta={sessionParticipantsMeta}
+			configuredUsers={fitnessModule.configuredUsers}
+			governanceConfig={fitnessModule.governanceConfig}
+		/>
+	);
+};
+
+const FitnessChartViewBase = ({
+	mode, onMount, sessionData, primaryMediaKey, axisTicks, marks, avatarSizing = 'fixed', showFocusLegend = true, focusUserId, onFocusChange,
+	participants,
+	historicalParticipants,
+	getUserTimelineSeries,
+	timebase,
+	registerLifecycle,
+	activityMonitor,  // Phase 2 - centralized activity tracking
+	zoneConfig,       // Zone config for ring rate lookup (fixes sawtooth)
+	sessionId,        // Session ID for cache cleanup on session change
+	participantDisplayMap,     // SSoT for name/avatar/progress/zoneIndex per participant
+	sessionParticipantsMeta,   // Persisted session meta (for offline hydration — Issue A)
+	configuredUsers,           // userCollections.all — slug -> real name, for historical rosters
+	governanceConfig
+}) => {
 	useRenderProfiler('FitnessChart');
-	const {
-		participants,
-		historicalParticipants,
-		getUserTimelineSeries,
-		timebase,
-		registerLifecycle,
-		activityMonitor,  // Phase 2 - centralized activity tracking
-		zoneConfig,       // Zone config for ring rate lookup (fixes sawtooth)
-		sessionId,        // Session ID for cache cleanup on session change
-		participantDisplayMap,     // SSoT for name/avatar/progress/zoneIndex per participant
-		sessionParticipantsMeta,   // Persisted session meta (for offline hydration — Issue A)
-		configuredUsers,           // userCollections.all — slug -> real name, for historical rosters
-		governanceConfig
-	} = useFitnessModule('fitness_chart');
 	// Exempt participants are excluded from the y-scale basis (logScaleBasis.js).
 	// Seed from FitnessContext: fetching this config after mount used to let the
 	// initial results frame include an exempt rider, then redraw differently.
@@ -1577,5 +1631,8 @@ const FitnessChart = ({ mode, onClose: _onClose, config: _config, onMount, sessi
 		</div>
 	);
 };
+
+const FitnessChartView = React.memo(FitnessChartViewBase);
+FitnessChartView.displayName = 'FitnessChartView';
 
 export default FitnessChart;

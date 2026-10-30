@@ -775,6 +775,15 @@ An active challenge survives departures below its start minimum; departure or
 observed target loss invalidates that rider's own uninterrupted hold. Step
 counters and cycle clocks rebase on recovery, excluding background effort.
 
+### Zone lookup misses
+
+A participant with no committed zone yet (just joined, untagged strap, guest)
+is looked up every evaluation tick. A **subject**'s miss logs
+`participant.zone.lookup_failed` (warn, at most 6/min, aggregated); a
+non-subject's logs `participant.zone.lookup_failed_nonsubject` at debug (1/min)
+— a guest can neither satisfy nor be blamed by the steady-state requirement, so
+its miss is not a warning.
+
 ### Optional zone holds
 
 `challenge_hold_seconds` defaults to **0**, including invalid or negative settings.

@@ -460,3 +460,34 @@ describe('a guest meeting the zone satisfies the challenge (audit 2026-10-29)', 
     expect(res.missingUsers).toEqual(['rider_f']);
   });
 });
+
+describe('zone lookup misses are quiet for guests (audit 2026-10-29)', () => {
+  it('a guest with no zone never warns; a subject warns at most 6 times a minute', async () => {
+    const logging = await import('../../../../../../frontend/src/lib/logging/Logger.js');
+    logging.resetSamplingState?.();
+    const root = logging.getLogger();
+    const warns = [];
+    const origSampled = root.sampled;
+    root.sampled = (name, data, opts) => { warns.push({ name, level: opts?.level }); };
+    try {
+      const eng = new GovernanceEngine();
+      eng.config = { exemptions: [] };
+      const zoneRankMap = { cool: 0, active: 1 };
+      eng._captureLatestInputs({ activeParticipants: ['rider', 'guest_1'], guestIds: ['guest_1'], zoneRankMap });
+      for (let i = 0; i < 20; i++) {
+        eng._evaluateZoneRequirement('active', 'all', ['rider', 'guest_1'], { rider: 'active' }, zoneRankMap, {}, 2);
+      }
+      const guestWarns = warns.filter((w) => w.name === 'participant.zone.lookup_failed');
+      expect(guestWarns).toHaveLength(0);
+      const nonSubject = warns.filter((w) => w.name === 'participant.zone.lookup_failed_nonsubject');
+      expect(nonSubject).toHaveLength(20);
+      expect(nonSubject.every((w) => w.level === 'debug')).toBe(true);
+      // A subject's miss is still a warn.
+      warns.length = 0;
+      eng._evaluateZoneRequirement('active', 'all', ['rider', 'guest_1'], { guest_1: 'active' }, zoneRankMap, {}, 2);
+      expect(warns.find((w) => w.name === 'participant.zone.lookup_failed')?.level).toBe('warn');
+    } finally {
+      root.sampled = origSampled;
+    }
+  });
+});

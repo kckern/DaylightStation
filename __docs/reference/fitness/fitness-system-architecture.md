@@ -157,7 +157,7 @@ Episode cards report wall-clock elapsed time (`elapsedMs`) and each participant'
 | **FitnessPlayer** | `FitnessPlayer.jsx` | Video player. Manages play queue, video element, playback controls. Enforces governance lock (pause/mute when locked) |
 | **FitnessPlayerOverlay** | `FitnessPlayerOverlay.jsx` | Overlay UI shown during governance lock. Displays participant zones, target requirements, countdown timers |
 | **FitnessSidebar** | `FitnessSidebar.jsx` | Side panel showing user avatars, HR readings, zone colors, coin counts |
-| **FitnessChart** | `FitnessSidebar/FitnessChart.jsx` | Real-time race chart (SVG) showing cumulative coin progress per participant |
+| **FitnessChart** | `widgets/FitnessChart/FitnessChart.jsx` | Real-time race chart (SVG) showing cumulative coin progress per participant. A thin context reader feeds a memoised `FitnessChartView`; `chartLiveInputs.js` hands the view new inputs only on a new timeline tick or a drawn roster change (identity, zone colour, activity), and throttles the legend's live HR to 1 Hz — the context re-renders on every heart-rate sample, which used to re-render the chart 15–17×/s |
 | **FitnessPluginContainer** | `FitnessPlugins/FitnessPluginContainer.jsx` | Plugin system for fitness mini-apps (chart, session browser, vibration monitor, pose detection) |
 | **FitnessNavbar** | `FitnessNavbar.jsx` | Navigation bar with content categories |
 | **FitnessPlayerFooter** | `FitnessPlayerFooter.jsx` | Seek bar, playback controls, timestamp display |
@@ -1282,7 +1282,7 @@ When a workout counts as watched is not Fitness config: see `watch_completion` i
 | `frontend/src/modules/Fitness/FitnessPlayer.jsx` | Video player + governance lock |
 | `frontend/src/modules/Fitness/FitnessPlayerOverlay.jsx` | Lock screen overlay |
 | `frontend/src/modules/Fitness/FitnessSidebar.jsx` | Users, zones, coins sidebar |
-| `frontend/src/modules/Fitness/FitnessSidebar/FitnessChart.jsx` | Real-time race chart |
+| `__app_modules/wellness/fitness/browser/widgets/FitnessChart/FitnessChart.jsx` | Real-time race chart |
 | `frontend/src/modules/Fitness/FitnessPlayerFooter.jsx` | Seek bar and controls |
 | `frontend/src/modules/Fitness/FitnessPlugins/FitnessPluginContainer.jsx` | Plugin host |
 | `frontend/src/modules/Fitness/VolumeProvider.jsx` | Volume coordination |

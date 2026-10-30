@@ -3743,11 +3743,19 @@ export class GovernanceEngine {
     activeParticipants.forEach((participantId) => {
       const participantZoneId = userZoneMap[participantId];
       if (!participantZoneId) {
-        getLogger().warn('participant.zone.lookup_failed', {
+        // Runs every tick (~5-10Hz). A rider with no committed zone yet (just
+        // joined, untagged strap, a guest) used to log a warn on EVERY tick —
+        // ~50 per session for one guest. A non-subject can't satisfy or be
+        // blamed by steady-state, so its miss is debug; a subject's stays a
+        // warn, rate-limited.
+        // (Separate event names: sampling budgets are per event name, so a
+        // guest's misses must not spend a subject's warn budget.)
+        const subject = isSubject(participantId);
+        getLogger().sampled(subject ? 'participant.zone.lookup_failed' : 'participant.zone.lookup_failed_nonsubject', {
           key: participantId,
           availableKeys: Object.keys(userZoneMap),
           caller: 'GovernanceEngine._evaluateZoneRequirement'
-        });
+        }, { maxPerMinute: subject ? 6 : 1, aggregate: true, level: subject ? 'warn' : 'debug' });
       }
       const participantRank = this._getZoneRank(participantZoneId);
       // STEPPING COUNTS. A zone is a heart-rate band, and a heart-rate band is
