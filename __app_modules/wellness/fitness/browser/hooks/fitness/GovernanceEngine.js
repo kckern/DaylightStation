@@ -3834,7 +3834,9 @@ export class GovernanceEngine {
 
     // A rider counts only after holding the zone for challenge_hold_seconds
     // continuously within this challenge (0 = instant). Dropping out resets.
-    const holdSetting = Number(this.config?.challenge_hold_seconds ?? 0);
+    // A challenge may carry its own hold (set at start when it was already met
+    // — see _alreadyMetHoldSeconds); otherwise the configured hold applies.
+    const holdSetting = Number(challenge.holdSeconds ?? this.config?.challenge_hold_seconds ?? 0);
     const holdMs = (Number.isFinite(holdSetting) && holdSetting >= 0 ? holdSetting : 0) * 1000;
     const now = this._now();
     challenge.zoneHold = challenge.zoneHold || {};
@@ -3913,6 +3915,27 @@ export class GovernanceEngine {
       requiredCount,
       zoneLabel: zoneInfo?.name || zoneId
     };
+  }
+
+  /**
+   * If a zone challenge would be satisfied the instant it starts and no hold is
+   * configured, return the hold (seconds) it must require instead —
+   * `challenge_already_met_hold_seconds` (default 10). Otherwise null.
+   * Pure: reads the zone map, never mutates the challenge.
+   */
+  _alreadyMetHoldSeconds(challenge, activeParticipants = [], userZoneMap = {}, totalCount = 0) {
+    if (!challenge?.zone) return null;
+    const configured = Number(this.config?.challenge_hold_seconds ?? 0);
+    if (Number.isFinite(configured) && configured > 0) return null;
+    const requiredRank = this._getZoneRank(challenge.zone) ?? 0;
+    const inZone = (activeParticipants || []).filter((id) => {
+      const rank = this._getZoneRank(userZoneMap?.[id]);
+      return Number.isFinite(rank) && rank >= requiredRank;
+    });
+    const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
+    if (inZone.length < requiredCount) return null;
+    const setting = Number(this.config?.challenge_already_met_hold_seconds ?? 10);
+    return Number.isFinite(setting) && setting > 0 ? setting : 10;
   }
 
   /**
@@ -5236,6 +5259,23 @@ export class GovernanceEngine {
       this.challengeState.nextChallengeAt = null;
       this.challengeState.nextChallengeRemainingMs = null;
       this.challengeState.videoLocked = false;
+
+      // A zone challenge the room ALREADY meets at its start would complete on
+      // the next tick (audit 2026-10-29: 6 of 12 completed 1–158ms after
+      // starting, cutting their own start sound). Never let one be satisfied at
+      // start: when no hold is configured, it asks the riders to HOLD the zone.
+      if ((preview.type || 'zone') === 'zone') {
+        const holdSeconds = this._alreadyMetHoldSeconds(this.challengeState.activeChallenge, activeParticipants, userZoneMap, totalCount);
+        if (holdSeconds != null) {
+          this.challengeState.activeChallenge.holdSeconds = holdSeconds;
+          getLogger().info('governance.challenge.already_met_at_start', {
+            zone: this.challengeState.activeChallenge.zone,
+            rule: this.challengeState.activeChallenge.rule,
+            selectionLabel: this.challengeState.activeChallenge.selectionLabel,
+            holdSeconds
+          });
+        }
+      }
 
       if (challengeConfig.selectionType === 'cyclic' && Number.isInteger(preview.cursorIndex)) {
         this.challengeState.selectionCursor[challengeConfig.id] = preview.cursorIndex;

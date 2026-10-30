@@ -783,6 +783,14 @@ indicator. Explicit finite nonnegative settings, including 1 or 10 seconds,
 require continuous eligibility within that challenge. Another challenge cannot
 inherit a rider's hold credit.
 
+**A challenge is never satisfied at its start.** When a zone challenge comes due
+while the room already meets it and no hold is configured, it starts with its
+own hold (`activeChallenge.holdSeconds`, from
+`challenge_already_met_hold_seconds`, default **10**): the riders must hold the
+zone that long, so the start cue plays and the challenge is a real ask. Logged
+as `governance.challenge.already_met_at_start`. (Audit 2026-10-29: 6 of 12
+challenges completed 1–158ms after starting and cut their own start sound.)
+
 The evaluation result and composed challenge snapshot expose
 `holdProgressByUser[userId]: { elapsedMs, remainingMs, totalMs }`. The existing
 `holdRemainingMs` is the earliest unfinished group hold and serves scheduling;
@@ -830,6 +838,7 @@ Located at `household/fitness/config.yml` under the configured data root:
 governance:
   grace_period_seconds: 30
   challenge_hold_seconds: 0   # immediate zone credit; set 1 or 10 for an optional hold
+  challenge_already_met_hold_seconds: 10   # hold asked of a challenge already met at its start
   # superusers: retired and ignored; supervisors are profiles with type: owner or roles: [guardian]
   unattended_policy:
     enabled: true
