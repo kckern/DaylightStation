@@ -288,6 +288,9 @@ const FitnessSidebarMenu = ({
     // UserManager.resolveUserForDevice applies via buildZoneConfig.
     const ageClass = option.ageClass || null;
     const zones = ageClass ? zonesMapToArray(guestProfiles?.[ageClass]?.zones) : null;
+    // A household member on a borrowed strap is HIMSELF, not a guest: a
+    // governance subject, saved with his own flags, earning his own badge.
+    const occupantType = option.isPrimary ? 'member' : 'guest';
     pickerLogger.info('guest_picker.selected', {
       deviceId: deviceIdStr,
       from: activeAssignment?.occupantId || activeAssignment?.metadata?.profileId || null,
@@ -298,6 +301,7 @@ const FitnessSidebarMenu = ({
       isGeneric: Boolean(option.isGeneric),
       isPrimary: Boolean(option.isPrimary),
       isOriginal: Boolean(option.isOriginal),
+      occupantType,
       ageClass: option.ageClass || null,
       baseName
     });
@@ -307,6 +311,7 @@ const FitnessSidebarMenu = ({
       candidateId: option.id,
       source: option.source,
       baseUserName: baseName,
+      occupantType,
       ...(ageClass ? { ageClass } : {}),
       ...(zones ? { zones } : {})
     });

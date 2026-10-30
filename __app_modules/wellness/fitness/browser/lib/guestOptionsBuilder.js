@@ -73,6 +73,7 @@ export function buildGuestCandidates({
       profileId: id,
       category: 'Family',
       source: match.source || 'Family',
+      isPrimary: true,
       allowWhileAssigned: true
     });
   });

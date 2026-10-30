@@ -30,11 +30,13 @@ const usersConfig = {
   friends: [],
 };
 
-function renderPicker() {
+function renderPicker({ assigned = true } = {}) {
   const assignGuestToDevice = vi.fn();
-  const guestAssignment = { deviceId: '10266', occupantId: 'guest_10266', occupantName: 'Guest', metadata: { candidateId: 'guest', profileId: 'guest_10266' } };
+  const guestAssignment = assigned
+    ? { deviceId: '10266', occupantId: 'guest_10266', occupantName: 'Guest', metadata: { candidateId: 'guest', profileId: 'guest_10266' } }
+    : null;
   ctx.value = {
-    deviceAssignments: [guestAssignment],
+    deviceAssignments: guestAssignment ? [guestAssignment] : [],
     getDeviceAssignment: (id) => (id === '10266' ? guestAssignment : null),
     activeHeartRateParticipants: [{ id: 'rider_f', name: 'Rider F', isActive: true }],
     getUserByDevice: () => null,
@@ -73,9 +75,15 @@ describe('guest picker — household members on an unowned strap', () => {
   it('assigns the primary onto the strap and logs guest_picker.selected', () => {
     const { assignGuestToDevice } = renderPicker();
     fireEvent.click(screen.getByText('Rider M'));
-    expect(assignGuestToDevice).toHaveBeenCalledWith('10266', expect.objectContaining({ profileId: 'rider_m', name: 'Rider M' }));
+    expect(assignGuestToDevice).toHaveBeenCalledWith('10266', expect.objectContaining({ profileId: 'rider_m', name: 'Rider M', occupantType: 'member' }));
     const selected = events.filter((x) => x.e === 'guest_picker.selected');
     expect(selected).toHaveLength(1);
-    expect(selected[0].d).toMatchObject({ deviceId: '10266', from: 'guest_10266', to: 'rider_m', isPrimary: true, tab: 'family' });
+    expect(selected[0].d).toMatchObject({ deviceId: '10266', from: 'guest_10266', to: 'rider_m', isPrimary: true, tab: 'family', occupantType: 'member' });
+  });
+
+  it('a generic Guest pick stays typed as a guest', () => {
+    const { assignGuestToDevice } = renderPicker({ assigned: false });
+    fireEvent.click(screen.getAllByText('Guest')[0]);
+    expect(assignGuestToDevice).toHaveBeenCalledWith('10266', expect.objectContaining({ occupantType: 'guest' }));
   });
 });
