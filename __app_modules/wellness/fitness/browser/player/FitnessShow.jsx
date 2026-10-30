@@ -8,6 +8,9 @@ import { buildVirtualSeasons } from "../lib/playlistVirtualSeasons.js";
 import { formatFitnessDate } from "../lib/dateFormatter.js";
 import { useIdentity } from "../identity/useIdentity.js";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
+import PresenceGateNotice from "./overlays/PresenceGateNotice.jsx";
+import usePresenceGate from "../hooks/usePresenceGate.js";
+import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import LockIcon from "./overlays/LockIcon.jsx";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import getLogger from '@/lib/logging/Logger.js';
@@ -222,6 +225,9 @@ const deriveResumeMeta = (episode) => {
   };
 };
 
+// The presence-gate prompt waits longer than a casual unlock: it is the only way in.
+const PRESENCE_PROMPT_TIMEOUT_MS = 30000;
+
 const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack: _onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
   // Parse showId - strip any prefix (e.g., "plex:662027" -> "662027")
   // The fitness API assumes plex source, so we only need the numeric ID
@@ -314,6 +320,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     setPendingUnlock(null);
     clearUnlock();
   }, [showId, clearUnlock]);
+
+  // Presence gate (fitness config `presence_gate`): while the supervising adult
+  // is away, opening a show needs an admin fingerprint. Declared AFTER the reset
+  // effect above so its clearUnlock() on a show change never cancels this prompt.
+  const presenceGate = usePresenceGate('show');
+  const presencePrompt = usePresenceGatePrompt(presenceGate, showId ? String(showId) : null, {
+    kind: 'show',
+    onDismiss: _onBack,
+  });
 
   const fetchShowData = useCallback(async () => {
     if (!showId) {
@@ -1164,6 +1179,25 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
           <div className="no-selection-title">Select a Show</div>
           <div className="no-selection-text">Choose a fitness show from the menu to get started</div>
         </div>
+      </div>
+    );
+  }
+
+  // Gated: the show's contents never render, so nothing can be browsed or played.
+  if (presencePrompt.blocked) {
+    return (
+      <div className="fitness-show presence-gated" style={{ position: 'relative', minHeight: '100%' }}>
+        {!presencePrompt.open && presenceGate.settled && (
+          <PresenceGateNotice onUnlock={presencePrompt.retry} onBack={_onBack} />
+        )}
+        <UnlockPrompt
+          open={presencePrompt.open}
+          state={presencePrompt.state}
+          lockLabel="Grown-up needed"
+          unlockedUser={presencePrompt.unlockedUser}
+          onCancel={presencePrompt.cancel}
+          timeoutMs={PRESENCE_PROMPT_TIMEOUT_MS}
+        />
       </div>
     );
   }

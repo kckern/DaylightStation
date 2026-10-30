@@ -56,6 +56,7 @@ import { FitnessVoiceMemoService } from "../application/services/FitnessVoiceMem
 import { VoiceMemoRetryWorker } from "../application/services/VoiceMemoRetryWorker.mjs";
 import { FitnessSessionOperations } from "../application/services/FitnessSessionOperations.mjs";
 import { GarageHumanActivityService } from "../application/services/GarageHumanActivityService.mjs";
+import { PresenceGateService } from "../application/services/PresenceGateService.mjs";
 import { GarageSpeakerHealthService } from "../application/services/GarageSpeakerHealthService.mjs";
 import { CycleRaceApiService } from "../application/services/CycleRaceApiService.mjs";
 import { GetFitnessMenuMusic } from "../application/usecases/GetFitnessMenuMusic.mjs";
@@ -430,6 +431,7 @@ export function createFitnessApiRouter(config) {
     isScreenshotValidationError: (error) => error?.name === 'ScreenshotValidationError',
     fitnessHardwareService,
     garageHumanActivity: new GarageHumanActivityService({ gateway: garageHumanActivityGateway, logger }),
+    presenceGate: new PresenceGateService({ gateway: garageHumanActivityGateway, loadConfig: () => fitnessConfig || {}, logger }),
     garageSpeakerHealth: new GarageSpeakerHealthService({
       logger: garageSpeakerLogger,
       liveSessionAuthority,

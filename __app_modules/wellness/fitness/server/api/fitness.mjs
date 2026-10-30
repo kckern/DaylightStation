@@ -143,6 +143,7 @@ function sendFingerprintOutcome(res, outcome) {
  * @param {Object} config.fitnessContentService - Semantic content/config facade
  * @param {Object} config.fitnessHardwareService - Semantic room-hardware facade
  * @param {Object} [config.garageHumanActivity] - Garage TV automatic shutdown guard
+ * @param {Object} [config.presenceGate] - PresenceGateService (is the supervising adult home?)
  * @param {Object} [config.garageSpeakerHealth] - Records HA's garage speaker recovery steps (record())
  * @param {Object} config.fitnessWebhookService - Semantic provider-event facade
  * @param {Object} [config.stravaSyncHealth] - Strava sync-health monitor (report())
@@ -178,6 +179,7 @@ export function createFitnessRouter(config) {
     fitnessHardwareService,
     garageHumanActivity = null,
     garageSpeakerHealth = null,
+    presenceGate = null,
     fitnessWebhookService,
     stravaSyncHealth = null,
     fitnessConfigService,
@@ -301,6 +303,14 @@ export function createFitnessRouter(config) {
     logger.info?.('skyline_glider.flight.suspended', data);
     return res.status(202).json({ accepted: true });
   });
+
+  // Presence gate: is the supervising adult home? Off (no HA read) unless the
+  // household fitness config enables `presence_gate`. The service fails closed.
+  router.get('/presence', asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!presenceGate) return res.json({ enabled: false });
+    return res.json(await presenceGate.status());
+  }));
 
   router.post('/garage-human-activity', asyncHandler(async (req, res) => {
     const { deviceId, emulationOpen, hrSessionActive } = req.body ?? {};

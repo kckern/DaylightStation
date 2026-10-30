@@ -28,6 +28,9 @@ import { useVolumeSync } from "../hooks/useVolumeSync.js";
 import { useGovernanceAudioDuck } from "./hooks/useGovernanceAudioDuck.js";
 import { installCueAudioUnlock } from "./hooks/audioCuePlayer.js";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
+import PresenceGateNotice from "./overlays/PresenceGateNotice.jsx";
+import usePresenceGate from "../hooks/usePresenceGate.js";
+import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import { useIdentity } from "../identity/useIdentity.js";
 import { shouldBypassGovernance } from "./governanceBypass.js";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
@@ -408,7 +411,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Live content starts through exercise governance. Fingerprint content
   // authorization is reserved for Fitness Home session replays.
   const budgetBlocked = Boolean(playbackBudget?.blocked);
-  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || budgetBlocked;
+
+  // Presence gate (fitness config `presence_gate`): while the supervising adult
+  // is away, STARTING an item needs an admin fingerprint. Admission is per item
+  // and sticky — the adult leaving mid-video never pauses what is playing.
+  const presenceGate = usePresenceGate('play');
+  const presenceDismissRef = useRef(null);
+  const presencePrompt = usePresenceGatePrompt(presenceGate, currentItemId != null ? String(currentItemId) : null, {
+    kind: 'play',
+    onDismiss: () => presenceDismissRef.current?.(),
+  });
+  const presenceBlocked = presencePrompt.blocked;
+  // Holds that are not exercise governance: they pause and refuse autoplay alike.
+  const externalHold = budgetBlocked || presenceBlocked;
+  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || externalHold;
 
   const [showChart, setShowChart] = useState(true);
 
@@ -441,13 +457,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     gates: [
       { blocked: Boolean(effectiveGovernanceState?.videoLocked), id: GATE_ID.GOVERNANCE, seekCeiling: null },
       { blocked: budgetBlocked, id: GATE_ID.PLAYBACK_BUDGET, seekCeiling: null },
+      { blocked: presenceBlocked, id: GATE_ID.PRESENCE, seekCeiling: null },
     ],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [isSeeking, videoHeld, budgetBlocked, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [isSeeking, videoHeld, budgetBlocked, presenceBlocked, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === GATE_ID.GOVERNANCE && pauseDecision.paused;
   // Live governance verdict for callbacks. Handlers handed to <Player> can
@@ -457,7 +474,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     enforce: enforceGovernance,
     isLocked: isGovernanceLocked,
   } = useGovernanceProgressEnforcer({
-    governancePaused: governancePaused || budgetBlocked,
+    governancePaused: governancePaused || externalHold,
     pausePlayback,
     setVideoPlayerPaused,
     logger,
@@ -681,7 +698,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       elementPaused: Boolean(mediaElement?.paused),
       wePausedIt: wasPlayingBeforeVoiceMemoRef.current,
       // If governance is locked, the governance unlock effect will handle resume.
-      governanceLocked: governancePaused || budgetBlocked,
+      governanceLocked: governancePaused || externalHold,
     });
 
     if (action === 'pause') {
@@ -706,7 +723,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         // Ignore play errors (e.g. user gesture requirements which should already be met)
       });
     }
-  }, [videoPlayerPaused, mediaElement, governancePaused, budgetBlocked]);
+  }, [videoPlayerPaused, mediaElement, governancePaused, externalHold]);
 
   const TimeDisplay = useMemo(() => React.memo(function TimeDisplay({ ct, dur }) {
     return <>{formatTime(ct)} / {formatTime(dur)}</>;
@@ -821,7 +838,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     governance: effectiveGovernanceState,
     pauseDecision: {
       ...pauseDecision,
-      holdReason: budgetBlocked ? GATE_ID.PLAYBACK_BUDGET : voiceMemoOverlayState?.open ? 'voice_memo'
+      holdReason: budgetBlocked ? GATE_ID.PLAYBACK_BUDGET : presenceBlocked ? GATE_ID.PRESENCE : voiceMemoOverlayState?.open ? 'voice_memo'
         : emergencyPhase && emergencyPhase !== 'normal' ? 'emergency' : null,
     },
     resilience: resilienceState,
@@ -2099,6 +2116,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     ? `${enhancedCurrentItem.contentId || enhancedCurrentItem.assetId || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
     : 'fitness-player-empty';
 
+  // A dismissed (cancelled / timed-out) presence prompt leaves the player. The
+  // gate hook sits with the other holds above, before handleClose exists.
+  presenceDismissRef.current = handleClose;
+
   // Video content with overlay and chart
   const videoContent = (
     <div className="fitness-video-shell">
@@ -2111,6 +2132,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       {playbackBudget?.status === 'ready' && <span className="playback-budget-remaining" aria-label="Unattended playback remaining">
         {Math.ceil(playbackBudget.remainingMs / 60000)} min remaining
       </span>}
+      {presenceBlocked && !presencePrompt.open && presenceGate.settled && (
+        <PresenceGateNotice onUnlock={presencePrompt.retry} onBack={handleClose} />
+      )}
       <FitnessPlayerOverlay
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
@@ -2283,6 +2307,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         sessionId={fitnessSessionInstance?.sessionId ?? null}
         intervalMs={Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000}
         enabled={captureAllowed}
+      />
+      <UnlockPrompt
+        open={presencePrompt.open}
+        state={presencePrompt.state}
+        lockLabel="Grown-up needed"
+        unlockedUser={presencePrompt.unlockedUser}
+        onCancel={presencePrompt.cancel}
+        timeoutMs={30000}
       />
       <UnlockPrompt
         open={unlockPromptOpen}

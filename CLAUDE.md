@@ -233,6 +233,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `__docs/reference/fitness/exercise-library.md` |
 | Skyline Glider (cadence flight game: zone/act YAML, sprite + tile assets, sounds, entities, laser/bomb weapons + `vulnerable_to`, world-map progression) | `__docs/reference/fitness/skyline-glider.md` |
 | Garage speaker recovery (HA plug power-cycle on dropout, cap, fitness.garage_speaker.* events) | `__docs/reference/fitness/garage-speaker-recovery.md` |
+| Fitness presence gate (admin fingerprint to open a show / start a video while the supervising adult is away; `presence_gate` config, HA presence read) | `__docs/reference/fitness/presence-gate.md` |
 | Fitness suggestions grid (snapshot: built at boot/midnight/after a workout; strategies) | `__docs/reference/fitness/suggestions.md` |
 | Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `__docs/reference/gaming/emulator-resilience.md` |
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
