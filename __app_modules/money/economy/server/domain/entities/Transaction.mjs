@@ -36,6 +36,21 @@ export function createTransaction({ id, kind, delta, action, source, ref = null,
 // The kinds a payout mints (EconomyService.mint): what counts toward a payout ref's "paid".
 export const PAID_KINDS = Object.freeze(new Set(['earn', 'prize']));
 
+/** An `adjust` ref that reverses part of a payout: `reverse:<payout ref>`. */
+export const REVERSE_PREFIX = 'reverse:';
+
+/**
+ * The ref a transaction pays toward, or null: an earn/prize pays its own ref;
+ * a grown-up's reversal (`adjust` under `reverse:<ref>`) un-pays that ref, so
+ * a corrected line pays again from its true total — never twice.
+ */
+export function paidRefOf(txn) {
+  if (!txn?.ref) return null;
+  if (PAID_KINDS.has(txn.kind)) return txn.ref;
+  if (txn.kind === 'adjust' && txn.ref.startsWith(REVERSE_PREFIX)) return txn.ref.slice(REVERSE_PREFIX.length);
+  return null;
+}
+
 /**
  * Whether an entry is one PayoutService minted: a paid kind, `source: payout`
  * AND an `action` in the `payout:` namespace, which only `mint` stamps. A

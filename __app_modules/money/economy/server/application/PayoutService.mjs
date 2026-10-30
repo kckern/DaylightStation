@@ -21,7 +21,7 @@
  * since this process last logged it, and the per-settle summary is `debug`
  * unless something minted or a count moved.
  */
-import { PAID_KINDS } from "../domain/index.mjs";
+import { PAID_KINDS, paidRefOf } from "../domain/index.mjs";
 import { ringAmount } from "../domain/earnings/index.mjs";
 
 const CURRENCIES = ['silver', 'gems'];
@@ -208,8 +208,10 @@ export class PayoutService {
     const paid = new Map();
     if (owed.length) {
       for (const t of await this.#economy.getHistory(learnerId)) {
-        if (!t.ref || !PAID_KINDS.has(t.kind)) continue;
-        const key = `${t.currency ?? 'silver'}|${t.ref}`;
+        // Earn/prize pays its ref; a reversal (`reverse:<ref>`) un-pays it.
+        const paidRef = paidRefOf(t);
+        if (!paidRef) continue;
+        const key = `${t.currency ?? 'silver'}|${paidRef}`;
         paid.set(key, (paid.get(key) ?? 0) + (t.delta || 0));
       }
     }

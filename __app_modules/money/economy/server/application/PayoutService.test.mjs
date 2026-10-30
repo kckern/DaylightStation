@@ -96,6 +96,20 @@ describe('PayoutService.settle', () => {
     expect(ledger('learner-a')).toHaveLength(5);
   });
 
+  it('a reversal under reverse:<ref> un-pays that ref, so a corrected line pays again — never twice', async () => {
+    const { payout, economy, ledger } = setup();
+    await payout.settle({ learnerId: 'learner-a', week: '2026-09-24' });
+    const korean = ref('learner-a', 'korean');
+    // A grown-up docks 4 over-paid silver on that line.
+    await economy.adjust('learner-a', { delta: -4, source: 'parent', ref: `reverse:${korean}` });
+    const again = await payout.settle({ learnerId: 'learner-a', week: '2026-09-24' });
+    // The line is still worth 4, and 4 were taken back: it is owed again.
+    expect(again.minted.map((m) => [m.ref, m.amount])).toEqual([[korean, 4]]);
+    const third = await payout.settle({ learnerId: 'learner-a', week: '2026-09-24' });
+    expect(third.minted).toEqual([]);
+    expect(ledger('learner-a').filter((t) => t.ref === korean)).toHaveLength(2);
+  });
+
   it('asks the preview for the week it was given (default: the preview\'s own current week)', async () => {
     const { payout, state } = setup();
     await payout.settle({ learnerId: 'learner-a', week: '2026-09-24' });

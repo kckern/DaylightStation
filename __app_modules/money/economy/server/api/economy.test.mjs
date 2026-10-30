@@ -84,6 +84,18 @@ describe('economy router', () => {
     expect(sources).toEqual([['deposit', 'admin'], ['earn', 'api']]);
   });
 
+  it('adjust writes one signed admin entry, idempotent on its ref', async () => {
+    const app = makeApp();
+    await request(app).post(`/api/v1/economy/users/${USER}/deposit`).send({ amount: 10 }).expect(200);
+    const body = { delta: -3, ref: 'reverse:earn:x:worksheet-done:2026-10-26:on-time', note: 'over-paid', source: 'payout' };
+    const first = await request(app).post(`/api/v1/economy/users/${USER}/adjust`).send(body).expect(200);
+    expect(first.body).toMatchObject({ adjusted: -3, duplicate: false, balance: 7 });
+    const again = await request(app).post(`/api/v1/economy/users/${USER}/adjust`).send(body).expect(200);
+    expect(again.body).toMatchObject({ adjusted: 0, duplicate: true, balance: 7 });
+    const rows = new YamlEconomyDatastore({ configService }).readAllTransactions(USER).filter((t) => t.kind === 'adjust');
+    expect(rows.map((t) => [t.delta, t.source])).toEqual([[-3, 'admin']]);
+  });
+
   it('maps domain errors to non-200s', async () => {
     const app = makeApp();
 

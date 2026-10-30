@@ -8,7 +8,7 @@
  * datastore's per-user lock: an append awaits the user's queue, so without
  * the lock a second call could pass the same check before the first lands.
  */
-import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS,
+import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS, paidRefOf,
   passRef, parsePassRef, passesOn, findPass, priceIn, readCap, capUsed, consumedRef, refundedRef, refundRef, DEFAULT_MAX_ACTIVE_MS } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
@@ -339,7 +339,7 @@ export class EconomyService {
     return this.#tellAfter(userId, this.#ds.withUserLock(userId, async () => {
       // One all-time read per mint, under the lock: the authoritative check.
       const paid = this.#ds.readAllTransactions(userId, { strict: true })
-        .filter((t) => PAID_KINDS.has(t.kind) && t.ref === ref && (t.currency ?? 'silver') === currency)
+        .filter((t) => paidRefOf(t) === ref && (t.currency ?? 'silver') === currency)
         .reduce((s, t) => s + (t.delta || 0), 0);
       const owed = amount - paid;
       if (owed <= 0) {
