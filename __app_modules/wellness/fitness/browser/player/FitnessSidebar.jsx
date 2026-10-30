@@ -11,6 +11,7 @@ import FitnessMusicPlayer from "./panels/FitnessMusicPlayer.jsx";
 import FitnessGovernance from "./panels/FitnessGovernance.jsx";
 import { DaylightAPI } from '@/lib/api.mjs';
 import { buildEndSessionRequest } from "./endSessionRequest.js";
+import { buildGuestCandidates } from "../lib/guestOptionsBuilder.js";
 import "./FitnessSidebar.scss";
 import "./panels/FitnessGovernance.scss";
 
@@ -71,77 +72,12 @@ const FitnessSidebar = forwardRef(({ playerRef, videoVolume, onReloadVideo, relo
       setEndingSession(false);
     }
   }, [activeSessionId, endingSession, requestEndSession]);
-  const guestCandidates = React.useMemo(() => {
-    const tag = (list, category) => (Array.isArray(list) ? list.map(item => ({ ...item, category })) : []);
-    const family = tag(usersConfigRaw?.family, 'Family');
-    const friends = tag(usersConfigRaw?.friends, 'Friend');
-    const primaryReturnees = Array.isArray(replacedPrimaryPool)
-      ? replacedPrimaryPool.map((candidate) => ({
-          ...candidate,
-          category: candidate.category || 'Family',
-          source: candidate.source || 'Family'
-        }))
-      : [];
-
-    const primaryByName = new Map();
-    if (Array.isArray(usersConfigRaw?.primary)) {
-      usersConfigRaw.primary.forEach((cfg) => {
-        if (cfg?.name) {
-          primaryByName.set(cfg.name, cfg);
-        }
-      });
-    }
-
-    const primaryGuestPool = [];
-    if (primaryByName.size) {
-      deviceAssignments.forEach((assignment) => {
-        if (!assignment?.occupantName) return;
-        const match = primaryByName.get(assignment.occupantName);
-        if (!match) return;
-        // Use explicit ID from match config
-        const id = match.id || match.profileId;
-        if (!id) {
-          getLogger().warn('fitness_sidebar.primary_guest_pool_missing_id', { name: match.name });
-          return;
-        }
-        // Primary family members who have been displaced by guests can be
-        // assigned to multiple devices (returnee scenario). This allows
-        // the original owner to "reclaim" their device even if they're
-        // temporarily listed as a candidate for another device.
-        primaryGuestPool.push({
-          ...match,
-          id,
-          profileId: id,
-          category: 'Family',
-          source: match.source || 'Family',
-          allowWhileAssigned: true  // Returnees can multi-assign
-        });
-      });
-    }
-
-    const combined = [...primaryGuestPool, ...primaryReturnees, ...family, ...friends];
-    const seenIds = new Set();
-    return combined.reduce((acc, candidate) => {
-      if (!candidate || !candidate.name) return acc;
-      // Use explicit ID from candidate
-      const id = candidate.id || candidate.profileId;
-      if (!id) {
-        getLogger().warn('fitness_sidebar.guest_candidate_missing_id', { name: candidate.name });
-        return acc;
-      }
-      if (seenIds.has(id)) return acc;
-      seenIds.add(id);
-      acc.push({
-        ...candidate,
-        id,
-        profileId: id,
-        category: candidate.category || 'Family',
-        source: candidate.source || candidate.category || null,
-        allowWhileAssigned: Boolean(candidate.allowWhileAssigned)
-      });
-      return acc;
-    }, []);
-  }, [deviceAssignments, replacedPrimaryPool, usersConfigRaw?.family, usersConfigRaw?.friends, usersConfigRaw?.primary]);
+  const guestCandidates = React.useMemo(() => buildGuestCandidates({
+    usersConfig: usersConfigRaw,
+    deviceAssignments,
+    replacedPrimaryPool,
+    logger: getLogger(),
+  }), [deviceAssignments, replacedPrimaryPool, usersConfigRaw?.family, usersConfigRaw?.friends, usersConfigRaw?.primary]);
 
   const openSettingsMenu = React.useCallback(() => {
     setMenuState({ open: true, mode: 'settings', target: null });

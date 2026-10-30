@@ -57,24 +57,34 @@ Users come from `fitness.yml` (the `users:` block) and `data/household/.../users
 
 ```
 usersConfigRaw
-├── primary[]    — Always shown in sidebar. Household head-of-list (e.g. parents, kids in the household).
+├── primary[]    — Always shown in sidebar. Household head-of-list (e.g. parents, kids in the household). ALSO offered in the "Family" tab of the guest picker.
 ├── secondary[]  — Shown only when their device is active. Lower-frequency household members.
 ├── family[]     — Extended family. NOT shown in sidebar by default; surfaces in the "Family" tab of the guest picker.
 └── friends[]    — Friends. Surfaces in the "Friends" tab of the guest picker.
 ```
 
-The sidebar's `guestCandidates` memo (`FitnessSidebar.jsx:71-141`) tags each entry with its category:
+The sidebar's `guestCandidates` memo calls the pure `buildGuestCandidates()` (`lib/guestOptionsBuilder.js`), which tags each entry with its category:
 
 ```javascript
-const family  = tag(usersConfigRaw?.family,  'Family');
-const friends = tag(usersConfigRaw?.friends, 'Friend');
-// + primaryReturnees (displaced primaries that can reclaim a device)
+const family  = tag(usersConfig?.family,  'Family');
+const friends = tag(usersConfig?.friends, 'Friend');
 // + primaryGuestPool (displaced primaries, allowWhileAssigned: true so they can reclaim)
+// + primaryReturnees (replacedPrimaryPool from FitnessContext)
+// + householdPrimaries (EVERY primary, category 'Family', isPrimary: true)
 ```
 
 The combined list — plus `allowWhileAssigned` flags and de-duplication by ID — becomes `context.guestCandidates`, consumed by `FitnessSidebarMenu` in `mode='guest'`.
 
-Displaced primaries get `allowWhileAssigned: true` automatically (`FitnessSidebar.jsx:114`) — when a guest takes Alice's strap, Alice enters the candidate pool for *every* device so she can reclaim hers (or take another) even while her name is technically "assigned."
+**Every primary household member is assignable to any guest or unowned strap** (owner ruling 2026-10-29). When a rider's own strap dies, tap the spare strap, open **Family**, and pick them: the ride's rings and coins land on their own id instead of a generic `guest_<deviceId>`. A primary whose own strap is live is filtered out by `buildGuestOptions` (the `activeHeartRateParticipants` exclusion), and a primary already riding a borrowed strap is not offered on a second one. A primary picked this way is recorded on the ledger like any picker assignment (`occupantType: 'guest'`), so governance treats them as a non-subject for that strap: never punished, still counts toward winning a challenge.
+
+Displaced primaries get `allowWhileAssigned: true` automatically — when a guest takes Alice's strap, Alice enters the candidate pool for *every* device so she can reclaim hers (or take another) even while her name is technically "assigned."
+
+### Picker logs
+
+`FitnessSidebarMenu` (child logger `component: fitness-guest-picker`) emits:
+
+- `guest_picker.opened` — once per open: `deviceId`, `occupantId`/`occupantName`, `baseName`, `unmapped`, the ids offered in `topOptions`, `friends` and `family`, `excludedLive` (riders hidden because their own strap is live), `candidateCount`.
+- `guest_picker.selected` — `deviceId`, `from`, `to` (the profileId assigned), `candidateId`, `source`, `tab`, `isGeneric`/`isPrimary`/`isOriginal`, `ageClass`, `baseName`.
 
 ---
 

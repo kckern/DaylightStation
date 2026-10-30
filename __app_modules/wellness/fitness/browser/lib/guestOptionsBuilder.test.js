@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from "./guestOptionsBuilder.js";
+import { buildGuestOptions, buildGuestCandidates, nextGenericGuestName, zonesMapToArray } from "./guestOptionsBuilder.js";
 
 const friend = (id, name) => ({ id, name, profileId: id, category: 'Friend' });
 
@@ -145,5 +145,77 @@ describe('zonesMapToArray', () => {
     expect(zonesMapToArray(null)).toBeNull();
     expect(zonesMapToArray({})).toBeNull();
     expect(zonesMapToArray({ active: 'high' })).toBeNull();
+  });
+});
+
+
+// Owner ruling 2026-10-29: a household member must be assignable to any guest
+// or unowned strap from the Family picker (a rider whose strap died rode a
+// spare strap as a generic Guest and lost the session's credit).
+describe('buildGuestCandidates — every primary is offered under Family', () => {
+  const usersConfig = {
+    primary: [{ id: 'rider_m', name: 'Rider M' }, { id: 'rider_f', name: 'Rider F' }, { id: 'rider_a', name: 'Rider A' }],
+    family: [{ id: 'aunt', name: 'Aunt' }],
+    friends: [{ id: 'pal', name: 'Pal' }],
+  };
+
+  it('tags every primary as a Family candidate, no displacement needed', () => {
+    const cands = buildGuestCandidates({ usersConfig, deviceAssignments: [], replacedPrimaryPool: [] });
+    const family = cands.filter((c) => c.category === 'Family').map((c) => c.id);
+    expect(family).toEqual(expect.arrayContaining(['aunt', 'rider_m', 'rider_f', 'rider_a']));
+    expect(cands.find((c) => c.id === 'rider_m')).toMatchObject({ isPrimary: true, source: 'Family', allowWhileAssigned: false });
+    expect(cands.filter((c) => c.category === 'Friend').map((c) => c.id)).toEqual(['pal']);
+  });
+
+  it('keeps a displaced primary multi-assignable (returnee) and does not duplicate them', () => {
+    const cands = buildGuestCandidates({
+      usersConfig,
+      deviceAssignments: [{ deviceId: '1', occupantName: 'Rider F' }],
+      replacedPrimaryPool: [],
+    });
+    const f = cands.filter((c) => c.id === 'rider_f');
+    expect(f).toHaveLength(1);
+    expect(f[0].allowWhileAssigned).toBe(true);
+  });
+
+  it('offers a primary whose own strap is NOT live onto an unowned strap, and hides live ones', () => {
+    const guestCandidates = buildGuestCandidates({ usersConfig });
+    const out = buildGuestOptions({
+      guestCandidates,
+      deviceAssignments: [{ deviceId: '10266', occupantId: 'guest_10266', occupantName: 'Guest', metadata: { candidateId: 'guest', profileId: 'guest_10266' } }],
+      activeAssignment: { deviceId: '10266', occupantId: 'guest_10266', occupantName: 'Guest', metadata: { candidateId: 'guest', profileId: 'guest_10266' } },
+      // rider_f and rider_a are riding on their own live straps; rider_m's died.
+      activeHeartRateParticipants: [
+        { id: 'rider_f', name: 'Rider F', isActive: true },
+        { id: 'rider_a', name: 'Rider A', isActive: true },
+        { id: 'rider_m', name: 'Rider M', isActive: false },
+      ],
+      baseName: null,
+      selectedTab: 'family',
+    });
+    const ids = out.filteredOptions.map((o) => o.id);
+    expect(ids).toContain('rider_m');
+    expect(ids).toContain('aunt');
+    expect(ids).not.toContain('rider_f');
+    expect(ids).not.toContain('rider_a');
+    expect(out.filteredOptions.find((o) => o.id === 'rider_m')).toMatchObject({ isPrimary: true, profileId: 'rider_m' });
+  });
+
+  it('a primary already riding a borrowed strap is not offered on a second one', () => {
+    const guestCandidates = buildGuestCandidates({ usersConfig });
+    const out = buildGuestOptions({
+      guestCandidates,
+      deviceAssignments: [{ deviceId: '10266', occupantId: 'rider_m', occupantName: 'Rider M', metadata: { candidateId: 'rider_m', profileId: 'rider_m' } }],
+      activeAssignment: null,
+      selectedTab: 'family',
+    });
+    expect(out.filteredOptions.map((o) => o.id)).not.toContain('rider_m');
+  });
+
+  it('warns (never throws) on a primary with no id', () => {
+    const warns = [];
+    const cands = buildGuestCandidates({ usersConfig: { primary: [{ name: 'No Id' }] }, logger: { warn: (e) => warns.push(e) } });
+    expect(cands).toEqual([]);
+    expect(warns).toContain('fitness_sidebar.guest_candidate_missing_id');
   });
 });

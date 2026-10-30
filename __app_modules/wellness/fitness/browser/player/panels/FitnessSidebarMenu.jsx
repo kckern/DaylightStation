@@ -11,6 +11,7 @@ import "../FitnessSidebar.scss";
 import { menuFocusStops, nextFocusStop, rowNeighbour } from "./sidebarMenuFocus.js";
 import { useGamepadKeys } from "../../lib/useGamepadKeys.js";
 import RingIcon from '@/lib/icons/RingIcon.jsx';
+import getLogger from '@/lib/logging/Logger.js';
 
 // Auto-close behavior for quick-action settings: flash the selected control
 // briefly so the user sees their tap was registered, then dismiss the menu.
@@ -224,6 +225,34 @@ const FitnessSidebarMenu = ({
     guestProfiles
   }), [guestCandidates, activeAssignment, baseName, selectedTab, deviceAssignments, activeHeartRateParticipants, fitnessContext, guestProfiles]);
 
+  const pickerLogger = React.useMemo(() => getLogger().child({ component: 'fitness-guest-picker' }), []);
+  // guest_picker.opened — once per (device) open, with what was offered on
+  // each tab, so "why couldn't I pick X?" is answerable from the log store.
+  const pickerOpenLoggedRef = React.useRef(null);
+  React.useEffect(() => {
+    if (mode !== 'guest' || !deviceIdStr) return;
+    if (pickerOpenLoggedRef.current === deviceIdStr) return;
+    pickerOpenLoggedRef.current = deviceIdStr;
+    const offered = (tab) => buildGuestOptions({
+      guestCandidates, deviceAssignments, activeAssignment, activeHeartRateParticipants,
+      baseName, baseUserId: guestOptions.topOptions.find((o) => o.isOriginal)?.id ?? null,
+      selectedTab: tab, guestProfiles
+    }).filteredOptions.map((o) => o.id);
+    pickerLogger.info('guest_picker.opened', {
+      deviceId: deviceIdStr,
+      occupantId: activeAssignment?.occupantId || activeAssignment?.metadata?.profileId || null,
+      occupantName: currentLabel,
+      baseName,
+      unmapped: !baseName,
+      topOptions: guestOptions.topOptions.map((o) => o.id),
+      friends: offered('friends'),
+      family: offered('family'),
+      excludedLive: activeHeartRateParticipants.filter((p) => p?.isActive).map((p) => p.id || p.profileId || null),
+      candidateCount: guestCandidates.length
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, deviceIdStr]);
+
   // Auto-switch to Family tab if Friends tab is empty or all used up
   React.useEffect(() => {
     if (selectedTab === 'friends' && guestOptions.filteredOptions.length === 0) {
@@ -259,6 +288,19 @@ const FitnessSidebarMenu = ({
     // UserManager.resolveUserForDevice applies via buildZoneConfig.
     const ageClass = option.ageClass || null;
     const zones = ageClass ? zonesMapToArray(guestProfiles?.[ageClass]?.zones) : null;
+    pickerLogger.info('guest_picker.selected', {
+      deviceId: deviceIdStr,
+      from: activeAssignment?.occupantId || activeAssignment?.metadata?.profileId || null,
+      to: profileId,
+      candidateId: option.id,
+      source: option.source || null,
+      tab: selectedTab,
+      isGeneric: Boolean(option.isGeneric),
+      isPrimary: Boolean(option.isPrimary),
+      isOriginal: Boolean(option.isOriginal),
+      ageClass: option.ageClass || null,
+      baseName
+    });
     assignGuestToDevice(deviceIdStr, {
       name,
       profileId,

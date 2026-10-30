@@ -21,6 +21,93 @@ export function nextGenericGuestName(deviceAssignments = []) {
   return `Guest ${highest + 1}`;
 }
 
+/**
+ * The guest-picker candidate pool (Friends + Family tabs).
+ *
+ * Family = extended family (`users.family`) PLUS every primary household
+ * member. A household member must be assignable to any guest or unowned strap
+ * (owner ruling 2026-10-29: a rider whose own strap died rode a spare strap as
+ * a generic Guest and lost the whole session's credit). A primary whose own
+ * strap is live is filtered out later by buildGuestOptions (the
+ * activeHeartRateParticipants exclusion), so they cannot be doubled.
+ *
+ * Primaries displaced from their own strap by a guest (the returnee pool) keep
+ * `allowWhileAssigned` so they can reclaim it.
+ */
+export function buildGuestCandidates({
+  usersConfig = null,
+  deviceAssignments = [],
+  replacedPrimaryPool = [],
+  logger = null
+} = {}) {
+  const warn = (event, data) => { try { logger?.warn?.(event, data); } catch (_) { /* never throw from a log */ } };
+  const tag = (list, category) => (Array.isArray(list) ? list.map((item) => ({ ...item, category })) : []);
+  const family = tag(usersConfig?.family, 'Family');
+  const friends = tag(usersConfig?.friends, 'Friend');
+  const primaryReturnees = Array.isArray(replacedPrimaryPool)
+    ? replacedPrimaryPool.map((candidate) => ({
+        ...candidate,
+        category: candidate.category || 'Family',
+        source: candidate.source || 'Family'
+      }))
+    : [];
+
+  const primaries = Array.isArray(usersConfig?.primary) ? usersConfig.primary.filter((cfg) => cfg?.name) : [];
+  const primaryByName = new Map(primaries.map((cfg) => [cfg.name, cfg]));
+
+  const primaryGuestPool = [];
+  (deviceAssignments || []).forEach((assignment) => {
+    if (!assignment?.occupantName) return;
+    const match = primaryByName.get(assignment.occupantName);
+    if (!match) return;
+    const id = match.id || match.profileId;
+    if (!id) {
+      warn('fitness_sidebar.primary_guest_pool_missing_id', { name: match.name });
+      return;
+    }
+    // Primary family members displaced by guests can be assigned to multiple
+    // devices (returnee scenario) so the owner can reclaim their strap.
+    primaryGuestPool.push({
+      ...match,
+      id,
+      profileId: id,
+      category: 'Family',
+      source: match.source || 'Family',
+      allowWhileAssigned: true
+    });
+  });
+
+  // Every primary household member, offered under Family.
+  const householdPrimaries = primaries.map((cfg) => ({
+    ...cfg,
+    category: 'Family',
+    source: 'Family',
+    isPrimary: true
+  }));
+
+  const combined = [...primaryGuestPool, ...primaryReturnees, ...family, ...householdPrimaries, ...friends];
+  const seenIds = new Set();
+  return combined.reduce((acc, candidate) => {
+    if (!candidate || !candidate.name) return acc;
+    const id = candidate.id || candidate.profileId;
+    if (!id) {
+      warn('fitness_sidebar.guest_candidate_missing_id', { name: candidate.name });
+      return acc;
+    }
+    if (seenIds.has(id)) return acc;
+    seenIds.add(id);
+    acc.push({
+      ...candidate,
+      id,
+      profileId: id,
+      category: candidate.category || 'Family',
+      source: candidate.source || candidate.category || null,
+      allowWhileAssigned: Boolean(candidate.allowWhileAssigned)
+    });
+    return acc;
+  }, []);
+}
+
 export function buildGuestOptions({
   guestCandidates = [],
   deviceAssignments = [],
@@ -131,7 +218,8 @@ export function buildGuestOptions({
       id,
       name: candidate.name,
       profileId: id,
-      source: candidate.source || candidate.category || candidate.group || candidate.group_label || candidate.type || null
+      source: candidate.source || candidate.category || candidate.group || candidate.group_label || candidate.type || null,
+      ...(candidate.isPrimary ? { isPrimary: true } : {})
     });
   });
 
