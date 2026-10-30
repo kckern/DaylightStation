@@ -230,8 +230,36 @@ describe('WeekCloseService.close', () => {
     expect(res.learners.find((l) => l.learnerId === 'parent-a').results[0].status).toBe('not-an-earner');
   });
 
-  it('a fractional rate floors the gold; a balance too small for one gold converts nothing', async () => {
-    const { service, economy, ledger, log } = setup({ convert: [{ from: 'silver', to: 'gold', rate: 0.1 }] });
+  it('at 10:1 gold is fractional: 56 silver is exactly 5.6 gold, 7 silver is 0.7', async () => {
+    const { service, economy, ledger } = setup({ convert: [{ from: 'silver', to: 'gold', rate: 0.1 }] });
+    await fund(economy, 'learner-a', 56);
+    await fund(economy, 'learner-b', 7);
+    await service.close({ weekId: WEEK });
+    expect(converts(ledger('learner-a')).map((t) => t.delta)).toEqual([-56, 5.6]);
+    expect(converts(ledger('learner-b')).map((t) => t.delta)).toEqual([-7, 0.7]);
+    expect((await economy.getBalance('learner-a')).balances).toEqual({ silver: 0, gold: 5.6, gems: 0 });
+    // A second close of the same week writes nothing.
+    await service.close({ weekId: WEEK });
+    expect(converts(ledger('learner-a'))).toHaveLength(2);
+  });
+
+  it('two weeks of fractional gold accumulate exactly (5.6 + 4.7 = 10.3)', async () => {
+    const { state, service, economy, ledger } = setup({ convert: [{ from: 'silver', to: 'gold', rate: 0.1 }] });
+    await fund(economy, 'learner-a', 56);
+    await service.close({ weekId: WEEK });
+    await fund(economy, 'learner-a', 47, 'earn:learner-a:week2');
+    state.today = '2026-10-04';
+    await service.close({ weekId: '2026-09-28' });
+    expect(converts(ledger('learner-a')).map((t) => t.delta)).toEqual([-56, 5.6, -47, 4.7]);
+    const { balances } = await economy.getBalance('learner-a');
+    expect(balances.gold).toBe(10.3);
+    expect(Math.floor(balances.gold)).toBe(10);
+    // The cached wallet agrees with the fold, exactly.
+    expect(new YamlEconomyDatastore({ configService }).readWallet('learner-a').balances.gold).toBe(10.3);
+  });
+
+  it('a fractional rate into a whole-coin currency floors; too little for one converts nothing', async () => {
+    const { service, economy, ledger, log } = setup({ convert: [{ from: 'silver', to: 'gems', rate: 0.1 }] });
     await fund(economy, 'learner-a', 25);
     await fund(economy, 'learner-b', 7);
     await service.close({ weekId: WEEK });

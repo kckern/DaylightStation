@@ -9,7 +9,8 @@
  * the lock a second call could pass the same check before the first lands.
  */
 import { createTransaction, foldBalances, resolvePolicy, inBlackout, drainPerSecond, CURRENCIES, PAID_KINDS, paidRefOf,
-  passRef, parsePassRef, passesOn, findPass, priceIn, readCap, capUsed, consumedRef, refundedRef, refundRef, DEFAULT_MAX_ACTIVE_MS } from "../domain/index.mjs";
+  passRef, parsePassRef, passesOn, findPass, priceIn, readCap, capUsed, consumedRef, refundedRef, refundRef, DEFAULT_MAX_ACTIVE_MS,
+  convertedAmount, isCoinAmount, quantize } from "../domain/index.mjs";
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { shortId } from '#system/utils/id.mjs';
 import { studyDayForInstant } from "../../../../learning/school/server/domain-study-day.mjs";
@@ -23,29 +24,28 @@ export const REFUND_SETUP_MS = 5 * 60 * 1000;
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const isPlayedMs = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 
-/** Whole `to` coins for `amount` at `rate`, floored (the epsilon absorbs 0.29 × 100 = 28.999…). */
-export function convertedAmount(amount, rate) {
-  return Math.floor(amount * rate + 1e-9);
-}
+// `amount` at `rate` in `to`: exact for gold (fractional), floored whole coins otherwise (domain/coins.mjs).
+export { convertedAmount };
 
 const isRate = (rate) => typeof rate === 'number' && Number.isFinite(rate) && rate > 0;
 
 /**
  * What a lone first half of a conversion says the pair is, checked: a
  * negative delta, `meta.from` matching, a real `meta.to`, a positive rate
- * and a whole `got` no more than that rate gives. Anything else is refused,
+ * and a `got` valid in `meta.to` (whole, or fractional for gold) no more than
+ * that rate gives. Anything else is refused,
  * since repairing from it would mint coins nobody can account for.
  */
 function repairFigures(fromHalf, from, ref) {
   const m = fromHalf.meta;
   const refuse = (why) => { throw new ValidationError(`convert ${ref}: cannot repair, ${why}`, { code: 'BAD_CONVERT_HALF' }); };
-  if (!Number.isInteger(fromHalf.delta) || fromHalf.delta >= 0) refuse(`the ${from} half has delta ${fromHalf.delta}`);
+  if (!isCoinAmount(from, -fromHalf.delta)) refuse(`the ${from} half has delta ${fromHalf.delta}`);
   if (m == null || typeof m !== 'object') refuse('the first half has no meta');
   if (m.from !== from) refuse(`meta.from is ${m.from}, not ${from}`);
   if (!CURRENCIES.includes(m.to) || m.to === from) refuse(`meta.to is ${m.to}`);
   if (!isRate(m.rate)) refuse(`meta.rate is ${m.rate}`);
   const spent = -fromHalf.delta;
-  if (!Number.isInteger(m.got) || m.got <= 0 || m.got > convertedAmount(spent, m.rate)) refuse(`meta.got is ${m.got}`);
+  if (!isCoinAmount(m.to, m.got) || quantize(m.to, m.got) > convertedAmount(spent, m.rate, m.to)) refuse(`meta.got is ${m.got}`);
   return { to: m.to, rate: m.rate, spent, got: m.got };
 }
 
@@ -357,8 +357,9 @@ export class EconomyService {
   /**
    * Convert a wallet's whole `from` balance into `to` at `rate` (the week
    * close: silver → gold). Writes a pair of `convert` entries with one `at`:
-   * −balance in `from` under `ref`, then +convertedAmount(balance, rate) in
-   * `to` under `${ref}:${to}`. Both carry `evidenceRef: ref` and
+   * −balance in `from` under `ref`, then +convertedAmount(balance, rate, to)
+   * in `to` under `${ref}:${to}` (exact for gold: 56 silver at 0.1 is 5.6
+   * gold; floored whole coins for any other target). Both carry `evidenceRef: ref` and
    * `meta: { ...meta, from, to, rate, spent, got }`.
    *
    * The balance read (strict, all-time), the idempotency check and both
@@ -378,8 +379,9 @@ export class EconomyService {
    *   neither               `nothing` (balance ≤ 0), `not-an-earner` (with
    *                         `requireEntry`: no ledger entry passes it),
    *                         `below-rate` (balance too small for
-   *                         one whole `to` coin: nothing is spent for
-   *                         nothing), or `converted`
+   *                         any `to` at all — under one whole coin, or
+   *                         under one micro-gold for gold: nothing is
+   *                         spent for nothing), or `converted`
    * `dryRun` gives the same answer (`would-convert`, `would-repair`) and
    * writes nothing, not even the wallet snapshot. Once the first half has
    * landed the wallet snapshot is written even if the second half throws; a
@@ -431,7 +433,7 @@ export class EconomyService {
       const spent = foldBalances(txns)[from];
       if (spent <= 0) return result('nothing', 0, 0);
       if (requireEntry != null && !txns.some((t) => requireEntry(t))) return result('not-an-earner', 0, 0);
-      const got = convertedAmount(spent, rate);
+      const got = convertedAmount(spent, rate, to);
       if (got <= 0) return { ...result('below-rate', 0, 0), balance: spent };
       if (dryRun) return result('would-convert', spent, got);
       const figures = { to, rate, spent, got };
@@ -539,10 +541,12 @@ export class EconomyService {
       if (capUsed(today, found)) {
         throw this.#passRefusal(userId, privilege, coin, price, 'PASS_CAP', `${cap.count} pass${cap.count === 1 ? '' : 'es'} a day: already used today`);
       }
+      // The exact balance decides: 5.6 gold buys a 5-gold pass (leaving
+      // 0.6), and is short of a 6-gold one by 0.4 (a screen shows 1).
       const balance = foldBalances(txns)[coin];
       if (balance < price) {
         throw this.#passRefusal(userId, privilege, coin, price, 'PASS_UNAFFORDABLE', `${found.key} costs ${price} ${coin}; the balance is ${balance}`,
-          { coin, price, balance, shortfall: price - balance });
+          { coin, price, balance, shortfall: quantize(coin, price - balance) });
       }
       const id = passRef({ learnerId: userId, studyDay, seq: today.length + 1 });
       const common = { action: found.key, source: 'pass', ref: id, evidenceRef: id, currency: coin, at };

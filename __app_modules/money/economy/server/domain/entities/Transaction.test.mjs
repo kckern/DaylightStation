@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createTransaction, foldBalance, foldBalances, CURRENCIES, isPayoutEntry } from "./Transaction.mjs";
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const AT = '2026-10-19T12:00:00.000Z';
 const base = (over) => ({ id: 'txn_x', kind: 'earn', delta: 2, action: 'x', source: 'test', at: AT, ...over });
@@ -59,6 +60,34 @@ describe('currency and the new kinds', () => {
     for (const key of ['ruleId', 'price', 'timeliness', 'evidenceRef', 'meta']) expect(plain).not.toHaveProperty(key);
     const full = createTransaction(base({ ruleId: 'green-day', timeliness: 'on-time', evidenceRef: 'unit:u1', meta: { week: '2026-W42' } }));
     expect(full).toMatchObject({ ruleId: 'green-day', timeliness: 'on-time', evidenceRef: 'unit:u1', meta: { week: '2026-W42' } });
+  });
+});
+
+describe('fractional gold', () => {
+  const t = (over) => createTransaction({ id: 'txn_1', kind: 'convert', action: 'week-close', source: 'week-close', at: '2026-10-25T23:30:00.000Z', ...over });
+  it('gold may be fractional and is stored on the 6-place grid', () => {
+    expect(t({ currency: 'gold', delta: 5.6 }).delta).toBe(5.6);
+    expect(t({ currency: 'gold', delta: 56 * 0.1 }).delta).toBe(5.6); // 5.6000000000000005 snapped
+  });
+  it('silver and gems stay whole', () => {
+    expect(() => t({ currency: 'silver', delta: -5.6 })).toThrow(ValidationError);
+    expect(() => t({ currency: 'gems', delta: 0.5 })).toThrow(ValidationError);
+  });
+  it('a gold figure that rounds to zero on the grid is refused', () => {
+    expect(() => t({ currency: 'gold', delta: 1e-9 })).toThrow(ValidationError);
+    expect(() => t({ currency: 'gold', delta: NaN })).toThrow(ValidationError);
+  });
+  it('folds fractional gold exactly: 5.6 + 4.7 is 10.3, and 0.1 × 3 is 0.3', () => {
+    expect(foldBalances([{ currency: 'gold', delta: 5.6 }, { currency: 'gold', delta: 4.7 }]).gold).toBe(10.3);
+    expect(foldBalances([0.1, 0.1, 0.1].map((delta) => ({ currency: 'gold', delta }))).gold).toBe(0.3);
+    expect(foldBalances([{ currency: 'gold', delta: 5.6 }, { currency: 'gold', delta: -5, kind: 'spend' }]).gold).toBe(0.6);
+  });
+  it('an old all-integer ledger folds exactly as before', () => {
+    const old = [{ delta: 12 }, { delta: -12, currency: 'silver', kind: 'convert' }, { delta: 12, currency: 'gold', kind: 'convert' },
+      { delta: -1, currency: 'gold', kind: 'spend' }, { delta: 3, currency: 'gems' }, { delta: 4 }];
+    const folded = foldBalances(old);
+    expect(folded).toEqual({ silver: 4, gold: 11, gems: 3 });
+    expect(Object.values(folded).every(Number.isInteger)).toBe(true);
   });
 });
 

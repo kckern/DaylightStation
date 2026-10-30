@@ -46,11 +46,46 @@ a later phase), so the ledger is append-only and auditable.
 | Currency | Earned by | Spent on | Lifetime |
 |---|---|---|---|
 | `silver` | payouts (every earn rule), parent deposits, legacy earns, pass refunds | early passes, arcade metered spend | the week: unspent silver of a payout earner becomes gold at the Sunday close |
-| `gold` | the week close (`silver → gold` at the catalog's rate) | early passes | kept for good |
+| `gold` | the week close (`silver → gold` at the catalog's rate, 10:1) | early passes | kept for good; **fractional** (see below) |
 | `gems` | earn rules that pay gems (for example ring thresholds or the contest) | nothing | kept for good, never converted, never buy a pass |
 
 An entry written before currencies existed has no `currency` and is silver.
 Each currency is folded on its own (`foldBalances`) and floored at 0 for display.
+
+### Fractional gold
+
+The week close converts silver to gold at **10 silver : 1 gold**
+(`rate: 0.1`, which multiplies). Gold keeps the fraction: 56 silver closes to
+exactly **5.6 gold**, and fractions accumulate across weeks (5.6 + 4.7 = 10.3).
+Silver and gems stay whole coins; only gold may be fractional
+(`FRACTIONAL_CURRENCIES` in `domain/coins.mjs`).
+
+- **Precision.** A gold amount is a whole number of micro-gold
+  (1 gold = 10⁶ µg), carried as a number rounded to 6 decimals.
+  `createTransaction` snaps a gold `delta` to that grid (56 × 0.1 =
+  5.6000000000000005 is stored as 5.6) and refuses one that rounds to 0;
+  `foldBalances` and the history's `balanceAfter` sum gold in integer
+  micro-gold, so a balance never reads 10.299999999999999. Six places is far
+  finer than any rate (silver is whole, so silver × 0.1 has one decimal place)
+  and integer sums stay exact up to ~9 billion gold.
+- **Display.** Every screen shows `Math.floor` of a gold figure — 5.6 reads
+  **5**, 10.3 reads **10**. A child never sees a decimal. The API
+  (`balances.gold`, history `legs` and `balanceAfter`, a refusal's
+  `details.balance`/`shortfall`) carries the exact stored figure; the server's
+  history sentences (`text`) are already floored ("56 silver → 5 gold ·
+  Sunday", "+5 gold · …"). Browser surfaces floor through
+  `frontend/src/lib/coins/coinFigure.js` (`coinFigure`, `coinMagnitude`; it
+  mirrors `displayCoins`): the bank's balance cards, its ledger amounts and
+  balances, the status board's gold figure. A coin shortfall reads in whole
+  coins rounded **up** (`coinsShort`; the piano lock's "N more gold"): short
+  by 0.4 reads "1 more gold", matching the floored 5 shown against a price of 6.
+- **Spending.** Prices stay whole. Affordability compares the **exact**
+  balance: `balance >= price`. 5.6 gold buys a 5-gold pass (leaving 0.6) and
+  cannot buy a 6-gold one (`PASS_UNAFFORDABLE`, `shortfall: 0.4`). What a
+  floor-displayed balance of N can buy is therefore exactly what N whole gold
+  can buy — the fraction never lets a child buy more than the screen shows.
+- **Old ledgers.** Every gold row written before this is a whole number and
+  folds unchanged.
 
 ### How a coin looks (`CoinIcon`)
 
@@ -117,7 +152,7 @@ A day file that exists but does not parse is never appended to: the append fails
   at: "2026-07-17T20:15:00.000Z"
   kind: earn            # deposit | earn | prize | spend | withdraw | adjust | convert | pass
   currency: silver      # silver | gold | gems; an entry with no currency is silver
-  delta: 5              # signed integer; sign must match kind
+  delta: 5              # signed; sign must match kind. Whole for silver/gems; gold may be fractional (6 places)
   action: payout:math-daily
   source: payout
   ref: "earn:learner_a:math-daily:2026-W42:on-time"   # traceability and idempotency key
@@ -179,7 +214,7 @@ rules_source: earn-rules   # economy/earn-rules.yml
 week_close:
   cron: "30 23 * * 0"      # Sunday 23:30 local
   convert:
-    - { from: silver, to: gold, rate: 1 }
+    - { from: silver, to: gold, rate: 0.1 }   # rate multiplies: 10 silver → 1 gold
 passes:
   early-pass:
     privileges: [piano.games]
@@ -463,27 +498,29 @@ Per close, `catalog()` is read once (mode and rules):
   silver, and a wallet that never had a payout keeps it. Without a roster only
   the payout earners close.
 - **What converts.** The wallet's whole silver balance at close time (the fold of
-  the whole ledger), not the week's earnings. Gold = floor(silver × rate). A
-  balance too small for one gold (a fractional rate) converts nothing and logs
-  `economy.week-close.below-rate`: silver is never spent for zero gold. Zero
-  silver writes nothing.
+  the whole ledger), not the week's earnings. Gold = silver × rate, exact
+  (`convertedAmount(amount, rate, 'gold')`, quantized to 6 places): 56 silver
+  at 0.1 is 5.6 gold, 3 silver is 0.3. A rule into a whole-coin currency
+  (gems) still floors, and a balance too small for one coin there converts
+  nothing and logs `economy.week-close.below-rate`: silver is never spent for
+  zero. Zero silver writes nothing.
 - **Rules.** Each `week_close.convert` entry needs `from` and `to` in
   silver/gold/gems and different, and `rate` a positive finite number; a
   currency may appear in only one rule. A bad entry logs
   `economy.week-close.bad-rule { rule, reason }` and is skipped. Only listed
-  rules run (for example `silver → gold` at 1).
+  rules run (the household's is `silver → gold` at 0.1).
 - **The pair.** `EconomyService.convert` reads the ledger strictly, checks
   idempotency and appends both halves inside one user-lock body, so a payout or
   spend cannot land between the balance read and the pair. Both halves share one
   `at`, `action: week-close`, `source: week-close`,
   `evidenceRef: close:<learner>:<week>` and
   `meta: { weekId, from, to, rate, spent, got }` (enough for the history line
-  "12 silver → 12 gold · Sunday"):
+  "56 silver → 5 gold · Sunday", figures floored):
 
   | Half | `ref` | `currency` | `delta` |
   |---|---|---|---|
   | out | `close:<learner>:<week>` | silver | −balance |
-  | in | `close:<learner>:<week>:gold` | gold | +floor(balance × rate) |
+  | in | `close:<learner>:<week>:gold` | gold | +balance × rate (exact, 6 places) |
 
 - **Idempotent.** The out half's ref means the week is closed: a second close
   writes nothing (`already-converted`). The out half is written first, so a
@@ -496,8 +533,9 @@ Per close, `catalog()` is read once (mode and rules):
   its `to`, `rate` and `got`, even if the rule has changed since (a different
   target logs `economy.convert.repair-original-target`). An out half whose
   figures do not add up (delta not negative, `meta.from` not the rule's
-  `from`, a bad `meta.to` or `meta.rate`, or `meta.got` not a whole number
-  from 1 to floor(spent × rate)) is refused (`BAD_CONVERT_HALF`), as is an in
+  `from`, a bad `meta.to` or `meta.rate`, or `meta.got` not a valid positive
+  amount in `meta.to` — whole for silver/gems, fractional allowed for gold —
+  or above `convertedAmount(spent, rate, to)`) is refused (`BAD_CONVERT_HALF`), as is an in
   half without its out half (`ORPHAN_CONVERT_HALF`). A corrupt shard throws
   `CORRUPT_LEDGER` and nothing is written. Those three need a person and log
   `economy.week-close.failed` at error; any other failure logs it at warn.
@@ -655,9 +693,10 @@ the amount, `detail` what a payout was for (below, or null), `legs` the signed a
 `balanceAfter` the `{ silver, gold, gems }` balances once the line landed. It is
 folded oldest first over the whole ledger read, before the 50-line cut, each
 currency floored at 0, so line 50 still knows what older lines left behind. An
-older client reads `text` only. The sentences: "+2 silver · Green
-day", "−3 silver · early pass", "+3 silver · early pass refunded", "12 silver →
-12 gold · Sunday", "+2 silver · Korean · Tuesday", "+6 silver · Rings · Sonic &
+older client reads `text` only. Figures in `text` are floored (gold is
+fractional; `legs` and `balanceAfter` are exact). The sentences: "+2 silver · Green
+day", "−3 silver · early pass", "+3 silver · early pass refunded", "56 silver →
+5 gold · Sunday", "+2 silver · Korean · Tuesday", "+6 silver · Rings · Sonic &
 Sega All Stars Racing · 7:19 pm · 588 rings". A payout's `detail` comes from the
 `meta` the payout keeps on the entry (`payoutMeta`: the line's `kind`, `count`
 and, for `section-day` and `day-met`, the study `days` that paid so far; for a

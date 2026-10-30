@@ -1554,6 +1554,14 @@ describe('AgendaStatusBoard gold', () => {
     expect(screen.queryByLabelText('12 gold')).toBeNull();
   });
 
+  it('a fractional gold balance shows its floor: 5.6 reads 5', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(5.6, 0));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('5 gold')).toHaveLength(2));
+    expect(screen.queryByLabelText('5.6 gold')).toBeNull();
+    expect(screen.queryByText('5.6')).toBeNull();
+  });
+
   it('a wallet with no `balances` shows no gold rather than the silver figure', async () => {
     schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 12, session: null } });
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);

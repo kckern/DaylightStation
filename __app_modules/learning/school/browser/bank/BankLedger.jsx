@@ -12,6 +12,7 @@
 import PropTypes from 'prop-types';
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
+import { coinMagnitude } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import { historyByDay, ledgerEntry } from "./bankScreenModel.js";
 
 const CURRENCY_ICON = {
@@ -34,7 +35,7 @@ function Row({ line }) {
             key={a.currency}
             className={`school-bank-ledger__leg school-bank-ledger__amount ${a.delta > 0 ? 'is-plus' : 'is-minus'}`}
             aria-label={a.text}
-          >{`${a.delta < 0 ? '−' : '+'}${Math.abs(a.delta)}`}</span>
+          >{`${a.delta < 0 ? '−' : '+'}${coinMagnitude(a.delta)}`}</span>
         ))}
       </td>
       <td className="school-bank-ledger__cell school-bank-ledger__cell--what">

@@ -156,3 +156,32 @@ describe('historyLines: what a payout was for', () => {
     expect(line).toMatchObject({ text: '+2 silver · Korean (each day done)', label: 'Korean (each day done)', detail: null });
   });
 });
+
+describe('fractional gold', () => {
+  const close = (week, silver, gold, at) => [
+    tx({ id: `${week}:gold`, at, kind: 'convert', currency: 'gold', delta: gold, action: 'week-close', source: 'week-close', ref: `close:k:${week}:gold`, evidenceRef: `close:k:${week}` }),
+    tx({ id: `${week}:silver`, at, kind: 'convert', currency: 'silver', delta: -silver, action: 'week-close', source: 'week-close', ref: `close:k:${week}`, evidenceRef: `close:k:${week}` }),
+  ];
+  // Newest first, as getHistory returns them.
+  const entries = [
+    ...close('2026-10-12', 47, 4.7, '2026-10-19T06:30:00.000Z'),
+    tx({ id: 'e2', at: '2026-10-15T16:00:00.000Z', delta: 47 }),
+    ...close('2026-10-05', 56, 5.6, '2026-10-12T06:30:00.000Z'),
+    tx({ id: 'e1', at: '2026-10-08T16:00:00.000Z', delta: 56 }),
+  ];
+
+  it('a sentence shows whole gold (floored); the legs keep the exact figure', () => {
+    const [newest, , older] = historyLines(entries, opts);
+    expect(newest.text).toBe('47 silver → 4 gold · Sunday');
+    expect(older.text).toBe('56 silver → 5 gold · Sunday');
+    expect(newest.legs).toEqual([{ currency: 'silver', delta: -47 }, { currency: 'gold', delta: 4.7 }]);
+    expect(entrySentence(tx({ kind: 'convert', currency: 'gold', delta: 5.6 }), opts)).toBe('+5 gold · from a conversion · Sunday');
+  });
+
+  it('the balance after accumulates gold exactly (5.6 + 4.7 = 10.3)', () => {
+    const lines = historyLines(entries, opts);
+    expect(lines[0].balanceAfter).toEqual({ silver: 0, gold: 10.3, gems: 0 });
+    expect(lines[0].balanceAfter).toEqual(foldBalances(entries));
+    expect(lines[2].balanceAfter.gold).toBe(5.6);
+  });
+});

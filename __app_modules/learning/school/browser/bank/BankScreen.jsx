@@ -39,6 +39,7 @@ import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useW
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { StatCard } from "../../../../../frontend/src/lib/ui/index.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
+import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
@@ -219,17 +220,17 @@ export default function BankScreen({ learner, onExit, idleTimeoutSeconds = 0, no
                 <StatCard
                   emphasis
                   label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="silver" />, 'Silver')}
-                  value={data.balances.silver}
+                  value={coinFigure(data.balances.silver)}
                   trend={goldCountdown({ weekEndsOn: data.weekEndsOn, studyDay: data.studyDay, weekEndsAt: data.weekEndsAt, now: at })}
                 />
                 <StatCard
                   label={coinLabel(<CoinIcon className="school-bank-screen__stat-icon" metal="gold" />, 'Gold')}
-                  value={Number.isFinite(data.balances.gold) ? data.balances.gold : 0}
+                  value={coinFigure(data.balances.gold)}
                   trend="yours for good"
                 />
                 <StatCard
                   label={coinLabel(<GemIcon className="school-bank-screen__stat-icon" />, 'Gems')}
-                  value={Number.isFinite(data.balances.gems) ? data.balances.gems : 0}
+                  value={coinFigure(data.balances.gems)}
                   trend="yours for good"
                 />
               </section>

@@ -126,6 +126,13 @@ describe('spendItems', () => {
     expect(items[0].prices.map((p) => p.state)).toEqual(['not enough yet', '1 more gold']);
   });
 
+  it('fractional gold: 5.6 can buy a 5-gold pass; 6 gold is "1 more gold", never "0.4"', () => {
+    const rows = (price) => spendItems({ offers: offer([{ coin: 'gold', price }]), pass: { 'piano.games': none }, balances: { gold: 5.6 } }).items[0].prices[0].state;
+    expect(rows(5)).toBe('can buy at the piano');
+    expect(rows(6)).toBe('1 more gold');
+    expect(rows(8)).toBe('3 more gold');
+  });
+
   it('per coin: can buy, or how many more', () => {
     const { items } = spendItems({
       offers: offer([{ coin: 'silver', price: 10, affordable: false }, { coin: 'gold', price: 2, affordable: true }]),
@@ -207,6 +214,25 @@ describe('BankScreen', () => {
     expect(screen.queryByTestId('bank-spend')).toBeNull();
     expect(screen.queryByTestId('bank-earn')).toBeNull();
     expect(screen.queryByRole('button', { name: /buy/i })).toBeNull();
+  });
+});
+
+describe('BankScreen — fractional gold', () => {
+  it('shows the floor of a fractional gold balance and history, never a decimal', async () => {
+    schoolApi.economyBank.mockResolvedValue(ok(bankData({
+      balances: { silver: 0, gold: 10.3, gems: 0 },
+      history: [{ text: '47 silver → 4 gold · Sunday', at: new Date(2026, 9, 18, 20, 0).toISOString(), kind: 'convert', ids: ['c', 'd'], source: 'conversion', label: 'silver → gold',
+        legs: [{ currency: 'silver', delta: -47 }, { currency: 'gold', delta: 4.7 }], balanceAfter: { silver: 0, gold: 10.3, gems: 0 } }],
+    })));
+    await renderScreen();
+    const stats = screen.getByTestId('bank-balances').querySelectorAll('.ds-stat');
+    expect(stats[1]).toHaveTextContent('10');
+    expect(stats[1]).not.toHaveTextContent('10.3');
+    const history = screen.getByTestId('bank-history');
+    expect(history).toHaveTextContent('+4');
+    expect(screen.getByLabelText('+4 gold')).toBeInTheDocument();
+    expect(history).toHaveTextContent('10 gold');
+    expect(history.textContent).not.toMatch(/\d\.\d/);
   });
 });
 

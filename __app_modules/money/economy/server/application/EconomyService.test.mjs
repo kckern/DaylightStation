@@ -561,7 +561,7 @@ describe('convert', () => {
     const svc = makeService();
     expect((await svc.convert(USER, args())).status).toBe('nothing');
     await fund(svc, 3);
-    expect(await svc.convert(USER, args({ rate: 0.25 }))).toMatchObject({ status: 'below-rate', balance: 3 });
+    expect(await svc.convert(USER, args({ rate: 0.25, to: 'gems' }))).toMatchObject({ status: 'below-rate', balance: 3 });
     expect(converts()).toEqual([]);
   });
   it('would-convert (dry run) writes nothing', async () => {
@@ -627,6 +627,27 @@ describe('convert', () => {
     expect(res).toMatchObject({ status: 'repaired', spent: 12, got: 6, rate: 0.5 });
     expect(converts()[1]).toMatchObject({ currency: 'gold', delta: 6, ref: `${REF}:gold`, meta: expect.objectContaining({ rate: 0.5, got: 6 }) });
   });
+  it('gold is fractional: 56 silver at 0.1 converts to exactly 5.6 gold', async () => {
+    const svc = makeService();
+    await fund(svc, 56);
+    expect(await svc.convert(USER, args({ rate: 0.1 }))).toMatchObject({ status: 'converted', spent: 56, got: 5.6, rate: 0.1 });
+    expect(converts().map((t) => [t.currency, t.delta])).toEqual([['silver', -56], ['gold', 5.6]]);
+    expect(await svc.peekBalance(USER)).toEqual({ silver: 0, gold: 5.6, gems: 0 });
+    expect(await svc.convert(USER, args({ rate: 0.1 }))).toMatchObject({ status: 'already-converted', got: 5.6 });
+  });
+  it('3 silver at 0.1 is 0.3 gold, not below-rate: a fraction of a gold still converts', async () => {
+    const svc = makeService();
+    await fund(svc, 3);
+    expect(await svc.convert(USER, args({ rate: 0.1 }))).toMatchObject({ status: 'converted', spent: 3, got: 0.3 });
+  });
+  it('repair writes a fractional gold half from the first half\'s meta', async () => {
+    const svc = makeService();
+    await ds().appendTransaction(USER, outHalf({ rate: 0.1, got: 5.6 }, -56));
+    expect(await svc.convert(USER, args({ rate: 0.1, dryRun: true }))).toMatchObject({ status: 'would-repair', spent: 56, got: 5.6 });
+    expect(await svc.convert(USER, args({ rate: 0.1 }))).toMatchObject({ status: 'repaired', spent: 56, got: 5.6 });
+    expect(converts()[1]).toMatchObject({ currency: 'gold', delta: 5.6, ref: `${REF}:gold` });
+    expect((await svc.convert(USER, args({ rate: 0.1 }))).status).toBe('already-converted');
+  });
   it('repair goes to the first half\'s target currency even if the rule changed', async () => {
     const svc = makeService();
     await ds().appendTransaction(USER, outHalf({ to: 'gems' }));
@@ -639,7 +660,8 @@ describe('convert', () => {
     ['a positive from half', outHalf({}, 12)],
     ['no meta', half({ currency: 'silver', delta: -12, ref: REF })],
     ['got above what the rate gives', outHalf({ got: 13 })],
-    ['a fractional got', outHalf({ got: 1.5 })],
+    ['a fractional got into a whole-coin currency', outHalf({ to: 'gems', got: 1.5 })],
+    ['a fractional got above what the rate gives', outHalf({ rate: 0.1, got: 1.3 })],
     ['a zero got', outHalf({ got: 0 })],
     ['a meta.from that is not the call\'s from', outHalf({ from: 'gems' })],
     ['a meta.to that is not a currency', outHalf({ to: 'platinum' })],

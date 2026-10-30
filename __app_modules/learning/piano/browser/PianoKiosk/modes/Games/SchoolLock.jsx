@@ -23,7 +23,8 @@ function lockMessage(access) {
 /** What a refused buy says to the child. Exported for its tests. */
 export function buyNotice(error, coin, body = errorBody(error)) {
   if (error?.status === 402) {
-    const shortfall = Number.isFinite(body?.shortfall) ? body.shortfall : null;
+    // Gold is fractional: 0.4 gold short reads "1 more gold", never a decimal.
+    const shortfall = Number.isFinite(body?.shortfall) && body.shortfall > 0 ? Math.ceil(body.shortfall - 1e-9) : null;
     return shortfall != null ? `${shortfall} more ${body?.coin ?? coin} to buy a game.` : `Not enough ${coin} yet.`;
   }
   if (body?.code === 'PASS_CAP') return SNEAK_USED_COPY;

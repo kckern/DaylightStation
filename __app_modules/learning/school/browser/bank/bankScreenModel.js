@@ -4,6 +4,7 @@
 // can reload the screen on its own.
 import { subjectLabel } from "../home/subjects.js";
 import { labelize } from "../teacher/labelize.js";
+import { coinFigure, coinMagnitude, coinsShort } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 
 const DAY_MS = 86_400_000;
 const COINS = ['silver', 'gold'];
@@ -42,7 +43,8 @@ export function ledgerEntry(line) {
   const currencies = [...new Set(legs.map((l) => l.currency))];
   const balanceText = after && currencies.length
     ? currencies.map((c) => {
-      const n = Number.isFinite(after[c]) ? after[c] : 0;
+      // Gold is fractional on the ledger; a kid sees whole coins (5.6 → 5).
+      const n = coinFigure(after[c]);
       return `${n} ${coinWord(c, n)}`;
     }).join(' \u00b7 ')
     : null;
@@ -53,7 +55,7 @@ export function ledgerEntry(line) {
     time: Number.isFinite(at) ? new Date(at).toLocaleTimeString(undefined, TIME) : null,
     label: typeof line?.label === 'string' && line.label ? line.label : (line?.text ?? ''),
     detail: typeof line?.detail === 'string' && line.detail ? line.detail : null,
-    amounts: legs.map(({ currency, delta }) => ({ currency, delta, text: `${delta < 0 ? MINUS : '+'}${Math.abs(delta)} ${coinWord(currency, delta)}` })),
+    amounts: legs.map(({ currency, delta }) => ({ currency, delta, text: `${delta < 0 ? MINUS : '+'}${coinMagnitude(delta)} ${coinWord(currency, delta)}` })),
     sign: legs.length === 1 ? Math.sign(legs[0].delta) : 0,
     balanceText,
   };
@@ -183,7 +185,8 @@ export function spendItems({ offers = {}, pass = {}, balances = {}, schoolDone =
           coin, price,
           // A server "no" over a local count that looks enough (a read in
           // between) has no honest number to give.
-          state: note ? null : (canBuy ? 'can buy at the piano' : (price - have > 0 ? `${price - have} more ${coin}` : 'not enough yet')),
+          // Short by 0.4 gold reads "1 more gold": whole coins, rounded up.
+          state: note ? null : (canBuy ? 'can buy at the piano' : (coinsShort(price, have) > 0 ? `${coinsShort(price, have)} more ${coin}` : 'not enough yet')),
         };
       }),
     });
