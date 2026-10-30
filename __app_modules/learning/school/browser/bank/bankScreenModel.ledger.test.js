@@ -3,6 +3,16 @@ import { ledgerEntry, NAPPING, coinWord } from './bankScreenModel.js';
 
 const line = (over) => ({ text: 't', at: '2026-10-21T16:00:00.000Z', kind: 'earn', ids: ['e'], ...over });
 
+describe('ledgerEntry — fractional gold', () => {
+  it('floors a fractional gold leg and balance: +5.6 reads +5, 10.3 reads 10', () => {
+    const e = ledgerEntry(line({ kind: 'convert', ids: ['g', 'o'], source: 'conversion', label: 'silver → gold',
+      legs: [{ currency: 'silver', delta: -56 }, { currency: 'gold', delta: 5.6 }], balanceAfter: { silver: 0, gold: 10.3, gems: 0 } }));
+    expect(e.amounts.map((a) => a.text)).toEqual(['\u221256 silver', '+5 gold']);
+    expect(e.amounts[1].delta).toBe(5.6);
+    expect(e.balanceText).toBe('0 silver \u00b7 10 gold');
+  });
+});
+
 describe('ledgerEntry', () => {
   it('a payout: time, signed amount, label and what it was for, balance after in its own coin', () => {
     const at = '2026-10-21T16:00:00.000Z';

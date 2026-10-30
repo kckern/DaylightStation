@@ -1,9 +1,12 @@
 /**
  * Household economy transaction — immutable ledger entry.
- * delta is a signed integer in one currency; sign must match kind.
+ * delta is a signed amount in one currency; sign must match kind. Silver and
+ * gems are whole numbers; gold may be fractional, stored on the 6-place grid
+ * (`../coins.mjs`).
  * An entry written before currencies existed has no `currency`: it is silver.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { isCoinDelta, isFractional, quantize, sumCoins } from '../coins.mjs';
 
 export const CURRENCIES = Object.freeze(['silver', 'gold', 'gems']);
 
@@ -20,8 +23,13 @@ export function createTransaction({ id, kind, delta, action, source, ref = null,
   if (sign === null) {
     if (delta !== 0) throw new ValidationError(`${kind} requires delta 0, got ${delta}`);
   } else {
-    if (!Number.isInteger(delta) || delta === 0) throw new ValidationError(`delta must be a non-zero integer, got ${delta}`);
+    if (!isCoinDelta(currency, delta)) {
+      throw new ValidationError(isFractional(currency)
+        ? `delta must be a non-zero number, got ${delta}`
+        : `delta must be a non-zero integer, got ${delta}`);
+    }
     if (sign !== 0 && Math.sign(delta) !== sign) throw new ValidationError(`${kind} requires delta sign ${sign}`);
+    delta = quantize(currency, delta);
   }
   if (!action) throw new ValidationError('action is required');
   if (!source) throw new ValidationError('source is required');
@@ -60,14 +68,19 @@ export function isPayoutEntry(t) {
   return PAID_KINDS.has(t?.kind) && t.source === 'payout' && typeof t.action === 'string' && t.action.startsWith('payout:');
 }
 
-/** `{silver, gold, gems}`, each folded on its own and floored at 0 (never reports overdraft). */
+/**
+ * `{silver, gold, gems}`, each folded on its own and floored at 0 (never
+ * reports overdraft). Gold is summed exactly (integer micro-gold), so a
+ * fractional balance reads 10.3, not 10.299999999999999. The figure is the
+ * stored one; a screen shows `Math.floor` of it.
+ */
 export function foldBalances(transactions) {
-  const sums = Object.fromEntries(CURRENCIES.map((c) => [c, 0]));
+  const deltas = Object.fromEntries(CURRENCIES.map((c) => [c, []]));
   for (const t of transactions || []) {
     const currency = t.currency ?? 'silver';
-    if (currency in sums) sums[currency] += t.delta || 0;
+    if (currency in deltas) deltas[currency].push(t.delta || 0);
   }
-  return Object.fromEntries(CURRENCIES.map((c) => [c, Math.max(0, sums[c])]));
+  return Object.fromEntries(CURRENCIES.map((c) => [c, Math.max(0, sumCoins(c, deltas[c]))]));
 }
 
 /** The silver balance — what every pre-currency caller means by "balance". */

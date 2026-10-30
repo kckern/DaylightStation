@@ -8,7 +8,11 @@
  *                                        a ring payout: the workout it paid for
  *   −3 silver · early pass               a pass bought
  *   +3 silver · early pass refunded      its refund (both matched on `source: pass`)
- *   12 silver → 12 gold · Sunday         a week close: both convert halves, one line
+ *   56 silver → 5 gold · Sunday          a week close: both convert halves, one line
+ *
+ * Gold may be fractional (56 silver is 5.6 gold); every figure in a sentence
+ * is `displayCoins` (floored: "5 gold"), while `legs` and `balanceAfter`
+ * carry the exact stored figures for a surface to floor itself.
  *
  * The part after the label (`detail`) comes from the `meta` PayoutService
  * keeps on the entry (`payoutMeta`); an entry minted before that has none and
@@ -29,6 +33,8 @@
  * preview. Pass markers (kind `pass`, delta 0) move no coin and are left out.
  */
 
+import { displayCoins, toUnits, fromUnits, isFractional } from './coins.mjs';
+
 const MINUS = '−';
 // Only EconomyService's pass methods write `source: pass`.
 const PASS_SOURCE = 'pass';
@@ -40,7 +46,7 @@ const lookup = (labels, key) => {
 };
 
 const coinName = (currency, n) => (currency === 'gems' && Math.abs(n) === 1 ? 'gem' : currency);
-const amount = (delta, currency) => `${delta < 0 ? MINUS : '+'}${Math.abs(delta)} ${coinName(currency, delta)}`;
+const amount = (delta, currency) => `${delta < 0 ? MINUS : '+'}${displayCoins(Math.abs(delta))} ${coinName(currency, delta)}`;
 const words = (action) => String(action ?? '').replace(/^payout:/, '').replace(/[-_]+/g, ' ').trim() || 'entry';
 const withNote = (phrase, note) => (typeof note === 'string' && note.trim() ? `${phrase}: ${note.trim()}` : phrase);
 
@@ -74,12 +80,14 @@ export function entrySource(t) {
  * 51st and older entries left behind.
  */
 function balancesAfter(list) {
+  // Gold summed in integer micro-gold, as `foldBalances` does, so 5.6 + 4.7 is 10.3.
   const sums = { silver: 0, gold: 0, gems: 0 };
   const after = new Array(list.length);
+  const read = (c) => Math.max(0, isFractional(c) ? fromUnits(sums[c]) : sums[c]);
   for (let k = list.length - 1; k >= 0; k -= 1) {
     const currency = list[k].currency ?? 'silver';
-    if (currency in sums) sums[currency] += list[k].delta;
-    after[k] = { silver: Math.max(0, sums.silver), gold: Math.max(0, sums.gold), gems: Math.max(0, sums.gems) };
+    if (currency in sums) sums[currency] += isFractional(currency) ? toUnits(list[k].delta) : list[k].delta;
+    after[k] = { silver: read('silver'), gold: read('gold'), gems: read('gems') };
   }
   return after;
 }
@@ -176,7 +184,7 @@ export function entrySentence(t, opts = {}) {
  * The entries (newest first, as `getHistory` returns them) as lines:
  * `{ text, at, kind, ids, source, label, detail, legs, balanceAfter }`. The two halves
  * of a conversion, sharing an `evidenceRef` with opposite signs, become one
- * line: "12 silver → 12 gold · Sunday", placed where the first half appears,
+ * line: "56 silver → 5 gold · Sunday" (figures floored), placed where the first half appears,
  * with both legs (spend half first). `at` is not compared, so a pair whose
  * second half a repair wrote later still reads as one; the weekday is the
  * spending half's. Zero-delta entries are skipped. `label` is the words after
@@ -203,7 +211,7 @@ export function historyLines(entries, opts = {}) {
         const day = weekday(out.at, opts.timezone);
         const from = coinName(out.currency ?? 'silver', out.delta);
         const to = coinName(back.currency ?? 'silver', back.delta);
-        const text = `${-out.delta} ${from} → ${back.delta} ${to}${day ? ` · ${day}` : ''}`;
+        const text = `${displayCoins(-out.delta)} ${from} → ${displayCoins(back.delta)} ${to}${day ? ` · ${day}` : ''}`;
         lines.push({
           text, at: t.at, kind: 'convert', ids: [t.id, list[j].id],
           source: 'conversion', label: `${from} → ${to}`, detail: null, legs: [leg(out), leg(back)], balanceAfter: after[Math.min(i, j)],

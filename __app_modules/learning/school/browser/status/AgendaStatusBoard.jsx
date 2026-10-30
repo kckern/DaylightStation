@@ -69,6 +69,7 @@ import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
 import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
+import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
@@ -319,7 +320,7 @@ function Coins({ figure, gold, studyDay }) {
       {hasGold && (
         <>
           <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" metal="gold" />
-          <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
+          <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${coinFigure(gold)} gold`}>{coinFigure(gold)}</span>
         </>
       )}
       {showGems && (

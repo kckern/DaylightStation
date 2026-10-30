@@ -33,6 +33,11 @@ describe('buyNotice', () => {
     expect(buyNotice(httpError(402, { code: 'PASS_UNAFFORDABLE', coin: 'gold', shortfall: 1 }), 'gold')).toBe('1 more gold to buy a game.');
   });
 
+  it('a fractional gold shortfall reads in whole coins, rounded up (0.4 → 1)', () => {
+    expect(buyNotice(httpError(402, { code: 'PASS_UNAFFORDABLE', coin: 'gold', shortfall: 0.4 }), 'gold')).toBe('1 more gold to buy a game.');
+    expect(buyNotice(httpError(402, { code: 'PASS_UNAFFORDABLE', coin: 'gold', shortfall: 2.4 }), 'gold')).toBe('3 more gold to buy a game.');
+  });
+
   it('says plainly "not enough" on a 402 with no shortfall', () => {
     expect(buyNotice(httpError(402, { code: 'PASS_UNAFFORDABLE' }), 'silver')).toBe('Not enough silver yet.');
     expect(buyNotice(httpError(402), 'silver')).toBe('Not enough silver yet.');

@@ -85,6 +85,38 @@ describe('EconomyService.buyPass', () => {
     expect(ledger()).toEqual(before);
     expect(logger.info).toHaveBeenCalledWith('economy.pass.refused', expect.objectContaining({ learnerId: USER, privilege: 'piano.games', coin: 'silver', price: 3, reason: 'PASS_UNAFFORDABLE' }));
   });
+  describe('fractional gold (10:1 week close)', () => {
+    // 56 silver closes to exactly 5.6 gold.
+    const fundFractionalGold = async (svc) => {
+      await fundSilver(svc, 56);
+      await svc.convert(USER, { from: 'silver', to: 'gold', rate: 0.1, ref: 'close:test-user:2026-10-12' });
+    };
+    it('5.6 gold buys a 5-gold pass and leaves exactly 0.6', async () => {
+      passes = { 'early-pass': earlyPass({ price: { silver: 0, gold: 5 } }) };
+      const svc = makeService();
+      await fundFractionalGold(svc);
+      const res = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'gold' });
+      expect(res.pass).toMatchObject({ coin: 'gold', price: 5, paid: 5, state: 'active' });
+      expect(res.balances).toEqual({ silver: 0, gold: 0.6, gems: 0 });
+    });
+    it('5.6 gold cannot buy a 6-gold pass: short by exactly 0.4', async () => {
+      passes = { 'early-pass': earlyPass({ price: { silver: 0, gold: 6 } }) };
+      const svc = makeService();
+      await fundFractionalGold(svc);
+      const before = ledger();
+      const err = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'gold' }).catch((e) => e);
+      expect(err).toMatchObject({ code: 'PASS_UNAFFORDABLE', details: { coin: 'gold', price: 6, balance: 5.6, shortfall: 0.4 } });
+      expect(ledger()).toEqual(before);
+    });
+    it('a refunded gold pass hands back the whole price onto the fraction', async () => {
+      passes = { 'early-pass': earlyPass({ price: { silver: 0, gold: 5 } }) };
+      const svc = makeService();
+      await fundFractionalGold(svc);
+      const { pass } = await svc.buyPass(USER, { privilege: 'piano.games', coin: 'gold' });
+      const res = await svc.refundPass(USER, { passId: pass.passId, playedMs: 0 });
+      expect(res.balances.gold).toBe(5.6);
+    });
+  });
   it('affordability reads the ledger, not a stale wallet snapshot', async () => {
     const svc = makeService();
     await fundSilver(svc, 5);
