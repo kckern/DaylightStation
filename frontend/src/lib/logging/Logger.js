@@ -295,6 +295,38 @@ export const getLogger = () => {
 };
 
 /**
+ * Push every buffered event out NOW and wait (bounded) for the socket to drain.
+ * For code that is about to unload the page (a hard reload): the buffering
+ * transport batches on a 1s timer, so an event logged just before
+ * `location.reload()` is otherwise lost with the page.
+ *
+ * Never throws and never waits longer than `timeoutMs`.
+ * @param {{ timeoutMs?: number, wsService?: object }} [opts] - wsService is a test seam
+ * @returns {Promise<boolean>} true when the buffer was handed to an open socket and drained
+ */
+export const flushLogs = async ({ timeoutMs = 500, wsService: injectedWs = null } = {}) => {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const remaining = () => Math.max(0, deadline - Date.now());
+  try {
+    const transport = ensureTransport();
+    if (!transport?.flush) return false;
+    await Promise.race([Promise.resolve(transport.flush()), sleep(remaining())]);
+    let ws = injectedWs;
+    if (!ws) {
+      try { ({ wsService: ws } = await import('../../services/WebSocketService.js')); } catch (_) { ws = null; }
+    }
+    const socket = ws?.ws;
+    const open = typeof WebSocket !== 'undefined' ? socket?.readyState === WebSocket.OPEN : socket?.readyState === 1;
+    if (!open) return false;
+    while ((socket.bufferedAmount || 0) > 0 && remaining() > 0) await sleep(Math.min(20, remaining()));
+    return (socket.bufferedAmount || 0) === 0;
+  } catch (_) {
+    return false;
+  }
+};
+
+/**
  * Get current configuration (for debugging)
  */
 export const getConfig = () => ({ ...config });

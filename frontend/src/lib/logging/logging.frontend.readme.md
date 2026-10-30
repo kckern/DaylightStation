@@ -372,7 +372,20 @@ console.log(getConfig());
 
 ### Force Flush
 
-The logger auto-flushes, but you can monitor the queue:
+The transport batches on a 1s timer, so an event logged right before the page
+unloads (`location.reload()`, navigation) is lost unless it is pushed out first.
+Before unloading, `await flushLogs()` — it sends the buffer now and waits
+(bounded, default 500ms, never throws) for the socket to drain. The fitness
+`hardReload()` does this.
+
+```javascript
+import getLogger, { flushLogs } from '../lib/logging/Logger.js';
+getLogger().info('about-to-reload', { source });
+await flushLogs({ timeoutMs: 500 });
+location.reload();
+```
+
+Otherwise the logger auto-flushes, and you can monitor the queue:
 
 ```javascript
 const status = getStatus();

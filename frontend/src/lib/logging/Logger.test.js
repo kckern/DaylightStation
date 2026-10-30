@@ -59,3 +59,13 @@ describe('Logger.sampled — aggregation survives a field changing type', () => 
     }).not.toThrow();
   });
 });
+
+describe('flushLogs', () => {
+  it('never throws and resolves within its timeout', async () => {
+    const { flushLogs } = await import('./Logger.js');
+    const t0 = Date.now();
+    const ok = await flushLogs({ timeoutMs: 50, wsService: { ws: { readyState: 1, bufferedAmount: 999 } } });
+    expect(typeof ok).toBe('boolean');
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+});
