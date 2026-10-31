@@ -124,3 +124,9 @@ describe('BookScanEntry — a scan while a child\'s shelf is open (2026-09-30)',
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+it('leaves unscoped scans to the pile when the pile is mounted', async () => {
+  const { container } = render(<BookScanEntry {...props} pile />); await act(async () => {});
+  expect(container.innerHTML).toBe('');
+  expect(h.claim).not.toHaveBeenCalled();
+});

@@ -36,6 +36,7 @@ import RubiksCubeProgram from "./Programs/RubiksCube/RubiksCubeProgram.jsx";
 import SchoolDebriefProgram from "./Programs/SchoolDebrief/SchoolDebriefProgram.jsx";
 import BookShelf from "./books/BookShelf.jsx";
 import BookScanEntry from "./books/BookScanEntry.jsx";
+import BookPile from "./books/BookPile.jsx";
 import BookShelfDoor from "./books/BookShelfDoor.jsx";
 import ReportPanel from "./report/ReportPanel.jsx";
 import AdaptiveTutorPanel from "./remediation/AdaptiveTutorPanel.jsx";
@@ -1008,6 +1009,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     ? extraCrumbs
     : (section ? [{ label: sectionLabel }] : []);
 
+  // A scan may land at any moment; these say whether the panel is free to show
+  // it, and whether an open shelf already owns it. The pile and the scoped
+  // claim read the same two answers.
+  const scanSafe = lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged;
+  const scanScope = section === 'book-shelf' && shelfScanReady && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null;
   // `!lock.resolved` is part of this gate on purpose: a locked panel must never
   // flash the browsable home for the beat it takes the screen config to land.
   if (status !== 'ready' || !lock.resolved) return <div className="school-app school-app--loading">Loading…</div>;
@@ -1066,13 +1072,17 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             inside it — a scan can land whether the panel is locked or open,
             and this must render either way. */}
         {isPanelSurface(screenId) && <BookScanEntry screenId={screenId} roster={roster}
-          safe={lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged}
+          safe={scanSafe}
           onOpen={lock.locked ? openDeferredScan : null}
           confirmExit={gradedRunInFlight}
           // A child's reading shelf is open and says "scan the barcode": the
           // scan is theirs, claimed for them without a detour home (2026-09-30).
-          scopeLearnerId={section === 'book-shelf' && shelfScanReady && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null}
+          scopeLearnerId={scanScope}
+          // Unscoped scans belong to the pile below, not the one-book dialog.
+          pile
           onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
+        {isPanelSurface(screenId) && <BookPile screenId={screenId} roster={roster} safe={scanSafe}
+          onOpen={lock.locked ? openDeferredScan : null} confirmExit={gradedRunInFlight} scopeLearnerId={scanScope} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
             branch below, not inside it: the Portal is the screen most worth

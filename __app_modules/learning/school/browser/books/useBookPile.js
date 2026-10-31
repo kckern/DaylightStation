@@ -27,11 +27,19 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
   const generation = useRef(0);
   const reads = useRef(0);
   const inFlight = useRef(false);
+  // The scope a pile was READ under. Auto-filing trusts only a read taken while
+  // no shelf owned the scans: when a scoped claim relaunches the shelf, scope
+  // drops for a moment, and the pile held from before still shows that book as
+  // unfiled — filing from it would send the claimed book to the sticky reader.
+  const scopeNow = useRef(scopeLearnerId);
+  scopeNow.current = scopeLearnerId;
+  const [readScope, setReadScope] = useState(scopeLearnerId);
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
     const seq = ++reads.current;
     const gen = generation.current;
+    const scope = scopeNow.current;
     let result;
     // Never reject: every caller fires this as `void refresh()`.
     try {
@@ -43,6 +51,7 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
     if (seq !== reads.current || gen !== generation.current) return;
     if (!result?.ok) { schoolLog.bookShelfError?.('book-pile.read-failed', { status: result?.status ?? null }); return; }
     setPile(result.data?.pile ?? null);
+    setReadScope(scope);
   }, [enabled, screenId]);
 
   useWebSocketSubscription('school', (msg) => {
@@ -56,6 +65,9 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
     const unsubscribe = enabled ? wsService.onStatusChange((status) => { if (status.connected) void refresh(); }) : undefined;
     return () => { generation.current += 1; unsubscribe?.(); };
   }, [enabled, refresh]);
+
+  // A shelf opening or closing changes who owns a scan: read again under the new scope.
+  useEffect(() => { void refresh(); }, [scopeLearnerId, refresh]);
 
   const cards = useMemo(() => pile?.cards ?? [], [pile]);
   const unfiled = useMemo(() => cards.filter((card) => card.state === 'unfiled'), [cards]);
@@ -91,6 +103,7 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
       return;
     }
     setPile(result.data?.pile ?? null);
+    setReadScope(scopeNow.current);
     schoolLog.bookShelf(`book-pile.${label}`, { screenId, count: result.data?.pile?.cards?.length ?? 0 });
   }, [screenId]);
 
@@ -99,7 +112,7 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
   const remove = useCallback((cardId) => run('card-removed', () => schoolApi.bookScans.removeCard(cardId, { screenId })), [run, screenId]);
 
   const reader = pile?.reader ?? null;
-  const autoFileable = !scopeLearnerId && reader && unfiled.some((card) => FILEABLE.has(card.status) && !card.error);
+  const autoFileable = !scopeLearnerId && readScope === null && reader && unfiled.some((card) => FILEABLE.has(card.status) && !card.error);
   useEffect(() => {
     if (autoFileable) void file(reader);
   }, [autoFileable, reader, file, unfiled]);
