@@ -94,7 +94,7 @@ describe('checkpoint lifecycle against real server persistence', () => {
     expect(await journal.list(env.key)).toHaveLength(1);
     const reopened = makeSession(); const prepared = await reopened.prepare();
     expect(prepared.status).toBe('ready');
-    expect(Buffer.from(prepared.resume.data).toString()).toBe('state-pending');
+    expect(Buffer.from(prepared.resume.data).toString()).toBe('battery-pending');
     expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-pending');
     expect(await journal.list(env.key)).toHaveLength(0);
   });
@@ -115,7 +115,7 @@ describe('checkpoint lifecycle against real server persistence', () => {
     try { await vi.waitFor(async () => expect(await journal.list(env.key)).toHaveLength(1)); expect(completed).toBe(false); }
     finally { gate.resolve(); }
     await saving;
-    expect(Buffer.from((await preparing).resume.data).toString()).toBe('state-exit');
+    expect(Buffer.from((await preparing).resume.data).toString()).toBe('battery-exit');
   });
   it('rejects incomplete captures without replacing existing progress', async () => {
     const first = await seed(); const session = makeSession(); await ready(session);
@@ -139,7 +139,7 @@ describe('checkpoint lifecycle against real server persistence', () => {
     await old.save(captured('held-in-memory')); old.dispose(); journal.failWrites = false;
     const reopened = makeSession(); const prepared = await reopened.prepare();
     expect(prepared.status).toBe('ready');
-    expect(Buffer.from(prepared.resume.data).toString()).toBe('state-held-in-memory');
+    expect(Buffer.from(prepared.resume.data).toString()).toBe('battery-held-in-memory');
   });
   it('requires explicit recovery when two pending branches share the same parent', async () => {
     const first = await seed(); const description = (await client.getCheckpoint(env.key)).data;
@@ -158,6 +158,18 @@ describe('checkpoint lifecycle against real server persistence', () => {
     expect(session.confirmRestored({ status: 'ok', verified: true, provenance: prepared.provenance, artifactHash: 'c'.repeat(64) }).status).toBe('error');
     expect((await session.save(captured('fresh'))).status).toBe('skipped');
     expect((await env.repository.read(env.key)).revision).toBe(first.revision);
+  });
+  it('battery game resumes from the in-game save even when a snapshot exists', async () => {
+    const head = await seed(); const session = makeSession();
+    const prepared = await session.prepare();
+    expect(prepared.resume.kind).toBe('battery');
+    expect(Buffer.from(prepared.resume.data).toString()).toBe('battery-seed');
+    expect(prepared.artifactHash).toBe(head.artifacts.battery.hash);
+    expect(session.confirmRestored({ status: 'ok', verified: true, provenance: prepared.provenance, artifactHash: head.artifacts.battery.hash }).status).toBe('ok');
+  });
+  it('a battery game never accepts its snapshot as proof of restoring the in-game save', async () => {
+    const head = await seed(); const session = makeSession(); const prepared = await session.prepare();
+    expect(session.confirmRestored({ status: 'ok', verified: true, provenance: prepared.provenance, artifactHash: head.artifacts.snapshot.hash }).status).toBe('error');
   });
 
 });
@@ -179,13 +191,21 @@ describe('explicit checkpoint recovery choices', () => {
     const { session, remote } = await conflict();
     const copies = await session.inspectRecovery(); expect(copies.status).toBe('ok');
     const point = await session.selectRecovery({ type: 'local', captureId: copies.pending[0].captureId });
-    expect(point.status).toBe('ready'); expect(Buffer.from(point.resume.data).toString()).toBe('state-local');
+    expect(point.status).toBe('ready'); expect(Buffer.from(point.resume.data).toString()).toBe('battery-local');
     expect(session.getState().canPlay).toBe(false);
     expect((await session.confirmRecoveryRestored(proof(point))).status).toBe('ok');
     expect(session.getState().canPlay).toBe(true);
     expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-local');
     expect((await env.repository.readRecoveryRevision(env.key, remote.revision)).snapshot.toString()).toBe('state-remote');
     expect(await journal.list(env.key)).toHaveLength(0); expect(await journal.listArchived(env.key)).toHaveLength(1);
+  });
+  it('recovering a server copy of a battery game restores its in-game save, not its snapshot', async () => {
+    const { session, remote } = await conflict();
+    await session.inspectRecovery();
+    const point = await session.selectRecovery({ type: 'server', revision: remote.revision });
+    expect(point.resume.kind).toBe('battery');
+    expect(Buffer.from(point.resume.data).toString()).toBe('battery-remote');
+    expect(point.artifactHash).toBe(remote.artifacts.battery.hash);
   });
   it('keeps a nonselected local branch available after choosing the current server copy', async () => {
     const { session, remote } = await conflict();
@@ -276,7 +296,7 @@ describe('explicit checkpoint recovery choices', () => {
     const first = await seed(); const session = makeSession(); const input = captured('guest');
     const pending = session.prepareClaim(input, { allowExisting: true }); input.state.fill(0);
     const point = await pending; expect(point.status).toBe('ready');
-    expect(Buffer.from(point.resume.data).toString()).toBe('state-guest');
+    expect(Buffer.from(point.resume.data).toString()).toBe('battery-guest');
     const reopened = makeSession(); const prepared = await reopened.prepare();
     expect(prepared.status).toBe('recovery'); expect(prepared.reason).toBe('verification');
     expect((await env.repository.read(env.key)).revision).toBe(first.revision);
