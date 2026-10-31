@@ -79,6 +79,7 @@ export function createCheckpointConsoleLifecycle({ engine: initialEngine, key, s
       selectedVariant = options.variant || 'wasm';
       return remember(options.claimCapture ? session.prepareClaim(options.claimCapture, options) : session.prepare(options));
     },
+    chooseResume(id) { return session.chooseResume(id); },
     async restore(point) {
       try {
         if (disposed || point?.status !== 'ready') return { status: 'skipped' };

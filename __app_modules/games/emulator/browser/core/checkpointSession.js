@@ -1,6 +1,6 @@
 import { ownCheckpointBytes, sameProvenance } from './checkpointClient.js';
 import { checkpointGameKey } from './checkpointJournal.js';
-import { resumeSource } from './resumeSource.js';
+import { resumeChoices, resumeSource } from './resumeSource.js';
 
 // Reopening in the same page must wait for an old console's asynchronous exit.
 const inPageWrites = new Map();
@@ -56,19 +56,25 @@ export function createCheckpointSession({ key, saveMode, client, journal,
     phase = 'recovery'; recoveryReason = reason; pendingRecovery = pending; publish();
     return { status: 'recovery', reason, description, pending };
   };
+  // The player's pick on the launch card; the in-game save unless they chose otherwise.
+  let resumeChoice = 'continue';
+  function chosenSource(record) {
+    const picked = resumeChoice !== 'continue' && resumeChoices(saveMode, record).find(choice => choice.id === resumeChoice);
+    return picked ? { kind: picked.kind, artifact: picked.artifact } : resumeSource(saveMode, record);
+  }
   function resumePoint() {
-    const source = resumeSource(saveMode, head);
+    const source = chosenSource(head);
     if (source.kind === 'fresh') return { kind: 'fresh', data: null, intentionalReset: head?.kind === 'reset' };
     return { kind: source.kind, data: head[source.artifact] };
   }
   const restoredHash = record => {
-    const { artifact } = resumeSource(saveMode, record);
+    const { artifact } = chosenSource(record);
     return artifact ? record.artifacts[artifact].hash : null;
   };
   async function prepare({ variant = 'wasm' } = {}) {
     if (disposed) return { status: 'skipped' };
     if (entries.length) return markFailure(issue('Finish the pending save before loading again', 'ECHECKPOINTCONFLICT'));
-    restored = false; selection = null; fault = null; phase = 'loading'; publish();
+    restored = false; selection = null; fault = null; resumeChoice = 'continue'; phase = 'loading'; publish();
     try {
       await Promise.allSettled([...(inPageWrites.get(gameKey) ?? [])]);
       // Durable-store failure in a previous in-page console cannot erase its RAM copy.
@@ -112,8 +118,15 @@ export function createCheckpointSession({ key, saveMode, client, journal,
       lastCaptureId = head?.captureId ?? null; phase = 'restoring'; publish();
       const resume = resumePoint();
       const artifactHash = restoredHash(head);
-      return { status: 'ready', head, provenance: description.provenance, saveMode, resume, artifactHash };
+      return { status: 'ready', head, provenance: description.provenance, saveMode, resume, artifactHash, choices: resumeChoices(saveMode, head) };
     } catch (reason) { return markFailure(reason); }
+  }
+  function chooseResume(id) {
+    if (phase !== 'restoring' || selection || !resumeChoices(saveMode, head).some(choice => choice.id === id)) {
+      return failure(issue('That saved game is not available', 'ECHECKPOINTINVALID'));
+    }
+    resumeChoice = id;
+    return { status: 'ready', head, provenance: description.provenance, saveMode, resume: resumePoint(), artifactHash: restoredHash(head), choices: resumeChoices(saveMode, head) };
   }
   function confirmRestored(result) {
     let expectedHash;
@@ -388,7 +401,7 @@ export function createCheckpointSession({ key, saveMode, client, journal,
     };
     return track(gameKey, work());
   }
-  return { prepare, confirmRestored, save, retry, getState, inspectRecovery, selectRecovery, confirmRecoveryRestored, resetProgress, resetFromRecovery, prepareClaim,
+  return { prepare, chooseResume, confirmRestored, save, retry, getState, inspectRecovery, selectRecovery, confirmRecoveryRestored, resetProgress, resetFromRecovery, prepareClaim,
     flush: captured => captured ? save(captured) : uploadTail.then(result => fault || result),
     getRecovery: () => ({ description, pending: pendingRecovery }),
     dispose() { disposed = true; phase = 'disposed'; },

@@ -167,6 +167,20 @@ describe('checkpoint lifecycle against real server persistence', () => {
     expect(prepared.artifactHash).toBe(head.artifacts.battery.hash);
     expect(session.confirmRestored({ status: 'ok', verified: true, provenance: prepared.provenance, artifactHash: head.artifacts.battery.hash }).status).toBe('ok');
   });
+  it('lets the player choose where they stopped instead of their in-game save', async () => {
+    const head = await seed(); const session = makeSession();
+    const prepared = await session.prepare();
+    expect(prepared.choices.map(choice => choice.id)).toEqual(['continue', 'where-stopped']);
+    const point = session.chooseResume('where-stopped');
+    expect(point.status).toBe('ready'); expect(point.resume.kind).toBe('state');
+    expect(Buffer.from(point.resume.data).toString()).toBe('state-seed');
+    expect(point.artifactHash).toBe(head.artifacts.snapshot.hash);
+    expect(session.confirmRestored({ status: 'ok', verified: true, provenance: point.provenance, artifactHash: head.artifacts.snapshot.hash }).status).toBe('ok');
+  });
+  it('refuses a resume choice the head does not offer', async () => {
+    await seed(); const session = makeSession(); await session.prepare();
+    expect(session.chooseResume('nonsense').status).toBe('error');
+  });
   it('a battery game never accepts its snapshot as proof of restoring the in-game save', async () => {
     const head = await seed(); const session = makeSession(); const prepared = await session.prepare();
     expect(session.confirmRestored({ status: 'ok', verified: true, provenance: prepared.provenance, artifactHash: head.artifacts.snapshot.hash }).status).toBe('error');

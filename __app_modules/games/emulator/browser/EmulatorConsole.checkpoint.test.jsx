@@ -27,6 +27,9 @@ async function playable(view) {
   await waitFor(() => expect(view.engines.at(-1).setProgressPlayable).toHaveBeenLastCalledWith(true));
   await act(async () => {});
 }
+async function continueSave(view) {
+  fireEvent.click(await view.findByRole('button', { name: 'Continue your save' }));
+}
 function openErase(view) {
   fireEvent.click(view.container.querySelector('[data-hotspot-id="power"]'));
   fireEvent.click(view.getByRole('button', { name: 'Erase saved game' }));
@@ -78,7 +81,7 @@ describe('console protected checkpoint wiring', () => {
   });
   it('shows failed restoration and cannot persist fresh startup bytes on teardown', async () => {
     const previous = await seed('previous');
-    const view = setup({ rejectRestore: true });
+    const view = setup({ rejectRestore: true }); await continueSave(view);
     await waitFor(() => expect(view.getByText(/Could not restore saved progress/)).toBeTruthy());
     view.unmount(); expect((await env.repository.read(env.key)).revision).toBe(previous.revision);
     expect(view.engines[0].captureState).not.toHaveBeenCalled();
@@ -125,7 +128,7 @@ describe('console recovery, claims and failed exits', () => {
   });
   it('retains the current paused branch when explicitly restoring an earlier saved copy through a native reboot', async () => {
     const first = await seed('first'); const second = await seed('second');
-    const view = setup(); await playable(view); view.advance('current-paused');
+    const view = setup(); await continueSave(view); await playable(view); view.advance('current-paused');
     fireEvent.click(view.getByRole('button', { name: 'Game menu' })); fireEvent.click(view.getByRole('button', { name: 'Recover progress' }));
     await waitFor(() => expect(view.getByRole('dialog', { name: 'Recover progress' })).toBeTruthy());
     const choices = recoveryChoices('battery', (await env.repository.inspectRecovery(env.key)).checkpoints);
@@ -148,7 +151,7 @@ describe('console recovery, claims and failed exits', () => {
     expect(view.engines.at(-1).restoreCheckpoint.mock.calls[0][0].kind).toBe('fresh');
   });
   it('starts fresh only after an explicit recovery reset is acknowledged and preserves the previous record', async () => {
-    const previous = await seed('previous'); const view = setup({ rejectRestore: true });
+    const previous = await seed('previous'); const view = setup({ rejectRestore: true }); await continueSave(view);
     await view.findByText(/Could not restore saved progress/);
     fireEvent.click(view.getByRole('button', { name: 'Review recovery copies' }));
     fireEvent.click(await view.findByRole('button', { name: 'Start a fresh game' }));
@@ -159,7 +162,7 @@ describe('console recovery, claims and failed exits', () => {
 });
 
 it('lets keyboard/controller intent select a recovery copy after the game menu closes', async () => {
-  const first = await seed('first'); const view = setup(); await playable(view);
+  const first = await seed('first'); const view = setup(); await continueSave(view); await playable(view);
   fireEvent.click(view.getByRole('button', { name: 'Game menu' })); fireEvent.click(view.getByRole('button', { name: 'Recover progress' }));
   const restore = await view.findByRole('button', { name: /^In-game save/ }); restore.focus();
   fireEvent.keyDown(window, { key: 'Enter' });
@@ -249,5 +252,34 @@ describe('restart keeps the in-game save; erasing takes a second confirmation', 
     power(view);
     expect(view.getByRole('button', { name: 'Start over' })).toBeTruthy();
     expect(view.queryByRole('button', { name: 'Restart game' })).toBeNull();
+  });
+});
+
+describe('launch card: the player chooses their save or where they stopped', () => {
+  it('holds the boot on a card with Continue your save focused when both exist', async () => {
+    await seed('both'); const view = setup();
+    const keep = await view.findByRole('button', { name: 'Continue your save' });
+    expect(view.getByRole('button', { name: /^Back to where you stopped · / })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(keep));
+    expect(view.engines[0].boot).not.toHaveBeenCalled();
+    fireEvent.click(keep); await playable(view);
+    const resume = view.engines[0].restoreCheckpoint.mock.calls[0][0];
+    expect(resume.kind).toBe('battery'); expect(Buffer.from(resume.data).toString()).toBe('battery-both');
+  });
+  it('loads the snapshot only when the player picks where they stopped', async () => {
+    await seed('both'); const view = setup();
+    fireEvent.click(await view.findByRole('button', { name: /^Back to where you stopped · / })); await playable(view);
+    const resume = view.engines[0].restoreCheckpoint.mock.calls[0][0];
+    expect(resume.kind).toBe('state'); expect(Buffer.from(resume.data).toString()).toBe('state-both');
+  });
+  it('boots straight to the in-game save with no card when there is no snapshot', async () => {
+    const description = (await client.getCheckpoint(env.key)).data;
+    const imported = await client.importCheckpoint(env.key, { expectedRevision: null, provenance: description.provenance, captureId: randomUUID(),
+      sessionId: randomUUID(), sequence: 1, snapshot: null, battery: captured('only').battery });
+    expect(imported.status).toBe('ok');
+    const view = setup(); await playable(view);
+    expect(view.queryByRole('button', { name: 'Continue your save' })).toBeNull();
+    const resume = view.engines[0].restoreCheckpoint.mock.calls[0][0];
+    expect(resume.kind).toBe('battery'); expect(Buffer.from(resume.data).toString()).toBe('battery-only');
   });
 });

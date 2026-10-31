@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { resumeSource } from './resumeSource.js';
+import { resumeChoices, resumeSource } from './resumeSource.js';
 
 const bytes = label => new Uint8Array(Buffer.from(label));
 
@@ -20,5 +20,27 @@ describe('resumeSource', () => {
   });
   it('refuses a non-reset record with nothing usable', () => {
     expect(() => resumeSource('battery', { kind: 'save', snapshot: null, battery: null })).toThrow(expect.objectContaining({ code: 'ECHECKPOINTCORRUPT' }));
+  });
+});
+
+describe('resumeChoices', () => {
+  const at = '2026-10-31T21:17:52.000Z';
+  it('offers the in-game save first and where-they-stopped second for a battery game saved by the console', () => {
+    expect(resumeChoices('battery', { kind: 'save', createdAt: at, snapshot: bytes('s'), battery: bytes('b') })).toEqual([
+      { id: 'continue', kind: 'battery', artifact: 'battery', at },
+      { id: 'where-stopped', kind: 'state', artifact: 'snapshot', at },
+    ]);
+  });
+  it('never offers a snapshot that was not captured together with the in-game save', () => {
+    for (const kind of ['baseline', 'import', 'recover']) {
+      expect(resumeChoices('battery', { kind, createdAt: at, snapshot: bytes('s'), battery: bytes('b') }).map(choice => choice.id)).toEqual(['continue']);
+    }
+  });
+  it('has a single choice when only one kind of progress exists, and none after a reset', () => {
+    expect(resumeChoices('battery', { kind: 'import', createdAt: at, snapshot: null, battery: bytes('b') }).map(choice => choice.id)).toEqual(['continue']);
+    expect(resumeChoices('battery', { kind: 'baseline', createdAt: at, snapshot: bytes('s'), battery: null }).map(choice => choice.id)).toEqual(['where-stopped']);
+    expect(resumeChoices('state', { kind: 'save', createdAt: at, snapshot: bytes('s'), battery: null }).map(choice => choice.id)).toEqual(['where-stopped']);
+    expect(resumeChoices('battery', { kind: 'reset', snapshot: null, battery: null })).toEqual([]);
+    expect(resumeChoices('battery', null)).toEqual([]);
   });
 });

@@ -224,6 +224,12 @@ export function EmulatorConsole({
   // non-destructive Restart; erasing its save is a second, explicit step.
   const [resetOpen, setResetOpen] = useState(false);
   const [eraseConfirm, setEraseConfirm] = useState(false);
+  // Launch card: when a save holds both the in-game save and where the player
+  // stopped, the boot waits for them to choose. Never a forced autoload.
+  const [launchChoice, setLaunchChoice] = useState(null);
+  const launchPickRef = useRef(null);
+  // Restart already chose the in-game save; its reboot skips the card.
+  const skipLaunchCardRef = useRef(false);
   const closeReset = useCallback(() => { setResetOpen(false); setEraseConfirm(false); }, []);
   const softRestart = !!(persistence?.checkpoint && persistence?.persist && persistence?.userId && persistence?.saveMode === 'battery');
 
@@ -723,13 +729,14 @@ export function EmulatorConsole({
   // menu mounts open, and must not also pick its first button.
   const sheetRef = useRef(null);
   const progressDialogRef = useRef(null);
+  const launchDialogRef = useRef(null);
   const resetDialogRef = useRef(null);
   const errorDialogRef = useRef(null);
   const modalStateRef = useRef(null);
   const progressBlocked = !!checkpointKey && !!progress && !progress.canPlay;
-  const modalInputActive = resetOpen || !!recoveryCopies || !!error || progressBlocked;
+  const modalInputActive = !!launchChoice || resetOpen || !!recoveryCopies || !!error || progressBlocked;
   modalStateRef.current = { resetOpen, eraseConfirm, softRestart, recovery: !!recoveryCopies, recoveryLoading: !!recoveryCopies?.loading, error: !!error, progressBlocked };
-  const activeInputSheet = () => resetDialogRef.current || progressDialogRef.current || errorDialogRef.current || sheetRef.current;
+  const activeInputSheet = () => launchDialogRef.current || resetDialogRef.current || progressDialogRef.current || errorDialogRef.current || sheetRef.current;
   const menuDefaultButton = () => {
     const sheet = activeInputSheet();
     return sheet?.querySelector('[data-autofocus]') || sheet?.querySelector('button');
@@ -738,7 +745,7 @@ export function EmulatorConsole({
   // emulator core takes focus for itself when it finishes booting.
   useEffect(() => {
     if (!holdPaused && (settingsOpen || modalInputActive)) menuDefaultButton()?.focus?.();
-  }, [settingsOpen, playReady, resetOpen, eraseConfirm, recoveryCopies, error, progress?.phase, modalInputActive, holdPaused]);
+  }, [settingsOpen, playReady, launchChoice, resetOpen, eraseConfirm, recoveryCopies, error, progress?.phase, modalInputActive, holdPaused]);
   const onMenuIntent = useCallback((intent) => {
     const sheet = activeInputSheet();
     if (!sheet) return;
@@ -854,6 +861,7 @@ export function EmulatorConsole({
       const result = await (checkpointRef.current?.save() ?? Promise.resolve({ status: 'skipped' }));
       if (!['ok', 'skipped'].includes(result?.status)) { logger.warn('emulator.console.restart-save-failed', { game: game?.id, status: result?.status }); return; }
       logger.info('emulator.console.restart', { game: game?.id, user: persistenceRef.current?.userId || null });
+      skipLaunchCardRef.current = true;
       setError(null); setBootNonce(value => value + 1);
     })();
     restartFlightRef.current = operation;
@@ -961,6 +969,19 @@ export function EmulatorConsole({
               if (!cancelled) setRecoveryCopies(copies.status === 'ok' ? copies : { error: copies.error });
             }
             return false;
+          }
+          const skipCard = skipLaunchCardRef.current; skipLaunchCardRef.current = false;
+          if (!handoff && !skipCard && point.choices?.length > 1) {
+            const picked = await new Promise(resolve => { launchPickRef.current = resolve; setLaunchChoice({ choices: point.choices }); });
+            launchPickRef.current = null;
+            if (cancelled || !picked) return false;
+            setLaunchChoice(null);
+            logger.info('emulator.console.resume-choice', { game: game?.id, user: bootPersistence.userId || null, choice: picked });
+            if (picked !== 'continue') {
+              const chosen = checkpoint.chooseResume(picked);
+              if (chosen.status !== 'ready') { setProgress({ phase: 'error', canPlay: false, error: chosen }); return false; }
+              point = chosen;
+            }
           }
           sessionEngineConfig.checkpointProvenance = point.provenance;
           sessionEngineConfig.afterBoot = async () => {
@@ -1170,6 +1191,7 @@ export function EmulatorConsole({
 
     return () => {
       cancelled = true;
+      launchPickRef.current?.(null); launchPickRef.current = null; setLaunchChoice(null);
       const playDurationMs = Date.now() - mountedAt;
       logger.info('emulator.console.unmount', { game: game?.id, playDurationMs });
       if (interval) clearInterval(interval);
@@ -1377,7 +1399,21 @@ export function EmulatorConsole({
           <span>{overlayText(status)}</span>
         </div>
       )}
-      {checkpointKey && progress && !progress.canPlay && !recoveryCopies && !error && !resetOpen && (
+      {launchChoice && (
+        <div className="emulator-progress-overlay" role="dialog" aria-modal="true" aria-label="Choose your saved game">
+          <div className="emulator-progress-card" ref={launchDialogRef}>
+            {launchChoice.choices.map(choice => (
+              <button type="button" key={choice.id} {...(choice.id === 'continue' ? { 'data-autofocus': true } : {})}
+                onClick={() => launchPickRef.current?.(choice.id)}>
+                {choice.id === 'continue' ? 'Continue your save'
+                  : `Back to where you stopped${choice.at ? ` · ${new Date(choice.at).toLocaleString()}` : ''}`}
+              </button>
+            ))}
+            {typeof onExit === 'function' && <button type="button" onClick={requestExit}>Exit game</button>}
+          </div>
+        </div>
+      )}
+      {checkpointKey && progress && !progress.canPlay && !launchChoice && !recoveryCopies && !error && !resetOpen && (
         <div className="emulator-progress-overlay" role={progress.error ? 'alertdialog' : 'status'} aria-label="Saved progress">
           <div className="emulator-progress-card" ref={progressDialogRef}>
             <p>{progress.error?.code === 'ECHECKPOINTRESTORE' ? 'Could not restore saved progress.'
