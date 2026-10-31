@@ -22,6 +22,7 @@ import { readHeap, heapFields, heapSnapshotFields, reportMemoryMonitoringAvailab
 import { sortNavItems, filterNavItemsByDay, isNavItemActive, shouldPlayMenuMusic } from "./lib/navigationUtils.js";
 import useDayOfWeek from "../../../../frontend/src/hooks/useDayOfWeek.js";
 import useLocalDate from "../../../../frontend/src/hooks/useLocalDate.js";
+import { useFitnessCastReceiver } from "./hooks/fitness/useFitnessCastReceiver.js";
 import VoiceMemoOverlay from "./player/overlays/VoiceMemoOverlay.jsx";
 import FitnessToast from "./player/overlays/FitnessToast.jsx";
 import { DeviceStatePublisher } from "../../../../__capabilities/screen-host/browser/publishers.mjs";
@@ -952,6 +953,23 @@ const FitnessApp = () => {
   };
 
   // DoNow reachability (spec §5, surface `garage-fitness`): a parent-dispatched
+  // Media app "Play on <this kiosk>": the receiver acks the homeline command
+  // and hands over a Plex id. Close any open module first (an ambience keeps
+  // its own music playing underneath otherwise), then take the same path as
+  // /fitness/play/:id so governance, presence gate and unlock still apply.
+  const handlePlayFromUrlRef = useRef(null);
+  handlePlayFromUrlRef.current = handlePlayFromUrl;
+  const handleCastPlay = useCallback((plexId, { commandId } = {}) => {
+    logger.info('fitness-cast-play', { plexId, commandId });
+    setActiveModule(null);
+    setActiveCollection(null);
+    setSelectedShow(null);
+    setCurrentView('menu');
+    navigate(`/fitness/play/${plexId}`, { replace: true });
+    handlePlayFromUrlRef.current?.(plexId);
+  }, [logger, navigate]);
+  useFitnessCastReceiver({ deviceId: FLEET_DEVICE_ID, onPlay: handleCastPlay });
+
   // `fitness.launch` arrives on the shared WS bus with just an episodeId — no
   // pre-fetched metadata — so it plays exactly like a manually-typed
   // /fitness/play/:id URL: navigate there and let handlePlayFromUrl fetch the

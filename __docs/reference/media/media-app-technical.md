@@ -328,6 +328,23 @@ governance and overlays; those are not Player handles and must not feed the
 fleet session bridge. Unmounting the Player removes its registration so the
 next device heartbeat reports idle rather than the previous title.
 
+The fitness kiosk is also a cast target ("Play on garage"). It is not a
+screen-framework screen, so it carries its own receiver,
+`useFitnessCastReceiver` (fitness `browser/hooks/fitness/`), mounted in
+`FitnessApp` with the kiosk's explicit `FLEET_DEVICE_ID`. The receiver:
+
+- sends `command-handler-presence` heartbeats, so WakeAndLoad takes the
+  WS-first path;
+- acks a `queue` play-now of a `plex:` id on receipt, then plays it through
+  the normal `/fitness/play/:id` path (any open module, such as an ambience,
+  closes first);
+- refuses adds, other commands and non-Plex sources with a coded ack.
+
+"Now playing" is confirmed by the `DeviceStatePublisher` above. On the
+WS-fallback path, a device with no content control that never acks, or any
+receiver that answers `ok:false` with a `code`, now fails the load step
+immediately instead of reporting it delivered.
+
 Playback-hub speaker lanes publish their known current track and playback
 state. Their native playlist cursor does not index the fleet queue: until the
 hub supplies queue entries, that queue stays empty with `currentIndex: -1`,
