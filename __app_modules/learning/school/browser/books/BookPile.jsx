@@ -8,12 +8,16 @@
  * button on purpose: splitting a pile is the exception, not the flow.
  * (Design: ops:docs/superpowers/specs/2026-10-30-portal-book-pile-design.md.)
  *
- * Shown when the panel is free and there is something to see: unfiled books,
- * or a live session's filed ones (kept on screen so a wrong reader can still
- * be fixed). While the panel is busy it offers itself from the corner — but
- * only when nobody has been picked yet; a picked reader files silently.
+ * FULL SCREEN ONLY WHILE SOMEONE IS SCANNING. The screen takes the panel while
+ * the session is live (filed cards stay on it so a wrong reader can still be
+ * fixed) unless set aside with Later. Otherwise unfiled books wait in a corner
+ * card — the keypad must never be held hostage by a pile nobody finished, and
+ * the cards themselves are kept until the study day ends. A pile of nothing
+ * but unreadable barcodes raises no card at all. While the panel is busy the
+ * corner card is the only form, and only before a reader is picked: a picked
+ * reader files silently.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import useArmedAction from "../../../../../frontend/src/lib/identity/useArmedAction.js";
 import BookCover from "./BookCover.jsx";
 import LearnerChoice from "./LearnerChoice.jsx";
@@ -74,18 +78,24 @@ function ChangeSheet({ card, title, roster, busy, onMove, onRemove, onClose }) {
 }
 
 export default function BookPile({ screenId, roster = [], safe, onOpen = null, confirmExit = false, scopeLearnerId = null }) {
-  const { cards, reader, live, unfiled, busy, error, file, move, remove, enabled } = useBookPile({ screenId, scopeLearnerId });
+  const { cards, reader, live, lastScanAt, unfiled, busy, error, file, move, remove, enabled } = useBookPile({ screenId, scopeLearnerId });
   const [changing, setChanging] = useState(null);
+  // Later sets the screen aside until the next scan; Open brings it back.
+  const [laterAt, setLaterAt] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => { if (!live && !unfiled.length) setExpanded(false); }, [live, unfiled.length]);
   const names = useMemo(() => new Map(roster.map((learner) => [learner.id, learner.name || learner.id])), [roster]);
   const nameOf = (id) => names.get(id) ?? id ?? '';
 
   // An open shelf owns its scans; the pile has nothing to say there.
   if (!enabled || scopeLearnerId) return null;
-  const shown = unfiled.length > 0 || (live && cards.length > 0);
-  if (!shown) return null;
-  if (!safe) {
-    if (reader || unfiled.length === 0 || !onOpen) return null;
-    return <CornerOffer count={unfiled.length} confirmExit={confirmExit} onOpen={onOpen} />;
+  const waiting = unfiled.filter((card) => card.status !== 'invalid').length;
+  const setAside = laterAt !== null && laterAt === lastScanAt;
+  const full = safe && cards.length > 0 && ((live && !setAside) || expanded);
+  if (!full) {
+    if (waiting === 0 || (!safe && (reader || !onOpen))) return null;
+    const open = () => { setLaterAt(null); setExpanded(true); if (!safe) onOpen(); };
+    return <CornerOffer count={waiting} confirmExit={!safe && confirmExit} onOpen={open} />;
   }
 
   const title = unfiled.length === 0 && reader ? `Filing to ${nameOf(reader)}` : `Books to file · ${unfiled.length}`;
@@ -96,7 +106,7 @@ export default function BookPile({ screenId, roster = [], safe, onOpen = null, c
   return (
     <section className="school-book-scan school-book-pile" data-ime="off" aria-label="Books to file">
       <div className="school-book-scan__screen">
-        <ScreenHeader title={title} />
+        <ScreenHeader title={title} onDone={() => { setLaterAt(lastScanAt); setExpanded(false); }} doneLabel={unfiled.length ? 'Later' : 'Done'} />
         <p className="school-book-pile__hint">{hint}</p>
         <ul className="school-book-pile__cards">
           {cards.map((card) => {

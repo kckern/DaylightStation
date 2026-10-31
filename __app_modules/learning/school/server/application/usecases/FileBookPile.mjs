@@ -55,8 +55,28 @@ export class FileBookPile {
     return result;
   }
 
-  /** The shelf's Undo finish: an append-only reopen that withdraws the finish credit. */
-  async undo({ learnerId, itemId, attemptKey }) {
+  /**
+   * Take back what `file` did, and only that.
+   *   - `already-today`: the pile wrote nothing, so it undoes nothing. That
+   *     finish is the child's own; reopening it would delete their credit.
+   *   - `finished-new`: the pile created the reading, so it removes it — a
+   *     reopen would leave a book the child never touched "currently reading".
+   *     Only while every entry on it is the pile's own; once the child has
+   *     added to it, it is theirs and is reopened instead.
+   *   - `finished-open`: the shelf's Undo finish (append-only reopen that
+   *     withdraws the finish credit).
+   */
+  async undo({ learnerId, itemId, attemptKey, outcome }) {
+    if (outcome === 'already-today') return { outcome: 'untouched' };
+    if (outcome === 'finished-new') {
+      const reading = (await this.#bookLog.listForLearner(learnerId)).find((entry) => entry.id === itemId);
+      const pileOnly = reading && (reading.entries ?? []).every((entry) => String(entry?.idempotencyKey ?? '').startsWith('pile:'))
+        && String(reading.idempotencyKey ?? 'pile:').startsWith('pile:');
+      if (pileOnly) {
+        await this.#bookLog.deleteReading({ learnerId, readingId: itemId });
+        return { outcome: 'removed' };
+      }
+    }
     await this.#record.execute({ learnerId, itemId, kind: 'reopened', entryId: `pile:${attemptKey}:undo` });
     return { outcome: 'reopened' };
   }

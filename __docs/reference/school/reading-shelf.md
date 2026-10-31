@@ -155,9 +155,16 @@ the household study day ends. One session belongs to one child:
   file to that child by themselves, even while the panel is busy.
 - **A quiet gap ends the session.** `PILE_QUIET_GAP_MS` (2 minutes) with no
   scan or tap clears the reader; unfiled cards stay. One wake per session.
+- **The screen never holds the keypad hostage.** It is full screen only while
+  the session is live (and not set aside with **Later**). After that, unfiled
+  books wait in a corner card (*N books scanned — open when ready*); a pile of
+  nothing but unreadable barcodes raises no card.
 - **Splitting is tucked away.** A card's Change button offers *Give to someone
-  else* and *Remove*. On a filed card both start with the shelf's Undo finish
-  (an append-only reopen that withdraws the finish credit; no PIN).
+  else* and *Remove*. On a filed card both first take back exactly what the
+  pile wrote (no PIN): a reading the pile created is deleted while it holds
+  only the pile's entries; a reading it finished gets the shelf's Undo finish;
+  an *already has it today* card wrote nothing, so the child's own finish is
+  never touched.
 - **Nothing is logged twice.** The same book scanned twice in a session is one
   card (*Scanned twice*). Filing goes through `FileBookPile`, which looks at
   the shelf first: an open reading of the book is finished rather than
@@ -166,7 +173,8 @@ the household study day ends. One session belongs to one child:
   re-file after Undo uses a new attempt.
 - **An open shelf wins.** While a child's shelf is asking for a barcode, a scan
   is claimed for that child through the scoped path above and the pile stands
-  aside.
+  aside. A shelf claims only scans made while it is open; a filed or removed
+  card is never offered to it.
 
 Filings are the child's own entries (`source: 'panel'`), the same as logging
 from the shelf. The pile lives in memory in `PrepareBookScan`: a backend

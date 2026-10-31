@@ -159,6 +159,53 @@ describe('PrepareBookScan pile', () => {
     expect(f.filer.file).not.toHaveBeenCalled();
   });
 
+  it('remove on an already-today card leaves the child\'s own finish alone', async () => {
+    const filer = { file: vi.fn(async () => ({ outcome: 'already-today', itemId: 'theirs' })), undo: vi.fn(async () => ({ outcome: 'untouched' })) };
+    const f = fixture({ filer });
+    await f.receive(ISBNS[0]); await settle();
+    await f.service.filePile({ screenId: 'portal', learnerId: 'child' });
+    await f.service.removeCard({ screenId: 'portal', cardId: pile(f).cards[0].id });
+    expect(filer.undo).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'already-today' }));
+  });
+
+  it('a filed card is no longer offered to an open shelf', async () => {
+    const f = fixture();
+    await f.receive(ISBNS[0]); await settle();
+    expect(f.service.pending('portal')).not.toBeNull();
+    await f.service.filePile({ screenId: 'portal', learnerId: 'child' });
+    expect(f.service.pending('portal')).toBeNull();
+  });
+
+  it('a removed card is no longer offered to an open shelf', async () => {
+    const f = fixture();
+    await f.receive(ISBNS[0]); await settle();
+    await f.service.removeCard({ screenId: 'portal', cardId: pile(f).cards[0].id });
+    expect(f.service.pending('portal')).toBeNull();
+  });
+
+  it('a rescan of a book a shelf claimed is a new card', async () => {
+    const f = fixture();
+    await f.receive(ISBNS[0]); await settle();
+    const intent = f.service.pending('portal');
+    await f.service.claim({ id: intent.id, screenId: 'portal', learnerId: 'child' });
+    await f.receive(ISBNS[0]); await settle();
+    expect(pile(f).cards.map((c) => c.state)).toEqual(['claimed', 'unfiled']);
+  });
+
+  it('a tap on a pile from a closed session starts a new session', async () => {
+    const f = fixture();
+    await f.receive(ISBNS[0]); await settle();
+    f.advance(PILE_QUIET_GAP_MS + 1);
+    await f.service.filePile({ screenId: 'portal', learnerId: 'child' });
+    await f.receive(ISBNS[0]); await settle();
+    expect(pile(f).cards.filter((c) => c.isbn13 === ISBNS[0])).toHaveLength(2);
+  });
+
+  it('reading an unknown screen allocates nothing', () => {
+    const f = fixture();
+    expect(f.service.pile('nowhere')).toMatchObject({ cards: [], live: false, reader: null });
+  });
+
   it('refuses foreign card ids', async () => {
     const f = fixture();
     await f.receive(ISBNS[0]); await settle();

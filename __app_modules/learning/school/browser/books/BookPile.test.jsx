@@ -9,7 +9,7 @@ const roster = [{ id: 'child-a', name: 'Ada' }, { id: 'child-b', name: 'Ben' }];
 const card = (over = {}) => ({ id: 'c1', isbn13: '9780064400558', status: 'ready', state: 'unfiled', duplicates: 0, book: { title: 'Hatchet' }, ...over });
 const hook = (over = {}) => {
   const cards = over.cards ?? [card()];
-  return { cards, reader: null, live: true, unfiled: cards.filter((c) => c.state === 'unfiled'), busy: false, error: null,
+  return { cards, reader: null, live: true, lastScanAt: '2026-10-30T20:00:00.000Z', unfiled: cards.filter((c) => c.state === 'unfiled'), busy: false, error: null,
     file: h.file, move: h.move, remove: h.remove, enabled: true, ...over };
 };
 const props = { screenId: 'portal', roster, safe: true, onOpen: vi.fn() };
@@ -84,6 +84,30 @@ describe('BookPile', () => {
 
   it('draws nothing when the session is over and nothing is left to file', () => {
     h.state = hook({ live: false, cards: [card({ state: 'filed', learnerId: 'child-a', outcome: 'finished-new' })] });
+    const { container } = render(<BookPile {...props} />);
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('Later sets the pile aside to a corner card, and Open brings it back', async () => {
+    const r = render(<BookPile {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+    expect(screen.queryByRole('heading', { name: /Books to file/ })).toBeNull();
+    expect(screen.getByText('1 book scanned — open when ready')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Open it' }));
+    expect(screen.getByRole('heading', { name: 'Books to file · 1' })).toBeTruthy();
+    expect(props.onOpen).not.toHaveBeenCalled();
+    r.unmount();
+  });
+
+  it('recedes to a corner card once the session is over, keeping the keypad free', () => {
+    h.state = hook({ live: false });
+    render(<BookPile {...props} />);
+    expect(screen.queryByRole('heading', { name: /Books to file/ })).toBeNull();
+    expect(screen.getByText('1 book scanned — open when ready')).toBeTruthy();
+  });
+
+  it('raises nothing for leftover unreadable barcodes', () => {
+    h.state = hook({ live: false, cards: [card({ status: 'invalid', error: 'That book barcode is invalid.' })] });
     const { container } = render(<BookPile {...props} />);
     expect(container.innerHTML).toBe('');
   });

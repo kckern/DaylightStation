@@ -92,7 +92,8 @@ export class PrepareBookScan {
     pile.lastActiveAt = now;
     // Same book twice in one session is one card. A later session's scan of it
     // is a new card: it may be for a different child.
-    const twin = pile.cards.find(c => c.session === pile.session && c.isbn13 === isbn13 && c.state !== 'removed');
+    // A card a shelf claimed is that child's; a rescan of the book is a new card.
+    const twin = pile.cards.find(c => c.session === pile.session && c.isbn13 === isbn13 && c.state !== 'removed' && c.state !== 'claimed');
     if (twin) {
       twin.duplicates += 1;
       logger.info?.('school.book-pile.card-added', { screenId: target.screenId, duplicate: true });
@@ -303,6 +304,10 @@ export class PrepareBookScan {
     };
   }
   pile(screenId) {
+    // Reading never allocates: only a scan (or a filing) creates a pile.
+    if (!this.#piles.has(screenId)) {
+      return { screenId, live: false, reader: null, quietGapMs: PILE_QUIET_GAP_MS, lastScanAt: null, cards: [] };
+    }
     return this.#view(screenId, this.#pileFor(screenId));
   }
   /** Run one pile operation at a time per screen, so a card is never filed twice. */
@@ -329,15 +334,24 @@ export class PrepareBookScan {
     try {
       const result = await this.#deps.filer.file({ learnerId, isbn13: card.isbn13, attemptKey: `${card.id}:${card.attempt}` });
       Object.assign(card, { state: 'filed', learnerId, outcome: result.outcome, itemId: result.itemId, error: null });
+      this.#retire(card);
     } catch (error) {
       Object.assign(card, { state: 'unfiled', error: FILE_FAILED });
       this.#deps.logger.warn?.('school.book-pile.file-failed', { screenId, error: error?.message ?? String(error) });
     }
     this.#notify({ screenId, id: card.id });
   }
+  /**
+   * A card the pile has dealt with must not stay offered as a live intent: the
+   * open-shelf path claims the newest live intent, and would hand a book filed
+   * to one child to whichever child opens their shelf next.
+   */
+  #retire(card) {
+    if (card.record?.phase === 'pending' && !card.record.claiming) card.record.phase = 'dismissed';
+  }
   async #unfileCard(card) {
     if (card.state !== 'filed') return;
-    await this.#deps.filer.undo({ learnerId: card.learnerId, itemId: card.itemId, attemptKey: `${card.id}:${card.attempt}` });
+    await this.#deps.filer.undo({ learnerId: card.learnerId, itemId: card.itemId, attemptKey: `${card.id}:${card.attempt}`, outcome: card.outcome });
     Object.assign(card, { state: 'unfiled', learnerId: null, outcome: null, itemId: null, attempt: card.attempt + 1 });
   }
   /**
@@ -351,7 +365,12 @@ export class PrepareBookScan {
     const pile = this.#pileFor(screenId);
     if (cardIds) for (const id of cardIds) this.#card(pile, id);
     return this.#serial(pile, async () => {
-      if (!cardIds) { pile.reader = learnerId; pile.lastActiveAt = this.#deps.clock(); }
+      if (!cardIds) {
+        // A tap on a pile left from a closed session opens a new one, so later
+        // scans start fresh cards rather than merging with the old ones.
+        if (!this.#isLive(pile)) pile.session += 1;
+        pile.reader = learnerId; pile.lastActiveAt = this.#deps.clock();
+      }
       const targets = pile.cards.filter(c => c.state === 'unfiled' && FILEABLE.has(c.status) && (!cardIds || cardIds.includes(c.id)));
       for (const card of targets) await this.#fileCard(screenId, card, learnerId);
       if (targets.length) {
@@ -383,6 +402,7 @@ export class PrepareBookScan {
       const wasFiled = card.state === 'filed';
       if (wasFiled) { this.#requireFiler(); await this.#unfileCard(card); }
       card.state = 'removed';
+      this.#retire(card);
       this.#notify({ screenId, id: card.id });
       this.#deps.logger.info?.('school.book-pile.card-removed', { screenId, wasFiled });
       return this.#view(screenId, pile);

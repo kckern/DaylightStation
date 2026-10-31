@@ -117,5 +117,5 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
     if (autoFileable) void file(reader);
   }, [autoFileable, reader, file, unfiled]);
 
-  return { cards, reader, live: Boolean(pile?.live), unfiled, busy, error, file, move, remove, enabled };
+  return { cards, reader, live: Boolean(pile?.live), lastScanAt: pile?.lastScanAt ?? null, unfiled, busy, error, file, move, remove, enabled };
 }

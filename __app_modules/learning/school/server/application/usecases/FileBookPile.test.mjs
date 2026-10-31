@@ -6,9 +6,13 @@ const TODAY = '2026-10-30';
 
 function fixture(readings = []) {
   const shelf = readings;
-  const bookLog = { listForLearner: vi.fn(async () => shelf) };
-  const openBookShelfItem = { execute: vi.fn(async ({ bookId }) => {
-    const reading = { id: 'new-1', book: { isbn: bookId }, status: 'finished', finishedOn: TODAY };
+  const bookLog = {
+    listForLearner: vi.fn(async () => shelf),
+    deleteReading: vi.fn(async ({ readingId }) => { shelf.splice(shelf.findIndex((r) => r.id === readingId), 1); }),
+  };
+  const openBookShelfItem = { execute: vi.fn(async ({ bookId, entryId, progressEntryId }) => {
+    const reading = { id: 'new-1', book: { isbn: bookId }, status: 'finished', finishedOn: TODAY,
+      idempotencyKey: entryId, entries: [{ idempotencyKey: progressEntryId, kind: 'finished', on: TODAY }] };
     shelf.push(reading);
     return { item: { itemId: reading.id } };
   }) };
@@ -60,20 +64,35 @@ describe('FileBookPile', () => {
     expect(result.outcome).toBe('finished-new');
   });
 
-  it('re-filing after undo finishes again', async () => {
+  it('undoing a reading the pile created removes it, and re-filing creates it again', async () => {
     const f = fixture();
     const first = await f.filer.file({ learnerId: 'child', isbn13: ISBN, attemptKey: 'k1' });
-    await f.filer.undo({ learnerId: 'child', itemId: first.itemId, attemptKey: 'k1' });
+    expect(await f.filer.undo({ learnerId: 'child', itemId: first.itemId, attemptKey: 'k1', outcome: first.outcome })).toEqual({ outcome: 'removed' });
+    expect(f.bookLog.deleteReading).toHaveBeenCalledWith({ learnerId: 'child', readingId: 'new-1' });
+    expect(f.shelf).toHaveLength(0);
+    expect(f.recordBookProgress.execute).not.toHaveBeenCalled();
     const again = await f.filer.file({ learnerId: 'child', isbn13: ISBN, attemptKey: 'k2' });
-    expect(again).toEqual({ outcome: 'finished-open', itemId: 'new-1' });
-    expect(f.recordBookProgress.execute).toHaveBeenLastCalledWith({
-      learnerId: 'child', itemId: 'new-1', kind: 'finished', entryId: 'pile:k2:finish',
-    });
+    expect(again.outcome).toBe('finished-new');
   });
 
-  it('undo reopens via RecordBookProgress', async () => {
+  it('a created reading the child has since added to is reopened, not deleted', async () => {
+    const f = fixture();
+    const first = await f.filer.file({ learnerId: 'child', isbn13: ISBN, attemptKey: 'k1' });
+    f.shelf[0].entries.push({ idempotencyKey: 'child-note', kind: 'progress', on: TODAY });
+    expect((await f.filer.undo({ learnerId: 'child', itemId: first.itemId, attemptKey: 'k1', outcome: 'finished-new' })).outcome).toBe('reopened');
+    expect(f.bookLog.deleteReading).not.toHaveBeenCalled();
+  });
+
+  it('undo never touches a finish the child made themselves', async () => {
     const f = fixture([{ id: 'r1', book: { isbn: ISBN }, status: 'finished', finishedOn: TODAY }]);
-    const result = await f.filer.undo({ learnerId: 'child', itemId: 'r1', attemptKey: 'u1' });
+    expect(await f.filer.undo({ learnerId: 'child', itemId: 'r1', attemptKey: 'u1', outcome: 'already-today' })).toEqual({ outcome: 'untouched' });
+    expect(f.recordBookProgress.execute).not.toHaveBeenCalled();
+    expect(f.bookLog.deleteReading).not.toHaveBeenCalled();
+  });
+
+  it('undo of a finished open reading reopens via RecordBookProgress', async () => {
+    const f = fixture([{ id: 'r1', book: { isbn: ISBN }, status: 'finished', finishedOn: TODAY }]);
+    const result = await f.filer.undo({ learnerId: 'child', itemId: 'r1', attemptKey: 'u1', outcome: 'finished-open' });
     expect(f.recordBookProgress.execute).toHaveBeenCalledWith({
       learnerId: 'child', itemId: 'r1', kind: 'reopened', entryId: 'pile:u1:undo',
     });

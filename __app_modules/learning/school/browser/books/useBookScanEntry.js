@@ -122,6 +122,14 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     state.current.onLaunch({ ...result.data.launchTarget, bookEntry: { ...result.data.bookEntry, intentId: selected.id } }, learnerId);
     void refresh();
   }, [screenId, refresh]);
+  // A shelf only claims what is scanned WHILE it is open. A scan already
+  // waiting when it opened belongs to the pile (another child's stack, most
+  // likely); claiming it would launch this child's shelf with that book.
+  const scopeSeen = useRef(scopeLearnerId);
+  useEffect(() => {
+    if (scopeLearnerId && scopeSeen.current !== scopeLearnerId && current.current) scopedAttempts.current.add(current.current.id);
+    scopeSeen.current = scopeLearnerId;
+  }, [scopeLearnerId]);
   useEffect(() => {
     if (!scopeLearnerId || !intent || claiming || !['ready', 'not-found'].includes(intent.status)) return;
     if (scopedAttempts.current.has(intent.id)) return;
