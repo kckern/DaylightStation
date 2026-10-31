@@ -6,7 +6,7 @@ export function createSkylineControlState({riders=[],acts=[],lastPlayedByRider={
 export function reduceSkylineControl(current,event) {
   let state={...current},effects=[];
   const effect=(type,extra={})=>effects.push({type,...extra});
-  const ready=intent=>{state.phase='ready';state.steady=0;state.countdown=3;state.resumeIntent=intent};
+  const ready=intent=>{state.phase='ready';state.steady=0;state.countdown=3;state.resumeIntent=intent;effect('choose-act',{actId:state.actId})};
   const identity=()=>{state.phase='identity';state.riderId=null;state.afterSave=null;effect('release-selector')};
   const identify=rider=>{
     if(!rider)return;
@@ -16,6 +16,7 @@ export function reduceSkylineControl(current,event) {
   const finish=afterSave=>{state.phase='saving';state.afterSave=afterSave;effect('finalize',{status:'abandoned'})};
   if(event.type==='CONFIG_CHANGED'){
     state={...state,...event.config};
+    if(event.resetIdentity)identity();
     if(!state.acts.some(a=>a.id===state.actId))state.actId=chooseAct(state.acts,state.lastPlayedByRider[state.riderId]);
   } else if(event.type==='SELECT_ACT'&&state.phase==='flights') {
     if(state.acts.some(a=>a.id===event.actId)){state.actId=event.actId;effect('choose-act',{actId:event.actId})}
@@ -49,7 +50,7 @@ export function reduceSkylineControl(current,event) {
       if(state.steady>=1.2-1e-9){state.phase='countdown';state.countdown=3}
     }else{
       state.countdown-=event.dt;
-      if(state.countdown<=1e-9){state.phase='flight';effect(state.resumeIntent==='checkpoint'?'retry-checkpoint':state.resumeIntent==='live'?'resume-flight':'launch',{actId:state.actId,resume:state.resumeIntent==='saved'})}
+      if(state.countdown<=1e-9){state.phase='flight';state.lastPlayedByRider={...state.lastPlayedByRider,[state.riderId]:state.actId};effect(state.resumeIntent==='checkpoint'?'retry-checkpoint':state.resumeIntent==='live'?'resume-flight':'launch',{actId:state.actId,resume:state.resumeIntent==='saved'})}
     }
   } else if(event.type==='PRESS'){
     const i=event.position-1,gesture=event.gesture||'single';

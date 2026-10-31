@@ -23,6 +23,10 @@ describe('MQTTSelectorAdapter', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   describe('constructor', () => {
+    it('resolves published hold events through an existing long-press shortcut', () => {
+      const adapter = new MQTTSelectorAdapter({host:'mqtt'},{selectors:[{...SELECTORS[0],buttons:{'2_long':'dad'}}],logger});
+      expect(adapter.resolveInput(SELECTORS[0].mqtt_topic,{action:'2_hold'})).toMatchObject({userId:'dad',action:'2_hold'});
+    });
     it('keeps arbitrary mapped party-game inputs and rejects unmapped gestures', () => {
       const adapter = new MQTTSelectorAdapter({ host: 'mqtt' }, { selectors: [{ id: 'buzz', equipment: 'party-games', mqtt_topic: 'party', buttons: { '8_single': 'team8' } }], logger });
       expect(adapter.resolveInput('party', { action: '8_single' })).toMatchObject({ userId: 'team8' });

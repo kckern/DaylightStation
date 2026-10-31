@@ -122,7 +122,8 @@ export class MQTTSelectorAdapter {
     if (!entry) return null;
     const action = data && typeof data.action === 'string' ? data.action : '';
     if (!action) return null;
-    const userId = entry.buttons[action];
+    const alternate = action.endsWith('_hold') ? action.replace(/_hold$/, '_long') : action.replace(/_long$/, '_hold');
+    const userId = entry.buttons[action] ?? entry.buttons[alternate];
     if (userId == null) return null;
     return { selectorId: entry.selectorId, equipmentId: entry.equipmentId, userId, action };
   }

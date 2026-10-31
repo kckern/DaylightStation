@@ -9,8 +9,8 @@ import { useCallback, useEffect, useRef } from 'react';
 
 const TRIGGER_THRESHOLD = 0.5;
 // Standard mapping: A / RT fire the laser; B / X / LT drop a bomb.
-export const WEAPON_BUTTONS = Object.freeze({ laser: [0, 7], bomb: [1, 2, 6] });
-export const WEAPON_KEYS = Object.freeze({ ' ': 'laser', f: 'laser', F: 'laser', b: 'bomb', B: 'bomb' });
+export const WEAPON_BUTTONS = Object.freeze({ laser: [0, 7], bomb: [1, 2, 6], missile: [4], boost: [3] });
+export const WEAPON_KEYS = Object.freeze({ ' ': 'laser', f: 'laser', F: 'laser', b: 'bomb', B: 'bomb', m:'missile', M:'missile', v:'boost', V:'boost' });
 
 const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
@@ -101,6 +101,7 @@ export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad, onFi
       onFireRef.current?.({ action, source });
     }
   };
+  drain.clear = () => { queue.current = []; };
   return drain;
 }
 
