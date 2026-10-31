@@ -58,6 +58,7 @@ largeText:
   - __app_modules/wellness/fitness/browser/context/FitnessContext.jsx
   - __app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js
   - __app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js
+  - __app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx
   - __backend/src/app.mjs
   - __capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs
   - __capabilities/gaming/cli/gaming-assets/lib.mjs
