@@ -627,10 +627,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     };
   }, [fitnessConfiguration]);
   const riderSelectors = fitnessRoot?.selectors || [];
-  useEffect(() => {
-    selectorInputRouterRef.current.clear();
-    return () => selectorInputRouterRef.current.clear();
-  }, [JSON.stringify(riderSelectors)]);
+  // Consumers release/rebind their own claims when selector configuration
+  // changes. Clearing here would erase a child's newly rebound claim.
+  useEffect(() => () => selectorInputRouterRef.current.clear(), []);
 
   // Pass selection config to persistence manager for primary media selection
   useEffect(() => {

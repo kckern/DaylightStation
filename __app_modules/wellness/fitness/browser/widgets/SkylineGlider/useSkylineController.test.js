@@ -33,3 +33,23 @@ it('releases a replaced controller and offers identity again instead of silently
  expect(result.current.state.phase).toBe('identity');
  expect(router.route({selectorId:'pad',equipmentId:'bike',action:'1_single',userId:'child'})).toBe(false);
 });
+it('captures the physical pad after touch identity or touch Other riders',()=>{
+ const router=createSelectorInputRouter(),ctx={selectorInputRouter:router,riderSelectors:[{id:'pad',equipment:'bike',buttons:{'1_single':'child','2_single':'dad'}}],users:[{id:'child'},{id:'dad'}],equipment:[{id:'bike',cadence:7}]};
+ const {result}=renderHook(()=>useSkylineController({ctx,courses:[{id:'one'}],access:{unlocked:true},onEffect:vi.fn()}));
+ act(()=>result.current.dispatch({type:'PRESS',position:1,gesture:'single',source:'touch'}));
+ expect(result.current.state.riderId).toBe('child');
+ let consumed;act(()=>{consumed=router.route({selectorId:'pad',equipmentId:'bike',action:'2_single',userId:'dad'})});
+ expect(consumed).toBe(true);expect(result.current.state.riderId).toBe('child');
+ act(()=>result.current.dispatch({type:'PRESS',position:3,source:'touch'}));
+ act(()=>result.current.dispatch({type:'PRESS',position:4,gesture:'long',source:'touch'}));
+ act(()=>{consumed=router.route({selectorId:'pad',equipmentId:'bike',action:'2_single',userId:'dad'})});
+ expect(consumed).toBe(true);expect(result.current.state.rosterIndex).toBe(1);
+});
+it('cannot open the menu between a measured zero and the next animation frame',()=>{
+ const onEffect=vi.fn(),ctx={users:[],fitnessSessionInstance:{getEquipmentCadence:()=>({rpm:0,connected:true,ts:Date.now()})}};
+ const {result}=renderHook(()=>useSkylineController({ctx,courses:[],access:{unlocked:true},onEffect}));
+ act(()=>result.current.dispatch({type:'CONFIG_CHANGED',config:{phase:'flight',equipmentId:'bike',flight:{phase:'playing',inputReady:true,stalled:false}}}));
+ act(()=>result.current.dispatch({type:'PRESS',position:4,gesture:'long',source:'rider-button'}));
+ expect(result.current.state.phase).toBe('stall');
+ expect(onEffect.mock.calls.some(([e])=>e.type==='pause')).toBe(false);
+});

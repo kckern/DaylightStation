@@ -69,8 +69,9 @@ export function reduceSkylineControl(current,event) {
       else if(i===2)identity();else if(i===3&&selected?.status!=='locked'&&state.allowed)ready(event.resume?'saved':'new');
       else if(i===3&&selected?.status==='locked')effect('request-act-unlock',{actId:state.actId});
     }else if(state.phase==='ready'){
-      if(i===1)identity();else if(i<3)state.phase='flights';
-    }else if(state.phase==='countdown'){if(i===2)state.phase='flights'}
+      if(i<3&&['live','checkpoint'].includes(state.resumeIntent))finish(i===1?'identity':'flights');
+      else if(i===1)identity();else if(i<3)state.phase='flights';
+    }else if(state.phase==='countdown'){if(i===2){if(['live','checkpoint'].includes(state.resumeIntent))finish('flights');else state.phase='flights'}}
     else if(state.phase==='flight'){
       if(gesture==='long'&&i===3&&!state.flight?.stalled){state.phase='menu';effect('pause')}
       else if(gesture==='single'&&state.weaponsEnabled&&!state.flight?.pausedForSensor)effect('combat',{action:combat[i]});
@@ -79,7 +80,7 @@ export function reduceSkylineControl(current,event) {
     }else if(state.phase==='crash'){
       if(i===0)ready('checkpoint');else if(i===1)finish('restart');else finish(i===2?'flights':'identity');
     }else if(state.phase==='result'){
-      if(state.saveStatus==='error'){if(i===0)effect('retry-save');else if(i===2)state.phase='save-details'}
+      if(state.saveStatus==='error'){if(i===0){state.phase='saving';effect('retry-save')}else if(i===2)state.phase='save-details'}
       else if(state.saveStatus==='saved'){
         if(i===0)ready('new');
         else if(i===1){const index=state.acts.findIndex(a=>a.id===state.actId),next=state.acts[index+1];if(next&&next.status!=='locked'){state.actId=next.id;effect('choose-act',{actId:next.id});ready('new')}else state.phase='flights'}

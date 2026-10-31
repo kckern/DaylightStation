@@ -105,10 +105,58 @@ async function mount(options={}){
  if(options.nonSchoolAdult)mockCtx.getUserByName=id=>({id,schoolLearner:id!=='adult'});
  const duration=options.duration||100;
  apiFetch.mockResolvedValue({ok:true,json:async()=>({courses:[{...course,duration_s:duration,rules:{...course.rules,weapons:{enabled:!options.noWeapons}},segments:[{id:'finish',type:'finish',start_s:duration}]},...(options.extraCourses||[])]})});
- render(<SkylineGlider/>);await flush();await press(1);await flush();
+ const view=render(<SkylineGlider/>);await flush();await press(1);await flush();return view;
 }
 async function launch(){await press(4);await advance(4250);await advance(100)}
 describe('complete bike lifecycle',()=>{
+ it('preserves the exact pending terminal record when a selector is replaced',async()=>{
+  const view=await mount();await launch();await press(4,'long');
+  apiFetch.mockResolvedValue({ok:false,status:503});await press(3);await flush();
+  const key='fitness:skyline-glider:dad:mountain-pass',pending=JSON.parse(localStorage.getItem(key));
+  expect(pending.lifecycle).toBe('pending_terminal');
+  mockCtx.riderSelectors=[{...mockCtx.riderSelectors[0],id:'replacement'}];view.rerender(<SkylineGlider/>);await flush();
+  expect(JSON.parse(localStorage.getItem(key))).toEqual(pending);
+  expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent('Save failed');
+  apiFetch.mockResolvedValue({ok:true,json:async()=>({created:true})});
+  await act(async()=>{expect(mockCtx.selectorInputRouter.route({selectorId:'replacement',equipmentId:'bike',action:'1_single',userId:'dad'})).toBe(true)});await flush();
+  expect(screen.getByText(/Flight saved/)).toBeVisible();
+ });
+ it('finalizes a live run when leaving resume readiness before selecting another act',async()=>{
+  const next={...course,id:'cloud-ridge',name:'Cloud Ridge',duration_s:100,segments:[{id:'finish',type:'finish',start_s:100}]};
+  await mount({extraCourses:[next]});await launch();await press(4,'long');await press(1);await press(3);await flush();
+  await press(2);await press(4);await advance(4250);await advance(100);
+  const starts=mockLog.info.mock.calls.filter(([n])=>n==='skyline_glider.flight.started');
+  expect(starts.at(-1)[1].courseId).toBe('cloud-ridge');
+  expect(apiFetch.mock.calls.filter(([u,o])=>u.endsWith('/runs')&&o?.method==='POST')).toHaveLength(1);
+ });
+ it('cancels an admin prompt with the physical bottom-left button',async()=>{
+  gateMocks.localDev=false;gateMocks.entitlement=skylineEntitlement('denied');
+  let finish;gateMocks.registerAdmin.mockImplementation(()=>new Promise(resolve=>{finish=resolve}));
+  await mount();await press(1);await flush();await press(3);await flush();
+  expect(gateMocks.clearUnlock).toHaveBeenCalledOnce();
+  expect(screen.getByTestId('skyline-glider-school-lock')).toBeVisible();
+  await act(async()=>finish({matched:true,userId:'late-admin'}));
+  expect(screen.getByTestId('skyline-glider-school-lock')).toBeVisible();
+ });
+ it('takes off safely even when storage removal is blocked',async()=>{
+  await mount();const remove=vi.spyOn(localStorage,'removeItem').mockImplementation(()=>{throw new Error('storage blocked')});
+  try{await launch();expect(screen.getByTestId('skyline-glider-flight')).toBeVisible()}finally{remove.mockRestore()}
+ });
+ it('latches the engine stall even if cadence recovers before the next frame after a menu press',async()=>{
+  await mount();await launch();
+  await act(async()=>{rpm=0;mockCtx.selectorInputRouter.route({selectorId:'pad',equipmentId:'bike',action:'4_hold'});rpm=130});
+  await advance(3000);
+  expect(screen.getByTestId('skyline-glider-lobby').dataset.controlPhase).toBe('crash');
+ });
+ it('consumes two save-retry presses in one batch as one pending write',async()=>{
+  await mount();await launch();await press(4,'long');
+  apiFetch.mockResolvedValue({ok:false,status:503});await press(3);await flush();
+  const pending=[];apiFetch.mockImplementation(()=>new Promise(resolve=>pending.push(resolve)));
+  try{
+   await act(async()=>{for(let i=0;i<2;i++)mockCtx.selectorInputRouter.route({selectorId:'pad',equipmentId:'bike',action:'1_single',userId:'dad'})});
+   expect(pending).toHaveLength(1);
+  }finally{pending.forEach(resolve=>resolve({ok:true,json:async()=>({created:true})}));await flush()}
+ });
  it('finishes saving a legacy terminal record before pedaling or creating another run',async()=>{
   const record={schema:'skyline-glider-run/v1',run:{id:'old-run',status:'abandoned',course_id:'mountain-pass',course_version:1,started_at:'2026-10-29T10:00:00Z',ended_at:'2026-10-29T10:01:00Z',duration_s:60,reward_rings:0},rider:{user_id:'dad'},collectibles:[]};
   localStorage.setItem('fitness:skyline-glider:dad:mountain-pass',JSON.stringify({schema:'skyline-glider-checkpoint/v3',lifecycle:'pending_terminal',identity:{runId:'old-run',startedAt:record.run.started_at},state:{...flightState,phase:'completed',collectedIds:[],calibration:{lowRpm:30,highRpm:100}},terminalRecord:record}));
@@ -120,7 +168,7 @@ describe('complete bike lifecycle',()=>{
  });
  it('keeps a failed terminal record available even when local storage is unavailable',async()=>{
   await mount();await launch();await press(4,'long');
-  const storage=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('storage denied')});
+  const storage=vi.spyOn(localStorage,'setItem').mockImplementation(()=>{throw new Error('storage denied')});
   apiFetch.mockResolvedValue({ok:false,status:503});
   try{await press(3);await flush();expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent('Save failed');expect(screen.getByRole('button',{name:/Retry save/})).toBeEnabled()}finally{storage.mockRestore()}
  });

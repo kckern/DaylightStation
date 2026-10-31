@@ -90,6 +90,8 @@ export default function SkylineGlider() {
   const flightRef = useRef(null);
   const runRef = useRef(null);
   const finalizingRef = useRef(false);
+  const settledRunIdsRef=useRef(new Set());
+  const unlockGenerationRef=useRef(0);
   const lastSampleSecondRef = useRef(-1);
   const previousInputRef = useRef(null);
   const effectTimersRef = useRef(new Set());
@@ -104,6 +106,9 @@ export default function SkylineGlider() {
   if (!audioRef.current) audioRef.current = createSkylineAudio();
   const persistCheckpoint=useCallback((...args)=>{
     try{writeFlightCheckpoint(...args);return true}catch(error){setStorageWarning('Local save unavailable. Keep this page open until the flight is saved.');log.warn('skyline_glider.checkpoint.storage_error',{error:error.message});return false}
+  },[log]);
+  const removeCheckpoint=useCallback((...args)=>{
+    try{clearFlightCheckpoint(...args);return true}catch(error){setStorageWarning('Local saves unavailable. Keep this page open until the server confirms saving.');log.warn('skyline_glider.checkpoint.remove_error',{error:error.message});return false}
   },[log]);
   const fitnessSessionInstance = ctx?.fitnessSessionInstance;
   const setGovernanceSuspended = ctx?.setGovernanceSuspended;
@@ -143,7 +148,8 @@ export default function SkylineGlider() {
     onFire: (press) => log.info('skyline_glider.input.fire', press),
   });
   const checkpointIdentity = useMemo(() => course && riderIdentity ? { ...riderIdentity, calibration: resolveCalibration(equipment, course) } : null, [course, riderIdentity, equipment]);
-  const saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
+  let saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
+  if(saved.status==='pending_terminal'&&settledRunIdsRef.current.has(saved.identity?.runId))saved={status:'missing'};
   phaseRef.current = phase;
   suspensionContextRef.current = { course, equipmentId: equipment?.id, riderId };
 
@@ -312,7 +318,8 @@ export default function SkylineGlider() {
           reason: 'terminal-identity-changed',
         });
       }
-      clearFlightCheckpoint(riderId, course);
+      settledRunIdsRef.current.add(record.run.id);
+      removeCheckpoint(riderId, course);
       if (status === 'completed') { setChosenActId(null); await refreshWorld(record.rider.user_id); }
       setSaveState({ status: 'saved', record });
       setPhase('result');
@@ -455,7 +462,7 @@ export default function SkylineGlider() {
       phase: 'playing', pausedForSensor: false, collisionProtected: false,
       armedAtMs, inputReady: false, lastInputTs: null,
     } : initial;
-    if (!resume) clearFlightCheckpoint(riderId, course);
+    if (!resume) removeCheckpoint(riderId, course);
     suspensionLoggedRef.current = false;
     flightRef.current = next;
     const run = canResume ? { runId: saved.identity.runId, startedAt: saved.identity.startedAt } : {
@@ -480,11 +487,13 @@ export default function SkylineGlider() {
 
   const requestAdminOverride = async () => {
     if (!riderId || riderId === 'guest') return;
+    const generation=++unlockGenerationRef.current;
     setAdminPromptOpen(true);
     log.info('skyline_glider.access.override_requested', {
       riderId, equipmentId: equipment?.id,
     });
     const result = await registerAdmin('skyline_glider');
+    if(generation!==unlockGenerationRef.current)return;
     if (!result?.matched || !result.userId) {
       log.info('skyline_glider.access.override_denied', {
         riderId, equipmentId: equipment?.id, reason: result?.reason || 'denied',
@@ -501,6 +510,7 @@ export default function SkylineGlider() {
 
   const requestActUnlock = async (act) => {
     if (!riderId || riderId === 'guest') return;
+    const generation=++unlockGenerationRef.current;
     setActUnlock({ actId: act.id, name: act.name });
     log.info('skyline_glider.progress.unlock_requested', { riderId, actId: act.id });
     const result = await registerAdmin('skyline_glider');
@@ -525,7 +535,7 @@ export default function SkylineGlider() {
   };
 
   const controller = useSkylineController({
-    ctx,courses,world:riderWorld,access:{...access,unlocked:accessGranted},saved,saveState,flight,
+    ctx,courses,world:riderWorld,modalOpen:adminPromptOpen||!!actUnlock,access:{...access,unlocked:accessGranted},saved,saveState,flight,
     onEffect:effect=>{
       log.info('skyline_glider.control.action',{action:effect.type,riderId:effect.riderId,equipmentId:effect.equipmentId,actId:effect.actId});
       if(effect.type==='assign-rider'){
@@ -566,6 +576,10 @@ export default function SkylineGlider() {
         const cadence=fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id);
         if(current?.phase==='playing'&&!current.stalled&&!current.pausedForSensor&&!current.collisionProtected&&!(cadence?.connected&&cadence.rpm===0))drainWeapons.enqueue([effect.action]);
       }else if(effect.type==='clear-input')drainWeapons.clear?.();
+      else if(effect.type==='commit-stall'){
+        const current=flightRef.current;
+        if(current){const next=stepFlight(current,{...effect.cadence,actions:[]},1/60,course);flightRef.current=next;setFlight(next);setPhase('flight')}
+      }
       else if(effect.type==='pause'||effect.type==='suspend'){
         if(runRef.current&&flightRef.current)persistCheckpoint(riderId,course,{identity:{...runRef.current,...checkpointIdentity},state:flightRef.current});
         drainWeapons.clear?.();setPhase('paused')
@@ -573,8 +587,12 @@ export default function SkylineGlider() {
       else if(effect.type==='toggle-sound')setMuted(value=>{audioRef.current.setMuted(!value);return !value});
       else if(effect.type==='finalize')void finalize('abandoned');
       else if(effect.type==='retry-save'){
-        if(saveState.record){finalizingRef.current=false;void finalize(saveState.record.run.status,flightRef.current,saveState.record)}
+        if(saveState.record){void finalize(saveState.record.run.status,flightRef.current,saveState.record)}
+      }else if(effect.type==='cancel-unlock'){
+        unlockGenerationRef.current++;setAdminPromptOpen(false);setActUnlock(null);clearUnlock();
       }else if(effect.type==='release-selector'){
+        if(['saving','error'].includes(saveState.status))return;
+        unlockGenerationRef.current++;if(adminPromptOpen||actUnlock)clearUnlock();setAdminPromptOpen(false);setActUnlock(null);
         if(runRef.current&&flightRef.current&&saveState.status!=='saved')persistCheckpoint(riderId,course,{identity:{...runRef.current,...checkpointIdentity},state:flightRef.current});
         lockedSelectionRef.current=null;lockedCourseRef.current=null;setControllerSelection(null);setFlight(null);flightRef.current=null;runRef.current=null;setChosenActId(null);setSaveState({status:'idle',record:null});setPhase('lobby');
       }else if(effect.type==='request-admin')void requestAdminOverride();
@@ -586,6 +604,7 @@ export default function SkylineGlider() {
     else if(!['loading','error','result'].includes(phase))setPhase('paused');
   },[controller.state.phase]);
   const panelControls=controller.controls.map(c=>{
+    if(adminPromptOpen||actUnlock)return {...c,label:c.position===3?'Cancel':'Present admin badge',hint:c.position===3?'Return to the game':'Waiting for approval',disabled:c.position!==3,avatarSrc:null,icon:c.position===3?'×':'—'};
     if(c.position!==4||controller.state.phase!=='flights')return c;
     if(saved.status==='pending_terminal')return {...c,label:'Retry previous save',hint:'Finish saving before a new flight'};
     if(c.label==='Start'&&saved.status==='compatible')return {...c,label:'Resume',hint:'Continue this flight'};
@@ -608,8 +627,8 @@ export default function SkylineGlider() {
     {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
     {(adminPromptOpen||actUnlock)&&<p>Present an admin badge to unlock. Bottom-left cancels.</p>}
     </div>
-    <SkylineControlPanel controls={panelControls} onPress={(position,gesture)=>{if((adminPromptOpen||actUnlock)&&position===3){setAdminPromptOpen(false);setActUnlock(null);clearUnlock()}else pressPanel(position,gesture)}}/>
-    <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>{setAdminPromptOpen(false);setActUnlock(null);clearUnlock()}}/>
+    <SkylineControlPanel controls={panelControls} onPress={pressPanel}/>
+    <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>pressPanel(3)}/>
   </main>;
   return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-course-id={course.id} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
     <SkylineControlPanel controls={panelControls} onPress={pressPanel} compact/>

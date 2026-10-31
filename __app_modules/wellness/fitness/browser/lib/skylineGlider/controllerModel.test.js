@@ -42,7 +42,9 @@ describe('seated game lifecycle',()=>{
  });
  it('gates new attempts and rider changes behind saving the same terminal run',()=>{
   const s={...press(start(),1),phase:'result',saveStatus:'error'};
-  expect(reduceSkylineControl(s,{type:'PRESS',position:1}).effects).toEqual([{type:'retry-save'}]);
+  const retry=reduceSkylineControl(s,{type:'PRESS',position:1});
+  expect(retry.state.phase).toBe('saving');
+  expect(retry.effects).toEqual([{type:'retry-save'},{type:'clear-input'}]);
   expect(press(s,4).riderId).toBe('child');
   expect(press(s,3).phase).toBe('save-details');
  });
