@@ -1,3 +1,5 @@
+import { localDateKey } from '../../../../../frontend/src/hooks/useLocalDate.js';
+
 export function shouldPlayMenuMusic({
   currentView,
   screenHasFitnessChart = false,
@@ -35,20 +37,30 @@ export function sortNavItems(navItems) {
  * (0 = Sunday … 6 = Saturday). Example: `days: [6]` shows the item only on
  * Saturdays.
  *
- * Items without a `days` field — or with a non-array / empty `days` value —
+ * An item may also carry a `dates` array of calendar dates: 'MM-DD' recurs
+ * every year (`dates: ['10-31']` = every Halloween), 'YYYY-MM-DD' is one day
+ * only. When both `days` and `dates` are present the item must match both.
+ *
+ * Items without a `days`/`dates` field — or with a non-array / empty value —
  * are always shown (forgiving default, so a malformed config never silently
  * hides a tab).
  *
  * @param {Array} navItems
  * @param {number} [today] - Day-of-week override (mainly for tests); defaults
  *   to the current local day via `new Date().getDay()`.
+ * @param {string} [localDate] - Local date 'YYYY-MM-DD'; defaults to today.
  * @returns {Array} Items visible on the given day, in original order.
  */
-export function filterNavItemsByDay(navItems, today = new Date().getDay()) {
+export function filterNavItemsByDay(navItems, today = new Date().getDay(), localDate = localDateKey()) {
   if (!Array.isArray(navItems)) return [];
+  const monthDay = String(localDate).slice(5);
   return navItems.filter((item) => {
-    if (!item || !Array.isArray(item.days) || item.days.length === 0) return true;
-    return item.days.includes(today);
+    if (!item) return true;
+    if (Array.isArray(item.days) && item.days.length > 0 && !item.days.includes(today)) return false;
+    if (Array.isArray(item.dates) && item.dates.length > 0) {
+      return item.dates.some((d) => String(d) === localDate || String(d) === monthDay);
+    }
+    return true;
   });
 }
 
@@ -94,6 +106,10 @@ export function isNavItemActive(item, currentState) {
     case 'module_direct':
       return currentView === 'module' &&
              activeModule?.id === item.target.module_id;
+
+    case 'ambience':
+      return currentView === 'module' &&
+             activeModule?.config?.ambience?.id === item.target.id;
 
     case 'screen':
       return currentView === 'screen' && activeScreen === item.target.screen_id;

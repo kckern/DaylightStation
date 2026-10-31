@@ -338,6 +338,7 @@ export function createFitnessApiRouter(config) {
   const fitnessHardwareService = new FitnessHardwareService({
     zoneLedController: fitnessServices.ambientLedController,
     danceLightingController: fitnessServices.danceLightingController,
+    ambienceController: fitnessServices.ambienceController,
     equipmentFanController: fitnessServices.equipmentFanController,
   });
   const fitnessWebhookService = new FitnessWebhookService({

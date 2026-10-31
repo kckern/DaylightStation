@@ -21,6 +21,7 @@ import { guardedReload } from "../../../../frontend/src/lib/reloadGuard.js";
 import { readHeap, heapFields, heapSnapshotFields, reportMemoryMonitoringAvailability } from "../../../../frontend/src/lib/perf/memoryProbe.js";
 import { sortNavItems, filterNavItemsByDay, isNavItemActive, shouldPlayMenuMusic } from "./lib/navigationUtils.js";
 import useDayOfWeek from "../../../../frontend/src/hooks/useDayOfWeek.js";
+import useLocalDate from "../../../../frontend/src/hooks/useLocalDate.js";
 import VoiceMemoOverlay from "./player/overlays/VoiceMemoOverlay.jsx";
 import FitnessToast from "./player/overlays/FitnessToast.jsx";
 import { DeviceStatePublisher } from "../../../../__capabilities/screen-host/browser/publishers.mjs";
@@ -816,6 +817,7 @@ const FitnessApp = () => {
   // Reactive day-of-week — updates itself at local midnight WITHOUT a reload, so
   // day-gated nav items re-evaluate live on a long-running kiosk session.
   const dayOfWeek = useDayOfWeek();
+  const localDate = useLocalDate();
 
   // Derive navItems from the API response (source-agnostic: uses contentConfig section)
   // Items may carry a `days` array (0=Sun..6=Sat) to gate them to certain days
@@ -828,8 +830,8 @@ const FitnessApp = () => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
     const contentConfig = root?.content || root?.plex || root?.[contentSource] || {};
     const src = contentConfig?.nav_items || [];
-    return filterNavItemsByDay(Array.isArray(src) ? src : [], dayOfWeek);
-  }, [fitnessConfiguration, contentSource, dayOfWeek]);
+    return filterNavItemsByDay(Array.isArray(src) ? src : [], dayOfWeek, localDate);
+  }, [fitnessConfiguration, contentSource, dayOfWeek, localDate]);
 
   // Derive screens config map from fitness configuration
   const screensConfig = useMemo(() => {
@@ -1151,6 +1153,16 @@ const FitnessApp = () => {
         navigate(`/fitness/module/${target.id}`, { replace: true });
         break;
 
+      case 'ambience':
+        // An ambience is the Dance Party screen run from the nav item's own
+        // video / playlist / HA script (no strobe, no workout).
+        setActiveModule({ id: 'dance_party', config: { ambience: { ...target, name: _item?.name ?? target.id } } });
+        setActiveCollection(null);
+        setCurrentView('module');
+        setSelectedShow(null);
+        navigate(`/fitness/ambience/${target.id}`, { replace: true });
+        break;
+
       case 'screen':
         setActiveScreen(target.screen_id);
         setActiveCollection(null);
@@ -1451,6 +1463,16 @@ const FitnessApp = () => {
     } else if (view === 'module' && id) {
       setActiveModule({ id });
       setCurrentView('module');
+    } else if (view === 'ambience' && id) {
+      // Reload on /fitness/ambience/:id — only while its tab is visible today.
+      const item = navItems.find((n) => n?.type === 'ambience' && String(n?.target?.id) === String(id));
+      if (item) {
+        setActiveModule({ id: 'dance_party', config: { ambience: { ...item.target, name: item.name ?? id } } });
+        setCurrentView('module');
+      } else {
+        logger.warn('fitness-ambience-url-unavailable', { id });
+        navigate('/fitness', { replace: true });
+      }
     } else if (view === 'games' && id) {
       // /fitness/games/:system/:game — testing deep link into the arcade; the
       // emulator widget launches the game past its admin gate (and logs it).
@@ -1471,7 +1493,7 @@ const FitnessApp = () => {
     // handlePlayFromUrl intentionally excluded: it's redefined every render and
     // including it would re-fire this effect on every render too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlState, loading, urlInitialized, navigate, location, screensConfig, logger, nogovern]);
+  }, [urlState, loading, urlInitialized, navigate, location, screensConfig, logger, nogovern, navItems]);
 
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {

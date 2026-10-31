@@ -3,9 +3,10 @@ import PropTypes from 'prop-types';
 import { Player as Player } from "../../../../../media/media/browser/playback.mjs";
 import { ContentDisplayUrl } from '@/lib/api.mjs';
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
-import { resolveDancePlaylists } from "./resolveDancePlaylists.js";
+import { resolveDancePlaylists, resolveAmbience } from "./resolveDancePlaylists.js";
 import { muteVideosIn } from "./muteVideosIn.js";
 import { useDanceLighting } from "./useDanceLighting.js";
+import { useAmbienceLighting } from "./useAmbienceLighting.js";
 import { useDanceStrobe } from "./useDanceStrobe.js";
 import { useDanceBpm } from "./useDanceBpm.js";
 import { useBpmPublisher } from "./useBpmPublisher.js";
@@ -28,6 +29,11 @@ import "./DancePartyWidget.scss";
  * looped via `queue.continuous` and muted by forcing `<video>.muted = true`
  * directly (via muteVideosIn — `play={{ volume: 0 }}` is a no-op because
  * useQueueController resolves `play?.volume || ... || 1` and 0 is falsy).
+ *
+ * Ambience mode (`config.ambience`, from an `ambience` nav item such as the
+ * Halloween tab): the item's own single video loops and its playlist plays,
+ * its HA script runs the lights/heat (useAmbienceLighting), and the party
+ * extras (strobe, BPM, accents, video-advance-per-song) are off.
  */
 export default function DancePartyWidget({ onClose, config, onMount }) {
   const logger = useMemo(() => getLogger().child({ component: 'dance-party' }), []);
@@ -35,11 +41,17 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Single source of truth: the dance_party block from FitnessContext. The
   // host's `config` prop is only honored when it explicitly carries its own
   // dance_party block (e.g. unit tests) — never merged, never substituted.
-  const dancePartyConfig = config?.dance_party ?? fitnessContext?.dancePartyConfig ?? null;
+  const ambience = config?.ambience ?? null;
+  const isAmbience = ambience != null;
+  const dancePartyConfig = isAmbience ? ambience : (config?.dance_party ?? fitnessContext?.dancePartyConfig ?? null);
   const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader, strobeBpm } =
-    useMemo(() => resolveDancePlaylists(dancePartyConfig), [dancePartyConfig]);
+    useMemo(() => (isAmbience ? resolveAmbience(ambience) : resolveDancePlaylists(dancePartyConfig)), [isAmbience, ambience, dancePartyConfig]);
 
-  const { accent, lightsOn, toggleLights } = useDanceLighting({ enabled: true });
+  const party = useDanceLighting({ enabled: !isAmbience });
+  const ambienceLights = useAmbienceLighting({ ambienceId: isAmbience ? (ambience.id ?? null) : null });
+  const { lightsOn, toggleLights } = isAmbience ? ambienceLights : party;
+  const noAccent = useCallback(() => {}, []);
+  const accent = isAmbience ? noAccent : party.accent;
 
   const audioRef = useRef(null);
   const videoRef = useRef(null);
@@ -51,12 +63,13 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Strobe clock: live-detected BPM from the music wins; the configured
   // strobe_bpm is the fallback until the analyzer locks (or if Web Audio is
   // unavailable). trackKey resets the analyzer's votes on song change.
-  const { detectedBpm } = useDanceBpm({ playerRef: audioRef, trackKey: track?.key ?? null });
-  const effectiveBpm = detectedBpm ?? strobeBpm;
-  const { strobeOn, toggleStrobe, strobeStyle } = useDanceStrobe({ bpm: effectiveBpm });
+  const { detectedBpm } = useDanceBpm({ playerRef: audioRef, trackKey: track?.key ?? null, enabled: !isAmbience });
+  const effectiveBpm = detectedBpm ?? strobeBpm ?? 60;
+  const strobe = useDanceStrobe({ bpm: effectiveBpm });
+  const strobeStyle = isAmbience ? null : strobe.strobeStyle;
   // Mirror the tempo to HA (input_number via backend) so the physical party
   // strobe follows the music; throttled here AND rate-capped server-side.
-  useBpmPublisher({ bpm: effectiveBpm });
+  useBpmPublisher({ bpm: effectiveBpm, enabled: !isAmbience });
 
   // Notify the host container we've mounted (parity with other widgets).
   useEffect(() => {
@@ -72,11 +85,11 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       });
       return;
     }
-    logger.info('fitness.dance.config_resolved', { audioPlaylistId, videoPlaylistId, shuffle, hasVideo });
+    logger.info('fitness.dance.config_resolved', { audioPlaylistId, videoPlaylistId, shuffle, hasVideo, ambienceId: ambience?.id ?? null });
     if (!audioPlaylistId) {
       logger.error('fitness.dance.audio_unconfigured', { dancePartyConfig });
     }
-  }, [configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, dancePartyConfig, logger]);
+  }, [configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, dancePartyConfig, ambience, logger]);
 
   // Mirror FitnessMusicPlayer: the queue prop is a memoized object so the inner
   // Player's queue controller does not re-init every render.
@@ -124,12 +137,12 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       logger.info('fitness.dance.track_change', { title: media.title || null });
       // New song → new visual: advance the video layer in step with the music.
       // Skip the initial track so the video doesn't jump right at mount.
-      if (!isFirstTrack && videoRef.current?.advance) {
+      if (!isFirstTrack && !isAmbience && videoRef.current?.advance) {
         videoRef.current.advance(1);
         logger.debug('fitness.dance.video_advance_on_track_change', {});
       }
     }
-  }, [accent, logger]);
+  }, [accent, isAmbience, logger]);
 
   const handleAudioError = useCallback((err) => {
     logger.warn('fitness.dance.audio_error', { kind: err?.kind ?? null, message: err?.message ?? null });
@@ -234,8 +247,8 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         onVolumeSelect={handleVolumeSelect}
         lightsOn={lightsOn}
         onToggleLights={toggleLights}
-        strobeOn={strobeOn}
-        onToggleStrobe={toggleStrobe}
+        strobeOn={isAmbience ? false : strobe.strobeOn}
+        onToggleStrobe={isAmbience ? undefined : strobe.toggleStrobe}
       />
     </div>
   );

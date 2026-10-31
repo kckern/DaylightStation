@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterNavItemsByDay, shouldPlayMenuMusic } from "./navigationUtils.js";
+import { filterNavItemsByDay, isNavItemActive, shouldPlayMenuMusic } from "./navigationUtils.js";
 
 describe('shouldPlayMenuMusic', () => {
   const ready = { queueSize: 0, hasActiveModule: false, loading: false, hasTracks: true };
@@ -64,5 +64,42 @@ describe('filterNavItemsByDay', () => {
     const onlyToday = { ...home, days: [today] };
     const notToday = { ...home, days: [(today + 1) % 7] };
     expect(filterNavItemsByDay([onlyToday, notToday])).toEqual([onlyToday]);
+  });
+});
+
+// `dates`: 'MM-DD' recurs yearly, 'YYYY-MM-DD' is one day only.
+describe('filterNavItemsByDay — dates', () => {
+  const halloween = { type: 'ambience', name: 'Halloween', dates: ['10-31'], target: { id: 'halloween' } };
+  const oneOff = { type: 'ambience', name: 'Once', dates: ['2026-10-31'], target: { id: 'once' } };
+  const satHalloween = { ...halloween, days: [6] };
+
+  it('shows a month-day item on that date every year', () => {
+    expect(filterNavItemsByDay([halloween], 6, '2026-10-31')).toEqual([halloween]);
+    expect(filterNavItemsByDay([halloween], 0, '2027-10-31')).toEqual([halloween]);
+    expect(filterNavItemsByDay([halloween], 0, '2026-11-01')).toEqual([]);
+    expect(filterNavItemsByDay([halloween], 5, '2026-10-30')).toEqual([]);
+  });
+
+  it('shows a full-date item on that one day only', () => {
+    expect(filterNavItemsByDay([oneOff], 6, '2026-10-31')).toEqual([oneOff]);
+    expect(filterNavItemsByDay([oneOff], 0, '2027-10-31')).toEqual([]);
+  });
+
+  it('requires both days and dates when both are set', () => {
+    expect(filterNavItemsByDay([satHalloween], 6, '2026-10-31')).toEqual([satHalloween]);
+    expect(filterNavItemsByDay([satHalloween], 0, '2027-10-31')).toEqual([]);
+  });
+
+  it('treats an empty dates array as always shown', () => {
+    const item = { ...halloween, dates: [] };
+    expect(filterNavItemsByDay([item], 2, '2026-03-03')).toEqual([item]);
+  });
+});
+
+describe('isNavItemActive — ambience', () => {
+  const item = { type: 'ambience', target: { id: 'halloween' } };
+  it('is active when the dance_party module runs that ambience', () => {
+    expect(isNavItemActive(item, { currentView: 'module', activeModule: { id: 'dance_party', config: { ambience: { id: 'halloween' } } } })).toBe(true);
+    expect(isNavItemActive(item, { currentView: 'module', activeModule: { id: 'dance_party' } })).toBe(false);
   });
 });

@@ -38,12 +38,15 @@ export class AmbientLedAdapter extends IZoneLedController {
   #gateway;
   #loadFitnessConfig;
   #logger;
+  #isSuppressed;
 
   /**
    * @param {Object} config
    * @param {Object} config.gateway - IHomeAutomationGateway implementation
    * @param {Function} config.loadFitnessConfig - Function to load fitness config
    * @param {Object} [config.logger] - Logger instance
+   * @param {Function} [config.isSuppressed] - true while something else owns the
+   *   strips (a running ambience, e.g. Halloween); zone colors stand down
    */
   constructor(config) {
     super();
@@ -63,6 +66,7 @@ export class AmbientLedAdapter extends IZoneLedController {
     this.#gateway = config.gateway;
     this.#loadFitnessConfig = config.loadFitnessConfig;
     this.#logger = config.logger || console;
+    this.#isSuppressed = typeof config.isSuppressed === 'function' ? config.isSuppressed : () => false;
 
     // State
     this.lastScene = null;
@@ -291,6 +295,12 @@ export class AmbientLedAdapter extends IZoneLedController {
         reason: 'feature_disabled',
         message: 'ambient_led not configured or missing required scenes'
       };
+    }
+
+    // An ambience (e.g. the Halloween tab) owns the strips while it runs.
+    if (this.#isSuppressed()) {
+      this.#logger.debug?.('fitness.zone_led.skipped', { reason: 'ambience_active', householdId });
+      return { ok: true, skipped: true, reason: 'ambience_active' };
     }
 
     const sceneConfig = fitnessConfig.ambient_led.scenes;

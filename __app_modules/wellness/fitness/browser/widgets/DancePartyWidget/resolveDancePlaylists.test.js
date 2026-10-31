@@ -62,3 +62,11 @@ describe('resolveDancePlaylists', () => {
     expect(resolveDancePlaylists({ audio_playlist_id: 1, shuffle: false }).shuffle).toBe(false);
   });
 });
+
+describe('resolveAmbience', () => {
+  it('reads prefixed ids and loops the single video', async () => {
+    const { resolveAmbience } = await import('./resolveDancePlaylists.js');
+    const r = resolveAmbience({ id: 'halloween', video: 'plex:774715', playlist: 'plex:774714' });
+    expect(r).toMatchObject({ configured: true, audioPlaylistId: 774714, videoPlaylistId: 774715, hasVideo: true, shuffle: true });
+  });
+});

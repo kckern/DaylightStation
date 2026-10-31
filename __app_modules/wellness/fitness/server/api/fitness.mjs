@@ -1177,6 +1177,18 @@ export function createFitnessRouter(config) {
     return res.json(result);
   }));
 
+  /**
+   * Ambience — POST /ambience/:id/{start,stop}. Runs the HA script named by the
+   * `ambience` nav item with that target.id (never a client-chosen entity).
+   */
+  const ambienceAction = (action) => asyncHandler(async (req, res) => {
+    const householdId = req.query.householdId || req.body?.householdId;
+    const result = await fitnessHardwareService.ambience(action, householdId, req.params.id);
+    return res.status(result?.reason === 'unknown_ambience' ? 404 : 200).json(result);
+  });
+  router.post('/ambience/:id/start', ambienceAction('start'));
+  router.post('/ambience/:id/stop', ambienceAction('stop'));
+
   // =============================================================================
   // Equipment Fan Endpoints (require Home Assistant configuration)
   // =============================================================================
