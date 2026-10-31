@@ -26,5 +26,6 @@ describe('Skyline Glider terminal result', () => {
     expect(record.result.outcome.score).toBe(2);
     expect(record.run).toMatchObject({ targets: 2, shots_fired: 9, bombs_dropped: 2 });
     expect(record.result.metrics).toMatchObject({ targets: 2, shots_fired: 9, bombs_dropped: 2 });
+    expect(record.result.metrics).toMatchObject({missiles_fired:0,boosts_used:0});
   });
 });

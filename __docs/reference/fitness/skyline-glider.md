@@ -4,8 +4,8 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 
 ## Play contract
 
-- A fresh press of a bike's physical rider-selector button starts the game, resumes that rider's compatible checkpoint, or leaves a prior result for the next flight. Failed terminal saves are retried before the new flight begins. The kiosk does not require a touchscreen press between runs.
-- The selector's equipment and assigned rider are locked together for the run. Checkpoints, saved runs, and rewards remain scoped to that rider.
+- Identify with your configured rider button, then use the visible 2×2 bike panel to choose a flight and Start/Resume. Every menu and result uses the same four physical positions; touch is equivalent. Start waits for fresh cadence at least 30 RPM for 1.2 seconds, followed by a three-second countdown. Waiting at zero is safe; falling below 30 before takeoff resets readiness.
+- The selector and equipment are captured before assignment ingestion. Navigation and all four flight buttons keep the selected rider locked; another bike continues normal assignment. Change rider is explicit. Identity uses configured avatars and shortcuts; unmapped hold/double opens Other riders. TS0044_2 publishes hold, normalized to configured long shortcuts (including button 2 for Dad).
 - School learners may fly only when the fail-closed `fitness.skyline-glider` entitlement grants access from `school.day-complete`. The Fitness roster derives `schoolLearner` from the same authoritative School learner directory used by the other school-gated surfaces. Missing identity, Guest, unavailable, expired or indeterminate state all stay locked; household members marked `schoolLearner: false` are outside this gate. The client honors the decision's `validFrom`/`validUntil` window and suspends an active countdown or flight immediately when access is revoked, preserving a resumable checkpoint and releasing the bike for another rider.
 - An admin fingerprint can approve a pending physical-button start. The admin authorizes the flight but does not become its rider or reward recipient.
 - Localhost and `127.0.0.1` deep links retain touchscreen Start/Resume controls for development. A non-local deep link still enters the gated kiosk lobby.
@@ -14,7 +14,7 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 - The ANT bridge allows one expected crank interval plus 25% tolerance, bounded between 5 and 6 seconds, before reporting a stop. At 15 RPM this is 5 seconds plus packet delay; once the bridge reports a genuine zero there is no additional in-game coast/recovery grace. A once-per-turn sensor cannot promptly distinguish 1 RPM from stopping.
 - A missing or stalled cadence transport is collision-protected for 0.75 seconds, then freezes the course behind a reconnect overlay.
 - **Assisted hills:** Mountain Pass carries a low craft along the hillside without damage. Its first minute is open sky and bells; the whole act has no lava, lethal obstacles or weapons.
-- **Terrain and `solid` entities are walls outside assistance.** Touching one is an immediate crash ("Wing down!"), invincible or not: a two-second pause, then a restart at the latest checkpoint with three lives. The craft can never pass through the ground. Only a sensor pause protects the rider, and then the craft is held inside the open band.
+- **Terrain and `solid` entities are walls outside assistance.** Touching one is an immediate crash ("Wing down!"), invincible or not: the rider then chooses Retry checkpoint, Restart level, Flights or Change rider using the panel. Retry restores the latest checkpoint with three lives and waits for pedaling before takeoff. The craft can never pass through the ground. Only a sensor pause protects the rider, and then the craft is held inside the open band.
 - **`breakable` entities** (trees, houses) shatter on contact and cost one life, followed by `invincibility_s` of blinking. Hits while blinking still shatter but cost nothing. Losing the last life is a crash. A checkpoint restart brings back anything broken after that checkpoint.
 - **`scenery` entities** never collide.
 - Mountain Pass (Alpine, Act 1) lasts five minutes, moving from open-sky bells to assisted meadow hills. Cloud Ridge (Alpine, Act 2) lasts four minutes, introducing safe target practice, marked bomb barriers and lava gaps with distinct dusk scenery.
@@ -23,23 +23,27 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 
 ## Weapons
 
-During flight, one fresh press of the locked rider’s bike button requests both a laser and a bomb. Each keeps its own cooldown. Bombs may be wasted in empty sky; an empty rack can cause failure at a bomb-only barrier. Other riders’ buttons retain normal assignment feedback. The active combat press suppresses its redundant assignment toast while still ingesting assignment. Countdown, crash and sensor-pause presses never replay later. Keyboard and gamepad inputs also remain available. Weapons never hurt the rider and cost nothing. They destroy placed entities.
+During flight, top-left fires laser, top-right drops a bomb, bottom-left launches a guided missile and bottom-right activates lift boost. Holding bottom-right opens a labeled menu for Resume, Sound, End flight and Change rider. The menu freezes simulation; resuming requires pedal readiness and preserves ammunition. A committed stall completes before the menu can open. Sensor loss still permits ending the flight. No attack or menu input reassigns the rider.
 
-| Input | Laser | Bomb |
-|---|---|---|
-| Rider selector | Same press | Same press |
-| Gamepad (standard mapping) | A (0) or RT (7) | B (1), X (2) or LT (6) |
-| Keyboard | Space or F | B |
+| Input | Laser | Bomb | Missile | Lift boost |
+|---|---|---|---|---|
+| Bike 2×2 panel | Top-left (1) | Top-right (2) | Bottom-left (3) | Bottom-right (4) |
+| Gamepad standard indexes | A (0) / RT (7) | B (1) / X (2) / LT (6) | LB (4) | Y (3) |
+| Keyboard | Space / F | B | M | V |
+
+Numeric keys 1–4 operate the current panel; Escape opens the flight menu. Existing text-entry and browser shortcuts retain their meaning.
 
 On the garage's 8BitDo SFC30 (standard mapping in Firefox), that is the bottom face button (printed **B**) or **R** for the laser, and the right face button (printed **A**), **Y** or **L** for a bomb. The pad's letters follow the SNES layout, so they are swapped against the Xbox names above.
 
 - Each press fires once; holding does not autofire. A button already held when flight starts is ignored until released. A press on a frame where no time passes waits for the next frame. Presses during a sensor pause or crash are dropped.
 - **Laser:** leaves the craft nose at the craft's altitude and travels `laser_speed_s` course-seconds per second faster than the craft, for `laser_range_s`. Each step sweeps its whole path, so thin objects cannot be skipped. It stops at the first terrain or non-scenery entity it reaches, destroying that entity if it is vulnerable to the laser and being absorbed otherwise. It is unlimited, with a `laser_cooldown_s` cooldown.
 - **Bomb:** released under the craft, it keeps pace with the craft while falling under `bomb_gravity`. It detonates on terrain, a non-scenery entity, or the bottom of the screen. The blast (`blast_width_s` × `blast_height`, visible for `blast_s`) destroys every entity it touches that is vulnerable to bombs. The rack holds `bombs` and refills at every checkpoint crossed and on restart.
+- **Missile:** three per checkpoint, with a 0.8-second cooldown. Guides toward the nearest forward eligible target; launches without a target still consume ammunition. Cannot damage bomb-only barriers. Optional targets appear later in Cloud Ridge.
+- **Lift boost:** two seconds of extra lift, eight seconds recharge from activation. Optional high bells encourage trying it. It does not cancel a stall, bypass mandatory walls or grant immunity. Sensor pauses freeze timers.
 - **Heart-rate power:** the locked rider’s trusted, eligible zone profile, at most ten seconds old, sets basic/warm/hot/fire damage to 1/2/3/4. Cool, active, missing, stale and unknown zones use basic power. Each shot snapshots its power. Bomb blast dimensions scale by 1/1.25/1.5/1.75. A monitor is optional; conserved basic bombs can clear mandatory barriers. More physical resistance can raise effort without changing cadence/altitude.
 - **Vulnerability** defaults by class: `breakable` → laser and bomb, `solid` → bomb only, `scenery` → nothing. An entity definition or placement can set `vulnerable_to: [laser, bomb]` (or `[]`). A destroyed solid stops being a wall.
 - A crash clears shots and blasts in flight. A checkpoint restart restores what was destroyed at that checkpoint, as it does for crash-broken breakables.
-- Kills are recorded per entity as `laser`, `bomb` or `crash`. The run saves `targets` (laser and bomb kills), `shots_fired` and `bombs_dropped` on `run` and in `result.metrics`. `targets` counts kills on the final run-through: a checkpoint restart rolls it back along with the destroyed entities, as it does collectibles. The shot counters are cumulative across restarts, like `collisions`. Game score adds weapon targets to bells; reward rings do not change. Positive integer `hit_points` supports tougher targets. Partial target damage persists and rolls back with checkpoints.
+- Kills are recorded per entity as `laser`, `bomb`, `missile` or `crash`. The run saves `targets` (laser, bomb and missile kills), `shots_fired`, `bombs_dropped`, `missiles_fired` and `boosts_used` on `run` and in `result.metrics`. `targets` counts kills on the final run-through: a checkpoint restart rolls it back along with the destroyed entities, as it does collectibles. The shot counters are cumulative across restarts, like `collisions`. Game score adds weapon targets to bells; reward rings do not change. Positive integer `hit_points` supports tougher targets. Partial target damage persists and rolls back with checkpoints.
 - Fire keys are ignored with Ctrl, Cmd or Alt held and while typing in a field. A fire key never also activates a focused on-screen button.
 
 `rules.weapons` in an act overrides the defaults. Every field except `enabled` must be a non-negative number:
@@ -147,13 +151,13 @@ A `lava` segment uses `start_s`, `end_s` and `top` below the safe flight band (g
 
 A solid placement with `required_weapon: bomb` explicitly allows an otherwise impassable barrier. Weapons must be enabled, the barrier bomb-vulnerable and the rack sufficient for basic damage. Author a reachable detonation surface and enough blast width to clear the wall before the craft nose arrives; validate a complete basic-power route. Ordinary solids still require a flyable gap. `hit_points` can be defined on a class or placement. Checkpoint retries refill ammunition and restore obstacles/damage; no rescue ammunition is provided.
 
-Zone `palette` (or act `overrides.palette`) accepts `theme`, `sky`, `horizon`, `rock`, `rock_low`; built-in themes `meadow` and `volcanic` also tint backdrop silhouettes. Texture and sprite slots still work. Bundled course versions (Mountain Pass v6, Cloud Ridge v3) were incremented, invalidating old active course layouts while retaining pending terminal saves and earned completion.
+Zone `palette` (or act `overrides.palette`) accepts `theme`, `sky`, `horizon`, `rock`, `rock_low`; built-in themes `meadow` and `volcanic` also tint backdrop silhouettes. Texture and sprite slots still work. Bundled course versions (Mountain Pass v6, Cloud Ridge v4) were incremented, invalidating old active course layouts while retaining pending terminal saves and earned completion.
 
 ## Progression
 
 Acts play in world order: zone order from `world.yml`, then `act`. The first act is always open. Each later act opens once the act before it is completed, and that rule crosses zone boundaries. Per-rider progress lives in `fitness/skyline-glider/progress/<riderId>.yml`. It is updated whenever a completed run saves, and rebuilt from the run log when missing, so deleting it is safe.
 
-The lobby shows the world map. The rider button starts, in priority order: a tapped tile, a flight waiting to be retried or resumed, then the rider's next act. Tapping a locked tile asks for an admin fingerprint and records the unlock with `unlocked_by`. If the world map cannot load, every act stays playable and `skyline_glider.world.error` is logged.
+The flight picker shows the world map beside the 2×2 controls. Its top two buttons browse, bottom-left changes rider, and bottom-right starts/resumes or requests admin approval for a locked act. Default to the next unfinished act, otherwise the rider's last played act. Results offer Replay, Next level (Flights after the final act), Flights and Change rider. A failed terminal save offers Retry save and blocks a new run until the same record is saved. Locked-act approval records `unlocked_by`. If the world map cannot load, every act stays playable and `skyline_glider.world.error` is logged.
 
 The household Fitness menu is deployment-owned configuration and is not tracked in this repository. Add this tile to the production menu:
 

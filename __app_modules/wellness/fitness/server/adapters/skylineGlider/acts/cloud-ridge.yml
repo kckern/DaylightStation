@@ -1,12 +1,17 @@
 schema: skyline-glider-course/v1
 id: cloud-ridge
-version: 3
+version: 4
 zone: alpine
 act: 2
 name: Cloud Ridge
-description: Press your rider button to fire! Save bombs for marked barriers. Keep
-  pedaling above the lava.
+description: Use your four bike buttons for laser, bomb, missile and lift boost.
+  Save bombs for marked barriers and keep pedaling above the lava.
 duration_s: 240
+control_cues:
+  - at_s: 115
+    text: Bottom left launches a guided missile at high targets.
+  - at_s: 155
+    text: Bottom right gives a short lift boost. Keep pedaling!
 rpm:
   min: 30
   max: 130
@@ -21,12 +26,18 @@ motion:
   slow_signal_grace_s: 5
   inferred_slowdown_s: 0.5
 rules:
+  boost:
+    enabled: true
+    duration_s: 2
+    recharge_s: 8
+    lift: 0.13
   lives: 3
   invincibility_s: 1.25
   restart_delay_s: 2
   weapons:
     enabled: true
     bombs: 5
+    missiles: 3
     blast_width_s: 3
     blast_height: 0.16
 overrides:
@@ -78,6 +89,9 @@ segments:
   - id: cr-bell-09
     at_s: 228
     altitude: 0.72
+  - id: cr-boost-bell
+    at_s: 165
+    altitude: 0.22
 - id: checkpoint-one
   type: checkpoint
   start_s: 60
@@ -109,6 +123,18 @@ segments:
   type: finish
   start_s: 240
 entities:
+- id: missile-practice-01
+  entity: target
+  at_s: 128
+  altitude: 0.35
+  hit_points: 2
+  vulnerable_to: [laser, bomb, missile]
+- id: missile-practice-02
+  entity: target
+  at_s: 180
+  altitude: 0.28
+  hit_points: 2
+  vulnerable_to: [laser, bomb, missile]
 - id: target-01
   entity: target
   at_s: 25

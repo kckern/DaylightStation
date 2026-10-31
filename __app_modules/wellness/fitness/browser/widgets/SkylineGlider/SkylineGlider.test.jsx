@@ -89,6 +89,11 @@ beforeEach(() => {
 });
 
 describe('SkylineGlider', () => {
+  it('renders a guided missile distinctly from a falling bomb', () => {
+    render(<FlightScene state={{...flightState,projectiles:[{id:'missile-1',kind:'missile',at_s:10,altitude:.5}],boostRemaining:1}} course={course}/>);
+    expect(screen.getByTestId('skyline-glider-shot-missile-1').querySelector('[data-missile-body]')).toBeTruthy();
+    expect(screen.getByTestId('skyline-glider-boost-effect')).toBeTruthy();
+  });
   it('renders actual course geometry scrolling past a right-facing pitched glider', () => {
     const { container } = render(<FlightScene state={flightState} course={course} />);
 

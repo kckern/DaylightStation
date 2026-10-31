@@ -114,7 +114,7 @@ function Entity({ entity, assets, time }) {
   </g>;
 }
 
-const SHOT_SIZE = Object.freeze({ laser: { width: 52, height: 14 }, bomb: { width: 24, height: 30 } });
+const SHOT_SIZE = Object.freeze({ laser: { width: 52, height: 14 }, bomb: { width: 24, height: 30 }, missile: {width:42,height:16} });
 
 function Shot({ shot, x, y, zone, assets, time }) {
   const name = frameName(zone.weapons?.[shot.kind], time);
@@ -126,7 +126,7 @@ function Shot({ shot, x, y, zone, assets, time }) {
   return <g data-testid={`skyline-glider-shot-${shot.id}`} data-kind={shot.kind} data-power={shot.power || 1} transform={`translate(${x} ${y})`} className={`skyline-glider__shot skyline-glider__shot--${shot.kind}`}>
     {hasFrame(assets, name)
       ? <SpriteFrame assets={assets} name={name} x={left} y={-size.height / 2} width={size.width} height={size.height} align={laser ? 'xMaxYMid' : 'xMidYMid'}/>
-      : laser ? <LaserPreset/> : <BombPreset/>}
+      : laser ? <LaserPreset/> : shot.kind==='missile'?<g><path data-missile-body="" d="M-20 -7 H9 L24 0 9 7 H-20 L-12 0Z" fill="#fff2bf" stroke="#67462f" strokeWidth="2"/><path d="M-20 -4 L-36 0 -20 4" fill="#ef7b38"/></g>:<BombPreset/>}
   </g>;
 }
 
@@ -189,6 +189,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
         return <SpriteFrame assets={assets} name={craftFrame} x={-craftRear} y={-height / 2} width={craftFront + craftRear} height={height} align="xMidYMid"/>;
       })() : <GliderPreset craftFront={craftFront} craftRear={craftRear}/>}
       {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
+      {state.boostRemaining>0&&<g data-testid="skyline-glider-boost-effect" opacity=".8"><path d="M-45 5 L-100 18 M-40 16 L-86 30" stroke="#83e0e9" strokeWidth="8" strokeLinecap="round"/></g>}
       {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
     </g>
     {(state.blasts || []).map((blast) => <Blast key={blast.id} blast={blast} x={xAt(blast.at_s)} y={blast.altitude * projected.height} width={(blast.blast_width_s ?? rules.blast_width_s) * projected.unitsPerSecond} height={(blast.blast_height ?? rules.blast_height) * projected.height} progress={blastProgress(blast)} zone={zone} assets={assets}/>)}

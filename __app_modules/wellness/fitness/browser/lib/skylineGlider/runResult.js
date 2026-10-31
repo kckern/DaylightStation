@@ -32,7 +32,7 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
       started_at: startedAt, ended_at: endedAt,
       participants: [{ id: riderId }],
       outcome: { kind: completed ? 'completed' : 'abandoned', score: collectibles.length + targets, winner_ids: completed ? [riderId] : [] },
-      metrics: { duration_s: Math.round(state.courseTime * 100) / 100, collisions: state.collisions, restarts: state.restarts, collectibles: collectibles.length, targets, shots_fired: shotsFired, bombs_dropped: bombsDropped },
+      metrics: { duration_s: Math.round(state.courseTime * 100) / 100, collisions: state.collisions, restarts: state.restarts, collectibles: collectibles.length, targets, shots_fired: shotsFired, bombs_dropped: bombsDropped, missiles_fired:state.missilesFired||0,boosts_used:state.boostsUsed||0 },
     },
   };
 }

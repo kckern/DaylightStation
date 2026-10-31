@@ -19,6 +19,11 @@ const state = (overrides = {}) => ({
 });
 
 describe('flight telemetry', () => {
+  it('records missile and boost activations separately', () => {
+    const report=collectFlightTelemetry({previous:state(),next:state({missilesFired:1,missilesLeft:2,boostsUsed:1}),input:{connected:true},course,lastSampleSecond:-1});
+    expect(report.events).toContainEqual({type:'weapon.fired',data:{weapon:'missile',count:1,missilesLeft:2}});
+    expect(report.events).toContainEqual({type:'boost.activated',data:{count:1}});
+  });
   it('emits exactly one complete state sample for each crossed course second', () => {
     const first = collectFlightTelemetry({
       previous: state(), next: state({ courseTime: 1.04 }),

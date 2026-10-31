@@ -25,6 +25,8 @@ function buildSample(next, input, course, courseSecond) {
     inputMode: next.inputMode,
     lives: next.lives,
     bombsLeft: next.bombsLeft ?? null,
+    missilesLeft: next.missilesLeft ?? null,
+    boostRechargeRemaining: next.boostRechargeRemaining ?? null,
     phase: next.phase,
     stalled: !!next.stalled,
     visibleSegmentIds: visibleSegmentIds(course, next.courseTime),
@@ -101,6 +103,8 @@ export function collectFlightTelemetry({
     events.push({ type: 'weapon.fired', data: { weapon: 'bomb', count: next.bombsDropped, bombsLeft: next.bombsLeft } });
   }
   const priorBlasts = new Set((previous.blasts || []).map((blast) => blast.id));
+  if((next.missilesFired||0)>(previous.missilesFired||0))events.push({type:'weapon.fired',data:{weapon:'missile',count:next.missilesFired,missilesLeft:next.missilesLeft}});
+  if((next.boostsUsed||0)>(previous.boostsUsed||0))events.push({type:'boost.activated',data:{count:next.boostsUsed}});
   for (const blast of next.blasts || []) {
     if (!priorBlasts.has(blast.id)) events.push({ type: 'bomb.detonated', data: { shotId: blast.id, atSeconds: blast.at_s, altitude: blast.altitude } });
   }

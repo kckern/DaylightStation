@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SkylineGliderCourseCatalog } from "./SkylineGliderCourseCatalog.mjs";
 import { resolveAct } from "./skylineGlider/resolveAct.mjs";
 import { validateCourse as validateFrontendCourse, resolveCalibration } from "../../browser/lib/skylineGlider/courseModel.js";
-import { createFlightState, stepFlight } from "../../browser/lib/skylineGlider/flightEngine.js";
+import { createFlightState, stepFlight, retryFlightCheckpoint } from "../../browser/lib/skylineGlider/flightEngine.js";
 import { terrainBounds } from "../../browser/lib/skylineGlider/flightGeometry.js";
 
 let root;
@@ -24,7 +24,10 @@ describe('SkylineGliderCourseCatalog', () => {
     expect(first.entities).toEqual([]);
     expect(first.segments.some(s => s.type === 'lava')).toBe(false);
     expect(first.segments.filter(s => s.type === 'lower-terrain').every(s => s.profile?.length >= 3)).toBe(true);
-    expect(second).toMatchObject({ version: 3, duration_s: 240 });
+    expect(second).toMatchObject({ version: 4, duration_s: 240 });
+    expect(second.entities.filter(e=>e.vulnerable_to?.includes('missile')).every(e=>e.at_s>100&&e.required_weapon!=='bomb')).toBe(true);
+    expect(second.entities.some(e=>e.vulnerable_to?.includes('missile'))).toBe(true);
+    expect(second.rules.boost).toMatchObject({enabled:true,duration_s:2,recharge_s:8});
     expect(second.zone.palette.theme).not.toBe(first.zone.palette.theme);
     expect(second.segments.filter(s => s.type === 'lava').every(s => s.start_s >= 60)).toBe(true);
     expect(second.entities.some(e => e.required_weapon === 'bomb')).toBe(true);
@@ -66,6 +69,8 @@ describe('SkylineGliderCourseCatalog', () => {
     expect(state.phase).toBe('crashed');
     expect(state.lastCollisionEntityId).toBe(barrier.id);
     state = stepFlight(state, { rpm: 15, connected: true }, course.rules.restart_delay_s + .02, course);
+    expect(state.phase).toBe('crashed');
+    state = retryFlightCheckpoint(state, course);
     expect(state.restarts).toBe(1);
     expect(state.bombsLeft).toBe(course.rules.weapons.bombs);
     expect(state.destroyedIds).not.toContain(barrier.id);
