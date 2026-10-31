@@ -437,27 +437,33 @@ target language (the lexicon's name, `typed Korean answer` / `typed English
 answer`) and script, and its JSON carries `script` and `language`; nothing in
 them assumes Korean. **Short words (≤ 2 units — Hangul syllables, Han/kana
 characters, graphemes): the deterministic score is final** — no
-model call. **Longer words**: if `card_ladder.judge.model` is configured, a
-small low-effort model may raise an eligible floor (score ≥ 4 and d/L ≤ 33%) by
-**one band** (`judge: model`), never lower it; model failure or timeout falls
-back to the deterministic score (`judge: fallback`). **On this household
-`card_ladder.judge.model` is `gpt-5-nano`**, so a long-word misspelling that
-clears the deterministic floor can still gain the model's +1-band step;
-verdicts still land on `exact`, `wrong-script`, `guard`, `distance`, `cache` or
-`fallback` whenever the model doesn't apply or doesn't answer in time.
+model call. **Longer words**: a model may raise an eligible floor (score ≥ 4
+and d/L ≤ 33%) by **one band** (`judge: model`), never lower it; model failure
+or timeout falls back to the deterministic score (`judge: fallback`).
 
-**Shadow judge (2026-09-24).** When a typed-decision model is configured
-(`IDecisionGateway`, TypeSafe Jev, key in `system/auth/jev.yml`), it scores the
-same answer in parallel whenever the model step above runs. It never runs for
-short, exact, guarded or cached answers. It answers one Score question over the
-same rubric as five levels (different word · partly there · misspelled but
-intended · one slip · exact → 2/4/6/8/10), clamped the same way (never below the
-floor, at most one band up). **It decides nothing.** Each run logs
-`school.card-ladder.judge-shadow` with `base`, `llm`, `jev`, `jevConfidence`,
-`jevMs`, `agreed` and `passAgreed`. That is the evidence for or against letting
-it replace the LLM step, and it matters here because the provider rates its CJK
-accuracy below English. A shadow failure logs `judge-shadow-failed` and does not
-affect the verdict.
+**Which model (owner ruling 2026-10-30: prefer Jev over small chat models).**
+When a typed-decision model is configured (`IDecisionGateway`, TypeSafe Jev,
+key in `system/auth/jev.yml`), it is the model step: one Score question over
+the same rubric as five levels (different word · partly there · misspelled but
+intended · one slip · exact → 2/4/6/8/10), the level rounded to a band and
+clamped as above. The chat model `card_ladder.judge.model` (`gpt-5-nano` on
+this household) answers only where no decision model is configured; a Jev
+failure is a `fallback` to the floor, not a retry through the chat model. Jev
+returns no text, so a Jev verdict's `reason` is null; its cache row in
+`judgements.yml` carries `engine: jev` and the versioned `model`
+(`engine: llm` rows predate the ruling or come from a household without Jev).
+
+Every model-step call logs `school.card-ladder.judge-model` with `engine`,
+`model`, `floor`, `raw` (the model's band before the clamp), `level`,
+`confidence`, `score` and `ms`; a failure logs `judge-fallback` with `engine`.
+`raw` below `floor` is the evidence for the open question of whether a model
+should ever LOWER a floor. A replay of every past attempt on 2026-10-30 found
+that it would have mattered once: 사진을 먹어도 돼요 ("eat a photo") for
+사진을 찍어도 돼요 passes on distance (floor 8) while Jev read it as partly there
+(raw 4) at confidence 0.28. Jev's confidence on Korean was erratic in that
+replay (0 on a clear sound-spelling), which is why no confidence gate exists
+yet. The `judge-shadow` events (2026-09-24 → 2026-10-30) are the earlier,
+decide-nothing version of this step.
 
 ### Grading by script
 
@@ -1256,7 +1262,8 @@ sequencing events) `package` and `day`:
 | `word.prereqs` | a word's sign-off prerequisites moved (a recognition pass, a finished Match, a typed sign-off or its loss) | `wordId`, `changed`, `recognizedCount`, `matched`, `typedSignedOff`, `readyForSignOff`, `gaps` |
 | `recorded` / `practice` | a spoken take stored; a practice run built | `step`, `take`, `bytes`; `practice`, `help`, `filter`, `size`, `first` |
 | `learn-more` | a Learn more round started (ruling 2026-09-23) | `round`, `newIds`, `doneAt` (unchanged), `activeMs`; its `round.planned` carries `extra: true` |
-| `judge-fallback` (warn) | the typed judge's model failed or timed out | `wordId`, `error` |
+| `judge-model` | the typed judge's model step answered (Jev, or the chat model where no decision model is configured) | `wordId`, `engine`, `model`, `floor`, `raw`, `level`, `confidence`, `score`, `ms` |
+| `judge-fallback` (warn) | the typed judge's model failed or timed out | `wordId`, `engine`, `error`, `ms` |
 | `admin` | a grown-up word control (reset, mark mastered, exclude, drop deck, **regrade**) | `actorId`, `action`, `wordId`; a regrade adds `itemId`, `pass`, `score`, `was` |
 | `folded` / `fold-refused` / `fold-deck-skipped` | the printed quiz folded in (spec §8) | `source`, `count`, `demoted` |
 | `tuning` | one line per applied or dropped tuner change, and per grown-up undo | `setting`, `from`, `to`, `reason`, `dropped?`, `actorId` on an undo |

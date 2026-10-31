@@ -3281,6 +3281,13 @@ monitor() {
                         _cmac=$(jq -r '.mac' <<< "$device_json")
                         log "$name" "Connected"
                         logev "$name" bt.connect mac="$_cmac"
+                        # Tell the wind-down policy about the edge BEFORE the
+                        # settle gate. profile_loop disconnects an ended session's
+                        # device within ~1s, so waiting out BT_SETTLE_SEC first
+                        # meant the enforcer always won and an ended session could
+                        # never reopen. A connect after a long gap starts a fresh
+                        # session; a quick reconnect stays ended (session_policy.py).
+                        if has_profile "$slot"; then profile_policy "$slot" connect >/dev/null || true; fi
                         # Don't commit to playback on the bare Connected edge —
                         # require the link to hold for BT_SETTLE_SEC first. A
                         # flapping link would otherwise spawn+teardown mpv (and a
@@ -3303,7 +3310,6 @@ monitor() {
                             continue
                         fi
                         connected_state[$dbus_id]=true
-                        if has_profile "$slot"; then profile_policy "$slot" connect >/dev/null || true; fi
                         local cls
                         cls=$(device_class "$device_json")
                         if [[ "$cls" == "public" ]] && ! is_armed_for_play "$slot"; then

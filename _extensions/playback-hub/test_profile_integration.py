@@ -83,6 +83,15 @@ class StartupSafety(unittest.TestCase):
         monitor=source[source.index('monitor() {'):]
         self.assertLess(monitor.index('profile_loop &'), monitor.index('start_playback "$slot"'))
 
+    def test_connect_edge_reaches_policy_before_settle_gate(self):
+        # profile_loop disconnects an ended session's device within a second.
+        # If the connect edge waited out BT_SETTLE_SEC first, the enforcer would
+        # always win and an ended session could never reopen (2026-10-29: white
+        # dropped every connect for four days).
+        source=(MODULE/'playback-hub.sh').read_text()
+        edge=source[source.index('logev "$name" bt.connect mac="$_cmac"'):]
+        self.assertLess(edge.index('profile_policy "$slot" connect'), edge.index('bt_link_stable "$_cmac"'))
+
 class ResumeIdentity(unittest.TestCase):
     setUp = ShellIntegration.setUp
     shell = ShellIntegration.shell

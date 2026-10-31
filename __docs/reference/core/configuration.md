@@ -299,7 +299,7 @@ Enable it for a household with `decision: [{ provider: jev }]` in
 `integrations.yml`, then `adapters.get('decision')`; unconfigured households
 get a NoOp whose `evaluate()` throws. Jev bills input tokens only.
 Consumers today: nutrition icon choice and audit triage, the card-ladder typed
-judge (shadow), and finance transaction categorization (`TransactionCategoryJudge`,
+judge (its model step, ahead of the chat model), and finance transaction categorization (`TransactionCategoryJudge`,
 shadow by default; `jev.mode` in the household finance `gpt.yml`, see
 `__docs/reference/finance/categorization.md`).
 

@@ -127,59 +127,74 @@ describe('CardLadderTypedJudge — cache and re-grade keys use the script normal
     expect(await ask('photosynthesys')).toMatchObject({ judge: 'cache' });
     expect(aiGateway.chatStructured).toHaveBeenCalledTimes(1);
   });
-  describe('shadow judge (decision model)', () => {
+  describe('decision model (Jev) at the model step', () => {
     const LONG = entry('안녕히계세요');
     const TYPED = '안녕히개새요';
-    const shadowJudge = ({ llm = async () => ({ score: 9 }), jev }) => {
+    const jevJudge = ({ llm = async () => ({ score: 9 }), jev, withLlm = true }) => {
       const logger = { info: vi.fn(), warn: vi.fn() };
       const aiGateway = { chatStructured: vi.fn(llm) };
       const decisionGateway = { isConfigured: () => true, evaluate: vi.fn(jev) };
-      return { logger, aiGateway, decisionGateway,
-        judge: new CardLadderTypedJudge({ aiGateway, decisionGateway, cache: makeCache(), model: 'small', logger }) };
+      const cache = makeCache();
+      return { logger, aiGateway, decisionGateway, cache,
+        judge: new CardLadderTypedJudge({ aiGateway: withLlm ? aiGateway : null, decisionGateway, cache, model: withLlm ? 'small' : null, logger }) };
     };
-    const jevScore = (score, confidence = 0.8) => async () => ({ model: 'jev-1.13.0',
+    const jevScore = (score, confidence = 0.8) => async () => ({ model: 'jev-1.14.0',
       answers: { match: { type: 'score', score, confidence, probabilities: [] } } });
+    const floorOf = async () => (await new CardLadderTypedJudge({ cache: makeCache(), logger: { info() {}, warn() {} } })
+      .judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).score;
 
-    it('scores the same answer beside the LLM, clamps it the same way, and never changes the verdict', async () => {
-      const { judge, logger, decisionGateway, aiGateway } = shadowJudge({ jev: jevScore(4) });
+    it('is preferred over the chat model when both are configured, and caches its verdict', async () => {
+      const { judge, aiGateway, decisionGateway, cache, logger } = jevJudge({ jev: jevScore(4) });
       const verdict = await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
-      const plain = await make(async () => ({ score: 9 })).judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
-      expect(verdict).toEqual(plain);
+      expect(verdict.judge).toBe('model');
+      expect(aiGateway.chatStructured).not.toHaveBeenCalled();
       const [state, questions] = decisionGateway.evaluate.mock.calls[0];
-      expect(state).toEqual(JSON.parse(aiGateway.chatStructured.mock.calls[0][0][1].content));
+      expect(state).toMatchObject({ target: '안녕히계세요', attempt: TYPED });
       expect(questions.match.type).toBe('score');
       expect(questions.match.levels).toHaveLength(5);
-      const row = logger.info.mock.calls.find(([event]) => event === 'school.card-ladder.judge-shadow')[1];
-      // level 4 = "Exact" = 10 raw, clamped to one band above the floor — same as the LLM's 9
-      expect(row).toMatchObject({ jevRaw: 10, jev: verdict.score, llm: verdict.score, agreed: true, passAgreed: true, jevConfidence: 0.8 });
+      expect(cache.get('p', 'w', TYPED)).toMatchObject({ judge: 'model', engine: 'jev', model: 'jev-1.14.0', reason: null });
+      const row = logger.info.mock.calls.find(([event]) => event === 'school.card-ladder.judge-model')[1];
+      expect(row).toMatchObject({ engine: 'jev', model: 'jev-1.14.0', raw: 10, level: 4, confidence: 0.8, score: verdict.score });
     });
 
-    it('logs disagreement when the decision model reads it as a different word', async () => {
-      const { judge, logger } = shadowJudge({ jev: jevScore(0.2) });
-      const verdict = await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
-      const row = logger.info.mock.calls.find(([event]) => event === 'school.card-ladder.judge-shadow')[1];
-      expect(row.jevRaw).toBe(2);
-      expect(row.jev).toBe(row.base); // never below the deterministic floor
-      expect(row.agreed).toBe(row.base === verdict.score);
+    it('clamps like the chat model: at most one band up, never below the floor', async () => {
+      const floor = await floorOf();
+      const high = await jevJudge({ jev: jevScore(4) }).judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
+      expect(high.score).toBe(Math.min(10, floor + 2));
+      const low = jevJudge({ jev: jevScore(0.2) });
+      expect(await low.judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'model', score: floor });
+      expect(low.logger.info.mock.calls.find(([event]) => event === 'school.card-ladder.judge-model')[1]).toMatchObject({ raw: 2, floor });
     });
 
-    it('still logs when the LLM fails, and a shadow failure is only a warning', async () => {
-      const failingLlm = shadowJudge({ llm: async () => { throw new Error('timeout'); }, jev: jevScore(3) });
-      expect(await failingLlm.judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'fallback' });
-      expect(failingLlm.logger.info).toHaveBeenCalledWith('school.card-ladder.judge-shadow', expect.objectContaining({ llm: null, agreed: null }));
-
-      const failingJev = shadowJudge({ jev: async () => { throw new Error('429'); } });
-      expect(await failingJev.judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'model' });
-      expect(failingJev.logger.warn).toHaveBeenCalledWith('school.card-ladder.judge-shadow-failed', expect.objectContaining({ error: '429' }));
+    it('falls back to the floor when the decision model fails, without trying the chat model', async () => {
+      const { judge, aiGateway, logger } = jevJudge({ jev: async () => { throw new Error('429'); } });
+      expect(await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'fallback', score: await floorOf() });
+      expect(aiGateway.chatStructured).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith('school.card-ladder.judge-fallback', expect.objectContaining({ engine: 'jev', error: '429' }));
+      const malformed = jevJudge({ jev: async () => ({ model: 'jev', answers: {} }) });
+      expect(await malformed.judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'fallback' });
     });
 
-    it('does not run where the LLM does not (short, exact, cached)', async () => {
-      const { judge, decisionGateway } = shadowJudge({ jev: jevScore(4) });
+    it('runs with no chat model configured at all', async () => {
+      const { judge } = jevJudge({ jev: jevScore(4), withLlm: false });
+      expect(await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'model' });
+    });
+
+    it('an unconfigured decision gateway leaves the chat model in charge', async () => {
+      const aiGateway = { chatStructured: vi.fn(async () => ({ score: 9, reason: 'close' })) };
+      const decisionGateway = { isConfigured: () => false, evaluate: vi.fn() };
+      const judge = new CardLadderTypedJudge({ aiGateway, decisionGateway, cache: makeCache(), model: 'small', logger: { info() {}, warn() {} } });
+      expect(await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'model', reason: 'close' });
+      expect(decisionGateway.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('is never asked about short, exact or cached answers', async () => {
+      const { judge, decisionGateway } = jevJudge({ jev: jevScore(4) });
       await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가이', otherWords: [] });
       await judge.judge({ pkg: 'p', entry: LONG, typed: '안녕히계세요', otherWords: [] });
       expect(decisionGateway.evaluate).not.toHaveBeenCalled();
       await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
-      await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] });
+      expect(await judge.judge({ pkg: 'p', entry: LONG, typed: TYPED, otherWords: [] })).toMatchObject({ judge: 'cache' });
       expect(decisionGateway.evaluate).toHaveBeenCalledTimes(1);
     });
   });
