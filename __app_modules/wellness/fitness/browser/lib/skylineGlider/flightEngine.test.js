@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateCourse } from "./courseModel.js";
-import { createFlightState, stepFlight } from "./flightEngine.js";
+import { createFlightState, stepFlight, retryFlightCheckpoint } from "./flightEngine.js";
 
 const course = {
   duration_s: 20,
@@ -202,7 +202,7 @@ describe('collisions, checkpoints, and completion', () => {
     state = { ...state, altitude: 0.7, courseTime: 2.1, lives: 2, invincibleRemaining: 0 };
     state = stepFlight(state, fresh(30), 1 / 60, course);
     expect(state.phase).toBe('crashed');
-    state = run(state, 2.1, fresh(50));
+    state = retryFlightCheckpoint(run(state, 2.1, fresh(50)), course);
     expect(state.phase).toBe('playing');
     expect(state.lives).toBe(3);
     expect(state.courseTime).toBeGreaterThanOrEqual(5);
@@ -266,7 +266,7 @@ describe('entities', () => {
     state = stepFlight({ ...state, courseTime: 7.5, altitude: 0.7 }, fresh(30), 1 / 60, entityCourse);
     expect(state.destroyedIds).toEqual(['tree-a', 'tree-b']);
     state = stepFlight({ ...state, courseTime: 13.5, invincibleRemaining: 0 }, fresh(30), 1 / 60, entityCourse);
-    state = run(state, 2.1, fresh(50));
+    state = retryFlightCheckpoint(run(state, 2.1, fresh(50)), entityCourse);
 
     expect(state.phase).toBe('playing');
     expect(state.destroyedIds).toEqual(['tree-a']);
@@ -372,7 +372,7 @@ describe('weapons', () => {
     expect(next.bombsLeft).toBe(5);
     const crashed = stepFlight({ ...next, bombsLeft: 0, projectiles: [{ id: 'laser-9', kind: 'laser', at_s: 6, origin_s: 6, altitude: 0.6 }], blasts: [{ id: 'bomb-9', at_s: 6, altitude: 0.7, remaining: 0.5 }], altitude: 0.99 }, hold, 1 / 60, { ...armed, segments: [...armed.segments.slice(0, 1), { id: 'floor', type: 'lower-terrain', start_s: 5, end_s: 8, top: 0.7 }, armed.segments[1]] });
     expect(crashed).toMatchObject({ phase: 'crashed', projectiles: [], blasts: [] });
-    const restarted = stepFlight(crashed, hold, armed.rules.restart_delay_s + 0.05, armed);
+    const restarted = retryFlightCheckpoint(stepFlight(crashed, hold, armed.rules.restart_delay_s + 0.05, armed), armed);
     expect(restarted).toMatchObject({ phase: 'playing', bombsLeft: 5, projectiles: [], blasts: [] });
   });
 });

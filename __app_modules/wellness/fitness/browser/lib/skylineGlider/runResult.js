@@ -9,7 +9,7 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
   // `targets` counts the final run-through (rolled back with the checkpoint, like
   // collectibles); shot and bomb counters are cumulative, like collisions.
   const destroyedBy = Object.values(state.destroyedBy || {});
-  const targets = destroyedBy.filter((by) => by === 'laser' || by === 'bomb').length;
+  const targets = destroyedBy.filter((by) => ['laser', 'bomb', 'missile'].includes(by)).length;
   const shotsFired = state.shotsFired || 0;
   const bombsDropped = state.bombsDropped || 0;
   return {
@@ -20,6 +20,7 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
       duration_s: Math.round(state.courseTime * 100) / 100,
       collisions: state.collisions, restarts: state.restarts, reward_rings: rewardRings,
       targets, shots_fired: shotsFired, bombs_dropped: bombsDropped,
+      missiles_fired: state.missilesFired || 0, boosts_used: state.boostsUsed || 0,
       ...(fitnessSessionId ? { fitness_session_id: fitnessSessionId } : {}),
       ...(equipmentId ? { equipment_id: equipmentId } : {}),
       ...(calibration ? { calibration: { low_rpm: calibration.lowRpm, high_rpm: calibration.highRpm } } : {}),

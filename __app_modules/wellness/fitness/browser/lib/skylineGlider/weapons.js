@@ -10,6 +10,11 @@ export const WEAPON_DEFAULTS = Object.freeze({
   laser_speed_s: 3,
   laser_range_s: 7,
   bombs: 5,
+  missiles: 3,
+  missile_cooldown_s: .8,
+  missile_range_s: 7,
+  missile_speed_s: 3,
+  missile_turn_rate: .3,
   bomb_cooldown_s: 0.8,
   bomb_gravity: 1.4,
   blast_width_s: 1.2,
@@ -17,7 +22,7 @@ export const WEAPON_DEFAULTS = Object.freeze({
   blast_s: 0.5,
 });
 
-export const WEAPON_KINDS = Object.freeze(['laser', 'bomb']);
+export const WEAPON_KINDS = Object.freeze(['laser', 'bomb', 'missile']);
 
 const DEFAULT_VULNERABILITY = Object.freeze({ breakable: ['laser', 'bomb'], solid: ['bomb'], scenery: [] });
 
@@ -26,6 +31,7 @@ export function weaponRules(course) {
 }
 
 export function vulnerableTo(entity, weapon) {
+  if (weapon === 'missile' && entity?.required_weapon === 'bomb') return false;
   const list = Array.isArray(entity?.vulnerable_to) ? entity.vulnerable_to : DEFAULT_VULNERABILITY[entity?.class] || [];
   return list.includes(weapon);
 }
@@ -35,6 +41,9 @@ export function initialWeaponState(course) {
     projectiles: [],
     blasts: [],
     bombsLeft: weaponRules(course).bombs,
+    missilesLeft: weaponRules(course).missiles,
+    missileCooldown: 0,
+    missilesFired: 0,
     laserCooldown: 0,
     bombCooldown: 0,
     shotsFired: 0,
@@ -51,7 +60,14 @@ export function fireWeapons(state, actions, course, power = 1) {
   if (!rules.enabled || !actions?.length) return state;
   let next = state;
   for (const action of actions) {
-    if (action === 'laser' && !(next.laserCooldown > 0)) {
+    if (action === 'missile' && !(next.missileCooldown > 0) && next.missilesLeft > 0) {
+      const at = next.courseTime + SKYLINE_CRAFT_GEOMETRY.frontSeconds;
+      const target = (course.entities || []).filter(e => !(next.destroyedIds || []).includes(e.id) && vulnerableTo(e, 'missile') && e.at_s >= at && e.at_s <= at + rules.missile_range_s)
+        .sort((a,b) => a.at_s - b.at_s || a.id.localeCompare(b.id))[0];
+      const count = (next.missilesFired || 0) + 1;
+      next = { ...next, missilesFired: count, missilesLeft: next.missilesLeft - 1, missileCooldown: rules.missile_cooldown_s,
+        projectiles: [...next.projectiles, { id: 'missile-' + count, kind: 'missile', power, at_s: at, origin_s: at, altitude: next.altitude, targetId: target?.id || null }] };
+    } else if (action === 'laser' && !(next.laserCooldown > 0)) {
       const shotsFired = next.shotsFired + 1;
       const at = next.courseTime + SKYLINE_CRAFT_GEOMETRY.frontSeconds;
       next = {
@@ -94,6 +110,21 @@ export function advanceWeapons(state, dt, course) {
   const blasts = (state.blasts || []).map((blast) => ({ ...blast, remaining: blast.remaining - dt })).filter((blast) => blast.remaining > 1e-9);
   const projectiles = [];
   for (const shot of state.projectiles || []) {
+    if (shot.kind === 'missile') {
+      const limit = shot.origin_s + rules.missile_range_s;
+      const end = Math.min(limit, shot.at_s + (1 + rules.missile_speed_s) * dt);
+      const target = targets().find(e => e.id === shot.targetId && vulnerableTo(e, 'missile'));
+      const delta = target ? target.altitude - shot.altitude : 0;
+      const altitude = shot.altitude + Math.max(-rules.missile_turn_rate * dt, Math.min(rules.missile_turn_rate * dt, delta));
+      const steps = Math.max(1, Math.ceil((end - shot.at_s) / .05));
+      let hit = null;
+      for (let i=0;i<steps&&!hit;i++) hit = firstHitAlong(targets(), course,
+        shot.at_s + (end-shot.at_s)*i/steps, shot.at_s + (end-shot.at_s)*(i+1)/steps,
+        shot.altitude + (altitude-shot.altitude)*(i+.5)/steps);
+      if (hit?.entity && vulnerableTo(hit.entity, 'missile')) damage(hit.entity, 'missile', shot.power);
+      if (!hit && end < limit) projectiles.push({ ...shot, at_s: end, altitude });
+      continue;
+    }
     if (shot.kind === 'laser') {
       // Sweep the whole step so a narrow entity or zero-width wall is never skipped.
       const limit = shot.origin_s + rules.laser_range_s;
@@ -124,5 +155,6 @@ export function advanceWeapons(state, dt, course) {
     entityDamage,
     laserCooldown: cool(state.laserCooldown),
     bombCooldown: cool(state.bombCooldown),
+    missileCooldown: cool(state.missileCooldown),
   };
 }

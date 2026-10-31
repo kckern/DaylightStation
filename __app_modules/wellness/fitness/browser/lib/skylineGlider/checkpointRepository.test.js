@@ -6,6 +6,14 @@ const identity = { fitnessSessionId: 'fs-1', riderId: 'test-rider', equipmentId:
 
 describe('Skyline Glider checkpoint repository', () => {
   beforeEach(() => localStorage.clear());
+  it('rejects old active state but retains old pending terminal records for saving', () => {
+    const key = 'fitness:skyline-glider:test-rider:mountain-pass';
+    const old = { schema: 'skyline-glider-checkpoint/v3', course, identity, state: { courseTime: 15 }, lifecycle: 'active' };
+    localStorage.setItem(key, JSON.stringify(old));
+    expect(readFlightCheckpoint('test-rider',course).status).toBe('incompatible');
+    localStorage.setItem(key, JSON.stringify({ ...old, lifecycle:'pending_terminal',terminalRecord:{run:{id:'old-run'}} }));
+    expect(readFlightCheckpoint('test-rider',course)).toMatchObject({status:'pending_terminal',terminalRecord:{run:{id:'old-run'}}});
+  });
   it('round-trips only an exactly compatible active checkpoint', () => {
     writeFlightCheckpoint('test-rider', course, { identity, state: { courseTime: 75, collectedIds: ['a'], entityDamage: { target: 2 } } });
     expect(readFlightCheckpoint('test-rider', course, identity)).toMatchObject({ status: 'compatible', identity: { runId: 'run-1' }, state: { courseTime: 75, entityDamage: { target: 2 } } });

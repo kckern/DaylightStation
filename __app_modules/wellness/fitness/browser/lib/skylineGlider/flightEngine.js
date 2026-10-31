@@ -8,6 +8,7 @@ import {
   terrainContact,
 } from "./flightGeometry.js";
 import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
+import { initialBoostState, activateBoost, advanceBoost, boostTargetAltitude } from './liftBoost.js';
 
 const STEP = 1 / 60;
 
@@ -28,6 +29,9 @@ function applyCourseEvents(state, previousTime, course) {
     next = {
       ...next,
       bombsLeft: weaponRules(course).bombs,
+      missilesLeft: weaponRules(course).missiles,
+      boostRemaining: 0,
+      boostRechargeRemaining: 0,
       checkpoint: {
         id: checkpoint.id,
         time: checkpoint.start_s,
@@ -115,7 +119,8 @@ function collide(state, course) {
   return hit.lives > 0 ? hit : crash(hit, course, { cause: 'lives', entityId: broken[0].id, counted: true });
 }
 
-function restartAtCheckpoint(state, course) {
+export function retryFlightCheckpoint(state, course) {
+  if (state.phase !== 'crashed') return state;
   return {
     ...state,
     phase: 'playing',
@@ -135,6 +140,10 @@ function restartAtCheckpoint(state, course) {
     projectiles: [],
     blasts: [],
     bombsLeft: weaponRules(course).bombs,
+    missilesLeft: weaponRules(course).missiles,
+    missileCooldown: 0,
+    boostRemaining: 0,
+    boostRechargeRemaining: 0,
     laserCooldown: 0,
     bombCooldown: 0,
     restarts: state.restarts + 1,
@@ -161,8 +170,7 @@ function advanceStall(state, input, dt, course) {
 function singleStep(state, input, dt, course) {
   if (state.phase === 'completed') return state;
   if (state.phase === 'crashed') {
-    const crashRemaining = Math.max(0, state.crashRemaining - dt);
-    return crashRemaining === 0 ? restartAtCheckpoint({ ...state, crashRemaining }, course) : { ...state, crashRemaining };
+    return state;
   }
 
   if (state.stalled) return advanceStall(state, input, dt, course);
@@ -201,6 +209,10 @@ function singleStep(state, input, dt, course) {
 
   const previousTime = state.courseTime;
   if (!missing && input?.rpm === 0) return advanceStall(state, input, dt, course);
+  if (!missing) {
+    state = advanceBoost(state, dt, course);
+    if (input?.actions?.includes('boost')) state = activateBoost(state, course);
+  }
   const measuredRpm = Math.max(0, Number(input?.rpm) || 0);
   const inferredFor = disconnected ? state.sensorMissingFor + dt : 0;
   const slowdownSeconds = Math.max(STEP, Number(course.motion.inferred_slowdown_s ?? 0.5));
@@ -222,6 +234,7 @@ function singleStep(state, input, dt, course) {
   }
   if (disconnected) targetAltitude = targetForRpm(rawRpm, state.calibration);
 
+  targetAltitude = boostTargetAltitude(state, targetAltitude, course);
   const desiredRate = (targetAltitude - state.altitude) / course.motion.response_s;
   const rate = clamp(desiredRate, -course.motion.max_climb_rate, course.motion.max_descent_rate);
   const altitude = clamp(state.altitude + rate * dt, HIGH_ALTITUDE, LOW_ALTITUDE);
@@ -280,6 +293,7 @@ export function createFlightState(course, {
     collectedIds: [],
     destroyedIds: [],
     ...initialWeaponState(course),
+    ...initialBoostState(),
     checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [], destroyedIds: [], destroyedBy: {}, entityDamage: {} },
   };
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { terrainBounds, terrainContact, firstHitAlong, safeBandAt } from './flightGeometry.js';
 import { validateCourse, resolveCalibration } from './courseModel.js';
-import { createFlightState, stepFlight } from './flightEngine.js';
+import { createFlightState, stepFlight, retryFlightCheckpoint } from './flightEngine.js';
 import { projectCourseWindow } from './courseProjection.js';
 
 const hill = { id: 'hill', type: 'lower-terrain', start_s: 2, end_s: 12, top: .9, profile: [{ at_s: 2, altitude: .9 }, { at_s: 7, altitude: .5 }, { at_s: 12, altitude: .9 }] };
@@ -12,6 +12,10 @@ const calibration = { lowRpm: 15, highRpm: 60 };
 const input = (rpm) => ({ rpm, connected: true });
 
 describe('accessible flight', () => {
+  it('rejects invalid boost rules and fractional ammunition', () => {
+    expect(validateCourse({ ...base, rules:{...base.rules,boost:{duration_s:-2}} }).valid).toBe(false);
+    expect(validateCourse({ ...base, rules:{...base.rules,weapons:{missiles:1.5}} }).valid).toBe(false);
+  });
   it('uses the same interpolated slope for contact, craft footprint and projectile sweeps', () => {
     const course = { segments: [hill] };
     expect(terrainBounds(hill, 4.5).bottom).toBeCloseTo(.7);
@@ -77,6 +81,7 @@ it('restores partial target damage at checkpoint and refills wasted ammunition',
  state = stepFlight(state, input(15), 4.4, course);
  expect(state.phase).toBe('crashed');
  state = stepFlight(state, input(15), 2.1, course);
+ state = retryFlightCheckpoint(state, course);
  expect(state.entityDamage).toEqual({ target: 1 });
  expect(state.bombsLeft).toBe(5);
 });

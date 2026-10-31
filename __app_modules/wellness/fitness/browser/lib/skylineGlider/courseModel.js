@@ -2,7 +2,7 @@ import { SKYLINE_CRAFT_GEOMETRY, entityBounds, terrainContact } from "./flightGe
 
 const SCHEMA = 'skyline-glider-course/v1';
 const ENTITY_CLASSES = new Set(['breakable', 'solid', 'scenery']);
-const WEAPONS = new Set(['laser', 'bomb']);
+const WEAPONS = new Set(['laser', 'bomb', 'missile']);
 const TYPES = new Set([
   'open', 'lower-terrain', 'upper-terrain', 'corridor', 'lava',
   'collectible-path', 'checkpoint', 'finish',
@@ -149,6 +149,13 @@ export function validateCourse(input) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) errors.push(`rules weapons ${field} must be a non-negative number`);
   }
   const entities = validateEntities(Array.isArray(input.entities) ? input.entities : [], errors);
+  for (const field of ['bombs','missiles']) if (weapons?.[field] != null && !Number.isInteger(weapons[field])) errors.push('ammunition must be an integer');
+  const boost = input.rules?.boost;
+  if (boost != null && (typeof boost !== 'object' || Array.isArray(boost))) errors.push('rules boost must be a mapping');
+  else for (const [field,value] of Object.entries(boost || {})) {
+    if (field === 'enabled') { if (typeof value !== 'boolean') errors.push('boost enabled must be boolean'); }
+    else if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) errors.push('boost tuning must be non-negative');
+  }
   if (errors.length === 0) {
     const required = entities.filter(entity => entity.required_weapon === 'bomb');
     for (const entity of required) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createFlightState, stepFlight } from './flightEngine.js';
+import { createFlightState, stepFlight, retryFlightCheckpoint } from './flightEngine.js';
 
 const calibration = { lowRpm: 30, highRpm: 130 };
 const course = { duration_s: 20, motion: { response_s: .6, filter_s: .25, deadband_rpm: 2, max_climb_rate: .3, max_descent_rate: .3, disconnect_grace_s: .75, slow_signal_grace_s: 5, inferred_slowdown_s: .5 }, rules: { lives: 3, invincibility_s: 1, restart_delay_s: 2 }, segments: [{ id: 'finish', type: 'finish', start_s: 20 }] };
@@ -58,6 +58,8 @@ describe('unrecoverable zero-cadence stall', () => {
   state.checkpoint = { ...state.checkpoint, id: 'saved', time: 5, restartAltitude: .5 };
   state = untilCrash(stepFlight(state, fresh(0), 1 / 60, course), fresh(130), course);
   state = stepFlight(state, fresh(130), 2.02, course);
+  expect(state.phase).toBe('crashed');
+  state = retryFlightCheckpoint(state, course);
   expect(state.stalled).toBe(false);
   expect(state.phase).toBe('playing');
   expect(state.courseTime).toBeGreaterThanOrEqual(5);
