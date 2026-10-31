@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import getLogger from '@/lib/logging/Logger.js';
 import { selectCheckpointVariant } from "./core/nativeCheckpoint.js";
 import { createCheckpointConsoleLifecycle, captureCheckpoint } from "./core/checkpointConsoleLifecycle.js";
+import { recoveryChoices } from "./core/recoveryChoices.js";
 import { createEmulatorEngine } from "./core/EmulatorEngine.js";
 import { createAudioMixer } from "./audio/AudioMixer.js";
 import { createEmulatorSession } from "./core/EmulatorSession.js";
@@ -79,6 +80,9 @@ const DEFAULT_FACTORIES = {
  * snapshot and the .srm; state captures only the snapshot. Returns
  * { state?, battery? } or null when nothing was captured.
  */
+/** How long the erase confirm ignores input after it appears (double-tap guard). */
+const ERASE_CONFIRM_GUARD_MS = 500;
+
 function captureForMode(engine, saveMode) {
   if (saveMode === 'state') {
     const state = engine.captureState?.();
@@ -192,7 +196,6 @@ export function EmulatorConsole({
   // Stable indirection so the mount-once hotspot controller can open the (live)
   // reset confirm modal without being recreated.
   const openResetRef = useRef(null);
-  openResetRef.current = () => setResetOpen(true);
 
   const presentation = presentationProp || game?.presentation || {};
   const hotspots = presentation.hotspots || [];
@@ -219,8 +222,24 @@ export function EmulatorConsole({
   const persistenceRef = useRef(persistence);
   persistenceRef.current = persistence;
 
-  // Reset ("start over") confirm modal.
+  // Reset ("start over") confirm modal. A battery game with a player gets a
+  // non-destructive Restart; erasing its save is a second, explicit step.
   const [resetOpen, setResetOpen] = useState(false);
+  const [eraseConfirm, setEraseConfirm] = useState(false);
+  // Launch card: when a save holds both the in-game save and where the player
+  // stopped, the boot waits for them to choose. Never a forced autoload.
+  const [launchChoice, setLaunchChoice] = useState(null);
+  const launchPickRef = useRef(null);
+  // The power switch waits while the launch card is up: nothing has booted yet.
+  openResetRef.current = () => { if (!launchChoice) setResetOpen(true); };
+  // A double tap on "Erase saved game" must not land on the confirm that
+  // replaces it, so the confirm ignores input briefly after it appears.
+  const eraseArmedAtRef = useRef(0);
+  useEffect(() => { if (eraseConfirm) eraseArmedAtRef.current = Date.now(); }, [eraseConfirm]);
+  // Restart already chose the in-game save; its reboot skips the card.
+  const skipLaunchCardRef = useRef(false);
+  const closeReset = useCallback(() => { setResetOpen(false); setEraseConfirm(false); }, []);
+  const softRestart = !!(persistence?.checkpoint && persistence?.persist && persistence?.userId && persistence?.saveMode === 'battery');
 
   // Game menu (host section + volume + LCD shade) — the ⋯ button on the bezel.
   // The game pauses while it is open.
@@ -718,13 +737,14 @@ export function EmulatorConsole({
   // menu mounts open, and must not also pick its first button.
   const sheetRef = useRef(null);
   const progressDialogRef = useRef(null);
+  const launchDialogRef = useRef(null);
   const resetDialogRef = useRef(null);
   const errorDialogRef = useRef(null);
   const modalStateRef = useRef(null);
   const progressBlocked = !!checkpointKey && !!progress && !progress.canPlay;
-  const modalInputActive = resetOpen || !!recoveryCopies || !!error || progressBlocked;
-  modalStateRef.current = { resetOpen, recovery: !!recoveryCopies, recoveryLoading: !!recoveryCopies?.loading, error: !!error, progressBlocked };
-  const activeInputSheet = () => resetDialogRef.current || progressDialogRef.current || errorDialogRef.current || sheetRef.current;
+  const modalInputActive = !!launchChoice || resetOpen || !!recoveryCopies || !!error || progressBlocked;
+  modalStateRef.current = { launchChoice: !!launchChoice, resetOpen, eraseConfirm, softRestart, recovery: !!recoveryCopies, recoveryLoading: !!recoveryCopies?.loading, error: !!error, progressBlocked };
+  const activeInputSheet = () => launchDialogRef.current || resetDialogRef.current || progressDialogRef.current || errorDialogRef.current || sheetRef.current;
   const menuDefaultButton = () => {
     const sheet = activeInputSheet();
     return sheet?.querySelector('[data-autofocus]') || sheet?.querySelector('button');
@@ -733,13 +753,15 @@ export function EmulatorConsole({
   // emulator core takes focus for itself when it finishes booting.
   useEffect(() => {
     if (!holdPaused && (settingsOpen || modalInputActive)) menuDefaultButton()?.focus?.();
-  }, [settingsOpen, playReady, resetOpen, recoveryCopies, error, progress?.phase, modalInputActive, holdPaused]);
+  }, [settingsOpen, playReady, launchChoice, resetOpen, eraseConfirm, recoveryCopies, error, progress?.phase, modalInputActive, holdPaused]);
   const onMenuIntent = useCallback((intent) => {
     const sheet = activeInputSheet();
     if (!sheet) return;
     if (intent === 'back') {
       const modal = modalStateRef.current;
-      if (modal.resetOpen) setResetOpen(false);
+      if (modal.launchChoice) return;
+      if (modal.resetOpen && modal.eraseConfirm && modal.softRestart && !modal.recovery) setEraseConfirm(false);
+      else if (modal.resetOpen) { setResetOpen(false); setEraseConfirm(false); }
       else if (modal.recovery) { if (!modal.recoveryLoading) cancelRecovery(); }
       else if (modal.error || modal.progressBlocked) requestExitRef.current?.();
       else setSettingsOpen(false);
@@ -813,7 +835,9 @@ export function EmulatorConsole({
   const resetFlightRef = useRef(null);
   const confirmReset = useCallback(() => {
     if (resetFlightRef.current) return resetFlightRef.current;
-    setResetOpen(false);
+    if (eraseConfirm && Date.now() - eraseArmedAtRef.current < ERASE_CONFIRM_GUARD_MS) return undefined;
+    if (eraseConfirm) logger.info('emulator.console.erase-confirmed', { game: game?.id, user: persistenceRef.current?.userId || null });
+    setResetOpen(false); setEraseConfirm(false);
     const operation = (async () => {
     const p = persistenceRef.current;
     if (p?.checkpoint) {
@@ -836,7 +860,24 @@ export function EmulatorConsole({
     resetFlightRef.current = operation;
     operation.then(() => { if (resetFlightRef.current === operation) resetFlightRef.current = null; });
     return operation;
-  }, [game, logger, recoveryCopies]);
+  }, [game, logger, recoveryCopies, eraseConfirm]);
+  // Restart: keep the in-game save, store the latest capture, and reboot. The
+  // re-prepare resumes from that save (resumeSource), so no server reset.
+  const restartFlightRef = useRef(null);
+  const confirmRestart = useCallback(() => {
+    if (restartFlightRef.current) return restartFlightRef.current;
+    setResetOpen(false); setEraseConfirm(false);
+    const operation = (async () => {
+      const result = await (checkpointRef.current?.save() ?? Promise.resolve({ status: 'skipped' }));
+      if (!['ok', 'skipped'].includes(result?.status)) { logger.warn('emulator.console.restart-save-failed', { game: game?.id, status: result?.status }); return; }
+      logger.info('emulator.console.restart', { game: game?.id, user: persistenceRef.current?.userId || null });
+      skipLaunchCardRef.current = true;
+      setError(null); setBootNonce(value => value + 1);
+    })();
+    restartFlightRef.current = operation;
+    operation.finally(() => { if (restartFlightRef.current === operation) restartFlightRef.current = null; });
+    return operation;
+  }, [game, logger]);
 
   // Console-owned animation handler: flash a transient CSS class on the shader.
   const triggerAnim = (name) => {
@@ -932,12 +973,25 @@ export function EmulatorConsole({
               ...(needsClaim ? { claimCapture: claimTransferRef.current.captured, claimId: bootPersistence.claimId, allowExisting: bootPersistence.replaceExisting === true } : {}) });
           }
           if (cancelled) return false;
+          const skipCard = skipLaunchCardRef.current; skipLaunchCardRef.current = false;
           if (point.status !== 'ready') {
             if (point.status === 'recovery') {
               const copies = await checkpoint.inspectRecovery();
               if (!cancelled) setRecoveryCopies(copies.status === 'ok' ? copies : { error: copies.error });
             }
             return false;
+          }
+          if (!handoff && !skipCard && point.choices?.length > 1) {
+            const picked = await new Promise(resolve => { launchPickRef.current = resolve; setLaunchChoice({ choices: point.choices }); });
+            launchPickRef.current = null;
+            if (cancelled || !picked) return false;
+            setLaunchChoice(null);
+            logger.info('emulator.console.resume-choice', { game: game?.id, user: bootPersistence.userId || null, choice: picked });
+            if (picked !== 'continue') {
+              const chosen = checkpoint.chooseResume(picked);
+              if (chosen.status !== 'ready') { setProgress({ phase: 'error', canPlay: false, error: chosen }); return false; }
+              point = chosen;
+            }
           }
           sessionEngineConfig.checkpointProvenance = point.provenance;
           sessionEngineConfig.afterBoot = async () => {
@@ -1147,6 +1201,7 @@ export function EmulatorConsole({
 
     return () => {
       cancelled = true;
+      launchPickRef.current?.(null); launchPickRef.current = null; setLaunchChoice(null);
       const playDurationMs = Date.now() - mountedAt;
       logger.info('emulator.console.unmount', { game: game?.id, playDurationMs });
       if (interval) clearInterval(interval);
@@ -1354,7 +1409,21 @@ export function EmulatorConsole({
           <span>{overlayText(status)}</span>
         </div>
       )}
-      {checkpointKey && progress && !progress.canPlay && !recoveryCopies && !error && !resetOpen && (
+      {launchChoice && (
+        <div className="emulator-progress-overlay" role="dialog" aria-modal="true" aria-label="Choose your saved game">
+          <div className="emulator-progress-card" ref={launchDialogRef}>
+            {launchChoice.choices.map(choice => (
+              <button type="button" key={choice.id} {...(choice.id === 'continue' ? { 'data-autofocus': true } : {})}
+                onClick={() => launchPickRef.current?.(choice.id)}>
+                {choice.id === 'continue' ? 'Continue your save'
+                  : `Back to where you stopped${choice.at ? ` · ${new Date(choice.at).toLocaleString()}` : ''}`}
+              </button>
+            ))}
+            {typeof onExit === 'function' && <button type="button" onClick={requestExit}>Exit game</button>}
+          </div>
+        </div>
+      )}
+      {checkpointKey && progress && !progress.canPlay && !launchChoice && !recoveryCopies && !error && !resetOpen && (
         <div className="emulator-progress-overlay" role={progress.error ? 'alertdialog' : 'status'} aria-label="Saved progress">
           <div className="emulator-progress-card" ref={progressDialogRef}>
             <p>{progress.error?.code === 'ECHECKPOINTRESTORE' ? 'Could not restore saved progress.'
@@ -1374,9 +1443,9 @@ export function EmulatorConsole({
             {recoveryCopies.error && <p role="alert">{recoveryCopies.error}</p>}
             {recoveryCopies.loading ? <p>Checking recovery copies…</p> : (
               <>
-                {(recoveryCopies.inspection?.checkpoints || []).filter(point => point.usable).map((point, index) => (
-                  <button type="button" key={point.revision} onClick={() => chooseRecovery({ type: 'server', revision: point.revision })}>
-                    {point.kind === 'reset' ? 'Fresh start recorded' : 'Restore saved copy'} {index + 1}{point.createdAt ? ` · ${new Date(point.createdAt).toLocaleString()}` : ''}
+                {recoveryChoices(persistence?.saveMode, recoveryCopies.inspection?.checkpoints || []).map((choice, index) => (
+                  <button type="button" key={choice.revision} onClick={() => chooseRecovery({ type: 'server', revision: choice.revision })}>
+                    {choice.label} {index + 1}{choice.at ? ` · ${new Date(choice.at).toLocaleString()}` : ''}
                   </button>
                 ))}
                 {[...(recoveryCopies.pending || []), ...(recoveryCopies.archived || [])].map((point, index) => (
@@ -1386,7 +1455,7 @@ export function EmulatorConsole({
                 ))}
                 <button type="button" data-autofocus onClick={inspectRecovery}>Refresh copies</button>
                 <button type="button" onClick={cancelRecovery}>Cancel</button>
-                <button type="button" onClick={() => setResetOpen(true)}>Start a fresh game</button>
+                <button type="button" onClick={() => { setEraseConfirm(softRestart); setResetOpen(true); }}>Start a fresh game</button>
               </>
             )}
           </div>
@@ -1450,7 +1519,7 @@ export function EmulatorConsole({
         className={`emulator-settings-toggle${menuAttention ? ' has-attention' : ''}`}
         aria-label="Game menu"
         aria-expanded={settingsOpen}
-        onClick={() => setSettingsOpen((v) => !v)}
+        onClick={() => { if (!launchChoice) setSettingsOpen((v) => !v); }}
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
           <circle cx="5" cy="12" r="2.2" />
@@ -1497,22 +1566,45 @@ export function EmulatorConsole({
       {/* Reset / "start over" confirm — raised by the power-switch hotspot. */}
       {resetOpen && (
         <div className="emulator-reset-modal" role="dialog" aria-modal="true" aria-label="Start over">
-          <div className="emulator-reset-modal__backdrop" onPointerDown={() => setResetOpen(false)} />
+          <div className="emulator-reset-modal__backdrop" onPointerDown={closeReset} />
           <div className="emulator-reset-modal__sheet" ref={resetDialogRef}>
-            <div className="emulator-reset-modal__title">Start {game?.title || 'this game'} over?</div>
-            <div className="emulator-reset-modal__body">
-              {persistence?.persist && nowPlaying?.name
-                ? `This begins a fresh game for ${nowPlaying.name}. Their previous progress stays available in recovery.`
-                : 'This restarts the game from the beginning.'}
-            </div>
-            <div className="emulator-reset-modal__actions">
-              <button type="button" className="emulator-reset-modal__cancel" data-autofocus onClick={() => setResetOpen(false)} onPointerDown={() => setResetOpen(false)}>
-                {recoveryCopies ? 'Back to recovery' : 'Keep playing'}
-              </button>
-              <button type="button" className="emulator-reset-modal__confirm" onClick={confirmReset} onPointerDown={confirmReset}>
-                Start over
-              </button>
-            </div>
+            {softRestart && eraseConfirm ? (
+              <>
+                <div className="emulator-reset-modal__title">{nowPlaying?.name ? `Erase ${nowPlaying.name}'s saved game?` : 'Erase the saved game?'}</div>
+                <div className="emulator-reset-modal__body">This can't be undone from the game. The old save stays in recovery.</div>
+                <div className="emulator-reset-modal__actions">
+                  <button type="button" className="emulator-reset-modal__cancel" data-autofocus onClick={closeReset} onPointerDown={closeReset}>{recoveryCopies ? 'Back to recovery' : 'Keep playing'}</button>
+                  <button type="button" className="emulator-reset-modal__confirm" onClick={confirmReset} onPointerDown={confirmReset}>Erase and start new</button>
+                </div>
+              </>
+            ) : softRestart ? (
+              <>
+                <div className="emulator-reset-modal__title">Restart {game?.title || 'this game'}?</div>
+                <div className="emulator-reset-modal__body">Restart game goes back to the title screen. Continue loads the last in-game save.</div>
+                <div className="emulator-reset-modal__actions">
+                  <button type="button" className="emulator-reset-modal__cancel" data-autofocus onClick={closeReset} onPointerDown={closeReset}>Keep playing</button>
+                  <button type="button" className="emulator-reset-modal__confirm" onClick={confirmRestart} onPointerDown={confirmRestart}>Restart game</button>
+                  <button type="button" className="emulator-reset-modal__erase" onClick={() => setEraseConfirm(true)}>Erase saved game</button>
+                </div>
+              </>
+            ) : (
+              <>
+              <div className="emulator-reset-modal__title">Start {game?.title || 'this game'} over?</div>
+              <div className="emulator-reset-modal__body">
+                {persistence?.persist && nowPlaying?.name
+                  ? `This begins a fresh game for ${nowPlaying.name}. Their previous progress stays available in recovery.`
+                  : 'This restarts the game from the beginning.'}
+              </div>
+              <div className="emulator-reset-modal__actions">
+                <button type="button" className="emulator-reset-modal__cancel" data-autofocus onClick={() => setResetOpen(false)} onPointerDown={() => setResetOpen(false)}>
+                  {recoveryCopies ? 'Back to recovery' : 'Keep playing'}
+                </button>
+                <button type="button" className="emulator-reset-modal__confirm" onClick={confirmReset} onPointerDown={confirmReset}>
+                  Start over
+                </button>
+              </div>
+              </>
+            )}
           </div>
         </div>
       )}

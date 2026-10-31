@@ -1,5 +1,6 @@
 import { ownCheckpointBytes, sameProvenance } from './checkpointClient.js';
 import { checkpointGameKey } from './checkpointJournal.js';
+import { resumeChoices, resumeSource } from './resumeSource.js';
 
 // Reopening in the same page must wait for an old console's asynchronous exit.
 const inPageWrites = new Map();
@@ -55,16 +56,25 @@ export function createCheckpointSession({ key, saveMode, client, journal,
     phase = 'recovery'; recoveryReason = reason; pendingRecovery = pending; publish();
     return { status: 'recovery', reason, description, pending };
   };
-  function resumePoint() {
-    if (!head || head.kind === 'reset') return { kind: 'fresh', data: null, intentionalReset: head?.kind === 'reset' };
-    if (head.snapshot) return { kind: 'state', data: head.snapshot };
-    if (saveMode === 'battery' && head.battery) return { kind: 'battery', data: head.battery };
-    throw issue('The saved checkpoint has no usable resume data', 'ECHECKPOINTCORRUPT');
+  // The player's pick on the launch card; the in-game save unless they chose otherwise.
+  let resumeChoice = 'continue';
+  function chosenSource(record) {
+    const picked = resumeChoice !== 'continue' && resumeChoices(saveMode, record).find(choice => choice.id === resumeChoice);
+    return picked ? { kind: picked.kind, artifact: picked.artifact } : resumeSource(saveMode, record);
   }
+  function resumePoint() {
+    const source = chosenSource(head);
+    if (source.kind === 'fresh') return { kind: 'fresh', data: null, intentionalReset: head?.kind === 'reset' };
+    return { kind: source.kind, data: head[source.artifact] };
+  }
+  const restoredHash = record => {
+    const { artifact } = chosenSource(record);
+    return artifact ? record.artifacts[artifact].hash : null;
+  };
   async function prepare({ variant = 'wasm' } = {}) {
     if (disposed) return { status: 'skipped' };
     if (entries.length) return markFailure(issue('Finish the pending save before loading again', 'ECHECKPOINTCONFLICT'));
-    restored = false; selection = null; fault = null; phase = 'loading'; publish();
+    restored = false; selection = null; fault = null; resumeChoice = 'continue'; phase = 'loading'; publish();
     try {
       await Promise.allSettled([...(inPageWrites.get(gameKey) ?? [])]);
       // Durable-store failure in a previous in-page console cannot erase its RAM copy.
@@ -107,12 +117,20 @@ export function createCheckpointSession({ key, saveMode, client, journal,
       pendingRecovery = []; description = { ...description, head };
       lastCaptureId = head?.captureId ?? null; phase = 'restoring'; publish();
       const resume = resumePoint();
-      const artifactHash = resume.kind === 'fresh' ? null : head.artifacts[resume.kind === 'state' ? 'snapshot' : 'battery'].hash;
-      return { status: 'ready', head, provenance: description.provenance, saveMode, resume, artifactHash };
+      const artifactHash = restoredHash(head);
+      return { status: 'ready', head, provenance: description.provenance, saveMode, resume, artifactHash, choices: resumeChoices(saveMode, head) };
     } catch (reason) { return markFailure(reason); }
   }
+  function chooseResume(id) {
+    if (phase !== 'restoring' || selection || !resumeChoices(saveMode, head).some(choice => choice.id === id)) {
+      return failure(issue('That saved game is not available', 'ECHECKPOINTINVALID'));
+    }
+    resumeChoice = id;
+    return { status: 'ready', head, provenance: description.provenance, saveMode, resume: resumePoint(), artifactHash: restoredHash(head), choices: resumeChoices(saveMode, head) };
+  }
   function confirmRestored(result) {
-    const expectedHash = head?.snapshot ? head.artifacts.snapshot.hash : head?.battery ? head.artifacts.battery.hash : null;
+    let expectedHash;
+    try { expectedHash = restoredHash(head); } catch (reason) { return markFailure(reason); }
     if (selection || (result?.artifactHash ?? null) !== expectedHash || phase !== 'restoring' || result?.status !== 'ok' || result.verified !== true
       || !sameProvenance(result.provenance, description?.provenance)) {
       return markFailure(issue('Saved progress was not verified by the emulator', 'ECHECKPOINTRESTORE'));
@@ -248,14 +266,16 @@ export function createCheckpointSession({ key, saveMode, client, journal,
       } else throw issue('Choose a recovery copy explicitly', 'ECHECKPOINTINVALID');
       if (source.provenance.romHash !== recoveryInspection.provenance.romHash) throw issue('This recovery copy belongs to a different game', 'ECHECKPOINTCOMPAT');
       source = { ...source, snapshot: ownCheckpointBytes(source.snapshot), battery: ownCheckpointBytes(source.battery) };
-      const kind = source.kind === 'reset' ? 'fresh' : source.snapshot ? 'state' : source.battery ? 'battery' : null;
-      if (!kind) throw issue('That recovery copy has no saved progress', 'ECHECKPOINTCORRUPT');
-      const artifactHash = kind === 'fresh' ? null : source.artifacts[kind === 'state' ? 'snapshot' : 'battery'].hash;
+      let picked;
+      try { picked = resumeSource(saveMode, source); }
+      catch { throw issue('That recovery copy has no saved progress', 'ECHECKPOINTCORRUPT'); }
+      const { kind, artifact } = picked;
+      const artifactHash = artifact ? source.artifacts[artifact].hash : null;
       restored = false;
       selection = { choice: { ...choice }, source, artifactHash, inspection: recoveryInspection, pending: [...pendingRecovery] };
       phase = 'restoring'; publish();
       return { status: 'ready', recovery: true, provenance: recoveryInspection.provenance, saveMode, artifactHash,
-        resume: { kind, data: kind === 'fresh' ? null : ownCheckpointBytes(kind === 'state' ? source.snapshot : source.battery), intentionalReset: kind === 'fresh' } };
+        resume: { kind, data: artifact ? ownCheckpointBytes(source[artifact]) : null, intentionalReset: kind === 'fresh' } };
     } catch (reason) { return markFailure(reason); }
   }
   function confirmRecoveryRestored(proof) {
@@ -381,7 +401,7 @@ export function createCheckpointSession({ key, saveMode, client, journal,
     };
     return track(gameKey, work());
   }
-  return { prepare, confirmRestored, save, retry, getState, inspectRecovery, selectRecovery, confirmRecoveryRestored, resetProgress, resetFromRecovery, prepareClaim,
+  return { prepare, chooseResume, confirmRestored, save, retry, getState, inspectRecovery, selectRecovery, confirmRecoveryRestored, resetProgress, resetFromRecovery, prepareClaim,
     flush: captured => captured ? save(captured) : uploadTail.then(result => fault || result),
     getRecovery: () => ({ description, pending: pendingRecovery }),
     dispose() { disposed = true; phase = 'disposed'; },
