@@ -5,6 +5,7 @@ import { render, fireEvent, waitFor, act, cleanup } from '@testing-library/react
 import { EmulatorConsole } from './EmulatorConsole.jsx';
 import { createEmulatorCheckpointHarness, createMemoryCheckpointJournal } from '../../../../tests/_lib/emulatorCheckpointHarness.mjs';
 import { createCheckpointClient, checkpointDigest } from './core/checkpointClient.js';
+import { recoveryChoices } from './core/recoveryChoices.js';
 let env, client, journal, originalCrypto;
 const captured = label => ({ state: new Uint8Array(Buffer.from(`state-${label}`)), battery: new Uint8Array(Buffer.from(`battery-${label}`)) });
 beforeEach(() => {
@@ -127,9 +128,9 @@ describe('console recovery, claims and failed exits', () => {
     const view = setup(); await playable(view); view.advance('current-paused');
     fireEvent.click(view.getByRole('button', { name: 'Game menu' })); fireEvent.click(view.getByRole('button', { name: 'Recover progress' }));
     await waitFor(() => expect(view.getByRole('dialog', { name: 'Recover progress' })).toBeTruthy());
-    const copies = await env.repository.inspectRecovery(env.key);
-    const index = copies.checkpoints.filter(point => point.usable).findIndex(point => point.revision === first.revision) + 1;
-    fireEvent.click(await view.findByRole('button', { name: new RegExp(`^Restore saved copy ${index}`) }));
+    const choices = recoveryChoices('battery', (await env.repository.inspectRecovery(env.key)).checkpoints);
+    const index = choices.findIndex(choice => choice.at === first.createdAt) + 1;
+    fireEvent.click(await view.findByRole('button', { name: new RegExp(`^In-game save ${index} `) }));
     await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view);
     expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-first');
     expect((await env.repository.readRecoveryRevision(env.key, second.revision)).snapshot.toString()).toBe('state-second');
@@ -160,7 +161,7 @@ describe('console recovery, claims and failed exits', () => {
 it('lets keyboard/controller intent select a recovery copy after the game menu closes', async () => {
   const first = await seed('first'); const view = setup(); await playable(view);
   fireEvent.click(view.getByRole('button', { name: 'Game menu' })); fireEvent.click(view.getByRole('button', { name: 'Recover progress' }));
-  const restore = await view.findByRole('button', { name: /^Restore saved copy/ }); restore.focus();
+  const restore = await view.findByRole('button', { name: /^In-game save/ }); restore.focus();
   fireEvent.keyDown(window, { key: 'Enter' });
   await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view);
   expect((await env.repository.read(env.key)).restoredFrom).toBe(first.revision);

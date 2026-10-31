@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import getLogger from '@/lib/logging/Logger.js';
 import { selectCheckpointVariant } from "./core/nativeCheckpoint.js";
 import { createCheckpointConsoleLifecycle, captureCheckpoint } from "./core/checkpointConsoleLifecycle.js";
+import { recoveryChoices } from "./core/recoveryChoices.js";
 import { createEmulatorEngine } from "./core/EmulatorEngine.js";
 import { createAudioMixer } from "./audio/AudioMixer.js";
 import { createEmulatorSession } from "./core/EmulatorSession.js";
@@ -1396,9 +1397,9 @@ export function EmulatorConsole({
             {recoveryCopies.error && <p role="alert">{recoveryCopies.error}</p>}
             {recoveryCopies.loading ? <p>Checking recovery copies…</p> : (
               <>
-                {(recoveryCopies.inspection?.checkpoints || []).filter(point => point.usable).map((point, index) => (
-                  <button type="button" key={point.revision} onClick={() => chooseRecovery({ type: 'server', revision: point.revision })}>
-                    {point.kind === 'reset' ? 'Fresh start recorded' : 'Restore saved copy'} {index + 1}{point.createdAt ? ` · ${new Date(point.createdAt).toLocaleString()}` : ''}
+                {recoveryChoices(persistence?.saveMode, recoveryCopies.inspection?.checkpoints || []).map((choice, index) => (
+                  <button type="button" key={choice.revision} onClick={() => chooseRecovery({ type: 'server', revision: choice.revision })}>
+                    {choice.label} {index + 1}{choice.at ? ` · ${new Date(choice.at).toLocaleString()}` : ''}
                   </button>
                 ))}
                 {[...(recoveryCopies.pending || []), ...(recoveryCopies.archived || [])].map((point, index) => (
