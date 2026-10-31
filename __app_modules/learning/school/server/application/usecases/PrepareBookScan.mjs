@@ -24,6 +24,18 @@ const stepSummary = (part) => (part && typeof part === 'object' ? {
   ...(part.skipped ? { skipped: true } : {}),
   ...(part.error ? { error: safeError(part.error) } : {}),
 } : null);
+// THE PILE (2026-10-30). Every scan is ALSO a card in a per-screen pile that
+// a grown-up files to one child with one tap (design:
+// ops:docs/superpowers/specs/2026-10-30-portal-book-pile-design.md). The
+// intentions above stay exactly as they were for the open-shelf scoped claim;
+// cards are what the pile shows, and a card is never superseded or expired —
+// only filed, claimed, removed, or cleared when the study day ends. A quiet
+// gap of this long ends the SESSION: the reader stops being sticky, the cards
+// stay.
+export const PILE_QUIET_GAP_MS = 120_000;
+const PILE_MAX_CARDS = 200;
+const FILEABLE = new Set(['ready', 'not-found']);
+const FILE_FAILED = 'Could not file this book. Tap a face to try again.';
 const refuse = (status, message) => { const error = new Error(message); error.status = status; throw error; };
 
 /** Short-lived household kiosk intentions. No reading store or progress writer is a dependency. */
@@ -32,10 +44,13 @@ export class PrepareBookScan {
   // Per screen: the wake in flight (shared by every scan that arrives while it
   // runs) and, after a failure, until when no new wake is attempted.
   #wakes = new Map(); #wakeCooldowns = new Map();
+  // Per screen: { day, cards, reader, lastActiveAt, session, awake, chain }.
+  // In memory, like the intentions: a backend restart loses an unfiled pile.
+  #piles = new Map();
   constructor({ resolveBook, roster, issueLaunchTarget, wake, notifications, target,
-    clock = Date.now, mintId, logger = {} }) {
+    clock = Date.now, mintId, logger = {}, filer = null, dayOf = null }) {
     if (typeof mintId !== 'function') throw new TypeError('PrepareBookScan requires a secure intent id generator');
-    this.#deps = { resolveBook, roster, issueLaunchTarget, wake, notifications, target, clock, mintId, logger };
+    this.#deps = { resolveBook, roster, issueLaunchTarget, wake, notifications, target, clock, mintId, logger, filer, dayOf };
   }
   #prune() {
     const now = this.#deps.clock();
@@ -68,8 +83,26 @@ export class PrepareBookScan {
     }
     const parsed = parseBookIdentifier(code);
     const isbn13 = parsed.kind === 'isbn' ? parsed.isbn13 : code;
+    const pile = this.#pileFor(target.screenId, now);
+    const wasLive = this.#isLive(pile, now);
+    if (!wasLive) {
+      pile.session += 1; pile.reader = null;
+      logger.info?.('school.book-pile.opened', { screenId: target.screenId, carried: pile.cards.filter(c => c.state === 'unfiled').length });
+    }
+    pile.lastActiveAt = now;
+    // Same book twice in one session is one card. A later session's scan of it
+    // is a new card: it may be for a different child.
+    // A card a shelf claimed is that child's; a rescan of the book is a new card.
+    const twin = pile.cards.find(c => c.session === pile.session && c.isbn13 === isbn13 && c.state !== 'removed' && c.state !== 'claimed');
+    if (twin) {
+      twin.duplicates += 1;
+      logger.info?.('school.book-pile.card-added', { screenId: target.screenId, duplicate: true });
+      if (twin.status === 'unavailable' && twin.record) this.#resolve(twin.record);
+      this.#notify({ screenId: target.screenId, id: twin.id });
+    }
     const coalesced = [...this.#records.values()].find(r => this.#live(r) && r.isbn13 === isbn13);
     if (coalesced) {
+      if (!twin) this.#addCard(pile, coalesced);
       if (!coalesced.claiming && coalesced.status === 'unavailable') this.#resolve(coalesced);
       if (!coalesced.claiming && coalesced.wakeFailed) this.#wake(coalesced);
       return { status: 'pending', intentId: coalesced.id };
@@ -84,9 +117,13 @@ export class PrepareBookScan {
       error: parsed.kind === 'isbn' ? null : 'That book barcode is invalid. Scan the publisher ISBN again.' };
     this.#records.set(record.id, record);
     while (this.#records.size > 32) this.#records.delete(this.#records.keys().next().value);
+    if (twin) record.card = twin;
+    else this.#addCard(pile, record);
     this.#notify(record);
     logger.info?.('school.book-scan.received', { screenId: target.screenId, status: record.status });
-    this.#wake(record);
+    // One wake per session: a pile of scans must not knock on the kiosk for
+    // each book. A failed wake keeps the old behaviour (retry, with cooldown).
+    if (!(wasLive && pile.awake)) this.#wake(record);
     if (parsed.kind === 'isbn') this.#resolve(record);
     return { status: 'pending', intentId: record.id };
   }
@@ -95,13 +132,17 @@ export class PrepareBookScan {
     record.wakeFailed = false;
     if (record.error?.startsWith('The screen')) record.error = null;
     const cooldownUntil = this.#wakeCooldowns.get(target.screenId) ?? 0;
+    const pile = this.#piles.get(target.screenId);
     if (!this.#wakes.has(target.screenId) && cooldownUntil > clock()) {
+      if (pile) pile.awake = false;
       logger.info?.('school.book-scan.wake-skipped', { screenId: target.screenId, reason: 'cooldown' });
       this.#wakeFailedFor(record, WAKE_WAITING);
       return;
     }
+    if (pile) pile.awake = true;   // optimistic: scans while it runs must not re-wake
     void this.#wakeScreen(target).then(ok => {
       if (ok) { if (this.#live(record)) this.#notify(record); return; }
+      if (pile) pile.awake = false;
       this.#wakeFailedFor(record);
     });
   }
@@ -141,14 +182,25 @@ export class PrepareBookScan {
   }
   #resolve(record) {
     record.status = 'loading'; record.error = record.wakeFailed ? record.wakeMessage ?? WAKE_FAILED : null;
+    if (record.card) Object.assign(record.card, { status: 'loading', error: null });
     this.#notify(record);
+    // The CARD takes the lookup whatever became of the intention: a pile card
+    // outlives the 5-minute intent and must still learn its title.
+    const toCard = (status, book, error) => {
+      if (!record.card) return;
+      Object.assign(record.card, { status, book, error });
+      this.#notify({ screenId: record.screenId, id: record.card.id });
+    };
     void Promise.resolve().then(() => this.#deps.resolveBook.execute(record.isbn13)).then(result => {
+      const status = result?.status === 'ok' && result.book ? 'ready' : result?.status === 'not-found' ? 'not-found' : 'unavailable';
+      toCard(status, status === 'ready' ? result.book : null, status === 'unavailable' ? 'Book details are unavailable. Try rescanning.' : null);
       if (!this.#live(record)) return;
-      record.status = result?.status === 'ok' && result.book ? 'ready' : result?.status === 'not-found' ? 'not-found' : 'unavailable';
+      record.status = status;
       record.book = record.status === 'ready' ? result.book : null;
       if (record.status === 'unavailable') record.error = 'Book details are unavailable. Try rescanning.';
       this.#notify(record);
     }).catch(() => {
+      toCard('unavailable', null, 'Book details are unavailable. Try rescanning.');
       if (!this.#live(record)) return;
       record.status = 'unavailable'; record.error = 'Book details are unavailable. Try rescanning.';
       this.#notify(record);
@@ -184,6 +236,7 @@ export class PrepareBookScan {
       if (record.phase !== 'pending') refuse(410, 'This scan is no longer available. Scan again.');
       record.result = { intentId: id, launchTarget, bookEntry: { isbn13: record.isbn13, book: record.book } };
       record.phase = 'claimed';
+      if (record.card?.state === 'unfiled') record.card.state = 'claimed';
       this.#passes.set(JSON.stringify([learnerId, record.isbn13]), this.#deps.clock() + PASS_TTL);
       while (this.#passes.size > 256) this.#passes.delete(this.#passes.keys().next().value);
       // Retire older previews so returning home only offers the latest deferred scan.
@@ -205,6 +258,155 @@ export class PrepareBookScan {
   hasScanned({ learnerId, isbn13 }) {
     this.#prune();
     return this.#passes.has(JSON.stringify([learnerId, isbn13]));
+  }
+  // ---- the pile -----------------------------------------------------------
+  #pileFor(screenId, now = this.#deps.clock()) {
+    const day = this.#deps.dayOf ? this.#deps.dayOf(new Date(now).toISOString()) : null;
+    let pile = this.#piles.get(screenId);
+    if (!pile || pile.day !== day) {
+      if (pile?.cards.some(c => c.state === 'unfiled')) {
+        this.#deps.logger.info?.('school.book-pile.closed', { screenId, reason: 'day-ended', unfiled: pile.cards.filter(c => c.state === 'unfiled').length });
+      }
+      pile = { day, cards: [], reader: null, lastActiveAt: null, session: 0, awake: false, chain: Promise.resolve() };
+      this.#piles.set(screenId, pile);
+    }
+    return pile;
+  }
+  #isLive(pile, now = this.#deps.clock()) {
+    return pile.lastActiveAt !== null && now - pile.lastActiveAt <= PILE_QUIET_GAP_MS;
+  }
+  /** A new card for `record` in the current session; the record now feeds it. */
+  #addCard(pile, record) {
+    const card = { id: this.#deps.mintId(), record, isbn13: record.isbn13, session: pile.session,
+      receivedAt: new Date(this.#deps.clock()).toISOString(), status: record.status, book: record.book,
+      error: record.status === 'invalid' || record.status === 'unavailable' ? record.error : null,
+      duplicates: 0, attempt: 0, state: 'unfiled', learnerId: null, outcome: null, itemId: null };
+    record.card = card;
+    pile.cards.push(card);
+    this.#capPile(pile);
+    this.#deps.logger.info?.('school.book-pile.card-added', { screenId: record.screenId, duplicate: false, status: card.status });
+    return card;
+  }
+  #capPile(pile) {
+    while (pile.cards.length > PILE_MAX_CARDS) {
+      const index = pile.cards.findIndex(c => c.state !== 'unfiled' && c.state !== 'filing');
+      if (index < 0) break;   // never drop an unfiled book to make room
+      pile.cards.splice(index, 1);
+    }
+  }
+  #view(screenId, pile) {
+    const live = this.#isLive(pile);
+    return {
+      screenId, live, reader: live ? pile.reader : null, quietGapMs: PILE_QUIET_GAP_MS,
+      lastScanAt: pile.lastActiveAt === null ? null : new Date(pile.lastActiveAt).toISOString(),
+      cards: pile.cards.filter(c => c.state !== 'removed').map(({ id, isbn13, status, book, error, receivedAt, duplicates, state, learnerId, outcome, itemId }) =>
+        ({ id, isbn13, status, book, error, receivedAt, duplicates, state, learnerId, outcome, itemId })),
+    };
+  }
+  pile(screenId) {
+    // Reading never allocates: only a scan (or a filing) creates a pile.
+    if (!this.#piles.has(screenId)) {
+      return { screenId, live: false, reader: null, quietGapMs: PILE_QUIET_GAP_MS, lastScanAt: null, cards: [] };
+    }
+    return this.#view(screenId, this.#pileFor(screenId));
+  }
+  /** Run one pile operation at a time per screen, so a card is never filed twice. */
+  #serial(pile, task) {
+    const run = pile.chain.then(task);
+    pile.chain = run.catch(() => {});
+    return run;
+  }
+  #requireFiler() {
+    if (!this.#deps.filer) refuse(503, 'Filing books from the Portal is unavailable right now.');
+    return this.#deps.filer;
+  }
+  async #requireLearner(learnerId) {
+    const roster = await this.#deps.roster();
+    if (!Array.isArray(roster) || !roster.some(learner => learner.id === learnerId)) refuse(403, 'Choose a current School learner.');
+  }
+  #card(pile, cardId) {
+    const card = pile.cards.find(c => c.id === cardId && c.state !== 'removed');
+    if (!card) refuse(403, 'That book is not in this pile.');
+    return card;
+  }
+  async #fileCard(screenId, card, learnerId) {
+    card.state = 'filing';
+    try {
+      const result = await this.#deps.filer.file({ learnerId, isbn13: card.isbn13, attemptKey: `${card.id}:${card.attempt}` });
+      Object.assign(card, { state: 'filed', learnerId, outcome: result.outcome, itemId: result.itemId, error: null });
+      this.#retire(card);
+    } catch (error) {
+      Object.assign(card, { state: 'unfiled', error: FILE_FAILED });
+      this.#deps.logger.warn?.('school.book-pile.file-failed', { screenId, error: error?.message ?? String(error) });
+    }
+    this.#notify({ screenId, id: card.id });
+  }
+  /**
+   * A card the pile has dealt with must not stay offered as a live intent: the
+   * open-shelf path claims the newest live intent, and would hand a book filed
+   * to one child to whichever child opens their shelf next.
+   */
+  #retire(card) {
+    if (card.record?.phase === 'pending' && !card.record.claiming) card.record.phase = 'dismissed';
+  }
+  async #unfileCard(card) {
+    if (card.state !== 'filed') return;
+    await this.#deps.filer.undo({ learnerId: card.learnerId, itemId: card.itemId, attemptKey: `${card.id}:${card.attempt}`, outcome: card.outcome });
+    Object.assign(card, { state: 'unfiled', learnerId: null, outcome: null, itemId: null, attempt: card.attempt + 1 });
+  }
+  /**
+   * One tap: file every unfiled card to this learner and make them the
+   * session's reader. With `cardIds` it files just those and leaves the reader
+   * alone — that is the tucked-away split, not the default.
+   */
+  async filePile({ screenId, learnerId, cardIds = null }) {
+    this.#requireFiler();
+    await this.#requireLearner(learnerId);
+    const pile = this.#pileFor(screenId);
+    if (cardIds) for (const id of cardIds) this.#card(pile, id);
+    return this.#serial(pile, async () => {
+      if (!cardIds) {
+        // A tap on a pile left from a closed session opens a new one, so later
+        // scans start fresh cards rather than merging with the old ones.
+        if (!this.#isLive(pile)) pile.session += 1;
+        pile.reader = learnerId; pile.lastActiveAt = this.#deps.clock();
+      }
+      const targets = pile.cards.filter(c => c.state === 'unfiled' && FILEABLE.has(c.status) && (!cardIds || cardIds.includes(c.id)));
+      for (const card of targets) await this.#fileCard(screenId, card, learnerId);
+      if (targets.length) {
+        this.#deps.logger.info?.('school.book-pile.filed', { screenId, learnerId, count: targets.length,
+          alreadyToday: targets.filter(c => c.outcome === 'already-today').length,
+          failed: targets.filter(c => c.state !== 'filed').length });
+      }
+      return this.#view(screenId, pile);
+    });
+  }
+  async moveCard({ screenId, cardId, learnerId }) {
+    this.#requireFiler();
+    await this.#requireLearner(learnerId);
+    const pile = this.#pileFor(screenId);
+    const card = this.#card(pile, cardId);
+    return this.#serial(pile, async () => {
+      if (!FILEABLE.has(card.status)) refuse(409, 'This book is still being looked up. Try again in a moment.');
+      const from = card.learnerId;
+      await this.#unfileCard(card);
+      await this.#fileCard(screenId, card, learnerId);
+      this.#deps.logger.info?.('school.book-pile.card-moved', { screenId, from, to: learnerId });
+      return this.#view(screenId, pile);
+    });
+  }
+  async removeCard({ screenId, cardId }) {
+    const pile = this.#pileFor(screenId);
+    const card = this.#card(pile, cardId);
+    return this.#serial(pile, async () => {
+      const wasFiled = card.state === 'filed';
+      if (wasFiled) { this.#requireFiler(); await this.#unfileCard(card); }
+      card.state = 'removed';
+      this.#retire(card);
+      this.#notify({ screenId, id: card.id });
+      this.#deps.logger.info?.('school.book-pile.card-removed', { screenId, wasFiled });
+      return this.#view(screenId, pile);
+    });
   }
   dismiss({ id, screenId }) {
     const record = this.#record(id, screenId);

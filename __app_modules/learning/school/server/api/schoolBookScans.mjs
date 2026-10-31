@@ -19,6 +19,21 @@ export function createSchoolBookScansRouter({ bookScans, openAtPanel = null }) {
       res.json(await openAtPanel.open({ screenId: req.body?.screenId, learnerId: req.body?.learnerId }));
     }));
   }
+  // The pile (see `PrepareBookScan`). Declared before `/:id/...` so `pile` is
+  // never read as an intent id. Filing writes the child's shelf directly; the
+  // authority is the same as a claim's — the barcode was read at this screen —
+  // and only card ids already in this screen's pile are accepted.
+  router.get('/pile', (req, res) => res.json({ pile: bookScans.pile(req.query.screenId) }));
+  router.post('/pile/file', express.json(), asyncHandler(async (req, res) => {
+    const { screenId, learnerId, cardIds = null } = req.body ?? {};
+    res.json({ pile: await bookScans.filePile({ screenId, learnerId, cardIds: Array.isArray(cardIds) ? cardIds : null }) });
+  }));
+  router.post('/pile/:cardId/move', express.json(), asyncHandler(async (req, res) => {
+    res.json({ pile: await bookScans.moveCard({ screenId: req.body?.screenId, cardId: req.params.cardId, learnerId: req.body?.learnerId }) });
+  }));
+  router.post('/pile/:cardId/remove', express.json(), asyncHandler(async (req, res) => {
+    res.json({ pile: await bookScans.removeCard({ screenId: req.body?.screenId, cardId: req.params.cardId }) });
+  }));
   router.post('/:id/claim', express.json(), asyncHandler(async (req, res) => {
     res.json(await bookScans.claim({ id: req.params.id, screenId: req.body?.screenId, learnerId: req.body?.learnerId }));
   }));

@@ -124,3 +124,19 @@ describe('BookScanEntry — a scan while a child\'s shelf is open (2026-09-30)',
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+it('leaves unscoped scans to the pile when the pile is mounted', async () => {
+  const { container } = render(<BookScanEntry {...props} pile />); await act(async () => {});
+  expect(container.innerHTML).toBe('');
+  expect(h.claim).not.toHaveBeenCalled();
+});
+
+it('a scan already waiting when a shelf opens is not claimed for that shelf', async () => {
+  const r = render(<BookScanEntry {...props} safe={false} pile />); await act(async () => {});
+  r.rerender(<BookScanEntry {...props} safe={false} pile scopeLearnerId="child" />); await act(async () => {});
+  expect(h.claim).not.toHaveBeenCalled();
+  const next = { ...intent, id: 'scan2' };
+  h.pending.mockResolvedValue({ ok: true, data: { intent: next } });
+  await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+  expect(h.claim).toHaveBeenCalledWith('scan2', { screenId: 'portal', learnerId: 'child' });
+});

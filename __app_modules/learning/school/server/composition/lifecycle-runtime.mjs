@@ -3,6 +3,7 @@ import { declaredEntryActions as declaredEntryActions } from "../domain/reachabi
 import { resolveBookScanTarget as resolveBookScanTarget } from "./schoolBookScans.mjs";
 import { storyBooksFromContentTags } from "./storyBookCorpus.mjs";
 import { PrepareBookScan as PrepareBookScan } from "../application/usecases/PrepareBookScan.mjs";
+import { FileBookPile } from "../application/usecases/FileBookPile.mjs";
 import crypto from "node:crypto";
 import { OpenBookShelfAtPanel as OpenBookShelfAtPanel } from "../application/usecases/OpenBookShelfAtPanel.mjs";
 import { OpenBankAtPanel as OpenBankAtPanel } from "../application/usecases/OpenBankAtPanel.mjs";
@@ -141,7 +142,23 @@ try {
   }
   let schoolStateGatesProducer = null;
   const bookScanTarget = resolveBookScanTarget({ configService, householdId, getScreenConfig: getSchoolScreenConfig });
+  // The pile files a scanned book straight onto a shelf, through the shelf's
+  // own write use cases. Absent those, scans still work; filing refuses (503).
+  const pileUseCases = dependencies.schoolLifecycle.useCases ?? {};
+  const bookPileFiler = dependencies.schoolLifecycle.bookLogLauncher && dependencies.schoolLifecycle.stores?.bookLog
+    && pileUseCases.openBookShelfItem && pileUseCases.recordBookProgress
+    ? new FileBookPile({
+      bookLog: dependencies.schoolLifecycle.stores.bookLog,
+      openBookShelfItem: pileUseCases.openBookShelfItem,
+      recordBookProgress: pileUseCases.recordBookProgress,
+      dayOf: (iso) => dependencies.schoolLifecycle.bookLogLauncher.dayOf(iso),
+      logger: schoolLifecycleLogger,
+    })
+    : null;
+  if (!bookPileFiler) schoolLifecycleLogger.warn('school.book-pile.unwired', {});
   const bookScans = dependencies.schoolLifecycle.bookLogLauncher && dependencies.schoolLifecycle.realtime ? new PrepareBookScan({
+    filer: bookPileFiler,
+    dayOf: bookPileFiler ? (iso) => dependencies.schoolLifecycle.bookLogLauncher.dayOf(iso) : null,
     mintId: () => crypto.randomBytes(32).toString('base64url'),
     resolveBook: books.resolveBook,
     roster: () => schoolLearnerDirectory.listLearners(),

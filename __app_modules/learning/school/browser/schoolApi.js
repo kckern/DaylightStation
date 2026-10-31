@@ -73,6 +73,11 @@ export const schoolApi = {
     // The panel's second door: no scan, no printed code. `{screenId, learnerId}`
     // in, a short-lived shelf launch target out (see `OpenBookShelfAtPanel`).
     open: (body) => req('/book-scans/open', body),
+    // The Portal pile: every scan as a card; one learner files them all.
+    pile: screenId => req(`/book-scans/pile?${new URLSearchParams({ screenId })}`),
+    filePile: (body) => req('/book-scans/pile/file', body),
+    moveCard: (cardId, body) => req(`/book-scans/pile/${encodeURIComponent(cardId)}/move`, body),
+    removeCard: (cardId, body) => req(`/book-scans/pile/${encodeURIComponent(cardId)}/remove`, body),
   },
   /**
    * Roster-wide State Gates query. The filters keep this one request for the

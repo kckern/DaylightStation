@@ -141,6 +141,49 @@ and Retry shelf remains available. The first-book tile follows the same guard.
 Done, idle close, unmount, and learner/grant changes invalidate late responses.
 Pointer, input, and keyboard/scanner activity rearm idle closure.
 
+## Scanning a pile at the Portal
+
+A grown-up can scan a whole stack of books at the Portal without waiting on
+the screen. Every scan becomes a card on a **Books to file** screen
+(`BookPile`, fed by `useBookPile`); nothing is superseded or expires before
+the household study day ends. One session belongs to one child:
+
+- **One tap files the pile.** Tapping a face files every unfiled card to that
+  child as finished on today's study day (no page numbers), including cards
+  left from an earlier session that timed out unfiled.
+- **The reader sticks.** After a face is tapped, later scans in the session
+  file to that child by themselves, even while the panel is busy.
+- **A quiet gap ends the session.** `PILE_QUIET_GAP_MS` (2 minutes) with no
+  scan or tap clears the reader; unfiled cards stay. One wake per session.
+- **The screen never holds the keypad hostage.** It is full screen only while
+  the session is live (and not set aside with **Later**). After that, unfiled
+  books wait in a corner card (*N books scanned — open when ready*); a pile of
+  nothing but unreadable barcodes raises no card.
+- **Splitting is tucked away.** A card's Change button offers *Give to someone
+  else* and *Remove*. On a filed card both first take back exactly what the
+  pile wrote (no PIN): a reading the pile created is deleted while it holds
+  only the pile's entries; a reading it finished gets the shelf's Undo finish;
+  an *already has it today* card wrote nothing, so the child's own finish is
+  never touched.
+- **Nothing is logged twice.** The same book scanned twice in a session is one
+  card (*Scanned twice*). Filing goes through `FileBookPile`, which looks at
+  the shelf first: an open reading of the book is finished rather than
+  duplicated, and a book that child already finished today is not written
+  again (*… already has it today*). Retries reuse the card's entry keys; a
+  re-file after Undo uses a new attempt.
+- **An open shelf wins.** While a child's shelf is asking for a barcode, a scan
+  is claimed for that child through the scoped path above and the pile stands
+  aside. A shelf claims only scans made while it is open; a filed or removed
+  card is never offered to it.
+
+Filings are the child's own entries (`source: 'panel'`), the same as logging
+from the shelf. The pile lives in memory in `PrepareBookScan`: a backend
+restart loses unfiled cards (the barcodes are still in the relay's day log).
+Routes: `GET /school/book-scans/pile`, `POST …/pile/file`,
+`POST …/pile/:cardId/move`, `POST …/pile/:cardId/remove`. Logs:
+`school.book-pile.*` (backend), `book-shelf` events with `book-pile.*`
+details (panel).
+
 ## Dates and historical data
 
 Finish context and recent ordering use the effective finished-event date,
