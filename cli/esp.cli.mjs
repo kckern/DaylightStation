@@ -34,7 +34,9 @@ import { pathToFileURL } from 'node:url';
 // ---------------------------------------------------------------------------
 const REGISTRY = {
   'food-scale': {
-    host: '10.0.0.47',
+    // The kitchen ATOM advertises mDNS; its old IP default was re-leased to
+    // another board, so `check` probed the wrong device.
+    host: 'kitchen-food-scale.local',
     kind: 'food-scale-relay',
     label: 'Kitchen food scale + UPC scanner',
   },
