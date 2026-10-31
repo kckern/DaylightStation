@@ -6,6 +6,13 @@ const start=()=>createSkylineControlState({riders,acts});
 const event=(s,e)=>reduceSkylineControl(s,e).state;
 const press=(s,position,gesture='single')=>event(s,{type:'PRESS',position,gesture});
 describe('seated game lifecycle',()=>{
+ it('does not start before course data arrives, even when physical buttons are pressed during loading',()=>{
+  let s=createSkylineControlState({riders,acts:[]});
+  s=press(s,1);s=press(s,4);
+  expect(s.phase).toBe('flights');
+  s=event(s,{type:'CONFIG_CHANGED',config:{acts}});
+  expect(press(s,4).phase).toBe('ready');
+ });
  it('uses direct identity, then visible navigation, then waits safely at zero',()=>{
   let s=press(start(),1);expect(s.phase).toBe('flights');expect(s.riderId).toBe('child');expect(s.actId).toBe('two');
   s=press(s,4);expect(s.phase).toBe('ready');

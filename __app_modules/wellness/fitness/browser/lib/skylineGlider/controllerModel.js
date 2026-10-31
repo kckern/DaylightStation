@@ -66,7 +66,7 @@ export function reduceSkylineControl(current,event) {
       else if(i===2)identity();else if(i===3)identify(state.riders[state.rosterIndex]);
     }else if(state.phase==='flights'){
       if(i<2&&state.acts.length){const index=state.acts.findIndex(a=>a.id===state.actId);state.actId=state.acts[(index+(i===0?-1:1)+state.acts.length)%state.acts.length].id;effect('choose-act',{actId:state.actId})}
-      else if(i===2)identity();else if(i===3&&selected?.status!=='locked'&&state.allowed)ready(event.resume?'saved':'new');
+      else if(i===2)identity();else if(i===3&&selected&&selected.status!=='locked'&&state.allowed)ready(event.resume?'saved':'new');
       else if(i===3&&selected?.status==='locked')effect('request-act-unlock',{actId:state.actId});
     }else if(state.phase==='ready'){
       if(i<3&&['live','checkpoint'].includes(state.resumeIntent))finish(i===1?'identity':'flights');
