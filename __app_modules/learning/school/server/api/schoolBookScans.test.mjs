@@ -62,3 +62,39 @@ it('content-only Fully Kiosk Portal wakes through the broadcast preparation with
   expect(result.ok).toBe(true); expect(device.powerOn).not.toHaveBeenCalled();
   expect(device.prepareForContent).toHaveBeenCalledWith({ skipCameraCheck: true, profile: 'broadcast' });
 });
+
+describe('book pile routes', () => {
+  const app = () => {
+    const bookScans = {
+      pending: vi.fn(() => null),
+      pile: vi.fn(() => ({ screenId: 'portal', cards: [], reader: null, live: false })),
+      filePile: vi.fn(async (args) => ({ screenId: args.screenId, cards: [], reader: args.learnerId })),
+      moveCard: vi.fn(async (args) => ({ moved: args })),
+      removeCard: vi.fn(async (args) => ({ removed: args })),
+      claim: vi.fn(), dismiss: vi.fn(),
+    };
+    const server = express(); server.use(createSchoolBookScansRouter({ bookScans }));
+    server.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: { message: error.message } }));
+    return { server, bookScans };
+  };
+  it('reads the pile for a screen', async () => {
+    const { server, bookScans } = app();
+    const response = await request(server).get('/pile?screenId=portal');
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body.pile).toMatchObject({ cards: [] });
+    expect(bookScans.pile).toHaveBeenCalledWith('portal');
+  });
+  it('files the pile, moves and removes a card', async () => {
+    const { server, bookScans } = app();
+    expect((await request(server).post('/pile/file').send({ screenId: 'portal', learnerId: 'child' })).body.pile.reader).toBe('child');
+    expect(bookScans.filePile).toHaveBeenCalledWith({ screenId: 'portal', learnerId: 'child', cardIds: null });
+    await request(server).post('/pile/file').send({ screenId: 'portal', learnerId: 'child', cardIds: ['c1'] });
+    expect(bookScans.filePile).toHaveBeenLastCalledWith({ screenId: 'portal', learnerId: 'child', cardIds: ['c1'] });
+    await request(server).post('/pile/c1/move').send({ screenId: 'portal', learnerId: 'sibling' });
+    expect(bookScans.moveCard).toHaveBeenCalledWith({ screenId: 'portal', cardId: 'c1', learnerId: 'sibling' });
+    await request(server).post('/pile/c1/remove').send({ screenId: 'portal' });
+    expect(bookScans.removeCard).toHaveBeenCalledWith({ screenId: 'portal', cardId: 'c1' });
+    expect(bookScans.claim).not.toHaveBeenCalled();
+  });
+});
