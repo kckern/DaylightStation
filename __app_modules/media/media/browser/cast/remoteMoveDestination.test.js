@@ -11,6 +11,12 @@ function request() {
 }
 
 describe('remote move adoption evidence', () => {
+  it('classifies a capture HTTP failure as capture-not-confirmed so the screen can use its load path', async () => {
+    const http = vi.fn().mockRejectedValue(new Error('HTTP 502: Bad Gateway'));
+    await expect(createRemoteMoveDestination({ deviceId: 'office-tv', http }).adopt(request()))
+      .resolves.toEqual({ status: 'uncertain', reason: 'capture-not-confirmed' });
+    expect(http).toHaveBeenCalledTimes(1);
+  });
   it('does not accept a generic HTTP/command acknowledgement as adoption', async () => {
     const http = vi.fn().mockResolvedValue({ ok: true });
     await expect(createRemoteMoveDestination({ deviceId: 'office-tv', http }).adopt(request()))

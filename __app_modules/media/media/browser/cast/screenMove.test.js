@@ -83,6 +83,32 @@ describe('moveScreenPlayback', () => {
 
 
 describe('moving to an idle screen (no owner to capture)', () => {
+  it('falls back after a capture 502 and keeps the source until the destination reports adoption', async () => {
+    const store = storeWith(published());
+    store.receive({ deviceId: 'den', snapshot: { sessionId: 'game', state: 'playing', currentItem: { contentId: 'arcade:gb/game', format: 'game' }, meta: { authority: 'arcade-session' } }, ts: new Date().toISOString() });
+    const http = vi.fn(async url => {
+      if (url.endsWith('/session/handoff')) throw new Error('HTTP 502: Bad Gateway');
+      return { ok: true };
+    });
+    const pending = moveScreenPlayback({ sourceId: 'kitchen', destinationId: 'den', fleetStore: store, http, operationId: 'op' });
+    await vi.waitFor(() => expect(http.mock.calls.map(c => c[0])).toContain('api/v1/device/den/load'));
+    expect(http.mock.calls.map(c => c[0])).not.toContain('api/v1/device/kitchen/session/claim');
+    store.receive({ deviceId: 'den', snapshot: published({ sessionId: 'movie' }), ts: new Date().toISOString() });
+    await expect(pending).resolves.toMatchObject({ ok: true, sourceStopped: true });
+    expect(http).toHaveBeenLastCalledWith('api/v1/device/kitchen/session/claim', expect.any(Object), 'POST');
+  });
+
+  it('does not fall back after a start HTTP failure because playback may already have started', async () => {
+    const store = createFleetStore(), snapshot = published();
+    const http = vi.fn()
+      .mockResolvedValueOnce({ ok: true, commandId: 'op:capture', handoff: { transferId: 'op', phase: 'captured', capture: { snapshot, identity: snapshot.meta.playbackOwner, capabilities: { handoffV1: true, seekable: true, liveEdge: false } } } })
+      .mockRejectedValueOnce(new Error('HTTP 502: Bad Gateway'));
+    await expect(createScreenMoveDestination({ deviceId: 'den', fleetStore: store, http }).adopt({ operationId: 'op', destinationId: 'den', snapshot }))
+      .resolves.toMatchObject({ status: 'uncertain', reason: 'HTTP 502: Bad Gateway' });
+    expect(http.mock.calls.map(c => c[0])).toEqual(['api/v1/device/den/session/handoff', 'api/v1/device/den/session/handoff']);
+    expect(http.mock.calls[1][1].params.op).toBe('start');
+  });
+
   it('adopts through the adopt load, and counts only once the screen reports the same item', async () => {
     const store = createFleetStore();
     store.receive({ deviceId: 'den', snapshot: { sessionId: 'den-idle', state: 'idle', currentItem: null, queue: { items: [], currentIndex: -1 } }, ts: new Date().toISOString() });
