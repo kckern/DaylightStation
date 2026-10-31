@@ -131,6 +131,14 @@ export class MQTTSelectorAdapter {
     this.#onSelect = callback;
   }
 
+  resolveInput(topic, data) {
+    const mapped = this.resolveSelection(topic, data);
+    if (mapped) return mapped;
+    const entry = this.#topicMap.get(topic);
+    if (!entry || entry.equipmentId === 'party-games' || !/^[1-4]_(single|long|hold|double)$/.test(data?.action || '')) return null;
+    return { selectorId: entry.selectorId, equipmentId: entry.equipmentId, action: data.action };
+  }
+
   init() {
     if (!this.#host) {
       this.#logger.warn?.('selector.mqtt.notConfigured', { message: 'No mqtt host configured' });
@@ -198,7 +206,7 @@ export class MQTTSelectorAdapter {
         this.#logger.warn?.('selector.mqtt.parseFailed', { topic, error: parseErr.message });
         return;
       }
-      const selection = this.resolveSelection(topic, data);
+      const selection = this.resolveInput(topic, data);
       if (!selection) return;
       this.#logger.info?.('selector.mqtt.select', selection);
       if (this.#onSelect) this.#onSelect(selection);

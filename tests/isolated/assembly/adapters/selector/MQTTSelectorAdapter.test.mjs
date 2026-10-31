@@ -23,6 +23,11 @@ describe('MQTTSelectorAdapter', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   describe('constructor', () => {
+    it('keeps arbitrary mapped party-game inputs and rejects unmapped gestures', () => {
+      const adapter = new MQTTSelectorAdapter({ host: 'mqtt' }, { selectors: [{ id: 'buzz', equipment: 'party-games', mqtt_topic: 'party', buttons: { '8_single': 'team8' } }], logger });
+      expect(adapter.resolveInput('party', { action: '8_single' })).toMatchObject({ userId: 'team8' });
+      expect(adapter.resolveInput('party', { action: '2_double' })).toBeNull();
+    });
     it('reports configured when host and selectors are present', () => {
       expect(makeAdapter().isConfigured()).toBe(true);
     });
@@ -39,6 +44,17 @@ describe('MQTTSelectorAdapter', () => {
   describe('resolveSelection', () => {
     let adapter;
     beforeEach(() => { adapter = makeAdapter(); });
+
+    it('delivers unmapped physical gestures without fabricating an assignment', () => {
+      const topic = SELECTORS[0].mqtt_topic;
+      for (const action of ['1_single', '2_long', '3_hold', '4_double']) {
+        expect(adapter.resolveInput(topic, { action })).toMatchObject({ selectorId: 'niceday_rider_selector', equipmentId: 'niceday', action });
+      }
+      expect(adapter.resolveInput(topic, { action: '4_double' }).userId).toBeUndefined();
+      expect(adapter.resolveInput(topic, { action: '9_long' })).toBeNull();
+      expect(adapter.resolveInput(topic, { action: '' })).toBeNull();
+      expect(adapter.resolveInput('unknown', { action: '1_single' })).toBeNull();
+    });
 
     it('maps a known single-press action to a rider claim', () => {
       const sel = adapter.resolveSelection(

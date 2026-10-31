@@ -1,4 +1,5 @@
 import { dispatchRiderSelection } from '../lib/riderSelection.js';
+import { createSelectorInputRouter } from '../lib/selectorInputRouter.js';
 import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
@@ -175,6 +176,8 @@ export const useFitness = useFitnessContext;
 
 // Provider component
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false, deviceId = null }) => {
+  const selectorInputRouterRef = useRef(null);
+  if (!selectorInputRouterRef.current) selectorInputRouterRef.current = createSelectorInputRouter();
   // UI State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [, setMusicAutoEnabledState] = useState(false);
@@ -623,6 +626,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         : []
     };
   }, [fitnessConfiguration]);
+  const riderSelectors = fitnessRoot?.selectors || [];
+  useEffect(() => {
+    selectorInputRouterRef.current.clear();
+    return () => selectorInputRouterRef.current.clear();
+  }, [JSON.stringify(riderSelectors)]);
 
   // Pass selection config to persistence manager for primary media selection
   useEffect(() => {
@@ -1526,6 +1534,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
           if (data?.topic === 'rider_select') {
             dispatchRiderSelection(data, {
+              route: selectorInputRouterRef.current.route,
               ingest: (selection) => session.ingestData(selection),
               emit: (selection) => emitAppEvent('rider-select', selection, selection.equipmentId || 'rider-selector', { persist: false }),
               toast: (selection) => riderToastRef.current?.(selection),
@@ -2923,6 +2932,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // DEPRECATED: Use participantDisplayMap.get(name).zoneId/zoneName/zoneColor instead
     getZoneProfile,
     userCollections,
+    selectorInputRouter: selectorInputRouterRef.current,
+    riderSelectors,
     deviceOwnership,
     guestCandidates: guestCandidateList,
     

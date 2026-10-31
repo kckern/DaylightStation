@@ -1876,7 +1876,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     ],
     onSelectorSelect: (selection) => {
       if (selection?.equipmentId === 'party-games') {
-        handlePartyGamesBuzz(selection);
+        if (selection.userId) handlePartyGamesBuzz(selection);
         return;
       }
       // selection: { selectorId, equipmentId, userId, action }
