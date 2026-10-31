@@ -93,7 +93,7 @@ open at launch and its Player section reads "Saving works at the garage".
 one child's (a long RPG one child is playing through):
 
 ```yaml
-  - id: pokemon-crystal
+  - id: long-rpg-quest
     save_mode: battery
     save_owner: <user>
 ```

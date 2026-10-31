@@ -50,6 +50,8 @@ export default {
       'react-router-dom': path.join(frontendNodeModules, 'react-router-dom'),
       '@mantine/charts': path.join(frontendNodeModules, '@mantine/charts'),
       'dash-video-element': path.join(frontendNodeModules, 'dash-video-element'),
+      // Bundled UI fonts (gaming/party-games `fonts.js`) are a frontend dependency.
+      '@fontsource': path.join(frontendNodeModules, '@fontsource'),
       'react': path.join(frontendNodeModules, 'react'),
       'react-dom': path.join(frontendNodeModules, 'react-dom'),
       // The backend keeps its own canvas dependency for production Node

@@ -4,6 +4,8 @@ import { jeopardyScoringPolicy } from './scoringPolicy.mjs';
 //   hosted: buzz → host judges; wrong re-arms remaining teams
 //   self:   buzz → answer auto-reveals → single confirm
 //   turns:  active team answers; rotation advances every clue
+// A clue (or the final) with a `learn` note lets the host open it once the
+// answer is up and judged; leaving the clue closes it.
 
 export function currentRound(state) { return state.set.rounds[state.roundIndex]; }
 export function clueAt(state, cat, row) { return currentRound(state)?.categories[cat]?.clues[row] || null; }
@@ -81,6 +83,7 @@ function closeClue(state) {
     ...state, used, phase: 'board', active: null, isDailyDouble: false,
     ...(state.jeopardyFlowVersion === 2 ? { answerReview: null } : {}),
     wager: null, answeringTeamId: null, attempted: [], revealed: false,
+    ...(state.learning ? { learning: false } : {}),
   };
   if (currentRound(s).mode === 'turns') s = { ...s, turnTeamId: nextTurn(s) };
   if (!boardDone(s)) return { ...s, cursor: playableCursor(s) };
@@ -89,6 +92,14 @@ function closeClue(state) {
     return { ...s, roundIndex: s.roundIndex + 1, phase: 'round-intro', cursor: { cat: 0, row: 0 } };
   }
   return s.set.final ? { ...s, phase: 'final-category' } : { ...s, phase: 'done' };
+}
+
+// The answer is on screen and no judgment is still owed.
+function canShowLearn(state) {
+  if (state.phase === 'answer-review') return !state.answerReview?.judgmentPending && Boolean(state.active?.clue?.learn);
+  if (state.phase === 'clue') return state.revealed === true && Boolean(state.active?.clue?.learn);
+  if (state.phase === 'final-judging') return !state.skippedFinal && Boolean(state.set.final?.learn);
+  return false;
 }
 
 function boardCells(state) {
@@ -227,6 +238,12 @@ export function jeopardyReducer(state, action) {
       if (v2) return state.phase === 'clue' && !state.answeringTeamId && !state.revealed ? { ...state, phase: 'answer-review', revealed: true, answerReview: { teamId: null, correct: null, scoreDelta: 0, judgmentPending: false } } : state;
       if (state.phase !== 'clue' && state.phase !== 'judging') return state;
       return { ...state, phase: 'clue', revealed: true, answeringTeamId: null };
+
+    case 'SHOW_LEARN':
+      return canShowLearn(state) && !state.learning ? { ...state, learning: true } : state;
+
+    case 'HIDE_LEARN':
+      return state.learning ? { ...state, learning: false } : state;
 
     case 'RETURN_TO_BOARD':
       if (v2) return state.phase === 'answer-review' ? closeClue(state) : state;

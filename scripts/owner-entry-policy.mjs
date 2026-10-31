@@ -384,6 +384,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/gaming/browser/platform/ui/GameButton.jsx': null,
   '__capabilities/gaming/browser/platform/ui/ImageDecoderDisplay.jsx': null,
   '__capabilities/gaming/browser/platform/ui/InstructionCard.jsx': null,
+  '__capabilities/gaming/browser/platform/ui/LearnCard.jsx': null,
   '__capabilities/gaming/browser/platform/ui/MediaCluePlayer.jsx': null,
   '__capabilities/gaming/browser/platform/ui/MemberAvatar.jsx': null,
   '__capabilities/gaming/browser/platform/ui/OptionalRendererBoundary.jsx': null,

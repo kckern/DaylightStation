@@ -226,3 +226,60 @@ it('can reach every remaining question on every nonempty 3-by-3 board',()=>{
   expect([...seen].sort(),`remaining board mask ${mask}`).toEqual(remaining.map(c=>`${c.cat}:${c.row}`).sort());
  }
 });
+
+describe('learn notes', () => {
+  const LEARN = { ref: 'Jer 1:5', text: 'Before I formed you…' };
+  function learnSet() {
+    const set = makeSet();
+    set.rounds[0].categories[0].clues[0].learn = LEARN;
+    set.final.learn = LEARN;
+    return set;
+  }
+  const v2Board = () => {
+    let s = initJeopardy(learnSet(), TEAM_IDS);
+    s = jeopardyReducer(s, { type: 'ENABLE_EXPERIENCE_V2' });
+    expect(s.jeopardyFlowVersion).toBe(2);
+    return jeopardyReducer(s, { type: 'START_ROUND' });
+  };
+
+  it('v2: opens in answer review once judged, never while a judgment is owed', () => {
+    let s = jeopardyReducer(v2Board(), { type: 'SELECT_TILE' });
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'BUZZ', teamId: 'team_2' });
+    s = jeopardyReducer(s, { type: 'REVEAL' });
+    expect(s.answerReview.judgmentPending).toBe(true);
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'JUDGE', correct: true });
+    expect(s.phase).toBe('answer-review');
+    s = jeopardyReducer(s, { type: 'SHOW_LEARN' });
+    expect(s.learning).toBe(true);
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'RETURN_TO_BOARD' });
+    expect(s).toMatchObject({ phase: 'board', learning: false });
+  });
+
+  it('v1: opens once the answer is shown; HIDE_LEARN closes it', () => {
+    let s = jeopardyReducer(toBoard(learnSet()), { type: 'SELECT_TILE' });
+    s = jeopardyReducer(s, { type: 'TIMEOUT' });
+    s = jeopardyReducer(s, { type: 'SHOW_LEARN' });
+    expect(s.learning).toBe(true);
+    expect(jeopardyReducer(s, { type: 'HIDE_LEARN' }).learning).toBe(false);
+  });
+
+  it('a clue without a learn note ignores SHOW_LEARN', () => {
+    let s = jeopardyReducer(v2Board(), { type: 'MOVE_CURSOR', dir: 'right' }); // CatB has no learn note
+    s = jeopardyReducer(s, { type: 'SELECT_TILE' });
+    s = jeopardyReducer(s, { type: 'TIMEOUT' });
+    expect(s.phase).toBe('answer-review');
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+  });
+
+  it('the final learn note opens during final judging', () => {
+    let s = { ...toBoard(learnSet()), phase: 'final-clue' };
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'REVEAL' });
+    s = jeopardyReducer(s, { type: 'SHOW_LEARN' });
+    expect(s).toMatchObject({ phase: 'final-judging', learning: true });
+    expect(jeopardyReducer(s, { type: 'HIDE_LEARN' }).learning).toBe(false);
+  });
+});

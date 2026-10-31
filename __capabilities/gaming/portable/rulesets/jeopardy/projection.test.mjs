@@ -54,3 +54,29 @@ it('hides_future_references and preserves selected references before reveal', ()
   expect(project().set.final).toMatchObject({ clue: 'Final question?', scripture_reference: 'Jonah 1:17' });
   expect(project().set.final).not.toHaveProperty('answer');
 });
+
+describe('Jeopardy learn notes', () => {
+  const learn = { ref: 'Lam 3:23', text: 'His great love is new every morning.' };
+  const withLearn = {
+    ...definition,
+    rounds: [{ ...definition.rounds[0], categories: [{ name: 'Category', clues: [{ ...definition.rounds[0].categories[0].clues[0], daily_double: false, learn }] }] }],
+    final: { ...definition.final, learn },
+  };
+
+  it('rejects a malformed learn note', () => {
+    const bad = { ...withLearn, final: { ...withLearn.final, learn: { ref: 'Lam 3:23' } } };
+    expect(jeopardyRuleModule.validateDefinition(bad)).toMatchObject({ valid: false, errors: expect.arrayContaining(['final.learn.text is required']) });
+    expect(jeopardyRuleModule.validateDefinition(withLearn).valid).toBe(true);
+  });
+
+  it('shows participants the learn note only with the answer, and only the host opens it', () => {
+    let state = { ...jeopardyRuleModule.createInitialState(withLearn, { seats: [{ id: 'team' }] }), phase: 'board' };
+    state = jeopardyRuleModule.handleCommand(state, { type: 'jeopardy.select.tile' }, withLearn, { actorId: 'host' }).state;
+    expect(JSON.stringify(jeopardyRuleModule.project(state, withLearn, { role: 'participant' }))).not.toContain('new every morning');
+    state = jeopardyRuleModule.handleCommand(state, { type: 'jeopardy.timeout' }, withLearn, { actorId: 'host' }).state;
+    expect(jeopardyRuleModule.project(state, withLearn, { role: 'participant' }).state.active.clue.learn).toEqual(learn);
+    expect(jeopardyRuleModule.handleCommand(state, { type: 'jeopardy.show.learn' }, withLearn, { actorId: 'team' }).error.code).toBe('authorization_denied');
+    state = jeopardyRuleModule.handleCommand(state, { type: 'jeopardy.show.learn' }, withLearn, { actorId: 'host' }).state;
+    expect(state.learning).toBe(true);
+  });
+});
