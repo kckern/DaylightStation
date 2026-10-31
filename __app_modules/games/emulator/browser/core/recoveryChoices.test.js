@@ -7,7 +7,7 @@ const point = (revision, kind, minute, battery) => ({ revision, kind, createdAt:
   artifacts: { snapshot: kind === 'reset' ? null : { hash: `s-${revision}`, bytes: 1 }, battery: battery ? { hash: battery, bytes: 1 } : null } });
 
 describe('recoveryChoices', () => {
-  it('lists one entry per in-game save for a battery game, dated when the kid saved, newest first', () => {
+  it('lists one entry per distinct battery copy, dated by the copy it restores, newest first', () => {
     // Shaped like the 2026-10-31 incident: baseline/save/recover share save A,
     // a reset, then a run of autosaves that all carry save B.
     const checkpoints = [
@@ -17,9 +17,14 @@ describe('recoveryChoices', () => {
       { revision: 'broken', usable: false, error: 'damaged' },
     ];
     expect(recoveryChoices('battery', checkpoints)).toEqual([
-      { revision: 'auto13', label: 'In-game save', at: at(54) },
+      { revision: 'auto13', label: 'In-game save', at: at(67) },
       { revision: 'reset', label: 'New game started', at: at(53) },
-      { revision: 'rec', label: 'In-game save', at: at(50) },
+      { revision: 'rec', label: 'In-game save', at: at(52) },
+    ]);
+  });
+  it('labels a battery-mode copy without an in-game save as a saved copy, since restoring it loads a snapshot', () => {
+    expect(recoveryChoices('battery', [point('legacy', 'baseline', 50, null)])).toEqual([
+      { revision: 'legacy', label: 'Restore saved copy', at: at(50) },
     ]);
   });
   it('keeps a state game one entry per copy with the existing labels', () => {

@@ -80,6 +80,9 @@ const DEFAULT_FACTORIES = {
  * snapshot and the .srm; state captures only the snapshot. Returns
  * { state?, battery? } or null when nothing was captured.
  */
+/** How long the erase confirm ignores input after it appears (double-tap guard). */
+const ERASE_CONFIRM_GUARD_MS = 500;
+
 function captureForMode(engine, saveMode) {
   if (saveMode === 'state') {
     const state = engine.captureState?.();
@@ -193,7 +196,6 @@ export function EmulatorConsole({
   // Stable indirection so the mount-once hotspot controller can open the (live)
   // reset confirm modal without being recreated.
   const openResetRef = useRef(null);
-  openResetRef.current = () => setResetOpen(true);
 
   const presentation = presentationProp || game?.presentation || {};
   const hotspots = presentation.hotspots || [];
@@ -228,6 +230,12 @@ export function EmulatorConsole({
   // stopped, the boot waits for them to choose. Never a forced autoload.
   const [launchChoice, setLaunchChoice] = useState(null);
   const launchPickRef = useRef(null);
+  // The power switch waits while the launch card is up: nothing has booted yet.
+  openResetRef.current = () => { if (!launchChoice) setResetOpen(true); };
+  // A double tap on "Erase saved game" must not land on the confirm that
+  // replaces it, so the confirm ignores input briefly after it appears.
+  const eraseArmedAtRef = useRef(0);
+  useEffect(() => { if (eraseConfirm) eraseArmedAtRef.current = Date.now(); }, [eraseConfirm]);
   // Restart already chose the in-game save; its reboot skips the card.
   const skipLaunchCardRef = useRef(false);
   const closeReset = useCallback(() => { setResetOpen(false); setEraseConfirm(false); }, []);
@@ -735,7 +743,7 @@ export function EmulatorConsole({
   const modalStateRef = useRef(null);
   const progressBlocked = !!checkpointKey && !!progress && !progress.canPlay;
   const modalInputActive = !!launchChoice || resetOpen || !!recoveryCopies || !!error || progressBlocked;
-  modalStateRef.current = { resetOpen, eraseConfirm, softRestart, recovery: !!recoveryCopies, recoveryLoading: !!recoveryCopies?.loading, error: !!error, progressBlocked };
+  modalStateRef.current = { launchChoice: !!launchChoice, resetOpen, eraseConfirm, softRestart, recovery: !!recoveryCopies, recoveryLoading: !!recoveryCopies?.loading, error: !!error, progressBlocked };
   const activeInputSheet = () => launchDialogRef.current || resetDialogRef.current || progressDialogRef.current || errorDialogRef.current || sheetRef.current;
   const menuDefaultButton = () => {
     const sheet = activeInputSheet();
@@ -751,6 +759,7 @@ export function EmulatorConsole({
     if (!sheet) return;
     if (intent === 'back') {
       const modal = modalStateRef.current;
+      if (modal.launchChoice) return;
       if (modal.resetOpen && modal.eraseConfirm && modal.softRestart && !modal.recovery) setEraseConfirm(false);
       else if (modal.resetOpen) { setResetOpen(false); setEraseConfirm(false); }
       else if (modal.recovery) { if (!modal.recoveryLoading) cancelRecovery(); }
@@ -826,6 +835,7 @@ export function EmulatorConsole({
   const resetFlightRef = useRef(null);
   const confirmReset = useCallback(() => {
     if (resetFlightRef.current) return resetFlightRef.current;
+    if (eraseConfirm && Date.now() - eraseArmedAtRef.current < ERASE_CONFIRM_GUARD_MS) return undefined;
     if (eraseConfirm) logger.info('emulator.console.erase-confirmed', { game: game?.id, user: persistenceRef.current?.userId || null });
     setResetOpen(false); setEraseConfirm(false);
     const operation = (async () => {
@@ -963,6 +973,7 @@ export function EmulatorConsole({
               ...(needsClaim ? { claimCapture: claimTransferRef.current.captured, claimId: bootPersistence.claimId, allowExisting: bootPersistence.replaceExisting === true } : {}) });
           }
           if (cancelled) return false;
+          const skipCard = skipLaunchCardRef.current; skipLaunchCardRef.current = false;
           if (point.status !== 'ready') {
             if (point.status === 'recovery') {
               const copies = await checkpoint.inspectRecovery();
@@ -970,7 +981,6 @@ export function EmulatorConsole({
             }
             return false;
           }
-          const skipCard = skipLaunchCardRef.current; skipLaunchCardRef.current = false;
           if (!handoff && !skipCard && point.choices?.length > 1) {
             const picked = await new Promise(resolve => { launchPickRef.current = resolve; setLaunchChoice({ choices: point.choices }); });
             launchPickRef.current = null;
@@ -1509,7 +1519,7 @@ export function EmulatorConsole({
         className={`emulator-settings-toggle${menuAttention ? ' has-attention' : ''}`}
         aria-label="Game menu"
         aria-expanded={settingsOpen}
-        onClick={() => setSettingsOpen((v) => !v)}
+        onClick={() => { if (!launchChoice) setSettingsOpen((v) => !v); }}
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
           <circle cx="5" cy="12" r="2.2" />

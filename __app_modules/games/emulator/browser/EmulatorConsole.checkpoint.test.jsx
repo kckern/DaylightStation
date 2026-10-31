@@ -30,9 +30,12 @@ async function playable(view) {
 async function continueSave(view) {
   fireEvent.click(await view.findByRole('button', { name: 'Continue your save' }));
 }
-function openErase(view) {
+// The erase confirm ignores input for 500ms after it appears (double-tap guard).
+const waitForEraseArm = () => act(async () => { await new Promise(done => setTimeout(done, 550)); });
+async function openErase(view) {
   fireEvent.click(view.container.querySelector('[data-hotspot-id="power"]'));
   fireEvent.click(view.getByRole('button', { name: 'Erase saved game' }));
+  await waitForEraseArm();
   return view.getByRole('button', { name: 'Erase and start new' });
 }
 function setup({ protectedClient = client, props = {}, rejectRestore = false } = {}) {
@@ -119,7 +122,7 @@ describe('console recovery, claims and failed exits', () => {
   it('leaves the running native game in place when reset fails', async () => {
     const view = setup({ protectedClient: { ...client, resetCheckpoint: async () => ({ status: 'error', code: 'ECHECKPOINTUNAVAILABLE', error: 'Reset is unavailable' }) } });
     await playable(view); view.advance('latest');
-    fireEvent.pointerDown(openErase(view));
+    fireEvent.pointerDown(await openErase(view));
     await waitFor(() => expect(view.getByText('Reset is unavailable')).toBeTruthy());
     expect(view.engines).toHaveLength(1); expect(view.engines[0].destroy).not.toHaveBeenCalled();
     expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-latest');
@@ -145,7 +148,7 @@ describe('console recovery, claims and failed exits', () => {
     const persistence = { userId: env.key.user, persist: true, saveMode: 'battery', intent: 'claim', claimId: randomUUID(), checkpoint: { key: env.key, client, journal, variant: 'wasm' } };
     view.rerenderProps({ persistence }); await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view);
     expect((await env.repository.read(env.key)).snapshot.toString()).toBe('state-guest');
-    fireEvent.pointerDown(openErase(view));
+    fireEvent.pointerDown(await openErase(view));
     await waitFor(() => expect(view.engines).toHaveLength(3)); await playable(view);
     expect((await env.repository.read(env.key)).kind).toBe('reset');
     expect(view.engines.at(-1).restoreCheckpoint.mock.calls[0][0].kind).toBe('fresh');
@@ -154,7 +157,7 @@ describe('console recovery, claims and failed exits', () => {
     const previous = await seed('previous'); const view = setup({ rejectRestore: true }); await continueSave(view);
     await view.findByText(/Could not restore saved progress/);
     fireEvent.click(view.getByRole('button', { name: 'Review recovery copies' }));
-    fireEvent.click(await view.findByRole('button', { name: 'Start a fresh game' }));
+    fireEvent.click(await view.findByRole('button', { name: 'Start a fresh game' })); await waitForEraseArm();
     fireEvent.pointerDown(view.getByRole('button', { name: 'Erase and start new' }));
     await waitFor(async () => expect((await env.repository.read(env.key)).kind).toBe('reset'));
     expect((await env.repository.readRecoveryRevision(env.key, previous.revision)).snapshot.toString()).toBe('state-previous');
@@ -172,9 +175,9 @@ it('lets keyboard/controller intent select a recovery copy after the game menu c
 it('supports keyboard reset confirmation and submits only one reset for pointer-down plus click', async () => {
   const resetCheckpoint = vi.fn((...args) => client.resetCheckpoint(...args));
   const view = setup({ protectedClient: { ...client, resetCheckpoint } }); await playable(view);
-  const start = openErase(view); start.focus(); fireEvent.keyDown(window, { key: 'Enter' });
+  const start = await openErase(view); start.focus(); fireEvent.keyDown(window, { key: 'Enter' });
   await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view); expect(resetCheckpoint).toHaveBeenCalledTimes(1);
-  const next = openErase(view);
+  const next = await openErase(view);
   fireEvent.pointerDown(next); fireEvent.click(next); await waitFor(() => expect(view.engines).toHaveLength(3));
   expect(resetCheckpoint).toHaveBeenCalledTimes(2);
 });
@@ -223,20 +226,20 @@ describe('restart keeps the in-game save; erasing takes a second confirmation', 
     expect(view.getByText("Erase Test Learner's saved game?")).toBeTruthy();
     expect(view.getByText("This can't be undone from the game. The old save stays in recovery.")).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(view.getByRole('button', { name: 'Keep playing' })));
-    expect(resetCheckpoint).not.toHaveBeenCalled();
+    expect(resetCheckpoint).not.toHaveBeenCalled(); await waitForEraseArm();
     fireEvent.click(view.getByRole('button', { name: 'Erase and start new' }));
     await waitFor(() => expect(view.engines).toHaveLength(2)); expect(resetCheckpoint).toHaveBeenCalledTimes(1);
   });
   it('the erased save stays restorable from recovery', async () => {
     const view = setup(); await playable(view); view.advance('kept');
-    fireEvent.click(openErase(view)); await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view);
+    fireEvent.click(await openErase(view)); await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view);
     const copies = await env.repository.inspectRecovery(env.key);
     const erased = copies.checkpoints.find(point => point.usable && point.kind !== 'reset' && point.artifacts?.battery);
     expect((await env.repository.readRecoveryRevision(env.key, erased.revision)).battery.toString()).toBe('battery-kept');
   });
   it('Restart after an erase keeps the new game, with no error and no second reset', async () => {
     const resetCheckpoint = vi.fn((...args) => client.resetCheckpoint(...args));
-    const view = setup({ protectedClient: { ...client, resetCheckpoint } }); await playable(view); fireEvent.click(openErase(view));
+    const view = setup({ protectedClient: { ...client, resetCheckpoint } }); await playable(view); fireEvent.click(await openErase(view));
     await waitFor(() => expect(view.engines).toHaveLength(2)); await playable(view);
     expect(view.engines[1].restoreCheckpoint.mock.calls[0][0].kind).toBe('fresh');
     view.advance('new-game'); power(view); fireEvent.click(view.getByRole('button', { name: 'Restart game' }));
@@ -281,5 +284,44 @@ describe('launch card: the player chooses their save or where they stopped', () 
     expect(view.queryByRole('button', { name: 'Continue your save' })).toBeNull();
     const resume = view.engines[0].restoreCheckpoint.mock.calls[0][0];
     expect(resume.kind).toBe('battery'); expect(Buffer.from(resume.data).toString()).toBe('battery-only');
+  });
+});
+
+describe('final review fixes', () => {
+  const power = view => fireEvent.click(view.container.querySelector('[data-hotspot-id="power"]'));
+  it('a double tap on Erase saved game does not erase: the confirm ignores input for a moment after it appears', async () => {
+    const resetCheckpoint = vi.fn((...args) => client.resetCheckpoint(...args));
+    const view = setup({ protectedClient: { ...client, resetCheckpoint } }); await playable(view);
+    power(view); fireEvent.click(view.getByRole('button', { name: 'Erase saved game' }));
+    const confirm = view.getByRole('button', { name: 'Erase and start new' });
+    fireEvent.pointerDown(confirm); fireEvent.click(confirm);
+    await act(async () => { await new Promise(done => setTimeout(done, 20)); });
+    expect(resetCheckpoint).not.toHaveBeenCalled();
+    expect(view.getByRole('button', { name: 'Erase and start new' })).toBeTruthy();
+  });
+  it('Back on the launch card does not exit the game', async () => {
+    await seed('both'); const view = setup();
+    await view.findByRole('button', { name: 'Continue your save' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await act(async () => {});
+    expect(view.onExit).not.toHaveBeenCalled();
+    expect(view.getByRole('button', { name: 'Continue your save' })).toBeTruthy();
+  });
+  it('the power switch and game menu stay closed while the launch card waits', async () => {
+    await seed('both'); const view = setup();
+    await view.findByRole('button', { name: 'Continue your save' });
+    power(view); fireEvent.click(view.getByRole('button', { name: 'Game menu' }));
+    expect(view.queryByRole('button', { name: 'Restart game' })).toBeNull();
+    expect(view.queryByRole('dialog', { name: 'Game menu' })).toBeNull();
+  });
+  it('a Restart whose reboot lands in recovery does not swallow the next launch card', async () => {
+    await seed('both');
+    let failNext = false;
+    const view = setup({ protectedClient: { ...client, getCheckpoint: async (...args) => failNext ? (failNext = false, { status: 'error', code: 'ECHECKPOINTUNAVAILABLE', error: 'Offline' }) : client.getCheckpoint(...args) } });
+    await continueSave(view); await playable(view);
+    failNext = true; power(view); fireEvent.click(view.getByRole('button', { name: 'Restart game' }));
+    await view.findByRole('button', { name: 'Retry' });
+    fireEvent.click(view.getByRole('button', { name: 'Retry' }));
+    expect(await view.findByRole('button', { name: 'Continue your save' })).toBeTruthy();
   });
 });

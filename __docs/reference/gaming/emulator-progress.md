@@ -44,6 +44,9 @@ capture** (`kind: 'save'`) opens a launch card:
   save; the game's title screen Continue loads it.
 - **Back to where you stopped · {time}**: restores the snapshot.
 
+While the card is up, Back does nothing and the power switch and game menu
+stay closed: nothing has booted yet.
+
 No card when only one exists, after a reset, on a recovery hand-off, or on a
 Restart. A migrated (`baseline`), `import`ed or `recover`ed pair is never
 offered as "where you stopped": its snapshot may be older than its in-game
@@ -64,7 +67,8 @@ For a battery game with a player:
 - **Keep playing** (focused) closes the dialog.
 - **Restart game** stores the latest capture, then reboots to the title screen
   from the in-game save. No reset is written.
-- **Erase saved game** opens a second confirmation, "Erase {name}'s saved
+- **Erase saved game** opens a second confirmation (it ignores input for
+  500ms after appearing, so a double tap cannot confirm it), "Erase {name}'s saved
   game?". Only **Erase and start new** writes a `reset` record. The erased
   save is not deleted: it stays in the history and in recovery.
 
@@ -72,10 +76,13 @@ State games and anonymous games keep the single **Start over**.
 
 ## Recovery
 
-For a battery game the recovery dialog lists **one entry per distinct in-game
-save** ("In-game save N · {date it first appeared}") and "New game started"
-for resets, newest first, instead of one entry per autosave
-(`recoveryChoices()`). Restoring an entry restores that in-game save.
+For a battery game the recovery dialog collapses copies with identical battery
+bytes into one entry ("In-game save N · {date}"), restoring and dated by the
+newest copy carrying those bytes, plus "New game started" for resets, newest
+first (`recoveryChoices()`). Because SRAM changes during play (see Saving), an
+entry is a distinct battery copy, not necessarily a distinct in-game save. A
+copy with no battery (a legacy snapshot-only baseline) is labelled "Restore
+saved copy", since restoring it loads a snapshot.
 
 ## Legacy files
 
