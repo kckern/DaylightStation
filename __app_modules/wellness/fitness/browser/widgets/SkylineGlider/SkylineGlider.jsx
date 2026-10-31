@@ -541,6 +541,13 @@ export default function SkylineGlider() {
         if(saveState.status==='saved'){lockedCourseRef.current=null;finalizingRef.current=false}
         setChosenActId(effect.actId);
       }
+      else if(effect.type==='recover-terminal'){
+        if(saved.status!=='pending_terminal')return;
+        lockedSelectionRef.current=activeBike;lockedCourseRef.current=course;
+        runRef.current={runId:saved.identity.runId,startedAt:saved.identity.startedAt};
+        flightRef.current=saved.state;setFlight(saved.state);finalizingRef.current=false;
+        void finalize(saved.terminalRecord.run.status,saved.state,saved.terminalRecord);
+      }
       else if(effect.type==='launch'){
         if(saved.status==='pending_terminal'){
           lockedSelectionRef.current=activeBike;lockedCourseRef.current=course;
@@ -578,7 +585,12 @@ export default function SkylineGlider() {
     if(['flight','stall'].includes(controller.state.phase)){if(flightRef.current)setPhase('flight')}
     else if(!['loading','error','result'].includes(phase))setPhase('paused');
   },[controller.state.phase]);
-  const panelControls=controller.controls.map(c=>c.position===4&&controller.state.phase==='flights'&&c.label==='Start'&&saved.status==='compatible'?{...c,label:'Resume',hint:'Continue this flight'}:c);
+  const panelControls=controller.controls.map(c=>{
+    if(c.position!==4||controller.state.phase!=='flights')return c;
+    if(saved.status==='pending_terminal')return {...c,label:'Retry previous save',hint:'Finish saving before a new flight'};
+    if(c.label==='Start'&&saved.status==='compatible')return {...c,label:'Resume',hint:'Continue this flight'};
+    return c;
+  });
   const pressPanel=(position,gesture='single')=>controller.dispatch({type:'PRESS',position,gesture,source:'touch'});
   const chooseAct = (act) => {
     if (act.status === 'locked') { void requestActUnlock(act); return; }
@@ -593,12 +605,13 @@ export default function SkylineGlider() {
     <div><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch}/>
     {saveState.status==='saved'&&<p>Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
     {storageWarning&&<p role="status">{storageWarning}</p>}
+    {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
     {(adminPromptOpen||actUnlock)&&<p>Present an admin badge to unlock. Bottom-left cancels.</p>}
     </div>
     <SkylineControlPanel controls={panelControls} onPress={(position,gesture)=>{if((adminPromptOpen||actUnlock)&&position===3){setAdminPromptOpen(false);setActUnlock(null);clearUnlock()}else pressPanel(position,gesture)}}/>
     <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>{setAdminPromptOpen(false);setActUnlock(null);clearUnlock()}}/>
   </main>;
-  return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
+  return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-course-id={course.id} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
     <SkylineControlPanel controls={panelControls} onPress={pressPanel} compact/>
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
@@ -608,7 +621,5 @@ export default function SkylineGlider() {
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
     {(effects.banner||(course.control_cues||[]).find(c=>flight.courseTime>=c.at_s&&flight.courseTime<c.at_s+7)?.text)&&<div className="skyline-glider__checkpoint-banner">{effects.banner||(course.control_cues||[]).find(c=>flight.courseTime>=c.at_s&&flight.courseTime<c.at_s+7)?.text}</div>}
     {flight.stalled && flight.phase === 'playing' && <div className="skyline-glider__stop-warning" role="status">Stalled! Returning to the checkpoint…</div>}
-    <button className="skyline-glider__end" onClick={()=>pressPanel(4,'long')}>End flight</button>
-    <button className="skyline-glider__mute" aria-pressed={muted} onClick={()=>{audioRef.current.setMuted(!muted);setMuted(!muted)}}>{muted ? 'Sound on' : 'Mute'}</button>
   </main>;
 }

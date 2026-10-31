@@ -23,6 +23,17 @@ describe('MQTTSelectorAdapter', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   describe('constructor', () => {
+    it('does not replay a retained button press on reconnect', () => {
+      const handlers=new Map(),onSelect=vi.fn(),client={on:vi.fn((name,fn)=>{handlers.set(name,fn);return client}),end:vi.fn()};
+      const adapter=new MQTTSelectorAdapter({host:'mqtt'},{selectors:SELECTORS,logger,onSelect,connect:()=>client});
+      try{
+        adapter.init();
+        handlers.get('message')(SELECTORS[0].mqtt_topic,Buffer.from(JSON.stringify({action:'1_single'})),{retain:true});
+        expect(onSelect).not.toHaveBeenCalled();
+        handlers.get('message')(SELECTORS[0].mqtt_topic,Buffer.from(JSON.stringify({action:'1_single'})),{retain:false});
+        expect(onSelect).toHaveBeenCalledOnce();
+      }finally{adapter.close()}
+    });
     it('resolves published hold events through an existing long-press shortcut', () => {
       const adapter = new MQTTSelectorAdapter({host:'mqtt'},{selectors:[{...SELECTORS[0],buttons:{'2_long':'dad'}}],logger});
       expect(adapter.resolveInput(SELECTORS[0].mqtt_topic,{action:'2_hold'})).toMatchObject({userId:'dad',action:'2_hold'});

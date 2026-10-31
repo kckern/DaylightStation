@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { DaylightImagePath } from '@/lib/api.mjs';
+import SkylineAvatar from './SkylineAvatar.jsx';
 export default function SkylineControlPanel({controls,onPress,compact=false}){
  const hold=useRef({timer:null,click:null,handled:false});
  const clear=()=>clearTimeout(hold.current.timer);
@@ -12,7 +12,7 @@ export default function SkylineControlPanel({controls,onPress,compact=false}){
    onClick={()=>{if(!hold.current.handled){if(c.avatarSrc){clearTimeout(hold.current.click);hold.current.click=setTimeout(()=>onPress(c.position,'single'),300)}else onPress(c.position,'single')}hold.current.handled=false}}
    onDoubleClick={()=>{clearTimeout(hold.current.click);if(c.avatarSrc)onPress(c.position,'double')}}>
    <span className="skyline-controls__position">{c.position}</span>
-   {c.avatarSrc?<img src={c.avatarSrc} alt={c.label} onError={e=>{if(e.currentTarget.dataset.fallback){e.currentTarget.style.visibility='hidden';return}e.currentTarget.dataset.fallback='true';e.currentTarget.src=DaylightImagePath('users/_default')}}/>:<span className="skyline-controls__icon" aria-hidden="true">{c.icon}</span>}
+   {c.avatarSrc?<SkylineAvatar src={c.avatarSrc} name={c.label}/>:<span className="skyline-controls__icon" aria-hidden="true">{c.icon}</span>}
    <strong>{c.label}</strong><small>{c.reason||c.hint}</small>
   </button>)}</div>
  </aside>;

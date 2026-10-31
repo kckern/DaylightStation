@@ -109,6 +109,15 @@ async function mount(options={}){
 }
 async function launch(){await press(4);await advance(4250);await advance(100)}
 describe('complete bike lifecycle',()=>{
+ it('finishes saving a legacy terminal record before pedaling or creating another run',async()=>{
+  const record={schema:'skyline-glider-run/v1',run:{id:'old-run',status:'abandoned',course_id:'mountain-pass',course_version:1,started_at:'2026-10-29T10:00:00Z',ended_at:'2026-10-29T10:01:00Z',duration_s:60,reward_rings:0},rider:{user_id:'dad'},collectibles:[]};
+  localStorage.setItem('fitness:skyline-glider:dad:mountain-pass',JSON.stringify({schema:'skyline-glider-checkpoint/v3',lifecycle:'pending_terminal',identity:{runId:'old-run',startedAt:record.run.started_at},state:{...flightState,phase:'completed',collectedIds:[],calibration:{lowRpm:30,highRpm:100}},terminalRecord:record}));
+  await mount();await press(4);await flush();
+  const writes=apiFetch.mock.calls.filter(([u,o])=>u.endsWith('/runs')&&o?.method==='POST');
+  expect(writes).toHaveLength(1);expect(JSON.parse(writes[0][1].body).record).toEqual(record);
+  expect(mockLog.info.mock.calls.some(([n])=>n==='skyline_glider.flight.started')).toBe(false);
+  expect(screen.getByText(/Flight saved/)).toBeVisible();
+ });
  it('keeps a failed terminal record available even when local storage is unavailable',async()=>{
   await mount();await launch();await press(4,'long');
   const storage=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('storage denied')});

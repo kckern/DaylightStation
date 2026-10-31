@@ -29,7 +29,7 @@ export function useSkylineController({ctx,courses=[],world,access,saved,saveStat
    const id=config?.buttons?.[event.position+'_'+(event.gesture||'single')],rider=before.riders.find(r=>r.id===id);
    if(rider)event={type:'IDENTIFY',rider,selectorId:config.id,equipmentId:config.equipment};
   }
-  if(event.type==='PRESS'&&event.position===4&&before.phase==='flights')event={...event,resume:latest.current.saved?.status==='compatible'};
+  if(event.type==='PRESS'&&event.position===4&&before.phase==='flights')event=latest.current.saved?.status==='pending_terminal'?{type:'RECOVER_TERMINAL'}:{...event,resume:latest.current.saved?.status==='compatible'};
   const next=reduceSkylineControl(before,event);
   stateRef.current=next.state;setState(next.state);
   for(const effect of next.effects){

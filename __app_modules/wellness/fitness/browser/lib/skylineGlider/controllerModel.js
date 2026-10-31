@@ -20,6 +20,8 @@ export function reduceSkylineControl(current,event) {
     if(!state.acts.some(a=>a.id===state.actId))state.actId=chooseAct(state.acts,state.lastPlayedByRider[state.riderId]);
   } else if(event.type==='SELECT_ACT'&&state.phase==='flights') {
     if(state.acts.some(a=>a.id===event.actId)){state.actId=event.actId;effect('choose-act',{actId:event.actId})}
+  } else if(event.type==='RECOVER_TERMINAL'){
+    state.phase='saving';effect('recover-terminal');
   } else if(event.type==='IDENTIFY') {
     state.selectorId=event.selectorId;state.equipmentId=event.equipmentId;identify(event.rider);
   } else if(event.type==='OPEN_ROSTER') {state.phase='roster';state.rosterIndex=0}

@@ -1,8 +1,9 @@
 import React from 'react';
+import SkylineAvatar from './SkylineAvatar.jsx';
 export default function SkylineMenus({state,riders,acts,onEvent}){
  const selected=acts.find(a=>a.id===state.actId),rider=riders.find(r=>r.id===state.riderId);
  const press=position=>onEvent({type:'PRESS',position,gesture:'single',source:'touch'});
- const person=r=><>{r.avatarSrc&&<img src={r.avatarSrc} alt={r.name}/>}<strong>{r.name}</strong></>;
+ const person=r=><><SkylineAvatar src={r.avatarSrc} name={r.name}/><strong>{r.name}</strong></>;
  if(state.phase==='identity')return <section className="skyline-menus"><h1>Who’s flying?</h1><p>Press your rider button. Hold for other riders.</p><div className="skyline-menus__options">{riders.filter(r=>r.position).map(r=><button key={r.id} onClick={()=>press(r.position)}>{person(r)}<small>Button {r.position}</small></button>)}</div></section>;
  if(state.phase==='roster'){const r=riders[state.rosterIndex];return <section className="skyline-menus"><h1>Other riders</h1><p>Browse with the top buttons. Choose with bottom right.</p>{r&&<div className="skyline-menus__person">{person(r)}</div>}</section>}
  if(state.phase==='flights')return <section className="skyline-menus"><p>{rider?.name} is flying</p><h1>Pick a flight</h1><p>Top buttons browse. Bottom right starts.</p><div className="skyline-menus__options">{acts.map(a=><button key={a.id} aria-pressed={a.id===state.actId} onClick={()=>onEvent({type:'SELECT_ACT',actId:a.id})}><strong>{a.name}</strong><small>{a.status==='locked'?'🔒 Admin unlock required':a.status==='completed'?'✓ Completed':'Ready to explore'}</small></button>)}</div></section>;
