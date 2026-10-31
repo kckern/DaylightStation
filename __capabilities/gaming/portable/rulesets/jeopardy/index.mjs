@@ -5,6 +5,7 @@ import { defineRuleModule } from "../../kernel/index.mjs";
 import { initJeopardy, jeopardyReducer, scoreDelta, migrateJeopardyState } from "./stateMachine.mjs";
 import { buzzersReady, reduceBuzzerSetup } from "./buzzerReadiness.mjs";
 import { adjustScore } from "../../mechanics/scoring.mjs";
+import { validateLearn } from "../../mechanics/learn.mjs";
 
 export function validateJeopardyDefinition(definition) {
   const errors = [...validateJeopardyScriptureMetadata(definition), ...validateJeopardyScoringMetadata(definition)];
@@ -12,8 +13,12 @@ export function validateJeopardyDefinition(definition) {
   if (!Array.isArray(definition?.rounds) || definition.rounds.length === 0) errors.push('rounds are required');
   for (const [roundIndex, round] of (definition?.rounds || []).entries()) {
     if (!Array.isArray(round.categories) || round.categories.length === 0) errors.push(`round ${roundIndex + 1} requires categories`);
-    for (const category of round.categories || []) if (!Array.isArray(category.clues) || category.clues.length === 0) errors.push(`category ${category.title || '?'} requires clues`);
+    for (const [categoryIndex, category] of (round.categories || []).entries()) {
+      if (!Array.isArray(category.clues) || category.clues.length === 0) errors.push(`category ${category.title || '?'} requires clues`);
+      for (const [clueIndex, clue] of (category.clues || []).entries()) errors.push(...validateLearn(clue?.learn, `rounds[${roundIndex}].categories[${categoryIndex}].clues[${clueIndex}]`));
+    }
   }
+  errors.push(...validateLearn(definition?.final?.learn, 'final'));
   return { valid: errors.length === 0, errors };
 }
 
@@ -47,7 +52,7 @@ function participantProjection(state, viewer) {
       clue: clue.clue,
       ...(clue.scripture_reference ? { scripture_reference: clue.scripture_reference } : {}),
       ...(clue.media ? { media: structuredClone(clue.media) } : {}),
-      ...(showActiveAnswer ? { answer: clue.answer } : {}),
+      ...(showActiveAnswer ? { answer: clue.answer, ...(clue.learn ? { learn: structuredClone(clue.learn) } : {}) } : {}),
     };
   }
   if (projected.set.final) {
@@ -56,7 +61,7 @@ function participantProjection(state, viewer) {
     projected.set.final = {
       category: final.category,
       ...(showFinalClue ? { clue: final.clue, ...(final.scripture_reference ? { scripture_reference: final.scripture_reference } : {}), ...(final.media ? { media: structuredClone(final.media) } : {}) } : {}),
-      ...(!state.skippedFinal && ['final-judging', 'done'].includes(state.phase) ? { answer: final.answer } : {}),
+      ...(!state.skippedFinal && ['final-judging', 'done'].includes(state.phase) ? { answer: final.answer, ...(final.learn ? { learn: structuredClone(final.learn) } : {}) } : {}),
     };
   }
   if (!['final-judging', 'done'].includes(state.phase)) {
@@ -65,7 +70,7 @@ function participantProjection(state, viewer) {
   return projected;
 }
 
-const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL', 'RETURN_TO_BOARD', 'BUZZER_SETUP', 'BUZZER_REASSIGN', 'BUZZER_REPORT', 'BUZZER_PRESENCE', 'CONFIGURE_COMPETITIVE', 'ENABLE_EXPERIENCE_V2', 'ENABLE_RELIABLE_INPUT', 'CONTINUE_ROUND', 'FINISH_GAME']);
+const HOST_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'MOVE_CURSOR', 'TIMEOUT', 'REVEAL', 'JUDGE', 'JUDGE_FINAL', 'RETURN_TO_BOARD', 'BUZZER_SETUP', 'BUZZER_REASSIGN', 'BUZZER_REPORT', 'BUZZER_PRESENCE', 'CONFIGURE_COMPETITIVE', 'ENABLE_EXPERIENCE_V2', 'ENABLE_RELIABLE_INPUT', 'CONTINUE_ROUND', 'FINISH_GAME', 'SHOW_LEARN', 'HIDE_LEARN']);
 const CUE_ACTIONS = new Set(['START_ROUND', 'SELECT_TILE', 'SELECT_AT', 'TIMEOUT', 'JUDGE', 'JUDGE_FINAL']);
 const actorIsHost = (actorId) => actorId === 'host' || actorId === 'system';
 

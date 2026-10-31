@@ -1,5 +1,6 @@
 export * from "./deadlines.mjs";
 export * from "./dice.mjs";
+export * from "./learn.mjs";
 export * from "./random.mjs";
 export * from "./scoring.mjs";
 export * from "./selection.mjs";

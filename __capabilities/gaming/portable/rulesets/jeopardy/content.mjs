@@ -1,4 +1,5 @@
 import { validateJeopardyScoringMetadata } from './scoringPolicy.mjs';
+import { normalizeLearn, validateLearn } from "../../mechanics/learn.mjs";
 /**
  * Pure validation + normalization for Jeopardy content packs.
  * (data/content/games/<game>/<set-id>.yml). No I/O — callers load YAML
@@ -7,8 +8,8 @@ import { validateJeopardyScoringMetadata } from './scoringPolicy.mjs';
  * Normalized shape (returned as `set` when valid):
  *   { id, title, description, open_book, rounds: [{ name, mode, multiplier,
  *     timer_seconds|null, penalize_wrong, categories: [{ name,
- *     clues: [{ value, clue, answer, scripture_reference|null, media|null, daily_double }] }] }],
- *     final: { category, clue, answer, scripture_reference|null, media|null } | null }
+ *     clues: [{ value, clue, answer, scripture_reference|null, media|null, learn|null, daily_double }] }] }],
+ *     final: { category, clue, answer, scripture_reference|null, media|null, learn|null } | null }
  */
 
 const MODES = ['hosted', 'self', 'turns'];
@@ -75,6 +76,7 @@ function normalizeClue(clue, path, errors) {
     errors.push(`${path}.answer is required`);
   }
   if (clue.little_kids != null && typeof clue.little_kids !== 'boolean') errors.push(`${path}.little_kids must be a boolean`);
+  errors.push(...validateLearn(clue.learn, path));
   return {
     ...(clue.little_kids === true ? { little_kids: true } : {}),
     value: clue.value,
@@ -82,6 +84,7 @@ function normalizeClue(clue, path, errors) {
     answer: clue.answer,
     scripture_reference: normalizeReference(clue),
     media: normalizeMedia(clue.media, path, errors),
+    learn: normalizeLearn(clue.learn),
     daily_double: clue.daily_double === true,
   };
 }
@@ -141,7 +144,8 @@ export function validateGameSet(raw) {
     if (typeof f !== 'object' || typeof f.category !== 'string' || typeof f.clue !== 'string' || typeof f.answer !== 'string') {
       errors.push('final requires category, clue, and answer strings');
     } else {
-      final = { scripture_reference: normalizeReference(f), category: f.category, clue: f.clue, answer: f.answer, media: normalizeMedia(f.media, 'final', errors) };
+      errors.push(...validateLearn(f.learn, 'final'));
+      final = { scripture_reference: normalizeReference(f), category: f.category, clue: f.clue, answer: f.answer, media: normalizeMedia(f.media, 'final', errors), learn: normalizeLearn(f.learn) };
     }
   }
 

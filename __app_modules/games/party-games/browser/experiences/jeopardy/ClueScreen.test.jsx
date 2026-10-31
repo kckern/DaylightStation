@@ -28,3 +28,14 @@ it('legacy null reference is absent', () => {
   render(<ClueScreen state={{ phase: 'clue', active: { clue }, roundIndex: 0, set: { open_book: true, rounds: [{}], final: clue } }} teams={[]} />);
   expect(screen.queryByTestId('scripture-reference')).toBeNull();
 });
+
+it('an opened learn note takes the clue panel’s place on the TV until it is closed', () => {
+  const clue = { value: 100, clue: 'Who knew you before you were born?', answer: 'God', learn: { ref: 'Jer 1:5', text: 'Before I formed you in the womb I knew you.' } };
+  const state = { phase: 'answer-review', revealed: true, answerReview: { judgmentPending: false, correct: true }, active: { clue }, roundIndex: 0, set: { rounds: [{ mode: 'hosted' }] } };
+  const view = render(<ClueScreen state={state} />);
+  expect(screen.queryByTestId('learn-card')).toBeNull();
+  expect(screen.getByText('God')).toBeVisible();
+  view.rerender(<ClueScreen state={{ ...state, learning: true }} />);
+  expect(screen.getByTestId('learn-card')).toHaveTextContent('Before I formed you in the womb I knew you.');
+  expect(screen.queryByText('Who knew you before you were born?')).toBeNull();
+});
