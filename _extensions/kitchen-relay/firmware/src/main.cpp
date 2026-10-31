@@ -33,6 +33,7 @@
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 #include <esp_system.h>
+#include <esp_core_dump.h>
 #include "config.h"
 // A config.h generated before OTA existed does not define these; default OFF so
 // an old config can never produce an unauthenticated flash endpoint.
@@ -62,6 +63,13 @@ static Preferences g_prefs;
 static uint32_t    g_bootCount = 0;
 static esp_reset_reason_t g_resetReason = ESP_RST_UNKNOWN;
 static uint32_t    g_wifiDrops = 0;    // WiFi (not WS) link losses since boot
+// The last crash, read back from the coredump partition. A PANIC reset wipes
+// the in-RAM log ring, so `last_reset: PANIC` alone says only THAT it died;
+// the framework already writes an ELF core dump to flash on every panic, and
+// this is where the WHERE comes from. Decode the PCs against the crashing
+// build's firmware.elf (xtensa-esp32-elf-addr2line -pfiaC -e firmware.elf ...).
+static bool g_haveCrash = false;
+static esp_core_dump_summary_t g_crash;
 // Set for the duration of an OTA write. loop() does nothing else while it is
 // true: any stall past espota's timeout aborts the transfer (see setup()).
 static volatile bool g_otaActive = false;
@@ -143,8 +151,17 @@ static NimBLEAdvertisedDevice* g_advDevice = nullptr;
 static volatile bool g_doConnect = false;
 static bool g_bleConnected = false;
 static NimBLEClient* g_client = nullptr;
+// ONE client object per peer, created once and reused for every reconnect
+// (connect() drops the previous attribute tree by default). These used to be
+// createClient()'d per attempt and never deleted: each gun or scale reconnect
+// leaked the client plus its discovered services, ~1.5-4 KB measured. After
+// ~12 h the internal heap was gone, the WiFi driver failed to allocate a timer
+// on a beacon timeout (cnx_beacon_timeout_process -> ets_timer_setfn ->
+// ESP_ERROR_CHECK), and the board panicked -- twice a day, every day.
+static NimBLEClient* g_scaleConn = nullptr;
 #if BARCODE_ENABLED
 static NimBLEClient* g_hidClient = nullptr;   // DS2278 BLE-HID central
+static NimBLEClient* g_hidConn = nullptr;     // the reused object (see g_scaleConn)
 #endif
 static bool g_scanActive = false;
 // When the scale was last seen. Nonzero at boot because there is no scale yet;
@@ -574,11 +591,14 @@ class HidClientCallbacks : public NimBLEClientCallbacks {
 static HidClientCallbacks g_hidCb;
 
 static bool connectHidScanner() {
-  NimBLEClient* c = NimBLEDevice::createClient();
-  c->setClientCallbacks(&g_hidCb, false);
-  c->setConnectionParams(12, 12, 0, 150);
-  c->setConnectTimeout(10);
-  if (!c->connect(g_hidTarget)) { relayLogLine("[hid] connect failed"); NimBLEDevice::deleteClient(c); return false; }
+  if (!g_hidConn) {
+    g_hidConn = NimBLEDevice::createClient();
+    g_hidConn->setClientCallbacks(&g_hidCb, false);
+    g_hidConn->setConnectionParams(12, 12, 0, 150);
+    g_hidConn->setConnectTimeout(10);
+  }
+  NimBLEClient* c = g_hidConn;
+  if (!c->connect(g_hidTarget)) { relayLogLine("[hid] connect failed"); return false; }
   if (!c->secureConnection()) { relayLogLine("[hid] bond failed"); c->disconnect(); return false; }
   NimBLERemoteService* hid = c->getService(NimBLEUUID((uint16_t)0x1812));
   if (!hid) { relayLogLine("[hid] no HID service"); c->disconnect(); return false; }
@@ -626,6 +646,7 @@ class ScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       relayLogf("[hid] found %s", dev.getAddress().toString().c_str());
       NimBLEDevice::getScan()->stop();
       g_scanActive = false;
+      delete g_hidTarget;
       g_hidTarget = new NimBLEAdvertisedDevice(dev);
       g_doHidConnect = true;
       return;
@@ -637,12 +658,16 @@ class ScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       relayLogf("[ble] found %s (%s)", dev.getName().c_str(), dev.getAddress().toString().c_str());
       NimBLEDevice::getScan()->stop();
       g_scanActive = false;
+      delete g_advDevice;
       g_advDevice = new NimBLEAdvertisedDevice(dev);
       g_doConnect = true;
       return;
     }
   }
 };
+// One instance for the life of the board: NimBLE never frees the callbacks
+// object it is handed, so the old per-startScan() `new` leaked on every restart.
+static ScanCallbacks g_scanCb;
 
 class ClientCallbacks : public NimBLEClientCallbacks {
   void onConnect(NimBLEClient*) override {}
@@ -657,9 +682,14 @@ class ClientCallbacks : public NimBLEClientCallbacks {
 static ClientCallbacks g_clientCb;
 
 static bool connectToScale() {
-  if (g_client) { g_client->disconnect(); g_client = nullptr; }
-  g_client = NimBLEDevice::createClient();
-  g_client->setClientCallbacks(&g_clientCb, false);
+  if (!g_scaleConn) {
+    g_scaleConn = NimBLEDevice::createClient();
+    g_scaleConn->setClientCallbacks(&g_clientCb, false);
+  }
+  // A link we lost track of: drop it and let the next sweep find the scale
+  // again. Connecting over it would race its onDisconnect against g_client.
+  if (g_scaleConn->isConnected()) { g_scaleConn->disconnect(); return false; }
+  g_client = g_scaleConn;
   if (!g_client->connect(g_advDevice)) { relayLogLine("[ble] scale connect failed"); return false; }
   NimBLERemoteService* svc = g_client->getService(SCALE_SERVICE_UUID);
   if (!svc) { relayLogLine("[ble] scale service missing"); g_client->disconnect(); return false; }
@@ -722,7 +752,7 @@ static uint32_t g_scanIdleSinceMs = 0;
 static void startScan() {
   if (g_scanActive || !g_bleScanEnabled) return;
   NimBLEScan* scan = NimBLEDevice::getScan();
-  scan->setAdvertisedDeviceCallbacks(new ScanCallbacks(), false);
+  scan->setAdvertisedDeviceCallbacks(&g_scanCb, false);
   scan->setActiveScan(true);
   // Low duty cycle (30/400 = 7.5%) on purpose. The previous 15/45 (33% in very
   // tight slices) starved Classic page scanning on the shared radio: the
@@ -865,6 +895,20 @@ static void handleStatus() {
   boot["count"] = g_bootCount;
   boot["last_reset"] = resetReasonStr(g_resetReason);
   boot["wdt_s"] = WDT_TIMEOUT_S;
+  if (g_haveCrash) {
+    char hex[11];
+    JsonObject crash = boot["crash"].to<JsonObject>();
+    crash["task"] = g_crash.exc_task;
+    snprintf(hex, sizeof(hex), "0x%08x", (unsigned)g_crash.exc_pc);   crash["pc"] = hex;
+    crash["cause"] = g_crash.ex_info.exc_cause;
+    snprintf(hex, sizeof(hex), "0x%08x", (unsigned)g_crash.ex_info.exc_vaddr); crash["vaddr"] = hex;
+    crash["elf_sha256"] = (const char*)g_crash.app_elf_sha256;
+    crash["bt_corrupted"] = g_crash.exc_bt_info.corrupted;
+    JsonArray bt = crash["backtrace"].to<JsonArray>();
+    for (uint32_t i = 0; i < g_crash.exc_bt_info.depth && i < 16; i++) {
+      snprintf(hex, sizeof(hex), "0x%08x", (unsigned)g_crash.exc_bt_info.bt[i]); bt.add(hex);
+    }
+  }
   // Which image is running. After an OTA this is the only way to confirm the
   // new build actually took, short of a serial cable.
   doc["build"] = __DATE__ " " __TIME__;
@@ -1023,6 +1067,13 @@ void setup() {
   g_prefs.end();
   relayLogf("[kitchen-relay] boot #%u (last reset: %s)",
             (unsigned)g_bootCount, resetReasonStr(g_resetReason));
+  if (esp_core_dump_image_check() == ESP_OK && esp_core_dump_get_summary(&g_crash) == ESP_OK) {
+    g_haveCrash = true;
+    g_crash.exc_task[sizeof(g_crash.exc_task) - 1] = 0;
+    relayLogf("[coredump] task=%s pc=0x%08x cause=%u vaddr=0x%08x",
+              g_crash.exc_task, (unsigned)g_crash.exc_pc,
+              (unsigned)g_crash.ex_info.exc_cause, (unsigned)g_crash.ex_info.exc_vaddr);
+  }
 
   FastLED.addLeds<SK6812, LED_PIN, GRB>(led, 1);
   FastLED.setBrightness(60);
