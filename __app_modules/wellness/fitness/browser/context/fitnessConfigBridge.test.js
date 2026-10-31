@@ -1,5 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyEquipmentCatalogFromConfig, equipmentCatalogIdentity } from "./fitnessConfigBridge.js";
+import { applyEquipmentCatalogFromConfig, equipmentCatalogIdentity, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
+
+describe('rider selector config bridge', () => {
+  const selectors = [{ id: 'bike-selector', equipment: 'bike', buttons: { '1_single': 'rider' } }];
+  it('preserves flat API selectors when the app has created a nested fitness envelope', () => {
+    expect(riderSelectorsFromConfig({ selectors, fitness: { users: {} } })).toBe(selectors);
+  });
+  it('supports both config shapes and respects an explicitly empty nested roster', () => {
+    expect(riderSelectorsFromConfig({ selectors })).toBe(selectors);
+    expect(riderSelectorsFromConfig({ fitness: { selectors } })).toBe(selectors);
+    expect(riderSelectorsFromConfig({ selectors, fitness: { selectors: [] } })).toEqual([]);
+    expect(riderSelectorsFromConfig({})).toEqual([]);
+  });
+});
 
 describe('equipment config bridge', () => {
   const mat = { id: 'step_mat', type: 'pressure_mat', pressure_mat: 'mat-1', activity: { spm_window_seconds: 15 } };

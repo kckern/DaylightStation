@@ -1273,7 +1273,7 @@ const FitnessApp = () => {
         // be listed here, or FitnessContext (which roots at response.fitness)
         // will never see it — that's how dance_party silently went missing.
         // Both spellings: `coin_time_unit_ms` is what the config still says.
-        const unifyKeys = ['ant_devices','equipment','users','ring_time_unit_ms','coin_time_unit_ms','ring_celebrations','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','playback_unlock','presence_gate','emergency','household_label','momentum'];
+        const unifyKeys = ['ant_devices','equipment','selectors','users','ring_time_unit_ms','coin_time_unit_ms','ring_celebrations','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','playback_unlock','presence_gate','emergency','household_label','momentum'];
         unifyKeys.forEach(k => {
           if (response[k] !== undefined && response.fitness[k] === undefined) {
             response.fitness[k] = response[k];

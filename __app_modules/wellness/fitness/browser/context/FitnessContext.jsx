@@ -19,7 +19,7 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { getModuleManifest } from "../index.js";
 import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
-import { applyEquipmentCatalogFromConfig } from "./fitnessConfigBridge.js";
+import { applyEquipmentCatalogFromConfig, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
 import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
@@ -626,7 +626,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         : []
     };
   }, [fitnessConfiguration]);
-  const riderSelectors = fitnessRoot?.selectors || [];
+  const riderSelectors = riderSelectorsFromConfig(fitnessConfiguration);
   // Consumers release/rebind their own claims when selector configuration
   // changes. Clearing here would erase a child's newly rebound claim.
   useEffect(() => () => selectorInputRouterRef.current.clear(), []);
