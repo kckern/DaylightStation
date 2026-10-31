@@ -19,3 +19,10 @@ it('legacy null reference is absent', () => {
   render(<FinalRound state={{ phase: 'final-clue', active: { clue }, roundIndex: 0, set: { open_book: true, rounds: [{}], final: clue } }} teams={[]} />);
   expect(screen.queryByTestId('scripture-reference')).toBeNull();
 });
+
+it('an opened final learn note replaces the final clue panel during judging', () => {
+  const final = { category: 'Fin', clue: 'Final question?', answer: 'Final answer!', learn: { text: 'His great love is new every morning.' } };
+  render(<FinalRound state={{ phase: 'final-judging', learning: true, set: { final }, finalWagers: {}, finalJudged: {} }} teams={[]} />);
+  expect(screen.getByTestId('learn-card')).toHaveTextContent('His great love is new every morning.');
+  expect(screen.queryByText('Final question?')).toBeNull();
+});

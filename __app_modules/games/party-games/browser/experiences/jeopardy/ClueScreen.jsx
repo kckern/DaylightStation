@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import RevealPanel from "../../../../../../__capabilities/gaming/browser/platform/ui/RevealPanel.jsx";
+import LearnCard from "../../../../../../__capabilities/gaming/browser/platform/ui/LearnCard.jsx";
 import MediaCluePlayer from "../../../../../../__capabilities/gaming/browser/platform/ui/MediaCluePlayer.jsx";
 import TimerRing from "../../../../../../__capabilities/gaming/browser/platform/ui/TimerRing.jsx";
 import { useCountdown } from "../../../../../../__capabilities/gaming/browser/platform/ui/useCountdown.js";
@@ -21,6 +22,8 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
   const round = state.set.rounds[state.roundIndex];
   const value = isDailyDouble ? wager : active.clue.value * Number(round.multiplier ?? 1);
   const judging = phase === 'judging';
+  // The host opened the clue's learn note: it takes the clue's place until closed.
+  const learning = state.learning === true && Boolean(active.clue.learn);
 
   return (
     <div className={`jp-clue${revealed ? ' jp-clue--revealed' : ''}${active.clue.media && !mediaError ? ' jp-clue--media' : ''}`} data-testid="clue-screen">
@@ -31,11 +34,13 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
         {!state.set.open_book && !active.clue.little_kids && !judging && !revealed && !state.answeringTeamId && <TimerRing progress={progress} remaining={remaining} size={72} />}
       </div>
       {pendingTeam && <p className="jp-clue__pending" role="status">{pendingTeam.name} buzz received — confirming…</p>}
-      {active.clue.media && !mediaError && (
+      {!learning && active.clue.media && !mediaError && (
         <MediaCluePlayer media={active.clue.media} onError={setMediaError} />
       )}
-      {mediaError && <div className="jp-clue__media-error">{mediaError}</div>}
-      <RevealPanel reference={active.clue.scripture_reference} prompt={active.clue.clue} revealed={revealed || phase === 'answer-review'} answer={active.clue.answer} />
+      {!learning && mediaError && <div className="jp-clue__media-error">{mediaError}</div>}
+      {learning
+        ? <LearnCard learn={active.clue.learn} />
+        : <RevealPanel reference={active.clue.scripture_reference} prompt={active.clue.clue} revealed={revealed || phase === 'answer-review'} answer={active.clue.answer} />}
       {phase === 'answer-review' && <p className="jp-clue__review" role="status">{state.answerReview?.judgmentPending ? 'Listen, then mark Correct or Wrong on your phone.' : `${state.answerReview?.correct === true ? 'Correct' : state.answerReview?.correct === false ? 'Wrong' : 'Answer revealed'}${state.answerReview?.scoreDelta ? ` · ${state.answerReview.scoreDelta > 0 ? '+' : '−'}${Math.abs(state.answerReview.scoreDelta)} points` : ''} · Next question on your phone`}</p>}
       {lockedTeam && (
         <div className="jp-clue__locked" style={{ '--team-color': lockedTeam.color, '--team-on': onColor(lockedTeam.color) }}>

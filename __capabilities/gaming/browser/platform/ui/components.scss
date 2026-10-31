@@ -203,6 +203,59 @@
   }
 }
 
+// Learn note (e.g. the verse behind a clue) — shown after the answer.
+.gp-learn {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0 clamp(1rem, 5vw, 3rem);
+  text-align: center;
+  animation: gp-reveal-in var(--gp-motion-reveal) var(--gp-ease-show);
+
+  &__ref {
+    font-family: var(--gp-font-display);
+    font-size: var(--gp-fs-heading);
+    letter-spacing: 0.04em;
+    color: var(--gp-brass);
+  }
+
+  &__translation {
+    margin-left: 0.6em;
+    font-family: var(--gp-font-ui);
+    font-size: var(--gp-fs-label);
+    letter-spacing: 0.08em;
+    color: var(--gp-paper-dim);
+  }
+
+  &__text {
+    margin: 0;
+    font-family: var(--gp-font-serif);
+    font-style: italic;
+    line-height: 1.35;
+    color: var(--gp-paper);
+    text-wrap: balance;
+
+    &--lg { font-size: 2.4rem; }
+    &--md { font-size: 2rem; }
+    &--sm { font-size: 1.6rem; }
+  }
+
+  &__note {
+    margin: 0;
+    border-top: 2px solid var(--gp-surface-border);
+    padding-top: 0.9rem;
+    font-family: var(--gp-font-serif);
+    font-size: 1.4rem;
+    color: var(--gp-paper-dim);
+  }
+}
+
 .gp-media {
   &--image,
   &--video {

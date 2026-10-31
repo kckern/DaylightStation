@@ -1,6 +1,7 @@
 import React from 'react';
 import TitleCard from "../../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
 import RevealPanel from "../../../../../../__capabilities/gaming/browser/platform/ui/RevealPanel.jsx";
+import LearnCard from "../../../../../../__capabilities/gaming/browser/platform/ui/LearnCard.jsx";
 import MediaCluePlayer from "../../../../../../__capabilities/gaming/browser/platform/ui/MediaCluePlayer.jsx";
 import "./Jeopardy.scss";
 
@@ -22,8 +23,12 @@ export function FinalRound({ state, teams }) {
   }
   if (phase === 'final-clue' || phase === 'final-judging') {
     return <div className="jp-final">
-      {set.final.media && <MediaCluePlayer media={set.final.media} />}
-      <RevealPanel reference={set.final.scripture_reference} prompt={set.final.clue} revealed={phase === 'final-judging'} answer={set.final.answer} />
+      {state.learning && phase === 'final-judging' && set.final.learn
+        ? <LearnCard learn={set.final.learn} />
+        : <>
+          {set.final.media && <MediaCluePlayer media={set.final.media} />}
+          <RevealPanel reference={set.final.scripture_reference} prompt={set.final.clue} revealed={phase === 'final-judging'} answer={set.final.answer} />
+        </>}
       {phase === 'final-judging' && <div className="jp-final__judging">
         {teams.map(team => <div className="jp-final__team" key={team.id}>
           <span>{team.name} (wagered {finalWagers[team.id]})</span>
