@@ -21,6 +21,7 @@ Halloween tab.
     playlist: plex:<playlist-id>
     ha_script: script.<name> # optional
     shuffle: true            # optional, default true
+    video_audio: true        # optional: keep the video's own sound (own volume bar)
 ```
 
 ## Date gating
@@ -42,6 +43,11 @@ hidden goes back to `/fitness`.
   (`config.ambience`): the video loops via `queue.continuous`, the playlist
   plays, and the party extras (strobe, BPM publishing, accents,
   video-advance-per-song) are off.
+- `video_audio: true` leaves the video unmuted. The volume sheet then shows
+  two strips, Music and Video sound. Each level is saved separately: the music
+  per playlist, the video per video.
+- The bar's immersive button (rightmost) hides the bar and ✕, leaving only a
+  Next button at 25% opacity. A tap on the video returns to the normal view.
 - `useAmbienceLighting` posts `POST /api/v1/fitness/ambience/:id/start` on
   mount and `/stop` on unmount; the lights button in the now-playing bar
   toggles the same two calls.

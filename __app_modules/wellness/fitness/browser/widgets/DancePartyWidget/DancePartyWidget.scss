@@ -67,3 +67,12 @@
 .dance-backdrop { position: absolute; inset: 0;
   background: radial-gradient(circle at 50% 35%, #ff2d95 0%, #7a1fff 38%, #0a0a2a 78%);
   animation: danceHue 8s linear infinite; }
+
+.dance-volume-modal__channel + .dance-volume-modal__channel { margin-top: 16px; }
+.dance-immersive-btn { display: flex; align-items: center; }
+// Immersive: the bar and ✕ are gone; Next stays, faint until touched.
+.dance-immersive-next { position: absolute; right: 20px; bottom: 16px; z-index: 5;
+  background: none; border: none; color: #fff; font-size: 28px; cursor: pointer;
+  opacity: .25; transition: opacity .2s ease;
+  &:active { opacity: .9; }
+}

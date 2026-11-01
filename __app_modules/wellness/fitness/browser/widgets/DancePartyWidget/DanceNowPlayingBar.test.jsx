@@ -42,4 +42,26 @@ describe('DanceNowPlayingBar', () => {
     render(<DanceNowPlayingBar track={null} isPlaying={false} onPlayPause={()=>{}} onNext={()=>{}} onExit={()=>{}} />);
     expect(screen.getByText(/no track|—/i)).toBeInTheDocument();
   });
+
+  it('immersive mode shows only a faint Next, which still advances', () => {
+    const onNext = vi.fn();
+    render(<DanceNowPlayingBar track={track} isPlaying immersive onPlayPause={()=>{}} onNext={onNext} onExit={()=>{}} onToggleImmersive={()=>{}} />);
+    expect(screen.queryByLabelText('Exit dance party')).toBeNull();
+    expect(screen.queryByText('Get Lucky')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Next'));
+    expect(onNext).toHaveBeenCalled();
+  });
+
+  it('opens one volume strip per channel', () => {
+    const channels = [
+      { id: 'music', label: 'Music', level: 50, onSelect: () => {} },
+      { id: 'video', label: 'Video sound', level: 30, onSelect: () => {} },
+    ];
+    render(<DanceNowPlayingBar track={track} isPlaying onPlayPause={()=>{}} onNext={()=>{}} onExit={()=>{}} volumeChannels={channels} onToggleImmersive={()=>{}} />);
+    fireEvent.click(screen.getByLabelText('Volume'));
+    expect(screen.getByText('Music 50%')).toBeTruthy();
+    expect(screen.getByText('Video sound 30%')).toBeTruthy();
+    expect(screen.getByLabelText('Immersive mode')).toBeTruthy();
+  });
 });
+

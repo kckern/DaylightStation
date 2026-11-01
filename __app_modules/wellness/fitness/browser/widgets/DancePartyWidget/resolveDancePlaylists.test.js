@@ -69,4 +69,11 @@ describe('resolveAmbience', () => {
     const r = resolveAmbience({ id: 'halloween', video: 'plex:774715', playlist: 'plex:774714' });
     expect(r).toMatchObject({ configured: true, audioPlaylistId: 774714, videoPlaylistId: 774715, hasVideo: true, shuffle: true });
   });
+
+  it('keeps the video sound only when video_audio is true', async () => {
+    const { resolveAmbience } = await import('./resolveDancePlaylists.js');
+    expect(resolveAmbience({ video: 'plex:1', playlist: 'plex:2', video_audio: true }).videoAudio).toBe(true);
+    expect(resolveAmbience({ video: 'plex:1', playlist: 'plex:2' }).videoAudio).toBe(false);
+  });
 });
+

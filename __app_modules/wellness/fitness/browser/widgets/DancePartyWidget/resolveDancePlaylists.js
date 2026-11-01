@@ -54,6 +54,10 @@ export function resolveAmbience(ambience) {
     videoPlaylistId: videoId,
     shuffle: ambience?.shuffle !== false,
     hasVideo: videoId != null,
+    // video_audio: true keeps the video's own soundtrack (e.g. a crackling
+    // fire) under the music, with its own volume bar. Dance Party videos are
+    // visual only and stay muted.
+    videoAudio: ambience?.video_audio === true,
     videoShader: typeof ambience?.video_shader === 'string' && ambience.video_shader ? ambience.video_shader : 'focused',
     strobeBpm: null
   };

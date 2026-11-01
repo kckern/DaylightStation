@@ -44,7 +44,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   const ambience = config?.ambience ?? null;
   const isAmbience = ambience != null;
   const dancePartyConfig = isAmbience ? ambience : (config?.dance_party ?? fitnessContext?.dancePartyConfig ?? null);
-  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader, strobeBpm } =
+  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader, strobeBpm, videoAudio = false } =
     useMemo(() => (isAmbience ? resolveAmbience(ambience) : resolveDancePlaylists(dancePartyConfig)), [isAmbience, ambience, dancePartyConfig]);
 
   const party = useDanceLighting({ enabled: !isAmbience });
@@ -111,11 +111,13 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // `play={{ volume: 0 }}` is a no-op (useQueueController: `play?.volume || 1`).
   // The MutationObserver in muteVideosIn keeps the <video> muted as the
   // `continuous` playlist swaps the source/element on each advance.
+  // An ambience with video_audio keeps the video's sound; its level comes
+  // from the video volume channel below instead.
   useEffect(() => {
-    if (!(hasVideo && videoQueue)) return undefined;
+    if (!(hasVideo && videoQueue) || videoAudio) return undefined;
     const cleanup = muteVideosIn(videoContainerRef.current);
     return cleanup;
-  }, [hasVideo, videoQueue]);
+  }, [hasVideo, videoQueue, videoAudio]);
 
   // Track changes arrive via Player's onProgress callback (progressData.media),
   // exactly as FitnessMusicPlayer derives its current track. Fire a lighting
@@ -151,12 +153,14 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Video-layer observability: log the first frame source and any errors so
   // a silent video layer is diagnosable from session logs.
   const videoKeyRef = useRef(null);
+  const [videoKey, setVideoKey] = useState(null);
   const handleVideoProgress = useCallback((progressData) => {
     const media = progressData?.media;
     if (!media) return;
     const key = media.contentId || media.key || media.plex || media.ratingKey || null;
     if (key && key !== videoKeyRef.current) {
       videoKeyRef.current = key;
+      setVideoKey(key);
       logger.info('fitness.dance.video_started', { title: media.title || null, contentId: key });
     }
   }, [logger]);
@@ -195,19 +199,53 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     logger.info('fitness.dance.volume_select', { level, volume: logVolumeFromLevel(level) });
   }, [volumeState, logger]);
 
+  // Video soundtrack channel (ambience video_audio only): its own persisted
+  // level per video, applied to the video Player; re-applied when it loads.
+  const noPlayerRef = useRef(null);
+  const videoVolumeState = usePersistentVolume({
+    grandparentId: 'fitness-dance',
+    parentId: videoPlaylistId != null ? `video-${videoPlaylistId}` : 'video',
+    trackId: 'video',
+    reapplyKey: videoKey,
+    playerRef: videoAudio ? videoRef : noPlayerRef
+  });
+  const videoVolumeLevel = snapToTouchLevel(logLevelFromVolume(videoVolumeState.muted ? 0 : videoVolumeState.volume));
+  const handleVideoVolumeSelect = useCallback((level) => {
+    videoVolumeState.setVolume(logVolumeFromLevel(level));
+    logger.info('fitness.dance.video_volume_select', { level, volume: logVolumeFromLevel(level) });
+  }, [videoVolumeState, logger]);
+  const volumeChannels = useMemo(() => [
+    { id: 'music', label: 'Music', level: volumeLevel, onSelect: handleVolumeSelect },
+    ...(videoAudio ? [{ id: 'video', label: 'Video sound', level: videoVolumeLevel, onSelect: handleVideoVolumeSelect }] : [])
+  ], [volumeLevel, handleVolumeSelect, videoAudio, videoVolumeLevel, handleVideoVolumeSelect]);
+
   // Press the video → fullscreen party: the widget root escapes the app frame
   // (fixed overlay over the fitness sidebar/chrome); press again to restore.
   // The now-playing bar stays visible in both states.
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Immersive: fullscreen with the bar hidden except a faint Next; a tap on
+  // the video comes back out to the normal (windowed) view.
+  const [immersive, setImmersive] = useState(false);
   const toggleFullscreen = useCallback(() => {
+    if (immersive) {
+      setImmersive(false);
+      setIsFullscreen(false);
+      logger.info('fitness.dance.immersive_toggle', { immersive: false });
+      return;
+    }
     setIsFullscreen((prev) => {
       logger.info('fitness.dance.fullscreen_toggle', { fullscreen: !prev });
       return !prev;
     });
+  }, [immersive, logger]);
+  const enterImmersive = useCallback(() => {
+    setImmersive(true);
+    setIsFullscreen(true);
+    logger.info('fitness.dance.immersive_toggle', { immersive: true });
   }, [logger]);
 
   return (
-    <div className={`dance-party${isFullscreen ? ' is-fullscreen' : ''}`}>
+    <div className={`dance-party${isFullscreen ? ' is-fullscreen' : ''}${immersive ? ' is-immersive' : ''}`}>
       {/* strobeStyle flips opacity bright/dim and walks hue-rotate per beat;
           scoped to the video layer so the bar/controls never flash. */}
       <div className="dance-video" ref={videoContainerRef} style={strobeStyle || undefined}>
@@ -221,7 +259,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       <button
         type="button"
         className="dance-tapzone"
-        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        aria-label={immersive ? 'Exit immersive mode' : isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
         onClick={toggleFullscreen}
       />
 
@@ -243,8 +281,9 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         onPlayPause={togglePlay}
         onNext={next}
         onExit={onClose}
-        volumeLevel={volumeLevel}
-        onVolumeSelect={handleVolumeSelect}
+        volumeChannels={volumeChannels}
+        immersive={immersive}
+        onToggleImmersive={enterImmersive}
         lightsOn={lightsOn}
         onToggleLights={toggleLights}
         strobeOn={isAmbience ? false : strobe.strobeOn}
