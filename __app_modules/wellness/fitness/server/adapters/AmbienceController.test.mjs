@@ -83,3 +83,47 @@ describe('AmbientLedAdapter — stands down while an ambience runs', () => {
     expect(gateway.activateScene).not.toHaveBeenCalled();
   });
 });
+
+describe('AmbienceController — soundboard effects', () => {
+  const withEffects = {
+    ...halloween,
+    target: {
+      ...halloween.target,
+      ha_effect_script: 'script.garage_led_halloween_effect',
+      effects: [{ id: 'lightning', lights: 'lightning' }, { id: 'cat' }],
+    },
+  };
+  function make(now) {
+    const gateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    const ctrl = new AmbienceController({
+      gateway, logger: silentLogger, now,
+      loadFitnessConfig: () => ({ plex: { nav_items: [withEffects] } }),
+    });
+    return { ctrl, gateway };
+  }
+
+  it('runs the effect script with the configured lights name', async () => {
+    const { ctrl, gateway } = make(() => 10_000);
+    expect((await ctrl.effect('hh', 'halloween', 'lightning')).ok).toBe(true);
+    expect(gateway.callService).toHaveBeenCalledWith('script', 'turn_on',
+      { entity_id: 'script.garage_led_halloween_effect', variables: { effect: 'lightning' } });
+  });
+
+  it('rate-limits effects closer than 3 s apart', async () => {
+    let t = 10_000;
+    const { ctrl, gateway } = make(() => t);
+    await ctrl.effect('hh', 'halloween', 'lightning');
+    t += 1000;
+    expect((await ctrl.effect('hh', 'halloween', 'lightning')).reason).toBe('rate_limited');
+    t += 3000;
+    expect((await ctrl.effect('hh', 'halloween', 'lightning')).ok).toBe(true);
+    expect(gateway.callService).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips effects with no lights and refuses unknown ids', async () => {
+    const { ctrl, gateway } = make(() => 10_000);
+    expect((await ctrl.effect('hh', 'halloween', 'cat')).reason).toBe('no_lights');
+    expect((await ctrl.effect('hh', 'halloween', 'nope')).reason).toBe('unknown_effect');
+    expect(gateway.callService).not.toHaveBeenCalled();
+  });
+});

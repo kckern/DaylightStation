@@ -1188,6 +1188,12 @@ export function createFitnessRouter(config) {
   });
   router.post('/ambience/:id/start', ambienceAction('start'));
   router.post('/ambience/:id/stop', ambienceAction('stop'));
+  router.post('/ambience/:id/effect/:effectId', asyncHandler(async (req, res) => {
+    const householdId = req.query.householdId || req.body?.householdId;
+    const result = await fitnessHardwareService.ambienceEffect(householdId, req.params.id, req.params.effectId);
+    const notFound = result?.reason === 'unknown_ambience' || result?.reason === 'unknown_effect';
+    return res.status(notFound ? 404 : 200).json(result);
+  }));
 
   // =============================================================================
   // Equipment Fan Endpoints (require Home Assistant configuration)

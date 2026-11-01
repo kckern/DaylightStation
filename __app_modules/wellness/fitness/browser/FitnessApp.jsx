@@ -958,6 +958,8 @@ const FitnessApp = () => {
   // its own music playing underneath otherwise), then take the same path as
   // /fitness/play/:id so governance, presence gate and unlock still apply.
   const handlePlayFromUrlRef = useRef(null);
+  const playQueueLengthRef = useRef(0);
+  playQueueLengthRef.current = fitnessPlayQueue.length;
   handlePlayFromUrlRef.current = handlePlayFromUrl;
   const handleCastPlay = useCallback((plexId, { commandId } = {}) => {
     logger.info('fitness-cast-play', { plexId, commandId });
@@ -966,7 +968,10 @@ const FitnessApp = () => {
     setSelectedShow(null);
     setCurrentView('menu');
     navigate(`/fitness/play/${plexId}`, { replace: true });
-    handlePlayFromUrlRef.current?.(plexId);
+    // With an empty queue the /fitness/play effect starts it; calling here as
+    // well fetched and queued it twice (2026-10-31). Something already playing
+    // keeps that effect quiet, so replace it directly.
+    if (playQueueLengthRef.current > 0) handlePlayFromUrlRef.current?.(plexId);
   }, [logger, navigate]);
   useFitnessCastReceiver({ deviceId: FLEET_DEVICE_ID, onPlay: handleCastPlay });
 

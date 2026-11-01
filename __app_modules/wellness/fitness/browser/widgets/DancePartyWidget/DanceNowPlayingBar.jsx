@@ -43,12 +43,23 @@ const ImmersiveIcon = () => (
   </svg>
 );
 
+// Wand (soundboard effects), stroke follows currentColor.
+const WandIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M4 20L14 10M14 10l2-2m-2 2l-2-2m2 2l2 2M17 3v3m0 0v3m0-3h-3m3 0h3M19 13v2m0 0v2m0-2h-2m2 0h2M8 4v2m0 0v2m0-2H6m2 0h2"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export default function DanceNowPlayingBar({
   track, isPlaying, onPlayPause, onNext, onExit,
   volumeChannels = [],
   lightsOn = false, onToggleLights,
   strobeOn = false, onToggleStrobe,
-  immersive = false, onToggleImmersive
+  immersive = false, onToggleImmersive,
+  onOpenEffects
 }) {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const closeVolume = useCallback(() => setVolumeOpen(false), []);
@@ -74,6 +85,11 @@ export default function DanceNowPlayingBar({
           <div className="dance-artist">{track?.artist || ''}</div>
         </div>
         <div className="dance-controls">
+          {onOpenEffects && (
+            <button type="button" className="dance-effects-btn" aria-label="Effects" onClick={onOpenEffects}>
+              <WandIcon />
+            </button>
+          )}
           {onToggleStrobe && (
             <button
               type="button"
@@ -136,5 +152,6 @@ DanceNowPlayingBar.propTypes = {
   strobeOn: PropTypes.bool,
   onToggleStrobe: PropTypes.func,
   immersive: PropTypes.bool,
-  onToggleImmersive: PropTypes.func
+  onToggleImmersive: PropTypes.func,
+  onOpenEffects: PropTypes.func
 };

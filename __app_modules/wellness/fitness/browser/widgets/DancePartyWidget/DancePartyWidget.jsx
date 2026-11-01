@@ -7,6 +7,7 @@ import { resolveDancePlaylists, resolveAmbience } from "./resolveDancePlaylists.
 import { muteVideosIn } from "./muteVideosIn.js";
 import { useDanceLighting } from "./useDanceLighting.js";
 import { useAmbienceLighting } from "./useAmbienceLighting.js";
+import { resolveEffects, useAmbienceEffects, EffectOverlay, EffectsBoard } from "./AmbienceEffects.jsx";
 import { useDanceStrobe } from "./useDanceStrobe.js";
 import { useDanceBpm } from "./useDanceBpm.js";
 import { useBpmPublisher } from "./useBpmPublisher.js";
@@ -222,6 +223,13 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Press the video → fullscreen party: the widget root escapes the app frame
   // (fixed overlay over the fitness sidebar/chrome); press again to restore.
   // The now-playing bar stays visible in both states.
+  // Soundboard (ambience `effects`): sound + overlay + a light burst.
+  const effects = useMemo(() => (isAmbience ? resolveEffects(ambience.effects) : []), [isAmbience, ambience]);
+  const { active: activeEffect, trigger: fireEffect } = useAmbienceEffects({
+    ambienceId: isAmbience ? (ambience.id ?? null) : null, effects, musicRef: audioRef,
+  });
+  const [effectsOpen, setEffectsOpen] = useState(false);
+
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Immersive: fullscreen with the bar hidden except a faint Next; a tap on
   // the video comes back out to the normal (windowed) view.
@@ -256,6 +264,8 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         )}
       </div>
 
+      <EffectOverlay effect={activeEffect} />
+
       <button
         type="button"
         className="dance-tapzone"
@@ -275,6 +285,10 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         </div>
       )}
 
+      {effectsOpen && !immersive && (
+        <EffectsBoard effects={effects} active={activeEffect} onFire={fireEffect} onClose={() => setEffectsOpen(false)} />
+      )}
+
       <DanceNowPlayingBar
         track={track}
         isPlaying={isPlaying}
@@ -284,6 +298,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         volumeChannels={volumeChannels}
         immersive={immersive}
         onToggleImmersive={enterImmersive}
+        onOpenEffects={effects.length > 0 ? () => setEffectsOpen((v) => !v) : undefined}
         lightsOn={lightsOn}
         onToggleLights={toggleLights}
         strobeOn={isAmbience ? false : strobe.strobeOn}

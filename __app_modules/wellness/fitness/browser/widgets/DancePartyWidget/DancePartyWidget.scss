@@ -76,3 +76,32 @@
   opacity: .25; transition: opacity .2s ease;
   &:active { opacity: .9; }
 }
+
+// ---- Ambience soundboard effects (AmbienceEffects.jsx) ----
+.amb-fx-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
+@keyframes ambFxFlash { 0% { opacity: 0; } 4% { opacity: .9; } 10% { opacity: .1; } 16% { opacity: .75; } 30% { opacity: 0; } 100% { opacity: 0; } }
+.amb-fx-flash { position: absolute; inset: 0; background: #fff; opacity: 0; animation: ambFxFlash var(--amb-fx-dur) ease-out forwards; }
+.amb-fx-sprite { position: absolute; width: 34vh; height: 34vh; }
+@keyframes ambFxCenter { 0% { transform: translate(-50%,-50%) scale(.3); opacity: 0; } 15% { transform: translate(-50%,-50%) scale(1); opacity: 1; } 85% { opacity: 1; } 100% { transform: translate(-50%,-50%) scale(1.05); opacity: 0; } }
+.amb-fx-center { left: 50%; top: 50%; width: 46vh; height: 46vh; animation: ambFxCenter var(--amb-fx-dur) ease-out forwards; }
+@keyframes ambFxAcross { 0% { left: -40vh; top: 30%; } 25% { top: 22%; } 50% { top: 32%; } 75% { top: 20%; } 100% { left: 110%; top: 28%; } }
+.amb-fx-float-across { animation: ambFxAcross var(--amb-fx-dur) ease-in-out forwards; opacity: .92; }
+@keyframes ambFxWalk { 0% { left: -36vh; } 100% { left: 105%; } }
+.amb-fx-walk-bottom { bottom: 2%; animation: ambFxWalk var(--amb-fx-dur) linear forwards; }
+@keyframes ambFxFlock { 0% { left: 105%; transform: scale(var(--amb-fx-scale, 1)); } 100% { left: -40vh; transform: scale(var(--amb-fx-scale, 1)) translateY(-8vh); } }
+.amb-fx-flock { width: 22vh; height: 15vh; left: 105%; animation: ambFxFlock calc(var(--amb-fx-dur) * .8) ease-in forwards; }
+@keyframes ambFxConfetti { 0% { top: -4%; opacity: 1; } 100% { top: 104%; opacity: .8; } }
+.amb-fx-confetti span { position: absolute; top: -4%; width: 12px; height: 18px; border-radius: 2px; animation-name: ambFxConfetti; animation-timing-function: linear; animation-fill-mode: forwards; }
+
+.amb-fx-board { position: absolute; inset: 0; z-index: 8; }
+.amb-fx-board__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.25); }
+.amb-fx-board__row { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: min(720px, 94vw);
+  padding: 14px; border-radius: 14px; background: rgba(12,12,24,.88); border: 1px solid rgba(255,255,255,.18); }
+.amb-fx-board__btn { height: 72px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25);
+  background: linear-gradient(180deg, rgba(255,138,0,.85), rgba(138,43,226,.85)); color: #fff;
+  font-size: 20px; font-weight: 700; cursor: pointer;
+  &:disabled { opacity: .45; }
+  &.is-active { box-shadow: 0 0 0 3px #ffd24a; opacity: 1; }
+}
+.dance-effects-btn { display: flex; align-items: center; }

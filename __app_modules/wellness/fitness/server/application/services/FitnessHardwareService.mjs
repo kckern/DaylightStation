@@ -32,6 +32,11 @@ export class FitnessHardwareService {
     return this.ambienceController[action](householdId, ambienceId);
   }
 
+  async ambienceEffect(householdId, ambienceId, effectId) {
+    if (!this.ambienceController) return { ok: true, skipped: true, reason: 'ambience_unavailable' };
+    return this.ambienceController.effect(householdId, ambienceId, effectId);
+  }
+
   async evaluateFan(input) {
     if (!this.equipmentFanController) return { kind: 'unconfigured' };
     return { kind: 'found', body: await this.equipmentFanController.evaluate(input) };

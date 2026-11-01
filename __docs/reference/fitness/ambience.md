@@ -22,6 +22,16 @@ Halloween tab.
     ha_script: script.<name> # optional
     shuffle: true            # optional, default true
     video_audio: true        # optional: keep the video's own sound (own volume bar)
+    ha_effect_script: script.<name>   # optional, for effects[].lights
+    effects:                 # optional soundboard (wand button)
+      - id: lightning
+        label: Lightning
+        sound: <media path>.mp3          # under media/, e.g. video/clips/...
+        lottie: <media path>.json        # transparent Lottie sprite
+        motion: center | float-across | walk-bottom | flock
+        screen: flash | confetti         # built-in, no file
+        lights: <name>                   # passed to ha_effect_script as `effect`
+        duration: 4.5                    # seconds, default 4.5
 ```
 
 ## Date gating
@@ -48,6 +58,17 @@ hidden goes back to `/fitness`.
   per playlist, the video per video.
 - The bar's immersive button (rightmost) hides the bar and ✕, leaving only a
   Next button at 25% opacity. A tap on the video returns to the normal view.
+- **Soundboard.** When `effects` is set, a wand button opens one big button
+  per effect. A press does four things for `duration`: plays the sound with
+  the music ducked to 35%, draws the overlay (a Lottie sprite on its motion
+  path, a white flash, or CSS confetti), and posts
+  `POST /api/v1/fitness/ambience/:id/effect/:effectId`. The server runs
+  `ha_effect_script` with `{ effect: <lights> }`.
+- Effects run one at a time, at least 3 s apart, enforced on both the client
+  and the server. The garage effect script (`script.garage_led_halloween_effect`)
+  makes short bursts, and the Halloween loop skips its color steps while an
+  effect runs. Lottie files come from LottieFiles (`.lottie` is a zip: take the
+  animation JSON and strip any solid `BG` layer).
 - `useAmbienceLighting` posts `POST /api/v1/fitness/ambience/:id/start` on
   mount and `/stop` on unmount; the lights button in the now-playing bar
   toggles the same two calls.

@@ -1,5 +1,7 @@
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
+const EFFECT_MIN_INTERVAL_MS = 3000;
+
 /**
  * AmbienceController — starts/stops the Home Assistant script that an
  * `ambience` nav item names (e.g. the Halloween tab's
@@ -18,13 +20,16 @@ export class AmbienceController {
   #loadFitnessConfig;
   #logger;
   #activeId = null;
+  #lastEffectAt = -Infinity;
+  #now;
 
-  constructor({ gateway, loadFitnessConfig, logger } = {}) {
+  constructor({ gateway, loadFitnessConfig, logger, now = () => Date.now() } = {}) {
     if (!gateway) throw new InfrastructureError('AmbienceController requires gateway', { code: 'MISSING_DEPENDENCY', dependency: 'gateway' });
     if (!loadFitnessConfig) throw new InfrastructureError('AmbienceController requires loadFitnessConfig', { code: 'MISSING_DEPENDENCY', dependency: 'loadFitnessConfig' });
     this.#gateway = gateway;
     this.#loadFitnessConfig = loadFitnessConfig;
     this.#logger = logger || console;
+    this.#now = now;
   }
 
   /** The configured ambience nav item with this id, or null. */
@@ -46,6 +51,42 @@ export class AmbienceController {
 
   async stop(householdId, ambienceId) {
     return this.#run(householdId, ambienceId, 'stop');
+  }
+
+  /**
+   * Soundboard light effect: runs the item's `ha_effect_script` with the
+   * effect's `lights` name. Rate-capped (EFFECT_MIN_INTERVAL_MS) because rapid
+   * bursts are what wedge the garage strips' Zigbee radios. Sound and screen
+   * parts of an effect are client-side; this is only the room.
+   */
+  async effect(householdId, ambienceId, effectId) {
+    const item = this.#find(householdId, ambienceId);
+    if (!item) return { ok: false, reason: 'unknown_ambience' };
+    const effect = (Array.isArray(item.target?.effects) ? item.target.effects : [])
+      .find((e) => String(e?.id) === String(effectId));
+    if (!effect) return { ok: false, reason: 'unknown_effect' };
+    const script = item.target?.ha_effect_script;
+    if (!effect.lights || typeof script !== 'string' || !script.startsWith('script.')) {
+      return { ok: true, skipped: true, reason: 'no_lights' };
+    }
+    const now = this.#now();
+    if (now - this.#lastEffectAt < EFFECT_MIN_INTERVAL_MS) {
+      this.#logger.info?.('fitness.ambience.effect_rate_limited', { ambienceId, effectId });
+      return { ok: true, skipped: true, reason: 'rate_limited' };
+    }
+    this.#lastEffectAt = now;
+    let result;
+    try {
+      result = await this.#gateway.callService('script', 'turn_on', { entity_id: script, variables: { effect: effect.lights } });
+    } catch (error) {
+      result = { ok: false, error: error.message };
+    }
+    if (result?.ok === false) {
+      this.#logger.error?.('fitness.ambience.effect_failed', { ambienceId, effectId, error: result.error ?? null });
+      return { ok: false, reason: 'ha_error', error: result.error ?? null };
+    }
+    this.#logger.info?.('fitness.ambience.effect', { ambienceId, effectId, lights: effect.lights });
+    return { ok: true, effect: effectId, lights: effect.lights };
   }
 
   async #run(householdId, ambienceId, command) {
