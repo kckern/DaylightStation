@@ -89,7 +89,7 @@
 @keyframes ambFxWalk { 0% { left: -36vh; } 100% { left: 105%; } }
 .amb-fx-walk-bottom { bottom: 2%; animation: ambFxWalk var(--amb-fx-dur) linear forwards; }
 @keyframes ambFxFlock { 0% { left: 105%; transform: scale(var(--amb-fx-scale, 1)); } 100% { left: -40vh; transform: scale(var(--amb-fx-scale, 1)) translateY(-8vh); } }
-.amb-fx-flock { width: 22vh; height: 15vh; left: 105%; animation: ambFxFlock calc(var(--amb-fx-dur) * .8) ease-in forwards; }
+.amb-fx-flock { width: 32vh; height: 21vh; left: 105%; animation: ambFxFlock calc(var(--amb-fx-dur) * .8) linear forwards; }
 @keyframes ambFxConfetti { 0% { top: -4%; opacity: 1; } 100% { top: 104%; opacity: .8; } }
 .amb-fx-confetti span { position: absolute; top: -4%; width: 12px; height: 18px; border-radius: 2px; animation-name: ambFxConfetti; animation-timing-function: linear; animation-fill-mode: forwards; }
 

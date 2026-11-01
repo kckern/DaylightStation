@@ -93,7 +93,7 @@ export function EffectOverlay({ effect }) {
       {effect.screen === 'confetti' && <Confetti />}
       {effect.lottie && effect.motion === 'flock' && [0, 1, 2, 3, 4].map((i) => (
         <LottieSprite key={i} path={effect.lottie} className="amb-fx-sprite amb-fx-flock"
-          style={{ top: `${10 + i * 13}%`, animationDelay: `${i * 0.35}s`, '--amb-fx-scale': 0.6 + (i % 3) * 0.2 }} />
+          style={{ top: `${6 + i * 14}%`, animationDelay: `${i * 0.3}s`, '--amb-fx-scale': 0.6 + (i % 3) * 0.2 }} />
       ))}
       {effect.lottie && effect.motion !== 'flock' && (
         <LottieSprite path={effect.lottie} className={`amb-fx-sprite amb-fx-${effect.motion}`} />
