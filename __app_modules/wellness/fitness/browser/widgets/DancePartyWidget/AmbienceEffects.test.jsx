@@ -4,7 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 vi.mock('lottie-web', () => ({ default: { loadAnimation: () => ({ destroy() {} }) } }));
 vi.mock('@/lib/api.mjs', () => ({ DaylightAPI: vi.fn().mockResolvedValue({}), DaylightMediaPath: (p) => p }));
 
-const { resolveEffects, EffectsBoard, EffectOverlay } = await import('./AmbienceEffects.jsx');
+const { resolveEffects, EffectsBoard, EffectOverlay, ArmedIndicator } = await import('./AmbienceEffects.jsx');
 
 describe('resolveEffects', () => {
   it('keeps id+label entries and defaults motion/duration', () => {
@@ -15,14 +15,31 @@ describe('resolveEffects', () => {
 });
 
 describe('EffectsBoard', () => {
-  it('fires the pressed effect and disables buttons while one runs', () => {
-    const effects = resolveEffects([{ id: 'lightning', label: 'Lightning' }, { id: 'cat', label: 'Cat' }]);
-    const onFire = vi.fn();
-    const { rerender } = render(<EffectsBoard effects={effects} active={null} onFire={onFire} onClose={() => {}} />);
+  const effects = resolveEffects([{ id: 'lightning', label: 'Lightning' }, { id: 'cat', label: 'Cat' }]);
+  it('fires now by default and closes', () => {
+    const onFire = vi.fn(), onArm = vi.fn(), onClose = vi.fn();
+    render(<EffectsBoard effects={effects} active={null} delaySeconds={15} onFire={onFire} onArm={onArm} onClose={onClose} />);
     fireEvent.click(screen.getByText('Lightning'));
     expect(onFire).toHaveBeenCalledWith(effects[0]);
-    rerender(<EffectsBoard effects={effects} active={effects[0]} onFire={onFire} onClose={() => {}} />);
-    expect(screen.getByText('Cat').disabled).toBe(true);
+    expect(onArm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+  it('arms instead when the delay is selected', () => {
+    const onFire = vi.fn(), onArm = vi.fn();
+    render(<EffectsBoard effects={effects} active={null} delaySeconds={15} onFire={onFire} onArm={onArm} onClose={() => {}} />);
+    fireEvent.click(screen.getByText('15s'));
+    fireEvent.click(screen.getByText('Cat'));
+    expect(onArm).toHaveBeenCalledWith(effects[1]);
+    expect(onFire).not.toHaveBeenCalled();
+  });
+});
+
+describe('ArmedIndicator', () => {
+  it('shows the countdown and cancels on tap', () => {
+    const onCancel = vi.fn();
+    render(<ArmedIndicator armed={{ effect: { label: 'Ghost' }, fireAt: 0 }} remainingS={12} onCancel={onCancel} />);
+    fireEvent.click(screen.getByText(/Ghost · 12s/));
+    expect(onCancel).toHaveBeenCalled();
   });
 });
 
@@ -39,5 +56,28 @@ describe('EffectOverlay', () => {
     expect(container.querySelectorAll('.amb-fx-confetti span').length).toBeGreaterThan(20);
     rerender(<EffectOverlay effect={flock} />);
     expect(container.querySelectorAll('.amb-fx-flock')).toHaveLength(5);
+  });
+});
+
+describe('useAmbienceEffects — arming', () => {
+  it('fires an armed effect after the delay, and cancel stops it', async () => {
+    vi.useFakeTimers();
+    const { renderHook, act } = await import('@testing-library/react');
+    const { useAmbienceEffects: useFx } = await import('./AmbienceEffects.jsx');
+    const effects = resolveEffects([{ id: 'ghost', label: 'Ghost' }]);
+    const { result } = renderHook(() => useFx({ ambienceId: 'halloween', effects, musicRef: { current: null } }));
+    act(() => result.current.arm(effects[0], 15000));
+    expect(result.current.armed.effect.id).toBe('ghost');
+    act(() => { vi.advanceTimersByTime(14000); });
+    expect(result.current.active).toBeNull();
+    act(() => { vi.advanceTimersByTime(1100); });
+    expect(result.current.active?.id).toBe('ghost');
+    expect(result.current.armed).toBeNull();
+    act(() => { vi.advanceTimersByTime(10000); });
+    act(() => result.current.arm(effects[0], 15000));
+    act(() => result.current.cancelArm());
+    act(() => { vi.advanceTimersByTime(20000); });
+    expect(result.current.active).toBeNull();
+    vi.useRealTimers();
   });
 });

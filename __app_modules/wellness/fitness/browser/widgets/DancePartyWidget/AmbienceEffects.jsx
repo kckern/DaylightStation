@@ -116,14 +116,27 @@ EffectOverlay.propTypes = { effect: PropTypes.object };
  */
 export function useAmbienceEffects({ ambienceId, effects, musicRef }) {
   const [active, setActive] = useState(null);
+  // Armed: { effect, fireAt } — fires on its own after the delay so the
+  // operator can step away from the screen first.
+  const [armed, setArmed] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
   const lastAtRef = useRef(-Infinity);
   const timersRef = useRef([]);
+  const armTimerRef = useRef(null);
   const audioRef = useRef(null);
 
   useEffect(() => () => {
     timersRef.current.forEach(clearTimeout);
+    clearTimeout(armTimerRef.current);
     audioRef.current?.pause();
   }, []);
+
+  // 1 s tick only while something is armed (drives the countdown).
+  useEffect(() => {
+    if (!armed) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [armed]);
 
   // Warm the Lottie cache so the first press isn't a blank beat.
   useEffect(() => {
@@ -164,22 +177,79 @@ export function useAmbienceEffects({ ambienceId, effects, musicRef }) {
     return true;
   }, [active, ambienceId, musicRef]);
 
-  return { active, trigger };
+  const triggerRef = useRef(trigger);
+  triggerRef.current = trigger;
+
+  const arm = useCallback((effect, delayMs) => {
+    clearTimeout(armTimerRef.current);
+    const fireAt = Date.now() + delayMs;
+    setArmed({ effect, fireAt });
+    setNow(Date.now());
+    logger().info('fitness.ambience.effect_armed', { ambienceId, id: effect.id, delayMs });
+    const fire = () => {
+      // A running effect or the cooldown would drop it; try again shortly.
+      if (!triggerRef.current(effect)) {
+        armTimerRef.current = setTimeout(fire, 1000);
+        return;
+      }
+      setArmed(null);
+    };
+    armTimerRef.current = setTimeout(fire, delayMs);
+  }, [ambienceId]);
+
+  const cancelArm = useCallback(() => {
+    clearTimeout(armTimerRef.current);
+    setArmed((prev) => {
+      if (prev) logger().info('fitness.ambience.effect_disarmed', { ambienceId, id: prev.effect.id });
+      return null;
+    });
+  }, [ambienceId]);
+
+  const armedRemainingS = armed ? Math.max(0, Math.ceil((armed.fireAt - now) / 1000)) : null;
+  return { active, trigger, armed, armedRemainingS, arm, cancelArm };
 }
 
-/** Wand popover: one big button per effect. */
-export function EffectsBoard({ effects, active, onFire, onClose }) {
+/**
+ * Armed indicator: tiny, low-contrast, bottom-right — readable by the
+ * operator up close, not by the people watching the screen. Tap to cancel.
+ */
+export function ArmedIndicator({ armed, remainingS, onCancel }) {
+  if (!armed) return null;
+  return (
+    <button type="button" className="amb-fx-armed" onClick={onCancel} aria-label={`Cancel ${armed.effect.label}`}>
+      <span className="amb-fx-armed__dot" />
+      {armed.effect.label} · {remainingS}s
+    </button>
+  );
+}
+
+ArmedIndicator.propTypes = { armed: PropTypes.object, remainingS: PropTypes.number, onCancel: PropTypes.func.isRequired };
+
+/**
+ * Operator panel: a slim, dim column on the right edge with small text, so
+ * spectators don't read it as part of the show. "Now" fires on tap; the
+ * delayed mode arms the effect and closes the panel so you can walk away.
+ */
+export function EffectsBoard({ effects, active, delaySeconds, onFire, onArm, onClose }) {
+  const [delayed, setDelayed] = useState(false);
   return (
     <div className="amb-fx-board" role="dialog" aria-label="Effects">
       <div className="amb-fx-board__backdrop" onPointerDown={onClose} />
-      <div className="amb-fx-board__row">
+      <div className="amb-fx-board__col">
+        <div className="amb-fx-board__mode" role="group" aria-label="When">
+          <button type="button" className={delayed ? '' : 'is-on'} aria-pressed={!delayed} onClick={() => setDelayed(false)}>Now</button>
+          <button type="button" className={delayed ? 'is-on' : ''} aria-pressed={delayed} onClick={() => setDelayed(true)}>{delaySeconds}s</button>
+        </div>
         {effects.map((e) => (
           <button
             key={e.id}
             type="button"
             className={`amb-fx-board__btn${active?.id === e.id ? ' is-active' : ''}`}
-            disabled={!!active}
-            onClick={() => onFire(e)}
+            disabled={!delayed && !!active}
+            onClick={() => {
+              if (delayed) onArm(e); else onFire(e);
+              onClose();
+            }}
           >
             {e.label}
           </button>
@@ -192,6 +262,8 @@ export function EffectsBoard({ effects, active, onFire, onClose }) {
 EffectsBoard.propTypes = {
   effects: PropTypes.array.isRequired,
   active: PropTypes.object,
+  delaySeconds: PropTypes.number,
   onFire: PropTypes.func.isRequired,
+  onArm: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };

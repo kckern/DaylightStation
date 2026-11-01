@@ -94,16 +94,29 @@
 .amb-fx-confetti span { position: absolute; top: -4%; width: 12px; height: 18px; border-radius: 2px; animation-name: ambFxConfetti; animation-timing-function: linear; animation-fill-mode: forwards; }
 
 .amb-fx-board { position: absolute; inset: 0; z-index: 8; }
-.amb-fx-board__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.25); }
-.amb-fx-board__row { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: min(720px, 94vw);
-  padding: 14px; border-radius: 14px; background: rgba(12,12,24,.88); border: 1px solid rgba(255,255,255,.18); }
-.amb-fx-board__btn { height: 72px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25);
-  background: linear-gradient(180deg, rgba(255,138,0,.85), rgba(138,43,226,.85)); color: #fff;
-  font-size: 20px; font-weight: 700; cursor: pointer;
-  &:disabled { opacity: .45; }
-  &.is-active { box-shadow: 0 0 0 3px #ffd24a; opacity: 1; }
+// Transparent: a tap off the panel closes it without dimming the show.
+.amb-fx-board__backdrop { position: absolute; inset: 0; background: transparent; }
+// Operator panel: slim, dim, right edge, small type — not part of the show.
+.amb-fx-board__col { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 4px; width: 128px; padding: 6px;
+  border-radius: 8px; background: rgba(0,0,0,.38); }
+.amb-fx-board__mode { display: flex; gap: 4px; margin-bottom: 2px;
+  button { flex: 1; height: 26px; border: none; border-radius: 5px; background: rgba(255,255,255,.06);
+    color: rgba(255,255,255,.45); font-size: 11px; cursor: pointer;
+    &.is-on { background: rgba(255,255,255,.16); color: rgba(255,255,255,.8); } }
 }
+.amb-fx-board__btn { height: 34px; border: none; border-radius: 5px; text-align: left; padding: 0 10px;
+  background: rgba(255,255,255,.07); color: rgba(255,255,255,.6); font-size: 12px; cursor: pointer;
+  &:disabled { opacity: .35; }
+  &.is-active { color: #fff; background: rgba(255,255,255,.18); }
+}
+// Armed: a faint countdown in the corner; tap cancels.
+@keyframes ambFxArmedPulse { 0%, 100% { opacity: .9; } 50% { opacity: .3; } }
+.amb-fx-armed { position: absolute; right: 14px; bottom: 74px; z-index: 6;
+  display: flex; align-items: center; gap: 6px; padding: 3px 8px; border: none; border-radius: 10px;
+  background: rgba(0,0,0,.3); color: rgba(255,255,255,.5); font-size: 11px; cursor: pointer; }
+.dance-party.is-immersive .amb-fx-armed { bottom: 60px; }
+.amb-fx-armed__dot { width: 6px; height: 6px; border-radius: 50%; background: #ff8a00; animation: ambFxArmedPulse 1.2s ease-in-out infinite; }
 .dance-effects-btn { display: flex; align-items: center; }
 // Contain the Player's own z-indexes (10–55) inside the video layer; without a
 // stacking context they outranked the effect layer (z 4) and hid every sprite.

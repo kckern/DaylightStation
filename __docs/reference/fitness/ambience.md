@@ -23,6 +23,7 @@ Halloween tab.
     shuffle: true            # optional, default true
     video_audio: true        # optional: keep the video's own sound (own volume bar)
     ha_effect_script: script.<name>   # optional, for effects[].lights
+    effect_delay_seconds: 15  # optional, the panel's delayed-fire option
     effects:                 # optional soundboard (wand button)
       - id: lightning
         label: Lightning
@@ -64,6 +65,11 @@ hidden goes back to `/fitness`.
   path, a white flash, or CSS confetti), and posts
   `POST /api/v1/fitness/ambience/:id/effect/:effectId`. The server runs
   `ha_effect_script` with `{ effect: <lights> }`.
+- The panel is meant for the operator, not the audience: a dim column on the
+  right edge with small text. "Now" fires on tap. The delayed option
+  (`effect_delay_seconds`, default 15) arms the effect and closes the panel;
+  a faint countdown in the corner shows it's armed, and tapping the countdown
+  cancels it.
 - Effects run one at a time, at least 3 s apart, enforced on both the client
   and the server. The garage effect script (`script.garage_led_halloween_effect`)
   makes short bursts, and the Halloween loop skips its color steps while an

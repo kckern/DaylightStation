@@ -7,7 +7,7 @@ import { resolveDancePlaylists, resolveAmbience } from "./resolveDancePlaylists.
 import { muteVideosIn } from "./muteVideosIn.js";
 import { useDanceLighting } from "./useDanceLighting.js";
 import { useAmbienceLighting } from "./useAmbienceLighting.js";
-import { resolveEffects, useAmbienceEffects, EffectOverlay, EffectsBoard } from "./AmbienceEffects.jsx";
+import { resolveEffects, useAmbienceEffects, EffectOverlay, EffectsBoard, ArmedIndicator } from "./AmbienceEffects.jsx";
 import { useDanceStrobe } from "./useDanceStrobe.js";
 import { useDanceBpm } from "./useDanceBpm.js";
 import { useBpmPublisher } from "./useBpmPublisher.js";
@@ -228,7 +228,8 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // The now-playing bar stays visible in both states.
   // Soundboard (ambience `effects`): sound + overlay + a light burst.
   const effects = useMemo(() => (isAmbience ? resolveEffects(ambience.effects) : []), [isAmbience, ambience]);
-  const { active: activeEffect, trigger: fireEffect } = useAmbienceEffects({
+  const effectDelayS = isAmbience && Number(ambience.effect_delay_seconds) > 0 ? Number(ambience.effect_delay_seconds) : 15;
+  const { active: activeEffect, trigger: fireEffect, armed, armedRemainingS, arm, cancelArm } = useAmbienceEffects({
     ambienceId: isAmbience ? (ambience.id ?? null) : null, effects, musicRef: audioRef,
   });
   const [effectsOpen, setEffectsOpen] = useState(false);
@@ -268,6 +269,7 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       </div>
 
       <EffectOverlay effect={activeEffect} />
+      <ArmedIndicator armed={armed} remainingS={armedRemainingS} onCancel={cancelArm} />
 
       <button
         type="button"
@@ -289,7 +291,8 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       )}
 
       {effectsOpen && !immersive && (
-        <EffectsBoard effects={effects} active={activeEffect} onFire={fireEffect} onClose={() => setEffectsOpen(false)} />
+        <EffectsBoard effects={effects} active={activeEffect} delaySeconds={effectDelayS}
+          onFire={fireEffect} onArm={(e) => arm(e, effectDelayS * 1000)} onClose={() => setEffectsOpen(false)} />
       )}
 
       <DanceNowPlayingBar
