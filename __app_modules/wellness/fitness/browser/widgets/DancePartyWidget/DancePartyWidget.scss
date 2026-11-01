@@ -105,3 +105,6 @@
   &.is-active { box-shadow: 0 0 0 3px #ffd24a; opacity: 1; }
 }
 .dance-effects-btn { display: flex; align-items: center; }
+// Contain the Player's own z-indexes (10–55) inside the video layer; without a
+// stacking context they outranked the effect layer (z 4) and hid every sprite.
+.dance-video { isolation: isolate; z-index: 0; }
