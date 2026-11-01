@@ -203,8 +203,11 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Video soundtrack channel (ambience video_audio only): its own persisted
   // level per video, applied to the video Player; re-applied when it loads.
   const noPlayerRef = useRef(null);
+  // Its own grandparent: under 'fitness-dance' an unset video level resolved
+  // to the music entry (the store's sibling fallback) and every music change
+  // re-applied to the video — the two bars moved together (2026-10-31).
   const videoVolumeState = usePersistentVolume({
-    grandparentId: 'fitness-dance',
+    grandparentId: 'fitness-ambience-video',
     parentId: videoPlaylistId != null ? `video-${videoPlaylistId}` : 'video',
     trackId: 'video',
     reapplyKey: videoKey,
