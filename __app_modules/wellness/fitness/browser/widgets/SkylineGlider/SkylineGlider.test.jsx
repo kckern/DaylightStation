@@ -221,3 +221,33 @@ describe('accessible flight geometry', () => {
   });
 });
 
+
+describe('what to do about each thing', () => {
+  const armed = { ...course, rules: { ...course.rules, weapons: { enabled: true } }, entities: [
+    { id: 'target-1', class: 'breakable', role: 'shoot', draw: 'target', at_s: 10, altitude: .5, width_s: .55, height: .16, hit_points: 3 },
+    { id: 'gate-1', class: 'solid', role: 'bomb', draw: 'barrier', required_weapon: 'bomb', at_s: 11, altitude: .95, width_s: 1.2, height: .9 },
+    { id: 'pine-1', class: 'breakable', role: 'avoid', draw: 'pine', at_s: 9, altitude: .78, width_s: .5, height: .14 },
+  ] };
+  it('brackets targets with health pips, labels bomb walls, and leaves obstacles plain', () => {
+    render(<FlightScene state={{ ...flightState, collectedIds: [], entityDamage: { 'target-1': 1 } }} course={armed}/>);
+    expect(screen.getByTestId('course-entity-target-1')).toHaveAttribute('data-role', 'shoot');
+    expect(screen.getByTestId('target-marks-target-1').querySelector('[data-remaining="2"]')).toBeTruthy();
+    expect(screen.getByTestId('course-entity-gate-1')).toHaveTextContent('BOMB');
+    expect(screen.getByTestId('course-entity-pine-1')).toHaveAttribute('data-role', 'avoid');
+    expect(screen.queryByTestId('target-marks-pine-1')).toBeNull();
+  });
+  it('marks nothing to shoot in an unarmed flight', () => {
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={{ ...armed, rules: { ...armed.rules, weapons: { enabled: false } } }}/>);
+    expect(screen.queryByTestId('target-marks-target-1')).toBeNull();
+  });
+  it('flashes a damaged target and draws hit and kill impacts', () => {
+    const impacts = [
+      { id: 'laser-1', kind: 'laser', effect: 'damage', entityId: 'target-1', at_s: 9.8, altitude: .45, remaining: .2 },
+      { id: 'missile-1', kind: 'missile', effect: 'kill', entityId: 'gone', at_s: 10.5, altitude: .4, remaining: .2 },
+    ];
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [], impacts }} course={armed}/>);
+    expect(screen.getByTestId('course-entity-target-1').querySelector('.skyline-glider__entity-flash')).toBeTruthy();
+    expect(screen.getByTestId('skyline-glider-impact-missile-1')).toHaveTextContent('+1');
+    expect(container.querySelector('.skyline-glider__impact--damage')).toBeTruthy();
+  });
+});

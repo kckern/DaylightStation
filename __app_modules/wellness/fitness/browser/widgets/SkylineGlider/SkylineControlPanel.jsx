@@ -1,10 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import SkylineAvatar from './SkylineAvatar.jsx';
-export default function SkylineControlPanel({controls,onPress,compact=false}){
+export default function SkylineControlPanel({controls,onPress}){
  const hold=useRef({timer:null,click:null,handled:false});
  const clear=()=>clearTimeout(hold.current.timer);
  useEffect(()=>()=>{clear();clearTimeout(hold.current.click)},[controls.map(c=>c.label).join('|')]);
- return <aside className={'skyline-controls'+(compact?' skyline-controls--compact':'')} aria-label="Bike controls">
+ return <aside className="skyline-controls" aria-label="Bike controls">
   <p className="skyline-controls__heading">Your bike buttons</p>
   <div className="skyline-controls__pad">{controls.map(c=><button key={c.position} type="button" data-position={c.position} disabled={c.disabled} title={c.reason||c.hint}
    onPointerDown={()=>{clear();hold.current.handled=false;hold.current.timer=setTimeout(()=>{hold.current.handled=true;onPress(c.position,'long')},650)}}

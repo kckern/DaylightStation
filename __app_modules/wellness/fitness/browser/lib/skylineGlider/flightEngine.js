@@ -8,7 +8,7 @@ import {
   terrainContact,
 } from "./flightGeometry.js";
 import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
-import { initialBoostState, activateBoost, advanceBoost, boostTargetAltitude } from './liftBoost.js';
+import { initialBoostState, activateBoost, advanceBoost, courseSpeed } from './liftBoost.js';
 
 const STEP = 1 / 60;
 
@@ -30,7 +30,8 @@ function applyCourseEvents(state, previousTime, course) {
       ...next,
       bombsLeft: weaponRules(course).bombs,
       missilesLeft: weaponRules(course).missiles,
-      boostRemaining: 0,
+      // A checkpoint recharges boost; one already running eases out on its own
+      // rather than snapping the scroll back to 1×.
       boostRechargeRemaining: 0,
       checkpoint: {
         id: checkpoint.id,
@@ -66,6 +67,7 @@ function crash(state, course, { cause, segmentId = null, entityId = null, counte
     crashCause: cause,
     projectiles: [],
     blasts: [],
+    impacts: [],
     collisions: counted ? state.collisions : state.collisions + 1,
     lastCollisionSegmentId: segmentId,
     lastCollisionEntityId: entityId,
@@ -139,6 +141,7 @@ export function retryFlightCheckpoint(state, course) {
     entityDamage: { ...(state.checkpoint.entityDamage || {}) },
     projectiles: [],
     blasts: [],
+    impacts: [],
     bombsLeft: weaponRules(course).bombs,
     missilesLeft: weaponRules(course).missiles,
     missileCooldown: 0,
@@ -160,7 +163,7 @@ function advanceStall(state, input, dt, course) {
     rawRpm: Math.max(0, Number(input?.rpm) || 0),
     zeroElapsed: state.zeroElapsed + dt,
     pausedForSensor: false, collisionProtected: false, inputMode: 'stalled',
-    projectiles: [], blasts: [],
+    projectiles: [], blasts: [], impacts: [],
   };
   const terrain = terrainContact(course, state.courseTime, altitude);
   return terrain || altitude + SKYLINE_CRAFT_GEOMETRY.radius >= 1
@@ -213,6 +216,11 @@ function singleStep(state, input, dt, course) {
     state = advanceBoost(state, dt, course);
     if (input?.actions?.includes('boost')) state = activateBoost(state, course);
   }
+  // Boost pushes the craft forward along the course; everything course-timed
+  // (scroll, weapons, checkpoints) rides on this one multiplier.
+  // A sensor dropout freezes the boost timers (above), so it must not keep
+  // pushing the craft forward at boost speed either.
+  const speed = missing ? 1 : courseSpeed(state, course);
   const measuredRpm = Math.max(0, Number(input?.rpm) || 0);
   const inferredFor = disconnected ? state.sensorMissingFor + dt : 0;
   const slowdownSeconds = Math.max(STEP, Number(course.motion.inferred_slowdown_s ?? 0.5));
@@ -234,7 +242,6 @@ function singleStep(state, input, dt, course) {
   }
   if (disconnected) targetAltitude = targetForRpm(rawRpm, state.calibration);
 
-  targetAltitude = boostTargetAltitude(state, targetAltitude, course);
   const desiredRate = (targetAltitude - state.altitude) / course.motion.response_s;
   const rate = clamp(desiredRate, -course.motion.max_climb_rate, course.motion.max_descent_rate);
   const altitude = clamp(state.altitude + rate * dt, HIGH_ALTITUDE, LOW_ALTITUDE);
@@ -252,10 +259,10 @@ function singleStep(state, input, dt, course) {
     collisionProtected: missing,
     inputMode: disconnected ? 'inferred-slowdown' : 'measured',
     invincibleRemaining: Math.max(0, state.invincibleRemaining - dt),
-    courseTime: state.courseTime + dt,
+    courseTime: state.courseTime + dt * speed,
   };
   if (!missing) next = fireWeapons(next, input?.actions, course, input?.weaponPower);
-  next = advanceWeapons(next, dt, course);
+  next = advanceWeapons(next, dt, course, speed);
   next = applyCourseEvents(next, previousTime, course);
   return collide(next, course);
 }

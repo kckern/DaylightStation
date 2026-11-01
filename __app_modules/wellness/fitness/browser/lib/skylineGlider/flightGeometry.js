@@ -103,8 +103,9 @@ export function entityAtPoint(entities, atSeconds, altitude) {
 /**
  * The nearest entity or terrain segment met by a point sweeping from `from` to
  * `to` at a fixed altitude: `{ entity | segment, at }`, or null. Entities win ties.
+ * `aim` is an altitude tolerance applied to entity boxes.
  */
-export function firstHitAlong(entities, course, from, to, altitude) {
+export function firstHitAlong(entities, course, from, to, altitude, aim = 0) {
   let best = null;
   const consider = (hit, start, end) => {
     if (start > to || end < from) return;
@@ -113,7 +114,9 @@ export function firstHitAlong(entities, course, from, to, altitude) {
   };
   for (const entity of entities || []) {
     const bounds = entityBounds(entity);
-    if (altitude >= bounds.top && altitude <= bounds.bottom) consider({ entity }, bounds.start, bounds.end);
+    // `aim` widens entity boxes only, so a shot a hair off a target still lands
+    // while terrain stays exact.
+    if (altitude >= bounds.top - aim && altitude <= bounds.bottom + aim) consider({ entity }, bounds.start, bounds.end);
   }
   for (const segment of course?.segments || []) {
     if (!terrainBounds(segment)) continue;

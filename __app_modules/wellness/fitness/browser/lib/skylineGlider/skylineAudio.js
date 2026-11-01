@@ -12,6 +12,12 @@ const CUE_FREQUENCIES = Object.freeze({
   laser: 1320,
   bomb: 330,
   explosion: 90,
+  missile: 990,
+  boost: 520,
+  hit: 1560,
+  target: 1180,
+  hurt: 160,
+  deny: 200,
 });
 const LOOPS = Object.freeze({ wind: 0.35, music: 0.5 });
 const SYNTH_GAIN = 0.05;
@@ -133,11 +139,11 @@ export function createSkylineAudio({
           return true;
         }
         const oscillator = context.createOscillator();
-        oscillator.type = cue === 'crash' || cue === 'breakable' ? 'square' : 'sine';
+        oscillator.type = ['crash', 'breakable', 'hurt', 'deny'].includes(cue) ? 'square' : 'sine';
         oscillator.frequency.value = CUE_FREQUENCIES[cue];
         oscillator.connect(master);
         oscillator.start(context.currentTime);
-        oscillator.stop(context.currentTime + (cue === 'finish' || cue === 'crash' ? 0.28 : 0.14));
+        oscillator.stop(context.currentTime + (cue === 'finish' || cue === 'crash' ? 0.28 : cue === 'hit' || cue === 'deny' ? 0.06 : 0.14));
         return true;
       } catch { return false; }
     },

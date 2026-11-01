@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initialBoostState, activateBoost, advanceBoost, boostTargetAltitude } from './liftBoost.js';
+import { initialBoostState, activateBoost, advanceBoost, courseSpeed } from './liftBoost.js';
 import { createFlightState, stepFlight, retryFlightCheckpoint } from './flightEngine.js';
 import { fireWeapons, advanceWeapons } from './weapons.js';
 
@@ -27,7 +27,8 @@ describe('four flight actions', () => {
   it('uses two seconds of boost and recharges eight seconds from activation', () => {
     let state=activateBoost({...initialBoostState(),phase:'playing'},course);
     expect(state.boostRemaining).toBe(2); expect(state.boostsUsed).toBe(1);
-    expect(boostTargetAltitude(state,.5,course)).toBeCloseTo(.37);
+    expect(courseSpeed(state,course)).toBe(1);
+    expect(courseSpeed({...state,boostRemaining:1},course)).toBeCloseTo(1.6);
     expect(activateBoost(state,course)).toBe(state);
     state=advanceBoost(state,2,course); expect(state.boostRemaining).toBe(0);
     expect(state.boostRechargeRemaining).toBe(6);
@@ -41,6 +42,31 @@ describe('four flight actions', () => {
     const retry=retryFlightCheckpoint({...state,missilesLeft:0,bombsLeft:0},course);
     expect(retry).toMatchObject({phase:'playing',stalled:false,missilesLeft:3,bombsLeft:5,restarts:1,boostRemaining:0,boostRechargeRemaining:0});
     expect(retryFlightCheckpoint(retry,course)).toBe(retry);
+  });
+  it('boosts forward along the course without changing altitude', () => {
+    const steady = { rpm: 80, connected: true };
+    let plain = initial(), boosted = initial();
+    for (let i = 0; i < 60; i++) { plain = stepFlight(plain, steady, 1/60, course); boosted = stepFlight(boosted, { ...steady, actions: i === 0 ? ['boost'] : undefined }, 1/60, course); }
+    expect(plain.courseTime).toBeCloseTo(1, 5);
+    expect(boosted.courseTime).toBeGreaterThan(1.4);
+    expect(boosted.altitude).toBeCloseTo(plain.altitude, 6);
+  });
+  it('carries bombs dropped during boost at the boosted speed', () => {
+    const shot = { ...fireWeapons(initial(), ['bomb'], course), courseTime: 0 };
+    expect(advanceWeapons(shot, .1, course, 1.6).projectiles[0].at_s).toBeCloseTo(.16);
+  });
+  it('does not push the craft at boost speed through a sensor dropout', () => {
+    const boosting = { ...activateBoost(initial(), course), boostRemaining: 1 };
+    const next = stepFlight(boosting, { rpm: 80, connected: false }, 1/60, course);
+    expect(next.courseTime - boosting.courseTime).toBeCloseTo(1/60, 9);
+  });
+  it('lets a running boost ease out across a checkpoint instead of snapping to 1x', () => {
+    const withCheckpoint = { ...course, segments: [{ id: 'cp', type: 'checkpoint', start_s: 0.5 }, ...course.segments] };
+    let state = stepFlight({ ...initial(), courseTime: 0.48 }, { rpm: 80, connected: true, actions: ['boost'] }, 1/60, withCheckpoint);
+    for (let i = 0; i < 30; i++) state = stepFlight(state, { rpm: 80, connected: true }, 1/60, withCheckpoint);
+    expect(state.checkpoint.id).toBe('cp');
+    expect(state.boostRemaining).toBeGreaterThan(1);
+    expect(state.boostRechargeRemaining).toBe(0);
   });
   it('freezes boost when the transport is paused', () => {
     const state={...activateBoost(initial(),course),sensorMissingFor:1,pausedForSensor:true};

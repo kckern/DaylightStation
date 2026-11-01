@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSkylineGliderRun, skylineGliderBonus } from "./runResult.js";
+import { buildSkylineGliderRun, countTargets, skylineGliderBonus } from "./runResult.js";
 
 describe('Skyline Glider terminal result', () => {
   it('awards ten completion rings plus unique collectibles, capped at thirty', () => {
@@ -28,4 +28,9 @@ describe('Skyline Glider terminal result', () => {
     expect(record.result.metrics).toMatchObject({ targets: 2, shots_fired: 9, bombs_dropped: 2 });
     expect(record.result.metrics).toMatchObject({missiles_fired:0,boosts_used:0});
   });
+});
+
+it('counts weapon kills of scored targets only, never crashes or avoid-role scenery', () => {
+  const course = { entities: [{ id: 't', role: 'shoot' }, { id: 'pine', role: 'avoid', class: 'breakable' }, { id: 'w', role: 'bomb' }] };
+  expect(countTargets({ destroyedBy: { t: 'laser', pine: 'missile', w: 'bomb', x: 'crash' } }, course)).toBe(2);
 });

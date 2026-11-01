@@ -104,13 +104,55 @@ function CourseSegment({ segment, zone, assets, time }) {
   </g>;
 }
 
-function Entity({ entity, assets, time }) {
+// What the rider should do about an entity: an explicit `role` wins, else it
+// is read from what can break it. Only an armed flight marks anything to shoot.
+export function entityRole(entity, armed) {
+  if (entity.role) return entity.role === 'shoot' && !armed ? 'avoid' : entity.role;
+  if (entity.class === 'scenery') return 'scenery';
+  if (entity.required_weapon === 'bomb') return 'bomb';
+  return 'avoid';
+}
+
+function TargetMarks({ entity, damage }) {
+  const pad = 10, arm = 14;
+  const left = entity.x - pad, right = entity.x + entity.width + pad;
+  const top = entity.y - pad, bottom = entity.y + entity.height + pad;
+  const hitPoints = entity.hit_points || 1;
+  const remaining = Math.max(0, hitPoints - (damage || 0));
+  const pipWidth = 24, gap = 6;
+  const pipsLeft = entity.x + entity.width / 2 - (hitPoints * pipWidth + (hitPoints - 1) * gap) / 2;
+  return <g className="skyline-glider__target-marks" data-testid={`target-marks-${entity.id}`}>
+    <path className="skyline-glider__target-brackets" d={`M${left} ${top + arm} V${top} H${left + arm} M${right - arm} ${top} H${right} V${top + arm} M${right} ${bottom - arm} V${bottom} H${right - arm} M${left + arm} ${bottom} H${left} V${bottom - arm}`}/>
+    {hitPoints > 1 && <g className="skyline-glider__target-pips" data-remaining={remaining}>
+      {Array.from({ length: hitPoints }, (_, index) => <rect key={index} x={pipsLeft + index * (pipWidth + gap)} y={bottom + 6} width={pipWidth} height={10} rx={3} data-full={index < remaining ? 'true' : 'false'}/>)}
+    </g>}
+  </g>;
+}
+
+function Entity({ entity, assets, time, role, damage, flashKey }) {
   const name = frameName(entity, time);
-  return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} className={`skyline-glider__entity skyline-glider__entity--${entity.class}`}>
+  return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role={role} className={`skyline-glider__entity skyline-glider__entity--${entity.class} skyline-glider__entity--${role}`}>
     {hasFrame(assets, name)
       ? <SpriteFrame assets={assets} name={name} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
       : <EntityPreset entity={entity}/>}
-    {entity.required_weapon === 'bomb' && <text x={entity.x + entity.width / 2} y={entity.y + 40} textAnchor="middle" fill="#fff1a8" fontSize="18" fontWeight="900">BOMB</text>}
+    {flashKey && <rect key={flashKey} className="skyline-glider__entity-flash" x={entity.x} y={entity.y} width={entity.width} height={entity.height} rx={8}/>}
+    {role === 'shoot' && <TargetMarks entity={entity} damage={damage}/>}
+    {role === 'bomb' && <g className="skyline-glider__bomb-mark">
+      {/* A full-height wall would put its label under the HUD bar, so keep it in view. */}
+      <text x={entity.x + entity.width / 2} y={Math.max(entity.y - 18, 130)} textAnchor="middle">BOMB ↓</text>
+    </g>}
+  </g>;
+}
+
+// A landed shot: a kill bursts and floats "+1", a hit that did not kill
+// sparks, and a shot something shrugged off puffs grey.
+function Impact({ impact, x, y }) {
+  return <g data-testid={`skyline-glider-impact-${impact.id}`} data-effect={impact.effect} transform={`translate(${x} ${y})`} className={`skyline-glider__impact skyline-glider__impact--${impact.effect}`}>
+    {impact.effect === 'kill' ? <>
+      <circle r="34"/>
+      <path d="M0 -46 V-24 M0 24 V46 M-46 0 H-24 M24 0 H46 M-32 -32 L-18 -18 M18 18 L32 32 M32 -32 L18 -18 M-18 18 L-32 32"/>
+      {impact.scores !== false && <text y="-56" textAnchor="middle">+1</text>}
+    </> : impact.effect === 'damage' ? <path d="M0 -20 L5 -5 L20 0 L5 5 L0 20 L-5 5 L-20 0 L-5 -5Z"/> : <circle r="10"/>}
   </g>;
 }
 
@@ -163,6 +205,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
   const fill = assets.images.get(zone.terrain?.fill);
   const rules = weaponRules(course);
   const xAt = (atSeconds) => craftX + (atSeconds - time) * projected.unitsPerSecond;
+  const flashes = new Map((state.impacts || []).filter((impact) => impact.entityId && impact.effect === 'damage').map((impact) => [impact.entityId, impact.id]));
   const blastProgress = (blast) => (rules.blast_s > 0 ? clamp(1 - blast.remaining / rules.blast_s, 0, 1) : 1);
   return <svg className={`skyline-glider__scene${zone.pixel_art ? ' skyline-glider__scene--pixel' : ''}`} data-zone={zone.id} data-theme={zone.palette?.theme || "alpine"} viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`} role="img" aria-label={`${zone.name || 'Alpine'} flight course`}>
     <SceneDefs palette={zone.palette}/>
@@ -174,7 +217,8 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
     {layers.filter((layer) => !layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
     <g className="skyline-glider__course-geometry">
       {projected.segments.map((segment) => <CourseSegment key={segment.id} segment={segment} zone={zone} assets={assets} time={time}/>)}
-      {projected.entities.filter((entity) => !destroyed.has(entity.id)).map((entity) => <Entity key={entity.id} entity={entity} assets={assets} time={time}/>)}
+      {projected.entities.filter((entity) => !destroyed.has(entity.id)).map((entity) => <Entity key={entity.id} entity={entity} assets={assets} time={time}
+        role={entityRole(entity, !!rules.enabled)} damage={state.entityDamage?.[entity.id]} flashKey={flashes.get(entity.id)}/>)}
       {projected.collectibles.filter((item) => !collected.has(item.id)).map((item) => <g key={item.id} transform={`translate(${item.x} ${item.y})`} className="skyline-glider__bell" data-testid={`course-collectible-${item.id}`}>
         {hasFrame(assets, collectibleFrame) ? <SpriteFrame assets={assets} name={collectibleFrame} x={-16} y={-16} width={32} height={32} align="xMidYMid"/> : <BellPreset/>}
       </g>)}
@@ -193,6 +237,9 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
       {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
     </g>
     {(state.blasts || []).map((blast) => <Blast key={blast.id} blast={blast} x={xAt(blast.at_s)} y={blast.altitude * projected.height} width={(blast.blast_width_s ?? rules.blast_width_s) * projected.unitsPerSecond} height={(blast.blast_height ?? rules.blast_height) * projected.height} progress={blastProgress(blast)} zone={zone} assets={assets}/>)}
+    <g className="skyline-glider__impacts">
+      {(state.impacts || []).map((impact) => <Impact key={impact.id} impact={impact} x={xAt(impact.at_s)} y={impact.altitude * projected.height}/>)}
+    </g>
     {layers.filter((layer) => layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
   </svg>;
 }

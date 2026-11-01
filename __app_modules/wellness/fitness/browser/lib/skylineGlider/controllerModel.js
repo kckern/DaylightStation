@@ -100,9 +100,11 @@ export function describeSkylineControls(s){
  case 'identity':choices=[1,2,3,4].map(position=>{const r=s.riders.find(x=>x.position===position);return [r?.name||'Other riders',r?.gestureHint||'Hold: other riders','●',r?.avatarSrc]});break;
  case 'roster':choices=[['Previous','Browse riders','←'],['Next','Browse riders','→'],['Back','Usual rider buttons','×'],['Choose',s.riders[s.rosterIndex]?.name||'No riders','✓']];break;
  case 'flights':choices=[['Previous','Choose flight','←'],['Next','Choose flight','→'],['Change rider',rider?.name,'×'],[act?.status==='locked'?'Locked':'Start',act?.status==='locked'?'Admin unlock':act?.name,'✓']];break;
- case 'ready':choices=[['Flights','Choose another','▦'],['Change rider',rider?.name,'●'],['Back','Return to flights','×'],['Ready','Pedal at least 30 RPM','✓']];break;
+ case 'ready':choices=['live','checkpoint'].includes(s.resumeIntent)
+  ?[['End flight','Save and choose another','▦'],['End flight','Save and change rider','●'],['End flight','Save and return to flights','×'],['Ready','Pedal at least 30 RPM','✓']]
+  :[['Flights','Choose another','▦'],['Change rider',rider?.name,'●'],['Back','Return to flights','×'],['Ready','Pedal at least 30 RPM','✓']];break;
  case 'countdown':choices=[['Keep pedaling','','—'],['Keep pedaling','','—'],['Cancel','Return to flights','×'],['Taking off',String(Math.ceil(s.countdown)),'✓']];break;
- case 'flight':choices=[['Laser',s.weaponsEnabled?'Unlimited bursts':'Opens in level 2','ϟ'],['Bomb',s.weaponsEnabled?(f.bombsLeft??5)+' remaining':'Opens in level 2','●'],['Missile',s.weaponsEnabled?(f.missilesLeft??3)+' remaining':'Opens in level 2','➤'],['Lift boost',(s.weaponsEnabled?(f.boostRechargeRemaining>0?Math.ceil(f.boostRechargeRemaining)+'s recharge':'Ready'):'Opens in level 2')+' · Hold: menu','↑']];break;
+ case 'flight':choices=[['Laser',s.weaponsEnabled?'Unlimited bursts':'Opens in level 2','ϟ'],['Bomb',s.weaponsEnabled?(f.bombsLeft??5)+' remaining':'Opens in level 2','●'],['Missile',s.weaponsEnabled?(f.missilesLeft??3)+' remaining':'Opens in level 2','➤'],['Boost',(s.weaponsEnabled?(f.boostRechargeRemaining>0?Math.ceil(f.boostRechargeRemaining)+'s recharge':'Ready'):'Opens in level 2')+' · Hold: menu','»']];break;
  case 'menu':choices=[['Resume','Pedal when ready','✓'],['Sound','Toggle on / off','♫'],['End flight','Save this attempt','×'],['Change rider','Save and finish','●']];break;
  case 'crash':choices=[['Retry checkpoint','Same rider & flight','↻'],['Restart level','From the beginning','⟲'],['Flights','Choose another','▦'],['Change rider','Save and finish','●']];break;
  case 'result':{

@@ -1,5 +1,14 @@
+import { scoresAsTarget } from "./weapons.js";
+
 export function skylineGliderBonus(collectedIds = []) {
   return Math.min(30, 10 + new Set(collectedIds).size);
+}
+
+/** Weapon kills of scored targets (see scoresAsTarget); crash breakage never counts. */
+export function countTargets(state, course) {
+  const entities = new Map((course?.entities || []).map((entity) => [entity.id, entity]));
+  return Object.entries(state.destroyedBy || {}).filter(([id, by]) => ['laser', 'bomb', 'missile'].includes(by)
+    && (!entities.has(id) || scoresAsTarget(entities.get(id)))).length;
 }
 
 export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId, equipmentId, calibration, startedAt, endedAt, state, status }) {
@@ -8,8 +17,7 @@ export function buildSkylineGliderRun({ runId, course, riderId, fitnessSessionId
   const rewardRings = completed ? skylineGliderBonus(collectibles) : 0;
   // `targets` counts the final run-through (rolled back with the checkpoint, like
   // collectibles); shot and bomb counters are cumulative, like collisions.
-  const destroyedBy = Object.values(state.destroyedBy || {});
-  const targets = destroyedBy.filter((by) => ['laser', 'bomb', 'missile'].includes(by)).length;
+  const targets = countTargets(state, course);
   const shotsFired = state.shotsFired || 0;
   const bombsDropped = state.bombsDropped || 0;
   return {

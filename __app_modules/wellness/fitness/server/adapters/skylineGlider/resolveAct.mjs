@@ -93,6 +93,7 @@ export function resolveAct(act, zones) {
       ...(definition.frame ? { frame: definition.frame } : {}),
       ...(definition.frames ? { frames: definition.frames, fps: definition.fps } : {}),
       ...(definition.draw ? { draw: definition.draw } : {}),
+      ...((placement.role ?? definition.role) ? { role: String(placement.role ?? definition.role) } : {}),
       ...(Array.isArray(placement.vulnerable_to ?? definition.vulnerable_to) ? { vulnerable_to: [...(placement.vulnerable_to ?? definition.vulnerable_to)] } : {}),
     };
   });

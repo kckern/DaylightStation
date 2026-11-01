@@ -26,15 +26,17 @@ collectible: { draw: bell }
 #   laser: { frames: [laser-0, laser-1], fps: 12 }
 #   bomb: { frame: bomb }
 #   blast: { frames: [blast-0, blast-1, blast-2] }
-# Entity classes: breakable (broken by a hit, a laser or a bomb), solid (a wall;
+# Entity classes: breakable (broken by a hit, a laser, a missile or a bomb), solid (a wall;
 # only a bomb destroys it), scenery (never touched). Set
-# `vulnerable_to: [laser, bomb]` (or []) on a definition or placement to override.
+# `vulnerable_to: [laser, bomb, missile]` (or []) on a definition or placement to override.
+# `role` tells the rider what to do and drives the on-screen marking:
+# shoot (crosshair brackets + health pips), bomb ("BOMB ↓"), avoid, scenery.
 entities:
-  bombwall: { class: solid, draw: barrier, width_s: 1.2, height: 0.9, vulnerable_to: [bomb] }
-  target: { class: breakable, draw: target, width_s: 0.55, height: 0.16 }
-  pine: { class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
-  chalet: { class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }
-  boulder: { class: solid, draw: boulder, width_s: 0.8, height: 0.12 }
+  bombwall: { class: solid, role: bomb, draw: barrier, width_s: 1.2, height: 0.9, vulnerable_to: [bomb] }
+  target: { class: breakable, role: shoot, draw: target, width_s: 0.55, height: 0.16 }
+  pine: { role: avoid, class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
+  chalet: { role: avoid, class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }
+  boulder: { role: avoid, class: solid, draw: boulder, width_s: 0.8, height: 0.12 }
   signpost: { class: scenery, draw: signpost, width_s: 0.3, height: 0.1 }
 sounds:
   bell: sounds/bell.mp3

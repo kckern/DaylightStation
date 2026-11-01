@@ -251,6 +251,20 @@ describe('complete bike lifecycle',()=>{
   expect(mockLog.info.mock.calls.some(([name])=>name==='skyline_glider.flight.started')).toBe(false);
   rpm=65;await advance(4250);await advance(100);expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-rider-id','dad');
  });
+ it('folds the bike buttons into the flight header instead of a panel',async()=>{
+  await mount();await launch();
+  expect(screen.getByTestId('skyline-glider-flight').querySelector('.skyline-controls')).toBeNull();
+  expect(screen.getByTestId('skyline-glider-hud').querySelectorAll('[data-position]')).toHaveLength(4);
+ });
+ it('flashes a refused press with its reason instead of doing nothing',async()=>{
+  await mount();await launch();
+  for(let i=0;i<5;i++){await press(2);await advance(900)}
+  expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('0');
+  await press(2);
+  expect(screen.getByTestId('skyline-glider-bombs')).toHaveAttribute('data-flash','deny');
+  expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('Empty');
+  expect(mockLog.info.mock.calls.some(([n,d])=>n==='skyline_glider.input.refused'&&d.reason==='empty')).toBe(true);
+ });
  it('uses all four physical actions without changing rider assignment',async()=>{
   await mount();await launch();await press(1);await advance(50);
   expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('5');

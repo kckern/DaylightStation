@@ -1,5 +1,5 @@
 import SkylineControlPanel from './SkylineControlPanel.jsx';
-import SkylineMenus from './SkylineMenus.jsx';
+import SkylineMenus, { crashReason } from './SkylineMenus.jsx';
 import { useSkylineController } from './useSkylineController.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
@@ -7,27 +7,25 @@ import getLogger from '@/lib/logging/Logger.js';
 import { validateCourse, resolveCalibration } from "../../lib/skylineGlider/courseModel.js";
 import { createFlightState, stepFlight, retryFlightCheckpoint } from "../../lib/skylineGlider/flightEngine.js";
 import { weaponPower } from "../../lib/skylineGlider/weaponPower.js";
-import { weaponRules } from "../../lib/skylineGlider/weapons.js";
+import { scoresAsTarget, weaponRefusal, weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { collectFlightTelemetry } from "../../lib/skylineGlider/flightTelemetry.js";
 import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
 import { EMPTY_ZONE_ASSETS, loadZoneAssets } from "../../lib/skylineGlider/zoneAssets.js";
 import { createSkylineAudio } from "../../lib/skylineGlider/skylineAudio.js";
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from "../../lib/skylineGlider/checkpointRepository.js";
-import { buildSkylineGliderRun } from "../../lib/skylineGlider/runResult.js";
+import { buildSkylineGliderRun, countTargets } from "../../lib/skylineGlider/runResult.js";
 import { listUsableSkylineBikes, selectSkylineBike } from "../../lib/skylineGlider/bikeSelection.js";
 import { useIdentity } from "../../identity/useIdentity.js";
 import UnlockPrompt from "../../player/overlays/UnlockPrompt.jsx";
 import { isLocalDevHost } from '@/lib/kioskEnv.js';
 import { DaylightMediaPath } from '@/lib/api.mjs';
-import { FlightScene } from "./FlightScene.jsx";
+import { FlightScene, entityRole } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
 import useSkylineWeapons from "./useSkylineWeapons.js";
+import SkylineFlightHud from "./SkylineFlightHud.jsx";
 import "./SkylineGlider.scss";
 
-function formatTime(seconds) {
-  const value = Math.max(0, Math.ceil(seconds));
-  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
-}
+const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 });
 
 export { FlightScene };
 
@@ -80,6 +78,7 @@ export default function SkylineGlider() {
   const [muted, setMuted] = useState(false);
   const [preferredEquipmentId, setPreferredEquipmentId] = useState(null);
   const [effects, setEffects] = useState({ collisionKey: 0, pops: [], banner: null });
+  const [pressFlash, setPressFlash] = useState(null);
   const [pendingStart, setPendingStart] = useState(null);
   const [accessOverride, setAccessOverride] = useState(null);
   const [adminPromptOpen, setAdminPromptOpen] = useState(false);
@@ -142,10 +141,29 @@ export default function SkylineGlider() {
     || courses.find((item) => playable(item.id)) || courses[0] || null;
   const course = lockedCourseRef.current || lobbyCourse;
   const armory = weaponRules(course);
+  // Every press lights its HUD cell: green when it will fire, red with the
+  // reason when it will not, plus a soft deny tone, so no press is silent.
+  const flashPress = useCallback((action, refusal) => {
+    const position = ACTION_POSITION[action];
+    if (!position) return;
+    const key = `${action}-${performance.now()}`;
+    setPressFlash({ position, ok: !refusal, reason: refusal, key });
+    const timer = setTimeout(() => setPressFlash((current) => current?.key === key ? null : current), refusal ? 700 : 350);
+    effectTimersRef.current.add(timer);
+    // A boost already running is not a refusal worth a buzz: the cell says "Boosting".
+    if (refusal && refusal !== 'active') {
+      audioRef.current.playCue('deny');
+      log.info('skyline_glider.input.refused', { action, reason: refusal, courseTime: flightRef.current?.courseTime ?? null });
+    }
+  }, [log]);
   const drainWeapons = useSkylineWeapons({
     enabled: phase === 'flight' && !!armory.enabled,
     onGamepad: (pad) => log.info('skyline_glider.input.gamepad', { padId: pad.id, mapping: pad.mapping || null }),
-    onFire: (press) => log.info('skyline_glider.input.fire', press),
+    onFire: (press) => {
+      log.info('skyline_glider.input.fire', press);
+      // Bike-button presses are flashed where they are accepted or refused.
+      if (press.source !== 'rider-button') flashPress(press.action, weaponRefusal(flightRef.current, press.action, course));
+    },
   });
   const checkpointIdentity = useMemo(() => course && riderIdentity ? { ...riderIdentity, calibration: resolveCalibration(equipment, course) } : null, [course, riderIdentity, equipment]);
   let saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
@@ -407,7 +425,8 @@ export default function SkylineGlider() {
             const timer = setTimeout(() => setEffects((current) => ({ ...current, collisionKey: 0 })), 450);
             effectTimersRef.current.add(timer);
           });
-          executeCue('collision-cue', event.data.kind === 'crash' ? 'crash' : 'breakable');
+          // Losing a heart has its own cue, never the sound of a target breaking.
+          executeCue('collision-cue', event.data.kind === 'crash' ? 'crash' : 'hurt');
         } else if (event.type === 'collectible') {
           executeVisual('bell-pop', () => {
             const key = `${event.data.collectibleId}-${next.courseTime}`;
@@ -420,9 +439,15 @@ export default function SkylineGlider() {
           executeCue(`${event.data.weapon}-cue`, event.data.weapon);
         } else if (event.type === 'bomb.detonated') {
           executeCue('explosion-cue', 'explosion');
-        } else if (event.type === 'entity.destroyed' && event.data.by === 'laser') {
+        } else if (event.type === 'entity.destroyed' && ['laser', 'missile'].includes(event.data.by)) {
           // Bomb kills are covered by the explosion cue, crash kills by the collision cue.
-          executeCue('shatter-cue', 'breakable');
+          // Only a scored target gets the reward sound; breaking scenery just shatters.
+          const scored = scoresAsTarget(course.entities?.find((entity) => entity.id === event.data.entityId));
+          executeCue(scored ? 'target-cue' : 'shatter-cue', scored ? 'target' : 'breakable');
+        } else if (event.type === 'weapon.hit' && event.data.effect !== 'kill' && event.data.weapon !== 'bomb') {
+          executeCue('hit-cue', event.data.effect === 'damage' ? 'hit' : 'deny');
+        } else if (event.type === 'boost.activated') {
+          executeCue('boost-cue', 'boost');
         } else if (event.type === 'checkpoint') {
           executeVisual('checkpoint-banner', () => {
             const label = `Checkpoint ${event.data.checkpointId}`;
@@ -574,7 +599,9 @@ export default function SkylineGlider() {
       }else if(effect.type==='combat'){
         const current=flightRef.current;
         const cadence=fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id);
-        if(current?.phase==='playing'&&!current.stalled&&!current.pausedForSensor&&!current.collisionProtected&&!(cadence?.connected&&cadence.rpm===0))drainWeapons.enqueue([effect.action]);
+        const refusal=cadence?.connected&&cadence.rpm===0?'paused':weaponRefusal(current,effect.action,course);
+        flashPress(effect.action,refusal);
+        if(!refusal)drainWeapons.enqueue([effect.action]);
       }else if(effect.type==='clear-input')drainWeapons.clear?.();
       else if(effect.type==='commit-stall'){
         const current=flightRef.current;
@@ -621,7 +648,10 @@ export default function SkylineGlider() {
   if(phase==='error')return <main className="skyline-glider skyline-glider--controls"><p role="alert">{error}</p><SkylineControlPanel controls={panelControls} onPress={pressPanel}/></main>;
   if(!['flight','stall'].includes(controller.state.phase))return <main className="skyline-glider skyline-glider--controls"
     data-testid={controller.state.phase==='denied'?'skyline-glider-school-lock':controller.state.phase==='result'||controller.state.phase==='saving'?'skyline-glider-result':controller.state.phase==='countdown'?'skyline-glider-countdown':'skyline-glider-lobby'} data-control-phase={controller.state.phase}>
-    <div><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch}/>
+    <div><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch}
+      crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
+      summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
+        return [['Bells',bells],...(armory.enabled?[['Targets',targets]]:[]),['Score',bells+targets],['Bumps',saveState.record.run.collisions||0]]})()}/>
     {saveState.status==='saved'&&<p>Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
     {storageWarning&&<p role="status">{storageWarning}</p>}
     {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
@@ -631,10 +661,11 @@ export default function SkylineGlider() {
     <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>pressPanel(3)}/>
   </main>;
   return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-course-id={course.id} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
-    <SkylineControlPanel controls={panelControls} onPress={pressPanel} compact/>
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
-    <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span>{!!armory.enabled && <span data-testid="skyline-glider-targets">◎ {Object.values(flight.destroyedBy || {}).filter(by => ['laser','bomb','missile'].includes(by)).length}</span>}{!!armory.enabled && <span data-testid="skyline-glider-power">Power {weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}×</span>}{!!armory.enabled && <span data-testid="skyline-glider-bombs" aria-label="Bombs left">💣 {flight.bombsLeft ?? armory.bombs}</span>}</header>
+    <SkylineFlightHud flight={flight} course={course} armed={!!armory.enabled} press={pressFlash}
+      targetsHit={countTargets(flight, course)}
+      power={weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}/>
     {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>{flight.crashCause === 'stall' ? 'Stall!' : 'Wing down!'}</h2><p>Returning to the last windsock…</p></div>}
     {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}

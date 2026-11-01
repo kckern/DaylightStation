@@ -1,17 +1,21 @@
 schema: skyline-glider-course/v1
 id: cloud-ridge
-version: 4
+version: 5
 zone: alpine
 act: 2
 name: Cloud Ridge
-description: Use your four bike buttons for laser, bomb, missile and lift boost.
-  Save bombs for marked barriers and keep pedaling above the lava.
+description: Use your four bike buttons for laser, bomb, missile and boost.
+  Shoot the bracketed targets, bomb the marked walls and keep pedaling above the lava.
 duration_s: 240
 control_cues:
+  - at_s: 14
+    text: Top left fires the laser. Shoot the bracketed targets — don't fly into them!
+  - at_s: 80
+    text: Top right drops a bomb. Bomb the wall marked BOMB.
   - at_s: 115
     text: Bottom left launches a guided missile at high targets.
   - at_s: 155
-    text: Bottom right gives a short lift boost. Keep pedaling!
+    text: Bottom right boosts you forward. Keep pedaling!
 rpm:
   min: 30
   max: 130
@@ -30,7 +34,7 @@ rules:
     enabled: true
     duration_s: 2
     recharge_s: 8
-    lift: 0.13
+    speed: 1.6
   lives: 3
   invincibility_s: 1.25
   restart_delay_s: 2
@@ -91,7 +95,7 @@ segments:
     altitude: 0.72
   - id: cr-boost-bell
     at_s: 165
-    altitude: 0.22
+    altitude: 0.5
 - id: checkpoint-one
   type: checkpoint
   start_s: 60
@@ -139,12 +143,12 @@ entities:
   entity: target
   at_s: 25
   altitude: 0.6
-  hit_points: 3
+  hit_points: 2
 - id: target-02
   entity: target
   at_s: 42
   altitude: 0.55
-  hit_points: 3
+  hit_points: 2
 - id: bomb-gate-01
   entity: bombwall
   at_s: 90
@@ -158,7 +162,7 @@ entities:
   entity: target
   at_s: 175
   altitude: 0.6
-  hit_points: 4
+  hit_points: 3
 - id: bomb-gate-02
   entity: bombwall
   at_s: 200

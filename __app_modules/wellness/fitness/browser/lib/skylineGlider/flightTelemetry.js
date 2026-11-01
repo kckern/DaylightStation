@@ -108,6 +108,10 @@ export function collectFlightTelemetry({
   for (const blast of next.blasts || []) {
     if (!priorBlasts.has(blast.id)) events.push({ type: 'bomb.detonated', data: { shotId: blast.id, atSeconds: blast.at_s, altitude: blast.altitude } });
   }
+  const priorImpacts = new Set((previous.impacts || []).map((impact) => impact.id));
+  for (const impact of next.impacts || []) {
+    if (!priorImpacts.has(impact.id)) events.push({ type: 'weapon.hit', data: { shotId: impact.id, weapon: impact.kind, effect: impact.effect, entityId: impact.entityId, damage: impact.damage ?? null, hitPoints: impact.hitPoints ?? null } });
+  }
   const priorDestroyed = previous.destroyedBy || {};
   for (const [entityId, by] of Object.entries(next.destroyedBy || {})) {
     if (!(entityId in priorDestroyed)) events.push({ type: 'entity.destroyed', data: { entityId, by } });
