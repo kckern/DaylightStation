@@ -204,7 +204,7 @@ export class TransactionCategorizationService {
     const ruleMatches = [];
     const simulated = transactions.map(txn => {
       const desc = txn.description || '';
-      const rule = this.#matchRule(desc, compiled);
+      const rule = this.#matchRule(txn, compiled);
       if (!rule) return txn;
       ruleMatches.push({
         id: txn.id, date: txn.date, originalDescription: desc,
@@ -269,7 +269,7 @@ export class TransactionCategorizationService {
 
     for (const txn of transactions) {
       const originalDescription = txn.description || '';
-      const rule = this.#matchRule(originalDescription, compiled);
+      const rule = this.#matchRule(txn, compiled);
       if (!rule) continue;
 
       txn.description = rule.rename;
@@ -293,13 +293,27 @@ export class TransactionCategorizationService {
   }
 
   #compileRules(rules) {
-    return (rules || []).map(r => ({ pattern: new RegExp(r.pattern, 'i'), rename: r.rename, tag: r.tag }));
+    return (rules || []).map(r => ({
+      pattern: new RegExp(r.pattern, 'i'),
+      account: r.account?.toLowerCase(),
+      rename: r.rename,
+      tag: r.tag,
+    }));
   }
 
-  /** First matching rule wins; a description already equal to its rename matches nothing. */
-  #matchRule(description, compiled) {
-    const rule = compiled.find(r => r.pattern.test(description));
-    return rule && description !== rule.rename ? rule : null;
+  /**
+   * First matching rule wins. A rule with `account` only sees rows on that account.
+   * A description already equal to its rename matches nothing, except that an
+   * account-scoped rule still corrects the tag: its name can legitimately be shared
+   * with rows on other accounts, so the provider or LLM may have tagged it wrongly.
+   */
+  #matchRule(txn, compiled) {
+    const description = txn.description || '';
+    const account = txn.accountName?.toLowerCase();
+    const rule = compiled.find(r => r.pattern.test(description) && (!r.account || r.account === account));
+    if (!rule) return null;
+    if (description !== rule.rename) return rule;
+    return rule.account && rule.tag && txn.tagNames?.[0] !== rule.tag ? rule : null;
   }
 
   /**

@@ -258,6 +258,72 @@ describe('TransactionCategorizationService', () => {
     });
   });
 
+  describe('account-scoped description rules', () => {
+    const useRule = () => mockFinanceStore.getCategorizationConfig.mockReturnValue({
+      ...mockCategorizationConfig,
+      descriptionRules: [{ pattern: 'Acme', account: 'Brokerage', rename: 'Acme Pay', tag: 'Transfer' }],
+    });
+
+    beforeEach(useRule);
+
+    it('applies only to rows on the named account', async () => {
+      const checking = { id: '1', date: '2026-01-02', description: 'Direct Deposit Acme', accountName: 'Brokerage', tagNames: [] };
+      const payroll = { id: '2', date: '2026-01-02', description: 'Acme Pay', accountName: 'Payroll', tagNames: ['Income'] };
+
+      await service.categorize([checking, payroll]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledTimes(1);
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Acme Pay', tags: 'Transfer' });
+      expect(payroll.tagNames).toEqual(['Income']);
+    });
+
+    it('does not apply to a row with no account', async () => {
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'Acme Pay Out', tagNames: ['Income'] }]);
+
+      expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
+    });
+
+    it('matches the account name regardless of case', async () => {
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'Direct Deposit Acme', accountName: 'BROKERAGE', tagNames: [] }]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Acme Pay', tags: 'Transfer' });
+    });
+
+    it('corrects the tag on a row already carrying the rule name', async () => {
+      const row = { id: '1', date: '2026-01-02', description: 'Acme Pay', accountName: 'Brokerage', tagNames: ['Payroll'] };
+
+      await service.categorize([row]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Acme Pay', tags: 'Transfer' });
+      expect(row.tagNames).toEqual(['Transfer']);
+    });
+
+    it('leaves a row alone once it has the rule name and tag', async () => {
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'Acme Pay', accountName: 'Brokerage', tagNames: ['Transfer'] }]);
+
+      expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
+    });
+
+    it('preview decides alike', async () => {
+      const result = await service.preview([
+        { id: '1', date: '2026-01-02', description: 'Acme Pay', accountName: 'Brokerage', tagNames: ['Payroll'] },
+        { id: '2', date: '2026-01-02', description: 'Acme Pay', accountName: 'Payroll', tagNames: ['Income'] },
+      ]);
+
+      expect(result.suggestions).toEqual([expect.objectContaining({ id: '1', source: 'rule', suggestedCategory: 'Transfer' })]);
+    });
+
+    it('a rule with no account still matches every account', async () => {
+      mockFinanceStore.getCategorizationConfig.mockReturnValue({
+        ...mockCategorizationConfig, descriptionRules: [{ pattern: 'CASH SWEEP', rename: 'Cash Sweep', tag: 'Transfer' }],
+      });
+
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'FIDELITY CASH SWEEP', accountName: 'Anything', tagNames: [] }]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Cash Sweep', tags: 'Transfer' });
+    });
+  });
+
   describe('getUncategorized', () => {
     it('returns transactions needing categorization', () => {
       const transactions = [
