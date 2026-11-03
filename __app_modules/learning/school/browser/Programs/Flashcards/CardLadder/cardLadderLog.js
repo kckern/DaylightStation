@@ -76,7 +76,7 @@ export const cardLadderLog = {
   // durationMs?, bytes?, status?, reason?}. failed/unavailable are warn (unavailable: no mic, Space falls through to Skip).
   sayRecording: (data) => emit('say.recording', data, data?.phase === 'failed' || data?.phase === 'unavailable' ? 'warn' : 'info'),
   itemSkipped: (data) => emit('item.skipped', data),                     // {itemId, type, via, ms, what} — Skip on a say step with no take
-  showMeUsed: (data) => emit('showme.used', data),                       // {itemId, via, ms} — gave up and asked to see the word
+  showMeUsed: (data) => emit('showme.used', data),                       // {itemId, mode, label, via, ms} — gave up (Show me / Don't know / Skip) and saw the word
   resultShown: (data) => emit('result.shown', data),                     // {itemId, correct, score, judge, held} — the verdict panel on screen
   resultDismissed: (data) => emit('result.dismissed', data),             // {itemId, via, ms} — Next past a held verdict
   hintShown: (data) => emit('hint.shown', data),                         // {step} — a step's first-time hint

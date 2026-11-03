@@ -51,9 +51,18 @@ function logKeyboardOnce(itemId) {
  * so it is shown like a graded one ("Right!" / "It's X") with Next, not as a
  * retry prompt. Without `pending`, a dictation miss is a retry.
  *
- * Unjudged practice typing (the drill "type" step, and Write without help —
- * a `typed` item with `graded: false`) also offers "Show me": it submits an
- * empty answer, which the server scores as a miss and answers with the word.
+ * NOT KNOWING IS NEVER A WALL (owner, 2026-11-03): every mode offers a way
+ * out that submits an empty answer — the server's "Don't know". It is a miss
+ * like any other (the card comes round again) and it answers with the word.
+ * The label says what it does here:
+ *   Show me     unjudged practice typing (the drill "type" step, and Write
+ *               without help — a `typed` item with `graded: false`)
+ *   Don't know  a graded item (3.3 / the 1.4 sign-off) and dictation: the step
+ *               ends at once with the word, instead of retries
+ *   Skip        copy: the word is on screen, so this is not a knowledge
+ *               question — only a way past a step that will not take
+ * Before this a stuck child typed "." or a run of backslashes to get past a
+ * graded card (2026-11-03).
  */
 export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespond, result = null, onContinue, busy = false, stageRef = null, pending = false, onLayout }) {
   const [value, setValue] = useState('');
@@ -74,7 +83,8 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   const termAudio = termAudioId ? resolveAssetUrl(termAudioId) : null;
   // graded + practice: cue prompt, verdict held until Next. copy + dictation: retry until it matches.
   const graded = mode === 'graded' || mode === 'practice' || (dictation && pending);
-  const canShowMe = mode === 'practice' || (mode === 'graded' && item.graded === false);
+  const showsMe = mode === 'practice' || (mode === 'graded' && item.graded === false);
+  const giveUpLabel = showsMe ? 'Show me' : mode === 'copy' ? 'Skip' : "Don't know";
   // Answered = a final verdict is on screen. Busy only disables the field: the
   // keypad and its toggle stay mounted through a submit (no flicker, no lost
   // open state), and go only once there is nothing left to type.
@@ -200,9 +210,9 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     onRespond({ typed: value });
     if (graded) { input.current?.blur(); stageRef?.current?.focus(); }
   };
-  const showMe = () => {
+  const giveUp = () => {
     if (busy || answered) return;
-    cardLadderLog.showMeUsed({ itemId: item.id, via: currentInput(), ms: Date.now() - shownAtRef.current });
+    cardLadderLog.showMeUsed({ itemId: item.id, mode, label: giveUpLabel, via: currentInput(), ms: Date.now() - shownAtRef.current });
     onRespond({ typed: '' });
     input.current?.blur(); stageRef?.current?.focus();
   };
@@ -220,7 +230,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   useCardLadderKeys({
     ...(result && graded ? { ' ': onContinue, enter: onContinue } : {}),
     tab: hear ?? (() => {}),
-    ...(canShowMe && !answered ? { '\\': showMe } : {}),
+    ...(!answered ? { '\\': giveUp } : {}),
   });
   const keypadShowing = keypadOpen && !answered;
   return (
@@ -249,9 +259,9 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); submit(); }
-            // Show me = give up and see the word: the hunted-for Backslash, like
-            // Skip elsewhere. Nobody types a backslash into an answer.
-            else if (e.code === 'Backslash' && canShowMe && !answered) { e.preventDefault(); showMe(); }
+            // Give up and see the word: the hunted-for Backslash, like Skip
+            // elsewhere. Nobody types a backslash into an answer.
+            else if (e.code === 'Backslash' && !answered) { e.preventDefault(); giveUp(); }
           }}
           onPointerDown={startLongPress}
           onPointerUp={endLongPress}
@@ -269,6 +279,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
           typed={value || null}
           reason={result.reason ?? null}
           audio={answerAudio}
+          gaveUp={result.judge === 'dont-know' || result.dontKnow === true}
         />
       )}
       <div className="wl-controls">
@@ -277,7 +288,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
             result hides the submit button; copy mode keeps it for the retry. */}
         {(!result || (!graded && result?.correct === false)) && (
           <>
-            {canShowMe && <TouchButton variant="secondary" keyHint="\\" disabled={busy} onClick={showMe}>Show me</TouchButton>}
+            <TouchButton variant="secondary" keyHint="\\" disabled={busy} onClick={giveUp}>{giveUpLabel}</TouchButton>
             <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
           </>
         )}

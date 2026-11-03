@@ -659,6 +659,42 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     expect(item).toMatchObject({ type: 'say', mode: 'say-after', word: { term: '가위', media: { audio: expect.stringContaining(TERM_AUDIO) } } });
   });
 
+  it("a new word's intro copy is skipped by an empty answer, never held until it matches", async () => {
+    const { service } = make({ media: true });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
+    let { item } = opened;
+    ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { seen: true } }));
+    expect(item.type).toBe('copy');
+    const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { typed: '' } });
+    expect(out.result).toMatchObject({ correct: false, answer: '가위', dontKnow: true });
+    expect(out.item).toMatchObject({ type: 'say', mode: 'say-after' });
+  });
+
+  it('an empty answer gives up a drill step at once: copy, tiles and dictation move on with the word', async () => {
+    // Not knowing is never a wall (owner, 2026-11-03): no retries, no junk typed to get past it.
+    const store = trickyStore();
+    store.s.status.words.gawi = { ...store.s.status.words.gawi, state: 'mastered', stage: 2, dueDay: '2026-10-30', recognizedCount: 2, matched: true };
+    const { service } = make({ store, media: true });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
+    const GIVE_UP = { copy: { typed: '' }, dictation: { typed: '' }, tiles: { tiles: [] } };
+    const seen = [];
+    let { item } = opened;
+    for (let i = 0; i < 20 && item.type === 'drill'; i += 1) {
+      const response = GIVE_UP[item.step] ?? DRILL_RESPONSE[item.step] ?? { done: true };
+      const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response });
+      if (GIVE_UP[item.step]) {
+        expect(out.item.id).not.toBe(item.id);
+        seen.push([item.step, out.result]);
+      }
+      ({ item } = out);
+    }
+    expect(seen).toMatchObject([
+      ['copy', { correct: false, answer: '가위', dontKnow: true }],
+      ['tiles', { correct: false, answer: '가위', dontKnow: true }],
+      ['dictation', { correct: false, answer: '가위', dontKnow: true }],
+    ]);
+  });
+
   it('without a microphone no say step is offered', async () => {
     const { service, store } = make({ media: true });
     await service.open({ userId: 'test-learner', deckId: DECK });
@@ -755,6 +791,16 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     const { service } = make();
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
     await expect(service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write' })).rejects.toThrow(/goal/);
+  });
+
+  it('practice Write with help: an empty answer skips the copy instead of holding the child on it', async () => {
+    const { service } = make({ store: doneStore() });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const started = await service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write', help: true });
+    expect(started.item.type).toBe('copy');
+    const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: started.item.id, response: { typed: '' } });
+    expect(out.result).toMatchObject({ correct: false, answer: expect.any(String), dontKnow: true });
+    expect(out.item.id).not.toBe(started.item.id);
   });
 
   it('practice after the goal: a type-from-cue item is judged but never grades', async () => {

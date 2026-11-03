@@ -29,15 +29,19 @@ function kidReadable(reason) {
  *   right   a short cheer (Got it! / Nice! / Yes!), the word large, Listen;
  *           a near miss (score < 10) adds "Close! It's spelled:" so a typo is
  *           still corrected.
+ *   gaveUp  the child said "Don't know": "Here's the word", the word large,
+ *           Listen — no "Not quite", no "You typed" (owner, 2026-11-03: not
+ *           knowing is fine; the card just comes round again).
  *
  * Announced (role=status, aria-live=polite). Enters with transform/opacity
  * only, on the shared DS keyframes and motion tokens; reduced motion: none.
  */
 export default function ResultPanel({
-  itemId, correct, score = null, answer, answerLang, typed = null, reason = null, audio = null, audioKind = 'term',
+  itemId, correct, score = null, answer, answerLang, typed = null, reason = null, audio = null, audioKind = 'term', gaveUp = false,
 }) {
+  const heading = correct ? cheerFor(itemId) : gaveUp ? "Here's the word" : 'Not quite';
   const nearMiss = correct && score != null && score < 10;
-  const label = correct ? (nearMiss ? "Close! It's spelled:" : null) : 'The answer';
+  const label = correct ? (nearMiss ? "Close! It's spelled:" : null) : gaveUp ? null : 'The answer';
   const note = kidReadable(reason);
   const listen = audio
     ? <TouchButton variant="secondary" keyHint="Tab" className="wl-result__listen" onClick={() => playClip(audio, audioKind)}><Icon name="volume" /> Listen</TouchButton>
@@ -48,10 +52,10 @@ export default function ResultPanel({
       data-testid="wl-result"
       role="status"
       aria-live="polite"
-      aria-label={correct ? 'Right' : 'Not quite'}
+      aria-label={heading}
     >
-      <h3 className="wl-result__heading">{correct ? cheerFor(itemId) : 'Not quite'}</h3>
-      {!correct && typed && (
+      <h3 className="wl-result__heading">{heading}</h3>
+      {!correct && !gaveUp && typed && (
         <p className="wl-result__row">
           <span className="wl-result__label">You typed</span>
           <span className="wl-result__typed" lang={answerLang}>{typed}</span>

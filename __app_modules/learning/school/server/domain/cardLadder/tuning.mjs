@@ -98,6 +98,8 @@ function capMinutesOf(dayFile, settings) {
  * the re-grade rewrote the judge cache — pass → passScore, fail → 1.
  */
 function typedScoreOf(item, dayFile, settings) {
+  // A give-up is not a spelling attempt: it counts under dontKnow, not here.
+  if (item?.result?.judge === 'dont-know') return null;
   if (typeof item?.regraded?.pass === 'boolean') {
     if (!item.regraded.pass) return 1;
     return settings?.typing?.passScore ?? dayFile.atOpen?.settings?.typing?.passScore ?? 6;
@@ -137,7 +139,8 @@ export function dayStats(dayFile, settings) {
     passedByPile,
     failedByPile,
     rechecks: { asked: answered.length, missed: answered.filter((row) => row?.correct !== true).length },
-    dontKnow: items.filter(([, item]) => item?.response?.dontKnow === true).length,
+    // Choice's button, a typed answer left empty (judge `dont-know`), or a drill step given up.
+    dontKnow: items.filter(([, item]) => item?.response?.dontKnow === true || item?.result?.judge === 'dont-know' || item?.result?.dontKnow === true).length,
     typedScores,
     judgeFallbacks: items.filter(([, item]) => item?.result?.judge === 'fallback').length,
     stalls: null,

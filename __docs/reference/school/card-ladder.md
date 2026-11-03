@@ -54,10 +54,10 @@ drill, speaking, on-screen keypad, practice menu)** actually ship; see
 | Judgement cache | `data/household/school/runtime/card-ladder/<package>/judgements.yml` (derived, shared across learners) |
 | Spoken takes | `media/school/recordings/card-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>` (for grown-ups; never graded) |
 | Program poster | `media/school/programs/card-ladder/<package>/poster.jpg` (JPEG, 2:3), falling back to the pre-rename `programs/word-ladder/<package>/poster.jpg` — served at `/api/v1/school/self-service/programs/card-ladder/<package>/poster.jpg`; missing = 404 and the surface draws its own placeholder |
-| Code (domain) | `__backend/src/2_domains/school/cardLadder/` — pure engine, states, choices, rounds, the target-script seam (`targetScript.mjs`) and Hangul scoring (`jamo.mjs`), settings, scenarios |
-| Code (application) | `__backend/src/3_applications/school/{CardLadderSittingService,CardLadderTypedJudge,CardLadderDoorLauncher}.mjs` |
-| Code (adapters) | `__backend/src/1_adapters/school/cardLadder/{YamlCardLadderStore,ShadowCardLadderStores,YamlJudgementCache,FilesystemCardLadderRecordings,DiscardingRecordings}.mjs` |
-| Code (API) | `__backend/src/4_api/v1/routers/school.cardLadder.mjs` |
+| Code (domain) | `__app_modules/learning/school/server/domain/cardLadder/` — pure engine, states, choices, rounds, the target-script seam (`targetScript.mjs`) and Hangul scoring (`jamo.mjs`), settings, scenarios |
+| Code (application) | `__app_modules/learning/school/server/application/{CardLadderSittingService,CardLadderTypedJudge,CardLadderDoorLauncher}.mjs` |
+| Code (adapters) | `__app_modules/learning/school/server/adapters/cardLadder/{YamlCardLadderStore,ShadowCardLadderStores,YamlJudgementCache,FilesystemCardLadderRecordings,DiscardingRecordings}.mjs` |
+| Code (API) | `__app_modules/learning/school/server/api/school.cardLadder.mjs` |
 | Code (frontend) | `frontend/src/modules/School/Programs/Flashcards/CardLadder/` |
 
 Everything per learner is keyed by the lexicon's `package`: status, day files
@@ -182,7 +182,7 @@ already was.
 
 `missStreak ≥ drill.afterMisses` sets `tricky` (flags the word — see
 [The tricky-word drill](#the-tricky-word-drill-spec-3-drill-path) below).
-Code: `__backend/src/2_domains/school/cardLadder/mastery.mjs`.
+Code: `__app_modules/learning/school/server/domain/cardLadder/mastery.mjs`.
 
 ## Rounds and the three piles
 
@@ -268,7 +268,7 @@ stays tricky for another day. **Nothing in a drill grades or changes word
 state**; it exists purely to walk one word from full support to none.
 
 Steps, fixed at creation and always in this order
-(`DRILL_STEPS` in `__backend/src/2_domains/school/cardLadder/drill.mjs`) — the
+(`DRILL_STEPS` in `__app_modules/learning/school/server/domain/cardLadder/drill.mjs`) — the
 unsupported production steps (dictation, say-from-cue, type) come last, after
 the scaffolded tiles, so writing from sound or memory is never front-loaded.
 **Typing from memory (dictation, type) is in a drill only for a word
@@ -294,6 +294,11 @@ blocked on, and never an error. **Tiles and dictation are never dead ends**: a m
 the same step in place — the term stays hidden through the first miss, is
 **revealed** (read-only, "It's 가위 — …", the step becomes copyable) after
 the **second** miss, and the step **advances regardless on the third try**.
+**Don't know** (`\`) ends the step at once instead: an empty answer
+(`{typed:''}`, or `{tiles:[]}`) advances with `{correct:false, answer, dontKnow:true}`,
+held like a third miss. Copy's give-up reads **Skip** (the word is on screen;
+it is a way past a step that will not take, not a knowledge question) and is
+not held.
 When a tiles or dictation step advances (a match or the third miss) the
 program **holds** that verdict — "Right!" or "It's 가위" — with a Next
 button before the next step replaces it (`HELD_DRILL_STEPS`). An open drill
@@ -409,17 +414,45 @@ stops propagation before it would otherwise reach the field. When the
 keypad is open, the typed item's prompt collapses to a compact height so
 the stage still fits at 1280×800.
 
+## Not knowing is never a wall
+
+Owner, 2026-11-03: getting it wrong, guessing and not knowing are all fine —
+the card just goes back in the stack and comes round again. None of them may
+**block** the child. Every screen that asks for recall has a give-up, touch
+first, on the hunted-for `\` key, and it is an ordinary miss:
+
+| Screen | Give-up | Sends | What happens |
+|---|---|---|---|
+| Choice (2.2 / 3.1) | **Don't know** (0, or `\`) | `{dontKnow:true}` | a miss; the answer with its audio |
+| Typed, graded (3.3, the 1.4 sign-off) | **Don't know** | `{typed:''}` | judged `dont-know`, score 0 — a miss; the result reads *Here's the word* |
+| Typed, unjudged practice (drill *type*, Write without help) | **Show me** | `{typed:''}` | the word; never graded |
+| Drill dictation, drill tiles | **Don't know** | `{typed:''}` / `{tiles:[]}` | the step ends at once, held with *It's 가위* |
+| Copy (drill *copy*, Write with help) | **Skip** | `{typed:''}` | moves on (the word was on screen) |
+| Say | **Skip** | `{done:true}` | see [Speaking](#speaking-never-graded) |
+| Match, Listen, Look | — | — | nothing to know: trial and error converges, or Next is the answer |
+
+Enter on an empty field still does nothing — only the give-up button or `\`
+gives up, so a stray Enter never throws an answer away. A give-up is logged
+`showme.used` (with `mode` and `label`) and the answer's `result.judge` is
+`dont-know` (typed) or `result.dontKnow: true` (drill steps), so a grown-up
+reading a day can tell *didn't know* from a real wrong attempt.
+
+Why: on 2026-11-03 a learner, stuck on graded 3.3 cards with no way out, typed `.`
+after three minutes on one and held down `\` (the give-up key everywhere
+else, inert there) on another — both came back `wrong-script`.
+
 ## Typed input and the judge (`CardLadderTypedJudge`)
 
 A mastery test, not a spelling test — grading is deliberately generous.
-`__backend/src/3_applications/school/CardLadderTypedJudge.mjs` runs the
-deterministic half (`2_domains/school/cardLadder/{scriptRules,targetScript,jamo,typedScore}.mjs`) in
+`__app_modules/learning/school/server/application/CardLadderTypedJudge.mjs` runs the
+deterministic half (`domain/cardLadder/{scriptRules,targetScript,jamo,typedScore}.mjs`) in
 order, first decision wins. The sitting passes the judge the target side's
 script and language (`targetScript`, `targetLanguage`) — the one seam where
 script-specific grading plugs in:
 
 | Step | Condition | Score |
 |---|---|---|
+| Nothing typed | the attempt is empty after `normalize` — the child's *Don't know* | 0, `judge: dont-know` (never the model; kept out of the tuner's `typedScores`, counted in its `dontKnow`) |
 | Exact | match under the script's `normalize` | 10, `judge: exact` |
 | Wrong script | the target has letters of its script and the attempt has none (a `generic` target has no floor) | 1, `judge: wrong-script` (days before 2026-09-23 say `no-hangul`) |
 | Different real word | match, under the script's `normalize`, to another introduced word or an authored decoy | 2, `judge: guard` |
@@ -470,7 +503,7 @@ decide-nothing version of this step.
 **2026-09-23 owner: per-script grading — Latin case-insensitive, accents a small slip, numbers exact; Hangul unchanged.**
 
 Each script is a small pure rule object in
-`2_domains/school/cardLadder/scriptRules.mjs` (`ruleFor(script)`), selected by
+`domain/cardLadder/scriptRules.mjs` (`ruleFor(script)`), selected by
 `scriptFor(target language)` or, with no language, read off the target text
 (`scriptOfText`). The client's `keypadFor(script)` (`CardLadder/targetScript.js`)
 mirrors the language table.
@@ -569,7 +602,7 @@ request.
 
 ## Settings and bounds
 
-Defaults live in `__backend/src/2_domains/school/cardLadder/settings.mjs`;
+Defaults live in `__app_modules/learning/school/server/domain/cardLadder/settings.mjs`;
 `school.yml`'s `card_ladder.settings` / `card_ladder.bounds` override them
 (`resolveSettings`). **The tuning values in force for a study day are frozen
 at its first open** (`dayFile.atOpen.settings`) — a mid-day config edit never
@@ -706,7 +739,7 @@ instantly.
 Once the day is done (goal or cap) the summary shows once
 (`dayFile.summarySeen`), then the **practice menu**: exactly the modes the
 server lists in `item.modes` (`PRACTICE_MODES` in
-`__backend/src/2_domains/school/cardLadder/practice.mjs`: flashcards, match,
+`__app_modules/learning/school/server/domain/cardLadder/practice.mjs`: flashcards, match,
 say, write, listen, drill, quiz) — a mode whose default run (with help,
 every introduced word) would come up empty is not offered at all. **Say** is
 the exception: it is offered when EITHER variant has a run (Without help
@@ -724,7 +757,7 @@ round stream).
 | Flashcards | front side ("Word first" / "Meaning first") | term-first | meaning-first |
 | Match | starts directly | 4–6 pair picture/text boards over the practice word set; finishing a board sets `matched` on its words | — |
 | Say | With help / Without help | **1.2 say-after** — hears the term, says it after (dropped from the run if no microphone or the word has no term audio) | **3.4 say-from-cue** — cue only; there's no model to say after, so the native comparison at the end is simply skipped |
-| Write | With help (offered first) / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — only over words `readyForSignOff` (locked until one is); free practice, never graded and never a sign-off; cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too). Typing from memory is never the first suggestion: With help is option 1 |
+| Write | With help (offered first) / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — only over words `readyForSignOff` (locked until one is); free practice, never graded and never a sign-off; cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too); With help's copy has **Skip**, which moves on the same way. Typing from memory is never the first suggestion: With help is option 1 |
 | Listen | starts directly | one run through every practice word that has term audio (`items/ListenItem.jsx`) | — |
 | Drill | word picker first (**My words**, multi-select, "Drill these") | the same drill walk as the tricky-word drill (look → … → type), over the chosen words | — |
 | Quiz me | starts directly | graded, recognition only (3.1 then 2.2, like the round quiz), then a Match of the words it passed (see Match (guided)) — see below | — |
@@ -830,7 +863,7 @@ actorId, pin, action: 'card-ladder.admin', context: {learnerId}})` first — a
 refusal changes nothing. Each mutation logs `school.card-ladder.admin`
 `{actorId, learnerId, package, wordId, action}` and a `transition` (source
 `admin`) for any word whose state or stage it moved. Pure parts live in
-`2_domains/school/cardLadder/admin.mjs`; the service methods are
+`domain/cardLadder/admin.mjs`; the service methods are
 `CardLadderSittingService.admin*`.
 
 A control that does not touch the day's plan (reset, mark mastered, drop deck,
@@ -849,7 +882,7 @@ day the learner actually opened (`listDays` = their study days).
 
 ## API
 
-Mounted by `mountCardLadderRoutes` (`__backend/src/4_api/v1/routers/school.cardLadder.mjs`)
+Mounted by `mountCardLadderRoutes` (`__app_modules/learning/school/server/api/school.cardLadder.mjs`)
 at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
 (test mode, same shape). Every response is `Cache-Control: private, no-store`.
 
@@ -862,7 +895,9 @@ at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
   (no microphone → no speaking steps; test mode also takes `scenario`)
 - `POST /card-ladder/sittings/:sittingId/items/:itemId {userId, response}` → `{result, item, progress}`;
   `response` shape depends on the current item: `{seen:true}` (flashcard intro),
-  `{sort}` (flashcard stream), `{typed}` (copy / typed), `{choice}` / `{dontKnow:true}` (choice)
+  `{sort}` (flashcard stream), `{typed}` (copy / typed), `{choice}` / `{dontKnow:true}` (choice).
+  An **empty** answer — `{typed:''}` (whitespace counts as empty) or `{tiles:[]}` — is the
+  child's *Don't know* everywhere else: see [Not knowing is never a wall](#not-knowing-is-never-a-wall)
 - `GET /card-ladder/sittings/:sittingId?userId=` → current item + progress (reload)
 - `POST /card-ladder/sittings/:sittingId/close {userId, reason}` — `reason` ∈ `goal|cap|leave|idle|unmount`
 - `POST /card-ladder/sittings/:sittingId/recordings/:itemId?userId=&ext=` — raw audio body
@@ -943,7 +978,7 @@ shadow 404s on next touch and the client reopens. The banner reads
 **"TEST — nothing is saved"**.
 
 `?scenario=` seeds the shadow before the sitting opens
-(`__backend/src/2_domains/school/cardLadder/scenarios.mjs`):
+(`__app_modules/learning/school/server/domain/cardLadder/scenarios.mjs`):
 
 | Scenario | Seeds |
 |---|---|
@@ -956,7 +991,7 @@ shadow 404s on next touch and the client reopens. The banner reads
 | `done` | today already closed (`doneAt` = today) — straight to the summary/menu |
 
 A backend safety test
-(`__backend/src/3_applications/school/CardLadderTestMode.test.mjs`) drives a full
+(`__app_modules/learning/school/server/application/CardLadderTestMode.test.mjs`) drives a full
 test sitting end to end and asserts every real file on disk is byte-identical
 before and after — this is the guarantee the banner promises.
 
@@ -1121,7 +1156,7 @@ button that currently owns the key.
 | Space on **Say** | Record (before a take) → Stop (while recording) → Next (after a take). No mic (none, refused, errored) → **Next** (an answer, logged `item.answered` with `micOff`), never a Skip and never a dead end | `SayItem.jsx` |
 | **←** (ArrowLeft) | Record again — only after a take, not while recording/saving, never without a mic | Say |
 | **Tab** | Hear it again — the term (say-after's model and a take's revealed word on Say included), the cue's gloss clip, or the result's revealed word; `preventDefault`, so focus never moves, and it works **inside a typing field** without typing or blurring — a typed item with no audio still maps it, as a no-op, so focus stays put | every item with any audio (and every typed item) |
-| **\** (Backslash) | Skip (Say — only while the button reads Skip: a working mic, no take yet) / Show me (typed) — the deliberately hunted-for give-up; Skip is touch-first | Say, typed practice |
+| **\** (Backslash) | Skip (Say — only while the button reads Skip: a working mic, no take yet) / the typing give-up (Show me · Don't know · Skip) / Don't know (tiles; an alias of 0 on choice) — the deliberately hunted-for give-up; touch-first | Say, every typed item, tiles, choice |
 | 1 / 2 / 3 | Not yet / Familiar / Got it | flipped flashcard |
 | U / Q | Undo / Quiz me | stream flashcards |
 | 1–4, 0 | Choices, Don't know | choice |
@@ -1321,7 +1356,7 @@ an Enter that submits a field. Nothing is logged per keystroke.
 | `item.answered` | the service accepted a response | `itemId`, `type`, `task`, `response`, `correct`, `score`, `judge`, `next`, `ms`, **`input`**; `micOff: true` on a say step moved past with no mic (the trace marks it "(no mic)") |
 | `result.shown` / `result.dismissed` | the verdict panel appears / Next past a held verdict | `itemId`, `correct`, `score`, `judge`, `held` (false = a retry on the same item); `via`, `ms` |
 | `item.skipped` | Skip on a say step with no take, past a working mic (with no mic it is an `item.answered`) | `itemId`, `type`, `what: say`, `itemMode`, `via`, `ms`, `micOff` (always false now; kept for older traces) |
-| `showme.used` | Show me on a practice typing item | `itemId`, `via`, `ms` |
+| `showme.used` | a give-up: Show me / Don't know / Skip on a typed item, Don't know on tiles | `itemId`, `mode`, `label`, `via`, `ms` (tiles: no `ms`) |
 | `item.stalled` (warn) | 45 s and 120 s with no key or pointer on the current item | `itemId`, `ms`, `visibility: visible\|hidden`, `screen: item\|result` |
 | `visibility` | the tab is hidden or shown | `state` |
 | `audio.played` | every clip that finished or failed (warn when `error`/`blocked`) | `clip: term\|gloss\|take`, `trigger: auto\|key\|touch`, `input` (for key/touch), `outcome: ended\|error\|blocked` |
@@ -1355,7 +1390,7 @@ own scope:
 ## Printed quiz and the fold (spec §8)
 
 Two quiz sources share one row shape (`buildWordQuizSource` /
-`buildLearnerQuizSource`, `__backend/src/2_domains/school/cardLadder/quizSource.mjs`):
+`buildLearnerQuizSource`, `__app_modules/learning/school/server/domain/cardLadder/quizSource.mjs`):
 one `question` block per word, `itemId: <wordId>` (so a scanned row's attempt
 names the word the fold demotes), answer + three authored decoys, alternating
 term→gloss (`What does **<term>** mean?`) / gloss→term (`Which is **<gloss>**
@@ -1449,7 +1484,7 @@ renders around them and `school certify` warns (`--strict-media` fails).
 ## Migration from v2
 
 The v1 `status.card-ladder-status/v1` (or unversioned) shape is migrated on
-read (`migrateStatusV2` in `2_domains/school/cardLadder/statusV3.mjs`) and
+read (`migrateStatusV2` in `domain/cardLadder/statusV3.mjs`) and
 written as v3 on the next transaction: NEW → `new`, LEARNING → `familiar`,
 CLAIMED → `claimed`, KNOWN step n → `mastered` stage n+1 with `dueDay` = the v2
 next-check day verbatim. v2 day plans, the review run, the recording gate and

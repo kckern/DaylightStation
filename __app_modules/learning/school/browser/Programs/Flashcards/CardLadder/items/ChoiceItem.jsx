@@ -44,6 +44,8 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
     ? { ' ': onContinue, enter: onContinue, tab: hear, h: hear }
     : {
       0: () => !busy && onRespond({ dontKnow: true }),
+      // The hunted-for give-up key on every other screen (Skip, Show me).
+      '\\': () => !busy && onRespond({ dontKnow: true }),
       tab: hear,
       h: hear,
       ...Object.fromEntries(item.choices.map((c, i) => [String(i + 1), () => choose(c)])),
@@ -86,6 +88,7 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
           answerLang={choicesLang}
           reason={result.reason ?? null}
           audio={answerAudio}
+          gaveUp={!result.correct && chosen === null}
         />
       )}
       <div className={`wl-controls${result ? ' has-result' : ''}`}>

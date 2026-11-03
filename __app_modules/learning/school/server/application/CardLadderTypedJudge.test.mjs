@@ -23,6 +23,13 @@ describe('CardLadderTypedJudge', () => {
     expect(await judge.judge({ pkg: 'p', entry: entry('가위'), typed: '가이', otherWords: [] })).toMatchObject({ judge: 'distance', score: 6, pass: true });
     expect(aiGateway.chatStructured).not.toHaveBeenCalled();
   });
+  it('an empty answer is an honest "don\'t know": a 0, never the wrong-script floor, never the model', async () => {
+    const { aiGateway, judge } = make(async () => ({ score: 10 }));
+    for (const typed of ['', '   ']) {
+      expect(await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed, otherWords: [] })).toEqual({ score: 0, judge: 'dont-know', reason: null, pass: false });
+    }
+    expect(aiGateway.chatStructured).not.toHaveBeenCalled();
+  });
   it('model raises at most one band from an eligible floor, attempt passed as data', async () => {
     const { aiGateway, judge } = make(async () => ({ score: 9, reason: 'clearly the phrase' }));
     const r = await judge.judge({ pkg: 'p', entry: entry('안녕히계세요'), typed: '안녕히개새요', otherWords: [] });

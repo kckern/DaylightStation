@@ -67,6 +67,9 @@ export class CardLadderTypedJudge {
     // Every cache key is the target script's normalize (Hangul: normalizeAnswer, unchanged).
     const rule = ruleForTarget(entry.term, targetScript);
     const normalized = rule.normalize(typed);
+    // Nothing typed = the child's "Don't know" (owner, 2026-11-03): an honest
+    // miss, scored apart from junk typed to get past the card.
+    if (!normalized.trim()) return this.#verdict(0, 'dont-know');
     const overruled = this.#cache.get(pkg, entry.id, normalized);
     if (overruled?.judge === 'grown-up') return this.#verdict(overruled.score, 'grown-up', overruled.reason ?? null);
     const base = scoreTypedDeterministic({ target: entry.term, typed, otherWords, targetScript: rule.script });

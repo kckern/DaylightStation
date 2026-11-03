@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { TouchButton } from "../../../../../../../../frontend/src/lib/ui/index.js";
 import { playClip } from "../cardLadderAudio.js";
 import { useCardLadderKeys } from "../useCardLadderKeys.js";
+import { cardLadderLog } from "../cardLadderLog.js";
+import { currentInput } from "../inputVia.js";
 import AnchorCue, { anchorCueAudio } from "./AnchorCue.jsx";
 
 /**
@@ -13,6 +15,10 @@ import AnchorCue, { anchorCueAudio } from "./AnchorCue.jsx";
  * (`result.correct === false`, same item): "Not quite", and after the second
  * miss the server's `result.answer` shows the spelling. `pending` = the
  * server has moved on (a match, or the third try), so the verdict waits for Next.
+ *
+ * Don't know (\\) sends an empty spelling: the server ends the step at once
+ * with the word, held like a third miss — never tap random tiles to get past
+ * it (owner, 2026-11-03).
  */
 export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, result = null, pending = false, onContinue, busy = false }) {
   const tiles = item.tiles ?? [];
@@ -28,6 +34,11 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   const add = (index) => { if (!locked && !answer.includes(index)) setAnswer((a) => [...a, index]); };
   const remove = (at) => { if (!locked) setAnswer((a) => a.filter((_, i) => i !== at)); };
   const check = () => { if (!locked && answer.length) onRespond({ tiles: answer.map((i) => tiles[i]) }); };
+  const dontKnow = () => {
+    if (locked) return;
+    cardLadderLog.showMeUsed({ itemId: item.id, mode: 'tiles', label: "Don't know", via: currentInput() });
+    onRespond({ tiles: [] });
+  };
 
   // Tab = hear the audio cue again (only when there is one).
   const cueClip = anchorCueAudio(item, resolveAssetUrl);
@@ -36,6 +47,7 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
     ? { ' ': onContinue, enter: onContinue, ...hearKeys }
     : {
       enter: check,
+      '\\': dontKnow,
       ...hearKeys,
       backspace: () => remove(answer.length - 1),
       ...Object.fromEntries(tiles.map((_, i) => [String(i + 1), () => add(i)])),
@@ -69,10 +81,11 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
       <div className="wl-controls">
         {result && (
           <p className="wl-verdict" role="status">
-            {result.correct ? 'Right!' : 'Not quite.'}
-            {!result.correct && result.answer && <> It&apos;s <span lang={langs.target}>{result.answer}</span></>}
+            {result.correct ? 'Right!' : result.dontKnow ? '' : 'Not quite.'}
+            {!result.correct && result.answer && <>{result.dontKnow ? '' : ' '}It&apos;s <span lang={langs.target}>{result.answer}</span></>}
           </p>
         )}
+        {!pending && <TouchButton variant="secondary" keyHint="\\" disabled={busy} onClick={dontKnow}>Don&apos;t know</TouchButton>}
         {!pending && <TouchButton variant="primary" keyHint="Enter" disabled={busy || !answer.length} onClick={check}>Check</TouchButton>}
         {pending && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}
       </div>
