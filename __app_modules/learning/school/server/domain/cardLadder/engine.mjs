@@ -235,22 +235,24 @@ function drillItem(ctx, drill, extra = {}) {
   return base;
 }
 
-// An empty answer on a step that retries (copy, dictation, tiles) is the
-// child's "Don't know": the step ends at once with the word shown, a miss like
-// any other (owner, 2026-11-03 — not knowing is never a wall).
+// An empty answer is the child's give-up (owner, 2026-11-03 — not knowing is
+// never a wall): the step ends at once with the word shown, a miss like any
+// other. Copy's is a Skip — the word was on screen, so it is not a "Don't
+// know" and is tagged apart, out of the tuner's dontKnow count.
 const gaveUp = (response) => (typeof response.typed === 'string' && !response.typed.trim())
   || (Array.isArray(response.tiles) && response.tiles.length === 0);
+const gaveUpResult = (term, isCopy) => ({ correct: false, answer: term, ...(isCopy ? { skipped: true } : { dontKnow: true }) });
 
 // Nothing here grades. copy advances only on an exact (normalized) match;
 // dictation and tiles advance on a match or after the third try, revealing the
-// answer after the second miss. Any of the three advances on a give-up.
+// answer after the second miss. Every typing step and tiles advances on a give-up.
 // Mutates `drill`.
 function respondDrill(ctx, drill, response) {
   const stepName = drill.steps[drill.index];
   const term = ctx.lexicon.entries.get(drill.wordId).term;
   let result = { ok: true };
-  if ((stepName === 'tiles' || TYPED_DRILL_STEPS.has(stepName)) && gaveUp(response)) {
-    result = { correct: false, answer: term, dontKnow: true };
+  if ((stepName === 'tiles' || TYPING_STEPS.has(stepName)) && gaveUp(response)) {
+    result = gaveUpResult(term, stepName === 'copy');
   } else if (stepName === 'dictation') {
     // Like tiles, never a dead end: the first miss hides the term (recalling it
     // IS the step), the second reveals it (the step becomes a copy), and the
@@ -676,7 +678,7 @@ function respondPractice(ctx, item, response, verdict) {
     ctx.status.words[task.wordId] = applySort(wordOf(ctx.status, task.wordId), response.sort, ctx.day);
   } else if (task.kind === 'copy') {
     const term = ctx.lexicon.entries.get(task.wordId).term;
-    if (gaveUp(response)) result = { correct: false, answer: term, dontKnow: true };
+    if (gaveUp(response)) result = gaveUpResult(term, true);
     else {
       result = { correct: answersMatch(response.typed, term, ctx.lexicon?.targetScript), answer: term };
       if (!result.correct) return { result, advance: false };
@@ -842,7 +844,7 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
       round.intro.step = 'copy';
     } else if (item.type === 'copy') {
       const term = ctx.lexicon.entries.get(item.wordId).term;
-      if (gaveUp(response)) result = { correct: false, answer: term, dontKnow: true };
+      if (gaveUp(response)) result = gaveUpResult(term, true);
       else {
         const correct = answersMatch(response.typed, term, ctx.lexicon?.targetScript);
         result = { correct, answer: term };

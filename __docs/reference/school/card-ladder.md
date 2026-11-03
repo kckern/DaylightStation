@@ -296,9 +296,11 @@ the same step in place — the term stays hidden through the first miss, is
 the **second** miss, and the step **advances regardless on the third try**.
 **Don't know** (`\`) ends the step at once instead: an empty answer
 (`{typed:''}`, or `{tiles:[]}`) advances with `{correct:false, answer, dontKnow:true}`,
-held like a third miss. Copy's give-up reads **Skip** (the word is on screen;
-it is a way past a step that will not take, not a knowledge question) and is
-not held.
+held like a third miss — the *type* step's Show me the same way. Copy's give-up
+reads **Skip** (the word is on screen; it is a way past a step that will not
+take, not a knowledge question), is tagged `skipped:true` instead (so the tuner
+never counts it as a Don't know), and is not held. Dictation's button reads Skip
+too once its second miss has shown the word.
 When a tiles or dictation step advances (a match or the third miss) the
 program **holds** that verdict — "Right!" or "It's 가위" — with a Next
 button before the next step replaces it (`HELD_DRILL_STEPS`). An open drill
@@ -424,17 +426,17 @@ first, on the hunted-for `\` key, and it is an ordinary miss:
 | Screen | Give-up | Sends | What happens |
 |---|---|---|---|
 | Choice (2.2 / 3.1) | **Don't know** (0, or `\`) | `{dontKnow:true}` | a miss; the answer with its audio |
-| Typed, graded (3.3, the 1.4 sign-off) | **Don't know** | `{typed:''}` | judged `dont-know`, score 0 — a miss; the result reads *Here's the word* |
+| Typed, graded (3.3, the 1.4 sign-off) | **Don't know** | `{typed:''}` | judged `dont-know`, score 0 — a miss; the result reads *Here's the answer*. A grown-up cannot re-grade it (nothing was typed); the Words panel lists it as *Don't know* with no Pass/Fail |
 | Typed, unjudged practice (drill *type*, Write without help) | **Show me** | `{typed:''}` | the word; never graded |
 | Drill dictation, drill tiles | **Don't know** | `{typed:''}` / `{tiles:[]}` | the step ends at once, held with *It's 가위* |
-| Copy (drill *copy*, Write with help) | **Skip** | `{typed:''}` | moves on (the word was on screen) |
+| Copy (a new word's intro, drill *copy*, Write with help) | **Skip** | `{typed:''}` | moves on (the word was on screen); `skipped:true`, not counted as Don't know |
 | Say | **Skip** | `{done:true}` | see [Speaking](#speaking-never-graded) |
 | Match, Listen, Look | — | — | nothing to know: trial and error converges, or Next is the answer |
 
 Enter on an empty field still does nothing — only the give-up button or `\`
 gives up, so a stray Enter never throws an answer away. A give-up is logged
 `showme.used` (with `mode` and `label`) and the answer's `result.judge` is
-`dont-know` (typed) or `result.dontKnow: true` (drill steps), so a grown-up
+`dont-know` (typed), `result.dontKnow: true` (drill steps) or `result.skipped: true` (copy), so a grown-up
 reading a day can tell *didn't know* from a real wrong attempt.
 
 Why: on 2026-11-03 a learner, stuck on graded 3.3 cards with no way out, typed `.`
@@ -1356,7 +1358,7 @@ an Enter that submits a field. Nothing is logged per keystroke.
 | `item.answered` | the service accepted a response | `itemId`, `type`, `task`, `response`, `correct`, `score`, `judge`, `next`, `ms`, **`input`**; `micOff: true` on a say step moved past with no mic (the trace marks it "(no mic)") |
 | `result.shown` / `result.dismissed` | the verdict panel appears / Next past a held verdict | `itemId`, `correct`, `score`, `judge`, `held` (false = a retry on the same item); `via`, `ms` |
 | `item.skipped` | Skip on a say step with no take, past a working mic (with no mic it is an `item.answered`) | `itemId`, `type`, `what: say`, `itemMode`, `via`, `ms`, `micOff` (always false now; kept for older traces) |
-| `showme.used` | a give-up: Show me / Don't know / Skip on a typed item, Don't know on tiles | `itemId`, `mode`, `label`, `via`, `ms` (tiles: no `ms`) |
+| `showme.used` | a give-up: Show me / Don't know / Skip on a typed item, Don't know on tiles | `itemId`, `mode`, `label`, `via`, `ms` |
 | `item.stalled` (warn) | 45 s and 120 s with no key or pointer on the current item | `itemId`, `ms`, `visibility: visible\|hidden`, `screen: item\|result` |
 | `visibility` | the tab is hidden or shown | `state` |
 | `audio.played` | every clip that finished or failed (warn when `error`/`blocked`) | `clip: term\|gloss\|take`, `trigger: auto\|key\|touch`, `input` (for key/touch), `outcome: ended\|error\|blocked` |

@@ -312,6 +312,18 @@ describe('Re-grade', () => {
     await waitFor(() => expect(cardLadderAdminApi.regrade).toHaveBeenCalled());
   });
 
+  it("a Don't know answer (nothing typed) is labelled as such and offers no Pass/Fail", async () => {
+    cardLadderAdminApi.words.mockResolvedValue(ok(payload({
+      words: [word1({
+        recentTyped: [{ day: '2026-09-18', itemId: 'item_1', typed: '', score: 0, judge: 'dont-know', reason: null, correct: false, source: 'typed', regraded: null }],
+      })],
+    })));
+    mount();
+    const row = (await screen.findByText('사과')).closest('tr');
+    fireEvent.click(within(row).getByRole('button', { name: /Don.t know/ }));
+    expect(within(row).queryByRole('button', { name: /^(Pass|Fail) / })).toBeNull();
+  });
+
   it('a failed re-grade surfaces the error against the typed answer', async () => {
     stubConfirm(true);
     cardLadderAdminApi.regrade.mockResolvedValue(fail('That answer could not be re-graded.'));

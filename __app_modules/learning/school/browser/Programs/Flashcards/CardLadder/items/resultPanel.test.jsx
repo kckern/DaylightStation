@@ -25,10 +25,10 @@ function typedWith(result, typed = '가비') {
 afterEach(() => playClip.mockClear());
 
 describe('TypedItem result panel', () => {
-  it('a "Don\'t know" reads "Here\'s the word": never "Not quite", never what was half-typed', () => {
+  it('a "Don\'t know" reads "Here\'s the answer": never "Not quite", never what was half-typed', () => {
     typedWith({ correct: false, answer: '가위', score: 0, judge: 'dont-know', audio: 'aud-gawi' }, '가');
-    expect(within(panel()).getByRole('heading')).toHaveTextContent("Here's the word");
-    expect(within(panel()).queryByText(/not quite|you typed|the answer/i)).toBeNull();
+    expect(within(panel()).getByRole('heading')).toHaveTextContent("Here's the answer");
+    expect(within(panel()).queryByText(/not quite|you typed|^the answer$/i)).toBeNull();
     expect(within(panel()).getByText('가위')).toBeInTheDocument();
   });
 

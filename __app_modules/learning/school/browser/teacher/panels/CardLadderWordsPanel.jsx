@@ -57,6 +57,8 @@ function StateChip({ level, state }) {
  */
 function TypedAnswer({ term, answer, onRegrade, busy, error }) {
   const [open, setOpen] = useState(false);
+  // An empty answer is the child's Don't know: nothing to re-grade.
+  const dontKnow = answer.judge === 'dont-know' || !String(answer.typed ?? '').trim();
   return (
     <li className="teacher-card-ladder__typed">
       <button
@@ -66,7 +68,7 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
         onClick={() => setOpen((value) => !value)}
         title={`${answer.score != null ? `score ${answer.score}` : 'unscored'} · ${answer.reason ?? ''}`}
       >
-        {answer.day} · “{answer.typed}”{answer.regraded ? ' (re-graded)' : ''}
+        {answer.day} · {dontKnow ? 'Don\u2019t know' : `“${answer.typed}”`}{answer.regraded ? ' (re-graded)' : ''}
       </button>
       {open && (
         <div className="teacher-card-ladder__typed-detail">
@@ -74,10 +76,10 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
             Score {answer.score ?? '—'} · judged by {answer.judge ?? 'unknown'}
             {answer.reason ? ` — ${answer.reason}` : ''}
           </p>
-          <div className="teacher-action-row">
+          {!dontKnow && <div className="teacher-action-row">
             <button type="button" aria-label={`Pass ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, true)}>Pass</button>
             <button type="button" aria-label={`Fail ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, false)}>Fail</button>
-          </div>
+          </div>}
           {error && <p className="teacher-panel__error">{error}</p>}
         </div>
       )}

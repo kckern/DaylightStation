@@ -84,7 +84,9 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   // graded + practice: cue prompt, verdict held until Next. copy + dictation: retry until it matches.
   const graded = mode === 'graded' || mode === 'practice' || (dictation && pending);
   const showsMe = mode === 'practice' || (mode === 'graded' && item.graded === false);
-  const giveUpLabel = showsMe ? 'Show me' : mode === 'copy' ? 'Skip' : "Don't know";
+  // Dictation after its second miss shows the word ("It's 가위 — type it"): a copy now.
+  const copying = mode === 'copy' || (dictation && Boolean(result?.answer));
+  const giveUpLabel = showsMe ? 'Show me' : copying ? 'Skip' : "Don't know";
   // Answered = a final verdict is on screen. Busy only disables the field: the
   // keypad and its toggle stay mounted through a submit (no flicker, no lost
   // open state), and go only once there is nothing left to type.

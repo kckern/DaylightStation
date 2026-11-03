@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TouchButton } from "../../../../../../../../frontend/src/lib/ui/index.js";
 import { playClip } from "../cardLadderAudio.js";
 import { useCardLadderKeys } from "../useCardLadderKeys.js";
@@ -31,12 +31,15 @@ export default function TilesItem({ item, langs, resolveAssetUrl, onRespond, res
   useEffect(() => { if (result && result.correct === false && !pending) setAnswer([]); }, [result, pending]);
 
   const locked = busy || pending;
+  // For showme.used `ms`: time since this item appeared.
+  const shownAtRef = useRef(Date.now());
+  useEffect(() => { shownAtRef.current = Date.now(); }, [item.id]);
   const add = (index) => { if (!locked && !answer.includes(index)) setAnswer((a) => [...a, index]); };
   const remove = (at) => { if (!locked) setAnswer((a) => a.filter((_, i) => i !== at)); };
   const check = () => { if (!locked && answer.length) onRespond({ tiles: answer.map((i) => tiles[i]) }); };
   const dontKnow = () => {
     if (locked) return;
-    cardLadderLog.showMeUsed({ itemId: item.id, mode: 'tiles', label: "Don't know", via: currentInput() });
+    cardLadderLog.showMeUsed({ itemId: item.id, mode: 'tiles', label: "Don't know", via: currentInput(), ms: Date.now() - shownAtRef.current });
     onRespond({ tiles: [] });
   };
 

@@ -666,7 +666,8 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { seen: true } }));
     expect(item.type).toBe('copy');
     const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { typed: '' } });
-    expect(out.result).toMatchObject({ correct: false, answer: '가위', dontKnow: true });
+    expect(out.result).toMatchObject({ correct: false, answer: '가위', skipped: true });
+    expect(out.result.dontKnow).toBeUndefined();
     expect(out.item).toMatchObject({ type: 'say', mode: 'say-after' });
   });
 
@@ -676,7 +677,7 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     store.s.status.words.gawi = { ...store.s.status.words.gawi, state: 'mastered', stage: 2, dueDay: '2026-10-30', recognizedCount: 2, matched: true };
     const { service } = make({ store, media: true });
     const opened = await service.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
-    const GIVE_UP = { copy: { typed: '' }, dictation: { typed: '' }, tiles: { tiles: [] } };
+    const GIVE_UP = { copy: { typed: '' }, dictation: { typed: '' }, tiles: { tiles: [] }, type: { typed: '  ' } };
     const seen = [];
     let { item } = opened;
     for (let i = 0; i < 20 && item.type === 'drill'; i += 1) {
@@ -689,9 +690,11 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
       ({ item } = out);
     }
     expect(seen).toMatchObject([
-      ['copy', { correct: false, answer: '가위', dontKnow: true }],
+      // Copy's give-up is a Skip (the word was on screen), the rest a Don't know.
+      ['copy', { correct: false, answer: '가위', skipped: true }],
       ['tiles', { correct: false, answer: '가위', dontKnow: true }],
       ['dictation', { correct: false, answer: '가위', dontKnow: true }],
+      ['type', { correct: false, answer: '가위', dontKnow: true }],
     ]);
   });
 
@@ -799,7 +802,7 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     const started = await service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write', help: true });
     expect(started.item.type).toBe('copy');
     const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: started.item.id, response: { typed: '' } });
-    expect(out.result).toMatchObject({ correct: false, answer: expect.any(String), dontKnow: true });
+    expect(out.result).toMatchObject({ correct: false, answer: expect.any(String), skipped: true });
     expect(out.item.id).not.toBe(started.item.id);
   });
 
@@ -1195,6 +1198,19 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     expect(judgementCache.set).toHaveBeenLastCalledWith('korean-vocab', 'gawi', '가이', { score: 1, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
     await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'r1:q:1', pass: true })).rejects.toThrow(/typed/);
     await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:none', pass: true })).rejects.toThrow(/rc:none/);
+  });
+
+  it("adminRegrade refuses a Don't know answer: nothing was typed, so a re-grade could only flip the record", async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: { 'rc:gawi': { at: 'a', response: { typed: '' }, result: { correct: false, score: 0, judge: 'dont-know' }, wordId: 'gawi', task: '3.3', source: 'recheck' } },
+    };
+    const judgementCache = cacheMock();
+    const { service } = make({ store, teacherGate: gate(), judgementCache });
+    await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:gawi', pass: true })).rejects.toThrow(/Don't know/);
+    expect(judgementCache.set).not.toHaveBeenCalled();
+    expect(store.s.days['2026-09-20'].items['rc:gawi'].regraded).toBeUndefined();
   });
 
   it('adminRegrade keys a Latin-target answer by the script normalize (lower-cased), as the judge looks it up', async () => {

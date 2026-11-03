@@ -383,6 +383,12 @@ describe('TypedItem — busy keeps the keypad, Show me', () => {
     expect(onRespond).toHaveBeenCalledTimes(2);
   });
 
+  it('dictation reads Skip once its second miss has put the word on screen (it is a copy now)', () => {
+    render(<TypedItem item={{ id: 'b6', type: 'drill', step: 'dictation', assets: { audio: 'a.mp3' } }} mode="dictation" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} result={{ correct: false, answer: '가위' }} />);
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Don't know" })).toBeNull();
+  });
+
   it('the way out is gone once a verdict is on screen', () => {
     render(<TypedItem item={cueItem} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} onContinue={() => {}} result={{ correct: false, score: 0, judge: 'dont-know', answer: '가위' }} />);
     expect(screen.queryByRole('button', { name: "Don't know" })).toBeNull();

@@ -29,7 +29,7 @@ function kidReadable(reason) {
  *   right   a short cheer (Got it! / Nice! / Yes!), the word large, Listen;
  *           a near miss (score < 10) adds "Close! It's spelled:" so a typo is
  *           still corrected.
- *   gaveUp  the child said "Don't know": "Here's the word", the word large,
+ *   gaveUp  the child said "Don't know": "Here's the answer", the answer large,
  *           Listen — no "Not quite", no "You typed" (owner, 2026-11-03: not
  *           knowing is fine; the card just comes round again).
  *
@@ -39,7 +39,7 @@ function kidReadable(reason) {
 export default function ResultPanel({
   itemId, correct, score = null, answer, answerLang, typed = null, reason = null, audio = null, audioKind = 'term', gaveUp = false,
 }) {
-  const heading = correct ? cheerFor(itemId) : gaveUp ? "Here's the word" : 'Not quite';
+  const heading = correct ? cheerFor(itemId) : gaveUp ? "Here's the answer" : 'Not quite';
   const nearMiss = correct && score != null && score < 10;
   const label = correct ? (nearMiss ? "Close! It's spelled:" : null) : gaveUp ? null : 'The answer';
   const note = kidReadable(reason);

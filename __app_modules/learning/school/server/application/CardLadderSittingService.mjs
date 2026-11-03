@@ -1156,6 +1156,9 @@ export class CardLadderSittingService {
     if (!dayFile.items?.[itemId]) throw new EntityNotFoundError('card-ladder answer', `${day} ${itemId}`);
     const answer = typedAnswers(dayFile).find((row) => row.itemId === itemId);
     if (!answer) throw new ValidationError('only a typed (3.3) answer can be re-graded');
+    // Nothing was typed — the child said Don't know. The judge never reads the
+    // cache for an empty answer, so a re-grade could only flip the record.
+    if (answer.judge === 'dont-know' || !String(answer.typed ?? '').trim()) throw new ValidationError("a Don't know answer cannot be re-graded");
     const score = pass ? this.#settings().typing.passScore : 1;
     // Keyed exactly as the judge looks it up: the target script's normalize.
     const rule = ruleForTarget(lexicon.entries.get(answer.wordId)?.term ?? '', lexicon.targetScript ?? scriptFor(lexicon.language?.code));
