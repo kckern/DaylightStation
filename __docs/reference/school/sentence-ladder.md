@@ -507,7 +507,7 @@ keeps it.
 **Interpretation also gets a meaning score, which gates nothing either.** Edit
 distance cannot tell "today the weather is nice" from a wrong answer (it scores
 0.4 against "The weather's nice today."). Where a decision gateway is configured,
-`SentenceMeaningJudge` (`3_applications/school/`) asks it one Score question —
+`SentenceMeaningJudge` (`__app_modules/learning/school/server/application/`) asks it one Score question —
 different meaning / partly / same meaning but one detail wrong / same meaning in
 different words / the same words — and the row gets a `meaning` field beside
 `accuracy`. `meaning.score` is the model's probability-weighted level ÷ 4, so it
@@ -521,12 +521,29 @@ names the attempt (`learnerId`, `corpus`, `seq`). An exact copy (accuracy 1) and
 by rule without a call. The judge is awaited before the row is written
 (`submitAttempt`, which the log route uses; the synchronous `logAttempt` never
 judges), under a 1.5 s deadline; a failure, a timeout or no gateway writes the
-row exactly as before. Dictation is never meaning-scored: it answers in the
-target language and its diff is the lesson. Config (school household config):
+row exactly as before. Config (school household config):
 `language.meaning_judge.enabled` (default on where a gateway exists),
 `language.meaning_judge.timeout_ms`. Logs: `school.language.meaning` (info,
 after the row is stored: accuracy, meaning, level, confidence, judge, model,
 method, practice, ms) and `school.language.meaning-failed` (warn).
+
+**Dictation gets a `heard` score from the same judge — correctness, not
+letters (owner ruling 2026-11-03).** Character accuracy calls a valid other
+spelling, a different word order or an equivalent wording a mismatch. The
+dictation row now carries `heard` beside `accuracy` (never `meaning`, so
+*Meaning understood* stays about interpretation): one call asks a Score over
+`HEARD_LEVELS` — wrong · partly right · one word wrong or missing · right but
+misspelled · ***fully right*** *(spacing and punctuation aside, a valid other
+spelling, the same words in another order, or an equivalent wording)* — and a
+Choice over `HEARD_MATCH_KINDS` (`identical`, `reordered`, `equivalent`,
+`misspelled`, `missing-words`, `different`), stored as `heard.match`. The same
+rules apply as for meaning: an exact copy (`match: identical`) and an answer
+with no letters (`match: different`) need no call; it gates nothing; a
+failure, a timeout or no gateway writes the row as before. **Copy-mode**
+dictation (`dictationMode: copy`, the sentence on screen) is not judged —
+tracing it is not hearing it. The learner's diff
+on the Review surface is unchanged. Logs: `school.language.heard` (info,
+after the row is stored) and `school.language.heard-failed` (warn).
 
 **`copy` mode's input gate is not a second gate.** The target is on screen and
 the child is tracing it, so the IME refuses a keystroke that makes the syllable
@@ -837,8 +854,9 @@ program with one picture would put a Korean cover on a Spanish card.
 
 The grown-up's course report carries the scores the child's card does not:
 **Typing accuracy** (mean `accuracy`, reveals excluded), **Answers shown**, and
-**Meaning understood** — the mean `meaning.score` over rows that carry one;
-grown-up only, absent until the first scored row.
+**Meaning understood** — the mean `meaning.score` over rows that carry one —
+and **Heard correctly**, the mean dictation `heard.score`; grown-up only, each
+absent until its first scored row.
 
 ---
 
@@ -925,6 +943,13 @@ An attempt is one row in the day's log:
     confidence: 0.81
     judge: model           # model | exact | no-words
     model: jev-1.13.0      # judge: model only
+  heard:                   # dictation only, when the judge answered; never gating
+    score: 1               # same scale: 0 wrong … 1 fully right (word order, spelling variant, equivalent wording)
+    level: 4
+    confidence: 0.9
+    judge: model           # model | exact | no-words
+    model: jev-1.14.0      # judge: model only
+    match: reordered       # identical | reordered | equivalent | misspelled | missing-words | different
 ```
 
 `method` says how the answer was produced — typed, or spoken and transcribed

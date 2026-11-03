@@ -686,13 +686,16 @@ export class CardLadderSittingService {
     let verdict = null;
     if (item.id === itemId && item.type === 'typed' && !ctx.dayFile.items[itemId] && typeof response?.typed === 'string') {
       const entry = lexicon.entries.get(item.wordId);
+      // With meanings: the judge's model tells a synonym from another word by them.
       const otherWords = [
-        ...Object.entries(ctx.status.words).filter(([id, w]) => id !== entry.id && w.state !== 'new').map(([id]) => lexicon.entries.get(id)?.term),
-        ...(entry.decoys?.term ?? []),
-      ].filter(Boolean);
+        ...Object.entries(ctx.status.words).filter(([id, w]) => id !== entry.id && w.state !== 'new')
+          .map(([id]) => lexicon.entries.get(id)).filter(Boolean).map((other) => ({ term: other.term, gloss: other.gloss ?? null })),
+        ...(entry.decoys?.term ?? []).map((term) => ({ term, gloss: null })),
+      ].filter((other) => other.term);
       // The target side's script and language: the judge's one script seam.
       verdict = await this.#judge.judge({
-        pkg, entry, typed: response.typed, otherWords,
+        // 1.4: the child heard the word (dictation sign-off), not its meaning.
+        pkg, entry, typed: response.typed, otherWords, heard: item.task === '1.4',
         targetScript: lexicon.targetScript ?? scriptFor(lexicon.language?.code), targetLanguage: (lexicon.targetLanguage ?? lexicon.language)?.name ?? null,
       });
     }

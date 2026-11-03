@@ -1,6 +1,6 @@
 // __backend/src/3_applications/school/SentenceMeaningJudge.test.mjs
 import { describe, expect, it, vi } from 'vitest';
-import { SentenceMeaningJudge, MEANING_LEVELS } from "./SentenceMeaningJudge.mjs";
+import { SentenceMeaningJudge, MEANING_LEVELS, HEARD_LEVELS, HEARD_MATCH_KINDS } from "./SentenceMeaningJudge.mjs";
 
 const answerWith = (score, confidence = 0.8) => async () => ({
   model: 'jev-1.13.0',
@@ -93,5 +93,52 @@ describe('SentenceMeaningJudge', () => {
     expect(noop.enabled).toBe(false);
     expect(await none.judge({ ...ARGS, accuracy: 1 })).toBeNull();
     expect(await noop.judge(ARGS)).toBeNull();
+  });
+});
+
+describe('SentenceMeaningJudge — dictation (`heard`, owner 2026-11-03: correctness, not letters)', () => {
+  const HEARD = { given: '날씨가 오늘 좋아요', expected: '오늘 날씨가 좋아요.', language: 'KR', accuracy: 0.5, kind: 'heard' };
+  const heardWith = (score, match) => async () => ({
+    model: 'jev-1.14.0',
+    answers: {
+      heard: { type: 'score', score, confidence: 0.9, probabilities: [] },
+      match: { type: 'choice', choice: match, confidence: 0.8, probabilities: { [match]: 0.8 } },
+    },
+  });
+
+  it('its top level is reachable with other spelling, word order or wording', () => {
+    expect(HEARD_LEVELS).toHaveLength(5);
+    expect(HEARD_LEVELS[4]).toMatch(/other spelling/);
+    expect(HEARD_LEVELS[4]).toMatch(/another order/);
+    expect(Object.keys(HEARD_MATCH_KINDS)).toEqual(expect.arrayContaining(['identical', 'reordered', 'misspelled', 'different']));
+  });
+
+  it('asks the heard Score and the match Choice; a reordering is fully right', async () => {
+    const { judge, decisionGateway } = make(heardWith(4, 'reordered'));
+    expect(await judge.judge(HEARD)).toMatchObject({ score: 1, level: 4, judge: 'model', match: 'reordered' });
+    const [state, questions] = decisionGateway.evaluate.mock.calls[0];
+    expect(state).toEqual({ reference: '오늘 날씨가 좋아요.', answer: '날씨가 오늘 좋아요', language: 'KR' });
+    expect(Object.keys(questions)).toEqual(['heard', 'match']);
+    expect(questions.match.type).toBe('choice');
+  });
+
+  it('a match Jev did not offer is dropped; an exact copy is identical without a call', async () => {
+    expect(await make(heardWith(3, 'made-up')).judge.judge(HEARD)).not.toHaveProperty('match');
+    const { judge, decisionGateway } = make(heardWith(0, 'different'));
+    expect(await judge.judge({ ...HEARD, accuracy: 1 })).toMatchObject({ score: 1, judge: 'exact', match: 'identical' });
+    expect(decisionGateway.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('a failure logs heard-failed and returns null', async () => {
+    const { judge, logger } = make(async () => { throw new Error('429'); });
+    expect(await judge.judge(HEARD)).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith('school.language.heard-failed', expect.objectContaining({ error: '429' }));
+  });
+
+  it('the meaning rubric is unchanged and carries no match', async () => {
+    const { judge, decisionGateway } = make(answerWith(3));
+    const out = await judge.judge(ARGS);
+    expect(out).not.toHaveProperty('match');
+    expect(Object.keys(decisionGateway.evaluate.mock.calls[0][1])).toEqual(['meaning']);
   });
 });

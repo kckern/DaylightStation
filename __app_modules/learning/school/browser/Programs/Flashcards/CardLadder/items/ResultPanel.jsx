@@ -4,6 +4,8 @@ import { FitText } from "../FitText.jsx";
 import { playClip } from "../cardLadderAudio.js";
 
 const CHEERS = ['Got it!', 'Nice!', 'Yes!'];
+/** Right answers in other words than the card's — not a mistake, so never "Close!". */
+const OTHER_WORDING = new Set(['synonym', 'reordered', 'variant']);
 
 /** A light, deterministic variation: the same item always cheers the same way. */
 export function cheerFor(itemId) {
@@ -29,6 +31,11 @@ function kidReadable(reason) {
  *   right   a short cheer (Got it! / Nice! / Yes!), the word large, Listen;
  *           a near miss (score < 10) adds "Close! It's spelled:" so a typo is
  *           still corrected.
+ *   right, other words — the judge's `match` (owner, 2026-11-03: correctness,
+ *           not letters): a synonym, a reordering or a valid other spelling is
+ *           fully right, so it is never "Close!": "Same meaning! This card
+ *           says:" and the card's own wording; another ending or particle that
+ *           still passes: "Right word! This card has:".
  *   gaveUp  the child said "Don't know": "Here's the answer", the answer large,
  *           Listen — no "Not quite", no "You typed" (owner, 2026-11-03: not
  *           knowing is fine; the card just comes round again).
@@ -37,11 +44,13 @@ function kidReadable(reason) {
  * only, on the shared DS keyframes and motion tokens; reduced motion: none.
  */
 export default function ResultPanel({
-  itemId, correct, score = null, answer, answerLang, typed = null, reason = null, audio = null, audioKind = 'term', gaveUp = false,
+  itemId, correct, score = null, answer, answerLang, typed = null, reason = null, audio = null, audioKind = 'term', gaveUp = false, match = null,
 }) {
   const heading = correct ? cheerFor(itemId) : gaveUp ? "Here's the answer" : 'Not quite';
   const nearMiss = correct && score != null && score < 10;
-  const label = correct ? (nearMiss ? "Close! It's spelled:" : null) : gaveUp ? null : 'The answer';
+  const label = correct
+    ? (OTHER_WORDING.has(match) ? 'Same meaning! This card says:' : match === 'other-form' ? 'Right word! This card has:' : nearMiss ? "Close! It's spelled:" : null)
+    : gaveUp ? null : 'The answer';
   const note = kidReadable(reason);
   const listen = audio
     ? <TouchButton variant="secondary" keyHint="Tab" className="wl-result__listen" onClick={() => playClip(audio, audioKind)}><Icon name="volume" /> Listen</TouchButton>

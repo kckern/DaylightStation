@@ -209,6 +209,16 @@ describe('CardLadderSittingService', () => {
     });
   });
 
+  it("a synonym Jev calls fully right passes, and its match reaches the result and the day's record", async () => {
+    const judge = vi.fn(async () => ({ score: 10, judge: 'model', reason: null, pass: true, match: 'synonym' }));
+    const { service, store } = make({ store: readyStore(1), judge });
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(item.type).toBe('typed');
+    const out = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '자르개' } });
+    expect(out.result).toMatchObject({ correct: true, answer: '가위', score: 10, judge: 'model', match: 'synonym' });
+    expect(store.s.days[TODAY].items[item.id].result).toMatchObject({ correct: true, match: 'synonym' });
+  });
+
   it('judges a typed answer before the engine sees it, once per item', async () => {
     const { service, judge } = make({ store: readyStore(1) });
     const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
@@ -216,7 +226,10 @@ describe('CardLadderSittingService', () => {
     const out = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
     expect(judge).toHaveBeenCalledTimes(1);
     expect(judge.mock.calls[0][0]).toMatchObject({ pkg: 'korean-vocab', typed: '가비', entry: { id: 'gawi' }, targetScript: 'hangul', targetLanguage: 'Korean' });
-    expect(judge.mock.calls[0][0].otherWords).toEqual(expect.arrayContaining(['풀', 'a', 'b', 'c']));
+    // With meanings, so Jev can tell a synonym from another word; decoys have none.
+    expect(judge.mock.calls[0][0].otherWords).toEqual(expect.arrayContaining([
+      { term: '풀', gloss: 'Glue' }, { term: 'a', gloss: null }, { term: 'b', gloss: null }, { term: 'c', gloss: null },
+    ]));
     expect(out.result).toMatchObject({ correct: false, answer: '가위', score: 2, judge: 'exact' });
     const repeat = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
     expect(repeat.result).toEqual(out.result);

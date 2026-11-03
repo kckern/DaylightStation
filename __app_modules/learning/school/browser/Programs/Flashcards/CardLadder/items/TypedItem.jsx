@@ -282,6 +282,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
           reason={result.reason ?? null}
           audio={answerAudio}
           gaveUp={result.judge === 'dont-know' || result.dontKnow === true}
+          match={result.match ?? null}
         />
       )}
       <div className="wl-controls">

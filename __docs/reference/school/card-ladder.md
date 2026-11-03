@@ -445,12 +445,93 @@ else, inert there) on another — both came back `wrong-script`.
 
 ## Typed input and the judge (`CardLadderTypedJudge`)
 
-A mastery test, not a spelling test — grading is deliberately generous.
-`__app_modules/learning/school/server/application/CardLadderTypedJudge.mjs` runs the
-deterministic half (`domain/cardLadder/{scriptRules,targetScript,jamo,typedScore}.mjs`) in
-order, first decision wins. The sitting passes the judge the target side's
-script and language (`targetScript`, `targetLanguage`) — the one seam where
-script-specific grading plugs in:
+A mastery test, not a spelling test. **The score says whether the child gave
+the right answer, not how many letters line up with the card** (owner ruling
+2026-11-03). A synonym, a valid other spelling or the same words in another
+order can be fully right — a 10 — though no letter match would say so; an
+answer a letter or two away can be wrong if those letters change the meaning.
+So with Jev configured, **Jev grades every real attempt** and the letter rules
+below settle only what they can settle with certainty.
+
+`__app_modules/learning/school/server/application/CardLadderTypedJudge.mjs` holds both
+halves. The sitting passes it the target side's script and language
+(`targetScript`, `targetLanguage`) and the other introduced words **with their
+meanings** (`otherWords: [{term, gloss}]`, authored decoys with `gloss: null`),
+so Jev can tell a synonym from another word.
+
+### With Jev: correctness, not letters
+
+| Step | Condition | Score |
+|---|---|---|
+| Nothing typed | empty — the *Don't know* button | 0, `dont-know`, no call |
+| Only punctuation | `.` `?!` — junk typed to get past the card | 1, `wrong-script`, no call |
+| A grown-up's re-grade | cached `judge: grown-up` for this answer | theirs, wins over everything |
+| Identical | match under the script's `normalize` | 10, `exact`, no call |
+| No target-script letters | e.g. Latin typed for a Hangul word | 1, `wrong-script`, no call |
+| A wrong number | digits typed, and the digit tokens differ (a number written in words goes to Jev) | 2, `number`, no call |
+| **Everything else** | Jev, two atomic questions | **Jev's** |
+
+The two questions (`IDecisionGateway.evaluate`, one call):
+
+- **`correct`** — a Score over `CORRECT_LEVELS`, about meaning: *wrong* (a
+  different meaning — another word, see `otherWords` — or no answer) → 2 ·
+  *partly right* → 4 · *right idea, a slip a teacher would correct* (a wrong
+  ending, particle or tense) → 6 · *right, misspelled* → 8 · ***fully right***
+  *— the same word, a synonym, a valid other spelling, or the same words in
+  another order* → 10. The level (rounded, clamped) **is** the score; nothing
+  clamps it to the letter distance, up or down. *Right idea, a slip* passes at
+  the default `passScore` 6 **on purpose**: the owner asked for close-enough
+  intents to count; the result screen still shows the card's form.
+- **`match`** — a Choice over `MATCH_KINDS`: `identical`, `synonym`,
+  `reordered`, `variant`, `misspelled`, `other-form`, `different`. It **never
+  moves the score**; it is carried on the verdict, the result and the day's
+  record (`match`) for the result screen and the grown-up view (`typedAnswers`
+  and the day review carry it). An option Jev did not offer is dropped.
+
+**Jev must be sure.** A replay of every past typed answer (2026-11-03, 72
+answers, 26 Jev calls) showed Jev's wrong verdicts were its unsure ones —
+한교 for 한국 passed at confidence 0.05, 중유하다 for 중요하다 failed at 0.27,
+도와줄다 for 불우 이웃을 돕다 passed while its own match said `different` — and
+its right ones came sure and consistent (아빠가 게워 줄 테니까 for 아빠가 도와줄
+테니까: close letters, another meaning, failed). So Jev's score stands only
+when its `correct` confidence is **≥ 0.4** and the two answers **agree** (a pass
+whose match is `different`, or a fail whose match is `identical` / `synonym` /
+`reordered` / `variant`, is a contradiction). Otherwise the letter rules decide
+— their `judge` (`distance`, `guard`, …), no `match` — and the log says
+`jev: unsure` with `unsure: low-confidence | contradiction`. With the
+guardrails the same replay changes exactly one grade, the 게워 sentence.
+
+The **1.4 sign-off** tells Jev the child *heard* the word read aloud; 3.3 says
+it was asked for. The rubric is the same (owner: a synonym is right).
+
+Jev's state is the target, its meaning (`gloss`), `kind`, the attempt **as
+typed** (spaces and word order intact, NFC, ≤ 80 chars — the normalized form is
+only the cache key), the other words with meanings, `script`, `language`, and
+for Hangul both sides as keystroke jamo syllable by syllable (`targetJamo`,
+`attemptJamo`: `ㄷㅗ ㅇㅗㅏ ㅈㅜ ㄷㅏ`), so a spelling slip (깨워 / 개워) reads
+differently from a different word.
+
+On the result screen a right answer in other words is **never "Close!"**:
+`synonym` / `reordered` / `variant` read *Same meaning! This card says:* with
+the card's wording; `other-form` reads *Right word! This card has:*; a pass
+below 10 that is a plain misspelling stays *Close! It's spelled:*.
+
+Every call logs `school.card-ladder.judge-model` with `engine: jev`, `model`,
+`rules` / `rulesJudge` (what the letter rules alone would have said — the
+running comparison), `level`, `confidence`, `score`, `pass`, `match`,
+`matchConfidence` and `ms`. A failure or a malformed answer logs
+`judge-fallback` and grades by the letter rules (`judge: fallback`). Every
+Jev verdict, sure or not, is cached with `engine: jev, v: 2` (and `match`,
+`model`, `unsure`) in `judgements.yml`, so a repeated answer is never asked
+twice; Jev rows cached before this ruling (the one-band clamp, no `v`) are not
+reused — the answer is asked again. The log row also carries `jevScore` /
+`jevMatch` (Jev's own read) beside the final `score`.
+
+### Without Jev: the letter rules
+
+`domain/cardLadder/{scriptRules,targetScript,jamo,typedScore}.mjs`, in order,
+first decision wins — the whole judge where no decision model is configured,
+and the fallback when Jev fails:
 
 | Step | Condition | Score |
 |---|---|---|
@@ -467,38 +548,20 @@ Distance is Levenshtein over the script's units (`keystrokeUnits(text,
 targetScript)`): for a Hangul target, **jamo as typed on a two-set keyboard**
 (compound vowels/finals split into component keys; tense consonants and ㅒ/ㅖ
 stay single); for Latin, letters after case-fold with diacritics stripped; for
-every other script, grapheme clusters. The model's instructions name the
-target language (the lexicon's name, `typed Korean answer` / `typed English
-answer`) and script, and its JSON carries `script` and `language`; nothing in
-them assumes Korean. **Short words (≤ 2 units — Hangul syllables, Han/kana
-characters, graphemes): the deterministic score is final** — no
-model call. **Longer words**: a model may raise an eligible floor (score ≥ 4
-and d/L ≤ 33%) by **one band** (`judge: model`), never lower it; model failure
-or timeout falls back to the deterministic score (`judge: fallback`).
+every other script, grapheme clusters. **Without Jev**, short words (≤ 2
+units) are final on these rules, and a chat model (`card_ladder.judge.model`,
+`gpt-5-nano` on this household; `engine: llm`) may raise an eligible longer
+floor (score ≥ 4, d/L ≤ 33%) by one band, never lower it. Its instructions name
+the target language and script; nothing in them assumes Korean.
 
-**Which model (owner ruling 2026-10-30: prefer Jev over small chat models).**
-When a typed-decision model is configured (`IDecisionGateway`, TypeSafe Jev,
-key in `system/auth/jev.yml`), it is the model step: one Score question over
-the same rubric as five levels (different word · partly there · misspelled but
-intended · one slip · exact → 2/4/6/8/10), the level rounded to a band and
-clamped as above. The chat model `card_ladder.judge.model` (`gpt-5-nano` on
-this household) answers only where no decision model is configured; a Jev
-failure is a `fallback` to the floor, not a retry through the chat model. Jev
-returns no text, so a Jev verdict's `reason` is null; its cache row in
-`judgements.yml` carries `engine: jev` and the versioned `model`
-(`engine: llm` rows predate the ruling or come from a household without Jev).
-
-Every model-step call logs `school.card-ladder.judge-model` with `engine`,
-`model`, `floor`, `raw` (the model's band before the clamp), `level`,
-`confidence`, `score` and `ms`; a failure logs `judge-fallback` with `engine`.
-`raw` below `floor` is the evidence for the open question of whether a model
-should ever LOWER a floor. A replay of every past attempt on 2026-10-30 found
-that it would have mattered once: 사진을 먹어도 돼요 ("eat a photo") for
-사진을 찍어도 돼요 passes on distance (floor 8) while Jev read it as partly there
-(raw 4) at confidence 0.28. Jev's confidence on Korean was erratic in that
-replay (0 on a clear sound-spelling), which is why no confidence gate exists
-yet. The `judge-shadow` events (2026-09-24 → 2026-10-30) are the earlier,
-decide-nothing version of this step.
+**History.** 2026-10-30 (prefer Jev over small chat models) put Jev at the
+model step on the same one-band clamp. In practice it never moved a grade —
+every call in the week to 2026-11-03 came back at or under the letter floor —
+and the clamp kept it from the answers it exists for: 도와줄다 for the
+*help-neighbors* card scored 2 on distance and was never asked, and short words
+were never asked at all. The 2026-11-03 ruling replaced the clamp with the
+correctness rubric above. The `judge-shadow` events (2026-09-24 → 2026-10-30)
+were the decide-nothing first version of the step.
 
 ### Grading by script
 
@@ -510,7 +573,7 @@ Each script is a small pure rule object in
 (`scriptOfText`). The client's `keypadFor(script)` (`CardLadder/targetScript.js`)
 mirrors the language table.
 
-| Script | Languages | `normalize` | Distance units | Wrong script (→ 1) | Short (≤ 2 → deterministic) | Keypad |
+| Script | Languages | `normalize` | Distance units | Wrong script (→ 1) | Short (≤ 2 → final, without Jev) | Keypad |
 |---|---|---|---|---|---|---|
 | `hangul` | ko | `normalizeAnswer`: NFC, whitespace and punctuation removed (unchanged) | keystroke jamo | no Hangul typed — only when the target itself has Hangul letters; a bare-number target (`1945`) is judged by the numbers rule | syllables | jamo keypad |
 | `latin` | en, es, fr, de, … | NFC, trim, collapse whitespace, strip punctuation, case-fold | letters, diacritics stripped (+ the accent-slip 8) | no Latin letter | graphemes | none |

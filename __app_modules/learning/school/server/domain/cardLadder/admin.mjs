@@ -62,7 +62,7 @@ export function typedAnswers(dayFile) {
     rows.push({
       day: dayFile.day, itemId, at: record.at ?? null, wordId: meta.wordId, task: meta.task, source: meta.source,
       typed: record.response.typed, correct: record.result?.correct ?? null, score: record.result?.score ?? null,
-      judge: record.result?.judge ?? null, reason: record.reason ?? null, regraded: record.regraded ?? null,
+      judge: record.result?.judge ?? null, match: record.result?.match ?? null, reason: record.reason ?? null, regraded: record.regraded ?? null,
     });
   }
   return rows.sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')));
@@ -135,6 +135,7 @@ export function dayAnswers(dayFile) {
       answer: result.answer ?? null,
       score: result.score ?? null,
       judge: result.judge ?? null,
+      match: result.match ?? null,
       reason: record.reason ?? null,
       regraded: record.regraded ?? null,
     });

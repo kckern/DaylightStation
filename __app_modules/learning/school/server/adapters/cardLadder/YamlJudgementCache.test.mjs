@@ -13,6 +13,21 @@ describe('judgement caches', () => {
     expect(new YamlJudgementCache({ rootDir }).get('korean-vocab', 'gawi', '가이')).toMatchObject({ score: 6 });
     fs.rmSync(rootDir, { recursive: true, force: true });
   });
+  it("yaml cache keeps a Jev verdict's rubric version and match, so it is reused after a restart", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jc-'));
+    new YamlJudgementCache({ rootDir }).set('korean-vocab', 'hakgyo', '핚교', {
+      score: 8, judge: 'model', reason: null, match: 'misspelled', engine: 'jev', model: 'jev-1.14.0', v: 2,
+    });
+    new YamlJudgementCache({ rootDir }).set('korean-vocab', 'hanguk', '한교', {
+      score: 4, judge: 'distance', reason: null, match: null, engine: 'jev', v: 2, unsure: 'low-confidence',
+    });
+    const reread = new YamlJudgementCache({ rootDir });
+    expect(reread.get('korean-vocab', 'hakgyo', '핚교')).toEqual({
+      score: 8, judge: 'model', reason: null, match: 'misspelled', engine: 'jev', model: 'jev-1.14.0', v: 2,
+    });
+    expect(reread.get('korean-vocab', 'hanguk', '한교')).toEqual({ score: 4, judge: 'distance', reason: null, engine: 'jev', v: 2, unsure: 'low-confidence' });
+    fs.rmSync(rootDir, { recursive: true, force: true });
+  });
   it('memory cache', () => {
     const cache = new MemoryJudgementCache();
     cache.set('p', 'w', 'x', { score: 8, judge: 'model', reason: 'r' });

@@ -649,7 +649,7 @@ function gradeQuizTask(ctx, round, task, correct) {
 }
 
 function gradedResult(ctx, item, correct, verdict) {
-  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}) };
+  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}) } : {}) };
 }
 
 // Practice never grades except a Quiz me task (rule 1). Sorts obey rule 2 via
@@ -772,7 +772,7 @@ function gradedRecord(item, response, result, verdict) {
   if (!graded || response?.menu === true || typeof result?.correct !== 'boolean') return null;
   return {
     wordId: item.wordId, task: item.task, source: item.source, correct: result.correct,
-    ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}),
+    ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}) } : {}),
   };
 }
 
