@@ -138,6 +138,23 @@ describe('course entities', () => {
     expect(validateCourse(course({ entities: [wall] })).errors.join()).toMatch(/rock is unreachable/);
   });
 
+  it('requires missiles for a missile-only wall, and does not treat it as an unflyable gap', () => {
+    const wall = entity({ id: 'crack', altitude: 0.95, height: 0.9, required_weapon: 'missile', vulnerable_to: ['missile'] });
+    expect(validateCourse(course({ entities: [wall] })).valid).toBe(true);
+    expect(validateCourse(course({ entities: [wall], rules: { ...course().rules, weapons: { missiles: 0 } } })).errors)
+      .toContain('entity crack requires unavailable missiles');
+  });
+
+  it('accepts a gate gap and a shutter a full boost can beat, and rejects one that shuts too early', () => {
+    const piece = (id, altitude, height, over = {}) => entity({ id, altitude, height, width_s: 0.8, vulnerable_to: [], ...over });
+    const gate = (closes) => [piece('g-top', 0.37, 0.37), piece('g-bottom', 1, 0.37), piece('g-shutter', 0.63, 0.26, { closes_at_s: closes })];
+    const rules = { ...course().rules, weapons: { enabled: true } };
+    expect(validateCourse(course({ rules, entities: gate(118.9) })).errors).toEqual([]);
+    expect(validateCourse(course({ rules, entities: gate(116) })).errors).toContain('entity g-shutter closes too early to boost through');
+    expect(validateCourse(course({ rules: { ...rules, boost: { enabled: false } }, entities: gate(118.9) })).errors)
+      .toContain('entity g-shutter closes but boost is off');
+  });
+
   it('rejects a checkpoint that restarts the rider inside terrain', () => {
     const result = validateCourse(course({ segments: [
       { id: 'ground', type: 'lower-terrain', start_s: 70, end_s: 80, top: 0.45 },

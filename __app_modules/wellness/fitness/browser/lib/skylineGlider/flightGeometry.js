@@ -71,6 +71,22 @@ export function entityBounds(entity) {
   };
 }
 
+/**
+ * Whether an entity is in the world at this camera time. A shutter
+ * (`closes_at_s`) does not exist until the camera reaches that time; before
+ * then the gap it seals is open.
+ */
+export function entityPresent(entity, camera) {
+  return !(Number(entity?.closes_at_s) > camera);
+}
+
+/**
+ * How long before it closes a shutter starts warning. The warning is also
+ * when the boost recharges (flightEngine), so a press made too early never
+ * leaves the rider unable to boost when it counts.
+ */
+export const SHUTTER_WARN_S = 3;
+
 export function entitiesTouchingCraft(course, courseTime, altitude, geometry = SKYLINE_CRAFT_GEOMETRY) {
   const from = courseTime - geometry.rearSeconds;
   const to = courseTime + geometry.frontSeconds;

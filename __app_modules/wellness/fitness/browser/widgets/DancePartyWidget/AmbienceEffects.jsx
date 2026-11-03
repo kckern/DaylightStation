@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import lottie from 'lottie-web';
+// lottie-web touches a canvas the moment it is imported, so load it on first
+// use: importing the fitness app (and every jsdom test that does) stays safe.
+const lottiePlayer = () => import('lottie-web').then((m) => m.default || m);
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
 
@@ -49,7 +51,7 @@ function LottieSprite({ path, className, style }) {
   useEffect(() => {
     let anim = null;
     let cancelled = false;
-    loadLottie(path).then((data) => {
+    Promise.all([loadLottie(path), lottiePlayer()]).then(([data, lottie]) => {
       if (cancelled || !ref.current) return;
       anim = lottie.loadAnimation({ container: ref.current, renderer: 'svg', loop: true, autoplay: true, animationData: data });
     }).catch((err) => logger().warn('fitness.ambience.lottie_failed', { path, error: err?.message ?? null }));

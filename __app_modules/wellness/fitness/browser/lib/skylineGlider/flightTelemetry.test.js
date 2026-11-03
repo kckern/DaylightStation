@@ -22,7 +22,13 @@ describe('flight telemetry', () => {
   it('records missile and boost activations separately', () => {
     const report=collectFlightTelemetry({previous:state(),next:state({missilesFired:1,missilesLeft:2,boostsUsed:1}),input:{connected:true},course,lastSampleSecond:-1});
     expect(report.events).toContainEqual({type:'weapon.fired',data:{weapon:'missile',count:1,missilesLeft:2}});
-    expect(report.events).toContainEqual({type:'boost.activated',data:{count:1}});
+    expect(report.events).toContainEqual({type:'boost.activated',data:{count:1,cameraTime:.9}});
+  });
+  it('reports a gate as cleared once the craft tail passes it, flagging shutters and the dash', () => {
+    const gate = { class: 'solid', group: 'g', at_s: 10, width_s: .8, height: .37 };
+    const gated = { ...course, entities: [{ ...gate, id: 'g-top', piece: 'top', altitude: .37 }, { ...gate, id: 'g-shutter', piece: 'shutter', altitude: .63, height: .26, closes_at_s: 9 }] };
+    const report = collectFlightTelemetry({ previous: state({ courseTime: 11.06 }), next: state({ courseTime: 11.1, boostOffset: 2.4 }), input: { connected: true }, course: gated, lastSampleSecond: 99 });
+    expect(report.events).toContainEqual({ type: 'gate.cleared', data: { gateId: 'g', shutter: true, boostOffset: 2.4 } });
   });
   it('emits exactly one complete state sample for each crossed course second', () => {
     const first = collectFlightTelemetry({

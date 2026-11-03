@@ -7,6 +7,7 @@ import getLogger from '@/lib/logging/Logger.js';
 import { validateCourse, resolveCalibration } from "../../lib/skylineGlider/courseModel.js";
 import { createFlightState, stepFlight, retryFlightCheckpoint } from "../../lib/skylineGlider/flightEngine.js";
 import { weaponPower } from "../../lib/skylineGlider/weaponPower.js";
+import { cameraTime } from "../../lib/skylineGlider/liftBoost.js";
 import { scoresAsTarget, weaponRefusal, weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { collectFlightTelemetry } from "../../lib/skylineGlider/flightTelemetry.js";
 import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
@@ -30,6 +31,12 @@ const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 
 export { FlightScene };
 
 const mediaUrl = (path) => DaylightMediaPath(`/media/${path}`);
+// Text cues are timed to what is on screen, so they follow the camera, not a
+// craft that has dashed ahead of it.
+const activeCue = (course, flight) => {
+  const camera = cameraTime(flight);
+  return (course.control_cues || []).find((c) => camera >= c.at_s && camera < c.at_s + 7)?.text;
+};
 
 // World-map rows when no rider progress is available: every act open.
 function zonesFromCourses(courses) {
@@ -165,6 +172,20 @@ export default function SkylineGlider() {
       if (press.source !== 'rider-button') flashPress(press.action, weaponRefusal(flightRef.current, press.action, course));
     },
   });
+  // A partner on the step mat is the bombardier: every classified stomp drops
+  // a bomb from the same rack the rider's button uses. Only stomps count — an
+  // ordinary step is someone walking past, not a request to fire.
+  const subscribeToAppEvent = ctx?.subscribeToAppEvent;
+  const stompArmed = phase === 'flight' && !!armory.enabled;
+  useEffect(() => {
+    if (!stompArmed || !subscribeToAppEvent) return undefined;
+    log.info('skyline_glider.stomp_mat.armed', { riderId });
+    const stop = subscribeToAppEvent('pressure-mat:stomp', (event) => {
+      drainWeapons.enqueue(['bomb'], 'stomp-mat');
+      log.info('skyline_glider.stomp_mat.bomb', { matId: event?.source ?? null, courseTime: flightRef.current?.courseTime ?? null });
+    });
+    return () => { stop?.(); log.debug('skyline_glider.stomp_mat.disarmed', { riderId }); };
+  }, [stompArmed, subscribeToAppEvent, drainWeapons, log, riderId]);
   const checkpointIdentity = useMemo(() => course && riderIdentity ? { ...riderIdentity, calibration: resolveCalibration(equipment, course) } : null, [course, riderIdentity, equipment]);
   let saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
   if(saved.status==='pending_terminal'&&settledRunIdsRef.current.has(saved.identity?.runId))saved={status:'missing'};
@@ -669,7 +690,7 @@ export default function SkylineGlider() {
     {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>{flight.crashCause === 'stall' ? 'Stall!' : 'Wing down!'}</h2><p>Returning to the last windsock…</p></div>}
     {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
-    {(effects.banner||(course.control_cues||[]).find(c=>flight.courseTime>=c.at_s&&flight.courseTime<c.at_s+7)?.text)&&<div className="skyline-glider__checkpoint-banner">{effects.banner||(course.control_cues||[]).find(c=>flight.courseTime>=c.at_s&&flight.courseTime<c.at_s+7)?.text}</div>}
+    {(effects.banner||activeCue(course,flight))&&<div className="skyline-glider__checkpoint-banner">{effects.banner||activeCue(course,flight)}</div>}
     {flight.stalled && flight.phase === 'playing' && <div className="skyline-glider__stop-warning" role="status">Stalled! Returning to the checkpoint…</div>}
   </main>;
 }

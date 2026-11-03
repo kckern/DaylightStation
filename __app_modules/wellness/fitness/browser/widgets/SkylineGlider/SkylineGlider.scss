@@ -66,6 +66,9 @@
 .skyline-glider__target-brackets { fill: none; stroke: #8dfcff; stroke-width: 5; stroke-linecap: round; animation: skyline-target-pulse 1s ease-in-out infinite alternate; }
 .skyline-glider__target-pips rect { fill: rgba(9, 31, 37, .7); stroke: #8dfcff; stroke-width: 2; &[data-full="true"] { fill: #8dfcff; } }
 .skyline-glider__bomb-mark text { fill: #fff1a8; stroke: #5b2b1c; stroke-width: 5; paint-order: stroke; font-size: 30px; font-weight: 900; animation: skyline-target-pulse .8s ease-in-out infinite alternate; }
+.skyline-glider__missile-mark text { fill: #ffd27a; stroke: #5b2b1c; stroke-width: 5; paint-order: stroke; font-size: 30px; font-weight: 900; animation: skyline-target-pulse .8s ease-in-out infinite alternate; }
+.skyline-glider__shutter-warning { fill: none; stroke: #ff5a4a; stroke-width: 8; stroke-linecap: round; animation: skyline-target-pulse .25s steps(2) infinite alternate; }
+.skyline-glider__boost-mark { fill: #bff6ff; stroke: #123a4a; stroke-width: 5; paint-order: stroke; font-size: 26px; font-weight: 900; animation: skyline-target-pulse .5s ease-in-out infinite alternate; }
 .skyline-glider__entity-flash { fill: #fff; animation: skyline-entity-flash .3s ease-out 1 both; pointer-events: none; }
 .skyline-glider__impact { pointer-events: none; }
 .skyline-glider__impact--kill { animation: skyline-kill .35s ease-out 1 both; circle { fill: rgba(255, 241, 168, .55); } path { stroke: #fff1a8; stroke-width: 6; stroke-linecap: round; } text { fill: #8dfcff; stroke: #0b2a33; stroke-width: 5; paint-order: stroke; font-size: 34px; font-weight: 900; } }

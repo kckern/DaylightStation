@@ -1,6 +1,7 @@
 import React from 'react';
 import { projectCourseWindow } from "../../lib/skylineGlider/courseProjection.js";
-import { SKYLINE_CRAFT_GEOMETRY } from "../../lib/skylineGlider/flightGeometry.js";
+import { SHUTTER_WARN_S, SKYLINE_CRAFT_GEOMETRY } from "../../lib/skylineGlider/flightGeometry.js";
+import { cameraTime } from "../../lib/skylineGlider/liftBoost.js";
 import { weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { EMPTY_ZONE_ASSETS } from "../../lib/skylineGlider/zoneAssets.js";
 import {
@@ -109,9 +110,23 @@ function CourseSegment({ segment, zone, assets, time }) {
 export function entityRole(entity, armed) {
   if (entity.role) return entity.role === 'shoot' && !armed ? 'avoid' : entity.role;
   if (entity.class === 'scenery') return 'scenery';
-  if (entity.required_weapon === 'bomb') return 'bomb';
+  if (entity.required_weapon) return entity.required_weapon;
   return 'avoid';
 }
+
+// A shutter warns for SHUTTER_WARN_S (blinking gap edges, BOOST label) and
+// then slams shut over the last SHUTTER_SLAM_S; it only becomes solid at
+// closes_at_s (see flightGeometry entityPresent), so the slam is kept short
+// enough that nothing on screen ever looks closed while it is still open.
+export const SHUTTER_SLAM_S = .4;
+export function shutterProgress(entity, camera) {
+  if (entity.closes_at_s == null) return { warning: false, closed: 1 };
+  const closed = clamp((camera - (entity.closes_at_s - SHUTTER_SLAM_S)) / SHUTTER_SLAM_S, 0, 1);
+  return { warning: closed < 1 && camera >= entity.closes_at_s - SHUTTER_WARN_S, closed };
+}
+
+// Where a role's label sits: above the thing, kept clear of the HUD bar.
+const ROLE_LABEL = Object.freeze({ bomb: 'BOMB ↓', missile: 'MISSILE →' });
 
 function TargetMarks({ entity, damage }) {
   const pad = 10, arm = 14;
@@ -129,17 +144,30 @@ function TargetMarks({ entity, damage }) {
   </g>;
 }
 
+function Shutter({ entity, progress: { warning, closed } }) {
+  const height = entity.height * closed;
+  return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role="boost" data-progress={Math.round(closed * 100) / 100} data-warning={warning ? 'true' : 'false'} className="skyline-glider__entity skyline-glider__entity--shutter">
+    {height > 0 && <EntityPreset entity={{ ...entity, height }}/>}
+    {warning && <>
+      <path className="skyline-glider__shutter-warning" d={`M${entity.x - 6} ${entity.y} H${entity.x + entity.width + 6} M${entity.x - 6} ${entity.y + entity.height} H${entity.x + entity.width + 6}`}/>
+      {/* Above the gap, clear of the glider flying through it. */}
+      <text className="skyline-glider__boost-mark" x={entity.x + entity.width / 2} y={Math.max(entity.y - 36, 130)} textAnchor="middle">BOOST »</text>
+    </>}
+  </g>;
+}
+
 function Entity({ entity, assets, time, role, damage, flashKey }) {
   const name = frameName(entity, time);
+  const label = ROLE_LABEL[role];
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role={role} className={`skyline-glider__entity skyline-glider__entity--${entity.class} skyline-glider__entity--${role}`}>
     {hasFrame(assets, name)
       ? <SpriteFrame assets={assets} name={name} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
       : <EntityPreset entity={entity}/>}
     {flashKey && <rect key={flashKey} className="skyline-glider__entity-flash" x={entity.x} y={entity.y} width={entity.width} height={entity.height} rx={8}/>}
     {role === 'shoot' && <TargetMarks entity={entity} damage={damage}/>}
-    {role === 'bomb' && <g className="skyline-glider__bomb-mark">
+    {label && <g className={`skyline-glider__${role}-mark`}>
       {/* A full-height wall would put its label under the HUD bar, so keep it in view. */}
-      <text x={entity.x + entity.width / 2} y={Math.max(entity.y - 18, 130)} textAnchor="middle">BOMB ↓</text>
+      <text x={entity.x + entity.width / 2} y={Math.max(entity.y - 18, 130)} textAnchor="middle">{label}</text>
     </g>}
   </g>;
 }
@@ -189,10 +217,12 @@ function Blast({ blast, x, y, width, height, progress, zone, assets }) {
 
 export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_ASSETS }) {
   const zone = course.zone || DEFAULT_ZONE;
-  const projected = projectCourseWindow(course, state.courseTime);
-  const time = state.courseTime;
+  // The camera scrolls steadily; a boost moves the craft ahead of it on screen
+  // (state.courseTime is the craft, cameraTime is the view).
+  const time = cameraTime(state);
+  const projected = projectCourseWindow(course, time);
   const scroll = time * projected.unitsPerSecond;
-  const craftX = projected.playerX;
+  const craftX = projected.playerX + (state.courseTime - time) * projected.unitsPerSecond;
   const craftY = state.altitude * projected.height;
   const pitch = clamp((state.verticalRate || 0) * 50, -12, 12);
   const craftFront = SKYLINE_CRAFT_GEOMETRY.frontSeconds * projected.unitsPerSecond;
@@ -204,7 +234,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
   const layers = zone.layers || [];
   const fill = assets.images.get(zone.terrain?.fill);
   const rules = weaponRules(course);
-  const xAt = (atSeconds) => craftX + (atSeconds - time) * projected.unitsPerSecond;
+  const xAt = (atSeconds) => projected.playerX + (atSeconds - time) * projected.unitsPerSecond;
   const flashes = new Map((state.impacts || []).filter((impact) => impact.entityId && impact.effect === 'damage').map((impact) => [impact.entityId, impact.id]));
   const blastProgress = (blast) => (rules.blast_s > 0 ? clamp(1 - blast.remaining / rules.blast_s, 0, 1) : 1);
   return <svg className={`skyline-glider__scene${zone.pixel_art ? ' skyline-glider__scene--pixel' : ''}`} data-zone={zone.id} data-theme={zone.palette?.theme || "alpine"} viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`} role="img" aria-label={`${zone.name || 'Alpine'} flight course`}>
@@ -217,8 +247,10 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
     {layers.filter((layer) => !layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
     <g className="skyline-glider__course-geometry">
       {projected.segments.map((segment) => <CourseSegment key={segment.id} segment={segment} zone={zone} assets={assets} time={time}/>)}
-      {projected.entities.filter((entity) => !destroyed.has(entity.id)).map((entity) => <Entity key={entity.id} entity={entity} assets={assets} time={time}
-        role={entityRole(entity, !!rules.enabled)} damage={state.entityDamage?.[entity.id]} flashKey={flashes.get(entity.id)}/>)}
+      {projected.entities.filter((entity) => !destroyed.has(entity.id)).map((entity) => entity.closes_at_s != null
+        ? <Shutter key={entity.id} entity={entity} progress={shutterProgress(entity, time)}/>
+        : <Entity key={entity.id} entity={entity} assets={assets} time={time}
+          role={entityRole(entity, !!rules.enabled)} damage={state.entityDamage?.[entity.id]} flashKey={flashes.get(entity.id)}/>)}
       {projected.collectibles.filter((item) => !collected.has(item.id)).map((item) => <g key={item.id} transform={`translate(${item.x} ${item.y})`} className="skyline-glider__bell" data-testid={`course-collectible-${item.id}`}>
         {hasFrame(assets, collectibleFrame) ? <SpriteFrame assets={assets} name={collectibleFrame} x={-16} y={-16} width={32} height={32} align="xMidYMid"/> : <BellPreset/>}
       </g>)}

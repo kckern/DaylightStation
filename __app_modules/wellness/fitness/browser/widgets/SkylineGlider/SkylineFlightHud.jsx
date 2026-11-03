@@ -1,5 +1,5 @@
 import React from 'react';
-import { boostRules } from '../../lib/skylineGlider/liftBoost.js';
+import { boostRules, cameraTime } from '../../lib/skylineGlider/liftBoost.js';
 
 // In-flight header: score on the left, and a 2×2 mini-pad mirroring the
 // physical bike buttons on the right. The pad is a legend, not a touch target;
@@ -37,7 +37,7 @@ export default function SkylineFlightHud({ flight, course, armed, targetsHit, po
   const recharge = boostRules(course).recharge_s;
   return <header className="skyline-glider__hud" data-testid="skyline-glider-hud">
     <span className="skyline-glider__hud-hearts" aria-label={`${hearts} hearts left`}>{'♥'.repeat(hearts) || '♡'}</span>
-    <span className="skyline-glider__hud-time">{formatTime(course.duration_s - flight.courseTime)}</span>
+    <span className="skyline-glider__hud-time">{formatTime(course.duration_s - cameraTime(flight))}</span>
     <span className="skyline-glider__hud-stat" aria-label="Bells collected">🔔 {flight.collectedIds.length}</span>
     {armed && <span className="skyline-glider__hud-stat" data-testid="skyline-glider-targets" aria-label="Targets destroyed">◎ {targetsHit}</span>}
     {armed && power > 1 && <span className="skyline-glider__hud-stat skyline-glider__hud-power" data-testid="skyline-glider-power" aria-label="Heart-rate power">⚡{power}×</span>}

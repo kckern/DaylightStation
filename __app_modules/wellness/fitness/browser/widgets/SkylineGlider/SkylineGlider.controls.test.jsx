@@ -273,6 +273,17 @@ describe('complete bike lifecycle',()=>{
   expect(mockCtx.fitnessSessionInstance.setEquipmentRider).toHaveBeenCalledExactlyOnceWith('bike','dad');
   expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-rider-id','dad');
  });
+ it('lets a partner on the step mat drop bombs with a stomp, but not with an ordinary step',async()=>{
+  await mount();
+  mockCtx.__emitAppEvent('pressure-mat:stomp',{id:'garage-step-mat'});await advance(50);
+  await launch();await advance(50);
+  expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('5');
+  await act(async()=>{mockCtx.__emitAppEvent('pressure-mat:step',{id:'garage-step-mat'})});await advance(100);
+  expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('5');
+  await act(async()=>{mockCtx.__emitAppEvent('pressure-mat:stomp',{id:'garage-step-mat'})});await advance(100);
+  expect(screen.getByTestId('skyline-glider-bombs')).toHaveTextContent('4');
+  expect(mockLog.info.mock.calls.some(([n,d])=>n==='skyline_glider.input.fire'&&d.action==='bomb'&&d.source==='stomp-mat')).toBe(true);
+ });
  it('opens a seated menu, saves abandonment once, and replays the same rider',async()=>{
   await mount();await launch();await press(4,'long');
   expect(screen.getByTestId('skyline-glider-lobby').dataset.controlPhase).toBe('menu');

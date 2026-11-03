@@ -83,6 +83,38 @@ export function BellPreset() {
 // Entity drawings fill a 100×100 box stretched over the entity's hitbox.
 const ENTITY_DRAWINGS = {
   barrier: <><rect x="0" y="0" width="100" height="100" fill="#625567" stroke="#e6b85f" strokeWidth="4"/><path d="M0 20 H100 M0 40 H100 M0 60 H100 M0 80 H100 M25 0 V20 M75 20 V40 M25 40 V60 M75 60 V80 M25 80 V100" fill="none" stroke="#392e45" strokeWidth="3"/></>,
+  // Breakable by missile only: the cracks say "this one gives".
+  crackwall: <>
+    <rect x="0" y="0" width="100" height="100" fill="#7a5a52" stroke="#f0a35e" strokeWidth="4"/>
+    <path d="M0 25 H100 M0 50 H100 M0 75 H100 M50 0 V25 M20 25 V50 M80 25 V50 M50 50 V75 M20 75 V100 M80 75 V100" fill="none" stroke="#4b3436" strokeWidth="3"/>
+    <path d="M58 6 L42 22 L60 34 L38 52 L62 66 L44 84 L56 96" fill="none" stroke="#ffd27a" strokeWidth="5" strokeLinejoin="round"/>
+  </>,
+  // A gate's posts are steel nothing breaks; the hazard band marks the edge of the gap.
+  'gate-top': <>
+    <rect x="6" y="0" width="88" height="100" fill="#3f4656" stroke="#1f2430" strokeWidth="4"/>
+    <path d="M6 88 H94 V100 H6Z" fill="#f2c94c"/>
+    <path d="M14 88 L26 100 M38 88 L50 100 M62 88 L74 100 M86 88 L94 96" stroke="#1f2430" strokeWidth="6"/>
+  </>,
+  'gate-bottom': <>
+    <rect x="6" y="0" width="88" height="100" fill="#3f4656" stroke="#1f2430" strokeWidth="4"/>
+    <path d="M6 0 H94 V12 H6Z" fill="#f2c94c"/>
+    <path d="M14 0 L26 12 M38 0 L50 12 M62 0 L74 12 M86 0 L94 8" stroke="#1f2430" strokeWidth="6"/>
+  </>,
+  'gate-shutter': <>
+    <rect x="10" y="0" width="80" height="100" fill="#c1443b" stroke="#5a1d1d" strokeWidth="4"/>
+    <path d="M10 20 H90 M10 40 H90 M10 60 H90 M10 80 H90" stroke="#5a1d1d" strokeWidth="4"/>
+  </>,
+  // Ground targets for bombs: a squat bunker with a slit, and a radio tower.
+  bunker: <>
+    <path d="M0 100 V45 Q50 -10 100 45 V100Z" fill="#6b7a4f" stroke="#2f3a24" strokeWidth="5"/>
+    <rect x="30" y="48" width="40" height="12" rx="4" fill="#1d2416"/>
+    <circle cx="50" cy="20" r="7" fill="#ff6b5a"/>
+  </>,
+  tower: <>
+    <path d="M4 100 L30 8 H70 L96 100Z" fill="#5b4a5e" stroke="#2e2333" strokeWidth="4"/>
+    <path d="M22 70 H78 M27 45 H73 M33 22 H67 M14 92 L70 30 M86 92 L30 30" stroke="#2e2333" strokeWidth="4"/>
+    <circle cx="50" cy="6" r="6" fill="#ff6b5a"/>
+  </>,
   target: <><circle cx="50" cy="50" r="44" fill="#f7d778" stroke="#593847" strokeWidth="6"/><circle cx="50" cy="50" r="27" fill="#db6655"/><circle cx="50" cy="50" r="10" fill="#fff2c6"/></>,
   pine: <>
     <rect x="44" y="78" width="12" height="22" className="skyline-glider__entity-trunk"/>
@@ -101,7 +133,8 @@ const ENTITY_DRAWINGS = {
 };
 
 export function EntityPreset({ entity }) {
-  const drawing = ENTITY_DRAWINGS[entity.draw];
+  // A gate's posts and shutter each have their own drawing (`gate-top` …).
+  const drawing = ENTITY_DRAWINGS[`${entity.draw}-${entity.piece}`] || ENTITY_DRAWINGS[entity.draw];
   return <svg x={entity.x} y={entity.y} width={entity.width} height={entity.height} viewBox="0 0 100 100" preserveAspectRatio="none" overflow="visible">
     {drawing || <rect width="100" height="100" rx="12" className="skyline-glider__entity-box"/>}
   </svg>;

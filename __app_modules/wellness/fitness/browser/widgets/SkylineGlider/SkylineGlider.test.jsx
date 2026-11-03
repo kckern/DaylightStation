@@ -94,6 +94,47 @@ describe('SkylineGlider', () => {
     expect(screen.getByTestId('skyline-glider-shot-missile-1').querySelector('[data-missile-body]')).toBeTruthy();
     expect(screen.getByTestId('skyline-glider-boost-effect')).toBeTruthy();
   });
+  it('moves the boosted glider forward on screen while the course stays put', () => {
+    const { rerender } = render(<FlightScene state={flightState} course={course}/>);
+    const anchor = screen.getByTestId('skyline-glider-craft').getAttribute('transform');
+    const hill = screen.getByTestId('course-segment-hill').innerHTML;
+    // Same camera (courseTime − boostOffset), craft 2.8 course-seconds ahead.
+    rerender(<FlightScene state={{ ...flightState, courseTime: flightState.courseTime + 2.8, boostOffset: 2.8 }} course={course}/>);
+    expect(screen.getByTestId('course-segment-hill').innerHTML).toBe(hill);
+    const dx = Number(/translate\(([\d.]+)/.exec(screen.getByTestId('skyline-glider-craft').getAttribute('transform'))[1]) - Number(/translate\(([\d.]+)/.exec(anchor)[1]);
+    expect(dx).toBeCloseTo(200);
+  });
+  it('slides a shutter shut across a gate gap and marks it BOOST until it closes', () => {
+    const gate = { class: 'solid', group: 'g', draw: 'gate', at_s: 12, width_s: .8, vulnerable_to: [] };
+    const entities = [
+      { ...gate, id: 'g-top', piece: 'top', altitude: .37, height: .37 },
+      { ...gate, id: 'g-bottom', piece: 'bottom', altitude: 1, height: .37 },
+      { ...gate, id: 'g-shutter', piece: 'shutter', altitude: .63, height: .26, closes_at_s: 10 },
+    ];
+    const gated = { ...course, entities };
+    const { rerender } = render(<FlightScene state={{ ...flightState, courseTime: 6 }} course={gated}/>);
+    const shutter = () => screen.getByTestId('course-entity-g-shutter');
+    expect(shutter()).toHaveAttribute('data-progress', '0');
+    expect(shutter()).toHaveAttribute('data-warning', 'false');
+    rerender(<FlightScene state={{ ...flightState, courseTime: 8 }} course={gated}/>);
+    expect(shutter()).toHaveAttribute('data-progress', '0');
+    expect(shutter()).toHaveAttribute('data-warning', 'true');
+    expect(shutter()).toHaveTextContent('BOOST');
+    rerender(<FlightScene state={{ ...flightState, courseTime: 9.8 }} course={gated}/>);
+    expect(shutter()).toHaveAttribute('data-progress', '0.5');
+    rerender(<FlightScene state={{ ...flightState, courseTime: 10 }} course={gated}/>);
+    expect(shutter()).toHaveAttribute('data-progress', '1');
+    expect(shutter()).not.toHaveTextContent('BOOST');
+  });
+  it('labels a missile-only wall MISSILE and a ground target BOMB', () => {
+    const entities = [
+      { id: 'crack', class: 'solid', role: 'missile', required_weapon: 'missile', draw: 'crackwall', at_s: 10, altitude: .95, width_s: 1, height: .9 },
+      { id: 'bunker', class: 'breakable', role: 'bomb', draw: 'bunker', at_s: 12, altitude: .92, width_s: .9, height: .08 },
+    ];
+    render(<FlightScene state={flightState} course={{ ...course, entities, rules: { ...course.rules, weapons: { enabled: true } } }}/>);
+    expect(screen.getByTestId('course-entity-crack')).toHaveTextContent('MISSILE');
+    expect(screen.getByTestId('course-entity-bunker')).toHaveTextContent('BOMB');
+  });
   it('renders actual course geometry scrolling past a right-facing pitched glider', () => {
     const { container } = render(<FlightScene state={flightState} course={course} />);
 

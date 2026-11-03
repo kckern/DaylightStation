@@ -24,16 +24,23 @@ describe('SkylineGliderCourseCatalog', () => {
     expect(first.entities).toEqual([]);
     expect(first.segments.some(s => s.type === 'lava')).toBe(false);
     expect(first.segments.filter(s => s.type === 'lower-terrain').every(s => s.profile?.length >= 3)).toBe(true);
-    expect(second).toMatchObject({ version: 5, duration_s: 240 });
+    expect(second).toMatchObject({ version: 6, duration_s: 240 });
     expect(second.entities.filter(e=>e.vulnerable_to?.includes('missile')).every(e=>e.at_s>100&&e.required_weapon!=='bomb')).toBe(true);
     expect(second.entities.some(e=>e.vulnerable_to?.includes('missile'))).toBe(true);
-    expect(second.rules.boost).toMatchObject({enabled:true,duration_s:2,recharge_s:8,speed:1.6});
-    expect(second.rules.boost.lift).toBeUndefined();
+    expect(second.rules.boost).toMatchObject({enabled:true,offset_s:2.8,duration_s:1.6,recharge_s:8});
+    expect(second.rules.boost.speed).toBeUndefined();
     expect(second.entities.filter(e=>e.entity==='target').every(e=>e.role==='shoot')).toBe(true);
-    expect(second.entities.filter(e=>e.required_weapon==='bomb').every(e=>e.role==='bomb')).toBe(true);
+    // Bombs go down, onto ground targets — never into a wall ahead.
+    const bombable = second.entities.filter(e=>e.vulnerable_to?.includes('bomb') && e.entity!=='target');
+    expect(bombable.length).toBeGreaterThan(0);
+    expect(bombable.every(e=>e.role==='bomb' && e.altitude>=.9)).toBe(true);
+    expect(second.entities.some(e=>e.entity==='bombwall')).toBe(false);
+    // Missiles break the cracked wall; gates are steel with a gap, one of them a shutter.
+    expect(second.entities.filter(e=>e.entity==='crackwall').every(e=>e.required_weapon==='missile'&&e.role==='missile')).toBe(true);
+    expect(second.entities.filter(e=>e.group).every(e=>e.vulnerable_to?.length===0)).toBe(true);
+    expect(second.entities.some(e=>e.piece==='shutter'&&e.closes_at_s<e.at_s)).toBe(true);
     expect(second.zone.palette.theme).not.toBe(first.zone.palette.theme);
     expect(second.segments.filter(s => s.type === 'lava').every(s => s.start_s >= 60)).toBe(true);
-    expect(second.entities.some(e => e.required_weapon === 'bomb')).toBe(true);
     for (const act of acts) expect(validateFrontendCourse(act).errors).toEqual([]);
   });
 
@@ -48,35 +55,71 @@ describe('SkylineGliderCourseCatalog', () => {
     }
   });
 
-  it('lets a basic-power rider complete combat with conserved bombs; waste causes retry and refill', () => {
-    const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[1]).course;
-    const barriers = course.entities.filter(e => e.required_weapon === 'bomb');
+  // A scripted rider: low and slow by default, an easy 45 rpm through each
+  // gate's gap (it sits low enough for gentle pedaling), climbing over each tower, a bomb on everything below, a missile at the cracked wall
+  // and a boost as each shutter starts to close.
+  const autopilot = (course, { missiles = true } = {}) => {
     const fired = new Set();
+    const gaps = course.entities.filter(e => e.piece === 'top');
+    const towers = course.entities.filter(e => e.entity === 'tower');
+    const bombs = course.entities.filter(e => e.role === 'bomb');
+    const walls = course.entities.filter(e => e.required_weapon === 'missile');
+    const shutters = course.entities.filter(e => e.closes_at_s != null);
+    const once = (key, when) => (when && !fired.has(key) ? (fired.add(key), true) : false);
+    return (state) => {
+      const at = state.courseTime, camera = at - (state.boostOffset || 0);
+      const near = (e) => at >= e.at_s - 6 && at <= e.at_s + 2;
+      const actions = [
+        ...bombs.filter(e => once(e.id, at >= e.at_s - .25)).map(() => 'bomb'),
+        ...(missiles ? walls.filter(e => once(e.id, at >= e.at_s - 6)).map(() => 'missile') : []),
+        ...shutters.filter(e => once(e.id, camera >= e.closes_at_s - 1.5)).map(() => 'boost'),
+      ];
+      return { rpm: towers.some(near) ? 77 : gaps.some(near) ? 45 : 15, connected: true, weaponPower: 1, actions };
+    };
+  };
+
+  it('lets a basic-power rider clear the obstacle course: bombs below, a missile wall, gaps and a shutter', () => {
+    const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[1]).course;
+    const pilot = autopilot(course);
     let state = createFlightState(course, { calibration: resolveCalibration({}, course) });
-    for (let frame = 0; frame < course.duration_s * 60 + 60 && state.phase === 'playing'; frame++) {
-      const barrier = barriers.find(e => !fired.has(e.id) && state.courseTime >= e.at_s - e.width_s / 2 - 1.4);
-      if (barrier) fired.add(barrier.id);
-      state = stepFlight(state, { rpm: 15, connected: true, weaponPower: 1, actions: barrier ? ['laser', 'bomb'] : [] }, 1 / 60, course);
-    }
+    for (let frame = 0; frame < course.duration_s * 60 + 60 && state.phase === 'playing'; frame++) state = stepFlight(state, pilot(state), 1 / 60, course);
     expect(state.phase, JSON.stringify({ time: state.courseTime, cause: state.crashCause, entity: state.lastCollisionEntityId })).toBe('completed');
     expect(state.collisions).toBe(0);
-    for (const e of barriers) expect(state.destroyedBy[e.id]).toBe('bomb');
+    for (const e of course.entities.filter(e => e.role === 'bomb')) expect(state.destroyedBy[e.id], e.id).toBe('bomb');
+    for (const e of course.entities.filter(e => e.required_weapon === 'missile')) expect(state.destroyedBy[e.id], e.id).toBe('missile');
+    for (const e of course.entities.filter(e => e.group)) expect(state.destroyedIds).not.toContain(e.id);
+  });
 
-    const barrier = barriers[0];
-    const checkpoint = course.segments.filter(s => s.type === 'checkpoint' && s.start_s < barrier.at_s).at(-1);
-    state = createFlightState(course, { calibration: resolveCalibration({}, course), courseTime: checkpoint.start_s - .02 });
+  it('crashes a rider who wastes their missiles before the cracked wall, then refills them on retry', () => {
+    const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[1]).course;
+    const wall = course.entities.find(e => e.required_weapon === 'missile');
+    const checkpoint = course.segments.filter(s => s.type === 'checkpoint' && s.start_s < wall.at_s).at(-1);
+    const pilot = autopilot(course, { missiles: false });
+    let state = createFlightState(course, { calibration: resolveCalibration({}, course), courseTime: checkpoint.start_s - .02 });
     state = stepFlight(state, { rpm: 15, connected: true }, .1, course);
-    for (let n = 0; n < course.rules.weapons.bombs; n++) state = stepFlight(state, { rpm: 15, connected: true, actions: ['bomb'] }, 1, course);
-    expect(state.bombsLeft).toBe(0);
-    while (state.phase === 'playing' && state.courseTime < barrier.at_s + 1) state = stepFlight(state, { rpm: 15, connected: true }, 1 / 60, course);
+    // Fired at an empty sky, each missile flies off the edge of the screen.
+    for (let n = 0; n < course.rules.weapons.missiles; n++) state = stepFlight(state, { rpm: 15, connected: true, actions: ['missile'] }, 1, course);
+    expect(state.missilesLeft).toBe(0);
+    while (state.phase === 'playing' && state.courseTime < wall.at_s + 1) state = stepFlight(state, pilot(state), 1 / 60, course);
     expect(state.phase).toBe('crashed');
-    expect(state.lastCollisionEntityId).toBe(barrier.id);
-    state = stepFlight(state, { rpm: 15, connected: true }, course.rules.restart_delay_s + .02, course);
-    expect(state.phase).toBe('crashed');
+    expect(state.lastCollisionEntityId).toBe(wall.id);
     state = retryFlightCheckpoint(state, course);
     expect(state.restarts).toBe(1);
-    expect(state.bombsLeft).toBe(course.rules.weapons.bombs);
-    expect(state.destroyedIds).not.toContain(barrier.id);
+    expect(state.missilesLeft).toBe(course.rules.weapons.missiles);
+    expect(state.destroyedIds).not.toContain(wall.id);
+  });
+
+  it('shuts the gate on a rider who does not boost', () => {
+    const course = validateFrontendCourse(new SkylineGliderCourseCatalog({ configService: configService() }).list('home')[1]).course;
+    const shutter = course.entities.find(e => e.closes_at_s != null);
+    const pilot = autopilot(course);
+    let state = createFlightState(course, { calibration: resolveCalibration({}, course), courseTime: shutter.at_s - 10 });
+    while (state.phase === 'playing' && state.courseTime < shutter.at_s + 2) {
+      const input = pilot(state);
+      state = stepFlight(state, { ...input, actions: input.actions.filter(a => a !== 'boost') }, 1 / 60, course);
+    }
+    expect(state.phase).toBe('crashed');
+    expect(state.lastCollisionEntityId).toBe(shutter.id);
   });
 
   it('keeps slow pedaling safe over lava but makes a genuine stop crash', () => {
@@ -105,6 +148,25 @@ describe('SkylineGliderCourseCatalog', () => {
     expect(acts.map((course) => course.id)).toEqual(['mountain-pass', 'cloud-ridge', 'ridge-run']);
     expect(acts.at(-1)).toMatchObject({ act: null, zone: { id: 'alpine' } });
     expect(warnings).toHaveLength(2);
+  });
+
+  it('resolves a gate into steel posts around its gap, plus a shutter when it closes', () => {
+    const zones = new Map([['alpine', { id: 'alpine', entities: { gate: { class: 'solid', role: 'avoid', draw: 'gate', width_s: 0.8, gap: 0.24, vulnerable_to: [] } } }]]);
+    const act = { id: 'g', zone: 'alpine', entities: [
+      { id: 'open-gate', entity: 'gate', at_s: 10, gap_altitude: 0.5 },
+      { id: 'shut-gate', entity: 'gate', at_s: 20, gap_altitude: 0.4, gap: 0.3, closes_at_s: 18 },
+    ] };
+    const pieces = resolveAct(act, zones).entities;
+    expect(pieces.map((e) => e.id)).toEqual(['open-gate-top', 'open-gate-bottom', 'shut-gate-top', 'shut-gate-bottom', 'shut-gate-shutter']);
+    const [top, bottom] = pieces;
+    expect(top).toMatchObject({ group: 'open-gate', piece: 'top', class: 'solid', vulnerable_to: [] });
+    expect(top.altitude - top.height).toBeCloseTo(0);
+    expect(top.altitude).toBeCloseTo(0.38);
+    expect(bottom.altitude).toBe(1);
+    expect(bottom.altitude - bottom.height).toBeCloseTo(0.62);
+    expect(pieces.at(-1)).toMatchObject({ piece: 'shutter', closes_at_s: 18, height: 0.3 });
+    expect(pieces.at(-1).altitude).toBeCloseTo(0.55);
+    expect(top.closes_at_s).toBeUndefined();
   });
 
   it('resolves household zones, act overrides, entity classes and world order', () => {

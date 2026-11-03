@@ -7,7 +7,13 @@ export function crashReason(flight,entity){
  if(flight.crashCause==='lava')return 'Fell into the lava. Pedal faster to stay high over it.';
  if(flight.crashCause==='terrain')return 'Hit the ground. Pedal faster to climb, slower to drop.';
  if(flight.crashCause==='lives')return entity?.role==='shoot'?'Out of hearts — shoot the bracketed targets instead of flying into them.':'Out of hearts — fly around obstacles.';
- if(flight.crashCause==='entity')return entity?.role==='bomb'?'Crashed into a wall. Drop a bomb (top right) on walls marked BOMB.':'Crashed into an obstacle. Fly over or under it.';
+ if(flight.crashCause==='entity'){
+  if(entity?.piece==='shutter')return 'The gate shut before you got through. Boost (bottom right) as soon as it starts closing.';
+  if(entity?.piece)return 'Hit the gate. Pedal to line up with the gap and fly through it.';
+  if(entity?.role==='missile')return 'Crashed into the cracked wall. Fire a missile (bottom left) to break it.';
+  if(entity?.role==='bomb')return 'Crashed into a tower. Fly over it, or drop a bomb (top right) on it.';
+  return 'Crashed into an obstacle. Fly over or under it.';
+ }
  return null;
 }
 export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary}){

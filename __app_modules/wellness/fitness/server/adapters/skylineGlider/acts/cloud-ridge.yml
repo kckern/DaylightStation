@@ -1,21 +1,24 @@
 schema: skyline-glider-course/v1
 id: cloud-ridge
-version: 5
+version: 6
 zone: alpine
 act: 2
 name: Cloud Ridge
 description: Use your four bike buttons for laser, bomb, missile and boost.
-  Shoot the bracketed targets, bomb the marked walls and keep pedaling above the lava.
+  Shoot the bracketed targets, bomb the bunkers below, break the cracked wall
+  with a missile and boost through the gate before it shuts.
 duration_s: 240
 control_cues:
   - at_s: 14
     text: Top left fires the laser. Shoot the bracketed targets — don't fly into them!
-  - at_s: 80
-    text: Top right drops a bomb. Bomb the wall marked BOMB.
-  - at_s: 115
-    text: Bottom left launches a guided missile at high targets.
+  - at_s: 64
+    text: Top right drops a bomb. Bomb the bunkers on the ground — a partner can stomp the mat to drop one too!
+  - at_s: 99
+    text: Bottom left fires a missile. Only a missile breaks the cracked wall!
   - at_s: 155
-    text: Bottom right boosts you forward. Keep pedaling!
+    text: Fly through the gap in the gate. Bottom right boosts you ahead.
+  - at_s: 196
+    text: That gate is closing — boost now to dash through!
 rpm:
   min: 30
   max: 130
@@ -32,17 +35,17 @@ motion:
 rules:
   boost:
     enabled: true
-    duration_s: 2
+    offset_s: 2.8
+    duration_s: 1.6
     recharge_s: 8
-    speed: 1.6
   lives: 3
   invincibility_s: 1.25
   restart_delay_s: 2
   weapons:
     enabled: true
-    bombs: 5
+    bombs: 6
     missiles: 3
-    blast_width_s: 3
+    blast_width_s: 2.4
     blast_height: 0.16
 overrides:
   palette:
@@ -85,8 +88,8 @@ segments:
     at_s: 130
     altitude: 0.6
   - id: cr-bell-07
-    at_s: 165
-    altitude: 0.76
+    at_s: 159
+    altitude: 0.7
   - id: cr-bell-08
     at_s: 185
     altitude: 0.62
@@ -95,7 +98,7 @@ segments:
     altitude: 0.72
   - id: cr-boost-bell
     at_s: 165
-    altitude: 0.5
+    altitude: 0.6
 - id: checkpoint-one
   type: checkpoint
   start_s: 60
@@ -114,6 +117,10 @@ segments:
   start_s: 155
   end_s: 215
   top: 0.92
+- id: checkpoint-shutter
+  type: checkpoint
+  start_s: 188
+  restart_altitude: 0.5
 - id: last-lava
   type: lava
   start_s: 215
@@ -127,18 +134,6 @@ segments:
   type: finish
   start_s: 240
 entities:
-- id: missile-practice-01
-  entity: target
-  at_s: 128
-  altitude: 0.35
-  hit_points: 2
-  vulnerable_to: [laser, bomb, missile]
-- id: missile-practice-02
-  entity: target
-  at_s: 180
-  altitude: 0.28
-  hit_points: 2
-  vulnerable_to: [laser, bomb, missile]
 - id: target-01
   entity: target
   at_s: 25
@@ -149,26 +144,60 @@ entities:
   at_s: 42
   altitude: 0.55
   hit_points: 2
-- id: bomb-gate-01
-  entity: bombwall
-  at_s: 90
+- id: bunker-01
+  entity: bunker
+  at_s: 70
+  altitude: 0.92
+- id: bunker-02
+  entity: bunker
+  at_s: 76
+  altitude: 0.92
+- id: bunker-03
+  entity: bunker
+  at_s: 82
+  altitude: 0.92
+- id: tower-01
+  entity: tower
+  at_s: 92
+  altitude: 0.92
+- id: crack-wall-01
+  entity: crackwall
+  at_s: 107
   altitude: 0.95
-  width_s: 1.2
-  height: 0.9
-  required_weapon: bomb
-  vulnerable_to:
-  - bomb
+  required_weapon: missile
+- id: missile-practice-01
+  entity: target
+  at_s: 128
+  altitude: 0.35
+  hit_points: 2
+  vulnerable_to: [laser, bomb, missile]
+- id: gap-gate-01
+  entity: gate
+  at_s: 165
+  gap_altitude: 0.6
+  gap: 0.28
 - id: target-03
   entity: target
   at_s: 175
   altitude: 0.6
   hit_points: 3
-- id: bomb-gate-02
-  entity: bombwall
+- id: missile-practice-02
+  entity: target
+  at_s: 180
+  altitude: 0.28
+  hit_points: 2
+  vulnerable_to: [laser, bomb, missile]
+- id: bunker-04
+  entity: bunker
+  at_s: 184
+  altitude: 0.92
+- id: shutter-gate-01
+  entity: gate
   at_s: 200
-  altitude: 0.95
-  width_s: 1.2
-  height: 0.9
-  required_weapon: bomb
-  vulnerable_to:
-  - bomb
+  gap_altitude: 0.6
+  gap: 0.28
+  closes_at_s: 198.9
+- id: bunker-05
+  entity: bunker
+  at_s: 208
+  altitude: 0.92

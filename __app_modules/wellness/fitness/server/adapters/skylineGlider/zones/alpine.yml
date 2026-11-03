@@ -33,6 +33,14 @@ collectible: { draw: bell }
 # shoot (crosshair brackets + health pips), bomb ("BOMB ↓"), avoid, scenery.
 entities:
   bombwall: { class: solid, role: bomb, draw: barrier, width_s: 1.2, height: 0.9, vulnerable_to: [bomb] }
+  # A cracked wall across the whole sky: only a missile breaks it; lasers spark off.
+  crackwall: { class: solid, role: missile, draw: crackwall, width_s: 1, height: 0.9, vulnerable_to: [missile] }
+  # A wall nothing breaks, with an opening `gap` tall to fly through (see resolveAct expandGate).
+  gate: { class: solid, role: avoid, draw: gate, width_s: 0.8, gap: 0.24, vulnerable_to: [] }
+  # Ground targets for bombs: they sit below the lowest the craft can fly.
+  bunker: { class: breakable, role: bomb, draw: bunker, width_s: 0.9, height: 0.08, vulnerable_to: [bomb] }
+  # A tower rising into the low flight band: fly over it, or bomb it from above.
+  tower: { class: solid, role: bomb, draw: tower, width_s: 0.7, height: 0.36, vulnerable_to: [bomb] }
   target: { class: breakable, role: shoot, draw: target, width_s: 0.55, height: 0.16 }
   pine: { role: avoid, class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
   chalet: { role: avoid, class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }

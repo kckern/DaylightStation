@@ -1,4 +1,5 @@
 import { SKYLINE_CRAFT_GEOMETRY, entityBounds, terrainContact } from "./flightGeometry.js";
+import { boostRules } from "./liftBoost.js";
 
 const SCHEMA = 'skyline-glider-course/v1';
 const ENTITY_CLASSES = new Set(['breakable', 'solid', 'scenery']);
@@ -43,7 +44,9 @@ function validateEntities(rawEntities, errors) {
     if (!ENTITY_CLASSES.has(entity.class)) errors.push(`entity ${entity.id || index} has unsupported class`);
     if (!finite(entity.at_s) || !inBand(entity.altitude)) errors.push(`entity ${entity.id || index} is misplaced`);
     if (!(Number(entity.width_s) > 0) || !(Number(entity.height) > 0)) errors.push(`entity ${entity.id || index} has no size`);
-    if (entity.required_weapon != null && entity.required_weapon !== 'bomb') errors.push(`entity ${entity.id} has unsupported required_weapon`);
+    if (entity.required_weapon != null && !['bomb', 'missile'].includes(entity.required_weapon)) errors.push(`entity ${entity.id} has unsupported required_weapon`);
+    if (entity.closes_at_s != null && !finite(entity.closes_at_s)) errors.push(`entity ${entity.id} has invalid closes_at_s`);
+    if (entity.closes_at_s != null) entity.closes_at_s = Number(entity.closes_at_s);
     if (entity.hit_points != null && (!Number.isInteger(entity.hit_points) || entity.hit_points < 1)) errors.push(`entity ${entity.id} has invalid hit_points`);
     if (entity.vulnerable_to != null && (!Array.isArray(entity.vulnerable_to) || entity.vulnerable_to.some((weapon) => !WEAPONS.has(weapon)))) {
       errors.push(`entity ${entity.id || index} has unsupported vulnerable_to`);
@@ -157,12 +160,23 @@ export function validateCourse(input) {
     else if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) errors.push('boost tuning must be non-negative');
   }
   if (errors.length === 0) {
-    const required = entities.filter(entity => entity.required_weapon === 'bomb');
-    for (const entity of required) {
-      if (weapons?.enabled === false || (weapons?.bombs ?? 5) < (entity.hit_points || 1)
-        || !(entity.vulnerable_to || ['bomb']).includes('bomb')) errors.push(`entity ${entity.id} requires unavailable bombs`);
+    const ammo = { bomb: weapons?.bombs ?? 5, missile: weapons?.missiles ?? 3 };
+    for (const entity of entities.filter((e) => e.required_weapon)) {
+      const weapon = entity.required_weapon;
+      if (weapons?.enabled === false || ammo[weapon] < (entity.hit_points || 1)
+        || !(entity.vulnerable_to || [weapon]).includes(weapon)) errors.push(`entity ${entity.id} requires unavailable ${weapon}s`);
     }
-    const solids = entities.filter((entity) => entity.class === 'solid' && !entity.required_weapon).map(solidEntityBand);
+    // A shutter must be beatable: a full boost has to carry the craft's tail
+    // past the gate before the camera reaches the time it closes.
+    const boost = boostRules(input);
+    for (const shutter of entities.filter((e) => e.closes_at_s != null)) {
+      const needed = entityBounds(shutter).end + SKYLINE_CRAFT_GEOMETRY.rearSeconds - shutter.closes_at_s;
+      if (!boost.enabled || input.rules?.boost?.enabled === false) errors.push(`entity ${shutter.id} closes but boost is off`);
+      else if (needed > boost.offset_s) errors.push(`entity ${shutter.id} closes too early to boost through`);
+    }
+    // A wall that must be destroyed, or a shutter that may still be open,
+    // does not count as blocking when checking the course can be flown.
+    const solids = entities.filter((entity) => entity.class === 'solid' && !entity.required_weapon && entity.closes_at_s == null).map(solidEntityBand);
     validateReachability([...segments, ...solids], motion, errors);
     for (const checkpoint of segments.filter((segment) => segment.type === 'checkpoint')) {
       const altitude = checkpoint.restart_altitude ?? 0.5;

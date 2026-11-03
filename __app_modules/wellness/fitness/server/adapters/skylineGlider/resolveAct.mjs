@@ -66,6 +66,26 @@ export function resolveZone(rawZone, overrides) {
   };
 }
 
+/**
+ * A gate is a wall nothing can break, with an opening to fly through. It
+ * places as one entity (`gap` tall, centred on `gap_altitude`) and resolves
+ * into the boxes the flight engine already understands: a post from the top
+ * of the screen down to the gap and one from the gap to the ground. With
+ * `closes_at_s` it also gets a shutter that seals the gap once the camera
+ * reaches that time, so only a rider who boosts ahead gets through.
+ */
+function expandGate(entity) {
+  if (entity.gap == null) return [entity];
+  const { gap, gap_altitude: centre, closes_at_s: closesAt, ...wall } = entity;
+  const top = centre - gap / 2, bottom = centre + gap / 2;
+  const piece = (suffix, altitude, height, extra = {}) => ({ ...wall, id: `${entity.id}-${suffix}`, group: entity.id, piece: suffix, altitude, height, ...extra });
+  return [
+    piece('top', top, top, { gap_top: top, gap_bottom: bottom }),
+    piece('bottom', 1, 1 - bottom, { gap_top: top, gap_bottom: bottom }),
+    ...(closesAt != null ? [piece('shutter', bottom, gap, { closes_at_s: closesAt, gap_top: top, gap_bottom: bottom })] : []),
+  ];
+}
+
 /** Throws with a readable message when the act cannot be joined to its zone. */
 export function resolveAct(act, zones) {
   const zoneId = act.zone || 'alpine';
@@ -73,7 +93,7 @@ export function resolveAct(act, zones) {
   if (!rawZone) throw new Error(`act ${act.id} names unknown zone ${zoneId}`);
   const definitions = isObject(rawZone.entities) ? rawZone.entities : {};
   const ids = new Set();
-  const entities = (Array.isArray(act.entities) ? act.entities : []).map((placement, index) => {
+  const placed = (Array.isArray(act.entities) ? act.entities : []).map((placement, index) => {
     const definition = definitions[placement?.entity];
     if (!definition) throw new Error(`act ${act.id} places unknown entity ${placement?.entity}`);
     if (!ENTITY_CLASSES.has(definition.class)) throw new Error(`entity ${placement.entity} has invalid class`);
@@ -95,8 +115,11 @@ export function resolveAct(act, zones) {
       ...(definition.draw ? { draw: definition.draw } : {}),
       ...((placement.role ?? definition.role) ? { role: String(placement.role ?? definition.role) } : {}),
       ...(Array.isArray(placement.vulnerable_to ?? definition.vulnerable_to) ? { vulnerable_to: [...(placement.vulnerable_to ?? definition.vulnerable_to)] } : {}),
+      ...((placement.gap ?? definition.gap) != null ? { gap: Number(placement.gap ?? definition.gap), gap_altitude: Number(placement.gap_altitude) } : {}),
+      ...(placement.closes_at_s != null ? { closes_at_s: Number(placement.closes_at_s) } : {}),
     };
   });
+  const entities = placed.flatMap(expandGate);
   const { overrides, ...rest } = act;
   return {
     ...structuredClone(rest),

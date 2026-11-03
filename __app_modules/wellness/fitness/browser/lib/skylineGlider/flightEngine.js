@@ -3,12 +3,14 @@ import {
   LOW_ALTITUDE,
   SKYLINE_CRAFT_GEOMETRY,
   entitiesTouchingCraft,
+  entityPresent,
+  SHUTTER_WARN_S,
   pointOverlapsCraft,
   safeBandAt,
   terrainContact,
 } from "./flightGeometry.js";
 import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
-import { initialBoostState, activateBoost, advanceBoost, courseSpeed } from './liftBoost.js';
+import { initialBoostState, activateBoost, advanceBoost, cameraTime, courseSpeed } from './liftBoost.js';
 
 const STEP = 1 / 60;
 
@@ -23,8 +25,14 @@ function crossingSegments(course, from, to, type) {
   return course.segments.filter((segment) => segment.type === type && segment.start_s > from && segment.start_s <= to);
 }
 
-function applyCourseEvents(state, previousTime, course) {
+function applyCourseEvents(state, previousTime, course, previousCamera = previousTime) {
   let next = state;
+  // A shutter starting its warning recharges boost, so a rider who pressed
+  // too early (or used it on the last gate) can still dash through this one.
+  const camera = cameraTime(next);
+  if ((course.entities || []).some((e) => e.closes_at_s != null && previousCamera < e.closes_at_s - SHUTTER_WARN_S && camera >= e.closes_at_s - SHUTTER_WARN_S)) {
+    next = { ...next, boostRechargeRemaining: 0 };
+  }
   for (const checkpoint of crossingSegments(course, previousTime, next.courseTime, 'checkpoint')) {
     next = {
       ...next,
@@ -95,9 +103,12 @@ function collide(state, course) {
       state = { ...holdInsideTerrain(state, course), verticalRate: Math.min(0, state.verticalRate) };
     } else return crash(state, course, { cause: terrain.type === 'lava' ? 'lava' : 'terrain', segmentId: terrain.id });
   }
-  // Anything already destroyed (by a crash, laser or bomb) is gone for collision.
+  // Anything already destroyed (by a crash, laser or bomb) is gone for
+  // collision, and a shutter that has not closed yet is not there at all.
   const destroyed = new Set(state.destroyedIds || []);
-  const touching = entitiesTouchingCraft(course, state.courseTime, state.altitude).filter((entity) => !destroyed.has(entity.id));
+  const camera = cameraTime(state);
+  const touching = entitiesTouchingCraft(course, state.courseTime, state.altitude)
+    .filter((entity) => !destroyed.has(entity.id) && entityPresent(entity, camera));
   const solid = touching.find((entity) => entity.class === 'solid');
   if (solid) return crash(state, course, { cause: 'entity', entityId: solid.id });
 
@@ -145,8 +156,8 @@ export function retryFlightCheckpoint(state, course) {
     bombsLeft: weaponRules(course).bombs,
     missilesLeft: weaponRules(course).missiles,
     missileCooldown: 0,
-    boostRemaining: 0,
-    boostRechargeRemaining: 0,
+    ...initialBoostState(),
+    boostsUsed: state.boostsUsed || 0,
     laserCooldown: 0,
     bombCooldown: 0,
     restarts: state.restarts + 1,
@@ -211,16 +222,17 @@ function singleStep(state, input, dt, course) {
   }
 
   const previousTime = state.courseTime;
+  const previousCamera = cameraTime(state);
   if (!missing && input?.rpm === 0) return advanceStall(state, input, dt, course);
   if (!missing) {
     state = advanceBoost(state, dt, course);
     if (input?.actions?.includes('boost')) state = activateBoost(state, course);
   }
-  // Boost pushes the craft forward along the course; everything course-timed
-  // (scroll, weapons, checkpoints) rides on this one multiplier.
-  // A sensor dropout freezes the boost timers (above), so it must not keep
-  // pushing the craft forward at boost speed either.
-  const speed = missing ? 1 : courseSpeed(state, course);
+  // The camera always scrolls at 1×; a boost dashes the craft ahead of it, so
+  // the craft's own course speed is the scroll plus the dash (see liftBoost).
+  // A sensor dropout freezes the boost (above), so the craft holds its place
+  // on screen and moves with the scroll.
+  const speed = missing ? 1 : courseSpeed(state);
   const measuredRpm = Math.max(0, Number(input?.rpm) || 0);
   const inferredFor = disconnected ? state.sensorMissingFor + dt : 0;
   const slowdownSeconds = Math.max(STEP, Number(course.motion.inferred_slowdown_s ?? 0.5));
@@ -262,8 +274,8 @@ function singleStep(state, input, dt, course) {
     courseTime: state.courseTime + dt * speed,
   };
   if (!missing) next = fireWeapons(next, input?.actions, course, input?.weaponPower);
-  next = advanceWeapons(next, dt, course, speed);
-  next = applyCourseEvents(next, previousTime, course);
+  next = advanceWeapons(next, dt, course);
+  next = applyCourseEvents(next, previousTime, course, previousCamera);
   return collide(next, course);
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { advanceWeapons, fireWeapons, initialWeaponState, scoresAsTarget, vulnerableTo, weaponRefusal, weaponRules } from "./weapons.js";
+import { VIEW_AHEAD_S } from "./courseProjection.js";
 
 const course = {
   rules: { lives: 3, weapons: { bombs: 2 } },
@@ -36,7 +37,7 @@ describe('weapon rules', () => {
 describe('firing', () => {
   it('fires one laser per cooldown from the craft nose', () => {
     const next = fireWeapons(flying(), ['laser', 'laser'], course);
-    expect(next.projectiles).toEqual([{ id: 'laser-1', kind: 'laser', power: 1, at_s: 1.8, origin_s: 1.8, altitude: 0.6 }]);
+    expect(next.projectiles).toEqual([{ id: 'laser-1', kind: 'laser', power: 1, at_s: 1.8, origin_s: 1.8, altitude: 0.6, speed: 1 }]);
     expect(next.shotsFired).toBe(1);
     expect(next.laserCooldown).toBeCloseTo(0.3);
   });
@@ -101,11 +102,58 @@ describe('advancing shots', () => {
     expect(state.destroyedBy).toEqual({ near: 'laser' });
   });
 
-  it('expires a laser at its range', () => {
+  it('flies a laser and a missile all the way to the right edge of the screen, then drops them', () => {
     const open = { ...course, entities: [] };
-    let state = fireWeapons(flying(), ['laser'], open);
-    for (let i = 0; i < 150; i += 1) state = advanceWeapons(state, 1 / 60, open);
+    let state = fireWeapons(flying(), ['laser', 'missile'], open);
+    const edge = state.courseTime + VIEW_AHEAD_S;
+    // Seven course-seconds out (where shots used to vanish, mid-screen) both are still flying.
+    while (state.projectiles.some((shot) => shot.at_s < state.courseTime + 9.5)) state = advanceWeapons(state, 1 / 60, open);
+    expect(state.projectiles.map((shot) => shot.kind).sort()).toEqual(['laser', 'missile']);
+    for (let i = 0; i < 120; i += 1) state = advanceWeapons(state, 1 / 60, open);
     expect(state.projectiles).toEqual([]);
+    expect(edge - state.courseTime).toBeCloseTo(VIEW_AHEAD_S);
+  });
+
+  it('measures the screen edge from the camera, so a boosted craft does not shoot further', () => {
+    const open = { ...course, entities: [] };
+    const ahead = { ...flying(), boostOffset: 2.8 };
+    let state = fireWeapons(ahead, ['laser'], open);
+    for (let i = 0; i < 600 && state.projectiles.length; i += 1) {
+      const before = state.projectiles[0].at_s;
+      state = advanceWeapons(state, 1 / 60, open);
+      if (!state.projectiles.length) expect(before).toBeLessThanOrEqual(ahead.courseTime - 2.8 + VIEW_AHEAD_S + .8);
+    }
+    expect(state.projectiles).toEqual([]);
+  });
+
+  it('still honours a course that shortens the laser range', () => {
+    const short = { ...course, entities: [], rules: { ...course.rules, weapons: { ...course.rules?.weapons, laser_range_s: 2 } } };
+    let state = fireWeapons(flying(), ['laser'], short);
+    for (let i = 0; i < 60; i += 1) state = advanceWeapons(state, 1 / 60, short);
+    expect(state.projectiles).toEqual([]);
+  });
+
+  it('lets lasers through a shutter that has not closed yet, and stops them once it has', () => {
+    const shutter = { id: 'shut', class: 'solid', at_s: 4, altitude: .6, width_s: .6, height: .2, closes_at_s: 10, vulnerable_to: [] };
+    const gated = { ...course, entities: [shutter] };
+    let open = fireWeapons(flying({ altitude: .5 }), ['laser'], gated);
+    for (let i = 0; i < 60; i += 1) open = advanceWeapons(open, 1 / 60, gated);
+    expect(open.impacts).toEqual([]);
+    let shut = fireWeapons(flying({ altitude: .5, courseTime: 0 }), ['laser'], { ...gated, entities: [{ ...shutter, closes_at_s: -1 }] });
+    for (let i = 0; i < 60; i += 1) shut = advanceWeapons(shut, 1 / 60, { ...gated, entities: [{ ...shutter, closes_at_s: -1 }] });
+    expect(shut.impacts.map((impact) => impact.effect)).toEqual(['absorbed']);
+  });
+
+  it('scores a missile-only wall as a target and refuses lasers on it', () => {
+    const wall = { id: 'crack', class: 'solid', role: 'missile', required_weapon: 'missile', at_s: 3, altitude: .95, width_s: 1, height: .9, vulnerable_to: ['missile'] };
+    const walled = { ...course, entities: [wall] };
+    expect(scoresAsTarget(wall)).toBe(true);
+    let laser = fireWeapons(flying({ altitude: .5 }), ['laser'], walled);
+    for (let i = 0; i < 60; i += 1) laser = advanceWeapons(laser, 1 / 60, walled);
+    expect(laser.destroyedIds || []).not.toContain('crack');
+    let missile = fireWeapons(flying({ altitude: .5 }), ['missile'], walled);
+    for (let i = 0; i < 60; i += 1) missile = advanceWeapons(missile, 1 / 60, walled);
+    expect(missile.destroyedBy).toMatchObject({ crack: 'missile' });
   });
 
   it('drops a bomb onto a boulder and leaves a blast that fades', () => {

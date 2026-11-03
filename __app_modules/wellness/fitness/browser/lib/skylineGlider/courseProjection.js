@@ -10,6 +10,12 @@ const PROJECTED_TYPES = new Set([
   'lower-terrain', 'upper-terrain', 'corridor', 'lava', 'checkpoint', 'finish',
 ]);
 
+/**
+ * Course-seconds from the camera to the right edge of the screen. Shots fly
+ * until they pass it, so nothing vanishes in plain view.
+ */
+export const VIEW_AHEAD_S = (DEFAULTS.width - DEFAULTS.playerX) / (DEFAULTS.width / DEFAULTS.secondsPerViewport);
+
 const round = (value) => Math.round(value * 100) / 100;
 
 export function projectCourseWindow(course, courseTime, options = {}) {

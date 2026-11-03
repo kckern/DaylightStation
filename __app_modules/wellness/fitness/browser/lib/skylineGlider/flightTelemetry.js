@@ -1,3 +1,6 @@
+import { SKYLINE_CRAFT_GEOMETRY, entityBounds } from "./flightGeometry.js";
+import { cameraTime } from "./liftBoost.js";
+
 function activeTerrainId(course, courseTime) {
   return (course?.segments || []).find((segment) => segment.safeBand
     && courseTime >= segment.start_s
@@ -27,9 +30,10 @@ function buildSample(next, input, course, courseSecond) {
     bombsLeft: next.bombsLeft ?? null,
     missilesLeft: next.missilesLeft ?? null,
     boostRechargeRemaining: next.boostRechargeRemaining ?? null,
+    boostOffset: next.boostOffset ?? 0,
     phase: next.phase,
     stalled: !!next.stalled,
-    visibleSegmentIds: visibleSegmentIds(course, next.courseTime),
+    visibleSegmentIds: visibleSegmentIds(course, cameraTime(next)),
     sensor: {
       connected: !!input?.connected,
       stalled: !!input?.transportStalled,
@@ -104,7 +108,18 @@ export function collectFlightTelemetry({
   }
   const priorBlasts = new Set((previous.blasts || []).map((blast) => blast.id));
   if((next.missilesFired||0)>(previous.missilesFired||0))events.push({type:'weapon.fired',data:{weapon:'missile',count:next.missilesFired,missilesLeft:next.missilesLeft}});
-  if((next.boostsUsed||0)>(previous.boostsUsed||0))events.push({type:'boost.activated',data:{count:next.boostsUsed}});
+  if((next.boostsUsed||0)>(previous.boostsUsed||0))events.push({type:'boost.activated',data:{count:next.boostsUsed,cameraTime:cameraTime(next)}});
+  // A gate counts as cleared once the craft's tail is past it; `shutter` says
+  // whether that was the closing kind, so field logs show boosts that worked.
+  if (next.phase === 'playing') {
+    for (const post of (course?.entities || []).filter((entity) => entity.piece === 'top')) {
+      const end = entityBounds(post).end + SKYLINE_CRAFT_GEOMETRY.rearSeconds;
+      if (previous.courseTime <= end && next.courseTime > end) {
+        const shutter = (course.entities || []).find((entity) => entity.group === post.group && entity.piece === 'shutter');
+        events.push({ type: 'gate.cleared', data: { gateId: post.group, shutter: !!shutter, boostOffset: Math.round((next.boostOffset || 0) * 100) / 100 } });
+      }
+    }
+  }
   for (const blast of next.blasts || []) {
     if (!priorBlasts.has(blast.id)) events.push({ type: 'bomb.detonated', data: { shotId: blast.id, atSeconds: blast.at_s, altitude: blast.altitude } });
   }
