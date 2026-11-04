@@ -723,6 +723,7 @@ export function createSchoolPrintScanConsumer({
                 // differently ("Retake: …", "· from Mon Sep 14").
                 let settledRetake = false;
                 let settledStudyDay = null;
+                let settledHold = null;
                 if (closeSessionOutcome) {
                   try {
                     // The bridge returns the authoritative session id (a
@@ -734,6 +735,8 @@ export function createSchoolPrintScanConsumer({
                     printReason = printed ? null : (settled?.printReason ?? 'unknown');
                     settledRetake = Boolean(settled?.remediationOf);
                     settledStudyDay = settled?.studyDay ?? null;
+                    // A hold formed: there is no retake, and the phone must say so.
+                    settledHold = settled?.teacherHold ?? null;
                   } catch (err) {
                     // The settle is now UPSTREAM of the broadcast (it has to
                     // be — the print outcome does not exist before it), so
@@ -803,6 +806,7 @@ export function createSchoolPrintScanConsumer({
                   sessionId: sectionOutcome.session.sessionId,
                   retake: settledRetake,
                   studyDay: settledStudyDay,
+                  held: settledHold,
                 }, card, sectionOutcome.curriculum);
               } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
                 fireHook({

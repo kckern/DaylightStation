@@ -147,6 +147,16 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     expect(fired[0].notification.message).toBe('Retake: 5 of 6 correct');
   });
 
+  it('a settle that forms a hold pushes the hold copy', async () => {
+    const { fired, feed } = harness({
+      settleOutcome: () => ({ ...SETTLED(), result: 'needs_remediation', teacherHold: { retries: 2 } }),
+    });
+    await feed();
+    expect(fired[0].notification.title).toBe('🙋 Learner4 — U.S. Atlas: South Dakota');
+    expect(fired[0].notification.message).toContain('retries used up');
+    expect(fired[0].notification.message).not.toContain('receipt');
+  });
+
   it('Partial then Passed for the same session share one tag, so the phone replaces the first', async () => {
     const first = harness({ recordOutcome: PARTIAL });
     await first.feed();
