@@ -4,6 +4,7 @@ import { resolveBookScanTarget as resolveBookScanTarget } from "./schoolBookScan
 import { storyBooksFromContentTags } from "./storyBookCorpus.mjs";
 import { PrepareBookScan as PrepareBookScan } from "../application/usecases/PrepareBookScan.mjs";
 import { FileBookPile } from "../application/usecases/FileBookPile.mjs";
+import { ReplaceUnreadableCard } from "../application/usecases/ReplaceUnreadableCard.mjs";
 import crypto from "node:crypto";
 import { OpenBookShelfAtPanel as OpenBookShelfAtPanel } from "../application/usecases/OpenBookShelfAtPanel.mjs";
 import { OpenBankAtPanel as OpenBankAtPanel } from "../application/usecases/OpenBankAtPanel.mjs";
@@ -311,7 +312,18 @@ try {
         resolveCardScan,
         recordCardScanOutcome,
         closeSessionOutcome: dependencies.schoolLifecycle.useCases?.closeSessionOutcome ?? null,
-        replaceUnreadableCard: dependencies.schoolLifecycle.useCases?.replaceUnreadableCard ?? null,
+        // An answer card the reader cannot read the same way twice is replaced
+        // like a lost one, then retired (failure policy, 2026-11-04).
+        replaceUnreadableCard: (() => {
+          const { useCases = {}, stores = {} } = dependencies.schoolLifecycle;
+          return useCases.replaceLostAnswerSheet && stores.allocationStore?.retireCard
+            ? new ReplaceUnreadableCard({
+              replaceLostAnswerSheet: useCases.replaceLostAnswerSheet,
+              allocationStore: stores.allocationStore,
+              logger: schoolLifecycleLogger,
+            })
+            : null;
+        })(),
         gradingHook,
         // Every non-graded feed prints a notice slip through the same
         // thermal printer the result receipts use (2026-09-15).

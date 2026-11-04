@@ -131,7 +131,6 @@ import { OpenRemediation } from "../application/usecases/OpenRemediation.mjs";
 import { ReplaceRemediation } from "../application/usecases/ReplaceRemediation.mjs";
 import { InvalidateSessionEvidence } from "../application/usecases/InvalidateSessionEvidence.mjs";
 import { RecoverMisattributedWorksheet } from "../application/usecases/RecoverMisattributedWorksheet.mjs";
-import { ReplaceUnreadableCard } from "../application/usecases/ReplaceUnreadableCard.mjs";
 import { ResolvePersonalCard } from "../application/usecases/ResolvePersonalCard.mjs";
 import { ResolveScanAction } from "../application/usecases/ResolveScanAction.mjs";
 import { ResolveSubjectNext } from "../application/usecases/ResolveSubjectNext.mjs";
@@ -1382,11 +1381,6 @@ export async function createSchoolLifecycle({
       logger,
     })
     : null;
-  // An answer card the reader cannot read the same way twice is retired and its
-  // unfinished work reprinted on fresh paper (failure policy, 2026-11-04).
-  const replaceUnreadableCard = allocationStore?.retireCard && replaceLostAnswerSheet
-    ? new ReplaceUnreadableCard({ replaceLostAnswerSheet, allocationStore, logger })
-    : null;
   const setAssignments = new SetAssignments({
     assignments: stores.assignments, grownUps, teacherGate, curriculum,
     programValidators: createSchoolProgramEnrollmentValidators({
@@ -1598,7 +1592,7 @@ export async function createSchoolLifecycle({
     resolvePersonalCard, resolveScanAction, resolveReviewItem, resolveCardScan, reviewHeldCardScan,
     setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, sweepAnswerSheets, replaceLostAnswerSheet, createLostAnswerSheetTicket,
-    invalidateSessionEvidence, recoverMisattributedWorksheet, replaceUnreadableCard,
+    invalidateSessionEvidence, recoverMisattributedWorksheet,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, issueSubjectNext, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
     getPianoLessonGate, manageProgramDayBypass, getCompanionFinishCode, issueDirectLaunch, issueSubjectCode,
