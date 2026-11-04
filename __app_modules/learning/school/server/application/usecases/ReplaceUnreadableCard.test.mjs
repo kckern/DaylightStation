@@ -36,11 +36,11 @@ describe('ReplaceUnreadableCard', () => {
     });
   });
 
-  it('a card with nothing left to reprint is still retired', async () => {
+  it('a card with nothing left to reprint stays in service', async () => {
     const h = build({ status: 'already_settled', cardId: CARD, replacementCardId: null, replacements: [] });
     const result = await h.useCase.execute({ cardId: CARD, reason: 'omr_alignment_unconfirmed' });
-    expect(result).toMatchObject({ retired: true, replacements: [] });
-    expect(h.allocationStore.retireCard).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ cardId: CARD, retired: false, replacementCardId: null, replacements: [] });
+    expect(h.allocationStore.retireCard).not.toHaveBeenCalled();
   });
 
   it('a printer failure throws and leaves the card in service', async () => {

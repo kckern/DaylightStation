@@ -162,6 +162,22 @@ describe('useScanCeremony', () => {
     });
   });
 
+  it('maps scan-card-unreadable to a ceremony that asks for a grown-up', () => {
+    const { result } = mount();
+    act(() => { deliver({ topic: 'omr', event: 'scan-card-unreadable', testId: '4113279' }); });
+    expect(result.current.current).toMatchObject({
+      tone: 'error', title: "This card can't be read", detail: 'Ask a grown-up to help with the work on it.',
+    });
+  });
+
+  it('maps scan-card-retired to a ceremony pointing at the new card', () => {
+    const { result } = mount();
+    act(() => { deliver({ topic: 'omr', event: 'scan-card-retired', testId: '4113279' }); });
+    expect(result.current.current).toMatchObject({
+      tone: 'warn', title: 'This card was replaced', detail: 'Use your new answer card instead.',
+    });
+  });
+
   it('maps scan-refused to an error ceremony carrying the code', () => {
     const { result } = mount();
     act(() => {

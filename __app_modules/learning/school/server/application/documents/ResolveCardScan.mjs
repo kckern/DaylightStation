@@ -690,15 +690,25 @@ export class ResolveCardScan {
         // remembered, and the same card fed again with the identical read is
         // accepted as the child's actual card (e.g. a run re-bubbled one row
         // lower after a mis-bubble — 2026-11-03, see omrAlignment.sameOmrRead).
-        const refused = baseline?.refused;
-        const confirmed = refused && sameOmrRead(refused.answers, answers)
-          && Date.now() - Date.parse(refused.at) < OMR_REFEED_CONFIRM_MS;
-        if (!confirmed) {
-          // Consecutive unconfirmed refusals inside the refeed window. A clean
-          // scan writes a fresh baseline without `refused`, which resets this.
-          const recent = refused && Date.now() - Date.parse(refused.at) < OMR_REFEED_CONFIRM_MS;
-          const count = recent ? (refused.count ?? 1) + 1 : 1;
-          await this.#baselineStore.save(cardId, { ...baseline, refused: { answers, at: new Date().toISOString(), count } });
+        // Every refused read inside the window is kept, so a read that repeats
+        // after a slip in between still confirms (A, B, A is the child's A).
+        // `{answers, at}` is the pre-list shape of one remembered read.
+        const nowMs = Date.now();
+        const remembered = baseline?.refused
+          ? (Array.isArray(baseline.refused.reads) ? baseline.refused.reads
+            : [{ answers: baseline.refused.answers, at: baseline.refused.at }])
+          : [];
+        const recent = remembered.filter((read) => nowMs - Date.parse(read.at) < OMR_REFEED_CONFIRM_MS);
+        const match = recent.find((read) => sameOmrRead(read.answers, answers));
+        if (!match) {
+          // A teacher's replay re-runs evidence already counted; it is never a
+          // new feed, so it neither joins the list nor moves the card closer to
+          // retirement.
+          if (identityReview) return { error, results: [], decode };
+          // Distinct reads only: a matching read confirmed above instead.
+          const reads = [...recent, { answers, at: new Date(nowMs).toISOString() }];
+          const count = reads.length;
+          await this.#baselineStore.save(cardId, { ...baseline, refused: { reads, count } });
           this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error, confirmBy: 'refeed', refusals: count });
           if (count >= UNSALVABLE_REFUSALS) {
             this.#logger.warn?.('school.scan.card-unsalvable', { cardId, refusals: count });
@@ -706,10 +716,7 @@ export class ResolveCardScan {
           }
           return { error, results: [], decode };
         }
-        this.#logger.info?.('school.scan.alignment-confirmed-by-refeed', { cardId, ...error, refusedAt: refused.at });
-        // Confirmed: the refusal streak is over, whatever grading makes of it.
-        const { refused: _settled, ...accepted } = baseline;
-        await this.#baselineStore.save(cardId, accepted);
+        this.#logger.info?.('school.scan.alignment-confirmed-by-refeed', { cardId, ...error, refusedAt: match.at });
       }
     }
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });

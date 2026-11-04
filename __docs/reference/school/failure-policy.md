@@ -189,28 +189,44 @@ one` on the School needs you channel, never the 🔁 retake copy: there is no
 retake to point at. The receipt already said a grown-up would help; until this
 change the phone contradicted it.
 
+The hold push and the corrected-sheet lane can both happen to one sheet. A
+final-round failure pushes 🙋, and the child may still fix the marks on that
+paper and pass through the lane. The ✅ that follows belongs to the new
+session, so it arrives as a second card rather than replacing the 🙋 one.
+
 ### Unreadable card replacement
 
 `ResolveCardScan` refuses a read whose already-graded rows sit shifted against
-the card's last accepted read (`OMR_ALIGNMENT`), and a refused read fed again
+the card's last accepted read (`OMR_ALIGNMENT`). A refused read fed again
 unchanged is accepted as the child's real marks. The baseline keeps
-`refused: {answers, at, count}`. Each new unconfirmed read within
-`OMR_REFEED_CONFIRM_MS` increments `count`, and a confirmation or a clean scan
-clears it. At `UNSALVABLE_REFUSALS` (3) the result carries
-`unsalvable: {cardId, refusals}` and `school.scan.card-unsalvable` is logged.
+`refused: {reads: [{answers, at}], count}`: every refused read inside
+`OMR_REFEED_CONFIRM_MS`, so a read that repeats after a slip in between still
+confirms (reads A, B, A are the child's A), and `count` is the number of
+distinct reads. A clean scan's fresh baseline clears the list. A teacher's
+held-scan replay never joins it. At `UNSALVABLE_REFUSALS` (3) distinct reads
+the result carries `unsalvable: {cardId, refusals}` and
+`school.scan.card-unsalvable` is logged.
 
 The scan consumer then runs `ReplaceUnreadableCard`. It replaces the card like
 a lost one (`ReplaceLostAnswerSheet`, system-authorized as
 `system:unreadable-card`): live sheets are reprinted on a fresh card, printing
 before the old allocation is superseded, and graded work stays as evidence.
 Then it retires the card. The room hears `scan-card-replaced`, a slip headed
-HERE IS A FRESH SHEET prints, and `school.answer-sheet.unreadable-replaced` is
-logged. If the reprint fails, the card stays in service and the scan falls
-back to the ordinary `scan-unresolved` answer
-(`school.print.card-replace-failed`).
+HERE IS A FRESH SHEET prints, the phone gets ⚠️ "Card couldn't be read —
+unfinished work reprinted on a new card", and
+`school.answer-sheet.unreadable-replaced` is logged.
 
-A retired card fed again is answered as retired before any alignment check,
-so its old baseline can never refuse it.
+If nothing live is left to reprint, the card is NOT retired. Retiring it would
+only close its other paths, such as a failed sheet the child could still
+correct. The room hears `scan-card-unreadable`, a slip headed THIS CARD CAN'T BE
+READ asks for a grown-up, and the phone says "Card can't be read any more —
+needs you" (`school.answer-sheet.unreadable-kept`). If the reprint fails, the
+card stays in service and the scan falls back to the ordinary
+`scan-unresolved` answer (`school.print.card-replace-failed`).
+
+A retired card fed again is answered as retired before any alignment check, so
+its old baseline can never refuse it: `scan-card-retired`, a slip headed THIS
+CARD WAS REPLACED, "Use your new answer card instead."
 
 The hold is excused rather than faulted on purpose. Nothing about the system
 is broken, and a fault would leave the day `indeterminate` and the games

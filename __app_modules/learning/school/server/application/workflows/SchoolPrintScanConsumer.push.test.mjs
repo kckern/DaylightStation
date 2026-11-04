@@ -174,6 +174,48 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     expect(JSON.stringify(printed)).toContain("The reader couldn't read your card, so your unfinished work is printing on a new one.");
   });
 
+  it('a replaced card tells the phone the work was reprinted', async () => {
+    const replaceUnreadableCard = { execute: vi.fn(async () => ({
+      cardId: '5278294', retired: true, replacementCardId: '7654321',
+      replacements: [{ oldRecordId: 'a', newRecordId: 'b' }],
+    })) };
+    const { fired, feed } = harness({
+      resolve: () => ({ error: { code: 'OMR_ALIGNMENT' }, results: [], unsalvable: { cardId: '5278294', refusals: 3 } }),
+      replaceUnreadableCard,
+    });
+    await feed();
+    expect(fired).toHaveLength(1);
+    expect(fired[0]).toMatchObject({ result: 'card-replaced', testId: '5278294', reprinted: 1 });
+    expect(fired[0].notification.message).toBe("Card couldn't be read — unfinished work reprinted on a new card");
+    noDefects(fired[0].notification);
+  });
+
+  it('an unreadable card with nothing to reprint asks for a grown-up, on paper and on the phone', async () => {
+    const replaceUnreadableCard = { execute: vi.fn(async () => ({
+      cardId: '5278294', retired: false, replacementCardId: null, replacements: [],
+    })) };
+    const { spoken, printed, fired, feed } = harness({
+      resolve: () => ({ error: { code: 'OMR_ALIGNMENT' }, results: [], unsalvable: { cardId: '5278294', refusals: 3 } }),
+      replaceUnreadableCard,
+    });
+    await feed();
+    expect(spoken.map((s) => s.kind)).toEqual(['scan-card-unreadable']);
+    expect(JSON.stringify(printed)).toContain("THIS CARD CAN'T BE READ");
+    expect(JSON.stringify(printed)).not.toContain('printing on a new one');
+    expect(fired[0].notification.message).toBe("Card can't be read any more — needs you");
+    expect(fired[0].notification.title.startsWith('⚠️')).toBe(true);
+  });
+
+  it('a retired card fed again says it was replaced', async () => {
+    const { spoken, printed, feed } = harness({
+      resolve: () => ({ results: [], deadCard: true, retiredCard: true, answeredRowCount: 6, recordStatuses: ['superseded'] }),
+    });
+    await feed();
+    expect(spoken.map((s) => s.kind)).toEqual(['scan-card-retired']);
+    expect(JSON.stringify(printed)).toContain('THIS CARD WAS REPLACED');
+    expect(JSON.stringify(printed)).not.toContain('OUT OF DATE');
+  });
+
   it('a failed replacement still tells the room the card could not be read', async () => {
     const replaceUnreadableCard = { execute: vi.fn(async () => { throw new Error('printer down'); }) };
     const { spoken, warns, feed } = harness({

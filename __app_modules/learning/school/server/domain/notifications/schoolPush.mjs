@@ -158,6 +158,10 @@ export function composeSchoolPush(event = {}) {
       return push('⚠️', event, `Nothing new was marked on this card${where} — fill in today's rows and rescan`,
         'needsYou', { unknownChild: true });
     }
+    case 'card-replaced':
+      return event.retired
+        ? push('⚠️', event, "Card couldn't be read — unfinished work reprinted on a new card", 'needsYou', { unknownChild: true })
+        : push('⚠️', event, "Card can't be read any more — needs you", 'needsYou', { unknownChild: true });
     case 'unresolved':
     case 'refused':
       return push('⚠️', event, CODE_TEXT[event.code] ?? CODE_FALLBACK, 'needsYou', { unknownChild: true });

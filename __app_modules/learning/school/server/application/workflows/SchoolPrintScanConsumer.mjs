@@ -371,10 +371,15 @@ export function createSchoolPrintScanConsumer({
             cardId: outcome.unsalvable.cardId, reason: 'omr_alignment_unconfirmed',
           });
           const reprinted = replaced?.replacements?.length ?? 0;
+          const retired = replaced?.retired === true;
           logger.warn?.('school.print.card-replaced', {
-            testId, cardId: outcome.unsalvable.cardId, refusals: outcome.unsalvable.refusals, reprinted,
+            testId, cardId: outcome.unsalvable.cardId, refusals: outcome.unsalvable.refusals, reprinted, retired,
           });
-          speak({ event: 'scan-card-replaced', testId, reprinted });
+          fireHook(
+            { result: 'card-replaced', testId, reprinted, retired },
+            { kind: 'card-replaced', reprinted, retired },
+          );
+          speak({ event: retired ? 'scan-card-replaced' : 'scan-card-unreadable', testId, reprinted });
           return false;
         } catch (err) {
           logger.warn?.('school.print.card-replace-failed', {
@@ -478,6 +483,13 @@ export function createSchoolPrintScanConsumer({
         speak({
           event: 'scan-refused', code: 'unknown_card', recordId: null,
         });
+        return false;
+      }
+      if (outcome?.retiredCard) {
+        // `ReplaceUnreadableCard` (or a lost-sheet report) retired this card;
+        // its live work already reprinted on a new one.
+        logger.warn?.('school.print.scan-retired-card', { testId, answeredRowCount: outcome.answeredRowCount });
+        speak({ event: 'scan-card-retired', testId });
         return false;
       }
       if (outcome?.deadCard) {

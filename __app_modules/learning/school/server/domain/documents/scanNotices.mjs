@@ -68,6 +68,15 @@ export function scanNoticeDocument(announcement = {}) {
         headline: 'HERE IS A FRESH SHEET',
         lines: ["The reader couldn't read your card, so your unfinished work is printing on a new one."],
       });
+    case 'scan-card-unreadable':
+      // Unreadable, but nothing live to reprint: the card stays in service.
+      return noticeDocument({
+        id, headline: "THIS CARD CAN'T BE READ", lines: ['Ask a grown-up to help with the work on it.'],
+      });
+    case 'scan-card-retired':
+      return noticeDocument({
+        id, headline: 'THIS CARD WAS REPLACED', lines: ['Use your new answer card instead.'],
+      });
     case 'scan-rows-incomplete': {
       const lines = unfinishedLines(announcement);
       lines.push(`Fill it in on your answer card. ${FEED_AGAIN}`);

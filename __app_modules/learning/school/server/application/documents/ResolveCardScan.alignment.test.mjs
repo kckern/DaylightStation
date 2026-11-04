@@ -70,7 +70,7 @@ describe('alignment preflight', () => {
     expect(h.baselineStore.save).toHaveBeenCalledTimes(1);
     const [, saved] = h.baselineStore.save.mock.calls[0];
     expect(saved.answers).toEqual(answers);
-    expect(saved.refused).toMatchObject({ answers: shifted });
+    expect(saved.refused).toMatchObject({ reads: [{ answers: shifted }], count: 1 });
   });
   // 2026-11-03: a child bubbled a worksheet one row high, then re-bubbled it one
   // row lower; the corrected card read identically four times and was refused
@@ -146,12 +146,28 @@ describe('an unreadable card', () => {
     expect(h.warn).toHaveBeenCalledWith('school.scan.card-unsalvable', expect.objectContaining({ cardId: '1234567', refusals: 3 }));
   });
 
-  it('a confirming re-feed resets the refusal count', async () => {
+  it('a read that repeats after a slip confirms, and never counts toward retiring the card', async () => {
+    const h = live();
+    const slip = { ...shifted, 13: 'E' };
+    await h.resolver.execute({ testId: '1234567', answers: shifted });
+    await h.resolver.execute({ testId: '1234567', answers: slip });
+    const again = await h.resolver.execute({ testId: '1234567', answers: shifted });
+    expect(again.error).toBeUndefined();
+    expect(again.unsalvable).toBeUndefined();
+    expect(h.stored().refused.count).toBe(2);
+  });
+
+  it('a confirmed read stays confirmable on the next feed', async () => {
     const h = live();
     await h.resolver.execute({ testId: '1234567', answers: shifted });
     expect((await h.resolver.execute({ testId: '1234567', answers: shifted })).error).toBeUndefined();
-    const later = { ...shifted, 13: 'E', 14: 'D' };
-    await h.resolver.execute({ testId: '1234567', answers: later });
+    expect((await h.resolver.execute({ testId: '1234567', answers: shifted })).error).toBeUndefined();
+  });
+
+  it("a teacher's replay never counts toward retiring the card", async () => {
+    const h = live();
+    await h.resolver.execute({ testId: '1234567', answers: shifted });
+    await h.resolver.execute({ testId: '1234567', answers: { ...shifted, 13: 'E' }, identityReview: { targetRecordId: 'old' } });
     expect(h.stored().refused.count).toBe(1);
   });
 

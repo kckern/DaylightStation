@@ -58,6 +58,7 @@ clause; it never renders an id.
 | Piano lesson done | 🎹 | School progress (low) |
 | Needs remediation | 🔁 | School needs you (high) |
 | Needs remediation, retries used up (a teacher hold formed) | 🙋 | School needs you (high) |
+| Unreadable answer card: work reprinted on a new card, or nothing to reprint (needs a grown-up) | ⚠️ | School needs you (high) |
 | Awaiting review | 👀 | School needs you (high) |
 | Rows blank or double-marked, unreadable/refused card, nothing marked | ⚠️ | School needs you (high) |
 | Unmarked old record on a card whose other work graded | none (logged `school.push.suppressed`) | — |

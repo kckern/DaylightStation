@@ -37,7 +37,8 @@ export class ReplaceUnreadableCard {
 
   /**
    * @param {{cardId: string, reason: string}} args
-   * @returns {Promise<{cardId: string, retired: true, replacementCardId: string|null, replacements: object[]}>}
+   * @returns {Promise<{cardId: string, retired: boolean, replacementCardId: string|null, replacements: object[]}>}
+   *   `retired: false` when nothing live was left to reprint (the card stays in service)
    * @throws when the reprint did not finish — the card stays in service, so the
    *   child still holds a usable copy and the caller can say it could not read it
    */
@@ -46,8 +47,15 @@ export class ReplaceUnreadableCard {
     if (lost?.status !== 'replaced' && lost?.status !== 'already_settled') {
       throw new Error(`unreadable card ${cardId} was not reprinted: ${lost?.status ?? 'no result'}`);
     }
-    await this.#allocationStore.retireCard({ cardId, reason, retiredBy: RETIRED_BY });
     const replacements = lost.replacements ?? [];
+    // Nothing live to reprint: retiring would only close the card's other
+    // paths (a failed sheet still correctable on it), so it stays in service
+    // and the caller sends the child to a grown-up instead.
+    if (lost.status === 'already_settled') {
+      this.#logger.warn?.('school.answer-sheet.unreadable-kept', { cardId, reason });
+      return { cardId, retired: false, replacementCardId: null, replacements: [] };
+    }
+    await this.#allocationStore.retireCard({ cardId, reason, retiredBy: RETIRED_BY });
     this.#logger.info?.('school.answer-sheet.unreadable-replaced', {
       cardId, replacementCardId: lost.replacementCardId ?? null, reprinted: replacements.length, reason,
     });

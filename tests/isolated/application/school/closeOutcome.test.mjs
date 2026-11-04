@@ -955,6 +955,19 @@ describe('remediation cap: no retry ticket past two rounds', () => {
     expect(thermal.lastTranscript()).toContain('After 2 retries, a grown-up will sit down with you on this one.');
   });
 
+  it('returns the hold, so the phone can say a grown-up is needed instead of a retake', async () => {
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', SID);
+    await failRetry('ses_b');
+    expect((await close.execute({ sessionId: SID })).teacherHold).toEqual({ retries: 2 });
+  });
+
+  it('a failure with retries left returns no hold', async () => {
+    await priorFailure('ses_a', null, SID);
+    await failRetry('ses_a');
+    expect((await close.execute({ sessionId: SID })).teacherHold).toBeNull();
+  });
+
   it('counts the real retries when a grown-up opened one past the cap', async () => {
     await priorFailure('ses_a', null, 'ses_b');
     await priorFailure('ses_b', 'ses_a', 'ses_c');
