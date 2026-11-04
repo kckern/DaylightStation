@@ -38,7 +38,7 @@ import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/
 import { sha256Text } from '#system/utils/CanonicalFingerprint.mjs';
 import { planRows, resolveAmbiguousCardId } from "../../domain/documents/allocation.mjs";
 import { gradeAnswer } from "../../domain/grading.mjs";
-import { omrAlignmentError } from "../../domain/omrAlignment.mjs";
+import { OMR_REFEED_CONFIRM_MS, omrAlignmentError, sameOmrRead } from "../../domain/omrAlignment.mjs";
 import { omrKeyAlignmentSuspect } from "../../domain/omrKeyAlignment.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { creditsAsEraser, leniencyCap } from "../../domain/documents/ambiguityLeniency.mjs";
@@ -673,8 +673,20 @@ export class ResolveCardScan {
         .filter(([row]) => owners[row] && owners[row] === baseline.owners?.[row]));
       const error = omrAlignmentError(previous, answers);
       if (error) {
-        this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error });
-        return { error, results: [], decode };
+        // A refusal must never be a dead end. A reader slip does not reproduce
+        // on a fresh feed; a child's real marks do. The first refused read is
+        // remembered, and the same card fed again with the identical read is
+        // accepted as the child's actual card (e.g. a run re-bubbled one row
+        // lower after a mis-bubble — 2026-11-03, see omrAlignment.sameOmrRead).
+        const refused = baseline?.refused;
+        const confirmed = refused && sameOmrRead(refused.answers, answers)
+          && Date.now() - Date.parse(refused.at) < OMR_REFEED_CONFIRM_MS;
+        if (!confirmed) {
+          await this.#baselineStore.save(cardId, { ...baseline, refused: { answers, at: new Date().toISOString() } });
+          this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error, confirmBy: 'refeed' });
+          return { error, results: [], decode };
+        }
+        this.#logger.info?.('school.scan.alignment-confirmed-by-refeed', { cardId, ...error, refusedAt: refused.at });
       }
     }
     const answeredRows = new Set(Object.keys(answers).map(Number));

@@ -903,6 +903,16 @@ const APPLY = {
     s.lastFailure = null;
     if (e.confirmed !== false) s.lastPrintedAt = e.at;
   },
+  // A teacher reprint of a result receipt (ReprintResultReceiptArtifact). It
+  // was in SCHEMA and TRANSITIONS but had no applier, so the first reprint ever
+  // applied (2026-11-03) threw inside reduceSession and took the agenda, the
+  // teacher day, state gates and earnings down for that household.
+  result_receipt_reprinted(s, e) {
+    const row = s.resultReceiptArtifacts.find((entry) => entry.artifactId === e.artifactId);
+    if (!row) return;
+    if (e.confirmed !== false) row.printed = true;
+    row.reprintedAt = e.at;
+  },
   result_receipt_captured(s, e) {
     if (!e.artifactId || s.resultReceiptArtifacts.some((row) => row.artifactId === e.artifactId)) return;
     s.resultReceiptArtifacts.push({ artifactId: e.artifactId, kind: e.kind,
@@ -1224,6 +1234,9 @@ function computeNextAction(s) {
  * @param {Array} events
  * @returns {object} derived state; `errors[]` is empty for a clean log
  */
+/** Event types the reducer can fold; every EVENT_TYPES entry must be here (tested). */
+export const APPLIED_EVENT_TYPES = Object.freeze(Object.keys(APPLY));
+
 export function reduceSession(events) {
   const s = emptyState();
   if (!Array.isArray(events)) {
@@ -1287,6 +1300,12 @@ export function reduceSession(events) {
       if (violation !== MUST_OPEN) return;
     }
 
+    // A schema type without an applier is a code defect; report it on the
+    // session rather than throwing, which would hide every other session too.
+    if (typeof APPLY[raw.type] !== 'function') {
+      push(`no applier for event type: ${raw.type}`);
+      return;
+    }
     APPLY[raw.type](s, raw, push);
     if (!annotation) s.state = raw.type;
     s.eventCount += 1;

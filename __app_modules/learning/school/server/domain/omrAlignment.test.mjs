@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { omrAlignmentError } from "./omrAlignment.mjs";
+import { omrAlignmentError, sameOmrRead } from "./omrAlignment.mjs";
 
 const previous = Object.fromEntries(['A', 'D', 'B', 'E', 'C', 'A', 'B', 'D', 'E', 'C', 'B', 'A']
   .map((answer, i) => [i + 1, answer]));
@@ -36,5 +36,11 @@ describe('incremental OMR alignment', () => {
   it('does not reject a valid unchanged scan containing multiselect marks', () => {
     const multi = { ...previous, 3: ['E', 'A'] };
     expect(omrAlignmentError(multi, { ...multi, 3: ['A', 'E'] })).toBeNull();
+  });
+  it('treats two reads as the same card only when every row matches (multiselect order-insensitive)', () => {
+    expect(sameOmrRead({ 1: 'A', 2: ['C', 'E'] }, { 1: 'A', 2: ['E', 'C'] })).toBe(true);
+    expect(sameOmrRead({ 1: 'A', 2: 'C' }, { 1: 'A' })).toBe(false);
+    expect(sameOmrRead({ 1: 'A' }, { 1: 'B' })).toBe(false);
+    expect(sameOmrRead({}, {})).toBe(true);
   });
 });

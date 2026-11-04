@@ -143,7 +143,7 @@ function buildCeremony(payload) {
         detail: payload.code === 'OMR_COLUMN_COUNT'
           ? `The scanner read ${payload.actual} columns; this sheet needs ${payload.expected}. No grade was recorded. Scan again; if it repeats, ask a grown-up.`
           : payload.code === 'OMR_ALIGNMENT'
-            ? 'Scan alignment looks wrong compared with your earlier scan. No grade was recorded. Please rescan; if it repeats, ask a grown-up.'
+            ? "This sheet reads differently from your last scan. No grade was recorded. Scan again: if you moved your answers on purpose, the second scan counts."
             : "The student number didn't come through. Try scanning again, slowly.",
         at,
         code: payload.code ?? null,

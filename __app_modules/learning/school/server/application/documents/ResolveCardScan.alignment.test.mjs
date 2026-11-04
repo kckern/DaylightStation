@@ -65,7 +65,41 @@ describe('alignment preflight', () => {
       .toMatchObject({ error: { code: 'OMR_ALIGNMENT' }, results: [] });
     expect(h.repository.getPublished).not.toHaveBeenCalled();
     expect(h.allocationStore.updateStatus).not.toHaveBeenCalled();
-    expect(h.baselineStore.save).not.toHaveBeenCalled();
+    // The accepted answers are untouched; only the refused read is noted beside them.
+    expect(h.baselineStore.save).toHaveBeenCalledTimes(1);
+    const [, saved] = h.baselineStore.save.mock.calls[0];
+    expect(saved.answers).toEqual(answers);
+    expect(saved.refused).toMatchObject({ answers: shifted });
+  });
+  // 2026-11-03: a child bubbled a worksheet one row high, then re-bubbled it one
+  // row lower; the corrected card read identically four times and was refused
+  // every time. A slip does not reproduce on a fresh feed — real marks do.
+  it('accepts the same refused read fed again, and refuses a different one', async () => {
+    const shifted = Object.fromEntries(Object.entries(answers).map(([r, v]) => [Number(r) + 1, v]));
+    let stored = { answers, owners: Object.fromEntries(Object.keys(answers).map(r => [r, 'old'])) };
+    const baselineStore = { get: vi.fn(async () => stored), save: vi.fn(async (_id, next) => { stored = next; }) };
+    const allocationStore = { findByCard: vi.fn(async () => [record]), updateStatus: vi.fn() };
+    const repository = { getPublished: vi.fn(async () => null) };
+    const info = vi.fn();
+    const resolver = new ResolveCardScan({ allocationStore, repository, baselineStore, logger: { info, warn: vi.fn() } });
+
+    expect((await resolver.execute({ testId: '1234567', answers: shifted })).error?.code).toBe('OMR_ALIGNMENT');
+    const otherShift = { ...shifted, 13: 'E' };
+    expect((await resolver.execute({ testId: '1234567', answers: otherShift })).error?.code).toBe('OMR_ALIGNMENT');
+    // That different read became the remembered one; feeding IT again goes through.
+    const again = await resolver.execute({ testId: '1234567', answers: otherShift });
+    expect(again.error).toBeUndefined();
+    expect(repository.getPublished).toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith('school.scan.alignment-confirmed-by-refeed', expect.objectContaining({ cardId: '1234567' }));
+  });
+  it('does not confirm a refused read that is more than a day old', async () => {
+    const shifted = Object.fromEntries(Object.entries(answers).map(([r, v]) => [Number(r) + 1, v]));
+    const stale = { answers, owners: Object.fromEntries(Object.keys(answers).map(r => [r, 'old'])),
+      refused: { answers: shifted, at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString() } };
+    const baselineStore = { get: vi.fn(async () => stale), save: vi.fn() };
+    const resolver = new ResolveCardScan({ allocationStore: { findByCard: async () => [record], updateStatus: vi.fn() },
+      repository: { getPublished: vi.fn(async () => null) }, baselineStore, logger: {} });
+    expect((await resolver.execute({ testId: '1234567', answers: shifted })).error?.code).toBe('OMR_ALIGNMENT');
   });
   it('does not compare rows reused for a different worksheet', async () => {
     const h = setup({ owner: 'former-worksheet' });
