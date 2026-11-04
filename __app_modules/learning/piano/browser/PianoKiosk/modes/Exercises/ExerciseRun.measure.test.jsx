@@ -1478,6 +1478,9 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
       },
     }, 'Set 1');
 
+    // The keyboard mounts a beat after the set label paints; measure it once it
+    // exists (on a slow worker the probe ran first and found nothing, 2.7s).
+    await page.waitForSelector('.piano-exercise-run__keys', { timeout: 8000 });
     const root = await probe.one('.piano-exercise-run');
     const rail = await probe.one('.piano-exercise-run__rail');
     const keyboard = await probe.one('.piano-exercise-run__keys');
