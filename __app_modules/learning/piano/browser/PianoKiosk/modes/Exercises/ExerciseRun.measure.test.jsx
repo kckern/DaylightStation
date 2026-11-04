@@ -1510,7 +1510,9 @@ describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
     await page.getByRole('button', { name: /^Choose tempo:/ }).click();
     await page.getByRole('button', { name: 'Full speed', exact: true }).click();
     await probe.press(84);
-    await page.waitForSelector('.piano-exercise-run.is-running', { timeout: 8000 });
+    // Reaching the run is the point, not its speed: the count-in plays in a real
+    // browser, and 8s ran out only beside other suites on a loaded host.
+    await page.waitForSelector('.piano-exercise-run.is-running', { timeout: 20000 });
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('paused');
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
