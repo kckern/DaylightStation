@@ -314,8 +314,12 @@ defaults. Every write archives the replaced revision under
 | `week-met` | a green week: every study day green AND the weekly row satisfied |
 | `ring-threshold` | `rate: {rings, silver}` (silver per whole N rings) plus each threshold crossed |
 | `ring-contest` | most rings in the roster at award-week close; `tie: all\|split\|none` |
+| `ring-days` | once per award week, as soon as at least `min` rings (default 1) land on at least `days` study days (default 5). Counts **final** workouts only, summed per study day by start (4 am boundary); `pending` with `progress: {have, need}` while the award week runs, `none` once it closes short |
 | `debrief-day` | each day whose school debrief meets `match.criterion`: `completed`, `substantive` (on time, score at or above the threshold, not a fallback day) or `quiz-passed` (not a fallback day) |
 | `debrief-week` | the week, once every owed debrief day is completed (late counts) or excused **and at least one is completed**: excused only keeps a day from blocking, so an all-excused week pays nothing ("No debriefs done this week"). Pending until Friday's grace closes. See [School debrief](../school/school-debrief.md) |
+
+Any rule may also carry `gem: {category, label, color}` — how its gems read on
+the [Gem Board](#gem-board). Display only; it never changes what a rule pays.
 
 Rewards are a currency map (`{silver, gems}`; a bare number is silver). A rule that
 pays twice is two rules. Per-learner overrides live under `users.<id>`:
@@ -358,6 +362,7 @@ A line's silver is `round(count × silver × multiplier)` for the whole line.
 | GET `/api/v1/earnings/preview?week=` | the roster's week: `{windows, contestClosed, rulesRevision, learners[]}` |
 | GET `/api/v1/earnings/preview/:learnerId?week=` | one learner: `{totals, pending, lines[], work, evidence, multiplier, rulesRevision}` |
 | GET `/api/v1/earnings/rules` | `{ruleset, kinds}` |
+| GET `/api/v1/earnings/gems?week=` | the [Gem Board](#gem-board): `{mode, week, learners[], categories[], cells, totals}` |
 | PUT `/api/v1/school/teacher/economy/earn-rates/:learnerId` | `{actorId, pin, patch}` → the new ruleset (TeacherGate) |
 | PUT `/api/v1/school/teacher/economy/earn-rules` | `{actorId, pin, doc}` → the new ruleset (TeacherGate) |
 
@@ -365,6 +370,38 @@ A line's silver is `round(count × silver × multiplier)` for the whole line.
 are reusable by any surface; writes live with each surface's own gate (the
 teacher capability cookie is scoped to `/api/v1/school`). The teacher console
 edits rules in the **Coins** tab (`CoinsPanel`) and section (`CoinsRosterPanel`).
+
+### Gem Board
+
+One view of every learner against every gem, for one week. Design:
+`ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md`.
+
+- **Rows** are gem categories: every rule that pays gems (or names a `gem`
+  block), grouped by `gem.category` (default the rule id), in rule order. Each
+  row has a `cadence` — `contest` for `ring-contest`, otherwise `weekly`
+  (`milestone` arrives with the milestone kinds) — and a colour: `gem.color`,
+  else by kind (ruby `week-met`, sapphire `ring-contest`, amethyst
+  `ring-days`, topaz `debrief-week`).
+- **Columns** are the roster, in roster order, never ranked.
+- **A cell** is `{state, progress, week, lifetime, note}`; `state` is the best
+  of the row's lines: `won`, `earned`, `leading`, `pending`, `unknown`, `none`,
+  `disabled`. `week` is gems earned this week; `lifetime` counts payout gem
+  entries by `ruleId`, less grown-up reversals (`lifetimeGemsByRule`).
+- **Totals** per learner: this week's gems, and the wallet's gem balance as the
+  lifetime figure.
+- Built by `GemBoardService` (`application/GemBoardService.mjs`) over the same
+  preview the payouts use, plus a ledger read per learner; the pure fold is
+  `domain/earnings/gemBoard.mjs`. Logged `economy.gems.board.read` (debug),
+  `economy.gems.lifetime-unavailable` (warn). Catalog `off` → an empty board
+  with `mode: 'off'`.
+- **The overlay** is `frontend/src/lib/economy/GemBoard/GemBoard.jsx`, shared by
+  the fitness ring chart (`FitnessMomentum`: each card's purse, and the
+  headline's **Gems** chip; the garage pads drive it through `useGamepadKeys`)
+  and the school agenda (the board header's **Gems** door and each card's gem
+  door). Tap outside, ×, Escape or idle closes it; ←/→ moves the highlighted
+  column; Enter toggles this week / last week. No failure marks: not earned is
+  a blank cell. Browser events `gem-board.open`, `gem-board.close`
+  (`reason`, `dwellMs`), `gem-board.week-step`, `gem-board.load-failed`.
 
 ## Payouts
 

@@ -125,7 +125,7 @@ function phrase(t, { ruleLabels, evidenceLabels }) {
 
 const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const dayName = (day) => WEEKDAY[new Date(`${day}T12:00:00.000Z`).getUTCDay()];
-const DAY_KINDS = new Set(['section-day', 'day-met']);
+const DAY_KINDS = new Set(['section-day', 'day-met', 'ring-days']);
 const RING_KINDS = new Set(['ring-threshold', 'ring-contest']);
 
 /**

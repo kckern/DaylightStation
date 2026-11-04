@@ -21,8 +21,8 @@ function evaluate(rs, facts = {}, extra = {}) {
 const line = (out, id) => out.lines.find((l) => l.ruleId === id);
 
 describe('validateRuleset', () => {
-  it('knows nine kinds, one per earning trigger', () => {
-    expect(RULE_KINDS).toEqual(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week']);
+  it('knows ten kinds, one per earning trigger', () => {
+    expect(RULE_KINDS).toEqual(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week', 'ring-days']);
   });
 
   it('normalizes a bare number reward to silver and fills defaults', () => {

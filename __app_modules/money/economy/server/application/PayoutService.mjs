@@ -61,7 +61,7 @@ export function ringSteps(line) {
 const paysPerWorkout = (line) => line.kind === 'ring-threshold' && Array.isArray(line.sessions) && line.priced?.rate;
 
 // The evidence states that pay, for the line kinds that pay per day.
-const PAYING_DAY_STATE = { 'section-day': 'served', 'day-met': 'met' };
+const PAYING_DAY_STATE = { 'section-day': 'served', 'day-met': 'met', 'ring-days': 'moved' };
 
 /**
  * What the line looked like when it paid, kept on the entry so the bank can

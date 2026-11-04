@@ -120,6 +120,21 @@ export class EarningsPreviewService {
     };
   }
 
+  /**
+   * Finished workouts summed per study day (by start, 4 am boundary) — what a
+   * ring-days rule counts. A running workout, or one still inside its resume
+   * window, waits: a day it would move is not moved until it is final.
+   */
+  #ringDays(sessions) {
+    const byDay = new Map();
+    for (const s of sessions) {
+      if (!s?.final || !Number.isFinite(s.rings) || s.rings <= 0 || !Number.isFinite(s.startMs)) continue;
+      const day = studyDayForInstant(s.startMs, { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
+      byDay.set(day, (byDay.get(day) ?? 0) + s.rings);
+    }
+    return [...byDay].map(([day, rings]) => ({ day, rings })).sort((a, b) => (a.day < b.day ? -1 : 1));
+  }
+
   async #price(learner, ctx) {
     let school = EMPTY_SCHOOL;
     let schoolOk = true;
@@ -132,11 +147,12 @@ export class EarningsPreviewService {
     const standing = Array.isArray(ctx.standings) ? ctx.standings.find((s) => s.learnerId === learner.id) : null;
     const rings = Array.isArray(ctx.standings) ? (standing?.rings ?? 0) : null;
     const ringSessions = Array.isArray(standing?.sessions) ? standing.sessions : [];
+    const ringDays = Array.isArray(ctx.standings) ? this.#ringDays(ringSessions) : null;
     const outsideTerm = schoolOk && school.coverage === 'outside-term';
     const result = evaluateEarnings({
       ruleset: ctx.ruleset,
       learnerId: learner.id,
-      facts: { ...school, rings, ringSessions },
+      facts: { ...school, rings, ringSessions, ringDays },
       standings: ctx.standings,
       contestClosed: ctx.contestClosed,
       windows: ctx.windows,

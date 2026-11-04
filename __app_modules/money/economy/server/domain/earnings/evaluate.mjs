@@ -194,6 +194,26 @@ function ringContest(rule, facts, ctx) {
   return { status: paid(amount) ? 'earned' : 'none', count: mine, amount, evidence: [], note: leaders.length > 1 ? 'Tied for the most rings' : null, leader: true };
 }
 
+/**
+ * Rings on enough days: at least `min` rings on at least `days` study days of
+ * the award week. `facts.ringDays` is the learner's FINISHED workouts summed
+ * per study day (the preview groups them; this stays clock-free). Earned the
+ * moment the count is reached — a day moved cannot be un-moved — and settled
+ * as `none` once the award week has closed short.
+ */
+function ringDays(rule, facts, ctx) {
+  if (!Number.isFinite(facts.rings) || !Array.isArray(facts.ringDays)) {
+    return { status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note: 'Rings unavailable', progress: null };
+  }
+  const days = facts.ringDays.filter((d) => inEffect(rule.effective, d.day)).sort(byDay);
+  const evidence = days.map((d) => ({ day: d.day, rings: d.rings, state: d.rings >= rule.min ? 'moved' : 'short' }));
+  const have = evidence.filter((e) => e.state === 'moved').length;
+  const progress = { have: Math.min(have, rule.days), need: rule.days };
+  const note = `${progress.have} of ${rule.days} days`;
+  if (have >= rule.days) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note, progress };
+  return { status: ctx.contestClosed ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note, progress };
+}
+
 const DEBRIEF_PASS = {
   completed: (f) => f.state === 'completed',
   substantive: (f) => f.state === 'completed' && f.timeliness === 'on-time' && f.substantive === true,
@@ -241,6 +261,7 @@ const EVALUATORS = {
   unit,
   'ring-threshold': ringThreshold,
   'ring-contest': ringContest,
+  'ring-days': ringDays,
 };
 
 function windowDates(window) {
@@ -254,6 +275,7 @@ function windowDates(window) {
  * @param {string} args.learnerId
  * @param {{sectionDays: object[], days: object[], week: object|null, units: object[], rings: number|null, ringSessions?: object[]}} args.facts
  *   `ringSessions`: the learner's award-week workouts (`fitnessRingsProvider.standings`)
+ *   `ringDays`: those workouts that are final, summed per study day: `[{day, rings}]` (ring-days)
  * @param {Array<{learnerId: string, rings: number}>|null} args.standings - the roster's award-week rings (contest)
  * @param {boolean} args.contestClosed - the award week has closed
  * @param {{school: {from, to}, rings: {from, to}}} args.windows
@@ -266,7 +288,7 @@ function windowDates(window) {
  *   settles once its Friday has passed (Saturday is payday, D1).
  */
 export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {}, today = null }) {
-  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ringSessions: [], ...(facts ?? {}) };
+  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ringSessions: [], ringDays: null, ...(facts ?? {}) };
   const schoolDates = windowDates(windows?.school);
   const isOpen = (day) => today != null && day >= today;
   // A week's verdict is final only once its Friday has passed (or the week

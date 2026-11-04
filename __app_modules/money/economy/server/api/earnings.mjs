@@ -14,6 +14,7 @@
  *   GET /rules                                → { ruleset, kinds }
  *   GET /workout/:sessionId                   → one workout's ring silver per learner in it
  *   GET /standings                            → per learner: bank silver, week rings, gem
+ *   GET /gems?week=YYYY-MM-DD                 → the Gem Board: learners × gem categories
  *
  * `week` is any study day inside the wanted Monday→Sunday week; omitted means
  * the current one. Use cases arrive built (api-no-apps / api-no-domains).
@@ -21,7 +22,7 @@
 import express from 'express';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 
-export function createEarningsRouter({ earningsPreview, earnRules, workoutEarnings = null, logger = console } = {}) {
+export function createEarningsRouter({ earningsPreview, earnRules, workoutEarnings = null, gemBoard = null, logger = console } = {}) {
   if (!earningsPreview?.preview || !earningsPreview?.roster) throw new Error('createEarningsRouter requires earningsPreview');
   if (!earnRules?.describe) throw new Error('createEarningsRouter requires earnRules');
   const router = express.Router();
@@ -53,6 +54,11 @@ export function createEarningsRouter({ earningsPreview, earnRules, workoutEarnin
   router.get('/standings', asyncHandler(async (_req, res) => {
     if (needWorkout(res)) return;
     res.set('Cache-Control', 'no-store').json(await workoutEarnings.standings());
+  }));
+
+  router.get('/gems', asyncHandler(async (req, res) => {
+    if (!gemBoard?.board) { res.status(503).json({ error: 'gem board unavailable' }); return; }
+    res.set('Cache-Control', 'no-store').json(await gemBoard.board({ week: weekOf(req) }));
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string', logger }));

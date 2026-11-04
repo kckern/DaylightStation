@@ -79,6 +79,15 @@
     gap: 0.25rem 0.6rem;
   }
   &__purse {
+    // A button (it opens the Gem Board) that still reads as plain text.
+    border: 0;
+    margin: 0;
+    padding: 0.1rem 0.35rem;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -87,6 +96,22 @@
     font-variant-numeric: tabular-nums;
   }
   &__gem { margin-left: 0.2rem; }
+  &__purse:active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
+  &__gems-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.6rem;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font: inherit;
+    font-size: 1.05rem;
+    cursor: pointer;
+    align-self: center;
+  }
   &__gem.is-leading { opacity: 0.4; }
 
   // Monday-aligned weekly ring chart: same-scale vertical bars, oldest →

@@ -98,6 +98,7 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
     const { PayoutService } = await import("../application/PayoutService.mjs");
     const { WeekCloseService } = await import("../application/WeekCloseService.mjs");
     const { WorkoutEarningsService } = await import("../application/WorkoutEarningsService.mjs");
+    const { GemBoardService } = await import("../application/GemBoardService.mjs");
     const termVerdicts = schoolLifecycle?.termVerdicts ?? null;
     const learnerSessions = schoolLifecycle?.listLearnerSessions ?? null;
     const curriculum = schoolLifecycle?.stores?.curriculum ?? null;
@@ -172,13 +173,22 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       config: economyApi.configProjection,
       logger: rootLogger.child({ module: 'economy-workout-earnings' }),
     });
+    // The Gem Board (fitness ring chart, school agenda): learners × gems.
+    const gemBoard = new GemBoardService({
+      preview: earningsPreview,
+      rules: economyApi.earnRulesService,
+      economy: economyApi.economyService,
+      config: economyApi.configProjection,
+      logger: rootLogger.child({ module: 'economy-gem-board' }),
+    });
     const router = createEarningsRouter({
       earningsPreview,
       earnRules: economyApi.earnRulesService,
       workoutEarnings,
+      gemBoard,
       logger: rootLogger.child({ module: 'economy-earnings-api' }),
     });
-    return { router, earningsPreview, payoutService, weekCloseService, workoutEarnings };
+    return { router, earningsPreview, payoutService, weekCloseService, workoutEarnings, gemBoard };
 }
 
 // Every fact that can move a payout line, by topic. School's `school`
