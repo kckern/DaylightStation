@@ -665,7 +665,9 @@ describe('LogBookSheet — a save waiting on the teacher picker', () => {
     await waitFor(() => expect(summary()).toBe('Learner C – not sent'), { timeout: 3000 });
     expect(screen.getByText(/No teacher is set up/)).toBeTruthy();
     expect(profile.openPicker).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
+    // The summary lands a render before the save's busy flag clears; wait for
+    // the button itself rather than assuming the order (failed in 131ms on a slow worker).
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false));
   });
 
   it('a picker closed with nobody chosen ends the save: "not sent"', async () => {
@@ -679,6 +681,6 @@ describe('LogBookSheet — a save waiting on the teacher picker', () => {
     rerender(sheet());
     await waitFor(() => expect(summary()).toBe('Learner C – not sent'), { timeout: 3000 });
     expect(teacherWorkspaceApi.addReadingForLearner).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close' }).disabled).toBe(false));
   });
 });

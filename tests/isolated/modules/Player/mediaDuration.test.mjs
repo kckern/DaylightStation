@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { durationFromSeconds, durationFromMs } from '#frontend/modules/Player/utils/mediaIdentity.js';
+import { durationFromSeconds, durationFromMs } from '../../../../__capabilities/playback/browser/player/utils/mediaIdentity.js';
 
 // Replaces normalizeDuration.test.mjs, which enshrined a magnitude heuristic
 // ("1800 is > 1000 so treated as 1800ms -> 2s") that corrupted every video

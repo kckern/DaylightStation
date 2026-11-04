@@ -243,7 +243,7 @@ describe('ContentCombobox result actions — real focus ownership', () => {
         fireEvent.mouseDown(trigger);
         trigger.focus();
       });
-      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('active');
+      await waitFor(() => expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('active'));
       act(() => {
         if (interruption === 'pointer cancel') {
           fireEvent.pointerCancel(trigger, { pointerId: 41, pointerType: 'mouse', isPrimary: true });
@@ -253,7 +253,7 @@ describe('ContentCombobox result actions — real focus ownership', () => {
         }
       });
       expect(screen.queryByTestId('destination-sheet')).toBeNull();
-      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('inactive');
+      await waitFor(() => expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('inactive'));
       expect(input).toHaveValue('bluey');
 
       let outsidePointerDown;
@@ -277,11 +277,11 @@ describe('ContentCombobox result actions — real focus ownership', () => {
       await screen.findByTestId('result-more-plex:leaf-1');
       keyboardActivate(trigger);
       expect(await screen.findByTestId('destination-sheet')).toBeInTheDocument();
-      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('active');
+      await waitFor(() => expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('active'));
       expect(input).toHaveValue('bluey');
       fireEvent.keyDown(trigger, { key: 'Escape' });
       await waitFor(() => expect(screen.queryByTestId('destination-sheet')).toBeNull());
-      expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('inactive');
+      await waitFor(() => expect(screen.getByTestId('destination-interaction-state')).toHaveTextContent('inactive'));
       expect(input).toHaveValue('bluey');
 
       pointerActivate(outside);

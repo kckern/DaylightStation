@@ -1,5 +1,5 @@
 import { vi, describe, test, expect } from 'vitest';
-import { cleanupDashElement } from '#frontend/modules/Player/lib/dashCleanup.js';
+import { cleanupDashElement } from '../../../../__capabilities/playback/browser/player/lib/dashCleanup.js';
 
 describe('cleanupDashElement', () => {
   test('calls destroy() on element if available', () => {

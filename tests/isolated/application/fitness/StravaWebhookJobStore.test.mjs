@@ -16,7 +16,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   dirExists: vi.fn(),
 }));
 
-const { StravaWebhookJobStore } = await import('#adapters/strava/StravaWebhookJobStore.mjs');
+const { StravaWebhookJobStore } = await import("../../../../__app_modules/wellness/fitness/server/adapters/strava/StravaWebhookJobStore.mjs");
 const { loadYaml, listYamlFiles, dirExists } = await import('#system/utils/FileIO.mjs');
 
 describe('StravaWebhookJobStore.findActionable', () => {

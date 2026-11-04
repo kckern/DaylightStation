@@ -83,13 +83,29 @@ describe('FitnessSessionDetailWidget — delete flow', () => {
       expect(deleteBtn).toBeTruthy();
     });
 
+    // Delete is two taps — arm, then confirm — so a stray touch on the kiosk
+    // never deletes a workout (FitnessSessionDetailWidget DELETE_ARM_MS).
     await act(async () => { deleteBtn.click(); });
+    await act(async () => { findDeleteButton(container).click(); });
 
     await waitFor(() => { expect(mockRefetch).toHaveBeenCalledWith('sessions'); });
     expect(mockRestore).toHaveBeenCalledWith('right-area');
     const refetchOrder = mockRefetch.mock.invocationCallOrder[0];
     const restoreOrder = mockRestore.mock.invocationCallOrder[0];
     expect(refetchOrder).toBeLessThan(restoreOrder);
+  });
+
+  it('a single tap only arms delete; it never sends the DELETE', async () => {
+    const { container } = render(
+      <MantineProvider>
+        <FitnessSessionDetailWidget sessionId="20260422193014" />
+      </MantineProvider>
+    );
+    let deleteBtn;
+    await waitFor(() => { deleteBtn = findDeleteButton(container); expect(deleteBtn).toBeTruthy(); });
+    await act(async () => { deleteBtn.click(); });
+    expect(global.fetch.mock.calls.some(([, opts]) => opts?.method === 'DELETE')).toBe(false);
+    expect(mockRefetch).not.toHaveBeenCalled();
   });
 
   it('does NOT invalidate the cache if DELETE fails', async () => {
@@ -114,7 +130,10 @@ describe('FitnessSessionDetailWidget — delete flow', () => {
     await waitFor(() => { expect(global.fetch).toHaveBeenCalled(); });
     const deleteBtn = findDeleteButton(container);
     if (!deleteBtn) return;
+    // Delete is two taps — arm, then confirm — so a stray touch on the kiosk
+    // never deletes a workout (FitnessSessionDetailWidget DELETE_ARM_MS).
     await act(async () => { deleteBtn.click(); });
+    await act(async () => { findDeleteButton(container).click(); });
     expect(mockRefetch).not.toHaveBeenCalled();
     expect(mockRestore).not.toHaveBeenCalled();
   });

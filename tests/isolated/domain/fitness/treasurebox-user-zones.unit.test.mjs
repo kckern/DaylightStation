@@ -34,8 +34,11 @@ const LEARNER_ONE_ZONE_CONFIG = [
   { id: 'fire', name: 'Fire', min: 190, color: 'red', rings: 5 },
 ];
 
-function createMockZoneProfileStore(profiles = {}) {
+// The store is authoritative about trust (TreasureBox.resolveZone): a rider the
+// store has not trusted yet earns nothing, whatever their HR.
+function createMockZoneProfileStore(profiles = {}, { trusted = () => true } = {}) {
   return {
+    isZoneTrusted: vi.fn((userId) => trusted(userId)),
     getProfile: vi.fn((userId) => {
       const config = profiles[userId];
       if (!config) return null;
@@ -98,6 +101,12 @@ describe('TreasureBox per-user zone resolution', () => {
     const zone = tb.resolveZone('user_5', 155);
     expect(zone.id).toBe('warm');
     expect(zone.rings).toBe(2);
+  });
+
+  it('earns no zone for a rider the store has not trusted yet', () => {
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG }, { trusted: () => false });
+    const tb = createTreasureBox(store);
+    expect(tb.resolveZone('user_5', 155)).toBeNull();
   });
 
   it('still uses usersConfigOverrides if populated (backward compat)', () => {

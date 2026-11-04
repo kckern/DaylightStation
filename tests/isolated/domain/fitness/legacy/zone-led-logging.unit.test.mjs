@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Use process.cwd() instead of import.meta.url (babel-jest transforms ESM to CJS)
-const hookFilePath = path.resolve(process.cwd(), 'frontend/src/hooks/fitness/useZoneLedSync.js');
+const hookFilePath = path.resolve(process.cwd(), '__app_modules/wellness/fitness/browser/hooks/fitness/useZoneLedSync.js');
 
 describe('zone LED logging', () => {
   let fileContent;
@@ -12,7 +12,8 @@ describe('zone LED logging', () => {
   });
 
   test('imports getLogger from Logger.js', () => {
-    expect(fileContent).toContain("import { getLogger } from '../../lib/logging/Logger.js'");
+    // The hook moved into the fitness app module; it still imports the shared logger.
+    expect(fileContent).toMatch(/import \{ getLogger \} from ["'][^"']*frontend\/src\/lib\/logging\/Logger\.js["']/);
   });
 
   test('uses sampled logging for zone LED activations', () => {

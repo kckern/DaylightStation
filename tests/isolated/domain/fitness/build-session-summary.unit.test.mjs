@@ -286,9 +286,9 @@ describe('buildSessionSummary', () => {
         events: [
           { type: 'challenge', data: { result: 'success' } },
           { type: 'challenge', data: { result: 'success' } },
-          { type: 'challenge', data: { result: 'fail' } },
-          { type: 'challenge', data: { result: 'fail' } },
-          { type: 'challenge', data: { result: 'fail' } },
+          { type: 'challenge', data: { result: 'failed' } },
+          { type: 'challenge', data: { result: 'failed' } },
+          { type: 'challenge', data: { result: 'failed' } },
         ],
       }));
 
@@ -434,7 +434,7 @@ describe('buildSessionSummary', () => {
           { type: 'media', timestamp: 1000, data: { contentId: 'v1', title: 'Ep1', grandparentTitle: 'S', parentTitle: 'S1', grandparentId: 'g1', parentId: 'p1', start: 1000, end: 2000 } },
           { type: 'challenge', data: { result: 'success' } },
           { type: 'voice_memo', timestamp: 5000, data: { transcript: 'note', durationSeconds: 5 } },
-          { type: 'challenge', data: { result: 'fail' } },
+          { type: 'challenge', data: { result: 'failed' } },
         ],
       }));
 

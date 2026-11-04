@@ -138,9 +138,12 @@ describe('SchoolDebriefProgram start card', () => {
       api.answer = vi.fn(() => new Promise((r) => { release = () => { answered = true; r(ok({ correct: true, grade: 1, answer: 'a' })); }; }));
       await go();
       await screen.findByText('One');
+      // The question renders a commit before its key listener effect installs;
+      // flush effects so the digits are not pressed into the gap (failed in 147ms).
+      await act(async () => {});
       fireEvent.keyDown(window, { code: 'Digit1', key: '1' });
       fireEvent.keyDown(window, { code: 'Digit2', key: '2' });
-      expect(api.answer).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(api.answer).toHaveBeenCalledTimes(1));
       release();
       fireEvent.keyDown(await screen.findByRole('button', { name: /^Next/ }), { code: 'Enter', key: 'Enter' });
       enter();

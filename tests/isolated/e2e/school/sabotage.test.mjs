@@ -65,10 +65,12 @@ async function withMutation({ file, specifier, edits }, run) {
   fs.writeFileSync(tmp, patched, 'utf8');
   try {
     vi.resetModules();
-    vi.doMock(specifier, () => import(pathToFileURL(tmp).href));
+    // Mock by the module's real path: importers reach it by relative path now,
+    // not by the old `#domains/…` aliases, and the resolved id is the same either way.
+    vi.doMock(abs, () => import(pathToFileURL(tmp).href));
     return await run();
   } finally {
-    vi.doUnmock(specifier);
+    vi.doUnmock(abs);
     vi.resetModules();
     fs.rmSync(tmp, { force: true });
   }
@@ -281,7 +283,7 @@ const answerKeyScenario = async () => {
 // ---------------------------------------------------------------------------
 
 const OMR_DECODE_RETURNS_THE_LETTER = {
-  file: '__backend/src/2_domains/school/documents/omrForm.mjs',
+  file: '__app_modules/learning/school/server/domain/documents/omrForm.mjs',
   specifier: '#domains/school/documents/omrForm.mjs',
   edits: [['entries[itemId] = hits[0].label ?? hits[0].choice;', 'entries[itemId] = hits[0].choice;']],
 };
@@ -294,7 +296,7 @@ const OMR_DECODE_RETURNS_THE_LETTER = {
 // reported the suite as holed. Cutting the assignment covers both arms and
 // stays honest if a third is ever added.
 const CLOSE_OUT_PRINTS_NOTHING = {
-  file: '__backend/src/3_applications/school/usecases/CloseSessionOutcome.mjs',
+  file: '__app_modules/learning/school/server/application/usecases/CloseSessionOutcome.mjs',
   specifier: '#apps/school/usecases/CloseSessionOutcome.mjs',
   edits: [[
     `printing = receiptArtifact?.artifact && this.#receiptArtifactPrinter
@@ -305,19 +307,19 @@ const CLOSE_OUT_PRINTS_NOTHING = {
 };
 
 const QR_LOOP_DRAWS_NOTHING = {
-  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__app_modules/learning/school/server/rendering/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['if (!modules.data[row * modules.size + col]) continue;', 'continue;']],
 };
 
 const BUBBLE_CENTRE_IS_OFF_BY_3PT = {
-  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__app_modules/learning/school/server/rendering/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['        xPt: centreX,', '        xPt: centreX + 3,']],
 };
 
 const BUBBLE_IS_DRAWN_SMALLER_THAN_RECORDED = {
-  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__app_modules/learning/school/server/rendering/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['.circle(centreX, centreY, bubbleRadiusPt).stroke().restore();', '.circle(centreX, centreY, bubbleRadiusPt - 1).stroke().restore();']],
 };
@@ -327,7 +329,7 @@ const BUBBLE_IS_DRAWN_SMALLER_THAN_RECORDED = {
 // unchanged, the module count is unchanged, the dark-module count is still
 // healthy. Only a decoder pointed at the ink can see it.
 const QR_ENCODES_A_DIFFERENT_TOKEN = {
-  file: '__backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  file: '__app_modules/learning/school/server/rendering/documents/DocumentPdfRenderer.mjs',
   specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
   edits: [['QRCode.create(String(text), {', "QRCode.create(`${String(text)}Z`, {"]],
 };
@@ -337,7 +339,7 @@ const QR_ENCODES_A_DIFFERENT_TOKEN = {
 // first proves nothing: the second still refuses, and the mutation survives.
 // Both are the same guard, so both go.
 const REWARD_GUARD_IGNORES_THE_TXN = {
-  file: '__backend/src/3_applications/school/usecases/CloseSessionOutcome.mjs',
+  file: '__app_modules/learning/school/server/application/usecases/CloseSessionOutcome.mjs',
   specifier: '#apps/school/usecases/CloseSessionOutcome.mjs',
   edits: [
     ['    if (state.rewardTxn) {', '    if (false && state.rewardTxn) {'],
@@ -346,7 +348,7 @@ const REWARD_GUARD_IGNORES_THE_TXN = {
 };
 
 const VALIDATOR_ALLOWS_AN_ANSWER_KEY = {
-  file: '__backend/src/2_domains/school/documents/documentValidation.mjs',
+  file: '__app_modules/learning/school/server/domain/documents/documentValidation.mjs',
   specifier: '#domains/school/documents/documentValidation.mjs',
   edits: [[
     "  collectAnswerKeys(raw, '', errors, new WeakSet());",

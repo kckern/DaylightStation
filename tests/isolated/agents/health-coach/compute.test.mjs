@@ -3,7 +3,10 @@ import { describe, it, expect } from 'vitest';
 import { ComputeSandboxAdapter as ComputeSandbox } from "../../../../__app_modules/wellness/health/server/adapters/agents/health-coach/ComputeSandboxAdapter.mjs";
 
 describe('ComputeSandbox.evaluate', () => {
-  const sandbox = new ComputeSandbox();
+  // The 50ms runaway guard also fires on a host stall before a trivial
+  // expression finishes compiling (value undefined, at load ~60). Value tests
+  // get room; the guard itself is tested below with the shipped default.
+  const sandbox = new ComputeSandbox({ timeoutMs: 5000 });
 
   it('evaluates basic arithmetic', () => {
     const r = sandbox.evaluate('1 + 2 * 3');
@@ -66,9 +69,9 @@ describe('ComputeSandbox.evaluate', () => {
 
   it('times out on infinite loop', () => {
     // vm timeout works on synchronous expressions only; infinite loop is sync
-    const r = sandbox.evaluate('(function(){ while(true); })()');
+    const r = new ComputeSandbox().evaluate('(function(){ while(true); })()');
     expect(r.error).toBe('timeout');
-  }, 200);
+  }, 5000);
 
   it('captures duration in result', () => {
     const r = sandbox.evaluate('1 + 1');

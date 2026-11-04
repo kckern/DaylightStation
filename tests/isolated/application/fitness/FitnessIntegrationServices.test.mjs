@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FitnessContentService } from "../../../../__app_modules/wellness/fitness/server/application/services/FitnessContentService.mjs";
 import { EmergencyAccessService } from "../../../../__app_modules/wellness/fitness/server/application/services/EmergencyAccessService.mjs";
 import { FitnessWebhookService } from "../../../../__app_modules/wellness/fitness/server/application/services/FitnessWebhookService.mjs";
-import { StravaWebhookAdapter } from '#adapters/strava/StravaWebhookAdapter.mjs';
+import { StravaWebhookAdapter } from "../../../../__app_modules/wellness/fitness/server/adapters/strava/StravaWebhookAdapter.mjs";
 import { GetFitnessMenuMusic } from "../../../../__app_modules/wellness/fitness/server/application/usecases/GetFitnessMenuMusic.mjs";
 import { PrintFitnessReceipt } from "../../../../__app_modules/wellness/fitness/server/application/usecases/PrintFitnessReceipt.mjs";
 import { SaveDebugVoiceMemo } from "../../../../__app_modules/wellness/fitness/server/application/usecases/SaveDebugVoiceMemo.mjs";

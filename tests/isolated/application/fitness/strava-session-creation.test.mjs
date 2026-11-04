@@ -279,7 +279,9 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
 
     await service._attemptEnrichment(ACTIVITY_ID);
 
-    expect(mockStravaClient.getActivityStreams).not.toHaveBeenCalled();
+    // The route track still fetches GPS streams; only the heart-rate stream is skipped.
+    const requested = mockStravaClient.getActivityStreams.mock.calls.flatMap(([, keys]) => keys || []);
+    expect(requested).not.toContain('heartrate');
     const dateDir = path.join(tmpDir, '2026-03-01');
     expect(fs.existsSync(dateDir)).toBe(true);
   });

@@ -130,6 +130,9 @@ describe('explicit application operations at API handlers', () => {
       getHistory: { execute: vi.fn(async () => ({ series: [] })) },
       toggleEntity: { execute: vi.fn(async (command) => command) },
       activateScene: { execute: vi.fn(async (command) => command) },
+      getEntities: { execute: vi.fn(async () => ({ entities: [], rooms: [], types: [], stateClasses: {}, haUrl: null, summary: {}, mosaic: {} })) },
+      getEntityHistory: { execute: vi.fn(async (command) => command) },
+      getTimeline: { execute: vi.fn(async (command) => command) },
     };
     const app = mount('/home', createHomeDashboardRouter({ operations }));
     expect((await request(app).get('/home/config')).body).toEqual({ rooms: [] });
@@ -138,6 +141,9 @@ describe('explicit application operations at API handlers', () => {
     expect((await request(app).post('/home/toggle').send({ entityId: 'light.a', desiredState: 'on' })).body)
       .toEqual({ entityId: 'light.a', desiredState: 'on' });
     expect((await request(app).post('/home/scene/evening')).body).toEqual({ sceneId: 'evening' });
+    expect((await request(app).get('/home/entities')).body).toMatchObject({ entities: [], rooms: [] });
+    expect((await request(app).get('/home/entities/light.a/history?range=7d')).body).toEqual({ entityId: 'light.a', range: '7d' });
+    expect((await request(app).get('/home/timeline')).body).toEqual({ range: 'today' });
   });
 
   it('preserves Journalist morning success and unavailable-export precedence', async () => {

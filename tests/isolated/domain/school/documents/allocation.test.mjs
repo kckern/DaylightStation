@@ -23,7 +23,8 @@ describe('constants', () => {
     // `companion_code` is the finish-code gate row (Task 8) — a printed row
     // that consumes a card row like any other, but is not a question-bank type.
     expect(ROW_MAPPABLE_TYPES).toEqual(['multiple_choice', 'true_false', 'multi_select', 'companion_code']);
-    expect(ALLOCATION_STATUSES).toEqual(['live', 'satisfied', 'released', 'superseded']);
+    // `vacated`: a window a failed print released, closed up so it leaves no gap (e6b7f424c8).
+    expect(ALLOCATION_STATUSES).toEqual(['live', 'satisfied', 'released', 'superseded', 'vacated']);
   });
 });
 

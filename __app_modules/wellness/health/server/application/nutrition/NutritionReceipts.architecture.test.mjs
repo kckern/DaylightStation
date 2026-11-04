@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 const read = relative => fs.readFileSync(new URL(relative, import.meta.url), 'utf8');
+// Nutribot and the health composition live in their app modules now.
+const NUTRIBOT_APP = '../../../../nutribot/server/application/';
 
 describe('receipt ownership architecture', () => {
   it('keeps the polling trigger free of rendering and transport', () => {
@@ -11,14 +13,16 @@ describe('receipt ownership architecture', () => {
   it('capture and confirmation use cases hand off to the one publisher', () => {
     for (const name of ['LogFoodFromImage', 'LogFoodFromText', 'LogFoodFromUPC', 'AcceptFoodLog',
       'DiscardFoodLog', 'ReviseFoodLog', 'ProcessRevisionInput', 'SelectUPCPortion', 'SelectScaleDensity', 'LogScaleFoodFromText']) {
-      const source = read(`../nutribot/usecases/${name}.mjs`);
+      const source = read(`${NUTRIBOT_APP}usecases/${name}.mjs`);
       expect(source, name).toContain('#receipts');
       expect(source, name).not.toMatch(/formatFoodList|formatFoodCaption|formatConfirmation|buildActionButtons|buildConfirmButtons|buildProductCaption|withCommittedChoices|Food log updated|Logged ✓/);
     }
+    // The old receipt helper stays gone, in either home.
     expect(fs.existsSync(new URL("../../../../../../__backend/src/3_applications/nutribot/lib/committedChoices.mjs", import.meta.url))).toBe(false);
+    expect(fs.existsSync(new URL(`${NUTRIBOT_APP}lib/committedChoices.mjs`, import.meta.url))).toBe(false);
   });
   it('composition shares the publisher while Mastra remains behind the repair boundary', () => {
-    const composition = read('../../5_composition/modules/nutritionSurfaceSync.mjs');
+    const composition = read('../../composition/nutritionSurfaceSync.mjs');
     expect(composition).toContain('container.setReceiptPublisher(publisher)');
     expect(composition).toContain('new NutritionReceiptRenderer()');
     for (const source of [read('./NutritionRepairService.mjs'), read('../agents/nutrition-auditor/NutritionAuditor.mjs')]) {

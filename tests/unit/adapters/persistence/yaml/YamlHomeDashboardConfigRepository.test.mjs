@@ -29,7 +29,8 @@ describe('YamlHomeDashboardConfigRepository', () => {
   it('returns empty shape when file missing', async () => {
     const { repo } = makeRepo(null);
     const result = await repo.load();
-    expect(result).toEqual({ summary: {}, rooms: [] });
+    // Every section the dashboard reads comes back empty, never undefined.
+    expect(result).toEqual({ summary: {}, rooms: [], entities: {}, now: {}, power: {}, timeline: {}, mosaic: {} });
   });
 
   it('throws when dataService missing', () => {

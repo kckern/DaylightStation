@@ -901,14 +901,19 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
   // ticker, jsdom cannot measure where the ellipsis paints, so the honest pin
   // is the clamp declaration on the element carrying the overflow text, next
   // to the reserve that bounds it.
+  // happy-dom (21.x) computes neither `-webkit-line-clamp` nor
+  // `display: -webkit-box`, so the clamp is read from the rule this element
+  // matches; `overflow` it does compute, so that stays a computed check.
   it('carries the clamp on an overflowing fact, not just a short one', () => {
-    withStyles();
+    const css = withStyles();
     const longFact = 'A. '.repeat(100).trim(); // 300 characters, well past the three-line reserve
     const { getByTestId } = renderCard({ composer: { ...DATA.composer, facts: [longFact] } });
     const lineEl = getByTestId('surround-composer-fact').querySelector('.surround-composer-card__fact-line');
-    const style = window.getComputedStyle(lineEl);
-    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('3');
-    expect(style.getPropertyValue('overflow')).toBe('hidden');
+    expect(lineEl.textContent).toBe(longFact);
+    const rule = css.match(/\.surround-composer-card__fact-line \{[^}]*\}/)?.[0] || '';
+    expect(lineEl.matches('.surround-composer-card__fact-line')).toBe(true);
+    expect(rule).toMatch(/-webkit-line-clamp: 3/);
+    expect(window.getComputedStyle(lineEl).getPropertyValue('overflow')).toBe('hidden');
   });
 });
 

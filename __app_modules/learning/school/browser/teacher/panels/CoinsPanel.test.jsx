@@ -116,7 +116,8 @@ describe('CoinsPanel', () => {
     render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
     const input = await screen.findByLabelText('Silver for Rings');
     fireEvent.change(input, { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save rate for Rings' }));
+    // Save renders once the edit makes the row dirty (failed in 328ms on a slow worker).
+    fireEvent.click(await screen.findByRole('button', { name: 'Save rate for Rings' }));
     await waitFor(() => expect(schoolApi.putEarnRates).toHaveBeenCalledWith('learner-a', expect.objectContaining({
       patch: { rules: { rings: { rate: { rings: 100, silver: 2 } } } },
     })));

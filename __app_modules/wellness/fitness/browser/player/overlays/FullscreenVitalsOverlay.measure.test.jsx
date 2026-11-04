@@ -3,7 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const frontend = path.resolve(here, '../../../../../..');
+// The bundle resolves react from the frontend workspace (this file sits six
+// levels under the repo root since the move into __app_modules).
+const frontend = path.resolve(here, '../../../../../../frontend');
 let browser, script, css;
 
 beforeAll(async () => {

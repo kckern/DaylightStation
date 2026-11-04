@@ -241,7 +241,8 @@ it.each(['active','complete'])('follows host restart from %s and completes repla
  act(()=>socket.handler({kind:'session-restarted',sessionId:'unrelated',replacementSessionId:'ignored'}));expect(fetchBoot).toHaveBeenCalledTimes(1);
  act(()=>socket.handler({kind:'session-restarted',sessionId:'old',replacementSessionId:'diagnostic:new'}));
  const completeNew=await screen.findByRole('button',{name:'Complete diagnostic:new'});
- expect(window.localStorage.getItem('party-games:jeopardy:night:active-session')).toBe('diagnostic:new');
+ // The active session is persisted by an effect after the new session renders.
+ await waitFor(()=>expect(window.localStorage.getItem('party-games:jeopardy:night:active-session')).toBe('diagnostic:new'));
  fireEvent.click(completeNew);await screen.findByTestId('results');
  expect(screen.queryByRole('dialog')).toBeNull();expect(fetchBoot).toHaveBeenLastCalledWith({diagnosticSessionId:'diagnostic:new',sessionId:null});
  expect(new URLSearchParams(window.location.search).get('diagnostic_session')).toBe('diagnostic:new');

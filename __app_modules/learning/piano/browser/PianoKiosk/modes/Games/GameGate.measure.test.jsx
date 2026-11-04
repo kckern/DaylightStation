@@ -93,7 +93,11 @@ const CHROME_WORST_CASE = 70;
 async function compileSheet() {
   const sass = await import('sass-embedded');
   const sheets = [
-    path.join(FRONTEND, 'src/Apps/PianoApp.scss'),
+    // The shell sheet moved into the piano module and its tokens moved out of
+    // it, so the tokens go first (same cascade as ExerciseRun.measure).
+    path.join(FRONTEND, '../__capabilities/music-notation/browser/styles/tokens.scss'),
+    path.join(HERE, '../../../pianoTokens.scss'),
+    path.join(HERE, '../../../PianoApp.scss'),
     path.join(HERE, '../Exercises/Exercises.scss'),
     path.join(HERE, 'GameGate.scss'),
   ];

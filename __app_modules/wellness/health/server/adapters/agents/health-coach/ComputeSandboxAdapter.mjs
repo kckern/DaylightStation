@@ -10,7 +10,9 @@ import { IComputeSandbox } from "../../../application/agents/health-coach/ports/
 export class ComputeSandboxAdapter extends IComputeSandbox {
   #timeoutMs;
 
-  constructor({ timeoutMs = 50 } = {}) {
+  // The timeout stops runaway loops. 50ms also killed trivial expressions when the
+  // host stalled (load ~60, 2026-11-03); 250ms still bounds a loop to a blip.
+  constructor({ timeoutMs = 250 } = {}) {
     super();
     this.#timeoutMs = timeoutMs;
   }
