@@ -83,7 +83,7 @@ import { courseDisplay } from "../../domain/curriculum/display.mjs";
 export function createSchoolPrintScanConsumer({
   realtime, config = {}, resolveCardScan, recordCardScanOutcome = null,
   closeSessionOutcome = null, gradingHook = null, logger = console,
-  receipts = null, printDocuments = null,
+  receipts = null, printDocuments = null, replaceUnreadableCard = null,
   curriculum = null, studentName = null, today = null,
   scheduler = null, pushLabelTimeoutMs = 2000,
 }) {
@@ -360,6 +360,28 @@ export function createSchoolPrintScanConsumer({
      *   record, so it is in no position to announce that nothing was).
      */
     async function settleOutcome(outcome, speak) {
+      // A card refused UNSALVABLE_REFUSALS times with a different read each
+      // time is unreadable paper (`ResolveCardScan`): retire it and reprint the
+      // work still waiting on it, so the child is handed a fresh sheet instead
+      // of a fourth refusal. A failed replacement falls through to the
+      // ordinary unresolved path below, so the room still hears something.
+      if (outcome?.unsalvable && replaceUnreadableCard?.execute) {
+        try {
+          const replaced = await replaceUnreadableCard.execute({
+            cardId: outcome.unsalvable.cardId, reason: 'omr_alignment_unconfirmed',
+          });
+          const reprinted = replaced?.replacements?.length ?? 0;
+          logger.warn?.('school.print.card-replaced', {
+            testId, cardId: outcome.unsalvable.cardId, refusals: outcome.unsalvable.refusals, reprinted,
+          });
+          speak({ event: 'scan-card-replaced', testId, reprinted });
+          return false;
+        } catch (err) {
+          logger.warn?.('school.print.card-replace-failed', {
+            testId, cardId: outcome.unsalvable.cardId, error: err.message,
+          });
+        }
+      }
       if (outcome?.error) {
         // CARD_ID_UNREADABLE (or any future resolver error code) — never
         // guessed at; the recorder already persisted the raw/decoded scan

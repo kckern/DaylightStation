@@ -6,7 +6,7 @@
  * The fire stays fire-and-forget: a missing or broken label source degrades
  * the copy, never the grade, the ceremony or the slip.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createSchoolPrintScanConsumer } from "./SchoolPrintScanConsumer.mjs";
 import { findPushTextDefects } from '#domains/notification/push/pushText.mjs';
 
@@ -155,6 +155,34 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     expect(fired[0].notification.title).toBe('🙋 Learner4 — U.S. Atlas: South Dakota');
     expect(fired[0].notification.message).toContain('retries used up');
     expect(fired[0].notification.message).not.toContain('receipt');
+  });
+
+  it('an unsalvable card is replaced and the child is handed the fresh sheet', async () => {
+    const replaceUnreadableCard = { execute: vi.fn(async () => ({
+      cardId: '5278294', retired: true,
+      replacements: [{ fromSessionId: 'ses_a', toSessionId: 'ses_b', issuance: { status: 'issued' } }],
+    })) };
+    const { spoken, printed, feed } = harness({
+      resolve: () => ({ error: { code: 'OMR_ALIGNMENT' }, results: [], unsalvable: { cardId: '5278294', refusals: 3 } }),
+      replaceUnreadableCard,
+    });
+    await feed();
+    expect(replaceUnreadableCard.execute).toHaveBeenCalledWith({ cardId: '5278294', reason: 'omr_alignment_unconfirmed' });
+    expect(spoken.map((s) => s.kind)).toEqual(['scan-card-replaced']);
+    expect(spoken[0]).toMatchObject({ testId: '5278294', reprinted: 1 });
+    expect(JSON.stringify(printed)).toContain('HERE IS A FRESH SHEET');
+    expect(JSON.stringify(printed)).toContain("The reader couldn't read your card, so your unfinished work is printing on a new one.");
+  });
+
+  it('a failed replacement still tells the room the card could not be read', async () => {
+    const replaceUnreadableCard = { execute: vi.fn(async () => { throw new Error('printer down'); }) };
+    const { spoken, warns, feed } = harness({
+      resolve: () => ({ error: { code: 'OMR_ALIGNMENT' }, results: [], unsalvable: { cardId: '5278294', refusals: 3 } }),
+      replaceUnreadableCard,
+    });
+    await feed();
+    expect(spoken.map((s) => s.kind)).toEqual(['scan-unresolved']);
+    expect(warns.some((w) => w.event === 'school.print.card-replace-failed')).toBe(true);
   });
 
   it('Partial then Passed for the same session share one tag, so the phone replaces the first', async () => {

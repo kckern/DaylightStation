@@ -150,6 +150,18 @@ describe('useScanCeremony', () => {
     });
   });
 
+  it('maps scan-card-replaced to a ceremony that points at the fresh sheet', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-card-replaced', testId: '4113279', reprinted: 1 });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'warn',
+      title: 'Here is a fresh sheet',
+      detail: "The reader couldn't read your card, so your unfinished work is printing on a new one.",
+    });
+  });
+
   it('maps scan-refused to an error ceremony carrying the code', () => {
     const { result } = mount();
     act(() => {

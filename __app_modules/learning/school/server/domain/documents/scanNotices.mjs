@@ -61,6 +61,13 @@ export function scanNoticeDocument(announcement = {}) {
   switch (kind) {
     case 'scan-graded':
       return null;
+    case 'scan-card-replaced':
+      // `ReplaceUnreadableCard` retired the card; the reprints follow this slip.
+      return noticeDocument({
+        id,
+        headline: 'HERE IS A FRESH SHEET',
+        lines: ["The reader couldn't read your card, so your unfinished work is printing on a new one."],
+      });
     case 'scan-rows-incomplete': {
       const lines = unfinishedLines(announcement);
       lines.push(`Fill it in on your answer card. ${FEED_AGAIN}`);

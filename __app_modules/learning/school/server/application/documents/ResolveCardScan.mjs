@@ -38,7 +38,7 @@ import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/
 import { sha256Text } from '#system/utils/CanonicalFingerprint.mjs';
 import { planRows, resolveAmbiguousCardId } from "../../domain/documents/allocation.mjs";
 import { gradeAnswer } from "../../domain/grading.mjs";
-import { OMR_REFEED_CONFIRM_MS, omrAlignmentError, sameOmrRead } from "../../domain/omrAlignment.mjs";
+import { OMR_REFEED_CONFIRM_MS, UNSALVABLE_REFUSALS, omrAlignmentError, sameOmrRead } from "../../domain/omrAlignment.mjs";
 import { omrKeyAlignmentSuspect } from "../../domain/omrKeyAlignment.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { creditsAsEraser, leniencyCap } from "../../domain/documents/ambiguityLeniency.mjs";
@@ -666,6 +666,18 @@ export class ResolveCardScan {
     // have a different owner and must not be compared to their former worksheet.
     const allOwners = resolveRowOwners(records.filter((record) => isLiveOrSatisfied(record.status)));
     const owners = Object.fromEntries([...allOwners].map(([row, record]) => [row, record.recordId]));
+    const answeredRows = new Set(Object.keys(answers).map(Number));
+    // Ahead of the alignment check: a retired card's old baseline must not
+    // refuse it — its marks need the "this card was replaced" answer.
+    if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
+      return {
+        results: [], deadCard: true, retiredCard: true,
+        answeredRowCount: answeredRows.size,
+        recordStatuses: records.map((record) => record.status),
+        ...(cardIdInferred ? { cardIdInferred } : {}),
+        decode,
+      };
+    }
     let previous = {};
     if (this.#baselineStore && records.length) {
       const baseline = await this.#baselineStore.get(cardId);
@@ -682,22 +694,23 @@ export class ResolveCardScan {
         const confirmed = refused && sameOmrRead(refused.answers, answers)
           && Date.now() - Date.parse(refused.at) < OMR_REFEED_CONFIRM_MS;
         if (!confirmed) {
-          await this.#baselineStore.save(cardId, { ...baseline, refused: { answers, at: new Date().toISOString() } });
-          this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error, confirmBy: 'refeed' });
+          // Consecutive unconfirmed refusals inside the refeed window. A clean
+          // scan writes a fresh baseline without `refused`, which resets this.
+          const recent = refused && Date.now() - Date.parse(refused.at) < OMR_REFEED_CONFIRM_MS;
+          const count = recent ? (refused.count ?? 1) + 1 : 1;
+          await this.#baselineStore.save(cardId, { ...baseline, refused: { answers, at: new Date().toISOString(), count } });
+          this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error, confirmBy: 'refeed', refusals: count });
+          if (count >= UNSALVABLE_REFUSALS) {
+            this.#logger.warn?.('school.scan.card-unsalvable', { cardId, refusals: count });
+            return { error, results: [], decode, unsalvable: { cardId, refusals: count } };
+          }
           return { error, results: [], decode };
         }
         this.#logger.info?.('school.scan.alignment-confirmed-by-refeed', { cardId, ...error, refusedAt: refused.at });
+        // Confirmed: the refusal streak is over, whatever grading makes of it.
+        const { refused: _settled, ...accepted } = baseline;
+        await this.#baselineStore.save(cardId, accepted);
       }
-    }
-    const answeredRows = new Set(Object.keys(answers).map(Number));
-    if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
-      return {
-        results: [], deadCard: true, retiredCard: true,
-        answeredRowCount: answeredRows.size,
-        recordStatuses: records.map((record) => record.status),
-        ...(cardIdInferred ? { cardIdInferred } : {}),
-        decode,
-      };
     }
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
     if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}), decode };

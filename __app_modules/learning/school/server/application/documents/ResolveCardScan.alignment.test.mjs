@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ResolveCardScan } from "./ResolveCardScan.mjs";
+import { UNSALVABLE_REFUSALS } from "../../domain/omrAlignment.mjs";
 
 const answers = Object.fromEntries(['A','D','B','E','C','A','B','D','E','C','B','A'].map((v, i) => [i + 1, v]));
 const record = { recordId: 'old', status: 'live', renderedAt: '2026-09-01', rowRange: { start: 1, end: 25 } };
@@ -113,5 +114,57 @@ describe('alignment preflight', () => {
     const h = setup({ baselineError: true });
     await expect(h.resolver.execute({ testId: '1234567', answers })).rejects.toThrow('unreadable baseline');
     expect(h.repository.getPublished).not.toHaveBeenCalled();
+  });
+});
+
+describe('an unreadable card', () => {
+  const shifted = Object.fromEntries(Object.entries(answers).map(([r, v]) => [Number(r) + 1, v]));
+  function live() {
+    let stored = { answers, owners: Object.fromEntries(Object.keys(answers).map(r => [r, 'old'])) };
+    const baselineStore = { get: vi.fn(async () => stored), save: vi.fn(async (_id, next) => { stored = next; }) };
+    const warn = vi.fn();
+    const resolver = new ResolveCardScan({
+      allocationStore: { findByCard: vi.fn(async () => [record]), updateStatus: vi.fn() },
+      repository: { getPublished: vi.fn(async () => null) }, baselineStore, logger: { info: vi.fn(), warn },
+    });
+    return { resolver, warn, stored: () => stored };
+  }
+
+  it('three different refused reads mark the card unsalvable', async () => {
+    expect(UNSALVABLE_REFUSALS).toBe(3);
+    const h = live();
+    const reads = [shifted, { ...shifted, 13: 'E' }, { ...shifted, 13: 'D' }];
+    const results = [];
+    for (const read of reads) {
+      // eslint-disable-next-line no-await-in-loop
+      results.push(await h.resolver.execute({ testId: '1234567', answers: read }));
+      expect(h.stored().refused.count).toBe(results.length);
+    }
+    expect(results[0].unsalvable).toBeUndefined();
+    expect(results[1].unsalvable).toBeUndefined();
+    expect(results[2]).toMatchObject({ error: { code: 'OMR_ALIGNMENT' }, unsalvable: { cardId: '1234567', refusals: 3 } });
+    expect(h.warn).toHaveBeenCalledWith('school.scan.card-unsalvable', expect.objectContaining({ cardId: '1234567', refusals: 3 }));
+  });
+
+  it('a confirming re-feed resets the refusal count', async () => {
+    const h = live();
+    await h.resolver.execute({ testId: '1234567', answers: shifted });
+    expect((await h.resolver.execute({ testId: '1234567', answers: shifted })).error).toBeUndefined();
+    const later = { ...shifted, 13: 'E', 14: 'D' };
+    await h.resolver.execute({ testId: '1234567', answers: later });
+    expect(h.stored().refused.count).toBe(1);
+  });
+
+  it('the retired card fed again returns retiredCard, never an alignment refusal', async () => {
+    const retired = { ...record, status: 'satisfied', cardRetiredAt: '2026-11-04T00:00:00.000Z' };
+    const baselineStore = { get: vi.fn(async () => ({ answers, owners: Object.fromEntries(Object.keys(answers).map(r => [r, 'old'])) })), save: vi.fn() };
+    const resolver = new ResolveCardScan({
+      allocationStore: { findByCard: vi.fn(async () => [retired]), updateStatus: vi.fn() },
+      repository: { getPublished: vi.fn(async () => null) }, baselineStore, logger: {},
+    });
+    const result = await resolver.execute({ testId: '1234567', answers: shifted });
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({ retiredCard: true, deadCard: true });
+    expect(baselineStore.save).not.toHaveBeenCalled();
   });
 });
