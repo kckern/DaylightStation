@@ -108,8 +108,9 @@ describe('buildGemBoard', () => {
     expect(board.cells.contest.b.state).toBe('none');
     // School evidence missing (no week verdict) reads unknown, never missed.
     expect(board.cells['green-week'].a).toMatchObject({ state: 'unknown', lifetime: 3 });
-    expect(board.totals.a).toEqual({ week: 2, lifetime: 7 });
-    expect(board.totals.b).toEqual({ week: 0, lifetime: 0 });
+    // a holds the contest gem while leading it: week counts it, earned does not.
+    expect(board.totals.a).toEqual({ week: 3, earned: 2, lifetime: 7 });
+    expect(board.totals.b).toEqual({ week: 0, earned: 0, lifetime: 0 });
   });
 
   it('a decided contest reads won', () => {

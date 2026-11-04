@@ -8,6 +8,10 @@
  * block), grouped by `gem.category` (default: the rule id). Rows keep the
  * rules' order. Columns are the learners in roster order — never ranked.
  *
+ * Totals per learner: `week` is what they HOLD this week (earned, plus a
+ * contest gem while they lead it — the agenda card's figure), `earned` only
+ * what is earned, `lifetime` what the ledger has paid (the wallet's gems).
+ *
  * A cell's state, best first when a row has several rules:
  *   won       a contest gem, decided and theirs
  *   earned    a weekly gem paid (or owed) this week
@@ -69,17 +73,19 @@ function cell(row, learner, lifetimeByRule) {
   const lines = (learner.lines ?? []).filter((l) => row.ruleIds.includes(l.ruleId));
   let state = null;
   let week = 0;
+  let held = 0; // week, plus a contest gem while they lead it (the agenda's "held")
   let progress = null;
   let note = null;
   for (const line of lines) {
     const s = lineState(line);
     state = state == null ? s : better(s, state);
     if (line.status === 'earned') week += line.amount?.gems ?? 0;
+    if (line.status === 'earned' || s === 'leading') held += line.amount?.gems ?? 0;
     if (!progress && line.progress && s === 'pending') progress = line.progress;
     if (s === state) note = line.note ?? null;
   }
   const lifetime = row.ruleIds.reduce((sum, id) => sum + (lifetimeByRule?.[id] ?? 0), 0);
-  return { state: state ?? 'none', progress, week, lifetime: Math.max(lifetime, week), note };
+  return { state: state ?? 'none', progress, week, held, lifetime: Math.max(lifetime, week), note };
 }
 
 /**
@@ -103,9 +109,13 @@ export function buildGemBoard({ ruleset, week, lifetime = {}, mode = 'live' }) {
   const totals = {};
   for (const { learnerId } of learners) {
     const weekGems = rows.reduce((sum, row) => sum + cells[row.id][learnerId].week, 0);
+    const heldGems = rows.reduce((sum, row) => sum + cells[row.id][learnerId].held, 0);
     const rowsLifetime = rows.reduce((sum, row) => sum + cells[row.id][learnerId].lifetime, 0);
     const wallet = lifetime[learnerId]?.total;
-    totals[learnerId] = { week: weekGems, lifetime: Number.isFinite(wallet) ? Math.max(wallet, weekGems) : rowsLifetime };
+    // `week` is what the child HOLDS this week — earned, plus a contest gem
+    // while they lead it — the same figure as the agenda card's gem count.
+    // `lifetime` counts only what was paid.
+    totals[learnerId] = { week: heldGems, earned: weekGems, lifetime: Number.isFinite(wallet) ? Math.max(wallet, weekGems) : rowsLifetime };
   }
   return {
     mode,

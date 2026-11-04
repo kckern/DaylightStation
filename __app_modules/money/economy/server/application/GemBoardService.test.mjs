@@ -68,7 +68,7 @@ describe('GemBoardService', () => {
     expect(board.cells.contest.a.state).toBe('leading');
     // Lifetime from the ledger only for a household user; the wallet's gems are the total.
     expect(board.cells.exercise.a.lifetime).toBe(1);
-    expect(board.totals).toEqual({ a: { week: 1, lifetime: 4 }, b: { week: 0, lifetime: 0 } });
+    expect(board.totals).toEqual({ a: { week: 2, earned: 1, lifetime: 4 }, b: { week: 0, earned: 0, lifetime: 0 } });
   });
 
   it('economy off: an empty board', async () => {

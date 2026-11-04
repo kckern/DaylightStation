@@ -387,8 +387,9 @@ One view of every learner against every gem, for one week. Design:
   of the row's lines: `won`, `earned`, `leading`, `pending`, `unknown`, `none`,
   `disabled`. `week` is gems earned this week; `lifetime` counts payout gem
   entries by `ruleId`, less grown-up reversals (`lifetimeGemsByRule`).
-- **Totals** per learner: this week's gems, and the wallet's gem balance as the
-  lifetime figure.
+- **Totals** per learner: `week` is the gems they hold this week — earned, plus
+  the contest gem while they lead it, the same figure as the agenda card's gem
+  count — `earned` only the earned ones, and `lifetime` the wallet's gem balance.
 - Built by `GemBoardService` (`application/GemBoardService.mjs`) over the same
   preview the payouts use, plus a ledger read per learner; the pure fold is
   `domain/earnings/gemBoard.mjs`. Logged `economy.gems.board.read` (debug),
