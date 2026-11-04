@@ -218,3 +218,13 @@ describe('composeSchoolPush — two empty study days', () => {
     expect(composeSchoolPush({ kind: 'zero-days', learnerId: 'learner_a', days: 2 }).title).toBe('📭 School');
   });
 });
+
+describe('one phone card per sheet lineage', () => {
+  it('a retake tags itself with the original sheet, replacing that sheet\'s card', () => {
+    const first = composeSchoolPush({ ...base, ...labels, kind: 'graded', result: 'needs_remediation', earned: 1, total: 2, held: { retries: 2 } });
+    const fixed = composeSchoolPush({ ...base, ...labels, kind: 'graded', result: 'passed', earned: 2, total: 2,
+      retake: true, sessionId: 'ses_retake', tagSessionId: 'ses_a' });
+    expect(fixed.data.tag).toBe(first.data.tag);
+    expect(fixed.data.tag).toBe('school-user_4-ses_a');
+  });
+});

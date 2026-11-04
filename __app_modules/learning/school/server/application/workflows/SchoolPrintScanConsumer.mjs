@@ -363,8 +363,7 @@ export function createSchoolPrintScanConsumer({
       // A card refused UNSALVABLE_REFUSALS times with a different read each
       // time is unreadable paper (`ResolveCardScan`): retire it and reprint the
       // work still waiting on it, so the child is handed a fresh sheet instead
-      // of a fourth refusal. A failed replacement falls through to the
-      // ordinary unresolved path below, so the room still hears something.
+      // of a fourth refusal.
       if (outcome?.unsalvable && replaceUnreadableCard?.execute) {
         try {
           const replaced = await replaceUnreadableCard.execute({
@@ -382,9 +381,18 @@ export function createSchoolPrintScanConsumer({
           speak({ event: retired ? 'scan-card-replaced' : 'scan-card-unreadable', testId, reprinted });
           return false;
         } catch (err) {
+          // The card still cannot be read, so "scan again" would send the
+          // child round the same loop: a grown-up is the next step. The next
+          // feed tries the replacement again (a printer fault may clear).
           logger.warn?.('school.print.card-replace-failed', {
             testId, cardId: outcome.unsalvable.cardId, error: err.message,
           });
+          fireHook(
+            { result: 'card-replaced', testId, reprinted: 0, retired: false },
+            { kind: 'card-replaced', reprinted: 0, retired: false },
+          );
+          speak({ event: 'scan-card-unreadable', testId, reprinted: 0 });
+          return false;
         }
       }
       if (outcome?.error) {
@@ -758,6 +766,7 @@ export function createSchoolPrintScanConsumer({
                 let settledRetake = false;
                 let settledStudyDay = null;
                 let settledHold = null;
+                let settledLineage = null;
                 if (closeSessionOutcome) {
                   try {
                     // The bridge returns the authoritative session id (a
@@ -771,6 +780,7 @@ export function createSchoolPrintScanConsumer({
                     settledStudyDay = settled?.studyDay ?? null;
                     // A hold formed: there is no retake, and the phone must say so.
                     settledHold = settled?.teacherHold ?? null;
+                    settledLineage = settled?.lineageSessionId ?? null;
                   } catch (err) {
                     // The settle is now UPSTREAM of the broadcast (it has to
                     // be — the print outcome does not exist before it), so
@@ -841,6 +851,7 @@ export function createSchoolPrintScanConsumer({
                   retake: settledRetake,
                   studyDay: settledStudyDay,
                   held: settledHold,
+                  tagSessionId: settledLineage,
                 }, card, sectionOutcome.curriculum);
               } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
                 fireHook({

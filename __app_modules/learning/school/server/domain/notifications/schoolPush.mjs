@@ -64,7 +64,8 @@ function metadata(event, lane, key) {
 }
 
 function push(emoji, event, message, lane, { unknownChild = false } = {}) {
-  const key = event.sessionId ?? event.testId ?? 'unknown';
+  // `tagSessionId`: a retake's original sheet, so its result replaces that card.
+  const key = event.tagSessionId ?? event.sessionId ?? event.testId ?? 'unknown';
   return { title: titleOf(emoji, event, unknownChild), message, data: metadata(event, lane, key) };
 }
 

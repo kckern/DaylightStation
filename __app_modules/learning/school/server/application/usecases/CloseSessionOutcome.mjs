@@ -53,7 +53,7 @@ import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mj
 import { studyDayWindow } from "../../domain/studyDay.mjs";
 import { formatPageSpans } from "../../domain/questionBankV2.mjs";
 import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
-import { remediationDepthOf } from "../remediationDepth.mjs";
+import { remediationDepthOf, remediationRootOf } from "../remediationDepth.mjs";
 import { sessionPassingPercent } from "../passBar.mjs";
 
 export class CloseSessionOutcome {
@@ -723,6 +723,10 @@ export class CloseSessionOutcome {
       studyDay: state.studyDay ?? null,
       // A cap hold formed: there is no retake, so the phone must not promise one.
       teacherHold: teacherHold ? { retries: depth } : null,
+      // The phone keys a lineage's pushes to its original sheet (one card per sheet).
+      lineageSessionId: state.remediationOf
+        ? await remediationRootOf(sessionId, state.remediationOf, this.#sessions)
+        : sessionId,
       reward,
       unlocked,
       nextSubjectToken,

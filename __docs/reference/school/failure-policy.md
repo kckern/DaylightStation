@@ -191,8 +191,10 @@ change the phone contradicted it.
 
 The hold push and the corrected-sheet lane can both happen to one sheet. A
 final-round failure pushes 🙋, and the child may still fix the marks on that
-paper and pass through the lane. The ✅ that follows belongs to the new
-session, so it arrives as a second card rather than replacing the 🙋 one.
+paper and pass through the lane. `CloseSessionOutcome` returns
+`lineageSessionId`, the original sheet of the retake chain, and a graded push
+is tagged with it, so the ✅ that follows replaces the 🙋 card, just as any
+retake's result replaces its sheet's earlier 🔁.
 
 ### Unreadable card replacement
 
@@ -220,9 +222,11 @@ If nothing live is left to reprint, the card is NOT retired. Retiring it would
 only close its other paths, such as a failed sheet the child could still
 correct. The room hears `scan-card-unreadable`, a slip headed THIS CARD CAN'T BE
 READ asks for a grown-up, and the phone says "Card can't be read any more —
-needs you" (`school.answer-sheet.unreadable-kept`). If the reprint fails, the
-card stays in service and the scan falls back to the ordinary
-`scan-unresolved` answer (`school.print.card-replace-failed`).
+needs you" (`school.answer-sheet.unreadable-kept`). If the replacement fails
+(a printer fault, or a card holding more than one child's work), the card stays
+in service and the child gets the same ask-a-grown-up slip and push, never the
+"scan again" refusal copy (`school.print.card-replace-failed`). The next feed
+tries the replacement again.
 
 A retired card fed again is answered as retired before any alignment check, so
 its old baseline can never refuse it: `scan-card-retired`, a slip headed THIS

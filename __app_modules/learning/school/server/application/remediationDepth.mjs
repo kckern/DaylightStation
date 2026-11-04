@@ -54,6 +54,30 @@ export async function remediationDepthOf(remediationOf, sessions, { limit = MAX_
   return depth;
 }
 
+/**
+ * The ORIGINAL sheet behind a session: itself for an original, else the
+ * first session of its `remediationOf` chain (or the last one that could be
+ * read). The phone keys a lineage's pushes to it, so a retake's result
+ * replaces the earlier card rather than stacking beside it.
+ *
+ * @param {string} sessionId
+ * @param {string|null|undefined} remediationOf - that session's own link
+ * @param {{readEvents: Function}} sessions
+ * @returns {Promise<string>}
+ */
+export async function remediationRootOf(sessionId, remediationOf, sessions) {
+  let root = sessionId;
+  let cursor = remediationOf;
+  const seen = new Set([sessionId]);
+  while (isNonEmptyString(cursor) && !seen.has(cursor) && seen.size <= MAX_WALK) {
+    seen.add(cursor);
+    root = cursor;
+    // eslint-disable-next-line no-await-in-loop
+    cursor = await linkFromEvents(sessions, cursor);
+  }
+  return root;
+}
+
 const isOpenFailure = (row) => !row?.terminal && row?.state === 'outcome_recorded'
   && row?.outcome?.result === 'needs_remediation';
 

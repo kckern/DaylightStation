@@ -962,6 +962,13 @@ describe('remediation cap: no retry ticket past two rounds', () => {
     expect((await close.execute({ sessionId: SID })).teacherHold).toEqual({ retries: 2 });
   });
 
+  it('names the original sheet of a retake chain, so its pushes share one phone card', async () => {
+    await priorFailure('ses_a', null, 'ses_b');
+    await priorFailure('ses_b', 'ses_a', SID);
+    await failRetry('ses_b');
+    expect((await close.execute({ sessionId: SID })).lineageSessionId).toBe('ses_a');
+  });
+
   it('a failure with retries left returns no hold', async () => {
     await priorFailure('ses_a', null, SID);
     await failRetry('ses_a');

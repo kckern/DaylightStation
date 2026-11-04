@@ -67,8 +67,10 @@ clause; it never renders an id.
 | Two study days in a row with nothing done (`zero-days`) | 📭 | School needs you (high) |
 
 - `tag` is `school-{learnerId}-{sessionId ?? testId}`, so a rescan, or a Partial
-  followed by the Pass for the same session, replaces one card. With no learner
-  it is `school-card-{sessionId ?? testId}`.
+  followed by the Pass for the same session, replaces one card. A retake's
+  graded push uses its original sheet's session instead (`tagSessionId`, from
+  `CloseSessionOutcome`'s `lineageSessionId`), so the retake's ✅ replaces the
+  sheet's 🔁 or 🙋 card. With no learner it is `school-card-{sessionId ?? testId}`.
 - `group` is `school-{learnerId}`: one stack per child.
 - A piano lesson is tagged `school-{learnerId}-piano-{studyDay}`.
 - A card-ladder concern is tagged `school-{learnerId}-card-ladder-{package}`, so

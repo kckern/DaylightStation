@@ -216,15 +216,26 @@ describe('SchoolPrintScanConsumer — every hook fire carries the phone copy', (
     expect(JSON.stringify(printed)).not.toContain('OUT OF DATE');
   });
 
-  it('a failed replacement still tells the room the card could not be read', async () => {
-    const replaceUnreadableCard = { execute: vi.fn(async () => { throw new Error('printer down'); }) };
-    const { spoken, warns, feed } = harness({
+  it('a failed replacement sends the child to a grown-up, never back to "scan again"', async () => {
+    const replaceUnreadableCard = { execute: vi.fn(async () => { throw new Error('lost answer sheet must have exactly one attributable learner'); }) };
+    const { spoken, printed, fired, warns, feed } = harness({
       resolve: () => ({ error: { code: 'OMR_ALIGNMENT' }, results: [], unsalvable: { cardId: '5278294', refusals: 3 } }),
       replaceUnreadableCard,
     });
     await feed();
-    expect(spoken.map((s) => s.kind)).toEqual(['scan-unresolved']);
+    expect(spoken.map((s) => s.kind)).toEqual(['scan-card-unreadable']);
+    expect(JSON.stringify(printed)).toContain("THIS CARD CAN'T BE READ");
+    expect(JSON.stringify(printed)).not.toContain('scan counts');
+    expect(fired[0].notification.message).toBe("Card can't be read any more — needs you");
     expect(warns.some((w) => w.event === 'school.print.card-replace-failed')).toBe(true);
+  });
+
+  it("a retake's push takes the original sheet's tag", async () => {
+    const { fired, feed } = harness({
+      settleOutcome: () => ({ ...SETTLED(), remediationOf: 'ses_older', lineageSessionId: 'ses_root' }),
+    });
+    await feed();
+    expect(fired[0].notification.data.tag).toBe('school-user_4-ses_root');
   });
 
   it('Partial then Passed for the same session share one tag, so the phone replaces the first', async () => {
