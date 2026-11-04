@@ -113,3 +113,30 @@ describe('OpenRemediation — remediation cap', () => {
     expect((await useCase.execute({ sessionId: 'ses_c' })).status).toBe('opened');
   });
 });
+
+describe('OpenRemediation — a corrected sheet past the cap', () => {
+  it('a corrected_sheet lane opens one round past the cap', async () => {
+    const { sessions, logger, useCase } = build();
+    await fail(sessions, 'ses_0');
+    await fail(sessions, 'ses_1', 'ses_0');
+    await fail(sessions, 'ses_2', 'ses_1');
+    expect(await useCase.execute({ sessionId: 'ses_2' })).toMatchObject({ status: 'unavailable', reason: 'remediation_capped' });
+    const result = await useCase.execute({ sessionId: 'ses_2', lane: 'corrected_sheet' });
+    expect(result.status).toBe('opened');
+    const created = (await sessions.readEvents(result.newSessionId)).find((e) => e.type === 'created');
+    expect(created).toMatchObject({ lane: 'corrected_sheet', remediationOf: 'ses_2' });
+    expect(logger.info).toHaveBeenCalledWith('school.remediation.corrected-past-cap', {
+      learnerId: LEARNER, unitId: UNIT, sessionId: 'ses_2', depth: 2,
+    });
+  });
+
+  it('a corrected_sheet lane is still capped one round later', async () => {
+    const { sessions, useCase } = build();
+    await fail(sessions, 'ses_0');
+    await fail(sessions, 'ses_1', 'ses_0');
+    await fail(sessions, 'ses_2', 'ses_1');
+    await fail(sessions, 'ses_3', 'ses_2');
+    expect(await useCase.execute({ sessionId: 'ses_3', lane: 'corrected_sheet' }))
+      .toMatchObject({ status: 'unavailable', reason: 'remediation_capped' });
+  });
+});

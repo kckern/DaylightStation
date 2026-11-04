@@ -65,12 +65,16 @@ export class OpenRemediation {
    * @param {string} args.sessionId - the FAILED session the retry hangs off
    * @param {string|null} [args.openedBy] - a grown-up, already through the
    *   teacher gate; never capped
+   * @param {'corrected_sheet'|null} [args.lane] - `corrected_sheet`: the child
+   *   fixed the marks on the paper they already hold (`RecordCardScanOutcome`'s
+   *   corrected-sheet lane). That is not a fresh sheet, so it may open ONE round
+   *   past the cap; a correction that also fails is a hold like any other.
    * @returns {Promise<{ status: 'opened'|'already_opened'|'unavailable',
    *                     reason?: 'remediation_capped',
    *                     sessionId: string|null, newSessionId: string|null,
    *                     variant: number|null, document: object|null, message: string }>}
    */
-  async execute({ sessionId, openedBy = null } = {}) {
+  async execute({ sessionId, openedBy = null, lane = null } = {}) {
     const nowIso = this.#clock().toISOString();
     const state = reduceSession(await this.#sessions.readEvents(sessionId));
     if (!state.sessionId) return this.#unavailable(sessionId, 'We could not find that work.');
@@ -95,12 +99,18 @@ export class OpenRemediation {
       const depth = await remediationDepthOf(state.remediationOf, this.#sessions, {
         limit: this.#maxRounds + REMEDIATION_COUNT_HEADROOM,
       });
-      if (depth >= this.#maxRounds) {
+      const correctedSheet = lane === 'corrected_sheet';
+      if (depth >= this.#maxRounds + (correctedSheet ? 1 : 0)) {
         this.#logger.info?.('school.remediation.capped', {
           learnerId: state.learnerId, unitId: state.unitId, depth, sessionId, maxRounds: this.#maxRounds,
         });
         return this.#unavailable(sessionId, `After ${retriesPhrase(depth)}, a grown-up will help with this one.`, {
           headline: 'A grown-up will help', reason: 'remediation_capped',
+        });
+      }
+      if (correctedSheet && depth >= this.#maxRounds) {
+        this.#logger.info?.('school.remediation.corrected-past-cap', {
+          learnerId: state.learnerId, unitId: state.unitId, sessionId, depth,
         });
       }
     }
@@ -124,6 +134,7 @@ export class OpenRemediation {
       type: 'created', at: nowIso, sessionId: newSessionId,
       learnerId: state.learnerId, unitId: state.unitId, remediationOf: sessionId, variant,
       remediationItemIds: state.missedItemIds, ...(openedBy ? { openedBy } : {}),
+      ...(lane ? { lane } : {}),
     });
     if (opened.errors.length) throw new Error(`OpenRemediation: could not open the retry: ${opened.errors.join('; ')}`);
     await this.#sessions.appendEvent(newSessionId, opened.event);
