@@ -127,7 +127,7 @@ function remediationHoldItems(entries, { learnerId, statesById }) {
 
 export class GetTeacherToday {
   #learnerDirectory; #datastore; #sessions; #reviewQueue; #evidence; #curriculum; #bookLog;
-  #fitnessSessions; #pianoDayActivity; #timezone; #boundaryHour; #clock; #logger; #planProjection;
+  #fitnessSessions; #pianoDayActivity; #timezone; #boundaryHour; #clock; #logger; #planProjection; #dayCompletion;
 
   constructor({
     learnerDirectory, datastore, sessions, reviewQueue = null, evidenceRepository = null,
@@ -136,6 +136,10 @@ export class GetTeacherToday {
     // The agenda's own `PlanProjection`, asked for teacher holds. Null: the
     // digest carries an empty `attention` list.
     planProjection = null,
+    // The ONE answer to "is this child done today" (GetLearnerDayCompletion),
+    // the same one the day-complete gate, term grid and agenda use. Surfaces
+    // that show done-ness read `dayCompletion` here instead of recounting.
+    getLearnerDayCompletion = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!learnerDirectory) throw new Error('GetTeacherToday requires learnerDirectory');
@@ -153,8 +157,21 @@ export class GetTeacherToday {
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
     this.#planProjection = planProjection;
+    this.#dayCompletion = getLearnerDayCompletion;
     this.#clock = clock;
     this.#logger = logger;
+  }
+
+  /** The server's day verdict for one learner, or null when it is not wired or cannot be read. */
+  async #completionFor(learnerId, studyDay) {
+    if (!this.#dayCompletion?.execute) return null;
+    try {
+      const result = await this.#dayCompletion.execute({ learnerId, studyDay });
+      return { state: result?.state ?? null, studyDate: result?.studyDate ?? null, excused: result?.excused ?? null };
+    } catch (error) {
+      this.#logger.warn?.('school.teacher-day.completion-unavailable', { learnerId, error: error?.message });
+      return null;
+    }
   }
 
   async execute({ studyDay = null, version = 'v1', learnerId = null } = {}) {
@@ -385,7 +402,7 @@ export class GetTeacherToday {
         effectiveScoreTotals: { correct, total, percent: total ? Math.round((correct / total) * 10000) / 100 : null },
         pendingReview: pending.filter((item) => item.learnerId === learner.id).length,
         reflections,
-        ...(isV2 ? { readingActivity, fitnessActivity, pianoActivity } : {}),
+        ...(isV2 ? { readingActivity, fitnessActivity, pianoActivity, dayCompletion: await this.#completionFor(learner.id, selectedStudyDay) } : {}),
         // v1 compatibility fields. Attempt rows stay as the old count until all
         // historical attempts have a reliable work-session identity.
         attemptsToday: attempts.length,

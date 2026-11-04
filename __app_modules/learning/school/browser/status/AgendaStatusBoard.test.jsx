@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { fileURLToPath } from 'node:url';
 import * as sass from 'sass';
-import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
+import AgendaStatusBoard, { withServerVerdict } from "./AgendaStatusBoard.jsx";
 import { BOARD_CACHE_KEY } from "./boardCache.js";
 import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 
@@ -75,6 +75,15 @@ describe('AgendaStatusBoard model', () => {
     // Not served yet: the retry is still owed and still shows.
     const owed = summarize([{ subject: 'civilization', obligation: { state: 'owed' } }], sessions);
     expect(owed).toMatchObject({ total: 2, done: 1 });
+  });
+
+  it('lets the server day verdict decide done, in both directions, and ignores an unknown one', () => {
+    const partly = { total: 3, done: 2, segments: [] };
+    expect(withServerVerdict(partly, { state: 'complete' }).serverDone).toBe(true);
+    expect(withServerVerdict({ total: 2, done: 2, segments: [] }, { state: 'incomplete' }).serverDone).toBe(false);
+    expect(withServerVerdict(partly, { state: 'no_work_today' }).serverDone).toBe(true);
+    expect(withServerVerdict(partly, { state: 'indeterminate' })).toBe(partly);
+    expect(withServerVerdict(partly, null)).toBe(partly);
   });
 
   it('maps the outcome vocabulary onto three disc states', () => {

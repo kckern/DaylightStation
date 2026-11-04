@@ -34,6 +34,18 @@ function useCase(overrides = {}) {
 }
 
 describe('GetTeacherToday v2', () => {
+  // One source of truth for "done today": the digest carries the server's day
+  // verdict so the Portal board shows it instead of recounting (2026-11-03).
+  it('carries the server day verdict per learner, and survives it failing', async () => {
+    const execute = async ({ learnerId, studyDay }) => ({ learnerId, studyDate: studyDay, state: 'complete', excused: false });
+    const digest = await useCase({ getLearnerDayCompletion: { execute } }).execute({ studyDay: '2026-08-23', version: 'v2' });
+    expect(digest.learners[0].dayCompletion).toEqual({ state: 'complete', studyDate: '2026-08-23', excused: false });
+    const warn = [];
+    const broken = await useCase({ getLearnerDayCompletion: { execute: async () => { throw new Error('down'); } },
+      logger: { debug() {}, warn: (event) => warn.push(event) } }).execute({ studyDay: '2026-08-23', version: 'v2' });
+    expect(broken.learners[0].dayCompletion).toBeNull();
+    expect(warn).toContain('school.teacher-day.completion-unavailable');
+  });
   it('keeps Learner4 work on August 23 and reports its August 24 scan once as processed today', async () => {
     const august23 = await useCase().execute({ studyDay: '2026-08-23', version: 'v2' });
     expect(august23.learners[0]).toMatchObject({

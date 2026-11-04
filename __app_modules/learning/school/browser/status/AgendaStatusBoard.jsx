@@ -241,9 +241,24 @@ function TwoWeeks({ term, anchor }) {
  * finished, one big check mark. The number is the progress bar for a screen
  * reader ("2 of 7 done"); to the eye it is the across-the-room fact.
  */
+/**
+ * Lay the server's day verdict (GetLearnerDayCompletion, via the teacher day
+ * digest's `dayCompletion`) over the board's own count. Discs stay the board's;
+ * whether the day is DONE is the server's call, so this board can never say
+ * "1 left" while the gate has unlocked games, or a check while work is owed.
+ */
+export function withServerVerdict(summary, dayCompletion) {
+  const state = dayCompletion?.state;
+  if (!summary || !state || state === 'indeterminate') return summary;
+  return { ...summary, serverDone: state === 'complete' || state === 'no_work_today' };
+}
+
 function DayCount({ summary }) {
   if (!summary || summary.total <= 0) return null;
-  if (summary.done >= summary.total) {
+  // The server's verdict, when present, decides the check mark — the same
+  // answer the agenda, term grid and day-complete gate give (one source).
+  const finished = summary.serverDone ?? (summary.done >= summary.total);
+  if (finished) {
     return (
       <span className="school-status-board__check" data-testid="board-day-done" role="img" aria-label="Done for the day">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -260,7 +275,8 @@ function DayCount({ summary }) {
       aria-valuenow={summary.done}
       aria-label={`${summary.done} of ${summary.total} done`}
     >
-      {summary.total - summary.done}
+      {/* Server says work is owed though every disc reads green: never "0 left". */}
+      {summary.serverDone === false ? Math.max(1, summary.total - summary.done) : summary.total - summary.done}
     </span>
   );
 }
@@ -570,7 +586,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
           if (!plan?.ok) return settleWithoutPlan();
           settle(kid.id, generation, {
-            summary: summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity),
+            summary: withServerVerdict(
+              summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity),
+              learner?.dayCompletion),
           });
         } catch (error) {
           schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });

@@ -412,6 +412,7 @@ try {
         pianoDayActivity: dependencies.pianoDayActivity ?? null,
         timezone: configService.getTimezone?.() || null,
         planProjection: dependencies.schoolLifecycle.planProjection ?? null,
+        getLearnerDayCompletion: dependencies.schoolLifecycle.getLearnerDayCompletion ?? null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
     } catch (err) {

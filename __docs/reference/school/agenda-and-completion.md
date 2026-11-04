@@ -205,6 +205,17 @@ subject pins. A finished day shows one green check mark in its place. There is
 no segmented bar; the number is the progressbar for screen readers ("N of M
 done"). A rest day keeps "No school today".
 
+**Whether the day is done is the server's call, not the board's.** The teacher
+day digest (`GET /api/v1/school/teacher/day`, v2) carries each learner's
+`dayCompletion: { state, studyDate, excused }` from `GetLearnerDayCompletion`,
+the same verdict the day-complete gate, term grid and agenda use. The card shows
+the check mark when that state is `complete` or `no_work_today`, and never shows
+"0 left" while it says `incomplete`. The discs stay the board's own reading of
+sessions; a settled retry the planner has moved past (remediation capped, next
+unit served) is not a disc. When `dayCompletion` is null or `indeterminate` the
+card falls back to its own count. Before 2026-11-03 the board recounted alone and
+read "6 of 7" for a learner every other surface showed done.
+
 **Coins.** A fixed-width column so the figures line up down every card. Silver
 is the big figure: the learner's earnings so far this week from the roster
 earnings preview (`GET /api/v1/earnings/preview`; see
