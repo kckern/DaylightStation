@@ -79,7 +79,7 @@ function fakeReviewQueue() {
   };
 }
 
-function seededSession(sessionId, { learnerId = 'learner4', unitId = 'unit-1' } = {}) {
+function seededSession(sessionId, { learnerId = 'learner4', unitId = 'unit-1', remediationOf = null } = {}) {
   const mk = (payload) => {
     const { errors, event } = createEvent(payload);
     if (errors.length) throw new Error(errors.join('; '));
@@ -88,6 +88,7 @@ function seededSession(sessionId, { learnerId = 'learner4', unitId = 'unit-1' } 
   return [
     mk({
       type: 'created', at: '2026-08-05T00:00:00.000Z', sessionId, unitId, learnerId,
+      ...(remediationOf ? { remediationOf } : {}),
     }),
     mk({
       type: 'issued', at: '2026-08-05T00:01:00.000Z', sessionId, artifactId: 'art-1',
@@ -629,9 +630,13 @@ describe('review queue bridge', () => {
 describe('corrected-sheet retake', () => {
   // A failed sheet: graded 1/2 by a first scan, then settled needs_remediation
   // the way CloseSessionOutcome would.
-  async function failedSheet({ openRemediation } = {}) {
+  // `depth`: how many retries deep ws-1 already is (2 = the final round under
+  // the default cap of two), seeded as a remediationOf chain behind it.
+  async function failedSheet({ openRemediation, depth = 0 } = {}) {
     const datastore = fakeDatastore();
-    const sessions = fakeSessions(seededSession('ws-1'));
+    const ancestors = Array.from({ length: depth }, (_, i) => `ws-round-${i}`);
+    const seed = ancestors.flatMap((id, i) => seededSession(id, { remediationOf: ancestors[i - 1] ?? null }));
+    const sessions = fakeSessions([...seed, ...seededSession('ws-1', { remediationOf: ancestors.at(-1) ?? null })]);
     const reviewQueue = fakeReviewQueue();
     let n = 0;
     const remediation = openRemediation ?? new OpenRemediation({
@@ -707,9 +712,49 @@ describe('corrected-sheet retake', () => {
     const openRemediation = { execute: vi.fn(async () => ({ status: 'unavailable', reason: 'remediation_capped' })) };
     const { sessions, useCase } = await failedSheet({ openRemediation });
     const outcome = await useCase.execute({ testId: '1234567', card: corrected() });
-    expect(openRemediation.execute).toHaveBeenCalledWith({ sessionId: 'ws-1' });
+    expect(openRemediation.execute).toHaveBeenCalledWith({ sessionId: 'ws-1', lane: 'corrected_sheet' });
     expect(outcome.session).toMatchObject({ sessionId: 'ws-1', advancedTo: null, reason: 'state-outcome_recorded' });
     expect((await sessions.readEvents('ws-1')).at(-1).type).toBe('outcome_recorded');
+  });
+
+  it('a fixed final-round sheet is graded, not refused', async () => {
+    const { sessions, useCase } = await failedSheet({ depth: 2 });
+    const outcome = await useCase.execute({ testId: '1234567', card: corrected() });
+    expect(outcome.retakeOf).toBe('ws-1');
+    expect(outcome.session).toEqual({
+      sessionId: 'ws-retake-1', advancedTo: 'graded', percent: 100, correctCount: 2, totalCount: 2,
+    });
+    expect((await sessions.readEvents('ws-retake-1'))[0]).toMatchObject({ remediationOf: 'ws-1', lane: 'corrected_sheet' });
+  });
+
+  it('an identical re-feed of a capped sheet stays a duplicate', async () => {
+    const { sessions, useCase } = await failedSheet({ depth: 2 });
+    const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1', reScored: true }) });
+    expect(outcome).toMatchObject({ recorded: false, reason: 'duplicate-scan' });
+    expect(sessions.events.has('ws-retake-1')).toBe(false);
+  });
+
+  it('an eraser-only change past the cap goes to review', async () => {
+    const { useCase } = await failedSheet({ depth: 2 });
+    const card = corrected();
+    card.results[1] = { ...card.results[1], given: ['cat', 'fox'], leniency: 'eraser' };
+    const outcome = await useCase.execute({ testId: '1234567', card });
+    expect(outcome.session).toMatchObject({ sessionId: 'ws-retake-1', advancedTo: 'submitted', reason: 'awaiting-review' });
+  });
+
+  it('a second correction past the cap, after the first one failed, is refused', async () => {
+    const { sessions, useCase } = await failedSheet({ depth: 2 });
+    const half = corrected();
+    half.results[0] = { ...half.results[0], given: 'red', status: 'incorrect', earned: 0 };
+    await useCase.execute({ testId: '1234567', card: half });
+    const { event } = createEvent({
+      type: 'outcome_recorded', at: '2026-08-05T00:20:00.000Z', sessionId: 'ws-retake-1',
+      outcomeId: 'out:ws-retake-1', result: 'needs_remediation', reason: 'below_passing', passingPercent: 80,
+    });
+    await sessions.appendEvent('ws-retake-1', event);
+    const outcome = await useCase.execute({ testId: '1234567', card: corrected() });
+    expect(outcome.retakeOf).toBeUndefined();
+    expect(sessions.events.has('ws-retake-2')).toBe(false);
   });
 
   it('a failed retake corrected again opens the next round off the retake, not the original', async () => {

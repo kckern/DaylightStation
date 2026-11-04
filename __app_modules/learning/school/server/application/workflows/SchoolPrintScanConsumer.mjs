@@ -83,7 +83,7 @@ import { courseDisplay } from "../../domain/curriculum/display.mjs";
 export function createSchoolPrintScanConsumer({
   realtime, config = {}, resolveCardScan, recordCardScanOutcome = null,
   closeSessionOutcome = null, gradingHook = null, logger = console,
-  receipts = null, printDocuments = null,
+  receipts = null, printDocuments = null, replaceUnreadableCard = null,
   curriculum = null, studentName = null, today = null,
   scheduler = null, pushLabelTimeoutMs = 2000,
 }) {
@@ -360,6 +360,33 @@ export function createSchoolPrintScanConsumer({
      *   record, so it is in no position to announce that nothing was).
      */
     async function settleOutcome(outcome, speak) {
+      // A card refused UNSALVABLE_REFUSALS times with a different read each
+      // time is unreadable paper (`ResolveCardScan`): retire it and reprint the
+      // work still waiting on it, so the child is handed a fresh sheet instead
+      // of a fourth refusal. A failed replacement falls through to the
+      // ordinary unresolved path below, so the room still hears something.
+      if (outcome?.unsalvable && replaceUnreadableCard?.execute) {
+        try {
+          const replaced = await replaceUnreadableCard.execute({
+            cardId: outcome.unsalvable.cardId, reason: 'omr_alignment_unconfirmed',
+          });
+          const reprinted = replaced?.replacements?.length ?? 0;
+          const retired = replaced?.retired === true;
+          logger.warn?.('school.print.card-replaced', {
+            testId, cardId: outcome.unsalvable.cardId, refusals: outcome.unsalvable.refusals, reprinted, retired,
+          });
+          fireHook(
+            { result: 'card-replaced', testId, reprinted, retired },
+            { kind: 'card-replaced', reprinted, retired },
+          );
+          speak({ event: retired ? 'scan-card-replaced' : 'scan-card-unreadable', testId, reprinted });
+          return false;
+        } catch (err) {
+          logger.warn?.('school.print.card-replace-failed', {
+            testId, cardId: outcome.unsalvable.cardId, error: err.message,
+          });
+        }
+      }
       if (outcome?.error) {
         // CARD_ID_UNREADABLE (or any future resolver error code) — never
         // guessed at; the recorder already persisted the raw/decoded scan
@@ -456,6 +483,13 @@ export function createSchoolPrintScanConsumer({
         speak({
           event: 'scan-refused', code: 'unknown_card', recordId: null,
         });
+        return false;
+      }
+      if (outcome?.retiredCard) {
+        // `ReplaceUnreadableCard` (or a lost-sheet report) retired this card;
+        // its live work already reprinted on a new one.
+        logger.warn?.('school.print.scan-retired-card', { testId, answeredRowCount: outcome.answeredRowCount });
+        speak({ event: 'scan-card-retired', testId });
         return false;
       }
       if (outcome?.deadCard) {
@@ -723,6 +757,7 @@ export function createSchoolPrintScanConsumer({
                 // differently ("Retake: …", "· from Mon Sep 14").
                 let settledRetake = false;
                 let settledStudyDay = null;
+                let settledHold = null;
                 if (closeSessionOutcome) {
                   try {
                     // The bridge returns the authoritative session id (a
@@ -734,6 +769,8 @@ export function createSchoolPrintScanConsumer({
                     printReason = printed ? null : (settled?.printReason ?? 'unknown');
                     settledRetake = Boolean(settled?.remediationOf);
                     settledStudyDay = settled?.studyDay ?? null;
+                    // A hold formed: there is no retake, and the phone must say so.
+                    settledHold = settled?.teacherHold ?? null;
                   } catch (err) {
                     // The settle is now UPSTREAM of the broadcast (it has to
                     // be — the print outcome does not exist before it), so
@@ -803,6 +840,7 @@ export function createSchoolPrintScanConsumer({
                   sessionId: sectionOutcome.session.sessionId,
                   retake: settledRetake,
                   studyDay: settledStudyDay,
+                  held: settledHold,
                 }, card, sectionOutcome.curriculum);
               } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
                 fireHook({

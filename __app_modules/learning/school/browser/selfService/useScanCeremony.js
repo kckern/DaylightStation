@@ -148,6 +148,20 @@ function buildCeremony(payload) {
         at,
         code: payload.code ?? null,
       };
+    // ReplaceUnreadableCard retired the card; its unfinished work reprints now.
+    case 'scan-card-replaced':
+      return {
+        tone: 'warn',
+        title: 'Here is a fresh sheet',
+        detail: "The reader couldn't read your card, so your unfinished work is printing on a new one.",
+        at,
+      };
+    case 'scan-card-unreadable':
+      return {
+        tone: 'error', title: "This card can't be read", detail: 'Ask a grown-up to help with the work on it.', at,
+      };
+    case 'scan-card-retired':
+      return { tone: 'warn', title: 'This card was replaced', detail: 'Use your new answer card instead.', at };
     case 'scan-refused':
       return {
         tone: 'error',

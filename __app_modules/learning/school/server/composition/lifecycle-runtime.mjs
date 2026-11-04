@@ -311,6 +311,7 @@ try {
         resolveCardScan,
         recordCardScanOutcome,
         closeSessionOutcome: dependencies.schoolLifecycle.useCases?.closeSessionOutcome ?? null,
+        replaceUnreadableCard: dependencies.schoolLifecycle.useCases?.replaceUnreadableCard ?? null,
         gradingHook,
         // Every non-graded feed prints a notice slip through the same
         // thermal printer the result receipts use (2026-09-15).

@@ -47,3 +47,12 @@ export function sameOmrRead(a = {}, b = {}) {
 
 /** How long a refused read stays eligible to be confirmed by feeding the card again. */
 export const OMR_REFEED_CONFIRM_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Refused reads in a row, none confirmed by a refeed, after which the card is
+ * the problem rather than the reader: it is retired and its unfinished work is
+ * reprinted on a fresh one (`ReplaceUnreadableCard`). A slip does not repeat,
+ * and a child's real marks repeat exactly, so three different reads inside the
+ * refeed window mean the paper itself cannot be read the same way twice.
+ */
+export const UNSALVABLE_REFUSALS = 3;

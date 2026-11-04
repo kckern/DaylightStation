@@ -131,7 +131,7 @@ const SCHEMA = {
     },
   },
   created: {
-    fields: ['learnerId', 'unitId', 'studyDay', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy', 'replacementKey', 'replacesSessionId'],
+    fields: ['learnerId', 'unitId', 'studyDay', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy', 'replacementKey', 'replacesSessionId', 'lane'],
     validate: allOf(stringField('learnerId'), stringField('unitId'), (raw, push) => {
       if (raw.studyDay !== undefined && !isStudyDay(raw.studyDay)) push('studyDay: must be YYYY-MM-DD when present');
       // Both optional: only a remediation session carries them.
@@ -156,6 +156,10 @@ const SCHEMA = {
       }
       if ((raw.replacementKey === undefined) !== (raw.replacesSessionId === undefined)) {
         push('replacementKey and replacesSessionId must be supplied together');
+      }
+      // A retry the child opened by fixing the paper they hold (OpenRemediation).
+      if (raw.lane !== undefined && raw.lane !== 'corrected_sheet') {
+        push("lane: must be 'corrected_sheet' when present");
       }
     }),
   },

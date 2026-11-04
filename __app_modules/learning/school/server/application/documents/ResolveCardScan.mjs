@@ -38,7 +38,7 @@ import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/
 import { sha256Text } from '#system/utils/CanonicalFingerprint.mjs';
 import { planRows, resolveAmbiguousCardId } from "../../domain/documents/allocation.mjs";
 import { gradeAnswer } from "../../domain/grading.mjs";
-import { OMR_REFEED_CONFIRM_MS, omrAlignmentError, sameOmrRead } from "../../domain/omrAlignment.mjs";
+import { OMR_REFEED_CONFIRM_MS, UNSALVABLE_REFUSALS, omrAlignmentError, sameOmrRead } from "../../domain/omrAlignment.mjs";
 import { omrKeyAlignmentSuspect } from "../../domain/omrKeyAlignment.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { creditsAsEraser, leniencyCap } from "../../domain/documents/ambiguityLeniency.mjs";
@@ -666,6 +666,18 @@ export class ResolveCardScan {
     // have a different owner and must not be compared to their former worksheet.
     const allOwners = resolveRowOwners(records.filter((record) => isLiveOrSatisfied(record.status)));
     const owners = Object.fromEntries([...allOwners].map(([row, record]) => [row, record.recordId]));
+    const answeredRows = new Set(Object.keys(answers).map(Number));
+    // Ahead of the alignment check: a retired card's old baseline must not
+    // refuse it — its marks need the "this card was replaced" answer.
+    if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
+      return {
+        results: [], deadCard: true, retiredCard: true,
+        answeredRowCount: answeredRows.size,
+        recordStatuses: records.map((record) => record.status),
+        ...(cardIdInferred ? { cardIdInferred } : {}),
+        decode,
+      };
+    }
     let previous = {};
     if (this.#baselineStore && records.length) {
       const baseline = await this.#baselineStore.get(cardId);
@@ -678,26 +690,34 @@ export class ResolveCardScan {
         // remembered, and the same card fed again with the identical read is
         // accepted as the child's actual card (e.g. a run re-bubbled one row
         // lower after a mis-bubble — 2026-11-03, see omrAlignment.sameOmrRead).
-        const refused = baseline?.refused;
-        const confirmed = refused && sameOmrRead(refused.answers, answers)
-          && Date.now() - Date.parse(refused.at) < OMR_REFEED_CONFIRM_MS;
-        if (!confirmed) {
-          await this.#baselineStore.save(cardId, { ...baseline, refused: { answers, at: new Date().toISOString() } });
-          this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error, confirmBy: 'refeed' });
+        // Every refused read inside the window is kept, so a read that repeats
+        // after a slip in between still confirms (A, B, A is the child's A).
+        // `{answers, at}` is the pre-list shape of one remembered read.
+        const nowMs = Date.now();
+        const remembered = baseline?.refused
+          ? (Array.isArray(baseline.refused.reads) ? baseline.refused.reads
+            : [{ answers: baseline.refused.answers, at: baseline.refused.at }])
+          : [];
+        const recent = remembered.filter((read) => nowMs - Date.parse(read.at) < OMR_REFEED_CONFIRM_MS);
+        const match = recent.find((read) => sameOmrRead(read.answers, answers));
+        if (!match) {
+          // A teacher's replay re-runs evidence already counted; it is never a
+          // new feed, so it neither joins the list nor moves the card closer to
+          // retirement.
+          if (identityReview) return { error, results: [], decode };
+          // Distinct reads only: a matching read confirmed above instead.
+          const reads = [...recent, { answers, at: new Date(nowMs).toISOString() }];
+          const count = reads.length;
+          await this.#baselineStore.save(cardId, { ...baseline, refused: { reads, count } });
+          this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error, confirmBy: 'refeed', refusals: count });
+          if (count >= UNSALVABLE_REFUSALS) {
+            this.#logger.warn?.('school.scan.card-unsalvable', { cardId, refusals: count });
+            return { error, results: [], decode, unsalvable: { cardId, refusals: count } };
+          }
           return { error, results: [], decode };
         }
-        this.#logger.info?.('school.scan.alignment-confirmed-by-refeed', { cardId, ...error, refusedAt: refused.at });
+        this.#logger.info?.('school.scan.alignment-confirmed-by-refeed', { cardId, ...error, refusedAt: match.at });
       }
-    }
-    const answeredRows = new Set(Object.keys(answers).map(Number));
-    if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
-      return {
-        results: [], deadCard: true, retiredCard: true,
-        answeredRowCount: answeredRows.size,
-        recordStatuses: records.map((record) => record.status),
-        ...(cardIdInferred ? { cardIdInferred } : {}),
-        decode,
-      };
     }
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
     if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}), decode };

@@ -721,6 +721,8 @@ export class CloseSessionOutcome {
       // past study day carries its date. Both are facts of the session.
       remediationOf: state.remediationOf ?? null,
       studyDay: state.studyDay ?? null,
+      // A cap hold formed: there is no retake, so the phone must not promise one.
+      teacherHold: teacherHold ? { retries: depth } : null,
       reward,
       unlocked,
       nextSubjectToken,

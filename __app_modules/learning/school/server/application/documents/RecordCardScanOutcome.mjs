@@ -520,6 +520,11 @@ export class RecordCardScanOutcome {
    * submission. The caller's settle then runs outcome, coins, receipt and
    * ceremony exactly as for a first feed.
    *
+   * Past the round cap too, once (2026-11-03: a final-round 1/2 corrected to
+   * 2/2 was refused `remediation_capped`, and the child sat on a teacher hold
+   * nobody had been told about). The lane rides `lane: 'corrected_sheet'`;
+   * a correction that also fails is a hold like any other.
+   *
    * Only when every row is marked and at least one mark differs from the
    * graded sheet's: an identical re-feed is still a duplicate. A row only the
    * eraser-leniency rule would credit goes to a grown-up instead, so a right
@@ -554,7 +559,9 @@ export class RecordCardScanOutcome {
         .map((row) => [row.itemId, markKey(row.given)]));
       if (!graded.size || card.results.every((row) => graded.get(row.itemId) === markKey(row.given))) return null;
 
-      const opened = await this.#openRemediation.execute({ sessionId: current.sessionId });
+      // The corrected-sheet lane: fixing the paper the child holds is not a
+      // fresh sheet, so OpenRemediation lets it run one round past the cap.
+      const opened = await this.#openRemediation.execute({ sessionId: current.sessionId, lane: 'corrected_sheet' });
       if (opened?.status !== 'opened' || !opened.newSessionId) {
         this.#logger.warn?.('school.print.scan-retake-unavailable', {
           testId, sessionId: current.sessionId, recordId: card.recordId,

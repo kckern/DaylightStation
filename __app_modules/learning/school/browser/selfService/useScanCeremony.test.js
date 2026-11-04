@@ -150,6 +150,34 @@ describe('useScanCeremony', () => {
     });
   });
 
+  it('maps scan-card-replaced to a ceremony that points at the fresh sheet', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-card-replaced', testId: '4113279', reprinted: 1 });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'warn',
+      title: 'Here is a fresh sheet',
+      detail: "The reader couldn't read your card, so your unfinished work is printing on a new one.",
+    });
+  });
+
+  it('maps scan-card-unreadable to a ceremony that asks for a grown-up', () => {
+    const { result } = mount();
+    act(() => { deliver({ topic: 'omr', event: 'scan-card-unreadable', testId: '4113279' }); });
+    expect(result.current.current).toMatchObject({
+      tone: 'error', title: "This card can't be read", detail: 'Ask a grown-up to help with the work on it.',
+    });
+  });
+
+  it('maps scan-card-retired to a ceremony pointing at the new card', () => {
+    const { result } = mount();
+    act(() => { deliver({ topic: 'omr', event: 'scan-card-retired', testId: '4113279' }); });
+    expect(result.current.current).toMatchObject({
+      tone: 'warn', title: 'This card was replaced', detail: 'Use your new answer card instead.',
+    });
+  });
+
   it('maps scan-refused to an error ceremony carrying the code', () => {
     const { result } = mount();
     act(() => {
