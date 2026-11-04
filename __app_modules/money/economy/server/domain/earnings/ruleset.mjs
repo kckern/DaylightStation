@@ -5,7 +5,7 @@
  * Vocabulary: ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md §5.
  * Design: ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md.
  *
- * Nine kinds, one per earning trigger (scope × period):
+ * Ten kinds, one per earning trigger (scope × period):
  *   unit            each served unit matching the selector        School × Unit
  *   section-day     each day the matched section was served        School × Day, one subject
  *   section-week    every obligated day that week served           School × Week, one subject
@@ -13,21 +13,28 @@
  *   week-met        the week row `met`                             School × Week
  *   ring-threshold  `rate` silver per N rings + each threshold crossed (award week) Fitness × Week (absolute)
  *   ring-contest    most rings in the roster at award-week close   Fitness × Week (relative)
+ *   ring-days       at least `min` rings on at least `days` study days of the award week  Fitness × Week (absolute)
  *   debrief-day     each day's after-school debrief, by criterion  School × Day (completed | substantive | quiz-passed)
  *   debrief-week    every owed debrief done (late counts) or excused  School × Week
  *
  * A rule that pays twice is two rules: there is no `bonus`.
+ *
+ * Any rule may carry `gem: {category?, label?, color?}` — how its gems read on
+ * the Gem Board (ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md).
+ * Rules that share a `category` share a board row; `color` is the gem's
+ * provenance (taxonomy D12). Display only: it never changes what a rule pays.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { CURRENCIES } from '../entities/Transaction.mjs';
 
 export { CURRENCIES };
-export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week']);
+export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week', 'ring-days']);
 const DEBRIEF_CRITERIA = ['completed', 'substantive', 'quiz-passed'];
 const SECTION_KINDS = new Set(['section-day', 'section-week']);
 const TIES = new Set(['all', 'split', 'none']);
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const HEX = /^#[0-9a-fA-F]{6}$/;
 const MAX_MULTIPLIER = 10;
 
 /**
@@ -120,6 +127,26 @@ function normalizeEffective(effective, field) {
   return Object.keys(out).length ? out : null;
 }
 
+/** `{category?, label?, color?}` — the rule's row on the Gem Board. */
+function normalizeGem(gem, field) {
+  if (gem == null) return null;
+  if (typeof gem !== 'object' || Array.isArray(gem)) fail(`${field} must be {category, label, color}`, field);
+  const out = {};
+  if (gem.category != null) {
+    if (!ID.test(gem.category)) fail(`${field}.category must be a lowercase slug`, `${field}.category`);
+    out.category = gem.category;
+  }
+  if (gem.label != null) {
+    if (typeof gem.label !== 'string' || !gem.label.trim()) fail(`${field}.label must be a string`, `${field}.label`);
+    out.label = gem.label.trim();
+  }
+  if (gem.color != null) {
+    if (typeof gem.color !== 'string' || !HEX.test(gem.color)) fail(`${field}.color must be a #rrggbb colour`, `${field}.color`);
+    out.color = gem.color.toLowerCase();
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function normalizeRule(rule, i) {
   const field = `rules[${i}]`;
   if (!rule || typeof rule !== 'object') fail(`${field} must be an object`, field);
@@ -139,6 +166,8 @@ function normalizeRule(rule, i) {
   };
   const effective = normalizeEffective(rule.effective, `${field}.effective`);
   if (effective) out.effective = effective;
+  const gem = normalizeGem(rule.gem, `${field}.gem`);
+  if (gem) out.gem = gem;
   if (rule.kind === 'ring-threshold') {
     out.rate = normalizeRate(rule.rate, `${field}.rate`);
     out.thresholds = normalizeThresholds(rule.thresholds, `${field}.thresholds`);
@@ -147,6 +176,14 @@ function normalizeRule(rule, i) {
     const tie = rule.tie ?? 'all';
     if (!TIES.has(tie)) fail(`${field}.tie must be all, split or none`, `${field}.tie`);
     out.tie = tie;
+  }
+  if (rule.kind === 'ring-days') {
+    const days = rule.days ?? 5;
+    if (!Number.isInteger(days) || days < 1 || days > 7) fail(`${field}.days must be a whole number from 1 to 7`, `${field}.days`);
+    const min = rule.min ?? 1;
+    if (!Number.isInteger(min) || min < 1 || min > 10000) fail(`${field}.min must be a whole number from 1 to 10000`, `${field}.min`);
+    out.days = days;
+    out.min = min;
   }
   return out;
 }

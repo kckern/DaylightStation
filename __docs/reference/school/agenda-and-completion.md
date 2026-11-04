@@ -224,6 +224,11 @@ its earned lines into the ledger only while the economy catalog is `live`.
 Gold is smaller beneath it: the wallet's `balances.gold`
 (`GET /api/v1/economy/users/:id/wallet`), which grows when the Sunday week
 close converts unspent silver.
+On the Portal (where `SchoolApp` passes `onOpenGems`) the gems leave the coin
+grid for their own **gem door** under it: this week's count, a faint gem at
+zero, and a tap opens the family's Gem Board focused on that child (see the
+economy reference, "Gem Board"). The board header carries a **Gems** door to
+the same board. Without `onOpenGems`, gems stay in the coin grid as below.
 Gems are a third line only while some are held. One number per coin, no faded
 `+N`: silver is what was earned; gems are what the child holds this week,
 including the ring contest's gem while they lead it (the preview files that one

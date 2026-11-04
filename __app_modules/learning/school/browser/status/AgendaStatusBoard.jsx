@@ -49,6 +49,12 @@
  * (TermModal) and the coin cell opens that kid's bank screen through
  * `onOpenBank(learnerId)`, which the Portal wires to its economy-bank launch.
  * Neither starts tracked work. Without `onOpenBank` the cell is plain.
+ * A third, beside the coins: the gem door opens the family's Gem Board
+ * (`onOpenGems(learnerId)`, focused on that kid; spec
+ * ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md). Given,
+ * the gems leave the coin grid for their own button — a gem inside the bank
+ * door would be a button inside a button — and it shows even at zero, so the
+ * board is always one tap away.
  *
  * THE COIN CEREMONY (2026-10-21). When a child's coin-column silver rises
  * between two network reads of the same week, a short "+N" pop with their
@@ -318,11 +324,11 @@ function RestDayStatus({ restDay, pinned }) {
  * label; the words are for a screen reader. Nothing until a read lands, and
  * nothing for a cached silver figure from another week.
  */
-function Coins({ figure, gold, studyDay }) {
+function Coins({ figure, gold, studyDay, hideGems = false }) {
   const week = figureInWeek(figure, studyDay);
   const hasGold = Number.isFinite(gold);
   if (!week && !hasGold) return null;
-  const showGems = week && week.gems > 0;
+  const showGems = !hideGems && week && week.gems > 0;
   return (
     <div className="school-status-board__coin-grid">
       {week && (
@@ -351,9 +357,27 @@ function Coins({ figure, gold, studyDay }) {
   );
 }
 
+/** The gem door: this week's gems (faint at zero) — opens the Gem Board. */
+function GemDoor({ name, figure, studyDay, onOpen }) {
+  const week = figureInWeek(figure, studyDay);
+  const gems = week?.gems ?? 0;
+  return (
+    <button
+      type="button"
+      className={`school-status-board__gems-door${gems > 0 ? '' : ' is-zero'}`}
+      data-testid="board-gems-door"
+      aria-label={`Gem board, ${name}: ${gems} gem${gems === 1 ? '' : 's'} this week`}
+      onClick={onOpen}
+    >
+      <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
+      {gems > 0 && <span className="school-status-board__figure school-status-board__figure--gem">{gems}</span>}
+    </button>
+  );
+}
+
 const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} silver this week` : `${name}'s bank`);
 
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, coinCeremony = null }) {
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, coinCeremony = null }) {
   // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
   // a reload shows the board as it last stood, then each card is re-read and
   // replaced in place. A pinned `day` only trusts a snapshot of that same day.
@@ -822,10 +846,13 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                   aria-label={coinDoorLabel(kid.name, figureInWeek(earnings[kid.id], studyDay))}
                   onClick={() => openBank(kid.id)}
                 >
-                  <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+                  <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} hideGems={Boolean(onOpenGems)} />
                 </button>
               ) : (
-                <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+                <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} hideGems={Boolean(onOpenGems)} />
+              )}
+              {onOpenGems && (
+                <GemDoor name={kid.name} figure={earnings[kid.id]} studyDay={studyDay} onOpen={() => onOpenGems(kid.id)} />
               )}
             </div>
             {/* LAST WEEK AND THIS WEEK, and the fitness rings under them.

@@ -2,7 +2,7 @@
 // plus one row per person. Bars are fixed Monday weeks, not rolling windows;
 // their height and labels are rings while their bands retain the familiar
 // green/yellow/orange/red contribution breakdown.
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useScreenData } from "../../../../../../__capabilities/screen-host/browser/data.mjs";
 import { useFitnessScreen } from "../../useFitnessScreen.js";
 import { resolveUserDisplayName } from "../../hooks/fitness/DisplayNameResolver.js";
@@ -10,6 +10,8 @@ import RingIcon from '@/lib/icons/RingIcon.jsx';
 import CoinIcon from '@/lib/icons/CoinIcon.jsx';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
+import GemBoardOverlay from '@/lib/economy/GemBoard/GemBoard.jsx';
+import { useGamepadKeys } from "../../lib/useGamepadKeys.js";
 import { computeMomentum } from "./momentum.js";
 import "./FitnessMomentum.scss";
 
@@ -120,6 +122,12 @@ export default function FitnessMomentum() {
     return map;
   }, [rawStandings]);
   const { roster, householdLabel, compareWeeks, zoneRingRates } = useFitnessScreen();
+  // The Gem Board: opened from a card's purse (focused on that child) or the
+  // headline's gem chip. The garage pads drive it while it is open.
+  const economyOn = Boolean(rawStandings) && rawStandings.mode !== 'off';
+  const [board, setBoard] = useState(null); // null closed, else { focus }
+  const boardKeys = useRef(null);
+  useGamepadKeys(board != null, (key) => boardKeys.current?.(key));
 
   // Short, family-friendly names via the device-agnostic resolver ("Dad" etc.).
   const nameById = useMemo(() => {
@@ -163,6 +171,12 @@ export default function FitnessMomentum() {
               <span>{household.rings.toLocaleString()}</span>
             </span>
           )}
+        {economyOn && (
+          <button type="button" className="fitness-momentum__gems-chip" onClick={() => setBoard({ focus: null })} aria-label="Open the gem board">
+            <GemIcon size="1.2em" />
+            <span>Gems</span>
+          </button>
+        )}
       </div>
 
       {/* Only show the empty-state once we KNOW there's no data — never during load. */}
@@ -180,7 +194,7 @@ export default function FitnessMomentum() {
             {purseById.has(m.id) && (() => {
               const purse = purseById.get(m.id);
               return (
-                <span className="fitness-momentum__purse" title="Silver in the bank">
+                <button type="button" className="fitness-momentum__purse" title="Silver in the bank — tap for gems" onClick={() => setBoard({ focus: m.id })}>
                   <CoinIcon metal="silver" size="1.1em" label="silver" />
                   <span>{purse.silver}</span>
                   {purse.gem && (
@@ -190,7 +204,7 @@ export default function FitnessMomentum() {
                       label={purse.gem === 'won' ? 'Won the week’s gem' : 'Leading for the week’s gem'}
                     />
                   )}
-                </span>
+                </button>
               );
             })()}
             </span>
@@ -198,6 +212,13 @@ export default function FitnessMomentum() {
           </div>
         ))}
       </div>
+      <GemBoardOverlay
+        open={board != null}
+        surface="fitness"
+        focusLearnerId={board?.focus ?? null}
+        keyRef={boardKeys}
+        onClose={() => setBoard(null)}
+      />
     </div>
   );
 }

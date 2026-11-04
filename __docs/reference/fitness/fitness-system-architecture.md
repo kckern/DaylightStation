@@ -976,6 +976,12 @@ total. The top-right household total uses the canonical `RingIcon`. The sampled
 `momentum.render` event includes `householdRings` and `weekStartMs` so a stale or
 mis-bucketed home screen can be reconstructed from production logs.
 
+Each card's purse (bank silver + the week's gem) is a button that opens the
+shared Gem Board focused on that person, and the headline carries a **Gems**
+chip that opens it with no focus (shown whenever the economy is not `off`).
+While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→,
+A toggles the week, B closes). See the economy reference, "Gem Board".
+
 The widget computes from the home screen's `sessions` source, which FitnessApp
 persists in localStorage (see Screen Framework → Data Coordination), so the bars
 render from the last payload on mount and update when the fetch lands rather

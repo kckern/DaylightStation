@@ -61,6 +61,8 @@ import { useScanCeremony } from "./selfService/useScanCeremony.js";
 import { ReadalongPlaylistPlayer as ReadalongPlaylistPlayer } from "../../../../__capabilities/playback/browser/readalong.mjs";
 import { ShutdownBlackout, useShutdownLock } from "../../../../frontend/src/hooks/useShutdownLock.js";
 import HangulTypingProvider from "./ime/HangulTypingProvider.jsx";
+import GemBoardOverlay from "../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx";
+import GemIcon from "../../../../frontend/src/lib/icons/GemIcon.jsx";
 import "./School.scss";
 
 /**
@@ -715,6 +717,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Anything that leaves it (a code's card, a runner, a section) closes it.
   const bankDoorView = lock.locked && !active && !section && !queryPreviewLink && selfService.view === 'keypad';
   useEffect(() => { if (!bankDoorView) closeBankDoor(); }, [bankDoorView, closeBankDoor]);
+  // The family Gem Board: from the header's Gems door, or a kid's gem door on
+  // the board (focused on that kid). Read-only; it belongs to the same resting
+  // view as the bank door and closes when that view is left.
+  const [gemBoard, setGemBoard] = useState(null); // null closed, else { focus }
+  const openGemsFor = useCallback((learnerId) => setGemBoard({ focus: learnerId ?? null }), []);
+  useEffect(() => { if (!bankDoorView) setGemBoard(null); }, [bankDoorView]);
 
   const [lockSide, setLockSide] = useState('keypad-left');
   // What the Keypad reports about the child in front of it. Refs, not state:
@@ -1148,12 +1156,21 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               <div className="school-lock-split__board" aria-label="Today's school status">
                 <BoardHeader>
                   <div className="school-board-header__doors">
+                    <button type="button" className="school-book-door school-gem-door" data-testid="board-gem-board-door"
+                      aria-label="Open the gem board" onClick={() => openGemsFor(null)}>
+                      <GemIcon className="school-book-door__icon" size="1.6rem" />
+                      <span className="school-book-door__label">Gems</span>
+                    </button>
                     <BookShelfDoor screenId={screenId} roster={roster}
                       onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
                   </div>
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} coinCeremony={lock.coinCeremony} />
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} onOpenGems={openGemsFor} coinCeremony={lock.coinCeremony} />
               </div>
+              {/* Over the whole panel, keypad included, only while a child holds
+                  it open: a tap anywhere outside, × or 45 s idle closes it. */}
+              <GemBoardOverlay open={gemBoard != null} surface="school" focusLearnerId={gemBoard?.focus ?? null}
+                idleMs={45_000} onClose={() => setGemBoard(null)} />
               {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
                   the board pane, so it is never clipped by or stacked under
                   the board. */}
