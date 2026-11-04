@@ -80,9 +80,11 @@ test('every rung answers well inside the adapter budget', () => {
     // CPU time, not wall clock: a starved worker waits for the CPU without the
     // search getting any slower, and that wait read as a regression (1.6s,
     // load ~25). The 2.2s regression this guards is CPU, so it still fails.
-    const before = process.cpuUsage();
+    // This THREAD's CPU: vitest runs files on worker threads, and the
+    // process-wide figure counts every other file running beside this one.
+    const before = process.threadCpuUsage();
     chooseColumn(game.board, { player: game.turn, level: 7 });
-    const spent = process.cpuUsage(before);
+    const spent = process.threadCpuUsage(before);
     const elapsed = Math.round((spent.user + spent.system) / 1000);
     expect(elapsed, `rung 7 after [${moves.join(',')}] took ${elapsed}ms`).toBeLessThan(900);
   }
