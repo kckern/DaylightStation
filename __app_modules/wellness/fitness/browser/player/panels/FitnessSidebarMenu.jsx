@@ -326,14 +326,15 @@ const FitnessSidebarMenu = ({
 
   const canRemoveUser = Boolean(deviceIdStr && suppressDeviceUntilNextReading);
 
-  // Music is background for a video that asks for it (the NoMusic label), so
-  // the toggle exists only for such a video. Off = setMusicOverride(false),
-  // on = clear the override (null); the context never lets "on" start music
-  // on any other video (FitnessContext.setMusicOverrideState).
+  // Music plays by default on a video tagged NoMusic; on any other video the
+  // rider can force it on for that video. Off = setMusicOverride(false); on =
+  // clear the silence (null) on a tagged video, or force it (true) on an
+  // untagged one (FitnessContext.setMusicOverrideState).
   const musicAllowed = Boolean(fitnessContext?.musicAllowed);
-  const musicOn = musicAllowed && fitnessContext?.musicOverride !== false;
+  const musicOverride = fitnessContext?.musicOverride;
+  const musicOn = musicOverride === true || (musicAllowed && musicOverride !== false);
   const handleMusicToggle = () => {
-    fitnessContext?.setMusicOverride?.(musicOn ? false : null);
+    fitnessContext?.setMusicOverride?.(musicOn ? false : (musicAllowed ? null : true));
     ackSelection('music');
   };
 
@@ -396,7 +397,7 @@ const FitnessSidebarMenu = ({
             <span className="toggle-slider" />
           </span>
         </label>
-        {appMode === 'player' && musicAllowed && (
+        {appMode === 'player' && (
           <label className={`menu-item toggle-item${flashingId === 'music' ? ' is-ack-flash' : ''}`}>
             <span>🎵 Music</span>
             <span className="toggle-switch">

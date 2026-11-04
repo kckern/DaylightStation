@@ -182,6 +182,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [, setMusicAutoEnabledState] = useState(false);
   const [musicOverride, setMusicOverride] = useState(null);
+  // contentId of the video a rider forced music on for (settings toggle on an
+  // untagged video). Scoped to that one video: the next video falls back to
+  // its labels.
+  const [musicForceOnId, setMusicForceOnId] = useState(null);
   const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
   // True while the workout video is loading, recovering, or waiting on a file
@@ -1242,10 +1246,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const mediaMusicAutoEnabled = hasVideo
     && queuedMusicLabels.some(label => normalizeLabelList(nomusicLabels).includes(label));
   const musicAutoEnabled = mediaMusicAutoEnabled;
-  // Music is an overlay for a video that explicitly asks for an external
-  // soundtrack. It is never a standalone chart feature, and a manual request
-  // cannot manufacture permission to start it without that video.
-  const musicEnabled = hasVideo && musicAutoEnabled && musicOverride !== false;
+  const queuedMusicContentId = hasVideo ? getItemIdentifier(fitnessPlayQueue[0]) : null;
+  const musicForcedOn = hasVideo && musicForceOnId != null && musicForceOnId === queuedMusicContentId;
+  // true = forced on for this video, false = silenced, null = follow labels.
+  const effectiveMusicOverride = musicForcedOn ? true : musicOverride;
+  // Music is an overlay on a queued video: automatic for a video carrying a
+  // nomusic label, or forced on by the rider for the current video only. It is
+  // never a standalone chart feature (no video = no music).
+  const musicEnabled = hasVideo && (musicForcedOn || (musicAutoEnabled && musicOverride !== false));
 
   React.useEffect(() => {
     if (musicEnabled) {
@@ -1265,17 +1273,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, []);
 
   const setMusicOverrideState = React.useCallback((nextEnabled) => {
-    if (nextEnabled === null || nextEnabled === undefined) {
+    // false silences music (the settings Music toggle, a player failure/close);
+    // true forces it on for the queued video even without a nomusic label
+    // (2026-11-04); null clears both and follows the labels again. Music
+    // still needs a video in the player: never standalone (apps such as
+    // dance party run their own music).
+    if (nextEnabled === true) {
+      setMusicForceOnId(queuedMusicContentId);
       setMusicOverride(null);
       return;
     }
-    // false silences an allowed overlay (the settings Music toggle, a player
-    // failure/close); anything else only clears that silence. Nothing here can
-    // force music on: musicEnabled still requires a video whose labels allow
-    // it, so the settings toggle (shown only when musicAllowed) cannot break
-    // the 2026-10-06 rule.
+    setMusicForceOnId(null);
     setMusicOverride(nextEnabled === false ? false : null);
-  }, []);
+  }, [queuedMusicContentId]);
 
   // Music player control helpers for voice memo coordination
   const pauseMusicPlayer = useCallback(() => {
@@ -1296,16 +1306,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const decision = {
       contentId: item ? getItemIdentifier(item) : null,
       labels: normalizeLabelList(item?.labels),
-      source: musicOverride === false ? 'manual-off' : 'media-label',
+      source: musicForcedOn ? 'manual-on' : musicOverride === false ? 'manual-off' : 'media-label',
       autoEnabled: musicAutoEnabled,
-      manualOverride: musicOverride,
+      manualOverride: effectiveMusicOverride,
       enabled: musicEnabled,
     };
     const previous = previousMusicDecisionRef.current;
     if (JSON.stringify(previous) === JSON.stringify(decision)) return;
     previousMusicDecisionRef.current = decision;
     getLogger().info('fitness.music.decision', { previous, current: decision });
-  }, [fitnessPlayQueue, musicAutoEnabled, musicOverride, musicEnabled]);
+  }, [fitnessPlayQueue, musicAutoEnabled, musicOverride, musicForcedOn, effectiveMusicOverride, musicEnabled]);
 
   // Governance Media Update
   const setGovernanceMedia = React.useCallback((input) => {
@@ -3093,10 +3103,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     plexConfig,
     nomusicLabels,
     musicEnabled,
-    // The queued video allows background music (carries a nomusic label).
-    // The settings Music toggle is shown only while this is true.
+    // The queued video plays background music by default (nomusic label).
+    // The settings Music toggle is offered for every video; this only decides
+    // what "on" means (follow the label vs force for this video).
     musicAllowed: musicAutoEnabled,
-    musicOverride,
+    musicOverride: effectiveMusicOverride,
     setMusicAutoEnabled,
     setMusicOverride: setMusicOverrideState,
     selectedPlaylistId,

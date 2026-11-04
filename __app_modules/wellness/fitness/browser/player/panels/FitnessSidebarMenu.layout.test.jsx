@@ -55,7 +55,10 @@ describe('Settings primary controls and interaction', () => {
     fireEvent.keyDown(close, { key: 'ArrowUp' });
     expect(document.activeElement.closest('.touch-volume')).toBeTruthy();
     fireEvent.keyDown(document.activeElement, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Background music' }));
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowUp' });
     expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Treasure Box' }));
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowDown' });
     fireEvent.keyDown(document.activeElement, { key: 'ArrowDown' });
     fireEvent.keyDown(document.activeElement, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(close);
@@ -68,11 +71,26 @@ describe('Settings primary controls and interaction', () => {
     expect(document.activeElement).not.toBe(start);
     expect(p.videoVolume.setVolume).toHaveBeenCalledTimes(1);
   });
-  it('shows the Music toggle only for a video that allows music, and it toggles the override', () => {
+  it('offers the Music toggle on an untagged video, where on forces music for it', () => {
+    const setMusicOverride = vi.fn();
+    ctx.value = { musicAllowed: false, musicOverride: null, setMusicOverride };
+    render(<FitnessSidebarMenu {...props()} />);
+    const music = screen.getByRole('checkbox', { name: 'Background music' });
+    expect(music.checked).toBe(false);
+    fireEvent.click(music);
+    expect(setMusicOverride).toHaveBeenCalledWith(true);
+  });
+  it('a forced-on untagged video shows checked and turns off', () => {
+    const setMusicOverride = vi.fn();
+    ctx.value = { musicAllowed: false, musicOverride: true, setMusicOverride };
+    render(<FitnessSidebarMenu {...props()} />);
+    const music = screen.getByRole('checkbox', { name: 'Background music' });
+    expect(music.checked).toBe(true);
+    fireEvent.click(music);
+    expect(setMusicOverride).toHaveBeenCalledWith(false);
+  });
+  it('the Music toggle on a tagged video toggles the override', () => {
     const p = props();
-    const { unmount } = render(<FitnessSidebarMenu {...p} />);
-    expect(screen.queryByRole('checkbox', { name: 'Background music' })).toBeNull();
-    unmount();
     const setMusicOverride = vi.fn();
     ctx.value = { musicAllowed: true, musicOverride: null, setMusicOverride };
     render(<FitnessSidebarMenu {...p} />);

@@ -191,7 +191,16 @@ The playlist picker is rendered **outside** the collapsible panel. Opening it ca
 
 If the user lands on the fitness session with `selectedPlaylistId === null`, the component picks the first available playlist from `plexConfig.music_playlists`. The `hasAutoSelectedRef` guard ensures this fires exactly once per mount. Selecting this default never creates a manual music override.
 
-The standalone chart and any screen layout containing `fitness:chart` are always silent. There is no chart music toggle, and a manual request cannot enable music on a video that does not allow it. Chart screens are excluded from the separate ambient menu-music controller as well as from the in-session music policy. Music is allowed only as an overlay for a queued video carrying the configured `NoMusic` label; changing to an untagged video or clearing the video queue stops it immediately. The settings menu's **Music** toggle (restored 2026-10-23) is shown only while the queued video allows music (`musicAllowed` in the context): off calls `setMusicOverride(false)`, on calls `setMusicOverride(null)`, which only clears the silence and can never start music on an untagged video. Internal callers may also force an allowed overlay off after a player error; the toggle is how a rider turns it back on. The `fitness.music.decision` event records previous/current content IDs, labels, automatic state, effective enablement, and whether an internal manual-off is active.
+The standalone chart and any screen layout containing `fitness:chart` are always silent. There is no chart music toggle. Chart screens are excluded from the separate ambient menu-music controller as well as from the in-session music policy. Music only ever plays as an overlay on a video in the player, never standalone (apps such as dance party run their own music). Clearing the video queue stops it immediately.
+
+A queued video carrying the configured `NoMusic` label (`plex.nomusic_labels`, set at the show level in Plex) gets music automatically (`musicAllowed` in the context). Any other video is silent by default, but a rider can force music on for it. The settings menu's **Music** toggle is shown for every video in the player:
+
+| Video | Toggle on | Toggle off |
+|-------|-----------|------------|
+| Tagged `NoMusic` | `setMusicOverride(null)`: clears the silence | `setMusicOverride(false)` |
+| Untagged | `setMusicOverride(true)`: forces music for **this video only** | `setMusicOverride(false)` |
+
+A forced-on is pinned to the queued video's content ID (`musicForceOnId`). The next untagged video falls back to its labels and is silent. Internal callers may also force music off after a player error, and the toggle turns it back on. The `fitness.music.decision` event records the previous and current content IDs, the labels, the automatic state, effective enablement, `manualOverride` (`true`/`false`/`null`) and `source` (`media-label`, `manual-on` or `manual-off`).
 
 ## Data Sources
 
