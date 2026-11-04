@@ -55,6 +55,20 @@
 .screen-widget::-webkit-scrollbar-track { background: transparent; }
 .screen-widget::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
 
+/* A widget whose root is its own card sits inside a wrapper already painting
+   this chrome. It opts in with .screen-surface and gives its chrome up, so the
+   screen shows one container and the content keeps the space. !important beats
+   the padding Mantine sets inline on a Paper. */
+.screen-widget > .screen-surface {
+  padding: 0 !important;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* Full-panel widget — merges chrome with panel, no inner padding/border */
 .screen-widget--full {
   padding: 0;

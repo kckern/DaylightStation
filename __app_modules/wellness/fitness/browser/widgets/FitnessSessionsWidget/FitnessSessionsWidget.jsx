@@ -76,7 +76,7 @@ const SKELETON_ROWS = 6;
 
 function SessionsCardSkeleton() {
   return (
-    <DashboardCard title={null} className="dashboard-card--workouts">
+    <DashboardCard title={null} className="dashboard-card--workouts screen-surface">
       <Stack gap={4}>
         <div>
           {/* A real line box (nbsp) so the header is exactly as tall as a hydrated one. */}
@@ -120,7 +120,7 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
 
   if (!sessions || sessions.length === 0) {
     return (
-      <DashboardCard title="Recent Sessions" className="dashboard-card--workouts">
+      <DashboardCard title="Recent Sessions" className="dashboard-card--workouts screen-surface">
         <Text c="dimmed" ta="center" py="md">No recent sessions</Text>
       </DashboardCard>
     );
@@ -140,7 +140,7 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
   for (const g of groups) g.sessions.reverse();
 
   return (
-    <DashboardCard title={null} className="dashboard-card--workouts">
+    <DashboardCard title={null} className="dashboard-card--workouts screen-surface">
       <Stack gap={4}>
         {groups.map((group) => (
           <div key={group.date} data-date={group.date}>
