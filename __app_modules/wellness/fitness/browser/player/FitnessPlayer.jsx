@@ -1282,6 +1282,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       // could be stuck (voice memo wait, redirect resolution). Mark as forced.
       statusUpdateRef.current.endSent = true;
       pendingCloseRef.current = false;
+      // Unguarded by the stuck path: a stalled save only delays this refresh.
+      landSessionAfterClose(fitnessSessionInstance).finally(() => refetchScreenData?.('sessions'));
       if (setQueue) setQueue([]);
       setCurrentItem(null);
       if (typeof onSessionEndRedirect === 'function') {
