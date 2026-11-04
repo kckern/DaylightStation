@@ -342,11 +342,12 @@
     }
   }
 
+  // No overflow clip here: this cell hugs the avatar, so one would cut its zone
+  // glow on three sides. Long names truncate on __chip-name instead.
   &__identity {
     display: flex;
     align-items: center;
     min-width: 0;
-    overflow: hidden;
   }
 
   &__metric {

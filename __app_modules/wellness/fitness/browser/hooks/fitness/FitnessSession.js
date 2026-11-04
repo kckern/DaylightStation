@@ -330,6 +330,7 @@ export class FitnessSession {
     this._isEndingSession = false; // Re-entrancy guard for endSession()
     this._sessionEndedCallbacks = [];
     this._sessionEndingCallbacks = new Set();
+    this._playbackClosingCallbacks = new Set();
 
     this.snapshot = {
       participantRoster: [],
@@ -2959,6 +2960,42 @@ export class FitnessSession {
     return () => this._sessionEndingCallbacks.delete(callback);
   }
 
+  /**
+   * Register a playback observer to close when the player closes. That happens
+   * while the session keeps running, so onSessionEnding does not cover it.
+   * @param {function} callback
+   * @returns {function} - Unsubscribe function
+   */
+  onPlaybackClosing(callback) {
+    if (typeof callback !== 'function') return () => {};
+    this._playbackClosingCallbacks.add(callback);
+    return () => this._playbackClosingCallbacks.delete(callback);
+  }
+
+  /**
+   * The player closed: record the end of playback now and save it with the
+   * memos, instead of leaving both to the next autosave. Waits out a save in
+   * flight rather than racing it, and respects the session lock (no force), so
+   * a non-leader client still doesn't write.
+   * @returns {Promise<void>} settles when the save has landed
+   */
+  flushForLanding() {
+    for (const callback of this._playbackClosingCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        getLogger().warn('fitness.session.playback_closing_failed', { error: error?.message });
+      }
+    }
+    return this.whenFinalPersistSettled().then(() => {
+      if (!this.sessionId) return undefined;
+      this._maybeTickTimeline();
+      const snapshot = this.summary;
+      if (snapshot) this._persistSession(snapshot, { force: false });
+      return this.whenFinalPersistSettled();
+    });
+  }
+
   onSessionEnded(callback) {
     if (typeof callback !== 'function') return () => {};
     this._sessionEndedCallbacks.push(callback);
@@ -3113,6 +3150,7 @@ export class FitnessSession {
     this._sessionEndedCallbacks = [];
     
     this._sessionEndingCallbacks.clear();
+    this._playbackClosingCallbacks.clear();
 
     // Nullify manager references
     this._deviceRouter = null;

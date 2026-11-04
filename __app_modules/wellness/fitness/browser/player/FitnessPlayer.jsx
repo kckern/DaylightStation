@@ -1,6 +1,7 @@
 import { usePlayerSessionBinding } from '../../../../../__capabilities/playback/browser/sessions.mjs';
 import { usePlaybackTimelineRecorder } from './usePlaybackTimelineRecorder.js';
 import { announceWorkoutFinished } from './overlays/useWorkoutCoinCeremony.js';
+import { landSessionAfterClose } from './landSessionAfterClose.js';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessSidebar from "./FitnessSidebar.jsx";
 import "./FitnessPlayer.scss";
@@ -1281,6 +1282,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       // could be stuck (voice memo wait, redirect resolution). Mark as forced.
       statusUpdateRef.current.endSent = true;
       pendingCloseRef.current = false;
+      // Unguarded by the stuck path: a stalled save only delays this refresh.
+      landSessionAfterClose(fitnessSessionInstance).finally(() => refetchScreenData?.('sessions'));
       if (setQueue) setQueue([]);
       setCurrentItem(null);
       if (typeof onSessionEndRedirect === 'function') {
@@ -1329,6 +1332,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     statusUpdateRef.current.endSent = true;
     postEpisodeStatus({ naturalEnd: false, reason: 'close' });
 
+    // Before the redirect, so the landing page mounts with the memo and the end
+    // of playback in hand; this save is also what its refresh below reads.
+    const landed = landSessionAfterClose(fitnessSessionInstance);
+
     // Short "browse" exit: the video never ran long enough to trigger the
     // voice-memo prompt (see handleClose's meetsPromptThreshold) and no memo was
     // recorded. In that case we return to the show the user was browsing instead
@@ -1358,7 +1365,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // Refresh the sessions list once the final save has landed, so the just-saved
     // voice memo (and final stats) show on the session entry without a manual re-nav.
     if (typeof refetchScreenData === 'function') {
-      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
+      landed
         .finally(() => {
           refetchScreenData('sessions');
           // The suggestions snapshot went stale with this workout's saves; this
@@ -1381,7 +1388,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // backend independently re-derives HR, cadence, strength and memo evidence
     // from the saved Fitness session before deciding pass/remediation.
     if (typeof onSchoolAttemptClosed === 'function') {
-      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
+      landed
         .then(
           () => onSchoolAttemptClosed({
             fitnessSessionId: sid,

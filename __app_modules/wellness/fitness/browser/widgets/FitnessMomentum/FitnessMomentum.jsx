@@ -158,7 +158,7 @@ export default function FitnessMomentum() {
   const anyActive = household.weeks.some((w) => w.rings > 0);
 
   return (
-    <div className="fitness-momentum">
+    <div className="fitness-momentum screen-surface">
       <div className="fitness-momentum__headline">
         <span className="fitness-momentum__flame">🔥</span>
         <span className="fitness-momentum__house">{household.label}</span>

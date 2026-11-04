@@ -5,7 +5,8 @@ let sequence = 0;
 const runId = () => `${Date.now()}-${++sequence}`;
 
 /** Observe, never control, playback. Each attachment/replay is its own coverage
- * run; session finalization closes it before persistence and is terminal. */
+ * run; closing the player or finalizing the session closes it before persistence
+ * and is terminal. */
 export function usePlaybackTimelineRecorder({ session, contentId, mediaElement, governance, pauseDecision, resilience, evidence }) {
   const latest = useRef(null);
   latest.current = { governance, pauseDecision, resilience, evidence };
@@ -91,6 +92,7 @@ export function usePlaybackTimelineRecorder({ session, contentId, mediaElement, 
     const end = () => { if (!closed && !disposed) { record('end'); closed = true; } };
     const stop = () => { end(); disposed = true; };
     const unsubscribe = session.onSessionEnding?.(stop);
+    const unsubscribePlayerClose = session.onPlaybackClosing?.(stop);
     const listeners = { playing: onPlaying, pause: onPause, waiting: onWaiting, timeupdate: onTime, loadstart: onLoad, ended: () => { if (attributable) end(); } };
     for (const [event, handler] of Object.entries(listeners)) mediaElement?.addEventListener(event, handler);
     observer.current = record;
@@ -98,7 +100,7 @@ export function usePlaybackTimelineRecorder({ session, contentId, mediaElement, 
     getLogger().debug('fitness.playback_observer.attached', { contentId, playbackRunId });
     return () => {
       for (const [event, handler] of Object.entries(listeners)) mediaElement?.removeEventListener(event, handler);
-      stop(); unsubscribe?.();
+      stop(); unsubscribe?.(); unsubscribePlayerClose?.();
       if (observer.current === record) observer.current = null;
     };
   }, [session, sessionId, contentId, mediaElement]);

@@ -1,6 +1,7 @@
 import { dispatchRiderSelection } from '../lib/riderSelection.js';
 import { createSelectorInputRouter } from '../lib/selectorInputRouter.js';
 import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
+import { publishLiveMemos } from '../lib/liveSessionStore.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -987,6 +988,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return raw.map((memo) => ({ ...memo }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceMemoVersion, version]);
+
+  useEffect(() => {
+    publishLiveMemos(fitnessSessionRef.current?.sessionId, voiceMemos);
+  }, [voiceMemos]);
 
   const getVoiceMemoById = React.useCallback((memoId) => {
     if (!memoId) return null;

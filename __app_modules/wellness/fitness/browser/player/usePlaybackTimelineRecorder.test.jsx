@@ -131,3 +131,21 @@ it('does not attribute the old element to a new content ID during the player pol
   newMedia.currentTime = 5.2; fire(newMedia, 'timeupdate');
   expect(session.logEvent.mock.calls.at(-1)[1]).toMatchObject({ contentId: 'video:2', state: 'playing' });
 });
+
+// Closing the player leaves the session running, so the end of playback has to
+// be recorded here or the saved strip reads the rest of the video as unknown.
+it('closes the run when the player closes, and a late media event cannot reopen it', () => {
+  const closing = new Set();
+  const session = { logEvent: vi.fn(), onPlaybackClosing: (cb) => { closing.add(cb); return () => closing.delete(cb); } };
+  const mediaElement = Object.assign(makeMedia(), { readyState: 4, playbackRate: 1 });
+  const { unmount } = renderHook(p => usePlaybackTimelineRecorder(p), { initialProps: { session, contentId: 'video:1', mediaElement } });
+  fire(mediaElement, 'playing', false);
+  act(() => closing.forEach((cb) => cb()));
+  const events = () => session.logEvent.mock.calls.map(([, d]) => d);
+  expect(events().at(-1)).toMatchObject({ observation: 'end', state: 'none' });
+  const n = session.logEvent.mock.calls.length;
+  fire(mediaElement, 'playing', false);
+  unmount();
+  expect(session.logEvent).toHaveBeenCalledTimes(n);
+  expect(closing.size).toBe(0);
+});
