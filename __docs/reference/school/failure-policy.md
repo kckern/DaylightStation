@@ -123,6 +123,8 @@ What a hold does:
 | Agenda obligation | `obligated` | `excused · teacher_hold` when it is the only open item in the subject | same |
 | Result receipt (at settle) | Retry ticket, TRY AGAIN | No ticket; headed A GROWN-UP WILL HELP, "After N retries…" | n/a — a fresh failure is never stale |
 | A retry ticket already in hand | Opens the next round | `OpenRemediation` refuses a child (`reason: remediation_capped`, `school.remediation.capped`) | Still opens: the child came back |
+| The failed sheet fed again with fixed marks | Opens the next round on the same paper | Opens ONE more round (`lane: 'corrected_sheet'`, `school.remediation.corrected-past-cap`); a correction that also fails is a hold | Opens the next round |
+| Phone push (at settle) | 🔁 "retake is on the receipt" | 🙋 "retries used up, needs you for this one" (School needs you) | n/a |
 | Teacher dashboard | — | `attention` item `remediation-cap` (depth, last score) | `attention` item `remediation-stale` (idle school days, last score) |
 | Log | — | `school.remediation.held {reason: 'cap'}` when the result settles | `school.remediation.held {reason: 'stale'}` the first time a live projection sees it each study day |
 
@@ -162,6 +164,53 @@ A grown-up is never capped. "Offer another try" on the session page opens the
 next round through the teacher gate (`openedBy`). If that round fails too, the
 unit goes straight back to a hold, so the grown-up stays in the loop until the
 work is passed or settled another way.
+
+### Corrected sheet past the cap
+
+The cap counts fresh sheets. A child who fixes the marks on the paper they
+already hold, using the receipt that told them which rows were wrong, is not
+asking for a fresh sheet, so that correction is graded even when the cap has
+been reached: `RecordCardScanOutcome`'s corrected-sheet lane calls
+`OpenRemediation` with `lane: 'corrected_sheet'`, which allows one round past
+`maxRounds` and stamps `lane` on the new session's `created` event. Only one:
+a correction that fails again forms the hold as usual. The lane's own guards
+still apply past the cap. An identical re-feed is a duplicate, and a row only
+the eraser rule would credit goes to a grown-up's review instead of scoring.
+
+Before this (2026-11-03) a final-round 1/2 corrected to 2/2 was refused
+`remediation_capped`, the 50% stood, and the child sat on a hold.
+
+### Hold push
+
+`CloseSessionOutcome` returns `teacherHold: {retries}` when a result forms a
+cap hold. The scan consumer passes it on the graded push as `held`, and
+`composeSchoolPush` then sends 🙋 `{score} — retries used up, needs you for this
+one` on the School needs you channel, never the 🔁 retake copy: there is no
+retake to point at. The receipt already said a grown-up would help; until this
+change the phone contradicted it.
+
+### Unreadable card replacement
+
+`ResolveCardScan` refuses a read whose already-graded rows sit shifted against
+the card's last accepted read (`OMR_ALIGNMENT`), and a refused read fed again
+unchanged is accepted as the child's real marks. The baseline keeps
+`refused: {answers, at, count}`. Each new unconfirmed read within
+`OMR_REFEED_CONFIRM_MS` increments `count`, and a confirmation or a clean scan
+clears it. At `UNSALVABLE_REFUSALS` (3) the result carries
+`unsalvable: {cardId, refusals}` and `school.scan.card-unsalvable` is logged.
+
+The scan consumer then runs `ReplaceUnreadableCard`. It replaces the card like
+a lost one (`ReplaceLostAnswerSheet`, system-authorized as
+`system:unreadable-card`): live sheets are reprinted on a fresh card, printing
+before the old allocation is superseded, and graded work stays as evidence.
+Then it retires the card. The room hears `scan-card-replaced`, a slip headed
+HERE IS A FRESH SHEET prints, and `school.answer-sheet.unreadable-replaced` is
+logged. If the reprint fails, the card stays in service and the scan falls
+back to the ordinary `scan-unresolved` answer
+(`school.print.card-replace-failed`).
+
+A retired card fed again is answered as retired before any alignment check,
+so its old baseline can never refuse it.
 
 The hold is excused rather than faulted on purpose. Nothing about the system
 is broken, and a fault would leave the day `indeterminate` and the games
