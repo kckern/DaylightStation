@@ -597,12 +597,15 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
 
   async function openBankFromDoor() {
     render(<SchoolApp mode="locked" />);
-    await screen.findByTestId('selfservice-keypad');
-    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
-    return screen.findByTestId('bank-screen');
+    // A whole locked SchoolApp: the coin cell exists only once the status board's
+    // per-kid loads settle, which outran the 15s default on a loaded host.
+    const slow = { timeout: 45000 };
+    await screen.findByTestId('selfservice-keypad', {}, slow);
+    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ }, slow)));
+    return screen.findByTestId('bank-screen', {}, slow);
   }
 
-  it('coin cell → the kid\'s bank, with no Done overlay and no path of its own', async () => {
+  it('coin cell → the kid\'s bank, with no Done overlay and no path of its own', { timeout: 120000 }, async () => {
     const path = window.location.pathname;
     const bank = await openBankFromDoor();
     expect(bankOpenMock).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid1' }));
@@ -617,7 +620,7 @@ describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel'
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
 
-  it('an identity lapse closes the bank: the keypad, never someone\'s coins', async () => {
+  it('an identity lapse closes the bank: the keypad, never someone\'s coins', { timeout: 120000 }, async () => {
     await openBankFromDoor();
     const now = Date.now();
     const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 11 * 60_000);

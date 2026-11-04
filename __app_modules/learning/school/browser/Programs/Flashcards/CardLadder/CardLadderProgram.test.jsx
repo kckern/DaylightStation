@@ -341,8 +341,10 @@ describe('CardLadderProgram', () => {
     const onExit = vi.fn();
     renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
     await screen.findByRole('alert');
+    // The alert renders a commit before its key listener installs (failed in 81ms).
+    await act(async () => {});
     fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
-    expect(onExit).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
   });
 
   it('an open failure says so and offers Back', async () => {
