@@ -371,7 +371,8 @@ describe('Tuning', () => {
   it('shows current values against defaults, the last status and notes, and reads as the acting teacher', async () => {
     mount();
     const section = (await screen.findByRole('region', { name: 'Tuning' }));
-    expect(cardLadderAdminApi.tuning).toHaveBeenCalledWith('learner_a', 'language/korean/week-01-classroom', 'teacher_1');
+    // The region renders a commit before its fetch effect runs (failed in 39ms).
+    await waitFor(() => expect(cardLadderAdminApi.tuning).toHaveBeenCalledWith('learner_a', 'language/korean/week-01-classroom', 'teacher_1'));
     const newPerDay = (await within(section).findByText('batch.newPerDay', { selector: 'td' })).closest('tr');
     expect(within(newPerDay).getByText('3')).toBeTruthy();
     expect(within(newPerDay).getByText('4')).toBeTruthy();
