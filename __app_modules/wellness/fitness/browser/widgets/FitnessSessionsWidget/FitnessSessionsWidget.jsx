@@ -6,6 +6,7 @@ import { useScreenData } from "../../../../../../__capabilities/screen-host/brow
 import { useScreen } from "../../../../../../__capabilities/screen-host/browser/providers.mjs";
 import { DashboardCard } from "../_shared/DashboardCard.jsx";
 import { useFitnessScreen } from "../../useFitnessScreen.js";
+import { useLiveSession, withLiveMemos } from "../../lib/liveSessionStore.js";
 import SportIcon from "../_shared/SportIcon.jsx";
 import { formatSportType } from "../_shared/sportIconUtils.js";
 import MiniRouteMap from "./MiniRouteMap.jsx";
@@ -367,7 +368,12 @@ export default function FitnessSessionsWidget() {
   const containerRef = useRef(null);
 
   const loading = rawSessions === null;
-  const sessions = useMemo(() => rawSessions?.sessions || [], [rawSessions]);
+  // A memo just left on the live session shows before the API has it.
+  const liveSession = useLiveSession();
+  const sessions = useMemo(
+    () => withLiveMemos(rawSessions?.sessions || [], liveSession),
+    [rawSessions, liveSession]
+  );
 
   // Reflect the open session in the URL so it is deep-linkable / shareable:
   // /fitness/{screen}/session-{id}. Passing null returns to the bare screen path.
