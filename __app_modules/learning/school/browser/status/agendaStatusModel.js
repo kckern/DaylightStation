@@ -238,6 +238,17 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
     });
   }
 
+  // The SERVER decides whether a subject is done today (GetLearnerDayCompletion
+  // via the plan's `obligation`). A settled needs-retry the planner has moved
+  // past — remediation capped, the next unit served and passed — is history,
+  // not owed work. Counting it here made this board say "6 of 7" while the
+  // agenda, term grid and day-complete gate all said done (2026-11-03).
+  const servedSubjects = new Set(planned.filter((section) => section.obligation?.state === 'served').map((section) => section.subject));
+  const servedUnits = new Set(planned.flatMap((section) => (section.servedWork ?? []).map((work) => work.assignmentUnitId ?? work.unitId)));
+  for (const [unitId, segment] of byUnit) {
+    if (segment.state === 'needs-retry' && servedSubjects.has(segment.subject) && !servedUnits.has(unitId)) byUnit.delete(unitId);
+  }
+
   const segments = [...byUnit.values()].map((segment) => {
     const programId = fromEntries.get(segment.unitId)?.program;
     if (programId === 'book-log' || programId === 'story-time') {

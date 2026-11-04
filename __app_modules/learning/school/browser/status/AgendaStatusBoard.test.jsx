@@ -61,6 +61,22 @@ describe('AgendaStatusBoard model', () => {
     expect(summary.segments.map((s) => s.subject)).toEqual(['civilization', 'civilization']);
   });
 
+  // 2026-11-03: a capped remediation (planner moved on) plus the next unit passed
+  // read "6 of 7" here while the agenda, term grid and day-complete gate said done.
+  it('drops a settled retry the planner has moved past once the subject is served', () => {
+    const sections = [{ subject: 'civilization', obligation: { state: 'served' },
+      servedWork: [{ unitId: 'atlas.p120', assignmentUnitId: 'atlas.p120' }] }];
+    const sessions = [
+      { unitId: 'atlas.p084', subject: 'civilization', outcome: { result: 'needs_remediation' } },
+      { unitId: 'atlas.p120', subject: 'civilization', outcome: { result: 'passed' } },
+    ];
+    const summary = summarize(sections, sessions);
+    expect(summary).toMatchObject({ total: 1, done: 1 });
+    // Not served yet: the retry is still owed and still shows.
+    const owed = summarize([{ subject: 'civilization', obligation: { state: 'owed' } }], sessions);
+    expect(owed).toMatchObject({ total: 2, done: 1 });
+  });
+
   it('maps the outcome vocabulary onto three disc states', () => {
     const sessions = [
       { unitId: 'a', subject: 'math', outcome: { result: 'passed' } },
