@@ -486,6 +486,22 @@ absent means low and high evenly. The shoot staff exists only on a level whose
 mix can spawn a block. On single-note levels the staff that clears the next
 obstacle stays bright and the other staves dim.
 
+### Clock and stepping
+
+The loop runs on the gaming real-time kit (`__capabilities/gaming`): a
+`createFrameDriver` rAF loop (frames capped at 0.1 s) feeds `planSteps` in
+carry mode, so the world advances in whole 1/60 s steps and the remainder
+carries into the next frame. Every engine timestamp — duck start and its
+auto-release, damage invincibility, the shooting pose, obstacle spawn spacing —
+is in **simulated** milliseconds that advance only with those steps, and the
+clock runs only while `PLAYING`. Played actions (jump, duck, shoot) still apply
+the moment their chord matches, stamped with the current simulated time; duck
+stays level-held. The first frame after play starts runs no step. The
+renderer compares `invincibleUntil` / `shootUntil` against the hook's `simMs`
+and shows neither pose outside `PLAYING`, so nothing freezes mid-blink on the
+Game Over card. The `hit` and `dodge` sounds go through the kit's effect
+dispatcher, which adds no log lines.
+
 ### Death, sound and sprites
 
 Running out of health freezes the world and bursts the player into a ring of
