@@ -273,6 +273,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/gaming/portable/mechanics/random.mjs': null,
   '__capabilities/gaming/portable/mechanics/selection.mjs': null,
   '__capabilities/gaming/portable/opponents/profile.mjs': null,
+  '__capabilities/gaming/portable/realtime/index.mjs': null,
   '__capabilities/gaming/portable/rulesets/activity-party/index.mjs': null,
   '__capabilities/gaming/portable/rulesets/card-battle/index.mjs': null,
   '__capabilities/gaming/portable/rulesets/checkers/commentary.mjs': null,

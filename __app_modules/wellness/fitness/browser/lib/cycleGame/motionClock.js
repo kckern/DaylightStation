@@ -1,4 +1,4 @@
-import { tickFraction } from "./tickFraction.js";
+import { tickFraction } from "../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 
 /**
  * One shared, linear motion clock for a panel's data-driven positions.

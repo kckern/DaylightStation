@@ -9,6 +9,7 @@ import {
   safeBandAt,
   terrainContact,
 } from "./flightGeometry.js";
+import { advance } from "../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
 import { initialBoostState, activateBoost, advanceBoost, cameraTime, courseSpeed } from './liftBoost.js';
 
@@ -318,16 +319,13 @@ export function createFlightState(course, {
 }
 
 export function stepFlight(state, input, elapsedSeconds, course) {
-  let remaining = Math.max(0, Number(elapsedSeconds) || 0);
+  const elapsed = Math.max(0, Number(elapsedSeconds) || 0);
   // Checkpoints saved before weapons existed lack these fields.
-  let next = Array.isArray(state.projectiles) ? state : { ...initialWeaponState(course), ...state };
-  // Presses fire once per frame, not once per 1/60 s sub-step.
-  let stepInput = input;
-  while (remaining > 1e-9) {
-    const dt = Math.min(STEP, remaining);
-    next = singleStep(next, stepInput, dt, course);
-    if (stepInput?.actions) stepInput = { ...stepInput, actions: undefined };
-    remaining -= dt;
-  }
-  return next;
+  const next = Array.isArray(state.projectiles) ? state : { ...initialWeaponState(course), ...state };
+  // Presses fire once per frame, not once per 1/60 s sub-step (advance clears `actions`).
+  return advance(next, input, elapsed, {
+    step: (st, inp, dt) => singleStep(st, inp, dt, course),
+    stepS: STEP,
+    remainder: 'partial',
+  }).state;
 }

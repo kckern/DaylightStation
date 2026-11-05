@@ -30,6 +30,7 @@ import CycleEventToast from "./CycleEventToast.jsx";
 import RaceResults from "./RaceResults.jsx";
 import RaceRecap from "./RaceRecap.jsx";
 import { StopSignIcon, TimeIcon, RaceFlagIcon, MedalIcon, SpeedIcon, GhostIcon } from "./home/icons.jsx";
+import { dueAnchoredSteps } from "../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import "./CycleGameContainer.scss";
 
 // Drama-event toast icons, keyed by the `variant` dramaEventCopy.js returns
@@ -1350,9 +1351,12 @@ export default function CycleGameContainer({ onMount } = {}) {
       // Defensive fallback (anchor missing): advance exactly one tick rather than
       // stalling forever. Should not happen — the anchor effect above always
       // settles in the same commit as isEngineLive flipping true.
-      let dueTicks = anchorMs == null ? 1 : Math.floor((nowMs - anchorMs) / RACE_TICK_MS) - tickedCount;
-      if (dueTicks < 0) dueTicks = 0;
-      const cappedTicks = Math.min(dueTicks, 30); // bound a resumed-from-freeze burst
+      const { due: dueTicks, run: cappedTicks } = dueAnchoredSteps({
+        sinceAnchor: anchorMs == null ? null : nowMs - anchorMs,
+        stepsTaken: tickedCount,
+        step: RACE_TICK_MS,
+        maxSteps: 30, // bound a resumed-from-freeze burst
+      });
       if (dueTicks > 1) {
         log.warn('cycle_game.tick_catchup', {
           raceId: raceMetaRef.current?.raceId,
