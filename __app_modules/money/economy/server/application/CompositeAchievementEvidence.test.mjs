@@ -77,4 +77,24 @@ describe('EarningsPreviewService with achievements', () => {
       expect(out.learners[0].lines.map((l) => l.status)).toEqual(['indeterminate', 'indeterminate']);
     }
   });
+
+  it('shares one read a minute, but a fresh read sees a race that landed inside that minute', async () => {
+    let reads = 0;
+    let standings = [];
+    const service = build({
+      async week() {
+        reads += 1;
+        return { learners: { a: { days: {}, milestones: {} }, b: { days: {}, milestones: {} } }, contests: { race: { standings, closed: false } }, unavailable: [] };
+      },
+    });
+    const raceLine = (out) => out.learners.find((l) => l.learnerId === 'a').lines.find((l) => l.ruleId === 'race');
+    expect(raceLine(await service.roster()).leader).toBe(false);
+    standings = [{ learnerId: 'a', score: 1116 }]; // the race lands
+    expect(raceLine(await service.roster()).leader).toBe(false); // the poll's shared copy
+    expect(reads).toBe(1);
+    expect(raceLine(await service.roster({ fresh: true }))).toMatchObject({ status: 'pending', leader: true });
+    expect(reads).toBe(2);
+    expect(raceLine(await service.roster()).leader).toBe(true); // and the fresh read replaced the shared copy
+    expect(reads).toBe(2);
+  });
 });

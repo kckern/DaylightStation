@@ -31,8 +31,14 @@ const GROUPS = [
 
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
-export async function fetchGemBoard(week = null) {
-  const qs = week ? `?${new URLSearchParams({ week })}` : '';
+/**
+ * Read the board. `fresh` (the default for the overlay: someone just opened
+ * it) re-reads the achievements instead of the server's minute-shared copy;
+ * a background poll passes `fresh: false`.
+ */
+export async function fetchGemBoard(week = null, { fresh = true } = {}) {
+  const params = { ...(week ? { week } : {}), ...(fresh ? { fresh: '1' } : {}) };
+  const qs = Object.keys(params).length ? `?${new URLSearchParams(params)}` : '';
   const res = await fetch(`/api/v1/earnings/gems${qs}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`gems ${res.status}`);
   return res.json();

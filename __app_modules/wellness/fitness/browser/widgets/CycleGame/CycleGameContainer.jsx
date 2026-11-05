@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { announceAchievement } from "../../lib/achievementEvents.js";
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from "../../lib/cycleGame/CycleRaceController.js";
@@ -1437,6 +1438,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           ...(ok ? {} : { error: result.error })
         });
         if (ok) clearCheckpoint(window.sessionStorage); // race safely landed — the checkpoint is now redundant
+        if (ok) announceAchievement('cycle-race', { raceId: meta.raceId }); // the gem ceremony looks now
         else setSaveFailed(true);
         // The race just saved may have shuffled this week's featured-course
         // ladder — refetch and diff against the pre-race snapshot to surface

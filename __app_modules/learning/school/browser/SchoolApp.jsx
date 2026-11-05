@@ -62,6 +62,9 @@ import { ReadalongPlaylistPlayer as ReadalongPlaylistPlayer } from "../../../../
 import { ShutdownBlackout, useShutdownLock } from "../../../../frontend/src/hooks/useShutdownLock.js";
 import HangulTypingProvider from "./ime/HangulTypingProvider.jsx";
 import GemBoardOverlay from "../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx";
+import GemCeremony from "../../../../frontend/src/lib/economy/GemBoard/GemCeremony.jsx";
+import { useGemCeremony } from "../../../../frontend/src/lib/economy/GemBoard/useGemCeremony.js";
+import { playCoinCue } from "./status/coinCeremonyAudio.js";
 import GemIcon from "../../../../frontend/src/lib/icons/GemIcon.jsx";
 import "./School.scss";
 
@@ -723,6 +726,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [gemBoard, setGemBoard] = useState(null); // null closed, else { focus }
   const openGemsFor = useCallback((learnerId) => setGemBoard({ focus: learnerId ?? null }), []);
   useEffect(() => { if (!bankDoorView) setGemBoard(null); }, [bankDoorView]);
+  // A gem that landed since the panel last looked (a worksheet graded, a race
+  // of the week taken in the garage, a book logged): celebrated over the board
+  // pane — never the keypad — while the panel rests, from a minute poll and
+  // each time a child comes back to the keypad.
+  const gemCeremony = useGemCeremony({ surface: `school-${screenId}`, enabled: bankDoorView, pollMs: 60_000 });
 
   const [lockSide, setLockSide] = useState('keypad-left');
   // What the Keypad reports about the child in front of it. Refs, not state:
@@ -1166,6 +1174,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                   </div>
                 </BoardHeader>
                 <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} onOpenGems={openGemsFor} coinCeremony={lock.coinCeremony} />
+                {gemCeremony.ceremony && !gemBoard && (
+                  <GemCeremony key={gemCeremony.ceremony.id} surface="school" contained awards={gemCeremony.ceremony.awards}
+                    onShow={() => playCoinCue({ sound: lock.coinCeremony?.sound ?? 'school/_ux/coin.mp3', volume: lock.coinCeremony?.volume ?? 0.8 })}
+                    onDone={gemCeremony.done} />
+                )}
               </div>
               {/* Over the whole panel, keypad included, only while a child holds
                   it open: a tap anywhere outside, × or 45 s idle closes it. */}

@@ -2905,6 +2905,9 @@
 // landed on the last learner's card AND on the fixed "Turn off screen" button
 // underneath — neither of which jsdom can see. In flow, the board takes the
 // space that is left and the door keeps its own.
+// A gem ceremony is drawn over this pane only (never the keypad): the pane
+// positions it while one is showing.
+.school-lock-split__board:has(> .gem-ceremony) { position: relative; }
 .school-lock-split__board {
   pointer-events: none;
   user-select: none;

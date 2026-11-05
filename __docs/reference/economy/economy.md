@@ -405,6 +405,25 @@ One view of every learner against every gem, for one week. Design:
   `domain/earnings/gemBoard.mjs`. Logged `economy.gems.board.read` (debug),
   `economy.gems.lifetime-unavailable` (warn). Catalog `off` → an empty board
   with `mode: 'off'`.
+- **Fresh reads.** The preview shares one achievement read a minute across polled
+  surfaces. The board passes `?fresh=1` (the overlay always does), which reads
+  now and replaces the shared copy — a race that just landed shows at once.
+- **The gem ceremony** (`GemCeremony.jsx`, `useGemCeremony.js`,
+  `gemCeremonyModel.js` beside the board): a surface remembers the board as it
+  last saw it (localStorage, per surface, per week) and celebrates each cell
+  that now holds a gem it did not — `earned`, `won`, or a contest lead just
+  taken (`leading`); a lead that becomes a win celebrates again, a lost lead
+  never does. A surface that has not looked this week learns silently, and a
+  reload never replays one.
+  - **Fitness** (`FitnessApp` global overlays): learns on load, then looks
+    (fresh) 1.5 s after `fitness-achievement-recorded` (a cycle race or a Skyline
+    Glider flight saved, `lib/achievementEvents.js`) and after a workout ends;
+    shown after any coin ceremony, with the coin sound.
+  - **School Portal** (`SchoolApp`): while the panel rests at the keypad, a
+    minute poll and each return to the keypad; drawn over the board pane only,
+    never the keypad, with the coin cue.
+  - Events: `gem-ceremony.found`, `.shown`, `.dismissed` (`reason`),
+    `.look-failed`.
 - **Two panels.** Once any milestone row exists the overlay draws two grids
   side by side — this week + contests (with the totals) and milestones (each
   cell with its lifetime tally) — so every row fits 1280×800 unscrolled.
