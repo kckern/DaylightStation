@@ -92,7 +92,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cadences = null, to
     .filter((g) => !cadences || cadences.includes(g.cadence))
     .map((g) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.cadence === g.cadence) }))
     .filter((g) => g.rows.length), [board, cadences]);
-  const columns = `minmax(9rem, 1.4fr) repeat(${Math.max(learners.length, 1)}, minmax(0, 1fr))`;
+  const columns = `minmax(9rem, 1.7fr) repeat(${Math.max(learners.length, 1)}, minmax(0, 1fr))`;
   const focusClass = (id) => (id === focusLearnerId ? ' is-focus' : '');
 
   if (!learners.length || !groups.length) {

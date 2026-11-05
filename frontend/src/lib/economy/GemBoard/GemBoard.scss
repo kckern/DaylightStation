@@ -181,11 +181,23 @@
   &__total-week { font-size: 1.8rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   &__total-life { font-size: 0.9rem; opacity: 0.65; }
 
-  // The Portal is 1280×800: tighten rows so the board fits unscrolled.
+  // The Portal is 1280×800: one line per row and tighter rows, so both panels
+  // (up to ~11 rows on the left with the totals) fit unscrolled.
   @media (max-height: 820px) {
-    &__panel { padding: 0.8rem 1rem 1rem; gap: 0.5rem; }
-    &__row-label, &__cell { min-height: 2.4rem; }
-    &__avatar { width: 2.4rem; height: 2.4rem; }
-    &__group-label { padding-top: 0.45rem; }
+    &__panel { padding: 0.7rem 1rem 0.8rem; gap: 0.4rem; max-height: 98vh; }
+    &__title { font-size: 1.4rem; }
+    &__head { flex-direction: row; justify-content: center; gap: 0.4rem; padding: 0.25rem 0.2rem 0.35rem; }
+    &__avatar { width: 1.9rem; height: 1.9rem; }
+    &__name { font-size: 0.95rem; }
+    &__row-label { font-size: 0.95rem; min-height: 2.05rem; padding: 0.1rem 0; }
+    &__row-label > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    &__cell { min-height: 2.05rem; }
+    &__gem { width: 1.45em; height: 1.45em; }
+    &__progress { font-size: 0.85rem; }
+    &__group-label { padding: 0.35rem 0 0.15rem; font-size: 0.75rem; }
+    &__total { flex-direction: row; align-items: baseline; justify-content: center; gap: 0.35rem; padding: 0.2rem 0; }
+    &__total-week { font-size: 1.35rem; }
+    &__total-life { font-size: 0.8rem; }
+    &__row--totals > &__row-label, &__row--totals > &__col { margin-top: 0.2rem; }
   }
 }
