@@ -55,7 +55,7 @@ import { installRingCelebrationAudioUnlock, playRingCelebrationCue } from "./pla
 import WorkoutCoinCeremony from "./player/overlays/WorkoutCoinCeremony.jsx";
 import GemCeremony from '@/lib/economy/GemBoard/GemCeremony.jsx';
 import { useGemCeremony } from '@/lib/economy/GemBoard/useGemCeremony.js';
-import { ACHIEVEMENT_RECORDED_EVENT } from "./lib/achievementEvents.js";
+import { GAME_ACHIEVEMENT_RECORDED_EVENT } from "../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import { useWorkoutCoinCeremony, WORKOUT_FINISHED_EVENT } from "./player/overlays/useWorkoutCoinCeremony.js";
 
 registerBuiltinWidgets();
@@ -1940,7 +1940,7 @@ const PressureMatEventBridge = ({ logger }) => {
   return null;
 };
 
-const GEM_EVENTS = [ACHIEVEMENT_RECORDED_EVENT, WORKOUT_FINISHED_EVENT];
+const GEM_EVENTS = [GAME_ACHIEVEMENT_RECORDED_EVENT, WORKOUT_FINISHED_EVENT];
 const GEM_SOUND = { sound: 'school/_ux/coin.mp3', volume: 0.8 };
 
 const GlobalOverlays = () => {

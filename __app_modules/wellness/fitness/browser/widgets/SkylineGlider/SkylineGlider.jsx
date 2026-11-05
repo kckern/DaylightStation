@@ -1,5 +1,5 @@
 import SkylineControlPanel from './SkylineControlPanel.jsx';
-import { announceAchievement } from "../../lib/achievementEvents.js";
+import { announceGameAchievement } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import SkylineMenus, { crashReason } from './SkylineMenus.jsx';
 import { useSkylineController } from './useSkylineController.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -422,7 +422,7 @@ export default function SkylineGlider() {
         runId: record.run.id, status, riderId, equipmentId: equipment?.id,
         courseId: course.id, courseVersion: course.version,
       });
-      announceAchievement('skyline-glider', { runId: record.run.id }); // the gem ceremony looks now
+      announceGameAchievement('skyline-glider', { runId: record.run.id }); // the gem ceremony looks now
       return true;
     } catch (saveError) {
       finalizingRef.current = false;

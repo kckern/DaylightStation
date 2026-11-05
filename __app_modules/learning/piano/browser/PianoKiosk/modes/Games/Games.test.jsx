@@ -41,6 +41,13 @@ vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({
   default: () => log.logger, getLogger: () => log.logger,
 }));
 
+const gemBoard = vi.hoisted(() => ({ board: null }));
+vi.mock('../../../../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx', async (importOriginal) => ({
+  ...(await importOriginal()),
+  fetchGemBoard: vi.fn(async () => gemBoard.board),
+}));
+vi.mock('../../../../../../../frontend/src/lib/economy/coinCeremonyAudio.js', () => ({ playCoinCue: vi.fn(() => true) }));
+
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
   DaylightAPI: daylightApi,
@@ -380,6 +387,30 @@ describe('Games mode', () => {
     renderGames('/games/nonexistent-game/some-tab');
     fireEvent.click(screen.getByText('Back'));
     expect(screen.getByText('Space Invaders')).toBeTruthy();
+  });
+});
+
+describe('Games mode — gem ceremony', () => {
+  const boardWith = (state, week) => ({
+    mode: 'on', week: 7,
+    categories: [{ id: 'piano', label: 'Piano', color: '#4488ff', cadence: 'weekly' }],
+    learners: [{ learnerId: 'learner1', name: 'Learner One' }],
+    cells: { piano: { learner1: { state, week } } },
+  });
+
+  it('picker shows the gem ceremony for a gem earned since the last look', async () => {
+    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    gemBoard.board = boardWith('earned', 1);
+    renderGames();
+    expect(await screen.findByTestId('gem-ceremony')).toBeTruthy();
+  });
+
+  it('a game route renders no ceremony', async () => {
+    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    gemBoard.board = boardWith('earned', 1);
+    renderGames('/games/tetris');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId('gem-ceremony')).toBeNull();
   });
 });
 

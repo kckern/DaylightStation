@@ -17,6 +17,10 @@ import useSchoolGameAccess from '../../useSchoolGameAccess.js';
 import { gamesDisabledFor } from '../../gameAccessPolicy.js';
 import useGameBudgetMeter from '../../useGameBudgetMeter.js';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
+import GemCeremony from '../../../../../../../frontend/src/lib/economy/GemBoard/GemCeremony.jsx';
+import { useGemCeremony } from '../../../../../../../frontend/src/lib/economy/GemBoard/useGemCeremony.js';
+import { playCoinCue } from '../../../../../../../frontend/src/lib/economy/coinCeremonyAudio.js';
+import { GAME_ACHIEVEMENT_RECORDED_EVENT } from '../../../../../../../__capabilities/gaming/browser/platform/realtime/index.js';
 import GameGate from './GameGate.jsx';
 import { gateAppliesTo, gateConfigForLearner } from './gateScope.js';
 import MatchGateContext from './MatchGateContext.js';
@@ -150,6 +154,9 @@ function GamePicker() {
   const navigate = useNavigate();
   const ids = getGameIds();
   const cols = balancedColumns(ids.length);
+  // The picker only mounts when no game is open, so a gem never lands on a
+  // live run. Not learnOnMount: mounting IS the "a game just ended" look.
+  const gems = useGemCeremony({ surface: 'piano', events: [GAME_ACHIEVEMENT_RECORDED_EVENT] });
 
   return (
     <section className="piano-menu piano-mode--games">
@@ -172,6 +179,16 @@ function GamePicker() {
           );
         })}
       </ul>
+      {gems.ceremony && (
+        <GemCeremony
+          key={gems.ceremony.id}
+          surface="piano"
+          contained
+          awards={gems.ceremony.awards}
+          onShow={() => playCoinCue({ sound: 'school/_ux/coin.mp3', volume: 0.8 })}
+          onDone={gems.done}
+        />
+      )}
     </section>
   );
 }

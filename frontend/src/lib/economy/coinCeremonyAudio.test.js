@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const h = vi.hoisted(() => ({ master: 0.5, logs: [] }));
-vi.mock("../../../../../frontend/src/lib/volume/ScreenVolumeContext.js", () => ({ getEffectiveMaster: () => h.master }));
-vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
+vi.mock("../volume/ScreenVolumeContext.js", () => ({ getEffectiveMaster: () => h.master }));
+vi.mock("../logging/Logger.js", () => {
   const log = (level) => (event, data) => h.logs.push({ level, event, data });
   const child = () => ({ debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') });
   return { default: () => ({ child }) };
 });
-import { DaylightMediaPath } from "../../../../../frontend/src/lib/api.mjs";
+import { DaylightMediaPath } from "../api.mjs";
 import { playCoinCue, installCoinCueUnlock, __resetCoinCueForTest } from './coinCeremonyAudio.js';
 
 class FakeAudio {

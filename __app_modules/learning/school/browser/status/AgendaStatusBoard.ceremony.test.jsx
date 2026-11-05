@@ -8,7 +8,7 @@ vi.mock("../schoolApi.js", () => ({
 vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", () => ({
   useWebSocketSubscription: (topic, cb) => { h.ws.push({ topic, cb }); },
 }));
-vi.mock("./coinCeremonyAudio.js", () => ({
+vi.mock("../../../../../frontend/src/lib/economy/coinCeremonyAudio.js", () => ({
   playCoinCue: (opts) => { h.cues.push(opts); return true; },
   installCoinCueUnlock: (target, opts) => { h.unlocks.push(opts); return () => {}; },
 }));

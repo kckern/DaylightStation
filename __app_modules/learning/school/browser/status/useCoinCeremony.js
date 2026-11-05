@@ -14,7 +14,7 @@ import { schoolLog } from "../schoolLog.js";
 import {
   normalizeCoinCeremonyConfig, observeEarnings, emptyQueue, enqueueRise, promote, finish, nextPromoteIn,
 } from "./coinCeremonyModel.js";
-import { playCoinCue, installCoinCueUnlock } from "./coinCeremonyAudio.js";
+import { playCoinCue, installCoinCueUnlock } from "../../../../../frontend/src/lib/economy/coinCeremonyAudio.js";
 
 // Per-learner baseline ({ silver, from, to }), shared by every mount of the
 // board for the life of the page.

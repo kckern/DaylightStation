@@ -416,8 +416,8 @@ One view of every learner against every gem, for one week. Design:
   never does. A surface that has not looked this week learns silently, and a
   reload never replays one.
   - **Fitness** (`FitnessApp` global overlays): learns on load, then looks
-    (fresh) 1.5 s after `fitness-achievement-recorded` (a cycle race or a Skyline
-    Glider flight saved, `lib/achievementEvents.js`) and after a workout ends;
+    (fresh) 1.5 s after `game-achievement-recorded` (a cycle race or a Skyline
+    Glider flight saved, `announceGameAchievement` in the gaming realtime kit) and after a workout ends;
     shown after any coin ceremony, with the coin sound.
   - **School Portal** (`SchoolApp`): while the panel rests at the keypad, a
     minute poll and each return to the keypad; drawn over the board pane only,
