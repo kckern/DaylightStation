@@ -25,8 +25,62 @@ import { FlightScene, entityRole } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
 import useSkylineWeapons from "./useSkylineWeapons.js";
 import SkylineFlightHud from "./SkylineFlightHud.jsx";
-import { createFrameDriver } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
+import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
+
+
+const SKYLINE_LOG_NAMES = {
+  event: (e) => `skyline_glider.flight.${e.type}`,
+  executed: 'skyline_glider.effect.executed',
+  skipped: 'skyline_glider.effect.skipped',
+  failed: 'skyline_glider.effect.failed',
+};
+
+// Event type -> ordered effects. Rebuilt per frame so it reads current values.
+function buildEffectTable({ setEffects, effectTimersRef, course }) {
+  const later = (fn, ms) => { effectTimersRef.current.add(setTimeout(fn, ms)); };
+  return {
+    collision: (event) => [
+      { id: 'collision-burst', visual: () => {
+        setEffects((current) => ({ ...current, collisionKey: current.collisionKey + 1 }));
+        later(() => setEffects((current) => ({ ...current, collisionKey: 0 })), 450);
+      } },
+      // Losing a heart has its own cue, never the sound of a target breaking.
+      { id: 'collision-cue', cue: event.data.kind === 'crash' ? 'crash' : 'hurt' },
+    ],
+    collectible: (event, extra) => [
+      { id: 'bell-pop', visual: () => {
+        const key = `${event.data.collectibleId}-${extra.courseTime}`;
+        setEffects((current) => ({ ...current, pops: [...current.pops, { key }] }));
+        later(() => setEffects((current) => ({ ...current, pops: current.pops.filter((pop) => pop.key !== key) })), 600);
+      } },
+      { id: 'bell-cue', cue: 'bell' },
+    ],
+    'weapon.fired': (event) => [{ id: `${event.data.weapon}-cue`, cue: event.data.weapon }],
+    'bomb.detonated': () => [{ id: 'explosion-cue', cue: 'explosion' }],
+    'entity.destroyed': (event) => {
+      if (!['laser', 'missile'].includes(event.data.by)) return null;
+      // Bomb kills are covered by the explosion cue, crash kills by the collision cue.
+      // Only a scored target gets the reward sound; breaking scenery just shatters.
+      const scored = scoresAsTarget(course.entities?.find((entity) => entity.id === event.data.entityId));
+      return [{ id: scored ? 'target-cue' : 'shatter-cue', cue: scored ? 'target' : 'breakable' }];
+    },
+    'weapon.hit': (event) => (event.data.effect !== 'kill' && event.data.weapon !== 'bomb'
+      ? [{ id: 'hit-cue', cue: event.data.effect === 'damage' ? 'hit' : 'deny' }]
+      : null),
+    'boost.activated': () => [{ id: 'boost-cue', cue: 'boost' }],
+    checkpoint: (event) => [
+      { id: 'checkpoint-banner', visual: () => {
+        const label = `Checkpoint ${event.data.checkpointId}`;
+        setEffects((current) => ({ ...current, banner: label }));
+        later(() => setEffects((current) => ({ ...current, banner: current.banner === label ? null : current.banner })), 1500);
+      } },
+      { id: 'checkpoint-cue', cue: 'checkpoint' },
+    ],
+    restarted: () => [{ id: 'restart-ceremony' }, { id: 'restart-cue', cue: 'restart' }],
+    completed: () => [{ id: 'finish-ceremony' }, { id: 'finish-cue', cue: 'finish' }],
+  };
+}
 
 const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 });
 
@@ -421,69 +475,14 @@ export default function SkylineGlider() {
         courseId: course.id, courseVersion: course.version,
       };
       if (telemetry.sample) log.info('skyline_glider.flight.sample', { ...correlation, ...telemetry.sample });
-      for (const event of telemetry.events) {
-        log.info(`skyline_glider.flight.${event.type}`, { ...correlation, courseTime: next.courseTime, ...event.data });
-        const executeVisual = (effectId, update) => {
-          try {
-            update?.();
-            log.info('skyline_glider.effect.executed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId });
-          } catch (effectError) {
-            log.error('skyline_glider.effect.failed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, error: effectError.message });
-          }
-        };
-        const executeCue = (effectId, cue) => {
-          try {
-            if (audioRef.current.playCue(cue)) log.info('skyline_glider.effect.executed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId });
-            else log.info('skyline_glider.effect.skipped', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, reason: muted ? 'muted' : 'audio-unavailable' });
-          } catch (effectError) {
-            log.error('skyline_glider.effect.failed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, error: effectError.message });
-          }
-        };
-        if (event.type === 'collision') {
-          executeVisual('collision-burst', () => {
-            setEffects((current) => ({ ...current, collisionKey: current.collisionKey + 1 }));
-            const timer = setTimeout(() => setEffects((current) => ({ ...current, collisionKey: 0 })), 450);
-            effectTimersRef.current.add(timer);
-          });
-          // Losing a heart has its own cue, never the sound of a target breaking.
-          executeCue('collision-cue', event.data.kind === 'crash' ? 'crash' : 'hurt');
-        } else if (event.type === 'collectible') {
-          executeVisual('bell-pop', () => {
-            const key = `${event.data.collectibleId}-${next.courseTime}`;
-            setEffects((current) => ({ ...current, pops: [...current.pops, { key }] }));
-            const timer = setTimeout(() => setEffects((current) => ({ ...current, pops: current.pops.filter((pop) => pop.key !== key) })), 600);
-            effectTimersRef.current.add(timer);
-          });
-          executeCue('bell-cue', 'bell');
-        } else if (event.type === 'weapon.fired') {
-          executeCue(`${event.data.weapon}-cue`, event.data.weapon);
-        } else if (event.type === 'bomb.detonated') {
-          executeCue('explosion-cue', 'explosion');
-        } else if (event.type === 'entity.destroyed' && ['laser', 'missile'].includes(event.data.by)) {
-          // Bomb kills are covered by the explosion cue, crash kills by the collision cue.
-          // Only a scored target gets the reward sound; breaking scenery just shatters.
-          const scored = scoresAsTarget(course.entities?.find((entity) => entity.id === event.data.entityId));
-          executeCue(scored ? 'target-cue' : 'shatter-cue', scored ? 'target' : 'breakable');
-        } else if (event.type === 'weapon.hit' && event.data.effect !== 'kill' && event.data.weapon !== 'bomb') {
-          executeCue('hit-cue', event.data.effect === 'damage' ? 'hit' : 'deny');
-        } else if (event.type === 'boost.activated') {
-          executeCue('boost-cue', 'boost');
-        } else if (event.type === 'checkpoint') {
-          executeVisual('checkpoint-banner', () => {
-            const label = `Checkpoint ${event.data.checkpointId}`;
-            setEffects((current) => ({ ...current, banner: label }));
-            const timer = setTimeout(() => setEffects((current) => ({ ...current, banner: current.banner === label ? null : current.banner })), 1500);
-            effectTimersRef.current.add(timer);
-          });
-          executeCue('checkpoint-cue', 'checkpoint');
-        } else if (event.type === 'restarted') {
-          executeVisual('restart-ceremony');
-          executeCue('restart-cue', 'restart');
-        } else if (event.type === 'completed') {
-          executeVisual('finish-ceremony');
-          executeCue('finish-cue', 'finish');
-        }
-      }
+      createEffectDispatcher({
+        table: buildEffectTable({ setEffects, effectTimersRef, course }),
+        playCue: (cue) => audioRef.current.playCue(cue),
+        log,
+        logNames: SKYLINE_LOG_NAMES,
+        correlation: () => correlation,
+        skippedReason: () => (muted ? 'muted' : 'audio-unavailable'),
+      }).dispatch(telemetry.events, { courseTime: next.courseTime });
       lastSampleSecondRef.current = telemetry.nextSampleSecond;
       previousInputRef.current = { ...cadence };
       if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) persistCheckpoint(riderId, course, {
