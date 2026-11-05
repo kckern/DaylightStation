@@ -104,4 +104,12 @@ describe('Gaming import boundaries', () => {
     )).map((file) => path.relative(process.cwd(), file));
     expect(violations).toEqual([]);
   });
+
+  it('keeps the real-time kit pure: no clock or randomness in portable/realtime', () => {
+    const root = path.resolve('__capabilities/gaming/portable/realtime');
+    const violations = files(root).filter((file) => !file.endsWith('.test.mjs')).filter((file) => (
+      /Math\.random|Date\.now|performance\./.test(fs.readFileSync(file, 'utf8'))
+    )).map((file) => path.relative(process.cwd(), file));
+    expect(violations).toEqual([]);
+  });
 });
