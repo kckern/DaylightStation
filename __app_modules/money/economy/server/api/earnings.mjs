@@ -14,7 +14,8 @@
  *   GET /rules                                → { ruleset, kinds }
  *   GET /workout/:sessionId                   → one workout's ring silver per learner in it
  *   GET /standings                            → per learner: bank silver, week rings, gem
- *   GET /gems?week=YYYY-MM-DD                 → the Gem Board: learners × gem categories
+ *   GET /gems?week=YYYY-MM-DD[&fresh=1]       → the Gem Board: learners × gem categories
+ *                                               (fresh: re-read achievements, skip the minute cache)
  *
  * `week` is any study day inside the wanted Monday→Sunday week; omitted means
  * the current one. Use cases arrive built (api-no-apps / api-no-domains).
@@ -58,7 +59,7 @@ export function createEarningsRouter({ earningsPreview, earnRules, workoutEarnin
 
   router.get('/gems', asyncHandler(async (req, res) => {
     if (!gemBoard?.board) { res.status(503).json({ error: 'gem board unavailable' }); return; }
-    res.set('Cache-Control', 'no-store').json(await gemBoard.board({ week: weekOf(req) }));
+    res.set('Cache-Control', 'no-store').json(await gemBoard.board({ week: weekOf(req), fresh: req.query.fresh === '1' }));
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string', logger }));

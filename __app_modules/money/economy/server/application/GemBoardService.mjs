@@ -40,12 +40,15 @@ export class GemBoardService {
     }
   }
 
-  /** The board for the week holding `week` (any study day; null = this week). */
-  async board({ week = null } = {}) {
+  /**
+   * The board for the week holding `week` (any study day; null = this week).
+   * `fresh` reads the achievement evidence now rather than the minute-shared copy.
+   */
+  async board({ week = null, fresh = false } = {}) {
     const t0 = Date.now();
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { mode, week: null, learners: [], categories: [], cells: {}, totals: {} };
-    const [ruleset, roster] = await Promise.all([this.#rules.get(), this.#preview.roster({ week })]);
+    const [ruleset, roster] = await Promise.all([this.#rules.get(), this.#preview.roster({ week, fresh })]);
     const ids = (roster?.learners ?? []).map((l) => l.learnerId);
     const lifetime = Object.fromEntries(await Promise.all(ids.map(async (id) => [id, await this.#lifetime(id)])));
     const board = buildGemBoard({ ruleset, week: roster, lifetime, mode });

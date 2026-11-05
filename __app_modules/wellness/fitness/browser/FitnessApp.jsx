@@ -51,9 +51,12 @@ import {
 import MenuMusicController from "./nav/MenuMusicController.jsx";
 import EmergencyPlaybackController from "./player/EmergencyPlaybackController.jsx";
 import { FitnessFeedback, FeedbackCornerButton } from "./feedback/index.js";
-import { installRingCelebrationAudioUnlock } from "./player/overlays/ringCelebrationAudio.js";
+import { installRingCelebrationAudioUnlock, playRingCelebrationCue } from "./player/overlays/ringCelebrationAudio.js";
 import WorkoutCoinCeremony from "./player/overlays/WorkoutCoinCeremony.jsx";
-import { useWorkoutCoinCeremony } from "./player/overlays/useWorkoutCoinCeremony.js";
+import GemCeremony from '@/lib/economy/GemBoard/GemCeremony.jsx';
+import { useGemCeremony } from '@/lib/economy/GemBoard/useGemCeremony.js';
+import { ACHIEVEMENT_RECORDED_EVENT } from "./lib/achievementEvents.js";
+import { useWorkoutCoinCeremony, WORKOUT_FINISHED_EVENT } from "./player/overlays/useWorkoutCoinCeremony.js";
 
 registerBuiltinWidgets();
 
@@ -1937,11 +1940,19 @@ const PressureMatEventBridge = ({ logger }) => {
   return null;
 };
 
+const GEM_EVENTS = [ACHIEVEMENT_RECORDED_EVENT, WORKOUT_FINISHED_EVENT];
+const GEM_SOUND = { sound: 'school/_ux/coin.mp3', volume: 0.8 };
+
 const GlobalOverlays = () => {
   const fitnessCtx = useFitnessContext();
   useEffect(() => installRingCelebrationAudioUnlock(), []);
   // After a finished workout: what the ride was worth (FitnessPlayer fires it).
   const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony();
+  // A gem that just landed (a race of the week taken, an act completed, a ring
+  // mark): looked for right after a race/flight saves or a workout ends, and
+  // shown after any coin ceremony. The garage celebrates what happens in front
+  // of it, so it learns the board silently on load.
+  const gems = useGemCeremony({ surface: 'fitness', events: GEM_EVENTS, learnOnMount: true });
   if (!fitnessCtx) return null;
 
   return (
@@ -1967,6 +1978,15 @@ const GlobalOverlays = () => {
           sessionId={ceremony.sessionId}
           learners={ceremony.learners}
           onDone={dismissCeremony}
+        />
+      )}
+      {!ceremony && gems.ceremony && (
+        <GemCeremony
+          key={gems.ceremony.id}
+          surface="fitness"
+          awards={gems.ceremony.awards}
+          onShow={() => playRingCelebrationCue(GEM_SOUND)}
+          onDone={gems.done}
         />
       )}
     </>

@@ -79,9 +79,9 @@ export class EarningsPreviewService {
   }
 
   /** Every learner's week, reading the rules and the ring standings once. */
-  async roster({ week = null } = {}) {
+  async roster({ week = null, fresh = false } = {}) {
     const roster = await this.#roster();
-    const ctx = await this.#context(week, roster);
+    const ctx = await this.#context(week, roster, { fresh });
     // In parallel: each learner's evidence is an independent read, and a
     // serial roster took seconds per learner on a cold verdict cache.
     const learners = await Promise.all(roster.map((learner) => this.#price(learner, ctx)));
@@ -112,7 +112,7 @@ export class EarningsPreviewService {
     };
   }
 
-  async #context(week, roster) {
+  async #context(week, roster, { fresh = false } = {}) {
     const w = this.#windows(week);
     const ruleset = await this.#rules.get();
     let standings = null;
@@ -124,7 +124,7 @@ export class EarningsPreviewService {
     let achievements = null;
     if (this.#achievements && ruleset.rules.some((r) => ACHIEVEMENT_KINDS.has(r.kind))) {
       try {
-        achievements = await this.#cachedAchievements(w, roster);
+        achievements = await this.#cachedAchievements(w, roster, { fresh });
       } catch (err) {
         this.#logger.warn?.('economy.gems.evidence-unavailable', { source: 'all', error: err?.message ?? String(err) });
       }
@@ -135,12 +135,18 @@ export class EarningsPreviewService {
     };
   }
 
-  /** The week's achievement evidence, shared for a minute (one read per week per minute). */
-  #cachedAchievements(w, roster) {
+  /**
+   * The week's achievement evidence, shared for a minute so polled surfaces
+   * (fitness standings, the school board) cost one read a minute. `fresh`
+   * skips the shared copy and replaces it: a person just opened the Gem Board,
+   * or a race just landed, and a minute-old read would miss it (2026-11-04: a
+   * race-of-the-week lead did not show until the page was reloaded).
+   */
+  #cachedAchievements(w, roster, { fresh = false } = {}) {
     const key = `${w.school.from}|${roster.map((l) => l.id).join(',')}`;
     const nowMs = this.#clock().getTime();
     const hit = this.#achievementCache.get(key);
-    if (hit && nowMs - hit.at < ACHIEVEMENT_TTL_MS) return hit.promise;
+    if (!fresh && hit && nowMs - hit.at < ACHIEVEMENT_TTL_MS) return hit.promise;
     const promise = this.#readAchievements(w, roster);
     this.#achievementCache.set(key, { at: nowMs, promise });
     promise.catch(() => this.#achievementCache.delete(key));
