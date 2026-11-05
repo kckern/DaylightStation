@@ -1275,6 +1275,39 @@ export class CardLadderSittingService {
       return { doneToday: false, progressLabel: 'Not opened', remaining: null };
     }
   }
+
+  /**
+   * A learner's card-ladder record as achievement facts, read only and live
+   * only (the economy's gems). Every package on disk counts, enrolled or not —
+   * a dropped package's mastered words were still mastered.
+   *   doneDays  study days in [from, to] whose day file carries `doneAt`
+   *   signOffs  every word currently signed off (`state: mastered` with
+   *             `typedSignedOff`, not excluded), all time. A demotion clears
+   *             the stamp, so this is the PRESENT record, not a history.
+   * One unreadable package is skipped with a warning; a missing store is an error.
+   * @returns {Promise<{packages: Array<{package: string, doneDays: string[], signOffs: Array<{wordId: string, day: string}>}>}>}
+   */
+  async achievementRecord({ userId, from = null, to = null } = {}) {
+    if (this.#mode !== 'live') throw new ValidationError('achievementRecord is answered by the live card ladder only');
+    const view = typeof this.#stores.peek === 'function' ? this.#stores.peek(userId) : null;
+    if (typeof view?.listPackages !== 'function') throw new Error('card-ladder store cannot list packages');
+    const inRange = (day) => (!from || day >= from) && (!to || day <= to);
+    const packages = [];
+    for (const pkg of view.listPackages(userId)) {
+      try {
+        const doneDays = view.listDays(userId, pkg).filter(inRange)
+          .filter((day) => Boolean(view.readDay(userId, pkg, day)?.doneAt));
+        const words = view.readStatus(userId, pkg)?.words ?? {};
+        const signOffs = Object.entries(words)
+          .filter(([, w]) => w?.state === 'mastered' && typeof w.typedSignedOff === 'string' && w.excluded !== true)
+          .map(([wordId, w]) => ({ wordId, day: w.typedSignedOff }));
+        packages.push({ package: pkg, doneDays, signOffs });
+      } catch (error) {
+        this.#logger.warn?.('school.card-ladder.achievement-package-skipped', { learnerId: userId, package: pkg, error: error.message });
+      }
+    }
+    return { packages };
+  }
 }
 
 export default CardLadderSittingService;

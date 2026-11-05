@@ -191,6 +191,11 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/household/donow/server/composition/donow.mjs': 'composition',
   '__app_modules/media/media/server/composition/playback-hub.mjs': 'composition',
   '__app_modules/wellness/fitness/server/application/measures/fitnessRingsProvider.mjs': 'application',
+  // Gem achievement evidence (2026-11-04): each module's provider for the economy's gem rules.
+  '__app_modules/wellness/fitness/server/application/measures/fitnessAchievementProvider.mjs': 'application',
+  '__app_modules/learning/school/server/application/SchoolAchievementProvider.mjs': 'application',
+  '__app_modules/learning/piano/server/composition/achievements.mjs': 'composition',
+  '__app_modules/learning/piano/server/composition/rungLog.mjs': 'composition',
   '__app_modules/wellness/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs': 'application',
   '__app_modules/learning/school/server/study-calendar.mjs': 'domain',
   '__capabilities/device-dispatch/server/application/guards/authenticate.mjs': 'application',

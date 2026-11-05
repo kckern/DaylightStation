@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
-import GemBoardOverlay, { GemBoardGrid } from './GemBoard.jsx';
+import GemBoardOverlay, { GemBoardGrid, GemBoardPanels } from './GemBoard.jsx';
 
 const BOARD = {
   mode: 'live',
@@ -35,6 +35,26 @@ describe('GemBoardGrid', () => {
     expect(screen.getByLabelText('Ben, Exercise: still in reach, 3 of 5')).toBeTruthy();
     expect(screen.getByLabelText('Ann: 2 this week, 9 in all')).toBeTruthy();
     expect(container.querySelectorAll('.gem-board__head.is-focus')).toHaveLength(1);
+  });
+});
+
+describe('GemBoardPanels', () => {
+  it('one grid without milestones; two once milestones exist, the milestone side with tallies and no totals', () => {
+    const one = render(<GemBoardPanels board={BOARD} />);
+    expect(one.container.querySelectorAll('.gem-board__grid')).toHaveLength(1);
+    cleanup();
+    const withMilestones = {
+      ...BOARD,
+      categories: [...BOARD.categories, { id: 'glider', label: 'Skyline Glider', cadence: 'milestone', color: '#4fc3f7' }],
+      cells: { ...BOARD.cells, glider: { a: { state: 'earned', week: 1, lifetime: 6 }, b: { state: 'none', week: 0, lifetime: 2 } } },
+    };
+    const { container } = render(<GemBoardPanels board={withMilestones} />);
+    const grids = container.querySelectorAll('.gem-board__grid');
+    expect(grids).toHaveLength(2);
+    expect([...grids[1].querySelectorAll('.gem-board__group-label')].map((n) => n.textContent)).toEqual(['Milestones']);
+    expect([...grids[1].querySelectorAll('.gem-board__tally')].map((n) => n.textContent)).toEqual(['6', '2']);
+    expect(grids[0].querySelector('.gem-board__row--totals')).toBeTruthy();
+    expect(grids[1].querySelector('.gem-board__row--totals')).toBeNull();
   });
 });
 

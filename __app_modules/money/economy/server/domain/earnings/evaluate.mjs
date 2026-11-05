@@ -214,6 +214,78 @@ function ringDays(rule, facts, ctx) {
   return { status: ctx.contestClosed ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note, progress };
 }
 
+/**
+ * The achievement evidence for one activity, or null when it could not be
+ * read (the whole source failed, or that activity's provider did).
+ * `facts.achievements`: `{days: {activity: [day]}, milestones: {activity:
+ * [{key, day, label}]}, unavailable: [activity]}`.
+ */
+function achievement(facts, activity, part) {
+  const a = facts.achievements;
+  if (!a || (a.unavailable ?? []).includes(activity)) return null;
+  return a[part]?.[activity] ?? [];
+}
+
+const UNREADABLE = (note) => ({ status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note, progress: null });
+
+/**
+ * The activity done on at least `days` study days of the school week. Earned
+ * the moment the count is reached; `none` once the week is over short.
+ */
+function activityDays(rule, facts, ctx) {
+  const list = achievement(facts, rule.match.activity, 'days');
+  if (list == null) return UNREADABLE('Could not check this activity');
+  const days = [...new Set(list)].filter((d) => inEffect(rule.effective, d)).sort();
+  const evidence = days.map((day) => ({ day, state: 'done' }));
+  const progress = { have: Math.min(days.length, rule.days), need: rule.days };
+  const note = `${progress.have} of ${rule.days} days`;
+  if (days.length >= rule.days) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note, progress };
+  return { status: ctx.weekOver ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note, progress };
+}
+
+/**
+ * One gem per new achievement this week (a first win at a level, an act
+ * completed, a personal best…), oldest first, up to `cap`. A milestone is
+ * dated by its source, so it lands in exactly one week and the week's ref
+ * stays its idempotency key; one dated before `effective.from` never pays.
+ */
+function milestone(rule, facts) {
+  const list = achievement(facts, rule.match.activity, 'milestones');
+  if (list == null) return UNREADABLE('Could not check this activity');
+  const seen = new Set();
+  const hits = list
+    .filter((m) => m && typeof m.day === 'string' && inEffect(rule.effective, m.day))
+    .filter((m) => { const k = String(m.key); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : String(a.key) < String(b.key) ? -1 : 1));
+  const paid = rule.cap ? hits.slice(0, rule.cap.count) : hits;
+  const evidence = hits.map((m, i) => ({ day: m.day, key: String(m.key), label: m.label ?? null, state: i < paid.length ? 'paid' : 'over-cap' }));
+  if (!paid.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'None this week' };
+  const note = hits.length > paid.length ? `Weekly limit reached (${hits.length - paid.length} more)` : null;
+  return { status: 'earned', count: paid.length, amount: price(rule, paid.length), evidence, note };
+}
+
+/**
+ * The best score in the roster for the activity that week (higher is better).
+ * `ctx.contests[activity]`: `{standings: [{learnerId, score}], closed}` —
+ * leading until `closed`, then won. A score of 0 or less never leads.
+ */
+function activityContest(rule, facts, ctx) {
+  const contest = ctx.contests?.[rule.match.activity];
+  if (!contest || !Array.isArray(contest.standings)) return { ...UNREADABLE('Could not check this contest'), leader: false };
+  const scores = contest.standings.filter((s) => Number.isFinite(s.score) && s.score > 0);
+  const best = scores.length ? Math.max(...scores.map((s) => s.score)) : null;
+  const leaders = best == null ? [] : scores.filter((s) => s.score === best).map((s) => s.learnerId);
+  const mine = contest.standings.find((s) => s.learnerId === ctx.learnerId)?.score ?? null;
+  const leader = leaders.includes(ctx.learnerId);
+  const evidence = mine == null ? [] : [{ score: mine, best }];
+  if (!leader) return { status: contest.closed ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note: null, leader: false };
+  if (leaders.length > 1 && rule.tie === 'none') return { status: contest.closed ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note: 'Tied — this contest pays no tie', leader: true };
+  const share = leaders.length > 1 && rule.tie === 'split' ? leaders.length : 1;
+  const amount = { silver: Math.round(Math.floor(rule.reward.silver / share) * rule.multiplier), gems: Math.floor(rule.reward.gems / share) };
+  if (!contest.closed) return { status: 'pending', count: 1, amount, evidence, note: 'Leading', leader: true };
+  return { status: paid(amount) ? 'earned' : 'none', count: 1, amount, evidence, note: leaders.length > 1 ? 'Tied for the best' : null, leader: true };
+}
+
 const DEBRIEF_PASS = {
   completed: (f) => f.state === 'completed',
   substantive: (f) => f.state === 'completed' && f.timeliness === 'on-time' && f.substantive === true,
@@ -262,6 +334,9 @@ const EVALUATORS = {
   'ring-threshold': ringThreshold,
   'ring-contest': ringContest,
   'ring-days': ringDays,
+  'activity-days': activityDays,
+  'activity-contest': activityContest,
+  milestone,
 };
 
 function windowDates(window) {
@@ -278,6 +353,9 @@ function windowDates(window) {
  *   `ringDays`: those workouts that are final, summed per study day: `[{day, rings}]` (ring-days)
  * @param {Array<{learnerId: string, rings: number}>|null} args.standings - the roster's award-week rings (contest)
  * @param {boolean} args.contestClosed - the award week has closed
+ * @param {Record<string, {standings: Array<{learnerId, score}>, closed: boolean}>|null} [args.contests]
+ *   the roster's activity contests (activity-contest), null when unreadable
+ *   `facts.achievements`: this learner's achievement evidence (activity-days, milestone), null when unreadable
  * @param {{school: {from, to}, rings: {from, to}}} args.windows
  * @param {{school?: boolean|'outside-term'}} [args.unavailable] - a whole evidence source
  *   failed (or the week lies outside the school term): its lines are
@@ -287,8 +365,8 @@ function windowDates(window) {
  *   are OPEN: their unfinished work is "still to do", never missed. A week
  *   settles once its Friday has passed (Saturday is payday, D1).
  */
-export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {}, today = null }) {
-  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ringSessions: [], ringDays: null, ...(facts ?? {}) };
+export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, contests = null, windows, unavailable = {}, today = null }) {
+  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ringSessions: [], ringDays: null, achievements: null, ...(facts ?? {}) };
   const schoolDates = windowDates(windows?.school);
   const isOpen = (day) => today != null && day >= today;
   // A week's verdict is final only once its Friday has passed (or the week
@@ -328,7 +406,8 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
       continue;
     }
     const ctx = {
-      learnerId, today, standings, contestClosed, weekdaysCovered, isOpen, unknownDays,
+      learnerId, today, standings, contestClosed, contests, weekdaysCovered, isOpen, unknownDays,
+      weekOver: today != null && schoolDates != null && schoolDates.to < today,
       ref: (occurrence) => earningRef({ learnerId, ruleId: rule.id, period: occurrence }),
     };
     lines.push({ ...base, ...EVALUATORS[rule.kind](rule, f, ctx) });

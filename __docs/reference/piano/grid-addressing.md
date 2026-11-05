@@ -639,6 +639,10 @@ should hand the player back something they can play, and a bad five minutes shou
 between rungs. The record carries no game result at all, which is what makes the two ladders
 genuinely independent.
 
+Every raise of `addressing.ladder.unlocked_through` is also appended, dated, to the player's rung
+log (`users/{id}/apps/piano/rung-log.yml`, `ladder: addressing`) — see
+[piano-game-platform.md § Rung log](piano-game-platform.md#rung-log-dated-promotions).
+
 The settings panel picks a **rung**, not the dimensions: nobody hand-picks from 432 combinations, so
 it offers a `GameStepper` over the ladder with a line beneath saying what the rung resolves to, plus
 a "stay here" switch for `pinned`. The individual dimensions remain configurable in YAML.

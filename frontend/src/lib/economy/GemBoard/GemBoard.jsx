@@ -50,7 +50,7 @@ const CELL_LABEL = {
 };
 
 /** One child's cell in one gem row. Exported for tests. */
-export function GemCell({ cell, color, name, rowLabel }) {
+export function GemCell({ cell, color, name, rowLabel, cadence = 'weekly' }) {
   const state = cell?.state ?? 'none';
   const label = `${name}, ${rowLabel}: ${CELL_LABEL[state] ?? state}${cell?.progress ? `, ${cell.progress.have} of ${cell.progress.need}` : ''}`;
   let body = null;
@@ -75,18 +75,23 @@ export function GemCell({ cell, color, name, rowLabel }) {
   } else if (state === 'disabled') {
     body = <span className="gem-board__muted">–</span>;
   }
-  return <div className={`gem-board__cell is-${state}`} role="cell" aria-label={label} data-state={state}>{body}</div>;
+  // A milestone row keeps its tally: how many of these the child has ever earned.
+  const tally = cadence === 'milestone' && cell?.lifetime > 0
+    ? <span className="gem-board__tally" aria-hidden="true">{cell.lifetime}</span>
+    : null;
+  return <div className={`gem-board__cell is-${state}`} role="cell" aria-label={label} data-state={state}>{body}{tally}</div>;
 }
 
 /**
  * The board itself, from a `/earnings/gems` response. Pure display: no fetch.
  * @param {{board: object, focusLearnerId?: string|null}} props
  */
-export function GemBoardGrid({ board, focusLearnerId = null }) {
+export function GemBoardGrid({ board, focusLearnerId = null, cadences = null, totals = true }) {
   const learners = board?.learners ?? [];
   const groups = useMemo(() => GROUPS
+    .filter((g) => !cadences || cadences.includes(g.cadence))
     .map((g) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.cadence === g.cadence) }))
-    .filter((g) => g.rows.length), [board]);
+    .filter((g) => g.rows.length), [board, cadences]);
   const columns = `minmax(9rem, 1.4fr) repeat(${Math.max(learners.length, 1)}, minmax(0, 1fr))`;
   const focusClass = (id) => (id === focusLearnerId ? ' is-focus' : '');
 
@@ -113,14 +118,14 @@ export function GemBoardGrid({ board, focusLearnerId = null }) {
               </div>
               {learners.map((l) => (
                 <div key={l.learnerId} className={`gem-board__col${focusClass(l.learnerId)}`}>
-                  <GemCell cell={board.cells?.[row.id]?.[l.learnerId]} color={row.color} name={l.name} rowLabel={row.label} />
+                  <GemCell cell={board.cells?.[row.id]?.[l.learnerId]} color={row.color} name={l.name} rowLabel={row.label} cadence={row.cadence} />
                 </div>
               ))}
             </div>
           ))}
         </div>
       ))}
-      <div className="gem-board__row gem-board__row--totals" role="row">
+      {totals && <div className="gem-board__row gem-board__row--totals" role="row">
         <div className="gem-board__row-label" role="rowheader"><span>Gems</span></div>
         {learners.map((l) => {
           const t = board.totals?.[l.learnerId] ?? { week: 0, lifetime: 0 };
@@ -133,7 +138,27 @@ export function GemBoardGrid({ board, focusLearnerId = null }) {
             </div>
           );
         })}
-      </div>
+      </div>}
+    </div>
+  );
+}
+
+const WEEK_CADENCES = ['weekly', 'contest'];
+const MILESTONE_CADENCES = ['milestone'];
+
+/**
+ * The whole board: one grid, or — once milestones exist — two side by side
+ * (this week + contests with the totals; milestones with their tallies), so
+ * every row fits the Portal's 800 px without scrolling.
+ */
+export function GemBoardPanels({ board, focusLearnerId = null }) {
+  const split = (board?.categories ?? []).some((c) => c.cadence === 'milestone')
+    && (board?.categories ?? []).some((c) => c.cadence !== 'milestone');
+  if (!split) return <GemBoardGrid board={board} focusLearnerId={focusLearnerId} />;
+  return (
+    <div className="gem-board__panels">
+      <GemBoardGrid board={board} focusLearnerId={focusLearnerId} cadences={WEEK_CADENCES} />
+      <GemBoardGrid board={board} focusLearnerId={focusLearnerId} cadences={MILESTONE_CADENCES} totals={false} />
     </div>
   );
 }
@@ -258,7 +283,7 @@ export default function GemBoardOverlay({
         {board && board.mode === 'off' && <div className="gem-board__empty">Gems are switched off.</div>}
         {board && board.mode !== 'off' && (
           <div className={`gem-board__body${loading ? ' is-loading' : ''}`}>
-            <GemBoardGrid board={board} focusLearnerId={focus} />
+            <GemBoardPanels board={board} focusLearnerId={focus} />
           </div>
         )}
       </div>

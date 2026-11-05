@@ -206,3 +206,18 @@ describe('YamlCardLadderStore — the one-time move out of word-ladder/', () => 
   });
 });
 
+
+describe('YamlCardLadderStore.listPackages', () => {
+  it('lists packages under both directory names, without moving the legacy one', () => {
+    const root = path.join(dir, 'test-learner', 'apps', 'school');
+    fs.mkdirSync(path.join(root, 'card-ladder', 'korean-vocab'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'word-ladder', 'korean-vocab'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'word-ladder', 'korean-3-2'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'card-ladder', 'Not A Slug'), { recursive: true });
+    const store = new YamlCardLadderStore({ configService });
+    expect(store.listPackages('test-learner')).toEqual(['korean-3-2', 'korean-vocab']);
+    expect(store.readOnlyView().listPackages('test-learner')).toEqual(['korean-3-2', 'korean-vocab']);
+    expect(fs.existsSync(path.join(root, 'card-ladder', 'korean-3-2'))).toBe(false);
+    expect(store.listPackages('nobody')).toEqual([]);
+  });
+});

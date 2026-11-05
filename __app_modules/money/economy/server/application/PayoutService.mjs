@@ -61,7 +61,7 @@ export function ringSteps(line) {
 const paysPerWorkout = (line) => line.kind === 'ring-threshold' && Array.isArray(line.sessions) && line.priced?.rate;
 
 // The evidence states that pay, for the line kinds that pay per day.
-const PAYING_DAY_STATE = { 'section-day': 'served', 'day-met': 'met', 'ring-days': 'moved' };
+const PAYING_DAY_STATE = { 'section-day': 'served', 'day-met': 'met', 'ring-days': 'moved', 'activity-days': 'done' };
 
 /**
  * What the line looked like when it paid, kept on the entry so the bank can
@@ -75,6 +75,10 @@ export function payoutMeta(line) {
   const state = PAYING_DAY_STATE[line.kind];
   if (state) {
     meta.days = (line.evidence ?? []).filter((e) => e?.state === state && typeof e.day === 'string').map((e) => e.day).sort();
+  }
+  // A milestone line names what it paid for ("Level 5", "Mountain Pass").
+  if (line.kind === 'milestone') {
+    meta.items = (line.evidence ?? []).filter((e) => e?.state === 'paid').map((e) => e.label ?? e.key);
   }
   return meta;
 }
@@ -184,7 +188,7 @@ export class PayoutService {
         continue;
       }
       if (line.status !== 'earned' || !line.ref) continue;
-      const kind = line.kind === 'ring-contest' ? 'prize' : 'earn';
+      const kind = line.kind === 'ring-contest' || line.kind === 'activity-contest' ? 'prize' : 'earn';
       const steps = paysPerWorkout(line) ? ringSteps(line) : [{ amount: line.amount, meta: payoutMeta(line) }];
       for (const step of steps) {
         for (const currency of CURRENCIES) {

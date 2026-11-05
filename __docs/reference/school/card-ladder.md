@@ -1335,6 +1335,16 @@ through `readOnlyView()`, which reads an unmoved package in place and has no
 writer, so a test sitting writes neither path. The CLI reads `card-ladder/`
 first, else `word-ladder/`, and never copies.
 
+## Achievement record (gems)
+
+`CardLadderSittingService.achievementRecord({userId, from, to})` (live only,
+read only, through the store's `readOnlyView`) answers the economy's gems:
+per package on disk (`YamlCardLadderStore.listPackages`, both `card-ladder/`
+and pre-rename `word-ladder/` names, never migrating), the study days in range
+with `doneAt`, and every word currently signed off. An unreadable package is
+skipped with `school.card-ladder.achievement-package-skipped` (warn). See
+[Agenda and completion — School achievements for gems](./agenda-and-completion.md#school-achievements-for-gems).
+
 ## Logs
 
 Everything lands in the log store as `school.card-ladder.*`, and every event

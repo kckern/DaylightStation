@@ -1526,3 +1526,30 @@ describe('durable card-day completion facts', () => {
     expect(fact).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CardLadderSittingService.achievementRecord', () => {
+  const view = {
+    listPackages: () => ['korean-3-2', 'korean-vocab'],
+    listDays: (_u, pkg) => (pkg === 'korean-vocab' ? ['2026-09-20', '2026-09-21', '2026-09-22'] : ['2026-09-21']),
+    readDay: (_u, pkg, d) => ({ ...emptyDay(d), doneAt: pkg === 'korean-vocab' && d !== '2026-09-21' ? `${d}T15:00:00-07:00` : null }),
+    readStatus: (_u, pkg) => {
+      if (pkg === 'korean-3-2') throw new Error('boom');
+      return { ...emptyStatusV3(), words: {
+        gawi: { ...emptyWordV3(), state: 'mastered', typedSignedOff: '2026-09-20' },
+        pul: { ...emptyWordV3(), state: 'mastered', typedSignedOff: null },
+        cha: { ...emptyWordV3(), state: 'familiar', typedSignedOff: '2026-09-19' },
+        mul: { ...emptyWordV3(), state: 'mastered', typedSignedOff: '2026-09-21', excluded: true },
+      } };
+    },
+  };
+  it('reports done days in range and current sign-offs per package, skipping an unreadable one', async () => {
+    const { service, logger } = make({ peek: () => view });
+    const out = await service.achievementRecord({ userId: 'test-learner', from: '2026-09-21', to: '2026-09-27' });
+    expect(out).toEqual({ packages: [{ package: 'korean-vocab', doneDays: ['2026-09-22'], signOffs: [{ wordId: 'gawi', day: '2026-09-20' }] }] });
+    expect(logger.warn).toHaveBeenCalledWith('school.card-ladder.achievement-package-skipped', expect.objectContaining({ package: 'korean-3-2' }));
+  });
+  it('is live only and needs a listing store', async () => {
+    await expect(make({ mode: 'test', peek: () => view }).service.achievementRecord({ userId: 'test-learner' })).rejects.toThrow(/live/);
+    await expect(make().service.achievementRecord({ userId: 'test-learner' })).rejects.toThrow(/list packages/);
+  });
+});

@@ -8,10 +8,11 @@ export class PianoGamesContainer {
   #logger;
   #dialogue;
   #rivalries;
+  #rungLog;
 
   constructor({
     games, repository, boardGameDayService = null, logger = null,
-    dialogue = null, rivalries = null,
+    dialogue = null, rivalries = null, rungLog = null,
   }) {
     if (!games || !repository) throw new Error('PianoGamesContainer: games and repository required');
     this.#games = games;
@@ -20,6 +21,13 @@ export class PianoGamesContainer {
     this.#logger = logger;
     this.#dialogue = dialogue;
     this.#rivalries = rivalries;
+    this.#rungLog = rungLog;
+  }
+
+  // Dated promotion log (PianoRungLog). Best-effort by contract, and guarded
+  // again here: nothing about a log append may fail a game or an unlock.
+  #noteRung(change) {
+    try { this.#rungLog?.note?.(change); } catch { /* best-effort */ }
   }
 
   game(gameId) {
@@ -101,8 +109,19 @@ export class PianoGamesContainer {
 
   async writeConfig(gameId, userId, config) {
     this.game(gameId);
-    await this.#repository.writeConfig(gameId, userId, config);
-    return this.readConfig(gameId, userId);
+    const raisesAddressing = config?.addressing?.ladder?.unlocked_through !== undefined;
+    const before = raisesAddressing
+      ? (await this.readConfig(gameId, userId))?.addressing?.ladder?.unlocked_through ?? null
+      : null;
+    const written = await this.#repository.writeConfig(gameId, userId, config);
+    const after = await this.readConfig(gameId, userId);
+    if (raisesAddressing && written !== false) {
+      this.#noteRung({
+        userId, game: gameId, ladder: 'addressing',
+        from: before, to: after?.addressing?.ladder?.unlocked_through ?? null,
+      });
+    }
+    return after;
   }
 
   async recordGame(gameId, userId, record) {
@@ -127,10 +146,19 @@ export class PianoGamesContainer {
     }) ?? null;
     if (record.ranked === false) return { saved: true, ladder: current.snapshot(), boardGameDay };
     const ladder = current.record(record.result, record.level, { help: record.help });
-    await this.#repository.writeProgress(gameId, userId, {
+    const written = await this.#repository.writeProgress(gameId, userId, {
       unlockedThrough: ladder.unlockedThrough,
       series: ladder.series,
     });
+    if (written !== false && ladder.unlockedThrough > current.unlockedThrough) {
+      // Logged in the units the game stores and shows (chess zero-based).
+      const game = this.game(gameId);
+      const native = (position) => game.levelFromPosition?.(position) ?? position;
+      this.#noteRung({
+        userId, game: gameId, ladder: 'match',
+        from: native(current.unlockedThrough), to: native(ladder.unlockedThrough),
+      });
+    }
     return { saved: true, ladder: ladder.snapshot(), boardGameDay };
   }
 

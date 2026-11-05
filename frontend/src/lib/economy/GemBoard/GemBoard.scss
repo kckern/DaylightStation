@@ -21,7 +21,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
-    width: min(94vw, 1500px);
+    width: min(96vw, 1700px);
     max-height: 94vh;
     padding: 1.1rem 1.4rem 1.3rem;
     box-sizing: border-box;
@@ -74,6 +74,23 @@
 
   &__body { min-height: 0; &.is-loading { opacity: 0.6; } }
   &__empty { padding: 3rem 1rem; text-align: center; font-size: 1.25rem; opacity: 0.75; }
+
+  // Two grids side by side once milestones exist; stacked on a narrow screen.
+  &__panels {
+    display: flex;
+    gap: 1.6rem;
+    align-items: flex-start;
+    > .gem-board__grid { flex: 1 1 0; min-width: 0; }
+    @media (max-width: 900px) { flex-direction: column; }
+  }
+  &__tally {
+    position: absolute;
+    right: 0.25rem;
+    bottom: 0.1rem;
+    font-size: 0.75rem;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+  }
 
   &__grid {
     display: grid;
@@ -132,6 +149,7 @@
   &__row--totals > &__col.is-focus { border-radius: 0 0 10px 10px; }
 
   &__cell {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;

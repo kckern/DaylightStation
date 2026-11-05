@@ -36,7 +36,8 @@ test('keeps storage serialization out of the ladder aggregate', async () => {
   const { repository, writes } = fixture();
   await repository.writeProgress('checkers', 'kid', { unlockedThrough: 3, series: ['win'] });
   assert.deepEqual(writes.at(-1).value, { unlocked_through: 3, series: ['win'] });
-  assert.deepEqual(await repository.readProgress('checkers', 'kid'), { unlockedThrough: 3, series: ['win'] });
+  // Legacy bare-string series entries are normalized on read (readProgress).
+  assert.deepEqual(await repository.readProgress('checkers', 'kid'), { unlockedThrough: 3, series: [{ result: 'win', counted: true }] });
 });
 
 /**

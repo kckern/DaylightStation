@@ -234,6 +234,13 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
           // never absent. The remediation cap walks these links back to the
           // first sheet without reading a single event.
           remediationOf: state.remediationOf ?? null,
+          // The grade's own facts, for a reader asking "was this sheet marked,
+          // and how" (the economy's perfect-sheet gem): a `graded` event's
+          // stamp and counts, and whether the evidence was later invalidated.
+          gradedAt: state.gradedAt ?? null,
+          gradedCorrectCount: state.gradedCorrectCount ?? null,
+          gradedTotalCount: state.gradedTotalCount ?? null,
+          evidenceInvalidated: state.evidenceInvalidated === true,
         } });
       }
     }
@@ -271,6 +278,10 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
         studyDay: row.studyDay ?? null,
         updatedAt: row.updatedAt ?? null,
         remediationOf: row.remediationOf ?? null,
+        gradedAt: row.gradedAt ?? null,
+        gradedCorrectCount: row.gradedCorrectCount ?? null,
+        gradedTotalCount: row.gradedTotalCount ?? null,
+        evidenceInvalidated: row.evidenceInvalidated === true,
       });
     }
     return facts;

@@ -786,6 +786,19 @@ maintains: `household[-{id}]/history/fitness/cycle-races/_index/{YYYY-MM}.json`.
 Shards are **disposable** — deleting one just forces a rebuild (per-day mtime
 check) on the next read; nothing else depends on their presence.
 
+### Gems (economy achievement evidence)
+
+`application/measures/fitnessAchievementProvider.mjs` feeds the economy's
+`race` contest and `race-pb` milestone. `race` is this ladder (`getLadder` for
+the ISO week of the school week's Monday), roster riders only, scored
+higher-better: `1e6 / seconds` on a distance course, metres on a time course;
+closed once the week is over. `race-pb` walks the index rows in raceId order per
+course definition (id + win condition + goal): a strictly better result than the
+rider's prior best is a PB, their first ride of a course is not. Lobby races and
+ghosts never count. It is dated by the study day of `race.date` via
+`raceEpochMs()` (the record is fetched for each candidate) and keyed
+`<courseId>:<raceId>`.
+
 ---
 
 ## 17. Ghost system end-to-end

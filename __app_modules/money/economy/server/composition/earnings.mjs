@@ -91,7 +91,7 @@ export function cachedSheetRewards({ weeks, config, logger = console }) {
   };
 }
 
-export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,previewCacheNow = () => Date.now()}) {
+export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders = [],previewCacheNow = () => Date.now()}) {
     const { EarningsPreviewService } = await import("../application/EarningsPreviewService.mjs");
     const { SchoolEarningEvidence } = await import("../adapters/school/SchoolEarningEvidence.mjs");
     const { createEarningsRouter } = await import("../api/earnings.mjs");
@@ -99,6 +99,15 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
     const { WeekCloseService } = await import("../application/WeekCloseService.mjs");
     const { WorkoutEarningsService } = await import("../application/WorkoutEarningsService.mjs");
     const { GemBoardService } = await import("../application/GemBoardService.mjs");
+    const { CompositeAchievementEvidence } = await import("../application/CompositeAchievementEvidence.mjs");
+    // The household's other achievements (races, Skyline Glider, board games,
+    // piano, flashcards, reading, worksheets) for the activity-days /
+    // activity-contest / milestone earn rules. Each module hands in its own
+    // provider; one that fails greys out only its activities.
+    const achievementEvidence = new CompositeAchievementEvidence({
+      providers: achievementProviders,
+      logger: rootLogger.child({ module: 'economy-achievements' }),
+    });
     const termVerdicts = schoolLifecycle?.termVerdicts ?? null;
     const learnerSessions = schoolLifecycle?.listLearnerSessions ?? null;
     const curriculum = schoolLifecycle?.stores?.curriculum ?? null;
@@ -131,6 +140,7 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
         : unavailableSchool,
       // The same provider the board's weekly ring figure uses.
       ringEvidence: fitnessRings,
+      achievementEvidence,
       learners: async () => schoolLearnerDirectory.listLearners(),
       clock: () => new Date(),
       // One study calendar for the preview and the passes (the bank's "today").

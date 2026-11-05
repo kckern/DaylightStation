@@ -28,6 +28,8 @@ export class CycleRaceService {
   get(raceId, householdId) { return this.datastore.findById(raceId, householdId); }
   listByDate(date, householdId) { return this.datastore.findByDate(date, householdId); }
   listDates(householdId) { return this.datastore.listDates(householdId); }
+  /** Every race's index row (id, local date, course, per-rider results) — the ladder's input. */
+  listIndexEntries(householdId) { return this.datastore.listIndexEntries(householdId); }
 
   async findGhostCandidates({ courseId = null, winCondition = null, goalM = null, timeCapS = null, householdId } = {}) {
     const dates = await this.datastore.listDates(householdId);
