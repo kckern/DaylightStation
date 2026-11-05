@@ -5,7 +5,7 @@
  * Vocabulary: ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md §5.
  * Design: ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md.
  *
- * Ten kinds, one per earning trigger (scope × period):
+ * Thirteen kinds, one per earning trigger (scope × period):
  *   unit            each served unit matching the selector        School × Unit
  *   section-day     each day the matched section was served        School × Day, one subject
  *   section-week    every obligated day that week served           School × Week, one subject
@@ -14,6 +14,16 @@
  *   ring-threshold  `rate` silver per N rings + each threshold crossed (award week) Fitness × Week (absolute)
  *   ring-contest    most rings in the roster at award-week close   Fitness × Week (relative)
  *   ring-days       at least `min` rings on at least `days` study days of the award week  Fitness × Week (absolute)
+ *   activity-days   the named activity done on at least `days` study days of the school week   Any × Week (absolute)
+ *   activity-contest the best score in the roster for the named activity that week   Any × Week (relative)
+ *   milestone       one per new achievement of the named activity that week, up to `cap`   Any × Milestone
+ *
+ * The three `activity-*` / `milestone` kinds read `match.activity` from the
+ * achievement evidence (ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md):
+ *   activity-days    piano-practice | card-goal | story-read
+ *   activity-contest race | ring-improved
+ *   milestone        race-pb | glider-act | glider-bells | board-game-level | piano-rung
+ *                    | perfect-sheet | cards-mastered | book-finished | rings-lifetime
  *   debrief-day     each day's after-school debrief, by criterion  School × Day (completed | substantive | quiz-passed)
  *   debrief-week    every owed debrief done (late counts) or excused  School × Week
  *
@@ -28,7 +38,13 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 import { CURRENCIES } from '../entities/Transaction.mjs';
 
 export { CURRENCIES };
-export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week', 'ring-days']);
+export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week', 'ring-days', 'activity-days', 'activity-contest', 'milestone']);
+/** What each achievement kind may name in `match.activity`. */
+export const ACTIVITIES = Object.freeze({
+  'activity-days': Object.freeze(['piano-practice', 'card-goal', 'story-read']),
+  'activity-contest': Object.freeze(['race', 'ring-improved']),
+  milestone: Object.freeze(['race-pb', 'glider-act', 'glider-bells', 'board-game-level', 'piano-rung', 'perfect-sheet', 'cards-mastered', 'book-finished', 'rings-lifetime']),
+});
 const DEBRIEF_CRITERIA = ['completed', 'substantive', 'quiz-passed'];
 const SECTION_KINDS = new Set(['section-day', 'section-week']);
 const TIES = new Set(['all', 'split', 'none']);
@@ -109,6 +125,10 @@ function normalizeMatch(match, field) {
     if (typeof match[key] !== 'string' || !match[key]) fail(`${field}.${key} must be a string`, field);
     out[key] = match[key];
   }
+  if (match.activity != null) {
+    if (typeof match.activity !== 'string' || !ID.test(match.activity)) fail(`${field}.activity must be a slug`, field);
+    out.activity = match.activity;
+  }
   if (match.criterion != null) {
     if (typeof match.criterion !== 'string' || !match.criterion) fail(`${field}.criterion must be a string`, field);
     out.criterion = match.criterion;
@@ -176,6 +196,26 @@ function normalizeRule(rule, i) {
     const tie = rule.tie ?? 'all';
     if (!TIES.has(tie)) fail(`${field}.tie must be all, split or none`, `${field}.tie`);
     out.tie = tie;
+  }
+  if (ACTIVITIES[rule.kind]) {
+    if (!ACTIVITIES[rule.kind].includes(match.activity)) {
+      fail(`${field}.match.activity must be one of ${ACTIVITIES[rule.kind].join(', ')}`, `${field}.match.activity`);
+    }
+  }
+  if (rule.kind === 'activity-days') {
+    const days = rule.days ?? 4;
+    if (!Number.isInteger(days) || days < 1 || days > 7) fail(`${field}.days must be a whole number from 1 to 7`, `${field}.days`);
+    out.days = days;
+  }
+  if (rule.kind === 'activity-contest') {
+    const tie = rule.tie ?? 'all';
+    if (!TIES.has(tie)) fail(`${field}.tie must be all, split or none`, `${field}.tie`);
+    out.tie = tie;
+  }
+  if (rule.kind === 'milestone' && rule.cap != null) {
+    const count = rule.cap?.count;
+    if (!Number.isInteger(count) || count < 1 || count > 50) fail(`${field}.cap.count must be a whole number from 1 to 50`, `${field}.cap`);
+    out.cap = { per: 'week', count };
   }
   if (rule.kind === 'ring-days') {
     const days = rule.days ?? 5;

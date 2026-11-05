@@ -146,6 +146,32 @@ export class YamlPianoAttemptStore {
       .slice(0, Math.max(0, limit));
   }
 
+  /**
+   * Non-voided attempts whose `created_at` falls in [fromMs, toMs). Reads only
+   * the day folders that can hold them (folders are UTC dates of creation),
+   * not the whole history — for a weekly reader that runs on every preview.
+   */
+  listCreatedBetween(userId, { fromMs, toMs } = {}) {
+    if (!SEGMENT_RE.test(String(userId)) || !Number.isFinite(fromMs) || !Number.isFinite(toMs)) return [];
+    const root = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts');
+    if (!fileExists(root)) return [];
+    const DAY_MS = 86_400_000;
+    const first = new Date(fromMs - DAY_MS).toISOString().slice(0, 10);
+    const last = new Date(toMs + DAY_MS).toISOString().slice(0, 10);
+    return readDirectory(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name)
+        && entry.name >= first && entry.name <= last)
+      .flatMap((day) => readDirectory(path.join(root, day.name))
+        .filter((name) => name.endsWith('.yml'))
+        .map((name) => path.join(root, day.name, name)))
+      .map((file) => this.#read(file))
+      .filter((attempt) => attempt && !attempt.voided)
+      .filter((attempt) => {
+        const at = Date.parse(attempt.created_at ?? '');
+        return Number.isFinite(at) && at >= fromMs && at < toMs;
+      });
+  }
+
   list(userId, { limit = 1000, exerciseId = null, purpose = null, context = null } = {}) {
     return this.listRecent(userId, { limit: Math.max(limit, 1000) })
       .filter((attempt) => !exerciseId || (attempt.prompt?.exercise_id ?? attempt.exercise_id) === exerciseId)

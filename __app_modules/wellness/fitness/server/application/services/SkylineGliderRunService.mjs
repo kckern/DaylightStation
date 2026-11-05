@@ -40,4 +40,6 @@ export class SkylineGliderRunService {
   }
   get(runId, householdId) { return this.datastore.findById(runId, householdId); }
   listByDate(date, householdId) { return this.datastore.findByDate(date, householdId); }
+  /** Every saved run, in no particular order. */
+  listAll(householdId) { return this.datastore.findAll(householdId); }
 }

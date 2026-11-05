@@ -17,6 +17,8 @@ import { studyDayForInstant, studyDayWindowForDate } from "../../../../learning/
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const ACHIEVEMENT_KINDS = new Set(['activity-days', 'activity-contest', 'milestone']);
+const ACHIEVEMENT_TTL_MS = 60_000;
 const CONTEST_CLOSE_HOUR = 12; // Saturday noon, local
 
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -26,6 +28,8 @@ export class EarningsPreviewService {
   #rules;
   #school;
   #rings;
+  #achievements;
+  #achievementCache = new Map(); // weekId → {at, promise}: polled surfaces share one read a minute
   #learners;
   #clock;
   #timezone;
@@ -37,12 +41,13 @@ export class EarningsPreviewService {
    * @param {{get: () => Promise<object>}} deps.rules - EarnRulesService (or anything with get())
    * @param {import('./ports/IEarningEvidenceSource.mjs').ISchoolEarningEvidence} deps.schoolEvidence
    * @param {import('./ports/IEarningEvidenceSource.mjs').IRingEvidence} deps.ringEvidence
+   * @param {import('./ports/IEarningEvidenceSource.mjs').IAchievementEvidence|null} [deps.achievementEvidence]
    * @param {() => Promise<Array<{id: string, name?: string}>>} deps.learners - the school roster
    * @param {() => Date} deps.clock
    * @param {string} deps.timezone
    * @param {number} [deps.boundaryHour=4]
    */
-  constructor({ rules, schoolEvidence, ringEvidence, learners, clock, timezone, boundaryHour = 4, logger = console }) {
+  constructor({ rules, schoolEvidence, ringEvidence, achievementEvidence = null, learners, clock, timezone, boundaryHour = 4, logger = console }) {
     if (!rules?.get) throw new Error('EarningsPreviewService requires rules');
     if (!schoolEvidence?.schoolWeek) throw new Error('EarningsPreviewService requires schoolEvidence');
     if (!ringEvidence?.standings) throw new Error('EarningsPreviewService requires ringEvidence');
@@ -51,6 +56,7 @@ export class EarningsPreviewService {
     this.#rules = rules;
     this.#school = schoolEvidence;
     this.#rings = ringEvidence;
+    this.#achievements = achievementEvidence?.week ? achievementEvidence : null;
     this.#learners = learners;
     this.#clock = clock;
     this.#timezone = timezone ?? null;
@@ -97,10 +103,11 @@ export class EarningsPreviewService {
     const fromMs = studyDayWindowForDate(school.from, { ...opts, boundaryHour: this.#boundaryHour })?.startAtMs;
     const toMs = studyDayWindowForDate(addDays(school.from, 5), { ...opts, boundaryHour: CONTEST_CLOSE_HOUR })?.startAtMs;
     if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) throw new ValidationError('week is not a real date', { code: 'INVALID_WEEK', field: 'week', value: week });
+    const schoolEndMs = studyDayWindowForDate(addDays(school.to, 1), { ...opts, boundaryHour: this.#boundaryHour })?.startAtMs;
     return {
       school,
       rings: { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
-      fromMs, toMs, contestClosed: nowMs >= toMs,
+      fromMs, toMs, contestClosed: nowMs >= toMs, schoolEndMs,
       today: studyDayForInstant(nowMs, { timezone: this.#timezone, boundaryHour: this.#boundaryHour }),
     };
   }
@@ -114,10 +121,43 @@ export class EarningsPreviewService {
     } catch (err) {
       this.#logger.warn?.('economy.earnings.rings-unavailable', { error: err?.message ?? String(err) });
     }
+    let achievements = null;
+    if (this.#achievements && ruleset.rules.some((r) => ACHIEVEMENT_KINDS.has(r.kind))) {
+      try {
+        achievements = await this.#cachedAchievements(w, roster);
+      } catch (err) {
+        this.#logger.warn?.('economy.gems.evidence-unavailable', { source: 'all', error: err?.message ?? String(err) });
+      }
+    }
     return {
-      ruleset, standings, contestClosed: w.contestClosed, today: w.today,
+      ruleset, standings, contestClosed: w.contestClosed, today: w.today, achievements,
       windows: { school: w.school, rings: w.rings },
     };
+  }
+
+  /** The week's achievement evidence, shared for a minute (one read per week per minute). */
+  #cachedAchievements(w, roster) {
+    const key = `${w.school.from}|${roster.map((l) => l.id).join(',')}`;
+    const nowMs = this.#clock().getTime();
+    const hit = this.#achievementCache.get(key);
+    if (hit && nowMs - hit.at < ACHIEVEMENT_TTL_MS) return hit.promise;
+    const promise = this.#readAchievements(w, roster);
+    this.#achievementCache.set(key, { at: nowMs, promise });
+    promise.catch(() => this.#achievementCache.delete(key));
+    for (const [k, v] of this.#achievementCache) if (nowMs - v.at >= ACHIEVEMENT_TTL_MS) this.#achievementCache.delete(k);
+    return promise;
+  }
+
+  async #readAchievements(w, roster) {
+    return this.#achievements.week({
+      learnerIds: roster.map((l) => l.id),
+      week: w.school,
+      schoolMs: { fromMs: w.fromMs, toMs: w.schoolEndMs },
+      ringMs: { fromMs: w.fromMs, toMs: w.toMs },
+      contestClosed: w.contestClosed,
+      today: w.today,
+      studyDay: (ms) => studyDayForInstant(ms, { timezone: this.#timezone, boundaryHour: this.#boundaryHour }),
+    });
   }
 
   /**
@@ -152,8 +192,14 @@ export class EarningsPreviewService {
     const result = evaluateEarnings({
       ruleset: ctx.ruleset,
       learnerId: learner.id,
-      facts: { ...school, rings, ringSessions, ringDays },
+      facts: {
+        ...school, rings, ringSessions, ringDays,
+        achievements: ctx.achievements
+          ? { ...(ctx.achievements.learners?.[learner.id] ?? { days: {}, milestones: {} }), unavailable: ctx.achievements.unavailable ?? [] }
+          : null,
+      },
       standings: ctx.standings,
+      contests: ctx.achievements?.contests ?? null,
       contestClosed: ctx.contestClosed,
       windows: ctx.windows,
       today: ctx.today,

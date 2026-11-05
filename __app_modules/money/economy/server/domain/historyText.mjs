@@ -125,7 +125,7 @@ function phrase(t, { ruleLabels, evidenceLabels }) {
 
 const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const dayName = (day) => WEEKDAY[new Date(`${day}T12:00:00.000Z`).getUTCDay()];
-const DAY_KINDS = new Set(['section-day', 'day-met', 'ring-days']);
+const DAY_KINDS = new Set(['section-day', 'day-met', 'ring-days', 'activity-days']);
 const RING_KINDS = new Set(['ring-threshold', 'ring-contest']);
 
 /**
@@ -148,6 +148,13 @@ function payoutDetails(list, timezone) {
       const fresh = meta.days.filter((d) => !before.has(d));
       seen.set(key, new Set([...before, ...meta.days]));
       if (fresh.length) details[k] = { days: fresh, text: fresh.map(dayName).join(', ') };
+    } else if (meta.kind === 'milestone' && Array.isArray(meta.items) && meta.items.length) {
+      // A line pays its growth in several entries: name only what is new since the last.
+      const key = `${t.currency ?? 'silver'}|${t.ref}`;
+      const before = seen.get(key) ?? new Set();
+      const fresh = meta.items.filter((x) => !before.has(x));
+      seen.set(key, new Set([...before, ...meta.items]));
+      if (fresh.length) details[k] = { text: fresh.join(', ') };
     } else if (meta.kind === 'ring-threshold' && meta.session && Number.isFinite(meta.session.rings)) {
       const { title, startMs, rings } = meta.session;
       details[k] = { text: [title || 'Workout', clockTime(startMs, timezone), `${rings.toLocaleString('en-US')} rings`].filter(Boolean).join(' · ') };

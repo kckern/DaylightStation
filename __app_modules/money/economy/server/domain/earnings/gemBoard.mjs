@@ -29,9 +29,21 @@ export const GEM_KIND_COLORS = Object.freeze({
   'ring-days': '#8e5bd0',    // amethyst: exercise
   'debrief-week': '#e0a030', // topaz: the debrief week
 });
+/** …and by the activity an achievement rule names. */
+export const GEM_ACTIVITY_COLORS = Object.freeze({
+  'piano-practice': '#e0457b', 'piano-rung': '#e0457b',          // rose: piano
+  'card-goal': '#2bb3a3', 'cards-mastered': '#2bb3a3',          // turquoise: flashcards
+  'story-read': '#f2c94c', 'book-finished': '#f2c94c',          // citrine: reading
+  'perfect-sheet': '#d6304a',                                    // ruby: schoolwork
+  race: '#ff7a2f', 'race-pb': '#ff7a2f',                          // fire opal: cycling
+  'glider-act': '#4fc3f7', 'glider-bells': '#4fc3f7',            // aquamarine: Skyline Glider
+  'board-game-level': '#9e9e9e',                                  // diamond: board games
+  'ring-improved': '#8e5bd0', 'rings-lifetime': '#8e5bd0',        // amethyst: exercise
+});
 const DEFAULT_COLOR = '#1e88e5';
 
-const CADENCE = Object.freeze({ 'ring-contest': 'contest' });
+const CADENCE = Object.freeze({ 'ring-contest': 'contest', 'activity-contest': 'contest', milestone: 'milestone' });
+const CONTEST_KINDS = new Set(['ring-contest', 'activity-contest']);
 const STATE_ORDER = ['won', 'earned', 'leading', 'pending', 'unknown', 'none', 'disabled'];
 
 const paysGems = (rule) => (rule.reward?.gems ?? 0) > 0
@@ -49,7 +61,7 @@ export function gemCategories(ruleset) {
       id,
       label: rule.gem?.label ?? rule.label ?? rule.id,
       cadence: CADENCE[rule.kind] ?? 'weekly',
-      color: rule.gem?.color ?? GEM_KIND_COLORS[rule.kind] ?? DEFAULT_COLOR,
+      color: rule.gem?.color ?? GEM_ACTIVITY_COLORS[rule.match?.activity] ?? GEM_KIND_COLORS[rule.kind] ?? DEFAULT_COLOR,
       ruleIds: [rule.id],
     });
   }
@@ -57,7 +69,7 @@ export function gemCategories(ruleset) {
 }
 
 function lineState(line) {
-  const contest = line.kind === 'ring-contest';
+  const contest = CONTEST_KINDS.has(line.kind);
   switch (line.status) {
     case 'earned': return (line.amount?.gems ?? 0) > 0 ? (contest ? 'won' : 'earned') : 'none';
     case 'pending': return contest ? (line.leader ? 'leading' : 'none') : 'pending';

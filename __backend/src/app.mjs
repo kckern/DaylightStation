@@ -1695,7 +1695,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'presentation-api' }),
   });
 
-  const chessRuntime = createChessRuntime({configService,dataService,rootLogger,server});
+  // One dated rung log for every ladder that can raise a rung (chess, checkers,
+  // connect-four; match + addressing ladders): the gems' piano-rung milestones.
+  const { createPianoRungLog } = await import("../../__app_modules/learning/piano/server/composition/rungLog.mjs");
+  const pianoRungLog = createPianoRungLog({ dataService, logger: rootLogger.child({ module: 'piano-games' }) });
+  const chessRuntime = createChessRuntime({configService,dataService,rootLogger,server,rungLog: pianoRungLog});
   const pianoBoardGameDayService = createPianoBoardGameDayRuntime({configService,householdId,rootLogger});
   // The native Chess router retains its compatibility endpoints, but their
   // dialogue and rivalry work is delegated to the shared board-game services
@@ -1732,6 +1736,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     nativeRouters: { chess: pianoChessRouter },
     boardGameDayService: pianoBoardGameDayService,
     aiGateway: scopedGateway(sharedAiGateway, { app: 'piano-games' }),
+    rungLog: pianoRungLog,
   });
   server?.once?.('close', () => pianoGamesModule.container.dispose());
   v1Routers['piano-games'] = pianoGamesModule.router;
@@ -2905,8 +2910,49 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // A failure here must not stop School booting: without it there is no
   // earnings preview, no payouts and no week close, and it says so.
   let economyEarnings = { router: null, payoutService: null, weekCloseService: null };
+  // Achievement evidence for the gem rules (ops:docs/superpowers/specs/
+  // 2026-11-04-achievement-gems-design.md): each module's provider. One that
+  // cannot be built is left out and its gem rows read "can't tell".
+  const achievementProviders = [];
+  const addAchievementProvider = async (name, build) => {
+    try { achievementProviders.push(await build()); } catch (error) { rootLogger.warn('economy.gems.provider-unavailable', { provider: name, error: error.message }); }
+  };
+  await addAchievementProvider('fitness', async () => {
+    const { createFitnessAchievementProvider } = await import("../../__app_modules/wellness/fitness/server/application/measures/fitnessAchievementProvider.mjs");
+    return createFitnessAchievementProvider({
+      races: fitnessServices.cycleRaceService,
+      cycleGameConfig: () => fitnessConfigService.getCycleGameConfig(householdId),
+      gliderRuns: fitnessServices.skylineGliderRunService,
+      gliderActs: fitnessServices.skylineGliderCourseCatalog,
+      fitnessRings,
+      sessions: fitnessServices.sessionService,
+      householdId,
+      logger: rootLogger.child({ module: 'fitness-achievements' }),
+    });
+  });
+  await addAchievementProvider('piano', async () => {
+    const { createPianoAchievementEvidence } = await import("../../__app_modules/learning/piano/server/composition/achievements.mjs");
+    return createPianoAchievementEvidence({
+      configService, dataService, rootLogger,
+      rungLog: pianoGamesModule?.rungLog ?? pianoRungLog,
+      gameHistory: pianoGamesModule?.repository ?? null,
+    });
+  });
+  await addAchievementProvider('school', async () => {
+    const { createSchoolAchievementProvider } = await import("../../__app_modules/learning/school/server/application/SchoolAchievementProvider.mjs");
+    const stores = schoolLifecycle?.stores ?? {};
+    return createSchoolAchievementProvider({
+      cardLadder: cardLadderStudy ?? null,
+      readingLog: stores.readingLog ?? null,
+      bookLog: stores.bookLog ?? null,
+      books: stores.bookRepository ?? null,
+      sessions: schoolLifecycle?.listLearnerSessions ?? null,
+      curriculum: stores.curriculum ?? null,
+      logger: rootLogger.child({ module: 'school-achievements' }),
+    });
+  });
   try {
-    economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
+    economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders});
   } catch (error) {
     rootLogger.error('economy.earnings.unavailable', { error: error.message });
   }

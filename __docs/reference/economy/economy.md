@@ -315,8 +315,18 @@ defaults. Every write archives the replaced revision under
 | `ring-threshold` | `rate: {rings, silver}` (silver per whole N rings) plus each threshold crossed |
 | `ring-contest` | most rings in the roster at award-week close; `tie: all\|split\|none` |
 | `ring-days` | once per award week, as soon as at least `min` rings (default 1) land on at least `days` study days (default 5). Counts **final** workouts only, summed per study day by start (4 am boundary); `pending` with `progress: {have, need}` while the award week runs, `none` once it closes short |
+| `activity-days` | once per school week, as soon as `match.activity` was done on at least `days` study days (default 4). Activities: `piano-practice` (a passed piano challenge), `card-goal` (the flashcard day goal reached), `story-read` (story time credited). `pending` with progress until the week is over |
+| `activity-contest` | the best score in the roster for `match.activity` that week; `tie` as `ring-contest`. Activities: `race` (the week's featured cycle course, from the race ladder) and `ring-improved` (this award week's rings minus the learner's average over the previous four). Leading until the activity's own close, then won; a score of 0 never leads. Paid as `prize` |
+| `milestone` | one per NEW achievement of `match.activity` dated inside the week, oldest first, up to `cap: {count}` per week. Activities: `race-pb`, `glider-act`, `glider-bells`, `board-game-level` (first win at an opponent level), `piano-rung`, `perfect-sheet`, `cards-mastered` (every 10 words), `book-finished`, `rings-lifetime`. A milestone dated before the rule's `effective.from` never pays, so history is not back-paid |
 | `debrief-day` | each day whose school debrief meets `match.criterion`: `completed`, `substantive` (on time, score at or above the threshold, not a fallback day) or `quiz-passed` (not a fallback day) |
 | `debrief-week` | the week, once every owed debrief day is completed (late counts) or excused **and at least one is completed**: excused only keeps a day from blocking, so an all-excused week pays nothing ("No debriefs done this week"). Pending until Friday's grace closes. See [School debrief](../school/school-debrief.md) |
+
+The achievement kinds read the **achievement evidence** port
+(`IAchievementEvidence`): each module hands `createEconomyEarningsRuntime` a
+provider `{name, activities, week(args)}` and `CompositeAchievementEvidence`
+merges them; a provider that throws makes only its activities
+`indeterminate` (`economy.gems.evidence-unavailable`). The preview reads it once
+per week per minute and only when a rule of those kinds exists.
 
 Any rule may also carry `gem: {category, label, color}` — how its gems read on
 the [Gem Board](#gem-board). Display only; it never changes what a rule pays.
@@ -395,6 +405,9 @@ One view of every learner against every gem, for one week. Design:
   `domain/earnings/gemBoard.mjs`. Logged `economy.gems.board.read` (debug),
   `economy.gems.lifetime-unavailable` (warn). Catalog `off` → an empty board
   with `mode: 'off'`.
+- **Two panels.** Once any milestone row exists the overlay draws two grids
+  side by side — this week + contests (with the totals) and milestones (each
+  cell with its lifetime tally) — so every row fits 1280×800 unscrolled.
 - **The overlay** is `frontend/src/lib/economy/GemBoard/GemBoard.jsx`, shared by
   the fitness ring chart (`FitnessMomentum`: each card's purse, and the
   headline's **Gems** chip; the garage pads drive it through `useGamepadKeys`)

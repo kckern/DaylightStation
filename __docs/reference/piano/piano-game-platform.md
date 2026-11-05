@@ -278,6 +278,35 @@ shallower one from both seats.
 
 Both new games persist configuration, ranked records, ladder progress, and household archives through `IPianoGameRepository`. A client-side fallback is labeled local practice and recorded with `ranked: false`, so loss of Wi-Fi never turns offline engine help into ladder advancement.
 
+## Rung log (dated promotions)
+
+The ladders store only where a player is now — `ladder.yml` `unlocked_through` (the opponent,
+or **match**, ladder) and `config.yml` `addressing.ladder.unlocked_through` (the **addressing**
+ladder) — with no date. Every raise of either, for every board game, is also appended to a
+per-player log, so a promotion can be dated later (the gem economy's `piano-rung` milestone reads it):
+
+```yaml
+# users/{id}/apps/piano/rung-log.yml
+schema: piano.rung-log/v1
+entries:
+  - { at: "2026-11-04T18:00:00.000Z", game: checkers, ladder: match, from: 3, to: 4 }
+```
+
+- Rungs are in the units the game stores: chess's match ladder is zero-based (Level 0 … ), the rest one-based.
+- Only a raise is logged. A demotion or a rewrite of the same rung is not; a missing previous value
+  reads as the floor (chess match 0, otherwise 1).
+- Written at the writes themselves: `PianoGamesContainer.recordGame` / `writeConfig` (checkers,
+  connect-four) and `createChessRungLoggedWriters` in the chess runtime (chess match + addressing).
+  One `PianoRungLog` (`composition/rungLog.mjs`) is shared by both.
+- Best-effort: the append runs after the ladder write and never throws into it. Failures log
+  `piano.rung-log.append-failed` (warn); successes `piano.rung-log.appended` (info).
+- No backfill. Promotions before the log shipped (2026-11) have no date and are never milestones.
+
+The piano's achievement provider (`application/PianoAchievementProvider.mjs`, built by
+`composition/achievements.mjs`) reads this log plus the game records (first-ever win per opponent
+level: `board-game-level`) and passed challenge attempts (`piano-practice`) for the economy's
+achievement evidence. Logs `piano.achievements.source-unavailable` (warn) when one source fails.
+
 ## Adding a game
 
 1. Add registry metadata (`label`, `icon`, `status`, `family`, lazy component).

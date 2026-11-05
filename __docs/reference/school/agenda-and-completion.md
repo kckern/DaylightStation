@@ -436,3 +436,28 @@ remain locked. Earned-reward consumers may require `complete` specifically.
 The completion bridge publishes an initial observation after startup and later
 state transitions. Event consumers must be idempotent by learner and study
 date. See [completion and rewards](./completion-and-rewards.md).
+
+## School achievements for gems
+
+School supplies five activities to the economy's achievement gems through
+`createSchoolAchievementProvider` (`server/application/SchoolAchievementProvider.mjs`,
+rules in `server/domain/achievements.mjs`), one provider in the economy's
+`CompositeAchievementEvidence`. It reads School's own stores and use cases, never
+files:
+
+| Activity | Kind | Source | Fact |
+| --- | --- | --- | --- |
+| `card-goal` | activity days | `CardLadderSittingService.achievementRecord` | a card-ladder day file with `doneAt`, any package |
+| `story-read` | activity days | reading log `listForDay` | a credited story-time read on that study day |
+| `book-finished` | milestone | book log `listForLearner` | the FIRST finish of a book; key = ISBN, so a reread never earns twice |
+| `perfect-sheet` | milestone | `listLearnerSessions` | a graded curriculum sheet with every point (`gradedCorrectCount === gradedTotalCount`, else `gradedPercent >= 100`); key = session id; dated by the study day it was **graded**. Program sessions (`<program>:<id>` units), external assessments (no `graded` event) and invalidated evidence never count |
+| `cards-mastered` | milestone | `achievementRecord` | every 10th word signed off (`state: mastered` + `typedSignedOff`, not excluded) across every package on disk, enrolled or not; key = the count (`"10"`, `"20"`, …) |
+
+`cards-mastered` is computed from the present status, not a history: a demotion
+clears a word's `typedSignedOff` and a later re-sign-off re-dates it, so a
+threshold's day can move. Its key does not, which is what keeps it paid once.
+
+Each source fails alone (`school.achievements.source-failed`, warn): its
+activities are listed in `unavailable` for the week, for every learner, because
+the port has no per-learner "indeterminate" and a partial read is not "nothing
+happened". An unwired dependency is unavailable the same way, never empty.

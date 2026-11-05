@@ -23,3 +23,22 @@ export class IRingEvidence {
   // eslint-disable-next-line no-unused-vars
   async standings(args) { throw new Error('IRingEvidence.standings must be implemented'); }
 }
+
+/**
+ * IAchievementEvidence.week(args) → {
+ *   learners:    { [learnerId]: { days: {activity: [studyDay]}, milestones: {activity: [{key, day, label}]} } },
+ *   contests:    { [activity]: { standings: [{learnerId, score}], closed } },
+ *   unavailable: [activity],   // a provider that failed: its activities read indeterminate
+ * }
+ * args: { learnerIds, week: {from, to}, schoolMs: {fromMs, toMs}, ringMs: {fromMs, toMs},
+ *         contestClosed, today, studyDay: (ms) => 'YYYY-MM-DD' }
+ *
+ * Achievements are the household's other activities (cycle races, Skyline
+ * Glider, board games, piano, flashcards, reading, worksheets) for the
+ * activity-days / activity-contest / milestone earn rules. Each producing
+ * module implements a provider; `CompositeAchievementEvidence` merges them.
+ */
+export class IAchievementEvidence {
+  // eslint-disable-next-line no-unused-vars
+  async week(args) { throw new Error('IAchievementEvidence.week must be implemented'); }
+}

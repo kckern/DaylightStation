@@ -16,11 +16,16 @@ import { GameRivalryMemoryService } from "../application/game-platform/GameRival
 import { NodePromiseDeadline } from '#adapters/scheduling/NodePromiseDeadline.mjs';
 import { OpponentDialogueGenerator } from "../adapters/game-platform/OpponentDialogueGenerator.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
+import { createPianoRungLog } from "./rungLog.mjs";
 
 export function createPianoGamesModule({
   dataService, configService, logger, nativeRouters = {},
-  boardGameDayService = null, aiGateway = null,
+  boardGameDayService = null, aiGateway = null, rungLog = null,
 }) {
+  // One rung log for the process: pass the same instance the chess runtime
+  // got. Built here when omitted so checkers/connect-four promotions are dated
+  // regardless.
+  const pianoRungLog = rungLog ?? createPianoRungLog({ dataService, logger });
   const connectFourGateway = createConnectFourEngine({ logger: logger?.child?.({ module: 'connect-four-engine' }) });
   const checkersGateway = createCheckersEngine({ logger: logger?.child?.({ module: 'checkers-engine' }) });
   const chessLogger = logger?.child?.({ module: 'chess-engine' });
@@ -82,11 +87,12 @@ export function createPianoGamesModule({
     logger,
     dialogue,
     rivalries,
+    rungLog: pianoRungLog,
     // Constructed once above so dialogue and move authority share a ladder.
     games,
   });
   const router = createPianoGamesRouter({ pianoGames: container, logger, nativeRouters });
-  return { container, router };
+  return { container, router, rungLog: pianoRungLog, repository };
 }
 
 export default createPianoGamesModule;

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  copyDirectoryOnce, dirExists, listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic,
+  copyDirectoryOnce, dirExists, listDirs, listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic,
 } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
@@ -71,6 +71,7 @@ export class YamlCardLadderStore {
       readTuning: (userId, pkg) => view.readTuning(userId, pkg),
       tuningState: (userId, pkg) => view.tuningState(userId, pkg),
       listDays: (userId, pkg) => view.listDays(userId, pkg),
+      listPackages: (userId) => view.listPackages(userId),
     };
   }
   #load(base, parse, empty, context) {
@@ -139,6 +140,17 @@ export class YamlCardLadderStore {
     };
     saveYamlToPathAtomic(current.file, next, { noRefs: true });
     return structuredClone(next);
+  }
+  /**
+   * Every package this learner has a record for, under either directory name
+   * (a package not yet moved off `word-ladder/` still counts), sorted. Read
+   * only: listing never triggers the one-time move.
+   */
+  listPackages(userId) {
+    if (!this.#configService.getUserProfile?.(userId)) return [];
+    const root = path.join(this.#configService.getUserDir(userId), 'apps', 'school');
+    const names = new Set([...listDirs(path.join(root, STORE_DIR)), ...listDirs(path.join(root, LEGACY_STORE_DIR))]);
+    return [...names].filter((name) => SLUG.test(name)).sort();
   }
   /** The study days that have a day file (days the learner actually opened), oldest first. */
   listDays(userId, pkg) {
