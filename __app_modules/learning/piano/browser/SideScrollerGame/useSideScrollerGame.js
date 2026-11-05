@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { useStaffMatching } from '../game-platform/families/bound-action/useStaffMatching.js';
 import { resolveTheme } from './sideScrollerTheme.js';
@@ -123,6 +123,55 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     setTargets(newTargets);
   }, [logger]);
 
+  // ─── Outcomes ───────────────────────────────────────────────
+  // The setWorld updater records a fail/advance in pendingOutcomeRef; this applies
+  // it once. Returns true when the loop must stop (a fail).
+  const applyPendingOutcome = useCallback(() => {
+    const outcome = pendingOutcomeRef.current;
+    if (outcome) {
+      pendingOutcomeRef.current = null;
+      if (outcome.type === OUTCOME_FAIL) {
+        // The clock stops at the failing step, not at the end of the frame's plan.
+        simMsRef.current = outcome.simMs;
+        // The world freezes and the player bursts; Game Over follows the burst.
+        // The phase ref moves now, not on the next render, so a frame already
+        // queued cannot fail the run a second time.
+        phaseRef.current = 'DYING';
+        if (!deathTimerRef.current) {
+          sfx.play('death');
+          logger.info('side-scroller.death', { score: outcome.score, level: outcome.level });
+          setPhase('DYING');
+          deathTimerRef.current = setTimeout(() => {
+            deathTimerRef.current = null;
+            sfx.play('gameover');
+            logger.info('side-scroller.game-over', { score: outcome.score, level: outcome.level });
+            setPhase('GAME_OVER');
+          }, DEATH_MS);
+        }
+        return true;
+      } else if (outcome.type === OUTCOME_ADVANCE) {
+        logger.info('side-scroller.level-advance', { from: outcome.from, score: outcome.score });
+        if (outcome.nextLevel >= levels.length) {
+          sfx.play('gameover');
+          setPhase('GAME_OVER');
+        } else {
+          sfx.play('levelup');
+          setLevel(outcome.nextLevel);
+          setLevelName(levels[outcome.nextLevel]?.name ?? '');
+          setTimeout(() => regenerateTargets(levels[outcome.nextLevel]), 0);
+        }
+      }
+    }
+
+    return false;
+  }, [levels, logger, regenerateTargets, sfx]);
+
+  // An updater React deferred to its render recorded its outcome during that
+  // render: apply it at commit, before another frame can step past it.
+  useLayoutEffect(() => {
+    if (applyPendingOutcome()) driverRef.current?.stop();
+  }, [world, applyPendingOutcome]);
+
   // ─── Game Loop (rAF) ───────────────────────────────────────
 
   const gameLoop = useCallback(({ elapsedS }) => {
@@ -206,7 +255,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         // Evaluate level — store outcome in ref instead of calling setState from updater
         const outcome = evaluateLevel(next, lvlConfig);
         if (outcome === 'fail') {
-          pendingOutcomeRef.current = { type: OUTCOME_FAIL, score: next.score, level: levelRef.current };
+          pendingOutcomeRef.current = { type: OUTCOME_FAIL, score: next.score, level: levelRef.current, simMs: now };
           return next; // no further steps after a fail
         }
         if (outcome === 'advance') {
@@ -219,43 +268,12 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       return next;
     });
 
-    // Apply side effects after setWorld (extracted from updater)
-    const outcome = pendingOutcomeRef.current;
-    if (outcome) {
-      pendingOutcomeRef.current = null;
-      if (outcome.type === OUTCOME_FAIL) {
-        // The world freezes and the player bursts; Game Over follows the burst.
-        // The phase ref moves now, not on the next render, so a frame already
-        // queued cannot fail the run a second time.
-        phaseRef.current = 'DYING';
-        if (!deathTimerRef.current) {
-          sfx.play('death');
-          logger.info('side-scroller.death', { score: outcome.score, level: outcome.level });
-          setPhase('DYING');
-          deathTimerRef.current = setTimeout(() => {
-            deathTimerRef.current = null;
-            sfx.play('gameover');
-            logger.info('side-scroller.game-over', { score: outcome.score, level: outcome.level });
-            setPhase('GAME_OVER');
-          }, DEATH_MS);
-        }
-        return false;
-      } else if (outcome.type === OUTCOME_ADVANCE) {
-        logger.info('side-scroller.level-advance', { from: outcome.from, score: outcome.score });
-        if (outcome.nextLevel >= levels.length) {
-          sfx.play('gameover');
-          setPhase('GAME_OVER');
-        } else {
-          sfx.play('levelup');
-          setLevel(outcome.nextLevel);
-          setLevelName(levels[outcome.nextLevel]?.name ?? '');
-          setTimeout(() => regenerateTargets(levels[outcome.nextLevel]), 0);
-        }
-      }
-    }
+    // Apply side effects after setWorld (extracted from updater). React may
+    // defer the updater to its render; the layout effect below catches that case.
+    if (applyPendingOutcome()) return false;
 
     return true;
-  }, [levels, config, logger, regenerateTargets, sfx, effects]);
+  }, [levels, config, logger, regenerateTargets, effects, applyPendingOutcome]);
 
   // One frame driver for the hook's lifetime; it always calls the latest loop.
   const gameLoopRef = useRef(gameLoop);
@@ -337,6 +355,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     // Reset all timing refs here (NOT in the rAF effect)
     simMsRef.current = 0;
     carryRef.current = 0;
+    pendingOutcomeRef.current = null;
     lastSpawnRef.current = null;
     prevDodgeCountRef.current = 0;
     lastRegenDodgeRef.current = 0;

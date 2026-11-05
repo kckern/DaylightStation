@@ -496,7 +496,12 @@ auto-release, damage invincibility, the shooting pose, obstacle spawn spacing â€
 is in **simulated** milliseconds that advance only with those steps, and the
 clock runs only while `PLAYING`. Played actions (jump, duck, shoot) still apply
 the moment their chord matches, stamped with the current simulated time; duck
-stays level-held. The first frame after play starts runs no step. The
+stays level-held. The first frame after play starts runs no step. A fail stops
+the frame's remaining steps and pins the clock to the failing step; outcomes
+(fail, level advance) are applied right after `setWorld` or, when React defers
+the updater to its render, at that render's commit â€” never a frame late.
+`useSideScrollerGame.clock.test.jsx` pins the frame cap, the carry and the fail
+stop. The
 renderer compares `invincibleUntil` / `shootUntil` against the hook's `simMs`
 and shows neither pose outside `PLAYING`, so nothing freezes mid-blink on the
 Game Over card. The `hit` and `dodge` sounds go through the kit's effect
