@@ -42,6 +42,17 @@ describe('createFrameDriver', () => {
     expect(driver.running).toBe(true);
   });
 
+  it('reports a throwing onFrame to onError and still requests the next frame', () => {
+    const boom = new Error('boom');
+    const onError = vi.fn();
+    const { driver, fire, raf } = rig({ onFrame: () => { throw boom; }, opts: { onError } });
+    driver.start();
+    fire(1016);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(boom);
+    expect(raf).toHaveBeenCalledTimes(2);
+  });
+
   it('stop() cancels the pending frame', () => {
     const { driver, caf, raf } = rig();
     driver.start();

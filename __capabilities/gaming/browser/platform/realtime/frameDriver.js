@@ -6,7 +6,7 @@ const defaultNow = () => ((typeof performance !== 'undefined' && performance.now
  * `onFrame({ nowMs, rawElapsedS, elapsedS })` runs each frame; `elapsedS` is
  * `rawElapsedS` capped at `maxFrameS` (so a backgrounded tab does not produce one
  * giant step). Returning `false` parks the loop; `wake()` re-arms it. A throwing
- * `onFrame` is isolated and the loop continues.
+ * `onFrame` is isolated (reported to optional `onError(err)`) and the loop continues.
  *
  * `raf`/`caf` default to the GLOBALS, resolved at call time (tests stub them after
  * import). Pass `null` to force the no-rAF mode: `start()`/`wake()` do nothing.
@@ -17,6 +17,7 @@ export function createFrameDriver({
   now = defaultNow,
   raf,
   caf,
+  onError = () => {},
 } = {}) {
   const getRaf = () => (raf !== undefined ? raf : globalThis.requestAnimationFrame);
   const getCaf = () => (caf !== undefined ? caf : globalThis.cancelAnimationFrame);
@@ -35,7 +36,10 @@ export function createFrameDriver({
     let keepGoing = true;
     try {
       keepGoing = onFrame({ nowMs, rawElapsedS, elapsedS }) !== false;
-    } catch (e) { /* isolated: the loop continues */ }
+    } catch (e) {
+      // isolated: the loop continues, but the failure is reported
+      try { onError(e); } catch { /* a throwing reporter must not stop the loop */ }
+    }
     if (!running) return; // onFrame may have called stop()
     if (keepGoing) {
       rafId = getRaf()(frame);

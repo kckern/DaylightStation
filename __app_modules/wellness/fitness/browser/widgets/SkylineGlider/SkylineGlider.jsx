@@ -25,6 +25,7 @@ import { FlightScene, entityRole } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
 import useSkylineWeapons from "./useSkylineWeapons.js";
 import SkylineFlightHud from "./SkylineFlightHud.jsx";
+import { createFrameDriver } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
 
 const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 });
@@ -383,14 +384,11 @@ export default function SkylineGlider() {
 
   useEffect(() => {
     if (phase !== 'flight' || !flightRef.current) return undefined;
-    let prior = performance.now();
-    let frameId = 0;
-    renderHealthRef.current = { startedAt: prior, frames: 0, longFrames: 0 };
-    const frame = (now) => {
-      const frameMs = Math.max(0, now - prior);
+    renderHealthRef.current = { startedAt: performance.now(), frames: 0, longFrames: 0 };
+    const frame = ({ nowMs: now, rawElapsedS, elapsedS }) => {
       const health = renderHealthRef.current;
       health.frames += 1;
-      if (frameMs > 50) health.longFrames += 1;
+      if (rawElapsedS * 1000 > 50) health.longFrames += 1;
       const healthElapsedMs = now - health.startedAt;
       if (healthElapsedMs >= 10000) {
         log.info('skyline_glider.render.health', {
@@ -407,12 +405,11 @@ export default function SkylineGlider() {
       const cadence = fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
       const previous = flightRef.current;
       const previousCheckpointId = previous.checkpoint.id;
-      const elapsed = Math.min(.1, Math.max(0, (now - prior) / 1000));
+      const elapsed = elapsedS;
       // A zero-length frame runs no engine sub-step, so presses wait for the next frame.
       const actions = elapsed > 0 ? drainWeapons() : [];
       const power = weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId));
       const next = stepFlight(previous, { ...cadence, actions, weaponPower: power }, elapsed, course);
-      prior = now;
       flightRef.current = next;
       setFlight(next);
       const telemetry = collectFlightTelemetry({
@@ -493,11 +490,17 @@ export default function SkylineGlider() {
         identity: { ...runRef.current, ...checkpointIdentity }, state: next,
       });
       if (next.phase === 'completed') finalize('completed', next);
-      frameId = requestAnimationFrame(frame);
     };
+    const driver = createFrameDriver({
+      maxFrameS: 0.1,
+      onFrame: frame,
+      onError: (err) => log.error('skyline_glider.frame.error', {
+        runId: runRef.current?.runId, riderId, courseId: course.id, error: err?.message,
+      }),
+    });
     audioRef.current.startWind();
-    frameId = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(frameId); audioRef.current.stop(); };
+    driver.start();
+    return () => { driver.stop(); audioRef.current.stop(); };
   }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted, drainWeapons]);
 
   const begin = useCallback((resume = false) => {
