@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from "../../lib/cycleGame/speedometerGeometry.js";
-import { createTickLerp } from "../../lib/cycleGame/motionClock.js";
+import { createTickLerp } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import { AVATAR_RATIO, OVERLAY_FONT_RATIO, multiplierChipBox } from "../../lib/cycleGame/speedometerOverlayLayout.js";
 import { NoEntryIcon, RaceFlagIcon, MedalIcon } from "./home/icons.jsx";
 import "./CycleSpeedometer.scss";

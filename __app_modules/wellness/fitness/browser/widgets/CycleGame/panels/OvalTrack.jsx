@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
 import { formatClock } from "../../../lib/cycleGame/cycleGameLobby.js";
-import { createTickLerp } from "../../../lib/cycleGame/motionClock.js";
+import { createTickLerp } from "../../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import { ovalPoint } from "../../../lib/cycleGame/ovalTrackModel.js";
 import "./OvalTrack.scss";
 

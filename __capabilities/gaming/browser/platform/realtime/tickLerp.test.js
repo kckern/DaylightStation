@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createTickLerp } from "./motionClock.js";
+import { createTickLerp } from "./tickLerp.js";
 
 // Fake rAF: a manual frame queue driven by a controllable clock, so we can assert
 // the exact linear fraction the loop reports at chosen timestamps.

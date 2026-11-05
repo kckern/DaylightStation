@@ -384,6 +384,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/gaming/browser/platform/authority/createEphemeralLocalAuthority.js': null,
   '__capabilities/gaming/browser/platform/input/DrawingTabletAdapter.js': null,
   '__capabilities/gaming/browser/platform/projections/createProjectionAdapter.js': null,
+  '__capabilities/gaming/browser/platform/realtime/index.js': null,
   '__capabilities/gaming/browser/platform/runtime/GamingRuntime.jsx': null,
   '__capabilities/gaming/browser/platform/ui/CompanionPanel.jsx': null,
   '__capabilities/gaming/browser/platform/ui/ControlLegend.jsx': null,
