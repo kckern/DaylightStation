@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createBleepTone, BLEEP_HZ } from './bleepTone.js';
 
 function fakeCtx(state = 'running') {
@@ -52,5 +52,56 @@ describe('createBleepTone', () => {
   it('stop without start is a no-op', () => {
     const tone = createBleepTone({ createContext: () => fakeCtx() });
     expect(() => tone.stop()).not.toThrow();
+  });
+  it('degrades without resuming when the context is closed', () => {
+    const ctx = fakeCtx('closed');
+    const onDegraded = vi.fn();
+    const tone = createBleepTone({ createContext: () => ctx, onDegraded });
+    expect(tone.start()).toBe(false);
+    expect(ctx.resume).not.toHaveBeenCalled();
+    expect(onDegraded).toHaveBeenCalledWith('closed');
+  });
+  it('asks an interrupted context to resume, and degrades meanwhile', () => {
+    const ctx = fakeCtx('interrupted');
+    const onDegraded = vi.fn();
+    const tone = createBleepTone({ createContext: () => ctx, onDegraded });
+    expect(tone.start()).toBe(false);
+    expect(ctx.resume).toHaveBeenCalled();
+    expect(onDegraded).toHaveBeenCalledWith('interrupted');
+  });
+  it('replaces a closed context on the next start', () => {
+    const closed = fakeCtx('closed');
+    const running = fakeCtx();
+    const createContext = vi.fn().mockReturnValueOnce(closed).mockReturnValueOnce(running);
+    const tone = createBleepTone({ createContext });
+    expect(tone.start()).toBe(false);
+    expect(tone.start()).toBe(true);
+    expect(running.createOscillator).toHaveBeenCalledTimes(1);
+  });
+  it('connects nothing when building a node fails', () => {
+    const ctx = fakeCtx();
+    ctx.createOscillator = vi.fn(() => { throw new Error('no'); });
+    const onDegraded = vi.fn();
+    const tone = createBleepTone({ createContext: () => ctx, onDegraded });
+    expect(tone.start()).toBe(false);
+    expect(ctx.createGain.mock.results[0].value.connect).not.toHaveBeenCalled();
+    expect(onDegraded).toHaveBeenCalledWith('node-error');
+    expect(() => tone.stop()).not.toThrow();
+  });
+});
+
+describe('shared AudioContext', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
+  it('all tones share one lazily created context', async () => {
+    const Ctor = vi.fn(function FakeAudioContext() { return fakeCtx(); });
+    vi.stubGlobal('AudioContext', Ctor);
+    vi.resetModules();
+    const mod = await import('./bleepTone.js');
+    const a = mod.createBleepTone();
+    const b = mod.createBleepTone();
+    expect(Ctor).not.toHaveBeenCalled();
+    expect(a.start()).toBe(true);
+    expect(b.start()).toBe(true);
+    expect(Ctor).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,12 +9,21 @@
  */
 export const BLEEP_HZ = 1000;
 
-function defaultContext() {
+// One AudioContext for every tone in the page: browsers cap live contexts, and a
+// player is built per profile. Created on first start (not import), and replaced
+// if it has been closed.
+let sharedCtx = null;
+function sharedContext() {
+  if (sharedCtx && sharedCtx.state !== 'closed') return sharedCtx;
   const Ctor = globalThis.AudioContext || globalThis.webkitAudioContext;
-  try { return Ctor ? new Ctor() : null; } catch (_) { return null; }
+  try { sharedCtx = Ctor ? new Ctor() : null; } catch (_) { sharedCtx = null; }
+  return sharedCtx;
 }
 
-export function createBleepTone({ createContext = defaultContext, level = 0.25, rampSec = 0.008, onDegraded } = {}) {
+// A context the browser may hand back to us after a gesture or an interruption.
+const RESUMABLE = new Set(['suspended', 'interrupted']);
+
+export function createBleepTone({ createContext = sharedContext, level = 0.25, rampSec = 0.008, onDegraded } = {}) {
   let ctx = null;
   let osc = null;
   let gain = null;
@@ -22,23 +31,35 @@ export function createBleepTone({ createContext = defaultContext, level = 0.25, 
   return {
     start() {
       if (osc) return true;
-      if (!ctx) ctx = createContext();
+      if (!ctx || ctx.state === 'closed') ctx = createContext();
       if (!ctx) { onDegraded?.('no-audio-context'); return false; }
-      if (ctx.state === 'suspended') {
-        try { ctx.resume?.()?.catch?.(() => {}); } catch (_) { /* ignore */ }
-        onDegraded?.('suspended');
+      if (ctx.state !== 'running') {
+        if (RESUMABLE.has(ctx.state)) {
+          try { ctx.resume?.()?.catch?.(() => {}); } catch (_) { /* ignore */ }
+        }
+        onDegraded?.(ctx.state);
         return false;
       }
       const t = ctx.currentTime;
-      gain = ctx.createGain();
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(level, t + rampSec);
-      gain.connect(ctx.destination);
-      osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(BLEEP_HZ, t);
-      osc.connect(gain);
-      osc.start(t);
+      // Build both nodes before connecting either, so a failure leaves nothing
+      // attached to the destination.
+      let g; let o;
+      try {
+        g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(level, t + rampSec);
+        o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(BLEEP_HZ, t);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(t);
+      } catch (_) {
+        try { o?.disconnect?.(); g?.disconnect?.(); } catch (__) { /* ignore */ }
+        onDegraded?.('node-error');
+        return false;
+      }
+      osc = o; gain = g;
       return true;
     },
     stop() {
