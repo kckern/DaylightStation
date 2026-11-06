@@ -267,10 +267,10 @@ describe('PrepareBookScan — scan logging (2026-11-05)', () => {
     }));
   });
 
-  it('warns on a code that is no book, without trying to split it', async () => {
+  it('warns on a code that is no book, without trying to split it (26 digits, bad checksum)', async () => {
     const f = fixture();
-    await f.service.receive({ code: '97800644015179780064401517', device: 'reader', eventId: 'x2' });
-    expect(f.logger.warn).toHaveBeenCalledWith('school.book-scan.rejected', expect.objectContaining({ code: '97800644015179780064401517', reason: expect.any(String) }));
+    await f.service.receive({ code: '97800644015189780064401517', device: 'reader', eventId: 'x2' });
+    expect(f.logger.warn).toHaveBeenCalledWith('school.book-scan.rejected', expect.objectContaining({ code: '97800644015189780064401517', reason: expect.any(String) }));
     expect(pile(f).cards).toHaveLength(1);
     expect(pile(f).cards[0].status).toBe('invalid');
   });

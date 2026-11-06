@@ -34,13 +34,18 @@ const stepSummary = (part) => (part && typeof part === 'object' ? {
 // stay.
 export const PILE_QUIET_GAP_MS = 120_000;
 const PILE_MAX_CARDS = 200;
+// A reader that double-fires (or a child who taps twice) sends the same book
+// again within seconds. Within this window the repeat only bumps the twin
+// card's `duplicates`; it never makes a second record.
+export const BURST_WINDOW_MS = 10_000;
+const isIsbn13 = (value) => parseBookIdentifier(value).kind === 'isbn' && /^\d{13}$/.test(value);
 const FILEABLE = new Set(['ready', 'not-found']);
 const FILE_FAILED = 'Could not file this book. Tap a face to try again.';
 const refuse = (status, message) => { const error = new Error(message); error.status = status; throw error; };
 
 /** Short-lived household kiosk intentions. No reading store or progress writer is a dependency. */
 export class PrepareBookScan {
-  #deps; #records = new Map(); #events = new Map(); #passes = new Map();
+  #deps; #records = new Map(); #events = new Map(); #passes = new Map(); #bursts = new Map();
   // Per screen: the wake in flight (shared by every scan that arrives while it
   // runs) and, after a failure, until when no new wake is attempted.
   #wakes = new Map(); #wakeCooldowns = new Map();
@@ -54,6 +59,7 @@ export class PrepareBookScan {
   }
   #prune() {
     const now = this.#deps.clock();
+    for (const [key, firstAt] of this.#bursts) if (now - firstAt > BURST_WINDOW_MS) this.#bursts.delete(key);
     for (const [id, record] of this.#records) if (record.until <= now) this.#records.delete(id);
     for (const [id, until] of this.#events) if (until <= now) this.#events.delete(id);
     for (const [key, until] of this.#passes) if (until <= now) this.#passes.delete(key);
@@ -91,6 +97,20 @@ export class PrepareBookScan {
       // A separate bounded transport replay window, independent of the 32 intentions.
       while (this.#events.size > 2048) this.#events.delete(this.#events.keys().next().value);
     }
+    // Two ISBNs run together by the reader (26 digits) are two scans, but only
+    // when BOTH halves are real ISBN-13s; otherwise it stays one invalid code.
+    const text = String(code ?? '').trim();
+    if (/^\d{26}$/.test(text) && isIsbn13(text.slice(0, 13)) && isIsbn13(text.slice(13))) {
+      const codes = [text.slice(0, 13), text.slice(13)];
+      logger.info?.('school.book-scan.split', { screenId: target.screenId, codes });
+      const results = [];
+      for (const half of codes) results.push(await this.#intake({ code: half, device, capturedAt, delayedMs, now }));
+      return { status: 'split', results };
+    }
+    return this.#intake({ code, device, capturedAt, delayedMs, now });
+  }
+  async #intake({ code, device, capturedAt, delayedMs, now }) {
+    const { target, mintId, logger } = this.#deps;
     const parsed = parseBookIdentifier(code);
     const isbn13 = parsed.kind === 'isbn' ? parsed.isbn13 : code;
     // A code that names no book still becomes a card (so the grown-up sees it
@@ -110,12 +130,17 @@ export class PrepareBookScan {
     // is a new card: it may be for a different child.
     // A card a shelf claimed is that child's; a rescan of the book is a new card.
     const twin = pile.cards.find(c => c.session === pile.session && c.isbn13 === isbn13 && c.state !== 'removed' && c.state !== 'claimed');
+    const burstKey = `${target.screenId}|${isbn13}`;
+    const firstAt = this.#bursts.get(burstKey);
+    const inBurst = twin && firstAt !== undefined && now - firstAt <= BURST_WINDOW_MS;
+    if (firstAt === undefined || now - firstAt > BURST_WINDOW_MS) this.#bursts.set(burstKey, now);
     if (twin) {
       twin.duplicates += 1;
       logger.info?.('school.book-pile.card-added', { screenId: target.screenId, duplicate: true, isbn13 });
       if (twin.status === 'unavailable' && twin.record) this.#resolve(twin.record);
       this.#notify({ screenId: target.screenId, id: twin.id });
     }
+    if (inBurst) logger.debug?.('school.book-scan.burst-duplicate', { screenId: target.screenId, isbn13, msSinceFirst: now - firstAt });
     const coalesced = [...this.#records.values()].find(r => this.#live(r) && r.isbn13 === isbn13);
     if (coalesced) {
       if (!twin) this.#addCard(pile, coalesced);
@@ -123,6 +148,10 @@ export class PrepareBookScan {
       if (!coalesced.claiming && coalesced.wakeFailed) this.#wake(coalesced);
       return { status: 'pending', intentId: coalesced.id };
     }
+    // Inside the window a repeat never makes a second record, even when the
+    // first record is no longer live (superseded, dismissed): the twin card
+    // already counted it.
+    if (inBurst) return { status: 'pending', intentId: twin.record?.id ?? twin.id };
     const pending = [...this.#records.values()].filter(r => this.#live(r) && !r.claiming);
     // Keep the presented intention and only the newest deferred intention.
     const pinned = [...this.#records.values()].some(r => this.#live(r) && r.claiming);
