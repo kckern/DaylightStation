@@ -1605,11 +1605,11 @@ describe('CardLadderSittingService — dictation', () => {
     const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
     expect(intro.dictation).toMatchObject({ week: WEEK, total: 2, remaining: 2, done: false, ready: false, count: 2, countWarning: true, needsRecording: [], unknown: [] });
   });
-  it('intro dictation is null when no lexicon entry carries a week tag', async () => {
+  it('intro has no dictation field when no lexicon entry carries a week tag', async () => {
     const store = dictationStore();
     const { service } = make({ media: true, store });
     const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
-    expect(intro.dictation).toBeNull();
+    expect(intro).not.toHaveProperty('dictation');
   });
   it('intro reports a corrupt progress file instead of a summary, and never throws', async () => {
     const store = dictationStore({ fileState: { progress: 'corrupt' } });
