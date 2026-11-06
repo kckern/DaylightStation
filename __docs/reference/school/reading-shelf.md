@@ -138,7 +138,9 @@ Freshness is separate from operation errors: a failed Undo retains its own
 feedback and correction ID while stale tile/add/history actions stay blocked
 and Retry shelf remains available. The first-book tile follows the same guard.
 
-Done, idle close, unmount, and learner/grant changes invalidate late responses.
+Done, idle close, unmount, and learner changes invalidate late responses. A new
+grant for the same learner (each scan claimed while the shelf is open brings
+one) is used by later requests but does not reload the shelf.
 Pointer, input, and keyboard/scanner activity rearm idle closure.
 
 ## Scanning a pile at the Portal

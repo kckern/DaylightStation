@@ -1473,10 +1473,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             source the keypad's card timer reads — never a constant here. */}
         {section === 'book-shelf' && !active && bookLaunch && bookLaunch.learnerId === currentUser?.id && (
           <BookShelf
-            // A scan claimed while the shelf is open relaunches it with that
-            // book; the shelf seeds a scanned entry once per mount, so a new
-            // scan must be a new mount.
-            key={bookLaunch.bookEntry?.intentId ?? 'shelf'}
+            // ONE MOUNT PER CHILD. A scan claimed while the shelf is open is
+            // handed in as `initialBookEntry` (keyed by its intentId) and the
+            // mounted shelf queues it; keying the mount on the scan remounted
+            // and reloaded the shelf on every scan, throwing away an Add the
+            // child had just started (2026-11-05).
+            key={bookLaunch.learnerId}
             learnerId={bookLaunch.learnerId}
             grant={bookLaunch.bookGrant}
             initialBookEntry={bookLaunch.bookEntry}

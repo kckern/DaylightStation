@@ -150,6 +150,20 @@ had arrived meanwhile as "already waiting". A skip by this guard logs
 scan-ready is still delivered while that shelf is open: once claimed, the scan
 is no longer pending anywhere, so dropping the answer lost the book outright.
 
+**A claimed scan is handed to the open shelf, not delivered by remounting it.**
+The shelf is mounted once per child (`key={learnerId}`); each claimed scan
+reaches it as `initialBookEntry` carrying its `intentId`, and the fresh grant
+that comes with it is read by later requests without reloading the shelf.
+`useBookShelf` queues each scan once and opens the next one only where a scan
+is an answer: the shelf itself, the empty barcode pad, or a finished book (the
+"scan its barcode" case). Anywhere else — a pad with digits on it, the cover,
+an update, a save in flight — the book waits (`scan.queued`, debug, with the
+`isbn13`) and opens when that step finishes; a fresh save receipt holds it back
+for `RECEIPT_HOLD_MS` (4s) so the child sees their save land. Until 2026-11-05
+the shelf was keyed on the scan's `intentId`: every scan remounted it, showed
+"Getting your shelf…" again, and threw away an Add the child had started 24ms
+before. `scan.seeded` now carries the `isbn13`.
+
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at
 the ISBN pad. It is a door beside the board rather than a row on it: the board

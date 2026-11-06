@@ -137,12 +137,17 @@ vi.mock("../../../../__capabilities/playback/browser/player/Player.jsx", () => (
 // fetches. The cube runner is stubbed likewise so "the shelf, not the cube"
 // is a direct observation rather than an absence.
 const bookShelfProps = vi.fn();
-vi.mock("./books/BookShelf.jsx", () => ({
-  default: (props) => {
-    bookShelfProps(props);
-    return <section className="school-books"><h2>Reading</h2></section>;
-  },
-}));
+const bookShelfMounts = vi.fn();
+vi.mock("./books/BookShelf.jsx", async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: (props) => {
+      bookShelfProps(props);
+      useEffect(() => { bookShelfMounts(); }, []);
+      return <section className="school-books"><h2>Reading</h2></section>;
+    },
+  };
+});
 vi.mock("./Programs/RubiksCube/RubiksCubeProgram.jsx", () => ({
   default: () => <div data-testid="cube-stub">cube</div>,
 }));
@@ -187,6 +192,7 @@ beforeEach(() => {
   actMock.mockReset();
   schoolApi.teacherDay.mockReset().mockResolvedValue({ ok: true, data: { studyDay: '2026-09-07', learners: [] } });
   bookShelfProps.mockClear();
+  bookShelfMounts.mockClear();
   // The pile's mocks carry state between tests unless reset here.
   schoolApi.bookScans.pile.mockReset().mockResolvedValue({ ok: true, data: { pile: { screenId: 'portal', cards: [], reader: null, live: false, quietGapMs: 120000, lastScanAt: null } } });
   for (const name of ['filePile', 'moveCard', 'removeCard', 'open', 'claim', 'dismiss']) schoolApi.bookScans[name].mockReset();
@@ -818,6 +824,8 @@ it('a scan while a child\'s shelf asks for a barcode is claimed for that child, 
     await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({
       learnerId: 'kid1', grant: 'scoped-grant', initialBookEntry: { intentId: 'next-scan', isbn13: next.isbn13 },
     }));
+    // Handed to the mounted shelf, not delivered by remounting it (2026-11-05).
+    expect(bookShelfMounts).toHaveBeenCalledTimes(1);
   } finally { r.unmount(); window.history.replaceState({}, '', oldUrl); }
 });
 

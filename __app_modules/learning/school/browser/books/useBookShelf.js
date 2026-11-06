@@ -52,6 +52,9 @@ export const EMPTY_PROGRESS_SENTENCE = 'Type a page or tap "I read some today"';
 /** Blank or zero on the add flow's page step. */
 export const EMPTY_PAGE_SENTENCE = 'Type the page you are on';
 
+/** How long a fresh save receipt holds a newly scanned book back. */
+export const RECEIPT_HOLD_MS = 4000;
+
 const EMPTY_ADD = Object.freeze({
   entry: '',
   resolved: null,
@@ -118,9 +121,22 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   // again on any later read.
   const openAddRef = useRef(openAdd);
   openAddRef.current = openAdd;
-  const entryRef = useRef(initialBookEntry);
-  entryRef.current = initialBookEntry;
-  const consumedScan = useRef(false);
+  // THE GRANT IS READ, NOT WATCHED. Every scan claimed while the shelf is open
+  // arrives with a fresh grant for the same child; making that a dependency of
+  // the load reloaded the whole shelf ("Getting your shelf…") on every scan and
+  // threw away whatever the child was doing (2026-11-05). Requests read the
+  // newest grant; only a new learner reloads.
+  const grantRef = useRef(grant);
+  grantRef.current = grant;
+  // SCANS ARE HANDED IN, ONE AT A TIME. `initialBookEntry` is the newest scan
+  // claimed for this shelf (keyed by its `intentId`); each one is queued once
+  // and opened when the child is somewhere a scan is an answer — the shelf,
+  // the empty barcode pad, a finished book — never on top of a half-entered
+  // book or a receipt they have not had time to read.
+  const seenEntries = useRef(new Set());
+  const [entryQueue, setEntryQueue] = useState([]);
+  const [scannedBookId, setScannedBookId] = useState(null);
+  const [receiptHeld, setReceiptHeld] = useState(false);
   const [view, setView] = useState('loading');
   const [step, setStep] = useState(null);
   const [shelf, setShelf] = useState(null);
@@ -211,7 +227,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const load = useCallback(async () => {
     const gen = genRef.current;
     setError(null);
-    const shelfRequest = schoolApi.books.shelf(learnerId, grant);
+    const shelfRequest = schoolApi.books.shelf(learnerId, grantRef.current);
     // Normalize this optional request immediately so even a rejecting test
     // double (the real API never rejects) cannot become an unhandled promise
     // while a failed shelf takes the early return below.
@@ -244,7 +260,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       const me = rosterRes?.ok ? members.find((m) => m?.id === learnerId) : null;
       setLearner({ id: learnerId, name: me?.name || learnerId });
     });
-  }, [learnerId, grant, setNeedsRefresh]);
+  }, [learnerId, setNeedsRefresh]);
 
   /** Show persisted success immediately, then refresh the shelf beneath it. */
   const refetch = useCallback(async ({ receipt: nextReceipt = null } = {}) => {
@@ -255,7 +271,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       viewRef.current = 'shelf';
       setView('shelf');
     }
-    const res = await schoolApi.books.shelf(learnerId, grant);
+    const res = await schoolApi.books.shelf(learnerId, grantRef.current);
     if (genRef.current !== gen) return; // rule 1
     if (res.ok && res.data) {
       setShelf(res.data);
@@ -274,12 +290,11 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     setReceipt(nextReceipt);
     viewRef.current = 'shelf';
     setView('shelf');
-  }, [learnerId, grant, setNeedsRefresh]);
+  }, [learnerId, setNeedsRefresh]);
 
   useEffect(() => {
     genRef.current += 1;
     initialLoadRef.current = true;
-    consumedScan.current = false;
     setNeedsRefresh(true);
     workRef.current = false;
     lookupRef.current = false;
@@ -367,22 +382,56 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     enterUpdate(item);
   }, [enterUpdate, touch]);
 
-  // Consume only after a successful fresh shelf read. Existing mutations own all writes.
+  // Queue each newly claimed scan once.
+  const entryKey = initialBookEntry?.isbn13 ? (initialBookEntry.intentId ?? `isbn:${initialBookEntry.isbn13}`) : null;
   useEffect(() => {
-    const entry = entryRef.current;
-    if (consumedScan.current || !entry?.isbn13 || !shelf || needsRefresh || busy || !['shelf', 'add'].includes(view)) return;
-    consumedScan.current = true;
+    const entry = initialBookEntry;
+    if (!entryKey || seenEntries.current.has(entryKey)) return;
+    seenEntries.current.add(entryKey);
+    if (seenEntries.current.size > 64) seenEntries.current.delete(seenEntries.current.values().next().value);
+    setEntryQueue((queue) => [...queue, { ...entry, key: entryKey }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scan's identity, not the object
+  }, [entryKey]);
+
+  // A receipt is the child's confirmation that a save landed; a scan queued
+  // behind it waits this long before taking the screen.
+  useEffect(() => {
+    if (!receipt) { setReceiptHeld(false); return undefined; }
+    setReceiptHeld(true);
+    const timer = setTimeout(() => setReceiptHeld(false), RECEIPT_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [receipt]);
+
+  // Open the next queued scan only after a successful fresh shelf read, and
+  // only where a scan is an answer. Existing mutations own all writes.
+  const nextEntry = entryQueue[0] ?? null;
+  const scanIsAnswer = view === 'shelf' ? !receiptHeld
+    : view === 'completed' ? true
+      : view === 'add' && step === 'number' && !add.entry;
+  const queuedLogged = useRef(null);
+  useEffect(() => {
+    const entry = nextEntry;
+    if (!entry || !shelf || needsRefresh || busy) return;
+    if (!scanIsAnswer) {
+      if (queuedLogged.current !== entry.key) {
+        queuedLogged.current = entry.key;
+        schoolLog.bookShelfDebug?.('scan.queued', { learnerId, isbn13: entry.isbn13, view, step, waiting: entryQueue.length });
+      }
+      return;
+    }
+    setEntryQueue((queue) => queue.filter((queued) => queued.key !== entry.key));
+    setScannedBookId(entry.isbn13);
     const active = shelf.items?.find(item => item.bookId === entry.isbn13 && ['reading', 'unread'].includes(item.projection?.status));
     const finished = recentFinishes(shelf.items).find(item => item.bookId === entry.isbn13);
-    if (active) { enterUpdate(active); return; }
+    if (active) { setStep(null); setAdd(EMPTY_ADD); enterUpdate(active); return; }
     if (finished) {
       setCurrentItemId(finished.itemId); viewRef.current = 'completed'; setView('completed'); setStep(null); return;
     }
     const book = entry.book ?? { isbn13: entry.isbn13, title: null, authors: [], coverUrl: null };
     setAdd({ ...EMPTY_ADD, entry: entry.isbn13, resolved: { book }, metadataMissing: !entry.book, entryId: mintId(), progressEntryId: mintId() });
     viewRef.current = 'add'; setView('add'); setStep('cover');
-    schoolLog.bookShelf('scan.seeded', { learnerId });
-  }, [shelf, needsRefresh, busy, view, enterUpdate, learnerId]);
+    schoolLog.bookShelf('scan.seeded', { learnerId, isbn13: entry.isbn13 });
+  }, [nextEntry, shelf, needsRefresh, busy, scanIsAnswer, view, step, entryQueue.length, enterUpdate, learnerId]);
 
   /**
    * The duplicate guard's way out (design §5): the cover step named an item
@@ -873,7 +922,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     manualEntry: shelf?.entry?.manual !== false,
     // The book this shelf was opened FOR by a scan. Its pass is what lets a
     // scan-only shelf offer "Read again" on a finished copy.
-    scannedBookId: initialBookEntry?.isbn13 ?? null,
+    scannedBookId,
     learner,
     error,
     busy,
