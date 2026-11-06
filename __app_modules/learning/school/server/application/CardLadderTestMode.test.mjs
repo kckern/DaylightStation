@@ -39,7 +39,7 @@ function snapshotFiles() {
   return out;
 }
 
-function testService({ assets = { exists: () => false }, recordings = null } = {}) {
+function testService({ assets = { exists: () => false }, recordings = null, lexiconData = lexicon } = {}) {
   const configService = { getUserDir: (id) => path.join(dir, id), getUserProfile: () => ({}) };
   const real = new YamlCardLadderStore({ configService });
   real.transact('test-learner', 'korean-vocab', '2026-09-20', (x) => x); // create real files
@@ -47,8 +47,12 @@ function testService({ assets = { exists: () => false }, recordings = null } = {
   let t = Date.parse('2026-09-22T16:00:00-07:00');
   return new CardLadderSittingService({
     mode: 'test', recordings, assets,
-    stores: { open: (u, p, d, { scenario }) => { const token = shadows.create(u, p, d, (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck.words, day: d })); return { store: shadows.forToken(token), token }; }, forToken: (tk) => shadows.forToken(tk) },
-    decks: { getFlashcardDeck: async () => deck, listFlashcardDecks: async () => [deck] }, lexicons: { getLexicon: () => lexicon },
+    stores: {
+      open: (u, p, d, { scenario }) => { const token = shadows.create(u, p, d, (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck.words, day: d })); return { store: shadows.forToken(token), token }; },
+      forToken: (tk) => shadows.forToken(tk),
+      peek: (u, p, d, { scenario }) => shadows.peek(u, p, d, (snap) => seedScenario(scenario ?? 'today', snap, { deckWords: deck.words, day: d })),
+    },
+    decks: { getFlashcardDeck: async () => deck, listFlashcardDecks: async () => [deck] }, lexicons: { getLexicon: () => lexiconData },
     assignments: { get: async () => ({ programs: [{ programId: 'flashcards', deckId: deck.id, policy: { mode: 'card-ladder' } }] }) },
     judge: new CardLadderTypedJudge({ cache: new MemoryJudgementCache() }),
     settings: () => DEFAULT_SETTINGS, timezone: 'America/Los_Angeles', now: () => (t += 3000), logger: { info() {}, warn() {}, error() {} },
@@ -86,6 +90,29 @@ describe('test mode never writes', () => {
       ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response }));
     }
     expect(item).toMatchObject({ type: 'menu', learnMore: 0 });
+    expect(snapshotFiles()).toEqual(before);
+  });
+
+  it('the dictation scenario drives a fresh week: start, match, copy, two blind passes, ready — and writes nothing', async () => {
+    const tagged = { ...lexicon, entries: new Map([...lexicon.entries].map(([id, e]) => [id, id === 'gawi' ? { ...e, dictation: ['2026-W39'] } : e])) };
+    const service = testService({ assets: { exists: () => true }, lexiconData: tagged });
+    const before = snapshotFiles();
+    const intro = await service.intro({ userId: 'test-learner', deckId: deck.id, scenario: 'dictation' });
+    expect(intro.dictation).toMatchObject({ week: '2026-W39', total: 1, remaining: 1, done: false });
+    const opened = await service.open({ userId: 'test-learner', deckId: deck.id, scenario: 'dictation' });
+    let { item } = await service.startDictation({ learnerId: 'test-learner', sittingId: opened.sittingId });
+    const answer = async (response) => ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response }));
+    expect(item).toMatchObject({ task: 'D.1', wordId: 'gawi' });
+    await answer({ choice: '가위' });
+    expect(item).toMatchObject({ dictationStep: 'copy' });
+    await answer({ typed: '가위' });
+    expect(item).toMatchObject({ dictationStep: 'blind' });
+    await answer({ typed: '가위' });
+    expect(item).toMatchObject({ dictationStep: 'blind' });
+    await answer({ typed: '가위' });
+    expect(item).toMatchObject({ type: 'dictation-ready', ready: true, wordCount: 1, wordsDone: 1 });
+    await answer({ done: true });
+    expect(item.source).not.toBe('dictation');
     expect(snapshotFiles()).toEqual(before);
   });
 

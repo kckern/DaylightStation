@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { TouchButton } from "../../../../../../../../frontend/src/lib/ui/index.js";
 import { useCardLadderKeys } from "../useCardLadderKeys.js";
 import { cardLadderLog } from "../cardLadderLog.js";
+import { dictationOffer } from "../CardLadderStartCard.jsx";
 import { playScanCeremonyTone } from "../../../../selfService/scanCeremonySound.js";
 
 /**
@@ -37,11 +38,17 @@ const reducedMotion = () => typeof window !== 'undefined'
  * (`item.learnMore`), on 2. Done closes the sitting (goal / cap) and exits on
  * Space/Enter — and on 2 when there is nothing more to learn.
  */
-export default function SummaryItem({ item, langs = null, onRespond = () => {}, onLearnMore = null, onExit, busy = false }) {
+export default function SummaryItem({ item, langs = null, onRespond = () => {}, onLearnMore = null, onExit, busy = false, dictation = null, onDictation = null }) {
+  // The week's dictation (UX audit placement 1): the day-done card is where
+  // the child reliably lands, so while words are left the drill is the big
+  // button above Done; once the week is ready it is a line, and Done leads.
+  const offer = typeof onDictation === 'function' ? dictationOffer(dictation) : null;
+  const drill = offer?.kind === 'drill' ? () => { if (!busy) onDictation('summary'); } : null;
+  const review = offer?.kind === 'ready' ? () => { if (!busy) onDictation('summary', { review: true }); } : null;
   const more = () => { if (!busy) onRespond({ done: true }); };
   const canLearnMore = Number(item.learnMore) > 0 && typeof onLearnMore === 'function';
   const learnMore = () => { if (!busy) onLearnMore('summary'); };
-  useCardLadderKeys({ ' ': onExit, enter: onExit, 1: more, 2: canLearnMore ? learnMore : onExit });
+  useCardLadderKeys({ ' ': drill ?? onExit, enter: drill ?? onExit, 1: more, 2: canLearnMore ? learnMore : onExit, ...((drill ?? review) ? { d: drill ?? review } : {}) });
 
   const cheer = CHEERS[langs?.target] ?? null;
   const [turned, setTurned] = useState(false);
@@ -87,10 +94,13 @@ export default function SummaryItem({ item, langs = null, onRespond = () => {}, 
       {/* New words were planned and none came (a catch-up day). Say so, and
           point at the one button that gets them now (2026-09-26). */}
       {item.newWordsHeld && <p className="wl-summary__held">{canLearnMore ? 'New words next time — or tap Learn more words.' : 'New words next time.'}</p>}
-      <TouchButton variant="primary" keyHint="Space" className="wl-summary__done" onClick={onExit}>Done</TouchButton>
+      {offer && offer.kind !== 'drill' && <p className="wl-summary__dictation" role="status">{offer.text}</p>}
+      {drill && <TouchButton variant="primary" keyHint="Space" className="wl-summary__dictation-go" disabled={busy} onClick={drill}>{offer.text}</TouchButton>}
+      <TouchButton variant={drill ? 'secondary' : 'primary'} keyHint={drill ? null : 'Space'} className="wl-summary__done" onClick={onExit}>Done</TouchButton>
       <div className="wl-controls wl-controls--minor">
         <TouchButton variant="secondary" keyHint="1" disabled={busy} onClick={more}>Practise more</TouchButton>
         {canLearnMore && <TouchButton variant="secondary" keyHint="2" disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}
+        {review && <TouchButton variant="secondary" keyHint="D" disabled={busy} onClick={review}>{offer.action}</TouchButton>}
       </div>
     </section>
   );

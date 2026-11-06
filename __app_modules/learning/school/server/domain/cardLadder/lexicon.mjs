@@ -24,6 +24,7 @@
  * existing deck consumer works on it.
  */
 import { scriptFor } from "./targetScript.mjs";
+import { normalizeDictationWeek } from "./dictation.mjs";
 
 export const LEXICON_SCHEMA = 'school.word-lexicon/v2';
 /** Same content as v2 with side-neutral header names (`target:` / `anchor:` language blocks). */
@@ -145,6 +146,27 @@ function withSideNames(entry, at, errors) {
   return out;
 }
 
+/**
+ * Weekly dictation tags (spec 2026-11-06, Revision 2): `dictation: ['2026-W46']`
+ * and an optional `dictationOrder: { '2026-W46': 3 }`. Lenient on purpose — a
+ * malformed tag is dropped, never an error, so an authoring slip can never
+ * take the whole ladder down.
+ */
+function dictationTags(entry) {
+  const out = {};
+  const weeks = Array.isArray(entry.dictation) ? [...new Set(entry.dictation.map(normalizeDictationWeek).filter(Boolean))] : [];
+  if (weeks.length) out.dictation = weeks;
+  if (isMap(entry.dictationOrder)) {
+    const order = {};
+    for (const [key, value] of Object.entries(entry.dictationOrder)) {
+      const week = normalizeDictationWeek(key);
+      if (week && Number.isFinite(value)) order[week] = value;
+    }
+    if (Object.keys(order).length) out.dictationOrder = order;
+  }
+  return out;
+}
+
 /** Raw YAML → `{ errors, lexicon: { package, language, gloss, program, quiz, entries: Map } }`. */
 export function validateLexicon(raw) {
   const errors = [];
@@ -196,6 +218,7 @@ export function validateLexicon(raw) {
       gloss: String(entry.gloss ?? '').trim(),
       pronunciation: text(entry.pronunciation) ? entry.pronunciation.trim() : null,
       decoys,
+      ...dictationTags(entry),
     });
   });
   // "Phrase decoys only from phrases": a decoy that IS another in-set entry

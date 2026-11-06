@@ -4,14 +4,16 @@ import JamoKeypad from "./JamoKeypad.jsx";
 
 const offerJamo = vi.fn();
 const offerBackspace = vi.fn();
+const offerSpace = vi.fn();
 
 vi.mock("../../../ime/HangulTypingProvider.jsx", () => ({
-  useHangulTyping: () => ({ offerJamo, offerBackspace }),
+  useHangulTyping: () => ({ offerJamo, offerBackspace, offerSpace }),
 }));
 
 beforeEach(() => {
   offerJamo.mockClear();
   offerBackspace.mockClear();
+  offerSpace.mockClear();
   document.body.innerHTML = '';
 });
 
@@ -23,6 +25,15 @@ describe('JamoKeypad', () => {
   it('renders nothing when closed', () => {
     render(<JamoKeypad open={false} />);
     expect(screen.queryByTestId('jamo-keypad')).toBeNull();
+  });
+
+  it('has a Space key for phrases (여우 두 마리): it offers a space and refocuses the field', () => {
+    const focusTarget = vi.fn();
+    render(<JamoKeypad open focusTarget={focusTarget} />);
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Space' }));
+    expect(offerSpace).toHaveBeenCalledTimes(1);
+    expect(focusTarget).toHaveBeenCalled();
+    expect(offerJamo).not.toHaveBeenCalled();
   });
 
   it('offers the base jamo on a plain tap', () => {

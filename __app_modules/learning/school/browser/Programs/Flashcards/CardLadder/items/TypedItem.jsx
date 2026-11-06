@@ -79,18 +79,24 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   // Graded dictation (the 1.4 sign-off): heard like a drill dictation, judged like 3.3.
   const heardSignOff = mode === 'graded' && item.task === '1.4';
   const hearsTerm = dictation || heardSignOff;
-  const termAudioId = hearsTerm ? item.assets?.audio : word?.media?.audio;
+  // A dictation run's items carry the term clip in `assets.audio` (copy too).
+  const termAudioId = hearsTerm ? item.assets?.audio : (word?.media?.audio ?? (item.source === 'dictation' ? item.assets?.audio : null));
   const termAudio = termAudioId ? resolveAssetUrl(termAudioId) : null;
   // graded + practice: cue prompt, verdict held until Next. copy + dictation: retry until it matches.
   const graded = mode === 'graded' || mode === 'practice' || (dictation && pending);
   const showsMe = mode === 'practice' || (mode === 'graded' && item.graded === false);
   // Dictation after its second miss shows the word ("It's 가위 — type it"): a copy now.
   const copying = mode === 'copy' || (dictation && Boolean(result?.answer));
-  const giveUpLabel = showsMe ? 'Show me' : copying ? 'Skip' : "Don't know";
+  // In dictation a give-up steps the word back, so it is never "Skip" (final review M9).
+  const giveUpLabel = showsMe ? 'Show me' : copying && item.source !== 'dictation' ? 'Skip' : "Don't know";
   // Answered = a final verdict is on screen. Busy only disables the field: the
   // keypad and its toggle stay mounted through a submit (no flicker, no lost
   // open state), and go only once there is nothing left to type.
-  const answered = graded && Boolean(result);
+  // A weekly-dictation run (spec 2026-11-06, UX audit #3): every verdict is
+  // held with Next, and none of them names the word — a miss steps the word
+  // back and the server re-serves it, so the result is never "the answer".
+  const dictationRun = item.source === 'dictation';
+  const answered = (graded || dictationRun) && Boolean(result);
   const fieldDisabled = busy || answered;
   // A physical keyboard, on the shared evidence (`lib/hardwareKeyboard.js`:
   // a real letter/digit keypress — never keyCode 229 / Unidentified / a
@@ -131,6 +137,13 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
     setKeypadOpen(false);
     keypadUsedRef.current = false;
     clearTimeout(autoTimerRef.current);
+    // Dictation opens it at once (no 10 s wait) unless a keyboard is known.
+    if (dictationRun && hasKeypadRef.current && !keyboardRef.current) {
+      keypadUsedRef.current = true;
+      setKeypadOpen(true);
+      cardLadderLog.keypadToggled({ auto: true, open: true, via: 'dictation' });
+      return undefined;
+    }
     autoTimerRef.current = setTimeout(() => {
       if (keypadUsedRef.current) return;
       keypadUsedRef.current = true;
@@ -230,7 +243,7 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   // Tab is always mapped — a no-op when there is nothing to hear — so its
   // preventDefault runs and focus never leaves the field.
   useCardLadderKeys({
-    ...(result && graded ? { ' ': onContinue, enter: onContinue } : {}),
+    ...(result && (graded || dictationRun) ? { ' ': onContinue, enter: onContinue } : {}),
     tab: hear ?? (() => {}),
     ...(!answered ? { '\\': giveUp } : {}),
   });
@@ -271,7 +284,12 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
           onPointerCancel={endLongPress}
         />
       )}
-      {answered && (
+      {answered && dictationRun && (
+        <p className="wl-verdict wl-verdict--dictation" role="status">
+          {result.correct ? 'That\'s it!' : 'Not quite — let\'s look at it again'}
+        </p>
+      )}
+      {answered && !dictationRun && (
         <ResultPanel
           itemId={item.id}
           correct={Boolean(result.correct)}
@@ -289,13 +307,13 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
         {mode === 'copy' && termAudio && <TouchButton variant="secondary" keyHint="Tab" onClick={() => playClip(termAudio, 'term')}><Icon name="volume" /> Hear it</TouchButton>}
         {/* A copy mismatch is a retry, not a terminal result — only a GRADED
             result hides the submit button; copy mode keeps it for the retry. */}
-        {(!result || (!graded && result?.correct === false)) && (
+        {(!result || (!graded && !dictationRun && result?.correct === false)) && (
           <>
             <TouchButton variant="secondary" keyHint="\\" disabled={busy} onClick={giveUp}>{giveUpLabel}</TouchButton>
             <TouchButton variant="primary" keyHint="Enter" disabled={busy || !value.trim()} onClick={submit}>{busy && graded ? 'Checking…' : 'Enter'}</TouchButton>
           </>
         )}
-        {!graded && result?.correct === false && (
+        {!graded && !dictationRun && result?.correct === false && (
           <p className="wl-verdict" role="status">
             {!dictation && 'Try again — copy it exactly.'}
             {/* Dictation reveals the term only after the second miss (the server
@@ -304,11 +322,13 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
             {dictation && result.answer && <>It&apos;s <span lang={langs.target}>{result.answer}</span> — type it</>}
           </p>
         )}
-        {graded && result && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}
+        {(graded || dictationRun) && result && <TouchButton variant="primary" keyHint="Space" onClick={onContinue}>Next</TouchButton>}
       </div>
       {/* A last resort, not an option: a small icon in the item's corner,
           hidden once a keyboard is known (long-press the field instead). */}
-      {Keypad && !answered && !keyboard && (
+      {/* In dictation the toggle stays even with a keyboard known: a dozing
+          BLE keyboard must never leave the child unable to type (audit #10). */}
+      {Keypad && !answered && (!keyboard || dictationRun) && (
         <TouchButton
           variant="secondary"
           className="wl-typed__keypad-toggle"

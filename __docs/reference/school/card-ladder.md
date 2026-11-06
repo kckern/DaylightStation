@@ -58,7 +58,7 @@ drill, speaking, on-screen keypad, practice menu)** actually ship; see
 | Code (application) | `__app_modules/learning/school/server/application/{CardLadderSittingService,CardLadderTypedJudge,CardLadderDoorLauncher}.mjs` |
 | Code (adapters) | `__app_modules/learning/school/server/adapters/cardLadder/{YamlCardLadderStore,ShadowCardLadderStores,YamlJudgementCache,FilesystemCardLadderRecordings,DiscardingRecordings}.mjs` |
 | Code (API) | `__app_modules/learning/school/server/api/school.cardLadder.mjs` |
-| Code (frontend) | `frontend/src/modules/School/Programs/Flashcards/CardLadder/` |
+| Code (frontend) | `__app_modules/learning/school/browser/Programs/Flashcards/CardLadder/` |
 
 Everything per learner is keyed by the lexicon's `package`: status, day files
 and the judgement cache. Word ids need only be unique **within** a package.
@@ -139,6 +139,12 @@ The child is never asked to type a word from memory, from sound, or from
 English until they have shown they can recognise it, claimed it, and matched
 it. Copy-typing (1.1) with the word on screen is fine at any time (Learn,
 drill, Write with help); speaking is never graded and never gates anything.
+
+**One exception: [weekly dictation](#weekly-dictation-spec-2026-11-06).** A
+dictation run has its own scaffolding (match → copy → blind), so every word
+on the week's list may reach the blind step whatever its ladder state. The
+rule above still holds for the ladder itself, and dictation never changes a
+word's ladder state.
 
 Per-word flags in status v3 (`mastery.mjs`):
 
@@ -611,6 +617,96 @@ Every task item's day-file record (`items[itemId]`) keeps `wordId`, `task`,
 lists and re-grades. Older records without them are resolved from the day's
 plan (`rc:<word>`, a round's quiz queue, the latest practice run).
 
+## Weekly dictation (spec 2026-11-06)
+
+The class gives a dictation (받아쓰기) every week: ten words the child will
+hear and must write. Dictation is a **mode inside the card-ladder program**,
+not an enrollment: the words are ordinary deck words (same ids, media,
+lexicon), drilled on their own, on separate time.
+
+**The list is a tag on lexicon entries.** Each entry on a week's dictation
+carries `dictation: [<ISO week>]`, e.g.
+
+```yaml
+  - id: geomi
+    term: 거미
+    dictation: ['2026-W46']
+```
+
+The **current week** is the newest ISO week in any entry's tags; its words
+are the tagged entries in lexicon order (optional `dictationOrder:
+{ '2026-W46': 3 }` overrides). A week should have exactly **10**: any other
+count logs warn `school.card-ladder.dictation.count` and shows on the
+teacher panel, and the words are still served. Resolver:
+`currentDictation(lexicon)` in `server/domain/cardLadder/dictation.mjs`.
+Words must also be in the learner's deck and have term audio, or they wait
+on a grown-up (below).
+
+**Three steps per word**, in order: **match** (D.1: hear it, pick the
+spelling — authored `decoys.term` first), **copy** (D.2: hear it, see it,
+type it), **blind** (D.3: hear it, type it; the word is never sent or
+shown). Strict spelling — the same `answersMatch` compare as copy; no Jev. A
+pass moves the word on; a miss or Don't know steps it back one (a match miss
+stays at match) and the **same word is served again** at its new step, with
+the miss held on screen: *Not quite — let's look at it again* and Next.
+**Done** = every word typed correctly blind twice (not necessarily in a row).
+
+**Where it is offered — before and after the flashcards** (owner,
+2026-11-06):
+
+| Place | While words are left | Once ready |
+|---|---|---|
+| Start card | `Dictation: N words` beside Start (primary once the day is done; D) | *Dictation ready ✓* line + `Review dictation` (D) |
+| Day-done card | the big `Dictation: N words` above Done (Space) | *Dictation ready ✓* line + `Review dictation` (D), Done leads |
+| Practice menu | `Dictation: N words` (D) | `Review dictation` (D) |
+| Launch card (agenda) | description ends `Dictation: N words left` | — |
+
+When the only words left are waiting on a grown-up (no recording, not in the
+deck), every place says `Dictation: N words waiting for a grown-up` instead —
+it never goes quiet.
+
+**Review.** A finished week can be drilled again before the test:
+`POST …/dictation {userId, review: true}` opens a run with every word at
+blind and one pass banked, so one correct write finishes each word (a miss
+steps back as usual). The review's word state lives on the day file's run
+(`dictation.review.words`); `dictation-progress.yml` is never written.
+
+**The run.** The header shows one dot per word and *Dictation · Word 4 of
+10* — never the word — and **Stop for now**, which ends the run (`{stop:
+true}`) and returns the sitting to its own ladder. The jamo keypad opens at
+once (no 10 s wait) unless a keyboard is known, its toggle stays even with a
+keyboard declared (a dozing BLE keyboard must not lock the child out), and it
+has a **space** key for phrases (여우 두 마리). The run ends on an explicit
+**dictation-ready** item: *Dictation ready ✓* only when every word was
+drilled AND none is waiting; otherwise *9 of 10 words done* and which words
+need a recording or a place in the deck. Done (`{done: true}`) returns to the
+sitting's ladder.
+
+**Separate time.** Dictation answers never add to the day's active minutes
+and never satisfy or advance the daily goal; they do count as input for the
+idle clock. Dictation passes never change a word's ladder state.
+
+**Files.** Per learner and package, `dictation-progress.yml` beside the
+status file, keyed by week (a new week starts clean):
+`{ week, words: { <id>: { step, blindPasses, lastAttemptAt } } }`. Each
+answer is also a day-file item (`source: dictation`, `task: D.1|D.2|D.3`), so
+the teacher Days panel shows it. A corrupt progress file refuses Start with
+a message for a grown-up rather than failing mid-run.
+
+**Teacher view.** `GET /admin/words` adds `dictation` (week, count, count
+warning, remaining, `needsRecording`, `unknown`) and, on each list word only,
+`dictation: {step, blindPasses, done}`; the Words panel shows a *Dictation ·
+2026-W46* section with `copy · 1/2 blind` per word.
+
+**Test mode.** `?scenario=dictation` starts the week fresh in the shadow.
+
+**Events.** Server: `school.card-ladder.dictation.started`, `.attempt`,
+`.done`, `.exited` (`reason`: `stop`, or the sitting's close reason),
+`.ready-seen`, `.replaced`, `.nothing-to-drill`, `.count`, `.unknown-word`, `.corrupt`, `.already-done`,
+`.admin-unavailable`. Frontend (card-ladder facade): `dictation.started`
+(`from: start|summary|menu|replaced`), `dictation.attempt`,
+`dictation.exited` (`stop|ready|replaced`), `dictation.failed`.
+
 ## Goal, cap, and a study day
 
 Goal and cap are **per study day, across all of that day's sittings** — idle
@@ -972,6 +1068,10 @@ at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
   say-from-cue); never touches status. Test mode's sink keeps nothing.
 - `POST /card-ladder/sittings/:sittingId/practice {userId, mode, help, filter, chosen, frontSide}` → `{item, progress}`;
   400 before today's goal
+- `POST /card-ladder/sittings/:sittingId/dictation {userId, review?}` → `{item, progress, dictation}` — starts this
+  week's [dictation](#weekly-dictation-spec-2026-11-06) run in the sitting, before or after the goal; a week with
+  nothing left to drill answers `{done, dictation}` with no item. A dictation item also takes `{stop: true}`
+  (Stop for now) and the ending `{done: true}`
 - `POST /card-ladder/sittings/:sittingId/learn-more {userId}` → `{item, progress}` (the round's first intro card;
   `progress.round.extra: true`); 400 while guided work is open or no new word is left. Never refused by the cap
 - `GET /card-ladder/words?userId=&deckId=[&sittingId=]` → `{words: [{wordId, term, gloss, state, stage, tricky, dueDay}]}`
@@ -1054,6 +1154,7 @@ shadow 404s on next touch and the client reopens. The banner reads
 | `tricky` | every deck word `familiar` (introduced 3 days ago); the first is tricky since yesterday — the day opens on its drill |
 | `typos` | every deck word due for its typed sign-off recheck — typed items to misspell (the round quiz is recognition only) |
 | `done` | today already closed (`doneAt` = today) — straight to the summary/menu |
+| `dictation` | the real snapshot, and this week's dictation from its start — the shadow's progress is empty, so every tagged word is at match (the real `dictation-progress.yml` is never read or written) |
 
 A backend safety test
 (`__app_modules/learning/school/server/application/CardLadderTestMode.test.mjs`) drives a full

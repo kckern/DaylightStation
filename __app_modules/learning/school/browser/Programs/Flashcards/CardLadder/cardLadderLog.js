@@ -62,6 +62,10 @@ export const cardLadderLog = {
   sittingClosed: (data) => emit('sitting.closed', data),                // {reason, activeMs, remaining}
   // {clip, trigger: auto|key|touch, input?, outcome: ended|error|blocked} — logged only from cardLadderAudio.js; a failed clip is warn.
   audioPlayed: (data) => emit('audio.played', data, data?.outcome === 'ended' ? 'info' : 'warn'),
+  dictationStarted: (data) => emit('dictation.started', data),            // {from: start|summary|menu, week, remaining}
+  dictationFailed: (data) => emit('dictation.failed', data, 'warn'),      // {from, status, error}
+  dictationAttempt: (data) => emit('dictation.attempt', data),            // {wordId, step, correct, ms}
+  dictationExited: (data) => emit('dictation.exited', data),              // {reason: stop|ready|replaced, week}
   keypadToggled: (data) => emit('keypad.toggled', data),                // {auto, open, via?: 'long-press'}
   keyboardDetected: (data) => emit('keyboard.detected', data),          // once per device: a physical keyboard is known, keypad toggle hidden
   cardFlipped: (data) => emit('card.flipped', data),                    // {ms}

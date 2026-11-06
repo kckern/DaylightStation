@@ -279,3 +279,13 @@ describe('applyTuningProposal bounds', () => {
     expect(out.next['round.size']).toBe(specLo);
   });
 });
+
+describe('dayStats — dictation is apart from the ladder', () => {
+  it('a dictation attempt (Don\'t know included) never counts in the day\'s numbers', async () => {
+    const { dayStats: stats } = await import('./tuning.mjs');
+    const day = { day: '2026-11-06', rounds: [], rechecks: { answered: {} }, activeMs: 0, sittings: {}, items: {
+      'dc1:0': { at: 'x', response: { dontKnow: true }, result: { correct: false, dontKnow: true }, wordId: 'gawi', task: 'D.1', source: 'dictation' },
+    } };
+    expect(stats(day, {}).dontKnow).toBe(0);
+  });
+});

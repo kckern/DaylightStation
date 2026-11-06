@@ -30,6 +30,19 @@ describe('/api/v1/school/card-ladder (through the School router)', () => {
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(res.body.sittingId).toBe('korean-vocab.live.1');
   });
+  it('starts a dictation run in a sitting and never caches it (Task 3)', async () => {
+    const service = { startDictation: vi.fn(async () => ({ item: { id: 'dc1:0' }, dictation: { week: '2026-W46' } })) };
+    const res = await request(app(service)).post('/api/v1/school/card-ladder/sittings/korean-vocab.live.1/dictation')
+      .send({ userId: 'kid' }).expect(200);
+    expect(service.startDictation).toHaveBeenCalledWith({ userId: 'kid', sittingId: 'korean-vocab.live.1' });
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.body.item.id).toBe('dc1:0');
+  });
+  it('passes review: true through to a review run (final review I2)', async () => {
+    const service = { startDictation: vi.fn(async () => ({ item: { id: 'dc1:0' } })) };
+    await request(app(service)).post('/api/v1/school/card-ladder/sittings/korean-vocab.live.1/dictation').send({ userId: 'kid', review: true }).expect(200);
+    expect(service.startDictation).toHaveBeenCalledWith({ userId: 'kid', sittingId: 'korean-vocab.live.1', review: true });
+  });
   it('maps a missing assignment to 403 and a bad response to 400', async () => {
     const refusing = { open: vi.fn(async () => { throw new GuestForbiddenError('no assignment'); }) };
     await request(app(refusing)).post('/api/v1/school/card-ladder/open').send({ userId: 'kid', deckId: 'd' }).expect(403);

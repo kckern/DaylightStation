@@ -87,6 +87,38 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
   );
 }
 
+/**
+ * This week's dictation (spec 2026-11-06): the tagged week, a warning when
+ * it is not exactly ten words, the words waiting on a grown-up (a recording,
+ * or a place in the deck), and each list word's step and blind passes.
+ */
+export function dictationLine(d) {
+  if (!d) return null;
+  return d.done ? 'ready ✓' : `${d.step} · ${d.blindPasses}/2 blind`;
+}
+
+function DictationSummary({ dictation, words }) {
+  if (!dictation) return null;
+  const listed = words.filter((word) => word.dictation);
+  return (
+    <section className="teacher-card-ladder__dictation" aria-label="Dictation">
+      <h3 className="teacher-card-ladder__pool-title">Dictation · {dictation.week}</h3>
+      {dictation.unavailable && <p className="teacher-panel__error">The progress file for this week is unreadable.</p>}
+      {dictation.countWarning && <p className="teacher-panel__error">{dictation.count} words tagged — a week should have 10.</p>}
+      {(dictation.needsRecording ?? []).length > 0 && <p className="teacher-panel__error">Needs its recording: {dictation.needsRecording.join(', ')}</p>}
+      {(dictation.unknown ?? []).length > 0 && <p className="teacher-panel__error">Not in this deck: {dictation.unknown.join(', ')}</p>}
+      {!dictation.unavailable && <p className="teacher-muted">{dictation.ready ? 'Ready — every word written blind twice.' : `${dictation.remaining} of ${dictation.total} words left.`}</p>}
+      {listed.length > 0 && (
+        <ul className="teacher-card-ladder__dictation-words">
+          {listed.map((word) => (
+            <li key={word.wordId}><span lang="ko">{word.term}</span> — <span>{dictationLine(word.dictation)}</span></li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function WordRow({ word, learnerId, deckId, run, busy, errors }) {
   const [stagePick, setStagePick] = useState(String(word.stage ?? 0));
   // Every write re-reads the table, and a refetch can change this word's
@@ -396,6 +428,7 @@ export default function CardLadderWordsPanel({ learnerId, deckId, title = null, 
       unavailableCopy="Card ladder is not available on this install."
     >
       <div className="teacher-card-ladder">
+        <DictationSummary dictation={record.data?.dictation ?? null} words={words} />
         {/* Scrolls inside the panel: ten columns never fit a phone, and the
             page itself must not scroll sideways (audit 2026-10-29). */}
         <div className="teacher-card-ladder__scroll">

@@ -10,6 +10,7 @@ import FlashcardItem from "./items/FlashcardItem.jsx";
 import ChoiceItem from "./items/ChoiceItem.jsx";
 import TypedItem from "./items/TypedItem.jsx";
 import SummaryItem from "./items/SummaryItem.jsx";
+import DictationReadyItem from "./items/DictationReadyItem.jsx";
 import SayItem from "./items/SayItem.jsx";
 import DrillItem from "./items/DrillItem.jsx";
 import DrillOfferItem from "./items/DrillOfferItem.jsx";
@@ -24,7 +25,7 @@ import { layoutForItem, mediaForItem } from "./itemLayout.js";
 import { stopAudio } from "./cardLadderAudio.js";
 import { useCardLadderKeys } from "./useCardLadderKeys.js";
 import { currentInput, noteInput, noteKeyEvent } from "./inputVia.js";
-import CardLadderStartCard from "./CardLadderStartCard.jsx";
+import CardLadderStartCard, { dictationOffer } from "./CardLadderStartCard.jsx";
 import CardLadderHeader from "./CardLadderHeader.jsx";
 import { CARRY_FIRST_HINT, STEP_HINTS, stepTrail } from "./stepTrail.js";
 import "./CardLadder.scss";
@@ -230,7 +231,11 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     cardLadderLog.started({ userId, deckId, test, scenario });
     open();
   }, [started, open, userId, deckId, test, scenario]);
-  useCardLadderKeys({ ' ': start, enter: start }, { enabled: !started });
+  // D starts (or reviews) the week's dictation from the start card (final review M7).
+  const startOffer = dictationOffer(intro?.dictation);
+  const startKeys = { ' ': start, enter: start };
+  if (startOffer?.kind === 'drill' || startOffer?.kind === 'ready') startKeys.d = () => startDictationRef.current?.('start', { review: startOffer.kind === 'ready' });
+  useCardLadderKeys(startKeys, { enabled: !started });
 
   useEffect(() => {
     if (!item) return;
@@ -344,6 +349,26 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       ms: itemShownAtRef.current != null ? Date.now() - itemShownAtRef.current : null, input,
       ...(meta && typeof meta === 'object' ? meta : {}),
     });
+    if (item.source === 'dictation') {
+      const week = intro?.dictation?.week ?? null;
+      if (item.type === 'dictation-ready') cardLadderLog.dictationExited({ reason: 'ready', week });
+      else if (response?.stop === true) cardLadderLog.dictationExited({ reason: 'stop', week });
+      else {
+        cardLadderLog.dictationAttempt({
+          wordId: item.wordId ?? null, step: item.dictationStep ?? null, correct: data?.result?.correct ?? null,
+          ms: itemShownAtRef.current != null ? Date.now() - itemShownAtRef.current : null,
+        });
+      }
+    }
+    // The week's list was re-tagged mid-run (audit #8): the answer was not
+    // recorded against the old week, so start the new week's run at once.
+    if (data?.dictation?.replaced) {
+      cardLadderLog.dictationExited({ reason: 'replaced', week: data.dictation.previousWeek ?? null });
+      setResult(null); setPendingItem(null);
+      if (data?.item) setItem(data.item);
+      startDictationRef.current?.('replaced');
+      return;
+    }
     // Best-effort per-round tally for round.ended {quizzed, notYet} — a
     // sorted-to-notYet flashcard, or a graded quiz answer (choice/typed,
     // which only ever carry a task once they're in a round's quiz phase).
@@ -357,6 +382,13 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
         itemId: item.id, correct: data.result.correct ?? null, score: data.result.score ?? null, judge: data.result.judge ?? null, held,
       });
     };
+    // Dictation: a miss is always held with Next (audit #3) — the server has
+    // already stepped the word back and re-served it; never jump silently.
+    if (item.source === 'dictation' && data?.result?.correct === false) {
+      setResult(data.result); setPendingItem(data.item ?? item);
+      showResult(true);
+      return;
+    }
     if (data?.result?.correct === false && (data?.item?.id === item.id || (item.type === 'copy' && !data?.item))) {
       setResult(data.result); setPendingItem(null);
       showResult(false); // a retry: the item stays, with its miss shown
@@ -369,7 +401,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     }
     setResult(null); setPendingItem(null);
     if (data?.item) setItem(data.item);
-  }, [api, session, item, userId, deckId, test, open, resync, dismissHint, unreachable]);
+  }, [api, session, item, userId, deckId, test, open, resync, dismissHint, unreachable, intro]);
 
   const next = useCallback(() => {
     if (!pendingItem) return;
@@ -437,6 +469,70 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (serverUnreachable(status)) { unreachable('learn-more'); return; }
     await resync();
   }, [api, session, item, userId, deckId, test, show, open, resync, unreachable]);
+
+  /**
+   * This week's dictation (spec 2026-11-06): offered before the flashcards
+   * (start card), after them (day-done card) and from the menu. Opens the
+   * sitting first when none is open, like the assessment review; a week with
+   * nothing left to drill just refreshes the offer.
+   */
+  const startDictation = useCallback(async (from, { review = false } = {}) => {
+    if (busyRef.current || typeof api.dictation !== 'function') return;
+    busyRef.current = true;
+    setBusy(true);
+    let id = sittingRef.current;
+    // The opened sitting's own first card, held back: shown only if the run
+    // cannot start, so the child never sees (or hears) it flash past (final review I1).
+    let opened = null;
+    if (!id) {
+      setStarted(true);
+      cardLadderLog.started({ userId, deckId, test, scenario, via: 'dictation' });
+      const capabilities = { microphone: await detectMicrophoneCapability() };
+      const reply = await api.open({ userId, deckId, scenario, capabilities });
+      if (!live.current) return;
+      if (!reply.ok || !reply.data?.sittingId) {
+        busyRef.current = false; setBusy(false);
+        setError('This word list is not ready right now.');
+        cardLadderLog.planFailed({ userId, deckId, status: reply.status, test });
+        return;
+      }
+      id = reply.data.sittingId;
+      sittingRef.current = id; closedRef.current = false;
+      trace.setSitting(id); trace.setPackage(reply.data.package ?? null);
+      setSession({ id, langs: sidesFromOpen(reply.data) });
+      opened = reply.data;
+      cardLadderLog.sittingOpened({ package: reply.data.package ?? null, first: reply.data.item?.type ?? null, phase: reply.data.progress?.phase ?? null });
+    }
+    const { ok, status, data } = await api.dictation(id, review ? { userId, review: true } : { userId });
+    busyRef.current = false;
+    if (!live.current) return;
+    setBusy(false);
+    if (ok && data?.dictation) setIntro((prev) => ({ ...(prev ?? {}), dictation: data.dictation }));
+    if (ok && data?.item) {
+      show(data.item, data.progress ?? null);
+      cardLadderLog.dictationStarted({ from, review, week: data.dictation?.week ?? null, remaining: data.dictation?.remaining ?? null });
+      return;
+    }
+    if (opened) show(opened.item, opened.progress ?? null);
+    if (ok) { cardLadderLog.dictationStarted({ from, week: data?.dictation?.week ?? null, remaining: data?.dictation?.remaining ?? null, nothingToDrill: true }); return; }
+    cardLadderLog.dictationFailed({ from, status, error: data?.error ?? null });
+    if (serverUnreachable(status)) unreachable('dictation');
+  }, [api, userId, deckId, test, scenario, trace, show, unreachable]);
+  const startDictationRef = useRef(null);
+  startDictationRef.current = startDictation;
+  // Back on the day-done card after a run: re-read the offer, so its count is today's.
+  useEffect(() => {
+    if (item?.type !== 'summary' || typeof api.intro !== 'function' || !userId || !deckId) return undefined;
+    let alive = true;
+    (async () => {
+      const { ok, data } = await api.intro({ userId, deckId, scenario });
+      if (alive && ok && data) setIntro(data);
+    })();
+    return () => { alive = false; };
+  }, [item?.type, item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Stop for now (audit #6): ends the run in the sitting, back to the ladder.
+  const inDictation = item?.source === 'dictation' && item?.type !== 'dictation-ready';
+  const stopDictation = useCallback(() => { if (!pendingItem) respond({ stop: true }); }, [respond, pendingItem]);
 
   const [assessment, setAssessment] = useState(null);
   const [assessmentBusy, setAssessmentBusy] = useState(false);
@@ -542,7 +638,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
 
   let body = <p className="wl-loading">Loading…</p>;
   if (!started) {
-    body = <CardLadderStartCard intro={intro} fallbackTitle={title} onStart={start} onPosterFailed={posterFailed} />;
+    body = <CardLadderStartCard intro={intro} fallbackTitle={title} onStart={start} onDictation={(review) => startDictation('start', { review })} onPosterFailed={posterFailed} />;
   } else if (error) {
     body = (
       <div className="wl-item wl-error" role="alert">
@@ -564,14 +660,23 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     else if (item.type === 'drill-offer') body = <DrillOfferItem key={key} {...common} />;
     else if (item.type === 'match') body = <MatchItem key={key} {...common} />;
     else if (item.type === 'listen') body = <ListenItem key={key} {...common} />;
+    else if (item.type === 'dictation-ready') body = <DictationReadyItem key={key} item={item} onRespond={respond} busy={busy} />;
     else if (item.type === 'menu') {
       body = (
         <MenuItem
           key={key} item={item} api={api} sittingId={session.id} userId={userId} deckId={deckId}
           langs={session.langs} onPractice={practiceStarted} onLearnMore={learnMore} onExit={done}
+          dictation={intro?.dictation ?? null} onDictation={startDictation}
         />
       );
-    } else body = <SummaryItem key={key} item={item} langs={session.langs} onRespond={respond} onLearnMore={learnMore} busy={busy} onExit={done} />;
+    } else {
+      body = (
+        <SummaryItem
+          key={key} item={item} langs={session.langs} onRespond={respond} onLearnMore={learnMore} busy={busy} onExit={done}
+          dictation={intro?.dictation ?? null} onDictation={startDictation}
+        />
+      );
+    }
   }
   const pct = progress?.capMs ? Math.min(100, Math.round((progress.activeMs / progress.capMs) * 100)) : 0;
   const remaining = remainingLabel(progress);
@@ -591,9 +696,11 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
           onExit={leave}
           timePct={pct}
           hint={hint}
-          right={inPractice
-            ? <TouchButton variant="secondary" keyHint="M" disabled={busy || Boolean(pendingItem)} onClick={toMenu}>Menu</TouchButton>
-            : <p className="wl-header__piles">{remaining}</p>}
+          right={inDictation
+            ? <TouchButton variant="secondary" disabled={busy || Boolean(pendingItem)} onClick={stopDictation}>Stop for now</TouchButton>
+            : inPractice
+              ? <TouchButton variant="secondary" keyHint="M" disabled={busy || Boolean(pendingItem)} onClick={toMenu}>Menu</TouchButton>
+              : <p className="wl-header__piles">{remaining}</p>}
         />
         <main className="wl-main">{body}</main>
         {(!started || ['summary', 'menu'].includes(item?.type) || ['quiz_ready', 'retry_ready', 'completed', 'quiz_issued'].includes(assessment?.stage)) && <PracticeAssessmentPanel progress={assessment} busy={busy || assessmentBusy} onPrint={printAssessment} onReview={reviewAssessment} notice={assessmentNotice} />}

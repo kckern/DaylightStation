@@ -55,6 +55,7 @@ export default function ChoiceItem({ item, langs, resolveAssetUrl, onRespond, re
     <section className="wl-item wl-choice" aria-label={item.source === 'recheck' ? 'Check' : 'Quiz'}>
       <div className="wl-prompt">
         {item.task === '2.2' && item.channel === 'read' && <FitText role="prompt" text={item.prompt} lang={langs.target} />}
+        {item.task === 'D.1' && item.listen && <TouchButton variant="secondary" keyHint="Tab" onClick={() => audio && playClip(audio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
         {item.task === '2.2' && item.channel === 'hear' && (
           result
             ? <FitText role="prompt" text={item.prompt} lang={langs.target} />

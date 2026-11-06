@@ -76,6 +76,16 @@ export default function DrillItem({
   else if (step === 'tiles') body = <TilesItem {...common} pending={pending} />;
   else body = <UnknownStep {...common} />;
   const of = item.of ?? 0;
+  // A dictation step (spec 2026-11-06): the header names neither the word
+  // (the blind step must not show it) nor a drill step count — the program
+  // header says which of the week's words this is.
+  if (item.source === 'dictation') {
+    return (
+      <section className="wl-drill wl-drill--dictation" aria-label="Dictation">
+        <div className="wl-drill__body">{body}</div>
+      </section>
+    );
+  }
   return (
     <section className="wl-drill" aria-label="Drill">
       <header className="wl-drill__header">

@@ -36,6 +36,16 @@ export default function CardLadderHeader({
             </li>
           ))}
         </ol>
+        ) : trail.dictation ? (
+          <ol className="wl-trail wl-trail--dictation" aria-label="This week's words">
+            {Array.from({ length: trail.dictation.count }, (_, i) => (
+              <li
+                key={i}
+                className={`wl-dictation-dot${i < trail.dictation.done ? ' is-done' : ''}${i + 1 === trail.dictation.index ? ' is-current' : ''}`}
+                aria-hidden="true"
+              />
+            ))}
+          </ol>
         ) : <span className="wl-trail" />}
         <div className="wl-header__right">{right}</div>
         <p className="wl-header__round" aria-label="Progress">{trail.subLine}</p>

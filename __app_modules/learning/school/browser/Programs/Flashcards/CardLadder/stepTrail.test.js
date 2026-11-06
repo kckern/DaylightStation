@@ -109,3 +109,19 @@ describe('stepTrail — the sitting header\'s Review › Learn › Sort › Quiz
     }
   });
 });
+
+describe('stepTrail — a dictation run (spec 2026-11-06, UX audit #6)', () => {
+  const item = { id: 'dc1:0', type: 'choice', task: 'D.1', source: 'dictation', wordIndex: 4, wordCount: 10, wordsDone: 3 };
+  it('has no round steps and says which word of the week this is', () => {
+    const trail = stepTrail({ phase: 'dictation', doneToday: false }, item);
+    expect(trail.steps).toEqual([]);
+    expect(trail.current).toBeNull();
+    expect(trail.subLine).toBe('Dictation · Word 4 of 10');
+    expect(trail.dictation).toEqual({ index: 4, count: 10, done: 3 });
+  });
+  it('the ending reads as the week, not a word', () => {
+    const trail = stepTrail({ phase: 'dictation' }, { id: 'dc1:ready', type: 'dictation-ready', source: 'dictation', wordCount: 10, wordsDone: 10 });
+    expect(trail.subLine).toBe('Dictation');
+    expect(trail.dictation).toEqual({ index: null, count: 10, done: 10 });
+  });
+});

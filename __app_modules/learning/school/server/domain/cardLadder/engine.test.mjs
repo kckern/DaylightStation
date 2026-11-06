@@ -939,3 +939,212 @@ describe('course review', () => {
     expect(() => courseEngine.startCourseReview(ctx, { unitId: 'course.01', chosen: ['ghost'] })).toThrow();
   });
 });
+
+// ── Dictation (spec 2026-11-06 Revision 1): its own run, its own steps, never the goal or the clock.
+import { startDictation as startDictationRun } from "./engine.mjs";
+import { dictationState } from "./dictation.mjs";
+
+describe('engine — dictation run', () => {
+  const SID = 'korean-vocab.live.1';
+  const LIST = { week: '2026-11-09', words: ['gawi', 'pul'] };
+  const stateOf = (progress = null) => dictationState(LIST, progress, { hasAudio: () => true, inLexicon: (id) => lexicon.entries.has(id) });
+  function dictating(progress = null) {
+    const base = { ...start(), sittingId: SID, dictation: stateOf(progress) };
+    return { ...base, ...startDictationRun(base, { sittingId: SID }) };
+  }
+  // One answer; the returned state stands in for the service's re-read of the progress file.
+  function answer(ctx, response) {
+    const item = currentItem(ctx);
+    const out = respond(ctx, item.id, response, { at: at() });
+    return { ctx: { ...ctx, status: out.status, dayFile: out.dayFile, dictation: out.dictation?.state ?? ctx.dictation }, item, out };
+  }
+  const blindOf = (id, blindPasses = 0) => ({ week: LIST.week, words: { gawi: { step: 'match', blindPasses: 0 }, pul: { step: 'match', blindPasses: 0 }, [id]: { step: 'blind', blindPasses } } });
+
+  it('starts before the daily goal, serves D.1 first, and leaves the goal and the clock alone', () => {
+    const plain = start();
+    expect(plain.dayFile.doneAt).toBeNull();
+    const ctx = dictating();
+    expect(ctx.dayFile.doneAt).toBeNull();
+    expect(ctx.dayFile.activeMs).toBe(plain.dayFile.activeMs);
+    expect(ctx.dayFile.lastInputAt).toBe(plain.dayFile.lastInputAt);
+    const item = currentItem(ctx);
+    expect(item).toMatchObject({ type: 'choice', task: 'D.1', source: 'dictation', wordId: 'gawi', dictationStep: 'match' });
+    expect(item.choices).toContain('가위');
+    expect(item.choices).toEqual(expect.arrayContaining(['x1', 'x2', 'x3']));
+  });
+
+  it('Stop for now: { stop: true } ends the run, records no attempt, and the sitting goes back to the ladder', () => {
+    let ctx = dictating();
+    let step;
+    ({ ctx, out: step } = answer(ctx, { stop: true }));
+    expect(step.result).toEqual({ stopped: true });
+    expect(step.dictation ?? null).toBeNull();
+    expect(ctx.dayFile.dictation).toMatchObject({ ended: 'stopped' });
+    expect(ctx.dayFile.dictation.endedAt).toBeTruthy();
+    expect(Object.values(ctx.dayFile.items ?? {}).some((row) => row.source === 'dictation')).toBe(false);
+    expect(currentItem(ctx).source).not.toBe('dictation');
+    expect(currentItem(ctx).type).not.toBe('dictation-ready');
+  });
+
+  it('is bound to its own sitting: another sitting of the day sees the regular ladder', () => {
+    const ctx = dictating();
+    expect(currentItem({ ...ctx, sittingId: 'korean-vocab.live.2' }).source).not.toBe('dictation');
+    expect(currentItem({ ...ctx, dictation: undefined }).source).not.toBe('dictation');
+  });
+
+  it('match pass -> copy -> blind; a blind miss goes back to copy and never names the answer', () => {
+    let ctx = dictating();
+    let step;
+    ({ ctx, out: step } = answer(ctx, { choice: '가위' }));
+    expect(step.result).toMatchObject({ correct: true });
+    expect(step.dictation).toMatchObject({ wordId: 'gawi', step: 'match', pass: true, word: { step: 'copy', blindPasses: 0 } });
+    // A pass moves on: pul is served next; miss it in match — it stays in match, and pul comes straight back (audit #3).
+    ({ ctx, out: step } = answer(ctx, { choice: 'x1' }));
+    expect(step.dictation).toMatchObject({ wordId: 'pul', pass: false, word: { step: 'match' } });
+    expect(currentItem(ctx)).toMatchObject({ wordId: 'pul', dictationStep: 'match' });
+    ({ ctx } = answer(ctx, { choice: '풀' }));
+    const copy = currentItem(ctx);
+    expect(copy).toMatchObject({ type: 'drill', step: 'copy', source: 'dictation', wordId: 'gawi', dictationStep: 'copy' });
+    ({ ctx, out: step } = answer(ctx, { typed: '가위' }));
+    expect(step.dictation.word.step).toBe('blind');
+    ({ ctx } = answer(ctx, { typed: '풀' }));
+    const blind = currentItem(ctx);
+    expect(blind).toMatchObject({ type: 'drill', step: 'dictation', source: 'dictation', wordId: 'gawi', dictationStep: 'blind' });
+    expect(JSON.stringify(blind)).not.toContain('가위');
+    ({ ctx, out: step } = answer(ctx, { typed: '가이' }));
+    expect(step.result.correct).toBe(false);
+    expect(JSON.stringify(step.result)).not.toContain('가위');
+    expect(step.dictation.word).toMatchObject({ step: 'copy', blindPasses: 0 });
+  });
+
+  it('a mixed-script typed answer is a miss, never a crash', () => {
+    let ctx = dictating(blindOf('gawi'));
+    const { out } = answer(ctx, { typed: '가wi' });
+    expect(out.result.correct).toBe(false);
+    expect(out.dictation.word.step).toBe('copy');
+  });
+
+  it("Don't know steps back one, in copy and in blind", () => {
+    const ctx = dictating({ week: LIST.week, words: { gawi: { step: 'copy', blindPasses: 0 }, pul: { step: 'blind', blindPasses: 1 } } });
+    const first = answer(ctx, { dontKnow: true });
+    expect(first.out.dictation).toMatchObject({ wordId: 'gawi', dontKnow: true, word: { step: 'match' } });
+    // A Don't-know is a miss: gawi comes back at match; a pass there moves on to pul (audit #3).
+    const again = answer(first.ctx, { choice: '가위' });
+    expect(again.out.dictation).toMatchObject({ wordId: 'gawi', pass: true });
+    const second = answer(again.ctx, { typed: '' });
+    expect(second.out.dictation).toMatchObject({ wordId: 'pul', dontKnow: true, word: { step: 'copy', blindPasses: 1 } });
+  });
+
+  it('two blind passes per word end the run; the regular ladder comes back', () => {
+    let ctx = dictating({ week: LIST.week, words: { gawi: { step: 'blind', blindPasses: 1 }, pul: { step: 'blind', blindPasses: 1 } } });
+    let step;
+    ({ ctx, out: step } = answer(ctx, { typed: '가위' }));
+    expect(step.dictation).toMatchObject({ done: false, remaining: 1 });
+    ({ ctx, out: step } = answer(ctx, { typed: '풀' }));
+    expect(step.dictation).toMatchObject({ done: true, remaining: 0, word: { blindPasses: 2 } });
+    expect(ctx.dayFile.dictation.ended).toBe('done');
+    // An explicit ending first (audit #4); acknowledging it brings the regular ladder back.
+    const ready = currentItem(ctx);
+    expect(ready).toMatchObject({ type: 'dictation-ready', source: 'dictation', ready: true });
+    const acked = respond(ctx, ready.id, { done: true }, { at: at() });
+    expect(currentItem({ ...ctx, dayFile: acked.dayFile }).source).not.toBe('dictation');
+    expect(ctx.dayFile.doneAt).toBeNull();
+  });
+
+  it('records each attempt as a day-file item and never touches word status or active time', () => {
+    let ctx = dictating();
+    const before = structuredClone(ctx.status);
+    const activeMs = ctx.dayFile.activeMs;
+    let item;
+    ({ ctx, item } = answer(ctx, { choice: '가위' }));
+    expect(ctx.dayFile.items[item.id]).toMatchObject({ response: { choice: '가위' }, result: { correct: true }, wordId: 'gawi', task: 'D.1', source: 'dictation', dictationStep: 'match' });
+    expect(ctx.status).toEqual(before);
+    expect(ctx.dayFile.activeMs).toBe(activeMs);
+    // A replayed id reports the stored result and no new attempt.
+    const replay = respond(ctx, item.id, { choice: '가위' }, { at: at() });
+    expect(replay.dictation).toBeUndefined();
+  });
+
+  it('refuses to start without a list, or with nothing left to drill', () => {
+    const base = { ...start(), sittingId: SID };
+    expect(() => startDictationRun({ ...base, dictation: null }, { sittingId: SID })).toThrow(/dictation/);
+    const done = { week: LIST.week, words: { gawi: { step: 'blind', blindPasses: 2 }, pul: { step: 'blind', blindPasses: 2 } } };
+    expect(() => startDictationRun({ ...base, dictation: stateOf(done) }, { sittingId: SID })).toThrow(/done/);
+  });
+});
+
+describe('engine — dictation, UX audit fixes (Task 2b)', () => {
+  const SID = 'korean-vocab.live.1';
+  const LIST = { week: '2026-W46', words: ['gawi', 'pul', 'chaek'] };
+  const stateOf = (progress = null, rules = {}) => dictationState(LIST, progress, { hasAudio: () => true, inLexicon: (id) => lexicon.entries.has(id), ...rules });
+  function dictating(progress = null, rules = {}) {
+    const base = { ...start(), sittingId: SID, dictation: stateOf(progress, rules) };
+    return { ...base, ...startDictationRun(base, { sittingId: SID }) };
+  }
+  function answer(ctx, response) {
+    const item = currentItem(ctx);
+    const out = respond(ctx, item.id, response, { at: at() });
+    return { ctx: { ...ctx, status: out.status, dayFile: out.dayFile, dictation: out.dictation?.state ?? ctx.dictation }, item, out };
+  }
+
+  it('#3 a copy miss serves the same word again at its new step; only a pass moves on', () => {
+    let ctx = dictating({ week: LIST.week, words: { gawi: { step: 'copy', blindPasses: 0 } } });
+    expect(currentItem(ctx)).toMatchObject({ wordId: 'gawi', dictationStep: 'copy' });
+    ({ ctx } = answer(ctx, { typed: '가이' }));
+    expect(currentItem(ctx)).toMatchObject({ wordId: 'gawi', dictationStep: 'match' });
+    ({ ctx } = answer(ctx, { choice: '가위' }));
+    expect(currentItem(ctx).wordId).toBe('pul');
+  });
+
+  it('#3 a blind miss serves that word\'s copy next', () => {
+    let ctx = dictating({ week: LIST.week, words: { gawi: { step: 'blind', blindPasses: 1 } } });
+    ({ ctx } = answer(ctx, { typed: '가이' }));
+    expect(currentItem(ctx)).toMatchObject({ wordId: 'gawi', dictationStep: 'copy', type: 'drill', step: 'copy' });
+  });
+
+  it('#4 the finishing answer is followed by an explicit dictation-ready item, never a ladder item', () => {
+    const two = { step: 'blind', blindPasses: 2 };
+    let ctx = dictating({ week: LIST.week, words: { gawi: { step: 'blind', blindPasses: 1 }, pul: two, chaek: two } });
+    ({ ctx } = answer(ctx, { typed: '가위' }));
+    const ready = currentItem(ctx);
+    expect(ready).toEqual({
+      id: `${ctx.dayFile.dictation.id}:ready`, type: 'dictation-ready', source: 'dictation', week: LIST.week,
+      ready: true, wordCount: 3, wordsDone: 3, needsRecording: [], unknown: [],
+    });
+    // It stays until acknowledged with { done: true } — a reload of the sitting sees it again.
+    expect(currentItem({ ...ctx, dictation: undefined }).type).toBe('dictation-ready');
+    expect(() => respond(ctx, ready.id, { choice: 'x' }, { at: at() })).toThrow();
+    const acked = respond(ctx, ready.id, { done: true }, { at: at() });
+    expect(acked.dayFile.dictation.readyAt).toEqual(expect.any(String));
+    expect(acked.dayFile.items[ready.id]).toBeUndefined();
+    expect(currentItem({ ...ctx, dayFile: acked.dayFile }).type).not.toBe('dictation-ready');
+    // Another sitting never sees it.
+    expect(currentItem({ ...ctx, sittingId: 'korean-vocab.live.2' }).type).not.toBe('dictation-ready');
+  });
+
+  it('#5 drilling every word with one excluded ends the run, but the ending is not ready and names the excluded word', () => {
+    const two = { step: 'blind', blindPasses: 2 };
+    let ctx = dictating({ week: LIST.week, words: { gawi: { step: 'blind', blindPasses: 1 }, pul: two } }, { hasAudio: (id) => id !== 'chaek' });
+    let step;
+    ({ ctx, out: step } = answer(ctx, { typed: '가위' }));
+    expect(step.dictation).toMatchObject({ done: false, remaining: 0 });
+    expect(ctx.dayFile.dictation.ended).toBe('done');
+    expect(currentItem(ctx)).toMatchObject({ type: 'dictation-ready', ready: false, wordCount: 2, wordsDone: 2, needsRecording: ['chaek'], unknown: [] });
+  });
+
+  it('#5 an all-excluded list cannot start', () => {
+    const base = { ...start(), sittingId: SID, dictation: stateOf(null, { hasAudio: () => false }) };
+    expect(() => startDictationRun(base, { sittingId: SID })).toThrow(/dictation/);
+  });
+
+  it('#2/#7 every dictation item hears the word and carries the dictation header fields', () => {
+    let ctx = dictating({ week: LIST.week, words: { pul: { step: 'copy', blindPasses: 0 }, chaek: { step: 'blind', blindPasses: 2 } } });
+    const match = currentItem(ctx);
+    expect(match).toMatchObject({ task: 'D.1', channel: 'hear', listen: true, wordIndex: 1, wordCount: 3, wordsDone: 1 });
+    ({ ctx } = answer(ctx, { choice: '가위' }));
+    const copy = currentItem(ctx);
+    expect(copy).toMatchObject({ wordId: 'pul', dictationStep: 'copy', channel: 'hear', listen: true, wordIndex: 2, wordCount: 3, wordsDone: 1 });
+    expect(copy.at).toBeUndefined();
+    expect(copy.of).toBeUndefined();
+  });
+});

@@ -63,6 +63,9 @@ export function createCardLadderApi({ test = false } = {}) {
       method: 'POST',
       body: Object.fromEntries(Object.entries({ userId, mode, help, filter, chosen, frontSide }).filter(([, v]) => v !== null && v !== undefined)),
     }),
+    /** This week's dictation (spec 2026-11-06): a focused run in the sitting,
+     *  before or after the daily goal. */
+    dictation: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/dictation`, { method: 'POST', body: { userId } }),
     /** Learn more words (ruling 2026-09-23): one more guided round over the
      *  next new words, from the menu or the Done summary. */
     learnMore: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/learn-more`, { method: 'POST', body: { userId } }),

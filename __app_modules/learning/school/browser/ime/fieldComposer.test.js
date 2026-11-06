@@ -591,6 +591,18 @@ describe('FieldComposer.offerJamo / offerBackspace — the keypad seam', () => {
     expect(el.value).toBe('가위');
   });
 
+  it('offerSpace ends the syllable and inserts a space, so 여우 두 마리 composes from the keypad', () => {
+    const el = field();
+    const c = new FieldComposer();
+    const type = (jamo) => jamo.forEach((j) => expect(c.offerJamo(j, el)).toBe(true));
+    type(['ㅇ', 'ㅕ', 'ㅇ', 'ㅜ']);
+    expect(c.offerSpace(el)).toBe(true);
+    type(['ㄷ', 'ㅜ']);
+    expect(c.offerSpace(el)).toBe(true);
+    type(['ㅁ', 'ㅏ', 'ㄹ', 'ㅣ']);
+    expect(el.value).toBe('여우 두 마리');
+  });
+
   it('offerBackspace removes the last jamo, peeling like a physical Backspace', () => {
     const el = field();
     const c = new FieldComposer();
