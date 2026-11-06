@@ -778,9 +778,10 @@ async function main() {
   if (command === 'export') {
     const va = new VidAngel(loadVidAngelAuth());
     const ref = cmdArgs[0];
-    if (!ref) { console.error('Usage: vidangel export <slug> [--out file.yml]'); process.exit(1); }
+    if (!ref) { console.error('Usage: contentfilter export <slug> [--content-id plex:ID] [--out file.yml]'); process.exit(1); }
     const { movie, tagSet } = await resolveTagSet(va, ref);
     const edl = tagSetToEdl(tagSet, { slug: ref, title: movie.title, year: movie.year });
+    if (flags['content-id']) edl.contentId = String(flags['content-id']);
     const output = flags.json ? JSON.stringify(edl, null, 2) : yaml.dump(edl, { lineWidth: 120 });
     if (flags.out) {
       writeFileSync(flags.out, output);
@@ -1064,6 +1065,39 @@ async function main() {
     return;
   }
 
+  if (command === 'migrate-refined') {
+    const { runMigrate, MIGRATE_USAGE } = await import('./contentfilter/migrateCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(MIGRATE_USAGE); process.exit(1); }
+    try {
+      await runMigrate({
+        rk, flags, args, dataFilterDir: filterCacheDir(), mediaFilterDir: filterMediaDir(), loadPlexConfig,
+        getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+      });
+    } catch (err) {
+      console.error(`migrate-refined ${rk} failed: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (command === 'sync') {
+    const { runSync, SYNC_USAGE } = await import('./contentfilter/syncCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(SYNC_USAGE); process.exit(1); }
+    if (!process.env.DAYLIGHT_BASE_PATH) process.env.DAYLIGHT_BASE_PATH = path.dirname(resolveDataDir());
+    try {
+      await runSync({
+        rk, flags, args, dataFilterDir: filterCacheDir(), mediaFilterDir: filterMediaDir(), loadPlexConfig,
+        getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+      });
+    } catch (err) {
+      console.error(`sync ${rk} failed: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (command === 'refine') {
     const { runRefine, REFINE_USAGE } = await import('./contentfilter/refineCommand.mjs');
     // One key, a comma list, or --all (every EDL on disk). A batch keeps going past failures
@@ -1281,7 +1315,7 @@ Commands:
   search <query>        Find filterable titles (slug, year, type, tag_count)
   works                 Popular filterable titles available on your services
   tags <slug>           Summarize a title's filter categories + tag counts
-  export <slug>         Emit a normalized FilterEDL (YAML; --json for JSON)
+  export <slug>         Emit a normalized FilterEDL (YAML; --json for JSON; --content-id plex:ID)
   calibrate <ratingKey> Derive a per-file time sync (offset/scale) that aligns cues to your
                         Plex file, via SRT-snap (default) or --method whisper. --write saves it.
   srt-mutes <ratingKey> Scan the Plex English SRT (or --srt <file>) for every word in
@@ -1294,6 +1328,11 @@ Commands:
                         asking only the decision model (Jev). Unsettled cues go to
                         household/content-filter/review/<rk>.refine.yml. --part, --src, --cues,
                         --kinds, --limit, --concurrency, --no-region, --transcript, --write.
+  sync <ratingKey>      Fit this copy's sync from the anchors in the tag set's refined EDL
+                        (refined/<workId>-<tagSetId>.edl.yml); detects a different cut as
+                        segments. No decision model. --part, --src, --transcript, --write.
+  migrate-refined <rk>  Move a title's refined cue times from its override into the shareable
+                        refined EDL (VidAngel clock); the override keeps its sync. --write.
   snap <ratingKey>      Whisper-align every mute cue to its true audio word boundary (ms) and
                         write precise in/out into the override. --limit N, --model, --write.
   bulk-export           Export every mapped movie's EDL (token; resumable; --force --delay)

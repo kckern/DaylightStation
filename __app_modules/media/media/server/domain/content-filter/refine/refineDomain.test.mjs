@@ -73,6 +73,6 @@ describe('wordPairs', () => {
     const { coarse, pairs } = wordPairs(tags, words);
     expect(coarse).toBeGreaterThanOrEqual(7);
     expect(coarse).toBeLessThanOrEqual(9);
-    expect(pairs).toEqual([{ x: 100, y: 107.5 }, { x: 202, y: 210.2 }]);
+    expect(pairs).toEqual([{ x: 100, y: 107.5, wi: 0 }, { x: 202, y: 210.2, wi: 1 }]);
   });
 });

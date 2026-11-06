@@ -277,6 +277,8 @@ export function FilterDebugHud({ getMediaEl, transport, effectiveCues, lead = DE
       {/* Footer — position in EDL + lead */}
       <div style={{ ...dim, fontSize: '0.9em' }}>
         {total ? `${index || '–'} / ${total}` : 'no cues'} · lead {lead}s
+        {effectiveCues?.syncSummary ? ` · ${effectiveCues.syncSummary}` : ''}
+        {effectiveCues?.notInCut ? ` · ${effectiveCues.notInCut} not in this cut` : ''}
       </div>
     </div>
   );

@@ -38,4 +38,30 @@ describe('GetContentFilter', () => {
     expect(contentFilterRepository.getProfile).not.toHaveBeenCalled();
     expect(contentFilterRepository.getOverride).not.toHaveBeenCalled();
   });
+
+  it('serves the tag set\'s refined EDL in place of the raw one when it exists', async () => {
+    const raw = { sourceRef: { workId: 12, tagSetId: 345 }, cues: [{ id: 'c1', in: 100 }] };
+    const refined = { timebase: { clock: 'vidangel' }, cues: [{ id: 'c1', in: 100.123, precision: 'ms' }] };
+    const contentFilterRepository = {
+      getEdl: vi.fn().mockResolvedValue(raw),
+      getRefinedEdl: vi.fn().mockResolvedValue(refined),
+      getProfile: vi.fn().mockResolvedValue({ name: 'family' }),
+      getOverride: vi.fn().mockResolvedValue(null),
+    };
+    const out = await new GetContentFilter({ contentFilterRepository }).execute({ ratingKey: '40417', profileName: 'family' });
+    expect(out.edl).toBe(refined);
+    expect(contentFilterRepository.getRefinedEdl).toHaveBeenCalledWith({ workId: 12, tagSetId: 345 });
+  });
+
+  it('falls back to the raw EDL when the tag set has no refined EDL', async () => {
+    const raw = { sourceRef: { workId: 12, tagSetId: 345 }, cues: [] };
+    const contentFilterRepository = {
+      getEdl: vi.fn().mockResolvedValue(raw),
+      getRefinedEdl: vi.fn().mockResolvedValue(null),
+      getProfile: vi.fn().mockResolvedValue(null),
+      getOverride: vi.fn().mockResolvedValue(null),
+    };
+    const out = await new GetContentFilter({ contentFilterRepository }).execute({ ratingKey: '40417', profileName: 'family' });
+    expect(out.edl).toBe(raw);
+  });
 });

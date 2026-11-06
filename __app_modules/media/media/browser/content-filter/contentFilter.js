@@ -13,6 +13,8 @@
  */
 
 // Timing a refine pass measured on this file: no approximate widening.
+import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
+
 const PRECISE = new Set(['ms', 'frame']);
 
 // Overlay effects can be confined to a region track; the rest act on the whole cue.
@@ -110,7 +112,13 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
   // sync remaps imported (foreign-timed) cues onto this file: t_local = t*scale + offset.
   // Manual addCues are authored in local time, so they are NOT synced.
   const sync = override?.sync;
-  const applySync = (t) => (sync ? t * (sync.scale ?? 1) + (sync.offsetSec || 0) : t);
+  // A refined EDL keeps every cue on VidAngel's clock; this copy's sync maps it
+  // (one speed, one offset per segment when the cut differs). Its precise cues
+  // are only precise on the part the sync was fitted for.
+  const refinedEdl = edl?.timebase?.clock === 'vidangel';
+  const syncFitsPart = !!sync && (sync.part == null || part == null || String(sync.part) === String(part));
+  const syncSpan = (a, b) => (sync ? mapSpan(a, b, sync) : [{ in: a, out: b }]);
+  let notInCut = 0;
   const base = [
     ...(edl?.cues || []).map((cue) => ({ cue, synced: true })),
     ...(override?.addCues || []).map((cue) => ({ cue, synced: false })),
@@ -120,8 +128,8 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
   for (const { cue, synced } of base) {
     let ov = overrides[cue.id] || {};
     if (ov.disabled) continue;
-    if (ov.refine && part != null && ov.refine.part != null && String(ov.refine.part) !== String(part)) {
-      // Refined on another edition: keep person-set keys, drop the measured timing
+    if (ov.refine && (refinedEdl || (part != null && ov.refine.part != null && String(ov.refine.part) !== String(part)))) {
+      // Timing measured in one file's time: superseded by a refined EDL, or for another edition.
       const { in: _i, out: _o, precision: _p, frameIn: _fi, frameOut: _fo, segments: _s, regions: _r, refine: _rf, ...rest } = ov;
       ov = rest;
     }
@@ -139,15 +147,38 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     if (!rule) continue;
 
     const eff = { ...cue, effect: rule.effect };
-    if (ov.in != null || ov.out != null) {
+    let measured = ov;
+    if (synced && refinedEdl && PRECISE.has(cue.precision)) {
+      if (syncFitsPart) {
+        // Precise on the reference clock: map through this copy's sync, snap
+        // frame cues to this copy's frame grid. Segments and regions map too.
+        const snap = (span) => (cue.precision === 'frame' ? snapToFrames(span, sync?.frames) : span);
+        const spans = (cue.segments?.length ? cue.segments : [cue]).flatMap((sg) => syncSpan(sg.in, sg.out)).map(snap);
+        if (!spans.length) { notInCut++; continue; }
+        eff.in = spans[0].in; eff.out = spans[spans.length - 1].out;
+        measured = {
+          segments: spans.length > 1 ? spans : undefined,
+          regions: cue.regions?.map((k) => ({ ...k, in: sync ? mapTime(k.in, sync) : k.in })).filter((k) => k.in != null),
+        };
+      } else {
+        // No sync fitted for this part: the reference timing does not carry over exactly.
+        const [span] = syncSpan(cue.in, cue.out);
+        if (!span) { notInCut++; continue; }
+        eff.in = span.in; eff.out = span.out; eff.precision = 'second-approx';
+        delete eff.segments; delete eff.regions;
+      }
+      if (typeof ov.nudgeMs === 'number') { eff.in += ov.nudgeMs / 1000; eff.out += ov.nudgeMs / 1000; }
+    } else if (ov.in != null || ov.out != null) {
       // Precise per-cue times (e.g. Whisper-snapped) are already LOCAL and ms —
       // use as-is, bypassing sync so they aren't offset a second time.
       if (ov.in != null) eff.in = ov.in;
       if (ov.out != null) eff.out = ov.out;
       eff.precision = ov.precision || 'ms';
     } else if (synced && sync) {
-      eff.in = applySync(cue.in);
-      eff.out = applySync(cue.out);
+      const spans = syncSpan(cue.in, cue.out);
+      if (!spans.length) { notInCut++; continue; }
+      eff.in = spans[0].in;
+      eff.out = spans[spans.length - 1].out;
       // optional per-cue manual nudge (ms), applied after the global sync
       if (typeof ov.nudgeMs === 'number') { eff.in += ov.nudgeMs / 1000; eff.out += ov.nudgeMs / 1000; }
     }
@@ -168,10 +199,23 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
 
     // Widen (pads + min-width for approx cues) so short/zero-width cues fire and
     // survive driver granularity. Runs after sync so pads are in local time.
-    for (const part of expandMeasured(eff, ov)) out.push(widenCue(part, profile?.treatments));
+    for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
   }
   out.sort((a, b) => a.in - b.in || a.out - b.out);
+  // How many cues fall in scenes this copy does not have (for the debug overlay).
+  Object.defineProperty(out, 'notInCut', { value: notInCut, enumerable: false });
+  Object.defineProperty(out, 'syncSummary', { value: summarizeSync(sync, { refinedEdl, syncFitsPart }), enumerable: false });
   return out;
+}
+
+/** One line for the debug overlay: how this copy is synced, or why refined times are not used. */
+function summarizeSync(sync, { refinedEdl, syncFitsPart }) {
+  if (!sync) return refinedEdl ? 'no sync: refined times not used' : 'no sync';
+  const parts = [`sync ${sync.method || 'manual'}`];
+  if (sync.segments?.length > 1) parts.push(`${sync.segments.length} segments`);
+  if (typeof sync.medAbsResidSec === 'number') parts.push(`±${Math.round(sync.medAbsResidSec * 1000)}ms`);
+  if (refinedEdl && !syncFitsPart) parts.push('other part: approx');
+  return parts.join(' ');
 }
 
 /**
@@ -182,10 +226,10 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
  */
 function expandMeasured(eff, ov) {
   let parts = [eff];
-  if (Array.isArray(ov.segments) && ov.segments.length > 1) {
+  if (Array.isArray(ov?.segments) && ov.segments.length > 1) {
     parts = ov.segments.map((s, i) => ({ ...eff, id: `${eff.id}#${i}`, in: s.in, out: s.out }));
   }
-  if (!REGIONAL.has(eff.effect) || !Array.isArray(ov.regions) || !ov.regions.length || eff.rect) return parts;
+  if (!REGIONAL.has(eff.effect) || !Array.isArray(ov?.regions) || !ov.regions.length || eff.rect) return parts;
   const keys = ov.regions;
   const out = [];
   for (const p of parts) {

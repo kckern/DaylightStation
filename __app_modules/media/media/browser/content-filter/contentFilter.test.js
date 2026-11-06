@@ -209,3 +209,61 @@ describe('resolveEffectiveCues with refined data', () => {
     expect(cues[0].rect).toBeUndefined();
   });
 });
+
+describe('resolveEffectiveCues with a refined EDL (VidAngel clock)', () => {
+  const zero = { padLeadMs: 0, padTrailMs: 0 };
+  const profile = {
+    categories: { 'language/x': { effect: 'mute' }, 'sex/x': { effect: 'skip' }, 'violence/x': { effect: 'skip' } },
+    treatments: { mute: zero, skip: zero },
+  };
+  const edl = {
+    timebase: { clock: 'vidangel', runtimeSec: 5000 },
+    cues: [
+      { id: 'w', type: 'mute', category: 'language/x', in: 100.123, out: 100.456, precision: 'ms' },
+      { id: 'f', type: 'skip', category: 'sex/x', in: 200.02, out: 201.0, precision: 'frame' },
+      { id: 'c', type: 'skip', category: 'violence/x', in: 4050, out: 4052, precision: 'second-approx' },
+    ],
+  };
+  const single = { scale: 1, offsetSec: 8, part: '40417', frames: { fps: '24/1', startTime: 0 } };
+
+  it('maps refined cues through the sync with no approximate widening', () => {
+    const w = resolveEffectiveCues({ edl, profile, override: { sync: single }, part: '40417' }).find((c) => c.id === 'w');
+    expect(w.in).toBeCloseTo(108.123, 6);
+    expect(w.out).toBeCloseTo(108.456, 6);
+    expect(w.precision).toBe('ms');
+  });
+  it('snaps frame cues to the playing copy\'s frame grid', () => {
+    const f = resolveEffectiveCues({ edl, profile, override: { sync: single }, part: '40417' }).find((c) => c.id === 'f');
+    expect(f.in).toBeCloseTo(208, 6); // 208.02 -> start of frame 4992 (208.0)
+    expect(f.out).toBeCloseTo(209, 6); // 209.0 is already a boundary
+  });
+  it('drops cues in a scene this copy lacks, and maps the rest by segment', () => {
+    const sync = {
+      part: '40417',
+      segments: [
+        { fromVa: 0, toVa: 4000, scale: 1, offsetSec: 8 },
+        { fromVa: 4100, toVa: 5000, scale: 1, offsetSec: -92 },
+      ],
+    };
+    const out = resolveEffectiveCues({ edl, profile, override: { sync }, part: '40417' });
+    expect(out.map((c) => c.id)).toEqual(['w', 'f']);
+    expect(out.notInCut).toBe(1);
+  });
+  it('treats refined cues as approximate on a part the sync was not fitted for', () => {
+    const w = resolveEffectiveCues({ edl, profile, override: { sync: single }, part: '999' }).find((c) => c.id === 'w');
+    expect(w.precision).not.toBe('ms');
+    expect(w.out - w.in).toBeGreaterThanOrEqual(0.9); // widened to the approximate minimum
+  });
+  it('ignores file-time refined entries left in the override, but keeps person-set keys', () => {
+    const override = {
+      sync: single,
+      cueOverrides: {
+        w: { in: 999, out: 1000, precision: 'ms', refine: { v: 1, part: '40417' } },
+        f: { disabled: true },
+      },
+    };
+    const out = resolveEffectiveCues({ edl, profile, override, part: '40417' });
+    expect(out.find((c) => c.id === 'w').in).toBeCloseTo(108.123, 6);
+    expect(out.find((c) => c.id === 'f')).toBeUndefined();
+  });
+});
