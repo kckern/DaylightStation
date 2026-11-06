@@ -1,4 +1,5 @@
 import React from 'react';
+import { LifeMeter } from '../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
 import { boostRules, cameraTime } from '../../lib/skylineGlider/liftBoost.js';
 
 // In-flight header: score on the left, and a 2×2 mini-pad mirroring the
@@ -36,7 +37,7 @@ export default function SkylineFlightHud({ flight, course, armed, targetsHit, po
   const hearts = Math.max(0, flight.lives || 0);
   const recharge = boostRules(course).recharge_s;
   return <header className="skyline-glider__hud" data-testid="skyline-glider-hud">
-    <span className="skyline-glider__hud-hearts" aria-label={`${hearts} hearts left`}>{'♥'.repeat(hearts) || '♡'}</span>
+    <LifeMeter variant="glyphs" current={hearts} ariaLabel={`${hearts} hearts left`} className="skyline-glider__hud-hearts" />
     <span className="skyline-glider__hud-time">{formatTime(course.duration_s - cameraTime(flight))}</span>
     <span className="skyline-glider__hud-stat" aria-label="Bells collected">🔔 {flight.collectedIds.length}</span>
     {armed && <span className="skyline-glider__hud-stat" data-testid="skyline-glider-targets" aria-label="Targets destroyed">◎ {targetsHit}</span>}

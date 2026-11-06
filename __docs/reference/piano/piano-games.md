@@ -509,6 +509,21 @@ and shows neither pose outside `PLAYING`, so nothing freezes mid-blink on the
 Game Over card. The `hit` and `dodge` sounds go through the kit's effect
 dispatcher, which adds no log lines.
 
+### HUD and LEVEL UP
+
+The countdown, the health meter and the LEVEL UP banner are the shared game HUD
+(`__capabilities/gaming/browser/platform/ui/hud`): `CountdownOverlay`,
+`LifeMeter` (one notch per health point, `role="meter"` labelled "Health") and
+`MomentBanner`. The scene keeps its own look — the meter sits in the dark well
+at the far left with notches stacking bottom-up, amber (`--piano-warn`) and
+felt-red at a quarter health, fed through `--game-hud-live` /
+`--game-hud-danger`. A real level advance sets the hook's `moment`
+(`{ key: 'level-<n>', title: 'LEVEL UP!', subtitle: <next level name> }`) in
+the same place the advance is applied, so it fires once per advance, and clears
+it after 1500 ms; the banner shows in the play canvas between the top staves
+and the duck staff while the run continues underneath.
+`levelUpMoment.test.jsx` pins it.
+
 ### Death, sound and sprites
 
 Running out of health freezes the world and bursts the player into a ring of
