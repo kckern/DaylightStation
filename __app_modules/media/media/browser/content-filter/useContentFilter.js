@@ -64,6 +64,14 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   const defaultSfx = useMemo(() => createSfxPlayer(profile?.sounds), [profile?.sounds]);
   const sfxPlayer = sfx || defaultSfx;
 
+  // Latest-value refs: callers may pass a fresh getMediaEl/transport each render.
+  // Re-running the main effect on identity alone would exitAll() mid-cue (unmute,
+  // stop the bleep) and re-enter on the next tick, so the effect reads these refs.
+  const getMediaElRef = useRef(getMediaEl);
+  getMediaElRef.current = getMediaEl;
+  const transportRef = useRef(transport);
+  transportRef.current = transport;
+
   const [activeOverlays, setActiveOverlays] = useState([]);
   const [activeCard, setActiveCard] = useState(null);
   // Bumped once per cue entry so the filter-active badge can pulse on each fire.
@@ -89,7 +97,8 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   }, []);
 
   useEffect(() => {
-    const el = getMediaEl?.();
+    const el = getMediaElRef.current?.();
+    const transport = { seek: (s) => transportRef.current?.seek?.(s) };
 
     const exitAll = () => {
       const prev = enteredRef.current;
@@ -285,8 +294,9 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     return () => {
       stopped = true;
       // NOTE: do NOT clear the skip-card timer here — this cleanup also runs on
-      // benign effect re-runs (e.g. an unstable getMediaEl identity), which would
-      // cancel an in-flight resume. It's cleared only on true unmount (below).
+      // effect re-runs that are not unmounts (enabled toggled, cues or sfx player
+      // changed), which would cancel an in-flight resume. It's cleared only on
+      // true unmount (the effect above).
       if (hasRvfc && rvfcHandle != null && typeof el.cancelVideoFrameCallback === 'function') {
         try { el.cancelVideoFrameCallback(rvfcHandle); } catch (_) { /* ignore */ }
       }
@@ -304,8 +314,10 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   // payload above; the real dependency is effectiveCues, which already
   // incorporates override — adding override directly would re-run this
   // timer/listener-setup effect on unrelated override field changes.
+  // getMediaEl/transport are read through latest-value refs (see above), so a new
+  // identity alone does not tear the filter down.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, getMediaEl, transport, effectiveCues, sfxPlayer]);
+  }, [enabled, effectiveCues, sfxPlayer]);
 
   return { activeOverlays, activeCard, effectiveCues, fireCount };
 }

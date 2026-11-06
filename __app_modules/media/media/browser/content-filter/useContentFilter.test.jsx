@@ -292,4 +292,20 @@ describe('useContentFilter', () => {
       expect(sfx.stop).toHaveBeenCalled();
     });
   });
+
+  it('survives an unstable getMediaEl/transport identity (new arrow every render)', () => {
+    const el = makeFakeEl();
+    const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+    const hook = renderHook(() => useContentFilter({
+      getMediaEl: () => el, transport: { seek: (s) => { el.currentTime = s; } },
+      sfx, edl, profile, enabled: true,
+    }));
+    act(() => { el.currentTime = 20.5; el.fire('timeupdate'); });
+    expect(el.muted).toBe(true);
+    expect(hook.result.current.fireCount).toBe(1);
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    act(() => { el.currentTime = 21.5; el.fire('timeupdate'); });
+    expect(el.muted).toBe(true);
+    expect(hook.result.current.fireCount).toBe(1);
+  });
 });
