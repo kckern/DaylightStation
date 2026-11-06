@@ -31,19 +31,21 @@ describe('effect registry', () => {
 
   it('mute: onEnter/onExit toggle el.muted', () => {
     const el = { muted: false };
-    getEffectHandler('mute').onEnter({ el, cue: {} });
+    const mem = {};
+    getEffectHandler('mute').onEnter({ el, mem, cue: {} });
     expect(el.muted).toBe(true);
-    getEffectHandler('mute').onExit({ el, cue: {} });
+    getEffectHandler('mute').onExit({ el, mem, cue: {} });
     expect(el.muted).toBe(false);
   });
 
   it('bleep: onEnter mutes source + plays the SFX, onExit restores', () => {
     const el = { muted: false };
     const sfx = { play: vi.fn(), stop: vi.fn() };
-    getEffectHandler('bleep').onEnter({ el, sfx, cue: { sound: 'car-horn' } });
+    const mem = {};
+    getEffectHandler('bleep').onEnter({ el, sfx, mem, cue: { sound: 'car-horn' } });
     expect(el.muted).toBe(true);
     expect(sfx.play).toHaveBeenCalledWith('car-horn');
-    getEffectHandler('bleep').onExit({ el, sfx, cue: {} });
+    getEffectHandler('bleep').onExit({ el, sfx, mem, cue: {} });
     expect(el.muted).toBe(false);
     expect(sfx.stop).toHaveBeenCalled();
   });
@@ -52,13 +54,28 @@ describe('effect registry', () => {
     const el = { muted: false };
     const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
     const h = getEffectHandler('bleep');
-    h.onEnter({ el, cue: { id: 'b' }, sfx });
+    const mem = {};
+    h.onEnter({ el, cue: { id: 'b' }, sfx, mem });
     expect(el.muted).toBe(true);
     expect(sfx.tone).toHaveBeenCalledTimes(1);
     expect(sfx.play).not.toHaveBeenCalled();
-    h.onExit({ el, sfx });
+    h.onExit({ el, sfx, mem });
     expect(el.muted).toBe(false);
     expect(sfx.stop).toHaveBeenCalled();
+  });
+
+  it('mute/bleep: audio is released only when the last overlapping cue exits', () => {
+    const el = { muted: false };
+    const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+    const mem = {};
+    getEffectHandler('mute').onEnter({ el, sfx, mem, cue: { id: 'a' } });
+    getEffectHandler('bleep').onEnter({ el, sfx, mem, cue: { id: 'b' } });
+    getEffectHandler('mute').onExit({ el, sfx, mem, cue: { id: 'a' } });
+    expect(el.muted).toBe(true);
+    expect(sfx.stop).not.toHaveBeenCalled();
+    getEffectHandler('bleep').onExit({ el, sfx, mem, cue: { id: 'b' } });
+    expect(el.muted).toBe(false);
+    expect(sfx.stop).toHaveBeenCalledTimes(1);
   });
 
   it('duck: onEnter lowers volume to the cue level and onExit restores', () => {

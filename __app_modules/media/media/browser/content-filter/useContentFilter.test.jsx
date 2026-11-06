@@ -249,4 +249,47 @@ describe('useContentFilter', () => {
     act(() => { el.currentTime = 20.7; el.fire('timeupdate'); }); // same cue, no new entry
     expect(hook.result.current.fireCount).toBe(1);
   });
+
+  describe('overlapping word cues (padded windows overlap)', () => {
+    // "damn" 10.0–10.3 and "hell" 10.6–10.9 resolve with pads to 9.80–10.45 and
+    // 10.40–11.05. The first cue's exit must not release audio the second holds.
+    const words = { cues: [
+      { id: 'damn', category: 'language/profanity/damn', in: 10.0, out: 10.3, precision: 'ms' },
+      { id: 'hell', category: 'language/profanity/hell', in: 10.6, out: 10.9, precision: 'ms' },
+    ] };
+    const tickAt = (el, t) => act(() => { el.currentTime = t; el.fire('timeupdate'); });
+
+    it('resolves to the overlapping padded windows', () => {
+      const { hook } = setup({ edl: words, profile: { categories: { language: { effect: 'mute' } } } });
+      const [a, b] = hook.result.current.effectiveCues;
+      expect([+a.in.toFixed(2), +a.out.toFixed(2)]).toEqual([9.8, 10.45]);
+      expect([+b.in.toFixed(2), +b.out.toFixed(2)]).toEqual([10.4, 11.05]);
+    });
+
+    it('mute: stays muted from the first exit until the second cue ends', () => {
+      const { el } = setup({ edl: words, profile: { categories: { language: { effect: 'mute' } } } });
+      tickAt(el, 10.0);
+      tickAt(el, 10.42); // both entered
+      tickAt(el, 10.5); // first exits, second still entered
+      expect(el.muted).toBe(true);
+      tickAt(el, 11.0);
+      expect(el.muted).toBe(true);
+      tickAt(el, 11.2);
+      expect(el.muted).toBe(false);
+    });
+
+    it('bleep: the first exit does not stop the tone the second cue relies on', () => {
+      const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+      const { el } = setup({ sfx, edl: words, profile: { categories: { language: { effect: 'bleep' } } } });
+      tickAt(el, 10.0);
+      tickAt(el, 10.42);
+      tickAt(el, 10.5);
+      tickAt(el, 11.0);
+      expect(el.muted).toBe(true);
+      expect(sfx.stop).not.toHaveBeenCalled();
+      tickAt(el, 11.2);
+      expect(el.muted).toBe(false);
+      expect(sfx.stop).toHaveBeenCalled();
+    });
+  });
 });
