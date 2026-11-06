@@ -1383,7 +1383,20 @@ export class CardLadderSittingService {
         label: introPlanLabel(plan), line: introPlanLabel(plan, { withTime: true }),
       },
       progress: card.progress,
+      dictation: this.#introDictation(store, userId, pkg, lexicon, deck),
     };
+  }
+
+  /**
+   * The start card's dictation line (Task 3): the week's summary, `null` with
+   * no week tag, or `{ week, unavailable: 'corrupt' }` when the learner's
+   * progress file can't be read — the card says so instead of failing.
+   */
+  #introDictation(store, userId, pkg, lexicon, deck) {
+    const read = this.#readDictation(store, userId, pkg, lexicon, this.#media(deck, lexicon), deck);
+    if (!read.list) return null;
+    if (read.fileState.progress === 'corrupt') return { week: read.list.week, unavailable: 'corrupt' };
+    return this.#dictationSummary(read.state, read.list);
   }
 
   /**

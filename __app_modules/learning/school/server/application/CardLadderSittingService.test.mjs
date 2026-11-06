@@ -1586,6 +1586,37 @@ describe('CardLadderSittingService — dictation', () => {
   const answer = (service, sittingId, item, response) => service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
   const events = (logger, level, name) => logger[level].mock.calls.filter(([event]) => event === name);
 
+  it('leaving mid-run keeps progress; a new sitting resumes each word at its step (Task 3, Review Focus 4)', async () => {
+    const store = dictationStore();
+    const { service, started, sittingId } = await begin({ store });
+    const first = started.item;
+    await answer(service, sittingId, first, { choice: '가위' });
+    expect(store.s.progress.words.gawi.step).toBe('copy');
+    await service.close({ userId: 'test-learner', sittingId, reason: 'leave' });
+    const reopened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const again = await service.startDictation({ learnerId: 'test-learner', package: 'korean-vocab', sittingId: reopened.sittingId });
+    expect(store.s.progress.words.gawi.step).toBe('copy');
+    expect(again.dictation).toMatchObject({ week: WEEK, remaining: 2 });
+    expect(again.item).toMatchObject({ wordId: 'gawi', dictationStep: 'copy' });
+  });
+  it('intro carries the week\'s dictation summary for the start card (Task 3)', async () => {
+    const store = dictationStore();
+    const { service } = makeD({ store });
+    const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
+    expect(intro.dictation).toMatchObject({ week: WEEK, total: 2, remaining: 2, done: false, ready: false, count: 2, countWarning: true, needsRecording: [], unknown: [] });
+  });
+  it('intro dictation is null when no lexicon entry carries a week tag', async () => {
+    const store = dictationStore();
+    const { service } = make({ media: true, store });
+    const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
+    expect(intro.dictation).toBeNull();
+  });
+  it('intro reports a corrupt progress file instead of a summary, and never throws', async () => {
+    const store = dictationStore({ fileState: { progress: 'corrupt' } });
+    const { service } = makeD({ store });
+    const intro = await service.intro({ userId: 'test-learner', deckId: DECK });
+    expect(intro.dictation).toMatchObject({ week: WEEK, unavailable: 'corrupt' });
+  });
   it('starts before the daily goal on a D.1 pick: term audio, term choices including the answer', async () => {
     const store = dictationStore();
     const { started, logger } = await begin({ store });

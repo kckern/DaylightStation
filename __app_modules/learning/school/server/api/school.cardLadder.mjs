@@ -53,6 +53,12 @@ export function mountCardLadderRoutes({
           userId, sittingId: req.params.sittingId, mode, help, filter, chosen, frontSide,
         }));
       }));
+      // This week's dictation (spec 2026-11-06): a focused run in the sitting,
+      // before or after the daily goal.
+      router.post(`${base}/sittings/:sittingId/dictation`, wrap(async (req, res) => {
+        const { userId } = req.body || {};
+        noStore(res).json(await service().startDictation({ userId, sittingId: req.params.sittingId }));
+      }));
       // Learn more words (ruling 2026-09-23): one more guided round over the next new words.
       router.post(`${base}/sittings/:sittingId/learn-more`, wrap(async (req, res) => {
         const { userId } = req.body || {};
