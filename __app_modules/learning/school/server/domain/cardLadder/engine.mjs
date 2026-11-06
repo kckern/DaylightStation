@@ -579,6 +579,8 @@ function dictationItem(ctx, run) {
   const base = {
     id, source: 'dictation', wordId, dictationStep: word.step, channel: 'hear', listen: true,
     wordIndex: state.words.findIndex((w) => w.id === wordId) + 1, wordCount: state.words.length, wordsDone: state.words.filter((w) => w.done).length,
+    // Each word's done flag, in list order, so the header's dots are per word (M8).
+    wordsDoneFlags: state.words.map((w) => w.done === true),
     dictation: { step: word.step, blindPasses: word.blindPasses, remaining: state.remaining, total: state.words.length },
   };
   if (word.step === 'match') return { ...base, type: 'choice', task: DICTATION_TASK.match, choices: dictationChoices(ctx, entry, `${ctx.learnerId}|${ctx.day}|${id}`) };

@@ -289,3 +289,39 @@ async function startRunFrom(api) {
   render(<CardLadderProgram descriptor={descriptor} api={api} />);
   fireEvent.click(await screen.findByRole('button', { name: /Dictation: 7 words/ }));
 }
+
+describe('CardLadderProgram — weekly dictation: deferred minors', () => {
+  it('a correct copy is held with "That\'s it!" and Next, like the blind step (M4)', async () => {
+    await startRunFrom(fakeApi({ first: copy, respondWith: async () => ({ ok: true, status: 200, data: { result: { correct: true }, item: blind, progress: dictationProgress } }) }));
+    const field = await settledField();
+    fireEvent.change(field, { target: { value: '가위' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(await screen.findByText("That's it!")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => expect(screen.queryByText("That's it!")).toBeNull());
+  });
+
+  it('a list whose tags were removed mid-run says so instead of restarting into an error (M5)', async () => {
+    const api = fakeApi({ first: pick, respondWith: async () => ({ ok: true, status: 200, data: { result: null, item: flash, progress, dictation: { replaced: true, week: null } } }) });
+    await startRunFrom(api);
+    fireEvent.click(await screen.findByRole('button', { name: '가방' }));
+    expect(await screen.findByText("This week's dictation list changed.")).toBeInTheDocument();
+    expect(api.dictation).toHaveBeenCalledTimes(1);
+  });
+
+  it('the header fills the dots of the words that are done, and hides the time bar (M8)', async () => {
+    await startRunFrom(fakeApi({ first: { ...pick, wordsDoneFlags: [false, true, false, false, false, false, false, false, false, true], wordsDone: 2, wordIndex: 1 } }));
+    await screen.findByRole('button', { name: '가방' });
+    const dots = [...document.querySelectorAll('.wl-dictation-dot')];
+    expect(dots.map((d) => d.classList.contains('is-done'))).toEqual([false, true, false, false, false, false, false, false, false, true]);
+    expect(document.querySelector('.wl-header__time')).toBeNull();
+  });
+
+  it('a dictation that cannot start says so (M10)', async () => {
+    const api = fakeApi({ openItem: flash });
+    api.dictation = vi.fn(async () => ({ ok: false, status: 500, data: { error: 'boom' } }));
+    render(<CardLadderProgram descriptor={descriptor} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Dictation: 7 words/ }));
+    expect(await screen.findByText("Dictation couldn't start. Tap it again in a moment.")).toBeInTheDocument();
+  });
+});

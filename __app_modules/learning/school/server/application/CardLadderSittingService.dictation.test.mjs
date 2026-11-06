@@ -122,6 +122,29 @@ describe('CardLadderSittingService — dictation', () => {
     const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
     expect(status.description).toMatch(/Dictation: 1 word waiting for a grown-up$/);
   });
+  it('a re-sent dictation answer (double tap, retry after a blip) adds no active time (M1)', async () => {
+    const store = dictationStore();
+    const { service, started, sittingId, advance } = await begin({ store });
+    await answer(service, sittingId, started.item, { choice: '가위' });
+    const before = store.s.days[TODAY].activeMs;
+    advance(20000);
+    await answer(service, sittingId, started.item, { choice: '가위' });
+    expect(store.s.days[TODAY].activeMs).toBe(before);
+  });
+  it('a failed progress write ends the run (logged) so the sitting falls back to its ladder, never a loop (M2)', async () => {
+    const store = dictationStore();
+    const { service, started, sittingId, logger } = await begin({ store });
+    store.writeDictationProgress = () => { throw new Error('disk full'); };
+    const out = await answer(service, sittingId, started.item, { choice: '가위' });
+    expect(out.item.source).not.toBe('dictation');
+    expect(store.s.days[TODAY].dictation).toMatchObject({ ended: 'stopped' });
+    expect(events(logger, 'warn', 'school.card-ladder.dictation.progress-write-failed')[0][1]).toMatchObject({ wordId: 'gawi', error: 'disk full' });
+  });
+  it('dictation items carry each word\'s done flag for the header dots (M8)', async () => {
+    const store = dictationStore({ progress: { week: WEEK, words: { pul: { step: 'blind', blindPasses: 2 } } } });
+    const { started } = await begin({ store });
+    expect(started.item.wordsDoneFlags).toEqual([false, true]);
+  });
   it('intro carries the week\'s dictation summary for the start card (Task 3)', async () => {
     const store = dictationStore();
     const { service } = makeD({ store });

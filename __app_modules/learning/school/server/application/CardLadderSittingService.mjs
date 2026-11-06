@@ -844,7 +844,9 @@ export class CardLadderSittingService {
       // Dictation runs on separate time (ruling 10): its answers never reach
       // addActiveTime. They do move the clock's reference, so the next regular
       // answer counts only the time since this one — none of the dictation.
-      const timed = fresh.source === 'dictation' && fresh.id === itemId ? { ...dayFile, lastInputAt: ms } : addActiveTime(dayFile, ms);
+      // A re-sent dictation answer (the item already answered) is dictation time too (M1).
+      const dictationAnswer = (fresh.source === 'dictation' && fresh.id === itemId) || dayFile.items?.[itemId]?.source === 'dictation';
+      const timed = dictationAnswer ? { ...dayFile, lastInputAt: ms } : addActiveTime(dayFile, ms);
       const step = respond({ ...ctx, status, dayFile: timed }, itemId, response, { at, verdict });
       ({ transitions, graded } = step);
       attempt = step.dictation ?? null;
@@ -857,7 +859,23 @@ export class CardLadderSittingService {
         learnerId: userId, package: pkg, week: attempt.week, sittingId, wordId: attempt.wordId, step: attempt.step, pass: attempt.pass,
         dontKnow: attempt.dontKnow, next: attempt.word.step, blindPasses: attempt.word.blindPasses, remaining: attempt.remaining, review: true,
       });
-    } else if (attempt) nextCtx.dictation = this.#recordDictationAttempt({ store, userId, pkg, sittingId, lexicon, media: ctx.media, deck }, attempt);
+    } else if (attempt) {
+      try {
+        nextCtx.dictation = this.#recordDictationAttempt({ store, userId, pkg, sittingId, lexicon, media: ctx.media, deck }, attempt);
+      } catch (error) {
+        // The answer is on the day file but its progress is not (M2): end the
+        // run so the sitting falls back to its ladder instead of re-serving
+        // a word whose state can no longer be saved.
+        this.#logger.warn?.('school.card-ladder.dictation.progress-write-failed', {
+          learnerId: userId, package: pkg, week: attempt.week, sittingId, wordId: attempt.wordId, error: error.message,
+        });
+        const at = isoWithOffset(this.#now(), this.#timezone);
+        const ended = this.#transact(store, userId, pkg, day, ctx.dayFile.sittings[sittingId].deckId, ({ status, dayFile }) => ({
+          status, dayFile: dayFile.dictation ? { ...dayFile, dictation: { ...dayFile.dictation, ended: 'stopped', endedAt: at } } : dayFile,
+        }));
+        nextCtx.status = ended.status; nextCtx.dayFile = ended.dayFile; nextCtx.dictation = undefined;
+      }
+    }
     if (item.id === itemId && item.source === 'dictation' && out.result?.stopped === true) {
       this.#logger.info?.('school.card-ladder.dictation.exited', {
         learnerId: userId, package: pkg, week: ctx.dictation?.week ?? null, remaining: ctx.dictation?.remaining ?? null, sittingId, reason: 'stop',
