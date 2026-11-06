@@ -97,4 +97,18 @@ describe('a scan handed to a mounted shelf', () => {
     expect(r.result.current.view).toBe('shelf');
     expect(h.shelf).toHaveBeenCalledTimes(1);
   });
+
+  it('a pad holding only the last scanned number is still asking for a barcode', async () => {
+    h.shelf.mockResolvedValue({ ok: true, status: 200, data: { learnerId: 'kid', items: [], obligation: null } });
+    const r = mountShelf({ intentId: 'scan-1', isbn13: ISBN, book: { isbn13: ISBN, title: 'Hatchet' } }); await act(async () => {});
+    expect(r.result.current.step).toBe('cover');
+    act(() => r.result.current.actions.back());
+    expect(r.result.current.step).toBe('number');
+    expect(r.result.current.add.entry).toBe(ISBN);
+    r.rerender({ initialBookEntry: { intentId: 'scan-2', isbn13: ISBN2, book: BOOK2 } });
+    await act(async () => {});
+    expect(r.result.current.step).toBe('cover');
+    expect(r.result.current.add.resolved.book).toEqual(BOOK2);
+  });
 });
+

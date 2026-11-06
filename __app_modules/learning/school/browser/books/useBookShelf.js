@@ -407,7 +407,10 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const nextEntry = entryQueue[0] ?? null;
   const scanIsAnswer = view === 'shelf' ? !receiptHeld
     : view === 'completed' ? true
-      : view === 'add' && step === 'number' && !add.entry;
+      // The pad asks for a barcode; digits typed BY HAND are the child's
+      // own work and keep it. The last scanned number (back from its cover)
+      // is not.
+      : view === 'add' && step === 'number' && (!add.entry || add.entry === scannedBookId);
   const queuedLogged = useRef(null);
   useEffect(() => {
     const entry = nextEntry;

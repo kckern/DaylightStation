@@ -155,8 +155,9 @@ The shelf is mounted once per child (`key={learnerId}`); each claimed scan
 reaches it as `initialBookEntry` carrying its `intentId`, and the fresh grant
 that comes with it is read by later requests without reloading the shelf.
 `useBookShelf` queues each scan once and opens the next one only where a scan
-is an answer: the shelf itself, the empty barcode pad, or a finished book (the
-"scan its barcode" case). Anywhere else — a pad with digits on it, the cover,
+is an answer: the shelf itself, the barcode pad (empty, or holding only the
+last scanned number after a Back from its cover), or a finished book (the
+"scan its barcode" case). Anywhere else — a pad with hand-typed digits, the cover,
 an update, a save in flight — the book waits (`scan.queued`, debug, with the
 `isbn13`) and opens when that step finishes; a fresh save receipt holds it back
 for `RECEIPT_HOLD_MS` (4s) so the child sees their save land. Until 2026-11-05
