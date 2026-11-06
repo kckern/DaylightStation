@@ -120,7 +120,12 @@ On the piano kiosk the ceremony runs in the Games mode shell:
 2. Looking is enabled only on the picker route, and the card renders only on the
    picker. A gem is never shown over a live game.
 3. Arriving at the picker counts as "a game just ended", so the hook does not
-   learn silently on mount.
+   learn silently on mount. The picker looks with a fresh read (`fresh: true`)
+   each time it is shown, so a gem won seconds ago is not missed to the
+   server's cached board.
+4. The piano's contained ceremony intentionally covers the whole piano stage
+   (header included) as a celebration scrim. This is a controller ruling, not
+   an oversight.
 
 Economy details (snapshot, what counts as a new gem, events) are in
 [Household economy](../economy/economy.md#gem-board).

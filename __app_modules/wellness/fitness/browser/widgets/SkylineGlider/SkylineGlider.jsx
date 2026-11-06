@@ -28,7 +28,6 @@ import SkylineFlightHud from "./SkylineFlightHud.jsx";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
 
-
 const SKYLINE_LOG_NAMES = {
   event: (e) => `skyline_glider.flight.${e.type}`,
   executed: 'skyline_glider.effect.executed',
@@ -459,11 +458,10 @@ export default function SkylineGlider() {
       const cadence = fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
       const previous = flightRef.current;
       const previousCheckpointId = previous.checkpoint.id;
-      const elapsed = elapsedS;
       // A zero-length frame runs no engine sub-step, so presses wait for the next frame.
-      const actions = elapsed > 0 ? drainWeapons() : [];
+      const actions = elapsedS > 0 ? drainWeapons() : [];
       const power = weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId));
-      const next = stepFlight(previous, { ...cadence, actions, weaponPower: power }, elapsed, course);
+      const next = stepFlight(previous, { ...cadence, actions, weaponPower: power }, elapsedS, course);
       flightRef.current = next;
       setFlight(next);
       const telemetry = collectFlightTelemetry({
@@ -493,9 +491,9 @@ export default function SkylineGlider() {
     const driver = createFrameDriver({
       maxFrameS: 0.1,
       onFrame: frame,
-      onError: (err) => log.error('skyline_glider.frame.error', {
+      onError: (err) => log.sampled('skyline_glider.frame.error', {
         runId: runRef.current?.runId, riderId, courseId: course.id, error: err?.message,
-      }),
+      }, { maxPerMinute: 5, aggregate: true, level: 'error' }),
     });
     audioRef.current.startWind();
     driver.start();

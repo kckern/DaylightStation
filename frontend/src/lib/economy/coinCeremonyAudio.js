@@ -11,16 +11,16 @@
  * pop-up must not depend on the sound.
  */
 import { DaylightMediaPath } from "../api.mjs";
+import getLogger from "../logging/Logger.js";
 import { getEffectiveMaster } from "../volume/ScreenVolumeContext.js";
 // The default cue (same file as COIN_CEREMONY_DEFAULTS.sound in School's model;
 // duplicated so this shared lib does not import an app module).
 const DEFAULT_COIN_SOUND = 'school/_ux/coin.mp3';
-import getLogger from "../logging/Logger.js";
 
 let audio = null;
 let unlocked = false;
 let _logger = null;
-const logger = () => (_logger ||= getLogger().child({ component: 'school-coin-cue' }));
+const logger = () => (_logger ||= getLogger().child({ component: 'coin-cue' }));
 
 function element() {
   if (!audio && typeof Audio !== 'undefined') audio = new Audio();

@@ -275,6 +275,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     return true;
   }, [levels, config, logger, regenerateTargets, effects, applyPendingOutcome]);
 
+  const frameErrorLoggedRef = useRef(false);
   // One frame driver for the hook's lifetime; it always calls the latest loop.
   const gameLoopRef = useRef(gameLoop);
   useEffect(() => { gameLoopRef.current = gameLoop; }, [gameLoop]);
@@ -282,8 +283,12 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     driverRef.current = createFrameDriver({
       onFrame: (frame) => gameLoopRef.current(frame),
       maxFrameS: MAX_FRAME_S,
-      // Surface a loop failure as an uncaught error, as a throwing rAF callback did.
-      onError: (err) => { setTimeout(() => { throw err; }, 0); },
+      // A loop that throws does so every frame: log the first per run, no re-throw.
+      onError: (err) => {
+        if (frameErrorLoggedRef.current) return;
+        frameErrorLoggedRef.current = true;
+        logger.error('side-scroller.frame.error', { error: err?.message });
+      },
     });
   }
 
@@ -351,6 +356,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   const startGame = useCallback(() => {
     if (!['IDLE', 'GAME_OVER'].includes(phaseRef.current)) return;
     clearAllTimers();
+    frameErrorLoggedRef.current = false;
 
     // Reset all timing refs here (NOT in the rAF effect)
     simMsRef.current = 0;

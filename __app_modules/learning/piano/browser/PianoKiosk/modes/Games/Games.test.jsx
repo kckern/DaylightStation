@@ -430,6 +430,12 @@ describe('Games mode — gem ceremony', () => {
     expect(await screen.findByTestId('gem-ceremony')).toBeTruthy();
   });
 
+  it('the picker looks with a fresh gem board read', async () => {
+    renderGames();
+    await waitFor(() => expect(fetchGemBoardMock).toHaveBeenCalled());
+    expect(fetchGemBoardMock.mock.calls.every(([, opts]) => opts?.fresh === true)).toBe(true);
+  });
+
   it('a dismissed ceremony does not repeat when the picker remounts', async () => {
     localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
     gemBoard.board = boardWith('earned', 1);

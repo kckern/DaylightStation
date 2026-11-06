@@ -18,6 +18,7 @@ import { gamesDisabledFor } from '../../gameAccessPolicy.js';
 import useGameBudgetMeter from '../../useGameBudgetMeter.js';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import GemCeremony from '../../../../../../../frontend/src/lib/economy/GemBoard/GemCeremony.jsx';
+import { fetchGemBoard } from '../../../../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx';
 import { useGemCeremony } from '../../../../../../../frontend/src/lib/economy/GemBoard/useGemCeremony.js';
 import { playCoinCue, installCoinCueUnlock } from '../../../../../../../frontend/src/lib/economy/coinCeremonyAudio.js';
 import { GAME_ACHIEVEMENT_RECORDED_EVENT } from '../../../../../../../__capabilities/gaming/browser/platform/realtime/index.js';
@@ -85,6 +86,9 @@ function GameMountWitness({ gameId, matchId, learnerId, logger, onMount = null }
  * works under either /piano/* (single piano) or /piano/:pianoId/* (multi).
  */
 const GEM_EVENTS = [GAME_ACHIEVEMENT_RECORDED_EVENT];
+// The picker's look is always a fresh read: the server's default board is up to
+// a minute stale, so a gem won seconds ago would be missed on return.
+const loadFreshGemBoard = (week, opts) => fetchGemBoard(week, { ...opts, fresh: true });
 
 export function Games() {
   const pianoUser = useContext(PianoUserContext);
@@ -119,7 +123,7 @@ export function Games() {
   const location = useLocation();
   const gamesBase = useResolvedPath('.').pathname;
   const onPicker = location.pathname.replace(/\/+$/, '') === gamesBase.replace(/\/+$/, '');
-  const gems = useGemCeremony({ surface: 'piano', events: GEM_EVENTS, enabled: onPicker });
+  const gems = useGemCeremony({ surface: 'piano', events: GEM_EVENTS, enabled: onPicker, load: loadFreshGemBoard });
   // Prime the cue from the first real gesture so the WebView lets it play later.
   useEffect(() => installCoinCueUnlock(typeof window !== 'undefined' ? window : null, { sound: 'school/_ux/coin.mp3' }), []);
 

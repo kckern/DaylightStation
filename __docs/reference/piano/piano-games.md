@@ -499,7 +499,9 @@ the moment their chord matches, stamped with the current simulated time; duck
 stays level-held. The first frame after play starts runs no step. A fail stops
 the frame's remaining steps and pins the clock to the failing step; outcomes
 (fail, level advance) are applied right after `setWorld` or, when React defers
-the updater to its render, at that render's commit — never a frame late.
+the updater to its render, at that render's commit — never a frame late. A frame that throws is logged once per run as
+`side-scroller.frame.error` (reset in `startGame`) and not re-thrown, so a
+loop that fails every frame does not flood the log at 60 Hz.
 `useSideScrollerGame.clock.test.jsx` pins the frame cap, the carry and the fail
 stop. The
 renderer compares `invincibleUntil` / `shootUntil` against the hook's `simMs`
