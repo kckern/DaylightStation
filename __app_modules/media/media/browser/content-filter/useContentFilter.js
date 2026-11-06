@@ -76,7 +76,9 @@ export function createSfxPlayer(sounds, { tone = createBleepTone({ onDegraded: l
  * @param {object} args.profile           L2 profile/theme
  * @param {object} [args.override]        L3 per-title override
  * @param {string|null} [args.part]       media part being played (refined cue times bind to a part)
- * @param {{play:Function, tone:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests)
+ * @param {{play:Function, tone:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests).
+ *   Must be memoized: it is a dependency of the main effect, so a new object each
+ *   render tears the filter down (exitAll) and re-attaches on every render.
  * @param {boolean} [args.enabled=true]
  * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array, fireCount: number}}
  */
