@@ -112,6 +112,56 @@ overlay effects including blur, censor bars, pixelation, full blur, and title ca
 Timing pads protect against playback-driver granularity and source drift. Approximate
 mute cues are widened more than skips because a narrow window can leak a spoken word.
 
+### Audio effects: holds, bleep tone, pauses
+
+- **Overlapping word cues hold the mute together.** Padding makes neighbouring words
+  overlap. Mute and bleep handlers count holds in the per-hook `mem`
+  (`muteHolds`, `soundHolds`); only the last cue to exit unmutes or stops the sound,
+  so an earlier cue's exit cannot release a later word.
+- **Bleep defaults to a synthesized 1 kHz sine**, the broadcast censor tone
+  (`bleepTone.js`, Web Audio, short gain ramps, one shared `AudioContext` per page).
+  Its level follows the media element's volume. A cue or profile can name a sound in
+  `profile.sounds` instead.
+- **The video is muted first**, so a bleep that cannot sound still silences the word.
+  That happens when Web Audio is missing, the context is not `running` (browsers hold
+  it suspended until a user gesture), a named sound has no URL, or `Audio.play()`
+  fails. Each case logs `content-filter.bleep.degraded` with a `reason`.
+- **Pause or stall mid-bleep stops the tone** and keeps the mute; `playing` restarts
+  it for any bleep still active.
+- **Element swaps rebind.** The player re-keys its `<video>` on a stream re-mint,
+  bitrate change or soft reinit. The hook compares the element `getMediaEl()` returns
+  after every render with the one it is attached to and re-attaches when they differ
+  (`content-filter.element.rebound`, info). `getMediaEl` and `transport` are read
+  through refs, so their identity does not matter; an injected `sfx` player must be
+  memoized.
+
+## Viewer chrome: bumper and badge
+
+Both render inside `FilterOverlay` (`FilterChrome.jsx`), so they appear wherever a
+filtered title plays, including D-pad TVs.
+
+- **Bumper.** On the first `playing` at or near the start (within 5 s, so not on a
+  resume), a card shows for about 4 s over playback without pausing it: the clear logo
+  (hidden if it fails to load), "Edited for content", and a summary built from the
+  resolved cues by `filterSummary.js`, e.g. "152 words muted · 4 scenes blurred · credits
+  skipped". It yields to a skip-card. Logs `content-filter.bumper.shown`.
+- **Badge.** A small shield bottom-right at about 40% opacity, brightening briefly each
+  time a cue fires (`fireCount` from `useContentFilter`: cue entries and skip-cards,
+  not title cards). States:
+
+  | State | Drawn as | When |
+  |---|---|---|
+  | `certified` | solid shield | the EDL has a `certification.level`, or every word cue is `ms`/`frame` precise |
+  | `provisional` | outline | any mute or bleep is approximate (`isProvisional`) |
+  | `failed` | crossed shield | filter data failed to load after one retry |
+
+  The badge is display-only for now: no pointer events, no focus, `aria-hidden`.
+- **Loading.** `useFilterData` returns `{ data, status }` with status
+  `idle | loading | ready | none | failed`. A `404` is `none` (no filter data, no
+  chrome). A network error or `5xx` is retried once, then `failed`, logged as
+  `content-filter.load.failed`. Changing titles clears the previous title's data before
+  the new fetch, so one title's cues never apply to another.
+
 ## Persistence and API
 
 `FilesystemContentFilterRepository` owns the YAML layout and reads fail-soft: missing or
