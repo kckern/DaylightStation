@@ -14,4 +14,4 @@ export { default as GameStepper } from './GameStepper.jsx';
 export { default as DealNotice } from './DealNotice.jsx';
 export { default as LadderBadge } from './LadderBadge.jsx';
 export { default as WinTally } from './WinTally.jsx';
-export { CountdownOverlay, LifeMeter, ProgressMeter } from './GameChrome.jsx';
+export { CountdownOverlay, LifeMeter, ProgressMeter, MomentBanner } from './GameChrome.jsx';

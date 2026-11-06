@@ -6,4 +6,5 @@ export {
   CountdownOverlay,
   LifeMeter,
   ProgressMeter,
+  MomentBanner,
 } from '../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';

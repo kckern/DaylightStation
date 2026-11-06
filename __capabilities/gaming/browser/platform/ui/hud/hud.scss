@@ -51,6 +51,10 @@
   transition: width 200ms ease-out;
 }
 
+.game-hud-moment-region {
+  display: contents;
+}
+
 .game-hud-moment {
   display: grid;
   place-items: center;

@@ -684,6 +684,8 @@ export default function SkylineGlider() {
     <SkylineControlPanel controls={panelControls} onPress={pressPanel}/>
     <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>pressPanel(3)}/>
   </main>;
+  // One value for both the text and the key, so a banner replays exactly when its words change.
+  const bannerText = effects.banner || activeCue(course, flight);
   return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-course-id={course.id} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
     <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
@@ -693,7 +695,7 @@ export default function SkylineGlider() {
     {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>{flight.crashCause === 'stall' ? 'Stall!' : 'Wing down!'}</h2><p>Returning to the last windsock…</p></div>}
     {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
-    <MomentBanner text={effects.banner||activeCue(course,flight)} momentKey={effects.banner||activeCue(course,flight)} className="skyline-glider__checkpoint-banner"/>
+    <MomentBanner text={bannerText} momentKey={bannerText} className="skyline-glider__checkpoint-banner"/>
     {flight.stalled && flight.phase === 'playing' && <div className="skyline-glider__stop-warning" role="status">Stalled! Returning to the checkpoint…</div>}
   </main>;
 }

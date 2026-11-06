@@ -522,10 +522,12 @@
 }
 
 /* ── HUD (countdown / life / progress / banner) ───────────────────────────
-   Rendered by the shared kit (re-exported from chrome/index.js); the kit has no
-   colours of its own. */
-/* The shared HUD (`__capabilities/gaming/.../ui/hud`) colours itself from
-   --game-hud-*; this maps them onto the cabinet. */
+   Rendered by the shared kit (`__capabilities/gaming/.../ui/hud`); chrome/index.js
+   re-exports all four — CountdownOverlay, LifeMeter, ProgressMeter and
+   MomentBanner — so piano games import them from chrome only. The kit has no
+   colours of its own: it reads --game-hud-*, and this maps them onto the
+   cabinet. MomentBanner's role="status" is a persistent wrapper; a game's
+   className styles the visible child inside it. */
 .piano-game-host,
 .piano-game-fullscreen {
   --game-hud-ink: var(--pg-ivory);

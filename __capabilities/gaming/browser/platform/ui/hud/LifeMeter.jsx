@@ -12,8 +12,10 @@ export default function LifeMeter({
   const extra = className ? ` ${className}` : '';
   const live = Math.max(0, Number(current) || 0);
   if (variant === 'glyphs') {
+    // role="img" must always carry a name; default to "<count> <label>".
+    const name = ariaLabel ?? `${live} ${label}`;
     return (
-      <span className={`game-hud-life game-hud-life--glyphs${extra}`} role="img" aria-label={ariaLabel}>
+      <span className={`game-hud-life game-hud-life--glyphs${extra}`} role="img" aria-label={name}>
         {glyph.repeat(Math.max(0, Math.floor(live))) || emptyGlyph}
       </span>
     );

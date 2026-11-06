@@ -1,4 +1,4 @@
-import { CountdownOverlay } from '../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
+import { CountdownOverlay } from '../../game-platform/chrome/index.js';
 import './SideScrollerOverlay.scss';
 
 export function SideScrollerOverlay({ phase, countdown, score, level }) {

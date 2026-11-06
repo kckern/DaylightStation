@@ -2,7 +2,6 @@ import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { LifeMeter, MomentBanner } from './index.js';
-import { LifeMeter as ChromeLifeMeter } from '../../../../../../__app_modules/learning/piano/browser/game-platform/chrome/index.js';
 
 describe('LifeMeter', () => {
   it('renders notches and rounds partial health up', () => {
@@ -31,24 +30,39 @@ describe('LifeMeter', () => {
     const empty = render(<LifeMeter variant="glyphs" current={0} ariaLabel="none" />);
     expect(empty.container.textContent).toBe('♡');
   });
+  it('names a glyph meter even without ariaLabel', () => {
+    const { container } = render(<LifeMeter variant="glyphs" current={2} label="hearts" />);
+    const img = container.querySelector('[role="img"]');
+    expect(img.getAttribute('aria-label')).toBe('2 hearts');
+    const below = render(<LifeMeter variant="glyphs" current={-1} />);
+    expect(below.container.querySelector('[role="img"]').getAttribute('aria-label')).toBe('0 Health');
+  });
 });
 
 describe('MomentBanner', () => {
   it('announces text and replaces its node when the key changes', () => {
-    const { getByRole, rerender } = render(<MomentBanner text="Checkpoint 2" momentKey="a" />);
-    const first = getByRole('status');
+    const { getByRole, container, rerender } = render(<MomentBanner text="Checkpoint 2" momentKey="a" />);
+    const region = getByRole('status');
+    expect(region.textContent).toBe('Checkpoint 2');
+    const first = container.querySelector('.game-hud-moment');
     expect(first.textContent).toBe('Checkpoint 2');
     rerender(<MomentBanner text="Checkpoint 2" momentKey="b" />);
-    expect(getByRole('status')).not.toBe(first);
+    expect(getByRole('status')).toBe(region);
+    expect(container.querySelector('.game-hud-moment')).not.toBe(first);
   });
   it('renders nothing without text or title', () => {
-    const { container } = render(<MomentBanner momentKey="a" />);
-    expect(container.firstChild).toBeNull();
+    const { container, getByRole } = render(<MomentBanner momentKey="a" />);
+    expect(container.querySelector('.game-hud-moment')).toBeNull();
+    expect(getByRole('status').childNodes).toHaveLength(0);
   });
-});
-
-describe('piano chrome re-export', () => {
-  it('is the kit LifeMeter', () => {
-    expect(ChromeLifeMeter).toBe(LifeMeter);
+  it('keeps the live region mounted and puts className on the visual child', () => {
+    const { getByRole, container, rerender } = render(<MomentBanner momentKey="a" className="x-banner" />);
+    const region = getByRole('status');
+    expect(region.className).toBe('game-hud-moment-region');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    rerender(<MomentBanner title="LEVEL UP!" subtitle="Canyon" momentKey="b" className="x-banner" />);
+    expect(getByRole('status')).toBe(region);
+    expect(container.querySelector('.game-hud-moment.x-banner').parentElement).toBe(region);
+    expect(region.classList.contains('x-banner')).toBe(false);
   });
 });

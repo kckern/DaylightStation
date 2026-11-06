@@ -20,40 +20,6 @@
       0 0 60px color-mix(in srgb, var(--pg-brass) 40%, transparent);
   }
 
-  // The shared MomentBanner, rendered in the play canvas (not the overlay) so
-  // the run keeps going under it. Centred in the band between the top staves
-  // (jump 2–30%, shoot 9–37%) and the duck staff (70–98%), so it never covers
-  // a note the child is reading; it never takes pointer input.
-  &__level-up.game-hud-moment {
-    position: absolute;
-    inset: 37% 0 30%;
-    margin: auto;
-    width: fit-content;
-    height: fit-content;
-    z-index: 40;
-    pointer-events: none;
-    gap: 0;
-    text-align: center;
-    background: rgba(0, 0, 0, 0.8);
-    padding: 20px 48px;
-    border-radius: 16px;
-    border: 2px solid color-mix(in srgb, var(--pg-brass-fill) 55%, transparent);
-
-    h2 {
-      font-size: 3rem;
-      font-weight: 900;
-      margin: 0 0 8px;
-      color: var(--pg-brass);
-      text-shadow: 0 0 20px color-mix(in srgb, var(--pg-brass) 60%, transparent);
-    }
-
-    p {
-      font-size: 1.5rem;
-      color: var(--pg-ivory-dim);
-      margin: 0;
-    }
-  }
-
   &__gameover {
     text-align: center;
     background: rgba(0, 0, 0, 0.8);

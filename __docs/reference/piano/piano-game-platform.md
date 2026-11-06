@@ -65,7 +65,7 @@ A game overrides **the board's colours and nothing else**. The board carries the
 | `GameStatusBar` | the one sentence under the board, with `role="status"` and a reserved height. |
 | `GameToggle` / `GameChoice` | replace the native checkbox and `<select>`, which rendered as OS widgets on a charcoal kiosk at hit sizes a child misses. |
 | `LadderBadge` / `WinTally` | who you are playing, drawn as a ladder and a tally rather than spelled as "Level 3 of 7 · 1 / 3 wins". |
-| `CountdownOverlay` / `LifeMeter` / `ProgressMeter` / `MomentBanner` | the HUD. Re-exported from the shared kit (`__capabilities/gaming/browser/platform/ui/hud`); chrome only maps `--game-hud-*` to `--pg-*`. See [HUD set](../gaming/realtime-kit.md#hud-set). |
+| `CountdownOverlay` / `LifeMeter` / `ProgressMeter` / `MomentBanner` | the HUD. Re-exported from the shared kit (`__capabilities/gaming/browser/platform/ui/hud`), all four including `MomentBanner`; piano games import them from `chrome/index.js`, never the kit path. Chrome only maps `--game-hud-*` to `--pg-*`. `MomentBanner`'s `role="status"` is a persistent wrapper; the game's `className` lands on the visible child (the Side Scroller's `side-scroller__level-up`). See [HUD set](../gaming/realtime-kit.md#hud-set). |
 
 Checkers and Connect Four expose separate seven-character rosters; Chess exposes
 twenty-one. Household and user configuration may replace the selected roster

@@ -144,6 +144,9 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         // The phase ref moves now, not on the next render, so a frame already
         // queued cannot fail the run a second time.
         phaseRef.current = 'DYING';
+        // A LEVEL UP still on screen must not sit over the death burst.
+        if (momentTimerRef.current) { clearTimeout(momentTimerRef.current); momentTimerRef.current = null; }
+        setMoment(null);
         if (!deathTimerRef.current) {
           sfx.play('death');
           logger.info('side-scroller.death', { score: outcome.score, level: outcome.level });
@@ -159,6 +162,8 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       } else if (outcome.type === OUTCOME_ADVANCE) {
         logger.info('side-scroller.level-advance', { from: outcome.from, score: outcome.score });
         if (outcome.nextLevel >= levels.length) {
+          if (momentTimerRef.current) { clearTimeout(momentTimerRef.current); momentTimerRef.current = null; }
+          setMoment(null);
           sfx.play('gameover');
           setPhase('GAME_OVER');
         } else {

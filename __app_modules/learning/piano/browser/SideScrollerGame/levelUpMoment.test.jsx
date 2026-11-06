@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
-import { MomentBanner } from '../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
+import { MomentBanner } from '../game-platform/chrome/index.js';
 
 // Force a level advance on the first evaluated step, and only that one.
-const evalCtl = vi.hoisted(() => ({ calls: 0, advanceOnCall: 1 }));
+const evalCtl = vi.hoisted(() => ({ calls: 0, advanceOnCall: 1, failOnCall: null }));
 vi.mock('./sideScrollerEngine.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
     evaluateLevel: (world, lvl) => {
       evalCtl.calls += 1;
+      if (evalCtl.calls === evalCtl.failOnCall) return 'fail';
       if (evalCtl.calls === evalCtl.advanceOnCall) return 'advance';
       return actual.evaluateLevel(world, lvl);
     },
@@ -37,7 +38,7 @@ function Harness() {
       momentKey={game.moment?.key}
       title={game.moment?.title}
       subtitle={game.moment?.subtitle}
-      className="scroller-overlay__level-up"
+      className="side-scroller__level-up"
     />
   );
 }
@@ -71,7 +72,7 @@ describe('Side Scroller — LEVEL UP moment', () => {
     act(() => { game.startGame(); });
     act(() => { vi.advanceTimersByTime(800 * 4 + 10); });
     expect(game.phase).toBe('PLAYING');
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(document.querySelector('.side-scroller__level-up')).toBeNull();
 
     frame(nowMs);
     frame(nowMs + 50); // a few fixed steps; the first one advances
@@ -83,9 +84,59 @@ describe('Side Scroller — LEVEL UP moment', () => {
     expect(game.moment).toEqual({ key: 'level-1', title: 'LEVEL UP!', subtitle: 'Canyon Run' });
 
     act(() => { vi.advanceTimersByTime(1499); });
-    expect(screen.queryByRole('status')).not.toBeNull();
+    expect(document.querySelector('.side-scroller__level-up')).not.toBeNull();
     act(() => { vi.advanceTimersByTime(1); });
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(document.querySelector('.side-scroller__level-up')).toBeNull();
+    expect(game.moment).toBeNull();
+  });
+});
+
+describe('Side Scroller — LEVEL UP never outlives the run', () => {
+  beforeEach(() => {
+    evalCtl.advanceOnCall = 1;
+    evalCtl.failOnCall = null;
+  });
+  afterEach(() => {
+    evalCtl.advanceOnCall = 1;
+    evalCtl.failOnCall = null;
+  });
+
+  function playToFirstLevelUp() {
+    render(<Harness />);
+    act(() => { game.startGame(); });
+    act(() => { vi.advanceTimersByTime(800 * 4 + 10); });
+    frame(nowMs);
+    frame(nowMs + 50);
+    expect(game.level).toBe(1);
+    expect(game.moment).not.toBeNull();
+  }
+
+  it('a fail shortly after a level-up clears the banner before the death burst', () => {
+    playToFirstLevelUp();
+    evalCtl.failOnCall = evalCtl.calls + 1;
+    act(() => { vi.advanceTimersByTime(200); });
+    frame(nowMs + 100);
+    frame(nowMs + 150);
+    expect(game.phase).toBe('DYING');
+    expect(game.moment).toBeNull();
+    expect(document.querySelector('.side-scroller__level-up')).toBeNull();
+    // The cleared timer cannot fire a stale clear later either.
+    act(() => { vi.advanceTimersByTime(1500); });
+    expect(game.moment).toBeNull();
+  });
+
+  it('advancing past the last level clears the banner, and startGame after GAME_OVER leaves moment null', () => {
+    playToFirstLevelUp();
+    evalCtl.advanceOnCall = evalCtl.calls + 1;
+    frame(nowMs + 100);
+    frame(nowMs + 150);
+    expect(game.phase).toBe('GAME_OVER');
+    expect(game.moment).toBeNull();
+    expect(document.querySelector('.side-scroller__level-up')).toBeNull();
+    act(() => { game.startGame(); });
+    expect(game.phase).toBe('STARTING');
+    expect(game.moment).toBeNull();
+    act(() => { vi.advanceTimersByTime(1500); });
     expect(game.moment).toBeNull();
   });
 });

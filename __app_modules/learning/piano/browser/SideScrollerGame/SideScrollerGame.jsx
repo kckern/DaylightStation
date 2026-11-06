@@ -12,7 +12,7 @@ import { PLAYER_X } from './sideScrollerEngine.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
-import { LifeMeter, MomentBanner } from '../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
+import { LifeMeter, MomentBanner } from '../game-platform/chrome/index.js';
 import './SideScrollerGame.scss';
 
 /** The staff that clears each obstacle type — the one a hint leaves bright. */
@@ -172,7 +172,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
             momentKey={game.moment?.key}
             title={game.moment?.title}
             subtitle={game.moment?.subtitle}
-            className="scroller-overlay__level-up"
+            className="side-scroller__level-up"
           />
         </div>
       </div>

@@ -175,8 +175,8 @@ every colour comes from `--game-hud-*` set by the host game.
 | `ProgressMeter` | `value`, `maximum = 100`, `label`, `className` |
 | `MomentBanner` | `text` or `title` + `subtitle`, `momentKey`, `className` |
 
-- `LifeMeter` notches: `role="meter"` with `aria-valuenow` (partial health rounds up); notches at or below `dangerAt` take the danger colour. Glyphs: `role="img"` with `ariaLabel`; zero shows the empty glyph.
-- `MomentBanner` is `role="status"`. Changing `momentKey` replaces the node and replays the entrance animation (disabled under reduced motion). It renders nothing without `text` or `title`.
+- `LifeMeter` notches: `role="meter"` with `aria-valuenow` (partial health rounds up). When current health is at or below `dangerAt` × maximum, every lit notch takes the danger colour. Glyphs: `role="img"` named by `ariaLabel`, which defaults to `"<current> <label>"` (current clamped at zero) so the image always has a name; zero shows the empty glyph.
+- `MomentBanner`'s live region is a persistent wrapper: `<div class="game-hud-moment-region" role="status" aria-live="polite">` is always mounted and takes no layout (`display: contents`), so assistive tech is already watching it when text arrives. Inside it, the visual child (`.game-hud-moment` plus the caller's `className`) is rendered only when there is `text` or `title`, and is keyed by `momentKey`: changing the key replaces that child and replays the entrance animation (disabled under reduced motion). Style the child through `className`; the wrapper is never the visible element.
 
 **Custom properties:** `--game-hud-ink`, `--game-hud-edge`, `--game-hud-live`,
 `--game-hud-danger`, `--game-hud-track`, `--game-hud-banner-ink`,
@@ -184,19 +184,29 @@ every colour comes from `--game-hud-*` set by the host game.
 `currentcolor` / transparent / no shadow.
 
 **Mapping per surface.** The piano maps them to `--pg-*` in
-`game-platform/chrome/gameChrome.scss` and re-exports the components from its
-chrome. Skyline sets a palette block on `.skyline-glider` (`--game-hud-hearts`,
-banner ink and background) and uses `LifeMeter` glyphs for hearts and
-`MomentBanner` for its checkpoint/cue banner.
+`game-platform/chrome/gameChrome.scss` and re-exports all four components
+(`CountdownOverlay`, `LifeMeter`, `ProgressMeter`, `MomentBanner`) from its
+chrome barrel, which is the piano games' single import for them. Skyline sets a
+palette block on `.skyline-glider` (banner ink and background as
+`--game-hud-banner-*`, plus its own `--skyline-hearts`) and uses `LifeMeter`
+glyphs for hearts and `MomentBanner` for its checkpoint/cue banner. The
+`--game-hud-*` prefix is reserved for the kit's contract above; a surface's own
+extra colours take its own prefix (`--skyline-hearts` is Skyline's, not the
+kit's).
 
 **Choosing a meter.** Segmented (`LifeMeter` notches) for a count of hits the
 player can take; continuous (`ProgressMeter`) for a trend such as time or
 progress.
 
 **Specificity.** A surface with stronger local styles may out-specify
-`.game-hud-moment` on purpose: Skyline's `.skyline-glider .skyline-glider__checkpoint-banner`
-positions and sizes its banner this way, keeping the kit's markup and
-accessibility.
+`.game-hud-moment` on purpose, keeping the kit's markup and accessibility.
+Skyline's `.skyline-glider .skyline-glider__checkpoint-banner` sets its own
+position, animation, font, padding and colours, so it no longer depends on the
+order the two stylesheets load in; because it also replaces the kit's
+animation, it honours reduced motion with its own
+`@media (prefers-reduced-motion: reduce)` rule (the kit's rule is out-specified
+too). Its hearts colour is likewise
+`.skyline-glider .skyline-glider__hud-hearts`, out-specifying `.game-hud-life`.
 
 ## What was left out, and why
 
