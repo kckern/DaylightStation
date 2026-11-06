@@ -54,6 +54,8 @@ export const schoolLog = {
   // verdict on it — the same discipline as the self-service code above.
   bookShelf: (detail, data) => emit('book-shelf', detail, data),
   bookShelfError: (detail, data) => emit('book-shelf', detail, data, 'error'), // shelf.failed | write.failed
+  // Verbose shelf/pile decisions: scan.scoped-claim-skipped | scan.queued.
+  bookShelfDebug: (detail, data) => emit('book-shelf', detail, data, 'debug'),
 };
 
 export default schoolLog;

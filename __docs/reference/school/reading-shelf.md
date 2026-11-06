@@ -171,10 +171,13 @@ the household study day ends. One session belongs to one child:
   duplicated, and a book that child already finished today is not written
   again (*… already has it today*). Retries reuse the card's entry keys; a
   re-file after Undo uses a new attempt.
-- **An open shelf wins.** While a child's shelf is asking for a barcode, a scan
-  is claimed for that child through the scoped path above and the pile stands
-  aside. A shelf claims only scans made while it is open; a filed or removed
-  card is never offered to it.
+- **An open shelf wins.** While a child's shelf is open the pile stands aside
+  (even mid-step, when the shelf is not asking for a barcode), and a scan is
+  claimed for that child through the scoped path as soon as the shelf is
+  scan-ready. A shelf claims only scans made while it is open; a filed or
+  removed card is never offered to it. The server keeps only the newest
+  unclaimed scan as a claimable intent, so if two land during one shelf step
+  the older one stays an unfiled card in the pile rather than being lost.
 
 Filings are the child's own entries (`source: 'panel'`), the same as logging
 from the shelf. The pile lives in memory in `PrepareBookScan`: a backend

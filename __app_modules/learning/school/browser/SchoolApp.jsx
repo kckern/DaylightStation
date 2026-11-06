@@ -1029,7 +1029,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // it, and whether an open shelf already owns it. The pile and the scoped
   // claim read the same two answers.
   const scanSafe = lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged;
-  const scanScope = section === 'book-shelf' && shelfScanReady && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null;
+  // Whose shelf is OPEN (ready for a barcode or not), and whose shelf is
+  // asking for one right now. A scan is claimed only under `scanScope`; but
+  // the shelf being open is what decides which scans were already waiting and
+  // keeps the pile from filing a book this child is in the middle of scanning.
+  const shelfOwner = section === 'book-shelf' && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null;
+  const scanScope = shelfOwner && shelfScanReady ? shelfOwner : null;
   // `!lock.resolved` is part of this gate on purpose: a locked panel must never
   // flash the browsable home for the beat it takes the screen config to land.
   if (status !== 'ready' || !lock.resolved) return <div className="school-app school-app--loading">Loading…</div>;
@@ -1094,11 +1099,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           // A child's reading shelf is open and says "scan the barcode": the
           // scan is theirs, claimed for them without a detour home (2026-09-30).
           scopeLearnerId={scanScope}
+          shelfLearnerId={shelfOwner}
           // Unscoped scans belong to the pile below, not the one-book dialog.
           pile
           onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
         {isPanelSurface(screenId) && <BookPile screenId={screenId} roster={roster} safe={scanSafe}
-          onOpen={lock.locked ? openDeferredScan : null} confirmExit={gradedRunInFlight} scopeLearnerId={scanScope} />}
+          onOpen={lock.locked ? openDeferredScan : null} confirmExit={gradedRunInFlight} scopeLearnerId={shelfOwner} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
             branch below, not inside it: the Portal is the screen most worth

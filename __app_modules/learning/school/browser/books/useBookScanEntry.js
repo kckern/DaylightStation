@@ -15,13 +15,19 @@ import { isPanelSurface } from "../schoolPathModel.js";
  * claimed for that child at once, once, when its lookup settles. Nothing else
  * about an anonymous scan changes: without a scope it still waits for `safe`.
  */
-export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = null }) {
+export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = null, shelfLearnerId }) {
   const enabled = isPanelSurface(screenId);
+  // `shelfLearnerId` — whose shelf is OPEN, ready for a barcode or not.
+  // `scopeLearnerId` drops to null whenever the shelf is mid-step (a cover, an
+  // update, a save, its own reload); only the shelf opening and closing may
+  // decide which scan was "already waiting". Callers that do not pass it get
+  // the old meaning (the scope is the shelf).
+  const openLearnerId = shelfLearnerId === undefined ? scopeLearnerId : shelfLearnerId;
   const [intent, setIntent] = useState(null);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState(null);
-  const state = useRef({ safe, screenId, onLaunch, scopeLearnerId });
-  state.current = { safe, screenId, onLaunch, scopeLearnerId };
+  const state = useRef({ safe, screenId, onLaunch, scopeLearnerId, openLearnerId });
+  state.current = { safe, screenId, onLaunch, scopeLearnerId, openLearnerId };
   // Intent ids a scoped claim has already been attempted for: a failed claim
   // says so once and is not retried on every poll.
   const scopedAttempts = useRef(new Set());
@@ -105,6 +111,11 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
   const claim = useCallback(async learnerId => {
     const selected = current.current;
     const allowed = () => state.current.safe || (learnerId && state.current.scopeLearnerId === learnerId);
+    // Once the server has handed the book over it is no longer pending: a
+    // shelf that stepped into a cover or an update meanwhile is still this
+    // child's shelf, and it queues the book (`useBookShelf`). Dropping the
+    // answer here would lose the book outright.
+    const stillOwned = () => allowed() || (learnerId && state.current.openLearnerId === learnerId);
     if (!allowed() || !selected || claimLock.current || !['ready', 'not-found'].includes(selected.status)) return;
     const gen = generation.current;
     const claimToken = Symbol();
@@ -112,7 +123,7 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     const result = await schoolApi.bookScans.claim(selected.id, { screenId, learnerId });
     if (claimLock.current !== claimToken) return;
     claimLock.current = false; setClaiming(false);
-    if (gen !== generation.current || !allowed() || current.current?.id !== selected.id) return;
+    if (gen !== generation.current || !stillOwned() || current.current?.id !== selected.id) return;
     if (!result.ok || result.data?.intentId !== selected.id || !result.data?.launchTarget?.bookGrant) {
       setError(result.data?.error?.message ?? 'Could not open this scan. Try again or rescan the book.');
       schoolLog.bookShelfError('scan.claim-failed', { status: result.status }); return;
@@ -123,18 +134,29 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     void refresh();
   }, [screenId, refresh]);
   // A shelf only claims what is scanned WHILE it is open. A scan already
-  // waiting when it opened belongs to the pile (another child's stack, most
-  // likely); claiming it would launch this child's shelf with that book.
-  const scopeSeen = useRef(scopeLearnerId);
+  // waiting when it FIRST opened belongs to the pile (another child's stack,
+  // most likely); claiming it would launch this child's shelf with that book.
+  // Keyed on the shelf opening, NOT on the scope: the scope goes null and back
+  // every time the shelf leaves its scan-ready view, and seeding on that
+  // marked every scan that arrived during a cover step as "already waiting"
+  // (2026-11-05: two of four books lost that way).
+  const openSeen = useRef(openLearnerId);
+  const preOpen = useRef(new Set());
   useEffect(() => {
-    if (scopeLearnerId && scopeSeen.current !== scopeLearnerId && current.current) scopedAttempts.current.add(current.current.id);
-    scopeSeen.current = scopeLearnerId;
-  }, [scopeLearnerId]);
+    if (openLearnerId && openSeen.current !== openLearnerId && current.current) preOpen.current.add(current.current.id);
+    if (!openLearnerId) preOpen.current.clear();
+    openSeen.current = openLearnerId;
+  }, [openLearnerId]);
   useEffect(() => {
     if (!scopeLearnerId || !intent || claiming || !['ready', 'not-found'].includes(intent.status)) return;
     if (scopedAttempts.current.has(intent.id)) return;
+    if (preOpen.current.has(intent.id)) {
+      scopedAttempts.current.add(intent.id);
+      schoolLog.bookShelfDebug?.('scan.scoped-claim-skipped', { screenId, learnerId: scopeLearnerId, reason: 'waiting-before-shelf-opened', isbn13: intent.isbn13 ?? null });
+      return;
+    }
     scopedAttempts.current.add(intent.id);
-    schoolLog.bookShelf('scan.scoped-claim', { screenId, learnerId: scopeLearnerId, status: intent.status });
+    schoolLog.bookShelf('scan.scoped-claim', { screenId, learnerId: scopeLearnerId, status: intent.status, isbn13: intent.isbn13 ?? null });
     void claim(scopeLearnerId);
   }, [scopeLearnerId, intent, claiming, claim, screenId]);
   return { intent, claiming, error, claim, dismiss, enabled };
