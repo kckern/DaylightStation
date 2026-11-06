@@ -18,6 +18,22 @@ Piano remains the context owner for MIDI, instrument addressing, pedagogy, progr
 - Battle Stadium remains an external runtime. It participates in registry discovery but does not inherit a piano gameplay model.
 
 
+## Run roles and the real-time kit
+
+`game-platform/host/gameLifecycle.js` no longer owns a phase vocabulary: it
+re-exports the gaming kit's `RUN_ROLES` and `projectRunRole` as `HOST_PHASES` and
+`projectHostPhase`. A game keeps its own phase names and maps them onto the roles.
+Real-time games (the Side Scroller) step on the kit's fixed-step runner; see
+[Real-time Game Kit](../gaming/realtime-kit.md).
+
+## The gem ceremony in the Games picker
+
+The Games mode runs the gem ceremony for the piano surface. Its queue is held
+above the routes, so a ceremony interrupted by opening a game shows again on
+return; looking is enabled only on the picker and the card renders only there, so
+it never appears during a live game. The coin cue is primed from the first
+gesture. See [Household economy](../economy/economy.md#gem-board).
+
 ## The chrome kit
 
 Before this existed, the platform owned layout and nothing else, so every game invented its own surface, border, accent and idea of how big a button is. Eight games shipped six palettes: Chess's stylesheet was 76% tokenized and the other seven were 0%, Checkers' panel was `#071526b8` where Connect Four's was `#071526aa`, and four separate games each picked their own neon for "you scored" (`#00ffc8`, `#38f0cf`, `#72f1b8`, and the house `#2ec46f`).

@@ -64,7 +64,7 @@ import HangulTypingProvider from "./ime/HangulTypingProvider.jsx";
 import GemBoardOverlay from "../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx";
 import GemCeremony from "../../../../frontend/src/lib/economy/GemBoard/GemCeremony.jsx";
 import { useGemCeremony } from "../../../../frontend/src/lib/economy/GemBoard/useGemCeremony.js";
-import { playCoinCue } from "./status/coinCeremonyAudio.js";
+import { playCoinCue } from "../../../../frontend/src/lib/economy/coinCeremonyAudio.js";
 import GemIcon from "../../../../frontend/src/lib/icons/GemIcon.jsx";
 import "./School.scss";
 

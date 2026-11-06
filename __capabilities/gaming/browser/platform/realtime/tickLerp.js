@@ -1,15 +1,16 @@
-import { tickFraction } from "./tickFraction.js";
+import { tickFraction } from "../../../portable/realtime/index.mjs";
+import { createFrameDriver } from './frameDriver.js';
 
 /**
  * One shared, linear motion clock for a panel's data-driven positions.
  *
  * The engine ticks at ~1 Hz, so every rendered datum (chart tip, terminus tags,
  * speedo needle, oval markers, odometer) would otherwise jump once per second.
- * `createTickLerp` runs a SINGLE rAF loop per instance and, on every frame,
- * reports a LINEAR fraction 0→1 measured from the last `onTick()` across
- * `intervalMs` (reusing `tickFraction` semantics). Consumers lerp their own
- * `prev → cur` positions by that fraction and write them to the DOM imperatively —
- * so React never re-renders per frame (the PovGrid pattern).
+ * `createTickLerp` runs a SINGLE rAF loop (a frame driver) per instance and, on
+ * every frame, reports a LINEAR fraction 0→1 measured from the last `onTick()`
+ * across `intervalMs`. Consumers lerp their own `prev → cur` positions by that
+ * fraction and write them to the DOM imperatively — so React never re-renders per
+ * frame (the PovGrid pattern).
  *
  * Contract:
  *   - `onTick(payload)`  — a new data tick arrived; resets the fraction to 0 and
@@ -32,8 +33,6 @@ export function createTickLerp({ intervalMs = 1000, now } = {}) {
   const subs = new Set();
   let tickAt = readNow();
   let payload;
-  let rafId = 0;
-  let running = false;
 
   const emit = (f) => {
     subs.forEach((cb) => {
@@ -42,43 +41,35 @@ export function createTickLerp({ intervalMs = 1000, now } = {}) {
     });
   };
 
-  const frame = () => {
-    rafId = 0;
-    if (!running) return;
-    const f = tickFraction(readNow(), tickAt, intervalMs);
-    emit(f);
-    if (f < 1) {
-      rafId = requestAnimationFrame(frame);
-    } else {
-      running = false; // park at the tick; the next onTick re-arms
-    }
-  };
+  const driver = createFrameDriver({
+    now: readNow,
+    onFrame: ({ nowMs }) => {
+      const f = tickFraction(nowMs, tickAt, intervalMs);
+      emit(f);
+      return f < 1; // park at the tick; the next onTick re-arms
+    },
+  });
 
   return {
     onTick(next) {
       payload = next;
       tickAt = readNow();
-      if (typeof requestAnimationFrame === 'undefined') {
+      if (typeof globalThis.requestAnimationFrame === 'undefined') {
         // No rAF host (SSR / bare unit env): land subscribers on the current tick.
         emit(1);
         return;
       }
-      if (!running) {
-        running = true;
-        rafId = requestAnimationFrame(frame);
-      }
+      driver.wake();
     },
     subscribe(cb) {
       subs.add(cb);
       return () => { subs.delete(cb); };
     },
     stop() {
-      running = false;
-      if (rafId && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(rafId);
-      rafId = 0;
+      driver.stop();
       subs.clear();
     },
-    get running() { return running; },
+    get running() { return driver.running; },
   };
 }
 

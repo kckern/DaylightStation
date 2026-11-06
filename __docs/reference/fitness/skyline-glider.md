@@ -21,6 +21,10 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 - Game score is unique bells plus weapon-destroyed targets; crash destruction earns no target point. Completion ring rewards remain based on bells.
 - Completion awards 10 rings plus one per unique collectible, capped at 30. Normal heart-rate rings continue independently.
 
+## Loop and effects
+
+The simulation and its plumbing come from the gaming [real-time kit](../gaming/realtime-kit.md). `stepFlight` is sub-stepped by the kit's `advance` (1/60 s steps, last step partial). The flight loop is a kit `createFrameDriver` with frames capped at 0.1 s; a frame that throws is logged as `skyline_glider.frame.error` and the flight continues. Flight events (sounds, toasts) go through the kit's `createEffectDispatcher`, which keeps the `skyline_glider.effect.executed`, `.skipped` and `.failed` names and their `effectId` field. Once a flight is saved the game calls `announceGameAchievement`, so the gem ceremony looks at once.
+
 ## Weapons
 
 During flight, top-left fires laser, top-right drops a bomb, bottom-left launches a guided missile and bottom-right boosts the craft forward. The 2×2 panel is not drawn during flight; the HUD bar across the top shows hearts, time remaining, bells, targets and (when above 1×) heart-rate power on the left, and a 2×2 legend of the four actions on the right in their physical positions, each with its ammunition or recharge. Every press flashes its legend cell: green when it fires, red with the reason (`Reloading`, `Empty`, `Charging`, `Wait`) plus a short deny tone when it does not, logged as `skyline_glider.input.refused` (`action`, `reason`). Holding bottom-right opens a labeled menu for Resume, Sound, End flight and Change rider. The menu freezes simulation; resuming requires pedal readiness and preserves ammunition. A committed stall completes before the menu can open. Sensor loss still permits ending the flight. No attack or menu input reassigns the rider.

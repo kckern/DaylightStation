@@ -1,7 +1,7 @@
 /**
  * Fraction [0,1] elapsed from a tick timestamp toward the next tick. Saturates at 1
  * when a tick is overdue, so an interpolated value freezes at the latest data
- * instead of mid-glide. Pure — feed performance.now() from the caller.
+ * instead of mid-glide. Pure — the caller feeds in the current time.
  */
 export function tickFraction(nowMs, tickAtMs, tickMs) {
   if (!(tickMs > 0)) return 1;

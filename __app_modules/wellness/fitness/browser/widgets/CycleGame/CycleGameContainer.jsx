@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { announceAchievement } from "../../lib/achievementEvents.js";
+import { announceGameAchievement } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from "../../lib/cycleGame/CycleRaceController.js";
@@ -30,6 +30,7 @@ import CycleEventToast from "./CycleEventToast.jsx";
 import RaceResults from "./RaceResults.jsx";
 import RaceRecap from "./RaceRecap.jsx";
 import { StopSignIcon, TimeIcon, RaceFlagIcon, MedalIcon, SpeedIcon, GhostIcon } from "./home/icons.jsx";
+import { dueAnchoredSteps } from "../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import "./CycleGameContainer.scss";
 
 // Drama-event toast icons, keyed by the `variant` dramaEventCopy.js returns
@@ -1350,9 +1351,12 @@ export default function CycleGameContainer({ onMount } = {}) {
       // Defensive fallback (anchor missing): advance exactly one tick rather than
       // stalling forever. Should not happen — the anchor effect above always
       // settles in the same commit as isEngineLive flipping true.
-      let dueTicks = anchorMs == null ? 1 : Math.floor((nowMs - anchorMs) / RACE_TICK_MS) - tickedCount;
-      if (dueTicks < 0) dueTicks = 0;
-      const cappedTicks = Math.min(dueTicks, 30); // bound a resumed-from-freeze burst
+      const { due: dueTicks, run: cappedTicks } = dueAnchoredSteps({
+        sinceAnchor: anchorMs == null ? null : nowMs - anchorMs,
+        stepsTaken: tickedCount,
+        step: RACE_TICK_MS,
+        maxSteps: 30, // bound a resumed-from-freeze burst
+      });
       if (dueTicks > 1) {
         log.warn('cycle_game.tick_catchup', {
           raceId: raceMetaRef.current?.raceId,
@@ -1438,7 +1442,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           ...(ok ? {} : { error: result.error })
         });
         if (ok) clearCheckpoint(window.sessionStorage); // race safely landed — the checkpoint is now redundant
-        if (ok) announceAchievement('cycle-race', { raceId: meta.raceId }); // the gem ceremony looks now
+        if (ok) announceGameAchievement('cycle-race', { raceId: meta.raceId }); // the gem ceremony looks now
         else setSaveFailed(true);
         // The race just saved may have shuffled this week's featured-course
         // ladder — refetch and diff against the pre-race snapshot to surface

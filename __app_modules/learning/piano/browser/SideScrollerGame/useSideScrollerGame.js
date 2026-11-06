@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { useStaffMatching } from '../game-platform/families/bound-action/useStaffMatching.js';
 import { resolveTheme } from './sideScrollerTheme.js';
 import { useSideScrollerSfx } from './sideScrollerSounds.js';
 import { generateScrollerTargets } from './sideScrollerTargets.js';
+import { planSteps } from '../../../../../__capabilities/gaming/portable/realtime/index.mjs';
+import { createFrameDriver, createEffectDispatcher } from '../../../../../__capabilities/gaming/browser/platform/realtime/index.js';
 import {
   TOTAL_HEALTH,
   MAX_DUCK_MS,
@@ -32,6 +34,15 @@ const OUTCOME_ADVANCE = 'advance';
 // ─── Constants ──────────────────────────────────────────────────
 const COUNTDOWN_STEPS = [3, 2, 1, 0];
 const COUNTDOWN_STEP_MS = 800;
+/** Fixed simulation step. Whole steps only; the remainder carries to the next frame. */
+const STEP_S = 1 / 60;
+/** Longest frame the loop will simulate (a backgrounded tab does not leap). */
+const MAX_FRAME_S = 0.1;
+/** Cleared-obstacle sounds; no log names, so the dispatcher adds no log lines. */
+const SFX_TABLE = Object.freeze({
+  hit: () => [{ id: 'hit', cue: 'hit' }],
+  dodge: () => [{ id: 'dodge', cue: 'dodge' }],
+});
 /** How long the death burst plays before the Game Over card. */
 export const DEATH_MS = 2000;
 
@@ -44,6 +55,11 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   // original Mega Man + procedural-CSS look). Sounds are silent until configured.
   const theme = useMemo(() => resolveTheme(gameConfig), [gameConfig]);
   const sfx = useSideScrollerSfx(theme.sounds);
+  const effects = useMemo(() => createEffectDispatcher({
+    table: SFX_TABLE,
+    playCue: (cue) => { sfx.play(cue); return true; },
+    logNames: {},
+  }), [sfx]);
 
   const [phase, setPhase] = useState('IDLE');
   const [world, setWorld] = useState(() => createInitialWorld(gameConfig));
@@ -73,18 +89,22 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   }), [gameConfig]);
 
   // Timer refs
-  const rafRef = useRef(null);
+  const driverRef = useRef(null);
   const countdownRef = useRef(null);
   const deathTimerRef = useRef(null);
-  const lastFrameRef = useRef(0);
-  const lastSpawnRef = useRef(0);
+  // Simulated clock (ms). Advances only by fixed steps while PLAYING, so every
+  // engine timestamp (duck, damage, shoot pose, spawn spacing) is game time.
+  const simMsRef = useRef(0);
+  const carryRef = useRef(0);
+  // Sim time of the last spawn; null = nothing spawned yet this run.
+  const lastSpawnRef = useRef(null);
   const prevDodgeCountRef = useRef(0);
   const pendingOutcomeRef = useRef(null);
 
   // ─── Cleanup ────────────────────────────────────────────────
 
   const clearAllTimers = useCallback(() => {
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    driverRef.current?.stop();
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     if (deathTimerRef.current) { clearTimeout(deathTimerRef.current); deathTimerRef.current = null; }
   }, []);
@@ -103,96 +123,16 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     setTargets(newTargets);
   }, [logger]);
 
-  // ─── Game Loop (rAF) ───────────────────────────────────────
-
-  const gameLoop = useCallback((timestamp) => {
-    if (phaseRef.current !== 'PLAYING') return;
-
-    const dt = lastFrameRef.current ? Math.min((timestamp - lastFrameRef.current) / 1000, 0.1) : 0.016;
-    lastFrameRef.current = timestamp;
-
-    const lvlConfig = levels[levelRef.current] ?? levels[0];
-    if (!lvlConfig) return;
-
-    const scrollSpeed = lvlConfig.scroll_speed ?? 3;
-
-    // Obstacle interval: supports [min, max] range or single fixed value
-    const rawInterval = lvlConfig.obstacle_interval_ms ?? 2000;
-    const [intervalMin, intervalMax] = Array.isArray(rawInterval)
-      ? [rawInterval[0], rawInterval[1]]
-      : [rawInterval, rawInterval];
-
-    // Spawn decision — computed OUTSIDE state updater to avoid side-effect issues
-    const elapsed = timestamp - lastSpawnRef.current;
-    // Pick a random threshold within the configured range for this spawn cycle
-    const nextInterval = intervalMin + Math.random() * (intervalMax - intervalMin);
-    let spawnType = null;
-    if (elapsed >= nextInterval || lastSpawnRef.current === 0) {
-      spawnType = pickObstacleType(lvlConfig.obstacle_mix);
-      lastSpawnRef.current = timestamp;
-    }
-
-    setWorld(prev => {
-      let next = tickWorld(prev, dt, scrollSpeed);
-      next = updateJump(next, dt, config.jumpDurationMs);
-      next = updateDuck(next, timestamp, config.maxDuckMs);
-
-      if (next.blockHits > (prev.blockHits ?? 0)) {
-        logger.info('side-scroller.block-hit', {
-          hits: next.blockHits - (prev.blockHits ?? 0),
-          broken: next.blocksBroken - (prev.blocksBroken ?? 0),
-          blocksBroken: next.blocksBroken,
-        });
-      }
-
-      // Spawn obstacle (decision was made outside updater)
-      if (spawnType) {
-        next = spawnObstacle(next, spawnType);
-      }
-
-      // Check collisions
-      const collisions = checkCollisions(next);
-      if (collisions.length > 0) {
-        const hitIndices = collisions.map(c => next.obstacles.indexOf(c));
-        next = applyDamage(next, config.damagePerHit, config.invincibilityMs, timestamp, hitIndices);
-        sfx.play('hit');
-        logger.info('side-scroller.collision', { count: collisions.length, types: collisions.map(c => c.type), health: next.health, damagePerHit: config.damagePerHit });
-        if (next.health <= TOTAL_HEALTH * 0.25 && next.health > 0) {
-          logger.warn('side-scroller.health-warning', { health: next.health, totalHealth: TOTAL_HEALTH });
-        }
-      }
-
-      // Check for newly cleared obstacles (dodged or shot down) → heal
-      if (next.dodgeCount > prevDodgeCountRef.current) {
-        const dodged = next.dodgeCount - prevDodgeCountRef.current;
-        for (let i = 0; i < dodged; i++) {
-          next = applyHeal(next, config.healPerDodge);
-        }
-        sfx.play('dodge');
-        logger.info('side-scroller.heal', { dodged, health: next.health, healPerDodge: config.healPerDodge });
-        prevDodgeCountRef.current = next.dodgeCount;
-      }
-
-      // Evaluate level — store outcome in ref instead of calling setState from updater
-      const outcome = evaluateLevel(next, lvlConfig);
-      if (outcome === 'fail') {
-        pendingOutcomeRef.current = { type: OUTCOME_FAIL, score: next.score, level: levelRef.current };
-        return next;
-      }
-      if (outcome === 'advance') {
-        const nextLevel = levelRef.current + 1;
-        pendingOutcomeRef.current = { type: OUTCOME_ADVANCE, from: levelRef.current, score: next.score, nextLevel };
-        next = { ...next, score: 0 };
-      }
-
-      return next;
-    });
-
-    // Apply side effects after setWorld (extracted from updater)
+  // ─── Outcomes ───────────────────────────────────────────────
+  // The setWorld updater records a fail/advance in pendingOutcomeRef; this applies
+  // it once. Returns true when the loop must stop (a fail).
+  const applyPendingOutcome = useCallback(() => {
     const outcome = pendingOutcomeRef.current;
     if (outcome) {
       pendingOutcomeRef.current = null;
       if (outcome.type === OUTCOME_FAIL) {
+        // The clock stops at the failing step, not at the end of the frame's plan.
+        simMsRef.current = outcome.simMs;
         // The world freezes and the player bursts; Game Over follows the burst.
         // The phase ref moves now, not on the next render, so a frame already
         // queued cannot fail the run a second time.
@@ -208,7 +148,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
             setPhase('GAME_OVER');
           }, DEATH_MS);
         }
-        return;
+        return true;
       } else if (outcome.type === OUTCOME_ADVANCE) {
         logger.info('side-scroller.level-advance', { from: outcome.from, score: outcome.score });
         if (outcome.nextLevel >= levels.length) {
@@ -223,20 +163,145 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       }
     }
 
-    rafRef.current = requestAnimationFrame(gameLoop);
-  }, [levels, config, logger, regenerateTargets, sfx]);
+    return false;
+  }, [levels, logger, regenerateTargets, sfx]);
+
+  // An updater React deferred to its render recorded its outcome during that
+  // render: apply it at commit, before another frame can step past it.
+  useLayoutEffect(() => {
+    if (applyPendingOutcome()) driverRef.current?.stop();
+  }, [world, applyPendingOutcome]);
+
+  // ─── Game Loop (rAF) ───────────────────────────────────────
+
+  const gameLoop = useCallback(({ elapsedS }) => {
+    if (phaseRef.current !== 'PLAYING') return false;
+
+    const lvlConfig = levels[levelRef.current] ?? levels[0];
+    if (!lvlConfig) return false;
+
+    const scrollSpeed = lvlConfig.scroll_speed ?? 3;
+
+    // Obstacle interval: supports [min, max] range or single fixed value
+    const rawInterval = lvlConfig.obstacle_interval_ms ?? 2000;
+    const [intervalMin, intervalMax] = Array.isArray(rawInterval)
+      ? [rawInterval[0], rawInterval[1]]
+      : [rawInterval, rawInterval];
+
+    // Plan whole fixed steps; the remainder carries to the next frame.
+    const plan = planSteps(elapsedS, { stepS: STEP_S, remainder: 'carry', carryS: carryRef.current });
+    carryRef.current = plan.carryS;
+    if (plan.dts.length === 0) return true;
+
+    // Per-step clock + spawn decisions — computed OUTSIDE the state updater to
+    // avoid side-effect issues (the updater only replays them).
+    const steps = plan.dts.map((dt) => {
+      simMsRef.current += dt * 1000;
+      const now = simMsRef.current;
+      // Pick a random threshold within the configured range for this spawn check
+      const nextInterval = intervalMin + Math.random() * (intervalMax - intervalMin);
+      let spawnType = null;
+      if (lastSpawnRef.current === null || now - lastSpawnRef.current >= nextInterval) {
+        spawnType = pickObstacleType(lvlConfig.obstacle_mix);
+        lastSpawnRef.current = now;
+      }
+      return { dt, now, spawnType };
+    });
+
+    setWorld(prev => {
+      let next = prev;
+      for (const { dt, now, spawnType } of steps) {
+        const before = next;
+        next = tickWorld(next, dt, scrollSpeed);
+        next = updateJump(next, dt, config.jumpDurationMs);
+        next = updateDuck(next, now, config.maxDuckMs);
+
+        if (next.blockHits > (before.blockHits ?? 0)) {
+          logger.info('side-scroller.block-hit', {
+            hits: next.blockHits - (before.blockHits ?? 0),
+            broken: next.blocksBroken - (before.blocksBroken ?? 0),
+            blocksBroken: next.blocksBroken,
+          });
+        }
+
+        // Spawn obstacle (decision was made outside updater)
+        if (spawnType) {
+          next = spawnObstacle(next, spawnType);
+        }
+
+        // Check collisions
+        const collisions = checkCollisions(next);
+        if (collisions.length > 0) {
+          const hitIndices = collisions.map(c => next.obstacles.indexOf(c));
+          next = applyDamage(next, config.damagePerHit, config.invincibilityMs, now, hitIndices);
+          effects.dispatch([{ type: 'hit' }]);
+          logger.info('side-scroller.collision', { count: collisions.length, types: collisions.map(c => c.type), health: next.health, damagePerHit: config.damagePerHit });
+          if (next.health <= TOTAL_HEALTH * 0.25 && next.health > 0) {
+            logger.warn('side-scroller.health-warning', { health: next.health, totalHealth: TOTAL_HEALTH });
+          }
+        }
+
+        // Check for newly cleared obstacles (dodged or shot down) → heal
+        if (next.dodgeCount > prevDodgeCountRef.current) {
+          const dodged = next.dodgeCount - prevDodgeCountRef.current;
+          for (let i = 0; i < dodged; i++) {
+            next = applyHeal(next, config.healPerDodge);
+          }
+          effects.dispatch([{ type: 'dodge' }]);
+          logger.info('side-scroller.heal', { dodged, health: next.health, healPerDodge: config.healPerDodge });
+          prevDodgeCountRef.current = next.dodgeCount;
+        }
+
+        // Evaluate level — store outcome in ref instead of calling setState from updater
+        const outcome = evaluateLevel(next, lvlConfig);
+        if (outcome === 'fail') {
+          pendingOutcomeRef.current = { type: OUTCOME_FAIL, score: next.score, level: levelRef.current, simMs: now };
+          return next; // no further steps after a fail
+        }
+        if (outcome === 'advance') {
+          const nextLevel = levelRef.current + 1;
+          pendingOutcomeRef.current = { type: OUTCOME_ADVANCE, from: levelRef.current, score: next.score, nextLevel };
+          next = { ...next, score: 0 };
+        }
+      }
+
+      return next;
+    });
+
+    // Apply side effects after setWorld (extracted from updater). React may
+    // defer the updater to its render; the layout effect below catches that case.
+    if (applyPendingOutcome()) return false;
+
+    return true;
+  }, [levels, config, logger, regenerateTargets, effects, applyPendingOutcome]);
+
+  const frameErrorLoggedRef = useRef(false);
+  // One frame driver for the hook's lifetime; it always calls the latest loop.
+  const gameLoopRef = useRef(gameLoop);
+  useEffect(() => { gameLoopRef.current = gameLoop; }, [gameLoop]);
+  if (!driverRef.current) {
+    driverRef.current = createFrameDriver({
+      onFrame: (frame) => gameLoopRef.current(frame),
+      maxFrameS: MAX_FRAME_S,
+      // A loop that throws does so every frame: log the first per run, no re-throw.
+      onError: (err) => {
+        if (frameErrorLoggedRef.current) return;
+        frameErrorLoggedRef.current = true;
+        logger.error('side-scroller.frame.error', { error: err?.message });
+      },
+    });
+  }
 
   // Start/stop game loop based on phase — DO NOT reset refs here
   useEffect(() => {
+    const driver = driverRef.current;
     if (phase === 'PLAYING') {
-      rafRef.current = requestAnimationFrame(gameLoop);
+      driver.start();
     } else {
-      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      driver.stop();
     }
-    return () => {
-      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    };
-  }, [phase, gameLoop]);
+    return () => driver.stop();
+  }, [phase]);
 
   // ─── Action Handlers ────────────────────────────────────────
 
@@ -247,7 +312,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       setWorld(prev => applyJump(prev));
     } else if (actionName === 'duck') {
       sfx.play('duck');
-      const now = performance.now();
+      const now = simMsRef.current;
       setWorld(prev => applyDuck(prev, now));
     } else if (actionName === 'shoot') {
       // No slide-shot: a shot while ducking is ignored, and says so.
@@ -256,7 +321,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
         return;
       }
       sfx.play('shoot');
-      const now = performance.now();
+      const now = simMsRef.current;
       setWorld(prev => applyShoot(prev, now));
     }
   }, [logger, sfx]);
@@ -291,10 +356,13 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   const startGame = useCallback(() => {
     if (!['IDLE', 'GAME_OVER'].includes(phaseRef.current)) return;
     clearAllTimers();
+    frameErrorLoggedRef.current = false;
 
     // Reset all timing refs here (NOT in the rAF effect)
-    lastFrameRef.current = 0;
-    lastSpawnRef.current = 0;
+    simMsRef.current = 0;
+    carryRef.current = 0;
+    pendingOutcomeRef.current = null;
+    lastSpawnRef.current = null;
     prevDodgeCountRef.current = 0;
     lastRegenDodgeRef.current = 0;
 
@@ -361,6 +429,8 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     health: world.health,
     totalHealth: config.health,
     score: world.score,
+    // Simulated ms — the clock the world's invincibleUntil / shootUntil are stamped in.
+    simMs: simMsRef.current,
     startGame,
     nextObstacleType,
     theme,

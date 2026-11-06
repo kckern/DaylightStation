@@ -10,15 +10,17 @@
  * the Portal's volume curve and a muted panel stays silent. Never throws: the
  * pop-up must not depend on the sound.
  */
-import { DaylightMediaPath } from "../../../../../frontend/src/lib/api.mjs";
-import { getEffectiveMaster } from "../../../../../frontend/src/lib/volume/ScreenVolumeContext.js";
-import { COIN_CEREMONY_DEFAULTS } from "./coinCeremonyModel.js";
-import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { DaylightMediaPath } from "../api.mjs";
+import getLogger from "../logging/Logger.js";
+import { getEffectiveMaster } from "../volume/ScreenVolumeContext.js";
+// The default cue (same file as COIN_CEREMONY_DEFAULTS.sound in School's model;
+// duplicated so this shared lib does not import an app module).
+const DEFAULT_COIN_SOUND = 'school/_ux/coin.mp3';
 
 let audio = null;
 let unlocked = false;
 let _logger = null;
-const logger = () => (_logger ||= getLogger().child({ component: 'school-coin-cue' }));
+const logger = () => (_logger ||= getLogger().child({ component: 'coin-cue' }));
 
 function element() {
   if (!audio && typeof Audio !== 'undefined') audio = new Audio();
@@ -63,7 +65,7 @@ export function playCoinCue({ sound, volume = 0.8 } = {}) {
 let installed = null;
 export function installCoinCueUnlock(
   target = typeof window !== 'undefined' ? window : null,
-  { sound = COIN_CEREMONY_DEFAULTS.sound } = {},
+  { sound = DEFAULT_COIN_SOUND } = {},
 ) {
   if (!target || unlocked || !sound) return () => {};
   if (installed) return installed.off;

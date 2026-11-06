@@ -10,7 +10,7 @@ import { formatClock } from "../../../lib/cycleGame/cycleGameLobby.js";
 import { formatDistance } from "../../../lib/cycleGame/formatDistance.js";
 import { gapFrac } from "../../../lib/cycleGame/chartScale.js";
 import resolveParticipantIdentity from "../../../lib/cycleGame/participantIdentity.js";
-import { createTickLerp } from "../../../lib/cycleGame/motionClock.js";
+import { createTickLerp } from "../../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./DistanceChart.scss";
 
 const X_BASE_S = 20;        // smallest time window (seconds; 1 sample = 1s at the 1Hz tick)
@@ -103,7 +103,7 @@ function layoutTags(tips, win, minSepPct) {
  *
  * Motion (T6 architecture): the engine ticks at 1 Hz. Geometry is computed ONCE
  * per tick during render; the lane lines/areas, terminus tags, connectors and
- * event markers then GLIDE on a single shared linear rAF clock (motionClock),
+ * event markers then GLIDE on a single shared linear rAF clock (tickLerp),
  * written imperatively. React never re-renders per animation frame. The line
  * remap eases the WINDOW bounds prev→cur across the tick, so a continuous zoom
  * reads as a smooth drift rather than a per-tick snap.

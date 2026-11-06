@@ -56,10 +56,13 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
     return pitches.size > 0 ? pitches : null;
   }, [game.targets]);
 
-  // Invincibility (hurt pose) and the shooting pose both hold for a moment
-  const now = performance.now();
-  const invincible = game.world.invincibleUntil > now;
-  const shooting = game.world.shootUntil > now;
+  // Invincibility (hurt pose) and the shooting pose both hold for a moment.
+  // Both are stamped in the hook's simulated clock, which only runs while
+  // PLAYING — so outside PLAYING (death burst, Game Over) neither is shown,
+  // rather than freezing mid-blink.
+  const playing = game.phase === 'PLAYING';
+  const invincible = playing && game.world.invincibleUntil > game.simMs;
+  const shooting = playing && game.world.shootUntil > game.simMs;
   // The HUD stays up through the death burst, so the empty meter is seen
   const running = game.phase === 'PLAYING' || game.phase === 'DYING';
 

@@ -38,7 +38,7 @@ the hard part — is now battle-tested library code.
 | `PovGrid.scss` | WebGL canvas + label/card overlay layers, full-bleed. |
 | `lib/cycleGame/povWorld.js` | **Pure.** Race data → world coords: rider x/z, metre marks (1 m / 10 m, majors labelled), lap/finish gates. Unit-tested. |
 | `lib/cycleGame/povFollowCam.js` | **Pure.** The framing box: last-place → leader + `AHEAD_M` of road ahead, with a `MIN_SPAN_M` cap. Unit-tested. |
-| `lib/cycleGame/tickFraction.js` | 1 Hz → 60 fps interpolation clock (shared). |
+| `__capabilities/gaming/portable/realtime/tickFraction.mjs` | 1 Hz → 60 fps interpolation clock (shared real-time kit; `browser/platform/realtime/tickLerp.js` is the rAF motion clock on top of it). |
 | `lib/cycleGame/lineColors.js`, `formatDistance.js` | Per-rider colour + distance formatting (shared). |
 
 ## How it runs

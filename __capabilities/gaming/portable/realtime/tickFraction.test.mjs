@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tickFraction } from "./tickFraction.js";
+import { tickFraction } from "./tickFraction.mjs";
 
 describe('tickFraction', () => {
   it('is 0 at the tick instant and 1 a full tick later', () => {

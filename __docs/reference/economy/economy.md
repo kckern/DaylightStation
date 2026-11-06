@@ -415,10 +415,19 @@ One view of every learner against every gem, for one week. Design:
   taken (`leading`); a lead that becomes a win celebrates again, a lost lead
   never does. A surface that has not looked this week learns silently, and a
   reload never replays one.
+  - Ordering rule for every surface (never during a live run; the piano is stricter): see [the ceremony ordering rule](../gaming/realtime-kit.md#the-ceremony-ordering-rule).
   - **Fitness** (`FitnessApp` global overlays): learns on load, then looks
-    (fresh) 1.5 s after `fitness-achievement-recorded` (a cycle race or a Skyline
-    Glider flight saved, `lib/achievementEvents.js`) and after a workout ends;
+    (fresh) 1.5 s after `game-achievement-recorded` (a cycle race or a Skyline
+    Glider flight saved, `announceGameAchievement` in the [gaming real-time kit](../gaming/realtime-kit.md)) and after a workout ends;
     shown after any coin ceremony, with the coin sound.
+  - **Piano kiosk** (Games mode): the ceremony queue lives above the routes
+    and looks with a fresh read (`?fresh=1`) each time the picker is shown, so
+    arriving back from a game counts as "a game just ended". Its
+    `game-achievement-recorded` listener is attached only while the picker is
+    showing, and no piano game fires that event today.
+    The card renders only on the picker, never over a live game, and a ceremony
+    interrupted by opening a game shows again on return. Coin cue from
+    `frontend/src/lib/economy/coinCeremonyAudio.js`, primed on the first gesture.
   - **School Portal** (`SchoolApp`): while the panel rests at the keypad, a
     minute poll and each return to the keypad; drawn over the board pane only,
     never the keypad, with the coin cue.
