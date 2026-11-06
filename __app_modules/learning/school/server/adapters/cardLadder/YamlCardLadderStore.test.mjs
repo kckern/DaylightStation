@@ -221,3 +221,36 @@ describe('YamlCardLadderStore.listPackages', () => {
     expect(store.listPackages('nobody')).toEqual([]);
   });
 });
+
+describe('YamlCardLadderStore dictation files', () => {
+  const list = { schema: 'school.card-ladder-dictation/v1', week: '2026-W45', setAt: '2026-11-02T08:00:00.000Z', words: ['gawi', 'pul'] };
+  it('reads missing files as null / empty', () => {
+    const store = new YamlCardLadderStore({ configService });
+    expect(store.readDictation('test-learner', 'korean-vocab')).toBeNull();
+    expect(store.readDictationProgress('test-learner', 'korean-vocab')).toEqual({ week: null, words: {} });
+  });
+  it('round-trips the list and the progress', () => {
+    const store = new YamlCardLadderStore({ configService });
+    store.writeDictation('test-learner', 'korean-vocab', list);
+    store.writeDictationProgress('test-learner', 'korean-vocab', { week: '2026-W45', words: { gawi: { step: 'copy', blindPasses: 1, lastAttemptAt: '2026-11-06T10:00:00.000Z' } } });
+    expect(yaml.load(fs.readFileSync(path.join(base(), 'dictation.yml'), 'utf8'))).toEqual(list);
+    expect(store.readDictation('test-learner', 'korean-vocab')).toEqual(list);
+    expect(store.readDictationProgress('test-learner', 'korean-vocab').words.gawi).toMatchObject({ step: 'copy', blindPasses: 1 });
+    expect(fs.existsSync(path.join(base(), 'dictation-progress.yml'))).toBe(true);
+  });
+  it('the read-only view reads both and has no writer', () => {
+    const store = new YamlCardLadderStore({ configService });
+    store.writeDictation('test-learner', 'korean-vocab', list);
+    const view = store.readOnlyView();
+    expect(view.readDictation('test-learner', 'korean-vocab')).toEqual(list);
+    expect(view.readDictationProgress('test-learner', 'korean-vocab')).toEqual({ week: null, words: {} });
+    expect(view.writeDictation).toBeUndefined();
+    expect(view.writeDictationProgress).toBeUndefined();
+  });
+  it('refuses to overwrite a corrupt progress file', () => {
+    fs.mkdirSync(base(), { recursive: true });
+    fs.writeFileSync(path.join(base(), 'dictation-progress.yml'), 'week: [broken');
+    const store = new YamlCardLadderStore({ configService, logger: { error() {} } });
+    expect(() => store.writeDictationProgress('test-learner', 'korean-vocab', { week: 'w', words: {} })).toThrow(/corrupt/);
+  });
+});

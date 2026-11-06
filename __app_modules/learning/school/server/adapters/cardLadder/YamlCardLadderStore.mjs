@@ -6,7 +6,7 @@ import {
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 import {
-  DAY_SCHEMA, SLUG, STATUS_SCHEMA_V3, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyDay, emptyStatusV3, emptyTuning, isDaySchema, isStatusV3Schema,
+  DAY_SCHEMA, DICTATION_SCHEMA, SLUG, STATUS_SCHEMA_V3, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyDay, emptyStatusV3, emptyTuning, isDaySchema, isStatusV3Schema,
   migrateStatusV2, normalizeStatusV3,
 } from "../../domain/cardLadder/index.mjs";
 
@@ -72,6 +72,8 @@ export class YamlCardLadderStore {
       tuningState: (userId, pkg) => view.tuningState(userId, pkg),
       listDays: (userId, pkg) => view.listDays(userId, pkg),
       listPackages: (userId) => view.listPackages(userId),
+      readDictation: (userId, pkg) => view.readDictation(userId, pkg),
+      readDictationProgress: (userId, pkg) => view.readDictationProgress(userId, pkg),
     };
   }
   #load(base, parse, empty, context) {
@@ -120,6 +122,44 @@ export class YamlCardLadderStore {
       };
     }, emptyTuning, { learnerId: userId, package: pkg, file: 'tuning', kind: 'tuning' });
     return { ...loaded, file: path.join(dir, 'tuning.yml') };
+  }
+  #dictation(userId, pkg) {
+    const dir = this.#dir(userId, pkg);
+    if (!dir) return { state: 'missing', value: null, file: null };
+    const loaded = this.#load(path.join(dir, 'dictation'), (raw) => {
+      if (!isMap(raw) || !Array.isArray(raw.words)) throw new Error('invalid dictation shape');
+      return { schema: DICTATION_SCHEMA, week: raw.week == null ? null : String(raw.week), setAt: raw.setAt ?? null, words: raw.words.map(String) };
+    }, () => null, { learnerId: userId, package: pkg, file: 'dictation', kind: 'dictation' });
+    return { ...loaded, file: path.join(dir, 'dictation.yml') };
+  }
+  #dictationProgress(userId, pkg) {
+    const dir = this.#dir(userId, pkg);
+    const empty = () => ({ week: null, words: {} });
+    if (!dir) return { state: 'missing', value: empty(), file: null };
+    const loaded = this.#load(path.join(dir, 'dictation-progress'), (raw) => {
+      if (!isMap(raw)) throw new Error('invalid dictation progress shape');
+      return { week: raw.week == null ? null : String(raw.week), words: isMap(raw.words) ? raw.words : {} };
+    }, empty, { learnerId: userId, package: pkg, file: 'dictation-progress', kind: 'dictation-progress' });
+    return { ...loaded, file: path.join(dir, 'dictation-progress.yml') };
+  }
+  /** The week's dictation list, or null when none is set. */
+  readDictation(userId, pkg) { return structuredClone(this.#dictation(userId, pkg).value); }
+  readDictationProgress(userId, pkg) { return structuredClone(this.#dictationProgress(userId, pkg).value); }
+  writeDictation(userId, pkg, list) {
+    const current = this.#dictation(userId, pkg);
+    if (!current.file) throw new InfrastructureError(`cannot resolve card-ladder files for ${userId}`, { code: 'UNKNOWN_USER' });
+    if (current.state === 'corrupt') throw new DomainInvariantError(`card-ladder dictation for '${userId}' is corrupt — refusing to overwrite it`, { code: 'CARD_LADDER_DICTATION_CORRUPT' });
+    const next = { schema: DICTATION_SCHEMA, week: list?.week ?? null, setAt: list?.setAt ?? null, words: Array.isArray(list?.words) ? list.words.map(String) : [] };
+    saveYamlToPathAtomic(current.file, next, { noRefs: true });
+    return structuredClone(next);
+  }
+  writeDictationProgress(userId, pkg, progress) {
+    const current = this.#dictationProgress(userId, pkg);
+    if (!current.file) throw new InfrastructureError(`cannot resolve card-ladder files for ${userId}`, { code: 'UNKNOWN_USER' });
+    if (current.state === 'corrupt') throw new DomainInvariantError(`card-ladder dictation progress for '${userId}' is corrupt — refusing to overwrite it`, { code: 'CARD_LADDER_DICTATION_CORRUPT' });
+    const next = { week: progress?.week ?? null, words: isMap(progress?.words) ? progress.words : {} };
+    saveYamlToPathAtomic(current.file, next, { noRefs: true });
+    return structuredClone(next);
   }
   readTuning(userId, pkg) { return structuredClone(this.#tuning(userId, pkg).value); }
   /** `missing | ok | corrupt` — a corrupt tuning.yml reads as empty, so callers that write must ask. */

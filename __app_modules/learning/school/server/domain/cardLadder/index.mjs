@@ -40,3 +40,6 @@ export {
   TUNABLE, TUNING_BOUNDS, GROWN_UP_SETTINGS, tunableValues, dayStats, buildTuningDigest, applyTuningProposal,
   withTunedValues, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyTuning,
 } from "./tuning.mjs";
+export {
+  DICTATION_SCHEMA, DICTATION_STEPS, BLIND_PASSES_TO_FINISH, applyDictationAttempt, dictationState, nextDictationWord,
+} from "./dictation.mjs";

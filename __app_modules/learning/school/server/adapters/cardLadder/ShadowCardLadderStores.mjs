@@ -27,7 +27,7 @@ export class ShadowCardLadderStores {
     const token = crypto.randomBytes(6).toString('hex');
     let snapshot = { status: this.#real.readStatus(userId, pkg), dayFile: this.#real.readDay(userId, pkg, day) };
     if (typeof seed === 'function') snapshot = seed(structuredClone(snapshot));
-    this.#shadows.set(token, { createdAt: this.#now(), status: snapshot.status, days: { [day]: snapshot.dayFile } });
+    this.#shadows.set(token, { createdAt: this.#now(), status: snapshot.status, days: { [day]: snapshot.dayFile }, dictationProgress: undefined });
     return token;
   }
   /**
@@ -59,6 +59,10 @@ export class ShadowCardLadderStores {
         return structuredClone(next);
       },
       readTuning: (u, p) => this.#real.readTuning?.(u, p) ?? null,
+      // Dictation: the real list, read only; progress is the sitting's own copy, in memory.
+      readDictation: (u, p) => this.#real.readDictation?.(u, p) ?? null,
+      readDictationProgress: (u, p) => structuredClone(shadow.dictationProgress ?? this.#real.readDictationProgress?.(u, p) ?? { week: null, words: {} }),
+      writeDictationProgress: (_u, _p, progress) => { shadow.dictationProgress = structuredClone(progress); return structuredClone(progress); },
     };
   }
 }
