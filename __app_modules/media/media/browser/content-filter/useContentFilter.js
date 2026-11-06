@@ -17,6 +17,7 @@ import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleto
 import { resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
 import { getEffectHandler, EFFECT_KINDS, SKIP_EPSILON } from "./filterEffects.js";
 import { setSkipCardPaused } from "./skipCardState.js";
+import { createBleepTone } from "./bleepTone.js";
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
@@ -26,16 +27,20 @@ const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }
 // mounted this long with `visible:false` so it can ramp to 0 before unmount.
 const FILTER_FADE_MS = 300;
 
-/** Default SFX player for bleep sounds; maps a sound name -> URL via profile.sounds. */
+/** Default SFX player: named sounds from profile.sounds, else the synthesized 1 kHz bleep. */
 function createSfxPlayer(sounds) {
   let audio = null;
+  const tone = createBleepTone({
+    onDegraded: (reason) => logger().sampled?.('content-filter.bleep.degraded', { reason }, { maxPerMinute: 5 }),
+  });
   return {
     play(name) {
       const url = sounds?.[name];
-      if (!url || typeof Audio === 'undefined') return;
+      if (!url || typeof Audio === 'undefined') { tone.start(); return; }
       try { audio = new Audio(url); audio.loop = true; audio.play?.().catch(() => {}); } catch (_) { /* ignore */ }
     },
-    stop() { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; },
+    tone() { tone.start(); },
+    stop() { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; tone.stop(); },
   };
 }
 
@@ -47,7 +52,7 @@ function createSfxPlayer(sounds) {
  * @param {object} args.profile           L2 profile/theme
  * @param {object} [args.override]        L3 per-title override
  * @param {string|null} [args.part]       media part being played (refined cue times bind to a part)
- * @param {{play:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests)
+ * @param {{play:Function, tone:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests)
  * @param {boolean} [args.enabled=true]
  * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array}}
  */

@@ -53,7 +53,12 @@ registerEffectHandler('mute', {
 
 registerEffectHandler('bleep', {
   kind: EFFECT_KINDS.AUDIO,
-  onEnter({ el, cue, sfx }) { el.muted = true; if (cue.sound) sfx?.play?.(cue.sound); },
+  // The video is muted first, so if the tone cannot sound the word is still silenced.
+  onEnter({ el, cue, sfx }) {
+    el.muted = true;
+    if (cue.sound) sfx?.play?.(cue.sound);
+    else sfx?.tone?.();
+  },
   onExit({ el, sfx }) { el.muted = false; sfx?.stop?.(); },
 });
 

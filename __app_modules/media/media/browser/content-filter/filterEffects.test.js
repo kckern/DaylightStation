@@ -48,6 +48,19 @@ describe('effect registry', () => {
     expect(sfx.stop).toHaveBeenCalled();
   });
 
+  it('bleep without a named sound mutes and starts the synthesized tone', () => {
+    const el = { muted: false };
+    const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+    const h = getEffectHandler('bleep');
+    h.onEnter({ el, cue: { id: 'b' }, sfx });
+    expect(el.muted).toBe(true);
+    expect(sfx.tone).toHaveBeenCalledTimes(1);
+    expect(sfx.play).not.toHaveBeenCalled();
+    h.onExit({ el, sfx });
+    expect(el.muted).toBe(false);
+    expect(sfx.stop).toHaveBeenCalled();
+  });
+
   it('duck: onEnter lowers volume to the cue level and onExit restores', () => {
     const el = { volume: 1 };
     const mem = {};

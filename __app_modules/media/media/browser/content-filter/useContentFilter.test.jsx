@@ -225,4 +225,16 @@ describe('useContentFilter', () => {
     expect(transport.seek).not.toHaveBeenCalled();
     expect(hook.result.current.activeOverlays).toEqual([]);
   });
+
+  it('a bleep cue with no sound starts the tone through the sfx player', () => {
+    const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+    const { el } = setup({
+      sfx,
+      profile: { categories: { language: { effect: 'bleep' } } },
+      edl: { cues: [{ id: 'b1', category: 'language/profanity/damn', in: 10, out: 11, precision: 'ms' }] },
+    });
+    act(() => { el.currentTime = 10.5; el.fire('timeupdate'); });
+    expect(sfx.tone).toHaveBeenCalledTimes(1);
+    expect(el.muted).toBe(true);
+  });
 });
