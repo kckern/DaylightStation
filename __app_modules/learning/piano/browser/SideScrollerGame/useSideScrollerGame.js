@@ -43,6 +43,8 @@ const SFX_TABLE = Object.freeze({
   hit: () => [{ id: 'hit', cue: 'hit' }],
   dodge: () => [{ id: 'dodge', cue: 'dodge' }],
 });
+/** How long the LEVEL UP banner stays up after a real level advance. */
+export const LEVEL_UP_MOMENT_MS = 1500;
 /** How long the death burst plays before the Game Over card. */
 export const DEATH_MS = 2000;
 
@@ -67,6 +69,8 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   const [countdown, setCountdown] = useState(null);
   const [targets, setTargets] = useState(null);
   const [levelName, setLevelName] = useState('');
+  // The transient LEVEL UP announcement: { key, title, subtitle } or null.
+  const [moment, setMoment] = useState(null);
 
   const worldRef = useRef(world);
   const phaseRef = useRef(phase);
@@ -92,6 +96,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   const driverRef = useRef(null);
   const countdownRef = useRef(null);
   const deathTimerRef = useRef(null);
+  const momentTimerRef = useRef(null);
   // Simulated clock (ms). Advances only by fixed steps while PLAYING, so every
   // engine timestamp (duck, damage, shoot pose, spawn spacing) is game time.
   const simMsRef = useRef(0);
@@ -107,6 +112,8 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     driverRef.current?.stop();
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     if (deathTimerRef.current) { clearTimeout(deathTimerRef.current); deathTimerRef.current = null; }
+    if (momentTimerRef.current) { clearTimeout(momentTimerRef.current); momentTimerRef.current = null; }
+    setMoment(null);
   }, []);
 
   // ─── Target Regeneration ────────────────────────────────────
@@ -158,6 +165,13 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
           sfx.play('levelup');
           setLevel(outcome.nextLevel);
           setLevelName(levels[outcome.nextLevel]?.name ?? '');
+          // Applied exactly once per real advance, so the banner shows once per level.
+          setMoment({ key: `level-${outcome.nextLevel}`, title: 'LEVEL UP!', subtitle: levels[outcome.nextLevel]?.name ?? '' });
+          if (momentTimerRef.current) clearTimeout(momentTimerRef.current);
+          momentTimerRef.current = setTimeout(() => {
+            momentTimerRef.current = null;
+            setMoment(null);
+          }, LEVEL_UP_MOMENT_MS);
           setTimeout(() => regenerateTargets(levels[outcome.nextLevel]), 0);
         }
       }
@@ -424,6 +438,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
     level,
     levelName,
     countdown,
+    moment,
     targets,
     matchedActions,
     health: world.health,

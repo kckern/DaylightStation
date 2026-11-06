@@ -12,6 +12,7 @@ import { PLAYER_X } from './sideScrollerEngine.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { useMatchRematch } from '../game-platform/host/useMatchRematch.js';
 import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
+import { LifeMeter, MomentBanner } from '../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js';
 import './SideScrollerGame.scss';
 
 /** The staff that clears each obstacle type — the one a hint leaves bright. */
@@ -107,30 +108,13 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
       className="side-scroller"
       instrumentClassName="side-scroller__keyboard"
       instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: keyboardTargets, onNoteOn, onNoteOff }}
-      overlay={<SideScrollerOverlay phase={game.phase} countdown={game.countdown} score={game.score} level={game.level + 1} levelName={game.levelName} />}
+      overlay={<SideScrollerOverlay phase={game.phase} countdown={game.countdown} score={game.score} level={game.level + 1} />}
     >
       {/* Play area */}
       <div className="side-scroller__play-area">
         {/* Health bar — far left */}
         {running && (
-          <div
-            className="side-scroller__life-meter"
-            role="meter"
-            aria-label="Health"
-            aria-valuemin="0"
-            aria-valuemax={game.totalHealth}
-            aria-valuenow={Math.max(0, Math.ceil(game.health))}
-          >
-            <div className="side-scroller__life-frame">
-              {Array.from({ length: game.totalHealth }, (_, i) => (
-                <div key={i} className={[
-                  'side-scroller__life-notch',
-                  i < Math.ceil(game.health) && 'side-scroller__life-notch--active',
-                  i < Math.ceil(game.health) && game.health <= game.totalHealth * 0.25 && 'side-scroller__life-notch--danger',
-                ].filter(Boolean).join(' ')} />
-              ))}
-            </div>
-          </div>
+          <LifeMeter current={game.health} maximum={game.totalHealth} className="side-scroller__life-meter" />
         )}
 
         {/* Game canvas — full width */}
@@ -182,6 +166,14 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
               </div>
             </div>
           )}
+
+          {/* LEVEL UP — shown once per real level advance, then cleared */}
+          <MomentBanner
+            momentKey={game.moment?.key}
+            title={game.moment?.title}
+            subtitle={game.moment?.subtitle}
+            className="scroller-overlay__level-up"
+          />
         </div>
       </div>
 

@@ -536,6 +536,7 @@
   --game-hud-track: var(--pg-shelf-lift);
   --game-hud-banner-ink: var(--pg-ivory);
   --game-hud-banner-bg: color-mix(in srgb, var(--pg-case) 80%, transparent);
+  --game-hud-shadow: 0 2px 12px rgb(0 0 0 / 70%);
 }
 
 /* ── SHEET ─────────────────────────────────────────────────────────────────
