@@ -56,8 +56,12 @@ Edge mode is per axis: `'open'` means boxes that merely touch do not overlap,
 
 `sweepHits` does not rank. Each game orders the results itself: Skyline takes the
 earliest entry, with entities winning ties over terrain; the Side Scroller takes
-the leftmost block edge. A NaN bound is rejected by `sweepHits`; a validated
-Skyline course cannot produce one.
+the leftmost block edge (`obstacles[index].x`), first in input order on ties.
+
+`sweepHits` and `overlaps` do not validate inputs: a NaN bound makes every
+comparison false, so that box is silently skipped (no throw, no hit). Skyline
+cannot produce one from a validated course; `courseModel` rejects a non-finite
+`at_s` and a `width_s` or `height` that is not > 0.
 
 ## Portable API (`portable/realtime`)
 
@@ -167,6 +171,7 @@ meaning in two games":
 - **Contact roles, damage tables, entity hit points.** The Side Scroller has one
   role (everything hurts). Skyline stores damage taken, the Side Scroller hp
   remaining; converting either would change state shapes that tests assert.
+- **Scroller contact roles, damage tables, hit points, scroll policy, projectile lifecycle and presence windows** each had one real user or meant different things per game (spec, Second narrowing); Tier 2 is geometry only.
 - **Terrain profiles** stay in Skyline: one user.
 
 Design record: `ops:docs/superpowers/specs/2026-11-05-realtime-game-kit-design.md`.
