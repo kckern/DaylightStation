@@ -195,7 +195,10 @@ the household study day ends. One session belongs to one child:
   older pending intent; so if two land during one shelf step the older one
   stays an unfiled card in the pile rather than being lost, and
   `school.book-scan.superseded {isbn13, intentId, supersededBy}` (info) says
-  which book stopped being claimable.
+  which book stopped being claimable. The pile view gives each card its
+  `intentId` (the live one, if a rescan revived it) and `superseded`, so an
+  open shelf lists such a book under its scan chip with `scan it again to open
+  it` (see reading-log.md, "The shelf says at once…").
 
 Filings are the child's own entries (`source: 'panel'`), the same as logging
 from the shelf. The pile lives in memory in `PrepareBookScan`: a backend
@@ -211,6 +214,8 @@ details (panel):
 | `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. two ISBNs the reader ran together; not split |
 | `school.book-pile.card-added` | backend, info | `isbn13`, `duplicate`, `status` |
 | `school.book-scan.superseded` | backend, info | `isbn13`, `intentId`, `supersededBy` — an older pending scan stopped being claimable (a newer scan, or a shelf claim, retired it); its card stays in the pile |
+| `school.book-shelf.scan.acknowledged` | panel, info | `screenId`, `msSinceReceived` — the open shelf first showed `Got it — looking it up` for a scan (panel clock minus the server's `receivedAt`) |
+| `school.book-shelf.scan.visible` | panel, info | `screenId`, `msSinceReceived` — a scanned book is on the shelf's screen |
 | `school.book-shelf.scan.dropped` | panel, warn | `isbn13`, `reason` (`done`, `idle`, `unmount`) — a claimed scan still queued when the shelf closed |
 | `school.book-pile.filed` | backend, info | `learnerId`, `count` (filed), `alreadyToday`, `failed` |
 | `school.book-pile.file-empty` | backend, debug | a tap with nothing to file |

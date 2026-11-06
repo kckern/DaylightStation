@@ -242,6 +242,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Whether the open reading shelf is ASKING for a barcode right now (see
   // BookShelf `onScanReadyChange`); only then is a scan claimed for its child.
   const [shelfScanReady, setShelfScanReady] = useState(false);
+  // What the open shelf's scan chip says (book-scan experience task 3): the
+  // scan it is about to take (`BookScanEntry`) and the pile cards scanned
+  // since it opened (`BookPile`). Both report null once no shelf is open.
+  const [shelfScanAck, setShelfScanAck] = useState(null);
+  const [shelfWaiting, setShelfWaiting] = useState(null);
+  const shelfScanStatus = useMemo(() => ({ acknowledging: shelfScanAck, cards: shelfWaiting ?? [] }), [shelfScanAck, shelfWaiting]);
   const [queryPreviewLink, setQueryPreviewLink] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('preview'); } catch { return null; }
   });
@@ -1100,11 +1106,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           // scan is theirs, claimed for them without a detour home (2026-09-30).
           scopeLearnerId={scanScope}
           shelfLearnerId={shelfOwner}
+          onShelfScan={setShelfScanAck}
           // Unscoped scans belong to the pile below, not the one-book dialog.
           pile
           onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
         {isPanelSurface(screenId) && <BookPile screenId={screenId} roster={roster} safe={scanSafe}
-          onOpen={lock.locked ? openDeferredScan : null} confirmExit={gradedRunInFlight} scopeLearnerId={shelfOwner} />}
+          onOpen={lock.locked ? openDeferredScan : null} confirmExit={gradedRunInFlight} scopeLearnerId={shelfOwner}
+          onShelfCards={setShelfWaiting} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
             branch below, not inside it: the Portal is the screen most worth
@@ -1485,6 +1493,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             openAdd={bookLaunch.openAdd}
             idleTimeoutSeconds={lock.idleTimeoutSeconds}
             onScanReadyChange={setShelfScanReady}
+            scanStatus={shelfScanStatus}
             onExit={goHome}
           />
         )}

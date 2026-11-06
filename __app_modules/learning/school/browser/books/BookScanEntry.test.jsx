@@ -189,3 +189,46 @@ describe('BookScanEntry — scans while an open shelf is not scan-ready (2026-11
   });
 });
 
+
+// Book-scan experience task 3: the open shelf says "Got it" the moment a scan
+// it will claim lands, before the claim resolves.
+describe('BookScanEntry — tells the open shelf a scan is on its way', () => {
+  const fresh = { ...intent, id: 'scan9', status: 'loading', receivedAt: '2026-11-05T20:00:00.000Z' };
+  it('reports the scan while it is looked up and claimed, then clears it once handed over with its receive time', async () => {
+    const onShelfScan = vi.fn();
+    const onLaunch = vi.fn();
+    h.pending.mockResolvedValue({ ok: true, data: { intent: null } });
+    const r = render(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId="child" onLaunch={onLaunch} onShelfScan={onShelfScan} />); await act(async () => {});
+    expect(onShelfScan).not.toHaveBeenCalledWith(expect.objectContaining({ intentId: expect.anything() }));
+    let finish; h.claim.mockImplementation(() => new Promise(res => { finish = res; }));
+    h.pending.mockResolvedValue({ ok: true, data: { intent: fresh } });
+    await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+    expect(onShelfScan).toHaveBeenLastCalledWith({ intentId: 'scan9', receivedAt: fresh.receivedAt, screenId: 'portal' });
+    h.pending.mockResolvedValue({ ok: true, data: { intent: { ...fresh, status: 'ready' } } });
+    await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+    expect(h.claim).toHaveBeenCalledWith('scan9', { screenId: 'portal', learnerId: 'child' });
+    expect(onShelfScan).toHaveBeenLastCalledWith({ intentId: 'scan9', receivedAt: fresh.receivedAt, screenId: 'portal' });
+    h.pending.mockResolvedValue({ ok: true, data: { intent: null } });
+    await act(async () => finish({ ok: true, data: { intentId: 'scan9', launchTarget: { learnerId: 'child', bookGrant: 'g' }, bookEntry: { isbn13: intent.isbn13 } } }));
+    expect(onShelfScan).toHaveBeenLastCalledWith(null);
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ bookEntry: expect.objectContaining({ intentId: 'scan9', receivedAt: fresh.receivedAt, screenId: 'portal' }) }), 'child');
+    r.unmount();
+  });
+
+  it('says nothing for a scan that was already waiting when the shelf opened', async () => {
+    const onShelfScan = vi.fn();
+    const r = render(<BookScanEntry {...props} safe={false} pile onShelfScan={onShelfScan} />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} onShelfScan={onShelfScan} />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId="child" onShelfScan={onShelfScan} />); await act(async () => {});
+    expect(onShelfScan).not.toHaveBeenCalledWith(expect.objectContaining({ intentId: expect.anything() }));
+  });
+
+  it('a scan mid-step (shelf open, not scan-ready) is waiting, not acknowledged', async () => {
+    const onShelfScan = vi.fn();
+    h.pending.mockResolvedValue({ ok: true, data: { intent: null } });
+    render(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} onShelfScan={onShelfScan} />); await act(async () => {});
+    h.pending.mockResolvedValue({ ok: true, data: { intent: fresh } });
+    await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+    expect(onShelfScan).not.toHaveBeenCalledWith(expect.objectContaining({ intentId: expect.anything() }));
+  });
+});

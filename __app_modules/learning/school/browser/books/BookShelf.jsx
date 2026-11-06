@@ -11,6 +11,8 @@ import { recentOutcomes } from "./readingHistory.js";
 import Icon from "../home/icons/Icon.jsx";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
+import ScanStatusChip from "./ScanStatusChip.jsx";
+import { schoolLog } from "../schoolLog.js";
 
 /**
  * The window word after the launcher's label (design §3): the label carries
@@ -156,8 +158,40 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today, manu
  *   incoming scan for this child only then; mid-entry a scan must not remount
  *   the shelf and throw the child's half-entered book away.
  */
-export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false, onScanReadyChange = null }) {
-  const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, receiptHeld = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
+/**
+ * What the scan chip says, from what SchoolApp knows (`scanStatus`) and what
+ * the shelf holds. `scanStatus.acknowledging` is the scan this shelf is about
+ * to claim (`useBookScanEntry`); `scanStatus.cards` are the pile's unfiled
+ * cards scanned since the shelf opened (`BookPile`). A card is waiting unless
+ * it is the scan being acknowledged or one already handed to this shelf;
+ * handed scans not yet on screen (`queuedScans`) wait too.
+ */
+export function scanChipState(scanStatus, { queuedScans = 0, wasHanded = () => false } = {}) {
+  const acknowledging = scanStatus?.acknowledging ?? null;
+  const cards = (scanStatus?.cards ?? []).filter((card) => card.intentId !== acknowledging?.intentId && !wasHanded(card.intentId));
+  return {
+    acknowledging,
+    waiting: cards.length + queuedScans,
+    superseded: cards.filter((card) => card.superseded).map((card) => ({ id: card.id, label: card.label ?? card.isbn13 })),
+  };
+}
+
+export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false, onScanReadyChange = null, scanStatus = null }) {
+  const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, receiptHeld = false, queuedScans = 0, wasHanded, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
+  const chip = scanChipState(scanStatus, { queuedScans, wasHanded });
+  // Once per scan, on the render that first says "Got it". `receivedAt` is
+  // the server's clock and `Date.now()` the panel's: the figure carries any
+  // skew between the two.
+  const ackId = chip.acknowledging?.intentId ?? null;
+  const ackRef = useRef(chip.acknowledging);
+  ackRef.current = chip.acknowledging;
+  const ackLogged = useRef(null);
+  useEffect(() => {
+    if (!ackId || ackLogged.current === ackId) return;
+    ackLogged.current = ackId;
+    const received = Date.parse(ackRef.current?.receivedAt ?? '');
+    schoolLog.bookShelf('scan.acknowledged', { screenId: ackRef.current?.screenId ?? null, msSinceReceived: Number.isFinite(received) ? Math.max(0, Date.now() - received) : null });
+  }, [ackId]);
   // Not while a fresh save receipt is held: a scan claimed then could only be
   // queued, and a close inside the hold dropped a book the server had already
   // handed over. Left pending, it is claimed when the hold lifts, or stays in
@@ -203,6 +237,7 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
         onBack={['completed', 'update', 'add'].includes(view) ? actions.back : null}
         backDisabled={busy}
         onDone={actions.done}
+        status={<ScanStatusChip acknowledging={Boolean(chip.acknowledging)} waiting={chip.waiting} superseded={chip.superseded} />}
       />
       {body}
     </section>

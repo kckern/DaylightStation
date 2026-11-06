@@ -4,7 +4,7 @@
  * shelf — "Getting your shelf…" again — and threw away an Add the child had
  * started 24ms earlier, and a receipt they had just been shown).
  */
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const h = vi.hoisted(() => ({ shelf: vi.fn(), open: vi.fn(), progress: vi.fn(), mode: vi.fn(), resolve: vi.fn(), roster: vi.fn(), log: vi.fn(), debug: vi.fn(), warn: vi.fn() }));
@@ -13,7 +13,9 @@ vi.mock("../schoolApi.js", () => ({ schoolApi: {
   books: { shelf: (...a) => h.shelf(...a), open: (...a) => h.open(...a), progress: (...a) => h.progress(...a), mode: (...a) => h.mode(...a), resolve: (...a) => h.resolve(...a) },
 } }));
 vi.mock("../schoolLog.js", () => ({ schoolLog: { bookShelf: (...a) => h.log(...a), bookShelfError: vi.fn(), bookShelfDebug: (...a) => h.debug(...a), bookShelfWarn: (...a) => h.warn(...a) } }));
+vi.mock("../../../../../frontend/src/lib/identity/ProfileAvatar.jsx", () => ({ default: () => <span>avatar</span> }));
 import { useBookShelf } from "./useBookShelf.js";
+import BookShelf from "./BookShelf.jsx";
 
 const ISBN = '9780064400558';
 const ISBN2 = '9780064401517';
@@ -160,3 +162,113 @@ describe('a scan handed to a mounted shelf', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Book-scan experience task 3: the shelf says at once that a scan landed, and
+// how many more books are waiting behind the one on screen.
+// ---------------------------------------------------------------------------
+const ISBN3 = '9780763648602';
+const ISBN4 = '9780763691677';
+const BOOK3 = { isbn13: ISBN3, title: 'Book Three', authors: [] };
+const BOOK4 = { isbn13: ISBN4, title: 'Book Four', authors: [] };
+const ago = (ms) => new Date(Date.now() - ms).toISOString();
+const pileCard = (intentId, isbn13, over = {}) => ({ id: `card-${intentId}`, intentId, isbn13, status: 'ready', book: null, superseded: false, ...over });
+const chip = () => screen.queryByTestId('scan-status-chip');
+
+function renderShelf(props = {}) {
+  const base = { learnerId: 'kid', grant: 'g1', idleTimeoutSeconds: 90, onExit: vi.fn(), scanStatus: null, initialBookEntry: null };
+  const view = render(<BookShelf {...base} {...props} />);
+  return { ...view, update: (next) => view.rerender(<BookShelf {...base} {...props} {...next} />) };
+}
+
+describe('the shelf acknowledges a scan at once and shows what is waiting', () => {
+  it('a scan while the shelf is open: "Got it" before the claim resolves; it clears, and the book is shown, with both moments logged', async () => {
+    const receivedAt = ago(300);
+    const ack = { intentId: 'scan-2', receivedAt, screenId: 'portal' };
+    const s = renderShelf({ scanStatus: { acknowledging: ack, cards: [pileCard('scan-2', ISBN2, { status: 'loading' })] } });
+    await act(async () => {});
+    expect(chip()?.textContent).toBe('Got it — looking it up');
+    expect(h.log).toHaveBeenCalledWith('scan.acknowledged', { screenId: 'portal', msSinceReceived: expect.any(Number) });
+    const acked = h.log.mock.calls.find(([event]) => event === 'scan.acknowledged')[1];
+    expect(acked.msSinceReceived).toBeGreaterThanOrEqual(300);
+    // Logged once per scan, not once per render.
+    s.update({ scanStatus: { acknowledging: ack, cards: [pileCard('scan-2', ISBN2)] } });
+    await act(async () => {});
+    expect(h.log.mock.calls.filter(([event]) => event === 'scan.acknowledged')).toHaveLength(1);
+    // The claim lands: the scan is handed to the shelf and opens.
+    s.update({ scanStatus: { acknowledging: null, cards: [] }, initialBookEntry: { intentId: 'scan-2', isbn13: ISBN2, book: BOOK2, receivedAt, screenId: 'portal' } });
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: BOOK2.title })).toBeTruthy();
+    expect(chip()).toBeNull();
+    expect(h.log).toHaveBeenCalledWith('scan.visible', { screenId: 'portal', msSinceReceived: expect.any(Number) });
+    const visible = h.log.mock.calls.find(([event]) => event === 'scan.visible')[1];
+    expect(visible.msSinceReceived).toBeGreaterThanOrEqual(300);
+  });
+
+  it('two books scanned while the child is on Add: Add stays, "2 more books waiting"; finishing Add surfaces the next and the count drops to 1', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    h.shelf.mockResolvedValue({ ok: true, status: 200, data: { learnerId: 'kid', items: [], obligation: null } });
+    h.open.mockResolvedValue({ ok: true, status: 200, data: { ok: true, item: ITEM } });
+    const s = renderShelf({ initialBookEntry: { intentId: 'scan-2', isbn13: ISBN2, book: BOOK2, receivedAt: ago(100), screenId: 'portal' } });
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: BOOK2.title })).toBeTruthy();
+    // Two scans mid-step: not claimed (the shelf is not scan-ready), so both
+    // are unfiled pile cards for this screen.
+    s.update({ scanStatus: { acknowledging: null, cards: [pileCard('scan-3', ISBN3), pileCard('scan-4', ISBN4)] } });
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: BOOK2.title })).toBeTruthy();
+    expect(chip()?.textContent).toBe('2 more books waiting');
+    // Finish the Add. The receipt it earns stays on screen through its hold,
+    // with the count beside it — the queue does not take its place.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Start reading' })); });
+    await act(async () => {});
+    expect(screen.getByTestId('book-save-receipt')).toBeTruthy();
+    expect(chip()?.textContent).toBe('2 more books waiting');
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(screen.getByTestId('book-save-receipt')).toBeTruthy();
+    expect(chip()?.textContent).toBe('2 more books waiting');
+    // The hold lifts; the shelf claims the newest scan (the server retires the
+    // older one: it stays a pile card, marked superseded).
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    s.update({
+      scanStatus: { acknowledging: null, cards: [pileCard('scan-3', ISBN3, { superseded: true })] },
+      initialBookEntry: { intentId: 'scan-4', isbn13: ISBN4, book: BOOK4, receivedAt: ago(6000), screenId: 'portal' },
+    });
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: BOOK4.title })).toBeTruthy();
+    expect(chip()?.textContent).toContain('1 more book waiting');
+    expect(chip()?.textContent).toContain(ISBN3);
+    expect(chip()?.textContent).toContain('scan it again to open it');
+  });
+
+  it('two scans in one step: the older is superseded — "1 more book waiting", and it is listed by ISBN', async () => {
+    h.shelf.mockResolvedValue({ ok: true, status: 200, data: { learnerId: 'kid', items: [], obligation: null } });
+    renderShelf({
+      initialBookEntry: { intentId: 'scan-4', isbn13: ISBN4, book: BOOK4, receivedAt: ago(100), screenId: 'portal' },
+      scanStatus: { acknowledging: null, cards: [pileCard('scan-3', ISBN3, { superseded: true }), pileCard('scan-4', ISBN4)] },
+    });
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: BOOK4.title })).toBeTruthy();
+    // scan-4 is the book on screen (handed to this shelf), so it is not waiting.
+    const text = chip()?.textContent ?? '';
+    expect(text).toContain('1 more book waiting');
+    expect(text).toContain(ISBN3);
+    expect(text).toContain('scan it again to open it');
+  });
+
+  it('a claimed scan queued behind hand-typed digits counts as waiting, and stops counting once it opens', async () => {
+    const s = renderShelf();
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: /Add a book/ }));
+    await act(async () => {});
+    for (const key of ['9', '7', '8']) fireEvent.click(screen.getByRole('button', { name: key }));
+    expect(chip()).toBeNull();
+    s.update({ initialBookEntry: { intentId: 'scan-2', isbn13: ISBN2, book: BOOK2, receivedAt: ago(50), screenId: 'portal' } });
+    await act(async () => {});
+    expect(chip()?.textContent).toBe('1 more book waiting');
+    fireEvent.click(screen.getByTestId('screen-header-back'));
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: BOOK2.title })).toBeTruthy();
+    expect(chip()).toBeNull();
+  });
+});

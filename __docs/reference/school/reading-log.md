@@ -171,6 +171,26 @@ the shelf was keyed on the scan's `intentId`: every scan remounted it, showed
 "Getting your shelf…" again, and threw away an Add the child had started 24ms
 before. `scan.seeded` now carries the `isbn13`.
 
+**The shelf says at once that a scan landed** (`ScanStatusChip`, in the
+`ScreenHeader` `status` slot beside Done, so it moves nothing on the shelf). A
+scan the open shelf is about to take — landed after it opened, while it asks
+for a barcode or its claim is in flight — reads `Got it — looking it up` until
+the claim lands (`useBookScanEntry` `shelfScan`, reported up through
+`BookScanEntry` `onShelfScan`). Books still behind the one on screen read
+`1 more book waiting` / `{n} more books waiting`: the pile's unfiled cards
+scanned since the shelf opened (`BookPile` `onShelfCards`; the pile itself is
+hidden while a shelf is open), minus the one being acknowledged and any already
+handed to the shelf, plus claimed scans queued in `entryQueue` (`queuedScans`).
+A card the server superseded (two scans in one shelf step; the pile view
+carries `intentId` and `superseded` per card) is listed under the chip by title
+or ISBN with `scan it again to open it` — a rescan gives the card a live intent
+again. A receipt is not replaced by the queue during its hold; the count sits
+beside it. Logs: `school.book-shelf.scan.acknowledged {screenId,
+msSinceReceived}` once per scan on the first "Got it", and
+`school.book-shelf.scan.visible {screenId, msSinceReceived}` when the book is
+on screen. Both measure the panel clock against the server's `receivedAt`, so
+they carry any clock skew between the two.
+
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at
 the ISBN pad. It is a door beside the board rather than a row on it: the board

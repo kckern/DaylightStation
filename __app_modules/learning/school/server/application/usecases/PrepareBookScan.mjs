@@ -353,9 +353,22 @@ export class PrepareBookScan {
     return {
       screenId, live, reader: live ? pile.reader : null, quietGapMs: PILE_QUIET_GAP_MS,
       lastScanAt: pile.lastActiveAt === null ? null : new Date(pile.lastActiveAt).toISOString(),
-      cards: pile.cards.filter(c => c.state !== 'removed').map(({ id, isbn13, status, book, error, receivedAt, duplicates, state, learnerId, outcome, itemId }) =>
-        ({ id, isbn13, status, book, error, receivedAt, duplicates, state, learnerId, outcome, itemId })),
+      cards: pile.cards.filter(c => c.state !== 'removed').map((card) => {
+        const { id, isbn13, status, book, error, receivedAt, duplicates, state, learnerId, outcome, itemId } = card;
+        return { id, isbn13, status, book, error, receivedAt, duplicates, state, learnerId, outcome, itemId, ...this.#intentOf(card) };
+      }),
     };
+  }
+  /**
+   * Which intent feeds a card, and whether an open shelf can still claim it.
+   * A card outlives its intent: two scans in one shelf step leave the older
+   * one superseded (see `claim`) — an unfiled card no shelf will ever open
+   * unless the book is scanned again, which hands the card a live intent.
+   */
+  #intentOf(card) {
+    const live = [...this.#records.values()].find(r => r.card === card && this.#live(r));
+    const record = live ?? card.record ?? null;
+    return { intentId: record?.id ?? null, superseded: card.state === 'unfiled' && !live && record?.phase === 'superseded' };
   }
   pile(screenId) {
     // Reading never allocates: only a scan (or a filing) creates a pile.

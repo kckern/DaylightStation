@@ -298,3 +298,35 @@ describe('PrepareBookScan — a superseded scan is logged (fix round 1)', () => 
   });
 });
 
+
+describe('PrepareBookScan pile — an open shelf can tell which cards it will never claim (book-scan experience task 3)', () => {
+  it('names each card\'s intent, and marks the card whose intent a shelf claim retired', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    const before = pile(f).cards;
+    expect(before.map((c) => [c.isbn13, c.intentId, c.superseded])).toEqual([
+      [ISBNS[0], first.intentId, false],
+      [ISBNS[1], second.intentId, false],
+    ]);
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    const after = pile(f).cards;
+    expect(after.find((c) => c.isbn13 === ISBNS[0])).toMatchObject({ state: 'unfiled', superseded: true, intentId: first.intentId });
+    expect(after.find((c) => c.isbn13 === ISBNS[1])).toMatchObject({ state: 'claimed', superseded: false });
+  });
+
+  it('a rescan of a superseded book is claimable again: its card is no longer marked', async () => {
+    const f = fixture();
+    await f.receive(ISBNS[0]);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    f.advance(15_000);
+    const again = await f.receive(ISBNS[0]);
+    await settle();
+    const card = pile(f).cards.find((c) => c.isbn13 === ISBNS[0]);
+    expect(card).toMatchObject({ state: 'unfiled', superseded: false, intentId: again.intentId });
+    expect(pile(f).cards.filter((c) => c.isbn13 === ISBNS[0])).toHaveLength(1);
+  });
+});

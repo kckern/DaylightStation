@@ -439,6 +439,11 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     }
     setEntryQueue((queue) => queue.filter((queued) => queued.key !== entry.key));
     setScannedBookId(entry.isbn13);
+    // The scan is on screen from this render: how long since the server
+    // received it. `receivedAt` is the server's clock, `Date.now()` the
+    // panel's — the measure carries any skew between them (NTP on both).
+    const received = entry.receivedAt ? Date.parse(entry.receivedAt) : NaN;
+    schoolLog.bookShelf('scan.visible', { screenId: entry.screenId ?? null, msSinceReceived: Number.isFinite(received) ? Math.max(0, Date.now() - received) : null });
     const active = shelf.items?.find(item => item.bookId === entry.isbn13 && ['reading', 'unread'].includes(item.projection?.status));
     const finished = recentFinishes(shelf.items).find(item => item.bookId === entry.isbn13);
     if (active) { setStep(null); setAdd(EMPTY_ADD); enterUpdate(active); return; }
@@ -944,6 +949,11 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     // A fresh save receipt is on screen. The shelf is NOT scan-ready then
     // (`BookShelf`), so a scan stays pending on the server until it clears.
     receiptHeld,
+    // Claimed scans handed in and not yet on screen (the shelf's chip counts
+    // them), and whether a scan's intent was ever handed to this shelf (so a
+    // pile card for it is not counted as still waiting).
+    queuedScans: entryQueue.length,
+    wasHanded: (intentId) => Boolean(intentId) && seenEntries.current.has(intentId),
     learner,
     error,
     busy,

@@ -130,7 +130,9 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     }
     remember(selected.id); current.current = null; setIntent(null);
     schoolLog.bookShelf('scan.launch', { screenId, scoped: state.current.scopeLearnerId === learnerId && !state.current.safe });
-    state.current.onLaunch({ ...result.data.launchTarget, bookEntry: { ...result.data.bookEntry, intentId: selected.id } }, learnerId);
+    // `receivedAt` (server clock) and `screenId` ride along so the shelf can
+    // log how long the scan took to reach the screen (`scan.visible`).
+    state.current.onLaunch({ ...result.data.launchTarget, bookEntry: { ...result.data.bookEntry, intentId: selected.id, receivedAt: selected.receivedAt ?? null, screenId } }, learnerId);
     void refresh();
   }, [screenId, refresh]);
   // A shelf only claims what is scanned WHILE it is open. A scan already
@@ -159,5 +161,14 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     schoolLog.bookShelf('scan.scoped-claim', { screenId, learnerId: scopeLearnerId, status: intent.status, isbn13: intent.isbn13 ?? null });
     void claim(scopeLearnerId);
   }, [scopeLearnerId, intent, claiming, claim, screenId]);
-  return { intent, claiming, error, claim, dismiss, enabled };
+  // THE SCAN THE OPEN SHELF IS ABOUT TO TAKE (book-scan experience task 3):
+  // landed after the shelf opened, while it is asking for a barcode (or its
+  // claim is already in flight), and not yet tried and failed. The shelf says
+  // "Got it — looking it up" for it at once. A scan that lands mid-step is
+  // not this: it waits on the server, and the shelf counts it from the pile.
+  const shelfScan = openLearnerId && intent && intent.screenId === screenId && !preOpen.current.has(intent.id)
+    && intent.status !== 'invalid' && intent.status !== 'unavailable'
+    && (claiming || (scopeLearnerId && !scopedAttempts.current.has(intent.id)))
+    ? intent : null;
+  return { intent, claiming, error, claim, dismiss, enabled, shelfScan };
 }
