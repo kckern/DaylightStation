@@ -71,7 +71,8 @@ function dictationTrail(item) {
   const count = Number(item.wordCount) || 0;
   const done = Number(item.wordsDone) || 0;
   const index = item.type === 'dictation-ready' ? null : (Number(item.wordIndex) || null);
-  return { steps: [], current: null, subLine: index ? `Dictation · Word ${index} of ${count}` : 'Dictation', dictation: { index, count, done } };
+  const flags = Array.isArray(item.wordsDoneFlags) && item.wordsDoneFlags.length === count ? item.wordsDoneFlags : null;
+  return { steps: [], current: null, subLine: index ? `Dictation · Word ${index} of ${count}` : 'Dictation', dictation: { index, count, done, ...(flags ? { flags } : {}) } };
 }
 
 export function stepTrail(progress, item = null) {

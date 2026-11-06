@@ -671,8 +671,9 @@ blind and one pass banked, so one correct write finishes each word (a miss
 steps back as usual). The review's word state lives on the day file's run
 (`dictation.review.words`); `dictation-progress.yml` is never written.
 
-**The run.** The header shows one dot per word and *Dictation · Word 4 of
-10* — never the word — and **Stop for now**, which ends the run (`{stop:
+**The run.** The header shows one dot per word (filled when that word is
+done; the minutes bar is hidden — dictation is separate time) and *Dictation ·
+Word 4 of 10* — never the word — and **Stop for now**, which ends the run (`{stop:
 true}`) and returns the sitting to its own ladder. The jamo keypad opens at
 once (no 10 s wait) unless a keyboard is known, its toggle stays even with a
 keyboard declared (a dozing BLE keyboard must not lock the child out), and it
@@ -682,7 +683,15 @@ drilled AND none is waiting; otherwise *9 of 10 words done* and which words
 need a recording or a place in the deck. Done (`{done: true}`) returns to the
 sitting's ladder.
 
-**Separate time.** Dictation answers never add to the day's active minutes
+Every typed verdict is held with Next: *That's it!* on a pass, *Not quite —
+let's look at it again* on a miss. If the week's tags vanish mid-run the
+sitting returns to its ladder with *This week's dictation list changed.*; a
+run that cannot start says *Dictation couldn't start. Tap it again in a
+moment.* If saving a word's progress fails, the run ends (warn
+`school.card-ladder.dictation.progress-write-failed`) rather than repeating
+the word.
+
+**Separate time.** Dictation answers — re-sent ones included — never add to the day's active minutes
 and never satisfy or advance the daily goal; they do count as input for the
 idle clock. Dictation passes never change a word's ladder state.
 
@@ -702,7 +711,7 @@ warning, remaining, `needsRecording`, `unknown`) and, on each list word only,
 
 **Events.** Server: `school.card-ladder.dictation.started`, `.attempt`,
 `.done`, `.exited` (`reason`: `stop`, or the sitting's close reason),
-`.ready-seen`, `.replaced`, `.nothing-to-drill`, `.count`, `.unknown-word`, `.corrupt`, `.already-done`,
+`.ready-seen`, `.replaced`, `.progress-write-failed`, `.nothing-to-drill`, `.count`, `.unknown-word`, `.corrupt`, `.already-done`,
 `.admin-unavailable`. Frontend (card-ladder facade): `dictation.started`
 (`from: start|summary|menu|replaced`), `dictation.attempt`,
 `dictation.exited` (`stop|ready|replaced`), `dictation.failed`.

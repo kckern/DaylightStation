@@ -288,7 +288,13 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     setHint({ step, text: heldCarry ? CARRY_FIRST_HINT : STEP_HINTS[step], leaving: false });
     cardLadderLog.hintShown({ step });
   }, [trail.current]); // eslint-disable-line react-hooks/exhaustive-deps
-  const dismissHint = useCallback(() => setHint((h) => (h && !h.leaving ? { ...h, leaving: true } : h)), []);
+  // A dictation notice (M5, M10) has its own slot: a step's hint must not
+  // overwrite it on the render that shows the card. The next answer clears it.
+  const [dictationNotice, setDictationNotice] = useState(null);
+  const dismissHint = useCallback(() => {
+    setHint((h) => (h && !h.leaving ? { ...h, leaving: true } : h));
+    setDictationNotice(null);
+  }, []);
   // A write that never reached the server (status 0) leaves the item on screen
   // and the press safe to repeat — but it used to say NOTHING, so a child
   // tapping "Learn more words" through a restart saw a dead button and gave up
@@ -366,7 +372,9 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       cardLadderLog.dictationExited({ reason: 'replaced', week: data.dictation.previousWeek ?? null });
       setResult(null); setPendingItem(null);
       if (data?.item) setItem(data.item);
-      startDictationRef.current?.('replaced');
+      // No week tagged any more (M5): back to the ladder, and say why.
+      if (data.dictation.week == null) setDictationNotice({ step: 'dictation-notice', text: "This week's dictation list changed.", leaving: false });
+      else startDictationRef.current?.('replaced');
       return;
     }
     // Best-effort per-round tally for round.ended {quizzed, notYet} — a
@@ -384,7 +392,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     };
     // Dictation: a miss is always held with Next (audit #3) — the server has
     // already stepped the word back and re-served it; never jump silently.
-    if (item.source === 'dictation' && data?.result?.correct === false) {
+    if (item.source === 'dictation' && (data?.result?.correct === false || (data?.result?.correct === true && item.type === 'drill'))) {
       setResult(data.result); setPendingItem(data.item ?? item);
       showResult(true);
       return;
@@ -517,6 +525,8 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     if (ok) { cardLadderLog.dictationStarted({ from, week: data?.dictation?.week ?? null, remaining: data?.dictation?.remaining ?? null, nothingToDrill: true }); return; }
     cardLadderLog.dictationFailed({ from, status, error: data?.error ?? null });
     if (serverUnreachable(status)) unreachable('dictation');
+    // Any other refusal is said too, never a silent tap (M10).
+    else setDictationNotice({ step: 'dictation-notice', text: "Dictation couldn't start. Tap it again in a moment.", leaving: false });
   }, [api, userId, deckId, test, scenario, trace, show, unreachable]);
   const startDictationRef = useRef(null);
   startDictationRef.current = startDictation;
@@ -695,7 +705,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
           trail={trail}
           onExit={leave}
           timePct={pct}
-          hint={hint}
+          hint={dictationNotice ?? hint}
           right={inDictation
             ? <TouchButton variant="secondary" disabled={busy || Boolean(pendingItem)} onClick={stopDictation}>Stop for now</TouchButton>
             : inPractice
