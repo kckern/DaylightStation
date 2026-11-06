@@ -27,6 +27,7 @@ export const SCENE_DEFAULTS = Object.freeze({
   probeWidth: 640,
   growMaxSec: 60,       // an edge grows outward at most this far while the picture next to it is graphic
   growAt: 2,            // picture level (any scene group) that counts as graphic next to an edge
+  growProbeSec: [2, 8], // where past an edge to look
 });
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
@@ -127,17 +128,25 @@ export class SceneBuilder {
     const grown = { in: 0, out: 0 };
     for (const dir of [-1, 1]) {
       const side = dir < 0 ? 'in' : 'out';
+      const limit = span[side] + dir * this.opt.growMaxSec;
       while (grown[side] < this.opt.growMaxSec) {
         const edge = span[side];
-        const next = nextBoundary(edge, cuts, dir);
-        const t = r3(edge + dir * Math.min(2, Math.abs(next - edge) / 2));
-        if (t <= 0) break;
-        const [fr] = await this.media.frames(this.src, this.toFile(t), 1, { width: this.opt.probeWidth });
-        if (!fr) break;
-        const score = await this.#ask(id, 'scene-grow', pictureQuestion({ png: fr.png, groups, hint }), { t, side });
-        if (!groups.some((g) => Math.round(score[g]) >= this.opt.growAt)) break;
+        // Look 2 s and 8 s past the edge: fights cut away and back, so a quiet
+        // shot right at the edge does not mean the violence is over.
+        let farthest = null;
+        for (const d of this.opt.growProbeSec) {
+          const t = r3(edge + dir * d);
+          if (t <= 0) continue;
+          const [fr] = await this.media.frames(this.src, this.toFile(t), 1, { width: this.opt.probeWidth });
+          if (!fr) continue;
+          const score = await this.#ask(id, 'scene-grow', pictureQuestion({ png: fr.png, groups, hint }), { t, side });
+          if (groups.some((g) => Math.round(score[g]) >= this.opt.growAt)) farthest = t;
+        }
+        if (farthest == null) break;
+        const step = nextBoundary(farthest, cuts, dir);
+        const next = Math.max(0, dir < 0 ? Math.max(step, limit) : Math.min(step, limit));
         grown[side] = r3(grown[side] + Math.abs(next - edge));
-        span[side] = r3(Math.max(0, next));
+        span[side] = r3(next);
       }
     }
     return grown.in || grown.out ? grown : null;
