@@ -684,7 +684,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
-  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1065,6 +1065,17 @@ async function main() {
     return;
   }
 
+  if (command === 'pin-page' || command === 'pin') {
+    const { runPinPage, runPin } = await import('./contentfilter/pinCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter pin-page <rk> --src <file> | pin <rk> --src <file> --marks <file> [--write]'); process.exit(1); }
+    try {
+      if (command === 'pin-page') runPinPage({ rk, flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() });
+      else await runPin({ rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() });
+    } catch (err) { console.error(`${command} ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
   if (command === 'certify') {
     const { runCertify, CERTIFY_USAGE } = await import('./contentfilter/certifyCommand.mjs');
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
@@ -1339,6 +1350,8 @@ Commands:
   sync <ratingKey>      Fit this copy's sync from the anchors in the tag set's refined EDL
                         (refined/<workId>-<tagSetId>.edl.yml); detects a different cut as
                         segments. No decision model. --part, --src, --transcript, --write.
+  pin-page <ratingKey>  Clip page for safe-window mutes: mark where each word starts. --src.
+  pin <ratingKey>       Snap the marks to the words and write them as ms mutes. --src, --marks, --write.
   certify <ratingKey>   Show/recompute a refined EDL's certification (machine: every mute precise);
                         --parent --by <name> records a sign-off. --write.
   migrate-refined <rk>  Move a title's refined cue times from its override into the shareable

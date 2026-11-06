@@ -6,6 +6,7 @@
  */
 import { mapTime, unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { certify } from './certification.mjs';
+import { applySafeWindows } from './safeWindow.mjs';
 
 const ms = (t) => Math.round(t * 1000) / 1000;
 const COPY_KEYS = ['frameIn', 'frameOut'];
@@ -34,7 +35,7 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
     return ms(v);
   };
   let refinedCount = 0;
-  const cues = (edl.cues || []).map((cue) => {
+  const measured = (edl.cues || []).map((cue) => {
     const o = cueOverrides[cue.id];
     if (!o?.refine || o.in == null) return { ...cue, precision: cue.precision || edl.precision || 'second-approx' };
     refinedCount++;
@@ -47,6 +48,8 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
     delete out.approx;
     return out;
   });
+  // Mutes refine could not pin get a window wide enough for the tag's drift.
+  const cues = applySafeWindows(measured);
   const { contentId, cues: _c, precision: _p, certification: _x, ...head } = edl;
   // Certification is recomputed on every build; a person's sign-off carries over
   // from the previous file while the bar still holds.

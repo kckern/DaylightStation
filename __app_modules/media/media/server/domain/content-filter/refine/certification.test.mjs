@@ -9,13 +9,13 @@ describe('certify', () => {
   it('is machine-certified when every mute is precise, whatever the skips are', () => {
     const c = certify(edl([mute('a', 'ms'), mute('b', 'ms'), skip('c', 'second-approx'), skip('d', 'frame')]), { at: '2026-11-06' });
     expect(c.level).toBe('machine');
-    expect(c.bar).toBe('every-mute-precise');
-    expect(c.counts).toEqual({ mute: { precise: 2, approx: 0 }, visual: { precise: 1, approx: 1 } });
+    expect(c.bar).toBe('every-mute-covered');
+    expect(c.counts).toEqual({ mute: { precise: 2, safeWindow: 0, approx: 0 }, visual: { precise: 1, approx: 1 } });
     expect(c.machine).toEqual({ at: '2026-11-06' });
   });
   it('counts a tag listed under several categories once', () => {
     const c = certify(edl([mute('a', 'second-approx'), mute('a', 'second-approx'), mute('b', 'ms')]), { at: '2026-11-06' });
-    expect(c.counts.mute).toEqual({ precise: 1, approx: 1 });
+    expect(c.counts.mute).toEqual({ precise: 1, safeWindow: 0, approx: 1 });
     expect(c.blocking).toEqual(['a']);
   });
   it('is not certified while any mute is approximate, and lists them', () => {
@@ -27,6 +27,14 @@ describe('certify', () => {
     const signed = { certification: { level: 'parent', parent: { by: 'KC', at: '2026-11-07' } } };
     expect(certify(edl([mute('a', 'ms')], signed), { at: '2026-11-08' }).level).toBe('parent');
     expect(certify(edl([mute('a', 'second-approx')], signed), { at: '2026-11-08' }).level).toBe('none');
+  });
+});
+
+describe('certify with safe windows', () => {
+  it('counts safe-window mutes as covered', () => {
+    const c = certify(edl([mute('a', 'ms'), mute('b', 'safe-window')]), { at: '2026-11-06' });
+    expect(c.level).toBe('machine');
+    expect(c.counts.mute).toEqual({ precise: 1, safeWindow: 1, approx: 0 });
   });
 });
 

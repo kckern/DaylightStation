@@ -46,6 +46,20 @@ const FORMS = {
   fuck: ['fuck', 'fucking', 'fuckin', 'fucked', 'fucker', 'motherfucker'],
 };
 
+/**
+ * The plain word to prompt a speech model with for a tagged word, or null when
+ * the label cannot be resolved ("G*d" -> "god"; "p*ck*rw**d" -> null).
+ */
+export function wordPrompt(cue) {
+  const label = String(cue.label || '').trim();
+  if (!isWordLabel(label)) return null;
+  const leaf = String(cue.category || '').split('/').pop();
+  if (FORMS[leaf]) return leaf;
+  if (!label.includes('*')) return label.toLowerCase();
+  const rx = new RegExp(`^${label.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[a-z]')}$`);
+  return Object.keys(FORMS).find((k) => rx.test(k)) || null;
+}
+
 function normWord(w) {
   return String(w || '').toLowerCase().replace(/[^a-z']/g, '').replace(/^'+|'+$/g, '');
 }

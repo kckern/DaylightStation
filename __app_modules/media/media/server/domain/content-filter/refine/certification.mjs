@@ -1,16 +1,17 @@
 /**
  * Whether a refined EDL is ready to play.
  *
- * machine: refine settled every mute to ms/frame precision, so no tagged word
- *          can play outside its mute window. Skips and visual cues may stay
- *          approximate: the player already widens those generously.
+ * machine: every mute covers its word: pinned to ms/frame precision, or a safe
+ *          window wide enough for the tag's measured drift (safeWindow.mjs).
+ *          Skips and visual cues may stay approximate: the player already
+ *          widens those generously.
  * parent:  a person reviewed it and signed off; kept only while the machine
  *          bar still holds (a later refine that leaves a mute approximate
  *          drops it).
  * none:    anything else, including every raw VidAngel EDL.
  */
 export const LEVELS = ['none', 'machine', 'parent'];
-export const BAR = 'every-mute-precise';
+export const BAR = 'every-mute-covered';
 const PRECISE = new Set(['ms', 'frame']);
 
 /**
@@ -18,17 +19,23 @@ const PRECISE = new Set(['ms', 'frame']);
  * @param {{ at: string }} o
  */
 export function certify(edl, { at }) {
-  const counts = { mute: { precise: 0, approx: 0 }, visual: { precise: 0, approx: 0 } };
+  const counts = { mute: { precise: 0, safeWindow: 0, approx: 0 }, visual: { precise: 0, approx: 0 } };
   const blocking = [];
   const seen = new Set();
   for (const c of edl.cues || []) {
     // One VidAngel tag can be listed once per category under the same id and span.
     if (seen.has(c.id)) continue;
     seen.add(c.id);
-    const bucket = c.type === 'mute' ? counts.mute : counts.visual;
     const precise = PRECISE.has(c.precision);
-    bucket[precise ? 'precise' : 'approx']++;
-    if (c.type === 'mute' && !precise) blocking.push(c.id);
+    if (c.type === 'mute') {
+      // A safe window (wide enough for the tag's measured drift) also keeps the word from playing.
+      // 'pinned': a person marked the word and the span covers it, without ms edges.
+      const kind = precise ? 'precise' : (c.precision === 'safe-window' || c.precision === 'pinned') ? 'safeWindow' : 'approx';
+      counts.mute[kind]++;
+      if (kind === 'approx') blocking.push(c.id);
+    } else {
+      counts.visual[precise ? 'precise' : 'approx']++;
+    }
   }
   const machineOk = blocking.length === 0;
   const parent = machineOk ? edl.certification?.parent : undefined;
