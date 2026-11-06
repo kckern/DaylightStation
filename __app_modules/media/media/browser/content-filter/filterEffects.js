@@ -45,16 +45,39 @@ registerEffectHandler('skip', {
 });
 
 // Audio
+// Padded word cues can overlap (a cue's lead pad starts before the previous cue's
+// trail pad ends), and exits run before enters each tick. So silencing is a hold
+// count in `mem`, not a per-cue toggle: only the last entered cue's exit unmutes,
+// and only the last sound holder's exit stops the bleep / named sound.
+function holdMute(el, mem) { mem.muteHolds = (mem.muteHolds || 0) + 1; el.muted = true; }
+function releaseMute(el, mem) {
+  mem.muteHolds = Math.max(0, (mem.muteHolds || 0) - 1);
+  if (mem.muteHolds === 0) el.muted = false;
+}
+function holdSound(mem) { mem.soundHolds = (mem.soundHolds || 0) + 1; }
+function releaseSound(sfx, mem) {
+  mem.soundHolds = Math.max(0, (mem.soundHolds || 0) - 1);
+  if (mem.soundHolds === 0) sfx?.stop?.();
+}
+
 registerEffectHandler('mute', {
   kind: EFFECT_KINDS.AUDIO,
-  onEnter({ el }) { el.muted = true; },
-  onExit({ el }) { el.muted = false; },
+  onEnter({ el, mem }) { holdMute(el, mem); },
+  onExit({ el, mem }) { releaseMute(el, mem); },
 });
 
 registerEffectHandler('bleep', {
   kind: EFFECT_KINDS.AUDIO,
-  onEnter({ el, cue, sfx }) { el.muted = true; if (cue.sound) sfx?.play?.(cue.sound); },
-  onExit({ el, sfx }) { el.muted = false; sfx?.stop?.(); },
+  // The video is muted first, so if the tone cannot sound the word is still silenced.
+  // The sound follows the set's volume, so a quiet TV doesn't get a full-level bleep.
+  onEnter({ el, cue, sfx, mem }) {
+    holdMute(el, mem);
+    holdSound(mem);
+    const opts = { volume: el.volume };
+    if (cue.sound) sfx?.play?.(cue.sound, opts);
+    else sfx?.tone?.(opts);
+  },
+  onExit({ el, sfx, mem }) { releaseMute(el, mem); releaseSound(sfx, mem); },
 });
 
 registerEffectHandler('duck', {
@@ -74,8 +97,8 @@ registerEffectHandler('full-blur', { kind: EFFECT_KINDS.OVERLAY });   // whole-f
 // Standalone plot/warning card — visual overlay + OPTIONAL narration audio while shown.
 registerEffectHandler('title-card', {
   kind: EFFECT_KINDS.OVERLAY,
-  onEnter({ cue, sfx }) { if (cue.sound) sfx?.play?.(cue.sound); },
-  onExit({ cue, sfx }) { if (cue.sound) sfx?.stop?.(); },
+  onEnter({ cue, sfx, mem }) { if (cue.sound) { holdSound(mem); sfx?.play?.(cue.sound); } },
+  onExit({ cue, sfx, mem }) { if (cue.sound) releaseSound(sfx, mem); },
 });
 // skip-card is kept as one cue by the resolver (no skip + title-card expansion) and
 // driven directly by useContentFilter's skip-card lifecycle (seek to `out`, pause

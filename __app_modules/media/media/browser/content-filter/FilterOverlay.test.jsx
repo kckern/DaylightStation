@@ -75,4 +75,23 @@ describe('FilterOverlay', () => {
     expect(card).toBeTruthy();
     expect(container.querySelector('.filter-card').style.fontFamily).toContain('Roboto Condensed');
   });
+  it('renders the badge layer even when no effect is active', () => {
+    const { container } = render(<FilterOverlay activeOverlays={[]} badge={{ state: 'certified', fireCount: 0 }} />);
+    expect(container.querySelector('.filter-overlay')).toBeTruthy();
+    expect(container.querySelector('[data-filter-badge="certified"]')).toBeTruthy();
+  });
+
+  it('renders the bumper when given one', () => {
+    const { getByText } = render(<FilterOverlay bumper={{ summary: '1 word muted' }} />);
+    expect(getByText('Edited for content')).toBeTruthy();
+  });
+
+  it('the bumper yields to a skip-card; the badge stays', () => {
+    const { container, queryByText } = render(
+      <FilterOverlay activeCard={{ text: 'Skipping ahead' }} bumper={{ summary: '' }} badge={{ state: 'provisional', fireCount: 0 }} />
+    );
+    expect(queryByText('Edited for content')).toBeNull();
+    expect(queryByText('Skipping ahead')).toBeTruthy();
+    expect(container.querySelector('[data-filter-badge="provisional"]')).toBeTruthy();
+  });
 });
