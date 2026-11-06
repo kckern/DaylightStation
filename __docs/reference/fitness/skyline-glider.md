@@ -21,6 +21,8 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 - Game score is unique bells plus weapon-destroyed targets; crash destruction earns no target point. Completion ring rewards remain based on bells.
 - Completion awards 10 rings plus one per unique collectible, capped at 30. Normal heart-rate rings continue independently.
 
+Entity contact, point hits, blasts and sweeps use the shared scroller geometry; edge modes are in `__docs/reference/gaming/realtime-kit.md` (Scroller geometry).
+
 ## Loop and effects
 
 The simulation and its plumbing come from the gaming [real-time kit](../gaming/realtime-kit.md). `stepFlight` is sub-stepped by the kit's `advance` (1/60 s steps, last step partial). The flight loop is a kit `createFrameDriver` with frames capped at 0.1 s; a frame that throws is logged as `skyline_glider.frame.error` and the flight continues. Flight events (sounds, toasts) go through the kit's `createEffectDispatcher`, which keeps the `skyline_glider.effect.executed`, `.skipped` and `.failed` names and their `effectId` field. Once a flight is saved the game calls `announceGameAchievement`, so the gem ceremony looks at once.

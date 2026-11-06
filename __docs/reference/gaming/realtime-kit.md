@@ -22,7 +22,7 @@ Placement is decided by how many current games share a thing with the same meani
   fraction and lerp, effect dispatcher, run roles, the game-achievement
   announcement. This is what exists today.
 - **Tier 2, scroller geometry** (Skyline and the Side Scroller): boxes, overlap
-  queries with edge modes, swept hits. Not built yet. It is deliberately geometry
+  queries with edge modes, swept hits. Built; see "Scroller geometry" below. It is deliberately geometry
   only; see "What was left out" below.
 - **Tier 3, stays in each game:** Skyline's flight dynamics, stall, terrain,
   missile homing, course YAML and checkpoint repository; the Side Scroller's
@@ -32,6 +32,38 @@ Placement is decided by how many current games share a thing with the same meani
 **Promotion rule:** when a fourth game repeats a Tier 3 concept with the same
 meaning, it moves down a tier in that game's change, not before. Two games that
 only look alike do not qualify (see below).
+
+## Scroller geometry
+
+`portable/realtime/scroller/geometry.mjs`, re-exported from the barrel. Axis-aligned
+boxes, y down; pure, no clocks or randomness.
+
+```js
+box(x0, x1, y0, y1)                                   // frozen { x0, x1, y0, y1 }
+overlaps(a, b, { x = 'open', y = 'open' } = {})       // per-axis edge mode
+sweepHits(boxes, sweep, { x = 'closed', y = 'closed', include = () => true } = {})
+  // -> [{ index, at }] in input order; at = max(sweep.x0, box.x0)
+```
+
+Edge mode is per axis: `'open'` means boxes that merely touch do not overlap,
+`'closed'` means they do. Each caller states the mode its game needs:
+
+| Caller | x | y |
+|--------|---|---|
+| Piano Side Scroller collisions and pellet sweep | open | open |
+| Skyline craft contact | closed | open |
+| Skyline point hits, blasts and sweeps | closed | closed |
+
+`sweepHits` does not rank. Each game orders the results itself: Skyline takes the
+earliest entry, with entities winning ties over terrain; the Side Scroller takes
+the leftmost block edge (`obstacles[index].x`), first in input order on ties.
+
+`sweepHits` and `overlaps` do not validate inputs: a NaN bound makes every
+comparison false, so that box is silently skipped (no throw, no hit), and a NaN
+in the sweep itself skips every box. For Skyline, entity bounds and aim come
+from a validated course (`courseModel` rejects a non-finite `at_s` and a
+`width_s` or `height` that is not > 0); sweep endpoints come from runtime shot
+state, which the kit's stepping keeps finite.
 
 ## Portable API (`portable/realtime`)
 
@@ -141,6 +173,7 @@ meaning in two games":
 - **Contact roles, damage tables, entity hit points.** The Side Scroller has one
   role (everything hurts). Skyline stores damage taken, the Side Scroller hp
   remaining; converting either would change state shapes that tests assert.
+- **Scroll policy, projectile lifecycle and presence windows** each had one real user or meant different things per game (spec, Revision 2); Tier 2 is geometry only.
 - **Terrain profiles** stay in Skyline: one user.
 
 Design record: `ops:docs/superpowers/specs/2026-11-05-realtime-game-kit-design.md`.
