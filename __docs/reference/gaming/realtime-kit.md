@@ -44,7 +44,7 @@ import { planSteps, dueAnchoredSteps, advance, RUN_ROLES, projectRunRole, tickFr
 |---|---|---|
 | `planSteps` | `(elapsedS, { stepS, remainder = 'partial', carryS = 0 }) -> { dts, carryS }` | Splits elapsed seconds into fixed slices. `partial`: whole steps then one short step, nothing carried. `carry`: whole steps only; the remainder returns as `carryS` and is fed back next frame. |
 | `dueAnchoredSteps` | `({ sinceAnchor, stepsTaken, step, maxSteps = Infinity }) -> { due, run }` | Steps owed against a fixed anchor, in any unit. A null `sinceAnchor` owes one step. `run` is `due` capped at `maxSteps`; the caller logs the gap when `due > run`. |
-| `advance` | `(state, input, elapsedS, { step, stepS, remainder, carryS, oncePerFrame = ['actions'] }) -> { state, carryS, steps }` | Folds the game's `step(state, input, dt)` over the plan. Keys in `oncePerFrame` are cleared from the input after the first step, so a press fires once per frame, not once per sub-step. |
+| `advance` | `(state, input, elapsedS, { step, stepS, remainder, carryS, oncePerFrame = ['actions'] }) -> { state, carryS, steps }` | The options object is required (no default). Folds the game's `step(state, input, dt)` over the plan. Keys in `oncePerFrame` are cleared from the input after the first step, so a press fires once per frame, not once per sub-step. |
 | `tickFraction` | `(nowMs, tickAtMs, tickMs) -> 0..1` | Progress from a tick toward the next; saturates at 1 when the tick is overdue so a lerped value freezes on the latest data. A non-positive `tickMs` returns 1. |
 | `RUN_ROLES` | frozen array | `ready, countdown, playing, paused, result, exiting`. |
 | `projectRunRole` | `(phase, mapping = {}) -> role` | Maps a game-owned phase to a run role: the mapping entry, else the lower-cased phase, else `ready` when that is not a role. |
@@ -64,7 +64,7 @@ import { createFrameDriver, createTickLerp, createEffectDispatcher,
 |---|---|---|
 | `createFrameDriver` | `({ onFrame, maxFrameS = Infinity, now, raf, caf, onError }) -> { start, wake, stop, running }` | One rAF loop. `onFrame({ nowMs, rawElapsedS, elapsedS })` gets `elapsedS` capped at `maxFrameS`, so a backgrounded tab cannot produce one giant step. Returning `false` parks the loop; `wake()` re-arms it. A throwing `onFrame` is isolated, reported to `onError(err)`, and the loop continues; a throwing `onError` is swallowed. `raf`/`caf` resolve to the globals at call time; pass `null` for a no-rAF mode where `start`/`wake` do nothing. |
 | `createTickLerp` | `({ intervalMs = 1000, now }) -> { onTick(payload), subscribe(cb), stop(), running }` | One linear motion clock for data that arrives at ~1 Hz. `onTick` resets the fraction to 0 and re-arms; subscribers get `cb(fraction, payload)` each frame, are isolated from each other, and the loop parks at 1. With no rAF, `onTick` emits 1 at once. Consumers write to the DOM imperatively, so React does not re-render per frame. |
-| `createEffectDispatcher` | `({ table, playCue, log, logNames, correlation, skippedReason }) -> { dispatch(events, extra) }` | Maps event types to ordered effects. `table[type](event, extra)` returns `[{ id, cue }]` or `[{ id, visual }]`. A cue effect logs `logNames.executed` when `playCue(cue)` returns truthy, otherwise `logNames.skipped` with a reason. A throwing effect logs `logNames.failed` and the rest still run. `logNames.event(event)` names an optional per-event line. Every log carries `correlation()`, `extra`, `eventType` and `effectId`. |
+| `createEffectDispatcher` | `({ table, playCue, log, logNames, correlation, skippedReason }) -> { dispatch(events, extra) }` | Maps event types to ordered effects. `table[type](event, extra)` returns `[{ id, cue }]` or `[{ id, visual }]`. A cue effect logs `logNames.executed` when `playCue(cue)` returns truthy, otherwise `logNames.skipped` with a reason. A throwing effect logs `logNames.failed` and the rest still run. `logNames.event(event)` names an optional per-event line. The per-event line (`logNames.event`) carries `correlation()`, `extra` and `event.data`. The per-effect `executed`/`skipped`/`failed` lines carry `correlation()`, `extra`, `eventType` and `effectId`, plus `reason` on skipped and `error` on failed. Defaults: `log = null`, `logNames = {}`, `correlation = () => ({})`, `skippedReason = () => 'audio-unavailable'`; with no `log` or no name, nothing is logged. |
 | `GAME_ACHIEVEMENT_RECORDED_EVENT` | `'game-achievement-recorded'` | The window event name. |
 | `announceGameAchievement` | `(source, detail = {})` | Dispatches the event with `{ source, ...detail }`. A no-op without `window`. |
 
@@ -100,6 +100,13 @@ late and never twice. The details and the tests that pin them are in
 this page does not repeat them.
 
 ## The ceremony ordering rule
+
+**An economy ceremony (gem or coin) never shows during a live run (run role
+`countdown` or `playing`). It may show over the result (role `result`) — fitness
+shows the gem ceremony over the race/flight result as shipped. The piano is
+stricter by construction: its ceremony renders only on the Games picker, so it
+never covers a game or its result screen, and a ceremony interrupted by opening
+a game shows again on return.**
 
 A game announces **after its record is saved**: `announceGameAchievement` runs
 once the cycle race or Skyline flight has been persisted, so a Gem Board read

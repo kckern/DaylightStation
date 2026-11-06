@@ -415,6 +415,7 @@ One view of every learner against every gem, for one week. Design:
   taken (`leading`); a lead that becomes a win celebrates again, a lost lead
   never does. A surface that has not looked this week learns silently, and a
   reload never replays one.
+  - Ordering rule for every surface (never during a live run; the piano is stricter): see [the ceremony ordering rule](../gaming/realtime-kit.md#the-ceremony-ordering-rule).
   - **Fitness** (`FitnessApp` global overlays): learns on load, then looks
     (fresh) 1.5 s after `game-achievement-recorded` (a cycle race or a Skyline
     Glider flight saved, `announceGameAchievement` in the [gaming real-time kit](../gaming/realtime-kit.md)) and after a workout ends;
