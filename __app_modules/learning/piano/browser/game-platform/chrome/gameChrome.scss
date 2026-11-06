@@ -521,10 +521,9 @@
   margin-inline: auto;
 }
 
-/* ── HUD (countdown / life / progress) ─────────────────────────────────────
-   GameChrome.jsx has rendered these three since it was written and nothing has
-   ever styled them — `.piano-game-life__notch` was an unstyled empty span, so
-   a life meter drew nothing at all. */
+/* ── HUD (countdown / life / progress / banner) ───────────────────────────
+   Rendered by the shared kit (re-exported from chrome/index.js); the kit has no
+   colours of its own. */
 /* The shared HUD (`__capabilities/gaming/.../ui/hud`) colours itself from
    --game-hud-*; this maps them onto the cabinet. */
 .piano-game-host,

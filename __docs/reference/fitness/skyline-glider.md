@@ -31,6 +31,8 @@ The simulation and its plumbing come from the gaming [real-time kit](../gaming/r
 
 During flight, top-left fires laser, top-right drops a bomb, bottom-left launches a guided missile and bottom-right boosts the craft forward. The 2×2 panel is not drawn during flight; the HUD bar across the top shows hearts, time remaining, bells, targets and (when above 1×) heart-rate power on the left, and a 2×2 legend of the four actions on the right in their physical positions, each with its ammunition or recharge. Every press flashes its legend cell: green when it fires, red with the reason (`Reloading`, `Empty`, `Charging`, `Wait`) plus a short deny tone when it does not, logged as `skyline_glider.input.refused` (`action`, `reason`). Holding bottom-right opens a labeled menu for Resume, Sound, End flight and Change rider. The menu freezes simulation; resuming requires pedal readiness and preserves ammunition. A committed stall completes before the menu can open. Sensor loss still permits ending the flight. No attack or menu input reassigns the rider.
 
+The HUD hearts are the shared kit's `LifeMeter` (glyph variant) and the checkpoint/cue banner is its `MomentBanner`; their colours come from a `--game-hud-*` palette block on `.skyline-glider`. See [HUD set](../gaming/realtime-kit.md#hud-set).
+
 | Input | Laser | Bomb | Missile | Boost |
 |---|---|---|---|---|
 | Bike 2×2 panel | Top-left (1) | Top-right (2) | Bottom-left (3) | Bottom-right (4) |

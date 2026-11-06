@@ -162,6 +162,42 @@ On the piano kiosk the ceremony runs in the Games mode shell:
 Economy details (snapshot, what counts as a new gem, events) are in
 [Household economy](../economy/economy.md#gem-board).
 
+## HUD set
+
+`__capabilities/gaming/browser/platform/ui/hud/` (barrel `index.js`, styles
+`hud.scss`) holds the shared HUD. Components own structure and behaviour only;
+every colour comes from `--game-hud-*` set by the host game.
+
+| Component | Props |
+|---|---|
+| `CountdownOverlay` | `value` (renders nothing when null/undefined), `className` |
+| `LifeMeter` | `current`, `maximum`, `dangerAt = 0.25` (fraction of maximum), `variant = 'notches'` or `'glyphs'`, `glyph = '♥'`, `emptyGlyph = '♡'`, `label = 'Health'`, `ariaLabel`, `className` |
+| `ProgressMeter` | `value`, `maximum = 100`, `label`, `className` |
+| `MomentBanner` | `text` or `title` + `subtitle`, `momentKey`, `className` |
+
+- `LifeMeter` notches: `role="meter"` with `aria-valuenow` (partial health rounds up); notches at or below `dangerAt` take the danger colour. Glyphs: `role="img"` with `ariaLabel`; zero shows the empty glyph.
+- `MomentBanner` is `role="status"`. Changing `momentKey` replaces the node and replays the entrance animation (disabled under reduced motion). It renders nothing without `text` or `title`.
+
+**Custom properties:** `--game-hud-ink`, `--game-hud-edge`, `--game-hud-live`,
+`--game-hud-danger`, `--game-hud-track`, `--game-hud-banner-ink`,
+`--game-hud-banner-bg`, `--game-hud-shadow`. Unset, they fall back to
+`currentcolor` / transparent / no shadow.
+
+**Mapping per surface.** The piano maps them to `--pg-*` in
+`game-platform/chrome/gameChrome.scss` and re-exports the components from its
+chrome. Skyline sets a palette block on `.skyline-glider` (`--game-hud-hearts`,
+banner ink and background) and uses `LifeMeter` glyphs for hearts and
+`MomentBanner` for its checkpoint/cue banner.
+
+**Choosing a meter.** Segmented (`LifeMeter` notches) for a count of hits the
+player can take; continuous (`ProgressMeter`) for a trend such as time or
+progress.
+
+**Specificity.** A surface with stronger local styles may out-specify
+`.game-hud-moment` on purpose: Skyline's `.skyline-glider .skyline-glider__checkpoint-banner`
+positions and sizes its banner this way, keeping the kit's markup and
+accessibility.
+
 ## What was left out, and why
 
 The design was narrowed twice after review. Each cut failed the test "same
