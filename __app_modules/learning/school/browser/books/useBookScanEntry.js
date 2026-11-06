@@ -143,7 +143,13 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     if (gen !== generation.current || !stillOwned() || current.current?.id !== selected.id) return;
     if (!result.ok || result.data?.intentId !== selected.id || !result.data?.launchTarget?.bookGrant) {
       setError(result.data?.error?.message ?? 'Could not open this scan. Try again or rescan the book.');
-      schoolLog.bookShelfError('scan.claim-failed', { status: result.status }); return;
+      schoolLog.bookShelfError('scan.claim-failed', { status: result.status });
+      // Read again now: a notice that landed mid-claim was dropped by the
+      // lock, and on a pile screen the queue walk skips this failed head
+      // (`scopedAttempts`), so the books behind it are not held until the
+      // next unrelated scan or the head's five-minute expiry.
+      void refresh();
+      return;
     }
     remember(selected.id); current.current = null; setIntent(null);
     schoolLog.bookShelf('scan.launch', { screenId, scoped: state.current.scopeLearnerId === learnerId && !state.current.safe });

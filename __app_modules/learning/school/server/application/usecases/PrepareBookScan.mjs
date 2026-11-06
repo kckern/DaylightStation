@@ -145,8 +145,9 @@ export class PrepareBookScan {
     const burstKey = `${target.screenId}|${isbn13}`;
     const firstAt = this.#bursts.get(burstKey);
     // A burst is a reader double-firing at a book still being offered. A twin
-    // whose intent is no longer live (superseded by a shelf claim, dismissed,
-    // expired) cannot be opened any more; the rescan is the child doing what
+    // whose intent is no longer live (dismissed, expired, evicted — or, on a
+    // screen without a pile, superseded by a later scan or a shelf claim)
+    // cannot be opened any more; the rescan is the child doing what
     // the shelf chip told them ("scan it again to open it") and must make a
     // new intent at once, not wait out the window.
     const twinLive = Boolean(twin) && [...this.#records.values()].some(r => r.card === twin && this.#live(r));

@@ -16,7 +16,7 @@ import { useState, useMemo } from 'react';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const h = vi.hoisted(() => ({ service: null, subscribers: new Set(), log: vi.fn(), debug: vi.fn(), warn: vi.fn(), open: vi.fn(), shelf: vi.fn() }));
+const h = vi.hoisted(() => ({ failClaims: new Set(), service: null, subscribers: new Set(), log: vi.fn(), debug: vi.fn(), warn: vi.fn(), open: vi.fn(), shelf: vi.fn() }));
 const ok = (data) => ({ ok: true, status: 200, data });
 const call = async (fn) => {
   try { return ok(await fn()); } catch (error) { return { ok: false, status: error.status ?? 500, data: { error: { message: error.message } } }; }
@@ -32,7 +32,9 @@ vi.mock("../schoolApi.js", () => ({ schoolApi: {
       const queue = h.service.queue(screenId);
       return { intent: h.service.pending(screenId), ...(queue ? { queue } : {}) };
     }),
-    claim: async (id, { screenId, learnerId }) => call(() => h.service.claim({ id, screenId, learnerId })),
+    claim: async (id, { screenId, learnerId }) => (h.failClaims.has(id)
+      ? { ok: false, status: 410, data: { error: { message: 'This scan is no longer available. Scan again.' } } }
+      : call(() => h.service.claim({ id, screenId, learnerId }))),
     dismiss: async (id, { screenId }) => call(() => h.service.dismiss({ id, screenId })),
     pile: async (screenId) => call(() => ({ pile: h.service.pile(screenId) })),
     filePile: async () => ({ ok: false, status: 503, data: {} }),
@@ -98,7 +100,7 @@ function Panel({ open = true }) {
 }
 
 let n = 0;
-const scan = async (code) => { await act(async () => { await h.service.receive({ code, device: 'reader', eventId: `e${n++}` }); }); await flush(); };
+const scan = async (code) => { let r; await act(async () => { r = await h.service.receive({ code, device: 'reader', eventId: `e${n++}` }); }); await flush(); return r; };
 const flush = async () => { for (let i = 0; i < 6; i += 1) await act(async () => {}); };
 const chip = () => screen.queryByTestId('scan-status-chip')?.textContent ?? null;
 const heading = (title) => screen.queryByRole('heading', { name: title });
@@ -110,6 +112,7 @@ const holdLifts = async () => { await act(async () => { vi.advanceTimersByTime(4
 beforeEach(() => {
   vi.clearAllMocks();
   h.subscribers.clear();
+  h.failClaims.clear();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   h.shelf.mockResolvedValue(ok({ learnerId: 'kid', items: [], obligation: null }));
   h.open.mockImplementation(async (_learner, body) => ok({ ok: true, item: { itemId: `kid:${body?.isbn13 ?? 'x'}:e0`, bookId: body?.isbn13 ?? 'x', events: [], projection: { status: 'reading' } } }));
@@ -183,5 +186,25 @@ describe('the four-book incident: four scans during one shelf step', () => {
     await act(async () => { for (const fn of [...h.subscribers]) fn({ type: 'school.book-scan', screenId: 'portal' }); });
     await flush();
     expect(chip()).toContain('scan it again to open it');
+  });
+});
+
+// Re-review residual: a failed claim at the head of the queue must not stall
+// it. The failure re-reads the queue, whose walk skips the failed head.
+describe('a failed claim at the head of the queue', () => {
+  it('the next book opens without any further scan or notice', async () => {
+    h.service = makeService();
+    await openShelf();
+    await scan(ISBN0);
+    expect(heading('Book Zero')).toBeTruthy();
+    const queued = [];
+    for (const isbn of FOUR) queued.push(await scan(isbn));
+    expect(chip()).toBe('4 more books waiting');
+    h.failClaims.add(queued[0].intentId);
+    await startReading();
+    await holdLifts();
+    await flush();
+    expect(heading('Book Two')).toBeTruthy();
+    expect(h.service.pile('portal').cards.find((c) => c.isbn13 === FOUR[1]).state).toBe('claimed');
   });
 });
