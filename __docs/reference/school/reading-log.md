@@ -181,10 +181,14 @@ the claim lands (`useBookScanEntry` `shelfScan`, reported up through
 scanned since the shelf opened (`BookPile` `onShelfCards`; the pile itself is
 hidden while a shelf is open), minus the one being acknowledged and any already
 handed to the shelf, plus claimed scans queued in `entryQueue` (`queuedScans`).
-A card the server superseded (two scans in one shelf step; the pile view
-carries `intentId` and `superseded` per card) is listed under the chip by title
-or ISBN with `scan it again to open it` — a rescan gives the card a live intent
-again. A receipt is not replaced by the queue during its hold; the count sits
+A card with no live intent left (superseded by two scans in one shelf step,
+dismissed, expired or evicted; the pile view carries `intentId` and
+`superseded` per card) is listed under the chip by title or ISBN with `scan it
+again to open it`. A rescan gives the card a live intent at once: the 10 s
+burst window absorbs a repeat only while its twin card's intent is still live.
+A scan the chip already showed as waiting logs no `scan.acknowledged` when the
+shelf later claims it, and the book opening on a hand-off is never counted as
+waiting. A receipt is not replaced by the queue during its hold; the count sits
 beside it. Logs: `school.book-shelf.scan.acknowledged {screenId,
 msSinceReceived}` once per scan on the first "Got it", and
 `school.book-shelf.scan.visible {screenId, msSinceReceived}` when the book is
