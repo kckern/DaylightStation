@@ -66,7 +66,7 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
  * @param {Array<{ w: string, s: number, seg: number }>} p.words
  * @param {Array<{ id: number, text: string }>} p.segments
  * @param {object} p.sync
- * @param {Record<string, { in: number }>} [p.refinedById] - refined speech results; their start beats Whisper's
+ * @param {Record<string, { in: number }>} [p.refinedById] - refined speech results; only these become anchors
  * @param {number} [p.tol] - max |file time - synced tag time| for an inlier (s)
  */
 export function anchorsFrom({ pairs, words, segments, sync, refinedById = {}, tol = 3 }) {
@@ -77,7 +77,10 @@ export function anchorsFrom({ pairs, words, segments, sync, refinedById = {}, to
     if (expected == null || Math.abs(p.y - expected) > tol) continue;
     const w = words[p.wi];
     if (!w) continue;
-    const local = refinedById[p.id]?.in ?? p.y;
+    // Only words refine timed precisely: another copy's sync re-times its matches
+    // the same way, so a raw Whisper start (~80 ms early) here would bias the fit.
+    const local = refinedById[p.id]?.in;
+    if (local == null) continue;
     const t = unmapTime(local, sync);
     if (t == null) continue;
     anchors.push({ t: ms(t), kind: 'word', text: w.w.replace(/[^\p{L}\p{N}']/gu, '').toLowerCase(), line: lineOf.get(w.seg) || '' });

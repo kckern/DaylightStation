@@ -62,16 +62,15 @@ describe('anchorsFrom', () => {
   const segments = [{ id: 3, text: 'Oh damn, Doc.' }, { id: 9, text: 'What the hell?' }];
   const pairs = [{ x: 100, y: 108.1, wi: 1, id: 'a' }, { x: 500, y: 512.0, wi: 2, id: 'z' }];
 
-  it('turns inlier word pairs into anchors on the VidAngel clock with their line', () => {
-    const anchors = anchorsFrom({ pairs, words, segments, sync, refinedById: {} });
-    expect(anchors[0]).toEqual({ t: 100.1, kind: 'word', text: 'damn', line: 'Oh damn, Doc.' });
-  });
-  it('prefers the refined start of the tagged word', () => {
+  it('turns refined inlier words into anchors on the VidAngel clock with their line', () => {
     const anchors = anchorsFrom({ pairs, words, segments, sync, refinedById: { a: { in: 108.123 } } });
-    expect(anchors[0].t).toBe(100.123);
+    expect(anchors).toEqual([{ t: 100.123, kind: 'word', text: 'damn', line: 'Oh damn, Doc.' }]);
+  });
+  it('skips words refine did not time precisely', () => {
+    expect(anchorsFrom({ pairs, words, segments, sync, refinedById: {} })).toEqual([]);
   });
   it('drops pairs the sync does not explain', () => {
-    const anchors = anchorsFrom({ pairs, words, segments, sync, refinedById: {}, tol: 3 });
+    const anchors = anchorsFrom({ pairs, words, segments, sync, refinedById: { a: { in: 108.1 }, z: { in: 512 } }, tol: 3 });
     expect(anchors.map((a) => a.text)).toEqual(['damn']); // 512 - 8 = 504, 4 s from the tag at 500
   });
 });
