@@ -65,4 +65,18 @@ describe('FilesystemContentFilterRepository', () => {
       expect.objectContaining({ error: expect.any(String) }),
     );
   });
+
+  it('reads a refined EDL by VidAngel work and tag set', async () => {
+    const { mediaDir, repository } = createRepository();
+    mkdirSync(path.join(mediaDir, 'content-filter', 'refined'), { recursive: true });
+    writeFileSync(path.join(mediaDir, 'content-filter', 'refined', '12-345.edl.yml'), yaml.dump({ timebase: { clock: 'vidangel' }, cues: [] }));
+    await expect(repository.getRefinedEdl({ workId: 12, tagSetId: 345 })).resolves.toEqual({ timebase: { clock: 'vidangel' }, cues: [] });
+    await expect(repository.getRefinedEdl({ workId: 12, tagSetId: 999 })).resolves.toBeNull();
+  });
+
+  it('refuses refined EDL ids that are not plain numbers', async () => {
+    const { repository } = createRepository();
+    await expect(repository.getRefinedEdl({ workId: '../x', tagSetId: 1 })).resolves.toBeNull();
+    await expect(repository.getRefinedEdl({})).resolves.toBeNull();
+  });
 });

@@ -16,11 +16,9 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
-import { execFileSync } from 'child_process';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
-import { FfmpegRefineMedia } from '../../server/adapters/content-filter/FfmpegRefineMedia.mjs';
+import { prepareCopy } from './copySetup.mjs';
 import { MagickRefineRenderer } from '../../server/adapters/content-filter/MagickRefineRenderer.mjs';
 import { PythonWordAligner } from '../../server/adapters/content-filter/PythonWordAligner.mjs';
 import { makeTimebase } from '../../server/domain/content-filter/refine/timebase.mjs';
@@ -31,7 +29,6 @@ import { buildRefinedEdl, anchorsFrom, refinedEdlName } from '../../server/domai
 import { CueRefiner } from '../../server/application/content-filter/refine/CueRefiner.mjs';
 import { QUESTION_VERSION } from '../../server/application/content-filter/refine/refineQuestions.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** This many tagged words with none found in the transcript means the EDL is for other media. */
 const MISMATCH_MIN_TAGS = 6;
 
@@ -65,32 +62,9 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const overridePath = path.join(dataFilterDir, 'overrides', `${rk}.yml`);
   const override = existsSync(overridePath) ? yaml.load(readFileSync(overridePath, 'utf8')) || {} : {};
 
-  // 1. Media part and source
-  const { token, host } = loadPlexConfig();
-  const meta = (await getJson(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`))?.MediaContainer?.Metadata?.[0];
-  const parts = (meta?.Media || []).flatMap((m) => m.Part || []);
-  if (!parts.length) throw new Error(`Plex item ${rk} has no media parts`);
-  const part = flags.part ? parts.find((p) => String(p.id) === String(flags.part)) : parts[0];
-  if (!part) throw new Error(`Part ${flags.part} not on ${rk}; parts: ${parts.map((p) => p.id).join(', ')}`);
-  const src = flags.src || `${host}${part.key}?X-Plex-Token=${token}`;
-  const partId = String(part.id);
-
-  const workDir = path.join(mediaFilterDir, 'refine', rk);
-  mkdirSync(path.join(workDir, 'art'), { recursive: true });
-  const media = new FfmpegRefineMedia();
-  const probe = await media.probe(src);
-  if (probe.variableFrameRate) console.error(`⚠ variable frame rate (${probe.fps} vs avg ${probe.avgFps}); frame numbers are nominal`);
+  // 1-2. Media part, source, probe and transcript (cached per part)
+  const { meta, partId, src, workDir, media, probe, transcript } = await prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Refining' });
   const timebase = makeTimebase({ fps: probe.fps, startTime: probe.startTime });
-  console.error(`Refining ${rk} "${edl.title || meta?.title || ''}" part ${partId}: ${probe.width}x${probe.height} ${probe.fps} fps, ${Math.round(probe.duration)} s`);
-
-  // 2. Transcript (cached per part)
-  const transcriptPath = flags.transcript || path.join(workDir, `words-${partId}.json`);
-  if (!existsSync(transcriptPath)) {
-    console.error('Transcribing (word timestamps)… this runs once per part.');
-    const cmd = (process.env.CONTENT_FILTER_TRANSCRIBE_PY || 'uv run --script').split(/\s+/);
-    execFileSync(cmd[0], [...cmd.slice(1), path.join(HERE, 'transcribe.py'), src, transcriptPath], { stdio: ['ignore', 'inherit', 'inherit'] });
-  }
-  const transcript = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 
   // 3. Clock sync from tagged words vs transcript
   const tags = (edl.cues || []).filter((c) => c.type === 'mute').map((c) => ({ t: c.in, id: c.id, match: wordMatcher(c) })).filter((t) => t.match);

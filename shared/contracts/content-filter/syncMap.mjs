@@ -75,9 +75,10 @@ export function snapToFrames(span, frames) {
   const fps = parseFps(frames?.fps);
   if (!fps) return span;
   const dur = 1 / fps; const t0 = frames.startTime || 0;
-  // Tolerance in frames: stored start times are rounded (0.083333 for 1/12), so an
-  // edge on a boundary can land a few millionths of a frame past it.
-  const tol = 1e-3;
+  // Tolerance in frames: reference times are stored to the millisecond and start
+  // times are rounded (0.083333 for 1/12), so an edge that was on a boundary comes
+  // back up to ~0.5 ms off it. 0.05 frame is 2 ms at 24 fps.
+  const tol = 0.05;
   const nIn = Math.floor((span.in - t0) * fps + tol);
   const nOut = Math.ceil((span.out - t0) * fps - tol);
   const inT = t0 + nIn * dur;

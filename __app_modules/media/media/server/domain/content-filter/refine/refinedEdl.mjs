@@ -4,7 +4,7 @@
  * fit its own sync. No Plex ids, frame numbers or part ids: those belong to one
  * household's copy and stay in its override.
  */
-import { mapTime, unmapTime } from '../../../../../../../shared/content-filter/syncMap.mjs';
+import { mapTime, unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 const ms = (t) => Math.round(t * 1000) / 1000;
 const COPY_KEYS = ['frameIn', 'frameOut'];
@@ -83,6 +83,24 @@ export function anchorsFrom({ pairs, words, segments, sync, refinedById = {}, to
     anchors.push({ t: ms(t), kind: 'word', text: w.w.replace(/[^\p{L}\p{N}']/gu, '').toLowerCase(), line: lineOf.get(w.seg) || '' });
   }
   return anchors.sort((a, b) => a.t - b.t);
+}
+
+/**
+ * An override without the refined timing that now lives in the refined EDL:
+ * refine-stamped measurements are removed, keys a person set (disabled, effect,
+ * nudgeMs, …) stay, and entries left empty are dropped.
+ * @returns {{ cueOverrides: Record<string, object>, removed: number }}
+ */
+export function stripRefined(cueOverrides = {}) {
+  const MEASURED = ['in', 'out', 'precision', 'frameIn', 'frameOut', 'segments', 'regions', 'refine'];
+  const out = {}; let removed = 0;
+  for (const [id, o] of Object.entries(cueOverrides)) {
+    if (!o?.refine) { out[id] = o; continue; }
+    removed++;
+    const kept = Object.fromEntries(Object.entries(o).filter(([k]) => !MEASURED.includes(k)));
+    if (Object.keys(kept).length) out[id] = kept;
+  }
+  return { cueOverrides: out, removed };
 }
 
 function plainSync(sync) {

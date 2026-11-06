@@ -82,6 +82,11 @@ describe('snapToFrames', () => {
     expect(s.in).toBeCloseTo(4.25, 6);
     expect(s.out).toBeCloseTo(4.25 + 3 / 24, 6);
   });
+  it('keeps a boundary that comes back half a millisecond off after ms rounding', () => {
+    const s = snapToFrames({ in: 4.25 + 0.0005, out: 4.25 + 3 / 24 + 0.0005 }, frames);
+    expect(s.in).toBeCloseTo(4.25, 6);
+    expect(s.out).toBeCloseTo(4.25 + 3 / 24, 6);
+  });
   it('works at NTSC fractional rates', () => {
     const f = { fps: '24000/1001', startTime: 0 };
     const s = snapToFrames({ in: 10.0, out: 10.0 }, f);

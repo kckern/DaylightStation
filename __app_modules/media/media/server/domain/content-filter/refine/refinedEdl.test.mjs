@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRefinedEdl, anchorsFrom, refinedEdlName } from './refinedEdl.mjs';
+import { buildRefinedEdl, anchorsFrom, refinedEdlName, stripRefined } from './refinedEdl.mjs';
 
 const edl = {
   contentId: 'plex:40417', title: 'Test Film', year: 1999, source: 'vidangel',
@@ -82,5 +82,18 @@ describe('refinedEdlName', () => {
   });
   it('refuses without a tag set', () => {
     expect(() => refinedEdlName({ sourceRef: { workId: 12 } })).toThrow();
+  });
+});
+
+describe('stripRefined', () => {
+  it('removes refined timing, keeps person-set keys and manual entries', () => {
+    const { cueOverrides: o, removed } = stripRefined({
+      a: { in: 1, out: 2, precision: 'ms', refine: { v: 1 } },
+      b: { in: 3, out: 4, precision: 'frame', frameIn: 1, frameOut: 2, refine: { v: 1 }, effect: 'mute', nudgeMs: 20 },
+      c: { in: 5, out: 6 }, // manual timing, no refine stamp
+      d: { disabled: true },
+    });
+    expect(removed).toBe(2);
+    expect(o).toEqual({ b: { effect: 'mute', nudgeMs: 20 }, c: { in: 5, out: 6 }, d: { disabled: true } });
   });
 });

@@ -17,7 +17,7 @@ function median(a) {
  * @param {Array<{ x: number, y: number }>} pairs - x source seconds, y local seconds
  * @returns {{ scale: number, offset: number, used: number, total: number, medResid: number }|null}
  */
-export function fitSync(pairs, { tol = 3, minPairs = 6 } = {}) {
+export function fitSync(pairs, { tol = 3, minPairs = 6, maxScaleDev = 0.01 } = {}) {
   if (pairs.length < minPairs) return null;
   // Iterate: offset-only inliers -> 2-param fit -> re-select inliers on the fit
   let scale = 1; let offset = median(pairs.map((p) => p.y - p.x));
@@ -29,7 +29,7 @@ export function fitSync(pairs, { tol = 3, minPairs = 6 } = {}) {
     const mx = inl.reduce((s, p) => s + p.x, 0) / n; const my = inl.reduce((s, p) => s + p.y, 0) / n;
     const sxx = inl.reduce((s, p) => s + (p.x - mx) ** 2, 0); const sxy = inl.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
     if (sxx > 0) { scale = sxy / sxx; offset = my - scale * mx; }
-    if (Math.abs(scale - 1) > 0.01) { scale = 1; offset = median(inl.map((p) => p.y - p.x)); }
+    if (Math.abs(scale - 1) > maxScaleDev) { scale = 1; offset = median(inl.map((p) => p.y - p.x)); }
   }
   const medResid = median(inl.map((p) => Math.abs(p.y - (p.x * scale + offset))));
   return { scale: Number(scale.toFixed(6)), offset: Number(offset.toFixed(3)), used: inl.length, total: pairs.length, medResid: Number(medResid.toFixed(3)) };
