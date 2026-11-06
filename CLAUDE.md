@@ -226,6 +226,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Station sequences (playlist pinned head + station IDs between songs; radio-station playlists) | `__docs/reference/player/surround/sequences.md` |
 | Media source healing (Plex refuses a file: proxy 503, Player waits, backend repair ladder) | `__docs/reference/player/media-source-healing.md` |
 | Home Line video calling (state, signaling, recovery, observability) | `__docs/reference/call/README.md` |
+| Real-time game kit (step runner, frame driver, effect dispatcher, tick lerp, run roles, simulated piano clock, gem-ceremony ordering) | `__docs/reference/gaming/realtime-kit.md` |
 | Piano Producer (jam/song builder) | `__docs/reference/piano/producer.md` |
 | Piano tablet screen control (screensaver, manual off holds, power authority) | `__docs/reference/piano/screen-control.md` |
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `__docs/reference/piano/grid-addressing.md` |

@@ -23,6 +23,8 @@ The v2 cutover has no runtime compatibility aliases. `ops:retired/scripts/migrat
 
 The dependency direction is `environment → experience → platform`. Experiences may consume environment capabilities (such as buzzers and audio cues) only through injected `gamingServices`; they never import an environment. `architecture.test.js` enforces these boundaries.
 
+Real-time games (Skyline Glider, the Cycle Race, the Piano Side Scroller) share a step runner, frame driver and effect dispatcher; see [real-time kit](realtime-kit.md).
+
 See [taxonomy](taxonomy.md), [kernel and runtime](kernel-and-runtime.md), [authored artifacts](authored-artifacts.md), and [Party Games](party-games.md).
 
 **Emulated arcade play is a separate concern from the Party Games platform
