@@ -40,7 +40,7 @@ export function fitSync(pairs, { tol = 3, minPairs = 6 } = {}) {
  * Every (tag, matching word within ±maxShift) difference votes into 1 s bins;
  * the winning bin gives a coarse offset; then each tag keeps its match only
  * when exactly one word lies within ±near of the coarse guess.
- * @param {Array<{ t: number, match: (w: string) => boolean }>} tags - source time + word matcher
+ * @param {Array<{ t: number, match: (w: string) => boolean, id?: string }>} tags - source time + word matcher
  * @param {Array<{ w: string, s: number }>} words - transcript words (local time)
  */
 export function wordPairs(tags, words, { maxShift = 90, near = 6 } = {}) {
@@ -65,7 +65,7 @@ export function wordPairs(tags, words, { maxShift = 90, near = 6 } = {}) {
   const pairs = [];
   for (const tag of tags) {
     const hits = words.filter((w) => Math.abs(w.s - (tag.t + coarse)) <= near && tag.match(w.w));
-    if (hits.length === 1) pairs.push({ x: tag.t, y: hits[0].s });
+    if (hits.length === 1) pairs.push({ x: tag.t, y: hits[0].s, wi: words.indexOf(hits[0]), ...(tag.id != null ? { id: tag.id } : {}) });
   }
   return { coarse, pairs };
 }

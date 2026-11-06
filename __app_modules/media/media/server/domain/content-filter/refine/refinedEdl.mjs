@@ -1,0 +1,92 @@
+/**
+ * The shareable refined EDL: every cue of a VidAngel tag set on VidAngel's
+ * clock, refined ones at ms/frame precision, with anchors any copy can use to
+ * fit its own sync. No Plex ids, frame numbers or part ids: those belong to one
+ * household's copy and stay in its override.
+ */
+import { mapTime, unmapTime } from '../../../../../../../shared/content-filter/syncMap.mjs';
+
+const ms = (t) => Math.round(t * 1000) / 1000;
+const COPY_KEYS = ['frameIn', 'frameOut'];
+
+/** File name for a tag set's refined EDL. */
+export function refinedEdlName(edl) {
+  const { workId, tagSetId } = edl?.sourceRef || {};
+  if (workId == null || tagSetId == null) throw new Error('refined EDL needs sourceRef.workId and sourceRef.tagSetId');
+  return `${workId}-${tagSetId}.edl.yml`;
+}
+
+/**
+ * @param {object} p
+ * @param {object} p.edl - the coarse VidAngel EDL
+ * @param {Record<string, object>} p.cueOverrides - override entries; those with a `refine` stamp are used
+ * @param {object} p.sync - the copy's sync (VidAngel -> file time)
+ * @param {Array<object>} [p.anchors]
+ * @param {object} [p.refinedFrom] - the reference copy: { runtimeSec, fps, startTime }
+ */
+export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], refinedFrom = {} }) {
+  const toVa = (t) => {
+    const v = unmapTime(t, sync);
+    if (v == null) throw new Error(`time ${t} is outside the copy's sync`);
+    return ms(v);
+  };
+  let refinedCount = 0;
+  const cues = (edl.cues || []).map((cue) => {
+    const o = cueOverrides[cue.id];
+    if (!o?.refine || o.in == null) return { ...cue, precision: cue.precision || edl.precision || 'second-approx' };
+    refinedCount++;
+    const out = { ...cue, in: toVa(o.in), out: toVa(o.out), precision: o.precision };
+    for (const k of COPY_KEYS) delete out[k];
+    if (o.segments?.length) out.segments = o.segments.map((s) => ({ in: toVa(s.in), out: toVa(s.out) }));
+    if (o.regions?.length) out.regions = o.regions.map((k) => ({ ...k, in: toVa(k.in) }));
+    const { part, ...stamp } = o.refine;
+    out.refine = stamp;
+    delete out.approx;
+    return out;
+  });
+  const { contentId, cues: _c, precision: _p, ...head } = edl;
+  return {
+    ...head,
+    timebase: {
+      clock: 'vidangel',
+      runtimeSec: edl.runtimeUnalteredSec ?? null,
+      refinedCount,
+      anchors,
+      refinedFrom: { ...refinedFrom, sync: plainSync(sync) },
+    },
+    cues,
+  };
+}
+
+/**
+ * Anchors from the transcript word pairs the sync was fitted on: inliers only,
+ * each with its transcript line so another copy can find the same occurrence.
+ * @param {object} p
+ * @param {Array<{ x: number, y: number, wi: number, id: string }>} p.pairs - tag time (VidAngel) -> word start (file)
+ * @param {Array<{ w: string, s: number, seg: number }>} p.words
+ * @param {Array<{ id: number, text: string }>} p.segments
+ * @param {object} p.sync
+ * @param {Record<string, { in: number }>} [p.refinedById] - refined speech results; their start beats Whisper's
+ * @param {number} [p.tol] - max |file time - synced tag time| for an inlier (s)
+ */
+export function anchorsFrom({ pairs, words, segments, sync, refinedById = {}, tol = 3 }) {
+  const lineOf = new Map((segments || []).map((s) => [s.id, s.text]));
+  const anchors = [];
+  for (const p of pairs || []) {
+    const expected = mapTime(p.x, sync);
+    if (expected == null || Math.abs(p.y - expected) > tol) continue;
+    const w = words[p.wi];
+    if (!w) continue;
+    const local = refinedById[p.id]?.in ?? p.y;
+    const t = unmapTime(local, sync);
+    if (t == null) continue;
+    anchors.push({ t: ms(t), kind: 'word', text: w.w.replace(/[^\p{L}\p{N}']/gu, '').toLowerCase(), line: lineOf.get(w.seg) || '' });
+  }
+  return anchors.sort((a, b) => a.t - b.t);
+}
+
+function plainSync(sync) {
+  if (!sync) return null;
+  if (sync.segments) return { segments: sync.segments };
+  return { scale: sync.scale ?? 1, offsetSec: sync.offsetSec ?? sync.offset ?? 0 };
+}

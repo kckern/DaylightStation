@@ -9,6 +9,7 @@
  *   <mediaDir>/content-filter/refine/<rk>/words-<part>.json   transcript cache
  *   <mediaDir>/content-filter/refine/<rk>/log.jsonl           one line per model call
  *   <mediaDir>/content-filter/refine/<rk>/art/                images the model saw
+ *   <mediaDir>/content-filter/refined/<workId>-<tagSetId>.edl.yml shareable refined EDL (VidAngel clock)
  *   <mediaDir>/content-filter/refine/<rk>/results-<part>.json raw results (.partial.json for a filtered run)
  *   <dataDir>/household/content-filter/overrides/<rk>.yml     merged (--write)
  *   <dataDir>/household/content-filter/review/<rk>.refine.yml unknowns, give-ups, kept-manual
@@ -26,6 +27,7 @@ import { makeTimebase } from '../../server/domain/content-filter/refine/timebase
 import { wordMatcher } from '../../server/domain/content-filter/refine/cueKinds.mjs';
 import { fitSync, wordPairs } from '../../server/domain/content-filter/refine/syncFit.mjs';
 import { mergeRefine } from '../../server/domain/content-filter/refine/refineOutput.mjs';
+import { buildRefinedEdl, anchorsFrom, refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
 import { CueRefiner } from '../../server/application/content-filter/refine/CueRefiner.mjs';
 import { QUESTION_VERSION } from '../../server/application/content-filter/refine/refineQuestions.mjs';
 
@@ -91,7 +93,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const transcript = JSON.parse(readFileSync(transcriptPath, 'utf8'));
 
   // 3. Clock sync from tagged words vs transcript
-  const tags = (edl.cues || []).filter((c) => c.type === 'mute').map((c) => ({ t: c.in, match: wordMatcher(c) })).filter((t) => t.match);
+  const tags = (edl.cues || []).filter((c) => c.type === 'mute').map((c) => ({ t: c.in, id: c.id, match: wordMatcher(c) })).filter((t) => t.match);
   const { coarse, pairs } = wordPairs(tags, transcript.words);
   const fit = fitSync(pairs);
   const manual = override.sync && (!override.sync.part || String(override.sync.part) === String(partId)) ? override.sync : null;
@@ -158,9 +160,26 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     return { results, counts };
   }
   merged.contentId = merged.contentId || `plex:${rk}`;
+  const frames = { fps: String(probe.fps), startTime: probe.startTime || 0 };
   if (!merged.sync && fit) merged.sync = { offsetSec: fit.offset, scale: fit.scale, method: 'transcript', samples: fit.used, medAbsResidSec: fit.medResid, part: partId };
+  if (merged.sync && String(merged.sync.part ?? partId) === String(partId) && !merged.sync.frames) merged.sync.frames = frames;
   mkdirSync(path.dirname(overridePath), { recursive: true });
   writeFileSync(overridePath, yaml.dump(merged, { lineWidth: 140 }));
+
+  // Shareable refined EDL: every cue on VidAngel's clock, plus anchors for other copies.
+  // The player still reads this household's refined times from the override until it
+  // learns to read refined EDLs, so the override keeps them for now.
+  const vaSync = { scale: sync.scale, offsetSec: sync.offset };
+  const refinedById = Object.fromEntries(results.filter((r) => r.status === 'refined' && r.kind === 'speech').map((r) => [r.id, r]));
+  const anchors = anchorsFrom({ pairs, words: transcript.words, segments: transcript.segments, sync: vaSync, refinedById });
+  const refined = buildRefinedEdl({
+    edl, cueOverrides: merged.cueOverrides, sync: vaSync, anchors,
+    refinedFrom: { runtimeSec: Math.round(probe.duration * 1000) / 1000, ...frames },
+  });
+  const refinedPath = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
+  mkdirSync(path.dirname(refinedPath), { recursive: true });
+  writeFileSync(refinedPath, yaml.dump(refined, { lineWidth: 140 }));
+  console.error(`✓ refined EDL (${refined.timebase.refinedCount} refined, ${anchors.length} anchors) -> ${refinedPath}`);
   const reviewPath = path.join(dataFilterDir, 'review', `${rk}.refine.yml`);
   mkdirSync(path.dirname(reviewPath), { recursive: true });
   writeFileSync(reviewPath, yaml.dump({ contentId: `plex:${rk}`, part: partId, generatedAt: new Date().toISOString(), counts, items: review }, { lineWidth: 140 }));
