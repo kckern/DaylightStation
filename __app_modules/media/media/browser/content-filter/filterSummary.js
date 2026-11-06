@@ -8,7 +8,7 @@ import { PRECISE } from './contentFilter.js';
 
 const WORD = new Set(['mute', 'bleep']);
 const HIDE_BLUR = new Set(['blur', 'full-blur', 'pixelate']);
-const HIDE_SOLID = new Set(['black', 'censor-bar']);
+const HIDE_SOLID = new Set(['black', 'blackout', 'censor-bar']);
 const SKIP = new Set(['skip', 'skip-card']);
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -16,7 +16,8 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export function filterSummary(cues = []) {
   const words = cues.filter((c) => WORD.has(c.effect));
   const blurred = cues.filter((c) => HIDE_BLUR.has(c.effect)).length;
-  const hidden = cues.filter((c) => HIDE_SOLID.has(c.effect)).length;
+  // A scene split across sync segments is one scene.
+  const hidden = cues.filter((c) => HIDE_SOLID.has(c.effect) && c.firstPiece !== false).length;
   const skips = cues.filter((c) => SKIP.has(c.effect));
   const credits = skips.filter((c) => String(c.category || '').startsWith('credits/')).length;
   const scenesSkipped = skips.length - credits;

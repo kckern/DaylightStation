@@ -201,11 +201,80 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // survive driver granularity. Runs after sync so pads are in local time.
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
   }
+  const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
   out.sort((a, b) => a.in - b.in || a.out - b.out);
+  Object.defineProperty(out, 'sceneSummary', { value: sceneSummary, enumerable: false });
   // How many cues fall in scenes this copy does not have (for the debug overlay).
   Object.defineProperty(out, 'notInCut', { value: notInCut, enumerable: false });
   Object.defineProperty(out, 'syncSummary', { value: summarizeSync(sync, { refinedEdl, syncFitsPart }), enumerable: false });
   return out;
+}
+
+// How strongly an effect hides the picture. A scene drops a cue only when the
+// scene hides at least as much; audio effects and title cards are never dropped.
+const HIDE_RANK = { blur: 1, 'censor-bar': 1, pixelate: 1, 'full-blur': 2, blackout: 3, skip: 4, 'skip-card': 4 };
+const SCENE_AXES = ['situation', 'picture'];
+
+/** The effect a scene earns under the profile, from its trusted axes only. */
+function sceneEffect(scene, rules, trusted) {
+  let best = null;
+  for (const g of scene.groups || Object.keys(scene.level || {})) {
+    const rule = rules[g]; const lv = scene.level?.[g];
+    if (!rule || !lv) continue;
+    for (const effect of ['skip', 'blackout']) {
+      const meets = Object.entries(rule[effect] || {}).some(([axis, min]) => trusted.has(axis) && lv[axis] >= min);
+      if (meets && (!best || HIDE_RANK[effect] > HIDE_RANK[best])) best = effect;
+    }
+  }
+  return best;
+}
+
+/**
+ * Scenes from a refined EDL (ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md).
+ * A scene's effect (profile `scenes:` thresholds on trusted axes, or the
+ * override's `sceneOverrides.<id>.effect`) takes over from the cues inside it:
+ * skip -> one skip-card; blackout -> a black overlay piece per synced segment.
+ * Word mutes, credits and anything that hides more stay. Only an approved card
+ * (sceneOverrides.<id>.card.text) is ever shown; otherwise generic text.
+ * Mutates `out`; returns a summary for the hook's log.
+ */
+function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
+  const scenes = refinedEdl ? edl?.scenes || [] : [];
+  const rules = profile?.scenes || {};
+  const cal = edl?.sceneCalibration || {};
+  const trusted = new Set(SCENE_AXES.filter((a) => cal[a] === 'trusted'));
+  const summary = { scenes: scenes.length, byEffect: {}, untrusted: SCENE_AXES.filter((a) => !trusted.has(a)) };
+  if (!scenes.length) return summary;
+  const ov = override?.sceneOverrides || {};
+  const holdSec = profile?.treatments?.['skip-card']?.holdSec ?? 2.5;
+  for (const scene of scenes) {
+    const so = ov[scene.id] || {};
+    if (so.disabled) continue;
+    const effect = so.effect ? (so.effect === 'off' ? null : so.effect) : sceneEffect(scene, rules, trusted);
+    if (!effect) continue;
+    const spans = sync ? mapSpan(scene.in, scene.out, sync) : [{ in: scene.in, out: scene.out }];
+    if (!spans.length) continue;
+    const members = new Set(scene.cues || []);
+    const inside = (c) => spans.some((sp) => c.in >= sp.in - 0.5 && c.out <= sp.out + 0.5);
+    for (let i = out.length - 1; i >= 0; i--) {
+      const c = out[i];
+      const rank = HIDE_RANK[c.effect];
+      if (rank == null || rank > HIDE_RANK[effect] || String(c.category || '').startsWith('credits')) continue;
+      const base = String(c.id).split(/[#@]/)[0];
+      if (members.has(base) || inside(c)) out.splice(i, 1);
+    }
+    const approved = so.card?.text || null;
+    const category = `scene/${(scene.groups || [])[0] || 'other'}`;
+    summary.byEffect[effect] = (summary.byEffect[effect] || 0) + 1;
+    if (effect === 'skip') {
+      out.push({ id: scene.id, scene: scene.id, effect: 'skip-card', category, in: spans[0].in, out: spans[spans.length - 1].out,
+        holdSec, text: approved || 'Scene skipped.', precision: 'frame' });
+    } else {
+      spans.forEach((sp, i) => out.push({ id: `${scene.id}#${i}`, scene: scene.id, effect, category, in: sp.in, out: sp.out,
+        text: approved || 'Scene hidden.', cardSec: holdSec, firstPiece: i === 0, precision: 'frame' }));
+    }
+  }
+  return summary;
 }
 
 /** One line for the debug overlay: how this copy is synced, or why refined times are not used. */

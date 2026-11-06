@@ -95,3 +95,28 @@ describe('FilterOverlay', () => {
     expect(container.querySelector('[data-filter-badge="provisional"]')).toBeTruthy();
   });
 });
+
+describe('FilterOverlay blackout', () => {
+  it('covers the frame in opaque black with the card text, then fades the text', async () => {
+    const { vi } = await import('vitest');
+    const { act } = await import('@testing-library/react');
+    vi.useFakeTimers();
+    try {
+      const cue = { id: 'sc-va1#0', text: 'He gets away.', cardSec: 4.5, firstPiece: true };
+      const { container } = render(<FilterOverlay activeOverlays={[{ effect: 'blackout', cue }]} />);
+      const el = container.querySelector('[data-filter-effect="blackout"]');
+      expect(el.style.backgroundColor).toMatch(/^(#000|rgb\(0, 0, 0\))$/);
+      const text = container.querySelector('[data-blackout-text]');
+      expect(text.textContent).toBe('He gets away.');
+      expect(text.style.opacity).toBe('0.9');
+      act(() => { vi.advanceTimersByTime(4600); });
+      expect(container.querySelector('[data-blackout-text]').style.opacity).toBe('0');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('shows no text on a later piece of the same scene', () => {
+    const cue = { id: 'sc-va1#1', text: 'Scene hidden.', firstPiece: false };
+    const { container } = render(<FilterOverlay activeOverlays={[{ effect: 'blackout', cue }]} />);
+    expect(container.querySelector('[data-blackout-text]')).toBeNull();
+  });
+});

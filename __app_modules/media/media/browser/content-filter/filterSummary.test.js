@@ -57,3 +57,13 @@ describe('bumperStartWindowSec', () => {
     expect(bumperStartWindowSec([c('skip', { in: 300, out: 320 }), c('mute', { in: 1, out: 2 })])).toBe(5);
   });
 });
+
+describe('filterSummary with scenes', () => {
+  it('counts a blackout scene once, however many pieces it has', () => {
+    const cues = [
+      { effect: 'blackout', scene: 's1', firstPiece: true }, { effect: 'blackout', scene: 's1', firstPiece: false },
+      { effect: 'blackout', scene: 's2', firstPiece: true },
+    ];
+    expect(filterSummary(cues)).toBe('2 scenes hidden');
+  });
+});
