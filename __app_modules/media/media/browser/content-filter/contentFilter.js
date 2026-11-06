@@ -14,6 +14,7 @@
 
 // Timing a refine pass measured on this file: no approximate widening.
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
 export const PRECISE = new Set(['ms', 'frame']);
 
@@ -201,11 +202,74 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // survive driver granularity. Runs after sync so pads are in local time.
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
   }
+  const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
   out.sort((a, b) => a.in - b.in || a.out - b.out);
+  Object.defineProperty(out, 'sceneSummary', { value: sceneSummary, enumerable: false });
   // How many cues fall in scenes this copy does not have (for the debug overlay).
   Object.defineProperty(out, 'notInCut', { value: notInCut, enumerable: false });
   Object.defineProperty(out, 'syncSummary', { value: summarizeSync(sync, { refinedEdl, syncFitsPart }), enumerable: false });
   return out;
+}
+
+/**
+ * Scenes from a refined EDL (ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md).
+ * A scene's effect (profile `scenes:` thresholds on trusted axes, or the
+ * override's `sceneOverrides.<id>.effect`) takes over from the cues inside it:
+ * skip -> one skip-card; blackout -> a black overlay piece per synced segment.
+ * Word mutes, credits and anything that hides more stay. Only an approved card
+ * (sceneOverrides.<id>.card.text) is ever shown; otherwise generic text.
+ * Mutates `out`; returns a summary for the hook's log.
+ */
+const SCENE_BRIDGE_SEC = 30;
+
+function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
+  const scenes = refinedEdl ? edl?.scenes || [] : [];
+  const trusted = trustedAxes(edl);
+  const summary = { scenes: scenes.length, byEffect: {}, untrusted: SCENE_AXES.filter((a) => !trusted.has(a)) };
+  if (!scenes.length) return summary;
+  const ov = override?.sceneOverrides || {};
+  const holdSec = profile?.treatments?.['skip-card']?.holdSec ?? 2.5;
+  // Effects first, then bridge neighbours of a shared group with the same effect
+  // across a short gap, so the child sees one black (or one card), not black-picture-black.
+  const ruled = [...scenes].sort((a, b) => a.in - b.in)
+    .map((scene) => ({ scene, so: ov[scene.id] || {}, effect: sceneEffect(scene, { profile, sceneOverride: ov[scene.id] || {}, trusted }) }))
+    .filter((r) => r.effect);
+  const bridged = [];
+  for (const r of ruled) {
+    const prev = bridged[bridged.length - 1];
+    const shares = prev && (prev.scene.groups || []).some((g) => (r.scene.groups || []).includes(g));
+    if (prev && shares && prev.effect === r.effect && r.scene.in - prev.scene.out <= SCENE_BRIDGE_SEC) {
+      prev.scene = { ...prev.scene, out: Math.max(prev.scene.out, r.scene.out), cues: [...(prev.scene.cues || []), ...(r.scene.cues || [])] };
+      prev.so = prev.so.card ? prev.so : { ...prev.so, card: r.so.card };
+      prev.bridged = (prev.bridged || 1) + 1;
+      continue;
+    }
+    bridged.push({ ...r });
+  }
+  for (const { scene, so, effect } of bridged) {
+    const spans = sync ? mapSpan(scene.in, scene.out, sync) : [{ in: scene.in, out: scene.out }];
+    if (!spans.length) continue;
+    const members = new Set(scene.cues || []);
+    const inside = (c) => spans.some((sp) => c.in >= sp.in - 0.5 && c.out <= sp.out + 0.5);
+    for (let i = out.length - 1; i >= 0; i--) {
+      const c = out[i];
+      const rank = HIDE_RANK[c.effect];
+      if (rank == null || rank > HIDE_RANK[effect] || String(c.category || '').startsWith('credits')) continue;
+      const base = String(c.id).split(/[#@]/)[0];
+      if (members.has(base) || inside(c)) out.splice(i, 1);
+    }
+    const approved = so.card?.text || null;
+    const category = `scene/${(scene.groups || [])[0] || 'other'}`;
+    summary.byEffect[effect] = (summary.byEffect[effect] || 0) + 1;
+    if (effect === 'skip') {
+      out.push({ id: scene.id, scene: scene.id, effect: 'skip-card', category, in: spans[0].in, out: spans[spans.length - 1].out,
+        holdSec, text: approved || 'Scene skipped.', precision: 'frame' });
+    } else {
+      spans.forEach((sp, i) => out.push({ id: `${scene.id}#${i}`, scene: scene.id, effect, category, in: sp.in, out: sp.out,
+        text: approved || 'Scene hidden.', cardSec: holdSec, firstPiece: i === 0, precision: 'frame' }));
+    }
+  }
+  return summary;
 }
 
 /** One line for the debug overlay: how this copy is synced, or why refined times are not used. */

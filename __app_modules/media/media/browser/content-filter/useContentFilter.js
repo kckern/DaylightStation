@@ -181,6 +181,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       effects: byEffect, ms: msCount, approx: approxCount,
       syncOffset: override?.sync?.offsetSec ?? 0,
     });
+    const scenes = effectiveCues.sceneSummary;
+    if (scenes?.scenes) {
+      logger().info?.('content-filter.scene.resolved', { scenes: scenes.scenes, effects: scenes.byEffect, untrusted: scenes.untrusted });
+      if (scenes.untrusted.length) logger().warn?.('content-filter.scene.fallback', { untrusted: scenes.untrusted, scenes: scenes.scenes });
+    }
 
     // Per-session apply tally (emitted at teardown).
     const session = { applied: {}, blurAudioSec: 0 };
@@ -246,7 +251,10 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
           entered.set(cue.id, cue);
           if (h.onEnter) { try { h.onEnter(ctxFor(cue)); } catch (e) { logger().warn?.('content-filter.enter-error', { effect: cue.effect, error: e?.message }); } }
           // A title-card only informs; skip-cards are counted in their own branch above.
-          if (!NOT_A_FIRE.has(cue.effect)) setFireCount((n) => n + 1);
+          // A scene split across sync segments counts once.
+          if (!NOT_A_FIRE.has(cue.effect) && cue.firstPiece !== false) setFireCount((n) => n + 1);
+          if (cue.scene) logger().debug?.('content-filter.scene.enter', { scene: cue.scene, effect: cue.effect });
+          if (cue.effect === 'blackout' && cue.firstPiece) logger().info?.('content-filter.blackout.shown', { scene: cue.scene, sec: +(cue.out - cue.in).toFixed(1) });
           session.applied[cue.effect] = (session.applied[cue.effect] || 0) + 1;
           if (cue.effect === 'full-blur') session.blurAudioSec += Math.max(0, cue.out - cue.in);
           // Rate-limited so it's visible in prod without spamming per-cue (mute is

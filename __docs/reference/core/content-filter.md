@@ -164,6 +164,8 @@ filtered title plays, including D-pad TVs.
 
 ## Persistence and API
 
+(Scene review routes are under [Scenes](#scenes).)
+
 `FilesystemContentFilterRepository` owns the YAML layout and reads fail-soft: missing or
 malformed files return `null` and emit a structured warning.
 
@@ -225,6 +227,84 @@ play.
 - `contentfilter certify <rk> [--parent --by <name>] [--write]` applies safe windows to an
   existing refined EDL, recomputes the level and prints pinned / safe-window / uncovered
   counts.
+
+## Scenes
+
+A VidAngel tag set marks moments ("A man is shot", "A man is shot in the back"),
+so filtering tag by tag flickers. A **scene** is a run of tags that is one
+situation, with edges on shot cuts. Each scene is judged by Jev and the household
+profile decides what it gets: nothing, **blackout** (picture black, sound plays)
+or **skip** (with a title card). Design: `ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md`.
+
+**Building** — `contentfilter scenes <rk> --src <file> [--out f.json] [--write] [--trust situation,picture --evidence <ref>]`
+(`SceneBuilder`, `scenes.mjs`, `sceneQuestions.mjs`):
+
+1. Candidates: `groupScenes` (tags < 20 s apart; ≥ 15 s or ≥ 3 tags; not credits or word mutes).
+   Only `violence_blood_gore`, `sex_nudity_immodesty` and `sex_any` form scene levels;
+   a run with none of them is dropped.
+2. Edges: the members' span (approximate tags widened 3 s) snapped outward to the
+   nearest shot cut within 12 s, then **grown** a shot at a time while Jev scores the
+   frame just past the edge picture ≥ 2 for any scene group, up to 60 s. VidAngel tags
+   mark moments; a fight keeps going between them. Edges always cover every member
+   (`scene-edge-uncovered` is logged if not).
+3. Situation, per group (Jev, text: member labels + dialogue in and 15 s around),
+   0 incidental · 1 peril / brief immodesty / flirting · 2 people hurt or killed /
+   nudity / sexual situation implied · 3 torture or cruel killing / sexual content or assault.
+4. Picture, per group (Jev, frames): `max(8, duration/10 s)` probes (cap 24), shot
+   middles first; level = the second-highest frame score (one odd frame cannot set it;
+   `scene-picture-outlier` when the max is 2+ above).
+5. Optional `--same-scene` (Jev merges/splits candidates): **off** — on the two
+   calibration films it did not beat the gap rule.
+
+Every answer goes to `refine/<rk>/log.jsonl` (`step: scene-*`, question version).
+Re-runs keep a scene's id when ≥ 50% of its members match (`scene-id-remap`); a
+draft card survives only an unchanged member set.
+
+**Refined EDL fields** — `scenes: [{ id: sc-<smallest member id>, in, out, edges: cut|approx,
+grown?, cues, groups, level: { <group>: { situation, picture, confidence } }, card? }]`
+and `sceneCalibration: { situation, picture: trusted|untrusted, at, evidence }`. The
+player acts on a **trusted** axis only; with neither trusted, members play by their own
+cue rules.
+
+**Profile** — `scenes:` maps a group to thresholds; skip beats blackout:
+
+```yaml
+scenes:
+  violence_blood_gore: { blackout: { picture: 2 } }
+  sex_nudity_immodesty: { blackout: { picture: 1 } }
+  sex_any: { blackout: { picture: 1 }, skip: { situation: 3 } }
+```
+
+**Household rulings** — `sceneOverrides.<id>` in the override: `effect: off|blackout|skip`,
+`disabled: true` (members play by their own rules), and `card: { text, approvedBy, at }`.
+The refined EDL's `card` is only a draft; **only an approved card is ever shown**.
+
+**Player** (`contentFilter.js` `applyScenes`, `sceneEffect.mjs` shared with the server):
+- A scene with an effect drops the cues inside it that hide no more than it does
+  (blur < full-blur < blackout < skip). Word mutes, credits and stronger cues stay;
+  mutes are never clipped to a scene.
+- Neighbouring scenes sharing a group, with the same effect and ≤ 30 s apart, are
+  **bridged** into one (one black, one card), at resolve time only.
+- **skip** → one `skip-card` (profile `holdSec`), text = approved card or "Scene skipped.".
+- **blackout** → a `blackout` overlay per synced segment: opaque black, sound plays;
+  approved card text or "Scene hidden." on the black for the first `holdSec`.
+- Bumper counts a blackout scene once ("2 scenes hidden"). Logs:
+  `content-filter.scene.resolved` (info), `content-filter.scene.fallback` (warn, an
+  untrusted axis), `content-filter.scene.enter` (debug), `content-filter.blackout.shown` (info).
+
+**Admin → Content → Content filter** (`/admin/content/filter`): titles with a refined
+filter; per title, every scene with its levels, the profile's effect, **Play scene**
+(filtered, at the copy's time), an effect picker, and the draft card with
+**Approve / Edit / Withdraw**. **Draft missing cards** asks the shared AI gateway
+(`app: media, feature: content-filter-cards`) for one child-safe sentence per scene that
+hides something (≤ 90 characters, never describing what was hidden). API:
+
+```text
+GET  /api/v1/content-filter/                   -> { titles }
+GET  /api/v1/content-filter/{rk}/scenes        -> { title, calibration, scenes }
+POST /api/v1/content-filter/{rk}/scenes/cards  { all?, force? } -> { drafted, scenes }
+PUT  /api/v1/content-filter/{rk}/scenes/{id}   { effect?, disabled?, card?: { approve, text? } | null, by? }
+```
 
 ## Subtitle word-list cues and review
 

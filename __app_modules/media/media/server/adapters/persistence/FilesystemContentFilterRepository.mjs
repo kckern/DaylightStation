@@ -1,7 +1,10 @@
 import {
   buildContainedPath,
   fileExists,
+  listYamlFiles,
+  readFile,
   readYamlFromPath,
+  saveYaml,
 } from '#system/utils/FileIO.mjs';
 import { IContentFilterRepository } from "../../application/content-filter/ports/IContentFilterRepository.mjs";
 
@@ -40,12 +43,46 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
     return this.#readYaml(this.#mediaDir, `content-filter/refined/${workId}-${tagSetId}.edl.yml`);
   }
 
+  async saveRefinedEdl({ workId, tagSetId } = {}, edl) {
+    const id = /^\d+$/;
+    if (!id.test(String(workId ?? '')) || !id.test(String(tagSetId ?? ''))) throw new Error('saveRefinedEdl needs numeric workId and tagSetId');
+    this.#writeYaml(this.#mediaDir, `content-filter/refined/${workId}-${tagSetId}.edl.yml`, edl);
+  }
+
+  async getTranscript(ratingKey, part) {
+    if (!/^\d+$/.test(String(part ?? ''))) return null;
+    const filePath = buildContainedPath(this.#mediaDir, `content-filter/refine/${ratingKey}/words-${part}.json`);
+    if (!filePath || !fileExists(filePath)) return null;
+    try {
+      const { segments = [] } = JSON.parse(readFile(filePath));
+      return { segments };
+    } catch (error) {
+      this.#logger.warn?.('content-filter.read.error', { path: filePath, error: error.message });
+      return null;
+    }
+  }
+
   async getProfile(profileName) {
     return this.#readYaml(this.#householdDir, `content-filter/profiles/${profileName}.yml`);
   }
 
   async getOverride(ratingKey) {
     return this.#readYaml(this.#householdDir, `content-filter/overrides/${ratingKey}.yml`);
+  }
+
+  async listOverrides() {
+    const dir = buildContainedPath(this.#householdDir, 'content-filter/overrides');
+    return dir ? listYamlFiles(dir).filter((n) => /^\d+$/.test(n)) : [];
+  }
+
+  async saveOverride(ratingKey, override) {
+    this.#writeYaml(this.#householdDir, `content-filter/overrides/${ratingKey}.yml`, override);
+  }
+
+  #writeYaml(root, relativePath, content) {
+    const filePath = buildContainedPath(root, relativePath);
+    if (!filePath) throw new Error(`content-filter path escapes its root: ${relativePath}`);
+    saveYaml(filePath, content, { lineWidth: 140 });
   }
 
   #readYaml(root, relativePath) {

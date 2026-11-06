@@ -684,7 +684,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
-  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1084,6 +1084,17 @@ async function main() {
     return;
   }
 
+  if (command === 'scenes') {
+    const { runScenes, SCENES_USAGE } = await import('./contentfilter/scenesCommand.mjs');
+    const { getDecisionGateway } = await import('../../../../cli/_bootstrap.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(SCENES_USAGE); process.exit(1); }
+    try {
+      await runScenes({ rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir(), getDecisionGateway });
+    } catch (err) { console.error(`scenes ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
   if (command === 'migrate-refined') {
     const { runMigrate, MIGRATE_USAGE } = await import('./contentfilter/migrateCommand.mjs');
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
@@ -1352,6 +1363,7 @@ Commands:
                         segments. No decision model. --part, --src, --transcript, --write.
   pin-page <ratingKey>  Clip page for safe-window mutes: mark where each word starts. --src.
   pin <ratingKey>       Snap the marks to the words and write them as ms mutes. --src, --marks, --write.
+  scenes <ratingKey>    Group refined tags into scenes (shot-cut edges, situation + picture levels by Jev). --src, --same-scene, --out, --write.
   certify <ratingKey>   Show/recompute a refined EDL's certification (machine: every mute precise);
                         --parent --by <name> records a sign-off. --write.
   migrate-refined <rk>  Move a title's refined cue times from its override into the shareable

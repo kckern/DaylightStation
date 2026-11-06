@@ -267,3 +267,121 @@ describe('resolveEffectiveCues with a refined EDL (VidAngel clock)', () => {
     expect(out.find((c) => c.id === 'f')).toBeUndefined();
   });
 });
+
+describe('resolveEffectiveCues with scenes', () => {
+  const zero = { padLeadMs: 0, padTrailMs: 0, approxWidthMs: 0 };
+  const profile = {
+    categories: { language: { effect: 'mute' }, 'violence_blood_gore/graphic': { effect: 'full-blur' }, credits: { effect: 'skip' } },
+    treatments: { mute: zero, 'full-blur': zero, skip: zero, 'skip-card': { holdSec: 4.5 } },
+    scenes: {
+      violence_blood_gore: { blackout: { picture: 2 }, skip: { situation: 3 } },
+    },
+  };
+  const sync = { scale: 1, offsetSec: 10, part: 'p' };
+  const scene = (level, extra = {}) => ({
+    id: 'sc-va1', in: 100, out: 160, edges: 'cut', cues: ['va1', 'va2'], groups: ['violence_blood_gore'],
+    level: { violence_blood_gore: { situation: level[0], picture: level[1] } }, ...extra,
+  });
+  const edl = (s, calibration = { situation: 'trusted', picture: 'trusted' }) => ({
+    timebase: { clock: 'vidangel' },
+    sceneCalibration: calibration,
+    cues: [
+      { id: 'va1', type: 'skip', category: 'violence_blood_gore/graphic', in: 110, out: 112, precision: 'frame' },
+      { id: 'va2', type: 'skip', category: 'violence_blood_gore/graphic', in: 140, out: 141, precision: 'frame' },
+      { id: 'w1', type: 'mute', category: 'language/x', in: 158, out: 166, precision: 'safe-window' },
+      { id: 'cr', type: 'skip', category: 'credits/closing', in: 150, out: 152, precision: 'frame' },
+    ],
+    scenes: [s],
+  });
+  const run = (e, override = {}) => resolveEffectiveCues({ edl: e, profile, override: { sync, ...override }, part: 'p' });
+
+  it('blacks out a scene whose picture level meets the threshold and drops its member blurs', () => {
+    const out = run(edl(scene([2, 2])));
+    const black = out.filter((c) => c.effect === 'blackout');
+    expect(black).toHaveLength(1);
+    expect(black[0]).toMatchObject({ in: 110, out: 170, scene: 'sc-va1', text: 'Scene hidden.' });
+    expect(out.some((c) => c.effect === 'full-blur')).toBe(false);
+  });
+
+  it('keeps word mutes whole, and never drops credits', () => {
+    const out = run(edl(scene([2, 2])));
+    const w = out.find((c) => c.id === 'w1');
+    expect(w.in).toBe(168); expect(w.out).toBe(176);
+    expect(out.some((c) => c.id === 'cr')).toBe(true);
+  });
+
+  it('skips a scene whose situation level meets the skip threshold, with a skip card', () => {
+    const [sk] = run(edl(scene([3, 0]))).filter((c) => c.scene);
+    expect(sk).toMatchObject({ effect: 'skip-card', in: 110, out: 170, holdSec: 4.5, text: 'Scene skipped.' });
+  });
+
+  it('shows only an approved card text, from the override', () => {
+    const s = scene([2, 2], { card: { text: 'draft text' } });
+    expect(run(edl(s)).find((c) => c.scene).text).toBe('Scene hidden.');
+    const out = run(edl(s), { sceneOverrides: { 'sc-va1': { card: { text: 'He gets away.', approvedBy: 'parent', at: '2026-11-06' } } } });
+    expect(out.find((c) => c.scene).text).toBe('He gets away.');
+  });
+
+  it('leaves member cues alone when the scene earns no effect', () => {
+    const out = run(edl(scene([1, 1])));
+    expect(out.some((c) => c.scene)).toBe(false);
+    expect(out.filter((c) => c.effect === 'full-blur')).toHaveLength(2);
+  });
+
+  it('a disabled scene lets its members play by their own rules', () => {
+    const out = run(edl(scene([2, 2])), { sceneOverrides: { 'sc-va1': { disabled: true } } });
+    expect(out.some((c) => c.scene)).toBe(false);
+    expect(out.filter((c) => c.effect === 'full-blur')).toHaveLength(2);
+  });
+
+  it('an override effect wins over the profile', () => {
+    const out = run(edl(scene([1, 1])), { sceneOverrides: { 'sc-va1': { effect: 'skip' } } });
+    expect(out.find((c) => c.scene).effect).toBe('skip-card');
+  });
+
+  it('ignores an untrusted axis and reports the fallback', () => {
+    const out = run(edl(scene([2, 2]), { situation: 'trusted', picture: 'untrusted' }));
+    expect(out.some((c) => c.scene)).toBe(false);
+    expect(out.sceneSummary).toMatchObject({ scenes: 1, untrusted: ['picture'], byEffect: {} });
+  });
+
+  it('does not drop a stronger cue inside a blackout scene', () => {
+    const e = edl(scene([2, 2]));
+    e.cues.push({ id: 'x', type: 'skip', category: 'sex_any/sexual_assault', in: 120, out: 125, precision: 'frame' });
+    const p = { ...profile, categories: { ...profile.categories, sex_any: { effect: 'skip' } } };
+    const out = resolveEffectiveCues({ edl: e, profile: p, override: { sync }, part: 'p' });
+    expect(out.some((c) => c.id === 'x' && c.effect === 'skip')).toBe(true);
+  });
+
+  it('splits a blackout across a cut this copy lacks', () => {
+    const seg = { segments: [{ fromVa: 0, toVa: 130, scale: 1, offsetSec: 10 }, { fromVa: 135, toVa: 9999, scale: 1, offsetSec: 5 }], part: 'p' };
+    const out = resolveEffectiveCues({ edl: edl(scene([2, 2])), profile, override: { sync: seg }, part: 'p' });
+    const pieces = out.filter((c) => c.effect === 'blackout');
+    expect(pieces).toHaveLength(2);
+    expect(pieces.filter((c) => c.firstPiece)).toHaveLength(1);
+  });
+});
+
+describe('scene bridging', () => {
+  const profile = { categories: {}, scenes: { violence_blood_gore: { blackout: { picture: 2 } } }, treatments: { 'skip-card': { holdSec: 4.5 } } };
+  const sc = (id, a, b, pic = 2, groups = ['violence_blood_gore']) => ({ id, in: a, out: b, cues: [], groups, level: Object.fromEntries(groups.map((g) => [g, { situation: 2, picture: pic }])) });
+  const edl = (scenes) => ({ timebase: { clock: 'vidangel' }, sceneCalibration: { situation: 'trusted', picture: 'trusted' }, cues: [], scenes });
+  const run = (scenes, override = {}) => resolveEffectiveCues({ edl: edl(scenes), profile, override: { sync: { scale: 1, offsetSec: 0 }, ...override }, part: null }).filter((c) => c.scene);
+
+  it('joins same-group scenes with the same effect across a gap of 30 s or less', () => {
+    const out = run([sc('sc-a', 100, 150), sc('sc-b', 172, 200)]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ scene: 'sc-a', in: 100, out: 200 });
+  });
+  it('keeps them apart across a longer gap, a different effect, or no shared group', () => {
+    expect(run([sc('sc-a', 100, 150), sc('sc-b', 181, 200)])).toHaveLength(2);
+    expect(run([sc('sc-a', 100, 150), sc('sc-b', 160, 200, 1)])).toHaveLength(1);
+    const p2 = { ...profile, scenes: { ...profile.scenes, sex_any: { blackout: { picture: 1 } } } };
+    const out = resolveEffectiveCues({ edl: edl([sc('sc-a', 100, 150), sc('sc-b', 160, 200, 1, ['sex_any'])]), profile: p2, override: { sync: { scale: 1, offsetSec: 0 } }, part: null }).filter((c) => c.scene);
+    expect(out).toHaveLength(2);
+  });
+  it('a bridged scene shows one approved card, from whichever scene has one', () => {
+    const out = run([sc('sc-a', 100, 150), sc('sc-b', 160, 200)], { sceneOverrides: { 'sc-b': { card: { text: 'They get away.' } } } });
+    expect(out[0].text).toBe('They get away.');
+  });
+});

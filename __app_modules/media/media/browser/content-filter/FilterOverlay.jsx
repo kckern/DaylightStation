@@ -78,9 +78,32 @@ function OverlayEffect({ effect, cue, theme, visible = true, art }) {
       return <div data-filter-effect="full-blur" style={{ ...base, ...blur(), backgroundColor: shown ? (theme.fullBg || 'rgba(0,0,0,0.35)') : 'rgba(0,0,0,0)' }} />;
     case 'title-card':
       return <Card text={cue.text} theme={theme} effect="title-card" art={art} visible={visible} />;
+    case 'blackout':
+      return <Blackout cue={cue} theme={theme} shown={shown} base={base} />;
     default:
       return null;
   }
+}
+
+/**
+ * A scene hidden in full: opaque black, the sound keeps playing. Its card text
+ * (approved, else "Scene hidden.") shows on the black for the first `cardSec`,
+ * so a long black reads as a deliberate edit, not a broken TV.
+ */
+function Blackout({ cue, theme, shown, base }) {
+  const [textOn, setTextOn] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setTextOn(false), (cue.cardSec ?? 4.5) * 1000);
+    return () => clearTimeout(t);
+  }, [cue.id, cue.cardSec]);
+  const font = theme.font || 'Roboto Condensed, sans-serif';
+  return (
+    <div data-filter-effect="blackout" style={{ ...base, inset: 0, backgroundColor: '#000', opacity: shown ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {cue.firstPiece !== false && cue.text ? (
+        <div data-blackout-text style={{ color: '#fff', fontFamily: font, fontSize: '1.5em', textAlign: 'center', padding: '0 2em', opacity: textOn ? 0.9 : 0, transition: `opacity ${FADE_MS}ms ease` }}>{cue.text}</div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Hide an <img> that fails to load (e.g. a title with no clearLogo). */

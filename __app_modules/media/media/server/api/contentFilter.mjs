@@ -11,11 +11,19 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * ratingKey is the Plex rating key (contentId `plex:<ratingKey>`); it is
  * digit-sanitized to prevent path traversal.
  */
-export function createContentFilterRouter({ getContentFilter, logger = console } = {}) {
+export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, logger = console } = {}) {
   if (!getContentFilter || typeof getContentFilter.execute !== 'function') {
     throw new Error('createContentFilterRouter requires getContentFilter');
   }
   const router = express.Router();
+
+  if (contentFilterScenes) {
+    // GET / -> { titles }: every title with a refined filter (Admin index).
+    router.get('/', asyncHandler(async (req, res) => {
+      const profileName = String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
+      res.json({ titles: await contentFilterScenes.titles({ profileName }) });
+    }));
+  }
 
   router.get('/:ratingKey', asyncHandler(async (req, res) => {
     const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
@@ -37,6 +45,42 @@ export function createContentFilterRouter({ getContentFilter, logger = console }
     });
     res.json({ edl, profile, override, certification });
   }));
+
+  // Scenes: the grown-up's review (Admin -> Content filter -> Scenes).
+  //   GET  /:ratingKey/scenes?profile=family     -> { title, calibration, scenes }
+  //   POST /:ratingKey/scenes/cards {all, force} -> { drafted, scenes }   (LLM drafts)
+  //   PUT  /:ratingKey/scenes/:sceneId {effect, disabled, card, by} -> { ruling }
+  if (contentFilterScenes) {
+    const rk = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
+    const profileOf = (req) => String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
+
+    router.get('/:ratingKey/scenes', asyncHandler(async (req, res) => {
+      const out = await contentFilterScenes.list({ ratingKey: rk(req), profileName: profileOf(req) });
+      if (!out) return res.status(404).json({ error: 'no refined filter', ratingKey: rk(req) });
+      res.json(out);
+    }));
+
+    router.post('/:ratingKey/scenes/cards', asyncHandler(async (req, res) => {
+      const out = await contentFilterScenes.draftCards({
+        ratingKey: rk(req), profileName: profileOf(req), all: !!req.body?.all, force: !!req.body?.force,
+      });
+      if (!out) return res.status(404).json({ error: 'no refined filter', ratingKey: rk(req) });
+      res.json(out);
+    }));
+
+    router.put('/:ratingKey/scenes/:sceneId', asyncHandler(async (req, res) => {
+      const sceneId = String(req.params.sceneId).replace(/[^a-z0-9_-]/gi, '');
+      const { effect, disabled, card, by } = req.body || {};
+      let ruling;
+      try {
+        ruling = await contentFilterScenes.rule({ ratingKey: rk(req), sceneId, effect, disabled, card, by });
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (!ruling) return res.status(404).json({ error: 'no such scene', sceneId });
+      res.json({ ruling });
+    }));
+  }
 
   return router;
 }
