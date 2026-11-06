@@ -37,4 +37,23 @@ describe('BarcodeFirmwareGateway', () => {
     });
     expect(eventBus.broadcast).toHaveBeenCalledWith('barcode-relay', listener.mock.calls[0][0]);
   });
+  // 2026-11-05: the firmware's capture time and hold were overwritten by the
+  // receive time, so a held or batched scan looked like a fresh one.
+  it('keeps the reader capture time and hold beside the receive time', () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-05T03:31:56.000Z'));
+    try {
+      const eventBus = makeBus(), listener = vi.fn();
+      new BarcodeFirmwareGateway({ eventBus, defaultDevice: 'kitchen', defaultRoute: 'nutribot', timezone: 'UTC' }).subscribe(listener);
+      eventBus.ingest({ source: 'kitchen-relay', type: 'scan', code: '9780064401517', ts: 123456, delayed_ms: 4200 });
+      eventBus.ingest({ source: 'kitchen-relay', type: 'scan', code: '9780064401517', ts: 123999 });
+      expect(listener.mock.calls[0][0]).toMatchObject({
+        receivedAt: '2026-11-05T03:31:56.000Z', capturedAt: '2026-11-05T03:31:51.800Z', delayedMs: 4200, deviceMs: 123456,
+      });
+      expect(listener.mock.calls[1][0]).toMatchObject({ capturedAt: '2026-11-05T03:31:56.000Z', delayedMs: 0, deviceMs: 123999 });
+      // Unchanged: `ts` is still the receive time, the identity is still eventId.
+      expect(typeof listener.mock.calls[0][0].ts).toBe('string');
+      expect(listener.mock.calls[0][0].eventId).not.toBe(listener.mock.calls[1][0].eventId);
+    } finally { vi.useRealTimers(); }
+  });
 });
+
