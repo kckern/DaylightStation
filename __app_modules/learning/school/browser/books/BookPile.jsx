@@ -83,8 +83,46 @@ function ChangeSheet({ card, title, roster, busy, onMove, onRemove, onClose }) {
   );
 }
 
-export default function BookPile({ screenId, roster = [], safe, onOpen = null, confirmExit = false, scopeLearnerId = null }) {
-  const { cards, reader, live, lastScanAt, unfiled, busy, error, lastFiled = null, file, move, remove, enabled } = useBookPile({ screenId, scopeLearnerId });
+/**
+ * The cards an open shelf should count as waiting for it: unfiled, scanned
+ * after the shelf opened (`before` — the unfiled card ids at that moment),
+ * and openable (not an unreadable barcode or a failed lookup). Each carries
+ * its intent, so the shelf can tell the scan it is acknowledging or already
+ * holds from one still behind it, and whether the server superseded it.
+ */
+export function shelfWaitingCards(cards, before) {
+  return cards
+    .filter((card) => card.state === 'unfiled' && !before.has(card.id) && card.status !== 'invalid' && card.status !== 'unavailable')
+    .map((card) => ({ id: card.id, intentId: card.intentId ?? null, isbn13: card.isbn13,
+      label: card.book?.title ? presentBook(card.book).title : card.isbn13, superseded: Boolean(card.superseded) }));
+}
+
+export default function BookPile({ screenId, roster = [], safe, onOpen = null, confirmExit = false, scopeLearnerId = null, onShelfCards = null }) {
+  const { cards, reader, live, lastScanAt, unfiled, busy, error, lastFiled = null, file, move, remove, enabled, loaded = true } = useBookPile({ screenId, scopeLearnerId });
+  // AN OPEN SHELF COUNTS WHAT WAITS FOR IT (book-scan experience task 3). The
+  // pile stands aside while a shelf is open, but its cards are the only place
+  // a scan that landed mid-step — or one the server superseded — is visible.
+  // Cards already unfiled when the shelf opened are the pile's, not the shelf's.
+  const openedWith = useRef(null);
+  const shelfReportRef = useRef(onShelfCards);
+  shelfReportRef.current = onShelfCards;
+  const shelfReported = useRef(undefined);
+  useEffect(() => {
+    let next = null;
+    if (scopeLearnerId) {
+      if (openedWith.current?.scope !== scopeLearnerId) {
+        if (!loaded) return;
+        openedWith.current = { scope: scopeLearnerId, before: new Set(unfiled.map((card) => card.id)) };
+      }
+      next = shelfWaitingCards(cards, openedWith.current.before);
+    } else {
+      openedWith.current = null;
+    }
+    const key = JSON.stringify(next);
+    if (shelfReported.current === key || (shelfReported.current === undefined && next === null)) { shelfReported.current = key; return; }
+    shelfReported.current = key;
+    shelfReportRef.current?.(next);
+  }, [scopeLearnerId, cards, unfiled, loaded]);
   const [changing, setChanging] = useState(null);
   // Later sets the screen aside until the next scan; Open brings it back.
   const [laterAt, setLaterAt] = useState(null);

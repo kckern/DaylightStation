@@ -81,6 +81,23 @@ locally is what stops a cover host being down from blanking a shelf a child is
 standing in front of. A book nobody
 has art for is recorded as a miss and left alone for two weeks.
 
+**The ladder is probed concurrently, but the order still decides.** Walking the
+rungs one at a time cost a round trip per miss (the winning catalogue was often
+rung three, 2-4 s). `ResolveBookCover` now asks every catalogue rung at once
+through `pickByPriority` (`__capabilities/book-catalog/server/domain/`): the
+answer is the lowest-index rung that has a usable cover, once every better rung
+has missed or timed out. A faster, worse cover never beats a slower, better one
+still in flight. A rung still pending is given up on after 2500 ms
+(`CANDIDATE_TIMEOUT_MS`) but only matters once a worse rung has succeeded; with
+no success at all the wait ends at the 6000 ms deadline (`DEADLINE_MS`) and the
+ladder falls through to the web image search and then the drawn cover.
+`books.cover.found` carries `elapsedMs` (probe start to pick) beside `source`
+and `attempts`. `attempts` is the number of rungs whose probe had SETTLED when
+the pick was made, not the number asked (all of them are) — rungs still in
+flight are abandoned uncounted. `tried` still lists the better rungs that
+missed, with the reason (`timeout` for one that never answered or failed
+outright).
+
 **The ladder always ends in a cover.** When every rung misses, the endpoint
 draws one — a coloured board with a spine, a foil frame, the title in a serif
 and the author under a rule, from
@@ -190,12 +207,23 @@ the household study day ends. One session belongs to one child:
   (even mid-step, when the shelf is not asking for a barcode), and a scan is
   claimed for that child through the scoped path as soon as the shelf is
   scan-ready. A shelf claims only scans made while it is open; a filed or
-  removed card is never offered to it. The server keeps at most the oldest
-  live intent plus the newest deferred one, and a shelf claim retires every
-  older pending intent; so if two land during one shelf step the older one
-  stays an unfiled card in the pile rather than being lost, and
-  `school.book-scan.superseded {isbn13, intentId, supersededBy}` (info) says
-  which book stopped being claimable.
+  removed card is never offered to it. **Scans that land during one step wait
+  their turn**: on a pile screen (`PrepareBookScan` `pile: true`, which the
+  composition sets — the scan target is always a School panel surface, and
+  every one mounts the pile) nothing is superseded, `pending()` offers the
+  OLDEST live intent, and `GET …/pending` returns the whole `queue`, so the
+  shelf drains them first in, first out. (Until 2026-11-05 the server kept the
+  corner-offer rules here too — the oldest live intent plus only the newest
+  deferred one, with a claim retiring every older one — and with three scans
+  in one step the chip counted books the server had already dropped. A screen
+  without a pile still keeps those rules and logs
+  `school.book-scan.superseded {isbn13, intentId, supersededBy}` (info).) The
+  store stays bounded (32 intents, 5-minute TTL). A card whose intent is gone —
+  dismissed, expired (the server notifies the screen when one expires) or
+  evicted — stays an unfiled card in the pile, and the pile view gives each
+  card its `intentId` (the live one, if a rescan revived it) and `superseded`,
+  so an open shelf lists such a book under its scan chip with `scan it again
+  to open it` (see reading-log.md, "The shelf says at once…").
 
 Filings are the child's own entries (`source: 'panel'`), the same as logging
 from the shelf. The pile lives in memory in `PrepareBookScan`: a backend
@@ -208,9 +236,13 @@ details (panel):
 | Event | Where | Fields |
 |-------|-------|--------|
 | `school.book-scan.received` | backend, info | `screenId`, `status`, `isbn13`, `receivedAt`, `capturedAt`, `delayedMs` (the reader's capture time and hold, from the relay gateway — a held or batched scan shows a non-null `delayedMs`) |
-| `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. two ISBNs the reader ran together; not split |
+| `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. run-together digits that are not two valid ISBN-13s (two valid ones are split, see `book-scan.split`) |
 | `school.book-pile.card-added` | backend, info | `isbn13`, `duplicate`, `status` |
-| `school.book-scan.superseded` | backend, info | `isbn13`, `intentId`, `supersededBy` — an older pending scan stopped being claimable (a newer scan, or a shelf claim, retired it); its card stays in the pile |
+| `school.book-scan.superseded` | backend, info | `isbn13`, `intentId`, `supersededBy` — on a screen WITHOUT a pile only: an older pending scan stopped being claimable (a newer scan, or a shelf claim, retired it); its card stays in the pile. Never logged on the Portal, whose scans queue |
+| `school.book-shelf.scan.acknowledged` | panel, info | `screenId`, `msSinceReceived` — the open shelf first showed `Got it — looking it up` for a scan (panel clock minus the server's `receivedAt`) |
+| `school.book-shelf.scan.visible` | panel, info | `screenId`, `msSinceReceived`, `queued` — a scanned book is on the shelf's screen; `queued: true` when it waited first (mid-step on the server, or behind a step in the shelf), so the figure is a wait, not a latency |
+| `school.book-scan.split` | backend, info | `screenId`, `codes` — a 26-digit code whose two 13-digit halves are both valid ISBN-13s, taken as two scans (any other 26-digit code is still one `rejected`) |
+| `school.book-scan.burst-duplicate` | backend, debug | `screenId`, `isbn13`, `msSinceFirst` — the same book scanned again within the 10 s burst window while its earlier card is still live; absorbed into that card. Debug: not in the store at the production info level — count `school.book-pile.card-added` with `duplicate: true` instead |
 | `school.book-shelf.scan.dropped` | panel, warn | `isbn13`, `reason` (`done`, `idle`, `unmount`) — a claimed scan still queued when the shelf closed |
 | `school.book-pile.filed` | backend, info | `learnerId`, `count` (filed), `alreadyToday`, `failed` |
 | `school.book-pile.file-empty` | backend, debug | a tap with nothing to file |

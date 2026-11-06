@@ -4,7 +4,7 @@ import { PrepareBookScan, PILE_QUIET_GAP_MS } from "./PrepareBookScan.mjs";
 
 const ISBNS = ['9780064400558', '9780062691026', '9780763648602', '9780763691677', '9780062042187'];
 
-function fixture({ resolveBook, filer, day = () => '2026-10-30' } = {}) {
+function fixture({ resolveBook, filer, day = () => '2026-10-30', pile = true } = {}) {
   let now = 1_000_000;
   let dayValue = day;
   const issueLaunchTarget = vi.fn(({ userId }) => ({ kind: 'program', program: 'book-log', learnerId: userId, bookGrant: 'grant' }));
@@ -16,7 +16,10 @@ function fixture({ resolveBook, filer, day = () => '2026-10-30' } = {}) {
   const wake = vi.fn(async () => {});
   const notifications = { bookScanAvailable: vi.fn() };
   const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() };
-  const service = new PrepareBookScan({
+  // Timers the service sets (an intent's expiry), run by hand: `fire()`.
+  const timers = [];
+  const schedule = (fn, ms) => { timers.push({ fn, ms }); };
+  const service = new PrepareBookScan({ pile, schedule,
     mintId: () => randomBytes(32).toString('base64url'), resolveBook,
     roster: () => [{ id: 'child' }, { id: 'sibling' }], issueLaunchTarget, wake, notifications, logger,
     clock: () => now, target: { deviceId: 'tablet', screenId: 'portal' },
@@ -25,7 +28,7 @@ function fixture({ resolveBook, filer, day = () => '2026-10-30' } = {}) {
   let n = 0;
   const receive = (code) => service.receive({ code, device: 'reader', eventId: `e${n++}` });
   return {
-    service, filer, wake, resolveBook, logger, receive,
+    service, filer, wake, resolveBook, logger, receive, notifications, timers,
     advance: (ms) => { now += ms; },
     setDay: (fn) => { dayValue = fn; },
   };
@@ -267,18 +270,21 @@ describe('PrepareBookScan — scan logging (2026-11-05)', () => {
     }));
   });
 
-  it('warns on a code that is no book, without trying to split it', async () => {
+  it('warns on a code that is no book, without trying to split it (26 digits, bad checksum)', async () => {
     const f = fixture();
-    await f.service.receive({ code: '97800644015179780064401517', device: 'reader', eventId: 'x2' });
-    expect(f.logger.warn).toHaveBeenCalledWith('school.book-scan.rejected', expect.objectContaining({ code: '97800644015179780064401517', reason: expect.any(String) }));
+    await f.service.receive({ code: '97800644015189780064401517', device: 'reader', eventId: 'x2' });
+    expect(f.logger.warn).toHaveBeenCalledWith('school.book-scan.rejected', expect.objectContaining({ code: '97800644015189780064401517', reason: expect.any(String) }));
     expect(pile(f).cards).toHaveLength(1);
     expect(pile(f).cards[0].status).toBe('invalid');
   });
 });
 
-describe('PrepareBookScan — a superseded scan is logged (fix round 1)', () => {
+// A screen WITHOUT a pile keeps the corner-offer rules: one presented intent
+// plus the newest deferred one. (Final review I1: on the Portal these rules
+// discarded books the shelf chip was still counting, so they apply only here.)
+describe('PrepareBookScan — a superseded scan is logged (fix round 1; a screen without a pile)', () => {
   it('names the book that lost its intent and the one that replaced it', async () => {
-    const f = fixture();
+    const f = fixture({ pile: false });
     // The server keeps the oldest live intent plus the newest deferred one, so
     // the third scan inside one shelf step is the first to retire one.
     const first = await f.receive(ISBNS[0]);
@@ -289,7 +295,7 @@ describe('PrepareBookScan — a superseded scan is logged (fix round 1)', () => 
   });
 
   it('logs the older scan a shelf claim retires (two scans in one shelf step)', async () => {
-    const f = fixture();
+    const f = fixture({ pile: false });
     const first = await f.receive(ISBNS[0]);
     const second = await f.receive(ISBNS[1]);
     await settle();
@@ -298,3 +304,168 @@ describe('PrepareBookScan — a superseded scan is logged (fix round 1)', () => 
   });
 });
 
+
+describe('PrepareBookScan pile — an open shelf can tell which cards it will never claim (book-scan experience task 3)', () => {
+  it('names each card\'s intent, and marks the card whose intent is gone (dismissed)', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    const before = pile(f).cards;
+    expect(before.map((c) => [c.isbn13, c.intentId, c.superseded])).toEqual([
+      [ISBNS[0], first.intentId, false],
+      [ISBNS[1], second.intentId, false],
+    ]);
+    // A pile screen's claim retires nothing (final review I1); the older
+    // intent goes because it was dismissed.
+    f.service.dismiss({ id: first.intentId, screenId: 'portal' });
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    const after = pile(f).cards;
+    expect(after.find((c) => c.isbn13 === ISBNS[0])).toMatchObject({ state: 'unfiled', superseded: true, intentId: first.intentId });
+    expect(after.find((c) => c.isbn13 === ISBNS[1])).toMatchObject({ state: 'claimed', superseded: false });
+  });
+
+  it('a rescan of a superseded book is claimable again: its card is no longer marked', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    f.service.dismiss({ id: first.intentId, screenId: 'portal' });
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    f.advance(15_000);
+    const again = await f.receive(ISBNS[0]);
+    await settle();
+    const card = pile(f).cards.find((c) => c.isbn13 === ISBNS[0]);
+    expect(card).toMatchObject({ state: 'unfiled', superseded: false, intentId: again.intentId });
+    expect(pile(f).cards.filter((c) => c.isbn13 === ISBNS[0])).toHaveLength(1);
+  });
+});
+
+describe('PrepareBookScan — "scan it again" works at once (task 3 fix round 1)', () => {
+  it('a rescan of a superseded book 5 s later is a new claimable intent, not a burst duplicate', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    f.advance(1000);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    f.service.dismiss({ id: first.intentId, screenId: 'portal' });
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[0]).superseded).toBe(true);
+    f.advance(4000);
+    const again = await f.receive(ISBNS[0]);
+    await settle();
+    const card = pile(f).cards.find((c) => c.isbn13 === ISBNS[0]);
+    expect(card).toMatchObject({ state: 'unfiled', superseded: false, intentId: again.intentId });
+    expect(f.service.pending('portal')).toMatchObject({ id: again.intentId, isbn13: ISBNS[0] });
+    expect(f.logger.debug).not.toHaveBeenCalledWith('school.book-scan.burst-duplicate', expect.anything());
+  });
+
+  it('a genuine burst (live twin) is still absorbed', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    f.advance(3000);
+    const again = await f.receive(ISBNS[0]);
+    expect(again.intentId).toBe(first.intentId);
+    expect(f.logger.debug).toHaveBeenCalledWith('school.book-scan.burst-duplicate', expect.objectContaining({ isbn13: ISBNS[0] }));
+  });
+
+  it('an unfiled card whose intent expired or was dismissed is marked superseded too (it can only be rescanned)', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    await settle();
+    f.service.dismiss({ id: first.intentId, screenId: 'portal' });
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[0])).toMatchObject({ state: 'unfiled', superseded: true });
+    f.advance(1000);
+    await f.receive(ISBNS[1]);
+    await settle();
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[1]).superseded).toBe(false);
+    f.advance(6 * 60_000);
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[1])).toMatchObject({ state: 'unfiled', superseded: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Final review I1 (2026-11-05). The server kept a 2-slot queue: the third scan
+// in one shelf step retired the first, and a shelf claim retired every older
+// one, while the chip still counted them as "N more books waiting". On a pile
+// screen nothing is superseded and the shelf drains first in, first out.
+// ---------------------------------------------------------------------------
+describe('PrepareBookScan — a pile screen drains in order (final review I1)', () => {
+  it('four scans in one shelf step: each is offered in turn, oldest first, and none is superseded', async () => {
+    const f = fixture();
+    const scans = [];
+    for (const isbn of ISBNS.slice(0, 4)) { scans.push(await f.receive(isbn)); f.advance(700); }
+    await settle();
+    expect(f.service.queue('portal').map((i) => i.id)).toEqual(scans.map((s) => s.intentId));
+    for (const [n, scan] of scans.entries()) {
+      const next = f.service.pending('portal');
+      expect(next).toMatchObject({ id: scan.intentId, isbn13: ISBNS[n] });
+      await f.service.claim({ id: next.id, screenId: 'portal', learnerId: 'child' });
+      expect(f.service.queue('portal').map((i) => i.id)).toEqual(scans.slice(n + 1).map((s) => s.intentId));
+      expect(pile(f).cards.filter((c) => c.state === 'unfiled').every((c) => c.superseded === false)).toBe(true);
+      f.advance(9000);
+    }
+    expect(f.service.pending('portal')).toBeNull();
+    expect(f.logger.info).not.toHaveBeenCalledWith('school.book-scan.superseded', expect.anything());
+    expect(pile(f).cards.map((c) => c.state)).toEqual(['claimed', 'claimed', 'claimed', 'claimed']);
+  });
+
+  it('a claim of a later scan leaves the earlier ones claimable', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    expect(f.service.pending('portal')).toMatchObject({ id: first.intentId });
+    await expect(f.service.claim({ id: first.intentId, screenId: 'portal', learnerId: 'child' })).resolves.toMatchObject({ intentId: first.intentId });
+  });
+
+  it('a double-fire is still absorbed while its twin is live', async () => {
+    const f = fixture();
+    const a = await f.receive(ISBNS[0]); f.advance(2000);
+    const b = await f.receive(ISBNS[1]); f.advance(1000);
+    const again = await f.receive(ISBNS[0]);
+    expect(again.intentId).toBe(a.intentId);
+    expect(f.service.queue('portal').map((i) => i.id)).toEqual([a.intentId, b.intentId]);
+    expect(pile(f).cards).toHaveLength(2);
+  });
+
+  it('an evicted intent still reads superseded ("scan it again")', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    // 32 more distinct books push the first intent out of the bounded store.
+    for (let i = 0; i < 32; i += 1) { await f.receive(`97800000${String(i).padStart(4, '0')}`.slice(0, 12) + '0'); f.advance(10); }
+    await settle();
+    expect(pile(f).cards.find((c) => c.intentId === first.intentId)).toMatchObject({ state: 'unfiled', superseded: true });
+  });
+
+  it('a screen without a pile has no queue', () => {
+    expect(fixture({ pile: false }).service.queue('portal')).toBeNull();
+  });
+});
+
+describe('PrepareBookScan — an expired intent says so at once (final review minor)', () => {
+  it('notifies the screen when an intent expires, so its card shows "scan it again" without waiting for another event', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    await settle();
+    const expiry = f.timers.find((t) => t.ms === 5 * 60_000);
+    expect(expiry).toBeTruthy();
+    f.notifications.bookScanAvailable.mockClear();
+    f.advance(5 * 60_000);
+    expiry.fn();
+    expect(f.notifications.bookScanAvailable).toHaveBeenCalledWith({ screenId: 'portal', intentId: first.intentId });
+    expect(pile(f).cards[0]).toMatchObject({ state: 'unfiled', superseded: true });
+  });
+
+  it('says nothing for an intent already claimed', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    await settle();
+    await f.service.claim({ id: first.intentId, screenId: 'portal', learnerId: 'child' });
+    f.notifications.bookScanAvailable.mockClear();
+    f.advance(5 * 60_000);
+    for (const t of f.timers) t.fn();
+    expect(f.notifications.bookScanAvailable).not.toHaveBeenCalled();
+  });
+});

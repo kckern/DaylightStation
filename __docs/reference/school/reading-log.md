@@ -171,6 +171,94 @@ the shelf was keyed on the scan's `intentId`: every scan remounted it, showed
 "Getting your shelf…" again, and threw away an Add the child had started 24ms
 before. `scan.seeded` now carries the `isbn13`.
 
+**The shelf says at once that a scan landed** (`ScanStatusChip`, in the
+`ScreenHeader` `status` slot beside Done, so it moves nothing on the shelf). A
+scan the open shelf is about to take — landed after it opened, while it asks
+for a barcode or its claim is in flight — reads `Got it — looking it up` until
+the claim lands (`useBookScanEntry` `shelfScan`, reported up through
+`BookScanEntry` `onShelfScan`). Books still behind the one on screen read
+`1 more book waiting` / `{n} more books waiting`: the pile's unfiled cards
+scanned since the shelf opened (`BookPile` `onShelfCards`; the pile itself is
+hidden while a shelf is open), minus the one being acknowledged and any already
+handed to the shelf, plus claimed scans queued in `entryQueue` (`queuedScans`).
+On the Portal the waiting scans are a queue the shelf drains **first in, first
+out**: after each step (and a receipt's hold) the shelf claims the oldest one,
+so four scans during one step open one by one and the chip counts down
+`3 → 2 → 1 → 0`. Nothing is superseded by a later scan or by a claim there
+(`PrepareBookScan` `pile: true`; see reading-shelf.md, "An open shelf wins").
+`GET /school/book-scans/pending` carries the whole `queue` beside the head
+`intent`, and the panel walks it past what it must not take — a scan already
+waiting when the shelf opened, an unreadable barcode or failed lookup, a scoped
+claim that already failed — so none of them holds up the books behind it.
+A card with no live intent left (dismissed, expired — the server says so when
+an intent expires — or evicted from the bounded store; the pile view carries
+`intentId` and `superseded` per card) is listed under the chip by title or ISBN
+with `scan it again to open it`. A rescan gives the card a live intent at once: the 10 s
+burst window absorbs a repeat only while its twin card's intent is still live.
+A scan the chip already showed as waiting — counted while the shelf was NOT
+asking for a barcode (mid-step or inside a receipt's hold) — logs no
+`scan.acknowledged` when the shelf later claims it. On a scan-ready shelf the
+pile read can beat the pending read by a round trip; that card is the scan
+about to be acknowledged, not a waiting one, and is still acknowledged. The
+book opening on a hand-off is never counted as waiting. A receipt is not replaced by the queue during its hold; the count sits
+beside it. Logs: `school.book-shelf.scan.acknowledged {screenId,
+msSinceReceived}` once per scan on the first "Got it", and
+`school.book-shelf.scan.visible {screenId, msSinceReceived, queued}` when the
+book is on screen. Both measure the panel clock against the server's
+`receivedAt`, so `msSinceReceived` includes any client/server clock skew.
+`queued: true` marks a scan that WAITED before it opened — on the server while
+the chip counted it (it landed mid-step), or in the shelf's own `entryQueue`
+behind a step — so its `msSinceReceived` holds the whole step and receipt hold
+(5 s and more), not the scan's latency. Those are exactly the scans that log no
+`scan.acknowledged`. The latency query below leaves them out. (The Portal never
+opens a shelf from a face scan, so no face-choosing time is in the figure.)
+
+**Scan intake rules** (`PrepareBookScan.receive`, before a scan becomes a card):
+
+- *Run-together codes are split.* A 26-digit code whose first and last 13 digits
+  are both valid ISBN-13s is two scans: each half goes through intake on its
+  own and `school.book-scan.split {screenId, codes}` is logged (info). Any other
+  malformed code is still one `school.book-scan.rejected`.
+- *Bursts are absorbed, but only while there is something to absorb into.* A
+  reader that double-fires at a book is counted as one for 10 s per screen
+  (`BURST_WINDOW_MS`, keyed on screen and ISBN); the repeat logs
+  `school.book-scan.burst-duplicate {screenId, isbn13, msSinceFirst}` (debug)
+  and coalesces into the live intent. The window applies only while the earlier
+  scan's card still has a live intent. Once it is dismissed, expired or evicted
+  (or, on a screen without a pile, superseded), a rescan is the child following the chip's "scan it again to open
+  it" and makes a new intent at once.
+
+**Timing queries** (log store; stats syntax is `| stats by (...)` /
+`| stats <fn>() as name`, see CLAUDE.md "Reading Logs"):
+
+Debug events — `school.book-scan.burst-duplicate`, `school.book-shelf.scan.queued`,
+`school.book-shelf.scan.scoped-claim-skipped` — never reach the store while the
+backend and panels log at info (the production default); raise the log level
+to see them. The queries below use info events only.
+
+```
+# Scan to book on screen (p50 / p95, ms) — scans that waited mid-step excluded
+_msg:"school.book-shelf.scan.visible" AND _time:7d AND NOT data.queued:true
+  | stats quantile(0.5, "data.msSinceReceived") as p50, quantile(0.95, "data.msSinceReceived") as p95, count() as n
+
+# Scan to "Got it" (the acknowledgement)
+_msg:"school.book-shelf.scan.acknowledged" AND _time:7d
+  | stats quantile(0.5, "data.msSinceReceived") as p50, quantile(0.95, "data.msSinceReceived") as p95
+
+# Cover lookup time, by winning source
+_msg:"books.cover.found" AND _time:7d
+  | stats by ("data.source") quantile(0.5, "data.elapsedMs") as p50, quantile(0.95, "data.elapsedMs") as p95, count() as n
+
+# Split scans
+_msg:"school.book-scan.split" AND _time:7d
+  | stats count() as n
+
+# Absorbed repeats (a double-fire or a repeat scan of a book already in the
+# session; burst-duplicate itself is debug and not in the store)
+_msg:"school.book-pile.card-added" AND data.duplicate:true AND _time:7d
+  | stats count() as n
+```
+
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at
 the ISBN pad. It is a door beside the board rather than a row on it: the board

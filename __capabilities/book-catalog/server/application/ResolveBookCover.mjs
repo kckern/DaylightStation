@@ -1,4 +1,5 @@
 import { coverCandidates, coverSearchQuery } from "../domain/BookCoverArt.mjs";
+import { pickByPriority } from "../domain/pickByPriority.mjs";
 import { generateCoverSvg } from "../domain/GeneratedCover.mjs";
 
 /**
@@ -146,18 +147,31 @@ export class ResolveBookCover {
     const tried = [];
     let attempts = 0;
 
-    for (const candidate of coverCandidates(book)) {
-      attempts += 1;
+    // Every catalogue rung is asked at once; the answer is still the best rung
+    // that has a cover (see `pickByPriority`), not the fastest.
+    const candidates = coverCandidates(book);
+    const reasons = new Array(candidates.length).fill('timeout');
+    const probe = async (candidate, index) => {
       const result = await this.#coverArt.fetch(candidate.url);
-      if (result.usable) {
-        this.#store.save(isbn13, { ...result, source: candidate.source, url: candidate.url, attempts });
-        this.#logger.info?.('books.cover.found', {
-          isbn13, source: candidate.source, attempts, width: result.width, height: result.height,
-        });
-        return { status: 'found', source: candidate.source, url: candidate.url, attempts, tried };
-      }
-      tried.push(`${candidate.source}:${result.reason}`);
+      if (result.usable) return result;
+      reasons[index] = result.reason;
+      return null;
+    };
+    const picked = await pickByPriority(candidates, probe, { now: () => this.#clock().getTime() });
+    if (picked) {
+      const candidate = candidates[picked.index];
+      const result = picked.value;
+      attempts = picked.attempts;
+      for (let i = 0; i < picked.index; i += 1) tried.push(`${candidates[i].source}:${reasons[i]}`);
+      this.#store.save(isbn13, { ...result, source: candidate.source, url: candidate.url, attempts });
+      this.#logger.info?.('books.cover.found', {
+        isbn13, source: candidate.source, attempts, width: result.width, height: result.height,
+        elapsedMs: picked.elapsedMs,
+      });
+      return { status: 'found', source: candidate.source, url: candidate.url, attempts, tried };
     }
+    attempts = candidates.length;
+    candidates.forEach((candidate, i) => tried.push(`${candidate.source}:${reasons[i]}`));
 
     // The last rung: no catalogue had it, so ask what the web has. Deliberately
     // last — an image search is the only rung that can return the WRONG book.

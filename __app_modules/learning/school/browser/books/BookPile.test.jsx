@@ -148,3 +148,29 @@ describe('BookPile', () => {
   });
 });
 
+
+// Book-scan experience task 3: an open shelf counts what is waiting for it.
+describe('BookPile — hands an open shelf its waiting cards', () => {
+  it('reports only cards scanned after the shelf opened, unfiled and openable, with intent and superseded flag', async () => {
+    const onShelfCards = vi.fn();
+    const before = card({ id: 'old', intentId: 'i-old' });
+    h.state = hook({ cards: [before] });
+    const r = render(<BookPile {...props} onShelfCards={onShelfCards} />);
+    r.rerender(<BookPile {...props} scopeLearnerId="child-a" onShelfCards={onShelfCards} />);
+    expect(onShelfCards).toHaveBeenLastCalledWith([]);
+    h.state = hook({ cards: [
+      before,
+      card({ id: 'a', intentId: 'i-a', isbn13: '9780763648602', book: { title: 'Book Three' }, superseded: true }),
+      card({ id: 'b', intentId: 'i-b', isbn13: '9780763691677', book: null }),
+      card({ id: 'bad', intentId: 'i-bad', status: 'invalid' }),
+      card({ id: 'gone', intentId: 'i-gone', state: 'claimed' }),
+    ] });
+    r.rerender(<BookPile {...props} scopeLearnerId="child-a" onShelfCards={onShelfCards} />);
+    expect(onShelfCards).toHaveBeenLastCalledWith([
+      { id: 'a', intentId: 'i-a', isbn13: '9780763648602', label: 'Book Three', superseded: true },
+      { id: 'b', intentId: 'i-b', isbn13: '9780763691677', label: '9780763691677', superseded: false },
+    ]);
+    r.rerender(<BookPile {...props} scopeLearnerId={null} onShelfCards={onShelfCards} />);
+    expect(onShelfCards).toHaveBeenLastCalledWith(null);
+  });
+});

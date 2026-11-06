@@ -158,6 +158,13 @@ try {
     : null;
   if (!bookPileFiler) schoolLifecycleLogger.warn('school.book-pile.unwired', {});
   const bookScans = dependencies.schoolLifecycle.bookLogLauncher && dependencies.schoolLifecycle.realtime ? new PrepareBookScan({
+    // The scan target is always a School panel surface, and every panel
+    // surface mounts the pile (`SchoolApp` passes `pile` to BookScanEntry):
+    // its waiting scans drain first in, first out (final review I1).
+    pile: true,
+    // The timer for an intent's expiry notice; unref'd so a pending notice
+    // never holds the process open.
+    schedule: (fn, ms) => { const timer = setTimeout(fn, ms); timer.unref?.(); return timer; },
     filer: bookPileFiler,
     dayOf: bookPileFiler ? (iso) => dependencies.schoolLifecycle.bookLogLauncher.dayOf(iso) : null,
     mintId: () => crypto.randomBytes(32).toString('base64url'),
