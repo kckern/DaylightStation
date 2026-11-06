@@ -47,3 +47,12 @@ describe('installed Media playback presentation', () => {
     expect(store.getLoadingSuppression()).toBe(false);
   });
 });
+
+describe('partFromSrc', () => {
+  it('reads the part id from a direct-play URL and returns null otherwise', async () => {
+    const { partFromSrc } = await import('./videoPresentation.jsx');
+    expect(partFromSrc('/api/v1/proxy/plex/library/parts/123/456/file.mp4?x=1')).toBe('123');
+    expect(partFromSrc('/api/v1/proxy/plex/video/:/transcode/universal/start.mpd?x')).toBeNull();
+    expect(partFromSrc(undefined)).toBeNull();
+  });
+});

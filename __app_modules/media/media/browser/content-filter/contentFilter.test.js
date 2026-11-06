@@ -162,3 +162,50 @@ describe('cuesActiveAt', () => {
     expect(cuesActiveAt(cues, 12).map((c) => c.id)).toEqual([]);
   });
 });
+
+describe('resolveEffectiveCues with refined data', () => {
+  const edl = { cues: [
+    { id: 'v', category: 'sex/immodesty', in: 100, out: 106, type: 'skip' },
+    { id: 's', category: 'sex/sign', in: 200, out: 206, type: 'skip' },
+  ] };
+  const refine = { v: 1, part: '40417' };
+
+  it('uses frame-precise times without approximate widening', () => {
+    const override = { cueOverrides: { v: { in: 107.375, out: 109.042, precision: 'frame', refine } } };
+    const [c] = resolveEffectiveCues({ edl, profile: { categories: { 'sex/immodesty': { effect: 'full-blur' } } }, override, part: '40417' });
+    expect(c.in).toBeCloseTo(107.375 - 0.15, 3);
+    expect(c.out).toBeCloseTo(109.042 + 0.25, 3);
+  });
+
+  it('ignores refined times on a different part', () => {
+    const override = { sync: { offsetSec: 7 }, cueOverrides: { v: { in: 107.375, out: 109.042, precision: 'frame', refine, nudgeMs: 0 } } };
+    const [c] = resolveEffectiveCues({ edl, profile: { categories: { 'sex/immodesty': { effect: 'skip' } } }, override, part: '999' });
+    expect(c.in).toBeCloseTo(107 - 0.4, 3);
+  });
+
+  it('splits multi-segment cues so a skip keeps the cutaway between them', () => {
+    const override = { cueOverrides: { v: { in: 107, out: 115, precision: 'frame', refine, segments: [{ in: 107, out: 109 }, { in: 112, out: 115 }] } } };
+    const cues = resolveEffectiveCues({ edl, profile: { categories: { 'sex/immodesty': { effect: 'skip' } } }, override });
+    expect(cues.map((c) => c.id)).toEqual(['v#0', 'v#1']);
+    expect(cues[1].in).toBeCloseTo(112 - 0.4, 3);
+  });
+
+  it('turns a region track into per-keyframe overlay rects', () => {
+    const override = { cueOverrides: { s: { in: 210, out: 213, precision: 'frame', refine, regions: [
+      { in: 210, grid: 6, cells: [0, 1, 6, 7], box: { x: 0, y: 0, w: 0.333, h: 0.333 } },
+      { in: 211.5, grid: 6, cells: [4, 5] },
+      { in: 213, cells: [] },
+    ] } } };
+    const cues = resolveEffectiveCues({ edl, profile: { categories: { 'sex/sign': { effect: 'blur' } } }, override });
+    expect(cues.map((c) => c.id)).toEqual(['s@0', 's@1']);
+    expect(cues[0].rect).toEqual({ x: 0, y: 0, w: 0.333, h: 0.333 });
+    expect(cues[1].rect).toEqual({ x: 4 / 6, y: 0, w: 2 / 6, h: 1 / 6 });
+  });
+
+  it('ignores the region track for a skip', () => {
+    const override = { cueOverrides: { s: { in: 210, out: 213, precision: 'frame', refine, regions: [{ in: 210, grid: 6, cells: [0] }, { in: 213, cells: [] }] } } };
+    const cues = resolveEffectiveCues({ edl, profile: { categories: { 'sex/sign': { effect: 'skip' } } }, override });
+    expect(cues).toHaveLength(1);
+    expect(cues[0].rect).toBeUndefined();
+  });
+});

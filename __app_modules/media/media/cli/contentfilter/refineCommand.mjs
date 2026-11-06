@@ -1,0 +1,169 @@
+/**
+ * `contentfilter refine <ratingKey>`: coarse EDL -> frame/ms-precise observations,
+ * with the decision model (Jev) as the only judge.
+ *
+ * Steps: resolve the Plex part -> probe -> transcript (cached) -> clock sync
+ * -> refine each cue -> merge into the override (--write) -> review list.
+ *
+ * Files (paths from the caller):
+ *   <mediaDir>/content-filter/refine/<rk>/words-<part>.json   transcript cache
+ *   <mediaDir>/content-filter/refine/<rk>/log.jsonl           one line per model call
+ *   <mediaDir>/content-filter/refine/<rk>/art/                images the model saw
+ *   <mediaDir>/content-filter/refine/<rk>/results-<part>.json raw results (.partial.json for a filtered run)
+ *   <dataDir>/household/content-filter/overrides/<rk>.yml     merged (--write)
+ *   <dataDir>/household/content-filter/review/<rk>.refine.yml unknowns, give-ups, kept-manual
+ */
+
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import yaml from 'js-yaml';
+import { FfmpegRefineMedia } from '../../server/adapters/content-filter/FfmpegRefineMedia.mjs';
+import { MagickRefineRenderer } from '../../server/adapters/content-filter/MagickRefineRenderer.mjs';
+import { PythonWordAligner } from '../../server/adapters/content-filter/PythonWordAligner.mjs';
+import { makeTimebase } from '../../server/domain/content-filter/refine/timebase.mjs';
+import { wordMatcher } from '../../server/domain/content-filter/refine/cueKinds.mjs';
+import { fitSync, wordPairs } from '../../server/domain/content-filter/refine/syncFit.mjs';
+import { mergeRefine } from '../../server/domain/content-filter/refine/refineOutput.mjs';
+import { CueRefiner } from '../../server/application/content-filter/refine/CueRefiner.mjs';
+import { QUESTION_VERSION } from '../../server/application/content-filter/refine/refineQuestions.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+/** This many tagged words with none found in the transcript means the EDL is for other media. */
+const MISMATCH_MIN_TAGS = 6;
+
+export const REFINE_USAGE = `Usage: contentfilter refine <ratingKey> [options]
+  --part <id>          Plex media part to refine (default: the first part)
+  --src <path|url>     Read media from here instead of the Plex part URL (same file, e.g. a local copy)
+  --cues a,b,c         Only these cue ids
+  --limit <n>          Only the first n cues
+  --kinds speech,visual  Only cues of these kinds (speech, speech-line, visual, credits)
+  --concurrency <n>    Cues in flight (default 3)
+  --no-region          Skip region tracks
+  --snap <sec>         Speech edge snap window (default 0.07; wider measured worse)
+  --transcript <file>  Use this word transcript (JSON from transcribe.py) instead of making one
+  --write              Merge results into the override and write the review list (default: dry run)`;
+
+/**
+ * @param {object} ctx
+ * @param {string} ctx.rk
+ * @param {object} ctx.flags - parsed --flags
+ * @param {string[]} ctx.args - raw argv (for boolean flags)
+ * @param {string} ctx.dataFilterDir - <dataDir>/household/content-filter
+ * @param {string} ctx.mediaFilterDir - <mediaDir>/content-filter
+ * @param {() => { token: string, host: string }} ctx.loadPlexConfig
+ * @param {(opts: object) => Promise<object|null>} ctx.getDecisionGateway
+ * @param {(url: string) => Promise<object>} ctx.getJson
+ */
+export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir, loadPlexConfig, getDecisionGateway, getJson }) {
+  const edlPath = path.join(mediaFilterDir, 'edl', `${rk}.edl.yml`);
+  if (!existsSync(edlPath)) throw new Error(`No EDL for ${rk} (${edlPath})`);
+  const edl = yaml.load(readFileSync(edlPath, 'utf8'));
+  const overridePath = path.join(dataFilterDir, 'overrides', `${rk}.yml`);
+  const override = existsSync(overridePath) ? yaml.load(readFileSync(overridePath, 'utf8')) || {} : {};
+
+  // 1. Media part and source
+  const { token, host } = loadPlexConfig();
+  const meta = (await getJson(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`))?.MediaContainer?.Metadata?.[0];
+  const parts = (meta?.Media || []).flatMap((m) => m.Part || []);
+  if (!parts.length) throw new Error(`Plex item ${rk} has no media parts`);
+  const part = flags.part ? parts.find((p) => String(p.id) === String(flags.part)) : parts[0];
+  if (!part) throw new Error(`Part ${flags.part} not on ${rk}; parts: ${parts.map((p) => p.id).join(', ')}`);
+  const src = flags.src || `${host}${part.key}?X-Plex-Token=${token}`;
+  const partId = String(part.id);
+
+  const workDir = path.join(mediaFilterDir, 'refine', rk);
+  mkdirSync(path.join(workDir, 'art'), { recursive: true });
+  const media = new FfmpegRefineMedia();
+  const probe = await media.probe(src);
+  if (probe.variableFrameRate) console.error(`⚠ variable frame rate (${probe.fps} vs avg ${probe.avgFps}); frame numbers are nominal`);
+  const timebase = makeTimebase({ fps: probe.fps, startTime: probe.startTime });
+  console.error(`Refining ${rk} "${edl.title || meta?.title || ''}" part ${partId}: ${probe.width}x${probe.height} ${probe.fps} fps, ${Math.round(probe.duration)} s`);
+
+  // 2. Transcript (cached per part)
+  const transcriptPath = flags.transcript || path.join(workDir, `words-${partId}.json`);
+  if (!existsSync(transcriptPath)) {
+    console.error('Transcribing (word timestamps)… this runs once per part.');
+    const cmd = (process.env.CONTENT_FILTER_TRANSCRIBE_PY || 'uv run --script').split(/\s+/);
+    execFileSync(cmd[0], [...cmd.slice(1), path.join(HERE, 'transcribe.py'), src, transcriptPath], { stdio: ['ignore', 'inherit', 'inherit'] });
+  }
+  const transcript = JSON.parse(readFileSync(transcriptPath, 'utf8'));
+
+  // 3. Clock sync from tagged words vs transcript
+  const tags = (edl.cues || []).filter((c) => c.type === 'mute').map((c) => ({ t: c.in, match: wordMatcher(c) })).filter((t) => t.match);
+  const { coarse, pairs } = wordPairs(tags, transcript.words);
+  const fit = fitSync(pairs);
+  const manual = override.sync && (!override.sync.part || String(override.sync.part) === String(partId)) ? override.sync : null;
+  if (!fit && !manual && tags.length >= MISMATCH_MIN_TAGS) {
+    // Enough tagged words that a matching file would pair them; none paired, so the
+    // EDL most likely describes different media (same title, other cut or other work).
+    throw new Error(`EDL does not match this media: ${pairs.length} of ${tags.length} tagged words found in the transcript `
+      + `(coarse offset ${coarse ?? 'none'} s). Check the Plex mapping, or set sync.offsetSec in the override to proceed.`);
+  }
+  const sync = fit ? { scale: fit.scale, offset: fit.offset }
+    : { scale: manual?.scale || 1, offset: manual?.offsetSec || 0 };
+  console.error(fit
+    ? `Sync: local = va x ${fit.scale} + ${fit.offset} s (${fit.used}/${fit.total} word pairs, median residual ${fit.medResid} s)`
+    : `⚠ No transcript sync (${pairs.length} of ${tags.length} tagged words paired); using ${manual ? 'the override' : 'no'} offset: ${sync.offset} s`);
+
+  // 4. Decision model
+  const decisions = await getDecisionGateway({ logger: { debug() {}, info() {}, warn: console.warn, error: console.error } });
+  if (!decisions) throw new Error('No decision model configured (system auth jev.api_key). refine asks no other model.');
+
+  // 5. Cues
+  let cues = edl.cues || [];
+  if (flags.cues) { const want = new Set(String(flags.cues).split(',')); cues = cues.filter((c) => want.has(c.id)); }
+  const refiner = new CueRefiner({
+    media, renderer: new MagickRefineRenderer(), decisions,
+    aligner: new PythonWordAligner({ src }), transcript, timebase, src, sync,
+    duration: probe.duration, aspect: probe.width / probe.height,
+    log: (e) => appendFileSync(path.join(workDir, 'log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), part: partId, ...e })}\n`),
+    saveArtifact: (name, png) => { const p = path.join(workDir, 'art', name); writeFileSync(p, png); return path.relative(workDir, p); },
+    options: { region: !args.includes('--no-region'), ...(flags.snap ? { edgeSnapSec: Number(flags.snap) } : {}) },
+  });
+  if (flags.kinds) {
+    const { initialKind } = await import('../../server/domain/content-filter/refine/cueKinds.mjs');
+    const want = new Set(String(flags.kinds).split(','));
+    cues = cues.filter((c) => want.has(initialKind(c).kind));
+  }
+  if (args.includes('--limit')) cues = cues.slice(0, Number(flags.limit)); // the CLI's global limit has a default; only an explicit one applies
+
+  refiner.planWords(edl.cues || []);
+  const results = [];
+  let next = 0;
+  const conc = Math.max(1, Number(flags.concurrency) || 3);
+  const t0 = Date.now();
+  async function worker() {
+    while (next < cues.length) {
+      const cue = cues[next++];
+      const r = await refiner.refine(cue);
+      results.push(r);
+      const what = r.status === 'refined' ? `${r.in}–${r.out}` : r.reason;
+      console.error(`  [${results.length}/${cues.length}] ${cue.id} ${r.kind} ${r.status} ${what}`);
+    }
+  }
+  await Promise.all(Array.from({ length: conc }, worker));
+  // A filtered run (--cues/--kinds/--limit) must not replace the full run's results.
+  const partial = Boolean(flags.cues || flags.kinds || args.includes('--limit'));
+  const resultsName = partial ? `results-${partId}.partial.json` : `results-${partId}.json`;
+  writeFileSync(path.join(workDir, resultsName), JSON.stringify({ sync, version: QUESTION_VERSION, partial, results }, null, 1));
+
+  // 6. Merge and review list
+  const at = new Date().toISOString().slice(0, 10);
+  const { override: merged, review, counts } = mergeRefine(override, results, { part: partId, at, version: QUESTION_VERSION });
+  console.error(`\n${results.length} cues in ${Math.round((Date.now() - t0) / 1000)} s: ${counts.written} refined, ${counts.unknown} unknown, ${counts.giveup} not found, ${counts.keptManual} kept (manual)`);
+  if (!args.includes('--write')) {
+    console.error('(dry run: pass --write to merge into the override and write the review list)');
+    return { results, counts };
+  }
+  merged.contentId = merged.contentId || `plex:${rk}`;
+  if (!merged.sync && fit) merged.sync = { offsetSec: fit.offset, scale: fit.scale, method: 'transcript', samples: fit.used, medAbsResidSec: fit.medResid, part: partId };
+  mkdirSync(path.dirname(overridePath), { recursive: true });
+  writeFileSync(overridePath, yaml.dump(merged, { lineWidth: 140 }));
+  const reviewPath = path.join(dataFilterDir, 'review', `${rk}.refine.yml`);
+  mkdirSync(path.dirname(reviewPath), { recursive: true });
+  writeFileSync(reviewPath, yaml.dump({ contentId: `plex:${rk}`, part: partId, generatedAt: new Date().toISOString(), counts, items: review }, { lineWidth: 140 }));
+  console.error(`✓ override -> ${overridePath}\n✓ review (${review.length}) -> ${reviewPath}`);
+  return { results, counts };
+}

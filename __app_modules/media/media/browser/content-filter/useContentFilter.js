@@ -46,14 +46,15 @@ function createSfxPlayer(sounds) {
  * @param {{cues: Array}} args.edl        L1 base EDL
  * @param {object} args.profile           L2 profile/theme
  * @param {object} [args.override]        L3 per-title override
+ * @param {string|null} [args.part]       media part being played (refined cue times bind to a part)
  * @param {{play:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests)
  * @param {boolean} [args.enabled=true]
  * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array}}
  */
-export function useContentFilter({ getMediaEl, transport, edl, profile, override, sfx, enabled = true } = {}) {
+export function useContentFilter({ getMediaEl, transport, edl, profile, override, part = null, sfx, enabled = true } = {}) {
   const effectiveCues = useMemo(
-    () => (edl && profile ? resolveEffectiveCues({ edl, profile, override }) : []),
-    [edl, profile, override]
+    () => (edl && profile ? resolveEffectiveCues({ edl, profile, override, part }) : []),
+    [edl, profile, override, part]
   );
   const defaultSfx = useMemo(() => createSfxPlayer(profile?.sounds), [profile?.sounds]);
   const sfxPlayer = sfx || defaultSfx;

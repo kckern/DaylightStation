@@ -41,7 +41,7 @@
  * @module cli/contentfilter
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { hostname } from 'os';
 import path from 'path';
@@ -684,6 +684,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1044,6 +1045,56 @@ async function main() {
     return;
   }
 
+  if (command === 'refine-eval') {
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter refine-eval <ratingKey> [--key answer-key.yml] [--results results.json] [--json]'); process.exit(1); }
+    const { scoreVisual, scoreSpeech } = await import('../server/domain/content-filter/refine/refineScore.mjs');
+    const dir = path.join(filterMediaDir(), 'refine', rk);
+    const keyPath = flags.key || path.join(dir, 'answer-key.yml');
+    const key = loadYaml(keyPath);
+    if (!key) { console.error(`No answer key at ${keyPath}`); process.exit(1); }
+    const resultsPath = flags.results || path.join(dir, `results-${key.part}.json`);
+    if (!existsSync(resultsPath)) { console.error(`No results at ${resultsPath} (run refine first)`); process.exit(1); }
+    const { results } = JSON.parse(readFileSync(resultsPath, 'utf8'));
+    const v = scoreVisual(results, key.visual); const s = scoreSpeech(results, key.speech);
+    if (flags.json) { console.log(JSON.stringify({ visual: v, speech: s }, null, 1)); return; }
+    console.log(`visual: ${v.refined}/${v.keyed} refined ${JSON.stringify(v.status)}; both edges within 1 frame ${v.within1}, within 6 ${v.within6}, an edge off > 0.5 s ${v.offHalfSecond}`);
+    console.log(`        |start| median ${v.startMedian} p90 ${v.startP90} frames; |end| median ${v.endMedian} p90 ${v.endP90}; IoU median ${v.iouMedian?.toFixed(2)}; routing ${v.routing.ok}/${v.routing.n}`);
+    console.log(`speech: ${s.refined}/${s.keyed} refined; |start| median ${s.startMedian} ms p90 ${s.startP90}; |end| median ${s.endMedian} ms p90 ${s.endP90}; both within 30 ms ${s.within30}, within 80 ms ${s.within80}`);
+    return;
+  }
+
+  if (command === 'refine') {
+    const { runRefine, REFINE_USAGE } = await import('./contentfilter/refineCommand.mjs');
+    // One key, a comma list, or --all (every EDL on disk). A batch keeps going past failures
+    // and skips titles that already have results unless --force.
+    let keys = String(cmdArgs[0] || '').split(',').map((k) => k.replace(/[^0-9]/g, '')).filter(Boolean);
+    if (args.includes('--all')) {
+      keys = readdirSync(path.join(filterMediaDir(), 'edl')).filter((f) => f.endsWith('.edl.yml')).map((f) => f.replace('.edl.yml', ''));
+    }
+    if (!keys.length) { console.error(`${REFINE_USAGE}\n  --all                Every title with an EDL (batch; skips done titles unless --force)`); process.exit(1); }
+    if (!process.env.DAYLIGHT_BASE_PATH) process.env.DAYLIGHT_BASE_PATH = path.dirname(resolveDataDir());
+    const { getDecisionGateway } = await import('../../../../cli/_bootstrap.mjs');
+    const batch = keys.length > 1;
+    const failed = [];
+    for (const rk of keys) {
+      const done = existsSync(path.join(filterMediaDir(), 'refine', rk)) && readdirSync(path.join(filterMediaDir(), 'refine', rk)).some((f) => f.startsWith('results-'));
+      if (batch && done && !args.includes('--force')) { console.error(`skip ${rk} (already refined; --force to redo)`); continue; }
+      try {
+        await runRefine({
+          rk, flags, args, dataFilterDir: filterCacheDir(), mediaFilterDir: filterMediaDir(), loadPlexConfig, getDecisionGateway,
+          getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+        });
+      } catch (err) {
+        console.error(`refine ${rk} failed: ${err.message}`);
+        failed.push(rk);
+        if (!batch) process.exit(1);
+      }
+    }
+    if (batch) console.error(`\nbatch: ${keys.length} titles, ${failed.length} failed${failed.length ? `: ${failed.join(', ')}` : ''}`);
+    return;
+  }
+
   if (command === 'srt-review') {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error('Usage: contentfilter srt-review <plexRatingKey> [--srt file] [--out path] [--concurrency 4] [--min-confidence 0.7]'); process.exit(1); }
@@ -1239,6 +1290,10 @@ Commands:
   srt-review <ratingKey> Ask the decision model (Jev) how each word-list cue is used in context and
                         write a review file for a grown-up (household/content-filter/review/<rk>.yml).
                         Never edits cues. --srt <file>, --out, --concurrency 4, --min-confidence 0.7.
+  refine <ratingKey>    Turn every coarse cue into frame/ms-precise observations (and region tracks),
+                        asking only the decision model (Jev). Unsettled cues go to
+                        household/content-filter/review/<rk>.refine.yml. --part, --src, --cues,
+                        --kinds, --limit, --concurrency, --no-region, --transcript, --write.
   snap <ratingKey>      Whisper-align every mute cue to its true audio word boundary (ms) and
                         write precise in/out into the override. --limit N, --model, --write.
   bulk-export           Export every mapped movie's EDL (token; resumable; --force --delay)

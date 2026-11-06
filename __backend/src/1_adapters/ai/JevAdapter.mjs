@@ -14,7 +14,7 @@
  * Pricing is per input token; output tokens are free.
  */
 
-import { IDecisionGateway } from '#apps/common/ports/IDecisionGateway.mjs';
+import { IDecisionGateway, isImage } from '#apps/common/ports/IDecisionGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { estimateCostUsd } from './aiPricing.mjs';
 import { createScopedView, usageAttribution } from './usageAttribution.mjs';
@@ -28,6 +28,10 @@ const MAX_SCORE_LEVELS = 10;
 // How many leaders each part of a split choice sends to the final round
 const FINALISTS_PER_PART = 3;
 const PART_SEPARATOR = '__part';
+// Images are a preview feature: multipart upload, opt-in header, 280-1568 px per side
+const IMAGE_HEADER = 'TypeSafe-Danger-Zone-Images';
+const IMAGE_MIN_SIDE = 280;
+const IMAGE_MAX_SIDE = 1568;
 
 /** Methods a scoped view tags, and the index of each one's options argument. */
 const SCOPED_METHODS = Object.freeze({ evaluate: 2, callApi: 2 });
@@ -111,7 +115,10 @@ export class JevAdapter extends IDecisionGateway {
     }
 
     const model = options.model || this.model;
-    const first = await this.callApi('/systemone', { model, state, questions: wireQuestions }, { timeout: options.timeout, usageTags: options.usageTags });
+    const { wireState, assets, files } = extractImages(state);
+    const base = assets ? { state: wireState, assets } : { state };
+    const callOpts = { timeout: options.timeout, usageTags: options.usageTags, files };
+    const first = await this.callApi('/systemone', { model, ...base, questions: wireQuestions }, callOpts);
     const results = [first];
     const wireAnswers = { ...(first.answers || {}) };
 
@@ -123,7 +130,7 @@ export class JevAdapter extends IDecisionGateway {
       }
       // Pin the second round to the model that answered the first, so an alias
       // moving between the two calls cannot mix versions in one answer
-      const second = await this.callApi('/systemone', { model: first.model || model, state, questions: finals }, { timeout: options.timeout, usageTags: options.usageTags });
+      const second = await this.callApi('/systemone', { model: first.model || model, ...base, questions: finals }, callOpts);
       results.push(second);
       Object.assign(wireAnswers, second.answers || {});
       this.logger.debug?.('jev.choice.narrowed', {
@@ -197,11 +204,13 @@ export class JevAdapter extends IDecisionGateway {
     try {
       // validateStatus keeps axios from throwing on 4xx/5xx, which would
       // discard the API's error body before it can be read and logged
-      const response = await this.httpClient.post(url, data, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`
-        },
+      const files = options.files || null;
+      const body = files ? toMultipart(data, files) : data;
+      const headers = files
+        ? { Authorization: `Bearer ${this.apiKey}`, [IMAGE_HEADER]: 'true' }
+        : { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` };
+      const response = await this.httpClient.post(url, body, {
+        headers,
         timeout: options.timeout || this.timeout,
         validateStatus: () => true
       });
@@ -281,6 +290,62 @@ export class JevAdapter extends IDecisionGateway {
       this.logger.warn?.('jev.usage.record-failed', { endpoint, error: recordError.message });
     }
   }
+}
+
+// ============ Images ============
+
+/**
+ * Pull top-level image values out of an object state. Each becomes an asset
+ * reference in the state and a file part in the multipart body.
+ * @returns {{ wireState: any, assets: Object|null, files: Array|null }}
+ */
+function extractImages(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return { wireState: state, assets: null, files: null };
+  const entries = Object.entries(state);
+  if (!entries.some(([, v]) => isImage(v))) return { wireState: state, assets: null, files: null };
+  const wireState = {};
+  const assets = {};
+  const files = [];
+  for (const [key, value] of entries) {
+    if (!isImage(value)) { wireState[key] = value; continue; }
+    checkImageSize(key, value);
+    const part = `img-${files.length}`;
+    const ref = `asset-${files.length}-${key}`;
+    assets[ref] = { type: 'image', part };
+    files.push({ part, data: value.data, mediaType: value.mediaType || 'image/png' });
+    wireState[key] = ref;
+  }
+  return { wireState, assets, files };
+}
+
+function checkImageSize(key, img) {
+  const dims = (img.width && img.height) ? { width: img.width, height: img.height } : pngSize(img.data);
+  if (!dims) return; // not a PNG and no size given: let the API judge
+  const { width, height } = dims;
+  if (Math.min(width, height) < IMAGE_MIN_SIDE || Math.max(width, height) > IMAGE_MAX_SIDE) {
+    throw new InfrastructureError(`Image "${key}" is ${width}x${height}; Jev needs ${IMAGE_MIN_SIDE}-${IMAGE_MAX_SIDE} px per side`, {
+      code: 'VALIDATION_ERROR',
+      field: `state.${key}`
+    });
+  }
+}
+
+/** Width and height from a PNG's IHDR chunk, or null when the bytes are not a PNG. */
+export function pngSize(data) {
+  if (!data || data.length < 24) return null;
+  const sig = [0x89, 0x50, 0x4e, 0x47];
+  if (!sig.every((b, i) => data[i] === b)) return null;
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+function toMultipart(data, files) {
+  const form = new FormData();
+  form.append('request', new Blob([JSON.stringify(data)], { type: 'application/json' }));
+  for (const f of files) {
+    form.append(f.part, new Blob([f.data], { type: f.mediaType }), `${f.part}.${f.mediaType.split('/')[1] || 'bin'}`);
+  }
+  return form;
 }
 
 // ============ Wire translation ============

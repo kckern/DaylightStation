@@ -12,6 +12,12 @@
  * fully unit-testable; useContentFilter dispatches the effects to the DOM.
  */
 
+// Timing a refine pass measured on this file: no approximate widening.
+const PRECISE = new Set(['ms', 'frame']);
+
+// Overlay effects can be confined to a region track; the rest act on the whole cue.
+const REGIONAL = new Set(['blur', 'censor-bar', 'pixelate']);
+
 // Params we carry from a profile rule / override onto the effective cue.
 const PARAM_KEYS = ['sound', 'rect', 'style', 'level', 'text'];
 
@@ -69,7 +75,7 @@ function widenCue(eff, treatments) {
 
   let start = eff.in - lead;
   let end = eff.out + trail;
-  if (eff.precision !== 'ms' && approxWidth > 0 && end - start < approxWidth) {
+  if (!PRECISE.has(eff.precision) && approxWidth > 0 && end - start < approxWidth) {
     const center = (eff.in + eff.out) / 2;
     start = center - approxWidth / 2 - lead;
     end = center + approxWidth / 2 + trail;
@@ -93,7 +99,12 @@ function mergeParams(target, ...sources) {
  * @param {{edl: {cues: Array}, profile: Object, override?: Object}} args
  * @returns {Array} effective cues, sorted by start time
  */
-export function resolveEffectiveCues({ edl, profile, override } = {}) {
+/**
+ * @param {{edl: {cues: Array}, profile: Object, override?: Object, part?: string|number|null}} args
+ *   part: the media part being played. Refined cue times (`cueOverrides[id].refine.part`)
+ *   apply only to that part; on another part the cue falls back to the synced coarse time.
+ */
+export function resolveEffectiveCues({ edl, profile, override, part = null } = {}) {
   const overrides = override?.cueOverrides || {};
   const cardByCue = new Map((override?.cards || []).map((c) => [c.after, c.text]));
   // sync remaps imported (foreign-timed) cues onto this file: t_local = t*scale + offset.
@@ -107,8 +118,13 @@ export function resolveEffectiveCues({ edl, profile, override } = {}) {
 
   const out = [];
   for (const { cue, synced } of base) {
-    const ov = overrides[cue.id] || {};
+    let ov = overrides[cue.id] || {};
     if (ov.disabled) continue;
+    if (ov.refine && part != null && ov.refine.part != null && String(ov.refine.part) !== String(part)) {
+      // Refined on another edition: keep person-set keys, drop the measured timing
+      const { in: _i, out: _o, precision: _p, frameIn: _fi, frameOut: _fo, segments: _s, regions: _r, refine: _rf, ...rest } = ov;
+      ov = rest;
+    }
 
     // Effect precedence: override > cue (addCues) > profile rule > cue.type.
     // The cue.type fallback (VidAngel audio=mute/audiovisual=skip) applies ONLY when
@@ -152,12 +168,45 @@ export function resolveEffectiveCues({ edl, profile, override } = {}) {
 
     // Widen (pads + min-width for approx cues) so short/zero-width cues fire and
     // survive driver granularity. Runs after sync so pads are in local time.
-    widenCue(eff, profile?.treatments);
-
-    out.push(eff);
+    for (const part of expandMeasured(eff, ov)) out.push(widenCue(part, profile?.treatments));
   }
   out.sort((a, b) => a.in - b.in || a.out - b.out);
   return out;
+}
+
+/**
+ * A refined cue may carry several on-screen segments and a region track.
+ * Segments become separate cues (so a skip does not swallow the cutaway
+ * between them); a region track splits an overlay cue into one cue per
+ * keyframe with its `rect`. Non-overlay effects ignore regions.
+ */
+function expandMeasured(eff, ov) {
+  let parts = [eff];
+  if (Array.isArray(ov.segments) && ov.segments.length > 1) {
+    parts = ov.segments.map((s, i) => ({ ...eff, id: `${eff.id}#${i}`, in: s.in, out: s.out }));
+  }
+  if (!REGIONAL.has(eff.effect) || !Array.isArray(ov.regions) || !ov.regions.length || eff.rect) return parts;
+  const keys = ov.regions;
+  const out = [];
+  for (const p of parts) {
+    for (let k = 0; k < keys.length - 1; k++) {
+      const a = Math.max(p.in, keys[k].in); const b = Math.min(p.out, keys[k + 1].in);
+      if (b <= a) continue;
+      const key = keys[k];
+      if (!key.whole && !(key.cells && key.cells.length)) continue; // track gap: nothing to cover
+      const rect = key.whole ? undefined : (key.box || cellsRect(key.grid, key.cells));
+      out.push({ ...p, id: `${p.id}@${k}`, in: a, out: b, ...(rect ? { rect } : {}) });
+    }
+  }
+  return out.length ? out : parts;
+}
+
+/** Bounding rect (fractions of the picture) of grid cells, row-major from 0. */
+export function cellsRect(grid, cells) {
+  if (!grid || !cells?.length) return undefined;
+  const rows = cells.map((c) => Math.floor(c / grid)); const cols = cells.map((c) => c % grid);
+  const r0 = Math.min(...rows); const r1 = Math.max(...rows); const c0 = Math.min(...cols); const c1 = Math.max(...cols);
+  return { x: c0 / grid, y: r0 / grid, w: (c1 - c0 + 1) / grid, h: (r1 - r0 + 1) / grid };
 }
 
 /**

@@ -12,6 +12,12 @@ const CONTENT_FILTER_ENABLED = (typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).get('filter') === '1')
   || CONTENT_FILTER_DEBUG;
 
+/** Plex part id from a direct-play URL (/library/parts/<id>/...), or null (e.g. a transcode). */
+export function partFromSrc(src) {
+  const m = String(src || '').match(/\/library\/parts\/(\d+)\//);
+  return m ? m[1] : null;
+}
+
 export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   // --- Content filter (opt-in via ?filter=1) ---
   const filterContentId = (isPlex && CONTENT_FILTER_ENABLED)
@@ -27,6 +33,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     edl: filterData?.edl,
     profile: filterData?.profile,
     override: filterData?.override,
+    part: partFromSrc(media?.mediaUrl || media?.url || getMediaEl?.()?.currentSrc),
     enabled: CONTENT_FILTER_ENABLED && !!filterData?.edl,
   });
 
