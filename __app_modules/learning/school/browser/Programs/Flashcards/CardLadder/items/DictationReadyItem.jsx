@@ -12,11 +12,13 @@ export default function DictationReadyItem({ item, onRespond, busy = false }) {
   const finish = () => { if (!busy) onRespond({ done: true }); };
   useCardLadderKeys({ ' ': finish, enter: finish });
   const waiting = [...(item.needsRecording ?? []), ...(item.unknown ?? [])];
+  // The whole week, waiting words included (final review M6).
+  const total = (item.wordCount ?? 0) + waiting.length;
   return (
     <section className="wl-item wl-dictation-ready" aria-label="Dictation">
       {item.ready
         ? <p className="wl-dictation-ready__title">Dictation ready ✓</p>
-        : <p className="wl-dictation-ready__title">{item.wordsDone} of {item.wordCount} words done</p>}
+        : <p className="wl-dictation-ready__title">{item.wordsDone} of {total} words done</p>}
       {item.ready && <p className="wl-dictation-ready__line">You can write all {item.wordCount} words from sound.</p>}
       {(item.needsRecording ?? []).length > 0 && (
         <p className="wl-dictation-ready__line">{item.needsRecording.length === 1 ? 'One word needs its recording' : `${item.needsRecording.length} words need their recordings`} — a grown-up will add it.</p>
@@ -24,7 +26,6 @@ export default function DictationReadyItem({ item, onRespond, busy = false }) {
       {(item.unknown ?? []).length > 0 && (
         <p className="wl-dictation-ready__line">{item.unknown.length === 1 ? 'One word is not in your deck yet' : `${item.unknown.length} words are not in your deck yet`} — a grown-up will add it.</p>
       )}
-      {waiting.length > 0 && <p className="wl-dictation-ready__ids" data-testid="dictation-waiting">{waiting.join(', ')}</p>}
       <div className="wl-controls">
         <TouchButton variant="primary" keyHint="Space" disabled={busy} onClick={finish}>Done</TouchButton>
       </div>

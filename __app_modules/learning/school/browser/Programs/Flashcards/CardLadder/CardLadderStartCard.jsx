@@ -54,8 +54,13 @@ export function startCardProgress(progress) {
 export function dictationOffer(dictation) {
   if (!dictation) return null;
   if (dictation.unavailable) return { kind: 'note', text: 'Dictation needs a grown-up to fix it' };
-  if (dictation.done) return { kind: 'ready', text: 'Dictation ready ✓' };
-  if (!(dictation.remaining > 0)) return null;
+  // A finished week can be reviewed (spec Goals; final review I2).
+  if (dictation.done) return { kind: 'ready', text: 'Dictation ready ✓', action: 'Review dictation' };
+  // Words left only for a grown-up are said, never hidden (final review I3).
+  const waiting = (dictation.needsRecording ?? []).length + (dictation.unknown ?? []).length;
+  if (!(dictation.remaining > 0)) {
+    return waiting ? { kind: 'note', text: `Dictation: ${waiting} ${waiting === 1 ? 'word' : 'words'} waiting for a grown-up` } : null;
+  }
   return { kind: 'drill', text: `Dictation: ${dictation.remaining} ${dictation.remaining === 1 ? 'word' : 'words'}` };
 }
 
@@ -88,7 +93,10 @@ export default function CardLadderStartCard({ intro, fallbackTitle, onStart, onD
         <div className="wl-start__action">
           <TouchButton variant={offer?.kind === 'drill' && dayDone ? 'secondary' : 'primary'} keyHint="Space" onClick={onStart}>Start</TouchButton>
           {offer?.kind === 'drill' && (
-            <TouchButton variant={dayDone ? 'primary' : 'secondary'} keyHint="D" onClick={onDictation}>{offer.text}</TouchButton>
+            <TouchButton variant={dayDone ? 'primary' : 'secondary'} keyHint="D" onClick={() => onDictation(false)}>{offer.text}</TouchButton>
+          )}
+          {offer?.kind === 'ready' && (
+            <TouchButton variant="secondary" keyHint="D" onClick={() => onDictation(true)}>{offer.action}</TouchButton>
           )}
         </div>
       </div>

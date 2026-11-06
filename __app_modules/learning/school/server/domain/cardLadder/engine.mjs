@@ -591,7 +591,7 @@ function dictationItem(ctx, run) {
  * `dictationState`). Allowed before or after the daily goal; never touches
  * the goal, the clock or word status. Replaces any earlier run.
  */
-export function startDictation(ctx, { sittingId }) {
+export function startDictation(ctx, { sittingId, review = null }) {
   const state = ctx.dictation;
   if (typeof sittingId !== 'string' || !sittingId) throw new ValidationError('sittingId is required');
   if (!state?.week) throw new ValidationError('no dictation list is set');
@@ -601,6 +601,9 @@ export function startDictation(ctx, { sittingId }) {
   const number = (dayFile.dictationRuns ?? 0) + 1;
   dayFile.dictationRuns = number;
   dayFile.dictation = { id: `dc${number}`, sittingId, week: state.week, index: 0, lastWordId: null, ended: null, endedAt: null };
+  // A review of a finished week (final review I2): its word state lives on
+  // the run itself, so the learner's progress file is never touched.
+  if (review) dayFile.dictation.review = { words: clone(review.words) };
   return { status: clone(ctx.status), dayFile };
 }
 
@@ -630,6 +633,7 @@ function respondDictation(ctx, item, itemId, response, at) {
   const words = state.words.map((w) => (w.id === word.id ? { ...w, step: next.step, blindPasses: next.blindPasses, done: next.blindPasses >= BLIND_PASSES_TO_FINISH } : w));
   const remaining = words.filter((w) => !w.done).length;
   const nextState = { ...state, words, remaining, finished: remaining === 0, done: remaining === 0 && words.length > 0 && !(state.excluded?.length) };
+  if (run.review) run.review.words[word.id] = { step: next.step, blindPasses: next.blindPasses };
   run.index += 1;
   run.lastWordId = word.id;
   // A miss keeps the word (audit #3): the next item is the same word at its new step.
@@ -644,7 +648,7 @@ function respondDictation(ctx, item, itemId, response, at) {
   ctx.dayFile.items[itemId] = { at, response, result, wordId: item.wordId, task: item.task ?? DICTATION_TASK[step], source: 'dictation', dictationStep: step };
   return {
     status: ctx.status, dayFile: ctx.dayFile, result,
-    dictation: { wordId: word.id, week: state.week, step, pass, dontKnow, word: next, remaining, done: nextState.done, state: nextState },
+    dictation: { wordId: word.id, week: state.week, step, pass, dontKnow, word: next, remaining, done: nextState.done, state: nextState, review: Boolean(run.review) },
   };
 }
 

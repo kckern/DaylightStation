@@ -86,6 +86,42 @@ describe('CardLadderSittingService — dictation', () => {
     expect(out.dictation).toBeNull();
     expect(out.words.some((w) => 'dictation' in w)).toBe(false);
   });
+  it('a finished week can be reviewed: blind straight away, one correct write per word, ready — progress never written (final review I2)', async () => {
+    const finished = { week: WEEK, words: { gawi: { step: 'blind', blindPasses: 2 }, pul: { step: 'blind', blindPasses: 2 } } };
+    const store = dictationStore({ progress: finished });
+    const { service, logger } = makeD({ store });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const plain = await service.startDictation({ learnerId: 'test-learner', sittingId: opened.sittingId });
+    expect(plain).toMatchObject({ done: true });
+    const started = await service.startDictation({ learnerId: 'test-learner', sittingId: opened.sittingId, review: true });
+    expect(started.item).toMatchObject({ type: 'drill', step: 'dictation', dictationStep: 'blind', source: 'dictation' });
+    expect(JSON.stringify(started.item)).not.toContain('가위');
+    let item = started.item;
+    const write = async (typed) => ({ item } = await answer(service, opened.sittingId, item, { typed }));
+    await write('틀림');
+    expect(item).toMatchObject({ wordId: started.item.wordId, dictationStep: 'copy' });
+    await write(lexicon.entries.get(item.wordId).term);
+    await write(lexicon.entries.get(item.wordId).term);
+    await write(lexicon.entries.get(item.wordId).term);
+    expect(item).toMatchObject({ type: 'dictation-ready', ready: true });
+    expect(store.s.progressWrites).toEqual([]);
+    expect(events(logger, 'info', 'school.card-ladder.dictation.started').at(-1)[1]).toMatchObject({ review: true });
+  });
+  it('the intro and launch card probe only the tagged words\' term audio, never the whole lexicon (final review M3)', async () => {
+    const probed = [];
+    const store = dictationStore();
+    const { service } = makeD({ store, list: ['gawi'], media: (id) => { probed.push(id); return true; } });
+    await service.intro({ userId: 'test-learner', deckId: DECK });
+    expect(probed.length).toBeGreaterThan(0);
+    expect(probed.every((id) => /\/gawi\/term\./.test(id))).toBe(true);
+  });
+  it('the launch card says when the only words left are waiting for a grown-up (final review I3)', async () => {
+    const store = dictationStore({ progress: { week: WEEK, words: { gawi: { step: 'blind', blindPasses: 2 } } } });
+    const { service } = makeD({ store, media: (id) => !/\/pul\//.test(id) });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(status.description).toMatch(/Dictation: 1 word waiting for a grown-up$/);
+  });
   it('intro carries the week\'s dictation summary for the start card (Task 3)', async () => {
     const store = dictationStore();
     const { service } = makeD({ store });

@@ -217,3 +217,75 @@ describe('CardLadderProgram — weekly dictation: the practice menu', () => {
     expect(logs.dictationStarted).toHaveBeenCalledWith(expect.objectContaining({ from: 'menu' }));
   });
 });
+
+describe('CardLadderProgram — weekly dictation: final review fixes', () => {
+  it('the start-card tap never shows the sitting\'s first regular card before the drill (I1)', async () => {
+    let release;
+    const api = fakeApi({ openItem: summary });
+    api.dictation = vi.fn(() => new Promise((resolve) => { release = resolve; }));
+    render(<CardLadderProgram descriptor={descriptor} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Dictation: 7 words/ }));
+    await waitFor(() => expect(api.dictation).toHaveBeenCalled());
+    expect(screen.queryByText(/You practised/)).toBeNull();
+    release({ ok: true, status: 200, data: { item: pick, progress: dictationProgress, dictation: week() } });
+    await screen.findByRole('button', { name: '가방' });
+    expect(screen.queryByText(/You practised/)).toBeNull();
+  });
+
+  it('if the dictation call fails after opening, the child gets the sitting\'s own card, never a dead Loading (I1)', async () => {
+    const api = fakeApi({ openItem: flash });
+    api.dictation = vi.fn(async () => ({ ok: false, status: 500, data: { error: 'boom' } }));
+    render(<CardLadderProgram descriptor={descriptor} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Dictation: 7 words/ }));
+    expect(await screen.findByText('가위')).toBeInTheDocument();
+  });
+
+  it('a finished week offers Review on the start card; it asks the server for a review run (I2)', async () => {
+    const api = fakeApi({ dictation: week({ remaining: 0, done: true, ready: true }), first: blind });
+    render(<CardLadderProgram descriptor={descriptor} api={api} />);
+    expect(await screen.findByText(/Dictation ready ✓/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Review dictation/ }));
+    await screen.findByLabelText('Your answer');
+    expect(api.dictation).toHaveBeenCalledWith('s1', { userId: 'test-learner', review: true });
+  });
+
+  it('a finished week offers Review on the day-done card too (I2)', async () => {
+    const api = fakeApi({ openItem: summary, dictation: week({ remaining: 0, done: true, ready: true }), first: blind });
+    render(<CardLadderProgram descriptor={descriptor} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Start/ }));
+    const card = await screen.findByRole('region', { name: 'Done' });
+    fireEvent.click(within(card).getByRole('button', { name: /Review dictation/ }));
+    await waitFor(() => expect(api.dictation).toHaveBeenCalledWith('s1', { userId: 'test-learner', review: true }));
+  });
+
+  it('words left only for a grown-up are said, never hidden (I3)', async () => {
+    render(<CardLadderProgram descriptor={descriptor} api={fakeApi({ dictation: week({ remaining: 0, done: false, ready: false, needsRecording: ['ima'] }) })} />);
+    expect(await screen.findByText('Dictation: 1 word waiting for a grown-up')).toBeInTheDocument();
+  });
+
+  it('D on the start card starts the dictation (M7)', async () => {
+    const api = fakeApi();
+    render(<CardLadderProgram descriptor={descriptor} api={api} />);
+    await screen.findByRole('button', { name: /Dictation: 7 words/ });
+    fireEvent.keyDown(window, { key: 'd' });
+    await waitFor(() => expect(api.dictation).toHaveBeenCalled());
+  });
+
+  it('the copy step\'s give-up reads "Don\'t know" — it steps the word back, it does not skip (M9)', async () => {
+    await startRunFrom(fakeApi({ first: copy }));
+    await settledField();
+    expect(screen.getByRole('button', { name: /Don't know/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Skip/ })).toBeNull();
+  });
+
+  it('the ending counts the whole week and names no ids to the child (M6)', async () => {
+    await startRunFrom(fakeApi({ first: { ...ready, ready: false, wordCount: 9, wordsDone: 9, needsRecording: ['ima'] } }));
+    expect(await screen.findByText('9 of 10 words done')).toBeInTheDocument();
+    expect(screen.queryByText('ima')).toBeNull();
+  });
+});
+
+async function startRunFrom(api) {
+  render(<CardLadderProgram descriptor={descriptor} api={api} />);
+  fireEvent.click(await screen.findByRole('button', { name: /Dictation: 7 words/ }));
+}

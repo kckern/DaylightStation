@@ -44,10 +44,11 @@ export default function SummaryItem({ item, langs = null, onRespond = () => {}, 
   // button above Done; once the week is ready it is a line, and Done leads.
   const offer = typeof onDictation === 'function' ? dictationOffer(dictation) : null;
   const drill = offer?.kind === 'drill' ? () => { if (!busy) onDictation('summary'); } : null;
+  const review = offer?.kind === 'ready' ? () => { if (!busy) onDictation('summary', { review: true }); } : null;
   const more = () => { if (!busy) onRespond({ done: true }); };
   const canLearnMore = Number(item.learnMore) > 0 && typeof onLearnMore === 'function';
   const learnMore = () => { if (!busy) onLearnMore('summary'); };
-  useCardLadderKeys({ ' ': drill ?? onExit, enter: drill ?? onExit, 1: more, 2: canLearnMore ? learnMore : onExit, ...(drill ? { d: drill } : {}) });
+  useCardLadderKeys({ ' ': drill ?? onExit, enter: drill ?? onExit, 1: more, 2: canLearnMore ? learnMore : onExit, ...((drill ?? review) ? { d: drill ?? review } : {}) });
 
   const cheer = CHEERS[langs?.target] ?? null;
   const [turned, setTurned] = useState(false);
@@ -99,6 +100,7 @@ export default function SummaryItem({ item, langs = null, onRespond = () => {}, 
       <div className="wl-controls wl-controls--minor">
         <TouchButton variant="secondary" keyHint="1" disabled={busy} onClick={more}>Practise more</TouchButton>
         {canLearnMore && <TouchButton variant="secondary" keyHint="2" disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}
+        {review && <TouchButton variant="secondary" keyHint="D" disabled={busy} onClick={review}>{offer.action}</TouchButton>}
       </div>
     </section>
   );

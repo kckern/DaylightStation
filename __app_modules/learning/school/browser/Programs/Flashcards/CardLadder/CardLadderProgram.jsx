@@ -25,7 +25,7 @@ import { layoutForItem, mediaForItem } from "./itemLayout.js";
 import { stopAudio } from "./cardLadderAudio.js";
 import { useCardLadderKeys } from "./useCardLadderKeys.js";
 import { currentInput, noteInput, noteKeyEvent } from "./inputVia.js";
-import CardLadderStartCard from "./CardLadderStartCard.jsx";
+import CardLadderStartCard, { dictationOffer } from "./CardLadderStartCard.jsx";
 import CardLadderHeader from "./CardLadderHeader.jsx";
 import { CARRY_FIRST_HINT, STEP_HINTS, stepTrail } from "./stepTrail.js";
 import "./CardLadder.scss";
@@ -231,7 +231,11 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     cardLadderLog.started({ userId, deckId, test, scenario });
     open();
   }, [started, open, userId, deckId, test, scenario]);
-  useCardLadderKeys({ ' ': start, enter: start }, { enabled: !started });
+  // D starts (or reviews) the week's dictation from the start card (final review M7).
+  const startOffer = dictationOffer(intro?.dictation);
+  const startKeys = { ' ': start, enter: start };
+  if (startOffer?.kind === 'drill' || startOffer?.kind === 'ready') startKeys.d = () => startDictationRef.current?.('start', { review: startOffer.kind === 'ready' });
+  useCardLadderKeys(startKeys, { enabled: !started });
 
   useEffect(() => {
     if (!item) return;
@@ -472,11 +476,14 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
    * sitting first when none is open, like the assessment review; a week with
    * nothing left to drill just refreshes the offer.
    */
-  const startDictation = useCallback(async (from) => {
+  const startDictation = useCallback(async (from, { review = false } = {}) => {
     if (busyRef.current || typeof api.dictation !== 'function') return;
     busyRef.current = true;
     setBusy(true);
     let id = sittingRef.current;
+    // The opened sitting's own first card, held back: shown only if the run
+    // cannot start, so the child never sees (or hears) it flash past (final review I1).
+    let opened = null;
     if (!id) {
       setStarted(true);
       cardLadderLog.started({ userId, deckId, test, scenario, via: 'dictation' });
@@ -493,19 +500,20 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       sittingRef.current = id; closedRef.current = false;
       trace.setSitting(id); trace.setPackage(reply.data.package ?? null);
       setSession({ id, langs: sidesFromOpen(reply.data) });
-      show(reply.data.item, reply.data.progress ?? null);
+      opened = reply.data;
       cardLadderLog.sittingOpened({ package: reply.data.package ?? null, first: reply.data.item?.type ?? null, phase: reply.data.progress?.phase ?? null });
     }
-    const { ok, status, data } = await api.dictation(id, { userId });
+    const { ok, status, data } = await api.dictation(id, review ? { userId, review: true } : { userId });
     busyRef.current = false;
     if (!live.current) return;
     setBusy(false);
     if (ok && data?.dictation) setIntro((prev) => ({ ...(prev ?? {}), dictation: data.dictation }));
     if (ok && data?.item) {
       show(data.item, data.progress ?? null);
-      cardLadderLog.dictationStarted({ from, week: data.dictation?.week ?? null, remaining: data.dictation?.remaining ?? null });
+      cardLadderLog.dictationStarted({ from, review, week: data.dictation?.week ?? null, remaining: data.dictation?.remaining ?? null });
       return;
     }
+    if (opened) show(opened.item, opened.progress ?? null);
     if (ok) { cardLadderLog.dictationStarted({ from, week: data?.dictation?.week ?? null, remaining: data?.dictation?.remaining ?? null, nothingToDrill: true }); return; }
     cardLadderLog.dictationFailed({ from, status, error: data?.error ?? null });
     if (serverUnreachable(status)) unreachable('dictation');
@@ -630,7 +638,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
 
   let body = <p className="wl-loading">Loading…</p>;
   if (!started) {
-    body = <CardLadderStartCard intro={intro} fallbackTitle={title} onStart={start} onDictation={() => startDictation('start')} onPosterFailed={posterFailed} />;
+    body = <CardLadderStartCard intro={intro} fallbackTitle={title} onStart={start} onDictation={(review) => startDictation('start', { review })} onPosterFailed={posterFailed} />;
   } else if (error) {
     body = (
       <div className="wl-item wl-error" role="alert">

@@ -656,10 +656,20 @@ the miss held on screen: *Not quite — let's look at it again* and Next.
 
 | Place | While words are left | Once ready |
 |---|---|---|
-| Start card | `Dictation: N words` beside Start (primary once the day is done) | *Dictation ready ✓* line |
-| Day-done card | the big `Dictation: N words` above Done (Space) | *Dictation ready ✓* line, Done leads |
-| Practice menu | `Dictation: N words` (D) | — |
+| Start card | `Dictation: N words` beside Start (primary once the day is done; D) | *Dictation ready ✓* line + `Review dictation` (D) |
+| Day-done card | the big `Dictation: N words` above Done (Space) | *Dictation ready ✓* line + `Review dictation` (D), Done leads |
+| Practice menu | `Dictation: N words` (D) | `Review dictation` (D) |
 | Launch card (agenda) | description ends `Dictation: N words left` | — |
+
+When the only words left are waiting on a grown-up (no recording, not in the
+deck), every place says `Dictation: N words waiting for a grown-up` instead —
+it never goes quiet.
+
+**Review.** A finished week can be drilled again before the test:
+`POST …/dictation {userId, review: true}` opens a run with every word at
+blind and one pass banked, so one correct write finishes each word (a miss
+steps back as usual). The review's word state lives on the day file's run
+(`dictation.review.words`); `dictation-progress.yml` is never written.
 
 **The run.** The header shows one dot per word and *Dictation · Word 4 of
 10* — never the word — and **Stop for now**, which ends the run (`{stop:
@@ -1058,7 +1068,7 @@ at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
   say-from-cue); never touches status. Test mode's sink keeps nothing.
 - `POST /card-ladder/sittings/:sittingId/practice {userId, mode, help, filter, chosen, frontSide}` → `{item, progress}`;
   400 before today's goal
-- `POST /card-ladder/sittings/:sittingId/dictation {userId}` → `{item, progress, dictation}` — starts this
+- `POST /card-ladder/sittings/:sittingId/dictation {userId, review?}` → `{item, progress, dictation}` — starts this
   week's [dictation](#weekly-dictation-spec-2026-11-06) run in the sitting, before or after the goal; a week with
   nothing left to drill answers `{done, dictation}` with no item. A dictation item also takes `{stop: true}`
   (Stop for now) and the ending `{done: true}`

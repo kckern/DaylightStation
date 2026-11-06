@@ -70,7 +70,8 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
   const learnMore = () => { if (!busy && canLearnMore) onLearnMore('menu'); };
   // This week's dictation (spec 2026-11-06), on D while words are left.
   const offer = typeof onDictation === 'function' ? dictationOffer(dictation) : null;
-  const drill = offer?.kind === 'drill' ? () => { if (!busy) onDictation('menu'); } : null;
+  const drill = offer?.kind === 'drill' ? () => { if (!busy) onDictation('menu'); }
+    : offer?.kind === 'ready' ? () => { if (!busy) onDictation('menu', { review: true }); } : null;
   let keys = {};
   if (view.name === 'menu') {
     keys = {
@@ -128,7 +129,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
         ))}
         <TouchButton variant="secondary" keyHint={wordsKey} disabled={busy} onClick={toWords}>My words</TouchButton>
         {canLearnMore && <TouchButton variant="secondary" keyHint={learnKey} disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}
-        {drill && <TouchButton variant="secondary" keyHint="D" disabled={busy} onClick={drill}>{offer.text}</TouchButton>}
+        {drill && <TouchButton variant="secondary" keyHint="D" disabled={busy} onClick={drill}>{offer.kind === 'ready' ? offer.action : offer.text}</TouchButton>}
       </div>
       {notice && <p className="wl-say__notice" role="alert">{notice}</p>}
       <div className="wl-controls">
