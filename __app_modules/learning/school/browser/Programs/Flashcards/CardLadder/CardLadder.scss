@@ -403,3 +403,24 @@
   width: 0.8em; height: 0.8em; background: currentColor;
   clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
 }
+
+// ── Weekly dictation (spec 2026-11-06; UX audit placements + run shape) ──
+// Start card: the drill sits beside Start; a ready/fix line sits above them.
+.wl-start__action { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.wl-start__dictation { margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--ds-success); }
+// Day-done card: the drill is the big button above Done; "ready" is a line.
+.ds-touch.wl-summary__dictation-go { min-width: 320px; min-height: 80px; font-size: 1.75rem; }
+.wl-summary__dictation { margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--ds-success); }
+// Header: one dot per word of the week in place of the round steps.
+.wl-trail--dictation { display: flex; gap: 0.5rem; align-items: center; list-style: none; margin: 0; padding: 0; }
+.wl-dictation-dot {
+  width: 14px; height: 14px; border-radius: 999px; background: var(--ds-surface); box-shadow: inset 0 0 0 2px var(--ds-border);
+  &.is-done { background: var(--ds-success); box-shadow: none; }
+  &.is-current { box-shadow: inset 0 0 0 3px var(--ds-accent); }
+}
+.wl-verdict--dictation { font-size: 1.5rem; font-weight: 700; text-align: center; }
+// The ending.
+.wl-dictation-ready { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; text-align: center; }
+.wl-dictation-ready__title { margin: 0; font-size: 2.75rem; font-weight: 800; color: var(--ds-success); }
+.wl-dictation-ready__line { margin: 0; font-size: 1.25rem; color: var(--ds-text-mid); }
+.wl-dictation-ready__ids { margin: 0; font-size: 1rem; color: var(--ds-text-low); }

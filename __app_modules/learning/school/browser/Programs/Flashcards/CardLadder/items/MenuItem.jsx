@@ -3,6 +3,7 @@ import { TouchButton } from "../../../../../../../../frontend/src/lib/ui/index.j
 import { useCardLadderKeys } from "../useCardLadderKeys.js";
 import { cardLadderLog } from "../cardLadderLog.js";
 import WordsItem from "./WordsItem.jsx";
+import { dictationOffer } from "../CardLadderStartCard.jsx";
 
 const LABELS = {
   flashcards: 'Flashcards', match: 'Match', say: 'Say', write: 'Write', listen: 'Listen', drill: 'Drill', quiz: 'Quiz me',
@@ -20,7 +21,7 @@ const HELP_MODES = new Set(['say', 'write']);
  * calls `api.practice` and hands the whole `{ok, status, data}` to
  * `onPractice` — the program shows the run's first item or recovers.
  */
-export default function MenuItem({ item, api, sittingId, userId, deckId, langs, onPractice, onExit, onLearnMore = null }) {
+export default function MenuItem({ item, api, sittingId, userId, deckId, langs, onPractice, onExit, onLearnMore = null, dictation = null, onDictation = null }) {
   const [view, setView] = useState({ name: 'menu' });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -67,11 +68,14 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
   const canLearnMore = Number(item.learnMore) > 0 && typeof onLearnMore === 'function';
   const learnKey = String(modes.length + 2);
   const learnMore = () => { if (!busy && canLearnMore) onLearnMore('menu'); };
+  // This week's dictation (spec 2026-11-06), on D while words are left.
+  const offer = typeof onDictation === 'function' ? dictationOffer(dictation) : null;
+  const drill = offer?.kind === 'drill' ? () => { if (!busy) onDictation('menu'); } : null;
   let keys = {};
   if (view.name === 'menu') {
     keys = {
       ...Object.fromEntries(modes.map((mode, i) => [String(i + 1), () => choose(mode)])), [wordsKey]: toWords,
-      ...(canLearnMore ? { [learnKey]: learnMore } : {}), ' ': onExit, enter: onExit,
+      ...(canLearnMore ? { [learnKey]: learnMore } : {}), ...(drill ? { d: drill } : {}), ' ': onExit, enter: onExit,
     };
   }
   else if (view.name === 'help') keys = { ...Object.fromEntries(helpOptions(view.mode).flatMap((help, i) => (locked(view.mode, help) ? [] : [[String(i + 1), () => start({ mode: view.mode, help })]]))), backspace: back };
@@ -124,6 +128,7 @@ export default function MenuItem({ item, api, sittingId, userId, deckId, langs, 
         ))}
         <TouchButton variant="secondary" keyHint={wordsKey} disabled={busy} onClick={toWords}>My words</TouchButton>
         {canLearnMore && <TouchButton variant="secondary" keyHint={learnKey} disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}
+        {drill && <TouchButton variant="secondary" keyHint="D" disabled={busy} onClick={drill}>{offer.text}</TouchButton>}
       </div>
       {notice && <p className="wl-say__notice" role="alert">{notice}</p>}
       <div className="wl-controls">

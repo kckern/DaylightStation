@@ -1441,7 +1441,14 @@ export class CardLadderSittingService {
         : { doneToday: Boolean(dayFile.doneAt), progressLabel: dayFile.doneAt ? 'Done for today' : 'In progress', remaining: null };
       if (target !== today) return credit;
       try {
-        return { ...credit, ...this.#cardProjection(await this.#card({ userId, store, day: target, ...loaded }), target) };
+        const projection = this.#cardProjection(await this.#card({ userId, store, day: target, ...loaded }), target);
+        // The week's dictation rides on the launch card's line (UX audit
+        // placement 2), so it is seen before Start — never a reason to fail.
+        const { dictation } = this.#introDictation(store, userId, pkg, loaded.lexicon, loaded.deck);
+        const dictationLine = dictation && !dictation.unavailable && !dictation.done && dictation.remaining > 0
+          ? `Dictation: ${dictation.remaining} word${dictation.remaining === 1 ? '' : 's'} left` : null;
+        if (dictationLine) projection.description = [projection.description, dictationLine].filter(Boolean).join(' · ');
+        return { ...credit, ...projection };
       } catch (error) {
         // The card is decoration on the credit: a failure here must not cost the day its disc.
         this.#logger.warn?.('school.card-ladder.card-unavailable', { learnerId: userId, deckId, day: target, error: error.message });

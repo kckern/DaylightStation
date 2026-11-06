@@ -38,7 +38,7 @@ const ROW_3 = [['ㅋ'], ['ㅌ'], ['ㅊ'], ['ㅍ'], ['ㅠ'], ['ㅜ'], ['ㅡ']];
  * right there on screen with the keypad open over it.
  */
 export default function JamoKeypad({ open, onSubmit, onToggle, focusTarget }) {
-  const { offerJamo, offerBackspace } = useHangulTyping();
+  const { offerJamo, offerBackspace, offerSpace } = useHangulTyping();
   const [shift, setShift] = useState(false);
 
   if (!open) return null;
@@ -60,6 +60,12 @@ export default function JamoKeypad({ open, onSubmit, onToggle, focusTarget }) {
     event.preventDefault();
     focusTarget?.();
     offerBackspace();
+    if (shift) setShift(false);
+  };
+  const pressSpace = (event) => {
+    event.preventDefault();
+    focusTarget?.();
+    offerSpace?.();
     if (shift) setShift(false);
   };
   const pressSubmit = (event) => {
@@ -124,13 +130,24 @@ export default function JamoKeypad({ open, onSubmit, onToggle, focusTarget }) {
           ⌫
         </TouchButton>
       </div>
-      <TouchButton
-        variant="primary"
-        className="wl-keypad__enter"
-        onPointerDown={pressSubmit}
-      >
-        Enter
-      </TouchButton>
+      <div className="wl-keypad__row wl-keypad__row--bottom">
+        {/* Phrases (여우 두 마리) need a word gap the keypad can type. */}
+        <TouchButton
+          variant="secondary"
+          className="wl-keypad__key wl-keypad__space"
+          aria-label="Space"
+          onPointerDown={pressSpace}
+        >
+          space
+        </TouchButton>
+        <TouchButton
+          variant="primary"
+          className="wl-keypad__enter"
+          onPointerDown={pressSubmit}
+        >
+          Enter
+        </TouchButton>
+      </div>
     </div>
   );
 }

@@ -43,6 +43,7 @@ const HangulTypingContext = createContext({
   // nothing to type onto, so it reports every offer as refused.
   offerJamo: () => false,
   offerBackspace: () => false,
+  offerSpace: () => false,
 });
 
 export function useHangulTyping() { return useContext(HangulTypingContext); }
@@ -194,6 +195,13 @@ export default function HangulTypingProvider({ children, enabled = true }) {
     return composer.current.offerBackspace(el);
   }, [enabled]);
 
+  const offerSpace = useCallback(() => {
+    if (!enabled || modeRef.current !== 'KR') return false;
+    const el = document.activeElement;
+    if (!isComposableField(el)) return false;
+    return composer.current.offerSpace(el);
+  }, [enabled]);
+
   // A field may name its language; the nearest declaration wins and is released
   // when focus leaves it. `TypedRung` sets this from the rung's own response
   // language, so dictation and interpretation alternate without a keypress.
@@ -258,8 +266,8 @@ export default function HangulTypingProvider({ children, enabled = true }) {
   useEffect(() => { composer.current.end(); }, [mode]);
 
   const value = useMemo(
-    () => ({ mode, register, setMode, toggle, compositionState, setTypingOracle, offerJamo, offerBackspace }),
-    [mode, register, setMode, toggle, compositionState, setTypingOracle, offerJamo, offerBackspace],
+    () => ({ mode, register, setMode, toggle, compositionState, setTypingOracle, offerJamo, offerBackspace, offerSpace }),
+    [mode, register, setMode, toggle, compositionState, setTypingOracle, offerJamo, offerBackspace, offerSpace],
   );
 
   return (

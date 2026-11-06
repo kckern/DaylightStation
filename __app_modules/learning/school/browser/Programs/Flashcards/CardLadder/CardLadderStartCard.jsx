@@ -45,7 +45,23 @@ export function startCardProgress(progress) {
   return { total, mastered, recognised, text: `${recognised} recognised · ${mastered} mastered of ${total}` };
 }
 
-export default function CardLadderStartCard({ intro, fallbackTitle, onStart, onPosterFailed }) {
+/**
+ * The week's dictation on the start card (spec 2026-11-06; UX audit
+ * placement 3): a button beside Start while words are left — the primary one
+ * once the day's goal is done — or a "ready" line once every word is. A file
+ * a grown-up must fix is said plainly; nothing is shown with no week tagged.
+ */
+export function dictationOffer(dictation) {
+  if (!dictation) return null;
+  if (dictation.unavailable) return { kind: 'note', text: 'Dictation needs a grown-up to fix it' };
+  if (dictation.done) return { kind: 'ready', text: 'Dictation ready ✓' };
+  if (!(dictation.remaining > 0)) return null;
+  return { kind: 'drill', text: `Dictation: ${dictation.remaining} ${dictation.remaining === 1 ? 'word' : 'words'}` };
+}
+
+export default function CardLadderStartCard({ intro, fallbackTitle, onStart, onDictation = null, onPosterFailed }) {
+  const offer = onDictation ? dictationOffer(intro?.dictation) : null;
+  const dayDone = Boolean(intro?.today?.doneToday);
   const title = intro?.course?.title || fallbackTitle || 'Words';
   const progress = startCardProgress(intro?.progress);
   const pct = (n) => `${Math.min(100, (n / (progress?.total || 1)) * 100)}%`;
@@ -68,8 +84,12 @@ export default function CardLadderStartCard({ intro, fallbackTitle, onStart, onP
             </div>
           </div>
         )}
+        {offer && offer.kind !== 'drill' && <p className="wl-start__dictation" role="status">{offer.text}</p>}
         <div className="wl-start__action">
-          <TouchButton variant="primary" keyHint="Space" onClick={onStart}>Start</TouchButton>
+          <TouchButton variant={offer?.kind === 'drill' && dayDone ? 'secondary' : 'primary'} keyHint="Space" onClick={onStart}>Start</TouchButton>
+          {offer?.kind === 'drill' && (
+            <TouchButton variant={dayDone ? 'primary' : 'secondary'} keyHint="D" onClick={onDictation}>{offer.text}</TouchButton>
+          )}
         </div>
       </div>
     </div>

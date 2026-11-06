@@ -1607,6 +1607,20 @@ describe('CardLadderSittingService — dictation', () => {
     expect(out.item.source).not.toBe('dictation');
     expect(events(logger, 'info', 'school.card-ladder.dictation.exited')[0][1]).toMatchObject({ learnerId: 'test-learner', package: 'korean-vocab', week: WEEK, sittingId, reason: 'stop' });
   });
+  it('the launch card names the dictation: "Dictation: N words left" (audit placement 2)', async () => {
+    const store = dictationStore();
+    const { service } = makeD({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(status.description).toMatch(/Dictation: 2 words left$/);
+  });
+  it('the launch card says nothing about dictation with no week tagged', async () => {
+    const store = dictationStore();
+    const { service } = make({ media: true, store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(String(status.description ?? '')).not.toMatch(/Dictation/);
+  });
   it('intro carries the week\'s dictation summary for the start card (Task 3)', async () => {
     const store = dictationStore();
     const { service } = makeD({ store });

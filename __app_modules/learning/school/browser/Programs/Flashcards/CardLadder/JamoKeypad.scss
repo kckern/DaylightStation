@@ -22,6 +22,10 @@
 .wl-keypad__shift, .wl-keypad__backspace { min-width: 84px; width: 84px; font-size: 1.4rem; }
 
 .wl-keypad__enter { width: 100%; }
+// Space beside Enter: wide enough to find without looking, Enter keeps the rest.
+.wl-keypad__row--bottom { gap: 0.4rem; }
+.wl-keypad__row--bottom .wl-keypad__space { flex: 3 1 0; width: auto; font-size: 1.1rem; }
+.wl-keypad__row--bottom .wl-keypad__enter { flex: 2 1 0; width: auto; }
 
 .wl-keypad__close {
   position: absolute; top: -14px; right: -14px;

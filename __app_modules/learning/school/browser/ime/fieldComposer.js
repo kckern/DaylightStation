@@ -184,6 +184,21 @@ export class FieldComposer {
   }
 
   /**
+   * Offer a space from the keypad — a physical Space ends the run and lets
+   * the browser insert the space; a keypad has no browser default, so this
+   * ends the run and writes the space at the caret itself. Phrases such as
+   * 여우 두 마리 need it (dictation, UX audit #9).
+   */
+  offerSpace(el) {
+    this.end();
+    if (!isComposableField(el)) return false;
+    const at = el.selectionStart ?? el.value.length;
+    const to = el.selectionEnd ?? at;
+    writeField(el, `${el.value.slice(0, at)} ${el.value.slice(to)}`, at + 1);
+    return true;
+  }
+
+  /**
    * The shared tail of `handleKey` and `offerJamo`: apply one jamo to the
    * session in flight, honouring the copy-mode gate and auto-lock. By the
    * time either caller reaches here, `jamo` is known-valid and `el` is a

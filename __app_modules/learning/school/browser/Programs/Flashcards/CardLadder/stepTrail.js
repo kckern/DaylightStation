@@ -62,7 +62,20 @@ function subLineOf(progress, current) {
   return `Round ${progress.round.index} · ${ROUND_PHASE_NAME[phase] ?? 'Cards'}`;
 }
 
+/**
+ * A dictation run (spec 2026-11-06, UX audit #6) is its own shape: no round
+ * steps, no hint, and a line saying which of the week's words this is — the
+ * word itself is never named (the blind step must not show it).
+ */
+function dictationTrail(item) {
+  const count = Number(item.wordCount) || 0;
+  const done = Number(item.wordsDone) || 0;
+  const index = item.type === 'dictation-ready' ? null : (Number(item.wordIndex) || null);
+  return { steps: [], current: null, subLine: index ? `Dictation · Word ${index} of ${count}` : 'Dictation', dictation: { index, count, done } };
+}
+
 export function stepTrail(progress, item = null) {
+  if (item?.source === 'dictation') return dictationTrail(item);
   if (!progress) return { steps: [], current: null, subLine: '' };
   const current = currentStep(progress, item);
   const steps = [];
