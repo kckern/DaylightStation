@@ -5,6 +5,8 @@
  * there is no filter for the title, so optional policy is not loaded. When the
  * title's VidAngel tag set has a refined EDL, that one is served instead.
  */
+import { readiness } from '../readiness.mjs';
+
 export class GetContentFilter {
   /** @type {import('../ports/IContentFilterRepository.mjs').IContentFilterRepository} */
   #repository;
@@ -32,7 +34,7 @@ export class GetContentFilter {
       this.#repository.getProfile(profileName),
       this.#repository.getOverride(ratingKey),
     ]);
-    return { edl, profile, override };
+    return { edl, profile, override, certification: readiness(edl, profile) };
   }
 }
 

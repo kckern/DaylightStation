@@ -684,7 +684,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
-  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1065,6 +1065,14 @@ async function main() {
     return;
   }
 
+  if (command === 'certify') {
+    const { runCertify, CERTIFY_USAGE } = await import('./contentfilter/certifyCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(CERTIFY_USAGE); process.exit(1); }
+    try { runCertify({ rk, flags, args, mediaFilterDir: filterMediaDir() }); } catch (err) { console.error(`certify ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
   if (command === 'migrate-refined') {
     const { runMigrate, MIGRATE_USAGE } = await import('./contentfilter/migrateCommand.mjs');
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
@@ -1331,6 +1339,8 @@ Commands:
   sync <ratingKey>      Fit this copy's sync from the anchors in the tag set's refined EDL
                         (refined/<workId>-<tagSetId>.edl.yml); detects a different cut as
                         segments. No decision model. --part, --src, --transcript, --write.
+  certify <ratingKey>   Show/recompute a refined EDL's certification (machine: every mute precise);
+                        --parent --by <name> records a sign-off. --write.
   migrate-refined <rk>  Move a title's refined cue times from its override into the shareable
                         refined EDL (VidAngel clock); the override keeps its sync. --write.
   snap <ratingKey>      Whisper-align every mute cue to its true audio word boundary (ms) and

@@ -72,6 +72,7 @@ describe('content-filter router — two-root resolution', () => {
       edl: { cues: [{ id: 'c1', in: 1, out: 2, effect: 'mute' }] },
       profile: { name: 'family' },
       override: { source: 'manual', addCues: [{ id: 'manual1' }] },
+      certification: { level: 'none', requires: 'machine', ready: false },
     });
   });
 

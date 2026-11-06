@@ -37,7 +37,9 @@ export async function runMigrate({ rk, flags, args, dataFilterDir, mediaFilterDi
   const { pairs } = wordPairs(tags, transcript.words);
   const refinedById = Object.fromEntries(Object.entries(override.cueOverrides).filter(([, o]) => o?.refine && o.precision === 'ms'));
   const anchors = anchorsFrom({ pairs, words: transcript.words, segments: transcript.segments, sync, refinedById });
-  const refined = buildRefinedEdl({ edl, cueOverrides: override.cueOverrides, sync, anchors, refinedFrom: { runtimeSec: probe.duration, ...frames } });
+  const refinedPathEarly = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
+  const previous = existsSync(refinedPathEarly) ? yaml.load(readFileSync(refinedPathEarly, 'utf8')) : null;
+  const refined = buildRefinedEdl({ edl, cueOverrides: override.cueOverrides, sync, anchors, previous, at: new Date().toISOString().slice(0, 10), refinedFrom: { runtimeSec: probe.duration, ...frames } });
 
   const { cueOverrides, removed } = stripRefined(override.cueOverrides);
   const next = { ...override, sync: { ...sync, part: String(partId), frames }, cueOverrides };

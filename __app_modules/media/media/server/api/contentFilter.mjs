@@ -22,7 +22,7 @@ export function createContentFilterRouter({ getContentFilter, logger = console }
     if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
 
     const profileName = String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
-    const { edl, profile, override } = await getContentFilter.execute({
+    const { edl, profile, override, certification } = await getContentFilter.execute({
       ratingKey,
       profileName,
     });
@@ -35,7 +35,7 @@ export function createContentFilterRouter({ getContentFilter, logger = console }
       hasOverride: !!override, addCues: override?.addCues?.length || 0,
       cueOverrides: Object.keys(override?.cueOverrides || {}).length,
     });
-    res.json({ edl, profile, override });
+    res.json({ edl, profile, override, certification });
   }));
 
   return router;

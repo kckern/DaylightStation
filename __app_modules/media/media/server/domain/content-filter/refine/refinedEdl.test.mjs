@@ -22,7 +22,7 @@ const cueOverrides = {
 };
 
 describe('buildRefinedEdl', () => {
-  const out = buildRefinedEdl({ edl, cueOverrides, sync, anchors: [], refinedFrom: { fps: '24/1', startTime: 0 } });
+  const out = buildRefinedEdl({ edl, cueOverrides, sync, anchors: [], at: '2026-11-06', refinedFrom: { fps: '24/1', startTime: 0 } });
   const byId = Object.fromEntries(out.cues.map((c) => [c.id, c]));
 
   it('drops the Plex id and puts cue times on the VidAngel clock', () => {
@@ -49,7 +49,7 @@ describe('buildRefinedEdl', () => {
     expect(out.timebase.refinedCount).toBe(3);
   });
   it('rounds times to the millisecond', () => {
-    const o = buildRefinedEdl({ edl, cueOverrides: { a: { ...cueOverrides.a, in: 108.12345678 } }, sync });
+    const o = buildRefinedEdl({ edl, cueOverrides: { a: { ...cueOverrides.a, in: 108.12345678 } }, sync, at: '2026-11-06' });
     expect(o.cues.find((c) => c.id === 'a').in).toBe(100.123);
   });
 });

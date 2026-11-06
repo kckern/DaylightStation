@@ -19,6 +19,7 @@ describe('GetContentFilter', () => {
         edl: { cues: [{ id: 'c1' }] },
         profile: { name: 'family' },
         override: { source: 'manual' },
+        certification: { level: 'none', requires: 'machine', ready: false },
       });
     expect(contentFilterRepository.getEdl).toHaveBeenCalledWith('349222');
     expect(contentFilterRepository.getProfile).toHaveBeenCalledWith('family');
@@ -63,5 +64,19 @@ describe('GetContentFilter', () => {
     };
     const out = await new GetContentFilter({ contentFilterRepository }).execute({ ratingKey: '40417', profileName: 'family' });
     expect(out.edl).toBe(raw);
+  });
+
+  it('reports readiness against the profile requirement', async () => {
+    const refined = { certification: { level: 'machine' }, cues: [] };
+    const repo = (profile) => ({
+      getEdl: vi.fn().mockResolvedValue({ sourceRef: { workId: 1, tagSetId: 2 }, cues: [] }),
+      getRefinedEdl: vi.fn().mockResolvedValue(refined),
+      getProfile: vi.fn().mockResolvedValue(profile),
+      getOverride: vi.fn().mockResolvedValue(null),
+    });
+    const run = (profile) => new GetContentFilter({ contentFilterRepository: repo(profile) }).execute({ ratingKey: '1', profileName: 'x' });
+    expect((await run({})).certification).toEqual({ level: 'machine', requires: 'machine', ready: true });
+    expect((await run({ requiresCertification: 'parent' })).certification.ready).toBe(false);
+    expect((await run({ requiresCertification: 'none' })).certification.ready).toBe(true);
   });
 });

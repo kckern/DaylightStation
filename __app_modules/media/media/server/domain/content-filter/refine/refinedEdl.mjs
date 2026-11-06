@@ -5,6 +5,7 @@
  * household's copy and stay in its override.
  */
 import { mapTime, unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { certify } from './certification.mjs';
 
 const ms = (t) => Math.round(t * 1000) / 1000;
 const COPY_KEYS = ['frameIn', 'frameOut'];
@@ -23,8 +24,10 @@ export function refinedEdlName(edl) {
  * @param {object} p.sync - the copy's sync (VidAngel -> file time)
  * @param {Array<object>} [p.anchors]
  * @param {object} [p.refinedFrom] - the reference copy: { runtimeSec, fps, startTime }
+ * @param {string} p.at - date stamp for the certification (callers own the clock)
+ * @param {object} [p.previous] - the refined EDL being replaced (keeps a parent sign-off)
  */
-export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], refinedFrom = {} }) {
+export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], refinedFrom = {}, at = null, previous = null }) {
   const toVa = (t) => {
     const v = unmapTime(t, sync);
     if (v == null) throw new Error(`time ${t} is outside the copy's sync`);
@@ -44,9 +47,14 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
     delete out.approx;
     return out;
   });
-  const { contentId, cues: _c, precision: _p, ...head } = edl;
+  const { contentId, cues: _c, precision: _p, certification: _x, ...head } = edl;
+  // Certification is recomputed on every build; a person's sign-off carries over
+  // from the previous file while the bar still holds.
+  if (!at) throw new Error('buildRefinedEdl needs `at` (the date to stamp the certification with)');
+  const certification = certify({ cues, certification: previous?.certification }, { at });
   return {
     ...head,
+    certification,
     timebase: {
       clock: 'vidangel',
       runtimeSec: edl.runtimeUnalteredSec ?? null,

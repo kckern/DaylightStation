@@ -146,14 +146,17 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const vaSync = { scale: sync.scale, offsetSec: sync.offset };
   const refinedById = Object.fromEntries(results.filter((r) => r.status === 'refined' && r.kind === 'speech').map((r) => [r.id, r]));
   const anchors = anchorsFrom({ pairs, words: transcript.words, segments: transcript.segments, sync: vaSync, refinedById });
+  const refinedPath = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
+  const previous = existsSync(refinedPath) ? yaml.load(readFileSync(refinedPath, 'utf8')) : null;
   const refined = buildRefinedEdl({
-    edl, cueOverrides: merged.cueOverrides, sync: vaSync, anchors,
+    edl, cueOverrides: merged.cueOverrides, sync: vaSync, anchors, at, previous,
     refinedFrom: { runtimeSec: Math.round(probe.duration * 1000) / 1000, ...frames },
   });
-  const refinedPath = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
   mkdirSync(path.dirname(refinedPath), { recursive: true });
   writeFileSync(refinedPath, yaml.dump(refined, { lineWidth: 140 }));
-  console.error(`✓ refined EDL (${refined.timebase.refinedCount} refined, ${anchors.length} anchors) -> ${refinedPath}`);
+  const cert = refined.certification;
+  console.error(`✓ refined EDL (${refined.timebase.refinedCount} refined, ${anchors.length} anchors; certification ${cert.level}`
+    + `${cert.blocking ? `, ${cert.blocking.length} mutes still approximate` : ''}) -> ${refinedPath}`);
   const reviewPath = path.join(dataFilterDir, 'review', `${rk}.refine.yml`);
   mkdirSync(path.dirname(reviewPath), { recursive: true });
   writeFileSync(reviewPath, yaml.dump({ contentId: `plex:${rk}`, part: partId, generatedAt: new Date().toISOString(), counts, items: review }, { lineWidth: 140 }));
