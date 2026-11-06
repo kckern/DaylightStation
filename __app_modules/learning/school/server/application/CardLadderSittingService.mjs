@@ -785,8 +785,10 @@ export class CardLadderSittingService {
         throw new ValidationError('stale item');
       }
       changes = this.#housekeep(dayFile, sittingId, ms);
-      // Dictation runs on separate time (ruling 10): its answers never reach addActiveTime.
-      const timed = fresh.source === 'dictation' && fresh.id === itemId ? dayFile : addActiveTime(dayFile, ms);
+      // Dictation runs on separate time (ruling 10): its answers never reach
+      // addActiveTime. They do move the clock's reference, so the next regular
+      // answer counts only the time since this one — none of the dictation.
+      const timed = fresh.source === 'dictation' && fresh.id === itemId ? { ...dayFile, lastInputAt: ms } : addActiveTime(dayFile, ms);
       const step = respond({ ...ctx, status, dayFile: timed }, itemId, response, { at, verdict });
       ({ transitions, graded } = step);
       attempt = step.dictation ?? null;

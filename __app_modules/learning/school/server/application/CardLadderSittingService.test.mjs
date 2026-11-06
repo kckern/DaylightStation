@@ -1599,7 +1599,8 @@ describe('CardLadderSittingService — dictation', () => {
     expect(out.dictation).toMatchObject({ step: 'match', pass: true, remaining: 2, done: false });
     const day = store.s.days[TODAY];
     expect(day.activeMs).toBe(activeMs);
-    expect(day.lastInputAt).toBe(lastInputAt);
+    // The regular clock's reference moves past the dictation answer (fix round 1), adding nothing.
+    expect(day.lastInputAt).toBeGreaterThan(lastInputAt ?? 0);
     expect(day.doneAt).toBeNull();
     expect(day.items[started.item.id]).toMatchObject({ wordId: 'gawi', task: 'D.1', source: 'dictation', result: { correct: true } });
     expect(store.s.progress).toMatchObject({ week: WEEK, words: { gawi: { step: 'copy', blindPasses: 0 } } });
@@ -1692,4 +1693,42 @@ describe('CardLadderSittingService — dictation', () => {
     expect(other.item.source).not.toBe('dictation');
     expect(other.progress.phase).not.toBe('dictation');
   });
+
+  it('a regular answer right after a dictation stretch credits no dictation time', async () => {
+    const store = dictationStore();
+    const { service, advance } = make({ media: true, store });
+    const regular = await service.open({ userId: 'test-learner', deckId: DECK });
+    // One regular answer starts the goal clock.
+    const seen = await answer(service, regular.sittingId, regular.item, { seen: true });
+    const dictating = await service.open({ userId: 'test-learner', deckId: DECK });
+    const started = await service.startDictation({ learnerId: 'test-learner', package: 'korean-vocab', sittingId: dictating.sittingId });
+    advance(40000);
+    await answer(service, dictating.sittingId, started.item, { choice: '가위' });
+    const before = store.s.days[TODAY].activeMs;
+    await answer(service, regular.sittingId, seen.item, { typed: '가위' });
+    expect(store.s.days[TODAY].activeMs - before).toBeLessThan(20000);
+  });
+
+  it('D.1 keeps a lone authored decoy and borrows list words of any kind to make four choices', async () => {
+    const entries = new Map([
+      ['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['가이'], gloss: ['x', 'y', 'z'] } }],
+      ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: [], gloss: ['u', 'v', 'w'] } }],
+      ['saram', { id: 'saram', group: 'week-01', term: '사람 들', gloss: 'People', kind: 'phrase', decoys: { term: [], gloss: ['p', 'q', 'r'] } }],
+      ['mul', { id: 'mul', group: 'week-01', term: '물', gloss: 'Water', kind: 'word', decoys: { term: [], gloss: ['m', 'n', 'o'] } }],
+    ]);
+    const lex = { ...lexicon, entries };
+    const store = dictationStore({ list: { week: WEEK, words: ['gawi', 'pul', 'saram'] } });
+    const { started, service, sittingId } = await begin({ store, lexiconData: lex });
+    expect(started.item.wordId).toBe('gawi');
+    expect(started.item.choices).toHaveLength(4);
+    expect(started.item.choices).toEqual(expect.arrayContaining(['가위', '가이', '풀', '사람 들']));
+    // pul has no authored decoys: other list words of any kind, then the lexicon fill it to four.
+    const next = await answer(service, sittingId, started.item, { choice: '가위' });
+    expect(next.item.wordId).toBe('pul');
+    expect(next.item.choices).toHaveLength(4);
+    expect(new Set(next.item.choices).size).toBe(4);
+    expect(next.item.choices.filter((c) => c === '풀')).toHaveLength(1);
+    expect(next.item.choices).toEqual(expect.arrayContaining(['풀', '가위', '사람 들', '물']));
+  });
 });
+

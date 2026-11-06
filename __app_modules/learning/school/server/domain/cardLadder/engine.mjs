@@ -524,13 +524,28 @@ function openDictation(ctx) {
   return nextDictationWord(state, { lastWordId: run.lastWordId }) ? run : null;
 }
 
-// Hear the term, pick its spelling: the lexicon's authored `decoys.term`
-// first; only a word with fewer than three authored decoys borrows other list words.
+// Hear the term, pick its spelling. Decoys in order: the lexicon's authored
+// `decoys.term` (seeded order), then other list words of any kind, then other
+// lexicon terms — deduped, never the answer, so the pick is always the answer
+// plus three decoys when the lexicon has that many. Only the first three
+// reach `pickTermChoices`, so its own shuffle can never drop an authored one.
+const choiceKey = (text) => String(text ?? '').normalize('NFC').trim().toLowerCase();
+
 function dictationChoices(ctx, entry, seed) {
-  const authored = entry.decoys?.term ?? [];
-  const others = authored.length >= DICTATION_MIN_CHOICES ? []
-    : (ctx.dictation?.words ?? []).map((w) => ctx.lexicon.entries.get(w.id)).filter((other) => other && other.id !== entry.id);
-  return pickTermChoices(entry, others, seed).choices;
+  const listIds = (ctx.dictation?.words ?? []).map((w) => w.id).filter((id) => id !== entry.id);
+  const listTerms = listIds.map((id) => ctx.lexicon.entries.get(id)?.term);
+  const listSet = new Set(listIds);
+  const lexiconTerms = seededShuffle([...ctx.lexicon.entries.values()].filter((other) => other.id !== entry.id && !listSet.has(other.id)).map((other) => other.term), hashString(`${seed}|lexicon`));
+  const seen = new Set([choiceKey(entry.term)]);
+  const decoys = [];
+  for (const term of [...seededShuffle(entry.decoys?.term ?? [], hashString(`${seed}|authored`)), ...listTerms, ...lexiconTerms]) {
+    const key = choiceKey(term);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    decoys.push(term);
+    if (decoys.length === DICTATION_MIN_CHOICES) break;
+  }
+  return pickTermChoices({ ...entry, decoys: { ...entry.decoys, term: decoys } }, [], seed).choices;
 }
 
 function dictationItem(ctx, run) {
