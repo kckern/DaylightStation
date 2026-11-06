@@ -320,6 +320,28 @@ export class CardLadderSittingService {
 
   /** Per word: which assets exist (booleans, what the engine reads) and their ids. */
   /**
+   * The launch card's buttons (owner 2026-11-06: dictation and flashcard
+   * review always one tap from the card, whatever the day). The primary is
+   * what is most worth doing now: dictation while words are left, else
+   * today's cards before the goal, else review.
+   */
+  #launchEntries({ doneToday, dictation }) {
+    const drill = dictation && !dictation.unavailable && !dictation.done && dictation.remaining > 0;
+    const ready = dictation?.done === true;
+    const primary = drill ? 'dictation' : (doneToday ? 'review' : 'today');
+    const all = {
+      dictation: drill ? { id: 'dictation', label: 'Practise dictation' } : null,
+      'dictation-review': ready ? { id: 'dictation-review', label: 'Review dictation' } : null,
+      today: { id: 'today', label: "Today's cards" },
+      review: { id: 'review', label: 'Review flashcards' },
+    };
+    const order = drill
+      ? (doneToday ? ['dictation', 'review', 'today'] : ['dictation', 'today', 'review'])
+      : (doneToday ? ['review', 'dictation-review', 'today'] : ['today', 'review', 'dictation-review']);
+    return order.map((id) => all[id]).filter(Boolean).map((entry) => ({ ...entry, role: entry.id === primary ? 'primary' : 'secondary' }));
+  }
+
+  /**
    * Term audio for the week's tagged words only (final review M3): the start
    * card and every agenda card read this, and probing the whole lexicon's
    * media there is ~300 file checks per render on a slow mount.
@@ -1553,7 +1575,7 @@ export class CardLadderSittingService {
           if (doneToday) lines.push('Flashcards: practise anytime');
           if (lines.length) lesson.description = [lesson.description, ...lines].filter(Boolean).join('\n');
         }
-        return { ...credit, ...projection };
+        return { ...credit, ...projection, entries: this.#launchEntries({ doneToday: Boolean(dayFile.doneAt), dictation }) };
       } catch (error) {
         // The card is decoration on the credit: a failure here must not cost the day its disc.
         this.#logger.warn?.('school.card-ladder.card-unavailable', { learnerId: userId, deckId, day: target, error: error.message });

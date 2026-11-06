@@ -576,7 +576,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     if (target?.kind === 'program' && target.program === 'flashcards' && isCardLadderPolicy(target.policy)) {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
-      setActive({ mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null } });
+      setActive({ mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null, entry: target.entry ?? null } });
       openSection('flashcards');
       return true;
     }

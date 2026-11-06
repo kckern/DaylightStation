@@ -360,3 +360,33 @@ describe('CardLadderProgram — always available (owner 2026-11-06)', () => {
     expect(screen.getByRole('button', { name: /Review flashcards/ })).toBeInTheDocument();
   });
 });
+
+describe('CardLadderProgram — opened at a launch-card entry (owner 2026-11-06)', () => {
+  const menu = { id: 'menu', type: 'menu', learnMore: 0, modes: ['flashcards'], sayHelp: [], writeHelp: [true] };
+  it('entry "dictation" goes straight into the drill — no start card', async () => {
+    const api = fakeApi();
+    render(<CardLadderProgram descriptor={{ ...descriptor, entry: 'dictation' }} api={api} />);
+    await screen.findByRole('button', { name: '가방' });
+    expect(api.dictation).toHaveBeenCalledWith('s1', { userId: 'test-learner' });
+    expect(screen.queryByRole('button', { name: /^Start/ })).toBeNull();
+  });
+  it('entry "dictation-review" starts a review run', async () => {
+    const api = fakeApi({ dictation: week({ remaining: 0, done: true, ready: true }), first: blind });
+    render(<CardLadderProgram descriptor={{ ...descriptor, entry: 'dictation-review' }} api={api} />);
+    await screen.findByLabelText('Your answer');
+    expect(api.dictation).toHaveBeenCalledWith('s1', { userId: 'test-learner', review: true });
+  });
+  it('entry "review" opens the practice menu', async () => {
+    const api = fakeApi({ dictation: null });
+    api.menu = vi.fn(async () => ({ ok: true, status: 200, data: { item: menu, progress } }));
+    api.words = vi.fn(async () => ({ ok: true, status: 200, data: { words: [] } }));
+    render(<CardLadderProgram descriptor={{ ...descriptor, entry: 'review' }} api={api} />);
+    await screen.findByRole('heading', { name: 'Practice' });
+  });
+  it('entry "today" opens today\'s cards', async () => {
+    const api = fakeApi({ dictation: null });
+    render(<CardLadderProgram descriptor={{ ...descriptor, entry: 'today' }} api={api} />);
+    expect(await screen.findByText('가위')).toBeInTheDocument();
+    expect(api.dictation).not.toHaveBeenCalled();
+  });
+});

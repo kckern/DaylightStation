@@ -245,7 +245,11 @@ function buildCard(resolution, { mediaSurface = null, bankPrintable = false, ban
       // Opens in place on the panel — no room to walk to, so no destination to
       // name beyond the program itself.
       const name = resolution.unit?.title ?? resolution.programId;
-      return { work: action('program', `Open ${name}`, resolution.programId), sentence: null };
+      const work = action('program', `Open ${name}`, resolution.programId);
+      // Entries are buttons of this ONE action (each opens the program at a
+      // place), so the action stays unique by kind for RunSelfServiceAction.
+      const entries = resolution.unit?.entries;
+      return { work: Array.isArray(entries) && entries.length ? { ...work, entries } : work, sentence: null };
     }
     case 'companion':
       return {

@@ -525,7 +525,22 @@ export default function LaunchCard({
                 )}
                 {message && <p className="school-selfservice-card__sentence" role="status">{message}</p>}
                 <div className="school-selfservice-card__actions">
-                  {actions.map((action, index) => (
+                  {actions.flatMap((action, index) => (Array.isArray(action.entries) && action.entries.length
+                    // A program with entries (card ladder: dictation, review,
+                    // today — owner 2026-11-06) draws a button per entry, each
+                    // opening the program there; no generic "Open …" hop.
+                    ? action.entries.map((entry, i) => (
+                      <CardAction
+                        key={`${action.kind}-${entry.id}`}
+                        action={{ kind: action.kind, target: action.target, label: entry.label, role: entry.role ?? 'secondary' }}
+                        actionRef={index === 0 && i === 0 ? actionFocusRef : null}
+                        onAction={() => onAction(action, { entry: entry.id })}
+                        onExit={onExit}
+                        busy={busy}
+                        inert={isPreview || action.inert === true}
+                      />
+                    ))
+                    : [(
                     <CardAction
                       key={`${action.kind}-${index}`}
                       action={action}
@@ -539,7 +554,7 @@ export default function LaunchCard({
                       // unambiguously not part of what a child would see.
                       inert={isPreview || action.inert === true}
                     />
-                  ))}
+                  )]))}
                   {/* A preview never synthesises an exit — the band carries it,
                       and a second "Close" inside the card would be the one
                       live-looking button on a dead card. */}

@@ -102,7 +102,7 @@ function remainingLabel(progress) {
  * the page's user gesture, so every clip after it may autoplay.
  */
 export default function CardLadderProgram({ descriptor, api: injected = null, resolveAssetUrl = (id) => id, onExit = () => {} }) {
-  const { userId = null, deckId = null, test = false, scenario = null, title = null } = descriptor ?? {};
+  const { userId = null, deckId = null, test = false, scenario = null, title = null, entry = null } = descriptor ?? {};
   const api = useMemo(() => injected ?? createCardLadderApi({ test }), [injected, test]);
   // One trace per mount (spec §8) — created once, bound to the cardLadderLog
   // facade for this component's lifetime so every event below (and every
@@ -116,7 +116,8 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [started, setStarted] = useState(false);
+  // Opened at a launch-card entry, the start card is skipped (owner 2026-11-06).
+  const [started, setStarted] = useState(Boolean(entry));
   const stageRef = useRef(null);
   // Only the latest open may land (a reopen can overlap a slow first open).
   const generation = useRef(0);
@@ -582,6 +583,18 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
   startDictationRef.current = startDictation;
   const reviewFlashcardsRef = useRef(null);
   reviewFlashcardsRef.current = reviewFlashcards;
+  // A launch-card entry opens the program right there: the drill, a review
+  // run, the practice menu or today's cards — once, on mount.
+  const entryRanRef = useRef(false);
+  useEffect(() => {
+    if (!entry || entryRanRef.current) return;
+    entryRanRef.current = true;
+    cardLadderLog.entryOpened({ entry });
+    if (entry === 'dictation') startDictation('launch');
+    else if (entry === 'dictation-review') startDictation('launch', { review: true });
+    else if (entry === 'review') reviewFlashcards('launch');
+    else { cardLadderLog.started({ userId, deckId, test, scenario, via: 'launch' }); open(); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Back on the day-done card after a run: re-read the offer, so its count is today's.
   useEffect(() => {
     if (item?.type !== 'summary' || typeof api.intro !== 'function' || !userId || !deckId) return undefined;
