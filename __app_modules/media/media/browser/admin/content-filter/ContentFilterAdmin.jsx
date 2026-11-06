@@ -135,7 +135,7 @@ function SceneRow({ ratingKey, scene, busy, disabled, onRule }) {
           <Anchor href={playHref} target="_blank" rel="noreferrer" size="sm">Play scene</Anchor>
           <SegmentedControl size="xs" disabled={disabled} value={ruled}
             data={[{ label: `Profile (${EFFECT_LABEL[scene.profileEffect] ?? scene.profileEffect})`, value: 'profile' }, { label: 'Off', value: 'off' }, { label: 'Blackout', value: 'blackout' }, { label: 'Skip', value: 'skip' }]}
-            onChange={(v) => onRule({ effect: v })} />
+            onChange={(v) => onRule(v === 'profile' ? { effect: 'profile', disabled: false } : { effect: v })} />
         </Group>
       </Group>
       <Group gap="xs" mt={6} align="center" wrap="wrap">

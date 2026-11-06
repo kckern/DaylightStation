@@ -229,6 +229,12 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
   if (!scenes.length) return summary;
   const ov = override?.sceneOverrides || {};
   const holdSec = profile?.treatments?.['skip-card']?.holdSec ?? 2.5;
+  // A grown-up turned these scenes off: their cues play by their own rules even
+  // where an overlapping scene's span covers them.
+  const keepOwn = new Set(scenes.filter((sc) => {
+    const so = ov[sc.id];
+    return so?.disabled || so?.effect === 'off';
+  }).flatMap((sc) => sc.cues || []));
   // Effects first, then bridge neighbours of a shared group with the same effect
   // across a short gap, so the child sees one black (or one card), not black-picture-black.
   const ruled = [...scenes].sort((a, b) => a.in - b.in)
@@ -256,7 +262,7 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
       const rank = HIDE_RANK[c.effect];
       if (rank == null || rank > HIDE_RANK[effect] || String(c.category || '').startsWith('credits')) continue;
       const base = String(c.id).split(/[#@]/)[0];
-      if (members.has(base) || inside(c)) out.splice(i, 1);
+      if (members.has(base) || (inside(c) && !keepOwn.has(base))) out.splice(i, 1);
     }
     const approved = so.card?.text || null;
     const category = `scene/${(scene.groups || [])[0] || 'other'}`;

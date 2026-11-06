@@ -198,6 +198,16 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       if (!Number.isFinite(t)) return;
       const active = cuesActiveAt(effectiveCues, t);
 
+      // A skip is "done" only while its seek is in flight. Once the playhead is
+      // outside the skipped span it is forgotten, so rewinding into it skips it
+      // again (a scene skip has already removed its own blurs: playing it would
+      // show the scene unfiltered).
+      const done = skipCardRef.current.doneIds;
+      if (done.size) {
+        const activeSkips = new Set(active.filter((c) => c.effect === 'skip-card').map((c) => c.id));
+        for (const id of [...done]) if (!activeSkips.has(id)) done.delete(id);
+      }
+
       // skip-card: seek to the resume point and PAUSE so the seek buffers behind the
       // card; show the card; resume (play) after holdSec so playback is instant.
       const sc = active.find((c) => c.effect === 'skip-card' && !skipCardRef.current.doneIds.has(c.id));
@@ -212,6 +222,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (skipCardRef.current.timer) clearTimeout(skipCardRef.current.timer);
         skipCardRef.current.timer = setTimeout(() => {
           skipCardRef.current.timer = null;
+          // The seek did not land (still inside the span): seek again before resuming.
+          if (el.currentTime >= sc.in && el.currentTime < sc.out) {
+            logger().warn?.('content-filter.skip-card.reseek', { cue: sc.id, at: +el.currentTime.toFixed(2) });
+            transport?.seek?.(sc.out + SKIP_EPSILON);
+          }
           try { el.play?.(); } catch (_) { /* ignore */ }
           setSkipCardPaused(false);
           setActiveCard(null);

@@ -21,6 +21,16 @@ If nothing story-relevant happened, write a neutral line ("The fight is over.").
 
 export class ContentFilterScenes {
   #repo; #ai; #logger; #clock;
+  #queues = new Map(); // ratingKey -> tail promise: one read-modify-write at a time per title
+
+  /** Run fn after any earlier write for the same title (two Admin tabs must not clobber each other). */
+  #serial(ratingKey, fn) {
+    const prev = this.#queues.get(ratingKey) || Promise.resolve();
+    const next = prev.catch(() => {}).then(fn);
+    this.#queues.set(ratingKey, next);
+    next.finally(() => { if (this.#queues.get(ratingKey) === next) this.#queues.delete(ratingKey); }).catch(() => {});
+    return next;
+  }
 
   constructor({ contentFilterRepository, aiGateway = null, logger = console, clock = () => new Date() } = {}) {
     if (!contentFilterRepository) throw new Error('ContentFilterScenes requires contentFilterRepository');
@@ -84,8 +94,12 @@ export class ContentFilterScenes {
    * Draft card text for every scene that hides something (or all with `all`),
    * keeping drafts that exist unless `force`. Writes the refined EDL.
    */
-  async draftCards({ ratingKey, profileName = 'family', all = false, force = false }) {
+  async draftCards(args) {
     if (!this.#ai) throw new Error('No AI gateway configured for title cards');
+    return this.#serial(args.ratingKey, () => this.#draftCards(args));
+  }
+
+  async #draftCards({ ratingKey, profileName = 'family', all = false, force = false }) {
     const t = await this.#load(ratingKey, profileName);
     if (!t) return null;
     const trusted = trustedAxes(t.refined);
@@ -134,7 +148,11 @@ export class ContentFilterScenes {
    * Record a grown-up's ruling. `effect`: 'profile' clears it, else off|blackout|skip.
    * `card`: { approve: true, text? } approves (the draft unless text is given); null clears.
    */
-  async rule({ ratingKey, sceneId, effect, disabled, card, by = 'admin' }) {
+  async rule(args) {
+    return this.#serial(args.ratingKey, () => this.#rule(args));
+  }
+
+  async #rule({ ratingKey, sceneId, effect, disabled, card, by = 'admin' }) {
     const raw = await this.#repo.getEdl(ratingKey);
     const ref = raw?.sourceRef;
     const refined = ref ? await this.#repo.getRefinedEdl({ workId: ref.workId, tagSetId: ref.tagSetId }) : null;

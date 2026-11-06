@@ -234,6 +234,34 @@ describe('useContentFilter', () => {
     vi.useRealTimers();
   });
 
+  it('skip-card: rewinding into a skipped scene skips it again', () => {
+    vi.useFakeTimers();
+    const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped.', holdSec: 2.5 }] };
+    const el = makeFakeEl();
+    const transport = { seek: vi.fn((s) => { el.currentTime = s; }) };
+    renderHook(() => useContentFilter({ getMediaEl: () => el, transport, edl: scEdl, profile: { categories: {} }, enabled: true }));
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    act(() => { vi.advanceTimersByTime(2600); });
+    act(() => { el.fire('timeupdate'); });                       // landed past the scene
+    expect(transport.seek).toHaveBeenCalledTimes(1);
+    act(() => { el.currentTime = 30; el.fire('seeking'); el.fire('seeked'); }); // rewind into it
+    expect(transport.seek).toHaveBeenCalledTimes(2);
+    expect(transport.seek).toHaveBeenLastCalledWith(expect.closeTo(40.05, 2));
+    vi.useRealTimers();
+  });
+
+  it('skip-card: a seek that did not land is redone when the card ends', () => {
+    vi.useFakeTimers();
+    const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped.', holdSec: 2.5 }] };
+    const el = makeFakeEl();
+    const transport = { seek: vi.fn() };                         // the seek never lands
+    renderHook(() => useContentFilter({ getMediaEl: () => el, transport, edl: scEdl, profile: { categories: {} }, enabled: true }));
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    act(() => { vi.advanceTimersByTime(2600); });
+    expect(transport.seek).toHaveBeenCalledTimes(2);             // retried before resuming inside the scene
+    vi.useRealTimers();
+  });
+
   it('does nothing when disabled', () => {
     const { el, transport } = setup({ enabled: false });
     act(() => { el.currentTime = 110; el.fire('timeupdate'); });

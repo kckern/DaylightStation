@@ -385,3 +385,22 @@ describe('scene bridging', () => {
     expect(out[0].text).toBe('They get away.');
   });
 });
+
+describe('overlapping scenes and an Off ruling', () => {
+  it('a scene a grown-up turned off keeps its cues even inside an overlapping scene', () => {
+    const zero = { padLeadMs: 0, padTrailMs: 0, approxWidthMs: 0 };
+    const profile = { categories: { 'violence_blood_gore/graphic': { effect: 'full-blur' } }, treatments: { 'full-blur': zero },
+      scenes: { violence_blood_gore: { blackout: { picture: 2 } } } };
+    const lv = { violence_blood_gore: { situation: 2, picture: 2 } };
+    const edl = {
+      timebase: { clock: 'vidangel' }, sceneCalibration: { situation: 'trusted', picture: 'trusted' },
+      cues: [{ id: 'va5', type: 'skip', category: 'violence_blood_gore/graphic', in: 130, out: 132, precision: 'frame' }],
+      scenes: [
+        { id: 'sc-va1', in: 100, out: 150, cues: ['va1'], groups: ['violence_blood_gore'], level: lv },
+        { id: 'sc-va5', in: 125, out: 140, cues: ['va5'], groups: ['violence_blood_gore'], level: lv },
+      ],
+    };
+    const out = resolveEffectiveCues({ edl, profile, override: { sync: { scale: 1, offsetSec: 0 }, sceneOverrides: { 'sc-va5': { effect: 'off' } } }, part: null });
+    expect(out.some((c) => c.id === 'va5' && c.effect === 'full-blur')).toBe(true);
+  });
+});

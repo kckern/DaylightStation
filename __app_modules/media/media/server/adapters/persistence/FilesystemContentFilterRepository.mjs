@@ -4,7 +4,7 @@ import {
   listYamlFiles,
   readFile,
   readYamlFromPath,
-  saveYaml,
+  saveYamlToPathAtomic,
 } from '#system/utils/FileIO.mjs';
 import { IContentFilterRepository } from "../../application/content-filter/ports/IContentFilterRepository.mjs";
 
@@ -82,7 +82,9 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
   #writeYaml(root, relativePath, content) {
     const filePath = buildContainedPath(root, relativePath);
     if (!filePath) throw new Error(`content-filter path escapes its root: ${relativePath}`);
-    saveYaml(filePath, content, { lineWidth: 140 });
+    // Atomic: the player reads these files on every title load; a half-written
+    // override (no sync) or refined EDL would filter a whole viewing wrongly.
+    saveYamlToPathAtomic(filePath, content, { lineWidth: 140 });
   }
 
   #readYaml(root, relativePath) {

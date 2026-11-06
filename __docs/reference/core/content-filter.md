@@ -271,21 +271,29 @@ cue rules.
 ```yaml
 scenes:
   violence_blood_gore: { blackout: { picture: 2 } }
-  sex_nudity_immodesty: { blackout: { picture: 1 } }
+  sex_nudity_immodesty: { blackout: { picture: 2 } }   # nudity visible; immodesty keeps its per-tag blurs
   sex_any: { blackout: { picture: 1 }, skip: { situation: 3 } }
 ```
 
-**Household rulings** — `sceneOverrides.<id>` in the override: `effect: off|blackout|skip`,
+A scene with several groups takes the strongest effect any group earns, so a low
+threshold on one group (immodesty at picture 1) can black out a long fight that
+only blurred a few seconds before.
+
+**Household rulings** — written atomically, one ruling per title at a time — `sceneOverrides.<id>` in the override: `effect: off|blackout|skip`,
 `disabled: true` (members play by their own rules), and `card: { text, approvedBy, at }`.
 The refined EDL's `card` is only a draft; **only an approved card is ever shown**.
 
 **Player** (`contentFilter.js` `applyScenes`, `sceneEffect.mjs` shared with the server):
 - A scene with an effect drops the cues inside it that hide no more than it does
   (blur < full-blur < blackout < skip). Word mutes, credits and stronger cues stay;
-  mutes are never clipped to a scene.
+  mutes are never clipped to a scene; cues of a scene a grown-up turned off stay
+  even inside an overlapping scene.
 - Neighbouring scenes sharing a group, with the same effect and ≤ 30 s apart, are
   **bridged** into one (one black, one card), at resolve time only.
 - **skip** → one `skip-card` (profile `holdSec`), text = approved card or "Scene skipped.".
+  A skip is remembered only while its seek is in flight: rewinding into a skipped
+  scene skips it again (its blurs were dropped, so playing it would show it unfiltered),
+  and a seek that never landed is redone before playback resumes.
 - **blackout** → a `blackout` overlay per synced segment: opaque black, sound plays;
   approved card text or "Scene hidden." on the black for the first `holdSec`.
 - Bumper counts a blackout scene once ("2 scenes hidden"). Logs:

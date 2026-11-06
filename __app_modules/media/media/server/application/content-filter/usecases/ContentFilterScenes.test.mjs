@@ -79,6 +79,18 @@ describe('ContentFilterScenes', () => {
     expect(repo.state.override.sceneOverrides).toEqual({});
   });
 
+  it('keeps both of two rulings sent at once (no lost update)', async () => {
+    const repo = memRepo();
+    const slow = repo.getOverride;
+    repo.getOverride = async () => { await new Promise((r) => setTimeout(r, 5)); return slow(); };
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet, clock });
+    await Promise.all([
+      uc.rule({ ratingKey: '5', sceneId: 'sc-va1', effect: 'skip' }),
+      uc.rule({ ratingKey: '5', sceneId: 'sc-va2', effect: 'blackout' }),
+    ]);
+    expect(Object.keys(repo.state.override.sceneOverrides).sort()).toEqual(['sc-va1', 'sc-va2']);
+  });
+
   it('refuses an unknown effect and an unknown scene', async () => {
     const uc = new ContentFilterScenes({ contentFilterRepository: memRepo(), logger: quiet, clock });
     await expect(uc.rule({ ratingKey: '5', sceneId: 'sc-va1', effect: 'explode' })).rejects.toThrow('unknown scene effect');
