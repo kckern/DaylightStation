@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { FilterBumper, FilterBadge } from './FilterChrome.jsx';
 
 /**
  * FilterOverlay — renders the OVERLAY-kind content-filter effects on top of the
@@ -18,6 +19,11 @@ import PropTypes from 'prop-types';
  * video element. (Letterbox-precise mapping — insetting to the real content rect
  * when object-fit letterboxes — is a follow-up; percentage-of-frame is correct
  * for the common fill case.)
+ *
+ * The same layer carries the viewer chrome from FilterChrome.jsx: `bumper`
+ * ({ summary }) over the opening, and `badge` ({ state, fireCount }) for as long
+ * as a filter is in force. The layer renders when either is present even with no
+ * effect active. The bumper yields to a skip-card; the badge stays.
  */
 
 const FADE_MS = 300;
@@ -165,14 +171,16 @@ function Card({ text, theme, effect = 'card', art, visible = true, fullFrame = f
   );
 }
 
-export function FilterOverlay({ activeOverlays = [], activeCard = null, theme = {}, art = null }) {
-  if (!activeOverlays.length && !activeCard) return null;
+export function FilterOverlay({ activeOverlays = [], activeCard = null, theme = {}, art = null, bumper = null, badge = null }) {
+  if (!activeOverlays.length && !activeCard && !bumper && !badge) return null;
   return (
     <div className="filter-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 50 }}>
       {activeOverlays.map(({ effect, cue, visible }) => (
         <OverlayEffect key={`${effect}:${cue.id}`} effect={effect} cue={cue} theme={theme} visible={visible !== false} art={art} />
       ))}
       {activeCard && <Card text={activeCard.text} theme={theme} art={art} fullFrame />}
+      {bumper && !activeCard && <FilterBumper summary={bumper.summary} art={art} theme={theme} />}
+      {badge && <FilterBadge state={badge.state} fireCount={badge.fireCount} />}
     </div>
   );
 }
@@ -197,4 +205,6 @@ FilterOverlay.propTypes = {
   activeCard: PropTypes.shape({ text: PropTypes.string }),
   theme: PropTypes.object,
   art: artShape,
+  bumper: PropTypes.shape({ summary: PropTypes.string }),
+  badge: PropTypes.shape({ state: PropTypes.oneOf(['certified', 'provisional', 'failed']).isRequired, fireCount: PropTypes.number }),
 };
