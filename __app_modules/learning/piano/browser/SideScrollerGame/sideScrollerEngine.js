@@ -40,6 +40,11 @@
  * Projectile shape: { id, x, y } — left/top edge, PELLET_WIDTH × PELLET_HEIGHT.
  */
 
+import { box, overlaps, sweepHits } from '../../../../../__capabilities/gaming/portable/realtime/index.mjs';
+
+// Edge semantics: touching edges do not collide, on either axis.
+const OPEN = Object.freeze({ x: 'open', y: 'open' });
+
 // ─── Constants ──────────────────────────────────────────────────
 
 export const TOTAL_HEALTH = 28;
@@ -197,20 +202,20 @@ export function spawnObstacle(world, type) {
  * The nearest (leftmost) eligible block wins.
  */
 function findPelletTarget(obstacles, pellet, newX, shift) {
-  const sweepStart = pellet.x;
-  const sweepEnd = newX + PELLET_WIDTH;
-  const top = pellet.y;
-  const bottom = pellet.y + PELLET_HEIGHT;
+  const sweep = box(pellet.x, newX + PELLET_WIDTH, pellet.y, pellet.y + PELLET_HEIGHT);
+  const blockBoxes = obstacles.map((ob) => box(ob.x, ob.x + shift + ob.width, ob.y, ob.y + ob.height));
+  const hits = sweepHits(blockBoxes, sweep, {
+    ...OPEN,
+    include: (_, i) => {
+      const ob = obstacles[i];
+      return isShootable(ob.type) && !ob.broken && !ob.hit && !ob.dodged;
+    },
+  });
+
   let best = -1;
-
-  for (let i = 0; i < obstacles.length; i++) {
-    const ob = obstacles[i];
-    if (!isShootable(ob.type) || ob.broken || ob.hit || ob.dodged) continue;
-    const overlapX = sweepStart < ob.x + shift + ob.width && sweepEnd > ob.x;
-    const overlapY = top < ob.y + ob.height && bottom > ob.y;
-    if (overlapX && overlapY && (best < 0 || ob.x < obstacles[best].x)) best = i;
+  for (const { index } of hits) {
+    if (best < 0 || obstacles[index].x < obstacles[best].x) best = index;
   }
-
   return best;
 }
 
@@ -453,17 +458,13 @@ export function getPlayerHitbox(world) {
  * @returns {object[]} Array of obstacle objects that overlap the player
  */
 export function checkCollisions(world) {
-  const hb = getPlayerHitbox(world);
+  const p = getPlayerHitbox(world);
+  const hb = box(p.x, p.x + p.width, p.y, p.y + p.height);
   const collisions = [];
 
   for (const obs of world.obstacles) {
     if (obs.hit || obs.dodged) continue;
-
-    // AABB overlap test
-    const overlapX = hb.x < obs.x + obs.width && hb.x + hb.width > obs.x;
-    const overlapY = hb.y < obs.y + obs.height && hb.y + hb.height > obs.y;
-
-    if (overlapX && overlapY) {
+    if (overlaps(hb, box(obs.x, obs.x + obs.width, obs.y, obs.y + obs.height), OPEN)) {
       collisions.push(obs);
     }
   }
