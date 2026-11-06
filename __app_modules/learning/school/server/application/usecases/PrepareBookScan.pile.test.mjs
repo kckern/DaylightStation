@@ -275,3 +275,26 @@ describe('PrepareBookScan — scan logging (2026-11-05)', () => {
     expect(pile(f).cards[0].status).toBe('invalid');
   });
 });
+
+describe('PrepareBookScan — a superseded scan is logged (fix round 1)', () => {
+  it('names the book that lost its intent and the one that replaced it', async () => {
+    const f = fixture();
+    // The server keeps the oldest live intent plus the newest deferred one, so
+    // the third scan inside one shelf step is the first to retire one.
+    const first = await f.receive(ISBNS[0]);
+    await f.receive(ISBNS[1]);
+    expect(f.logger.info).not.toHaveBeenCalledWith('school.book-scan.superseded', expect.anything());
+    const third = await f.receive(ISBNS[2]);
+    expect(f.logger.info).toHaveBeenCalledWith('school.book-scan.superseded', { screenId: 'portal', isbn13: ISBNS[0], intentId: first.intentId, supersededBy: third.intentId });
+  });
+
+  it('logs the older scan a shelf claim retires (two scans in one shelf step)', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    expect(f.logger.info).toHaveBeenCalledWith('school.book-scan.superseded', { screenId: 'portal', isbn13: ISBNS[0], intentId: first.intentId, supersededBy: second.intentId });
+  });
+});
+

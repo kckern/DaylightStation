@@ -126,7 +126,8 @@ export class PrepareBookScan {
     const pending = [...this.#records.values()].filter(r => this.#live(r) && !r.claiming);
     // Keep the presented intention and only the newest deferred intention.
     const pinned = [...this.#records.values()].some(r => this.#live(r) && r.claiming);
-    for (const old of pending.slice(0, Math.max(0, pending.length - (pinned ? 0 : 1)))) old.phase = 'superseded';
+    const superseded = pending.slice(0, Math.max(0, pending.length - (pinned ? 0 : 1)));
+    for (const old of superseded) old.phase = 'superseded';
     const record = { id: mintId(), screenId: target.screenId, isbn13, receivedAt: new Date(now).toISOString(),
       expiresAt: new Date(now + TTL).toISOString(), until: now + TTL, phase: 'pending',
       status: parsed.kind === 'isbn' ? 'loading' : 'invalid', book: null,
@@ -135,6 +136,10 @@ export class PrepareBookScan {
     while (this.#records.size > 32) this.#records.delete(this.#records.keys().next().value);
     if (twin) record.card = twin;
     else this.#addCard(pile, record);
+    // A superseded intent can no longer be claimed by an open shelf; its card
+    // stays in the pile. Without this line two scans inside one shelf step
+    // left no trace of which book stopped being claimable.
+    for (const old of superseded) logger.info?.('school.book-scan.superseded', { screenId: target.screenId, isbn13: old.isbn13, intentId: old.id, supersededBy: record.id });
     this.#notify(record);
     logger.info?.('school.book-scan.received', { screenId: target.screenId, status: record.status, isbn13,
       receivedAt: record.receivedAt, capturedAt: capturedAt ?? null, delayedMs: Number.isFinite(delayedMs) ? delayedMs : null });
@@ -259,7 +264,10 @@ export class PrepareBookScan {
       // Retire older previews so returning home only offers the latest deferred scan.
       for (const old of this.#records.values()) {
         if (old === record) break;
-        if (old.phase === 'pending') old.phase = 'superseded';
+        if (old.phase === 'pending') {
+          old.phase = 'superseded';
+          this.#deps.logger.info?.('school.book-scan.superseded', { screenId, isbn13: old.isbn13, intentId: old.id, supersededBy: record.id });
+        }
       }
       this.#notify(record);
       this.#deps.logger.info?.('school.book-scan.claimed', { screenId });

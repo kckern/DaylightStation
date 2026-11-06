@@ -56,6 +56,8 @@ export const schoolLog = {
   bookShelfError: (detail, data) => emit('book-shelf', detail, data, 'error'), // shelf.failed | write.failed
   // Verbose shelf/pile decisions: scan.scoped-claim-skipped | scan.queued.
   bookShelfDebug: (detail, data) => emit('book-shelf', detail, data, 'debug'),
+  // A claimed scan the shelf could not show: scan.dropped.
+  bookShelfWarn: (detail, data) => emit('book-shelf', detail, data, 'warn'),
 };
 
 export default schoolLog;

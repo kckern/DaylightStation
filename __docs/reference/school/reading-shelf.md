@@ -158,7 +158,10 @@ the household study day ends. One session belongs to one child:
   screen shows it as a big **Filed 2 books to Ada** where the faces were. The
   faces go once nothing is left that a tap could file (a card still being
   looked up keeps them). On 2026-11-05 a filed pile looked exactly like an
-  unfiled one and a child tapped his face three more times.
+  unfiled one and a child tapped his face three more times. The confirmation
+  belongs to that filing: a newer scan (server `lastScanAt` past the filing's)
+  or the session ending clears it, so the next child's pile never opens under
+  someone else's banner.
 - **A tap with nothing to file is a no-op.** No reader change, no session
   bump, and it does not restart the quiet gap (each of those three extra taps
   used to keep the pile up longer); the server logs
@@ -187,9 +190,12 @@ the household study day ends. One session belongs to one child:
   (even mid-step, when the shelf is not asking for a barcode), and a scan is
   claimed for that child through the scoped path as soon as the shelf is
   scan-ready. A shelf claims only scans made while it is open; a filed or
-  removed card is never offered to it. The server keeps only the newest
-  unclaimed scan as a claimable intent, so if two land during one shelf step
-  the older one stays an unfiled card in the pile rather than being lost.
+  removed card is never offered to it. The server keeps at most the oldest
+  live intent plus the newest deferred one, and a shelf claim retires every
+  older pending intent; so if two land during one shelf step the older one
+  stays an unfiled card in the pile rather than being lost, and
+  `school.book-scan.superseded {isbn13, intentId, supersededBy}` (info) says
+  which book stopped being claimable.
 
 Filings are the child's own entries (`source: 'panel'`), the same as logging
 from the shelf. The pile lives in memory in `PrepareBookScan`: a backend
@@ -204,6 +210,8 @@ details (panel):
 | `school.book-scan.received` | backend, info | `screenId`, `status`, `isbn13`, `receivedAt`, `capturedAt`, `delayedMs` (the reader's capture time and hold, from the relay gateway — a held or batched scan shows a non-null `delayedMs`) |
 | `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. two ISBNs the reader ran together; not split |
 | `school.book-pile.card-added` | backend, info | `isbn13`, `duplicate`, `status` |
+| `school.book-scan.superseded` | backend, info | `isbn13`, `intentId`, `supersededBy` — an older pending scan stopped being claimable (a newer scan, or a shelf claim, retired it); its card stays in the pile |
+| `school.book-shelf.scan.dropped` | panel, warn | `isbn13`, `reason` (`done`, `idle`, `unmount`) — a claimed scan still queued when the shelf closed |
 | `school.book-pile.filed` | backend, info | `learnerId`, `count` (filed), `alreadyToday`, `failed` |
 | `school.book-pile.file-empty` | backend, debug | a tap with nothing to file |
 | `book-pile.filed` | panel, info | `count` (the server's), `pile` (cards on the pile), `alreadyToday`, `failed` |

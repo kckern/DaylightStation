@@ -138,4 +138,13 @@ describe('BookPile', () => {
     r.rerender(<BookPile {...props} safe={false} />);
     expect(h.log).toHaveBeenLastCalledWith('book-pile.shown', expect.objectContaining({ mode: 'corner' }));
   });
+
+  it('with no confirmation to show, a new card brings the faces back', () => {
+    h.state = hook({ reader: 'child-a', lastFiled: null,
+      cards: [card({ state: 'filed', learnerId: 'child-a', outcome: 'finished-new' }), card({ id: 'c2' })] });
+    render(<BookPile {...props} />);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Ada' })).toBeTruthy();
+  });
 });
+

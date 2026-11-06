@@ -95,4 +95,31 @@ describe('useBookPile', () => {
     expect(schoolLog.bookShelf).not.toHaveBeenCalledWith('book-pile.filed', expect.anything());
     expect(result.current.lastFiled).toBeNull();
   });
+
+  // Fix round 1: the confirmation outlived its session.
+  it('drops the filing confirmation when a newer scan arrives', async () => {
+    const filedAt = new Date(Date.now() - 1000).toISOString();
+    h.pile.mockResolvedValue(ok(pileOf({ lastScanAt: filedAt, cards: [card()] })));
+    h.filePile.mockResolvedValue({ ok: true, data: { pile: { ...pileOf({ lastScanAt: filedAt, reader: 'child-a', cards: [card({ state: 'filed', learnerId: 'child-a' })] }), filed: { learnerId: 'child-a', count: 1, alreadyToday: 0, failed: 0 } } } });
+    const { result } = renderHook(() => useBookPile({ screenId: 'portal' })); await act(async () => {});
+    await act(async () => result.current.file('child-a'));
+    expect(result.current.lastFiled).not.toBeNull();
+    // A later session (reader no longer sticky): another child's first scan.
+    h.pile.mockResolvedValue(ok(pileOf({ lastScanAt: new Date(Date.now() + 5000).toISOString(), reader: null,
+      cards: [card({ state: 'filed', learnerId: 'child-a' }), card({ id: 'c2', isbn13: '9780062691026' })] })));
+    await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+    expect(result.current.lastFiled).toBeNull();
+  });
+
+  it('drops the filing confirmation when the pile stops being live', async () => {
+    h.pile.mockResolvedValue(ok(pileOf({ cards: [card()] })));
+    h.filePile.mockResolvedValue({ ok: true, data: { pile: { ...pileOf({ reader: 'child-a', cards: [card({ state: 'filed', learnerId: 'child-a' })] }), filed: { learnerId: 'child-a', count: 1, alreadyToday: 0, failed: 0 } } } });
+    const { result } = renderHook(() => useBookPile({ screenId: 'portal' })); await act(async () => {});
+    await act(async () => result.current.file('child-a'));
+    expect(result.current.lastFiled).not.toBeNull();
+    h.pile.mockResolvedValue(ok(pileOf({ live: false, cards: [card({ state: 'filed', learnerId: 'child-a' })] })));
+    await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+    expect(result.current.lastFiled).toBeNull();
+  });
 });
+

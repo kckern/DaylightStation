@@ -7,12 +7,12 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const h = vi.hoisted(() => ({ shelf: vi.fn(), open: vi.fn(), progress: vi.fn(), mode: vi.fn(), resolve: vi.fn(), roster: vi.fn(), log: vi.fn(), debug: vi.fn() }));
+const h = vi.hoisted(() => ({ shelf: vi.fn(), open: vi.fn(), progress: vi.fn(), mode: vi.fn(), resolve: vi.fn(), roster: vi.fn(), log: vi.fn(), debug: vi.fn(), warn: vi.fn() }));
 vi.mock("../schoolApi.js", () => ({ schoolApi: {
   roster: (...a) => h.roster(...a),
   books: { shelf: (...a) => h.shelf(...a), open: (...a) => h.open(...a), progress: (...a) => h.progress(...a), mode: (...a) => h.mode(...a), resolve: (...a) => h.resolve(...a) },
 } }));
-vi.mock("../schoolLog.js", () => ({ schoolLog: { bookShelf: (...a) => h.log(...a), bookShelfError: vi.fn(), bookShelfDebug: (...a) => h.debug(...a) } }));
+vi.mock("../schoolLog.js", () => ({ schoolLog: { bookShelf: (...a) => h.log(...a), bookShelfError: vi.fn(), bookShelfDebug: (...a) => h.debug(...a), bookShelfWarn: (...a) => h.warn(...a) } }));
 import { useBookShelf } from "./useBookShelf.js";
 
 const ISBN = '9780064400558';
@@ -109,6 +109,54 @@ describe('a scan handed to a mounted shelf', () => {
     await act(async () => {});
     expect(r.result.current.step).toBe('cover');
     expect(r.result.current.add.resolved.book).toEqual(BOOK2);
+  });
+
+  // Fix round 1.
+  it('reports the receipt hold, and lifts it after RECEIPT_HOLD_MS', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const r = mountShelf(); await act(async () => {});
+    expect(r.result.current.receiptHeld).toBe(false);
+    act(() => r.result.current.actions.openItem(ITEM.itemId));
+    await act(async () => r.result.current.actions.submitProgress({ page: 90 }));
+    expect(r.result.current.receiptHeld).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(r.result.current.receiptHeld).toBe(false);
+  });
+
+  it('a close with a scan still queued says so at warn, with the book', async () => {
+    const r = mountShelf(); await act(async () => {});
+    act(() => r.result.current.actions.startAdd());
+    act(() => r.result.current.actions.typeIsbn('978'));
+    r.rerender({ initialBookEntry: { intentId: 'scan-2', isbn13: ISBN2, book: BOOK2 } });
+    await act(async () => {});
+    act(() => r.result.current.actions.done());
+    expect(h.warn).toHaveBeenCalledWith('scan.dropped', expect.objectContaining({ isbn13: ISBN2, reason: 'done' }));
+  });
+
+  it('an unmount with a scan still queued says so at warn', async () => {
+    const r = mountShelf(); await act(async () => {});
+    act(() => r.result.current.actions.startAdd());
+    act(() => r.result.current.actions.typeIsbn('978'));
+    r.rerender({ initialBookEntry: { intentId: 'scan-2', isbn13: ISBN2, book: BOOK2 } });
+    await act(async () => {});
+    r.unmount();
+    expect(h.warn).toHaveBeenCalledWith('scan.dropped', expect.objectContaining({ isbn13: ISBN2, reason: 'unmount' }));
+  });
+
+  it('queuing a scan re-arms the idle close', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const onExit = vi.fn();
+    const r = renderHook((props) => useBookShelf({ learnerId: 'kid', grant: 'g1', idleTimeoutSeconds: 90, onExit, ...props }), { initialProps: { initialBookEntry: null } });
+    await act(async () => {});
+    act(() => r.result.current.actions.startAdd());
+    act(() => r.result.current.actions.typeIsbn('978'));
+    await act(async () => { vi.advanceTimersByTime(80_000); });
+    r.rerender({ initialBookEntry: { intentId: 'scan-2', isbn13: ISBN2, book: BOOK2 } });
+    await act(async () => {});
+    await act(async () => { vi.advanceTimersByTime(20_000); });
+    expect(onExit).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(75_000); });
+    expect(onExit).toHaveBeenCalledWith('idle');
   });
 });
 

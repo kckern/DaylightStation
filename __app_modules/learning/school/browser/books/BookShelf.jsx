@@ -157,8 +157,12 @@ function Shelf({ shelf, error, actions, receipt, busy, needsRefresh, today, manu
  *   the shelf and throw the child's half-entered book away.
  */
 export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false, onScanReadyChange = null }) {
-  const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
-  const scanReady = !busy && !needsRefresh
+  const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, receiptHeld = false, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
+  // Not while a fresh save receipt is held: a scan claimed then could only be
+  // queued, and a close inside the hold dropped a book the server had already
+  // handed over. Left pending, it is claimed when the hold lifts, or stays in
+  // the pile if the shelf closes first.
+  const scanReady = !busy && !needsRefresh && !receiptHeld
     && (view === 'shelf' || view === 'completed' || (view === 'add' && step === 'number'));
   const reportRef = useRef(onScanReadyChange);
   reportRef.current = onScanReadyChange;

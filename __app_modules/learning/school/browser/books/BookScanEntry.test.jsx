@@ -178,4 +178,14 @@ describe('BookScanEntry — scans while an open shelf is not scan-ready (2026-11
     await act(async () => finish({ ok: true, data: { intentId: 'scan1', launchTarget: { learnerId: 'child', bookGrant: 'g' }, bookEntry: { isbn13: intent.isbn13 } } }));
     expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ bookEntry: expect.objectContaining({ intentId: 'scan1' }) }), 'child');
   });
+
+  // Fix round 1: the shelf is not scan-ready behind a fresh receipt, so a scan
+  // then stays pending; a close inside the hold leaves it to the pile.
+  it('a scan during the receipt hold stays pending through a close', async () => {
+    const r = render(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId={null} scopeLearnerId={null} />); await act(async () => {});
+    expect(h.claim).not.toHaveBeenCalled();
+    expect(h.dismiss).not.toHaveBeenCalled();
+  });
 });
+

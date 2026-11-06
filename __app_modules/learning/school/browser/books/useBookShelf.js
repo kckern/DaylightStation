@@ -137,6 +137,9 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
   const [entryQueue, setEntryQueue] = useState([]);
   const [scannedBookId, setScannedBookId] = useState(null);
   const [receiptHeld, setReceiptHeld] = useState(false);
+  // Mirror for `close()` and unmount, which must say what they drop.
+  const queueRef = useRef(entryQueue);
+  queueRef.current = entryQueue;
   const [view, setView] = useState('loading');
   const [step, setStep] = useState(null);
   const [shelf, setShelf] = useState(null);
@@ -201,6 +204,11 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     workRef.current = false;
     lookupRef.current = false;
     schoolLog.bookShelf('closed', { reason, view: viewRef.current });
+    // A queued scan was CLAIMED on the server: it is no longer pending and no
+    // longer offered by the pile. Closing past it loses the book, so say so.
+    for (const entry of queueRef.current) schoolLog.bookShelfWarn?.('scan.dropped', { learnerId, isbn13: entry.isbn13, reason });
+    queueRef.current = [];
+    setEntryQueue([]);
     viewRef.current = 'closed';
     setView('closed');
     setStep(null);
@@ -211,7 +219,7 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     setUpdateEntryId(null);
     setReceipt(null);
     onExitRef.current?.(reason);
-  }, []);
+  }, [learnerId]);
 
   /** Back to the tiles with the add/update state cleared. */
   const toShelf = useCallback(() => {
@@ -390,8 +398,15 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     seenEntries.current.add(entryKey);
     if (seenEntries.current.size > 64) seenEntries.current.delete(seenEntries.current.values().next().value);
     setEntryQueue((queue) => [...queue, { ...entry, key: entryKey }]);
+    // A scan is the child at the panel: it re-arms the idle close like a tap.
+    if (!isClosed()) touch();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scan's identity, not the object
   }, [entryKey]);
+
+  useEffect(() => () => {
+    for (const entry of queueRef.current) schoolLog.bookShelfWarn?.('scan.dropped', { learnerId, isbn13: entry.isbn13, reason: 'unmount' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
+  }, []);
 
   // A receipt is the child's confirmation that a save landed; a scan queued
   // behind it waits this long before taking the screen.
@@ -926,6 +941,9 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     // The book this shelf was opened FOR by a scan. Its pass is what lets a
     // scan-only shelf offer "Read again" on a finished copy.
     scannedBookId,
+    // A fresh save receipt is on screen. The shelf is NOT scan-ready then
+    // (`BookShelf`), so a scan stays pending on the server until it clears.
+    receiptHeld,
     learner,
     error,
     busy,

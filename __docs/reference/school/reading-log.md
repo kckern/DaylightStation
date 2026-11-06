@@ -159,8 +159,14 @@ is an answer: the shelf itself, the barcode pad (empty, or holding only the
 last scanned number after a Back from its cover), or a finished book (the
 "scan its barcode" case). Anywhere else — a pad with hand-typed digits, the cover,
 an update, a save in flight — the book waits (`scan.queued`, debug, with the
-`isbn13`) and opens when that step finishes; a fresh save receipt holds it back
-for `RECEIPT_HOLD_MS` (4s) so the child sees their save land. Until 2026-11-05
+`isbn13`) and opens when that step finishes. Queuing a scan re-arms the 90s idle
+close, like a tap. A fresh save receipt makes the shelf NOT scan-ready for
+`RECEIPT_HOLD_MS` (4s, `receiptHeld`), so the child sees their save land and a
+scan made then stays pending on the server — claimed when the hold lifts, or
+left in the pile if the shelf closes first. (A claimed scan is no longer pending
+or offered by the pile, so a scan claimed and then dropped by a close is lost;
+the receipt window was the easy way to hit that.) A close or unmount with a
+scan still queued logs `school.book-shelf.scan.dropped {isbn13, reason}` at warn. Until 2026-11-05
 the shelf was keyed on the scan's `intentId`: every scan remounted it, showed
 "Getting your shelf…" again, and threw away an Add the child had started 24ms
 before. `scan.seeded` now carries the `isbn13`.
