@@ -6,7 +6,9 @@
  * segments `{ segments: [{ fromVa, toVa, scale, offsetSec }] }` for copies whose
  * cut differs (scenes added or removed). Within a segment:
  *   local = va * scale + offsetSec
- * A reference time in no segment is a scene this copy does not have.
+ * A reference time in no segment is a scene this copy does not have. A segment
+ * may carry `fuzzyFromVa`/`fuzzyToVa`: how far it might really reach when the
+ * cut between it and its neighbour could only be bracketed by anchors.
  *
  * Pure; shared by the player (resolving cues) and the CLI (writing refined EDLs).
  */
@@ -17,7 +19,11 @@ const EPS = 1e-6;
 export function segmentsOf(sync) {
   if (sync?.segments?.length) {
     return [...sync.segments]
-      .map((s) => ({ fromVa: s.fromVa, toVa: s.toVa, scale: s.scale ?? 1, offsetSec: s.offsetSec || 0 }))
+      .map((s) => ({
+        fromVa: s.fromVa, toVa: s.toVa, scale: s.scale ?? 1, offsetSec: s.offsetSec || 0,
+        ...(s.fuzzyFromVa != null ? { fuzzyFromVa: s.fuzzyFromVa } : {}),
+        ...(s.fuzzyToVa != null ? { fuzzyToVa: s.fuzzyToVa } : {}),
+      }))
       .sort((a, b) => a.fromVa - b.fromVa);
   }
   return [{ fromVa: -Infinity, toVa: Infinity, scale: sync?.scale ?? 1, offsetSec: sync?.offsetSec || 0 }];
@@ -50,8 +56,12 @@ export function unmapTime(local, sync) {
 export function mapSpan(vaIn, vaOut, sync) {
   const parts = [];
   for (const s of segmentsOf(sync)) {
-    const a = Math.max(vaIn, s.fromVa); const b = Math.min(vaOut, s.toVa);
-    if (b > a || (b === a && vaIn === vaOut && a >= s.fromVa && a < s.toVa)) {
+    // Where a cut's exact place is unknown (between the anchors either side of
+    // it), a segment may reach into its neighbour: spans there map through both,
+    // so the moment is covered wherever the cut really is.
+    const lo = s.fuzzyFromVa ?? s.fromVa; const hi = s.fuzzyToVa ?? s.toVa;
+    const a = Math.max(vaIn, lo); const b = Math.min(vaOut, hi);
+    if (b > a || (b === a && vaIn === vaOut && a >= lo && a < hi)) {
       parts.push({ in: toLocal(a, s), out: toLocal(b, s) });
     }
   }

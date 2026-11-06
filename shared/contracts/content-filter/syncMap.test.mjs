@@ -69,6 +69,24 @@ describe('mapSpan', () => {
   });
 });
 
+describe('mapSpan near an uncertain cut', () => {
+  // The cut lies somewhere between anchors at VidAngel 3000 and 3100.
+  const fuzzy = {
+    segments: [
+      { fromVa: 0, toVa: 3050, fuzzyToVa: 3100, scale: 1, offsetSec: 8 },
+      { fromVa: 3050, fuzzyFromVa: 3000, toVa: 7000, scale: 1, offsetSec: -52 },
+    ],
+  };
+  it('maps a span in the uncertain zone through both neighbouring segments', () => {
+    const parts = mapSpan(3020, 3022, fuzzy);
+    expect(parts).toEqual([{ in: 3028, out: 3030 }, { in: 2968, out: 2970 }]);
+  });
+  it('keeps one mapping outside the zone, and mapTime stays strict', () => {
+    expect(mapSpan(2900, 2902, fuzzy)).toEqual([{ in: 2908, out: 2910 }]);
+    expect(mapTime(3020, fuzzy)).toBe(3028);
+  });
+});
+
 describe('snapToFrames', () => {
   const frames = { fps: '24/1', startTime: 0.083333 };
   it('moves in to the start of its frame and out to the end of its frame', () => {

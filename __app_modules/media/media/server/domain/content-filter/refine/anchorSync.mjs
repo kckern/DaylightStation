@@ -46,18 +46,28 @@ export function matchAnchors(anchors, words, segments, { maxShift = 120, near = 
     }
   }
   if (!votes.size) return { coarse: null, pairs: [], matched: 0, total: anchors.length };
-  let best = null;
-  for (const b of votes.keys()) {
-    const score = (votes.get(b - 1) || 0) + votes.get(b) + (votes.get(b + 1) || 0);
-    if (!best || score > best.score) best = { b, score };
+  // Every well-supported offset is a peak: a copy with scenes added or removed
+  // has one offset per stretch, so a single winner would lose the rest.
+  const smooth = (b) => (votes.get(b - 1) || 0) + (votes.get(b) || 0) + (votes.get(b + 1) || 0);
+  const minVotes = Math.max(3, Math.ceil(anchors.length * 0.1));
+  const peaks = [...votes.keys()]
+    .filter((b) => smooth(b) >= minVotes)
+    // local maximum of the raw counts (ties go to the lower bin)
+    .filter((b) => [-3, -2, -1, 1, 2, 3].every((dx) => votes.get(b) > (votes.get(b + dx) || 0) || (votes.get(b) === votes.get(b + dx) && dx > 0)))
+    .sort((a, b) => smooth(b) - smooth(a));
+  if (!peaks.length) {
+    const top = [...votes.keys()].sort((a, b) => smooth(b) - smooth(a))[0];
+    peaks.push(top);
   }
-  const coarse = best.b;
+  const coarse = peaks[0];
   const pairs = [];
   for (const a of anchors) {
-    const cands = (byWord.get(norm(a.text)) || []).filter((i) => Math.abs(words[i].s - (a.t + coarse)) <= near);
+    const cands = (byWord.get(norm(a.text)) || [])
+      .map((i) => ({ i, dist: Math.min(...peaks.map((p) => Math.abs(words[i].s - (a.t + p)))) }))
+      .filter((c) => c.dist <= near);
     if (!cands.length) continue;
-    const scored = cands.map((i) => ({ i, sim: a.line ? lineSimilarity(a.line, lineOf.get(words[i].seg)) : 1 }))
-      .sort((p, q) => q.sim - p.sim || Math.abs(words[p.i].s - a.t - coarse) - Math.abs(words[q.i].s - a.t - coarse));
+    const scored = cands.map((c) => ({ ...c, sim: a.line ? lineSimilarity(a.line, lineOf.get(words[c.i].seg)) : 1 }))
+      .sort((p, q) => q.sim - p.sim || p.dist - q.dist);
     const top = scored[0];
     if (top.sim < minLine) continue;
     if (scored[1] && scored[1].sim === top.sim && Math.abs(words[scored[1].i].s - words[top.i].s) > 0.5) continue; // ambiguous
@@ -105,9 +115,13 @@ export function fitSegments(pairs, { runtimeSec, tol = JUMP_SEC } = {}) {
     const resid = pts.map((p) => Math.abs(p.y - (scale * p.x + offset)));
     return { offset, used: pts.length, medResid: median(resid), first: pts[0].x, last: pts[pts.length - 1].x };
   });
+  // Each cut lies somewhere between the last anchor before it and the first
+  // after it: split midway, and mark that bracket as fuzzy on both sides.
   const segments = fits.map((f, k) => ({
     fromVa: k === 0 ? 0 : round3((fits[k - 1].last + f.first) / 2),
+    ...(k > 0 ? { fuzzyFromVa: fits[k - 1].last } : {}),
     toVa: k === fits.length - 1 ? runtimeSec : round3((f.last + fits[k + 1].first) / 2),
+    ...(k < fits.length - 1 ? { fuzzyToVa: fits[k + 1].first } : {}),
     scale: round6(scale),
     offsetSec: round3(f.offset),
   }));

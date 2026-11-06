@@ -37,6 +37,21 @@ describe('matchAnchors', () => {
   });
 });
 
+describe('matchAnchors with a different cut', () => {
+  it('matches anchors on both sides of a removed scene', () => {
+    // 12 anchors; the copy runs 4 s late before VidAngel 3000 and 56 s early after it
+    const anchors = []; const words = []; const segments = [];
+    for (let k = 0; k < 12; k++) {
+      const t = 300 + k * 500; const off = t < 3000 ? 4 : -56;
+      anchors.push({ t, text: 'damn', line: `line number ${k} damn` });
+      words.push({ w: 'damn', s: t + off, seg: k });
+      segments.push({ id: k, text: `line number ${k} damn` });
+    }
+    const m = matchAnchors(anchors, words, segments);
+    expect(m.matched).toBe(12);
+  });
+});
+
 describe('fitSegments', () => {
   const along = (xs, f) => xs.map((x) => ({ x, y: f(x) }));
   it('fits one segment for a plain offset and scale', () => {
@@ -65,6 +80,8 @@ describe('fitSegments', () => {
     expect(s.segments[0].toVa).toBeLessThan(2400);
     expect(s.segments[1].fromVa).toBe(s.segments[0].toVa);
     expect(s.segments[1].toVa).toBe(5000);
+    expect(s.segments[0].fuzzyToVa).toBe(2400);
+    expect(s.segments[1].fuzzyFromVa).toBe(1600);
   });
   it('ignores a lone outlier instead of splitting on it', () => {
     const pairs = along([100, 500, 900, 1300, 1700, 2100, 2500], (x) => x + 4);
