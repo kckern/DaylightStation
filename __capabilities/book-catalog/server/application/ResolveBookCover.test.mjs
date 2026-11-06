@@ -50,7 +50,8 @@ describe('ResolveBookCover', () => {
     const coverArt = fakeArt({ 'covers.openlibrary.org': {} });
     const result = await build(coverArt).execute(BOOK.isbn13);
     expect(result).toMatchObject({ status: 'found', source: 'openlibrary-isbn', attempts: 1 });
-    expect(coverArt.asked).toHaveLength(1);
+    // Rungs are probed concurrently now; the top rung is still asked first and wins.
+    expect(coverArt.asked[0]).toContain('covers.openlibrary.org/b/isbn');
     expect(store.has(BOOK.isbn13)).toBe(true);
   });
 
@@ -104,7 +105,10 @@ describe('ResolveBookCover', () => {
     const coverArt = fakeArt({ 'covers.openlibrary.org': {} });
     const resolver = build(coverArt);
     await Promise.all([1, 2, 3, 4].map(() => resolver.execute(BOOK.isbn13)));
-    expect(coverArt.asked).toHaveLength(1);
+    const single = fakeArt({ 'covers.openlibrary.org': {} });
+    await build(single, { store: fakeStore() }).execute(BOOK.isbn13);
+    // One ladder's worth of requests, not four.
+    expect(coverArt.asked).toHaveLength(single.asked.length);
   });
 
   it('never throws at a caller that was only rendering a tile', async () => {
