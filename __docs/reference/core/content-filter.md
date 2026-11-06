@@ -190,6 +190,42 @@ the filesystem adapter is replaceable without changing the use case.
 Always retain the source and precision metadata. A cue set must be checked against the
 actual media release before being enabled, especially when the source is marked unsynced.
 
+## Refined EDLs, safe windows and certification
+
+A refined EDL (`media/content-filter/refined/<workId>-<tagSetId>.edl.yml`, built by
+`buildRefinedEdl` in `server/domain/content-filter/refine/refinedEdl.mjs`) is a VidAngel
+tag set on VidAngel's clock, with each cue refine could measure at `ms`/`frame`
+precision. Every word the film transcript misses stays approximate — and VidAngel tags
+drift from the spoken word by several seconds, so an approximate mute can let the word
+play.
+
+- **Safe windows** (`safeWindow.mjs`). A mute refine could not pin is widened to
+  `tag.in − 3.5 s … tag.out + 3.0 s` with `precision: safe-window`; the tag span is
+  kept as `tagIn`/`tagOut`, so applying it again is a no-op. The constants cover every
+  word measured on two films (150 words: start drift −3.1…+2.7 s, end −3.8…+2.8 s). It
+  mutes more dialogue, but no tagged word plays. Skips and visual cues are not widened;
+  the player already pads those.
+- **Certification** (`certification.mjs`), bar `every-mute-covered`. `machine`: every
+  mute is pinned (`ms`/`frame`), a `safe-window`, or `pinned` (a person marked it and the
+  span covers the word without ms edges). `parent`: a person signed off on a
+  machine-certified EDL; it is kept only while the machine bar still holds. `none`:
+  anything else, including every raw VidAngel EDL. The player's badge reads this level.
+- **Pinning words** narrows a safe window back to the word, with a person's help, since
+  automatic re-listening and query-by-example both failed on words the transcript missed:
+  - `contentfilter pin-page <rk> --src <file>` cuts one clip per safe-window mute into
+    `refine/<rk>/pin/index.html`. The person plays each clip, presses **Mark word** as the
+    word starts (or **Not spoken here**), then **Copy results** (`<cueId>: <seconds>` per
+    line).
+  - `contentfilter pin <rk> --src <file> --marks <file> [--write]` transcribes 5 s around
+    each mark with the word as the prompt, accepts a hit only inside the press's reaction
+    window, and times it by forced alignment plus an energy snap (`precision: ms`). With no
+    hit it keeps the span from just before the press to the next energy offset
+    (`precision: pinned`). "Not spoken here" leaves the safe window and stamps
+    `pinned: { none: true }`. It recomputes certification.
+- `contentfilter certify <rk> [--parent --by <name>] [--write]` applies safe windows to an
+  existing refined EDL, recomputes the level and prints pinned / safe-window / uncovered
+  counts.
+
 ## Subtitle word-list cues and review
 
 `contentfilter srt-mutes <ratingKey>` scans the title's English SRT (Plex, or
@@ -238,7 +274,7 @@ The resolver and player behavior have unit tests. Debug mode (`?filter=1&filter-
 is intended to scrub cue-by-cue and verify arm/fire timing.
 
 The remaining work is primarily player wiring, default profile/SFX assets, letterbox-
-precise blur placement, Whisper refinement, and an admin authoring interface. Coverage
+precise blur placement, pinning the remaining safe-window mutes, and an admin authoring interface. Coverage
 and correctness are therefore data-quality concerns, not guarantees of the file format.
 
 Related implementation:

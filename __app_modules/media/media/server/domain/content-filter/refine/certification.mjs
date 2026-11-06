@@ -52,7 +52,7 @@ export function certify(edl, { at }) {
 export function signOff(edl, { by, at }) {
   const c = edl.certification;
   if (!c || !LEVELS.includes(c.level) || c.level === 'none') {
-    throw new Error('Only a machine-certified EDL can be signed off (every mute must be precise first)');
+    throw new Error('Only a machine-certified EDL can be signed off (every mute must be covered first)');
   }
   return { ...c, level: 'parent', parent: { by, at } };
 }
