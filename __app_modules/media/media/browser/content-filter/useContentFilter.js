@@ -27,20 +27,37 @@ const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }
 // mounted this long with `visible:false` so it can ramp to 0 before unmount.
 const FILTER_FADE_MS = 300;
 
-/** Default SFX player: named sounds from profile.sounds, else the synthesized 1 kHz bleep. */
-function createSfxPlayer(sounds) {
+const logBleepDegraded = (reason) =>
+  logger().sampled?.('content-filter.bleep.degraded', { reason }, { maxPerMinute: 5 });
+
+/**
+ * Default SFX player: named sounds from profile.sounds, else the synthesized 1 kHz
+ * bleep. A named sound that cannot play falls back to the tone and is logged.
+ * `tone` is injectable for tests.
+ */
+export function createSfxPlayer(sounds, { tone = createBleepTone({ onDegraded: logBleepDegraded }) } = {}) {
   let audio = null;
-  const tone = createBleepTone({
-    onDegraded: (reason) => logger().sampled?.('content-filter.bleep.degraded', { reason }, { maxPerMinute: 5 }),
-  });
+  const stopAudio = () => { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; };
+  const fallBack = (reason) => { logBleepDegraded(reason); tone.start(); };
   return {
     play(name) {
+      stopAudio(); // never orphan a looping sound
       const url = sounds?.[name];
-      if (!url || typeof Audio === 'undefined') { tone.start(); return; }
-      try { audio = new Audio(url); audio.loop = true; audio.play?.().catch(() => {}); } catch (_) { /* ignore */ }
+      if (!url) { fallBack('unknown-sound'); return; }
+      if (typeof Audio === 'undefined') { fallBack('no-audio-element'); return; }
+      let a;
+      try { a = new Audio(url); a.loop = true; } catch (_) { fallBack('audio-error'); return; }
+      audio = a;
+      try {
+        a.play?.()?.catch?.(() => {
+          if (audio !== a) return; // stopped or replaced before the rejection landed
+          audio = null;
+          fallBack('play-rejected');
+        });
+      } catch (_) { audio = null; fallBack('play-error'); }
     },
     tone() { tone.start(); },
-    stop() { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; tone.stop(); },
+    stop() { stopAudio(); tone.stop(); },
   };
 }
 

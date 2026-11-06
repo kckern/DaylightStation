@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 // Spy on the structured logger so we can assert observability events.
 const mockLogger = vi.hoisted(() => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() }));
 vi.mock("../../../../../frontend/src/lib/logging/singleton.js", () => ({ getChildLogger: () => mockLogger }));
 
-import { useContentFilter } from "./useContentFilter.js";
+import { useContentFilter, createSfxPlayer } from "./useContentFilter.js";
 import { isSkipCardPaused } from "./skipCardState.js";
 
 function makeFakeEl() {
@@ -345,5 +345,69 @@ describe('useContentFilter', () => {
       act(() => { el.fire('pause'); });
       expect(sfx.stop).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('createSfxPlayer', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.unstubAllGlobals());
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const fakeTone = () => ({ start: vi.fn(() => true), stop: vi.fn() });
+  const degradedReasons = () => mockLogger.sampled.mock.calls
+    .filter((c) => c[0] === 'content-filter.bleep.degraded').map((c) => c[1].reason);
+  function stubAudio({ throws = false, rejects = false } = {}) {
+    const made = [];
+    vi.stubGlobal('Audio', vi.fn(function FakeAudio(url) {
+      if (throws) throw new Error('bad src');
+      const a = { url, loop: false, pause: vi.fn(), play: vi.fn(() => (rejects ? Promise.reject(new Error('NotAllowed')) : Promise.resolve())) };
+      made.push(a);
+      return a;
+    }));
+    return made;
+  }
+
+  it('pauses the previous looping sound before starting another', () => {
+    const made = stubAudio();
+    const sfx = createSfxPlayer({ horn: '/horn.mp3' }, { tone: fakeTone() });
+    sfx.play('horn');
+    sfx.play('horn');
+    expect(made).toHaveLength(2);
+    expect(made[0].pause).toHaveBeenCalled();
+    expect(made[1].pause).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the tone and logs when the Audio element cannot be built', () => {
+    stubAudio({ throws: true });
+    const tone = fakeTone();
+    createSfxPlayer({ horn: '/horn.mp3' }, { tone }).play('horn');
+    expect(tone.start).toHaveBeenCalledTimes(1);
+    expect(degradedReasons()).toContain('audio-error');
+  });
+
+  it('falls back to the tone and logs when play() rejects', async () => {
+    stubAudio({ rejects: true });
+    const tone = fakeTone();
+    createSfxPlayer({ horn: '/horn.mp3' }, { tone }).play('horn');
+    await flush();
+    expect(tone.start).toHaveBeenCalledTimes(1);
+    expect(degradedReasons()).toContain('play-rejected');
+  });
+
+  it('does not start the tone for a rejection that lands after stop()', async () => {
+    stubAudio({ rejects: true });
+    const tone = fakeTone();
+    const sfx = createSfxPlayer({ horn: '/horn.mp3' }, { tone });
+    sfx.play('horn');
+    sfx.stop();
+    await flush();
+    expect(tone.start).not.toHaveBeenCalled();
+  });
+
+  it('plays the tone and logs for a sound name with no URL', () => {
+    const tone = fakeTone();
+    createSfxPlayer({}, { tone }).play('horn');
+    expect(tone.start).toHaveBeenCalledTimes(1);
+    expect(degradedReasons()).toContain('unknown-sound');
   });
 });
