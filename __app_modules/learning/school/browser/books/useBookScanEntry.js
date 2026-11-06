@@ -36,6 +36,11 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
   const generation = useRef(0);
   const reads = useRef(0);
   const claimLock = useRef(false);
+  // A shelf only claims what is scanned WHILE it is open (see below): the
+  // intent ids that were already waiting when it opened.
+  const preOpen = useRef(new Set());
+  // The last queue the server sent (pile screens only; see `refresh`).
+  const latestQueue = useRef(null);
   const refresh = useCallback(async () => {
     if (!enabled) return;
     const seq = ++reads.current;
@@ -64,8 +69,20 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
     }
     if (seq !== reads.current || gen !== generation.current || claimLock.current) return;
     if (!result?.ok) { schoolLog.bookShelfError?.('scan.pending-failed', { status: result?.status ?? null }); return; }
-    const next = result.data?.intent;
-    const accepted = next?.screenId === screenId && !seen.current.has(next.id) && Date.parse(next.expiresAt) > Date.now() ? next : null;
+    const usable = (candidate) => candidate?.screenId === screenId && !seen.current.has(candidate.id) && Date.parse(candidate.expiresAt) > Date.now();
+    // A PILE SCREEN SENDS ITS WHOLE QUEUE, oldest first (final review I1): the
+    // shelf drains it in order. Walk past what this panel must not take — a
+    // scan already waiting when the shelf opened (the pile's), an unreadable
+    // barcode or failed lookup, a scoped claim that already failed — so none
+    // of them holds up the books scanned after it. Without a queue the
+    // server's one intent is the offer, as before.
+    const queue = Array.isArray(result.data?.queue) ? result.data.queue : null;
+    latestQueue.current = queue;
+    const next = queue
+      ? queue.find((candidate) => usable(candidate) && !preOpen.current.has(candidate.id) && !scopedAttempts.current.has(candidate.id)
+        && candidate.status !== 'invalid' && candidate.status !== 'unavailable') ?? null
+      : result.data?.intent;
+    const accepted = usable(next) ? next : null;
     if (accepted && current.current && accepted.id !== current.current.id) {
       seen.current.add(current.current.id);
       if (seen.current.size > 32) seen.current.delete(seen.current.values().next().value);
@@ -143,12 +160,19 @@ export function useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId = nu
   // marked every scan that arrived during a cover step as "already waiting"
   // (2026-11-05: two of four books lost that way).
   const openSeen = useRef(openLearnerId);
-  const preOpen = useRef(new Set());
   useEffect(() => {
-    if (openLearnerId && openSeen.current !== openLearnerId && current.current) preOpen.current.add(current.current.id);
+    if (openLearnerId && openSeen.current !== openLearnerId) {
+      if (current.current) preOpen.current.add(current.current.id);
+      // On a pile screen every scan in the queue was waiting; read again so
+      // the offer moves past them to whatever comes next.
+      if (latestQueue.current) {
+        for (const waiting of latestQueue.current) preOpen.current.add(waiting.id);
+        void refresh();
+      }
+    }
     if (!openLearnerId) preOpen.current.clear();
     openSeen.current = openLearnerId;
-  }, [openLearnerId]);
+  }, [openLearnerId, refresh]);
   useEffect(() => {
     if (!scopeLearnerId || !intent || claiming || !['ready', 'not-found'].includes(intent.status)) return;
     if (scopedAttempts.current.has(intent.id)) return;

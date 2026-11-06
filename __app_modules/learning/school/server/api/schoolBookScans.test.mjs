@@ -98,3 +98,26 @@ describe('book pile routes', () => {
     expect(bookScans.claim).not.toHaveBeenCalled();
   });
 });
+
+// Final review I1: a pile screen's waiting scans are a queue the panel drains
+// in order; `/pending` carries it beside the head intent.
+describe('pending scans on a pile screen', () => {
+  it('returns the oldest intent and the whole queue, oldest first; a screen without a pile sends no queue', async () => {
+    const make = (pile) => {
+      const service = new PrepareBookScan({ pile, mintId: () => randomBytes(32).toString('base64url'),
+        resolveBook: { execute: async () => ({ status: 'not-found' }) }, roster: () => [{ id: 'child' }], issueLaunchTarget: vi.fn(),
+        target: { deviceId: 'tablet', screenId: 'portal' }, wake: async () => ({ ok: true }), notifications: { bookScanAvailable: vi.fn() } });
+      const server = express(); server.use(createSchoolBookScansRouter({ bookScans: service }));
+      return { service, server };
+    };
+    const portal = make(true);
+    await portal.service.receive({ code: '9780064400558', device: 'reader', eventId: 'a' });
+    await portal.service.receive({ code: '9780064401517', device: 'reader', eventId: 'b' });
+    const body = (await request(portal.server).get('/pending?screenId=portal')).body;
+    expect(body.intent.isbn13).toBe('9780064400558');
+    expect(body.queue.map((i) => i.isbn13)).toEqual(['9780064400558', '9780064401517']);
+    const other = make(false);
+    await other.service.receive({ code: '9780064400558', device: 'reader', eventId: 'a' });
+    expect((await request(other.server).get('/pending?screenId=portal')).body).not.toHaveProperty('queue');
+  });
+});

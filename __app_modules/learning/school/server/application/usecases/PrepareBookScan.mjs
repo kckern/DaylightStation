@@ -43,7 +43,18 @@ const FILEABLE = new Set(['ready', 'not-found']);
 const FILE_FAILED = 'Could not file this book. Tap a face to try again.';
 const refuse = (status, message) => { const error = new Error(message); error.status = status; throw error; };
 
-/** Short-lived household kiosk intentions. No reading store or progress writer is a dependency. */
+/**
+ * Short-lived household kiosk intentions. No reading store or progress writer is a dependency.
+ *
+ * `pile` — the target screen shows the pile (the Portal: `BookScanEntry`
+ * renders nothing for an unscoped scan there). Its waiting scans then form a
+ * QUEUE that an open shelf drains first in, first out: nothing is superseded
+ * by a later scan or by a claim, and `pending()` offers the OLDEST live intent.
+ * Without it the corner-offer rules hold — one presented intent plus only the
+ * newest deferred one (final review I1, 2026-11-05: on the Portal those rules
+ * discarded books the shelf chip still counted as waiting). The store stays
+ * bounded either way (32 intents, 5-minute TTL).
+ */
 export class PrepareBookScan {
   #deps; #records = new Map(); #events = new Map(); #passes = new Map(); #bursts = new Map();
   // Per screen: the wake in flight (shared by every scan that arrives while it
@@ -53,9 +64,9 @@ export class PrepareBookScan {
   // In memory, like the intentions: a backend restart loses an unfiled pile.
   #piles = new Map();
   constructor({ resolveBook, roster, issueLaunchTarget, wake, notifications, target,
-    clock = Date.now, mintId, logger = {}, filer = null, dayOf = null }) {
+    clock = Date.now, mintId, logger = {}, filer = null, dayOf = null, pile = false, schedule = null }) {
     if (typeof mintId !== 'function') throw new TypeError('PrepareBookScan requires a secure intent id generator');
-    this.#deps = { resolveBook, roster, issueLaunchTarget, wake, notifications, target, clock, mintId, logger, filer, dayOf };
+    this.#deps = { resolveBook, roster, issueLaunchTarget, wake, notifications, target, clock, mintId, logger, filer, dayOf, pile: pile === true, schedule };
   }
   #prune() {
     const now = this.#deps.clock();
@@ -115,7 +126,8 @@ export class PrepareBookScan {
     const isbn13 = parsed.kind === 'isbn' ? parsed.isbn13 : code;
     // A code that names no book still becomes a card (so the grown-up sees it
     // was read), but it can never be filed: say so at warn, with the code. Two
-    // ISBNs run together by the reader land here; they are not split.
+    // ISBNs run together arrive here already split by `receive`; a 26-digit
+    // run with a bad checksum in either half lands here whole, as one code.
     if (parsed.kind !== 'isbn') {
       logger.warn?.('school.book-scan.rejected', { screenId: target.screenId, code: String(code ?? '').slice(0, 128), reason: parsed.reason ?? parsed.kind, device: device ?? null });
     }
@@ -158,8 +170,9 @@ export class PrepareBookScan {
     // first record is no longer live (superseded, dismissed): the twin card
     // already counted it.
     if (inBurst) return { status: 'pending', intentId: twin.record?.id ?? twin.id };
-    const pending = [...this.#records.values()].filter(r => this.#live(r) && !r.claiming);
-    // Keep the presented intention and only the newest deferred intention.
+    // A pile screen queues every waiting scan (see the class note). Elsewhere:
+    // keep the presented intention and only the newest deferred intention.
+    const pending = this.#deps.pile ? [] : [...this.#records.values()].filter(r => this.#live(r) && !r.claiming);
     const pinned = [...this.#records.values()].some(r => this.#live(r) && r.claiming);
     const superseded = pending.slice(0, Math.max(0, pending.length - (pinned ? 0 : 1)));
     for (const old of superseded) old.phase = 'superseded';
@@ -169,6 +182,12 @@ export class PrepareBookScan {
       error: parsed.kind === 'isbn' ? null : 'That book barcode is invalid. Scan the publisher ISBN again.' };
     this.#records.set(record.id, record);
     while (this.#records.size > 32) this.#records.delete(this.#records.keys().next().value);
+    // An intent that runs out sends no event of its own, so a card would show
+    // "scan it again" only when something else moved. Say so when it expires
+    // (`schedule(fn, ms)` is the composition's timer; absent, nothing is sent).
+    this.#deps.schedule?.(() => {
+      if (this.#records.get(record.id) === record && record.phase === 'pending') this.#notify(record);
+    }, TTL);
     if (twin) record.card = twin;
     else this.#addCard(pile, record);
     // A superseded intent can no longer be claimed by an open shelf; its card
@@ -265,8 +284,22 @@ export class PrepareBookScan {
   }
   pending(screenId) {
     this.#prune();
-    const record = [...this.#records.values()].reverse().find(r => this.#live(r) && r.screenId === screenId);
+    // A pile screen drains first in, first out; elsewhere the newest wins.
+    const records = [...this.#records.values()];
+    const record = (this.#deps.pile ? records : records.reverse()).find(r => this.#live(r) && r.screenId === screenId);
     return record ? this.#preview(record) : null;
+  }
+  /**
+   * Every live intent for a pile screen, oldest first — the queue an open
+   * shelf drains. The panel walks it to skip the scans it must not take (one
+   * already waiting when the shelf opened, an unreadable barcode, a claim that
+   * already failed) without those holding up the books behind them. Null on a
+   * screen without a pile.
+   */
+  queue(screenId) {
+    if (!this.#deps.pile) return null;
+    this.#prune();
+    return [...this.#records.values()].filter(r => this.#live(r) && r.screenId === screenId).map(r => this.#preview(r));
   }
   #record(id, screenId) {
     this.#prune();
@@ -296,8 +329,9 @@ export class PrepareBookScan {
       if (record.card?.state === 'unfiled') record.card.state = 'claimed';
       this.#passes.set(JSON.stringify([learnerId, record.isbn13]), this.#deps.clock() + PASS_TTL);
       while (this.#passes.size > 256) this.#passes.delete(this.#passes.keys().next().value);
-      // Retire older previews so returning home only offers the latest deferred scan.
-      for (const old of this.#records.values()) {
+      // Retire older previews so returning home only offers the latest
+      // deferred scan. Not on a pile screen: those wait their turn.
+      if (!this.#deps.pile) for (const old of this.#records.values()) {
         if (old === record) break;
         if (old.phase === 'pending') {
           old.phase = 'superseded';
@@ -367,9 +401,9 @@ export class PrepareBookScan {
   }
   /**
    * Which intent feeds a card, and whether an open shelf can still claim it.
-   * A card outlives its intent: two scans in one shelf step leave the older
-   * one superseded (see `claim`), and a dismissed, expired or evicted intent
-   * is just as gone — an unfiled card no shelf will ever open unless the book
+   * A card outlives its intent: on a screen without a pile two scans in one
+   * shelf step leave the older one superseded (see `claim`), and a dismissed,
+   * expired or evicted intent is just as gone — an unfiled card no shelf will ever open unless the book
    * is scanned again, which hands the card a live intent.
    */
   #intentOf(card) {
@@ -419,7 +453,7 @@ export class PrepareBookScan {
   }
   /**
    * A card the pile has dealt with must not stay offered as a live intent: the
-   * open-shelf path claims the newest live intent, and would hand a book filed
+   * open-shelf path claims a live intent (the oldest on a pile screen), and would hand a book filed
    * to one child to whichever child opens their shelf next.
    */
   #retire(card) {

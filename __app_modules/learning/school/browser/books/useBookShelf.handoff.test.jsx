@@ -200,7 +200,7 @@ describe('the shelf acknowledges a scan at once and shows what is waiting', () =
     await act(async () => {});
     expect(screen.getByRole('heading', { name: BOOK2.title })).toBeTruthy();
     expect(chip()).toBeNull();
-    expect(h.log).toHaveBeenCalledWith('scan.visible', { screenId: 'portal', msSinceReceived: expect.any(Number) });
+    expect(h.log).toHaveBeenCalledWith('scan.visible', { screenId: 'portal', msSinceReceived: expect.any(Number), queued: false });
     const visible = h.log.mock.calls.find(([event]) => event === 'scan.visible')[1];
     expect(visible.msSinceReceived).toBeGreaterThanOrEqual(300);
   });
@@ -227,21 +227,23 @@ describe('the shelf acknowledges a scan at once and shows what is waiting', () =
     await act(async () => { vi.advanceTimersByTime(2000); });
     expect(screen.getByTestId('book-save-receipt')).toBeTruthy();
     expect(chip()?.textContent).toBe('2 more books waiting');
-    // The hold lifts; the shelf claims the newest scan (the server retires the
-    // older one: it stays a pile card, marked superseded).
+    // The hold lifts; the shelf claims the OLDEST scan (final review I1: on
+    // the Portal the server queues them first in, first out, and supersedes
+    // nothing), and the other waits its turn.
     await act(async () => { vi.advanceTimersByTime(3000); });
     s.update({
-      scanStatus: { acknowledging: null, cards: [pileCard('scan-3', ISBN3, { superseded: true })] },
-      initialBookEntry: { intentId: 'scan-4', isbn13: ISBN4, book: BOOK4, receivedAt: ago(6000), screenId: 'portal' },
+      scanStatus: { acknowledging: null, cards: [pileCard('scan-4', ISBN4)] },
+      initialBookEntry: { intentId: 'scan-3', isbn13: ISBN3, book: BOOK3, receivedAt: ago(6000), screenId: 'portal' },
     });
     await act(async () => {});
-    expect(screen.getByRole('heading', { name: BOOK4.title })).toBeTruthy();
-    expect(chip()?.textContent).toContain('1 more book waiting');
-    expect(chip()?.textContent).toContain(ISBN3);
-    expect(chip()?.textContent).toContain('scan it again to open it');
+    expect(screen.getByRole('heading', { name: BOOK3.title })).toBeTruthy();
+    expect(chip()?.textContent).toBe('1 more book waiting');
+    expect(chip()?.textContent).not.toContain('scan it again to open it');
   });
 
-  it('two scans in one step: the older is superseded — "1 more book waiting", and it is listed by ISBN', async () => {
+  // On the Portal a waiting scan is superseded only when its intent expired,
+  // was dismissed, or was evicted (final review I1); the chip shows it the same.
+  it('a waiting scan whose intent is gone: "1 more book waiting", and it is listed by ISBN', async () => {
     h.shelf.mockResolvedValue({ ok: true, status: 200, data: { learnerId: 'kid', items: [], obligation: null } });
     renderShelf({
       initialBookEntry: { intentId: 'scan-4', isbn13: ISBN4, book: BOOK4, receivedAt: ago(100), screenId: 'portal' },
@@ -293,7 +295,7 @@ describe('task 3 fix round 1', () => {
     act(() => { fireEvent.click(screen.getByTestId('screen-header-back')); });
     await act(async () => {});
     expect(h.log.mock.calls.filter(([event]) => event === 'scan.acknowledged')).toHaveLength(0);
-    expect(h.log).toHaveBeenCalledWith('scan.visible', { screenId: 'portal', msSinceReceived: expect.any(Number) });
+    expect(h.log).toHaveBeenCalledWith('scan.visible', { screenId: 'portal', msSinceReceived: expect.any(Number), queued: true });
   });
 
   it('a hand-off with nothing blocking never counts the opening book as waiting, not even for one render', async () => {
@@ -319,5 +321,33 @@ describe('task 3 fix round 1', () => {
     r.rerender({ initialBookEntry: { intentId: 'scan-7', isbn13: ISBN2, book: BOOK2 } });
     await act(async () => {});
     expect(r.result.current.queuedScans).toBe(1);
+  });
+});
+
+describe('final review I2 / I3', () => {
+  it('I2: on a scan-ready shelf a card the pile read reports before the pending read is still acknowledged', async () => {
+    const receivedAt = ago(200);
+    const s = renderShelf();
+    await act(async () => {});
+    // The shelf view, no receipt: scan-ready. The pile read wins the race.
+    s.update({ scanStatus: { acknowledging: null, cards: [pileCard('scan-9', ISBN2, { status: 'loading' })] } });
+    await act(async () => {});
+    s.update({ scanStatus: { acknowledging: { intentId: 'scan-9', receivedAt, screenId: 'portal' }, cards: [pileCard('scan-9', ISBN2)] } });
+    await act(async () => {});
+    expect(h.log).toHaveBeenCalledWith('scan.acknowledged', { screenId: 'portal', msSinceReceived: expect.any(Number) });
+  });
+
+  it('I3: a handed scan held behind hand-typed digits is visible as queued', async () => {
+    const s = renderShelf();
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: /Add a book/ }));
+    await act(async () => {});
+    for (const key of ['9', '7', '8']) fireEvent.click(screen.getByRole('button', { name: key }));
+    s.update({ initialBookEntry: { intentId: 'scan-10', isbn13: ISBN2, book: BOOK2, receivedAt: ago(50), screenId: 'portal' } });
+    await act(async () => {});
+    fireEvent.click(screen.getByTestId('screen-header-back'));
+    await act(async () => {});
+    expect(screen.getByRole('heading', { name: BOOK2.title })).toBeTruthy();
+    expect(h.log).toHaveBeenCalledWith('scan.visible', { screenId: 'portal', msSinceReceived: expect.any(Number), queued: true });
   });
 });

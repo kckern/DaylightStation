@@ -8,10 +8,11 @@
  * chip says so at once — `Got it — looking it up` — and counts the books
  * still behind the one on screen.
  *
- * `superseded` are books the server will no longer hand to this shelf: two
- * scans inside one shelf step keep only the newer intent, and the older one
- * stays an unfiled pile card (hidden while the shelf is open). Each is named
- * with the one thing that opens it.
+ * `superseded` are books the server will no longer hand to this shelf: their
+ * intent was dismissed, expired or evicted (on the Portal waiting scans queue
+ * and are never superseded by another scan), and each stays an unfiled pile
+ * card (hidden while the shelf is open). Each is named with the one thing
+ * that opens it.
  *
  * It sits in the shelf header's free middle (`ScreenHeader` `status`), never
  * in the body flow, so its coming and going moves nothing on the shelf.

@@ -181,22 +181,37 @@ the claim lands (`useBookScanEntry` `shelfScan`, reported up through
 scanned since the shelf opened (`BookPile` `onShelfCards`; the pile itself is
 hidden while a shelf is open), minus the one being acknowledged and any already
 handed to the shelf, plus claimed scans queued in `entryQueue` (`queuedScans`).
-A card with no live intent left (superseded by two scans in one shelf step,
-dismissed, expired or evicted; the pile view carries `intentId` and
-`superseded` per card) is listed under the chip by title or ISBN with `scan it
-again to open it`. A rescan gives the card a live intent at once: the 10 s
+On the Portal the waiting scans are a queue the shelf drains **first in, first
+out**: after each step (and a receipt's hold) the shelf claims the oldest one,
+so four scans during one step open one by one and the chip counts down
+`3 → 2 → 1 → 0`. Nothing is superseded by a later scan or by a claim there
+(`PrepareBookScan` `pile: true`; see reading-shelf.md, "An open shelf wins").
+`GET /school/book-scans/pending` carries the whole `queue` beside the head
+`intent`, and the panel walks it past what it must not take — a scan already
+waiting when the shelf opened, an unreadable barcode or failed lookup, a scoped
+claim that already failed — so none of them holds up the books behind it.
+A card with no live intent left (dismissed, expired — the server says so when
+an intent expires — or evicted from the bounded store; the pile view carries
+`intentId` and `superseded` per card) is listed under the chip by title or ISBN
+with `scan it again to open it`. A rescan gives the card a live intent at once: the 10 s
 burst window absorbs a repeat only while its twin card's intent is still live.
-A scan the chip already showed as waiting logs no `scan.acknowledged` when the
-shelf later claims it, and the book opening on a hand-off is never counted as
-waiting. A receipt is not replaced by the queue during its hold; the count sits
+A scan the chip already showed as waiting — counted while the shelf was NOT
+asking for a barcode (mid-step or inside a receipt's hold) — logs no
+`scan.acknowledged` when the shelf later claims it. On a scan-ready shelf the
+pile read can beat the pending read by a round trip; that card is the scan
+about to be acknowledged, not a waiting one, and is still acknowledged. The
+book opening on a hand-off is never counted as waiting. A receipt is not replaced by the queue during its hold; the count sits
 beside it. Logs: `school.book-shelf.scan.acknowledged {screenId,
 msSinceReceived}` once per scan on the first "Got it", and
-`school.book-shelf.scan.visible {screenId, msSinceReceived}` when the book is
-on screen. Both measure the panel clock against the server's `receivedAt`, so
-`msSinceReceived` includes any client/server clock skew. `scan.visible` for the
-scan that launches the shelf (the first scan, which opens it on a face) also
-includes the time spent choosing a face; read the steady-state figure from
-scans that land on an already-open shelf.
+`school.book-shelf.scan.visible {screenId, msSinceReceived, queued}` when the
+book is on screen. Both measure the panel clock against the server's
+`receivedAt`, so `msSinceReceived` includes any client/server clock skew.
+`queued: true` marks a scan that WAITED before it opened — on the server while
+the chip counted it (it landed mid-step), or in the shelf's own `entryQueue`
+behind a step — so its `msSinceReceived` holds the whole step and receipt hold
+(5 s and more), not the scan's latency. Those are exactly the scans that log no
+`scan.acknowledged`. The latency query below leaves them out. (The Portal never
+opens a shelf from a face scan, so no face-choosing time is in the figure.)
 
 **Scan intake rules** (`PrepareBookScan.receive`, before a scan becomes a card):
 
@@ -209,16 +224,21 @@ scans that land on an already-open shelf.
   (`BURST_WINDOW_MS`, keyed on screen and ISBN); the repeat logs
   `school.book-scan.burst-duplicate {screenId, isbn13, msSinceFirst}` (debug)
   and coalesces into the live intent. The window applies only while the earlier
-  scan's card still has a live intent. Once it is superseded, dismissed or
-  expired, a rescan is the child following the chip's "scan it again to open
+  scan's card still has a live intent. Once it is dismissed, expired or evicted
+  (or, on a screen without a pile, superseded), a rescan is the child following the chip's "scan it again to open
   it" and makes a new intent at once.
 
 **Timing queries** (log store; stats syntax is `| stats by (...)` /
 `| stats <fn>() as name`, see CLAUDE.md "Reading Logs"):
 
+Debug events — `school.book-scan.burst-duplicate`, `school.book-shelf.scan.queued`,
+`school.book-shelf.scan.scoped-claim-skipped` — never reach the store while the
+backend and panels log at info (the production default); raise the log level
+to see them. The queries below use info events only.
+
 ```
-# Scan to book on screen (p50 / p95, ms)
-_msg:"school.book-shelf.scan.visible" AND _time:7d
+# Scan to book on screen (p50 / p95, ms) — scans that waited mid-step excluded
+_msg:"school.book-shelf.scan.visible" AND _time:7d AND NOT data.queued:true
   | stats quantile(0.5, "data.msSinceReceived") as p50, quantile(0.95, "data.msSinceReceived") as p95, count() as n
 
 # Scan to "Got it" (the acknowledgement)
@@ -229,9 +249,14 @@ _msg:"school.book-shelf.scan.acknowledged" AND _time:7d
 _msg:"books.cover.found" AND _time:7d
   | stats by ("data.source") quantile(0.5, "data.elapsedMs") as p50, quantile(0.95, "data.elapsedMs") as p95, count() as n
 
-# Split and absorbed scans
-_msg:"school.book-scan.split" OR _msg:"school.book-scan.burst-duplicate"
-  | stats by (_msg) count() as n
+# Split scans
+_msg:"school.book-scan.split" AND _time:7d
+  | stats count() as n
+
+# Absorbed repeats (a double-fire or a repeat scan of a book already in the
+# session; burst-duplicate itself is debug and not in the store)
+_msg:"school.book-pile.card-added" AND data.duplicate:true AND _time:7d
+  | stats count() as n
 ```
 
 **The panel door is the mirror of a scan.** A reading icon beside the day board

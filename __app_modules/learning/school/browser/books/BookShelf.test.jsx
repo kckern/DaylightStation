@@ -63,7 +63,7 @@ describe('BookShelf', () => {
     arm({ view: 'loading', shelf: null });
     mount({ onExit });
     // `openAdd` rides along: the panel door opens the shelf straight at the pad.
-    expect(h.hook).toHaveBeenCalledWith({ learnerId: 'kid', grant: 'g1', idleTimeoutSeconds: 90, onExit, openAdd: false });
+    expect(h.hook).toHaveBeenCalledWith({ learnerId: 'kid', grant: 'g1', idleTimeoutSeconds: 90, onExit, openAdd: false, wasWaiting: expect.any(Function) });
   });
 
   it('loading: a calm line, no tiles', () => {

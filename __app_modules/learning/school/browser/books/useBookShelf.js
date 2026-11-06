@@ -113,8 +113,13 @@ function compact(obj) {
  * @param {string} p.grant - the `X-School-Book-Grant` the launch card carried
  * @param {number} [p.idleTimeoutSeconds=90]
  * @param {(reason: 'done'|'idle') => void} [p.onExit]
+ * @param {(intentId: string) => boolean} [p.wasWaiting] - did the panel show
+ *   this scan as waiting before it was handed over (it landed mid-step and
+ *   waited on the server)? Marks its `scan.visible` as `queued`.
  */
-export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit, initialBookEntry = null, openAdd = false }) {
+export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit, initialBookEntry = null, openAdd = false, wasWaiting = null }) {
+  const wasWaitingRef = useRef(wasWaiting);
+  wasWaitingRef.current = wasWaiting;
   // The panel door opens the shelf to TYPE a number, so the pad is the landing
   // — not the tiles with `Add a book` to find. A ref, and read only inside the
   // first load: it decides where that load lands and must not move the child
@@ -427,10 +432,13 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
       // is not.
       : view === 'add' && step === 'number' && (!add.entry || add.entry === scannedBookId);
   const queuedLogged = useRef(null);
+  // Scans that sat in this queue while the screen was not asking for one.
+  const waitedKeys = useRef(new Set());
   useEffect(() => {
     const entry = nextEntry;
     if (!entry || !shelf || needsRefresh || busy) return;
     if (!scanIsAnswer) {
+      for (const queued of entryQueue) waitedKeys.current.add(queued.key);
       if (queuedLogged.current !== entry.key) {
         queuedLogged.current = entry.key;
         schoolLog.bookShelfDebug?.('scan.queued', { learnerId, isbn13: entry.isbn13, view, step, waiting: entryQueue.length });
@@ -442,8 +450,12 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     // The scan is on screen from this render: how long since the server
     // received it. `receivedAt` is the server's clock, `Date.now()` the
     // panel's — the measure carries any skew between them (NTP on both).
+    // `queued`: the scan waited — behind a step here, or on the server while
+    // the panel showed it as waiting — so the figure holds that wait, not
+    // the scan's latency. The latency query filters these out.
     const received = entry.receivedAt ? Date.parse(entry.receivedAt) : NaN;
-    schoolLog.bookShelf('scan.visible', { screenId: entry.screenId ?? null, msSinceReceived: Number.isFinite(received) ? Math.max(0, Date.now() - received) : null });
+    const queued = waitedKeys.current.delete(entry.key) || Boolean(entry.intentId && wasWaitingRef.current?.(entry.intentId));
+    schoolLog.bookShelf('scan.visible', { screenId: entry.screenId ?? null, msSinceReceived: Number.isFinite(received) ? Math.max(0, Date.now() - received) : null, queued });
     const active = shelf.items?.find(item => item.bookId === entry.isbn13 && ['reading', 'unread'].includes(item.projection?.status));
     const finished = recentFinishes(shelf.items).find(item => item.bookId === entry.isbn13);
     if (active) { setStep(null); setAdd(EMPTY_ADD); enterUpdate(active); return; }

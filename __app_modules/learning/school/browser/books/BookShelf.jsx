@@ -1,5 +1,5 @@
 /** Learner reading workspace: bounded collections, focused editors, and inline save results. */
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useBookShelf } from "./useBookShelf.js";
 import BookHistory from "./BookHistory.jsx";
 import ReadingPips from "../reading/ReadingPips.jsx";
@@ -178,8 +178,20 @@ export function scanChipState(scanStatus, { queuedScans = 0, wasHanded = () => f
 }
 
 export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd = false, onScanReadyChange = null, scanStatus = null }) {
-  const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, receiptHeld = false, queuedScans = 0, wasHanded, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd });
+  // Intents the chip already counted as waiting. Their "Got it" when the
+  // shelf finally claims them is not an acknowledgement — the child was told
+  // long before — and logging it would put a whole step's wait into the
+  // acknowledgement latency. Their `scan.visible` is logged `queued`.
+  const seenWaiting = useRef(new Set());
+  const wasWaiting = useCallback((intentId) => seenWaiting.current.has(intentId), []);
+  const { view, step, shelf, studyDay, earliestFinishDay, manualEntry, scannedBookId, learner, error, busy, needsRefresh = false, receiptHeld = false, queuedScans = 0, wasHanded, current, receipt, add, actions } = useBookShelf({ learnerId, grant, idleTimeoutSeconds, onExit, initialBookEntry, openAdd, wasWaiting });
   const chip = scanChipState(scanStatus, { queuedScans, wasHanded });
+  // Not while a fresh save receipt is held: a scan claimed then could only be
+  // queued, and a close inside the hold dropped a book the server had already
+  // handed over. Left pending, it is claimed when the hold lifts, or stays in
+  // the pile if the shelf closes first.
+  const scanReady = !busy && !needsRefresh && !receiptHeld
+    && (view === 'shelf' || view === 'completed' || (view === 'add' && step === 'number'));
   // Once per scan, on the render that first says "Got it". `receivedAt` is
   // the server's clock and `Date.now()` the panel's: the figure carries any
   // skew between the two.
@@ -187,12 +199,11 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
   const ackRef = useRef(chip.acknowledging);
   ackRef.current = chip.acknowledging;
   const ackLogged = useRef(null);
-  // Intents the chip already counted as waiting. Their "Got it" when the
-  // shelf finally claims them is not an acknowledgement — the child was told
-  // long before — and logging it would put a whole step's wait into the
-  // acknowledgement latency. `scan.visible` still logs for them.
-  const seenWaiting = useRef(new Set());
+  // Only while the shelf is NOT asking for a barcode: on a scan-ready shelf
+  // the pile read can beat the pending read by one round trip, and that
+  // card is not waiting — it is the scan about to be acknowledged.
   useEffect(() => {
+    if (scanReady) return;
     for (const intentId of chip.waitingIntents) {
       seenWaiting.current.add(intentId);
       if (seenWaiting.current.size > 64) seenWaiting.current.delete(seenWaiting.current.values().next().value);
@@ -205,12 +216,6 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
     const received = Date.parse(ackRef.current?.receivedAt ?? '');
     schoolLog.bookShelf('scan.acknowledged', { screenId: ackRef.current?.screenId ?? null, msSinceReceived: Number.isFinite(received) ? Math.max(0, Date.now() - received) : null });
   }, [ackId]);
-  // Not while a fresh save receipt is held: a scan claimed then could only be
-  // queued, and a close inside the hold dropped a book the server had already
-  // handed over. Left pending, it is claimed when the hold lifts, or stays in
-  // the pile if the shelf closes first.
-  const scanReady = !busy && !needsRefresh && !receiptHeld
-    && (view === 'shelf' || view === 'completed' || (view === 'add' && step === 'number'));
   const reportRef = useRef(onScanReadyChange);
   reportRef.current = onScanReadyChange;
   useEffect(() => { reportRef.current?.(scanReady); }, [scanReady]);
