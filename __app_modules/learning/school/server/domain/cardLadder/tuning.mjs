@@ -122,7 +122,8 @@ export function dayStats(dayFile, settings) {
     for (const id of round.quiz?.failed ?? []) { failedByPile[pileOf(round, id)] += 1; quizzed += 1; }
   }
   const answered = Object.values(dayFile.rechecks?.answered ?? {});
-  const items = Object.entries(dayFile.items ?? {});
+  // Dictation (spec 2026-11-06) is drilled apart from the ladder: its attempts never tune it.
+  const items = Object.entries(dayFile.items ?? {}).filter(([, item]) => item?.source !== 'dictation');
   const typedScores = items.map(([, item]) => typedScoreOf(item, dayFile, settings)).filter((score) => typeof score === 'number');
   const activeMs = dayFile.activeMs ?? 0;
   // Time spent after the credit (practice, Learn more) says nothing about the

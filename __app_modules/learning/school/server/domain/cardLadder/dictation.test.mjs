@@ -117,3 +117,26 @@ describe('nextDictationWord', () => {
     expect(nextDictationWord(stateOf(['a', 'b', 'c']), { lastWordId: 'a' })).toBeNull();
   });
 });
+
+describe('nextDictationWord — a real rotation', () => {
+  it('walks three words in list order, wrapping, never serving the same word twice in a row', () => {
+    const s = dictationState({ week: 'w', words: ['a', 'b', 'c'] }, null, all);
+    const served = [];
+    let last = null;
+    for (let i = 0; i < 7; i += 1) { last = nextDictationWord(s, { lastWordId: last }); served.push(last); }
+    expect(served).toEqual(['a', 'b', 'c', 'a', 'b', 'c', 'a']);
+    for (let i = 1; i < served.length; i += 1) expect(served[i]).not.toBe(served[i - 1]);
+  });
+  it('keeps rotating as words finish mid-walk', () => {
+    const progress = { week: 'w', words: {} };
+    const served = [];
+    let last = null;
+    for (let i = 0; i < 6; i += 1) {
+      const s = dictationState({ week: 'w', words: ['a', 'b', 'c'] }, progress, all);
+      last = nextDictationWord(s, { lastWordId: last });
+      served.push(last);
+      if (last === 'b') progress.words.b = { step: 'blind', blindPasses: 2 };
+    }
+    expect(served).toEqual(['a', 'b', 'c', 'a', 'c', 'a']);
+  });
+});

@@ -1553,3 +1553,143 @@ describe('CardLadderSittingService.achievementRecord', () => {
     await expect(make().service.achievementRecord({ userId: 'test-learner' })).rejects.toThrow(/list packages/);
   });
 });
+
+// ── Dictation (spec 2026-11-06 Revision 1): one tap, its own run, strict spelling, no goal, no clock.
+describe('CardLadderSittingService — dictation', () => {
+  const WEEK = '2026-11-09';
+  function dictationStore({ list = { week: WEEK, words: ['gawi', 'pul'] }, progress = null, fileState = null } = {}) {
+    const store = memoryStore();
+    store.s.list = list; store.s.progress = progress; store.s.progressWrites = [];
+    Object.assign(store, {
+      readDictation: () => structuredClone(store.s.list),
+      readDictationProgress: () => structuredClone(store.s.progress ?? { week: null, words: {} }),
+      writeDictationProgress: (_u, _p, next) => { store.s.progress = structuredClone(next); store.s.progressWrites.push(structuredClone(next)); return next; },
+      dictationFileState: () => fileState ?? { list: store.s.list ? 'ok' : 'missing', progress: store.s.progress ? 'ok' : 'missing' },
+    });
+    return store;
+  }
+  async function begin(opts = {}) {
+    const made = make({ media: true, ...opts });
+    const opened = await made.service.open({ userId: 'test-learner', deckId: DECK });
+    const started = await made.service.startDictation({ learnerId: 'test-learner', package: 'korean-vocab', sittingId: opened.sittingId });
+    return { ...made, opened, started, sittingId: opened.sittingId };
+  }
+  const answer = (service, sittingId, item, response) => service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
+  const events = (logger, level, name) => logger[level].mock.calls.filter(([event]) => event === name);
+
+  it('starts before the daily goal on a D.1 pick: term audio, term choices including the answer', async () => {
+    const store = dictationStore();
+    const { started, logger } = await begin({ store });
+    expect(store.s.days[TODAY].doneAt).toBeNull();
+    expect(started.item).toMatchObject({ type: 'choice', task: 'D.1', source: 'dictation', wordId: 'gawi' });
+    expect(started.item.assets.audio).toMatch(/words\/week-01\/gawi\/term\.mp3$/);
+    expect(started.item.choices).toContain('가위');
+    expect(started.item.choices).toEqual(expect.arrayContaining(['a', 'b', 'c']));
+    expect(started.progress.phase).toBe('dictation');
+    expect(started.dictation).toMatchObject({ week: WEEK, total: 2, remaining: 2, done: false, needsRecording: [] });
+    expect(events(logger, 'info', 'school.card-ladder.dictation.started')[0][1]).toMatchObject({ learnerId: 'test-learner', package: 'korean-vocab', week: WEEK, remaining: 2 });
+  });
+
+  it('answers add no active time and leave the goal alone; attempts are day-file items', async () => {
+    const store = dictationStore();
+    const { service, started, sittingId, logger } = await begin({ store });
+    const activeMs = store.s.days[TODAY].activeMs;
+    const lastInputAt = store.s.days[TODAY].lastInputAt;
+    const out = await answer(service, sittingId, started.item, { choice: '가위' });
+    expect(out.dictation).toMatchObject({ step: 'match', pass: true, remaining: 2, done: false });
+    const day = store.s.days[TODAY];
+    expect(day.activeMs).toBe(activeMs);
+    expect(day.lastInputAt).toBe(lastInputAt);
+    expect(day.doneAt).toBeNull();
+    expect(day.items[started.item.id]).toMatchObject({ wordId: 'gawi', task: 'D.1', source: 'dictation', result: { correct: true } });
+    expect(store.s.progress).toMatchObject({ week: WEEK, words: { gawi: { step: 'copy', blindPasses: 0 } } });
+    expect(events(logger, 'info', 'school.card-ladder.dictation.attempt')[0][1]).toMatchObject({ learnerId: 'test-learner', package: 'korean-vocab', week: WEEK, wordId: 'gawi', step: 'match', pass: true, dontKnow: false });
+  });
+
+  it('a correct copy moves the word to blind; a blind miss moves it back to copy with no answer text', async () => {
+    const store = dictationStore({ progress: { week: WEEK, words: { gawi: { step: 'copy', blindPasses: 0 }, pul: { step: 'blind', blindPasses: 0 } } } });
+    const { service, started, sittingId } = await begin({ store });
+    expect(started.item).toMatchObject({ type: 'drill', step: 'copy', wordId: 'gawi', word: { term: '가위' } });
+    expect(started.item.word.media.audio).toMatch(/gawi\/term\.mp3$/);
+    const copied = await answer(service, sittingId, started.item, { typed: '가위' });
+    expect(copied.dictation).toMatchObject({ step: 'copy', pass: true });
+    expect(store.s.progress.words.gawi.step).toBe('blind');
+    const blind = copied.item;
+    expect(blind).toMatchObject({ type: 'drill', step: 'dictation', wordId: 'pul', dictationStep: 'blind' });
+    expect(blind.assets.audio).toMatch(/pul\/term\.mp3$/);
+    expect(JSON.stringify(blind)).not.toContain('풀');
+    const missed = await answer(service, sittingId, blind, { typed: '불' });
+    expect(missed.dictation).toMatchObject({ step: 'blind', pass: false, done: false });
+    expect(JSON.stringify(missed.result)).not.toContain('풀');
+    expect(store.s.progress.words.pul).toMatchObject({ step: 'copy', blindPasses: 0 });
+  });
+
+  it('a mixed-script answer is a miss, never a crash', async () => {
+    const store = dictationStore({ progress: { week: WEEK, words: { gawi: { step: 'blind', blindPasses: 0 } } } });
+    const { service, sittingId } = await begin({ store });
+    const item = (await service.get({ userId: 'test-learner', sittingId })).item;
+    // The first not-done word in list order is served first: gawi, at blind.
+    expect(item.wordId).toBe('gawi');
+    const out = await answer(service, sittingId, item, { typed: '가wi' });
+    expect(out.result.correct).toBe(false);
+    expect(store.s.progress.words.gawi.step).toBe('copy');
+  });
+
+  it('two blind passes per word end the run with done: true and one done log', async () => {
+    const store = dictationStore({ progress: { week: WEEK, words: { gawi: { step: 'blind', blindPasses: 1 }, pul: { step: 'blind', blindPasses: 1 } } } });
+    const { service, started, sittingId, logger } = await begin({ store });
+    const first = await answer(service, sittingId, started.item, { typed: '가위' });
+    expect(first.dictation).toMatchObject({ done: false, remaining: 1 });
+    const second = await answer(service, sittingId, first.item, { typed: '풀' });
+    expect(second.dictation).toMatchObject({ step: 'blind', pass: true, remaining: 0, done: true });
+    expect(second.item.source).not.toBe('dictation');
+    expect(events(logger, 'info', 'school.card-ladder.dictation.done')).toHaveLength(1);
+    expect(events(logger, 'info', 'school.card-ladder.dictation.done')[0][1]).toEqual({ learnerId: 'test-learner', package: 'korean-vocab', week: WEEK });
+    // Replaying the last answer is not a second finish.
+    await answer(service, sittingId, first.item, { typed: '풀' }).catch(() => null);
+    expect(events(logger, 'info', 'school.card-ladder.dictation.done')).toHaveLength(1);
+    expect(store.s.days[TODAY].doneAt).toBeNull();
+    // A done list does not start again.
+    expect(await service.startDictation({ learnerId: 'test-learner', package: 'korean-vocab', sittingId })).toMatchObject({ done: true });
+  });
+
+  it('refuses at entry when the list or the progress file is corrupt', async () => {
+    for (const fileState of [{ list: 'corrupt', progress: 'ok' }, { list: 'ok', progress: 'corrupt' }]) {
+      const made = make({ media: true, store: dictationStore({ fileState }) });
+      const opened = await made.service.open({ userId: 'test-learner', deckId: DECK });
+      await expect(made.service.startDictation({ learnerId: 'test-learner', package: 'korean-vocab', sittingId: opened.sittingId })).rejects.toThrow(/unreadable/);
+      expect(events(made.logger, 'warn', 'school.card-ladder.dictation.corrupt')[0][1]).toMatchObject({ learnerId: 'test-learner', package: 'korean-vocab', ...fileState });
+    }
+  });
+
+  it('refuses with no list, and on another package', async () => {
+    const made = make({ media: true, store: dictationStore({ list: null }) });
+    const opened = await made.service.open({ userId: 'test-learner', deckId: DECK });
+    await expect(made.service.startDictation({ learnerId: 'test-learner', package: 'korean-vocab', sittingId: opened.sittingId })).rejects.toThrow(/no dictation/i);
+    await expect(made.service.startDictation({ learnerId: 'test-learner', package: 'other', sittingId: opened.sittingId })).rejects.toThrow(/package/);
+  });
+
+  it('reports needs-recording words and warns on each unknown word at start', async () => {
+    const store = dictationStore({ list: { week: WEEK, words: ['gawi', 'ghost', 'pul'] } });
+    const { started, logger } = await begin({ store, media: (id) => !id.includes('/pul/') });
+    expect(started.dictation).toMatchObject({ total: 1, remaining: 1, needsRecording: ['pul'], unknown: ['ghost'] });
+    expect(events(logger, 'warn', 'school.card-ladder.dictation.unknown-word').map(([, data]) => data)).toEqual([
+      { learnerId: 'test-learner', package: 'korean-vocab', week: WEEK, wordId: 'ghost' },
+    ]);
+  });
+
+  it('writes progress under the list week and drops another week\'s rows', async () => {
+    const store = dictationStore({ progress: { week: '2026-11-02', words: { pul: { step: 'blind', blindPasses: 1 } } } });
+    const { service, started, sittingId } = await begin({ store });
+    await answer(service, sittingId, started.item, { choice: '가위' });
+    expect(store.s.progress).toEqual({ week: WEEK, words: { gawi: { step: 'copy', blindPasses: 0, lastAttemptAt: expect.any(String) } } });
+  });
+
+  it('another sitting of the same day keeps the regular ladder', async () => {
+    const store = dictationStore();
+    const { service } = await begin({ store });
+    const other = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(other.item.source).not.toBe('dictation');
+    expect(other.progress.phase).not.toBe('dictation');
+  });
+});
