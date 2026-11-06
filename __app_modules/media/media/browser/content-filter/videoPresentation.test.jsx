@@ -46,6 +46,36 @@ describe('installed Media playback presentation', () => {
     unmount();
     expect(store.getLoadingSuppression()).toBe(false);
   });
+
+  it('passes a badge (provisional when a mute is approximate) and a bumper summary to the overlay', async () => {
+    window.history.replaceState({}, '', '/?filter=1');
+    const fixture = {
+      edl: { cues: [{ id: 'm', effect: 'mute', in: 30, out: 31, precision: 'second-approx', category: 'language/x' }] },
+      profile: { categories: {}, theme: {} },
+      override: {},
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => fixture })));
+    const contract = await import('../../../../../__capabilities/playback/browser/presentation.mjs');
+    const el = document.createElement('video');
+    const { result } = renderHook(() => contract.useVideoPresentation({ media: { assetId: 'plex:42' }, isPlex: true, getMediaEl: () => el }));
+    await waitFor(() => expect(result.current.overlay?.props.badge).toBeTruthy());
+    expect(result.current.overlay.props.badge).toEqual({ state: 'provisional', fireCount: 0 });
+    expect(result.current.overlay.props.bumper).toBeNull();
+    act(() => { el.currentTime = 0; el.dispatchEvent(new Event('playing')); });
+    await waitFor(() => expect(result.current.overlay.props.bumper).toEqual({ summary: '1 word muted' }));
+  });
+
+  it('shows a failed badge, and no bumper, when filter data cannot be loaded', async () => {
+    window.history.replaceState({}, '', '/?filter=1');
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503 })));
+    const contract = await import('../../../../../__capabilities/playback/browser/presentation.mjs');
+    const el = document.createElement('video');
+    const { result } = renderHook(() => contract.useVideoPresentation({ media: { assetId: 'plex:43' }, isPlex: true, getMediaEl: () => el }));
+    await waitFor(() => expect(result.current.overlay?.props.badge).toEqual({ state: 'failed', fireCount: 0 }), { timeout: 5000 });
+    act(() => { el.currentTime = 0; el.dispatchEvent(new Event('playing')); });
+    expect(result.current.overlay.props.bumper).toBeNull();
+    expect(result.current.debug).toBeFalsy();
+  });
 });
 
 describe('partFromSrc', () => {

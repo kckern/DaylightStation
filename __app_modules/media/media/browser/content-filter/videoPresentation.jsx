@@ -3,6 +3,8 @@ import { useFilterData } from './useFilterData.js';
 import { useContentFilter } from './useContentFilter.js';
 import { FilterOverlay } from './FilterOverlay.jsx';
 import { FilterDebugHud } from './FilterDebugHud.jsx';
+import { filterSummary, isProvisional } from './filterSummary.js';
+import { useBumper } from './useBumper.js';
 
 // Content filtering is opt-in via ?filter=1 so normal playback is unaffected.
 // The debug HUD (?filter-debug=1) implies filtering is on — it exists to QA cues.
@@ -23,11 +25,11 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   const filterContentId = (isPlex && CONTENT_FILTER_ENABLED)
     ? (media?.assetId || media?.key || media?.plex || null)
     : null;
-  const { data: filterData } = useFilterData(filterContentId, { enabled: CONTENT_FILTER_ENABLED });
+  const { data: filterData, status: filterStatus } = useFilterData(filterContentId, { enabled: CONTENT_FILTER_ENABLED });
   const filterTransport = useMemo(() => ({
     seek: (s) => { const el = getMediaEl(); if (el && Number.isFinite(s)) { try { el.currentTime = s; } catch (_) { /* ignore */ } } },
   }), [getMediaEl]);
-  const { activeOverlays: filterOverlays, activeCard: filterCard, effectiveCues: filterCues } = useContentFilter({
+  const { activeOverlays: filterOverlays, activeCard: filterCard, effectiveCues: filterCues, fireCount } = useContentFilter({
     getMediaEl,
     transport: filterTransport,
     edl: filterData?.edl,
@@ -36,6 +38,19 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     part: partFromSrc(media?.mediaUrl || media?.url || getMediaEl?.()?.currentSrc),
     enabled: CONTENT_FILTER_ENABLED && !!filterData?.edl,
   });
+
+  // Viewer chrome (spec §2): the opening bumper and the filter-active badge. The
+  // badge also shows when the filter data failed to load, crossed out, so an
+  // absent filter never passes for an active one.
+  const hasEdl = !!filterData?.edl;
+  const filterSummaryLine = useMemo(() => filterSummary(filterCues), [filterCues]);
+  const provisional = useMemo(
+    () => isProvisional(filterCues, filterData?.edl?.certification),
+    [filterCues, filterData],
+  );
+  const bumperShown = useBumper({ getMediaEl, enabled: CONTENT_FILTER_ENABLED && hasEdl });
+  const badgeState = filterStatus === 'failed' ? 'failed' : (provisional ? 'provisional' : 'certified');
+  const showChrome = CONTENT_FILTER_ENABLED && !!filterContentId && (hasEdl || filterStatus === 'failed');
 
   // Art for title/skip cards, via the Plex image proxy. The proxy keys on the
   // bare ratingKey — filterContentId carries a `plex:` prefix (it's the mediaKey),
@@ -49,12 +64,14 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   }, [filterContentId]);
 
   return {
-    overlay: CONTENT_FILTER_ENABLED && filterData?.edl && (
+    overlay: showChrome && (
         <FilterOverlay
           activeOverlays={filterOverlays}
           activeCard={filterCard}
-          theme={filterData?.profile?.theme}
+          theme={filterData?.profile?.theme || undefined}
           art={filterCardArt}
+          bumper={bumperShown ? { summary: filterSummaryLine } : null}
+          badge={{ state: badgeState, fireCount }}
         />
       ),
     debug: CONTENT_FILTER_DEBUG && filterData?.edl && (
