@@ -1,4 +1,4 @@
-.skyline-glider { min-height: 100%; color: var(--text-primary, #fff); background: #17333f; display: grid; place-items: center; padding: 2rem; overflow: hidden; font-family: var(--font-family, sans-serif); }
+.skyline-glider { --game-hud-hearts: #ff7d6e; --game-hud-banner-ink: #17333f; --game-hud-banner-bg: #fff1a8; min-height: 100%; color: var(--text-primary, #fff); background: #17333f; display: grid; place-items: center; padding: 2rem; overflow: hidden; font-family: var(--font-family, sans-serif); }
 .skyline-glider--lobby { grid-template-columns: minmax(0, 1.4fr) minmax(18rem, .6fr); gap: 3rem; background: linear-gradient(135deg, #143a4a, #795945); }
 .skyline-glider h1 { font-size: clamp(3rem, 8vw, 7rem); margin: .1em 0; line-height: .9; }
 .skyline-glider__eyebrow { text-transform: uppercase; letter-spacing: .18em; color: #f3c777; }
@@ -31,7 +31,7 @@
 .skyline-glider__collision-burst { animation: skyline-impact .42s ease-out 1 both; }
 .skyline-glider__collision-burst path { fill: none; stroke: #fff1a8; stroke-linecap: round; stroke-width: 7; }
 .skyline-glider__bell-pop { animation: skyline-bell-pop .55s ease-out 1 both; fill: none; stroke: #fff1a8; stroke-width: 5; }
-.skyline-glider__checkpoint-banner { position: absolute; z-index: 6; top: 22%; left: 50%; transform: translateX(-50%); padding: .8rem 1.5rem; border-radius: 999px; color: #17333f; background: #fff1a8; font-size: 2rem; max-width: 80vw; text-align: center; font-weight: 900; animation: skyline-banner 1.5s ease-out 1 both; }
+.skyline-glider .skyline-glider__checkpoint-banner { display: block; position: absolute; z-index: 6; top: 22%; left: 50%; transform: translateX(-50%); padding: .8rem 1.5rem; border-radius: 999px; color: var(--game-hud-banner-ink); background: var(--game-hud-banner-bg); font-size: 2rem; max-width: 80vw; text-align: center; font-weight: 900; animation: skyline-banner 1.5s ease-out 1 both; }
 // One slim bar along the top: hearts · time · score on the left, the 2×2
 // bike-button legend on the right. It replaces the in-flight button panel so
 // the right side of the scene (where obstacles arrive) stays clear.
@@ -40,7 +40,7 @@
   padding: .45rem .6rem .45rem 1.5rem; border-radius: 1.4rem; color: #fff; background: rgba(9, 31, 37, .72);
   font-size: 1.75rem; font-weight: 800; line-height: 1;
 }
-.skyline-glider__hud-hearts { color: #ff7d6e; letter-spacing: .08em; }
+.skyline-glider__hud-hearts { color: var(--game-hud-hearts); letter-spacing: .08em; }
 .skyline-glider__hud-time { font-variant-numeric: tabular-nums; }
 .skyline-glider__hud-power { color: #ffcf6e; }
 .skyline-glider__hud-pad { margin-left: auto; display: grid; grid-template-columns: repeat(2, 10rem); gap: .4rem; }

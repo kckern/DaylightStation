@@ -13,7 +13,7 @@ export default function LifeMeter({
   const live = Math.max(0, Number(current) || 0);
   if (variant === 'glyphs') {
     return (
-      <span className={`game-hud-life game-hud-life--glyphs${extra}`} aria-label={ariaLabel}>
+      <span className={`game-hud-life game-hud-life--glyphs${extra}`} role="img" aria-label={ariaLabel}>
         {glyph.repeat(Math.max(0, Math.floor(live))) || emptyGlyph}
       </span>
     );

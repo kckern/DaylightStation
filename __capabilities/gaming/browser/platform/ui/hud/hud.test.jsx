@@ -27,6 +27,7 @@ describe('LifeMeter', () => {
     const { container } = render(<LifeMeter variant="glyphs" current={3} ariaLabel="3 hearts left" />);
     expect(container.textContent).toBe('♥♥♥');
     expect(container.querySelector('[aria-label="3 hearts left"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="3 hearts left"]').getAttribute('role')).toBe('img');
     const empty = render(<LifeMeter variant="glyphs" current={0} ariaLabel="none" />);
     expect(empty.container.textContent).toBe('♡');
   });
