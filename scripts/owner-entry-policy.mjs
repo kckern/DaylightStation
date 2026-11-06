@@ -408,6 +408,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/gaming/browser/platform/ui/_tokens.scss': null,
   '__capabilities/gaming/browser/platform/ui/components.scss': null,
   '__capabilities/gaming/browser/platform/ui/fonts.js': null,
+  '__capabilities/gaming/browser/platform/ui/hud/index.js': null,
   '__capabilities/gaming/browser/platform/ui/segmentedSecretPalette.js': null,
   '__capabilities/gaming/browser/platform/ui/teamColors.js': null,
   '__capabilities/gaming/browser/platform/ui/useCountdown.js': null,

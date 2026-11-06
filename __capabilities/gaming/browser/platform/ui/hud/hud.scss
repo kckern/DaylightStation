@@ -1,0 +1,78 @@
+/* Shared game HUD. Colours come ONLY from --game-hud-* (set by the host game's
+   chrome); the fallbacks name no colour of their own. */
+.game-hud-countdown {
+  display: grid;
+  place-items: center;
+  font-size: var(--t-display, 2.2rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--game-hud-ink, currentcolor);
+  text-shadow: 0 2px 12px rgb(0 0 0 / 70%);
+}
+
+.game-hud-life {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  color: var(--game-hud-ink, currentcolor);
+}
+
+.game-hud-life__notch {
+  width: 0.55rem;
+  height: 1.1rem;
+  border: 1px solid var(--game-hud-edge, currentcolor);
+  border-radius: 2px;
+  background: transparent;
+}
+
+.game-hud-life__notch.is-active {
+  border-color: var(--game-hud-live, currentcolor);
+  background: var(--game-hud-live, currentcolor);
+}
+
+.game-hud-life__notch.is-danger {
+  border-color: var(--game-hud-danger, currentcolor);
+  background: var(--game-hud-danger, currentcolor);
+}
+
+.game-hud-progress {
+  width: 100%;
+  height: 0.4rem;
+  border-radius: var(--r-pill, 999px);
+  background: var(--game-hud-track, transparent);
+  overflow: hidden;
+}
+
+.game-hud-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--game-hud-live, currentcolor);
+  transition: width 200ms ease-out;
+}
+
+.game-hud-moment {
+  display: grid;
+  place-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--r-pill, 999px);
+  color: var(--game-hud-banner-ink, var(--game-hud-ink, currentcolor));
+  background: var(--game-hud-banner-bg, transparent);
+  text-align: center;
+  animation: game-hud-moment-in 260ms ease-out;
+}
+
+.game-hud-moment h2,
+.game-hud-moment p {
+  margin: 0;
+}
+
+@keyframes game-hud-moment-in {
+  from { opacity: 0; transform: translateY(0.5rem) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-hud-moment { animation: none; }
+}
