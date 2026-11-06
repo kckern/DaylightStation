@@ -973,6 +973,19 @@ describe('engine — dictation run', () => {
     expect(item.choices).toEqual(expect.arrayContaining(['x1', 'x2', 'x3']));
   });
 
+  it('Stop for now: { stop: true } ends the run, records no attempt, and the sitting goes back to the ladder', () => {
+    let ctx = dictating();
+    let step;
+    ({ ctx, out: step } = answer(ctx, { stop: true }));
+    expect(step.result).toEqual({ stopped: true });
+    expect(step.dictation ?? null).toBeNull();
+    expect(ctx.dayFile.dictation).toMatchObject({ ended: 'stopped' });
+    expect(ctx.dayFile.dictation.endedAt).toBeTruthy();
+    expect(Object.values(ctx.dayFile.items ?? {}).some((row) => row.source === 'dictation')).toBe(false);
+    expect(currentItem(ctx).source).not.toBe('dictation');
+    expect(currentItem(ctx).type).not.toBe('dictation-ready');
+  });
+
   it('is bound to its own sitting: another sitting of the day sees the regular ladder', () => {
     const ctx = dictating();
     expect(currentItem({ ...ctx, sittingId: 'korean-vocab.live.2' }).source).not.toBe('dictation');

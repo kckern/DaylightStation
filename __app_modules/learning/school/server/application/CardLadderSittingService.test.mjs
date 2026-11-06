@@ -1599,6 +1599,14 @@ describe('CardLadderSittingService — dictation', () => {
     expect(again.dictation).toMatchObject({ week: WEEK, remaining: 2 });
     expect(again.item).toMatchObject({ wordId: 'gawi', dictationStep: 'copy' });
   });
+  it('Stop for now logs dictation.exited (reason stop) and serves the regular ladder in the same sitting', async () => {
+    const store = dictationStore();
+    const { service, started, sittingId, logger } = await begin({ store });
+    const out = await answer(service, sittingId, started.item, { stop: true });
+    expect(out.result).toEqual({ stopped: true });
+    expect(out.item.source).not.toBe('dictation');
+    expect(events(logger, 'info', 'school.card-ladder.dictation.exited')[0][1]).toMatchObject({ learnerId: 'test-learner', package: 'korean-vocab', week: WEEK, sittingId, reason: 'stop' });
+  });
   it('intro carries the week\'s dictation summary for the start card (Task 3)', async () => {
     const store = dictationStore();
     const { service } = makeD({ store });

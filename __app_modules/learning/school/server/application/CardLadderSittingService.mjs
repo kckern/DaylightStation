@@ -816,6 +816,11 @@ export class CardLadderSittingService {
     });
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
     if (attempt) nextCtx.dictation = this.#recordDictationAttempt({ store, userId, pkg, sittingId, lexicon, media: ctx.media, deck }, attempt);
+    if (item.id === itemId && item.source === 'dictation' && out.result?.stopped === true) {
+      this.#logger.info?.('school.card-ladder.dictation.exited', {
+        learnerId: userId, package: pkg, week: ctx.dictation?.week ?? null, remaining: ctx.dictation?.remaining ?? null, sittingId, reason: 'stop',
+      });
+    }
     if (item.id === itemId && item.type === 'dictation-ready') {
       this.#logger.info?.('school.card-ladder.dictation.ready-seen', { learnerId: userId, package: pkg, sittingId, week: item.week, ready: item.ready });
     }

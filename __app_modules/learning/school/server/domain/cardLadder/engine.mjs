@@ -609,6 +609,7 @@ function dictationFits(item, response) {
   const only = (key) => keys.length === 1 && keys[0] === key;
   if (item.type === 'dictation-ready') return only('done') && response.done === true;
   if (only('dontKnow')) return response.dontKnow === true;
+  if (only('stop')) return response.stop === true;
   return item.type === 'choice' ? only('choice') && typeof response.choice === 'string' : only('typed') && typeof response.typed === 'string';
 }
 
@@ -944,6 +945,12 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
     // Acknowledged: the sitting goes back to wherever it was. Not a day-file item.
     ctx.dayFile.dictation.readyAt = at;
     return { status: ctx.status, dayFile: ctx.dayFile, result: { done: true }, transitions: [], graded: null };
+  }
+  if (item.source === 'dictation' && response.stop === true) {
+    // Stop for now (UX audit #6): the run ends without an answer; progress
+    // already on disk stays, and the sitting goes back to its own ladder.
+    ctx.dayFile.dictation = { ...ctx.dayFile.dictation, ended: 'stopped', endedAt: at };
+    return { status: ctx.status, dayFile: ctx.dayFile, result: { stopped: true }, transitions: [], graded: null };
   }
   if (item.source === 'dictation') return { ...respondDictation(ctx, item, itemId, response, at), transitions: [], graded: null };
   const out = applyResponse(ctx, item, itemId, response, { at, verdict });
