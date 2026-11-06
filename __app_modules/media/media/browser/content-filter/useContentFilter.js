@@ -27,6 +27,9 @@ const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }
 // mounted this long with `visible:false` so it can ramp to 0 before unmount.
 const FILTER_FADE_MS = 300;
 
+// Cue entries that do not bump fireCount in the generic enter path.
+const NOT_A_FIRE = new Set(['title-card', 'skip-card']);
+
 const logBleepDegraded = (reason) =>
   logger().sampled?.('content-filter.bleep.degraded', { reason }, { maxPerMinute: 5 });
 
@@ -186,6 +189,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       const sc = active.find((c) => c.effect === 'skip-card' && !skipCardRef.current.doneIds.has(c.id));
       if (sc) {
         skipCardRef.current.doneIds.add(sc.id);
+        setFireCount((n) => n + 1);
         transport?.seek?.(sc.out + SKIP_EPSILON);
         try { el.pause?.(); } catch (_) { /* ignore */ }
         setSkipCardPaused(true); // suppress the buffering spinner during the deliberate pause
@@ -232,7 +236,8 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (!entered.has(cue.id)) {
           entered.set(cue.id, cue);
           if (h.onEnter) { try { h.onEnter(ctxFor(cue)); } catch (e) { logger().warn?.('content-filter.enter-error', { effect: cue.effect, error: e?.message }); } }
-          setFireCount((n) => n + 1);
+          // A title-card only informs; skip-cards are counted in their own branch above.
+          if (!NOT_A_FIRE.has(cue.effect)) setFireCount((n) => n + 1);
           session.applied[cue.effect] = (session.applied[cue.effect] || 0) + 1;
           if (cue.effect === 'full-blur') session.blurAudioSec += Math.max(0, cue.out - cue.in);
           // Rate-limited so it's visible in prod without spamming per-cue (mute is

@@ -196,6 +196,25 @@ describe('useContentFilter', () => {
     expect(hook.result.current.activeCard).toBeNull(); // rendered via overlay only
   });
 
+  it('fireCount counts a skip-card once', () => {
+    vi.useFakeTimers();
+    const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped a scene.', holdSec: 2.5 }] };
+    const { el, hook } = setup({ edl: scEdl, profile: { categories: {} } });
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    expect(hook.result.current.fireCount).toBe(1);
+    act(() => { vi.advanceTimersByTime(2600); });
+    act(() => { el.fire('timeupdate'); });
+    expect(hook.result.current.fireCount).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('fireCount does not count a title-card (it filters nothing)', () => {
+    const tcEdl = { cues: [{ id: 'tc', effect: 'title-card', category: 'meta/x', in: 20, out: 24, text: 'Heads up.' }] };
+    const { el, hook } = setup({ edl: tcEdl, profile: { categories: {} } });
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(hook.result.current.fireCount).toBe(0);
+  });
+
   it('skip-card: seeks past, pauses (buffer behind card), shows card, resumes after hold', () => {
     vi.useFakeTimers();
     const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped a scene.', holdSec: 2.5 }] };
