@@ -684,7 +684,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
-  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);

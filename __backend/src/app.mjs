@@ -1761,7 +1761,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Curated policy from data/household/content-filter/,
   // machine-fetched EDLs from media/content-filter/.
-  v1Routers['content-filter'] = await createContentFilterRuntime({configService,rootLogger});
+  v1Routers['content-filter'] = await createContentFilterRuntime({
+    configService, rootLogger,
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'media', feature: 'content-filter-cards' }),
+  });
 
   v1Routers.emulator = createEmulatorRuntime({configService,rootLogger,eventBus});
 

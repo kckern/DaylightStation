@@ -15,12 +15,32 @@ export class IContentFilterRepository {
     throw new Error('IContentFilterRepository.getRefinedEdl not implemented');
   }
 
+  /** Write a refined EDL back (scenes, card drafts). */
+  async saveRefinedEdl(_ref, _edl) {
+    throw new Error('IContentFilterRepository.saveRefinedEdl not implemented');
+  }
+
+  /** The refine transcript for one media part: { segments: [{ s, e, text }] }, or null. */
+  async getTranscript(_ratingKey, _part) {
+    throw new Error('IContentFilterRepository.getTranscript not implemented');
+  }
+
   async getProfile(_profileName) {
     throw new Error('IContentFilterRepository.getProfile not implemented');
   }
 
   async getOverride(_ratingKey) {
     throw new Error('IContentFilterRepository.getOverride not implemented');
+  }
+
+  /** Rating keys of every title with an override. */
+  async listOverrides() {
+    throw new Error('IContentFilterRepository.listOverrides not implemented');
+  }
+
+  /** Write a title's override (the household's rulings). */
+  async saveOverride(_ratingKey, _override) {
+    throw new Error('IContentFilterRepository.saveOverride not implemented');
   }
 }
 

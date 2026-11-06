@@ -361,3 +361,27 @@ describe('resolveEffectiveCues with scenes', () => {
     expect(pieces.filter((c) => c.firstPiece)).toHaveLength(1);
   });
 });
+
+describe('scene bridging', () => {
+  const profile = { categories: {}, scenes: { violence_blood_gore: { blackout: { picture: 2 } } }, treatments: { 'skip-card': { holdSec: 4.5 } } };
+  const sc = (id, a, b, pic = 2, groups = ['violence_blood_gore']) => ({ id, in: a, out: b, cues: [], groups, level: Object.fromEntries(groups.map((g) => [g, { situation: 2, picture: pic }])) });
+  const edl = (scenes) => ({ timebase: { clock: 'vidangel' }, sceneCalibration: { situation: 'trusted', picture: 'trusted' }, cues: [], scenes });
+  const run = (scenes, override = {}) => resolveEffectiveCues({ edl: edl(scenes), profile, override: { sync: { scale: 1, offsetSec: 0 }, ...override }, part: null }).filter((c) => c.scene);
+
+  it('joins same-group scenes with the same effect across a gap of 30 s or less', () => {
+    const out = run([sc('sc-a', 100, 150), sc('sc-b', 172, 200)]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ scene: 'sc-a', in: 100, out: 200 });
+  });
+  it('keeps them apart across a longer gap, a different effect, or no shared group', () => {
+    expect(run([sc('sc-a', 100, 150), sc('sc-b', 181, 200)])).toHaveLength(2);
+    expect(run([sc('sc-a', 100, 150), sc('sc-b', 160, 200, 1)])).toHaveLength(1);
+    const p2 = { ...profile, scenes: { ...profile.scenes, sex_any: { blackout: { picture: 1 } } } };
+    const out = resolveEffectiveCues({ edl: edl([sc('sc-a', 100, 150), sc('sc-b', 160, 200, 1, ['sex_any'])]), profile: p2, override: { sync: { scale: 1, offsetSec: 0 } }, part: null }).filter((c) => c.scene);
+    expect(out).toHaveLength(2);
+  });
+  it('a bridged scene shows one approved card, from whichever scene has one', () => {
+    const out = run([sc('sc-a', 100, 150), sc('sc-b', 160, 200)], { sceneOverrides: { 'sc-b': { card: { text: 'They get away.' } } } });
+    expect(out[0].text).toBe('They get away.');
+  });
+});

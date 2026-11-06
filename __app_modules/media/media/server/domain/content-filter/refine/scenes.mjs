@@ -69,6 +69,19 @@ export function probeTimes(scene, cuts = []) {
   return chosen;
 }
 
+export const GROW_STEP_MAX_SEC = 15; // a cut further than this is not the next shot boundary
+export const GROW_FALLBACK_SEC = 6;  // step when no cut is near
+
+/**
+ * The next place an edge can grow to: the nearest shot cut beyond it (within
+ * GROW_STEP_MAX_SEC), else a fixed step. dir -1 grows the start, +1 the end.
+ */
+export function nextBoundary(edge, cuts, dir) {
+  const beyond = cuts.filter((c) => (dir < 0 ? c < edge - 0.05 : c > edge + 0.05) && Math.abs(c - edge) <= GROW_STEP_MAX_SEC);
+  if (beyond.length) return dir < 0 ? Math.max(...beyond) : Math.min(...beyond);
+  return r3(edge + dir * GROW_FALLBACK_SEC);
+}
+
 /** Picture level: the second-highest frame score, so one odd frame cannot set it. */
 export function pictureLevel(scores) {
   const s = [...scores].sort((a, b) => b - a);

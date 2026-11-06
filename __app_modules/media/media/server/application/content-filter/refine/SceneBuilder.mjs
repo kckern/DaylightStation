@@ -12,7 +12,7 @@
 
 import { groupScenes } from '../../../domain/content-filter/refine/sceneGroups.mjs';
 import {
-  sceneId, sceneGroupsOf, sceneEdges, probeTimes, pictureLevel, EDGE_REACH_SEC, TAG_LEAD_SEC,
+  sceneId, sceneGroupsOf, sceneEdges, probeTimes, pictureLevel, nextBoundary, EDGE_REACH_SEC, TAG_LEAD_SEC,
 } from '../../../domain/content-filter/refine/scenes.mjs';
 import { mapTime, unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { SCENE_QUESTION_VERSION, sameSceneQuestion, situationQuestion, pictureQuestion } from './sceneQuestions.mjs';
@@ -25,6 +25,8 @@ export const SCENE_DEFAULTS = Object.freeze({
   splitGapSec: 10,      // ask about neighbouring tags inside a candidate this far apart
   contextSec: 15,       // dialogue either side of the scene for the situation question
   probeWidth: 640,
+  growMaxSec: 60,       // an edge grows outward at most this far while the picture next to it is graphic
+  growAt: 2,            // picture level (any scene group) that counts as graphic next to an edge
 });
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
@@ -115,16 +117,47 @@ export class SceneBuilder {
     return merged.filter((g) => g.length);
   }
 
+  /**
+   * Grow each edge outward, a shot at a time, while the picture just past it is
+   * still graphic (Jev, any scene group at growAt or above), up to growMaxSec.
+   * VidAngel tags mark moments; a fight keeps going between them.
+   * @returns {{ in: number, out: number }|null} seconds grown on each side
+   */
+  async #grow(id, span, cuts, groups, hint) {
+    const grown = { in: 0, out: 0 };
+    for (const dir of [-1, 1]) {
+      const side = dir < 0 ? 'in' : 'out';
+      while (grown[side] < this.opt.growMaxSec) {
+        const edge = span[side];
+        const next = nextBoundary(edge, cuts, dir);
+        const t = r3(edge + dir * Math.min(2, Math.abs(next - edge) / 2));
+        if (t <= 0) break;
+        const [fr] = await this.media.frames(this.src, this.toFile(t), 1, { width: this.opt.probeWidth });
+        if (!fr) break;
+        const score = await this.#ask(id, 'scene-grow', pictureQuestion({ png: fr.png, groups, hint }), { t, side });
+        if (!groups.some((g) => Math.round(score[g]) >= this.opt.growAt)) break;
+        grown[side] = r3(grown[side] + Math.abs(next - edge));
+        span[side] = r3(Math.max(0, next));
+      }
+    }
+    return grown.in || grown.out ? grown : null;
+  }
+
   async #scene(members) {
     const groups = sceneGroupsOf(members.map((m) => m.category));
     if (!groups.length) return null;
     const id = sceneId(members.map((m) => m.id));
-    const lo = Math.min(...members.map((m) => m.in)) - TAG_LEAD_SEC - EDGE_REACH_SEC - 1;
-    const hi = Math.max(...members.map((m) => m.out)) + TAG_LEAD_SEC + EDGE_REACH_SEC + 1;
+    const reach = TAG_LEAD_SEC + EDGE_REACH_SEC + this.opt.growMaxSec + 1;
+    const lo = Math.min(...members.map((m) => m.in)) - reach;
+    const hi = Math.max(...members.map((m) => m.out)) + reach;
     const cuts = (await this.media.shotCuts(this.src, this.toFile(Math.max(0, lo)), this.toFile(hi)))
       .map((c) => r3(this.toRef(c.pts)));
     const edges = sceneEdges({ members, cuts });
     const span = { in: edges.in, out: edges.out };
+    const hint = [...new Set(members.map((m) => m.label))].slice(0, 3).join('; ');
+    const grown = await this.#grow(id, span, cuts, groups, hint);
+    const uncovered = members.filter((m) => m.in < span.in || m.out > span.out).map((m) => m.id);
+    if (uncovered.length) this.log({ scene: id, step: 'scene-edge-uncovered', cues: uncovered, ...span });
 
     const situation = await this.#ask(id, 'scene-situation', situationQuestion({
       title: this.title,
@@ -133,7 +166,6 @@ export class SceneBuilder {
       groups,
     }));
 
-    const hint = [...new Set(members.map((m) => m.label))].slice(0, 3).join('; ');
     const perFrame = [];
     for (const t of probeTimes(span, cuts)) {
       const [fr] = await this.media.frames(this.src, this.toFile(t), 1, { width: this.opt.probeWidth });
@@ -147,6 +179,6 @@ export class SceneBuilder {
       if (pic.outlier) this.log({ scene: id, step: 'scene-picture-outlier', group: g, max: pic.max, level: pic.level });
       level[g] = { situation: situation[g].level, picture: pic.level, confidence: r3(situation[g].confidence ?? 0) };
     }
-    return { id, ...span, edges: edges.edges, cues: members.map((m) => m.id), groups, level, probes: perFrame.length };
+    return { id, ...span, edges: edges.edges, ...(grown ? { grown } : {}), cues: members.map((m) => m.id), groups, level, probes: perFrame.length };
   }
 }

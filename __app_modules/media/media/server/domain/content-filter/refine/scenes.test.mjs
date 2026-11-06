@@ -93,3 +93,16 @@ describe('carryForward', () => {
     expect(carryForward([], [{ id: 'sc-va9', cues: ['va9'] }]).scenes[0].id).toBe('sc-va9');
   });
 });
+
+describe('nextBoundary', () => {
+  it('is the nearest cut beyond the edge, within a shot', async () => {
+    const { nextBoundary } = await import('./scenes.mjs');
+    expect(nextBoundary(100, [90, 95, 108, 120], 1)).toBe(108);
+    expect(nextBoundary(100, [90, 95, 108], -1)).toBe(95);
+  });
+  it('steps 6 s when no cut is near', async () => {
+    const { nextBoundary } = await import('./scenes.mjs');
+    expect(nextBoundary(100, [130], 1)).toBe(106);
+    expect(nextBoundary(100, [], -1)).toBe(94);
+  });
+});

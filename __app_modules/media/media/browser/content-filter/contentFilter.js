@@ -14,6 +14,7 @@
 
 // Timing a refine pass measured on this file: no approximate widening.
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
 export const PRECISE = new Set(['ms', 'frame']);
 
@@ -210,25 +211,6 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
   return out;
 }
 
-// How strongly an effect hides the picture. A scene drops a cue only when the
-// scene hides at least as much; audio effects and title cards are never dropped.
-const HIDE_RANK = { blur: 1, 'censor-bar': 1, pixelate: 1, 'full-blur': 2, blackout: 3, skip: 4, 'skip-card': 4 };
-const SCENE_AXES = ['situation', 'picture'];
-
-/** The effect a scene earns under the profile, from its trusted axes only. */
-function sceneEffect(scene, rules, trusted) {
-  let best = null;
-  for (const g of scene.groups || Object.keys(scene.level || {})) {
-    const rule = rules[g]; const lv = scene.level?.[g];
-    if (!rule || !lv) continue;
-    for (const effect of ['skip', 'blackout']) {
-      const meets = Object.entries(rule[effect] || {}).some(([axis, min]) => trusted.has(axis) && lv[axis] >= min);
-      if (meets && (!best || HIDE_RANK[effect] > HIDE_RANK[best])) best = effect;
-    }
-  }
-  return best;
-}
-
 /**
  * Scenes from a refined EDL (ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md).
  * A scene's effect (profile `scenes:` thresholds on trusted axes, or the
@@ -238,20 +220,33 @@ function sceneEffect(scene, rules, trusted) {
  * (sceneOverrides.<id>.card.text) is ever shown; otherwise generic text.
  * Mutates `out`; returns a summary for the hook's log.
  */
+const SCENE_BRIDGE_SEC = 30;
+
 function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
   const scenes = refinedEdl ? edl?.scenes || [] : [];
-  const rules = profile?.scenes || {};
-  const cal = edl?.sceneCalibration || {};
-  const trusted = new Set(SCENE_AXES.filter((a) => cal[a] === 'trusted'));
+  const trusted = trustedAxes(edl);
   const summary = { scenes: scenes.length, byEffect: {}, untrusted: SCENE_AXES.filter((a) => !trusted.has(a)) };
   if (!scenes.length) return summary;
   const ov = override?.sceneOverrides || {};
   const holdSec = profile?.treatments?.['skip-card']?.holdSec ?? 2.5;
-  for (const scene of scenes) {
-    const so = ov[scene.id] || {};
-    if (so.disabled) continue;
-    const effect = so.effect ? (so.effect === 'off' ? null : so.effect) : sceneEffect(scene, rules, trusted);
-    if (!effect) continue;
+  // Effects first, then bridge neighbours of a shared group with the same effect
+  // across a short gap, so the child sees one black (or one card), not black-picture-black.
+  const ruled = [...scenes].sort((a, b) => a.in - b.in)
+    .map((scene) => ({ scene, so: ov[scene.id] || {}, effect: sceneEffect(scene, { profile, sceneOverride: ov[scene.id] || {}, trusted }) }))
+    .filter((r) => r.effect);
+  const bridged = [];
+  for (const r of ruled) {
+    const prev = bridged[bridged.length - 1];
+    const shares = prev && (prev.scene.groups || []).some((g) => (r.scene.groups || []).includes(g));
+    if (prev && shares && prev.effect === r.effect && r.scene.in - prev.scene.out <= SCENE_BRIDGE_SEC) {
+      prev.scene = { ...prev.scene, out: Math.max(prev.scene.out, r.scene.out), cues: [...(prev.scene.cues || []), ...(r.scene.cues || [])] };
+      prev.so = prev.so.card ? prev.so : { ...prev.so, card: r.so.card };
+      prev.bridged = (prev.bridged || 1) + 1;
+      continue;
+    }
+    bridged.push({ ...r });
+  }
+  for (const { scene, so, effect } of bridged) {
     const spans = sync ? mapSpan(scene.in, scene.out, sync) : [{ in: scene.in, out: scene.out }];
     if (!spans.length) continue;
     const members = new Set(scene.cues || []);

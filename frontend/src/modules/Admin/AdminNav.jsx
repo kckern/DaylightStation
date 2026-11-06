@@ -10,7 +10,7 @@ import {
   IconUsers, IconDevices,
   IconPlugConnected, IconClock, IconFileCode,
   IconRobot, IconDeviceGamepad2, IconBroadcast, IconPhoto, IconBell, IconPrinter,
-  IconChecklist, IconHistory, IconBooks
+  IconChecklist, IconHistory, IconBooks, IconShieldHalf
 } from '@tabler/icons-react';
 
 const navSections = [
@@ -22,6 +22,7 @@ const navSections = [
       { label: 'Programs', icon: IconCalendarEvent, to: '/admin/content/lists/programs' },
       { label: 'Games', icon: IconDeviceGamepad2, to: '/admin/content/games' },
       { label: 'Art', icon: IconPhoto, to: '/admin/content/art' },
+      { label: 'Content filter', icon: IconShieldHalf, to: '/admin/content/filter' },
     ]
   },
   {

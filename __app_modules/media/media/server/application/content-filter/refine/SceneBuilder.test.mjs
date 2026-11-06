@@ -33,7 +33,8 @@ const sync = { scale: 1, offsetSec: 10 };
 
 describe('SceneBuilder', () => {
   it('builds a scene with cut edges, situation and second-highest picture levels', async () => {
-    const decisions = fakeDecisions({ situation: 2.2, picture: [0, 3, 2, 1, 0, 0, 0, 0] });
+    // first two frames: the grow probes either side (quiet), then the 8 scene probes
+    const decisions = fakeDecisions({ situation: 2.2, picture: [0, 0, 0, 3, 2, 1, 0, 0, 0, 0] });
     // reference times 100..125; file times +10
     const b = new SceneBuilder({ media: media([95, 150]), decisions, src: 'f', sync });
     const [s] = await b.build([tag('va3', 100), tag('va4', 110), tag('va5', 125)]);
@@ -76,5 +77,24 @@ describe('SceneBuilder', () => {
     await b.build([tag('va1', 100), tag('va2', 105), tag('va3', 110)]);
     expect(log.find((e) => e.step === 'scene-situation')).toMatchObject({ scene: 'sc-va1', v: 1, model: 'fake' });
     expect(log.filter((e) => e.step === 'scene-picture')).toHaveLength(8);
+    expect(log.filter((e) => e.step === 'scene-grow').map((e) => e.side)).toEqual(['in', 'out']);
+  });
+
+  it('grows an edge a shot at a time while the picture next to it stays graphic', async () => {
+    // file cuts 75, 95, 150 -> reference 65, 85, 140; scene snaps to 85..140
+    const decisions = fakeDecisions({ picture: [2, 0, 0] });
+    const b = new SceneBuilder({ media: media([75, 95, 150]), decisions, src: 'f', sync });
+    const [s] = await b.build([tag('va3', 100), tag('va4', 110), tag('va5', 125)]);
+    // 65 is 20 s away (not the next shot): step 6 s to 79; then the next probe is quiet
+    expect(s.in).toBe(79);
+    expect(s.out).toBe(140);
+    expect(s.grown).toEqual({ in: 6, out: 0 });
+  });
+
+  it('stops growing at growMaxSec', async () => {
+    const decisions = fakeDecisions({ picture: Array(40).fill(3) });
+    const b = new SceneBuilder({ media: media([]), decisions, src: 'f', sync, options: { growMaxSec: 12 } });
+    const [s] = await b.build([tag('va3', 100), tag('va4', 110), tag('va5', 125)]);
+    expect(s.grown).toEqual({ in: 12, out: 12 });
   });
 });
