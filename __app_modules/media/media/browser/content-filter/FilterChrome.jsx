@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
+import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
+
+let _logger;
+const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
 
 /**
  * FilterChrome — the viewer-facing confidence chrome for a filtered title
@@ -49,6 +53,7 @@ export function FilterBadge({ state, fireCount }) {
   useEffect(() => {
     if (fireCount === last.current) return undefined;
     last.current = fireCount;
+    logger().sampled?.('content-filter.badge.pulse', { fireCount, state }, { maxPerMinute: 10 });
     setPulse(true);
     const id = setTimeout(() => setPulse(false), PULSE_MS);
     return () => clearTimeout(id);

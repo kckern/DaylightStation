@@ -34,8 +34,28 @@ export function filterSummary(cues = []) {
   return parts.join(' · ');
 }
 
-/** Provisional until certified; a word cue that is not ms/frame precise could leak. */
+/**
+ * Provisional until certified (spec: "No block = provisional"). Certification is
+ * written by refine (machine: no approximate word cue left) or by a parent sign-off.
+ */
 export function isProvisional(cues = [], certification = null) {
-  if (certification?.level) return false;
-  return cues.some((c) => WORD.has(c.effect) && !PRECISE.has(c.precision));
+  return !certification?.level;
+}
+
+/** Word cues (mute/bleep) not yet at ms/frame precision — the ones that could leak. */
+export function unrefinedWordCount(cues = []) {
+  return cues.filter((c) => WORD.has(c.effect) && !PRECISE.has(c.precision)).length;
+}
+
+/**
+ * Where the bumper's "started from the top" window ends. An opening skip (credits
+ * at 0–18 s) seeks the playhead before the bumper reads it on the first `playing`,
+ * so a skip that starts inside the window extends it past that skip's end.
+ */
+export function bumperStartWindowSec(cues = [], baseSec = 5) {
+  let end = baseSec;
+  for (const c of cues) {
+    if ((c.effect === 'skip' || c.effect === 'skip-card') && c.in <= end) end = Math.max(end, c.out + 1);
+  }
+  return end;
 }

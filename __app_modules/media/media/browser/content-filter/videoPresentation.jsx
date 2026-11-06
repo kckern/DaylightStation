@@ -3,7 +3,7 @@ import { useFilterData } from './useFilterData.js';
 import { useContentFilter } from './useContentFilter.js';
 import { FilterOverlay } from './FilterOverlay.jsx';
 import { FilterDebugHud } from './FilterDebugHud.jsx';
-import { filterSummary, isProvisional } from './filterSummary.js';
+import { filterSummary, isProvisional, bumperStartWindowSec } from './filterSummary.js';
 import { useBumper } from './useBumper.js';
 
 // Content filtering is opt-in via ?filter=1 so normal playback is unaffected.
@@ -48,7 +48,8 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     () => isProvisional(filterCues, filterData?.edl?.certification),
     [filterCues, filterData],
   );
-  const bumperShown = useBumper({ getMediaEl, enabled: CONTENT_FILTER_ENABLED && hasEdl });
+  const bumperWindowSec = useMemo(() => bumperStartWindowSec(filterCues), [filterCues]);
+  const bumperShown = useBumper({ getMediaEl, enabled: CONTENT_FILTER_ENABLED && hasEdl, startWindowSec: bumperWindowSec });
   const badgeState = filterStatus === 'failed' ? 'failed' : (provisional ? 'provisional' : 'certified');
   const showChrome = CONTENT_FILTER_ENABLED && !!filterContentId && (hasEdl || filterStatus === 'failed');
 

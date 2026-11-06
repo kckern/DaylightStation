@@ -140,8 +140,8 @@ mute cues are widened more than skips because a narrow window can leak a spoken 
 Both render inside `FilterOverlay` (`FilterChrome.jsx`), so they appear wherever a
 filtered title plays, including D-pad TVs.
 
-- **Bumper.** On the first `playing` at or near the start (within 5 s, so not on a
-  resume), a card shows for about 4 s over playback without pausing it: the clear logo
+- **Bumper.** On the first `playing` at or near the start (within 5 s, extended past an opening skip such as
+  BTTF's 0–18 s credits, so not on a resume), a card shows for about 4 s over playback without pausing it: the clear logo
   (hidden if it fails to load), "Edited for content", and a summary built from the
   resolved cues by `filterSummary.js`, e.g. "152 words muted · 4 scenes blurred · credits
   skipped". It yields to a skip-card. Logs `content-filter.bumper.shown`.
@@ -151,8 +151,8 @@ filtered title plays, including D-pad TVs.
 
   | State | Drawn as | When |
   |---|---|---|
-  | `certified` | solid shield | the EDL has a `certification.level`, or every word cue is `ms`/`frame` precise |
-  | `provisional` | outline | any mute or bleep is approximate (`isProvisional`) |
+  | `certified` | solid shield | the EDL carries a `certification.level` (`machine` from refine, or `parent`) |
+  | `provisional` | outline | no certification block (`isProvisional`); `unrefinedWordCount` counts the approximate mutes/bleeps that could leak |
   | `failed` | crossed shield | filter data failed to load after one retry |
 
   The badge is display-only for now: no pointer events, no focus, `aria-hidden`.

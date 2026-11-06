@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterSummary, isProvisional } from './filterSummary.js';
+import { filterSummary, isProvisional, unrefinedWordCount, bumperStartWindowSec } from './filterSummary.js';
 import { PRECISE } from './contentFilter.js';
 
 const c = (effect, extra = {}) => ({ id: `${effect}-${Math.random()}`, effect, in: 0, out: 1, ...extra });
@@ -26,17 +26,30 @@ describe('isProvisional', () => {
   it('is false when the EDL carries any certification level', () => {
     expect(isProvisional([c('mute', { precision: 'second-approx' })], { level: 'machine' })).toBe(false);
   });
-  it('is true when any mute or bleep is not ms/frame precise', () => {
-    expect(isProvisional([c('mute', { precision: 'ms' }), c('bleep', { precision: 'srt-line' })])).toBe(true);
-  });
-  it('ignores approximate skips and blurs', () => {
-    expect(isProvisional([c('mute', { precision: 'frame' }), c('skip', { precision: 'second-approx' })])).toBe(false);
+  it('is true with no certification block, even when every word cue is precise', () => {
+    expect(isProvisional([c('mute', { precision: 'ms' })])).toBe(true);
+    expect(isProvisional([])).toBe(true);
   });
 });
 
-describe('precision rule shared with the resolver', () => {
-  it('treats exactly the resolver\'s precise levels as not provisional', () => {
+describe('unrefinedWordCount', () => {
+  it('counts mute/bleep cues not at a precise level, ignoring skips and blurs', () => {
+    expect(unrefinedWordCount([
+      c('mute', { precision: 'ms' }), c('bleep', { precision: 'srt-line' }),
+      c('mute', { precision: 'second-approx' }), c('skip', { precision: 'second-approx' }),
+    ])).toBe(2);
+  });
+  it('uses exactly the resolver\'s precise levels', () => {
     expect([...PRECISE].sort()).toEqual(['frame', 'ms']);
-    for (const precision of PRECISE) expect(isProvisional([c('mute', { precision })])).toBe(false);
+    for (const precision of PRECISE) expect(unrefinedWordCount([c('mute', { precision })])).toBe(0);
+  });
+});
+
+describe('bumperStartWindowSec', () => {
+  it('extends past an opening skip (BTTF credits 0–18 s)', () => {
+    expect(bumperStartWindowSec([c('skip', { in: 0, out: 18 })])).toBe(19);
+  });
+  it('keeps the base window when no skip starts inside it', () => {
+    expect(bumperStartWindowSec([c('skip', { in: 300, out: 320 }), c('mute', { in: 1, out: 2 })])).toBe(5);
   });
 });
