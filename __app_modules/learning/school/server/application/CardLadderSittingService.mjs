@@ -1,4 +1,4 @@
-import { startCourseReview, startDictation as startDictationRun } from "../domain/cardLadder/engine.mjs";
+import { practiceMenu, startCourseReview, startDictation as startDictationRun } from "../domain/cardLadder/engine.mjs";
 import { currentDictation, dictationState } from "../domain/cardLadder/dictation.mjs";
 // __backend/src/3_applications/school/CardLadderSittingService.mjs
 /**
@@ -1030,6 +1030,14 @@ export class CardLadderSittingService {
   }
 
   /** Opens a practice run (spec §6 practice menu); the engine refuses one before today's goal. */
+  /** The practice menu, on request at any time (owner 2026-11-06: review anytime). Read only. */
+  async menu({ userId, sittingId } = {}) {
+    const { ctx } = await this.#context(userId, sittingId);
+    const item = practiceMenu(ctx);
+    this.#logger.info?.('school.card-ladder.menu-requested', { learnerId: userId, sittingId, doneAt: ctx.dayFile.doneAt ?? null });
+    return { item: this.#publicItem(item, ctx), progress: this.#progress(ctx) };
+  }
+
   async practice({ userId, sittingId, mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' } = {}) {
     const { store, pkg, day, ctx, settings } = await this.#context(userId, sittingId);
     const ms = this.#now();
@@ -1530,6 +1538,21 @@ export class CardLadderSittingService {
           else if (waiting) dictationLine = `Dictation: ${waiting} word${waiting === 1 ? '' : 's'} waiting for a grown-up`;
         }
         if (dictationLine) projection.description = [projection.description, dictationLine].filter(Boolean).join(' · ');
+        // The launch card renders the LESSON's title and description, not the
+        // top-level description (live 2026-11-06: "Done for today" and no
+        // dictation in sight). On a finished day dictation leads the title,
+        // and the card always says flashcards stay open (owner: anytime).
+        const lesson = projection.context?.lesson;
+        if (lesson) {
+          const doneToday = Boolean(dayFile.doneAt);
+          const lines = [];
+          if (doneToday && dictation && !dictation.unavailable && !dictation.done && dictation.remaining > 0) {
+            lesson.title = `Dictation: ${dictation.remaining} word${dictation.remaining === 1 ? '' : 's'}`;
+          } else if (dictationLine) lines.push(dictationLine);
+          if (dictation?.done) lines.push('Dictation ready ✓');
+          if (doneToday) lines.push('Flashcards: practise anytime');
+          if (lines.length) lesson.description = [lesson.description, ...lines].filter(Boolean).join('\n');
+        }
         return { ...credit, ...projection };
       } catch (error) {
         // The card is decoration on the credit: a failure here must not cost the day its disc.

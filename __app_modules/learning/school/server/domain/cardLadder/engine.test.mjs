@@ -3,7 +3,7 @@ import * as courseEngine from "./engine.mjs";
 import { describe, expect, it } from 'vitest';
 import { emptyWordV3 } from "./mastery.mjs";
 import { emptyDay, emptyStatusV3 } from "./statusV3.mjs";
-import { addActiveTime, currentItem, newWordsHeld, openDay, respond, startPractice, wordTransitions } from "./engine.mjs";
+import { addActiveTime, currentItem, newWordsHeld, openDay, practiceMenu, respond, startPractice, wordTransitions } from "./engine.mjs";
 
 const D = '2026-09-22';
 const SET = {
@@ -585,9 +585,18 @@ describe('engine — practice', () => {
     return { ...ctx, status: out.status, dayFile: out.dayFile };
   }
 
-  it('menu appears after the goal; practice before it is refused', () => {
-    expect(() => startPractice(start(), { mode: 'match' })).toThrow(/after today/);
+  // Owner ruling 2026-11-06 (overrules spec §6 "post-goal"): flashcard
+  // review is open anytime. A run started before the goal is served ahead of
+  // the round, and ending it returns to the round where it was.
+  it('menu appears after the goal; practice is open before it too, and ending it returns to the round', () => {
     expect(currentItem(doneCtx())).toMatchObject({ type: 'menu' });
+    const early = withWords(start(), { gawi: familiar, pul: familiar });
+    const round = currentItem(early);
+    expect(practiceMenu(early)).toMatchObject({ type: 'menu' });
+    const practising = practise(early, { mode: 'flashcards' });
+    expect(currentItem(practising)).toMatchObject({ source: 'practice' });
+    const out = respond(practising, currentItem(practising).id, { menu: true }, { at: 'x' });
+    expect(currentItem({ ...practising, status: out.status, dayFile: out.dayFile }).id).toBe(round.id);
   });
   // 2026-09-26: a day planned 3 new words, Review misses filled the working
   // set, and the day ended with none met — the summary said nothing about it.

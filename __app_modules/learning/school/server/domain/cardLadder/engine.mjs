@@ -395,6 +395,10 @@ export function currentItem(ctx) {
   if (dictation) return dictationItem(ctx, dictation);
   const course = ctx.dayFile.courseReview;
   if (course && course.index < course.queue.length) return { ...practiceItem(ctx, course), courseUnitId: course.unitId };
+  // A practice run started before the goal (owner, 2026-11-06) is served
+  // ahead of the day's round; ending it returns to the round where it was.
+  const early = !ctx.dayFile.doneAt ? openPractice(ctx) : null;
+  if (early) return practiceItem(ctx, early);
   const pending = ctx.dayFile.rechecks.order.find((id) => !ctx.dayFile.rechecks.answered[id]);
   if (pending) return gradedItem(ctx, `rc:${pending}`, pending, recheckTask(wordOf(ctx.status, pending), pending, ctx.media?.[pending]), 'recheck');
   const drill = openDrill(ctx);
@@ -423,6 +427,9 @@ function buildRun(ctx, capabilities, { mode, help = true, filter = 'introduced',
 // word) would have something in it. Say is the exception: With help
 // (say-after) needs term audio, Without help (say-from-cue) does not, so it
 // is offered when EITHER has a run, and `sayHelp` lists the ones that do.
+/** The practice menu, on request at any time (owner, 2026-11-06). */
+export function practiceMenu(ctx) { return menuItem(ctx); }
+
 function menuItem(ctx) {
   const seed = `${ctx.learnerId}|${ctx.day}|menu`;
   const runs = (opts) => buildRun(ctx, ctx.dayFile.capabilities, opts, seed).queue.length > 0;
@@ -688,7 +695,7 @@ function respondCourseReview(ctx, item, response, verdict) {
  * any earlier run; starting one also passes the summary.
  */
 export function startPractice(ctx, { mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' } = {}) {
-  if (!ctx.dayFile.doneAt) throw new ValidationError("practice opens after today's goal");
+  // Owner ruling 2026-11-06: flashcard review is open anytime, goal or not.
   if (!PRACTICE_MODES.includes(mode)) throw new ValidationError(`unknown practice mode '${mode}'`);
   if (!PRACTICE_FILTERS.includes(filter)) throw new ValidationError(`unknown practice filter '${filter}'`);
   if (!FRONT_SIDES.includes(frontSide)) throw new ValidationError(`unknown flashcard front side '${frontSide}'`);

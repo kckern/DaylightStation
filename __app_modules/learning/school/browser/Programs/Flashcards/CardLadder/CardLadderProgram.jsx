@@ -235,6 +235,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
   const startOffer = dictationOffer(intro?.dictation);
   const startKeys = { ' ': start, enter: start };
   if (startOffer?.kind === 'drill' || startOffer?.kind === 'ready') startKeys.d = () => startDictationRef.current?.('start', { review: startOffer.kind === 'ready' });
+  startKeys.r = () => reviewFlashcardsRef.current?.('start');
   useCardLadderKeys(startKeys, { enabled: !started });
 
   useEffect(() => {
@@ -528,8 +529,59 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     // Any other refusal is said too, never a silent tap (M10).
     else setDictationNotice({ step: 'dictation-notice', text: "Dictation couldn't start. Tap it again in a moment.", leaving: false });
   }, [api, userId, deckId, test, scenario, trace, show, unreachable]);
+  /**
+   * Review flashcards, anytime (owner, 2026-11-06): opens the sitting when
+   * none is open — without showing its first card — and serves the practice
+   * menu. A failure falls back to the sitting's own card and says so.
+   */
+  const reviewFlashcards = useCallback(async (from) => {
+    if (busyRef.current || typeof api.menu !== 'function') return;
+    busyRef.current = true;
+    setBusy(true);
+    let id = sittingRef.current;
+    let opened = null;
+    if (!id) {
+      setStarted(true);
+      cardLadderLog.started({ userId, deckId, test, scenario, via: 'review' });
+      const capabilities = { microphone: await detectMicrophoneCapability() };
+      const reply = await api.open({ userId, deckId, scenario, capabilities });
+      if (!live.current) return;
+      if (!reply.ok || !reply.data?.sittingId) {
+        busyRef.current = false; setBusy(false);
+        setError('This word list is not ready right now.');
+        cardLadderLog.planFailed({ userId, deckId, status: reply.status, test });
+        return;
+      }
+      id = reply.data.sittingId;
+      sittingRef.current = id; closedRef.current = false;
+      trace.setSitting(id); trace.setPackage(reply.data.package ?? null);
+      setSession({ id, langs: sidesFromOpen(reply.data) });
+      opened = reply.data;
+      cardLadderLog.sittingOpened({ package: reply.data.package ?? null, first: reply.data.item?.type ?? null, phase: reply.data.progress?.phase ?? null });
+    }
+    const { ok, status, data } = await api.menu(id, { userId });
+    busyRef.current = false;
+    if (!live.current) return;
+    setBusy(false);
+    if (ok && data?.item) {
+      show(data.item, data.progress ?? null);
+      cardLadderLog.reviewOpened({ from, doneToday: data.progress?.doneToday ?? null });
+      return;
+    }
+    cardLadderLog.reviewFailed({ from, status, error: data?.error ?? null });
+    if (opened) show(opened.item, opened.progress ?? null);
+    if (serverUnreachable(status)) unreachable('review');
+    else setDictationNotice({ step: 'review-notice', text: "Review couldn't open. Tap it again in a moment.", leaving: false });
+  }, [api, userId, deckId, test, scenario, trace, show, unreachable]);
+  // Done on a menu opened before the goal goes back to today's cards, not out.
+  const menuDone = useCallback(() => {
+    if (progress?.doneToday) { done(); return; }
+    resync();
+  }, [progress, done, resync]);
   const startDictationRef = useRef(null);
   startDictationRef.current = startDictation;
+  const reviewFlashcardsRef = useRef(null);
+  reviewFlashcardsRef.current = reviewFlashcards;
   // Back on the day-done card after a run: re-read the offer, so its count is today's.
   useEffect(() => {
     if (item?.type !== 'summary' || typeof api.intro !== 'function' || !userId || !deckId) return undefined;
@@ -648,7 +700,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
 
   let body = <p className="wl-loading">Loading…</p>;
   if (!started) {
-    body = <CardLadderStartCard intro={intro} fallbackTitle={title} onStart={start} onDictation={(review) => startDictation('start', { review })} onPosterFailed={posterFailed} />;
+    body = <CardLadderStartCard intro={intro} fallbackTitle={title} onStart={start} onDictation={(review) => startDictation('start', { review })} onReview={() => reviewFlashcards('start')} onPosterFailed={posterFailed} />;
   } else if (error) {
     body = (
       <div className="wl-item wl-error" role="alert">
@@ -675,7 +727,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       body = (
         <MenuItem
           key={key} item={item} api={api} sittingId={session.id} userId={userId} deckId={deckId}
-          langs={session.langs} onPractice={practiceStarted} onLearnMore={learnMore} onExit={done}
+          langs={session.langs} onPractice={practiceStarted} onLearnMore={learnMore} onExit={menuDone}
           dictation={intro?.dictation ?? null} onDictation={startDictation}
         />
       );

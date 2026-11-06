@@ -659,7 +659,11 @@ the miss held on screen: *Not quite — let's look at it again* and Next.
 | Start card | `Dictation: N words` beside Start (primary once the day is done; D) | *Dictation ready ✓* line + `Review dictation` (D) |
 | Day-done card | the big `Dictation: N words` above Done (Space) | *Dictation ready ✓* line + `Review dictation` (D), Done leads |
 | Practice menu | `Dictation: N words` (D) | `Review dictation` (D) |
-| Launch card (agenda) | description ends `Dictation: N words left` | — |
+| Launch card (agenda) | the lesson line says `Dictation: N words left`; once the day is done the lesson TITLE is `Dictation: N words` (the button reads *Open Dictation: N words*) | `Dictation ready ✓` line |
+
+On a finished day the launch card also says `Flashcards: practise anytime`.
+(The card renders the lesson's title and description — not the projection's
+top-level `description`.)
 
 When the only words left are waiting on a grown-up (no recording, not in the
 deck), every place says `Dictation: N words waiting for a grown-up` instead —
@@ -904,7 +908,16 @@ and the secondary choices smaller underneath — **Practise more** (1) and, whil
 new words remain, **Learn more words** (2). Reduced motion swaps the sides
 instantly.
 
-## The practice menu (spec §6, post-goal)
+## The practice menu (anytime — owner, 2026-11-06)
+
+**Review is open anytime, goal or not** (overrules spec §6's "post-goal").
+The start card always offers **Review flashcards** (R) beside Start and
+Dictation; it opens the sitting and asks `POST …/sittings/:id/menu` for the
+menu, without showing the day's first card. A practice run started before
+the goal is served ahead of the round, and ending it (or Done on that menu)
+returns to today's cards where they were. After the goal the menu still
+follows the summary, as below.
+
 
 Once the day is done (goal or cap) the summary shows once
 (`dayFile.summarySeen`), then the **practice menu**: exactly the modes the
