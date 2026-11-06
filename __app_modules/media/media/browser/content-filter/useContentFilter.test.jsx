@@ -116,7 +116,7 @@ describe('useContentFilter', () => {
     const { el, sfx } = setup();
     act(() => { el.currentTime = 11; el.fire('timeupdate'); });
     expect(el.muted).toBe(true);
-    expect(sfx.play).toHaveBeenCalledWith('car-horn');
+    expect(sfx.play).toHaveBeenCalledWith('car-horn', { volume: 1 });
     act(() => { el.currentTime = 13; el.fire('timeupdate'); });
     expect(sfx.stop).toHaveBeenCalled();
     expect(el.muted).toBe(false);
@@ -322,8 +322,10 @@ describe('useContentFilter', () => {
         act(() => { el.fire(ev); });
         expect(sfx.stop).toHaveBeenCalledTimes(1);
         expect(el.muted).toBe(true);
+        el.volume = 0.4;
         act(() => { el.fire('playing'); });
         expect(sfx.tone).toHaveBeenCalledTimes(2);
+        expect(sfx.tone).toHaveBeenLastCalledWith({ volume: 0.4 });
         expect(el.muted).toBe(true);
       });
     }
@@ -402,6 +404,16 @@ describe('createSfxPlayer', () => {
     sfx.stop();
     await flush();
     expect(tone.start).not.toHaveBeenCalled();
+  });
+
+  it('passes the volume to the tone and sets it on a named sound', () => {
+    const made = stubAudio();
+    const tone = fakeTone();
+    const sfx = createSfxPlayer({ horn: '/horn.mp3' }, { tone });
+    sfx.tone({ volume: 0.5 });
+    expect(tone.start).toHaveBeenCalledWith({ volume: 0.5 });
+    sfx.play('horn', { volume: 0.2 });
+    expect(made[0].volume).toBe(0.2);
   });
 
   it('plays the tone and logs for a sound name with no URL', () => {

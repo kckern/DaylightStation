@@ -69,11 +69,13 @@ registerEffectHandler('mute', {
 registerEffectHandler('bleep', {
   kind: EFFECT_KINDS.AUDIO,
   // The video is muted first, so if the tone cannot sound the word is still silenced.
+  // The sound follows the set's volume, so a quiet TV doesn't get a full-level bleep.
   onEnter({ el, cue, sfx, mem }) {
     holdMute(el, mem);
     holdSound(mem);
-    if (cue.sound) sfx?.play?.(cue.sound);
-    else sfx?.tone?.();
+    const opts = { volume: el.volume };
+    if (cue.sound) sfx?.play?.(cue.sound, opts);
+    else sfx?.tone?.(opts);
   },
   onExit({ el, sfx, mem }) { releaseMute(el, mem); releaseSound(sfx, mem); },
 });

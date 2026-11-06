@@ -29,7 +29,8 @@ export function createBleepTone({ createContext = sharedContext, level = 0.25, r
   let gain = null;
 
   return {
-    start() {
+    /** @param {{volume?: number}} [opts] media element volume (0..1) to scale the level by */
+    start({ volume = 1 } = {}) {
       if (osc) return true;
       if (!ctx || ctx.state === 'closed') ctx = createContext();
       if (!ctx) { onDegraded?.('no-audio-context'); return false; }
@@ -47,7 +48,8 @@ export function createBleepTone({ createContext = sharedContext, level = 0.25, r
       try {
         g = ctx.createGain();
         g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(level, t + rampSec);
+        const v = Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1;
+        g.gain.linearRampToValueAtTime(level * v, t + rampSec);
         o = ctx.createOscillator();
         o.type = 'sine';
         o.frequency.setValueAtTime(BLEEP_HZ, t);

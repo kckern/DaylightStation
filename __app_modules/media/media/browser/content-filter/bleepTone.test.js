@@ -28,6 +28,13 @@ describe('createBleepTone', () => {
     expect(osc.stop).toHaveBeenCalledWith(expect.any(Number));
     expect(osc.stop.mock.calls[0][0]).toBeGreaterThan(10);
   });
+  it('scales the tone level by the media volume', () => {
+    const ctx = fakeCtx();
+    const tone = createBleepTone({ createContext: () => ctx, level: 0.25 });
+    tone.start({ volume: 0.4 });
+    const gain = ctx.createGain.mock.results[0].value;
+    expect(gain.gain.linearRampToValueAtTime.mock.calls[0][0]).toBeCloseTo(0.1);
+  });
   it('is idempotent: a second start while sounding creates no second oscillator', () => {
     const ctx = fakeCtx();
     const tone = createBleepTone({ createContext: () => ctx });

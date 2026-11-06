@@ -38,25 +38,29 @@ const logBleepDegraded = (reason) =>
 export function createSfxPlayer(sounds, { tone = createBleepTone({ onDegraded: logBleepDegraded }) } = {}) {
   let audio = null;
   const stopAudio = () => { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; };
-  const fallBack = (reason) => { logBleepDegraded(reason); tone.start(); };
+  const fallBack = (reason, opts) => { logBleepDegraded(reason); tone.start(opts); };
   return {
-    play(name) {
+    play(name, opts = {}) {
       stopAudio(); // never orphan a looping sound
       const url = sounds?.[name];
-      if (!url) { fallBack('unknown-sound'); return; }
-      if (typeof Audio === 'undefined') { fallBack('no-audio-element'); return; }
+      if (!url) { fallBack('unknown-sound', opts); return; }
+      if (typeof Audio === 'undefined') { fallBack('no-audio-element', opts); return; }
       let a;
-      try { a = new Audio(url); a.loop = true; } catch (_) { fallBack('audio-error'); return; }
+      try {
+        a = new Audio(url);
+        a.loop = true;
+        if (Number.isFinite(opts.volume)) a.volume = Math.min(1, Math.max(0, opts.volume));
+      } catch (_) { fallBack('audio-error', opts); return; }
       audio = a;
       try {
         a.play?.()?.catch?.(() => {
           if (audio !== a) return; // stopped or replaced before the rejection landed
           audio = null;
-          fallBack('play-rejected');
+          fallBack('play-rejected', opts);
         });
-      } catch (_) { audio = null; fallBack('play-error'); }
+      } catch (_) { audio = null; fallBack('play-error', opts); }
     },
-    tone() { tone.start(); },
+    tone(opts) { tone.start(opts); },
     stop() { stopAudio(); tone.stop(); },
   };
 }
@@ -304,8 +308,9 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     const onResume = () => {
       const cue = enteredBleep();
       if (!cue) return;
-      if (cue.sound) sfxPlayer.play?.(cue.sound);
-      else sfxPlayer.tone?.();
+      const opts = { volume: el.volume };
+      if (cue.sound) sfxPlayer.play?.(cue.sound, opts);
+      else sfxPlayer.tone?.(opts);
     };
     const haltEvents = ['pause', 'waiting'];
     haltEvents.forEach((ev) => el.addEventListener(ev, onHalt));
