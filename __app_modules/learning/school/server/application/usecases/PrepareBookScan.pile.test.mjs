@@ -330,3 +330,45 @@ describe('PrepareBookScan pile — an open shelf can tell which cards it will ne
     expect(pile(f).cards.filter((c) => c.isbn13 === ISBNS[0])).toHaveLength(1);
   });
 });
+
+describe('PrepareBookScan — "scan it again" works at once (task 3 fix round 1)', () => {
+  it('a rescan of a superseded book 5 s later is a new claimable intent, not a burst duplicate', async () => {
+    const f = fixture();
+    await f.receive(ISBNS[0]);
+    f.advance(1000);
+    const second = await f.receive(ISBNS[1]);
+    await settle();
+    await f.service.claim({ id: second.intentId, screenId: 'portal', learnerId: 'child' });
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[0]).superseded).toBe(true);
+    f.advance(4000);
+    const again = await f.receive(ISBNS[0]);
+    await settle();
+    const card = pile(f).cards.find((c) => c.isbn13 === ISBNS[0]);
+    expect(card).toMatchObject({ state: 'unfiled', superseded: false, intentId: again.intentId });
+    expect(f.service.pending('portal')).toMatchObject({ id: again.intentId, isbn13: ISBNS[0] });
+    expect(f.logger.debug).not.toHaveBeenCalledWith('school.book-scan.burst-duplicate', expect.anything());
+  });
+
+  it('a genuine burst (live twin) is still absorbed', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    f.advance(3000);
+    const again = await f.receive(ISBNS[0]);
+    expect(again.intentId).toBe(first.intentId);
+    expect(f.logger.debug).toHaveBeenCalledWith('school.book-scan.burst-duplicate', expect.objectContaining({ isbn13: ISBNS[0] }));
+  });
+
+  it('an unfiled card whose intent expired or was dismissed is marked superseded too (it can only be rescanned)', async () => {
+    const f = fixture();
+    const first = await f.receive(ISBNS[0]);
+    await settle();
+    f.service.dismiss({ id: first.intentId, screenId: 'portal' });
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[0])).toMatchObject({ state: 'unfiled', superseded: true });
+    f.advance(1000);
+    await f.receive(ISBNS[1]);
+    await settle();
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[1]).superseded).toBe(false);
+    f.advance(6 * 60_000);
+    expect(pile(f).cards.find((c) => c.isbn13 === ISBNS[1])).toMatchObject({ state: 'unfiled', superseded: true });
+  });
+});

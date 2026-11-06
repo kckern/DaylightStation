@@ -952,7 +952,9 @@ export function useBookShelf({ learnerId, grant, idleTimeoutSeconds = 90, onExit
     // Claimed scans handed in and not yet on screen (the shelf's chip counts
     // them), and whether a scan's intent was ever handed to this shelf (so a
     // pile card for it is not counted as still waiting).
-    queuedScans: entryQueue.length,
+    // The head of the queue about to open this very render is not "waiting":
+    // counting it flashed "1 more book waiting" for a frame on every hand-off.
+    queuedScans: entryQueue.length - (nextEntry && shelf && !needsRefresh && !busy && scanIsAnswer ? 1 : 0),
     wasHanded: (intentId) => Boolean(intentId) && seenEntries.current.has(intentId),
     learner,
     error,

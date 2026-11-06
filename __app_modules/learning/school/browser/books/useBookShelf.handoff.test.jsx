@@ -272,3 +272,52 @@ describe('the shelf acknowledges a scan at once and shows what is waiting', () =
     expect(chip()).toBeNull();
   });
 });
+
+describe('task 3 fix round 1', () => {
+  it('a scan already shown as waiting is not "acknowledged" when the shelf finally claims it; it is still logged visible', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const receivedAt = ago(100);
+    const s = renderShelf();
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /Hatchet/ })); });
+    await act(async () => {});
+    // Waiting while the child is mid-step.
+    s.update({ scanStatus: { acknowledging: null, cards: [pileCard('scan-5', ISBN2)] } });
+    await act(async () => {});
+    expect(chip()?.textContent).toBe('1 more book waiting');
+    // The shelf becomes scan-ready and the claim starts for that same scan.
+    s.update({ scanStatus: { acknowledging: { intentId: 'scan-5', receivedAt, screenId: 'portal' }, cards: [pileCard('scan-5', ISBN2)] } });
+    await act(async () => {});
+    s.update({ scanStatus: { acknowledging: null, cards: [] }, initialBookEntry: { intentId: 'scan-5', isbn13: ISBN2, book: BOOK2, receivedAt, screenId: 'portal' } });
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByTestId('screen-header-back')); });
+    await act(async () => {});
+    expect(h.log.mock.calls.filter(([event]) => event === 'scan.acknowledged')).toHaveLength(0);
+    expect(h.log).toHaveBeenCalledWith('scan.visible', { screenId: 'portal', msSinceReceived: expect.any(Number) });
+  });
+
+  it('a hand-off with nothing blocking never counts the opening book as waiting, not even for one render', async () => {
+    const seen = [];
+    const r = renderHook((props) => {
+      const shelf = useBookShelf({ learnerId: 'kid', grant: 'g1', idleTimeoutSeconds: 90, onExit: vi.fn(), ...props });
+      seen.push(shelf.queuedScans);
+      return shelf;
+    }, { initialProps: { initialBookEntry: null } });
+    await act(async () => {});
+    expect(r.result.current.view).toBe('shelf');
+    seen.length = 0;
+    r.rerender({ initialBookEntry: { intentId: 'scan-6', isbn13: ISBN2, book: BOOK2 } });
+    await act(async () => {});
+    expect(r.result.current.step).toBe('cover');
+    expect(seen.every((n) => n === 0)).toBe(true);
+  });
+
+  it('a blocked hand-off still counts', async () => {
+    const r = mountShelf(); await act(async () => {});
+    act(() => r.result.current.actions.startAdd());
+    act(() => r.result.current.actions.typeIsbn('978'));
+    r.rerender({ initialBookEntry: { intentId: 'scan-7', isbn13: ISBN2, book: BOOK2 } });
+    await act(async () => {});
+    expect(r.result.current.queuedScans).toBe(1);
+  });
+});

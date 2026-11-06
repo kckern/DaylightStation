@@ -172,6 +172,7 @@ export function scanChipState(scanStatus, { queuedScans = 0, wasHanded = () => f
   return {
     acknowledging,
     waiting: cards.length + queuedScans,
+    waitingIntents: cards.map((card) => card.intentId).filter(Boolean),
     superseded: cards.filter((card) => card.superseded).map((card) => ({ id: card.id, label: card.label ?? card.isbn13 })),
   };
 }
@@ -186,9 +187,21 @@ export default function BookShelf({ learnerId, grant, idleTimeoutSeconds, onExit
   const ackRef = useRef(chip.acknowledging);
   ackRef.current = chip.acknowledging;
   const ackLogged = useRef(null);
+  // Intents the chip already counted as waiting. Their "Got it" when the
+  // shelf finally claims them is not an acknowledgement — the child was told
+  // long before — and logging it would put a whole step's wait into the
+  // acknowledgement latency. `scan.visible` still logs for them.
+  const seenWaiting = useRef(new Set());
+  useEffect(() => {
+    for (const intentId of chip.waitingIntents) {
+      seenWaiting.current.add(intentId);
+      if (seenWaiting.current.size > 64) seenWaiting.current.delete(seenWaiting.current.values().next().value);
+    }
+  });
   useEffect(() => {
     if (!ackId || ackLogged.current === ackId) return;
     ackLogged.current = ackId;
+    if (seenWaiting.current.has(ackId)) return;
     const received = Date.parse(ackRef.current?.receivedAt ?? '');
     schoolLog.bookShelf('scan.acknowledged', { screenId: ackRef.current?.screenId ?? null, msSinceReceived: Number.isFinite(received) ? Math.max(0, Date.now() - received) : null });
   }, [ackId]);

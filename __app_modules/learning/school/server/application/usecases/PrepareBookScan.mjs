@@ -132,7 +132,13 @@ export class PrepareBookScan {
     const twin = pile.cards.find(c => c.session === pile.session && c.isbn13 === isbn13 && c.state !== 'removed' && c.state !== 'claimed');
     const burstKey = `${target.screenId}|${isbn13}`;
     const firstAt = this.#bursts.get(burstKey);
-    const inBurst = twin && firstAt !== undefined && now - firstAt <= BURST_WINDOW_MS;
+    // A burst is a reader double-firing at a book still being offered. A twin
+    // whose intent is no longer live (superseded by a shelf claim, dismissed,
+    // expired) cannot be opened any more; the rescan is the child doing what
+    // the shelf chip told them ("scan it again to open it") and must make a
+    // new intent at once, not wait out the window.
+    const twinLive = Boolean(twin) && [...this.#records.values()].some(r => r.card === twin && this.#live(r));
+    const inBurst = twinLive && firstAt !== undefined && now - firstAt <= BURST_WINDOW_MS;
     if (firstAt === undefined || now - firstAt > BURST_WINDOW_MS) this.#bursts.set(burstKey, now);
     if (twin) {
       twin.duplicates += 1;
@@ -362,13 +368,16 @@ export class PrepareBookScan {
   /**
    * Which intent feeds a card, and whether an open shelf can still claim it.
    * A card outlives its intent: two scans in one shelf step leave the older
-   * one superseded (see `claim`) — an unfiled card no shelf will ever open
-   * unless the book is scanned again, which hands the card a live intent.
+   * one superseded (see `claim`), and a dismissed, expired or evicted intent
+   * is just as gone — an unfiled card no shelf will ever open unless the book
+   * is scanned again, which hands the card a live intent.
    */
   #intentOf(card) {
     const live = [...this.#records.values()].find(r => r.card === card && this.#live(r));
     const record = live ?? card.record ?? null;
-    return { intentId: record?.id ?? null, superseded: card.state === 'unfiled' && !live && record?.phase === 'superseded' };
+    // Any unfiled card without a live intent is out of a shelf's reach —
+    // superseded, dismissed, expired or evicted alike — and needs a rescan.
+    return { intentId: record?.id ?? null, superseded: card.state === 'unfiled' && !live && record != null };
   }
   pile(screenId) {
     // Reading never allocates: only a scan (or a filing) creates a pile.
