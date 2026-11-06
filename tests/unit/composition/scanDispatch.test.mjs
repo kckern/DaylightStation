@@ -1094,6 +1094,12 @@ describe('publisher book scan entry', () => {
     }
     expect(h.execute).not.toHaveBeenCalled();
   });
+  it('hands the reader capture time and hold to the book scan', async () => {
+    const book = { receive: vi.fn(async () => ({ status: 'pending' })) };
+    const h = harness({ book });
+    await h.scanDispatch.handleScan({ code: '9780064400558', route: 'nutribot', device: 'reader', eventId: 'e1', capturedAt: '2026-11-05T03:31:51.800Z', delayedMs: 4200 });
+    expect(book.receive).toHaveBeenLastCalledWith({ code: '9780064400558', device: 'reader', eventId: 'e1', capturedAt: '2026-11-05T03:31:51.800Z', delayedMs: 4200 });
+  });
   it('refuses visibly when unwired without food fallback', async () => {
     const h = harness();
     const result = await h.scanDispatch.handleScan({ code: '9780064400558', route: 'nutribot' });

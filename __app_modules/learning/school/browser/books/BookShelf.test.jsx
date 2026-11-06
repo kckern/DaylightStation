@@ -527,6 +527,10 @@ describe('BookShelf — says when it is waiting for a scan (2026-09-30)', () => 
     ['updating a book', { view: 'update' }, false],
     ['a save in flight', { view: 'shelf', busy: true }, false],
     ['loading', { view: 'loading' }, false],
+    // Fix round 1: a scan claimed during the receipt hold was queued, and a
+    // close inside those 4s lost it. While the receipt is held the scan stays
+    // PENDING on the server (and in the pile if the shelf closes).
+    ['the shelf behind a fresh save receipt', { view: 'shelf', receiptHeld: true }, false],
   ])('%s → ready %s', (_label, state, ready) => {
     arm(state);
     const onScanReadyChange = vi.fn();

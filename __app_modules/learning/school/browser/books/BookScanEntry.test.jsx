@@ -140,3 +140,52 @@ it('a scan already waiting when a shelf opens is not claimed for that shelf', as
   await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
   expect(h.claim).toHaveBeenCalledWith('scan2', { screenId: 'portal', learnerId: 'child' });
 });
+
+// 2026-11-05: four books scanned in ~7s; the second and fourth arrived while
+// the shelf was on its cover step (not scan-ready, so scope dropped to null)
+// and were marked "already waiting when the shelf opened" when scope came back.
+describe('BookScanEntry — scans while an open shelf is not scan-ready (2026-11-05)', () => {
+  const second = { ...intent, id: 'scan2', isbn13: '9780064401517' };
+  it('claims a scan that arrived while the shelf was busy, once it is ready again', async () => {
+    const onLaunch = vi.fn();
+    const r = render(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId="child" onLaunch={onLaunch} />); await act(async () => {});
+    expect(h.claim).toHaveBeenCalledWith('scan1', { screenId: 'portal', learnerId: 'child' });
+    // The shelf moves to its cover step: still open, not asking for a barcode.
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} onLaunch={onLaunch} />); await act(async () => {});
+    h.pending.mockResolvedValue({ ok: true, data: { intent: second } });
+    h.claim.mockResolvedValue({ ok: true, data: { intentId: 'scan2', launchTarget: { learnerId: 'child', bookGrant: 'g2' }, bookEntry: { isbn13: second.isbn13, book: second.book } } });
+    await act(async () => h.event({ type: 'school.book-scan', screenId: 'portal' }));
+    expect(h.claim).toHaveBeenCalledTimes(1);
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId="child" onLaunch={onLaunch} />); await act(async () => {});
+    expect(h.claim).toHaveBeenLastCalledWith('scan2', { screenId: 'portal', learnerId: 'child' });
+    expect(onLaunch).toHaveBeenLastCalledWith(expect.objectContaining({ bookEntry: expect.objectContaining({ intentId: 'scan2' }) }), 'child');
+  });
+
+  it('still leaves a scan that was waiting when the shelf FIRST opened to the pile, across ready toggles', async () => {
+    const r = render(<BookScanEntry {...props} safe={false} pile />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId="child" />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId="child" />); await act(async () => {});
+    expect(h.claim).not.toHaveBeenCalled();
+  });
+
+  it('delivers a claim that lands after the shelf stopped being scan-ready, while it is still open', async () => {
+    let finish; h.claim.mockImplementation(() => new Promise(res => { finish = res; }));
+    const onLaunch = vi.fn();
+    const r = render(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId="child" onLaunch={onLaunch} />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} onLaunch={onLaunch} />);
+    await act(async () => finish({ ok: true, data: { intentId: 'scan1', launchTarget: { learnerId: 'child', bookGrant: 'g' }, bookEntry: { isbn13: intent.isbn13 } } }));
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ bookEntry: expect.objectContaining({ intentId: 'scan1' }) }), 'child');
+  });
+
+  // Fix round 1: the shelf is not scan-ready behind a fresh receipt, so a scan
+  // then stays pending; a close inside the hold leaves it to the pile.
+  it('a scan during the receipt hold stays pending through a close', async () => {
+    const r = render(<BookScanEntry {...props} safe={false} pile shelfLearnerId="child" scopeLearnerId={null} />); await act(async () => {});
+    r.rerender(<BookScanEntry {...props} safe={false} pile shelfLearnerId={null} scopeLearnerId={null} />); await act(async () => {});
+    expect(h.claim).not.toHaveBeenCalled();
+    expect(h.dismiss).not.toHaveBeenCalled();
+  });
+});
+

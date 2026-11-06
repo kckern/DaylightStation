@@ -34,7 +34,15 @@ export class BarcodeFirmwareGateway extends BaseGateway {
       // Distinct scans in the same second are distinct servings. Downstream
       // retries retain this identity instead of deduplicating on wall-clock text.
       const eventId = typeof frame.eventId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(frame.eventId) ? frame.eventId : randomUUID();
-      const event = { source: 'barcode-relay', device, route, code, eventId, ts: formatLocalTimestamp(new Date(), this.timezone) };
+      // `ts` stays the receive time (day-log bucketing and every consumer read
+      // it). The reader's own timing rides beside it: the firmware sends its
+      // capture clock as `ts` (uptime ms) and `delayed_ms` only when a scan
+      // waited in its offline queue, so a held or batched scan is visible.
+      const received = new Date();
+      const delayedMs = Number.isFinite(Number(frame.delayed_ms)) && Number(frame.delayed_ms) > 0 ? Math.round(Number(frame.delayed_ms)) : 0;
+      const event = { source: 'barcode-relay', device, route, code, eventId, ts: formatLocalTimestamp(received, this.timezone),
+        receivedAt: received.toISOString(), capturedAt: new Date(received.getTime() - delayedMs).toISOString(), delayedMs,
+        deviceMs: Number.isFinite(Number(frame.ts)) ? Number(frame.ts) : null };
       listener(event, { clientId }); this.publish(device, event);
     });
   }

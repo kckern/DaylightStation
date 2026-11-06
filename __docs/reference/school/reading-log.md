@@ -128,15 +128,48 @@ reading. A scan that lands then is claimed for that child at once — no corner
 card, no trip home, no second "who's reading?" — and the shelf reopens on that
 book. On 2026-09-30 a learner did exactly what the add screen asked; the scan
 became a corner card, "Open it" sent him home, and he had to pick himself again.
-`SchoolApp` passes the open shelf's learner to `BookScanEntry` as
-`scopeLearnerId`; `useBookScanEntry` claims once per scan when its lookup
-settles (logging `scan.scoped-claim`), and only a failed claim is drawn. The
-shelf is keyed on the scan's `intentId`, because it seeds a scanned entry once
-per mount. Only while the shelf is ASKING for a barcode — its shelf view, the
-add flow's barcode step, a finished book's "scan its barcode" — does it report
-`onScanReadyChange(true)`. Mid-entry (cover, where, page, when, an update, a
-save in flight) a scan gets the ordinary corner offer instead, because the
-remount it causes would throw the child's half-entered book away.
+`SchoolApp` passes two things to `BookScanEntry`: `shelfLearnerId`, whose
+shelf is OPEN, and `scopeLearnerId`, set only while that shelf is ASKING for a
+barcode — its shelf view, the add flow's barcode step, a finished book's "scan
+its barcode" (`onScanReadyChange(true)`). `useBookScanEntry` claims once per
+scan when its lookup settles and the scope is set (logging `scan.scoped-claim`
+with the `isbn13`), and only a failed claim is drawn. Mid-entry (cover, where,
+page, when, an update, a save in flight) the scope drops; a scan that lands
+then simply waits, and is claimed the moment the shelf is scan-ready again.
+The pile stands aside for the whole time the shelf is open (`BookPile` is
+handed `shelfLearnerId`), so it can never file that scan to someone else.
+
+**Only a scan waiting when the shelf FIRST opened is left to the pile** — it is
+most likely another child's stack. That is keyed on `shelfLearnerId` changing,
+never on the scope: on 2026-11-05 a child scanned four books in seven seconds
+and two of them vanished, because the scope went null → learner every time the
+shelf left and re-entered its scan-ready view, and each return marked whatever
+had arrived meanwhile as "already waiting". A skip by this guard logs
+`scan.scoped-claim-skipped {reason: waiting-before-shelf-opened, isbn13}`
+(debug). A claim that the server granted after the shelf stopped being
+scan-ready is still delivered while that shelf is open: once claimed, the scan
+is no longer pending anywhere, so dropping the answer lost the book outright.
+
+**A claimed scan is handed to the open shelf, not delivered by remounting it.**
+The shelf is mounted once per child (`key={learnerId}`); each claimed scan
+reaches it as `initialBookEntry` carrying its `intentId`, and the fresh grant
+that comes with it is read by later requests without reloading the shelf.
+`useBookShelf` queues each scan once and opens the next one only where a scan
+is an answer: the shelf itself, the barcode pad (empty, or holding only the
+last scanned number after a Back from its cover), or a finished book (the
+"scan its barcode" case). Anywhere else — a pad with hand-typed digits, the cover,
+an update, a save in flight — the book waits (`scan.queued`, debug, with the
+`isbn13`) and opens when that step finishes. Queuing a scan re-arms the 90s idle
+close, like a tap. A fresh save receipt makes the shelf NOT scan-ready for
+`RECEIPT_HOLD_MS` (4s, `receiptHeld`), so the child sees their save land and a
+scan made then stays pending on the server — claimed when the hold lifts, or
+left in the pile if the shelf closes first. (A claimed scan is no longer pending
+or offered by the pile, so a scan claimed and then dropped by a close is lost;
+the receipt window was the easy way to hit that.) A close or unmount with a
+scan still queued logs `school.book-shelf.scan.dropped {isbn13, reason}` at warn. Until 2026-11-05
+the shelf was keyed on the scan's `intentId`: every scan remounted it, showed
+"Getting your shelf…" again, and threw away an Add the child had started 24ms
+before. `scan.seeded` now carries the `isbn13`.
 
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at

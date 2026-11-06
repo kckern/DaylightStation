@@ -24,6 +24,9 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
   const [pile, setPile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // What the last face tap (or sticky auto-file) actually filed, in the
+  // server's numbers: the screen's confirmation. Null until something is.
+  const [lastFiled, setLastFiled] = useState(null);
   const generation = useRef(0);
   const reads = useRef(0);
   const inFlight = useRef(false);
@@ -60,7 +63,7 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
 
   useEffect(() => {
     generation.current += 1;
-    setPile(null); setError(null);
+    setPile(null); setError(null); setLastFiled(null);
     void refresh();
     const unsubscribe = enabled ? wsService.onStatusChange((status) => { if (status.connected) void refresh(); }) : undefined;
     return () => { generation.current += 1; unsubscribe?.(); };
@@ -102,14 +105,38 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
       schoolLog.bookShelfError?.(`book-pile.${label}-failed`, { status: result?.status ?? null });
       return;
     }
-    setPile(result.data?.pile ?? null);
+    const next = result.data?.pile ?? null;
+    setPile(next);
     setReadScope(scopeNow.current);
-    schoolLog.bookShelf(`book-pile.${label}`, { screenId, count: result.data?.pile?.cards?.length ?? 0 });
+    const size = next?.cards?.length ?? 0;
+    if (label !== 'filed') { schoolLog.bookShelf(`book-pile.${label}`, { screenId, pile: size }); return; }
+    // `count` is what the SERVER filed on this tap. The pile size used to be
+    // logged as the count — 4 for a filing of 2 (2026-11-05).
+    const filed = next?.filed ?? null;
+    if (!filed || !(filed.count > 0)) {
+      schoolLog.bookShelfDebug?.('book-pile.file-empty', { screenId, learnerId: filed?.learnerId ?? null, pile: size });
+      return;
+    }
+    // `scanAt` is the server's own clock for this filing (the file resets the
+    // session's lastScanAt), so "a newer scan" never compares two clocks.
+    setLastFiled({ ...filed, at: Date.now(), scanAt: next?.lastScanAt ?? null });
+    schoolLog.bookShelf('book-pile.filed', { screenId, learnerId: filed.learnerId, count: filed.count,
+      alreadyToday: filed.alreadyToday ?? 0, failed: filed.failed ?? 0, pile: size });
   }, [screenId]);
 
   const file = useCallback((learnerId) => run('filed', () => schoolApi.bookScans.filePile({ screenId, learnerId })), [run, screenId]);
   const move = useCallback((cardId, learnerId) => run('card-moved', () => schoolApi.bookScans.moveCard(cardId, { screenId, learnerId })), [run, screenId]);
   const remove = useCallback((cardId) => run('card-removed', () => schoolApi.bookScans.removeCard(cardId, { screenId })), [run, screenId]);
+
+  // The confirmation belongs to the filing it reports. A newer scan, or the
+  // session ending, retires it — otherwise the next child's pile opened under
+  // "Filed 3 books to <someone else>".
+  useEffect(() => {
+    if (!lastFiled || !pile) return;
+    const since = lastFiled.scanAt ? Date.parse(lastFiled.scanAt) : lastFiled.at;
+    const newerScan = pile.lastScanAt && Date.parse(pile.lastScanAt) > since;
+    if (newerScan || !pile.live) setLastFiled(null);
+  }, [pile, lastFiled]);
 
   const reader = pile?.reader ?? null;
   const autoFileable = !scopeLearnerId && readScope === null && reader && unfiled.some((card) => FILEABLE.has(card.status) && !card.error);
@@ -117,5 +144,5 @@ export function useBookPile({ screenId, scopeLearnerId = null }) {
     if (autoFileable) void file(reader);
   }, [autoFileable, reader, file, unfiled]);
 
-  return { cards, reader, live: Boolean(pile?.live), lastScanAt: pile?.lastScanAt ?? null, unfiled, busy, error, file, move, remove, enabled };
+  return { cards, reader, live: Boolean(pile?.live), lastScanAt: pile?.lastScanAt ?? null, unfiled, busy, error, lastFiled, file, move, remove, enabled };
 }
