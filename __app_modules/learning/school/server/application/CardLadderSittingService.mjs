@@ -1,5 +1,5 @@
 import { startCourseReview, startDictation as startDictationRun } from "../domain/cardLadder/engine.mjs";
-import { dictationState } from "../domain/cardLadder/dictation.mjs";
+import { currentDictation, dictationState } from "../domain/cardLadder/dictation.mjs";
 // __backend/src/3_applications/school/CardLadderSittingService.mjs
 /**
  * The card ladder's application service (mastery redesign rev 4, spec §4/§8).
@@ -59,6 +59,8 @@ const SPEAKING = new Set(['say-after', 'read-aloud', 'say-from-cue']);
 const REVEAL_AFTER_TAKE = new Set(['read-aloud', 'say-from-cue']);
 const RECORDING_EXTS = new Set(['webm', 'ogg', 'm4a', 'mp4', 'wav']);
 const NO_ASSETS = Object.freeze({ image: null, audio: null, glossAudio: null });
+// A weekly dictation is ten words (spec 2026-11-06, Revision 2); another count is warned, never refused.
+const DICTATION_WORDS = 10;
 // Grown-up word controls (spec §6): how far back a word's typed answers are listed.
 const ADMIN_TYPED_DAYS = 14;
 // How many study days the grown-up's day list goes back (newest first).
@@ -221,25 +223,29 @@ export class CardLadderSittingService {
 
   /**
    * The week's dictation for a learner's package (spec 2026-11-06, Revision
-   * 1): the list, its progress, which file is corrupt, and the
-   * `dictationState` — words without term audio excluded as needs-recording,
-   * ids missing from the lexicon as unknown-word.
+   * 2): the list is the newest week tag on the package's lexicon entries
+   * (`currentDictation`); only the learner's progress is stored. Words
+   * without term audio are excluded as needs-recording, tagged words outside
+   * the sitting's deck as unknown-word (UX audit #5: shown, never hidden).
    */
-  #dictationRules(lexicon, media) {
-    return { hasAudio: (id) => media?.[id]?.audio === true, inLexicon: (id) => lexicon.entries.has(id) };
+  #dictationRules(lexicon, media, deck) {
+    const inDeck = new Set(deck?.words ?? []);
+    return { hasAudio: (id) => media?.[id]?.audio === true, inLexicon: (id) => lexicon.entries.has(id) && inDeck.has(id) };
   }
 
-  #readDictation(store, userId, pkg, lexicon, media) {
-    const fileState = store.dictationFileState?.(userId, pkg) ?? { list: 'missing', progress: 'missing' };
-    const list = store.readDictation?.(userId, pkg) ?? null;
+  #readDictation(store, userId, pkg, lexicon, media, deck) {
+    const fileState = store.dictationFileState?.(userId, pkg) ?? { progress: 'missing' };
+    const list = currentDictation(lexicon);
     const progress = store.readDictationProgress?.(userId, pkg) ?? null;
-    const state = list ? dictationState(list, progress, this.#dictationRules(lexicon, media)) : null;
+    const state = list ? dictationState(list, progress, this.#dictationRules(lexicon, media, deck)) : null;
     return { fileState, list, progress, state };
   }
 
-  #dictationSummary(state) {
+  #dictationSummary(state, list) {
+    const count = list?.count ?? state.words.length + state.excluded.length;
     return {
-      week: state.week, total: state.words.length, remaining: state.remaining, done: state.done,
+      week: state.week, total: state.words.length, remaining: state.remaining, done: state.done, ready: state.done,
+      count, countWarning: count !== DICTATION_WORDS,
       needsRecording: state.excluded.filter((row) => row.reason === 'needs-recording').map((row) => row.id),
       unknown: state.excluded.filter((row) => row.reason === 'unknown-word').map((row) => row.id),
     };
@@ -247,35 +253,44 @@ export class CardLadderSittingService {
 
   /**
    * One tap from the start card: opens a dictation run in `sittingId` and
-   * serves its first item, or `{ done: true }` for a finished list. Allowed
-   * before or after the daily goal; adds no active time (ruling 10). A
-   * corrupt list or progress file is refused here, so a run never fails
-   * mid-way.
+   * serves its first item. A ready list answers `{ done: true }`; a list with
+   * nothing left to drill but words waiting for a grown-up (or none at all)
+   * answers `{ done: false }` and opens no run. Allowed before or after the
+   * daily goal; adds no active time (ruling 10). A corrupt progress file is
+   * refused here, so a run never fails mid-way.
    */
   async startDictation({ learnerId, userId = learnerId, package: pkgArg = null, sittingId } = {}) {
-    const { store, pkg, lexicon, media, settings, ctx, day, sitting } = await this.#context(userId, sittingId);
+    const { store, pkg, lexicon, media, settings, ctx, day, sitting, deck } = await this.#context(userId, sittingId);
     if (pkgArg !== null && pkgArg !== pkg) throw new ValidationError(`Sitting belongs to package '${pkg}', not '${pkgArg}'.`);
-    const read = this.#readDictation(store, userId, pkg, lexicon, media);
+    const read = this.#readDictation(store, userId, pkg, lexicon, media, deck);
     const base = { learnerId: userId, package: pkg };
-    if (read.fileState.list === 'corrupt' || read.fileState.progress === 'corrupt') {
-      this.#logger.warn?.('school.card-ladder.dictation.corrupt', { ...base, sittingId, list: read.fileState.list, progress: read.fileState.progress });
+    if (read.fileState.progress === 'corrupt') {
+      this.#logger.warn?.('school.card-ladder.dictation.corrupt', { ...base, sittingId, progress: read.fileState.progress });
       throw new ValidationError('This week\'s dictation file is unreadable; a grown-up needs to fix it.');
     }
     if (!read.state?.week) throw new ValidationError('No dictation list is set for this week.');
     const { state } = read;
+    // Exactly ten (Revision 2): another count is flagged, never refused.
+    if (read.list.count !== DICTATION_WORDS) this.#logger.warn?.('school.card-ladder.dictation.count', { ...base, week: state.week, count: read.list.count });
     for (const row of state.excluded) {
       if (row.reason === 'unknown-word') this.#logger.warn?.('school.card-ladder.dictation.unknown-word', { ...base, week: state.week, wordId: row.id });
     }
-    const summary = this.#dictationSummary(state);
+    const summary = this.#dictationSummary(state, read.list);
     if (state.done) {
       this.#logger.info?.('school.card-ladder.dictation.already-done', { ...base, sittingId, week: state.week });
       return { done: true, dictation: summary };
+    }
+    if (state.finished) {
+      this.#logger.info?.('school.card-ladder.dictation.nothing-to-drill', {
+        ...base, sittingId, week: state.week, needsRecording: summary.needsRecording, unknown: summary.unknown,
+      });
+      return { done: false, dictation: summary };
     }
     const out = this.#transact(store, userId, pkg, day, sitting.deckId, ({ status, dayFile }) => startDictationRun({ ...ctx, status, dayFile, dictation: state }, { sittingId }));
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile, dictation: state, settings };
     const item = currentItem(nextCtx);
     this.#logger.info?.('school.card-ladder.dictation.started', {
-      ...base, sittingId, week: state.week, words: state.words.length, remaining: state.remaining, needsRecording: summary.needsRecording,
+      ...base, sittingId, week: state.week, words: state.words.length, remaining: state.remaining, needsRecording: summary.needsRecording, unknown: summary.unknown,
     });
     this.#logSequencing({ learnerId: userId, sittingId, pkg, day }, { ctx: nextCtx, item, via: 'dictation' });
     return { item: this.#publicItem(item, nextCtx), progress: this.#progress(nextCtx), dictation: summary };
@@ -442,7 +457,10 @@ export class CardLadderSittingService {
     const run = dayFile.practice;
     const practicing = Boolean(dayFile.doneAt && dayFile.summarySeen && run && run.index < run.queue.length);
     let phase = 'summary';
-    const dictating = Boolean(sittingId && dayFile.dictation && !dayFile.dictation.ended && dayFile.dictation.sittingId === sittingId && dictation?.week === dayFile.dictation.week);
+    const dictRun = dayFile.dictation;
+    // Dictating: the open run of this sitting, or its ending not yet acknowledged.
+    const dictating = Boolean(sittingId && dictRun && dictRun.sittingId === sittingId
+      && ((!dictRun.ended && dictation?.week === dictRun.week) || (dictRun.ended === 'done' && !dictRun.readyAt)));
     if (dictating) phase = 'dictation';
     else if (dayFile.courseReview?.index < dayFile.courseReview?.queue.length) phase = 'course-review';
     else if (rechecksLeft) phase = 'rechecks';
@@ -520,7 +538,7 @@ export class CardLadderSittingService {
     const ctx = { status, dayFile, day, lexicon, media, pool, settings, learnerId: userId, sittingId };
     // A dictation run is served only in the sitting that started it; its word state lives in the progress file.
     if (dayFile.dictation && !dayFile.dictation.ended && dayFile.dictation.sittingId === sittingId) {
-      ctx.dictation = this.#readDictation(store, userId, pkg, lexicon, media).state;
+      ctx.dictation = this.#readDictation(store, userId, pkg, lexicon, media, deck).state;
     }
     const deferred = this.#deferUnavailableIntroductions(status, structuredClone(dayFile), pool);
     if (deferred.length) {
@@ -531,7 +549,7 @@ export class CardLadderSittingService {
       ctx.status = out.status; ctx.dayFile = out.dayFile;
       this.#logger.info?.('school.card-ladder.course-introductions-deferred', { learnerId: userId, deckId: deck.id, wordIds: deferred });
     }
-    return { store, pkg, lexicon, media, settings, ctx, day, sitting };
+    return { store, pkg, lexicon, media, settings, ctx, day, sitting, deck };
   }
 
   /**
@@ -750,8 +768,10 @@ export class CardLadderSittingService {
 
   /** The client's response object is passed to the engine unchanged (no default flags spread in). */
   async respond({ userId, sittingId, itemId, response } = {}) {
-    const { store, pkg, lexicon, ctx, day } = await this.#context(userId, sittingId);
+    const { store, pkg, lexicon, ctx, day, deck } = await this.#context(userId, sittingId);
     if (typeof itemId !== 'string' || !itemId) throw new ValidationError('itemId is required');
+    const replaced = this.#dictationReplaced({ store, userId, pkg, sittingId, day, ctx, itemId });
+    if (replaced) return replaced;
     const item = currentItem(ctx);
     let verdict = null;
     if (item.id === itemId && item.type === 'typed' && !ctx.dayFile.items[itemId] && typeof response?.typed === 'string') {
@@ -795,7 +815,10 @@ export class CardLadderSittingService {
       return { status: step.status, dayFile: step.dayFile, result: step.result };
     });
     const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
-    if (attempt) nextCtx.dictation = this.#recordDictationAttempt({ store, userId, pkg, sittingId, lexicon, media: ctx.media }, attempt);
+    if (attempt) nextCtx.dictation = this.#recordDictationAttempt({ store, userId, pkg, sittingId, lexicon, media: ctx.media, deck }, attempt);
+    if (item.id === itemId && item.type === 'dictation-ready') {
+      this.#logger.info?.('school.card-ladder.dictation.ready-seen', { learnerId: userId, package: pkg, sittingId, week: item.week, ready: item.ready });
+    }
     const nextItem = currentItem(nextCtx);
     this.#logHousekeeping(userId, sittingId, out.dayFile, changes, nextItem);
     // Every response is `answered`; only a graded answer (verify, recheck,
@@ -821,8 +844,38 @@ export class CardLadderSittingService {
     return {
       result: this.#withAnswerAudio(out.result, out.dayFile.items?.[itemId]?.wordId ?? (item.id === itemId ? item.wordId : null), ctx),
       item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(nextCtx),
-      ...(attempt ? { dictation: { wordId: attempt.wordId, step: attempt.step, next: attempt.word.step, pass: attempt.pass, dontKnow: attempt.dontKnow, blindPasses: attempt.word.blindPasses, remaining: attempt.remaining, done: attempt.done } } : {}),
+      ...(attempt ? {
+        dictation: {
+          wordId: attempt.wordId, step: attempt.step, next: attempt.word.step, pass: attempt.pass, dontKnow: attempt.dontKnow,
+          blindPasses: attempt.word.blindPasses, remaining: attempt.remaining, done: attempt.done,
+          needsRecording: (attempt.state?.excluded ?? []).filter((row) => row.reason === 'needs-recording').map((row) => row.id),
+          unknown: (attempt.state?.excluded ?? []).filter((row) => row.reason === 'unknown-word').map((row) => row.id),
+        },
+      } : {}),
     };
+  }
+
+  /**
+   * UX audit #8: the week's tags changed while a run was open. An answer to
+   * the old run's item is not recorded against a list that no longer exists;
+   * the run ends `replaced` and the response says so —
+   * `dictation: { replaced: true }` — so the browser restarts on the new
+   * week instead of the answer vanishing. Null when nothing was replaced.
+   */
+  #dictationReplaced({ store, userId, pkg, sittingId, day, ctx, itemId }) {
+    const run = ctx.dayFile.dictation;
+    if (!run || run.ended || run.sittingId !== sittingId || !itemId.startsWith(`${run.id}:`) || ctx.dayFile.items[itemId]) return null;
+    const listWeek = ctx.dictation?.week ?? null;
+    if (listWeek === run.week) return null;
+    const at = isoWithOffset(this.#now(), this.#timezone);
+    const out = this.#transact(store, userId, pkg, day, ctx.dayFile.sittings[sittingId].deckId, ({ status, dayFile }) => {
+      if (dayFile.dictation?.id === run.id && !dayFile.dictation.ended) dayFile.dictation = { ...dayFile.dictation, ended: 'replaced', endedAt: at };
+      return { status, dayFile };
+    });
+    this.#logger.warn?.('school.card-ladder.dictation.replaced', { learnerId: userId, package: pkg, sittingId, week: run.week, listWeek, itemId });
+    const nextCtx = { ...ctx, status: out.status, dayFile: out.dayFile };
+    const nextItem = currentItem(nextCtx);
+    return { result: null, item: this.#publicItem(nextItem, nextCtx), progress: this.#progress(nextCtx), dictation: { replaced: true, week: listWeek, previousWeek: run.week } };
   }
 
   /**
@@ -831,14 +884,10 @@ export class CardLadderSittingService {
    * the attempt, and the list's finish once (only the answer that finished it
    * carries `done`; the run then ends). Returns the state for the next item.
    */
-  #recordDictationAttempt({ store, userId, pkg, sittingId, lexicon, media }, attempt) {
-    const read = this.#readDictation(store, userId, pkg, lexicon, media);
+  #recordDictationAttempt({ store, userId, pkg, sittingId, lexicon, media, deck }, attempt) {
+    // The list is the request's own lexicon, already checked against the run's week (#dictationReplaced).
+    const read = this.#readDictation(store, userId, pkg, lexicon, media, deck);
     const week = attempt.week;
-    if (read.list?.week !== week) {
-      // The list was replaced mid-run: this answer belongs to the old week, which is gone.
-      this.#logger.warn?.('school.card-ladder.dictation.attempt-dropped', { learnerId: userId, package: pkg, sittingId, week, listWeek: read.list?.week ?? null, wordId: attempt.wordId });
-      return read.state;
-    }
     const kept = read.progress?.week === week && read.progress.words && typeof read.progress.words === 'object' ? read.progress.words : {};
     store.writeDictationProgress(userId, pkg, { week, words: { ...structuredClone(kept), [attempt.wordId]: attempt.word } });
     const base = { learnerId: userId, package: pkg, week };
@@ -847,7 +896,7 @@ export class CardLadderSittingService {
       next: attempt.word.step, blindPasses: attempt.word.blindPasses, remaining: attempt.remaining,
     });
     if (attempt.done) this.#logger.info?.('school.card-ladder.dictation.done', base);
-    return dictationState(read.list, { week, words: { ...kept, [attempt.wordId]: attempt.word } }, this.#dictationRules(lexicon, media));
+    return dictationState(read.list, { week, words: { ...kept, [attempt.wordId]: attempt.word } }, this.#dictationRules(lexicon, media, deck));
   }
 
   /**

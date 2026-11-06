@@ -28,6 +28,15 @@ const HEADER = {
 const lexicon = (entries, over = {}) => ({ schema: LEXICON_SCHEMA, ...HEADER, entries, ...over });
 
 describe('validateLexicon', () => {
+  it('keeps dictation week tags and dictationOrder (spec 2026-11-06 Revision 2)', () => {
+    const { errors, lexicon: lex } = validateLexicon(lexicon([
+      entry({ dictation: ['2026-W46', '2026-w47', 'junk', 46], dictationOrder: { '2026-W46': 3, bad: 'x' } }), phrase(),
+    ]));
+    expect(errors).toEqual([]);
+    expect(lex.entries.get('gawi').dictation).toEqual(['2026-W46', '2026-W47']);
+    expect(lex.entries.get('gawi').dictationOrder).toEqual({ '2026-W46': 3 });
+    expect(lex.entries.get('annyeong').dictation).toBeUndefined();
+  });
   it('accepts a well-formed lexicon, carries its language identity and indexes entries by id', () => {
     const { errors, lexicon: lex } = validateLexicon(lexicon([entry(), phrase(), hello()]));
     expect(errors).toEqual([]);

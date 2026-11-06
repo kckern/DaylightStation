@@ -18,10 +18,8 @@ const real = {
 
 const dictationReal = {
   ...real, writes: 0,
-  dictationFileState() { return { list: 'ok', progress: 'ok' }; },
-  readDictation() { return { schema: 'school.card-ladder-dictation/v1', week: '2026-W45', setAt: null, words: ['gawi'] }; },
+  dictationFileState() { return { progress: 'ok' }; },
   readDictationProgress() { return { week: '2026-W45', words: { gawi: { step: 'copy', blindPasses: 0, lastAttemptAt: null } } }; },
-  writeDictation() { this.writes += 1; },
   writeDictationProgress() { this.writes += 1; },
 };
 
@@ -50,16 +48,16 @@ describe('ShadowCardLadderStores', () => {
     expect(store.writeTuning).toBeUndefined();
     expect(real.writes).toBe(0);
   });
-  it('dictation: reads the real list, keeps progress in memory only, never writes the real store', () => {
+  it('dictation: keeps progress in memory only, never writes the real store; no list reader (spec Revision 2)', () => {
     const real = dictationReal;
     const shadows = new ShadowCardLadderStores({ real, now: () => 0 });
     const store = shadows.forToken(shadows.create('test-learner', 'korean-vocab', '2026-09-22'));
-    expect(store.readDictation('test-learner', 'korean-vocab').words).toEqual(['gawi']);
+    expect(store.readDictation).toBeUndefined();
     expect(store.readDictationProgress('test-learner', 'korean-vocab').words.gawi.step).toBe('copy');
     store.writeDictationProgress('test-learner', 'korean-vocab', { week: '2026-W45', words: { gawi: { step: 'blind', blindPasses: 1, lastAttemptAt: null } } });
     expect(store.readDictationProgress('test-learner', 'korean-vocab').words.gawi.step).toBe('blind');
     expect(real.readDictationProgress().words.gawi.step).toBe('copy');
-    expect(store.dictationFileState('test-learner', 'korean-vocab')).toEqual({ list: 'ok', progress: 'ok' });
+    expect(store.dictationFileState('test-learner', 'korean-vocab')).toEqual({ progress: 'ok' });
     expect(store.writeDictation).toBeUndefined();
     expect(real.writes).toBe(0);
     // A fresh sitting starts from the real progress again.
@@ -106,18 +104,17 @@ describe('ShadowCardLadderStores over the real YAML store — test mode never wr
 });
 
 describe('ShadowCardLadderStores dictation over the real YAML store', () => {
-  it('reads the list, keeps progress in memory, and writes no file', () => {
+  it('keeps progress in memory and writes no file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shadow-dict-'));
     try {
       const configService = { getUserDir: (id) => path.join(dir, id), getUserProfile: (id) => (id === 'test-learner' ? { id } : null) };
       const realStore = new YamlCardLadderStore({ configService });
-      realStore.writeDictation('test-learner', 'korean-vocab', { schema: 'school.card-ladder-dictation/v1', week: 'w', setAt: null, words: ['gawi'] });
+      realStore.writeDictationProgress('test-learner', 'korean-vocab', { week: 'w', words: {} });
       const root = path.join(dir, 'test-learner');
       const bytes = () => fs.readdirSync(root, { recursive: true }).map((f) => [f, fs.statSync(path.join(root, f)).isFile() ? fs.readFileSync(path.join(root, f), 'utf8') : null]);
       const before = bytes();
       const shadows = new ShadowCardLadderStores({ real: realStore, now: () => 0 });
       const store = shadows.forToken(shadows.create('test-learner', 'korean-vocab', '2026-09-22'));
-      expect(store.readDictation('test-learner', 'korean-vocab').words).toEqual(['gawi']);
       store.writeDictationProgress('test-learner', 'korean-vocab', { week: 'w', words: { gawi: { step: 'copy', blindPasses: 0, lastAttemptAt: null } } });
       expect(store.readDictationProgress('test-learner', 'korean-vocab').words.gawi.step).toBe('copy');
       expect(bytes()).toEqual(before);

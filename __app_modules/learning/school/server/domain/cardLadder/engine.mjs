@@ -389,6 +389,8 @@ function itemForRound(ctx, round) {
 }
 
 export function currentItem(ctx) {
+  const ending = dictationEnding(ctx);
+  if (ending) return ending;
   const dictation = openDictation(ctx);
   if (dictation) return dictationItem(ctx, dictation);
   const course = ctx.dayFile.courseReview;
@@ -521,8 +523,26 @@ function openDictation(ctx) {
   const run = ctx.dayFile?.dictation;
   const state = ctx.dictation;
   if (!run || run.ended || !state || run.sittingId !== ctx.sittingId || state.week !== run.week) return null;
-  return nextDictationWord(state, { lastWordId: run.lastWordId }) ? run : null;
+  return nextDictationWord(state, { lastWordId: run.lastWordId, repeat: run.retry === true }) ? run : null;
 }
+
+// The run's explicit ending (UX audit #4): once every word is drilled, the
+// sitting that ran it is served a `dictation-ready` item until it is
+// acknowledged with `{ done: true }` — never a ladder item by surprise. It
+// reads only the outcome the finishing answer stored on the run, so it needs
+// no progress file. `ready` is false while any word is excluded (audit #5).
+function dictationEnding(ctx) {
+  const run = ctx.dayFile?.dictation;
+  if (!run || run.ended !== 'done' || run.readyAt || run.sittingId !== ctx.sittingId) return null;
+  const outcome = run.outcome ?? {};
+  return {
+    id: `${run.id}:ready`, type: 'dictation-ready', source: 'dictation', week: run.week,
+    ready: outcome.ready === true, wordCount: outcome.wordCount ?? 0, wordsDone: outcome.wordsDone ?? 0,
+    needsRecording: [...(outcome.needsRecording ?? [])], unknown: [...(outcome.unknown ?? [])],
+  };
+}
+
+const excludedIds = (state, reason) => (state?.excluded ?? []).filter((row) => row.reason === reason).map((row) => row.id);
 
 // Hear the term, pick its spelling. Decoys in order: the lexicon's authored
 // `decoys.term` (seeded order), then other list words of any kind, then other
@@ -550,12 +570,15 @@ function dictationChoices(ctx, entry, seed) {
 
 function dictationItem(ctx, run) {
   const state = ctx.dictation;
-  const wordId = nextDictationWord(state, { lastWordId: run.lastWordId });
+  const wordId = nextDictationWord(state, { lastWordId: run.lastWordId, repeat: run.retry === true });
   const word = state.words.find((w) => w.id === wordId);
   const entry = ctx.lexicon.entries.get(wordId);
   const id = `${run.id}:${run.index}`;
+  // Every step hears the word (audit #2): `channel: 'hear'` and `listen: true`.
+  // The header is the list's, not the drill's step trail (audit #7).
   const base = {
-    id, source: 'dictation', wordId, dictationStep: word.step,
+    id, source: 'dictation', wordId, dictationStep: word.step, channel: 'hear', listen: true,
+    wordIndex: state.words.findIndex((w) => w.id === wordId) + 1, wordCount: state.words.length, wordsDone: state.words.filter((w) => w.done).length,
     dictation: { step: word.step, blindPasses: word.blindPasses, remaining: state.remaining, total: state.words.length },
   };
   if (word.step === 'match') return { ...base, type: 'choice', task: DICTATION_TASK.match, choices: dictationChoices(ctx, entry, `${ctx.learnerId}|${ctx.day}|${id}`) };
@@ -572,7 +595,8 @@ export function startDictation(ctx, { sittingId }) {
   const state = ctx.dictation;
   if (typeof sittingId !== 'string' || !sittingId) throw new ValidationError('sittingId is required');
   if (!state?.week) throw new ValidationError('no dictation list is set');
-  if (state.done || !state.words.some((w) => !w.done)) throw new ValidationError('this dictation list is already done');
+  if (state.done) throw new ValidationError('this dictation list is already done');
+  if (!state.words.some((w) => !w.done)) throw new ValidationError('this dictation list has no word left to drill');
   const dayFile = clone(ctx.dayFile);
   const number = (dayFile.dictationRuns ?? 0) + 1;
   dayFile.dictationRuns = number;
@@ -583,6 +607,7 @@ export function startDictation(ctx, { sittingId }) {
 function dictationFits(item, response) {
   const keys = keysOf(response);
   const only = (key) => keys.length === 1 && keys[0] === key;
+  if (item.type === 'dictation-ready') return only('done') && response.done === true;
   if (only('dontKnow')) return response.dontKnow === true;
   return item.type === 'choice' ? only('choice') && typeof response.choice === 'string' : only('typed') && typeof response.typed === 'string';
 }
@@ -603,10 +628,18 @@ function respondDictation(ctx, item, itemId, response, at) {
   const result = { correct: pass, ...(dontKnow ? { dontKnow: true } : {}), ...(step === 'blind' ? {} : { answer: term }) };
   const words = state.words.map((w) => (w.id === word.id ? { ...w, step: next.step, blindPasses: next.blindPasses, done: next.blindPasses >= BLIND_PASSES_TO_FINISH } : w));
   const remaining = words.filter((w) => !w.done).length;
-  const nextState = { ...state, words, remaining, done: remaining === 0 };
+  const nextState = { ...state, words, remaining, finished: remaining === 0, done: remaining === 0 && words.length > 0 && !(state.excluded?.length) };
   run.index += 1;
   run.lastWordId = word.id;
-  if (nextState.done) { run.ended = 'done'; run.endedAt = at; }
+  // A miss keeps the word (audit #3): the next item is the same word at its new step.
+  run.retry = !pass;
+  if (nextState.finished) {
+    run.ended = 'done'; run.endedAt = at;
+    run.outcome = {
+      ready: nextState.done, wordCount: words.length, wordsDone: words.filter((w) => w.done).length,
+      needsRecording: excludedIds(state, 'needs-recording'), unknown: excludedIds(state, 'unknown-word'),
+    };
+  }
   ctx.dayFile.items[itemId] = { at, response, result, wordId: item.wordId, task: item.task ?? DICTATION_TASK[step], source: 'dictation', dictationStep: step };
   return {
     status: ctx.status, dayFile: ctx.dayFile, result,
@@ -907,6 +940,11 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
   const item = currentItem(ctx);
   if (item.id !== itemId) throw new ValidationError('stale item');
   validateResponse(item, response);
+  if (item.type === 'dictation-ready') {
+    // Acknowledged: the sitting goes back to wherever it was. Not a day-file item.
+    ctx.dayFile.dictation.readyAt = at;
+    return { status: ctx.status, dayFile: ctx.dayFile, result: { done: true }, transitions: [], graded: null };
+  }
   if (item.source === 'dictation') return { ...respondDictation(ctx, item, itemId, response, at), transitions: [], graded: null };
   const out = applyResponse(ctx, item, itemId, response, { at, verdict });
   return {

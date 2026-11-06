@@ -1,10 +1,10 @@
 /**
- * Dictation progression (spec 2026-11-06, Revision 1): pure. Each word of the
+ * Dictation (spec 2026-11-06, Revisions 1-2): pure. The list is the newest
+ * week tag on lexicon entries (`currentDictation`). Each word of the
  * week's list climbs match -> copy -> blind; a blind pass counts, two blind
  * passes (not necessarily consecutive) finish the word. The clock is injected:
  * nothing here reads ambient time.
  */
-export const DICTATION_SCHEMA = 'school.card-ladder-dictation/v1';
 export const DICTATION_STEPS = Object.freeze(['match', 'copy', 'blind']);
 export const BLIND_PASSES_TO_FINISH = 2;
 
@@ -46,14 +46,24 @@ export function dictationState(list, progress, { hasAudio = () => true, inLexico
     words.push({ id, step: isStep(row.step) ? row.step : 'match', blindPasses, done: blindPasses >= BLIND_PASSES_TO_FINISH });
   }
   const remaining = words.filter((w) => !w.done).length;
-  return { week, words, excluded, done: remaining === 0, remaining };
+  // `finished`: nothing is left to drill. `done` (ready) is the honest one
+  // (UX audit #5): every word drilled AND none excluded — an excluded word is
+  // waiting for a grown-up, so a list with one, or an empty list, is never ready.
+  const finished = remaining === 0;
+  return { week, words, excluded, done: finished && words.length > 0 && excluded.length === 0, finished, remaining };
 }
 
-/** The next not-done word, cycling in list order; never the same twice in a row unless it is the only one left. */
-export function nextDictationWord(state, { lastWordId = null } = {}) {
+/**
+ * The next not-done word, cycling in list order; never the same twice in a
+ * row unless it is the only one left — or `repeat` asks for it: after a miss
+ * the same word is served again at its new step (UX audit #3), so only a pass
+ * moves to another word.
+ */
+export function nextDictationWord(state, { lastWordId = null, repeat = false } = {}) {
   const words = state?.words ?? [];
   const pending = words.filter((w) => !w.done);
   if (!pending.length) return null;
+  if (repeat && pending.some((w) => w.id === lastWordId)) return lastWordId;
   if (pending.length === 1) return pending[0].id;
   const at = words.findIndex((w) => w.id === lastWordId);
   for (let i = 1; i <= words.length; i += 1) {
@@ -61,4 +71,44 @@ export function nextDictationWord(state, { lastWordId = null } = {}) {
     if (!w.done && w.id !== lastWordId) return w.id;
   }
   return pending[0].id;
+}
+
+const ISO_WEEK = /^(\d{4})-W(\d{2})$/;
+/** `2026-W46` (any case) → `2026-W46`, or null when it is not an ISO week tag. */
+export function normalizeDictationWeek(value) {
+  if (typeof value !== 'string') return null;
+  const match = ISO_WEEK.exec(value.trim().toUpperCase());
+  if (!match) return null;
+  const week = Number(match[2]);
+  return week >= 1 && week <= 53 ? `${match[1]}-W${match[2]}` : null;
+}
+
+/**
+ * The current dictation (spec 2026-11-06, Revision 2): the newest ISO week in
+ * any lexicon entry's `dictation` tags, and its words — `dictationOrder[week]`
+ * first, by that number, then the rest in lexicon order. `count` is reported
+ * as is; the caller warns when it is not ten and serves the words anyway.
+ * Pure: `null` when no entry carries a well-formed tag.
+ */
+export function currentDictation(lexicon) {
+  const entries = lexicon?.entries;
+  if (!entries || typeof entries.values !== 'function') return null;
+  const tagged = [];
+  let week = null;
+  let index = 0;
+  for (const entry of entries.values()) {
+    const weeks = (Array.isArray(entry?.dictation) ? entry.dictation : []).map(normalizeDictationWeek).filter(Boolean);
+    if (weeks.length) tagged.push({ id: entry.id, weeks, order: entry.dictationOrder, index });
+    for (const w of weeks) if (week === null || w > week) week = w;
+    index += 1;
+  }
+  if (week === null) return null;
+  const rank = (row) => {
+    const n = row.order && typeof row.order === 'object' ? row.order[week] : undefined;
+    return Number.isFinite(n) ? n : Infinity;
+  };
+  const words = tagged.filter((row) => row.weeks.includes(week))
+    .sort((a, b) => (rank(a) - rank(b)) || (a.index - b.index) || 0)
+    .map((row) => row.id);
+  return { week, words, count: words.length };
 }

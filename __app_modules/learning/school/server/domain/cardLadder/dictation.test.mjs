@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDictationAttempt, dictationState, nextDictationWord } from './dictation.mjs';
+import { applyDictationAttempt, currentDictation, dictationState, nextDictationWord } from './dictation.mjs';
 
 const NOW = '2026-11-06T10:00:00.000Z';
 const all = { hasAudio: () => true, inLexicon: () => true };
@@ -79,21 +79,26 @@ describe('dictationState', () => {
   it('done when every word is done', () => {
     const done = { step: 'blind', blindPasses: 2 };
     const s = dictationState(list, { week: '2026-W45', words: { a: done, b: done, c: done } }, all);
-    expect(s).toMatchObject({ done: true, remaining: 0 });
+    expect(s).toMatchObject({ done: true, finished: true, remaining: 0 });
   });
   it('progress for a different week is ignored', () => {
     const s = dictationState(list, { week: '2026-W44', words: { a: { step: 'blind', blindPasses: 2 } } }, all);
     expect(s.words[0]).toEqual({ id: 'a', step: 'match', blindPasses: 0, done: false });
   });
-  it('excludes words without audio and unknown words; they do not block done', () => {
+  it('excludes words without audio and unknown words; nothing is left to drill, but the list is never ready (audit #5)', () => {
     const done = { step: 'blind', blindPasses: 2 };
     const s = dictationState(list, { week: '2026-W45', words: { a: done } }, { hasAudio: (id) => id !== 'b', inLexicon: (id) => id !== 'c' });
     expect(s.excluded).toEqual([{ id: 'b', reason: 'needs-recording' }, { id: 'c', reason: 'unknown-word' }]);
     expect(s.words.map((w) => w.id)).toEqual(['a']);
-    expect(s).toMatchObject({ done: true, remaining: 0 });
+    expect(s).toMatchObject({ done: false, finished: true, remaining: 0 });
   });
-  it('a missing list is done with nothing', () => {
-    expect(dictationState(null, null, all)).toMatchObject({ week: null, words: [], done: true, remaining: 0 });
+  it('a missing list is not ready and has nothing to drill', () => {
+    expect(dictationState(null, null, all)).toMatchObject({ week: null, words: [], done: false, finished: true, remaining: 0 });
+  });
+  it('an all-excluded list is never ready', () => {
+    const s = dictationState(list, null, { hasAudio: () => false, inLexicon: () => true });
+    expect(s).toMatchObject({ words: [], done: false, finished: true, remaining: 0 });
+    expect(s.excluded).toHaveLength(3);
   });
 });
 
@@ -138,5 +143,51 @@ describe('nextDictationWord — a real rotation', () => {
       if (last === 'b') progress.words.b = { step: 'blind', blindPasses: 2 };
     }
     expect(served).toEqual(['a', 'b', 'c', 'a', 'c', 'a']);
+  });
+});
+
+describe('nextDictationWord — a miss keeps the word (audit #3)', () => {
+  const s = dictationState({ week: 'w', words: ['a', 'b', 'c'] }, null, all);
+  it('repeat serves the last word again while it is not done', () => {
+    expect(nextDictationWord(s, { lastWordId: 'b', repeat: true })).toBe('b');
+  });
+  it('without repeat it moves on', () => {
+    expect(nextDictationWord(s, { lastWordId: 'b', repeat: false })).toBe('c');
+  });
+  it('repeat never serves a done word', () => {
+    const done = dictationState({ week: 'w', words: ['a', 'b', 'c'] }, { week: 'w', words: { b: { step: 'blind', blindPasses: 2 } } }, all);
+    expect(nextDictationWord(done, { lastWordId: 'b', repeat: true })).toBe('c');
+  });
+});
+
+describe('currentDictation (spec Revision 2: week tags on lexicon entries)', () => {
+  const lex = (rows) => ({ package: 'korean-vocab', entries: new Map(rows.map((row) => [row.id, { term: row.id, ...row }])) });
+  it('null when no entry is tagged', () => {
+    expect(currentDictation(lex([{ id: 'a' }, { id: 'b', dictation: [] }]))).toBeNull();
+    expect(currentDictation(null)).toBeNull();
+  });
+  it('the newest ISO week wins; its words in lexicon order', () => {
+    const out = currentDictation(lex([
+      { id: 'a', dictation: ['2026-W45'] }, { id: 'b', dictation: ['2026-W46'] }, { id: 'c', dictation: ['2026-W45', '2026-W46'] }, { id: 'd' },
+    ]));
+    expect(out).toEqual({ week: '2026-W46', words: ['b', 'c'], count: 2 });
+  });
+  it('compares weeks by year then week number', () => {
+    expect(currentDictation(lex([{ id: 'a', dictation: ['2026-W52'] }, { id: 'b', dictation: ['2027-W01'] }])).week).toBe('2027-W01');
+  });
+  it('dictationOrder for the week sorts first; untagged-order words keep lexicon order after them', () => {
+    const out = currentDictation(lex([
+      { id: 'a', dictation: ['2026-W46'] },
+      { id: 'b', dictation: ['2026-W46'], dictationOrder: { '2026-W46': 2 } },
+      { id: 'c', dictation: ['2026-W46'], dictationOrder: { '2026-W46': 1, '2026-W45': 9 } },
+    ]));
+    expect(out.words).toEqual(['c', 'b', 'a']);
+  });
+  it('ignores malformed tags', () => {
+    expect(currentDictation(lex([{ id: 'a', dictation: ['2026-11-09', 46, null] }, { id: 'b', dictation: '2026-W46' }]))).toBeNull();
+  });
+  it('counts the words, ten or not (the caller warns)', () => {
+    const rows = Array.from({ length: 11 }, (_, i) => ({ id: `w${i}`, dictation: ['2026-W46'] }));
+    expect(currentDictation(lex(rows)).count).toBe(11);
   });
 });
