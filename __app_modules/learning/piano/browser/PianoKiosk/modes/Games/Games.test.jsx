@@ -42,11 +42,12 @@ vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({
 }));
 
 const gemBoard = vi.hoisted(() => ({ board: null }));
+const fetchGemBoardMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx', async (importOriginal) => ({
   ...(await importOriginal()),
-  fetchGemBoard: vi.fn(async () => gemBoard.board),
+  fetchGemBoard: fetchGemBoardMock,
 }));
-vi.mock('../../../../../../../frontend/src/lib/economy/coinCeremonyAudio.js', () => ({ playCoinCue: vi.fn(() => true) }));
+vi.mock('../../../../../../../frontend/src/lib/economy/coinCeremonyAudio.js', () => ({ playCoinCue: vi.fn(() => true), installCoinCueUnlock: vi.fn(() => () => {}) }));
 
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
@@ -227,6 +228,8 @@ beforeEach(() => {
   // Ended pass ids persist per learner (a reload must not reopen one); each
   // test starts with none.
   localStorage.clear();
+  fetchGemBoardMock.mockReset();
+  fetchGemBoardMock.mockImplementation(async () => gemBoard.board);
   // Which physical kiosk this browser is. Captured from the launch URL and
   // persisted; the host reads it rather than stamping a shared literal.
   localStorage.setItem('piano.kioskDeviceId', 'yellow-room-tablet');
@@ -405,11 +408,39 @@ describe('Games mode — gem ceremony', () => {
     expect(await screen.findByTestId('gem-ceremony')).toBeTruthy();
   });
 
-  it('a game route renders no ceremony', async () => {
+  it('a game route renders no ceremony and never looks at the board', async () => {
     localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
     gemBoard.board = boardWith('earned', 1);
-    renderGames('/games/tetris');
-    await new Promise((r) => setTimeout(r, 50));
+    renderGames('/games/probe-game');
+    await waitFor(() => expect(screen.getByTestId('probe-game')).toBeTruthy());
+    expect(fetchGemBoardMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('gem-ceremony')).toBeNull();
+  });
+
+  it('a ceremony interrupted by opening a game shows again on return to the picker', async () => {
+    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    gemBoard.board = boardWith('earned', 1);
+    renderGames('/games', 'guest', testConfig, ['/games/probe-game', '/games']);
+    const first = await screen.findByTestId('gem-ceremony');
+    expect(first).toBeTruthy();
+    fireEvent.click(screen.getByText('go:/games/probe-game'));
+    await waitFor(() => expect(screen.getByTestId('probe-game')).toBeTruthy());
+    expect(screen.queryByTestId('gem-ceremony')).toBeNull();
+    fireEvent.click(screen.getByText('go:/games'));
+    expect(await screen.findByTestId('gem-ceremony')).toBeTruthy();
+  });
+
+  it('a dismissed ceremony does not repeat when the picker remounts', async () => {
+    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    gemBoard.board = boardWith('earned', 1);
+    const first = renderGames();
+    fireEvent.pointerDown(await screen.findByTestId('gem-ceremony'));
+    await waitFor(() => expect(screen.queryByTestId('gem-ceremony')).toBeNull());
+    first.unmount();
+    fetchGemBoardMock.mockClear();
+    renderGames();
+    await waitFor(() => expect(fetchGemBoardMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('Tetris')).toBeTruthy());
     expect(screen.queryByTestId('gem-ceremony')).toBeNull();
   });
 });

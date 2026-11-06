@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useContext, useEffect, useRef, useState, Suspense } from 'react';
-import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, useNavigate, useParams, useLocation, useResolvedPath } from 'react-router-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { useDeviceAudience } from '../../../../../../../__capabilities/playback/browser/sessions.mjs';
 import { pianoAudience } from '../../../pianoAudience.js';
@@ -19,7 +19,7 @@ import useGameBudgetMeter from '../../useGameBudgetMeter.js';
 import { readKioskDeviceId } from '../../kioskDeviceIdentity.js';
 import GemCeremony from '../../../../../../../frontend/src/lib/economy/GemBoard/GemCeremony.jsx';
 import { useGemCeremony } from '../../../../../../../frontend/src/lib/economy/GemBoard/useGemCeremony.js';
-import { playCoinCue } from '../../../../../../../frontend/src/lib/economy/coinCeremonyAudio.js';
+import { playCoinCue, installCoinCueUnlock } from '../../../../../../../frontend/src/lib/economy/coinCeremonyAudio.js';
 import { GAME_ACHIEVEMENT_RECORDED_EVENT } from '../../../../../../../__capabilities/gaming/browser/platform/realtime/index.js';
 import GameGate from './GameGate.jsx';
 import { gateAppliesTo, gateConfigForLearner } from './gateScope.js';
@@ -84,6 +84,8 @@ function GameMountWitness({ gameId, matchId, learnerId, logger, onMount = null }
  * All navigation is RELATIVE (navigate('subpath') / navigate('..')) so the mode
  * works under either /piano/* (single piano) or /piano/:pianoId/* (multi).
  */
+const GEM_EVENTS = [GAME_ACHIEVEMENT_RECORDED_EVENT];
+
 export function Games() {
   const pianoUser = useContext(PianoUserContext);
   const { config } = usePianoKioskConfig();
@@ -107,6 +109,19 @@ export function Games() {
   const earlyPass = useEarlyPassSession({ learnerId, access: gameAccess });
   passGameRef.current = earlyPass.started;
   const deviceId = useMemo(() => readKioskDeviceId(), []);
+
+  // The gem ceremony's queue lives HERE, above the routes, so a game opened
+  // mid-ceremony unmounts the card but not the queue: it shows again on return
+  // (the hook already advanced its snapshot when it found the gems). Looking is
+  // enabled only on the picker route; the card renders only inside the picker,
+  // so a gem never lands on a live run. Not learnOnMount: arriving at the
+  // picker IS the "a game just ended" look.
+  const location = useLocation();
+  const gamesBase = useResolvedPath('.').pathname;
+  const onPicker = location.pathname.replace(/\/+$/, '') === gamesBase.replace(/\/+$/, '');
+  const gems = useGemCeremony({ surface: 'piano', events: GEM_EVENTS, enabled: onPicker });
+  // Prime the cue from the first real gesture so the WebView lets it play later.
+  useEffect(() => installCoinCueUnlock(typeof window !== 'undefined' ? window : null, { sound: 'school/_ux/coin.mp3' }), []);
 
   // BEFORE the school lock, and it is not a lock. A player games are not
   // offered to is told that, plainly, with no route to unlock and no
@@ -141,7 +156,7 @@ export function Games() {
   const session = earlyPass.holding ? earlyPass : null;
   return (
     <Routes>
-      <Route index element={<GamePicker />} />
+      <Route index element={<GamePicker ceremony={gems.ceremony} onCeremonyDone={gems.done} />} />
       <Route path=":gameId" element={<GameHost earlyPass={session} />} />
       <Route path=":gameId/:subRoute" element={<GameHost earlyPass={session} />} />
     </Routes>
@@ -149,14 +164,11 @@ export function Games() {
 }
 
 /** Game picker — grid of registered game tiles; tap to enter a game (relative nav). */
-function GamePicker() {
+function GamePicker({ ceremony = null, onCeremonyDone }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-games' }), []);
   const navigate = useNavigate();
   const ids = getGameIds();
   const cols = balancedColumns(ids.length);
-  // The picker only mounts when no game is open, so a gem never lands on a
-  // live run. Not learnOnMount: mounting IS the "a game just ended" look.
-  const gems = useGemCeremony({ surface: 'piano', events: [GAME_ACHIEVEMENT_RECORDED_EVENT] });
 
   return (
     <section className="piano-menu piano-mode--games">
@@ -179,14 +191,14 @@ function GamePicker() {
           );
         })}
       </ul>
-      {gems.ceremony && (
+      {ceremony && (
         <GemCeremony
-          key={gems.ceremony.id}
+          key={ceremony.id}
           surface="piano"
           contained
-          awards={gems.ceremony.awards}
+          awards={ceremony.awards}
           onShow={() => playCoinCue({ sound: 'school/_ux/coin.mp3', volume: 0.8 })}
-          onDone={gems.done}
+          onDone={onCeremonyDone}
         />
       )}
     </section>
