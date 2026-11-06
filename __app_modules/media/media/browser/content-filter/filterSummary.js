@@ -4,11 +4,12 @@
  * ops:docs/superpowers/specs/2026-11-06-content-filter-surround-design.md).
  * Pure: reads resolved effective cues only.
  */
+import { PRECISE } from './contentFilter.js';
+
 const WORD = new Set(['mute', 'bleep']);
 const HIDE_BLUR = new Set(['blur', 'full-blur', 'pixelate']);
 const HIDE_SOLID = new Set(['black', 'censor-bar']);
 const SKIP = new Set(['skip', 'skip-card']);
-const PRECISE = new Set(['ms', 'frame']);
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 

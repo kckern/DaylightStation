@@ -13,7 +13,7 @@
  */
 
 // Timing a refine pass measured on this file: no approximate widening.
-const PRECISE = new Set(['ms', 'frame']);
+export const PRECISE = new Set(['ms', 'frame']);
 
 // Overlay effects can be confined to a region track; the rest act on the whole cue.
 const REGIONAL = new Set(['blur', 'censor-bar', 'pixelate']);

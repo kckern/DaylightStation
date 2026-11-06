@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { filterSummary, isProvisional } from './filterSummary.js';
+import { PRECISE } from './contentFilter.js';
 
 const c = (effect, extra = {}) => ({ id: `${effect}-${Math.random()}`, effect, in: 0, out: 1, ...extra });
 
@@ -30,5 +31,12 @@ describe('isProvisional', () => {
   });
   it('ignores approximate skips and blurs', () => {
     expect(isProvisional([c('mute', { precision: 'frame' }), c('skip', { precision: 'second-approx' })])).toBe(false);
+  });
+});
+
+describe('precision rule shared with the resolver', () => {
+  it('treats exactly the resolver\'s precise levels as not provisional', () => {
+    expect([...PRECISE].sort()).toEqual(['frame', 'ms']);
+    for (const precision of PRECISE) expect(isProvisional([c('mute', { precision })])).toBe(false);
   });
 });
