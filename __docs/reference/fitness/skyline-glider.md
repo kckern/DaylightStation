@@ -14,6 +14,8 @@ Skyline Glider is a single-rider Fitness game in which cadence controls a hang g
 - The ANT bridge allows one expected crank interval plus 25% tolerance, bounded between 5 and 6 seconds, before reporting a stop. At 15 RPM this is 5 seconds plus packet delay; once the bridge reports a genuine zero there is no additional in-game coast/recovery grace. A once-per-turn sensor cannot promptly distinguish 1 RPM from stopping.
 - A missing or stalled cadence transport is collision-protected for 0.75 seconds, then freezes the course behind a reconnect overlay.
 - **Assisted hills:** Mountain Pass carries a low craft along the hillside without damage. Its first minute is open sky and bells; the whole act has no lava, lethal obstacles or weapons.
+Entity contact, point hits, blasts and sweeps use the shared scroller geometry; edge modes are in `__docs/reference/gaming/realtime-kit.md` (Scroller geometry).
+
 - **Terrain and `solid` entities are walls outside assistance.** Touching one is an immediate crash ("Wing down!"), invincible or not: the rider then chooses Retry checkpoint, Restart level, Flights or Change rider using the panel. Retry restores the latest checkpoint with three lives and waits for pedaling before takeoff. The craft can never pass through the ground. Only a sensor pause protects the rider, and then the craft is held inside the open band.
 - **`breakable` entities** (trees, houses) shatter on contact and cost one life, followed by `invincibility_s` of blinking. Hits while blinking still shatter but cost nothing. Losing the last life is a crash. A checkpoint restart brings back anything broken after that checkpoint.
 - **`scenery` entities** never collide.
