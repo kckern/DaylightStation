@@ -137,12 +137,12 @@ export function firstHitAlong(entities, course, from, to, altitude, aim = 0) {
     if (!best || at < best.at) best = { ...hit, at };
   };
   // `aim` widens entity boxes only, so a shot a hair off a target still lands
-  // while terrain stays exact. Hits come back in input order, so the strict-`<`
-  // ranking in `consider` (and entities-win-ties) is unchanged.
+  // while terrain stays exact. Hits come back in input order with their entry
+  // `at`, ranked by strict `<`; terrain is considered after, so entities win ties.
   const list = entities || [];
   const boxes = list.map((entity) => entityBox(entity, aim));
-  for (const hit of sweepHits(boxes, box(from, to, altitude, altitude))) {
-    consider({ entity: list[hit.index] }, boxes[hit.index].x0, boxes[hit.index].x1);
+  for (const hit of sweepHits(boxes, box(from, to, altitude, altitude), CLOSED_EDGES)) {
+    if (!best || hit.at < best.at) best = { entity: list[hit.index], at: hit.at };
   }
   for (const segment of course?.segments || []) {
     if (!terrainBounds(segment)) continue;

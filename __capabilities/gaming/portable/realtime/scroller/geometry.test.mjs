@@ -31,4 +31,10 @@ describe('sweepHits', () => {
     expect(sweepHits(boxes, box(0, 10, 0.5, 0.5), { include: (_, i) => i !== 2 }))
       .toEqual([{ index: 0, at: 5 }, { index: 1, at: 2 }]);
   });
+  it('open edge modes reject a box that only touches the sweep', () => {
+    const touching = [box(3, 4, 0, 1)];
+    const sweep = box(0, 3, 0.5, 0.5);
+    expect(sweepHits(touching, sweep)).toEqual([{ index: 0, at: 3 }]);
+    expect(sweepHits(touching, sweep, { x: 'open', y: 'open' })).toEqual([]);
+  });
 });

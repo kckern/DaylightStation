@@ -40,7 +40,7 @@
  * Projectile shape: { id, x, y } — left/top edge, PELLET_WIDTH × PELLET_HEIGHT.
  */
 
-import { box, overlaps, sweepHits } from '../../../../../__capabilities/gaming/portable/realtime/index.mjs';
+import { box, overlaps } from '../../../../../__capabilities/gaming/portable/realtime/index.mjs';
 
 // Edge semantics: touching edges do not collide, on either axis.
 const OPEN = Object.freeze({ x: 'open', y: 'open' });
@@ -204,18 +204,13 @@ export function spawnObstacle(world, type) {
 function findPelletTarget(obstacles, pellet, newX, shift) {
   const sweep = box(pellet.x, newX + PELLET_WIDTH, pellet.y, pellet.y + PELLET_HEIGHT);
   const blockBoxes = obstacles.map((ob) => box(ob.x, ob.x + shift + ob.width, ob.y, ob.y + ob.height));
-  const hits = sweepHits(blockBoxes, sweep, {
-    ...OPEN,
-    include: (_, i) => {
-      const ob = obstacles[i];
-      return isShootable(ob.type) && !ob.broken && !ob.hit && !ob.dodged;
-    },
-  });
-
   let best = -1;
-  for (const { index } of hits) {
-    if (best < 0 || obstacles[index].x < obstacles[best].x) best = index;
-  }
+  blockBoxes.forEach((blockBox, index) => {
+    const ob = obstacles[index];
+    if (!isShootable(ob.type) || ob.broken || ob.hit || ob.dodged) return;
+    if (!overlaps(sweep, blockBox, OPEN)) return;
+    if (best < 0 || ob.x < obstacles[best].x) best = index;
+  });
   return best;
 }
 
