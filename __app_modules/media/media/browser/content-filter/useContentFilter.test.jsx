@@ -18,6 +18,7 @@ function makeFakeEl() {
     addEventListener: (ev, fn) => { (handlers[ev] ||= []).push(fn); },
     removeEventListener: (ev, fn) => { handlers[ev] = (handlers[ev] || []).filter((h) => h !== fn); },
     fire: (ev) => (handlers[ev] || []).slice().forEach((h) => h()),
+    listenerCount: () => Object.values(handlers).reduce((n, arr) => n + arr.length, 0),
   };
   el.pause = vi.fn(() => { el.paused = true; });
   el.play = vi.fn(() => { el.paused = false; });
@@ -440,5 +441,44 @@ describe('createSfxPlayer', () => {
     createSfxPlayer({}, { tone }).play('horn');
     expect(tone.start).toHaveBeenCalledTimes(1);
     expect(degradedReasons()).toContain('unknown-sound');
+  });
+});
+
+describe('useContentFilter — media element replaced under a stable getMediaEl', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('rebinds to the new element (re-keyed <video>) and releases the old one', () => {
+    const oldEl = makeFakeEl();
+    const newEl = makeFakeEl();
+    let current = oldEl;
+    const getMediaEl = () => current;
+    const transport = { seek: vi.fn() };
+    const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+    const hook = renderHook(() => useContentFilter({ getMediaEl, transport, sfx, edl, profile, enabled: true }));
+    act(() => { oldEl.currentTime = 21; oldEl.fire('timeupdate'); });
+    expect(oldEl.muted).toBe(true);
+
+    current = newEl; // VideoPlayer re-keyed the element; getMediaEl identity unchanged
+    hook.rerender();
+    expect(oldEl.listenerCount()).toBe(0);
+    expect(oldEl.muted).toBe(false); // hold released on the old element
+    act(() => { newEl.currentTime = 21; newEl.fire('timeupdate'); });
+    expect(newEl.muted).toBe(true);
+    const call = mockLogger.info.mock.calls.find((c) => c[0] === 'content-filter.element.rebound');
+    expect(call?.[1]).toEqual({ from: 'detached', gen: 1 });
+  });
+
+  it('binds once an element appears after the first commit', () => {
+    let current = null;
+    const getMediaEl = () => current;
+    const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+    const hook = renderHook(() => useContentFilter({ getMediaEl, transport: { seek: vi.fn() }, sfx, edl, profile, enabled: true }));
+    const el = makeFakeEl();
+    current = el;
+    hook.rerender();
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(el.muted).toBe(true);
+    const call = mockLogger.info.mock.calls.find((c) => c[0] === 'content-filter.element.rebound');
+    expect(call?.[1]).toEqual({ from: 'none', gen: 1 });
   });
 });

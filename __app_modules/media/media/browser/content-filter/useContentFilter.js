@@ -120,8 +120,15 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     setSkipCardPaused(false);
   }, []);
 
+  // The element the main effect is attached to, and a generation bumped when the
+  // host swaps it out from under a stable getMediaEl (see the rebind check below).
+  const boundElRef = useRef(null);
+  const [elGen, setElGen] = useState(0);
+  const elGenRef = useRef(0);
+
   useEffect(() => {
     const el = getMediaElRef.current?.();
+    boundElRef.current = enabled ? (el || null) : null;
     const transport = { seek: (s) => transportRef.current?.seek?.(s) };
 
     const exitAll = () => {
@@ -361,8 +368,25 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   // timer/listener-setup effect on unrelated override field changes.
   // getMediaEl/transport are read through latest-value refs (see above), so a new
   // identity alone does not tear the filter down.
+  // elGen: the element was replaced (see below), so release the old one and attach anew.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, effectiveCues, sfxPlayer]);
+  }, [enabled, effectiveCues, sfxPlayer, elGen]);
+
+  // Rebind check, after every commit. VideoPlayer re-keys the media element (a
+  // resilience re-mint, a bitrate-cap move, a soft reinit) while getMediaEl keeps
+  // its identity, and a <dash-video>'s inner <video> can appear after commit.
+  // Without this the listeners stay on the detached element and every later cue
+  // goes unfiltered. The host re-renders about once a second, which bounds the gap.
+  useEffect(() => {
+    if (!enabled) return;
+    const current = getMediaElRef.current?.() || null;
+    if (current === boundElRef.current) return;
+    const from = boundElRef.current ? 'detached' : 'none';
+    boundElRef.current = current; // don't bump again before the main effect re-attaches
+    elGenRef.current += 1;
+    logger().info?.('content-filter.element.rebound', { from, gen: elGenRef.current });
+    setElGen(elGenRef.current);
+  });
 
   return { activeOverlays, activeCard, effectiveCues, fireCount };
 }
