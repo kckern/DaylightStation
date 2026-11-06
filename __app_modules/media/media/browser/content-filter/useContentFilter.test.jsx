@@ -45,8 +45,11 @@ function setup(overrides = {}) {
   const el = makeFakeEl();
   const transport = { seek: vi.fn((s) => { el.currentTime = s; }) };
   const sfx = { play: vi.fn(), stop: vi.fn() };
+  // Stable identity, as in production (useCommonMediaController's useCallback):
+  // an inline arrow here would re-run the hook's effect on every re-render.
+  const getMediaEl = () => el;
   const hook = renderHook(() => useContentFilter({
-    getMediaEl: () => el, transport, sfx, edl, profile, enabled: true, ...overrides,
+    getMediaEl, transport, sfx, edl, profile, enabled: true, ...overrides,
   }));
   return { el, transport, sfx, hook };
 }
@@ -127,7 +130,8 @@ describe('useContentFilter', () => {
     expect(ov[0].effect).toBe('censor-bar');
     expect(ov[0].cue.id).toBe('cen');
     act(() => { el.currentTime = 210; el.fire('timeupdate'); });
-    expect(hook.result.current.activeOverlays).toEqual([]);
+    // On exit the overlay stays mounted, hidden, for the fade (removal: next test).
+    expect(hook.result.current.activeOverlays).toEqual([expect.objectContaining({ effect: 'censor-bar', visible: false })]);
   });
 
   it('fades an overlay OUT: lingers visible:false for the fade window, then removes it', () => {
@@ -236,5 +240,13 @@ describe('useContentFilter', () => {
     act(() => { el.currentTime = 10.5; el.fire('timeupdate'); });
     expect(sfx.tone).toHaveBeenCalledTimes(1);
     expect(el.muted).toBe(true);
+  });
+
+  it('fireCount increments once per cue entry', () => {
+    const { el, hook } = setup();
+    expect(hook.result.current.fireCount).toBe(0);
+    act(() => { el.currentTime = 20.5; el.fire('timeupdate'); });
+    act(() => { el.currentTime = 20.7; el.fire('timeupdate'); }); // same cue, no new entry
+    expect(hook.result.current.fireCount).toBe(1);
   });
 });

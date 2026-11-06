@@ -54,7 +54,7 @@ function createSfxPlayer(sounds) {
  * @param {string|null} [args.part]       media part being played (refined cue times bind to a part)
  * @param {{play:Function, tone:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests)
  * @param {boolean} [args.enabled=true]
- * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array}}
+ * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array, fireCount: number}}
  */
 export function useContentFilter({ getMediaEl, transport, edl, profile, override, part = null, sfx, enabled = true } = {}) {
   const effectiveCues = useMemo(
@@ -66,6 +66,8 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
 
   const [activeOverlays, setActiveOverlays] = useState([]);
   const [activeCard, setActiveCard] = useState(null);
+  // Bumped once per cue entry so the filter-active badge can pulse on each fire.
+  const [fireCount, setFireCount] = useState(0);
 
   // Cues currently "entered" (id -> cue), so we can fire onExit exactly once.
   const enteredRef = useRef(new Map());
@@ -200,6 +202,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (!entered.has(cue.id)) {
           entered.set(cue.id, cue);
           if (h.onEnter) { try { h.onEnter(ctxFor(cue)); } catch (e) { logger().warn?.('content-filter.enter-error', { effect: cue.effect, error: e?.message }); } }
+          setFireCount((n) => n + 1);
           session.applied[cue.effect] = (session.applied[cue.effect] || 0) + 1;
           if (cue.effect === 'full-blur') session.blurAudioSec += Math.max(0, cue.out - cue.in);
           // Rate-limited so it's visible in prod without spamming per-cue (mute is
@@ -304,5 +307,5 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, getMediaEl, transport, effectiveCues, sfxPlayer]);
 
-  return { activeOverlays, activeCard, effectiveCues };
+  return { activeOverlays, activeCard, effectiveCues, fireCount };
 }
