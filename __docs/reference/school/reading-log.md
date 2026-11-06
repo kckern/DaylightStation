@@ -193,7 +193,46 @@ beside it. Logs: `school.book-shelf.scan.acknowledged {screenId,
 msSinceReceived}` once per scan on the first "Got it", and
 `school.book-shelf.scan.visible {screenId, msSinceReceived}` when the book is
 on screen. Both measure the panel clock against the server's `receivedAt`, so
-they carry any clock skew between the two.
+`msSinceReceived` includes any client/server clock skew. `scan.visible` for the
+scan that launches the shelf (the first scan, which opens it on a face) also
+includes the time spent choosing a face; read the steady-state figure from
+scans that land on an already-open shelf.
+
+**Scan intake rules** (`PrepareBookScan.receive`, before a scan becomes a card):
+
+- *Run-together codes are split.* A 26-digit code whose first and last 13 digits
+  are both valid ISBN-13s is two scans: each half goes through intake on its
+  own and `school.book-scan.split {screenId, codes}` is logged (info). Any other
+  malformed code is still one `school.book-scan.rejected`.
+- *Bursts are absorbed, but only while there is something to absorb into.* A
+  reader that double-fires at a book is counted as one for 10 s per screen
+  (`BURST_WINDOW_MS`, keyed on screen and ISBN); the repeat logs
+  `school.book-scan.burst-duplicate {screenId, isbn13, msSinceFirst}` (debug)
+  and coalesces into the live intent. The window applies only while the earlier
+  scan's card still has a live intent. Once it is superseded, dismissed or
+  expired, a rescan is the child following the chip's "scan it again to open
+  it" and makes a new intent at once.
+
+**Timing queries** (log store; stats syntax is `| stats by (...)` /
+`| stats <fn>() as name`, see CLAUDE.md "Reading Logs"):
+
+```
+# Scan to book on screen (p50 / p95, ms)
+_msg:"school.book-shelf.scan.visible" AND _time:7d
+  | stats quantile(0.5, "data.msSinceReceived") as p50, quantile(0.95, "data.msSinceReceived") as p95, count() as n
+
+# Scan to "Got it" (the acknowledgement)
+_msg:"school.book-shelf.scan.acknowledged" AND _time:7d
+  | stats quantile(0.5, "data.msSinceReceived") as p50, quantile(0.95, "data.msSinceReceived") as p95
+
+# Cover lookup time, by winning source
+_msg:"books.cover.found" AND _time:7d
+  | stats by ("data.source") quantile(0.5, "data.elapsedMs") as p50, quantile(0.95, "data.elapsedMs") as p95, count() as n
+
+# Split and absorbed scans
+_msg:"school.book-scan.split" OR _msg:"school.book-scan.burst-duplicate"
+  | stats by (_msg) count() as n
+```
 
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at

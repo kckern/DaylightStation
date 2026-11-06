@@ -81,6 +81,20 @@ locally is what stops a cover host being down from blanking a shelf a child is
 standing in front of. A book nobody
 has art for is recorded as a miss and left alone for two weeks.
 
+**The ladder is probed concurrently, but the order still decides.** Walking the
+rungs one at a time cost a round trip per miss (the winning catalogue was often
+rung three, 2-4 s). `ResolveBookCover` now asks every catalogue rung at once
+through `pickByPriority` (`__capabilities/book-catalog/server/domain/`): the
+answer is the lowest-index rung that has a usable cover, once every better rung
+has missed or timed out. A faster, worse cover never beats a slower, better one
+still in flight. A rung still pending is given up on after 2500 ms
+(`CANDIDATE_TIMEOUT_MS`) but only matters once a lower rung has succeeded; with
+no success at all the wait ends at the 6000 ms deadline (`DEADLINE_MS`) and the
+ladder falls through to the web image search and then the drawn cover.
+`books.cover.found` carries `elapsedMs` (probe start to pick) beside `source`
+and `attempts`; `tried` still lists the better rungs that missed, with the
+reason (`timeout` for one that never answered).
+
 **The ladder always ends in a cover.** When every rung misses, the endpoint
 draws one — a coloured board with a spine, a foil frame, the title in a serif
 and the author under a rule, from
@@ -211,11 +225,13 @@ details (panel):
 | Event | Where | Fields |
 |-------|-------|--------|
 | `school.book-scan.received` | backend, info | `screenId`, `status`, `isbn13`, `receivedAt`, `capturedAt`, `delayedMs` (the reader's capture time and hold, from the relay gateway — a held or batched scan shows a non-null `delayedMs`) |
-| `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. two ISBNs the reader ran together; not split |
+| `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. run-together digits that are not two valid ISBN-13s (two valid ones are split, see `book-scan.split`) |
 | `school.book-pile.card-added` | backend, info | `isbn13`, `duplicate`, `status` |
 | `school.book-scan.superseded` | backend, info | `isbn13`, `intentId`, `supersededBy` — an older pending scan stopped being claimable (a newer scan, or a shelf claim, retired it); its card stays in the pile |
 | `school.book-shelf.scan.acknowledged` | panel, info | `screenId`, `msSinceReceived` — the open shelf first showed `Got it — looking it up` for a scan (panel clock minus the server's `receivedAt`) |
 | `school.book-shelf.scan.visible` | panel, info | `screenId`, `msSinceReceived` — a scanned book is on the shelf's screen |
+| `school.book-scan.split` | backend, info | `screenId`, `codes` — a 26-digit code whose two 13-digit halves are both valid ISBN-13s, taken as two scans (any other 26-digit code is still one `rejected`) |
+| `school.book-scan.burst-duplicate` | backend, debug | `screenId`, `isbn13`, `msSinceFirst` — the same book scanned again within the 10 s burst window while its earlier card is still live; absorbed into that card |
 | `school.book-shelf.scan.dropped` | panel, warn | `isbn13`, `reason` (`done`, `idle`, `unmount`) — a claimed scan still queued when the shelf closed |
 | `school.book-pile.filed` | backend, info | `learnerId`, `count` (filed), `alreadyToday`, `failed` |
 | `school.book-pile.file-empty` | backend, debug | a tap with nothing to file |
