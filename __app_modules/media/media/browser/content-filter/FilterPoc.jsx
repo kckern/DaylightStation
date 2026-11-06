@@ -33,7 +33,7 @@ export default function FilterPoc() {
   // Optional: load REAL filter data for a title via ?contentId=plex:<ratingKey>.
   // Falls back to the built-in demo EDL when absent.
   const contentId = useMemo(() => new URLSearchParams(window.location.search).get('contentId'), []);
-  const realData = useFilterData(contentId, { enabled: !!contentId });
+  const { data: realData } = useFilterData(contentId, { enabled: !!contentId });
   const edl = contentId ? realData?.edl : EDL;
   const profile = contentId ? realData?.profile : PROFILE;
   const override = contentId ? realData?.override : undefined;

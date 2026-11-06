@@ -23,7 +23,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   const filterContentId = (isPlex && CONTENT_FILTER_ENABLED)
     ? (media?.assetId || media?.key || media?.plex || null)
     : null;
-  const filterData = useFilterData(filterContentId, { enabled: CONTENT_FILTER_ENABLED });
+  const { data: filterData } = useFilterData(filterContentId, { enabled: CONTENT_FILTER_ENABLED });
   const filterTransport = useMemo(() => ({
     seek: (s) => { const el = getMediaEl(); if (el && Number.isFinite(s)) { try { el.currentTime = s; } catch (_) { /* ignore */ } } },
   }), [getMediaEl]);
