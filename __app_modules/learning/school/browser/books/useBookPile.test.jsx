@@ -6,8 +6,9 @@ vi.mock("../schoolApi.js", () => ({ schoolApi: { bookScans: {
 } } }));
 vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", () => ({ useWebSocketSubscription: (_topic, cb) => { h.event = cb; } }));
 vi.mock("../../../../../frontend/src/services/WebSocketService.js", () => ({ wsService: { onStatusChange: cb => { h.reconnect = cb; return () => {}; } } }));
-vi.mock("../schoolLog.js", () => ({ schoolLog: { bookShelf: vi.fn(), bookShelfError: vi.fn() } }));
+vi.mock("../schoolLog.js", () => ({ schoolLog: { bookShelf: vi.fn(), bookShelfError: vi.fn(), bookShelfDebug: vi.fn() } }));
 import { useBookPile } from "./useBookPile.js";
+import { schoolLog } from "../schoolLog.js";
 
 const card = (over = {}) => ({ id: 'c1', isbn13: '9780064400558', status: 'ready', state: 'unfiled', duplicates: 0, book: { title: 'Hatchet' }, ...over });
 const pileOf = (over = {}) => ({ screenId: 'portal', live: true, reader: null, quietGapMs: 120000, lastScanAt: new Date().toISOString(), cards: [], ...over });
@@ -72,5 +73,26 @@ describe('useBookPile', () => {
     const { result } = renderHook(() => useBookPile({ screenId: null })); await act(async () => {});
     expect(result.current.enabled).toBe(false);
     expect(h.pile).not.toHaveBeenCalled();
+  });
+
+  // 2026-11-05: the panel logged `count: 4` (every card on the pile, two of
+  // them claimed by the shelf) for a filing the server counted as 2.
+  it("logs the server's filed count, not the pile size, and hands it to the screen", async () => {
+    h.pile.mockResolvedValue(ok(pileOf({ cards: [card(), card({ id: 'c2', state: 'claimed' })] })));
+    h.filePile.mockResolvedValue({ ok: true, data: { pile: { ...pileOf({ reader: 'child-a', cards: [card({ state: 'filed', learnerId: 'child-a' }), card({ id: 'c2', state: 'claimed' })] }), filed: { learnerId: 'child-a', count: 1, alreadyToday: 0, failed: 0 } } } });
+    const { result } = renderHook(() => useBookPile({ screenId: 'portal' })); await act(async () => {});
+    await act(async () => result.current.file('child-a'));
+    expect(schoolLog.bookShelf).toHaveBeenCalledWith('book-pile.filed', expect.objectContaining({ count: 1, pile: 2, learnerId: 'child-a' }));
+    expect(result.current.lastFiled).toEqual(expect.objectContaining({ learnerId: 'child-a', count: 1 }));
+  });
+
+  it('a tap that filed nothing logs that at debug and is no new confirmation', async () => {
+    h.pile.mockResolvedValue(ok(pileOf({ reader: 'child-a', cards: [card({ state: 'filed', learnerId: 'child-a' })] })));
+    h.filePile.mockResolvedValue({ ok: true, data: { pile: { ...pileOf({ reader: 'child-a', cards: [card({ state: 'filed', learnerId: 'child-a' })] }), filed: { learnerId: 'child-a', count: 0, alreadyToday: 0, failed: 0 } } } });
+    const { result } = renderHook(() => useBookPile({ screenId: 'portal' })); await act(async () => {});
+    await act(async () => result.current.file('child-a'));
+    expect(schoolLog.bookShelfDebug).toHaveBeenCalledWith('book-pile.file-empty', expect.objectContaining({ learnerId: 'child-a' }));
+    expect(schoolLog.bookShelf).not.toHaveBeenCalledWith('book-pile.filed', expect.anything());
+    expect(result.current.lastFiled).toBeNull();
   });
 });

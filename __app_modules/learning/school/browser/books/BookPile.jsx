@@ -17,13 +17,19 @@
  * corner card is the only form, and only before a reader is picked: a picked
  * reader files silently.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import useArmedAction from "../../../../../frontend/src/lib/identity/useArmedAction.js";
 import BookCover from "./BookCover.jsx";
+import Icon from "../home/icons/Icon.jsx";
 import LearnerChoice from "./LearnerChoice.jsx";
 import ScreenHeader from "../shared/ScreenHeader.jsx";
 import { presentBook } from "./bookPresentation.js";
 import { useBookPile } from "./useBookPile.js";
+import { schoolLog } from "../schoolLog.js";
+
+// A card a face tap can still do something for: fileable now, or still being
+// looked up (the tap makes its child the reader, who gets it when it lands).
+const AWAITING_A_FACE = new Set(['ready', 'not-found', 'loading']);
 
 function chipFor(card, nameOf) {
   if (card.status === 'loading') return { text: 'Looking up…', tone: 'muted' };
@@ -78,7 +84,7 @@ function ChangeSheet({ card, title, roster, busy, onMove, onRemove, onClose }) {
 }
 
 export default function BookPile({ screenId, roster = [], safe, onOpen = null, confirmExit = false, scopeLearnerId = null }) {
-  const { cards, reader, live, lastScanAt, unfiled, busy, error, file, move, remove, enabled } = useBookPile({ screenId, scopeLearnerId });
+  const { cards, reader, live, lastScanAt, unfiled, busy, error, lastFiled = null, file, move, remove, enabled } = useBookPile({ screenId, scopeLearnerId });
   const [changing, setChanging] = useState(null);
   // Later sets the screen aside until the next scan; Open brings it back.
   const [laterAt, setLaterAt] = useState(null);
@@ -87,13 +93,25 @@ export default function BookPile({ screenId, roster = [], safe, onOpen = null, c
   const names = useMemo(() => new Map(roster.map((learner) => [learner.id, learner.name || learner.id])), [roster]);
   const nameOf = (id) => names.get(id) ?? id ?? '';
 
-  // An open shelf owns its scans; the pile has nothing to say there.
-  if (!enabled || scopeLearnerId) return null;
+  // Which form the pile takes. Computed before any early return so the
+  // transition can be logged once (`book-pile.shown`), whichever it is.
   const waiting = unfiled.filter((card) => card.status !== 'invalid').length;
   const setAside = laterAt !== null && laterAt === lastScanAt;
   const full = safe && cards.length > 0 && ((live && !setAside) || expanded);
+  // An open shelf owns its scans; the pile has nothing to say there.
+  const mode = !enabled || scopeLearnerId ? 'hidden'
+    : full ? 'full'
+      : (waiting === 0 || (!safe && (reader || !onOpen))) ? 'hidden' : 'corner';
+  const shownMode = useRef('hidden');
+  useEffect(() => {
+    if (shownMode.current === mode) return;
+    shownMode.current = mode;
+    schoolLog.bookShelf('book-pile.shown', { screenId, mode, cards: cards.length, waiting, live, reader: reader ?? null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per transition, with the counts at that moment
+  }, [mode]);
+
+  if (mode === 'hidden') return null;
   if (!full) {
-    if (waiting === 0 || (!safe && (reader || !onOpen))) return null;
     const open = () => { setLaterAt(null); setExpanded(true); if (!safe) onOpen(); };
     return <CornerOffer count={waiting} confirmExit={!safe && confirmExit} onOpen={open} />;
   }
@@ -101,6 +119,13 @@ export default function BookPile({ screenId, roster = [], safe, onOpen = null, c
   const title = unfiled.length === 0 && reader ? `Filing to ${nameOf(reader)}` : `Books to file · ${unfiled.length}`;
   const hint = unfiled.length === 0 && reader ? `New scans go to ${nameOf(reader)}.` : 'Keep scanning. Tap a face to file them.';
   const editing = changing ? cards.find((card) => card.id === changing) : null;
+  // FILING SAYS SO. A filed pile used to look exactly like an unfiled one, and
+  // a child tapped his face three more times (2026-11-05). Once nothing is left
+  // that a face could file, the faces go and the confirmation takes their place.
+  const awaitingFace = unfiled.some((card) => AWAITING_A_FACE.has(card.status) && !card.error);
+  const confirmation = lastFiled?.count > 0
+    ? `Filed ${lastFiled.count === 1 ? '1 book' : `${lastFiled.count} books`} to ${nameOf(lastFiled.learnerId)}`
+    : null;
 
   /* A barcode scanner emits keystrokes; nothing here may be composed. */
   return (
@@ -129,9 +154,16 @@ export default function BookPile({ screenId, roster = [], safe, onOpen = null, c
           })}
         </ul>
         {error && <p className="school-book-scan__error" role="alert">{error}</p>}
-        <div className="school-book-pile__faces">
-          <LearnerChoice roster={roster} busy={busy} onChoose={file} />
-        </div>
+        {confirmation && (
+          <p className="school-book-pile__filed" role="status">
+            <Icon name="book-finished" className="school-book-pile__filed-mark" /> <span>{confirmation}</span>
+          </p>
+        )}
+        {awaitingFace && (
+          <div className="school-book-pile__faces">
+            <LearnerChoice roster={roster} busy={busy} onChoose={file} />
+          </div>
+        )}
       </div>
       {editing && (
         <ChangeSheet card={editing} title={editing.book?.title ? presentBook(editing.book).title : editing.isbn13}

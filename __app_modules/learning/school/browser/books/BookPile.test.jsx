@@ -1,7 +1,8 @@
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-const h = vi.hoisted(() => ({ state: null, file: vi.fn(), move: vi.fn(), remove: vi.fn() }));
+const h = vi.hoisted(() => ({ state: null, file: vi.fn(), move: vi.fn(), remove: vi.fn(), log: vi.fn() }));
 vi.mock("./useBookPile.js", () => ({ useBookPile: () => h.state }));
+vi.mock("../schoolLog.js", () => ({ schoolLog: { bookShelf: (...a) => h.log(...a), bookShelfError: vi.fn(), bookShelfDebug: vi.fn() } }));
 vi.mock("../../../../../frontend/src/lib/identity/ProfileAvatar.jsx", () => ({ default: () => <span>avatar</span> }));
 import BookPile from "./BookPile.jsx";
 
@@ -10,7 +11,7 @@ const card = (over = {}) => ({ id: 'c1', isbn13: '9780064400558', status: 'ready
 const hook = (over = {}) => {
   const cards = over.cards ?? [card()];
   return { cards, reader: null, live: true, lastScanAt: '2026-10-30T20:00:00.000Z', unfiled: cards.filter((c) => c.state === 'unfiled'), busy: false, error: null,
-    file: h.file, move: h.move, remove: h.remove, enabled: true, ...over };
+    file: h.file, move: h.move, remove: h.remove, enabled: true, lastFiled: null, ...over };
 };
 const props = { screenId: 'portal', roster, safe: true, onOpen: vi.fn() };
 beforeEach(() => { vi.clearAllMocks(); h.state = hook(); });
@@ -110,5 +111,31 @@ describe('BookPile', () => {
     h.state = hook({ live: false, cards: [card({ status: 'invalid', error: 'That book barcode is invalid.' })] });
     const { container } = render(<BookPile {...props} />);
     expect(container.innerHTML).toBe('');
+  });
+
+  // 2026-11-05: after a successful filing the screen looked exactly the same,
+  // so the child tapped his face three more times.
+  it('confirms a filing in so many words and takes the faces away once nothing is left to file', () => {
+    h.state = hook({ reader: 'child-a', lastFiled: { learnerId: 'child-a', count: 2, alreadyToday: 0, failed: 0, at: 1 },
+      cards: [card({ state: 'filed', learnerId: 'child-a', outcome: 'finished-new' }), card({ id: 'c2', state: 'filed', learnerId: 'child-a', outcome: 'finished-new' })] });
+    render(<BookPile {...props} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Filed 2 books to Ada');
+    expect(screen.queryByRole('button', { name: 'Ada' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ben' })).toBeNull();
+  });
+
+  it('keeps the faces while a book is still waiting to be filed', () => {
+    h.state = hook({ reader: 'child-a', lastFiled: { learnerId: 'child-a', count: 1, alreadyToday: 0, failed: 0, at: 1 },
+      cards: [card({ state: 'filed', learnerId: 'child-a', outcome: 'finished-new' }), card({ id: 'c2' })] });
+    render(<BookPile {...props} />);
+    expect(screen.getByRole('button', { name: 'Ada' })).toBeTruthy();
+  });
+
+  it('logs full screen vs corner once per change', () => {
+    const r = render(<BookPile {...props} />);
+    r.rerender(<BookPile {...props} />);
+    expect(h.log.mock.calls.filter(([e]) => e === 'book-pile.shown')).toEqual([['book-pile.shown', expect.objectContaining({ mode: 'full' })]]);
+    r.rerender(<BookPile {...props} safe={false} />);
+    expect(h.log).toHaveBeenLastCalledWith('book-pile.shown', expect.objectContaining({ mode: 'corner' }));
   });
 });

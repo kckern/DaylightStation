@@ -153,6 +153,16 @@ the household study day ends. One session belongs to one child:
 - **One tap files the pile.** Tapping a face files every unfiled card to that
   child as finished on today's study day (no page numbers), including cards
   left from an earlier session that timed out unfiled.
+- **Filing says so.** The file response carries `filed {learnerId, count,
+  alreadyToday, failed}` — what THAT tap did, in the server's numbers — and the
+  screen shows it as a big **Filed 2 books to Ada** where the faces were. The
+  faces go once nothing is left that a tap could file (a card still being
+  looked up keeps them). On 2026-11-05 a filed pile looked exactly like an
+  unfiled one and a child tapped his face three more times.
+- **A tap with nothing to file is a no-op.** No reader change, no session
+  bump, and it does not restart the quiet gap (each of those three extra taps
+  used to keep the pile up longer); the server logs
+  `school.book-pile.file-empty` at debug, the panel `book-pile.file-empty`.
 - **The reader sticks.** After a face is tapped, later scans in the session
   file to that child by themselves, even while the panel is busy.
 - **A quiet gap ends the session.** `PILE_QUIET_GAP_MS` (2 minutes) with no
@@ -187,7 +197,21 @@ restart loses unfiled cards (the barcodes are still in the relay's day log).
 Routes: `GET /school/book-scans/pile`, `POST …/pile/file`,
 `POST …/pile/:cardId/move`, `POST …/pile/:cardId/remove`. Logs:
 `school.book-pile.*` (backend), `book-shelf` events with `book-pile.*`
-details (panel).
+details (panel):
+
+| Event | Where | Fields |
+|-------|-------|--------|
+| `school.book-scan.received` | backend, info | `screenId`, `status`, `isbn13`, `receivedAt`, `capturedAt`, `delayedMs` (the reader's capture time and hold, from the relay gateway — a held or batched scan shows a non-null `delayedMs`) |
+| `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. two ISBNs the reader ran together; not split |
+| `school.book-pile.card-added` | backend, info | `isbn13`, `duplicate`, `status` |
+| `school.book-pile.filed` | backend, info | `learnerId`, `count` (filed), `alreadyToday`, `failed` |
+| `school.book-pile.file-empty` | backend, debug | a tap with nothing to file |
+| `book-pile.filed` | panel, info | `count` (the server's), `pile` (cards on the pile), `alreadyToday`, `failed` |
+| `book-pile.file-empty` | panel, debug | the server filed nothing on this tap |
+| `book-pile.shown` | panel, info | `mode: full \| corner \| hidden`, once per change, with `cards`, `waiting`, `live`, `reader` |
+
+Until 2026-11-05 the panel's `book-pile.filed` logged the pile size as
+`count` (4 for a filing of 2, because claimed cards stay on the pile).
 
 ## Dates and historical data
 

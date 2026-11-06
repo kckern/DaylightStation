@@ -69,7 +69,17 @@ export class PrepareBookScan {
     const { id, screenId, isbn13, receivedAt, expiresAt, status, book, error } = record;
     return { id, screenId, isbn13, receivedAt, expiresAt, status, book, error };
   }
-  async receive({ code, device, eventId }) {
+  /**
+   * @param {object} scan
+   * @param {string} scan.code
+   * @param {string} [scan.device]
+   * @param {string} [scan.eventId]
+   * @param {string|null} [scan.capturedAt] - when the reader captured it (the
+   *   firmware's own clock, carried by the relay gateway); logged only
+   * @param {number|null} [scan.delayedMs] - how long the reader held it before
+   *   sending (an offline queue, a batch); logged only
+   */
+  async receive({ code, device, eventId, capturedAt = null, delayedMs = null }) {
     this.#prune();
     const { target, clock, mintId, logger } = this.#deps;
     if (!target?.screenId || !target?.deviceId) refuse(503, 'School book scan target is unavailable; ask a grown-up to configure the Portal, then rescan');
@@ -83,6 +93,12 @@ export class PrepareBookScan {
     }
     const parsed = parseBookIdentifier(code);
     const isbn13 = parsed.kind === 'isbn' ? parsed.isbn13 : code;
+    // A code that names no book still becomes a card (so the grown-up sees it
+    // was read), but it can never be filed: say so at warn, with the code. Two
+    // ISBNs run together by the reader land here; they are not split.
+    if (parsed.kind !== 'isbn') {
+      logger.warn?.('school.book-scan.rejected', { screenId: target.screenId, code: String(code ?? '').slice(0, 128), reason: parsed.reason ?? parsed.kind, device: device ?? null });
+    }
     const pile = this.#pileFor(target.screenId, now);
     const wasLive = this.#isLive(pile, now);
     if (!wasLive) {
@@ -96,7 +112,7 @@ export class PrepareBookScan {
     const twin = pile.cards.find(c => c.session === pile.session && c.isbn13 === isbn13 && c.state !== 'removed' && c.state !== 'claimed');
     if (twin) {
       twin.duplicates += 1;
-      logger.info?.('school.book-pile.card-added', { screenId: target.screenId, duplicate: true });
+      logger.info?.('school.book-pile.card-added', { screenId: target.screenId, duplicate: true, isbn13 });
       if (twin.status === 'unavailable' && twin.record) this.#resolve(twin.record);
       this.#notify({ screenId: target.screenId, id: twin.id });
     }
@@ -120,7 +136,8 @@ export class PrepareBookScan {
     if (twin) record.card = twin;
     else this.#addCard(pile, record);
     this.#notify(record);
-    logger.info?.('school.book-scan.received', { screenId: target.screenId, status: record.status });
+    logger.info?.('school.book-scan.received', { screenId: target.screenId, status: record.status, isbn13,
+      receivedAt: record.receivedAt, capturedAt: capturedAt ?? null, delayedMs: Number.isFinite(delayedMs) ? delayedMs : null });
     // One wake per session: a pile of scans must not knock on the kiosk for
     // each book. A failed wake keeps the old behaviour (retry, with cooldown).
     if (!(wasLive && pile.awake)) this.#wake(record);
@@ -284,7 +301,7 @@ export class PrepareBookScan {
     record.card = card;
     pile.cards.push(card);
     this.#capPile(pile);
-    this.#deps.logger.info?.('school.book-pile.card-added', { screenId: record.screenId, duplicate: false, status: card.status });
+    this.#deps.logger.info?.('school.book-pile.card-added', { screenId: record.screenId, duplicate: false, status: card.status, isbn13: card.isbn13 });
     return card;
   }
   #capPile(pile) {
@@ -365,6 +382,18 @@ export class PrepareBookScan {
     const pile = this.#pileFor(screenId);
     if (cardIds) for (const id of cardIds) this.#card(pile, id);
     return this.#serial(pile, async () => {
+      // NOTHING TO FILE IS A NO-OP. A pile already filed looks the same to a
+      // child, who taps again (2026-11-05: three more taps). Such a tap must
+      // not restart the quiet gap, or the pile stays up longer the more the
+      // child tries to make it go away. A card still being looked up counts:
+      // tapping a face for it is a real answer, and the sticky reader is how
+      // it gets filed when the lookup lands.
+      const waiting = pile.cards.some(c => c.state === 'unfiled' && (FILEABLE.has(c.status) || c.status === 'loading')
+        && (!cardIds || cardIds.includes(c.id)));
+      if (!waiting) {
+        this.#deps.logger.debug?.('school.book-pile.file-empty', { screenId, learnerId, cards: pile.cards.length });
+        return { ...this.#view(screenId, pile), filed: { learnerId, count: 0, alreadyToday: 0, failed: 0 } };
+      }
       if (!cardIds) {
         // A tap on a pile left from a closed session opens a new one, so later
         // scans start fresh cards rather than merging with the old ones.
@@ -373,12 +402,14 @@ export class PrepareBookScan {
       }
       const targets = pile.cards.filter(c => c.state === 'unfiled' && FILEABLE.has(c.status) && (!cardIds || cardIds.includes(c.id)));
       for (const card of targets) await this.#fileCard(screenId, card, learnerId);
-      if (targets.length) {
-        this.#deps.logger.info?.('school.book-pile.filed', { screenId, learnerId, count: targets.length,
-          alreadyToday: targets.filter(c => c.outcome === 'already-today').length,
-          failed: targets.filter(c => c.state !== 'filed').length });
-      }
-      return this.#view(screenId, pile);
+      const filed = { learnerId,
+        count: targets.filter(c => c.state === 'filed').length,
+        alreadyToday: targets.filter(c => c.outcome === 'already-today').length,
+        failed: targets.filter(c => c.state !== 'filed').length };
+      if (targets.length) this.#deps.logger.info?.('school.book-pile.filed', { screenId, ...filed });
+      // `filed` is what THIS tap did, so the panel can confirm it in the
+      // server's own numbers rather than counting cards.
+      return { ...this.#view(screenId, pile), filed };
     });
   }
   async moveCard({ screenId, cardId, learnerId }) {

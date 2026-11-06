@@ -230,3 +230,48 @@ describe('PrepareBookScan pile', () => {
     expect(f.filer.file).not.toHaveBeenCalled();
   });
 });
+
+// 2026-11-05: filing gave no feedback, so the child tapped three more times.
+// Each extra tap filed nothing and logged nothing, but reset the quiet gap.
+describe('PrepareBookScan pile — filing feedback (2026-11-05)', () => {
+  it("returns the server's own count of what this tap filed", async () => {
+    const f = fixture();
+    for (const isbn of ISBNS.slice(0, 2)) await f.receive(isbn);
+    await settle();
+    const result = await f.service.filePile({ screenId: 'portal', learnerId: 'child' });
+    expect(result.filed).toEqual({ learnerId: 'child', count: 2, alreadyToday: 0, failed: 0 });
+  });
+
+  it('a tap with nothing to file changes nothing, extends nothing, and says so at debug', async () => {
+    const f = fixture();
+    for (const isbn of ISBNS.slice(0, 2)) await f.receive(isbn);
+    await settle();
+    await f.service.filePile({ screenId: 'portal', learnerId: 'child' });
+    const before = pile(f).lastScanAt;
+    f.advance(30_000);
+    const again = await f.service.filePile({ screenId: 'portal', learnerId: 'child' });
+    expect(again.filed).toEqual({ learnerId: 'child', count: 0, alreadyToday: 0, failed: 0 });
+    expect(pile(f).lastScanAt).toBe(before);
+    expect(f.filer.file).toHaveBeenCalledTimes(2);
+    expect(f.logger.debug).toHaveBeenCalledWith('school.book-pile.file-empty', expect.objectContaining({ screenId: 'portal', learnerId: 'child' }));
+  });
+});
+
+describe('PrepareBookScan — scan logging (2026-11-05)', () => {
+  it('names the ISBN on card-added and received, with the firmware capture timing', async () => {
+    const f = fixture();
+    await f.service.receive({ code: ISBNS[0], device: 'reader', eventId: 'x1', capturedAt: '2026-11-05T03:31:48.000Z', delayedMs: 1300 });
+    expect(f.logger.info).toHaveBeenCalledWith('school.book-pile.card-added', expect.objectContaining({ isbn13: ISBNS[0] }));
+    expect(f.logger.info).toHaveBeenCalledWith('school.book-scan.received', expect.objectContaining({
+      isbn13: ISBNS[0], capturedAt: '2026-11-05T03:31:48.000Z', delayedMs: 1300, receivedAt: expect.any(String),
+    }));
+  });
+
+  it('warns on a code that is no book, without trying to split it', async () => {
+    const f = fixture();
+    await f.service.receive({ code: '97800644015179780064401517', device: 'reader', eventId: 'x2' });
+    expect(f.logger.warn).toHaveBeenCalledWith('school.book-scan.rejected', expect.objectContaining({ code: '97800644015179780064401517', reason: expect.any(String) }));
+    expect(pile(f).cards).toHaveLength(1);
+    expect(pile(f).cards[0].status).toBe('invalid');
+  });
+});

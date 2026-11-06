@@ -3615,6 +3615,15 @@
     align-self: flex-start; margin-top: auto; padding: 0.2rem 0.5rem; border: 0; background: none;
     color: var(--school-muted); font: inherit; font-size: 0.85rem; text-decoration: underline; cursor: pointer;
   }
+  // The filing confirmation stands where the faces were: as big as a promise
+  // to a child that the tap worked, not a footnote under the cards.
+  .school-book-pile__filed {
+    display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin: 0;
+    min-height: clamp(7rem, 22vh, 11rem); padding: 1rem; box-sizing: border-box;
+    border-radius: 14px; background: var(--school-accent); color: var(--school-accent-ink);
+    font-size: clamp(1.5rem, 4.5vh, 2.4rem); font-weight: 800; text-align: center;
+  }
+  .school-book-pile__filed-mark { width: clamp(2.5rem, 7vh, 3.5rem); height: clamp(2.5rem, 7vh, 3.5rem); flex: 0 0 auto; }
   .school-book-pile__faces .school-book-scan__learners {
     grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; gap: clamp(0.5rem, 1.4vw, 1rem);
   }
