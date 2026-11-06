@@ -18,6 +18,7 @@ const real = {
 
 const dictationReal = {
   ...real, writes: 0,
+  dictationFileState() { return { list: 'ok', progress: 'ok' }; },
   readDictation() { return { schema: 'school.card-ladder-dictation/v1', week: '2026-W45', setAt: null, words: ['gawi'] }; },
   readDictationProgress() { return { week: '2026-W45', words: { gawi: { step: 'copy', blindPasses: 0, lastAttemptAt: null } } }; },
   writeDictation() { this.writes += 1; },
@@ -58,6 +59,7 @@ describe('ShadowCardLadderStores', () => {
     store.writeDictationProgress('test-learner', 'korean-vocab', { week: '2026-W45', words: { gawi: { step: 'blind', blindPasses: 1, lastAttemptAt: null } } });
     expect(store.readDictationProgress('test-learner', 'korean-vocab').words.gawi.step).toBe('blind');
     expect(real.readDictationProgress().words.gawi.step).toBe('copy');
+    expect(store.dictationFileState('test-learner', 'korean-vocab')).toEqual({ list: 'ok', progress: 'ok' });
     expect(store.writeDictation).toBeUndefined();
     expect(real.writes).toBe(0);
     // A fresh sitting starts from the real progress again.

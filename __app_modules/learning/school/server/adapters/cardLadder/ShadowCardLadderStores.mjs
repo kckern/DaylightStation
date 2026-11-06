@@ -61,6 +61,10 @@ export class ShadowCardLadderStores {
       readTuning: (u, p) => this.#real.readTuning?.(u, p) ?? null,
       // Dictation: the real list, read only; progress is the sitting's own copy, in memory.
       readDictation: (u, p) => this.#real.readDictation?.(u, p) ?? null,
+      dictationFileState: (u, p) => {
+        const real = this.#real.dictationFileState?.(u, p) ?? { list: 'missing', progress: 'missing' };
+        return shadow.dictationProgress ? { ...real, progress: 'ok' } : real;
+      },
       readDictationProgress: (u, p) => structuredClone(shadow.dictationProgress ?? this.#real.readDictationProgress?.(u, p) ?? { week: null, words: {} }),
       writeDictationProgress: (_u, _p, progress) => { shadow.dictationProgress = structuredClone(progress); return structuredClone(progress); },
     };

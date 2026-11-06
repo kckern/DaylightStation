@@ -253,4 +253,24 @@ describe('YamlCardLadderStore dictation files', () => {
     const store = new YamlCardLadderStore({ configService, logger: { error() {} } });
     expect(() => store.writeDictationProgress('test-learner', 'korean-vocab', { week: 'w', words: {} })).toThrow(/corrupt/);
   });
+  it('dictationFileState tells missing, ok and corrupt apart (list and progress), also through the read-only view', () => {
+    const store = new YamlCardLadderStore({ configService, logger: { error() {} } });
+    expect(store.dictationFileState('test-learner', 'korean-vocab')).toEqual({ list: 'missing', progress: 'missing' });
+    store.writeDictation('test-learner', 'korean-vocab', list);
+    fs.writeFileSync(path.join(base(), 'dictation-progress.yml'), 'week: [broken');
+    expect(store.readOnlyView().dictationFileState('test-learner', 'korean-vocab')).toEqual({ list: 'ok', progress: 'corrupt' });
+    fs.writeFileSync(path.join(base(), 'dictation.yml'), 'words: [broken');
+    expect(store.dictationFileState('test-learner', 'korean-vocab').list).toBe('corrupt');
+  });
+  it('refuses to overwrite a corrupt dictation list', () => {
+    fs.mkdirSync(base(), { recursive: true });
+    fs.writeFileSync(path.join(base(), 'dictation.yml'), 'words: [broken');
+    const store = new YamlCardLadderStore({ configService, logger: { error() {} } });
+    expect(() => store.writeDictation('test-learner', 'korean-vocab', list)).toThrow(/corrupt/);
+  });
+  it('writeDictation dedupes ids, first occurrence wins', () => {
+    const store = new YamlCardLadderStore({ configService });
+    expect(store.writeDictation('test-learner', 'korean-vocab', { ...list, words: ['a', 'a', 'b', 'a'] }).words).toEqual(['a', 'b']);
+    expect(store.readDictation('test-learner', 'korean-vocab').words).toEqual(['a', 'b']);
+  });
 });

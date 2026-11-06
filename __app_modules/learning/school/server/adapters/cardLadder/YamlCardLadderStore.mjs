@@ -73,6 +73,7 @@ export class YamlCardLadderStore {
       listDays: (userId, pkg) => view.listDays(userId, pkg),
       listPackages: (userId) => view.listPackages(userId),
       readDictation: (userId, pkg) => view.readDictation(userId, pkg),
+      dictationFileState: (userId, pkg) => view.dictationFileState(userId, pkg),
       readDictationProgress: (userId, pkg) => view.readDictationProgress(userId, pkg),
     };
   }
@@ -145,11 +146,15 @@ export class YamlCardLadderStore {
   /** The week's dictation list, or null when none is set. */
   readDictation(userId, pkg) { return structuredClone(this.#dictation(userId, pkg).value); }
   readDictationProgress(userId, pkg) { return structuredClone(this.#dictationProgress(userId, pkg).value); }
+  /** `missing | ok | corrupt` for each dictation file — a corrupt file reads as empty, so callers must ask before a drill. */
+  dictationFileState(userId, pkg) {
+    return { list: this.#dictation(userId, pkg).state, progress: this.#dictationProgress(userId, pkg).state };
+  }
   writeDictation(userId, pkg, list) {
     const current = this.#dictation(userId, pkg);
     if (!current.file) throw new InfrastructureError(`cannot resolve card-ladder files for ${userId}`, { code: 'UNKNOWN_USER' });
     if (current.state === 'corrupt') throw new DomainInvariantError(`card-ladder dictation for '${userId}' is corrupt — refusing to overwrite it`, { code: 'CARD_LADDER_DICTATION_CORRUPT' });
-    const next = { schema: DICTATION_SCHEMA, week: list?.week ?? null, setAt: list?.setAt ?? null, words: Array.isArray(list?.words) ? list.words.map(String) : [] };
+    const next = { schema: DICTATION_SCHEMA, week: list?.week ?? null, setAt: list?.setAt ?? null, words: Array.isArray(list?.words) ? [...new Set(list.words.map(String))] : [] };
     saveYamlToPathAtomic(current.file, next, { noRefs: true });
     return structuredClone(next);
   }

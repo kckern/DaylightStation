@@ -26,7 +26,7 @@ export function applyDictationAttempt(progressWord, { step, pass = false, dontKn
   }
   if (from === 'match') return { step: 'copy', blindPasses, lastAttemptAt };
   if (from === 'copy') return { step: 'blind', blindPasses, lastAttemptAt };
-  return { step: 'blind', blindPasses: blindPasses + 1, lastAttemptAt };
+  return { step: 'blind', blindPasses: Math.min(blindPasses + 1, BLIND_PASSES_TO_FINISH), lastAttemptAt };
 }
 
 /** Where a list stands. Progress for another week is treated as empty. */
@@ -35,7 +35,10 @@ export function dictationState(list, progress, { hasAudio = () => true, inLexico
   const ids = Array.isArray(list?.words) ? list.words : [];
   const stored = week != null && progress?.week === week && progress.words && typeof progress.words === 'object' ? progress.words : {};
   const words = []; const excluded = [];
+  const seen = new Set();
   for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
     if (!inLexicon(id)) { excluded.push({ id, reason: 'unknown-word' }); continue; }
     if (!hasAudio(id)) { excluded.push({ id, reason: 'needs-recording' }); continue; }
     const row = stored[id] ?? {};

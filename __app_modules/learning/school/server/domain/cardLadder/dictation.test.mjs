@@ -37,7 +37,24 @@ describe('applyDictationAttempt', () => {
   });
 });
 
+describe('applyDictationAttempt edge cases', () => {
+  it('clamps blindPasses at the done threshold', () => {
+    expect(applyDictationAttempt(word('blind', 2), { step: 'blind', pass: true }, NOW).blindPasses).toBe(2);
+  });
+  it('an invalid attempt step falls back to the stored step, then to match', () => {
+    expect(applyDictationAttempt(word('copy'), { step: 'bogus', pass: true }, NOW).step).toBe('blind');
+    expect(applyDictationAttempt(undefined, { step: 'bogus', pass: true }, NOW).step).toBe('copy');
+  });
+});
+
 describe('dictationState', () => {
+  it('dedupes duplicate ids, first occurrence wins, including excluded ones', () => {
+    const s = dictationState({ week: 'w', words: ['a', 'a', 'b', 'x', 'x'] }, null, { hasAudio: (id) => id !== 'x', inLexicon: () => true });
+    expect(s.words.map((w) => w.id)).toEqual(['a', 'b']);
+    expect(s.excluded).toEqual([{ id: 'x', reason: 'needs-recording' }]);
+    expect(s.remaining).toBe(2);
+    expect(nextDictationWord(dictationState({ week: 'w', words: ['a', 'a'] }, null, all), { lastWordId: 'a' })).toBe('a');
+  });
   it('everything is fresh with no progress', () => {
     const s = dictationState(list, null, all);
     expect(s).toMatchObject({ week: '2026-W45', done: false, remaining: 3, excluded: [] });
