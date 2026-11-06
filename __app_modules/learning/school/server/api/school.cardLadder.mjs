@@ -59,6 +59,11 @@ export function mountCardLadderRoutes({
         const { userId, review = false } = req.body || {};
         noStore(res).json(await service().startDictation({ userId, sittingId: req.params.sittingId, ...(review === true ? { review: true } : {}) }));
       }));
+      // The practice menu on request — review is open anytime (owner, 2026-11-06).
+      router.post(`${base}/sittings/:sittingId/menu`, wrap(async (req, res) => {
+        const { userId } = req.body || {};
+        noStore(res).json(await service().menu({ userId, sittingId: req.params.sittingId }));
+      }));
       // Learn more words (ruling 2026-09-23): one more guided round over the next new words.
       router.post(`${base}/sittings/:sittingId/learn-more`, wrap(async (req, res) => {
         const { userId } = req.body || {};

@@ -43,6 +43,12 @@ describe('/api/v1/school/card-ladder (through the School router)', () => {
     await request(app(service)).post('/api/v1/school/card-ladder/sittings/korean-vocab.live.1/dictation').send({ userId: 'kid', review: true }).expect(200);
     expect(service.startDictation).toHaveBeenCalledWith({ userId: 'kid', sittingId: 'korean-vocab.live.1', review: true });
   });
+  it('serves the practice menu on request (owner 2026-11-06)', async () => {
+    const service = { menu: vi.fn(async () => ({ item: { id: 'menu', type: 'menu' } })) };
+    const res = await request(app(service)).post('/api/v1/school/card-ladder/sittings/korean-vocab.live.1/menu').send({ userId: 'kid' }).expect(200);
+    expect(service.menu).toHaveBeenCalledWith({ userId: 'kid', sittingId: 'korean-vocab.live.1' });
+    expect(res.body.item.type).toBe('menu');
+  });
   it('maps a missing assignment to 403 and a bad response to 400', async () => {
     const refusing = { open: vi.fn(async () => { throw new GuestForbiddenError('no assignment'); }) };
     await request(app(refusing)).post('/api/v1/school/card-ladder/open').send({ userId: 'kid', deckId: 'd' }).expect(403);

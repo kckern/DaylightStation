@@ -56,6 +56,33 @@ describe('CardLadderSittingService — dictation', () => {
     expect(out.item.source).not.toBe('dictation');
     expect(events(logger, 'info', 'school.card-ladder.dictation.exited')[0][1]).toMatchObject({ learnerId: 'test-learner', package: 'korean-vocab', week: WEEK, sittingId, reason: 'stop' });
   });
+  it('the launch card shows dictation where the card renders it: the lesson, not a field it never reads (live 2026-11-06)', async () => {
+    const store = dictationStore();
+    const { service } = makeD({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(status.context.lesson.description).toMatch(/Dictation: 2 words left/);
+  });
+  it('on a finished day the launch card leads with dictation and says flashcards are open anytime (live 2026-11-06)', async () => {
+    const store = dictationStore();
+    const { service } = makeD({ store });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    store.s.days[TODAY] = { ...store.s.days[TODAY], doneAt: '2026-09-22T16:30:00-07:00' };
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(status.doneToday).toBe(true);
+    expect(status.context.lesson.title).toBe('Dictation: 2 words');
+    expect(status.context.lesson.description).toMatch(/Flashcards: practise anytime/);
+    expect(opened.sittingId).toBeTruthy();
+  });
+  it('on a finished day with dictation done, the launch card still says flashcards are open anytime', async () => {
+    const store = dictationStore({ progress: { week: WEEK, words: { gawi: { step: 'blind', blindPasses: 2 }, pul: { step: 'blind', blindPasses: 2 } } } });
+    const { service } = makeD({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    store.s.days[TODAY] = { ...store.s.days[TODAY], doneAt: '2026-09-22T16:30:00-07:00' };
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(status.context.lesson.description).toMatch(/Flashcards: practise anytime/);
+    expect(status.context.lesson.description).toMatch(/Dictation ready ✓/);
+  });
   it('the launch card names the dictation: "Dictation: N words left" (audit placement 2)', async () => {
     const store = dictationStore();
     const { service } = makeD({ store });
@@ -144,6 +171,14 @@ describe('CardLadderSittingService — dictation', () => {
     const store = dictationStore({ progress: { week: WEEK, words: { pul: { step: 'blind', blindPasses: 2 } } } });
     const { started } = await begin({ store });
     expect(started.item.wordsDoneFlags).toEqual([false, true]);
+  });
+  it('the practice menu is served on request, before the goal too (owner 2026-11-06: review anytime)', async () => {
+    const store = dictationStore();
+    const { service } = makeD({ store });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(store.s.days[TODAY].doneAt).toBeNull();
+    const out = await service.menu({ userId: 'test-learner', sittingId: opened.sittingId });
+    expect(out.item).toMatchObject({ id: 'menu', type: 'menu' });
   });
   it('intro carries the week\'s dictation summary for the start card (Task 3)', async () => {
     const store = dictationStore();

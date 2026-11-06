@@ -66,6 +66,8 @@ export function createCardLadderApi({ test = false } = {}) {
     /** This week's dictation (spec 2026-11-06): a focused run in the sitting,
      *  before or after the daily goal. */
     dictation: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/dictation`, { method: 'POST', body: { userId } }),
+    /** The practice menu on request — review is open anytime (owner, 2026-11-06). */
+    menu: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/menu`, { method: 'POST', body: { userId } }),
     /** Learn more words (ruling 2026-09-23): one more guided round over the
      *  next new words, from the menu or the Done summary. */
     learnMore: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/learn-more`, { method: 'POST', body: { userId } }),

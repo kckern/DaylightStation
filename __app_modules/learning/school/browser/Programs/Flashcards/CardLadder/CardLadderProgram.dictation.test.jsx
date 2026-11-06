@@ -325,3 +325,38 @@ describe('CardLadderProgram — weekly dictation: deferred minors', () => {
     expect(await screen.findByText("Dictation couldn't start. Tap it again in a moment.")).toBeInTheDocument();
   });
 });
+
+describe('CardLadderProgram — always available (owner 2026-11-06)', () => {
+  const menu = { id: 'menu', type: 'menu', learnMore: 0, modes: ['flashcards', 'match'], sayHelp: [], writeHelp: [true] };
+  it('the start card always offers Review flashcards, before the goal too, and it opens the practice menu', async () => {
+    const api = fakeApi({ dictation: null });
+    api.menu = vi.fn(async () => ({ ok: true, status: 200, data: { item: menu, progress } }));
+    api.words = vi.fn(async () => ({ ok: true, status: 200, data: { words: [] } }));
+    render(<CardLadderProgram descriptor={descriptor} api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Review flashcards/ }));
+    await screen.findByRole('heading', { name: 'Practice' });
+    expect(api.open).toHaveBeenCalledTimes(1);
+    expect(api.menu).toHaveBeenCalledWith('s1', { userId: 'test-learner' });
+    expect(screen.queryByText('가위')).toBeNull();
+  });
+  it('Done on a menu opened before the goal goes back to today\'s cards instead of leaving', async () => {
+    const api = fakeApi({ dictation: null });
+    api.menu = vi.fn(async () => ({ ok: true, status: 200, data: { item: menu, progress } }));
+    api.get = vi.fn(async () => ({ ok: true, status: 200, data: { item: flash, progress } }));
+    api.words = vi.fn(async () => ({ ok: true, status: 200, data: { words: [] } }));
+    const onExit = vi.fn();
+    render(<CardLadderProgram descriptor={descriptor} api={api} onExit={onExit} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Review flashcards/ }));
+    await screen.findByRole('heading', { name: 'Practice' });
+    fireEvent.click(screen.getByRole('button', { name: /^Done/ }));
+    expect(await screen.findByText('가위')).toBeInTheDocument();
+    expect(onExit).not.toHaveBeenCalled();
+    expect(api.close).not.toHaveBeenCalled();
+  });
+  it('the start card offers all three whatever the day: Start, Dictation, Review flashcards', async () => {
+    render(<CardLadderProgram descriptor={descriptor} api={fakeApi()} />);
+    await screen.findByRole('button', { name: /Dictation: 7 words/ });
+    expect(screen.getByRole('button', { name: /^Start/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Review flashcards/ })).toBeInTheDocument();
+  });
+});

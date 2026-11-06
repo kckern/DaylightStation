@@ -761,10 +761,12 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     expect(recordings.save).not.toHaveBeenCalled();
   });
 
-  it("practice is refused before today's goal", async () => {
+  // Owner ruling 2026-11-06: review is open anytime (overrules "post-goal").
+  it("practice is no longer refused before today's goal", async () => {
     const { service } = make();
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
-    await expect(service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write' })).rejects.toThrow(/goal/);
+    const outcome = await service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write' }).catch((error) => error);
+    expect(String(outcome?.message ?? '')).not.toMatch(/goal/);
   });
 
   it('practice Write with help: an empty answer skips the copy instead of holding the child on it', async () => {

@@ -64,7 +64,7 @@ export function dictationOffer(dictation) {
   return { kind: 'drill', text: `Dictation: ${dictation.remaining} ${dictation.remaining === 1 ? 'word' : 'words'}` };
 }
 
-export default function CardLadderStartCard({ intro, fallbackTitle, onStart, onDictation = null, onPosterFailed }) {
+export default function CardLadderStartCard({ intro, fallbackTitle, onStart, onDictation = null, onReview = null, onPosterFailed }) {
   const offer = onDictation ? dictationOffer(intro?.dictation) : null;
   const dayDone = Boolean(intro?.today?.doneToday);
   const title = intro?.course?.title || fallbackTitle || 'Words';
@@ -98,6 +98,8 @@ export default function CardLadderStartCard({ intro, fallbackTitle, onStart, onD
           {offer?.kind === 'ready' && (
             <TouchButton variant="secondary" keyHint="D" onClick={() => onDictation(true)}>{offer.action}</TouchButton>
           )}
+          {/* Review is open anytime, goal or not (owner, 2026-11-06). */}
+          {onReview && <TouchButton variant="secondary" keyHint="R" onClick={onReview}>Review flashcards</TouchButton>}
         </div>
       </div>
     </div>
