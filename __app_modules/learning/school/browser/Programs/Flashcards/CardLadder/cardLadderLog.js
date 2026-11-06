@@ -62,6 +62,7 @@ export const cardLadderLog = {
   sittingClosed: (data) => emit('sitting.closed', data),                // {reason, activeMs, remaining}
   // {clip, trigger: auto|key|touch, input?, outcome: ended|error|blocked} — logged only from cardLadderAudio.js; a failed clip is warn.
   audioPlayed: (data) => emit('audio.played', data, data?.outcome === 'ended' ? 'info' : 'warn'),
+  entryOpened: (data) => emit('entry.opened', data),                      // {entry: dictation|dictation-review|review|today} — opened from the launch card
   reviewOpened: (data) => emit('review.opened', data),                    // {from, doneToday} — practice menu on request (anytime)
   reviewFailed: (data) => emit('review.failed', data, 'warn'),            // {from, status, error}
   dictationStarted: (data) => emit('dictation.started', data),            // {from: start|summary|menu, week, remaining}

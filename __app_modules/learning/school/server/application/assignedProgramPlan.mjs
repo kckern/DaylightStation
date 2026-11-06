@@ -226,6 +226,9 @@ export function projectProgramEntry(entry, status) {
     // the card reads it as `next.description` with nothing in between.
     ...(typeof status?.description === 'string' && status.description.trim()
       ? { description: status.description.trim() } : {}),
+    // The launch card's entry buttons (card ladder: dictation, review, today's
+    // cards — owner 2026-11-06), carried to the one work action.
+    ...(Array.isArray(status?.entries) && status.entries.length ? { entries: status.entries } : {}),
   };
 }
 

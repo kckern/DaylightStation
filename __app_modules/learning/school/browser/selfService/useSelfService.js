@@ -339,7 +339,7 @@ export function useSelfService({
     setView('sentence');
   }, []);
 
-  const runAction = useCallback(async (action) => {
+  const runAction = useCallback(async (action, { entry = null } = {}) => {
     if (!action) return;
     if (action.kind === 'exit') { toLock(); return; }
     if (!beginWork()) return;   // second tap of a double-tap
@@ -370,7 +370,10 @@ export function useSelfService({
     // local (`IProgramLauncher.surface`), and `outcome: 'mount'` is how it
     // says so.
     if (outcome === ACT_OUTCOMES.MOUNT) {
-      const mountTarget = launchTarget(action, effect);
+      // The launch-card entry the child tapped (card ladder: dictation,
+      // review, today) rides to the program as where to open (owner 2026-11-06).
+      const target = launchTarget(action, effect);
+      const mountTarget = target && entry ? { ...target, entry } : target;
       if (!mountTarget || !onLaunch) {
         schoolLog.selfServiceError('mount.no-target', {
           kind: action.kind, effectKind: effect?.kind ?? null,

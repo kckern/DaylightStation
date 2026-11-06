@@ -180,6 +180,28 @@ describe('CardLadderSittingService — dictation', () => {
     const out = await service.menu({ userId: 'test-learner', sittingId: opened.sittingId });
     expect(out.item).toMatchObject({ id: 'menu', type: 'menu' });
   });
+  it('the launch card offers its entries: dictation first while words are left, then review and today (owner 2026-11-06)', async () => {
+    const store = dictationStore();
+    const { service } = makeD({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    const before = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(before.entries.map((e) => [e.id, e.label, e.role])).toEqual([
+      ['dictation', 'Practise dictation', 'primary'], ['today', "Today's cards", 'secondary'], ['review', 'Review flashcards', 'secondary'],
+    ]);
+    store.s.days[TODAY] = { ...store.s.days[TODAY], doneAt: '2026-09-22T16:30:00-07:00' };
+    const after = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(after.entries.map((e) => e.id)).toEqual(['dictation', 'review', 'today']);
+  });
+  it('with dictation done the entries offer Review dictation, and review leads on a finished day', async () => {
+    const store = dictationStore({ progress: { week: WEEK, words: { gawi: { step: 'blind', blindPasses: 2 }, pul: { step: 'blind', blindPasses: 2 } } } });
+    const { service } = makeD({ store });
+    await service.open({ userId: 'test-learner', deckId: DECK });
+    store.s.days[TODAY] = { ...store.s.days[TODAY], doneAt: '2026-09-22T16:30:00-07:00' };
+    const status = await service.dayStatus({ userId: 'test-learner', deckId: DECK });
+    expect(status.entries.map((e) => [e.id, e.label, e.role])).toEqual([
+      ['review', 'Review flashcards', 'primary'], ['dictation-review', 'Review dictation', 'secondary'], ['today', "Today's cards", 'secondary'],
+    ]);
+  });
   it('intro carries the week\'s dictation summary for the start card (Task 3)', async () => {
     const store = dictationStore();
     const { service } = makeD({ store });
