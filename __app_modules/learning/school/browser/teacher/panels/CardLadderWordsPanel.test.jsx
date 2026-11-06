@@ -431,3 +431,26 @@ describe('cardLadderEnrollments', () => {
     expect(cardLadderEnrollments(programs).map((row) => row.deckId)).toEqual(['a', 'b']);
   });
 });
+
+describe('CardLadderWordsPanel — this week\'s dictation (spec 2026-11-06, Task 5)', () => {
+  it('shows the week, the count warning, waiting words and each list word as "copy · 1/2 blind"', async () => {
+    cardLadderAdminApi.words.mockResolvedValue(ok(payload({
+      dictation: { week: '2026-W46', total: 1, remaining: 1, done: false, ready: false, count: 9, countWarning: true, needsRecording: ['word_3'], unknown: [] },
+      words: [word1({ dictation: { step: 'copy', blindPasses: 1, done: false } }), word1({ wordId: 'word_2', term: '배', gloss: 'pear' })],
+    })));
+    mount();
+    const section = await screen.findByRole('region', { name: /Dictation/ });
+    expect(within(section).getByText(/2026-W46/)).toBeInTheDocument();
+    expect(within(section).getByText(/9 words tagged — a week should have 10/)).toBeInTheDocument();
+    expect(within(section).getByText(/needs its recording: word_3/i)).toBeInTheDocument();
+    expect(within(section).getByText('copy · 1/2 blind')).toBeInTheDocument();
+    expect(within(section).getByText('사과')).toBeInTheDocument();
+    expect(within(section).queryByText('배')).toBeNull();
+  });
+
+  it('shows nothing about dictation when no week is tagged', async () => {
+    mount();
+    await screen.findAllByText('사과');
+    expect(screen.queryByRole('region', { name: /Dictation/ })).toBeNull();
+  });
+});

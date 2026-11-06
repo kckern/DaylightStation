@@ -7,7 +7,7 @@ import { emptyDay, emptyStatusV3 } from "./statusV3.mjs";
 // Recognised twice (verify + the first recheck) and matched: the next recheck is typed.
 const SIGN_OFF_READY = Object.freeze({ recognizedCount: 2, matched: true });
 
-export const SCENARIOS = Object.freeze(['today', 'fresh', 'due', 'round-end', 'tricky', 'done', 'typos']);
+export const SCENARIOS = Object.freeze(['today', 'fresh', 'due', 'round-end', 'tricky', 'done', 'typos', 'dictation']);
 
 export function seedScenario(name, snapshot, { deckWords, day }) {
   const each = (make) => Object.fromEntries(deckWords.map((id) => [id, make()]));
@@ -45,6 +45,10 @@ export function seedScenario(name, snapshot, { deckWords, day }) {
       dayFile: emptyDay(day),
     };
     case 'done': return { status: snapshot.status, dayFile: { ...emptyDay(day), atOpen: { dueRechecks: [], tricky: [], newAllowance: 0, settings: null }, doneAt: day } };
+    // The learner's day as it is, and this week's dictation from its start
+    // (spec 2026-11-06): the shadow's progress is empty, so every tagged word
+    // is at match. The real progress file is never read or written.
+    case 'dictation': return { ...snapshot, dictationProgress: { week: null, words: {} } };
     default: throw new ValidationError(`unknown test scenario '${name}'`);
   }
 }

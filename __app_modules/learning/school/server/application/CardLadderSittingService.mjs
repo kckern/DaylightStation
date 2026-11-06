@@ -1193,8 +1193,23 @@ export class CardLadderSittingService {
     // A deck the learner is still enrolled in is re-added at every open, so
     // only a deck they have left can be dropped from the pool.
     const enrolled = new Set((await this.#enrollments(learnerId)).map((row) => row.deckId ?? row.corpusId));
+    // The week's dictation for the grown-up (spec 2026-11-06, Task 5): the
+    // week, its count warning, words waiting on a recording or the deck, and
+    // each list word's step and blind passes. Never a reason to fail the list.
+    let dictation = null;
+    const drilled = new Map();
+    try {
+      const read = this.#readDictation(store, learnerId, pkg, lexicon, this.#media(deck, lexicon), deck);
+      if (read.list && read.fileState.progress === 'corrupt') dictation = { week: read.list.week, unavailable: 'corrupt' };
+      else if (read.state) {
+        dictation = this.#dictationSummary(read.state, read.list);
+        for (const w of read.state.words) drilled.set(w.id, { step: w.step, blindPasses: w.blindPasses, done: w.done });
+      }
+    } catch (error) {
+      this.#logger.warn?.('school.card-ladder.dictation.admin-unavailable', { learnerId, package: pkg, error: error.message });
+    }
     return {
-      learnerId, package: pkg, decksSeen: [...status.decksSeen],
+      learnerId, package: pkg, decksSeen: [...status.decksSeen], dictation,
       droppableDecks: status.decksSeen.filter((id) => !enrolled.has(id)),
       words: ids.filter((id) => lexicon.entries.has(id)).map((id) => {
         const entry = lexicon.entries.get(id);
@@ -1203,6 +1218,8 @@ export class CardLadderSittingService {
           wordId: id, term: entry.term, gloss: entry.gloss, state: word.state ?? 'new', stage: word.stage ?? null,
           dueDay: word.dueDay ?? null, missStreak: word.missStreak ?? 0, tricky: word.tricky === true, excluded: word.excluded === true,
           lastGraded: word.lastGraded ?? null, recentTyped: typed.get(id) ?? [], ...signOffFields(word),
+          // Only the week's words carry it, so every other word's row is unchanged.
+          ...(drilled.has(id) ? { dictation: drilled.get(id) } : {}),
         };
       }),
     };
