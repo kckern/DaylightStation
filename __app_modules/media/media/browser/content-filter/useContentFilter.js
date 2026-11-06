@@ -278,6 +278,22 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     const onSeeking = () => { exitAll(); };
     el.addEventListener('seeking', onSeeking);
 
+    // A bleep must not keep sounding over a paused or stalled picture. On
+    // pause/waiting stop the sound (the video stays muted); on playing, after
+    // tick() has run (registered later, so it fires later), restart it for the
+    // first bleep cue still entered.
+    const enteredBleep = () => [...enteredRef.current.values()].find((c) => c.effect === 'bleep');
+    const onHalt = () => { if (enteredBleep()) sfxPlayer.stop?.(); };
+    const onResume = () => {
+      const cue = enteredBleep();
+      if (!cue) return;
+      if (cue.sound) sfxPlayer.play?.(cue.sound);
+      else sfxPlayer.tone?.();
+    };
+    const haltEvents = ['pause', 'waiting'];
+    haltEvents.forEach((ev) => el.addEventListener(ev, onHalt));
+    el.addEventListener('playing', onResume);
+
     let stopped = false;
     let rvfcHandle = null;
     const hasRvfc = typeof el.requestVideoFrameCallback === 'function';
@@ -302,6 +318,8 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       }
       reactEvents.forEach((ev) => el.removeEventListener(ev, tick));
       el.removeEventListener('seeking', onSeeking);
+      haltEvents.forEach((ev) => el.removeEventListener(ev, onHalt));
+      el.removeEventListener('playing', onResume);
       exitAll();
       clearOverlayLife();
       // Session summary (info): what actually fired this segment + blur-with-audio

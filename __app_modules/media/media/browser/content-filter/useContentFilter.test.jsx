@@ -308,4 +308,42 @@ describe('useContentFilter', () => {
     expect(el.muted).toBe(true);
     expect(hook.result.current.fireCount).toBe(1);
   });
+
+  describe('bleep tone across pause and stall', () => {
+    const bleepEdl = { cues: [{ id: 'b1', category: 'language/profanity/damn', in: 10, out: 12, precision: 'ms' }] };
+    const bleepProfile = { categories: { language: { effect: 'bleep' } } };
+
+    for (const ev of ['pause', 'waiting']) {
+      it(`stops the tone on ${ev} but keeps the video muted, and restarts it on playing`, () => {
+        const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+        const { el } = setup({ sfx, edl: bleepEdl, profile: bleepProfile });
+        act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+        expect(sfx.tone).toHaveBeenCalledTimes(1);
+        act(() => { el.fire(ev); });
+        expect(sfx.stop).toHaveBeenCalledTimes(1);
+        expect(el.muted).toBe(true);
+        act(() => { el.fire('playing'); });
+        expect(sfx.tone).toHaveBeenCalledTimes(2);
+        expect(el.muted).toBe(true);
+      });
+    }
+
+    it('does not restart the tone on playing once the bleep cue has ended', () => {
+      const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+      const { el } = setup({ sfx, edl: bleepEdl, profile: bleepProfile });
+      act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+      act(() => { el.fire('pause'); });
+      act(() => { el.currentTime = 30; el.fire('playing'); });
+      expect(sfx.tone).toHaveBeenCalledTimes(1);
+      expect(el.muted).toBe(false);
+    });
+
+    it('pause with no bleep entered leaves the sfx player alone', () => {
+      const sfx = { play: vi.fn(), tone: vi.fn(), stop: vi.fn() };
+      const { el } = setup({ sfx });
+      act(() => { el.currentTime = 21; el.fire('timeupdate'); }); // a mute cue
+      act(() => { el.fire('pause'); });
+      expect(sfx.stop).not.toHaveBeenCalled();
+    });
+  });
 });
