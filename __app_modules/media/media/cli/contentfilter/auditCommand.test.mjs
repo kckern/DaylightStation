@@ -38,8 +38,10 @@ describe('computeAudit', () => {
   });
   it('counts shown cues with a region track, coarse-edge ones separately, and flags the 70% target', () => {
     // s1+s2 (group, tracked via s2), s3, s4 tracked; s5 not
-    expect(r.regions).toMatchObject({ shown: 5, tracked: 4, coarseEdge: 1, target: 0.7, pass: true });
+    expect(r.regions).toMatchObject({ shown: 5, tracked: 4, coarseEdge: 1, target: 0.7, withTrackData: 3 });
     expect(r.regions.share).toBeCloseTo(0.8, 5);
+    // The Proof metric is the DATA share (shown cues carrying a track): 3/5 misses the 70% target.
+    expect(r.regions.pass).toBe(false);
     const low = computeAudit({ edl: { ...film(), cues: film().cues.filter((c) => !['s2', 's3', 's4'].includes(c.id)) }, profile, override });
     expect(low.regions.pass).toBe(false);
     expect(low.ok).toBe(true); // soft target: does not fail the exit
@@ -47,10 +49,19 @@ describe('computeAudit', () => {
   it('also counts shown cues whose DATA carries a region track, even when the profile resolves them full-frame', () => {
     const fullFrame = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'full-blur' } } };
     const f = computeAudit({ edl: film(), profile: fullFrame, override });
-    expect(f.regions.tracked).toBe(2); // only the same-subject group (s1, s2) follows its track; a lone full-blur stays whole-frame
+    expect(f.regions.tracked).toBe(0); // an explicit full-blur stays whole-frame, alone or in a group
     expect(f.regions).toMatchObject({ shown: 5, withTrackData: 3 });
     expect(f.regions.dataShare).toBeCloseTo(0.6, 5);
     expect(formatAudit(f)).toMatch(/track data 3\/5/);
+  });
+  it('PASS/FAIL on the region target follows the data share; the resolved share is printed as info', () => {
+    const fullFrame = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'full-blur' } } };
+    const e = film(); e.cues = e.cues.map((c) => (c.id === 's1' || c.id === 's5' ? { ...c, regions: track(c.in, c.out) } : c));
+    const f = computeAudit({ edl: e, profile: fullFrame, override });
+    expect(f.regions.tracked).toBe(0);
+    expect(f.regions.dataShare).toBeCloseTo(1, 5);
+    expect(f.regions.pass).toBe(true);
+    expect(formatAudit(f)).toMatch(/region tracks on shown\s+PASS\s+track data 5\/5 \(100%, target 70%\); resolved regional 0\/5 \(0%\)/);
   });
   it('a same-subject group nothing resolves for (profile off) is "no effect", not a failure', () => {
     const off = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'off' } } };

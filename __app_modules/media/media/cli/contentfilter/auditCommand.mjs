@@ -7,7 +7,7 @@
  * and measures what would play. Read-only.
  *
  * Hard checks (exit non-zero): no tone longer than 1.5 s; no audio effect on a `shown` cue; no
- * visual effect on a `said` cue. Reported (target flagged, not fatal): region-track share of
+ * visual effect on a `said` cue. Reported (target flagged, not fatal): region-track DATA share of
  * `shown` cues (>= 70%), same-subject groups resolved to one effect, R4 line/exchange/card
  * counts, scene edge leaks, certification level, and language counts per R9 group.
  */
@@ -81,6 +81,7 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
   // Coverage of the DATA: shown cues carrying a region track whatever effect the profile picked
   // (an explicit full-blur stays whole-frame; the track is still there for a profile that wants it).
   const withTrackData = shownCues.filter(({ cue, ov }) => (cue.regions?.length || ov.regions?.length)).length;
+  const dataShare = pct(withTrackData, shownCues.length);
 
   // same-subject groups
   const bySubject = new Map();
@@ -138,7 +139,9 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     rk: null, title: edl?.title ?? null, profile: null,
     ok: checks.toneCap.ok && checks.channel.ok,
     checks,
-    regions: { shown: shownCues.length, tracked: trackedCues.length, coarseEdge, share, withTrackData, dataShare: pct(withTrackData, shownCues.length), target: REGION_TARGET, pass: share == null ? null : share >= REGION_TARGET },
+    // Proof metric: the DATA share (shown cues carrying a track). The resolved share is info:
+    // a profile's explicit full-blur stays whole-frame by design.
+    regions: { shown: shownCues.length, tracked: trackedCues.length, coarseEdge, share, withTrackData, dataShare, target: REGION_TARGET, pass: dataShare == null ? null : dataShare >= REGION_TARGET },
     subjects: { groups: groups.length, members: groups.reduce((n, [, ids]) => n + ids.length, 0), noEffect, resolvedOne, share: pct(resolvedOne, effective) },
     lines: { muted: lineIds('remark').length, skipped: lineIds('exchange').length, cardsApproved: cards.length - generic, cardsGeneric: generic },
     scenes: { total: (edl?.scenes || []).length, leaks, byEffect: cues.sceneSummary?.byEffect || {} },
@@ -155,7 +158,7 @@ export function formatAudit(r) {
   const rows = [
     ['tone cap (<= 1.5 s)', verdict(k.toneCap.ok), k.toneCap.violations ? `${k.toneCap.violations} over: ${k.toneCap.ids.join(', ')}` : '0 over'],
     ['channel match', verdict(k.channel.ok), k.channel.ok ? 'none misplaced' : `audio on shown: ${k.channel.audioOnShown.join(', ') || '-'}; visual on said: ${k.channel.visualOnSaid.join(', ') || '-'}`],
-    ['region tracks on shown', verdict(g.pass), `${g.tracked}/${g.shown} (${p100(g.share)}, target ${p100(g.target)}), ${g.coarseEdge} coarse-edge; track data ${g.withTrackData}/${g.shown} (${p100(g.dataShare)})`],
+    ['region tracks on shown', verdict(g.pass), `track data ${g.withTrackData}/${g.shown} (${p100(g.dataShare)}, target ${p100(g.target)}); resolved regional ${g.tracked}/${g.shown} (${p100(g.share)}), ${g.coarseEdge} coarse-edge`],
     ['same-subject groups', s.groups - s.noEffect ? verdict(s.resolvedOne === s.groups - s.noEffect) : 'n/a', `${s.groups} groups, ${s.members} members, ${s.resolvedOne} resolved to one effect (${p100(s.share)}), ${s.noEffect} with no effect (profile off or a scene covers them)`],
     ['lines / exchanges (R4)', '', `${l.muted} lines muted, ${l.skipped} exchanges skipped; cards ${l.cardsApproved} approved, ${l.cardsGeneric} generic`],
     ['scene edge leaks', verdict(!sc.leaks.length), sc.leaks.length ? sc.leaks.map((x) => `${x.scene}: ${x.cues.join(' ')}`).join('; ') : `0 of ${sc.total} scenes`],
