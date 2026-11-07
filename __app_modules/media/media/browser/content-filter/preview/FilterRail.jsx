@@ -1,25 +1,28 @@
 /**
  * FilterRail — the preview surround's sidebar (`content-filter-rail`).
- * Header (certification + summary + close), the last filtered moment with replay,
- * and the next five upcoming moments (a scene's pieces collapse to one row) with
- * jump and peek-unfiltered on the selected row. Mouse-only: plain buttons.
+ *
+ * Header: what this is, how far to trust it (the certification, in words) and
+ * what the filter does to this film. Two tabs. Review: the moment just filtered
+ * (replay it), the next five coming up (a scene's pieces are one row; choose one
+ * to jump there and select it, then peek at it unfiltered), and the WorkshopPanel
+ * for the selected one. Settings: the SettingsPanel.
+ *
+ * The selection lives in the preview store, so a mark clicked on the timeline
+ * and a row chosen here are the same selection. Mouse-only: plain buttons.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { useFilterPreview, previewStore } from './previewStore.js';
+import { useFilterPreview, previewStore, PREVIEW_LEAD_SEC } from './previewStore.js';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
 import { baseId } from '../useContentFilter.js';
 import WorkshopPanel from './WorkshopPanel.jsx';
 import SettingsPanel from './SettingsPanel.jsx';
+import {
+  effectWord, rowLabel, kindOf, clock, awayText, certificationText, effectSentence,
+} from './effectKinds.js';
+import './contentFilterTheme.scss';
 import './FilterRail.scss';
 
-const EFFECT_WORD = {
-  mute: 'muted', bleep: 'bleeped',
-  blur: 'blurred', 'full-blur': 'blurred', pixelate: 'blurred', 'censor-bar': 'blurred',
-  blackout: 'blacked out', skip: 'skipped', 'skip-card': 'skipped', 'title-card': 'card',
-};
-export const effectWord = (e) => EFFECT_WORD[e] || e || '';
-/** A row's label; scene pieces carry none, so fall back to "Scene" + effect word. */
-export const rowLabel = (item) => item?.label || `Scene ${effectWord(item?.effect)}`.trim();
+export { effectWord, rowLabel };
 
 const NEXT_COUNT = 5;
 
@@ -45,81 +48,160 @@ export function upcomingItems(cues, scenes, position, count = NEXT_COUNT) {
   return items;
 }
 
+/** The timeline's own mark shape, in its kind colour — the row's key. */
+const Glyph = ({ effect }) => <i className={`filter-rail__glyph is-${kindOf(effect)}`} aria-hidden="true" />;
+/** The effect in a word ("muted", "hidden"). */
+const Effect = ({ effect }) => <span className="filter-rail__effect">{effectWord(effect)}</span>;
+
+const CloseIcon = () => (
+  <svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true" focusable="false">
+    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
 export default function FilterRail({ position = 0 }) {
   const snap = useFilterPreview();
   const logger = useMemo(() => getChildLogger({ app: 'content-filter', component: 'filter-rail' }), []);
-  const [selectedId, setSelectedId] = useState(null);
   const [tab, setTab] = useState('review'); // 'review' | 'settings'
   const items = useMemo(() => upcomingItems(snap.cues, snap.scenes, position), [snap.cues, snap.scenes, position]);
   const last = snap.lastFired;
+  const selectedId = snap.selected?.id != null ? String(snap.selected.id) : null;
+  const level = snap.certification?.level || null;
+  const cert = certificationText(level);
+  const summary = String(snap.summary || '').split(' · ').filter(Boolean);
+  const selectedItem = items.find((it) => it.id === selectedId) || null;
 
   useEffect(() => { logger.debug('filter-rail.mounted', {}); return () => logger.debug('filter-rail.unmounted', {}); }, [logger]);
 
   const select = (item) => {
-    setSelectedId(item.id);
     previewStore.publish({ selected: item.kind === 'scene' ? { id: item.id, kind: 'scene', in: item.in } : item.cue });
     previewStore.jumpToCue(item.cue);
     logger.info('filter-rail.jump', { id: item.id, kind: item.kind, in: item.in });
+  };
+  const switchTab = (v) => {
+    if (v === tab) return;
+    setTab(v);
+    logger.info('filter-rail.tab', { tab: v });
   };
 
   return (
     <aside className="filter-rail">
       <header className="filter-rail__head">
-        <div className="filter-rail__cert">
-          <span className="filter-rail__level">{snap.certification?.level ?? ''}</span>
-          <button type="button" className="filter-rail__btn" aria-label="Close preview" onClick={() => previewStore.close()}>Close</button>
+        <div className="filter-rail__titlebar">
+          <div className="filter-rail__titles">
+            <h3 className="filter-rail__title">Filter preview</h3>
+            {snap.title ? <div className="filter-rail__film">{snap.title}</div> : null}
+          </div>
+          <button
+            type="button"
+            className="filter-rail__close"
+            aria-label="Close preview"
+            data-cf-hint="Close the preview. The film keeps playing, still filtered."
+            data-cf-hint-align="end"
+            data-cf-hint-side="below"
+            onClick={() => previewStore.close()}
+          >
+            <CloseIcon />
+          </button>
         </div>
-        {snap.summary ? <div className="filter-rail__summary">{snap.summary}</div> : null}
+
+        <div className={`filter-rail__cert is-${cert.tone}`}>
+          <span className="filter-rail__level">{level || 'not certified'}</span>
+          <span className="filter-rail__cert-line">{cert.line}</span>
+        </div>
+
+        {summary.length ? (
+          <ul className="filter-rail__summary" aria-label="What the filter does to this film">
+            {summary.map((s) => <li key={s}>{s}</li>)}
+          </ul>
+        ) : null}
       </header>
 
-      <div className="filter-rail__buttons" role="tablist" aria-label="Rail view">
+      <div className="filter-rail__tabs" role="tablist" aria-label="Rail view">
         {[['review', 'Review'], ['settings', 'Settings']].map(([v, label]) => (
-          <button key={v} type="button" role="tab" aria-selected={tab === v} className={`filter-rail__btn${tab === v ? ' is-selected' : ''}`} onClick={() => setTab(v)}>{label}</button>
+          <button key={v} type="button" role="tab" aria-selected={tab === v} className={`filter-rail__tab${tab === v ? ' is-selected' : ''}`} onClick={() => switchTab(v)}>{label}</button>
         ))}
       </div>
 
-      {tab === 'settings' ? <SettingsPanel /> : (
-      <>
-      <section className="filter-rail__section">
-        <h4>Last</h4>
-        {last ? (
-          <>
-            <div className="filter-rail__last">
-              <span className="filter-rail__label">{rowLabel(last)}</span>
-              <span className="filter-rail__effect">{effectWord(last.effect)}</span>
-            </div>
-            <button type="button" className="filter-rail__btn" aria-label="Replay last" onClick={() => previewStore.replayLast()}>Replay last</button>
-          </>
-        ) : <div className="filter-rail__empty">Nothing filtered yet</div>}
-      </section>
-
-      <section className="filter-rail__section">
-        <h4>Next</h4>
-        {items.length === 0 ? <div className="filter-rail__empty">Nothing ahead</div> : (
-          <ul className="filter-rail__list">
-            {items.map((it) => (
-              <li key={`${it.kind}:${it.id}`}>
+      {tab === 'settings' ? (
+        <div className="filter-rail__body is-settings">
+          <p className="filter-rail__note">Choose what the filter does. Changes apply from the next moment it reaches.</p>
+          <SettingsPanel />
+        </div>
+      ) : (
+        <div className="filter-rail__body">
+          <section className="filter-rail__section">
+            <h4>Last</h4>
+            {last ? (
+              <div className="filter-rail__last">
+                <div className="filter-rail__line">
+                  <Glyph effect={last.effect} />
+                  <span className="filter-rail__label">{rowLabel(last)}</span>
+                  <Effect effect={last.effect} />
+                  <span className="filter-rail__time">{clock(last.in)}</span>
+                </div>
                 <button
                   type="button"
-                  data-testid="filter-rail-next"
-                  className={`filter-rail__row${selectedId === it.id ? ' is-selected' : ''}`}
-                  onClick={() => select(it)}
+                  className="filter-rail__btn"
+                  aria-label="Replay last"
+                  data-cf-hint={`Play it again from ${PREVIEW_LEAD_SEC} s before, filtered.`}
+                  data-cf-hint-align="start"
+                  onClick={() => previewStore.replayLast()}
                 >
-                  <span className="filter-rail__label">{rowLabel(it)}</span>
-                  <span className="filter-rail__effect">{effectWord(it.effect)}</span>
-                  <span className="filter-rail__away">{Math.max(0, Math.round(it.in - position))}s</span>
+                  Replay
                 </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {selectedId != null ? (
-          <button type="button" className="filter-rail__btn" aria-label="Peek unfiltered" onClick={() => previewStore.peek(baseId(selectedId))}>Peek unfiltered</button>
-        ) : null}
-      </section>
+              </div>
+            ) : <p className="filter-rail__empty">Nothing filtered yet. Each moment shows up here as the film reaches it.</p>}
+          </section>
 
-      <WorkshopPanel />
-      </>
+          <section className="filter-rail__section">
+            <h4>Next</h4>
+            {items.length === 0 ? <p className="filter-rail__empty">Nothing else is filtered from here to the end.</p> : (
+              <>
+                <ul className="filter-rail__list">
+                  {items.map((it) => (
+                    <li key={`${it.kind}:${it.id}`}>
+                      <button
+                        type="button"
+                        data-testid="filter-rail-next"
+                        className={`filter-rail__row is-${kindOf(it.effect)}${selectedId === it.id ? ' is-selected' : ''}`}
+                        aria-pressed={selectedId === it.id}
+                        onClick={() => select(it)}
+                      >
+                        <Glyph effect={it.effect} />
+                        <span className="filter-rail__label">{rowLabel(it)}</span>
+                        <Effect effect={it.effect} />
+                        <span className="filter-rail__away">{awayText(it.in - position)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {selectedId == null && items.length ? (
+              <p className="filter-rail__note">Choose one to jump there and decide what happens to it.</p>
+            ) : null}
+            {selectedId != null ? (
+              <div className="filter-rail__peek">
+                <button
+                  type="button"
+                  className="filter-rail__btn"
+                  aria-label="Peek unfiltered"
+                  data-cf-hint={`Plays from ${PREVIEW_LEAD_SEC} s before, just once, as the film really is. Then the filter is back on.`}
+                  data-cf-hint-align="start"
+                  onClick={() => { previewStore.peek(baseId(selectedId)); logger.info('filter-rail.peek', { id: baseId(selectedId) }); }}
+                >
+                  Peek unfiltered
+                </button>
+                <span className="filter-rail__note">
+                  {selectedItem ? `${effectSentence(selectedItem.effect)} ` : ''}Peek plays this once without the filter.
+                </span>
+              </div>
+            ) : null}
+          </section>
+
+          <WorkshopPanel />
+        </div>
       )}
     </aside>
   );

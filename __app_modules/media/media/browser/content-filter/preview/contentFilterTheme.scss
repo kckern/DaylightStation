@@ -1,0 +1,99 @@
+/**
+ * The `content-filter` surround theme — the frame around the preview, named by
+ * `FILTER_SURROUND.definition.theme` and carried on the frame root as
+ * `.surround-frame--theme-content-filter`.
+ *
+ * The frame's own stylesheet is neutral layout; the concert-hall programme is the
+ * `classical` theme. This one is an edit bay: no plate (the inset that hangs it
+ * goes to zero, so the picture sits at the top), no curtain, no paper. A cool
+ * slate ground, the rail one step lighter, and the band left on the ground so the
+ * timeline reads as sitting under the picture rather than in a box of its own.
+ * Palette: `_palette.scss`.
+ */
+@use "./palette" as *;
+@use "../../theme/fonts";
+
+.surround-frame--theme-content-filter {
+  @include cf-tokens;
+  --placard-inset: 0px;
+  --band-overlap: 0px;
+  background: var(--cf-ground);
+  color: var(--cf-text);
+  font-family: var(--cf-font);
+
+  .surround-frame__stage {
+    background: var(--cf-ground);
+  }
+
+  .surround-frame__region {
+    background: var(--cf-panel);
+  }
+
+  .surround-frame__region--right {
+    box-shadow: inset 1px 0 0 var(--cf-line);
+  }
+
+  /* The band sits on the ground, and lets the timeline's hover card rise over
+     the picture's lower edge instead of being clipped at the band's top. */
+  .surround-frame__region--bottom {
+    background: var(--cf-ground);
+    overflow: visible;
+  }
+}
+
+/* HINTS — the short tooltip on every rail and timeline control that says what
+   it does. Pure CSS from `data-cf-hint`, so a control needs no wrapper; shown on
+   hover after a short beat (so passing over a row does not flash them) and at
+   once on keyboard focus. `data-cf-hint-align` = start | end pins it to that
+   edge for controls near a side; `data-cf-hint-side="below"` drops it under. */
+[data-cf-hint] {
+  position: relative;
+}
+
+[data-cf-hint]::after {
+  content: attr(data-cf-hint);
+  position: absolute;
+  z-index: 40;
+  bottom: calc(100% + 0.5em);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 15em;
+  padding: 0.4em 0.6em;
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-scrim);
+  color: var(--cf-text);
+  font-family: var(--cf-font);
+  font-size: 0.85em;
+  font-weight: 400;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 6px 18px var(--cf-shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+[data-cf-hint]:hover::after,
+[data-cf-hint]:focus-visible::after {
+  opacity: 1;
+}
+
+/* The beat applies on the way IN only; a hint leaves as soon as the pointer does. */
+[data-cf-hint]:hover::after {
+  transition-delay: 400ms;
+}
+
+[data-cf-hint]:focus-visible::after {
+  transition-delay: 0ms;
+}
+
+[data-cf-hint-align="start"]::after { left: 0; transform: none; }
+[data-cf-hint-align="end"]::after { left: auto; right: 0; transform: none; }
+[data-cf-hint-side="below"]::after { bottom: auto; top: calc(100% + 0.5em); }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-cf-hint]::after { transition: none; }
+}

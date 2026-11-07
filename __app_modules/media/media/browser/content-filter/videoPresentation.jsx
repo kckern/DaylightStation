@@ -13,6 +13,8 @@ import { useSurroundOverride } from "../../../../../__capabilities/playback/brow
 export const FILTER_SURROUND = Object.freeze({
   id: 'content-filter',
   definition: {
+    // Its own look (preview/contentFilterTheme.scss), not the concert-hall programme.
+    theme: 'content-filter',
     regions: {
       right: { module: 'content-filter-rail', width: '28%' },
       bottom: { module: 'content-filter-timeline' },

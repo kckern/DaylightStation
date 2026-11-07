@@ -20,40 +20,19 @@
    that draw the bond read one value and neither can drift from the other. */
 @use "./tokens" as *;
 
+/* ==========================================================================
+   THEMES. The frame's LAYOUT is below, unthemed. Its LOOK is a theme, named by
+   the definition (`definition.theme`) and carried on the root as
+   `surround-frame--theme-<name>` + `data-surround-theme`. A definition that
+   names none gets `classical` — the concert-hall programme every rule marked
+   `:where(.surround-frame--theme-classical)` paints — so every classical and
+   station surround, and the school's lesson and reading frames, are unchanged.
+   Classical rules are wrapped in `:where()` so they keep EXACTLY the
+   specificity they had when they were the base: nothing that overrode them
+   before has to change. Other themes live with their hosts (e.g.
+   `content-filter/preview/contentFilterTheme.scss`).
+   ========================================================================== */
 .surround-frame {
-  --hall-ink: #{$hall-ink};
-  --programme: #efe6d2;
-  --programme-edge: #ddd0b4;
-  --velvet: #{$velvet};
-  --brass: #c79a3e;
-  --brass-lit: #f6e3a0;
-  --ink: #2a1d07;
-  --ink-soft: #6b6152;
-
-  /* THE MAT. Every picture in the frame is mounted on this, and it is dark on
-     purpose (design wave 4): cream mats around a portrait and a city view read
-     as white borders on a dark wall — the brightest, most distracting marks on
-     a screen whose subject is the video. Near-black warm brown sits quietly on
-     the maroon rail and still separates a lit picture from the ground, which is
-     the only job a mat has here. `--mat-edge` is the 1px definition line, dark
-     as well, so an image never bleeds into the panel behind it.
-     `--programme` survives untouched — it is the programme STOCK (the panels
-     themselves), not the mats. */
-  --mat: #{$mat};
-  --mat-edge: rgba(8, 5, 5, 0.9);
-
-  --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
-  --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
-  /* THE ANNOTATION VOICE (design wave 6). A deliberate BREAK from the two
-     Garamonds: a translation under a segment heading, or under the listening
-     band's now-header, is the editor speaking, not the programme. In an all-
-     serif frame the only way to say "this line is a gloss, not more programme"
-     is to change the face — a smaller, greyer Garamond just reads as quieter
-     Garamond. Condensed first because a gloss lives in a narrow column (a
-     segment on the rail is a few hundred pixels wide at most); the system
-     sans is the fallback everywhere it is not installed, and the kiosk has one. */
-  --surround-annotation: "Roboto Condensed", "Helvetica Neue Condensed", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
-
   /* How far the video's top edge sits below the top of the main column — i.e.
      the strip of hall the plate hangs on.
      Wave 5 raised it 3.4rem -> 4.2rem for a straddle that put the plate a
@@ -101,16 +80,60 @@
      frame rendered without that JS. */
   --enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  /* Low-contrast paper fibre for the programme panels — no asset, same trick as
-     ArtMode's mat. Kept faint: this is stock, not texture for its own sake. */
-  --programme-fibre: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
-
   position: relative;
   display: flex;
   flex-direction: row;
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* THE NEUTRAL GROUND. The frame itself has no look: a theme (below, and in
+     each host's own theme sheet) paints it. Unthemed, it is a plain dark room
+     in the system sans, so no surround inherits the concert hall by accident. */
+  background: #000;
+  color: #ececec;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+
+/* The classical theme's tokens and ground: the darkened auditorium. */
+.surround-frame:where(.surround-frame--theme-classical) {
+  --hall-ink: #{$hall-ink};
+  --programme: #efe6d2;
+  --programme-edge: #ddd0b4;
+  --velvet: #{$velvet};
+  --brass: #c79a3e;
+  --brass-lit: #f6e3a0;
+  --ink: #2a1d07;
+  --ink-soft: #6b6152;
+
+  /* THE MAT. Every picture in the frame is mounted on this, and it is dark on
+     purpose (design wave 4): cream mats around a portrait and a city view read
+     as white borders on a dark wall — the brightest, most distracting marks on
+     a screen whose subject is the video. Near-black warm brown sits quietly on
+     the maroon rail and still separates a lit picture from the ground, which is
+     the only job a mat has here. `--mat-edge` is the 1px definition line, dark
+     as well, so an image never bleeds into the panel behind it.
+     `--programme` survives untouched — it is the programme STOCK (the panels
+     themselves), not the mats. */
+  --mat: #{$mat};
+  --mat-edge: rgba(8, 5, 5, 0.9);
+
+  --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
+  --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
+  /* THE ANNOTATION VOICE (design wave 6). A deliberate BREAK from the two
+     Garamonds: a translation under a segment heading, or under the listening
+     band's now-header, is the editor speaking, not the programme. In an all-
+     serif frame the only way to say "this line is a gloss, not more programme"
+     is to change the face — a smaller, greyer Garamond just reads as quieter
+     Garamond. Condensed first because a gloss lives in a narrow column (a
+     segment on the rail is a few hundred pixels wide at most); the system
+     sans is the fallback everywhere it is not installed, and the kiosk has one. */
+  --surround-annotation: "Roboto Condensed", "Helvetica Neue Condensed", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+
+  /* Low-contrast paper fibre for the programme panels — no asset, same trick as
+     ArtMode's mat. Kept faint: this is stock, not texture for its own sake. */
+  --programme-fibre: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+
   background: var(--hall-ink);
   color: var(--ink);
   font-family: var(--surround-body);
@@ -159,6 +182,9 @@
   justify-content: center;
   overflow: hidden;
 
+}
+
+:where(.surround-frame--theme-classical) .surround-frame__stage {
   /* THE HALL WEARS VELVET (design wave 5). Every pixel of this box that the
      video does not cover — the strip above it that the placard hangs on, and
      the letterbox slack beside it on a screen too narrow for a full-width 16:9
@@ -212,7 +238,8 @@
    edge is real estate a viewer taps.
    IT ONLY EXISTS WHEN THE FRAME IS ON: the inactive shell has no class and
    generates no box, so this rule matches nothing there. */
-.surround-frame__stage::after {
+/* Classical theme only. */
+:where(.surround-frame--theme-classical) .surround-frame__stage::after {
   content: "";
   position: absolute;
   top: var(--placard-inset);
@@ -312,7 +339,8 @@
 
 /* The soft join: the dark band fading upwards onto the video's last pixels.
    Sits above the band's top edge, over the video, and is pure decoration. */
-.surround-frame__footer::before {
+/* Classical theme only. */
+:where(.surround-frame--theme-classical) .surround-frame__footer::before {
   content: "";
   position: absolute;
   left: 0;
@@ -347,8 +375,11 @@
      not die on an inert nameplate: this layer is see-through to input, not
      just to light. */
   pointer-events: none;
-  /* It sits ON the video, so it casts: a tight contact shadow plus a wide soft
-     one. This is the one element in the frame allowed a drop shadow. */
+}
+
+/* Classical theme: it sits ON the video, so it casts — a tight contact shadow
+   plus a wide soft one. The one element in the frame allowed a drop shadow. */
+:where(.surround-frame--theme-classical) .surround-frame__header {
   box-shadow:
     0 2px 6px rgba(0, 0, 0, 0.55),
     0 14px 30px -10px rgba(0, 0, 0, 0.85);
@@ -393,6 +424,10 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+/* Classical theme: programme stock. */
+:where(.surround-frame--theme-classical) .surround-frame__region {
   background-color: var(--programme);
   background-image: var(--programme-fibre);
   background-size: 180px 180px;
@@ -404,6 +439,9 @@
    only show as a paper hairline around it. */
 .surround-frame__region--top {
   flex: 0 0 auto;
+}
+
+:where(.surround-frame--theme-classical) .surround-frame__region--top {
   background-color: transparent;
   background-image: none;
   box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.16);
@@ -426,7 +464,10 @@
     flex: 1 1 auto;
     min-height: 0;
   }
+}
 
+/* Classical theme: the band's stone and the bond's tokens. */
+:where(.surround-frame--theme-classical) .surround-frame__region--bottom {
   /* The work-in-time band is part of the darkened house, not the programme:
      near-black stone with the text in parchment. Re-mapping the frame tokens
      HERE restyles SegmentMap and CueTicker without touching either module —
@@ -489,7 +530,11 @@
      the middle of the rail with dead ground beneath it. */
   display: flex;
   flex-direction: column;
+}
 
+/* Classical theme: the rail's oxblood stock (programme and lyric alike). */
+:where(.surround-frame--theme-classical) .surround-frame__region--right,
+:where(.surround-frame--theme-classical) .surround-frame__region--lyric {
   --ink: #e9dfc8;
   --ink-soft: #a89a80;
   --programme-edge: rgba(233, 223, 200, 0.26);
@@ -505,9 +550,12 @@
 
 /* An unresolved module leaves paper, not a hole — the frame stays composed. */
 .surround-frame__region--empty {
+  opacity: 0.55;
+}
+
+:where(.surround-frame--theme-classical) .surround-frame__region--empty {
   background-image: none;
   background-color: var(--programme);
-  opacity: 0.55;
 }
 
 /* ---------------------------------------------------------------------------
