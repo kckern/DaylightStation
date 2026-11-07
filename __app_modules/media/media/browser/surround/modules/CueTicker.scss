@@ -36,8 +36,8 @@
  * a single source of truth with the JS choreography.
  */
 
-/* The band's shared literals - see `_tokens.scss` and `SegmentMap.scss`. */
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+/* The band's shared literals - see `../themes/_classical-tokens.scss` and `SegmentMap.scss`. */
+@use "../themes/classical-tokens" as *;
 
 .surround-cue-ticker {
   position: relative;

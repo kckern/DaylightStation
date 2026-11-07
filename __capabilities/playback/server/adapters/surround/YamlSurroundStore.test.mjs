@@ -1540,6 +1540,22 @@ describe('YamlSurroundStore — the band’s fields (design wave 7)', () => {
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:663134', '').definition.band).toBeUndefined();
   });
+
+  // THE LOOK IS AUTHORED, NOT DEFAULTED. The frame is neutral unless a
+  // definition names a theme; the concert-hall definitions name `classical`.
+  // TO GO RED: drop `theme` from the projection, or default it in the store.
+  it('carries an authored definition.theme', () => {
+    write('_surrounds/concert-hall.yml',
+      'id: concert-hall\ntheme: classical\nregions:\n  right: { width: 20%, module: composer-card }\n'
+      + 'collapse: { footerFloor: 90 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').definition.theme).toBe('classical');
+  });
+
+  it('leaves definition.theme absent when unauthored — the frame defaults to neutral', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect('theme' in store.lookup('plex:663134', '').definition).toBe(false);
+  });
 });
 
 /**

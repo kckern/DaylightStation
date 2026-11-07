@@ -478,6 +478,8 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/content-catalog/browser/search-status.mjs': null,
   '__capabilities/screen-host/browser/menu-context.mjs': null,
   '__app_modules/media/media/browser/surround-host.mjs': null,
+  // The opt-in `classical` surround theme (concert-hall look); the capability frame is neutral.
+  '__app_modules/media/media/browser/surround-classical.mjs': null,
   '__capabilities/content-catalog/browser/picker-controller.mjs': null,
   '__capabilities/content-catalog/browser/source-labels.mjs': null,
   '__capabilities/playback/browser/surround-frame.mjs': null,

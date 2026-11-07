@@ -14,7 +14,7 @@
 // `--label-floor`, which is an ANGULAR measurement (see `_tokens.scss`) and so
 // holds its apparent size across the 960 living room and the 1280 office alike.
 
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../../../../../media/media/browser/surround/themes/classical-tokens" as *;
 
 .lesson-score {
   display: inline-flex;

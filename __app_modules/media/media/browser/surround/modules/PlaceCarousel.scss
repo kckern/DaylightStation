@@ -21,7 +21,7 @@
  * and an engraving can sit on. One mat, one box, one dissolve.
  */
 
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../themes/classical-tokens" as *;
 
 .surround-place-carousel {
   height: 100%;

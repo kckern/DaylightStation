@@ -51,6 +51,11 @@ import { useMediaClockState } from "../../../../../__capabilities/playback/brows
 // concert-hall chrome into a school bundle for nothing is the dependency this
 // feature keeps out.
 import "./surround/registerReadingSurround.js";
+// The frame is neutral; this screen wears the concert-hall look its modules are
+// drawn against (mahogany band, programme ink), so it names the `classical`
+// theme and loads its stylesheet. That is a stylesheet, not the classical
+// modules — `Surround/builtins.js` stays out of the school bundle.
+import { CLASSICAL_SURROUND_THEME } from "../../../../media/media/browser/surround-classical.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import "./ReadingSessionScreen.scss";
 
@@ -85,6 +90,7 @@ function cueTone(tone) {
  * that was decoration.
  */
 const READING_SURROUND_DEFINITION = Object.freeze({
+  theme: CLASSICAL_SURROUND_THEME,
   regions: { right: { module: 'reading-credit', side: 'left', width: '18%' } },
 });
 

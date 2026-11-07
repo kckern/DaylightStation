@@ -23,7 +23,7 @@
  * the same literal fallback its siblings carry.
  */
 
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../themes/classical-tokens" as *;
 
 .surround-script-rail {
   display: flex;
