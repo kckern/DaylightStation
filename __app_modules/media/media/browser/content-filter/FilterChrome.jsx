@@ -10,15 +10,14 @@ const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }
  * (spec §2: ops:docs/superpowers/specs/2026-11-06-content-filter-surround-design.md).
  *
  * - FilterBumper: ~4 s over the opening, logo + "Edited for content" + summary.
- * - FilterBadge: small shield bottom-right, ~40% opacity; brightens briefly each
- *   time a cue fires. Solid = certified, outline = provisional, crossed = filter
+ * - FilterBadge: small shield bottom-right, ~40% opacity; glows gold while a filter
+ *   effect is active. Solid = certified, outline = provisional, crossed = filter
  *   data failed to load (shown so nobody is reassured by an absent filter).
  *
- * Display-only in this slice: the badge takes no focus and no pointer events, so
- * D-pad navigation is unchanged. Clicking it to open the preview is slice 3.
+ * Mouse-only: the badge is never focusable (tabIndex -1, no key handler) so the TV
+ * remote cannot open it; with `onOpen` it takes pointer events and click opens the preview.
  */
 const FADE_MS = 300;
-const PULSE_MS = 600;
 const SHIELD = 'M12 2 4 5v6c0 5.2 3.4 9.4 8 11 4.6-1.6 8-5.8 8-11V5l-8-3z';
 
 export function FilterBumper({ summary, art, theme = {} }) {
@@ -47,33 +46,40 @@ export function FilterBumper({ summary, art, theme = {} }) {
   );
 }
 
-export function FilterBadge({ state, fireCount }) {
-  const [pulse, setPulse] = useState(false);
-  const last = useRef(fireCount);
+export function FilterBadge({ state, active = false, onOpen }) {
+  const prevActive = useRef(false);
   useEffect(() => {
-    if (fireCount === last.current) return undefined;
-    last.current = fireCount;
-    logger().sampled?.('content-filter.badge.pulse', { fireCount, state }, { maxPerMinute: 10 });
-    setPulse(true);
-    const id = setTimeout(() => setPulse(false), PULSE_MS);
-    return () => clearTimeout(id);
-  }, [fireCount]);
+    if (active && !prevActive.current) {
+      logger().sampled?.('content-filter.badge.active', { state }, { maxPerMinute: 10 });
+    }
+    prevActive.current = active;
+  }, [active, state]);
 
   const solid = state === 'certified';
+  const ink = active ? '#ffd54a' : '#fff';
+  const clickable = typeof onOpen === 'function';
+  const handleClick = clickable ? (e) => { e.stopPropagation(); onOpen(); } : undefined;
   return (
     <div
       data-filter-badge={state}
-      data-pulse={pulse ? '1' : '0'}
-      aria-hidden="true"
+      data-active={active ? '1' : undefined}
+      aria-hidden={clickable ? undefined : 'true'}
+      aria-label={clickable ? 'Content filter preview' : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? -1 : undefined}
+      onClick={handleClick}
       style={{
-        position: 'absolute', right: '2.5%', bottom: '4%', width: 'clamp(22px, 2.2vw, 44px)',
-        pointerEvents: 'none', opacity: pulse ? 0.95 : 0.4, transition: 'opacity 250ms ease',
-        filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.7))',
+        position: 'absolute', right: '2.5%', bottom: '4%', width: 'clamp(16px, 1.5vw, 30px)',
+        pointerEvents: clickable ? 'auto' : 'none', cursor: clickable ? 'pointer' : undefined,
+        opacity: active ? 1 : 0.4, transition: 'opacity 250ms ease, filter 250ms ease',
+        filter: active
+          ? 'drop-shadow(0 0 6px rgba(255,213,74,0.9))'
+          : 'drop-shadow(0 1px 3px rgba(0,0,0,0.7))',
       }}
     >
       <svg viewBox="0 0 24 24" width="100%" height="100%">
-        <path d={SHIELD} fill={solid ? '#fff' : 'none'} stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" />
-        {state === 'failed' && <line x1="4" y1="4" x2="20" y2="20" stroke="#fff" strokeWidth="2" strokeLinecap="round" />}
+        <path d={SHIELD} fill={solid ? ink : 'none'} stroke={ink} strokeWidth="1.6" strokeLinejoin="round" />
+        {state === 'failed' && <line x1="4" y1="4" x2="20" y2="20" stroke={ink} strokeWidth="2" strokeLinecap="round" />}
       </svg>
     </div>
   );
@@ -86,5 +92,6 @@ FilterBumper.propTypes = {
 };
 FilterBadge.propTypes = {
   state: PropTypes.oneOf(['certified', 'provisional', 'failed']).isRequired,
-  fireCount: PropTypes.number,
+  active: PropTypes.bool,
+  onOpen: PropTypes.func,
 };

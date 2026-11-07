@@ -65,8 +65,30 @@ describe('content-filter scenes routes', () => {
     expect(override.sync.part).toBe('9');
   });
 
+  test('rejects a cue or scene id that is not clean (e.g. a measured va123#0) with 400', async () => {
+    expect((await request(app).put('/cf/77/cues/va123%230').send({ effect: 'mute' })).status).toBe(400);
+    expect((await request(app).put('/cf/77/scenes/sc-va1%230').send({ effect: 'off' })).status).toBe(400);
+    expect((await request(app).post('/cf/77/scenes/sc-va1%230/card').send({})).status).toBe(400);
+  });
+
   test('rejects a bad effect and an unknown scene', async () => {
     expect((await request(app).put('/cf/77/scenes/sc-va1').send({ effect: 'explode' })).status).toBe(400);
     expect((await request(app).put('/cf/77/scenes/sc-nope').send({ effect: 'off' })).status).toBe(404);
+  });
+  test('redrafts one scene card, 404 for an unknown scene', async () => {
+    const ok = await request(app).post('/cf/77/scenes/sc-va1/card').send({});
+    expect(ok.status).toBe(200);
+    expect(ok.body.card.text).toBe('They get away.');
+    expect((await request(app).post('/cf/77/scenes/sc-nope/card').send({})).status).toBe(404);
+  });
+
+  test('rules a cue: 200, 400 on a bad effect, 404 unknown', async () => {
+    const ok = await request(app).put('/cf/77/cues/va1').send({ effect: 'bleep' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.ruling).toEqual({ effect: 'bleep' });
+    const override = yaml.load(readFileSync(path.join(householdDir, 'content-filter/overrides/77.yml'), 'utf8'));
+    expect(override.cueOverrides.va1).toEqual({ effect: 'bleep' });
+    expect((await request(app).put('/cf/77/cues/va1').send({ effect: 'explode' })).status).toBe(400);
+    expect((await request(app).put('/cf/77/cues/zzz').send({ effect: 'mute' })).status).toBe(404);
   });
 });

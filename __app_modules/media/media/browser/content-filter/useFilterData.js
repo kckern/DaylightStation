@@ -2,7 +2,7 @@
  * useFilterData — fetch the content-filter cascade (edl + profile + override) for
  * a title from /api/v1/content-filter/:ratingKey.
  *
- * Returns `{ data, status }`, status one of:
+ * Returns `{ data, status, reload }`, status one of:
  *   - idle     filtering disabled or no content id
  *   - loading  a fetch (or its one retry) is in flight; data is null, so the
  *              previous title's EDL never stays live while the next one loads
@@ -10,8 +10,13 @@
  *   - none     404: the title has no filter data (not a failure)
  *   - failed   a network error or 5xx, retried once after retryDelayMs, failed
  *              again; logged as `content-filter.load.failed`
+ *
+ * `reload()` refetches the same title WITHOUT clearing `data` first, so filtering
+ * keeps running while a preview edit is re-read; it resolves once the new data is
+ * set (or, on failure, once the current data has been kept and the failure logged
+ * as `content-filter.reload.failed`). It never rejects.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 
 let _logger;
@@ -19,11 +24,15 @@ const logger = () => (_logger ||= getChildLogger({ component: 'content-filter-da
 
 export function useFilterData(contentId, { profile = 'family', enabled = true, retryDelayMs = 2000 } = {}) {
   const [state, setState] = useState({ data: null, status: 'idle' });
+  // The title the current effect loaded; a reload that lands after the title
+  // changed is dropped.
+  const keyRef = useRef(null);
 
   useEffect(() => {
     if (!enabled || !contentId) { setState({ data: null, status: 'idle' }); return undefined; }
     const ratingKey = String(contentId).replace(/^plex:/, '');
-    const url = `/api/v1/content-filter/${ratingKey}?profile=${encodeURIComponent(profile)}`;
+    const url = filterUrl(ratingKey, profile);
+    keyRef.current = url;
     let cancelled = false;
     let timer = null;
     setState({ data: null, status: 'loading' });
@@ -56,8 +65,30 @@ export function useFilterData(contentId, { profile = 'family', enabled = true, r
       });
 
     attempt(0);
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    return () => { cancelled = true; keyRef.current = null; if (timer) clearTimeout(timer); };
   }, [contentId, profile, enabled, retryDelayMs]);
 
-  return state;
+  const reload = useCallback(async () => {
+    const url = keyRef.current;
+    if (!url) return;
+    const ratingKey = String(contentId).replace(/^plex:/, '');
+    try {
+      const r = await fetch(url);
+      if (keyRef.current !== url) return;
+      if (r.status === 404) { setState({ data: null, status: 'none' }); return; }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      if (keyRef.current !== url) return;
+      setState({ data: d, status: 'ready' });
+      logger().info?.('content-filter.reloaded', { ratingKey, cues: d?.edl?.cues?.length || 0 });
+    } catch (e) {
+      logger().warn?.('content-filter.reload.failed', { ratingKey, error: e?.message });
+    }
+  }, [contentId]);
+
+  return { ...state, reload };
+}
+
+function filterUrl(ratingKey, profile) {
+  return `/api/v1/content-filter/${ratingKey}?profile=${encodeURIComponent(profile)}`;
 }

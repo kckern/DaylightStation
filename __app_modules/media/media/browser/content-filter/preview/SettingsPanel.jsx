@@ -1,0 +1,76 @@
+/**
+ * SettingsPanel — four plain choices for what the filter does (language, violence,
+ * nudity, sexual content), applied to this film or everywhere. Reads the merged
+ * profile the player received; each choice writes all four settings at once, then
+ * refreshes the player's filter. Segmented buttons, mouse-only.
+ */
+import React, { useMemo, useState } from 'react';
+import { useFilterPreview } from './previewStore.js';
+import { useFilterWrite } from './useFilterWrite.js';
+import { settingsFromProfile } from '../../../../../../shared/contracts/content-filter/filterSettings.mjs';
+import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
+import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
+
+const PROFILE_NAME = 'family';
+const LEVELS = [['off', 'Off'], ['blur', 'Blur'], ['blackout', 'Blackout'], ['skip', 'Skip']];
+const ROWS = [
+  { key: 'language', label: 'Language', options: [['mute', 'Mute'], ['bleep', 'Bleep'], ['off', 'Off']] },
+  { key: 'violence', label: 'Violence', options: LEVELS },
+  { key: 'nudity', label: 'Nudity', options: LEVELS },
+  { key: 'sexual', label: 'Sexual content', options: LEVELS },
+];
+
+export default function SettingsPanel() {
+  const snap = useFilterPreview();
+  const logger = useMemo(() => getChildLogger({ app: 'content-filter', component: 'settings-panel' }), []);
+  const { error, busy, write } = useFilterWrite(logger);
+  const [scope, setScope] = useState('film'); // 'film' | 'everywhere'
+  const rk = snap.ratingKey;
+  if (rk == null) return null;
+
+  const current = settingsFromProfile(snap.profile);
+  const hasFilmSettings = !!snap.override?.profilePatch;
+  const base = `/api/v1/content-filter`;
+
+  const choose = (key, value) => {
+    if (current[key] === value) return;
+    const settings = { [key]: value }; // only the change; the server merges over its own current values
+    const url = scope === 'film' ? `${base}/${encodeURIComponent(rk)}/settings` : `${base}/profiles/${PROFILE_NAME}/settings`;
+    return write(
+      () => DaylightAPI(url, { settings }, 'PUT'),
+      'content-filter.setting.changed', { ratingKey: rk, scope, setting: key, value },
+    );
+  };
+  const reset = () => write(
+    () => DaylightAPI(`${base}/${encodeURIComponent(rk)}/settings`, {}, 'DELETE'),
+    'content-filter.setting.changed', { ratingKey: rk, scope: 'film', setting: 'all', value: 'reset' },
+  );
+
+  return (
+    <div data-testid="settings-panel">
+      <section className="filter-rail__section">
+        <h4>Apply to</h4>
+        <div className="filter-rail__buttons">
+          {[['film', 'This film'], ['everywhere', 'Everywhere']].map(([v, label]) => (
+            <button key={v} type="button" aria-pressed={scope === v} className={`filter-rail__btn${scope === v ? ' is-selected' : ''}`} onClick={() => setScope(v)}>{label}</button>
+          ))}
+        </div>
+        {scope === 'everywhere' && hasFilmSettings ? <div className="filter-rail__empty">This film has its own settings, which win here.</div> : null}
+      </section>
+      {ROWS.map((row) => (
+        <section key={row.key} className="filter-rail__section">
+          <h4>{row.label}</h4>
+          <div className="filter-rail__buttons" role="group" aria-label={row.label}>
+            {row.options.map(([v, label]) => (
+              <button key={v} type="button" aria-pressed={current[row.key] === v} className={`filter-rail__btn${current[row.key] === v ? ' is-selected' : ''}`} disabled={busy} onClick={() => choose(row.key, v)}>{label}</button>
+            ))}
+          </div>
+        </section>
+      ))}
+      <section className="filter-rail__section">
+        <button type="button" className="filter-rail__btn" disabled={busy || !hasFilmSettings} onClick={reset}>Reset this film</button>
+        {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}
+      </section>
+    </div>
+  );
+}

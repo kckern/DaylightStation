@@ -8,10 +8,12 @@
  * child ever sees. Design: ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md
  */
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
+import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, LEVELS, LANGUAGE_VALUES } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 export const CARD_MAX_CHARS = 90;
 const EFFECTS = new Set(['off', 'blackout', 'skip']);
+const CUE_EFFECTS = new Set(['mute', 'bleep', 'blur', 'full-blur', 'skip']);
 
 export const CARD_SYSTEM = `You write the one-line title card a family movie filter shows a child in place of a scene it hid or skipped.
 Rules: one sentence, at most ${CARD_MAX_CHARS} characters, plain words a 7-year-old can read.
@@ -46,7 +48,63 @@ export class ContentFilterScenes {
     const refined = ref ? await this.#repo.getRefinedEdl({ workId: ref.workId, tagSetId: ref.tagSetId }) : null;
     if (!refined) return null;
     const [profile, override] = await Promise.all([this.#repo.getProfile(profileName), this.#repo.getOverride(ratingKey)]);
-    return { ref, refined, profile, override: override || {} };
+    return { ref, refined, profile: mergeProfilePatch(profile, override?.profilePatch), override: override || {} };
+  }
+
+  /** Validate a (partial) settings object; throws on anything outside the vocabulary. Returns only known keys. */
+  static #checkSettings(settings) {
+    if (!settings || typeof settings !== 'object') throw new Error('settings required');
+    const out = {};
+    if ('language' in settings) {
+      if (!LANGUAGE_VALUES.includes(settings.language)) throw new Error(`unknown language setting: ${settings.language}`);
+      out.language = settings.language;
+    }
+    for (const k of ['violence', 'nudity', 'sexual']) {
+      if (!(k in settings)) continue;
+      if (!LEVELS.includes(settings[k])) throw new Error(`unknown ${k} setting: ${settings[k]}`);
+      out[k] = settings[k];
+    }
+    return out;
+  }
+
+  /** This film only: store the settings as `override.profilePatch`. */
+  async setTitleSettings({ ratingKey, settings, profileName = 'family' }) {
+    const partial = ContentFilterScenes.#checkSettings(settings);
+    return this.#serial(ratingKey, async () => {
+      const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
+      // Partial settings merge over this film's current effective settings.
+      const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
+      const profilePatch = profilePatchFromSettings({ ...settingsFromProfile(effective), ...partial });
+      await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
+      this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
+      return { profilePatch };
+    });
+  }
+
+  /** Back to the household settings for this film. */
+  async clearTitleSettings({ ratingKey }) {
+    return this.#serial(ratingKey, async () => {
+      const override = await this.#repo.getOverride(ratingKey);
+      if (!override || !('profilePatch' in override)) return { cleared: false };
+      const { profilePatch: _gone, ...rest } = override;
+      await this.#repo.saveOverride(ratingKey, rest);
+      this.#logger.info?.('content-filter.settings.title-cleared', { ratingKey });
+      return { cleared: true };
+    });
+  }
+
+  /** Everywhere: rewrite only the keys the settings own in the household profile. @returns null if no such profile */
+  async setProfileSettings({ profileName, settings }) {
+    const partial = ContentFilterScenes.#checkSettings(settings);
+    return this.#serial(`profile:${profileName}`, async () => {
+      const profile = await this.#repo.getProfile(profileName);
+      if (!profile) return null;
+      // Partial settings merge over the stored (unmerged) household profile, never a film's patch.
+      const next = applySettingsToProfile(profile, { ...settingsFromProfile(profile), ...partial });
+      await this.#repo.saveProfile(profileName, next);
+      this.#logger.info?.('content-filter.settings.profile', { profile: profileName, settings });
+      return { profile: next };
+    });
   }
 
   /** Titles with a refined filter, for the Admin index. */
@@ -104,31 +162,16 @@ export class ContentFilterScenes {
     if (!t) return null;
     const trusted = trustedAxes(t.refined);
     const ov = t.override.sceneOverrides || {};
-    const transcript = t.override.sync ? await this.#repo.getTranscript(ratingKey, t.override.sync.part) : null;
-    const lines = (a, b) => {
-      if (!transcript || !t.override.sync) return '';
-      const fa = mapTime(a, t.override.sync); const fb = mapTime(b, t.override.sync);
-      return transcript.segments.filter((s) => s.e >= fa && s.s <= fb).map((s) => String(s.text).trim()).join(' ');
-    };
-    const labels = new Map((t.refined.cues || []).map((c) => [c.id, c.label]));
+    const prompter = await this.#prompter(ratingKey, t);
     const at = this.#clock().toISOString().slice(0, 10);
     let drafted = 0;
     const scenes = [];
     for (const s of t.refined.scenes || []) {
       const wanted = all || sceneEffect(s, { profile: t.profile, sceneOverride: ov[s.id] || {}, trusted });
       if (!wanted || (s.card?.text && !force)) { scenes.push(s); continue; }
-      const prompt = [
-        `Movie: ${t.refined.title}${t.refined.year ? ` (${t.refined.year})` : ''}`,
-        `What the hidden scene contains (from content tags; do not repeat): ${s.cues.map((id) => labels.get(id)).filter(Boolean).join('; ')}`,
-        `Said just before: ${lines(s.in - 30, s.in) || '(nothing)'}`,
-        `Said during: ${lines(s.in, s.out) || '(nothing)'}`,
-        `Said just after: ${lines(s.out, s.out + 30) || '(nothing)'}`,
-      ].join('\n');
       let text;
       try {
-        text = await this.#ai.chat([{ role: 'system', content: CARD_SYSTEM }, { role: 'user', content: prompt }], {
-          maxTokens: 80, temperature: 0.3, usageTags: { app: 'media', feature: 'content-filter-cards' },
-        });
+        text = await this.#ask(prompter(s));
       } catch (error) {
         this.#logger.warn?.('content-filter.card.failed', { ratingKey, scene: s.id, error: error.message });
         scenes.push(s);
@@ -142,6 +185,73 @@ export class ContentFilterScenes {
     await this.#repo.saveRefinedEdl(t.ref, { ...t.refined, scenes });
     this.#logger.info?.('content-filter.card.drafted', { ratingKey, drafted, scenes: scenes.length });
     return { drafted, scenes: scenes.length };
+  }
+
+  /** Builds the card prompt for a scene: tag labels plus the dialogue around it. */
+  async #prompter(ratingKey, t) {
+    const transcript = t.override.sync ? await this.#repo.getTranscript(ratingKey, t.override.sync.part) : null;
+    const lines = (a, b) => {
+      if (!transcript || !t.override.sync) return '';
+      const fa = mapTime(a, t.override.sync); const fb = mapTime(b, t.override.sync);
+      return transcript.segments.filter((s) => s.e >= fa && s.s <= fb).map((s) => String(s.text).trim()).join(' ');
+    };
+    const labels = new Map((t.refined.cues || []).map((c) => [c.id, c.label]));
+    return (s) => [
+      `Movie: ${t.refined.title}${t.refined.year ? ` (${t.refined.year})` : ''}`,
+      `What the hidden scene contains (from content tags; do not repeat): ${s.cues.map((id) => labels.get(id)).filter(Boolean).join('; ')}`,
+      `Said just before: ${lines(s.in - 30, s.in) || '(nothing)'}`,
+      `Said during: ${lines(s.in, s.out) || '(nothing)'}`,
+      `Said just after: ${lines(s.out, s.out + 30) || '(nothing)'}`,
+    ].join('\n');
+  }
+
+  #ask(prompt) {
+    return this.#ai.chat([{ role: 'system', content: CARD_SYSTEM }, { role: 'user', content: prompt }], {
+      maxTokens: 80, temperature: 0.3, usageTags: { app: 'media', feature: 'content-filter-cards' },
+    });
+  }
+
+  /** Redraft the card for one scene (always). @returns {Promise<null|{ card: { text, at } }>} */
+  async draftCard(args) {
+    if (!this.#ai) throw new Error('No AI gateway configured for title cards');
+    return this.#serial(args.ratingKey, async () => {
+      const { ratingKey, sceneId, profileName = 'family' } = args;
+      const t = await this.#load(ratingKey, profileName);
+      const scene = t?.refined.scenes?.find((s) => s.id === sceneId);
+      if (!scene) return null;
+      const text = await this.#ask((await this.#prompter(ratingKey, t))(scene));
+      const clean = cleanCard(text);
+      if (!clean) throw new Error('the model returned an unusable card');
+      const card = { text: clean, at: this.#clock().toISOString().slice(0, 10) };
+      await this.#repo.saveRefinedEdl(t.ref, { ...t.refined, scenes: t.refined.scenes.map((x) => (x === scene ? { ...x, card } : x)) });
+      this.#logger.info?.('content-filter.card.drafted', { ratingKey, scene: sceneId, drafted: 1 });
+      return { card };
+    });
+  }
+
+  /** Rule one cue: effect off|mute|bleep|blur|full-blur|skip, 'profile' clears. */
+  async ruleCue(args) {
+    return this.#serial(args.ratingKey, async () => {
+      const { ratingKey, cueId, effect, disabled } = args;
+      const raw = await this.#repo.getEdl(ratingKey);
+      const ref = raw?.sourceRef;
+      const refined = ref ? await this.#repo.getRefinedEdl({ workId: ref.workId, tagSetId: ref.tagSetId }) : null;
+      if (!refined?.cues?.some((c) => c.id === cueId)) return null;
+      const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
+      const all = { ...(override.cueOverrides || {}) };
+      const next = { ...(all[cueId] || {}) };
+      if (effect !== undefined) {
+        if (effect === 'profile' || effect === null) { delete next.effect; delete next.disabled; }
+        else if (effect === 'off') { delete next.effect; next.disabled = true; }
+        else if (CUE_EFFECTS.has(effect)) { next.effect = effect; delete next.disabled; }
+        else throw new Error(`unknown cue effect: ${effect}`);
+      }
+      if (disabled !== undefined) { if (disabled) next.disabled = true; else delete next.disabled; }
+      if (Object.keys(next).length) all[cueId] = next; else delete all[cueId];
+      await this.#repo.saveOverride(ratingKey, { ...override, cueOverrides: all });
+      this.#logger.info?.('content-filter.cue.override', { ratingKey, cue: cueId, ruling: next });
+      return next;
+    });
   }
 
   /**

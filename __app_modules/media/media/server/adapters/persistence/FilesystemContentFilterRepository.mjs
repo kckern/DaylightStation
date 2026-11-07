@@ -66,6 +66,12 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
     return this.#readYaml(this.#householdDir, `content-filter/profiles/${profileName}.yml`);
   }
 
+  async saveProfile(profileName, profile) {
+    const name = String(profileName ?? '');
+    if (!/^[a-z0-9_-]+$/.test(name)) throw new Error('saveProfile needs a profile name of [a-z0-9_-]');
+    this.#writeYaml(this.#householdDir, `content-filter/profiles/${name}.yml`, profile);
+  }
+
   async getOverride(ratingKey) {
     return this.#readYaml(this.#householdDir, `content-filter/overrides/${ratingKey}.yml`);
   }

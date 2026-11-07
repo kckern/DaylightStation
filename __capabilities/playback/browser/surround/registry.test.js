@@ -121,10 +121,12 @@ describe('surround builtins', () => {
   // registered under a wrong name as long as the total is right, which is the
   // one failure a definition's `module:` reference cannot survive.
   it('declares the modules the frame resolves by name', async () => {
-    const { SURROUND_BUILTIN_MODULES } = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
+    const { SURROUND_BUILTIN_MODULES } = await import(
+      "../../../../__app_modules/media/media/browser/surround/builtins.js"
+    );
     expect([...SURROUND_BUILTIN_MODULES].sort())
       .toEqual([
-        'composer-card', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
+        'composer-card', 'content-filter-rail', 'content-filter-timeline', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
         'place-carousel', 'play-card', 'script-rail', 'segment-map', 'work-placard',
       ]);
   });

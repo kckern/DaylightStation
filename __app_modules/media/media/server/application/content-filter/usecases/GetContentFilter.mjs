@@ -5,6 +5,7 @@
  * there is no filter for the title, so optional policy is not loaded. When the
  * title's VidAngel tag set has a refined EDL, that one is served instead.
  */
+import { mergeProfilePatch } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { readiness } from '../readiness.mjs';
 
 export class GetContentFilter {
@@ -30,10 +31,11 @@ export class GetContentFilter {
       : null;
     const edl = refined || raw;
 
-    const [profile, override] = await Promise.all([
+    const [baseProfile, override] = await Promise.all([
       this.#repository.getProfile(profileName),
       this.#repository.getOverride(ratingKey),
     ]);
+    const profile = mergeProfilePatch(baseProfile, override?.profilePatch);
     return { edl, profile, override, certification: readiness(edl, profile) };
   }
 }
