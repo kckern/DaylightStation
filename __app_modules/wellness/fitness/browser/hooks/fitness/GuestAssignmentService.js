@@ -78,9 +78,67 @@ export class GuestAssignmentService {
     }
   }
 
+  /**
+   * Every rejected assignment is logged at warn, always. A silent rejection left
+   * a family re-picking a rider five times with nothing to show for it.
+   */
+  #reject(result, { deviceId = null, userId = null } = {}) {
+    try {
+      getLogger().warn('guest_assignment.rejected', {
+        code: result.code,
+        deviceId,
+        userId,
+        existingDeviceId: result.existingDeviceId || null,
+        message: result.message
+      });
+    } catch (_) { /* never throw from a log */ }
+    return result;
+  }
+
+  /**
+   * Whether a strap is sending right now, per the session's device manager:
+   * present and not marked inactive (DeviceManager.pruneStaleDevices stamps
+   * inactiveSince after the inactivity timeout and later deletes the device;
+   * "Remove user" deletes it at once). Null when liveness cannot be read —
+   * the caller then treats the strap as live, the old conservative behaviour.
+   */
+  #isDeviceLive(deviceId) {
+    const dm = this.session?.deviceManager;
+    if (!dm || typeof dm.getDevice !== 'function') return null;
+    const device = dm.getDevice(String(deviceId));
+    if (!device) return false;
+    return !device.inactiveSince;
+  }
+
+  /**
+   * Close a silent strap's stint for this member and drop its ledger entry, so
+   * he can be put on the strap he is actually wearing. The stint ends
+   * `dropped` at the strap's last packet, so attribution stops where the data
+   * stopped. Rings, beats and zones stay keyed by the member's id and carry on
+   * in the new strap's stint.
+   */
+  #releaseStaleEntry(deviceId, entry, { toDeviceId, now }) {
+    const session = this.session;
+    const occupantId = entry?.metadata?.profileId || entry?.occupantId || null;
+    const stint = session?.entityRegistry?.getByDevice?.(deviceId) || null;
+    const openStint = stint && stint.status === 'active' && stint.profileId === occupantId ? stint : null;
+    const entityId = openStint?.entityId || null;
+    const device = session?.deviceManager?.getDevice?.(String(deviceId)) || null;
+    const lastSeen = Number.isFinite(device?.lastSeen) ? device.lastSeen : null;
+    const endTime = lastSeen != null && lastSeen <= now ? lastSeen : now;
+    if (entityId && typeof session.endSessionEntity === 'function') {
+      session.endSessionEntity(entityId, { status: 'dropped', timestamp: endTime, reason: 'strap-silent-moved' });
+    }
+    session.userManager.assignGuest(deviceId, null);
+    this.#logEvent('STALE_ASSIGNMENT_RELEASED', { deviceId, occupantId, entityId, toDeviceId });
+    getLogger().info('guest_assignment.stale_entry_released', {
+      deviceId, userId: occupantId, entityId, toDeviceId, endTime
+    });
+  }
+
   assignGuest(deviceId, assignment) {
     if (deviceId == null) {
-      return { ok: false, code: 'invalid-device', message: 'Device id is required.' };
+      return this.#reject({ ok: false, code: 'invalid-device', message: 'Device id is required.' });
     }
 
     if (assignment == null) {
@@ -89,7 +147,7 @@ export class GuestAssignmentService {
 
     const validation = validateGuestAssignmentPayload(assignment);
     if (!validation.ok) {
-      return { ok: false, code: 'invalid-payload', message: validation.errors.join(' ') };
+      return this.#reject({ ok: false, code: 'invalid-payload', message: validation.errors.join(' ') }, { deviceId: String(deviceId) });
     }
 
     const { value } = validation;
@@ -98,28 +156,48 @@ export class GuestAssignmentService {
     const now = Date.now();
 
     if (!session?.userManager) {
-      return { ok: false, code: 'session-missing', message: 'User manager is not available.' };
+      return this.#reject({ ok: false, code: 'session-missing', message: 'User manager is not available.' }, { deviceId: key });
     }
 
-    // Validate one-device-per-user constraint
+    // One member, one SENDING strap. An entry naming the same person on another
+    // device blocks only while that strap is live. A strap that went silent
+    // (inactive, pruned, or removed from the sidebar) leaves a stale entry that
+    // nothing else clears — a member's own strap even survives orphan cleanup,
+    // because he owns it in config — and that entry used to reject every pick
+    // of him onto a spare strap (session fs_20261106173151). A stale entry is
+    // closed and removed here, then the pick proceeds. `allowWhileAssigned`
+    // (shareable identities: friends, generic guests) keeps its explicit
+    // multi-strap bypass for live entries — but never for a household member
+    // (occupantType 'member'): a member cannot be on two sending straps.
     const newProfileId = value.profileId || value.metadata?.profileId;
-    const allowMultiAssign = value.allowWhileAssigned || value.metadata?.allowWhileAssigned;
+    const isMemberPick = value.metadata?.occupantType === 'member';
+    const allowMultiAssign = !isMemberPick
+      && Boolean(value.allowWhileAssigned || value.metadata?.allowWhileAssigned);
 
-    if (newProfileId && this.ledger && !allowMultiAssign) {
+    if (newProfileId && this.ledger?.entries) {
+      const staleEntries = [];
       for (const [existingDeviceId, entry] of this.ledger.entries.entries()) {
         if (existingDeviceId === key) continue; // Skip current device (update scenario)
 
         const existingProfileId = entry?.metadata?.profileId || entry?.occupantId;
         const existingAllowMulti = entry?.allowWhileAssigned || entry?.metadata?.allowWhileAssigned;
+        if (existingProfileId !== newProfileId || existingAllowMulti) continue;
 
-        if (existingProfileId === newProfileId && !existingAllowMulti) {
-          return {
-            ok: false,
-            code: 'user-already-assigned',
-            message: `User ${value.name || newProfileId} is already assigned to device ${existingDeviceId}`
-          };
+        if (this.#isDeviceLive(existingDeviceId) === false) {
+          staleEntries.push([existingDeviceId, entry]);
+          continue;
         }
+        if (allowMultiAssign) continue;
+        return this.#reject({
+          ok: false,
+          code: 'user-already-assigned',
+          existingDeviceId,
+          message: `User ${value.name || newProfileId} is already assigned to device ${existingDeviceId}`
+        }, { deviceId: key, userId: newProfileId });
       }
+      staleEntries.forEach(([existingDeviceId, entry]) => {
+        this.#releaseStaleEntry(existingDeviceId, entry, { toDeviceId: key, now });
+      });
     }
 
     // Check for previous assignment on this device (Issue #4 remediation)
@@ -240,6 +318,9 @@ export class GuestAssignmentService {
       occupantName: value.name,
       entityId: entityId
     };
+    // A member's pick-time bypass is not a property of his ledger entry: stored,
+    // it would exempt the entry from the one-sending-strap guard forever.
+    if (isMemberPick) delete metadata.allowWhileAssigned;
 
     // Log warning if no profileId was provided (Issue #3 remediation)
     if (!value.profileId) {

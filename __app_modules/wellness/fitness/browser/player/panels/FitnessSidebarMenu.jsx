@@ -312,6 +312,8 @@ const FitnessSidebarMenu = ({
       source: option.source,
       baseUserName: baseName,
       occupantType,
+      // The candidate's returnee/shareable bypass must reach the service guard.
+      ...(option.allowWhileAssigned ? { allowWhileAssigned: true } : {}),
       ...(ageClass ? { ageClass } : {}),
       ...(zones ? { zones } : {})
     });

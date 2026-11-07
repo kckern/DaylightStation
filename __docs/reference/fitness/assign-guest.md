@@ -190,12 +190,46 @@ const handleAssignGuest = (option) => {
     candidateId: option.id,
     source: option.source,
     baseUserName: baseName,  // Preserves original owner
+    occupantType,            // 'member' for a household primary, else 'guest'
+    // The candidate's bypass reaches the service guard (it was dropped before 2026-11-06)
+    ...(option.allowWhileAssigned ? { allowWhileAssigned: true } : {}),
     ...(ageClass ? { ageClass } : {}),
     ...(zones ? { zones } : {})
   });
   onClose();
 };
 ```
+
+### 4a. The one-sending-strap guard and failed assignments
+
+`GuestAssignmentService.assignGuest` refuses a pick when the same person's
+ledger entry sits on another strap **that is still sending** — code
+`user-already-assigned`, with `existingDeviceId`. Liveness is the session's
+`DeviceManager`: the device is present and has no `inactiveSince` (set after
+`ant_devices.timeout.inactive`; "Ignore This Strap" deletes the device outright).
+
+A strap that has gone silent no longer holds its wearer. Before 2026-11-06
+nothing cleared such an entry — a member's own strap even survives
+`cleanupOrphanGuests`, because he owns it in config — so in session
+`fs_20261106173151` a rider whose strap died was refused five times on a spare.
+Now the guard **releases** the stale entry first: its open stint ends
+`dropped` (reason `strap-silent-moved`) at the strap's last packet, the ledger
+entry is removed (`userManager.assignGuest(id, null)`), journal
+`STALE_ASSIGNMENT_RELEASED` and log `guest_assignment.stale_entry_released`
+are written, then the pick proceeds and opens a new stint on the spare. Rings,
+beats and zones stay keyed by the user id, so his totals carry on.
+
+`allowWhileAssigned` (friends / generic guests flagged shareable) still lets a
+pick go through while the other entry is live — **except** for a household
+member (`occupantType: 'member'`): a member cannot be on two sending straps,
+and a member's ledger entry never stores the flag. When liveness cannot be read
+(no device manager) the guard keeps the old conservative behaviour and blocks.
+
+Every rejection is logged at warn as `guest_assignment.rejected`
+(`code`, `deviceId`, `userId`, `existingDeviceId`), and `FitnessContext`
+additionally logs `assign-guest-failed` and shows a warning toast in the
+shared overlay slot (`buildAssignFailureToast.js`) — the picker no longer
+closes silently on a refusal.
 
 ### 5. Assignment Metadata
 
@@ -322,6 +356,11 @@ When a guest is assigned:
 3. GovernanceEngine evaluates requirements using guest's zone data
 
 This means governance requirements are evaluated based on **who is currently assigned**, not the device's original owner.
+
+An **unassigned** strap (`device:<id>`) or a guest with no zone profile yet
+takes the household base zone ladder off its live heart rate, so it shows zone
+progress and can help satisfy a group challenge; as a non-subject it is never
+required or blamed. See unknown-hr-monitors.md § Things to Know.
 
 ---
 
@@ -485,9 +524,10 @@ This section documents the ideal flows and constraints for guest assignment stat
 │     - A device can only have one active assignment at a time       │
 │     - New assignment replaces previous assignment                   │
 │                                                                     │
-│  2. ONE DEVICE PER USER (default)                                  │
-│     - A user can only be assigned to one device at a time          │
-│     - Exception: allowWhileAssigned=true bypasses this             │
+│  2. ONE SENDING DEVICE PER USER (default)                          │
+│     - A user can only be assigned to one LIVE device at a time     │
+│     - A silent strap's entry is released, stint closed (§4a)       │
+│     - allowWhileAssigned=true bypasses, never for a member         │
 │                                                                     │
 │  3. BASE USER PRESERVATION                                          │
 │     - baseUserName stored with every assignment                    │

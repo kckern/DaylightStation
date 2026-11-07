@@ -73,7 +73,10 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
 
   // Resolve zone progress by STABLE ID first. Looking this up by display name
   // is what broke the sidebar sort on 2026-07-21 — see zoneProgressIndex.js.
-  const progressEntry = zoneProgressIndex
+  // A non-subject with no vitals entry (an unassigned strap) carries a
+  // base-ladder progress from ParticipantRoster instead — see
+  // ParticipantRoster._buildRosterEntry, zoneProgressFallback.
+  const progressEntry = (zoneProgressIndex
     ? lookupZoneProgress(zoneProgressIndex, {
         profileId: rosterEntry.profileId || id,
         id,
@@ -81,7 +84,7 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
         displayLabel,
         deviceId: rosterEntry.hrDeviceId
       })
-    : null;
+    : null) || rosterEntry.zoneProgressFallback || null;
 
   return {
     id,

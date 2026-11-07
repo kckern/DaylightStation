@@ -25,6 +25,7 @@ import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessB
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
 import { buildRiderToast } from "../player/overlays/buildRiderToast.js";
+import { buildAssignFailureToast } from "../player/overlays/buildAssignFailureToast.js";
 import { lookupUserName } from "../player/overlays/lookupUserName.js";
 import { createChallengeToastTracker, nextChallengeToast } from "../player/overlays/challengeToastTracker.js";
 import { buildChallengeToast } from "../player/overlays/buildChallengeToast.js";
@@ -928,8 +929,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const assignGuestToDevice = React.useCallback((deviceId, assignment) => {
     if (!guestAssignmentServiceRef.current) return;
     const result = guestAssignmentServiceRef.current.assignGuest(deviceId, assignment);
-    if (!result?.ok && FITNESS_DEBUG) {
-      logFitnessContext('assign-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
+    if (!result?.ok) {
+      // Never silent: always logged (the service also logs
+      // guest_assignment.rejected) and shown on the overlay toast slot.
+      logFitnessContext('assign-guest-failed', {
+        code: result?.code || null,
+        deviceId: deviceId != null ? String(deviceId) : null,
+        userId: assignment?.profileId || null,
+        message: result?.message
+      }, { level: 'warn' });
+      toastIdRef.current += 1;
+      const toast = normalizeToast(buildAssignFailureToast(result, assignment), toastIdRef.current);
+      fitnessToastRef.current = toast;
+      setFitnessToast(toast);
     }
     // Trigger re-render for transferred users (grace period substitution)
     setTransferVersion(v => v + 1);
