@@ -95,7 +95,10 @@ describe('FitnessSession — two simultaneous generic Guest tags (W2 integration
     // Documents the pre-W2 failure mode: GuestAssignmentService's one-device-per-user
     // check blocks the second Guest tap when both share profileId='guest'.
     // The user-visible result was "the Guest button does nothing on the second device".
+    // The first strap must be SENDING: a silent strap's entry no longer blocks
+    // (2026-11-06, stale-entry release), so the shape needs a live strap.
     const a = service.assignGuest('90006', { name: 'Guest', profileId: 'guest', candidateId: 'guest', source: 'Guest' });
+    session.deviceManager.registerDevice({ id: '90006', type: 'heart_rate', heartRate: 90, lastSeen: Date.now() });
     const b = service.assignGuest('48292', { name: 'Guest', profileId: 'guest', candidateId: 'guest', source: 'Guest' });
 
     expect(a.ok).toBe(true);

@@ -11,7 +11,7 @@
  * @see /ops:docs/notes/fitness-architecture-review.md Phase 4
  */
 
-import { resolveDisplayLabel } from "./types.js";
+import { resolveDisplayLabel, deriveZoneProgressSnapshot } from "./types.js";
 import { ParticipantStatus } from "../../domain/types.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
@@ -601,7 +601,7 @@ export class ParticipantRoster {
     const timelineUserId = guestEntry?.metadata?.timelineUserId || null;
 
     // Phase 4: Use trackingId for zone lookup (matches TreasureBox key scheme)
-    const zoneInfo = zoneLookup.get(trackingId) || null;
+    let zoneInfo = zoneLookup.get(trackingId) || null;
 
     // When the current occupant took the strap (ledger update time)
     let entityStartTime = guestEntry?.updatedAt || null;
@@ -616,6 +616,32 @@ export class ParticipantRoster {
     const isGuest = guestEntry
       ? (guestEntry.occupantType === 'guest')
       : (mappedUser ? ['Guest', 'Friend', 'Family'].includes(mappedUser.source) : true);
+
+    // Base-ladder default (owner ruling 2026-11-06). A non-subject with a live
+    // reading but no zone profile of its own — an unassigned strap
+    // (`device:<id>`), or a guest whose profile has not been built yet — gets
+    // the household base zone ladder, read straight off its heart rate.
+    // Without it the rider had no zone at all: no progress bar
+    // (fitness.zone_progress.lookup_miss every few seconds) and no way to help
+    // a group challenge. It is only ever a non-subject (isGuest): governance
+    // lets it help satisfy a challenge but never requires or blames it.
+    // Subjects never take this path — their zone comes from their own profile.
+    let zoneProgressFallback = null;
+    if (!zoneInfo && isGuest && resolvedHeartRate > 0
+        && !this._zoneProfileStore?.getProfile?.(trackingId)) {
+      const ladder = this._zoneProfileStore?.getBaseZoneConfig?.() || null;
+      const snapshot = ladder ? deriveZoneProgressSnapshot({ zoneConfig: ladder, heartRate: resolvedHeartRate }) : null;
+      if (snapshot?.currentZoneId) {
+        const zoneId = String(snapshot.currentZoneId).toLowerCase();
+        zoneInfo = { zoneId, color: snapshot.currentZoneColor || null };
+        zoneProgressFallback = {
+          profileId: trackingId,
+          zoneId,
+          progress: Number.isFinite(snapshot.progress) ? snapshot.progress : 0,
+          source: 'base-ladder'
+        };
+      }
+    }
 
     const baseUserName = isGuest
       ? (guestEntry?.metadata?.baseUserName || guestEntry?.metadata?.base_user_name || null)
@@ -697,6 +723,9 @@ export class ParticipantRoster {
       zoneColor: zoneInfo?.color || null,
       rawZoneId: zoneInfo?.rawZoneId || zoneInfo?.zoneId || null,
       rawZoneColor: zoneInfo?.rawZoneColor || zoneInfo?.color || null,
+      // Set only on the base-ladder default above; ParticipantFactory reads it
+      // when the zone-progress index has no entry for this participant.
+      zoneProgressFallback,
       avatarUrl: isGuest ? null : mappedUser?.avatarUrl || null,
       status,
       isActive, // SINGLE SOURCE OF TRUTH for avatar visibility

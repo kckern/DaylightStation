@@ -28,6 +28,7 @@ import { MetricsRecorder } from "./MetricsRecorder.js";
 import { ParticipantRoster } from "./ParticipantRoster.js";
 import { TimelineRecorder } from "./TimelineRecorder.js";
 import { PersistenceManager } from "./PersistenceManager.js";
+import { isDeviceLive, releaseStaleAssignment } from "./staleAssignment.js";
 
 // Pre-timeline events older than this at session start are stale (see flush in ensureStarted).
 const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
@@ -204,6 +205,7 @@ export class FitnessSession {
     // Sub-managers
     this.deviceManager = new DeviceManager();
     this.userManager = new UserManager();
+    this._installLivenessProbe();
     this.governanceEngine = new GovernanceEngine(this);  // Pass session reference
     this.voiceMemoManager = new VoiceMemoManager(this);
     this.zoneProfileStore = new ZoneProfileStore();
@@ -715,7 +717,24 @@ export class FitnessSession {
         const userId = user?.id || null;
         
         // Auto-assign device to user if not already assigned (for simulator/auto-mapping)
-        if (!ledgerEntry && user && userId) {
+        const heldOwner = !ledgerEntry && !user ? this.userManager.findHeldConfiguredOwner?.(device.id) : null;
+        if (heldOwner) {
+          // One member, one SENDING strap: his own strap came back while he
+          // rides a borrowed one that is still live. Leave it unmapped — the
+          // family can pick it — rather than put him on two straps.
+          getLogger().sampled('fitness.auto_assign_skip', {
+            deviceId: device.id, userId: heldOwner.user.id, reason: 'user-on-other-live-strap', heldDeviceId: heldOwner.heldDeviceId
+          }, { maxPerMinute: 6, aggregate: true });
+        } else if (!ledgerEntry && user && userId) {
+          // The member's other ledger entries on silent, non-config straps are
+          // stale: close their stints and drop them before he takes this one.
+          for (const [otherId, entry] of [...ledger.entries.entries()]) {
+            if (otherId === String(device.id)) continue;
+            if ((entry?.metadata?.profileId || entry?.occupantId) !== userId) continue;
+            if (user.configuredHrDeviceIds?.has(String(otherId))) continue;
+            if (isDeviceLive(this.deviceManager, otherId) !== false) continue;
+            releaseStaleAssignment(this, otherId, entry, { toDeviceId: String(device.id) });
+          }
           getLogger().warn('fitness.auto_assign', { deviceId: device.id, userName: user.name, userId });
           const stint = this.openStint({ deviceId: device.id, profileId: user.id, name: user.name });
           this.userManager.assignGuest(device.id, user.name, {
@@ -900,6 +919,12 @@ export class FitnessSession {
     const next = this.createSessionEntity({ profileId: toUserId, name: name || toUserId, deviceId: key });
     getLogger().info('fitness.stint.handover', { deviceId: key, fromUserId, toUserId });
     return { ok: true, mode: 'handover', stint: next };
+  }
+
+  // The one-sending-strap rule reads strap liveness from the CURRENT device
+  // manager (it is replaced on reset), so the probe looks it up per call.
+  _installLivenessProbe() {
+    this.userManager?.setDeviceLivenessProbe?.((deviceId) => isDeviceLive(this.deviceManager, deviceId));
   }
 
   // Invalidate both identities synchronously, before another packet or sync can
@@ -3088,6 +3113,7 @@ export class FitnessSession {
     if (this._participantRoster) this._participantRoster.reset();
     this.userManager = new UserManager(); // Reset users? Or keep them? Usually reset for new session context.
     this.deviceManager = new DeviceManager(); // Reset devices?
+    this._installLivenessProbe();
     this.entityRegistry.reset(); // Clear session entities for new session
     this._stopAutosaveTimer();
     this._stopTickTimer(); // 6A: Also stop tick timer on reset

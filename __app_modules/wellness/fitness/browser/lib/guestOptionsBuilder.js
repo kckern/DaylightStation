@@ -220,7 +220,9 @@ export function buildGuestOptions({
       name: candidate.name,
       profileId: id,
       source: candidate.source || candidate.category || candidate.group || candidate.group_label || candidate.type || null,
-      ...(candidate.isPrimary ? { isPrimary: true } : {})
+      ...(candidate.isPrimary ? { isPrimary: true } : {}),
+      // Carried to handleAssignGuest so the service guard sees the bypass.
+      ...(candidate.allowWhileAssigned ? { allowWhileAssigned: true } : {})
     });
   });
 

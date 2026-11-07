@@ -30,13 +30,13 @@ const usersConfig = {
   friends: [],
 };
 
-function renderPicker({ assigned = true } = {}) {
+function renderPicker({ assigned = true, extraAssignments = [] } = {}) {
   const assignGuestToDevice = vi.fn();
   const guestAssignment = assigned
     ? { deviceId: '10266', occupantId: 'guest_10266', occupantName: 'Guest', metadata: { candidateId: 'guest', profileId: 'guest_10266' } }
     : null;
   ctx.value = {
-    deviceAssignments: guestAssignment ? [guestAssignment] : [],
+    deviceAssignments: [...(guestAssignment ? [guestAssignment] : []), ...extraAssignments],
     getDeviceAssignment: (id) => (id === '10266' ? guestAssignment : null),
     activeHeartRateParticipants: [{ id: 'rider_f', name: 'Rider F', isActive: true }],
     getUserByDevice: () => null,
@@ -54,7 +54,7 @@ function renderPicker({ assigned = true } = {}) {
       playerRef={{ current: { getMediaElement: () => null } }}
       videoVolume={{ volume: 0.5, setVolume: vi.fn() }}
       assignGuestToDevice={assignGuestToDevice}
-      guestCandidates={buildGuestCandidates({ usersConfig })}
+      guestCandidates={buildGuestCandidates({ usersConfig, deviceAssignments: extraAssignments })}
     />
   );
   return { assignGuestToDevice, onClose };
@@ -85,5 +85,22 @@ describe('guest picker — household members on an unowned strap', () => {
     const { assignGuestToDevice } = renderPicker({ assigned: false });
     fireEvent.click(screen.getAllByText('Guest')[0]);
     expect(assignGuestToDevice).toHaveBeenCalledWith('10266', expect.objectContaining({ occupantType: 'guest' }));
+  });
+
+  it('passes the candidate allowWhileAssigned through to the assignment (2026-11-06)', () => {
+    // Rider M is still in the ledger on his own (silent) strap 8317, which
+    // puts him in the returnee pool with allowWhileAssigned.
+    const stale = { deviceId: '8317', occupantId: 'rider_m', occupantName: 'Rider M', metadata: { profileId: 'rider_m' } };
+    const { assignGuestToDevice } = renderPicker({ extraAssignments: [stale] });
+    fireEvent.click(screen.getByText('Rider M'));
+    expect(assignGuestToDevice).toHaveBeenCalledWith('10266', expect.objectContaining({
+      profileId: 'rider_m', occupantType: 'member', allowWhileAssigned: true
+    }));
+  });
+
+  it('a plain pick carries no allowWhileAssigned', () => {
+    const { assignGuestToDevice } = renderPicker();
+    fireEvent.click(screen.getByText('Rider M'));
+    expect(assignGuestToDevice.mock.calls[0][1]).not.toHaveProperty('allowWhileAssigned');
   });
 });
