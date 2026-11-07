@@ -358,8 +358,14 @@ slice is an admin screen that reads the review file and writes `cueOverrides`.
 
 ## QA and current limitations
 
-The resolver and player behavior have unit tests. Debug mode (`?filter=1&filter-debug=1`)
-is intended to scrub cue-by-cue and verify arm/fire timing.
+The resolver and player behavior have unit tests. There is no debug HUD; use
+`cli/player-review` to scrub cue-by-cue and verify arm/fire timing.
+
+Filtering is **on by default** for a Plex title when the API reports
+`certification.ready === true` (the refined EDL level meets the profile's
+`requiresCertification`). `?filter=0` forces it off (no fetch); `?filter=1` forces
+it on, provisional EDLs included. The decision lives in `filterMode.js`; the
+`content-filter.default.on|off` log event records it once per title with a `reason`.
 
 The remaining work is primarily player wiring, default profile/SFX assets, letterbox-
 precise blur placement, pinning the remaining safe-window mutes, and an admin authoring interface. Coverage

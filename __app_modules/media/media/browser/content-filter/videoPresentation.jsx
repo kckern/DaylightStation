@@ -1,18 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { useFilterData } from './useFilterData.js';
 import { useContentFilter } from './useContentFilter.js';
 import { FilterOverlay } from './FilterOverlay.jsx';
-import { FilterDebugHud } from './FilterDebugHud.jsx';
+import { filterMode } from './filterMode.js';
+import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 import { filterSummary, isProvisional, bumperStartWindowSec } from './filterSummary.js';
 import { useBumper } from './useBumper.js';
-
-// Content filtering is opt-in via ?filter=1 so normal playback is unaffected.
-// The debug HUD (?filter-debug=1) implies filtering is on — it exists to QA cues.
-const CONTENT_FILTER_DEBUG = typeof window !== 'undefined'
-  && new URLSearchParams(window.location.search).get('filter-debug') === '1';
-const CONTENT_FILTER_ENABLED = (typeof window !== 'undefined'
-  && new URLSearchParams(window.location.search).get('filter') === '1')
-  || CONTENT_FILTER_DEBUG;
 
 /** Plex part id from a direct-play URL (/library/parts/<id>/...), or null (e.g. a transcode). */
 export function partFromSrc(src) {
@@ -20,12 +13,28 @@ export function partFromSrc(src) {
   return m ? m[1] : null;
 }
 
+let _logger;
+const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
+
 export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
-  // --- Content filter (opt-in via ?filter=1) ---
-  const filterContentId = (isPlex && CONTENT_FILTER_ENABLED)
+  // --- Content filter: on by default for certified titles; ?filter=0 off, ?filter=1 forced on ---
+  const search = typeof window !== 'undefined' ? window.location.search : '';
+  const forcedOff = filterMode({ search, certification: null, status: 'idle' }).reason === 'forced-off';
+  const filterContentId = (isPlex && !forcedOff)
     ? (media?.assetId || media?.key || media?.plex || null)
     : null;
-  const { data: filterData, status: filterStatus } = useFilterData(filterContentId, { enabled: CONTENT_FILTER_ENABLED });
+  const { data: filterData, status: filterStatus } = useFilterData(filterContentId, { enabled: !!filterContentId });
+  const mode = filterMode({ search, certification: filterData?.certification ?? null, status: filterStatus });
+  const forcedOn = mode.reason === 'forced-on';
+  const filterEnabled = mode.enabled;
+  const loggedRef = useRef(null);
+  useEffect(() => {
+    if (!filterContentId || mode.reason === 'loading') return;
+    const key = `${filterContentId}:${mode.enabled}`;
+    if (loggedRef.current === key) return;
+    loggedRef.current = key;
+    logger().info(mode.enabled ? 'content-filter.default.on' : 'content-filter.default.off', { contentId: filterContentId, reason: mode.reason });
+  }, [filterContentId, mode.enabled, mode.reason]);
   const filterTransport = useMemo(() => ({
     seek: (s) => { const el = getMediaEl(); if (el && Number.isFinite(s)) { try { el.currentTime = s; } catch (_) { /* ignore */ } } },
   }), [getMediaEl]);
@@ -36,11 +45,11 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     profile: filterData?.profile,
     override: filterData?.override,
     part: partFromSrc(media?.mediaUrl || media?.url || getMediaEl?.()?.currentSrc),
-    enabled: CONTENT_FILTER_ENABLED && !!filterData?.edl,
+    enabled: filterEnabled && !!filterData?.edl,
   });
 
-  // Viewer chrome (spec §2): the opening bumper and the filter-active badge. The
-  // badge also shows when the filter data failed to load, crossed out, so an
+  // Viewer chrome (spec §2): the opening bumper and the filter-active badge. When
+  // forced on (?filter=1) the badge also shows when the filter data failed to load, crossed out, so an
   // absent filter never passes for an active one.
   const hasEdl = !!filterData?.edl;
   const filterSummaryLine = useMemo(() => filterSummary(filterCues), [filterCues]);
@@ -49,9 +58,9 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     [filterCues, filterData],
   );
   const bumperWindowSec = useMemo(() => bumperStartWindowSec(filterCues), [filterCues]);
-  const bumperShown = useBumper({ getMediaEl, enabled: CONTENT_FILTER_ENABLED && hasEdl, startWindowSec: bumperWindowSec });
+  const bumperShown = useBumper({ getMediaEl, enabled: filterEnabled && hasEdl, startWindowSec: bumperWindowSec });
   const badgeState = filterStatus === 'failed' ? 'failed' : (provisional ? 'provisional' : 'certified');
-  const showChrome = CONTENT_FILTER_ENABLED && !!filterContentId && (hasEdl || filterStatus === 'failed');
+  const showChrome = !!filterContentId && ((filterEnabled && hasEdl) || (forcedOn && filterStatus === 'failed'));
 
   // Art for title/skip cards, via the Plex image proxy. The proxy keys on the
   // bare ratingKey — filterContentId carries a `plex:` prefix (it's the mediaKey),
@@ -73,14 +82,6 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
           art={filterCardArt}
           bumper={bumperShown ? { summary: filterSummaryLine } : null}
           badge={{ state: badgeState, fireCount }}
-        />
-      ),
-    debug: CONTENT_FILTER_DEBUG && filterData?.edl && (
-        <FilterDebugHud
-          getMediaEl={getMediaEl}
-          transport={filterTransport}
-          effectiveCues={filterCues}
-          theme={filterData?.profile?.theme}
         />
       ),
   };

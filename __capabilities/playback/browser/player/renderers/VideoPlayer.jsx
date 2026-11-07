@@ -200,7 +200,7 @@ export function VideoPlayer({
   const crtShaderActive = overlayProps.showCRT && crt.active;
   const crtOverlayFallback = overlayProps.showCRT && crt.fellBack;
 
-  const { overlay: filterOverlay, debug: filterDebug } = useVideoPresentation({ media, isPlex, getMediaEl });
+  const { overlay: filterOverlay } = useVideoPresentation({ media, isPlex, getMediaEl });
 
   // Render FPS monitoring for blur overlay performance diagnosis
   // (emits its own playback telemetry; the return value is unused since the
@@ -962,7 +962,6 @@ export function VideoPlayer({
         <div className={overlayProps.className} />
       )}
       {filterOverlay}
-      {filterDebug}
     </div>
   );
 }
