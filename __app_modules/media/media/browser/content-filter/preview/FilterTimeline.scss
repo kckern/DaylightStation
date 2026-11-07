@@ -6,7 +6,7 @@
  * not the Admin `--ds-*` tokens, which are undefined on the screen route.
  *
  * THE THREE MARKS MUST NOT BE CONFUSED, so each differs in more than colour:
- *   mute/bleep  — full-height brass hairline (a tick)
+ *   mute/bleep  — full-height brass hairline (a tick), deeper than the ink
  *   blur/other  — short centred parchment bar, half height
  *   scene block — full-height span: blackout is SOLID near-black with brass
  *                 edges (it used to be the bar's own ground, i.e. invisible);
@@ -53,7 +53,7 @@
     top: 0;
     bottom: 0;
     pointer-events: none;
-    &.is-tick { width: 2px; background: var(--brass-lit, #f6e3a0); }
+    &.is-tick { width: 2px; background: var(--brass, #c79a3e); }
     &.is-bar { width: 4px; top: 30%; bottom: 30%; background: var(--ink, #e9dfc8); border-radius: 1px; }
     &.is-block { min-width: 4px; }
     &.is-blackout {
