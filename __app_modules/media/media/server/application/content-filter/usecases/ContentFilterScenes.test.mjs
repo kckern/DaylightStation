@@ -131,3 +131,13 @@ describe('cleanCard', () => {
   it('trims quotes and whitespace', () => { expect(cleanCard('  “Hi there.” \n')).toBe('Hi there.'); });
   it('rejects empty or too long', () => { expect(cleanCard('')).toBeNull(); expect(cleanCard('a'.repeat(91))).toBeNull(); });
 });
+
+describe('ContentFilterScenes profile patch', () => {
+  it('applies the override profilePatch to the profile that scene effects use', async () => {
+    const repo = memRepo();
+    repo.state.profile = { scenes: { violence_blood_gore: { blackout: { picture: 2 } } } };
+    repo.state.override = { profilePatch: { categories: {}, scenes: { violence_blood_gore: {} } } };
+    const out = await new ContentFilterScenes({ contentFilterRepository: repo }).list({ ratingKey: '77' });
+    expect(out.scenes.every((s) => s.profileEffect !== 'blackout')).toBe(true);
+  });
+});

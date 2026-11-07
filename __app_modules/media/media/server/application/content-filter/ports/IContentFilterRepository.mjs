@@ -29,6 +29,11 @@ export class IContentFilterRepository {
     throw new Error('IContentFilterRepository.getProfile not implemented');
   }
 
+  /** Write a household profile back (settings rewrites). */
+  async saveProfile(_profileName, _profile) {
+    throw new Error('IContentFilterRepository.saveProfile not implemented');
+  }
+
   async getOverride(_ratingKey) {
     throw new Error('IContentFilterRepository.getOverride not implemented');
   }

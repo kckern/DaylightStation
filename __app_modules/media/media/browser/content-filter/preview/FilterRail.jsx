@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useFilterPreview, previewStore } from './previewStore.js';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
 import WorkshopPanel from './WorkshopPanel.jsx';
+import SettingsPanel from './SettingsPanel.jsx';
 import './FilterRail.scss';
 
 const EFFECT_WORD = {
@@ -47,6 +48,7 @@ export default function FilterRail({ position = 0 }) {
   const snap = useFilterPreview();
   const logger = useMemo(() => getChildLogger({ app: 'content-filter', component: 'filter-rail' }), []);
   const [selectedId, setSelectedId] = useState(null);
+  const [tab, setTab] = useState('review'); // 'review' | 'settings'
   const items = useMemo(() => upcomingItems(snap.cues, snap.scenes, position), [snap.cues, snap.scenes, position]);
   const last = snap.lastFired;
 
@@ -69,6 +71,14 @@ export default function FilterRail({ position = 0 }) {
         {snap.summary ? <div className="filter-rail__summary">{snap.summary}</div> : null}
       </header>
 
+      <div className="filter-rail__buttons" role="tablist" aria-label="Rail view">
+        {[['review', 'Review'], ['settings', 'Settings']].map(([v, label]) => (
+          <button key={v} type="button" role="tab" aria-selected={tab === v} className={`filter-rail__btn${tab === v ? ' is-selected' : ''}`} onClick={() => setTab(v)}>{label}</button>
+        ))}
+      </div>
+
+      {tab === 'settings' ? <SettingsPanel /> : (
+      <>
       <section className="filter-rail__section">
         <h4>Last</h4>
         {last ? (
@@ -108,6 +118,8 @@ export default function FilterRail({ position = 0 }) {
       </section>
 
       <WorkshopPanel />
+      </>
+      )}
     </aside>
   );
 }

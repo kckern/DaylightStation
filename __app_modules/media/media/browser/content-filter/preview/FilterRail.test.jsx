@@ -70,3 +70,16 @@ describe('FilterRail', () => {
     expect(screen.getAllByText('Scene blurred').length).toBeGreaterThan(0);
   });
 });
+
+describe('FilterRail tabs', () => {
+  beforeEach(() => { act(() => previewStore.reset()); });
+  it('switches between Review and Settings', () => {
+    setup({ ratingKey: '77' });
+    expect(screen.queryByTestId('settings-panel')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect(screen.getByTestId('settings-panel')).toBeTruthy();
+    expect(screen.queryByText('Last')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Review' }));
+    expect(screen.getByText('Last')).toBeTruthy();
+  });
+});

@@ -7,6 +7,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFilterPreview, previewStore } from './previewStore.js';
+import { useFilterWrite, errText } from './useFilterWrite.js';
 import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
 
@@ -22,15 +23,13 @@ const CUE_EFFECTS = [
 ];
 
 const base = (rk) => `/api/v1/content-filter/${encodeURIComponent(rk)}`;
-const errText = (e) => e?.message || 'request failed';
 
 export default function WorkshopPanel() {
   const snap = useFilterPreview();
   const logger = useMemo(() => getChildLogger({ app: 'content-filter', component: 'workshop-panel' }), []);
   const sel = snap.selected;
   const rk = snap.ratingKey;
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const { error, setError, busy, setBusy, write } = useFilterWrite(logger);
   const [draft, setDraft] = useState(null); // { id, text } typed or drafted, not yet approved
   const [editing, setEditing] = useState(false);
 
@@ -38,20 +37,6 @@ export default function WorkshopPanel() {
 
   if (!sel || rk == null) return null;
   const isScene = sel.kind === 'scene';
-
-  const write = async (fn, event, data) => {
-    setBusy(true); setError('');
-    try {
-      const out = await fn();
-      await previewStore.refresh();
-      if (event) logger.info(event, data);
-      return out;
-    } catch (e) {
-      setError(errText(e));
-      logger.warn('content-filter.workshop.failed', { ...data, error: errText(e) });
-      return undefined;
-    } finally { setBusy(false); }
-  };
 
   if (!isScene) {
     const ruling = snap.override?.cueOverrides?.[sel.id] || {};

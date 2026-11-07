@@ -56,6 +56,36 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     const rk = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
     const profileOf = (req) => String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
 
+    // Settings: four plain choices, for this film (override.profilePatch) or everywhere (the profile).
+    //   PUT    /:ratingKey/settings {settings}       -> { profilePatch }
+    //   DELETE /:ratingKey/settings                  -> { cleared }
+    //   PUT    /profiles/:name/settings {settings}   -> { profile }
+    // /profiles/... has two segments before /settings, so it never collides with /:ratingKey routes.
+    router.put('/profiles/:name/settings', asyncHandler(async (req, res) => {
+      const profileName = String(req.params.name).replace(/[^a-z0-9_-]/gi, '').toLowerCase();
+      if (!profileName) return res.status(400).json({ error: 'invalid profile' });
+      let out;
+      try {
+        out = await contentFilterScenes.setProfileSettings({ profileName, settings: req.body?.settings });
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (!out) return res.status(404).json({ error: 'no such profile', profile: profileName });
+      res.json(out);
+    }));
+    router.put('/:ratingKey/settings', asyncHandler(async (req, res) => {
+      if (!rk(req)) return res.status(400).json({ error: 'invalid ratingKey' });
+      try {
+        res.json(await contentFilterScenes.setTitleSettings({ ratingKey: rk(req), settings: req.body?.settings }));
+      } catch (error) {
+        res.status(400).json({ error: error.message });
+      }
+    }));
+    router.delete('/:ratingKey/settings', asyncHandler(async (req, res) => {
+      if (!rk(req)) return res.status(400).json({ error: 'invalid ratingKey' });
+      res.json(await contentFilterScenes.clearTitleSettings({ ratingKey: rk(req) }));
+    }));
+
     router.get('/:ratingKey/scenes', asyncHandler(async (req, res) => {
       const out = await contentFilterScenes.list({ ratingKey: rk(req), profileName: profileOf(req) });
       if (!out) return res.status(404).json({ error: 'no refined filter', ratingKey: rk(req) });

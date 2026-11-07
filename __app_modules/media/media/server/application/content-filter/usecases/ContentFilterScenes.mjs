@@ -8,6 +8,7 @@
  * child ever sees. Design: ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md
  */
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
+import { mergeProfilePatch, applySettingsToProfile, profilePatchFromSettings, LEVELS, LANGUAGE_VALUES } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 export const CARD_MAX_CHARS = 90;
@@ -47,7 +48,51 @@ export class ContentFilterScenes {
     const refined = ref ? await this.#repo.getRefinedEdl({ workId: ref.workId, tagSetId: ref.tagSetId }) : null;
     if (!refined) return null;
     const [profile, override] = await Promise.all([this.#repo.getProfile(profileName), this.#repo.getOverride(ratingKey)]);
-    return { ref, refined, profile, override: override || {} };
+    return { ref, refined, profile: mergeProfilePatch(profile, override?.profilePatch), override: override || {} };
+  }
+
+  /** Validate the four plain settings; throws on anything outside the vocabulary. */
+  static #checkSettings(settings) {
+    if (!settings || typeof settings !== 'object') throw new Error('settings required');
+    if (!LANGUAGE_VALUES.includes(settings.language)) throw new Error(`unknown language setting: ${settings.language}`);
+    for (const k of ['violence', 'nudity', 'sexual']) if (!LEVELS.includes(settings[k])) throw new Error(`unknown ${k} setting: ${settings[k]}`);
+  }
+
+  /** This film only: store the settings as `override.profilePatch`. */
+  async setTitleSettings({ ratingKey, settings }) {
+    ContentFilterScenes.#checkSettings(settings);
+    return this.#serial(ratingKey, async () => {
+      const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
+      const profilePatch = profilePatchFromSettings(settings);
+      await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
+      this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
+      return { profilePatch };
+    });
+  }
+
+  /** Back to the household settings for this film. */
+  async clearTitleSettings({ ratingKey }) {
+    return this.#serial(ratingKey, async () => {
+      const override = await this.#repo.getOverride(ratingKey);
+      if (!override || !('profilePatch' in override)) return { cleared: false };
+      const { profilePatch: _gone, ...rest } = override;
+      await this.#repo.saveOverride(ratingKey, rest);
+      this.#logger.info?.('content-filter.settings.title-cleared', { ratingKey });
+      return { cleared: true };
+    });
+  }
+
+  /** Everywhere: rewrite only the keys the settings own in the household profile. @returns null if no such profile */
+  async setProfileSettings({ profileName, settings }) {
+    ContentFilterScenes.#checkSettings(settings);
+    return this.#serial(`profile:${profileName}`, async () => {
+      const profile = await this.#repo.getProfile(profileName);
+      if (!profile) return null;
+      const next = applySettingsToProfile(profile, settings);
+      await this.#repo.saveProfile(profileName, next);
+      this.#logger.info?.('content-filter.settings.profile', { profile: profileName, settings });
+      return { profile: next };
+    });
   }
 
   /** Titles with a refined filter, for the Admin index. */
