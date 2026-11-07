@@ -58,3 +58,16 @@ it('observes connect and disconnect independently from acceptance',async()=>{
  state.devices[0].connected=false;state.devices[0].profiles=[];
  expect(await screen.findByRole('button',{name:'Connect Gamepad'})).toBeTruthy();
 });
+it('remote Up/Down leaves the PIN field and reaches Approve and Cancel',async()=>{
+ const state=makeState();state.devices[0].bond='bonding';state.pairing={address:MAC,variant:'pin',expiresAtMs:Date.now()+60000};setup(state);
+ render(<BluetoothRecoveryPanel deviceId="tv" onClose={()=>{}}/>);
+ const field=await screen.findByLabelText('Pairing PIN');fireEvent.change(field,{target:{value:'1234'}});field.focus();
+ fireEvent.keyDown(field,{key:'ArrowDown'});expect(document.activeElement).toBe(screen.getByRole('button',{name:'Approve pairing'}));
+ fireEvent.keyDown(document.activeElement,{key:'ArrowDown'});expect(document.activeElement).toBe(screen.getByRole('button',{name:'Cancel pairing'}));
+});
+it('does not label an unavailable HID observation as disconnected',async()=>{
+ const state=makeState();state.devices[0].connected=null;state.capabilities.input=false;setup(state);
+ render(<BluetoothRecoveryPanel deviceId="tv" onClose={()=>{}}/>);
+ expect(await screen.findByText('Connection status unavailable')).toBeTruthy();
+ expect(screen.getByRole('button',{name:'Connect Gamepad'})).toBeDisabled();
+});

@@ -6,11 +6,13 @@ import './BluetoothRecoveryPanel.scss';
 export default function BluetoothRecoveryPanel({ deviceId, onClose }) {
   const { state, fresh, error, message, busy, waiting, command } = useBluetoothRecovery({ deviceId });
   const [forget, setForget] = useState(null);
-  const [pin, setPin] = useState('');
+  const [pinEntry, setPinEntry] = useState({ key: null, value: '' });
   const root = useRef(null);
   const latestClose = useRef(onClose);latestClose.current = onClose;
   const pairing = state?.pairing;
-  useEffect(() => { setPin(''); }, [pairing?.address, pairing?.expiresAtMs]);
+  const pinKey = pairing ? `${pairing.address}:${pairing.expiresAtMs}` : null;
+  const pin = pinEntry.key === pinKey ? pinEntry.value : '';
+  const setPin = (value) => setPinEntry({ key: pinKey, value });
   useEffect(() => {
     root.current?.querySelector('button')?.focus();
     const key = (event) => {
@@ -18,7 +20,7 @@ export default function BluetoothRecoveryPanel({ deviceId, onClose }) {
       if (back) { event.preventDefault();event.stopImmediatePropagation();latestClose.current?.();return; }
       if (event.key.startsWith('Arrow')) {
         // Text input keeps its native cursor controls.
-        if (event.target?.tagName === 'INPUT') return;
+        if (event.target?.tagName === 'INPUT' && ['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
         const controls = [...root.current.querySelectorAll('button:not(:disabled),input:not(:disabled)')];
         const current = controls.indexOf(document.activeElement);
         const delta = ['ArrowUp', 'ArrowLeft'].includes(event.key) ? -1 : 1;
@@ -48,8 +50,8 @@ export default function BluetoothRecoveryPanel({ deviceId, onClose }) {
     {state?.lastError && <p role="alert">{state.lastError}</p>}
     <p role="status" aria-live="polite">{message}</p>
     <ul className="bluetooth-recovery__devices">{(state?.devices || []).map(device => <li key={device.address}>
-      <strong>{device.name || 'Unnamed controller'}</strong>
-      <span>{device.connected ? 'Connected' : device.bond === 'bonded' ? 'Paired · disconnected' : device.bond === 'bonding' ? 'Pairing…' : 'Not paired'}</span>
+      <strong>{device.name || 'Unnamed controller'}</strong><small>{device.address}</small>
+      <span>{typeof device.connected !== 'boolean' ? 'Connection status unavailable' : device.connected ? 'Connected' : device.bond === 'bonded' ? 'Paired · disconnected' : device.bond === 'bonding' ? 'Pairing…' : 'Not paired'}</span>
       {device.manageable ? <div className="bluetooth-recovery__actions">
         {device.bond === 'none' && <button type="button" aria-label={`Pair ${device.name}`} disabled={!available || !capabilities.pair} onClick={()=>action('pair',device)}>Pair</button>}
         {device.bond === 'bonded' && <>
@@ -60,7 +62,7 @@ export default function BluetoothRecoveryPanel({ deviceId, onClose }) {
     </li>)}</ul>
     {state && state.devices.filter(d=>d.manageable).length === 0 && <p>No game controllers found. Put the controller in pairing mode, then choose Find controllers.</p>}
     {forget && <section aria-label="Confirm forget" className="bluetooth-recovery__confirmation">
-      <p>Forget {forget.name}? You will need to pair it again.</p>
+      <p>Forget {forget.name} ({forget.address})? You will need to pair it again.</p>
       <button type="button" disabled={!available} aria-label={`Confirm forget ${forget.name}`} onClick={()=>{action('unpair',forget);setForget(null);}}>Forget controller</button>
       <button type="button" onClick={()=>setForget(null)}>Cancel forget</button>
     </section>}

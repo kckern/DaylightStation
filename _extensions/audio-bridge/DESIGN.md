@@ -476,3 +476,7 @@ permissions on Android 12+, as well as the existing microphone permission. Andro
 11 discovery also requires Location services enabled. Service teardown stops scans,
 cancels pending pairing and closes receivers/profile proxies. A running game or
 microphone call must not be interrupted for bridge installation/restart.
+
+Connection state is `null` while HID observation or permission is unavailable; it is
+never inferred to be disconnected from a missing observer. Answering a pairing
+prompt retains ownership and the 60-second deadline until a terminal bond event.

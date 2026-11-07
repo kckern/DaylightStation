@@ -11,7 +11,7 @@ export function operationSettled(operation, state) {
     case 'unpair': return !device || device.bond === 'none';
     case 'scan': return state.adapter.discovering;
     case 'scan/stop': return !state.adapter.discovering;
-    case 'pairing': return !state.pairing;
+    case 'pairing': return operation.accept ? device?.bond === 'bonded' : device?.bond === 'none' && !state.pairing;
     default: return false;
   }
 }
@@ -26,13 +26,16 @@ export function useBluetoothRecovery({ deviceId }) {
   const [waiting, setWaiting] = useState(false);
   const [busy, setBusy] = useState(false);
   const pending = useRef(null);
+  const operationTimer = useRef(null);
+  const expired = useRef(null);
   const scanOwned = useRef(false);
   const session = useRef(null);
   const inFlight = useRef(false);
   useEffect(() => {
     const abort = new AbortController();session.current = abort;
     let timer;
-    pending.current = null;scanOwned.current = false;inFlight.current = false;
+    pending.current = null;expired.current = null;scanOwned.current = false;inFlight.current = false;
+    setMessage('Reading controller status…');
     setState(null);setFresh(false);setBusy(false);setWaiting(false);setError(null);setReadError(null);
     logger.info('arcade.bluetooth.open', { deviceId });
     const poll = async () => {
@@ -41,9 +44,9 @@ export function useBluetoothRecovery({ deviceId }) {
         if (abort.signal.aborted) return;
         setState(next);setFresh(true);setReadError(null);
         if (pending.current && operationSettled(pending.current, next)) {
-          pending.current = null;setWaiting(false);setMessage('Controller status updated.');
-        } else if (pending.current && Date.now() >= pending.current.deadline) {
-          pending.current = null;setWaiting(false);setMessage('No completed change reported. Wake the controller and try again.');
+          clearTimeout(operationTimer.current);pending.current = null;setWaiting(false);setMessage('Controller status updated.');
+        } else if (expired.current && operationSettled(expired.current, next)) {
+          expired.current = null;setMessage('Controller status updated.');
         } else if (!pending.current) setMessage(previous => previous === 'Reading controller status…' ? '' : previous);
       } catch (e) {
         if (!abort.signal.aborted) { setFresh(false);setReadError(e.message || 'Could not read controller status.'); }
@@ -51,7 +54,7 @@ export function useBluetoothRecovery({ deviceId }) {
     };
     poll();
     return () => {
-      abort.abort();clearTimeout(timer);session.current = null;
+      abort.abort();clearTimeout(timer);clearTimeout(operationTimer.current);session.current = null;
       if (scanOwned.current) client.command('scan/stop').catch(() => logger.warn('arcade.bluetooth.scan-cleanup-failed', { deviceId }));
       logger.info('arcade.bluetooth.close', { deviceId });
     };
@@ -65,7 +68,16 @@ export function useBluetoothRecovery({ deviceId }) {
     try {
       await client.command(action, body, { signal: abort.signal });
       if (abort.signal.aborted) return;
-      pending.current = { action, address: body.address, deadline: Date.now() + 30000 };setWaiting(true);
+      const deadline = action === 'pairing' && pending.current?.address === body.address
+        ? pending.current.deadline : Date.now() + 30000;
+      const operation = { action, address: body.address, accept: body.accept, deadline };
+      pending.current = operation;expired.current = null;setWaiting(true);
+      clearTimeout(operationTimer.current);
+      operationTimer.current = setTimeout(() => {
+        if (abort.signal.aborted || pending.current !== operation) return;
+        expired.current = operation;pending.current = null;setWaiting(false);
+        setMessage('No completed change reported. Wake the controller and try again.');
+      }, Math.max(0, deadline - Date.now()));
       if (action === 'scan/stop') scanOwned.current = false;
       setMessage('Request accepted. Waiting for the device to report the change…');
     } catch (e) {

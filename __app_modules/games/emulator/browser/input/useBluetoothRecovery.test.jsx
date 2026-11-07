@@ -25,3 +25,28 @@ it('keeps previous state visibly stale after an outage and refuses new mutations
  expect(result.current.fresh).toBe(false);expect(result.current.state.devices[0].bond).toBe('bonded');
  await act(async()=>{await result.current.command('unpair',{address:MAC});});expect(posts).toHaveLength(0);
 });
+it('expires accepted work even when every subsequent read fails',async()=>{
+ vi.useFakeTimers();let online=true;
+ vi.stubGlobal('fetch',vi.fn(async(_url,o)=>{if(o.method!=='POST'&&!online)throw Error('offline');return {ok:true,json:async()=>o.method==='POST'?{ok:true,accepted:true}:initial()};}));
+ const {result}=renderHook(()=>useBluetoothRecovery({deviceId:'tv'}));await act(async()=>{});
+ await act(async()=>{await result.current.command('disconnect',{address:MAC,profile:'input'});});online=false;
+ await act(async()=>{await vi.advanceTimersByTimeAsync(31000);});
+ expect(result.current.waiting).toBe(false);expect(result.current.message).toMatch(/No completed change/);
+});
+it('waits for an observed bond after a pairing prompt is answered',async()=>{
+ vi.useFakeTimers();const state=initial();state.devices[0].bond='bonding';state.pairing={address:MAC,variant:'pin',expiresAtMs:Date.now()+60000};
+ vi.stubGlobal('fetch',vi.fn(async(_url,o)=>({ok:true,json:async()=>o.method==='POST'?{ok:true,accepted:true}:structuredClone(state)})));
+ const {result}=renderHook(()=>useBluetoothRecovery({deviceId:'tv'}));await act(async()=>{});
+ await act(async()=>{await result.current.command('pairing',{address:MAC,accept:true,pin:'1234'});});
+ state.pairing=null;await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});expect(result.current.waiting).toBe(true);
+ state.devices[0].bond='bonded';await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});expect(result.current.waiting).toBe(false);
+});
+it('does not complete Disconnect when the HID observer becomes unavailable',async()=>{
+ vi.useFakeTimers();const state=initial();state.devices[0].connected=true;state.devices[0].profiles=['input'];
+ vi.stubGlobal('fetch',vi.fn(async(_url,o)=>({ok:true,json:async()=>o.method==='POST'?{ok:true,accepted:true}:structuredClone(state)})));
+ const {result}=renderHook(()=>useBluetoothRecovery({deviceId:'tv'}));await act(async()=>{});
+ await act(async()=>{await result.current.command('disconnect',{address:MAC,profile:'input'});});
+ state.devices[0].connected=null;state.devices[0].profiles=[];
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});expect(result.current.waiting).toBe(true);
+ state.devices[0].connected=false;await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});expect(result.current.waiting).toBe(false);
+});

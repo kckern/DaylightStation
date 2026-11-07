@@ -2,7 +2,6 @@ package net.kckern.audiobridge;
 
 import fi.iki.elonen.NanoHTTPD;
 import org.json.JSONObject;
-import java.io.ByteArrayOutputStream;
 
 /** Bounded HTTP ingress, independent of the microphone WebSocket. */
 public final class ControlServer extends NanoHTTPD {

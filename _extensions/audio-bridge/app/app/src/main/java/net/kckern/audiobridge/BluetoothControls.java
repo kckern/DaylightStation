@@ -18,9 +18,8 @@ public final class BluetoothControls implements BluetoothController.Port {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, BluetoothDevice> seen = new LinkedHashMap<>();
     private BluetoothProfile hid;
-    private String requestedAddress, lastError;
-    private long pairingUntil;
-    private JSONObject pairing;
+    private String lastError;
+    private final PairingSession pairing = new PairingSession();
     private boolean registered, closed;
     private final Runnable stopDiscovery = () -> stopScan();
     private final Runnable expirePairing = () -> { synchronized (BluetoothControls.this) { clearPairing(true); } };
@@ -67,6 +66,10 @@ public final class BluetoothControls implements BluetoothController.Port {
     static boolean isGamepadClass(int deviceClass) {
         return (deviceClass & 0x1f00) == 0x0500 && ((deviceClass & 0x3c) == 0x04 || (deviceClass & 0x3c) == 0x08);
     }
+    static Boolean observedConnection(boolean permitted, boolean enabled, boolean proxyReady, boolean connected) {
+        if (!permitted || (enabled && !proxyReady)) return null;
+        return enabled && connected;
+    }
     private boolean manageable(BluetoothDevice device) {
         BluetoothClass klass = device.getBluetoothClass();
         return klass != null && isGamepadClass(klass.getDeviceClass());
@@ -78,18 +81,18 @@ public final class BluetoothControls implements BluetoothController.Port {
         List<BluetoothDevice> connected = enabled && hid != null ? hid.getConnectedDevices() : Collections.emptyList();
         JSONArray devices = new JSONArray();
         for (BluetoothDevice d : seen.values()) {
-            boolean linked = connected.contains(d);
+            Boolean linked = observedConnection(permitted, enabled, hid != null, connected.contains(d));
             int bond = d.getBondState();
             devices.put(new JSONObject().put("address", d.getAddress()).put("name", d.getName() == null ? "Unnamed device" : d.getName())
                     .put("type", d.getType() == BluetoothDevice.DEVICE_TYPE_LE ? "ble" : "classic")
                     .put("bond", bond == BluetoothDevice.BOND_BONDED ? "bonded" : bond == BluetoothDevice.BOND_BONDING ? "bonding" : "none")
-                    .put("connected", linked).put("profiles", linked ? new JSONArray().put("input") : new JSONArray())
+                    .put("connected", linked == null ? JSONObject.NULL : linked).put("profiles", Boolean.TRUE.equals(linked) ? new JSONArray().put("input") : new JSONArray())
                     .put("manageable", manageable(d)));
         }
         return new JSONObject().put("ok", true)
                 .put("adapter", new JSONObject().put("supported", adapter != null).put("enabled", enabled)
                         .put("discovering", enabled && adapter.isDiscovering()))
-                .put("devices", devices).put("pairing", pairing == null ? JSONObject.NULL : new JSONObject(pairing.toString()))
+                .put("devices", devices).put("pairing", pairing.prompt() == null ? JSONObject.NULL : new JSONObject(pairing.prompt().toString()))
                 .put("lastError", lastError == null ? JSONObject.NULL : lastError)
                 .put("capabilities", new JSONObject().put("scan", enabled && canScan()).put("pair", enabled)
                         .put("unpair", enabled && deviceMethod("removeBond"))
@@ -122,11 +125,10 @@ public final class BluetoothControls implements BluetoothController.Port {
     }
     @Override public synchronized boolean pair(String address) {
         if (!ready()) return false;
-        if (requestedAddress != null) return fail("Another pairing request is active");
+        if (pairing.address() != null) return fail("Another pairing request is active");
         stopScan();
         BluetoothDevice d = seen.get(address);
-        requestedAddress = address;
-        pairingUntil = System.currentTimeMillis() + 60000;
+        pairing.begin(address, System.currentTimeMillis());
         handler.postDelayed(expirePairing, 60000);
         if (!d.createBond()) { clearPairing(false); return fail("Pairing was not accepted"); }
         lastError = null;
@@ -150,23 +152,23 @@ public final class BluetoothControls implements BluetoothController.Port {
         catch (Exception e) { return fail("This device does not permit controller " + method + " from the bridge"); }
     }
     @Override public synchronized boolean reply(String address, boolean accept, String pin) {
-        if (!BluetoothController.ownsPairingRequest(requestedAddress, pairingUntil, address, System.currentTimeMillis())) return fail("Pairing request expired");
+        if (!pairing.owns(address, System.currentTimeMillis())) return fail("Pairing request expired");
         BluetoothDevice d = seen.get(address);
         try {
             boolean ok;
             if (!accept) ok = Boolean.TRUE.equals(BluetoothDevice.class.getMethod("cancelBondProcess").invoke(d));
             else if (pin != null) ok = d.setPin(pin.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             else ok = d.setPairingConfirmation(true);
-            if (ok) clearPairing(false); else fail("Pairing reply was not accepted");
+            if (ok) pairing.replyAccepted(); else fail("Pairing reply was not accepted");
             return ok;
         } catch (Exception e) { return fail("Pairing confirmation is restricted on this device"); }
     }
     private void clearPairing(boolean cancel) {
-        if (cancel && requestedAddress != null) {
-            try { BluetoothDevice.class.getMethod("cancelBondProcess").invoke(seen.get(requestedAddress)); } catch (Exception ignored) { }
+        if (cancel && pairing.address() != null) {
+            try { BluetoothDevice.class.getMethod("cancelBondProcess").invoke(seen.get(pairing.address())); } catch (Exception ignored) { }
         }
         handler.removeCallbacks(expirePairing);
-        requestedAddress = null; pairingUntil = 0; pairing = null;
+        pairing.clear();
     }
     private boolean deviceMethod(String method, Class<?>... args) {
         try { BluetoothDevice.class.getMethod(method, args); return true; } catch (Exception e) { return false; }
@@ -184,16 +186,16 @@ public final class BluetoothControls implements BluetoothController.Port {
                     if (d != null) seen.put(d.getAddress(), d);
                     if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(intent.getAction()) && adapter.isEnabled()) requestProxy();
                     if (d != null && BluetoothDevice.ACTION_PAIRING_REQUEST.equals(intent.getAction()) &&
-                            BluetoothController.ownsPairingRequest(requestedAddress, pairingUntil, d.getAddress(), System.currentTimeMillis())) {
+                            pairing.owns(d.getAddress(), System.currentTimeMillis())) {
                         int variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1);
-                        pairing = new JSONObject().put("address", d.getAddress()).put("expiresAtMs", pairingUntil)
-                                .put("variant", variant == 0 ? "pin" : "confirm");
+                        pairing.showPrompt(new JSONObject().put("address", d.getAddress()).put("expiresAtMs", pairing.expiresAt())
+                                .put("variant", variant == 0 ? "pin" : "confirm"));
                         // Keep the explicit request in our UX, never open Android Settings.
                         if (isOrderedBroadcast()) abortBroadcast();
                         if (variant != 0 && ctx.checkSelfPermission("android.permission.BLUETOOTH_PRIVILEGED") != PackageManager.PERMISSION_GRANTED)
                             fail("Pairing confirmation is restricted on this device");
                     }
-                    if (d != null && BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(intent.getAction()) && d.getAddress().equals(requestedAddress)
+                    if (d != null && BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(intent.getAction()) && d.getAddress().equals(pairing.address())
                             && d.getBondState() != BluetoothDevice.BOND_BONDING) clearPairing(false);
                 } catch (Exception e) { fail("Bluetooth state could not be updated"); }
             }
