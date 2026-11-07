@@ -180,3 +180,20 @@ describe('buildRefinedEdl: coarse-edge region cues', () => {
     expect(out.cues.find((x) => x.id === 'c')).toEqual(was);
   });
 });
+
+describe('buildRefinedEdl subjects (R6)', () => {
+  const base = { edl, cueOverrides, sync, anchors: [], at: '2026-11-06' };
+  it('writes the subject onto grouped cues', () => {
+    const out = buildRefinedEdl({ ...base, subjects: { b: 'subject-b', c: 'subject-b' } });
+    expect(out.cues.find((c) => c.id === 'b').subject).toBe('subject-b');
+    expect(out.cues.find((c) => c.id === 'c').subject).toBe('subject-b');
+    expect(out.cues.find((c) => c.id === 'a').subject).toBeUndefined();
+  });
+  it('a re-run keeps the previous subjects; null removes one', () => {
+    const first = buildRefinedEdl({ ...base, subjects: { b: 'subject-b', c: 'subject-b' } });
+    const again = buildRefinedEdl({ ...base, previous: first });
+    expect(again.cues.find((c) => c.id === 'b').subject).toBe('subject-b');
+    const cleared = buildRefinedEdl({ ...base, previous: first, subjects: { b: null, c: null } });
+    expect(cleared.cues.find((c) => c.id === 'b').subject).toBeUndefined();
+  });
+});

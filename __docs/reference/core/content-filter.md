@@ -240,6 +240,16 @@ list). The player applies such a track over the synced coarse window; `refinedCo
 only cues measured at ms/frame, and a cue refined at ms/frame is never replaced by a coarse one.
 When Jev sees the subject nowhere, or only judges it whole-frame, no track is written.
 
+**Same-subject tags (R6).** After measurement, `shown` cues whose spans overlap are asked of Jev
+pairwise (`subjectGroups.mjs`, both labels plus one frame from the overlap, "the same single
+thing on screen?"). Only a confident yes groups; no, abstain, timeout and error leave the tags
+separate. Grouped cues carry `subject: <id>` in the refined EDL; a re-run keeps the subjects
+already there (`--resubject` asks again, `--no-subjects` skips the step). The resolver turns
+cues sharing a `subject` into ONE effect (id = the subject id) over the union of their spans,
+following the best-tracked member's region track (most keyframes; held at both ends to cover the
+union): regional blur when tracked, full-blur otherwise. `said`/`heard` cues never group, so a
+word inside the union still mutes on its own.
+
 - **Safe windows** (`safeWindow.mjs`). A mute refine could not pin is widened to
   `tag.in − 3.5 s … tag.out + 3.0 s` with `precision: safe-window`; the tag span is
   kept as `tagIn`/`tagOut`, so applying it again is a no-op. The constants cover every

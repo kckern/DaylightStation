@@ -32,6 +32,8 @@ const AUDIO_EFFECTS = new Set(['mute', 'bleep', 'duck']);
 
 // Overlay effects can be confined to a region track; the rest act on the whole cue.
 const REGIONAL = new Set(['blur', 'censor-bar', 'pixelate']);
+// Visual overlays: the effects a same-subject group (R6) can merge.
+const OVERLAY = new Set(['blur', 'full-blur', 'censor-bar', 'pixelate', 'blackout']);
 
 // Params we carry from a profile rule / override onto the effective cue.
 const PARAM_KEYS = ['sound', 'rect', 'style', 'level', 'text'];
@@ -138,6 +140,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
   ];
 
   const out = [];
+  const groups = new Map();
   for (const { cue, synced } of base) {
     let ov = overrides[cue.id] || {};
     if (ov.disabled) continue;
@@ -255,7 +258,17 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
 
     // Widen (pads + min-width for approx cues) so short/zero-width cues fire and
     // survive driver granularity. Runs after sync so pads are in local time.
+    // R6: shown cues of one subject resolve together, after the loop, to a single effect.
+    const subject = ov.subject ?? cue.subject;
+    if (subject && modality === 'shown' && OVERLAY.has(eff.effect)) {
+      if (!groups.has(subject)) groups.set(subject, []);
+      groups.get(subject).push({ eff, measured });
+      continue;
+    }
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
+  }
+  for (const [subject, members] of groups) {
+    for (const piece of resolveSubject(subject, members)) out.push(widenCue(piece, profile?.treatments));
   }
   const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
   sizeTones(out);
@@ -265,6 +278,41 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
   Object.defineProperty(out, 'notInCut', { value: notInCut, enumerable: false });
   Object.defineProperty(out, 'syncSummary', { value: summarizeSync(sync, { refinedEdl, syncFitsPart }), enumerable: false });
   return out;
+}
+
+/**
+ * R6: `shown` cues sharing a subject are one thing on screen: one effect over the union of their
+ * spans (segments merged), following the best-tracked member's region track (most keyframes).
+ * The strongest member effect wins (blur/full-blur follow the track: regional when tracked).
+ * The track is held at either end so the whole union is covered. The piece id is the subject id.
+ * Members' ids go in `cues` so scenes still recognise them.
+ */
+function resolveSubject(subject, members) {
+  const rank = (e) => HIDE_RANK[e] ?? 0;
+  const tracked = members.filter((m) => m.measured?.regions?.length)
+    .sort((a, b) => b.measured.regions.length - a.measured.regions.length)[0];
+  const lead = [...members].sort((a, b) => rank(b.eff.effect) - rank(a.eff.effect))[0].eff;
+  const spans = members.flatMap(({ eff, measured }) => (measured?.segments?.length > 1 ? measured.segments : [{ in: eff.in, out: eff.out }]))
+    .sort((a, b) => a.in - b.in);
+  const union = [];
+  for (const sp of spans) {
+    const last = union[union.length - 1];
+    if (last && sp.in <= last.out) last.out = Math.max(last.out, sp.out);
+    else union.push({ in: sp.in, out: sp.out });
+  }
+  const first = union[0].in; const end = union[union.length - 1].out;
+  let regions;
+  if (tracked) {
+    regions = tracked.measured.regions.map((k) => ({ ...k }));
+    if (regions[0].in > first) regions.unshift({ ...regions[0], in: first });
+    const last = regions[regions.length - 1];
+    if (last.in < end) regions[regions.length - 1] = { ...last, in: end };
+  }
+  const effect = lead.effect === 'blur' || lead.effect === 'full-blur' ? (regions ? 'blur' : 'full-blur') : lead.effect;
+  const base = { ...(tracked?.eff || lead), effect, id: subject, subject, in: first, out: end, cues: members.map((m) => m.eff.id) };
+  delete base.segments; delete base.regions; delete base.rect;
+  if (members.some((m) => !PRECISE.has(m.eff.precision))) base.precision = 'second-approx';
+  return expandMeasured(base, { segments: union.length > 1 ? union : undefined, regions });
 }
 
 /**
@@ -372,7 +420,7 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
       const rank = HIDE_RANK[c.effect];
       if (rank == null || rank > HIDE_RANK[effect] || String(c.category || '').startsWith('credits')) continue;
       const base = String(c.id).split(/[#@]/)[0];
-      if (members.has(base) || (inside(c) && !keepOwn.has(base))) out.splice(i, 1);
+      if (members.has(base) || (c.cues || []).some((id) => members.has(id)) || (inside(c) && !keepOwn.has(base))) out.splice(i, 1);
     }
     const approved = so.card?.text || null;
     const category = `scene/${(scene.groups || [])[0] || 'other'}`;

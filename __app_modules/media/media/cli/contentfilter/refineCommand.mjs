@@ -27,6 +27,7 @@ import { wordMatcher } from '../../server/domain/content-filter/refine/cueKinds.
 import { fitSync, wordPairs } from '../../server/domain/content-filter/refine/syncFit.mjs';
 import { mergeRefine } from '../../server/domain/content-filter/refine/refineOutput.mjs';
 import { buildRefinedEdl, anchorsFrom, refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
+import { groupSubjects, jevSameSubject } from '../../server/application/content-filter/refine/subjectGroups.mjs';
 import { CueRefiner } from '../../server/application/content-filter/refine/CueRefiner.mjs';
 import { QUESTION_VERSION } from '../../server/application/content-filter/refine/refineQuestions.mjs';
 
@@ -45,6 +46,8 @@ export const REFINE_USAGE = `Usage: contentfilter refine <ratingKey> [options]
   --transcript <file>  Use this word transcript (JSON from transcribe.py) instead of making one
                        (hosts without uv: set CONTENT_FILTER_TRANSCRIBE_PY=python3 so transcription runs python3 transcribe.py)
   --kinds visual       Needs no transcript. A shown cue whose edges stay unsure is still region-tracked over where it was seen (coarse edges kept)
+  --no-subjects        Skip same-subject grouping of overlapping shown tags (R6)
+  --resubject          Ask every overlapping shown pair again (default: keep the subjects already in the refined EDL)
   --write              Merge results into the override and write the review list (default: dry run)`;
 
 /**
@@ -160,8 +163,27 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const anchors = anchorsFrom({ pairs, words: transcript?.words || [], segments: transcript?.segments || [], sync: vaSync, refinedById });
   const refinedPath = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
   const previous = existsSync(refinedPath) ? yaml.load(readFileSync(refinedPath, 'utf8')) : null;
+  // R6: shown tags overlapping in time that Jev says are one thing on screen share a subject.
+  let subjects = {};
+  if (!args.includes('--no-subjects')) {
+    const kindOf = Object.fromEntries(results.map((r) => [r.id, r.kind]));
+    const prevCues = new Map((previous?.cues || []).map((c) => [c.id, c]));
+    const local = (t) => t * sync.scale + sync.offset;
+    const spanned = cues.map((c) => {
+      const o = merged.cueOverrides?.[c.id];
+      const measured = o?.refine && o.in != null;
+      return { ...c, kind: kindOf[c.id] ?? c.refine?.kind ?? prevCues.get(c.id)?.refine?.kind,
+        in: measured ? o.in : local(c.in), out: measured ? o.out : local(c.out) };
+    });
+    const existing = Object.fromEntries((previous?.cues || []).filter((c) => c.subject).map((c) => [c.id, c.subject]));
+    const log = (e) => appendFileSync(path.join(workDir, 'log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), part: partId, ...e })}\n`);
+    const ask = jevSameSubject({ decisions, media, src, timebase, log });
+    const g = await groupSubjects({ cues: spanned, existing, reask: args.includes('--resubject'), ask, log });
+    subjects = g.subjects;
+    console.error(`Subjects: ${g.asked} pairs asked, ${g.yes} same; ${g.groups.length} group(s)${g.groups.length ? ` (${g.groups.map((x) => x.join('+')).join(', ')})` : ''}`);
+  }
   const refined = buildRefinedEdl({
-    edl, cueOverrides: merged.cueOverrides, sync: vaSync, anchors, at, previous, partial,
+    edl, cueOverrides: merged.cueOverrides, sync: vaSync, anchors, at, previous, partial, subjects,
     refinedFrom: { runtimeSec: Math.round(probe.duration * 1000) / 1000, ...frames },
   });
   mkdirSync(path.dirname(refinedPath), { recursive: true });

@@ -465,6 +465,66 @@ describe('channel-matched effects (R1, R2)', () => {
   });
 });
 
+describe('same-subject cues resolve to one effect (R6)', () => {
+  const track = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => ({ in: a + i, grid: 6, cells: [8, 9], box: { x: 0.3, y: 0.2, w: 0.3, h: 0.2 } })).concat([{ in: b + 1, cells: [] }]);
+  const tag = (id, a, b, over = {}) => ({ id, type: 'skip', category: 'language/language_sexual/other_sexual', label: `tag ${id}`, in: a, out: b, precision: 'frame', subject: 'subject-billboard', ...over });
+  const refined = (cues) => ({ timebase: { clock: 'vidangel' }, cues });
+  const profile = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'blur' } } };
+  const sync = { offsetSec: 0, scale: 1 };
+  // BTTF billboard: four tags on one shot, one carries the 6x6 track, categories mixed.
+  const bttf = () => [
+    tag('va3388987', 100, 112),
+    tag('va3388988', 101, 110, { category: 'sex_any/sexually_suggestive' }),
+    tag('va3388989', 100, 125, { regions: track(100, 125) }),
+    tag('va3388990', 104, 120),
+  ];
+  it('four tags, one subject, one tracked: exactly one regional blur over the union, no audio effect', () => {
+    const out = resolveEffectiveCues({ edl: refined(bttf()), profile, override: { sync } });
+    const zero = { treatments: { blur: { padLeadMs: 0, padTrailMs: 0 } } };
+    expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
+    expect(out.some((c) => ['bleep', 'mute', 'duck'].includes(c.effect))).toBe(false);
+    expect(new Set(out.map((c) => String(c.id).split('@')[0])).size).toBe(1);
+    expect(String(out[0].id)).toMatch(/^subject-billboard/);
+    expect(new Set(out.map((c) => c.id)).size).toBe(out.length);          // no duplicate pieces
+    expect(Math.min(...out.map((c) => c.in))).toBeCloseTo(100, 1);
+    expect(Math.max(...out.map((c) => c.out))).toBeGreaterThanOrEqual(125);
+    // no time is covered twice
+    const sorted = [...out].sort((a, b) => a.in - b.in);
+    sorted.slice(1).forEach((c, i) => expect(c.in).toBeGreaterThanOrEqual(sorted[i].out - 0.5));
+    void zero;
+  });
+  it('without a subject the same tags stay separate effects', () => {
+    const cues = bttf().map(({ subject: _s, ...c }) => c);
+    const out = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync } });
+    expect(new Set(out.map((c) => String(c.id).split(/[@#]/)[0])).size).toBe(4);
+  });
+  it('an untracked group is one full-blur over the union', () => {
+    const cues = bttf().map(({ regions: _r, ...c }) => c);
+    const out = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync } });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ effect: 'full-blur', id: 'subject-billboard' });
+    expect(out[0].in).toBeLessThanOrEqual(100); expect(out[0].out).toBeGreaterThanOrEqual(125);
+  });
+  it('the track the group uses is the best-tracked member\'s (most keyframes)', () => {
+    const cues = [tag('a', 100, 110, { regions: track(100, 101) }), tag('b', 100, 125, { regions: track(100, 125) })];
+    const out = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync } });
+    expect(out.length).toBeGreaterThan(10);
+  });
+  it('a said word inside the union still mutes independently', () => {
+    const cues = [...bttf(), { id: 'w', type: 'mute', category: 'language/profanity/damn', label: 'damn', in: 110, out: 110.4, precision: 'ms', subject: 'subject-billboard' }];
+    const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { language: { effect: 'mute' }, sex_any: { effect: 'blur' } } }, override: { sync } });
+    expect(out.find((c) => c.id === 'w')).toMatchObject({ effect: 'mute' });
+    expect(out.filter((c) => c.effect === 'blur').length).toBeGreaterThan(0);
+  });
+  it('a track shorter than the union is held over the rest of it', () => {
+    const cues = [tag('a', 100, 120, { regions: track(105, 110) }), tag('b', 100, 125)];
+    const out = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync } });
+    expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
+    expect(Math.min(...out.map((c) => c.in))).toBeLessThanOrEqual(100.2);
+    expect(Math.max(...out.map((c) => c.out))).toBeGreaterThanOrEqual(125);
+  });
+});
+
 describe('word-sized tones and lines (R3, R4)', () => {
   const zero = { padLeadMs: 0, padTrailMs: 0, approxWidthMs: 0 };
   const profile = {

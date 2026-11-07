@@ -30,8 +30,10 @@ export function refinedEdlName(edl) {
  *   parent sign-off and any key refine does not produce survive; a cue it holds refined that this
  *   run did not (re)measure keeps its refined data.
  * @param {boolean} [p.partial] - a filtered run: anchors add to previous's instead of replacing them
+ * @param {Record<string, string|null>} [p.subjects] - R6: cue id -> subject id (null removes one); cues not named keep
+ *   the subject previous gave them
  */
-export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], refinedFrom = {}, at = null, previous = null, partial = false }) {
+export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], refinedFrom = {}, at = null, previous = null, partial = false, subjects = {} }) {
   const prevCue = new Map((previous?.cues || []).map((c) => [c.id, c]));
   const toVa = (t) => {
     const v = unmapTime(t, sync);
@@ -61,7 +63,11 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
   });
   const refinedCount = measured.filter((c) => c.refine && c.refine.edges !== 'coarse').length;
   // Mutes refine could not pin get a window wide enough for the tag's drift.
-  const cues = applySafeWindows(measured);
+  const cues = applySafeWindows(measured).map((c) => {
+    const subject = c.id in subjects ? subjects[c.id] : (prevCue.get(c.id)?.subject ?? c.subject);
+    const { subject: _old, ...rest } = c;
+    return subject ? { ...rest, subject } : rest;
+  });
   const { contentId, cues: _c, precision: _p, certification: _x, ...head } = edl;
   // Certification is recomputed on every build; a person's sign-off carries over
   // from the previous file while the bar still holds.

@@ -97,3 +97,14 @@ export function spectrogramPickQuestion({ png, letters, word, prev, next, edge }
     read: (a) => ({ letter: a.pick.choice, confidence: a.pick.confidence }),
   };
 }
+
+/** R6: do two shown tags describe the same thing on screen? (both labels + one frame from their overlap) */
+export function sameSubjectQuestion(labelA, labelB, png) {
+  return {
+    state: { frame: image(png), a: String(labelA || '').trim(), b: String(labelB || '').trim() },
+    questions: {
+      same: yesNo('Two content tags from a family movie filter are described in `a` and `b`. In `frame`, do both tags describe the same single thing on screen (the same sign, billboard, object or action), not two different things?'),
+    },
+    read: (x) => ({ p: x.same.probability, v: band(x.same.probability) }),
+  };
+}
