@@ -29,6 +29,7 @@ import PlayCard from "./modules/PlayCard.jsx";
 import WorkPlacard from "./modules/WorkPlacard.jsx";
 import ScriptRail from "./modules/ScriptRail.jsx";
 import FilterRail from "../content-filter/preview/FilterRail.jsx";
+import FilterTimeline from "../content-filter/preview/FilterTimeline.jsx";
 
 /**
  * Every built-in, as `[name, Component, meta]`. The single source the
@@ -65,6 +66,8 @@ const BUILTIN_MODULES = [
   ['script-rail', ScriptRail, { regions: ['lyric'] }],
   // The content-filter preview sidebar (a grown-up reviewing what the filter did).
   ['content-filter-rail', FilterRail, { regions: ['right'] }],
+  // The preview's bottom bar: filter marks, playhead, seek and cue stepping.
+  ['content-filter-timeline', FilterTimeline, { regions: ['bottom'] }],
 ];
 
 /**
