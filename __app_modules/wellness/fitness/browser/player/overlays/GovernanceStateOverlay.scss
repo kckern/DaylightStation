@@ -1087,7 +1087,32 @@ $warning-scrim-steps: (
   flex: 0 0 auto;
 }
 
+// Challenge hold: slim bar + a quiet label on the same line (HoldProgress.jsx).
+// The fill is one linear transform animation over the whole hold, entered
+// part-way with a negative animation-delay — never a per-tick width/scale step.
+.governance-hold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.governance-hold__label {
+  flex: 0 0 auto;
+  min-width: 5.5em;
+  text-align: right;
+  font-size: 0.72rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(226, 232, 240, 0.55);
+  white-space: nowrap;
+}
+
 .governance-hold-progress {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 3px;
   width: 100%;
   border-radius: 999px;
@@ -1101,7 +1126,20 @@ $warning-scrim-steps: (
     border-radius: inherit;
     background: currentColor;
     transform-origin: left;
+    transform: scaleX(0);
   }
+
+  > .governance-hold-progress__fill--running {
+    animation-name: governance-hold-fill;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    will-change: transform;
+  }
+}
+
+@keyframes governance-hold-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 
 .governance-overlay__panel--sections {

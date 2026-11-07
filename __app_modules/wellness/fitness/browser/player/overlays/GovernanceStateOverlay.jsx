@@ -2,10 +2,13 @@ import React, { useMemo, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getLogger } from '@/lib/logging/Logger.js';
-import { useDeadlineCountdown } from "../../shared/index.js";
+// Direct import: the shared/ barrel drags every widget (recharts, flip-move…)
+// into this overlay and its tests.
+import useDeadlineCountdown from "../../shared/hooks/useDeadlineCountdown.js";
 import GovernanceAudioPlayer from "./GovernanceAudioPlayer.jsx";
 import CompletionAvatars from "./CompletionAvatars.jsx";
 import LockIcon from "./LockIcon.jsx";
+import HoldProgress from "./HoldProgress.jsx";
 import "./GovernanceStateOverlay.scss";
 import { checkOverlayPaint, describeCompositing } from "./overlayPaintCheck.js";
 import { warningScrimStep } from "./warningScrimStep.js";
@@ -27,17 +30,6 @@ function PedalFeedback({ pedal }) {
   </span>;
 }
 
-function HoldProgress({ row }) {
-  const hold = row.holdProgress;
-  if (!hold || !Number.isFinite(hold.totalMs) || hold.totalMs <= 0) return null;
-  const elapsedMs = Math.max(0, Math.min(hold.totalMs, hold.elapsedMs || 0));
-  return <div className="governance-hold-progress" role="progressbar"
-    aria-label={`${row.displayName || row.name || row.userId} zone hold`}
-    aria-valuemin={0} aria-valuemax={hold.totalMs} aria-valuenow={elapsedMs}
-    aria-valuetext={`${Math.ceil(Math.max(0, hold.totalMs - elapsedMs) / 1000)} seconds remaining`}>
-    <span style={{ transform: `scaleX(${elapsedMs / hold.totalMs})`, background: row.targetZone?.color || undefined }} />
-  </div>;
-}
 
 let _warningLogger;
 const warningLogger = () => {
