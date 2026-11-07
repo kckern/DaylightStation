@@ -4,7 +4,8 @@
  * Rules:
  * - A refined cue writes `cueOverrides[id]` with in/out (media seconds), its
  *   precision, segments (when more than one), region track, and a `refine`
- *   stamp binding it to the media part.
+ *   stamp binding it to the media part and naming the kind refine judged it
+ *   (speech, speech-line, visual, credits) — the player's channel (R1) reads it.
  * - A cue override WITHOUT a `refine` stamp is manual (or an older tool's)
  *   work and is never replaced; the result goes to the review list instead.
  * - Keys a person may set on an override (disabled, effect, nudgeMs, …) are
@@ -37,7 +38,7 @@ export function mergeRefine(override, results, { part, at, version = 1 }) {
       if (!regions || (prev && (prev.in != null || prev.out != null))) { counts.unknown++; continue; }
       const kept = {};
       for (const [k, v] of Object.entries(prev || {})) if (!REFINE_KEYS.includes(k)) kept[k] = v;
-      cueOverrides[r.id] = { ...kept, regions, refine: { v: version, part: String(part), at, edges: 'coarse' } };
+      cueOverrides[r.id] = { ...kept, regions, refine: { v: version, part: String(part), at, edges: 'coarse', ...(r.kind ? { kind: r.kind } : {}) } };
       counts.region++;
       continue;
     }
@@ -59,7 +60,7 @@ export function mergeRefine(override, results, { part, at, version = 1 }) {
     if (r.segments?.length > 1) entry.segments = r.segments.map((s) => ({ in: s.in, out: s.out }));
     const regions = regionsOf(r);
     if (regions) entry.regions = regions;
-    entry.refine = { v: version, part: String(part), at, ...(r.conf != null ? { conf: round2(r.conf) } : {}), ...(r.how ? { how: r.how } : {}) };
+    entry.refine = { v: version, part: String(part), at, ...(r.kind ? { kind: r.kind } : {}), ...(r.conf != null ? { conf: round2(r.conf) } : {}), ...(r.how ? { how: r.how } : {}) };
     cueOverrides[r.id] = entry;
     counts.written++;
   }

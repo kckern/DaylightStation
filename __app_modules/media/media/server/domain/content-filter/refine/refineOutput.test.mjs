@@ -103,7 +103,7 @@ describe('mergeRefine: region-only results (coarse edges)', () => {
 
   it('writes regions + a coarse stamp and no times, and lists the cue for review', () => {
     const { override, review, counts } = mergeRefine({}, [region()], { part: '9', at: '2026-11-06' });
-    expect(override.cueOverrides.va1).toEqual({ regions: [expect.objectContaining({ in: 5, cells: [4] }), { in: 7, cells: [] }], refine: { v: 1, part: '9', at: '2026-11-06', edges: 'coarse' } });
+    expect(override.cueOverrides.va1).toEqual({ regions: [expect.objectContaining({ in: 5, cells: [4] }), { in: 7, cells: [] }], refine: { v: 1, part: '9', at: '2026-11-06', edges: 'coarse', kind: 'visual' } });
     expect(override.cueOverrides.va1.in).toBeUndefined();
     expect(counts.region).toBe(1);
     expect(review[0]).toMatchObject({ id: 'va1', status: 'coarse-edges', reason: 'edge-all-unsure' });
@@ -115,5 +115,19 @@ describe('mergeRefine: region-only results (coarse edges)', () => {
     expect(override.cueOverrides.va1).toEqual(prev.cueOverrides.va1);
     expect(override.cueOverrides.va2.effect).toBe('blur');
     expect(override.cueOverrides.va2.regions).toHaveLength(2);
+  });
+});
+
+describe('mergeRefine: the refine stamp carries the judged kind (R1)', () => {
+  it('stamps kind on refined and coarse-edge entries', () => {
+    const track = [{ in: 20, grid: 6, cells: [0], box: { x: 0, y: 0, w: 0.2, h: 0.2 } }, { in: 21, cells: [] }];
+    const { override: out } = mergeRefine(null, [
+      { id: 'w', status: 'refined', kind: 'speech', precision: 'ms', in: 10.5, out: 10.9 },
+      { id: 'v', status: 'refined', kind: 'visual', precision: 'frame', in: 20, out: 22, frameIn: 1, frameOut: 2, segments: [{ in: 20, out: 22, region: { whole: true } }] },
+      { id: 'r', status: 'region', kind: 'visual', edges: 'coarse', reason: 'edge-all-unsure', segments: [{ in: 20, out: 21, region: { whole: false, track } }] },
+    ], stamp);
+    expect(out.cueOverrides.w.refine.kind).toBe('speech');
+    expect(out.cueOverrides.v.refine.kind).toBe('visual');
+    expect(out.cueOverrides.r.refine).toMatchObject({ edges: 'coarse', kind: 'visual' });
   });
 });

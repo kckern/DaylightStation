@@ -16,4 +16,19 @@ describe('TimeoutDecisionGateway', () => {
     const g = new TimeoutDecisionGateway({ evaluate: async () => { throw new Error('boom'); } }, { timeoutMs: 500 });
     await expect(g.evaluate({}, {})).rejects.toThrow('boom');
   });
+  it('a synchronous throw from the inner gateway rejects and leaves no timer armed', async () => {
+    const unhandled = [];
+    const onUnhandled = (e) => unhandled.push(e);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const g = new TimeoutDecisionGateway({ evaluate: () => { throw new Error('sync boom'); } }, { timeoutMs: 30 });
+      let p;
+      expect(() => { p = g.evaluate({}, {}); }).not.toThrow();
+      await expect(p).rejects.toThrow('sync boom');
+      await new Promise((r) => setTimeout(r, 80));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
 });

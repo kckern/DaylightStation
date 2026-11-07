@@ -22,7 +22,9 @@ export class TimeoutDecisionGateway {
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(Object.assign(new Error(`decision model gave no answer within ${ms} ms`), { code: 'JEV_TIMEOUT', timeoutMs: ms })), ms);
     });
-    return Promise.race([this.inner.evaluate(state, questions, { ...opts, timeout: ms }), timeout]).finally(() => clearTimeout(timer));
+    // A synchronous throw from the inner gateway becomes a rejection here, so the timer is always cleared.
+    const answer = Promise.resolve().then(() => this.inner.evaluate(state, questions, { ...opts, timeout: ms }));
+    return Promise.race([answer, timeout]).finally(() => clearTimeout(timer));
   }
 }
 

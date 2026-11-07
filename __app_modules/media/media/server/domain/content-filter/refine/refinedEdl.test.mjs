@@ -197,3 +197,15 @@ describe('buildRefinedEdl subjects (R6)', () => {
     expect(cleared.cues.find((c) => c.id === 'b').subject).toBeUndefined();
   });
 });
+
+describe('buildRefinedEdl: the refine kind reaches the shared EDL (R1)', () => {
+  it('keeps kind in the stamp of refined and coarse-edge cues', () => {
+    const ov = {
+      a: { ...cueOverrides.a, refine: { ...cueOverrides.a.refine, kind: 'speech' } },
+      c: { regions: [{ in: 308, grid: 6, cells: [4] }, { in: 312, cells: [] }], refine: { v: 1, part: '777', at: '2026-11-06', edges: 'coarse', kind: 'visual' } },
+    };
+    const out = buildRefinedEdl({ edl, cueOverrides: ov, sync, anchors: [], at: '2026-11-06', refinedFrom: {} });
+    expect(out.cues.find((x) => x.id === 'a').refine).toMatchObject({ kind: 'speech' });
+    expect(out.cues.find((x) => x.id === 'c').refine).toMatchObject({ kind: 'visual', edges: 'coarse' });
+  });
+});
