@@ -89,11 +89,14 @@ export async function groupSubjects({ cues, existing = {}, reask = false, ask, l
  * @param {{ frames: Function }} p.media
  * @param {string} p.src
  * @param {{ frameAt: Function, frameStart: Function }} p.timebase
- * @param {number} [p.width] - frame width sent to the model
+ * @param {number} [p.width] - minimum frame width sent to the model
+ * @param {number} [p.aspect] - picture width / height; widens the frame so the short side is >= 300 px
  * @param {number} [p.timeoutMs]
  * @param {(entry: object) => void} [p.log]
  */
-export function jevSameSubject({ decisions, media, src, timebase, width = 640, timeoutMs = 90000, log = () => {} }) {
+export function jevSameSubject({ decisions, media, src, timebase, width: baseWidth = 640, aspect = 16 / 9, timeoutMs = 90000, log = () => {} }) {
+  // The model needs >= 280 px on the short side: a scope picture (2.4:1) at 640 wide is only 266 tall.
+  const width = Math.max(baseWidth, 2 * Math.ceil((300 * aspect) / 2));
   return async (a, b, overlap) => {
     const mid = (overlap.in + overlap.out) / 2;
     const [fr] = await media.frames(src, timebase.frameStart(timebase.frameAt(mid)), 1, { width });

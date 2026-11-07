@@ -78,6 +78,9 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
   const trackedCues = shownCues.filter(({ cue }) => (pieces.get(cue.id) || []).some(trackedPiece));
   const coarseEdge = trackedCues.filter(({ cue, ov }) => (cue.refine?.edges ?? ov.refine?.edges) === 'coarse').length;
   const share = pct(trackedCues.length, shownCues.length);
+  // Coverage of the DATA: shown cues carrying a region track whatever effect the profile picked
+  // (an explicit full-blur stays whole-frame; the track is still there for a profile that wants it).
+  const withTrackData = shownCues.filter(({ cue, ov }) => (cue.regions?.length || ov.regions?.length)).length;
 
   // same-subject groups
   const bySubject = new Map();
@@ -87,12 +90,16 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     bySubject.get(s.subject).push(s.cue.id);
   }
   const groups = [...bySubject.entries()].filter(([, ids]) => ids.length > 1);
+  const ownOf = (subject) => cues.filter((c) => !c.scene && (baseId(c.id) === subject || (c.subject === subject && Array.isArray(c.cues))));
+  // A group none of whose members resolves to any piece (profile off, or a scene covers it) has no effect to disagree about.
+  const noEffect = groups.filter(([subject, ids]) => !ownOf(subject).length && !ids.some((id) => (pieces.get(id) || []).length)).length;
   const resolvedOne = groups.filter(([subject, ids]) => {
-    const own = cues.filter((c) => !c.scene && (baseId(c.id) === subject || (c.subject === subject && Array.isArray(c.cues))));
+    const own = ownOf(subject);
     if (!own.length) return false;
     const stray = ids.some((id) => (pieces.get(id) || []).some((c) => !own.includes(c)));
     return new Set(own.map((c) => c.effect)).size === 1 && !stray;
   }).length;
+  const effective = groups.length - noEffect;
 
   // R4
   const lineIds = (kind) => uniq(cues.filter((c) => c.line === kind).map((c) => baseId(c.id)));
@@ -131,8 +138,8 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     rk: null, title: edl?.title ?? null, profile: null,
     ok: checks.toneCap.ok && checks.channel.ok,
     checks,
-    regions: { shown: shownCues.length, tracked: trackedCues.length, coarseEdge, share, target: REGION_TARGET, pass: share == null ? null : share >= REGION_TARGET },
-    subjects: { groups: groups.length, members: groups.reduce((n, [, ids]) => n + ids.length, 0), resolvedOne, share: pct(resolvedOne, groups.length) },
+    regions: { shown: shownCues.length, tracked: trackedCues.length, coarseEdge, share, withTrackData, dataShare: pct(withTrackData, shownCues.length), target: REGION_TARGET, pass: share == null ? null : share >= REGION_TARGET },
+    subjects: { groups: groups.length, members: groups.reduce((n, [, ids]) => n + ids.length, 0), noEffect, resolvedOne, share: pct(resolvedOne, effective) },
     lines: { muted: lineIds('remark').length, skipped: lineIds('exchange').length, cardsApproved: cards.length - generic, cardsGeneric: generic },
     scenes: { total: (edl?.scenes || []).length, leaks, byEffect: cues.sceneSummary?.byEffect || {} },
     certification: { level: cert.level || 'none', ...(cert.blocking?.length ? { blocking: cert.blocking } : {}) },
@@ -148,8 +155,8 @@ export function formatAudit(r) {
   const rows = [
     ['tone cap (<= 1.5 s)', verdict(k.toneCap.ok), k.toneCap.violations ? `${k.toneCap.violations} over: ${k.toneCap.ids.join(', ')}` : '0 over'],
     ['channel match', verdict(k.channel.ok), k.channel.ok ? 'none misplaced' : `audio on shown: ${k.channel.audioOnShown.join(', ') || '-'}; visual on said: ${k.channel.visualOnSaid.join(', ') || '-'}`],
-    ['region tracks on shown', verdict(g.pass), `${g.tracked}/${g.shown} (${p100(g.share)}, target ${p100(g.target)}), ${g.coarseEdge} coarse-edge`],
-    ['same-subject groups', s.groups ? verdict(s.resolvedOne === s.groups) : 'n/a', `${s.groups} groups, ${s.members} members, ${s.resolvedOne} resolved to one effect (${p100(s.share)})`],
+    ['region tracks on shown', verdict(g.pass), `${g.tracked}/${g.shown} (${p100(g.share)}, target ${p100(g.target)}), ${g.coarseEdge} coarse-edge; track data ${g.withTrackData}/${g.shown} (${p100(g.dataShare)})`],
+    ['same-subject groups', s.groups - s.noEffect ? verdict(s.resolvedOne === s.groups - s.noEffect) : 'n/a', `${s.groups} groups, ${s.members} members, ${s.resolvedOne} resolved to one effect (${p100(s.share)}), ${s.noEffect} with no effect (profile off or a scene covers them)`],
     ['lines / exchanges (R4)', '', `${l.muted} lines muted, ${l.skipped} exchanges skipped; cards ${l.cardsApproved} approved, ${l.cardsGeneric} generic`],
     ['scene edge leaks', verdict(!sc.leaks.length), sc.leaks.length ? sc.leaks.map((x) => `${x.scene}: ${x.cues.join(' ')}`).join('; ') : `0 of ${sc.total} scenes`],
     ['certification', '', c.level + (c.blocking ? ` (approximate: ${c.blocking.join(', ')})` : '')],

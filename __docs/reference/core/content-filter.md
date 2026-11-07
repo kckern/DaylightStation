@@ -143,14 +143,18 @@ as authored.
 the raw one), the override with its `profilePatch` and the profile (default `family`) the way the
 API does, runs the player's own `resolveEffectiveCues` and measures what would play. It writes
 nothing. Output is a table on stderr; `--json` also prints the report on stdout. It exits 1 when a
-hard check fails.
+hard check fails. (The frontend logger writes to stdout; the CLI sends it to stderr so `--json` stays parseable.)
 
 - **Hard checks:** no bleep longer than 1.5 s (count and ids); no audio effect on a `shown` cue;
   no visual effect on a `said` cue (ids).
 - **Region tracks:** share of `shown` cues that resolve to an overlay and have a region track
-  (target 70%, flagged pass/fail but not fatal); coarse-edge tracks are counted separately.
+  (target 70%, flagged pass/fail but not fatal); coarse-edge tracks are counted separately. The
+  table also prints `track data n/m`: shown cues whose data carries a track whatever the profile
+  chose (a profile's explicit `full-blur` stays whole-frame unless the cue is in a same-subject
+  group, so the resolved share can sit far below the data share).
 - **Same-subject groups (R6):** groups of two or more `shown` cues, their members, and how many
-  resolve to a single effect.
+  resolve to a single effect. A group nothing resolves for (profile off, or a scene covers it) is
+  counted as "no effect" and does not fail the check.
 - **R4:** lines muted, exchanges skipped, and skip-cards with approved vs generic text.
 - **Scenes and certification:** scenes whose edges leave a member uncovered (the check refine logs
   as `scene-edge-uncovered`) and the EDL's certification level.
@@ -270,7 +274,7 @@ loads the existing refined EDL as `previous` before building.
 
 **Refine on the server (R8).** `transcribe.py` uses mlx-whisper when it imports and otherwise
 faster-whisper on CPU (int8); the choice is automatic and written as `backend` in the words JSON.
-Hosts without `uv` set `CONTENT_FILTER_TRANSCRIBE_PY=python3` so the CLI runs `python3 transcribe.py`.
+Hosts without `uv` set `CONTENT_FILTER_TRANSCRIBE_PY=python3` so the CLI runs `python3 transcribe.py`. Speech refine also forced-aligns each word (`align_words.py`, torch + torchaudio MMS): on such a host point `CONTENT_FILTER_ALIGN_PY` at a python that has them (a venv with the CPU wheels works); without it every speech cue ends `unknown` with `align_words failed: spawn uv ENOENT`.
 ImageMagick 6 hosts work too (the renderer falls back from `magick` to `convert`).
 `refine --kinds visual` needs no transcript (clock sync comes from the override) and selects
 `shown` cues, including `skip` cues under a language category. Every Jev request has a

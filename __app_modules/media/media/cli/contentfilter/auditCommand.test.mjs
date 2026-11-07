@@ -44,6 +44,20 @@ describe('computeAudit', () => {
     expect(low.regions.pass).toBe(false);
     expect(low.ok).toBe(true); // soft target: does not fail the exit
   });
+  it('also counts shown cues whose DATA carries a region track, even when the profile resolves them full-frame', () => {
+    const fullFrame = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'full-blur' } } };
+    const f = computeAudit({ edl: film(), profile: fullFrame, override });
+    expect(f.regions.tracked).toBe(2); // only the same-subject group (s1, s2) follows its track; a lone full-blur stays whole-frame
+    expect(f.regions).toMatchObject({ shown: 5, withTrackData: 3 });
+    expect(f.regions.dataShare).toBeCloseTo(0.6, 5);
+    expect(formatAudit(f)).toMatch(/track data 3\/5/);
+  });
+  it('a same-subject group nothing resolves for (profile off) is "no effect", not a failure', () => {
+    const off = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'off' } } };
+    const o = computeAudit({ edl: film(), profile: off, override });
+    expect(o.subjects).toMatchObject({ groups: 1, noEffect: 1, resolvedOne: 0 });
+    expect(formatAudit(o)).toMatch(/same-subject groups\s+n\/a/);
+  });
   it('counts same-subject groups and the share resolved to one effect', () => {
     expect(r.subjects).toMatchObject({ groups: 1, members: 2, resolvedOne: 1, share: 1 });
   });

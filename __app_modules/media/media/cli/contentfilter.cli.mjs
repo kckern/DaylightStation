@@ -1091,7 +1091,9 @@ async function main() {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error(AUDIT_USAGE); process.exit(1); }
     let report;
-    try { report = runAudit({ rk, flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() }); } catch (err) { console.error(`audit ${rk} failed: ${err.message}`); process.exit(1); }
+    // The resolver's logger prints to stdout; keep stdout for the --json report only.
+    const stdoutWrite = process.stdout.write; process.stdout.write = (...a) => process.stderr.write(...a);
+    try { report = runAudit({ rk, flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() }); } catch (err) { console.error(`audit ${rk} failed: ${err.message}`); process.exit(1); } finally { process.stdout.write = stdoutWrite; }
     console.error(formatAudit(report));
     if (flags.json) console.log(JSON.stringify(report, null, 2));
     if (!report.ok) process.exit(1);

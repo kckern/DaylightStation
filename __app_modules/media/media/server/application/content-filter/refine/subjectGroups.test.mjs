@@ -62,6 +62,14 @@ describe('jevSameSubject', () => {
     expect(await jevSameSubject({ decisions: gw(0.5), media, src: 'f', timebase })(a, b, { in: 5, out: 10 })).toBe(false);
     expect(await jevSameSubject({ decisions: gw(0.1), media, src: 'f', timebase })(a, b, { in: 5, out: 10 })).toBe(false);
   });
+  it('widens the frame for a scope picture so its short side reaches the model minimum (T2 640x266 was refused)', async () => {
+    const widths = [];
+    const m = { async frames(_s, pts, _n, { width }) { widths.push(width); return [{ pts, png: Buffer.from('F') }]; } };
+    await jevSameSubject({ decisions: gw(0.9), media: m, src: 'f', timebase, aspect: 1920 / 800 })(a, b, { in: 5, out: 10 });
+    await jevSameSubject({ decisions: gw(0.9), media: m, src: 'f', timebase, aspect: 16 / 9 })(a, b, { in: 5, out: 10 });
+    expect(widths[0] / (1920 / 800)).toBeGreaterThanOrEqual(300);
+    expect(widths[1]).toBe(640);
+  });
   it('a gateway timeout surfaces as no through groupSubjects', async () => {
     const decisions = { async evaluate() { throw Object.assign(new Error('late'), { code: 'JEV_TIMEOUT' }); } };
     const r = await groupSubjects({ cues: [a, b], ask: jevSameSubject({ decisions, media, src: 'f', timebase }) });

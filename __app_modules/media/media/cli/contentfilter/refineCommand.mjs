@@ -44,7 +44,8 @@ export const REFINE_USAGE = `Usage: contentfilter refine <ratingKey> [options]
   --no-region          Skip region tracks
   --snap <sec>         Speech edge snap window (default 0.07; wider measured worse)
   --transcript <file>  Use this word transcript (JSON from transcribe.py) instead of making one
-                       (hosts without uv: set CONTENT_FILTER_TRANSCRIBE_PY=python3 so transcription runs python3 transcribe.py)
+                       (hosts without uv: set CONTENT_FILTER_TRANSCRIBE_PY=python3 so transcription runs python3 transcribe.py,
+                       and CONTENT_FILTER_ALIGN_PY=<python with torch+torchaudio> for the word alignment of speech cues)
   --kinds visual       Needs no transcript. A shown cue whose edges stay unsure is still region-tracked over where it was seen (coarse edges kept)
   --no-subjects        Skip same-subject grouping of overlapping shown tags (R6)
   --resubject          Ask every overlapping shown pair again (default: keep the subjects already in the refined EDL)
@@ -177,7 +178,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     });
     const existing = Object.fromEntries((previous?.cues || []).filter((c) => c.subject).map((c) => [c.id, c.subject]));
     const log = (e) => appendFileSync(path.join(workDir, 'log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), part: partId, ...e })}\n`);
-    const ask = jevSameSubject({ decisions, media, src, timebase, log });
+    const ask = jevSameSubject({ decisions, media, src, timebase, aspect: probe.width / probe.height, log });
     const g = await groupSubjects({ cues: spanned, existing, reask: args.includes('--resubject'), ask, log });
     subjects = g.subjects;
     console.error(`Subjects: ${g.asked} pairs asked, ${g.yes} same; ${g.groups.length} group(s)${g.groups.length ? ` (${g.groups.map((x) => x.join('+')).join(', ')})` : ''}`);
