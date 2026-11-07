@@ -47,7 +47,7 @@ describe('ContentFilterScenes', () => {
     expect(await uc.draftCards({ ratingKey: '5' })).toEqual({ drafted: 1, scenes: 2 });
     expect(repo.state.refined.scenes[0].card).toEqual({ text: 'They escape in the truck.', at: '2026-11-06' });
     expect(repo.state.refined.scenes[1].card).toBeUndefined();
-    expect(prompts[0].m[1].content).toContain('Said just after: We made it.');
+    expect(prompts[0].m[1].content).toContain('Said in the minute after: We made it.');
     expect(prompts[0].o.usageTags).toEqual({ app: 'media', feature: 'content-filter-cards' });
   });
 

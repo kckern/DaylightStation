@@ -15,11 +15,12 @@ export const CARD_MAX_CHARS = 90;
 const EFFECTS = new Set(['off', 'blackout', 'skip']);
 const CUE_EFFECTS = new Set(['mute', 'bleep', 'blur', 'full-blur', 'skip']);
 
-export const CARD_SYSTEM = `You write the one-line title card a family movie filter shows a child in place of a scene it hid or skipped.
-Rules: one sentence, at most ${CARD_MAX_CHARS} characters, plain words a 7-year-old can read.
-Never describe what was hidden (no violence, injuries, nudity, or sexual detail).
-Say what happened in the story only when the child needs it to follow along ("The Terminator escapes from the police station.").
-If nothing story-relevant happened, write a neutral line ("The fight is over."). Reply with the sentence only.`;
+export const CARD_SYSTEM = `You write the one-line title card a family movie filter shows a child in place of a part of the film it skipped or hid.
+The child must be able to keep following the story, so say what HAPPENS in the story during the skipped part: who does what, and how it turns out (use your knowledge of this film and the dialogue around the gap).
+Name the characters. Never describe what was hidden: no violence detail, injuries, nudity, or sexual detail.
+One sentence, at most ${CARD_MAX_CHARS} characters, plain words a 7-year-old can read. Not "The fight is over." or "The scene ends.": say the story beat.
+Examples: "George stands up to Biff and knocks him down. Lorraine goes with George." / "The Terminator escapes from the police station."
+Reply with the sentence only.`;
 
 export class ContentFilterScenes {
   #repo; #ai; #logger; #clock;
@@ -213,9 +214,9 @@ export class ContentFilterScenes {
     return [
       `Movie: ${t.refined.title}${t.refined.year ? ` (${t.refined.year})` : ''}`,
       `What the hidden scene contains (from content tags; do not repeat): ${tags.filter(Boolean).join('; ')}`,
-      `Said just before: ${lines(from - 30, from) || '(nothing)'}`,
+      `Said in the two minutes before: ${lines(from - 120, from) || '(nothing)'}`,
       `Said during: ${lines(from, to) || '(nothing)'}`,
-      `Said just after: ${lines(to, to + 30) || '(nothing)'}`,
+      `Said in the minute after: ${lines(to, to + 60) || '(nothing)'}`,
     ].join('\n');
   }
 
@@ -228,7 +229,7 @@ export class ContentFilterScenes {
 
   #ask(prompt) {
     return this.#ai.chat([{ role: 'system', content: CARD_SYSTEM }, { role: 'user', content: prompt }], {
-      maxTokens: 80, temperature: 0.3, usageTags: { app: 'media', feature: 'content-filter-cards' },
+      maxTokens: 120, temperature: 0.3, usageTags: { app: 'media', feature: 'content-filter-cards' },
     });
   }
 
