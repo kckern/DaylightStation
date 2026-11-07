@@ -48,8 +48,8 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     enabled: filterEnabled && !!filterData?.edl,
   });
 
-  // Viewer chrome (spec §2): the opening bumper and the filter-active badge. When
-  // forced on (?filter=1) the badge also shows when the filter data failed to load, crossed out, so an
+  // Viewer chrome (spec §2): the opening bumper and the filter-active badge. The
+  // badge also shows (regardless of URL flags, except ?filter=0) when the filter data failed to load, crossed out, so an
   // absent filter never passes for an active one.
   const hasEdl = !!filterData?.edl;
   const filterSummaryLine = useMemo(() => filterSummary(filterCues), [filterCues]);
@@ -60,7 +60,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   const bumperWindowSec = useMemo(() => bumperStartWindowSec(filterCues), [filterCues]);
   const bumperShown = useBumper({ getMediaEl, enabled: filterEnabled && hasEdl, startWindowSec: bumperWindowSec });
   const badgeState = filterStatus === 'failed' ? 'failed' : (provisional ? 'provisional' : 'certified');
-  const showChrome = !!filterContentId && ((filterEnabled && hasEdl) || (forcedOn && filterStatus === 'failed'));
+  const showChrome = !!filterContentId && ((filterEnabled && hasEdl) || filterStatus === 'failed');
 
   // Art for title/skip cards, via the Plex image proxy. The proxy keys on the
   // bare ratingKey — filterContentId carries a `plex:` prefix (it's the mediaKey),

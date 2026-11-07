@@ -81,6 +81,8 @@ describe('installed Media playback presentation', () => {
     const el = document.createElement('video');
     return renderHook(() => contract.useVideoPresentation({ media: { assetId: id }, isPlex: true, getMediaEl: () => el }));
   }
+  // Let the fetch promise chain and resulting state updates flush.
+  const settle = () => act(async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); });
   const payload = (ready) => ({
     edl: { cues: [{ id: 'm', effect: 'mute', in: 30, out: 31, category: 'language/x' }] },
     profile: { categories: {}, theme: {} },
@@ -98,7 +100,8 @@ describe('installed Media playback presentation', () => {
     const f = vi.fn(async () => ({ ok: true, status: 200, json: async () => payload(false) }));
     const { result } = await renderFor('', f, 'plex:51');
     await waitFor(() => expect(f).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 50));
+    await settle();
+    expect(f).toHaveBeenCalledTimes(1);
     expect(result.current.overlay).toBeFalsy();
   });
 
@@ -106,14 +109,25 @@ describe('installed Media playback presentation', () => {
     const f = vi.fn(async () => ({ ok: false, status: 404 }));
     const { result } = await renderFor('', f, 'plex:52');
     await waitFor(() => expect(f).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 50));
+    await settle();
+    expect(f).toHaveBeenCalledTimes(1);
     expect(result.current.overlay).toBeFalsy();
+  });
+
+  it('shows the failed badge on a load failure with no URL flag', async () => {
+    const f = vi.fn(async () => ({ ok: false, status: 503 }));
+    const { result } = await renderFor('', f, 'plex:54');
+    await waitFor(() => expect(result.current.overlay?.props.badge).toEqual({ state: 'failed', fireCount: 0 }), { timeout: 5000 });
+    expect(f).toHaveBeenCalledTimes(2);
+    const { render } = await import('@testing-library/react');
+    const { container } = render(result.current.overlay);
+    expect(container.querySelector('[data-filter-badge="failed"]')).toBeTruthy();
   });
 
   it('?filter=0 does not even fetch', async () => {
     const f = vi.fn(async () => ({ ok: true, status: 200, json: async () => payload(true) }));
     const { result } = await renderFor('?filter=0', f, 'plex:53');
-    await new Promise((r) => setTimeout(r, 50));
+    await settle();
     expect(f).not.toHaveBeenCalled();
     expect(result.current.overlay).toBeFalsy();
   });
