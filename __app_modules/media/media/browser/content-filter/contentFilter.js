@@ -245,19 +245,22 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
       // optional per-cue manual nudge (ms), applied after the global sync
       if (typeof ov.nudgeMs === 'number') { eff.in += ov.nudgeMs / 1000; eff.out += ov.nudgeMs / 1000; }
     }
-    // The effect must fit the cue's channel (said/shown/heard); a tracked shown
-    // cue gets the regional blur, an untracked one full-blur.
+    // The effect must fit the cue's channel (said/shown/heard). R2: a shown cue with a usable
+    // region track (one sighting at least) gets the regional blur whether it asked for blur or
+    // full-blur — a full-blur keeps its radius (`heavy`); an untracked one gets full-blur.
     // Cues with no type or refine kind (hand-added) carry no channel evidence: left as authored.
     const kind = cue.kind ?? cue.refine?.kind ?? ov.refine?.kind;
     const modality = cueModality({ ...cue, ...(kind ? { kind } : {}) });
-    const fitted = (cue.type || kind)
-      ? fitEffectToChannel(eff.effect, modality, { hasRegions: !!measured?.regions?.length })
-      : eff.effect;
-    // R6: what this cue asks of its group — the effect it would play if tracked (blur stays
-    // regional-able; an explicit full-blur or a stronger effect stays as it is).
-    const groupEffect = (cue.type || kind) ? fitEffectToChannel(eff.effect, modality, { hasRegions: true }) : eff.effect;
+    const typed = !!(cue.type || kind);
+    const fitted = typed ? fitEffectToChannel(eff.effect, modality, { hasRegions: hasSighting(measured?.regions) }) : eff.effect;
+    // R6: what this cue asks of its group when the group has a track: blur (audio effects fit to
+    // it), full-blur, or a stronger effect as it is. The group decides what becomes regional.
+    const groupEffect = !typed ? eff.effect
+      : (modality === 'shown' && eff.effect === 'full-blur') ? 'full-blur'
+        : fitEffectToChannel(eff.effect, modality, { hasRegions: true });
     if (fitted !== eff.effect) {
       logger().sampled('content-filter.effect.adjusted', { id: cue.id, from: eff.effect, to: fitted, modality, source: explicit ? 'override' : 'profile' }, { maxPerMinute: 10, aggregate: true });
+      if (eff.effect === 'full-blur' && fitted === 'blur') eff.heavy = true;
       eff.effect = fitted;
     }
     // Coarse edges: the track covers only where it was seen, the cue's window is a guess. Hold
@@ -322,7 +325,8 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
   }
   for (const [subject, members] of groups) {
-    for (const piece of resolveSubject(subject, members)) out.push(widenCue(piece, profile?.treatments));
+    // Members are widened one by one inside resolveSubject; the pieces are not widened again.
+    for (const piece of resolveSubject(subject, members, profile?.treatments)) out.push(piece);
   }
   const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
   sizeTones(out);
@@ -336,20 +340,32 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
 
 /**
  * R6: `shown` cues sharing a subject are one thing on screen: one effect over the union of their
- * spans (segments merged). The group plays its STRONGEST member's effect (blackout > full-blur >
- * censor-bar/pixelate > blur). Only blur becomes regional: it follows the best-tracked member's
- * region track (most keyframes), else it is a full-blur; an explicit full-blur stays whole-frame.
+ * spans (segments merged), each member first widened as it would be alone (its own effect's pads
+ * and minimum width), so the group never hides less time than any member would untracked.
+ *
+ * With a usable track (the best-tracked member's, most keyframes; at least one sighting) blur and
+ * full-blur are one regional blur along it (R2) — `heavy` (full-blur radius) when any member asked
+ * for full-blur; a censor-bar/pixelate member outranks them and follows the track; blackout and
+ * skips outrank all. Without a track every member counts as the effect it would play alone (an
+ * untracked blur is a full-blur) and the strongest wins (blackout > full-blur > censor-bar/pixelate).
+ * An authored rect stays only with no track and when every member plays the same effect alone.
  * The track is held at either end and its gaps hide the whole picture, so no instant of any
  * member's span is left uncovered. The piece id is the subject id; members' ids go in `cues` so
  * scenes still recognise them.
  */
-function resolveSubject(subject, members) {
-  const strength = (m) => STRENGTH[m.groupEffect ?? m.eff.effect] ?? 0;
-  const tracked = members.filter((m) => m.measured?.regions?.length)
+function resolveSubject(subject, members, treatments) {
+  const tracked = members.filter((m) => hasSighting(m.measured?.regions))
     .sort((a, b) => b.measured.regions.length - a.measured.regions.length)[0];
-  const leader = [...members].sort((a, b) => strength(b) - strength(a))[0];
-  const lead = leader.groupEffect ?? leader.eff.effect;
-  const spans = members.flatMap(({ eff, measured }) => (measured?.segments?.length > 1 ? measured.segments : [{ in: eff.in, out: eff.out }]))
+  const want = (m) => (tracked ? (m.groupEffect ?? m.eff.effect) : (m.eff.effect === 'blur' ? 'full-blur' : m.eff.effect));
+  // On a track a full-blur becomes a (heavy) regional blur: below an opaque bar or pixelation.
+  const rank = (e) => (tracked && e === 'full-blur' ? 1.5 : (STRENGTH[e] ?? 0));
+  const leader = [...members].sort((a, b) => rank(want(b)) - rank(want(a)))[0];
+  const lead = want(leader);
+  const regionalBlur = !!tracked && (lead === 'blur' || lead === 'full-blur');
+  const effect = regionalBlur ? 'blur' : (lead === 'blur' ? 'full-blur' : lead);
+  const heavy = regionalBlur && members.some((m) => want(m) === 'full-blur' || m.eff.heavy);
+  const spans = members.flatMap(({ eff, measured }) => (measured?.segments?.length > 1 ? measured.segments : [{ in: eff.in, out: eff.out }])
+    .map((sp) => widenCue({ in: sp.in, out: sp.out, precision: eff.precision, effect: eff.effect }, treatments)))
     .sort((a, b) => a.in - b.in);
   const union = [];
   for (const sp of spans) {
@@ -358,24 +374,40 @@ function resolveSubject(subject, members) {
     else union.push({ in: sp.in, out: sp.out });
   }
   const first = union[0].in; const end = union[union.length - 1].out;
-  const effect = lead === 'blur' ? (tracked ? 'blur' : 'full-blur') : lead;
   const regions = tracked && REGIONAL.has(effect) ? coverTrack(tracked.measured.regions, first, end) : undefined;
   const base = { ...leader.eff, effect, id: subject, subject, in: first, out: end, cues: members.map((m) => m.eff.id) };
-  delete base.segments; delete base.regions;
-  // An authored rect (e.g. a censor bar) stays when there is no track to follow.
-  if (regions || !REGIONAL.has(effect)) delete base.rect;
+  delete base.segments; delete base.regions; delete base.heavy;
+  if (heavy) base.heavy = true;
+  // An authored rect (e.g. a censor bar) stays only when there is no track to follow and every
+  // member plays that same effect alone — otherwise some member hid more than the rect.
+  const keepRect = !regions && REGIONAL.has(effect) && members.every((m) => m.eff.effect === effect);
+  if (!keepRect) delete base.rect;
   if (members.some((m) => !PRECISE.has(m.eff.precision))) base.precision = 'second-approx';
   return expandMeasured(base, { segments: union.length > 1 ? union : undefined, regions });
 }
 
+/** A region track that saw its subject at least once (an all-gap track hides nothing regionally). */
+const hasSighting = (regions) => Array.isArray(regions) && regions.some((k) => !isTrackGap(k));
+
 const isTrackGap = (k) => !k.whole && !(k.cells && k.cells.length);
+// A miss this short between two sightings is a keyframe Jev did not see the subject in, not the
+// subject leaving: the box spanning both sightings is held over it.
+const BRIDGE_SEC = 1;
+// A whole-frame piece this short at a cut (frame snapping) is held under the next box instead.
+const SLIVER_SEC = 0.1;
+const keyRect = (k) => k.box || cellsRect(k.grid, k.cells);
+const spanRect = (a, b) => {
+  if (!a || !b) return undefined;
+  const x = Math.min(a.x, b.x); const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+};
 
 /**
  * A region track made to cover [from, to] with no uncovered instant. The last keyframe is the
  * track's end marker. Before the first sighting the first box is held back to `from`; after the
  * last sighting the last box is held forward (to `to`, or the marker if later); a gap (empty or
- * unsure keyframe) between two sightings hides the whole picture. A track with no sighting at
- * all is whole-frame throughout.
+ * unsure keyframe) between two sightings hides the box spanning both when the next sighting comes
+ * within BRIDGE_SEC, else the whole picture. A track with no sighting at all is whole-frame throughout.
  */
 function coverTrack(regions, from, to) {
   const keys = [...regions].sort((a, b) => a.in - b.in);
@@ -385,11 +417,16 @@ function coverTrack(regions, from, to) {
   if (firstSeen < 0) return [{ in: Math.min(from, body[0].in), whole: true }, { in: endAt, cells: [] }];
   let lastSeen = body.length - 1;
   while (isTrackGap(body[lastSeen])) lastSeen--;
+  let prev = firstSeen; let missFrom = null;
   const out = body.map((k, i) => {
-    if (!isTrackGap(k)) return k;
+    if (!isTrackGap(k)) { prev = i; missFrom = null; return k; }
     if (i < firstSeen) return { ...body[firstSeen], in: k.in };
     if (i > lastSeen) return { ...body[lastSeen], in: k.in };
-    return { in: k.in, whole: true };
+    missFrom ??= k.in;
+    let next = i + 1;
+    while (isTrackGap(body[next])) next++;
+    const box = body[next].in - missFrom <= BRIDGE_SEC ? spanRect(keyRect(body[prev]), keyRect(body[next])) : undefined;
+    return box ? { in: k.in, box, cells: body[next].cells, grid: body[next].grid } : { in: k.in, whole: true };
   });
   if (out[0].in > from) out.unshift({ ...body[firstSeen], in: from });
   out.push({ in: endAt, cells: [] });
@@ -566,6 +603,12 @@ function expandMeasured(eff, ov) {
       const key = keys[k];
       if (!key.whole && !(key.cells && key.cells.length)) continue; // track gap: nothing to cover
       const rect = key.whole ? undefined : (key.box || cellsRect(key.grid, key.cells));
+      const prevPiece = out[out.length - 1];
+      // A whole-frame sliver just before a box (a cut snapped to frames) takes that box.
+      if (rect && prevPiece && !prevPiece.rect && prevPiece.in >= p.in && prevPiece.out === a && prevPiece.out - prevPiece.in < SLIVER_SEC) {
+        prevPiece.out = b; prevPiece.rect = rect;
+        continue;
+      }
       out.push({ ...p, id: `${p.id}@${k}`, in: a, out: b, ...(rect ? { rect } : {}) });
     }
   }

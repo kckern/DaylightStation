@@ -79,7 +79,7 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
   const coarseEdge = trackedCues.filter(({ cue, ov }) => (cue.refine?.edges ?? ov.refine?.edges) === 'coarse').length;
   const share = pct(trackedCues.length, shownCues.length);
   // Coverage of the DATA: shown cues carrying a region track whatever effect the profile picked
-  // (an explicit full-blur stays whole-frame; the track is still there for a profile that wants it).
+  // (a track with no sighting, or a stronger effect such as blackout, resolves full-frame).
   const withTrackData = shownCues.filter(({ cue, ov }) => (cue.regions?.length || ov.regions?.length)).length;
   const dataShare = pct(withTrackData, shownCues.length);
 
@@ -140,7 +140,7 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     ok: checks.toneCap.ok && checks.channel.ok,
     checks,
     // Proof metric: the DATA share (shown cues carrying a track). The resolved share is info:
-    // a profile's explicit full-blur stays whole-frame by design.
+    // a cue whose track never sighted its subject, or a stronger effect, plays full-frame.
     regions: { shown: shownCues.length, tracked: trackedCues.length, coarseEdge, share, withTrackData, dataShare, target: REGION_TARGET, pass: dataShare == null ? null : dataShare >= REGION_TARGET },
     subjects: { groups: groups.length, members: groups.reduce((n, [, ids]) => n + ids.length, 0), noEffect, resolvedOne, share: pct(resolvedOne, effective) },
     lines: { muted: lineIds('remark').length, skipped: lineIds('exchange').length, cardsApproved: cards.length - generic, cardsGeneric: generic },

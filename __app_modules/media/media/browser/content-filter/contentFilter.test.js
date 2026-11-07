@@ -484,19 +484,18 @@ describe('same-subject cues resolve to one effect (R6)', () => {
   ];
   it('four tags, one subject, one tracked: exactly one regional blur over the union, no audio effect', () => {
     const out = resolveEffectiveCues({ edl: refined(bttf()), profile, override: { sync } });
-    const zero = { treatments: { blur: { padLeadMs: 0, padTrailMs: 0 } } };
     expect(out.length).toBeGreaterThan(0);
     expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
     expect(out.some((c) => ['bleep', 'mute', 'duck'].includes(c.effect))).toBe(false);
     expect(new Set(out.map((c) => String(c.id).split('@')[0])).size).toBe(1);
     expect(String(out[0].id)).toMatch(/^subject-billboard/);
     expect(new Set(out.map((c) => c.id)).size).toBe(out.length);          // no duplicate pieces
-    expect(Math.min(...out.map((c) => c.in))).toBeCloseTo(100, 1);
+    // untracked members keep their full-blur pads (150 ms lead) in the union
+    expect(Math.min(...out.map((c) => c.in))).toBeCloseTo(99.85, 3);
     expect(Math.max(...out.map((c) => c.out))).toBeGreaterThanOrEqual(125);
     // no time is covered twice
     const sorted = [...out].sort((a, b) => a.in - b.in);
     sorted.slice(1).forEach((c, i) => expect(c.in).toBeGreaterThanOrEqual(sorted[i].out - 0.5));
-    void zero;
   });
   it('without a subject the same tags stay separate effects', () => {
     const cues = bttf().map(({ subject: _s, ...c }) => c);
@@ -791,31 +790,31 @@ describe('final review fixes', () => {
     });
   });
 
-  describe('C2: a group resolves to the STRONGEST member effect; only blur becomes regional', () => {
+  describe('C2: a group resolves to the STRONGEST member effect; blur and full-blur become regional on a track', () => {
     const tracked = Array.from({ length: 16 }, (_, i) => key(105 + i)).concat([{ in: 121, cells: [] }]);
     const n = { id: 'n', type: 'skip', category: 'sex/nudity', label: 'Nudity shown', in: 100, out: 110, precision: 'frame', subject: 'S' };
     const s = { id: 's', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A sign', in: 105, out: 120, precision: 'frame', subject: 'S', regions: tracked };
 
-    it('nudity full-blur member + tracked blur member -> whole-frame full-blur over the union', () => {
+    it('full-blur member + tracked blur member -> regional heavy blur over the union, never full-frame', () => {
       const out = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'full-blur' }, sex_any: { effect: 'blur' } } }, override: { sync } });
       expect(out.length).toBeGreaterThan(0);
-      expect(out.every((c) => c.effect === 'full-blur' && !c.rect)).toBe(true);
-      expect(new Set(out.map((c) => c.id))).toEqual(new Set(['S']));
+      expect(out.every((c) => c.effect === 'blur' && c.rect && c.heavy)).toBe(true);
+      expect(new Set(out.map((c) => String(c.id).split('@')[0]))).toEqual(new Set(['S']));
       expectCovered(out, 100, 120);
     });
-    it('an explicit full-blur lead stays whole-frame even with a track', () => {
+    it('a full-blur lead with a track is regional (heavy)', () => {
       const out = resolveEffectiveCues({ edl: refined([{ ...n, regions: tracked }, s]), profile: { categories: { sex: { effect: 'full-blur' }, sex_any: { effect: 'full-blur' } } }, override: { sync } });
       expect(out.length).toBeGreaterThan(0);
-      expect(out.every((c) => c.effect === 'full-blur' && !c.rect)).toBe(true);
+      expect(out.every((c) => c.effect === 'blur' && c.rect && c.heavy)).toBe(true);
     });
-    it('blur members with a track stay regional blur (the BTTF billboard)', () => {
+    it('blur members with a track stay regional blur, not heavy', () => {
       const out = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'blur' }, sex_any: { effect: 'blur' } } }, override: { sync } });
       expect(out.length).toBeGreaterThan(0);
-      expect(out.every((c) => c.effect === 'blur')).toBe(true);
+      expect(out.every((c) => c.effect === 'blur' && !c.heavy)).toBe(true);
       expectCovered(out, 100, 120);
     });
-    it('censor-bar beats blur and follows the track; blackout beats everything', () => {
-      const cb = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'censor-bar' }, sex_any: { effect: 'blur' } } }, override: { sync } });
+    it('censor-bar beats blur and full-blur on a track and follows it; blackout beats everything', () => {
+      const cb = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'censor-bar' }, sex_any: { effect: 'full-blur' } } }, override: { sync } });
       expect(cb.length).toBeGreaterThan(0);
       expect(cb.every((c) => c.effect === 'censor-bar')).toBe(true);
       expect(cb.some((c) => c.rect)).toBe(true);
@@ -823,6 +822,135 @@ describe('final review fixes', () => {
       expect(bo.length).toBeGreaterThan(0);
       expect(bo.every((c) => c.effect === 'blackout')).toBe(true);
       expectCovered(bo, 100, 120);
+    });
+    it('a track with no sighting is not usable: the group stays full-frame full-blur', () => {
+      const blind = [{ in: 105, cells: [] }, { in: 110, cells: [] }, { in: 121, cells: [] }];
+      const out = resolveEffectiveCues({ edl: refined([n, { ...s, regions: blind }]), profile: { categories: { sex: { effect: 'full-blur' }, sex_any: { effect: 'blur' } } }, override: { sync } });
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ effect: 'full-blur', id: 'S' });
+      expect(out[0].rect).toBeUndefined();
+    });
+  });
+
+  describe('R2: a tracked shown cue is regional whether its effect is blur or full-blur', () => {
+    const tracked = Array.from({ length: 11 }, (_, i) => key(100 + i)).concat([{ in: 111, cells: [] }]);
+    const cue = { id: 'v', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A sign', in: 100, out: 111, precision: 'frame', regions: tracked, refine: { v: 1, kind: 'visual' } };
+    it('profile full-blur on a tracked cue: regional heavy blur pieces only', () => {
+      const out = resolveEffectiveCues({ edl: refined([cue]), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      expect(out.length).toBeGreaterThan(5);
+      expect(out.every((c) => c.effect === 'blur' && c.heavy && c.rect)).toBe(true);
+    });
+    it('a household cueOverrides full-blur on a tracked cue is still regional', () => {
+      const out = resolveEffectiveCues({ edl: refined([cue]), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync, cueOverrides: { v: { effect: 'full-blur' } } } });
+      expect(out.length).toBeGreaterThan(5);
+      expect(out.every((c) => c.effect === 'blur' && c.heavy && c.rect)).toBe(true);
+    });
+    it('untracked, full-blur stays full-frame', () => {
+      const { regions: _r, ...bare } = cue;
+      const out = resolveEffectiveCues({ edl: refined([bare]), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ effect: 'full-blur' });
+      expect(out[0].rect).toBeUndefined();
+    });
+  });
+
+  describe('the BTTF billboard (va3388987-90): only the sign is blurred', () => {
+    // 987 carries the track (sign on the right); its siblings carry none. Profile: suggestive
+    // -> full-blur, language -> bleep. Times are VidAngel-like second-approx points and spans.
+    const SIGN = { x: 0.66, y: 0.17, w: 0.33, h: 0.33 };
+    const track = Array.from({ length: 10 }, (_, i) => key(668 + i, { box: SIGN })).concat([{ in: 678, cells: [] }]);
+    const cues = () => [
+      { id: 'va3388987', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A theater marquee is visible', in: 668.2, out: 674.8, precision: 'frame', subject: 'subject-va3388987', regions: track, refine: { v: 1, kind: 'visual' } },
+      { id: 'va3388988', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A theater marquee is visible', in: 671, out: 671, precision: 'second-approx', subject: 'subject-va3388987' },
+      { id: 'va3388989', type: 'skip', category: 'language/language_sexual/other_sexual', label: 'A crude word is visible', in: 668, out: 677, precision: 'second-approx', subject: 'subject-va3388987' },
+      { id: 'va3388990', type: 'skip', category: 'language/language_sexual/other_sexual', label: 'A crude word is visible', in: 673, out: 676, precision: 'second-approx', subject: 'subject-va3388987' },
+    ];
+    const profile = { categories: { 'sex_any/sexually_suggestive': { effect: 'full-blur' }, language: { effect: 'bleep' } } };
+    const out = () => resolveEffectiveCues({ edl: refined(cues()), profile, override: { sync } });
+
+    it('regional heavy blur pieces only over the shared track; no full-frame piece, no audio effect', () => {
+      const o = out();
+      expect(o.length).toBeGreaterThan(5);
+      expect(o.every((c) => c.effect === 'blur' && c.heavy && c.rect)).toBe(true);
+      expect(o.every((c) => c.rect.x === SIGN.x && c.rect.w === SIGN.w)).toBe(true);
+      expect(o.some((c) => ['bleep', 'mute', 'duck', 'full-blur'].includes(c.effect))).toBe(false);
+      expect(new Set(o.map((c) => String(c.id).split('@')[0]))).toEqual(new Set(['subject-va3388987']));
+    });
+    it('the sign stays hidden for at least as long as each sibling would hide it alone', () => {
+      const o = out();
+      for (const sib of cues()) {
+        const { subject: _s, regions: _r, ...alone } = sib;
+        const solo = resolveEffectiveCues({ edl: refined([alone]), profile, override: { sync } });
+        expect(solo.length).toBeGreaterThan(0);
+        for (const p of solo) expectCovered(o, p.in, p.out);
+      }
+    });
+  });
+
+  describe('a shared track: a short miss is bridged, a sliver is not a whole-frame flash', () => {
+    const A = { x: 0.66, y: 0.17, w: 0.33, h: 0.33 }; const B = { x: 0.66, y: 0.33, w: 0.33, h: 0.33 };
+    it('one empty keyframe (<= 1 s) between two sightings holds the box spanning both, not the whole picture', () => {
+      const regions = [key(100, { box: A }), key(100.5, { box: A }), { in: 101, cells: [] }, key(101.5, { box: B }), key(102, { box: B }), { in: 102.5, cells: [] }];
+      const cues = [{ id: 't', type: 'skip', category: 'sex_any/x', label: 't', in: 100, out: 102.5, precision: 'frame', subject: 'S', regions }];
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      expectCovered(out, 100, 102.5);
+      expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
+      const miss = out.find((c) => c.in <= 101.2 && c.out > 101.2);
+      expect(miss.rect.x).toBeCloseTo(0.66, 6); expect(miss.rect.y).toBeCloseTo(0.17, 6);
+      expect(miss.rect.w).toBeCloseTo(0.33, 6); expect(miss.rect.h).toBeCloseTo(0.49, 6);
+    });
+    it('a longer miss still hides the whole picture (I3)', () => {
+      const regions = [key(100, { box: A }), { in: 100.5, cells: [] }, { in: 101, cells: [] }, { in: 101.5, cells: [] }, key(102, { box: B }), { in: 102.5, cells: [] }];
+      const cues = [{ id: 't', type: 'skip', category: 'sex_any/x', label: 't', in: 100, out: 102.5, precision: 'frame', subject: 'S', regions }];
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync } });
+      expect(out.find((c) => c.in <= 101.2 && c.out > 101.2).rect).toBeUndefined();
+    });
+    it('a segment that starts a hair before its first sighting holds that box back over the sliver', () => {
+      const regions = [key(100, { box: A }), key(102, { box: A }), key(104, { box: A }), { in: 105, cells: [] }, key(108, { box: B }), key(110, { box: B }), key(112, { box: B }), { in: 115, cells: [] }];
+      const cues = [{ id: 't', type: 'skip', category: 'sex_any/x', label: 't', in: 100, out: 115, precision: 'frame', subject: 'S', regions, segments: [{ in: 100, out: 105 }, { in: 107.98, out: 115 }] }];
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync } });
+      expectCovered(out, 100, 105); expectCovered(out, 107.98, 115);
+      expect(out.every((c) => c.rect)).toBe(true);
+    });
+  });
+
+  describe('group union: authored rects and widening', () => {
+    it('a censor-bar lead keeps its authored rect only when every member asks for the same effect', () => {
+      const rect = { x: 0.1, y: 0.8, w: 0.8, h: 0.1 };
+      const cues = [
+        { id: 'a', type: 'skip', category: 'sex_any/x', label: 'a', in: 100, out: 110, precision: 'frame', subject: 'S' },
+        { id: 'b', type: 'skip', category: 'violence/y', label: 'b', in: 105, out: 115, precision: 'frame', subject: 'S' },
+      ];
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'censor-bar', rect }, violence: { effect: 'pixelate' } } }, override: { sync } });
+      expect(out).toHaveLength(1);
+      expect(out[0].effect).toBe('censor-bar');
+      expect(out[0].rect).toBeUndefined(); // b's pixelate covered the whole frame; a bar in a's rect would hide less
+      expectCovered(out, 100, 115);
+    });
+    it('in a trackless group an untracked blur member counts as the full-blur it would play', () => {
+      const rect = { x: 0.1, y: 0.8, w: 0.8, h: 0.1 };
+      const cues = [
+        { id: 'a', type: 'skip', category: 'sex_any/x', label: 'a', in: 100, out: 110, precision: 'frame', subject: 'S' },
+        { id: 'b', type: 'skip', category: 'violence/y', label: 'b', in: 105, out: 115, precision: 'frame', subject: 'S' },
+      ];
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'censor-bar', rect }, violence: { effect: 'blur' } } }, override: { sync } });
+      expect(out).toHaveLength(1);
+      expect(out[0].effect).toBe('full-blur');
+      expect(out[0].rect).toBeUndefined();
+    });
+    it('a regional union keeps an untracked point-tag member\'s full-blur pads and minimum width', () => {
+      const tr = Array.from({ length: 6 }, (_, i) => key(100 + i)).concat([{ in: 106, cells: [] }]);
+      const cues = [
+        { id: 't', type: 'skip', category: 'sex_any/x', label: 't', in: 100, out: 106, precision: 'frame', subject: 'S', regions: tr },
+        { id: 'p', type: 'skip', category: 'sex_any/x', label: 'p', in: 106, out: 106, precision: 'second-approx', subject: 'S' },
+      ];
+      const profile = { categories: { sex_any: { effect: 'blur' } } };
+      const out = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync } });
+      expect(out.every((c) => c.effect === 'blur')).toBe(true);
+      const solo = resolveEffectiveCues({ edl: refined([{ ...cues[1], subject: undefined }]), profile, override: { sync } });
+      expect(solo).toHaveLength(1);
+      expect(solo[0].out - solo[0].in).toBeGreaterThanOrEqual(3);
+      expectCovered(out, solo[0].in, solo[0].out);
     });
   });
 

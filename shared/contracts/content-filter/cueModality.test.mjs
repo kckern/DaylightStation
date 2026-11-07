@@ -25,6 +25,10 @@ describe('fitEffectToChannel', () => {
     expect(fitEffectToChannel('bleep', 'shown', { hasRegions: true })).toBe('blur');
     expect(fitEffectToChannel('mute', 'shown', { hasRegions: false })).toBe('full-blur');
   });
+  it('shown full-blur -> regional blur when tracked, else stays full-blur (R2)', () => {
+    expect(fitEffectToChannel('full-blur', 'shown', { hasRegions: true })).toBe('blur');
+    expect(fitEffectToChannel('full-blur', 'shown', { hasRegions: false })).toBe('full-blur');
+  });
   it('said + visual effect -> mute', () => {
     expect(fitEffectToChannel('blur', 'said', {})).toBe('mute');
     expect(fitEffectToChannel('pixelate', 'heard', {})).toBe('mute');

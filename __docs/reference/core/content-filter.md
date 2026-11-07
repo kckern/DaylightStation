@@ -121,7 +121,10 @@ judged it shown; credits), `heard` (a non-speech sound). An effect must fit the 
 audio effects (mute, bleep, duck) only on `said`, mute also on `heard`; visual effects (blur,
 full-blur, censor-bar, pixelate, blackout) only on `shown`; skip and skip-card on any. A profile
 effect that does not fit maps to the channel's equivalent (`fitEffectToChannel`): `shown` + audio
-effect or blur -> regional `blur` when the cue has a region track, else `full-blur` (R2);
+effect, blur or full-blur -> regional `blur` when the cue has a usable region track (at least one
+sighting), else `full-blur` (R2). A tracked cue that asked for `full-blur` (profile or a household
+`cueOverrides` effect) plays the regional blur at the full-blur radius (`heavy: true`); a household
+that wants more on a tracked cue picks `censor-bar`, `pixelate`, `blackout` or `skip`;
 `said`/`heard` + a visual effect -> `mute`. The resolver logs the change as
 `content-filter.effect.adjusted`. Cues with neither a type nor a refine kind (hand-added) are left
 as authored. The refine kind comes from the refine stamp (`refine.kind`: speech, speech-line,
@@ -152,8 +155,8 @@ hard check fails. (The frontend logger writes to stdout; the CLI sends it to std
 - **Region tracks:** `track data n/m` is the Proof metric: the share of `shown` cues (that
   resolve to an overlay) whose data carries a region track, target 70%, flagged PASS/FAIL but not
   fatal. `resolved regional n/m` is printed as information: the cues that actually play a
-  regional piece. It can sit far below the data share, because a profile's explicit `full-blur`
-  stays whole-frame (alone or in a same-subject group). Coarse-edge tracks are counted separately.
+  regional piece. It sits below the data share only where a track never sighted its subject or
+  the effect is stronger than a blur (blackout, skip). Coarse-edge tracks are counted separately.
 - **Same-subject groups (R6):** groups of two or more `shown` cues, their members, and how many
   resolve to a single effect. A group nothing resolves for (profile off, or a scene covers it) is
   counted as "no effect" and does not fail the check.
@@ -290,7 +293,9 @@ was seen. It keeps its coarse VidAngel in/out and gains `regions` plus
 list). The player applies such a track over the synced coarse window, never over less time than
 the cue would be hidden untracked: the window takes the full-blur pads and minimum width, the
 first seen box is held back to its start and the last forward to its end, and an empty or unsure
-keyframe between two sightings hides the whole picture. `refinedCount` counts
+keyframe between two sightings hides the box spanning both sightings when the next one comes within
+1 s (a missed keyframe, not the subject leaving), else the whole picture. A whole-frame sliver under
+0.1 s at a cut (frame snapping) takes the next box instead of flashing the whole picture. `refinedCount` counts
 only cues measured at ms/frame, and a cue refined at ms/frame is never replaced by a coarse one.
 When Jev sees the subject nowhere, or only judges it whole-frame, no track is written.
 
@@ -300,13 +305,17 @@ thing on screen?"). Only a confident yes groups; no, abstain, timeout and error 
 separate. Grouped cues carry `subject: <id>` in the refined EDL; a re-run keeps the subjects
 already there (`--resubject` asks again, `--no-subjects` skips the step). The resolver turns
 cues sharing a `subject` into ONE effect (id = the subject id) over the union of their spans.
-The group plays its STRONGEST member's effect (blackout > full-blur > censor-bar/pixelate > blur;
-a member's audio or blur effect counts as blur), so no member is weakened by the group. Only blur
-becomes regional: it follows the best-tracked member's region track (most keyframes), else it is a
-full-blur; an explicit full-blur stays whole-frame even with a track. A censor-bar or pixelate group
-follows the track too, and keeps an authored `rect` when there is none. The track is held at both
-ends to cover the union, and a gap in it (empty or unsure keyframe) hides the whole picture, so no
-instant of any member's span is left uncovered. `said`/`heard` cues never group, so a word inside
+Each member's span is first widened as it would be alone (its own effect's pads and minimum
+width), so the union never hides less time than any member untracked. With a usable track (the
+best-tracked member's, most keyframes, at least one sighting) blur and full-blur members become ONE
+regional blur along it (R2), at the full-blur radius when any member asked for full-blur; a
+censor-bar or pixelate member outranks them and follows the track; blackout and skips outrank all.
+Without a track every member counts as what it would play alone (an untracked blur is a full-blur)
+and the strongest wins (blackout > full-blur > censor-bar/pixelate). An authored `rect` stays only
+when there is no track and every member plays that same effect alone. The track is held at both
+ends to cover the union, and a gap in it (empty or unsure keyframe) hides the box spanning the
+sightings around it when it lasts 1 s or less, else the whole picture, so no instant of any
+member's span is left uncovered. `said`/`heard` cues never group, so a word inside
 the union still mutes on its own.
 
 - **Safe windows** (`safeWindow.mjs`). A mute refine could not pin is widened to

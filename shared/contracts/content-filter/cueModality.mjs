@@ -37,14 +37,15 @@ export function cueModality(cue) {
 
 /**
  * Map a profile/override effect onto the cue's channel.
- * shown + audio effect or blur -> regional `blur` when tracked, else `full-blur`;
+ * shown + audio effect, blur or full-blur -> regional `blur` when tracked, else `full-blur`
+ * (R2: a track means only the tracked thing is hidden; the caller keeps a full-blur's radius);
  * said/heard + visual effect -> `mute`; heard + bleep/duck -> `mute`.
  * @returns {string|null} the effect to use (null when none given)
  */
 export function fitEffectToChannel(effect, modality, { hasRegions = false } = {}) {
   if (!effect) return null;
   if (modality === 'shown') {
-    if (AUDIO.has(effect) || effect === 'blur') return hasRegions ? 'blur' : 'full-blur';
+    if (AUDIO.has(effect) || effect === 'blur' || effect === 'full-blur') return hasRegions ? 'blur' : 'full-blur';
     return effect;
   }
   if (VISUAL.has(effect)) return 'mute';
