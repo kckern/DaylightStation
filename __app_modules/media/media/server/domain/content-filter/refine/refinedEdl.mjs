@@ -61,12 +61,14 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
   const certification = certify({ cues, certification: previous?.certification }, { at });
   // Keys refine does not produce (scenes, sceneCalibration, anything later) ride along from previous.
   const { contentId: _i, cues: _pc, certification: _pk, timebase: _pt, precision: _pp, ...carried } = previous || {};
+  // Fresh head fields win; only keys the head lacks (scenes, calibration, later additions) carry over.
+  const fromPrevious = Object.fromEntries(Object.entries(carried).filter(([k]) => !(k in head) || k === 'scenes' || k === 'sceneCalibration'));
   const prevAnchors = partial ? previous?.timebase?.anchors || [] : [];
   const seen = new Set(anchors.map((a) => `${a.t}|${a.text}`));
   const allAnchors = [...prevAnchors.filter((a) => !seen.has(`${a.t}|${a.text}`)), ...anchors].sort((a, b) => a.t - b.t);
-  return {
+  const built = {
     ...head,
-    ...carried,
+    ...fromPrevious,
     certification,
     timebase: {
       ...(previous?.timebase || {}),
@@ -78,6 +80,10 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
     },
     cues,
   };
+  // Same key order as the file being replaced (yaml.dump keeps insertion order), new keys last.
+  const order = Object.keys(previous || {});
+  const rank = (k) => { const n = order.indexOf(k); return n < 0 ? order.length : n; };
+  return Object.fromEntries(Object.entries(built).sort(([a], [b]) => rank(a) - rank(b)));
 }
 
 /**

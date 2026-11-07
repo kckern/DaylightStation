@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import yaml from 'js-yaml';
 import { buildRefinedEdl, anchorsFrom, refinedEdlName, stripRefined } from './refinedEdl.mjs';
 
 const edl = {
@@ -135,5 +136,27 @@ describe('buildRefinedEdl re-run safety (R7)', () => {
     expect(byA.in).toBeCloseTo(101, 6);
     expect(out.cues.filter((c) => c.id !== 'a')).toEqual(previous.cues.filter((c) => c.id !== 'a'));
     expect(out.timebase.anchors.map((x) => x.t)).toEqual([100.1, 101]);
+  });
+
+  it('keeps previous key order, so a re-run dumps byte-identical YAML', () => {
+    const { cues, ...rest } = previous;
+    const ordered = { ...rest, cues }; // scenes etc. before cues
+    const withTail = { ...previous }; delete withTail.scenes; withTail.scenes = previous.scenes; // scenes after cues
+    for (const prev of [ordered, withTail]) {
+      const out = buildRefinedEdl({ ...base, previous: prev });
+      expect(Object.keys(out)).toEqual(Object.keys(prev));
+      expect(yaml.dump(out)).toBe(yaml.dump(prev));
+    }
+  });
+
+  it('fresh edl head fields win over stale previous ones', () => {
+    const stale = { ...previous, title: 'Old Title', runtimeUnalteredSec: 1 };
+    const out = buildRefinedEdl({ ...base, previous: stale });
+    expect(out.title).toBe('Test Film');
+    expect(out.runtimeUnalteredSec).toBe(6000);
+    expect(out.scenes).toEqual(previous.scenes);
+    expect(out.sceneCalibration).toEqual(previous.sceneCalibration);
+    expect(out.futureKey).toEqual({ keep: 'me' });
+    expect(out.certification.parent).toEqual({ by: 'kc', at: '2026-11-05' });
   });
 });
