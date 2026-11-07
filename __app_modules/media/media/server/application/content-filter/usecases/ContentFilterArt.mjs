@@ -2,6 +2,7 @@ import { imageSize } from '../../../domain/content-filter/imageSize.mjs';
 
 export const MIN_LOGO_WIDTH = 300;
 const PROXY = '/api/v1/proxy/plex';
+const RETRY_MS = 60_000;
 
 /**
  * Art for a title's cards: { logo, background, poster, source }. The logo is chosen by cascade:
@@ -14,7 +15,7 @@ const PROXY = '/api/v1/proxy/plex';
  * @param {{ plex: { getMetadata, getClearLogos, selectClearLogo, imageHead }, logger?: object, ttlMs?: number, now?: () => number }} deps
  */
 export class ContentFilterArt {
-  #plex; #logger; #ttl; #now; #cache = new Map();
+  #plex; #logger; #ttl; #now; #cache = new Map(); #failures = 0;
 
   constructor({ plex, logger = console, ttlMs = 6 * 3600_000, now = Date.now } = {}) {
     if (!plex) throw new Error('ContentFilterArt requires plex');
@@ -24,13 +25,25 @@ export class ContentFilterArt {
   async execute({ ratingKey }) {
     const hit = this.#cache.get(ratingKey);
     if (hit && this.#now() - hit.at < this.#ttl) return hit.art;
+    this.#failures = 0;
     const art = await this.#resolve(ratingKey);
-    this.#cache.set(ratingKey, { art, at: this.#now() });
+    // A "none" reached while header reads failed is a transient miss, not a verdict: retry soon,
+    // do not pin it for hours.
+    const transient = art.source === 'none' && this.#failures > 0;
+    this.#cache.set(ratingKey, { art, at: this.#now() - (transient ? this.#ttl - RETRY_MS : 0) });
     return art;
   }
 
   async #width(keyOrUrl) {
-    try { return imageSize(await this.#plex.imageHead(keyOrUrl))?.width ?? null; } catch { return null; }
+    try {
+      const width = imageSize(await this.#plex.imageHead(keyOrUrl))?.width ?? null;
+      if (width == null) this.#logger.debug?.('content-filter.art.width-unreadable', { key: String(keyOrUrl).slice(0, 120) });
+      return width;
+    } catch (error) {
+      this.#failures++;
+      this.#logger.debug?.('content-filter.art.width-failed', { key: String(keyOrUrl).slice(0, 120), error: error?.message });
+      return null;
+    }
   }
 
   async #resolve(rk) {

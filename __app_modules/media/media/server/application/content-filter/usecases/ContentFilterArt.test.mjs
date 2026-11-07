@@ -80,3 +80,29 @@ describe('ContentFilterArt cascade', () => {
     expect(plex.getMetadata).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ContentFilterArt real Plex shapes and transient failures', () => {
+  const realAlts = [
+    { key: '/library/metadata/662169/file?url=metadata%3A%2F%2FclearLogos%2Fx', ratingKey: 'metadata://clearLogos/x', selected: true, provider: 'tmdb' },
+    { key: 'https://metadata-static.plex.tv/8/a.png', ratingKey: 'https://metadata-static.plex.tv/8/a.png', provider: 'tmdb' },
+  ];
+  const images = [{ type: 'clearLogo', url: 'metadata://clearLogos/x' }, { type: 'coverPoster', url: 'p' }, { type: 'background', url: 'b' }];
+
+  it('selected logo with a metadata:// url (unfetchable) still reaches the absolute-URL alternative', async () => {
+    const plex = fake({ images, alts: [{ ...realAlts[0], buf: png(54, 24) }, { ...realAlts[1], buf: png(2784, 1283) }] });
+    const art = await new ContentFilterArt({ plex, logger: logger() }).execute({ ratingKey: '662169' });
+    expect(art).toMatchObject({ logo: 'https://metadata-static.plex.tv/8/a.png', source: 'alternative' });
+  });
+
+  it('does not pin a failed measurement as a long-lived none, and logs why', async () => {
+    let t = 0; let fail = true; const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+    const plex = fake({ images, alts: [{ ...realAlts[1], buf: png(2784, 1283) }] });
+    const head = plex.imageHead;
+    plex.imageHead = vi.fn(async (k) => { if (fail) throw new Error('timeout'); return head(k); });
+    const uc = new ContentFilterArt({ plex, logger: log, now: () => t });
+    expect((await uc.execute({ ratingKey: '2' })).source).toBe('none');
+    expect(log.debug).toHaveBeenCalledWith('content-filter.art.width-failed', expect.objectContaining({ error: 'timeout' }));
+    fail = false; t = 61_000;
+    expect((await uc.execute({ ratingKey: '2' })).source).toBe('alternative');
+  });
+});
