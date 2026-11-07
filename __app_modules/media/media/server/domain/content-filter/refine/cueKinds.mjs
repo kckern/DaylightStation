@@ -27,6 +27,17 @@ export function initialKind(cue) {
   return { kind: 'visual', needsRouting: false };
 }
 
+/**
+ * Does `cue` belong to a `--kinds` selection? A skip cue under a language category is
+ * `shown` (a sign, a billboard) however its label reads; `initialKind` calls it a line
+ * only because the router has to decide, so a `visual` selection must still reach it.
+ */
+export function cueMatchesKinds(cue, wanted) {
+  const { kind, needsRouting } = initialKind(cue);
+  if (wanted.has(kind)) return true;
+  return wanted.has('visual') && needsRouting && cue.type === 'skip';
+}
+
 // Spoken forms per category leaf. Compounds count for each part (goddammit is god and damn).
 const FORMS = {
   god: ['god', 'gods', "god's", 'goddamn', 'goddamnit', 'goddammit', 'godsakes', 'godawful'],

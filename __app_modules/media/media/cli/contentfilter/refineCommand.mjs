@@ -107,9 +107,9 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     options: { region: !args.includes('--no-region'), ...(flags.snap ? { edgeSnapSec: Number(flags.snap) } : {}) },
   });
   if (flags.kinds) {
-    const { initialKind } = await import('../../server/domain/content-filter/refine/cueKinds.mjs');
+    const { cueMatchesKinds } = await import('../../server/domain/content-filter/refine/cueKinds.mjs');
     const want = new Set(String(flags.kinds).split(','));
-    cues = cues.filter((c) => want.has(initialKind(c).kind));
+    cues = cues.filter((c) => cueMatchesKinds(c, want));
   }
   if (args.includes('--limit')) cues = cues.slice(0, Number(flags.limit)); // the CLI's global limit has a default; only an explicit one applies
 
