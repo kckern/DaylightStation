@@ -108,6 +108,9 @@ function Blackout({ cue, theme, shown, base }) {
   );
 }
 
+/** A clearLogo narrower than this is a thumbnail-grade asset: treated as missing. */
+export const MIN_LOGO_PX = 300;
+
 /** Hide an <img> that fails to load (e.g. a title with no clearLogo). */
 const hideOnError = (e) => { e.currentTarget.style.display = 'none'; };
 
@@ -164,10 +167,11 @@ function Card({ text, theme, effect = 'card', art, visible = true, fullFrame = f
         style={{ ...cardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}
       >
         {dim}
-        <img
+        {!logoFailed && <img
           src={art.logo} alt="" onError={() => setLogoFailed(true)}
+          onLoad={(e) => { if (e.currentTarget.naturalWidth < MIN_LOGO_PX) setLogoFailed(true); }}
           style={{ position: 'relative', maxWidth: '55%', maxHeight: '34%', objectFit: 'contain', marginBottom: '0.6em', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.75))' }}
-        />
+        />}
         <div style={{ ...textStyle, maxWidth: '82%', textAlign: 'center' }}>{text}</div>
       </div>
     );

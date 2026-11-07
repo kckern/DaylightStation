@@ -160,7 +160,7 @@ hard check fails. (The frontend logger writes to stdout; the CLI sends it to std
 - **Same-subject groups (R6):** groups of two or more `shown` cues, their members, and how many
   resolve to a single effect. A group nothing resolves for (profile off, or a scene covers it) is
   counted as "no effect" and does not fail the check.
-- **R4:** lines muted, exchanges skipped, and skip-cards with approved vs generic text.
+- **R4:** lines muted, exchanges skipped, words treated as exchanges (a word label over 4 s, see below), and skip-cards with approved vs generic text.
 - **Scenes and certification:** scenes whose edges leave a member uncovered (the check refine logs
   as `scene-edge-uncovered`) and the EDL's certification level.
 - **Language (R9):** count per group (profanity, blasphemy, sexual, slurs, childish, and `unknown`
@@ -178,6 +178,10 @@ hard check fails. (The frontend logger writes to stdout; the CLI sends it to std
   (never a tone); over 4 s (tag span, or window when untagged) -> `skip-card` with the
   `treatments.skip-card.holdSec` hold and the approved card text, else "Scene skipped.".
   An explicit `skip`/`skip-card` effect is left alone.
+- **Exchange by length.** A word label does not make a long cue a word: a said cue with an audio
+  effect whose OWN tag span is over 4 s is an exchange whatever its label (`line: 'exchange'`,
+  logged as `content-filter.word.as-exchange`). The span is `tagOut - tagIn`, else the VidAngel
+  `out - in` before any widening; never a safe window (a 6.84 s safe-window word stays a word).
 
 - **Overlapping word cues hold the mute together.** Padding makes neighbouring words
   overlap. Mute and bleep handlers count holds in the per-hook `mem`
@@ -249,6 +253,21 @@ GET /api/v1/content-filter/{ratingKey}?profile=family
 If no EDL exists, the endpoint returns `404` with `no filter data`. The application port
 is defined by `__app_modules/media/media/server/application/content-filter/ports/IContentFilterRepository.mjs`;
 the filesystem adapter is replaceable without changing the use case.
+
+```text
+GET /api/v1/content-filter/{ratingKey}/art
+→ { logo, background, poster, source }   source: selected | alternative | none
+```
+
+Card art. The logo is chosen by cascade (`ContentFilterArt`): Plex's selected clear logo if it is
+at least 300 px wide; else the best entry of `/library/metadata/{rk}/clearLogos` (PNG first, at
+least 300 px, English first when stated, then widest), which is also selected in Plex with
+`PUT /library/metadata/{rk}/clearLogo?url=...` (best-effort, a failure only warns); else `null`
+and the card uses the poster layout, or just the title text with no poster. Widths are read
+from the image header (PNG IHDR / JPEG SOF) via a ranged fetch. The decision is cached per
+rating key in memory and logged as `content-filter.art.logo`. The client falls back to the
+proxy URLs if this call fails, and also treats any logo that loads narrower than 300 px (card
+and bumper) as missing.
 
 ## Import sources and synchronization
 

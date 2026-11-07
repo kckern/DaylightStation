@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { render, waitFor, act } from '@testing-library/react';
 import { FilterOverlay } from "./FilterOverlay.jsx";
 
 const rect = { x: 0.4, y: 0.5, w: 0.2, h: 0.1 };
@@ -66,6 +66,26 @@ describe('FilterOverlay', () => {
     expect(card.style.backgroundImage).toContain('/p/art');
     expect(container.querySelector('img').getAttribute('src')).toBe('/p/logo');
     expect(getByText('Biff forces Lorraine into his car.')).toBeTruthy();
+  });
+
+  it('treats a logo narrower than 300 px as missing (poster layout)', () => {
+    const { container } = render(
+      <FilterOverlay activeCard={{ text: 'Biff.' }} art={{ background: '/p/art', logo: '/p/logo', poster: '/p/poster' }} />
+    );
+    const img = container.querySelector('img');
+    Object.defineProperty(img, 'naturalWidth', { value: 54, configurable: true });
+    act(() => { img.dispatchEvent(new Event('load')); });
+    expect(container.querySelector('[data-card-layout="poster-left"]')).toBeTruthy();
+  });
+
+  it('keeps a logo that is 300 px or wider', () => {
+    const { container } = render(
+      <FilterOverlay activeCard={{ text: 'Biff.' }} art={{ background: '/p/art', logo: '/p/logo', poster: '/p/poster' }} />
+    );
+    const img = container.querySelector('img');
+    Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true });
+    act(() => { img.dispatchEvent(new Event('load')); });
+    expect(container.querySelector('[data-card-layout="logo-center"]')).toBeTruthy();
   });
 
   it('falls back to poster-left layout when no logo is available', () => {

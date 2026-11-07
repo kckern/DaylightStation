@@ -38,6 +38,7 @@ export function FilterBumper({ summary, art, theme = {} }) {
     >
       {art?.logo && !logoFailed && (
         <img src={art.logo} alt="" onError={() => setLogoFailed(true)}
+          onLoad={(e) => { if (e.currentTarget.naturalWidth < 300) setLogoFailed(true); }}
           style={{ maxWidth: '70%', maxHeight: '4.5em', objectFit: 'contain', marginBottom: '0.5em' }} />
       )}
       <div style={{ fontSize: '1.35em', letterSpacing: '0.04em' }}>Edited for content</div>

@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import { useFilterData } from './useFilterData.js';
 import { useContentFilter, baseId } from './useContentFilter.js';
 import { FilterOverlay } from './FilterOverlay.jsx';
@@ -86,12 +86,27 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   // bare ratingKey — filterContentId carries a `plex:` prefix (it's the mediaKey),
   // which 404s the proxy and would blank every card's poster/background/logo. Strip
   // it (mirrors FilterPoc). Cards degrade per-image when a title lacks an art asset.
-  const filterCardArt = useMemo(() => {
+  // The server picks the logo (selected, else a wide-enough alternative, else none); if that
+  // call fails the cards use the proxy URLs directly.
+  const defaultCardArt = useMemo(() => {
     if (!filterContentId) return null;
     const rk = String(filterContentId).replace(/^plex:/, '');
     const base = `/api/v1/proxy/plex/library/metadata/${rk}`;
     return { poster: `${base}/thumb`, background: `${base}/art`, logo: `${base}/clearLogo` };
   }, [filterContentId]);
+  const [fetchedCardArt, setFetchedCardArt] = useState(null);
+  useEffect(() => {
+    setFetchedCardArt(null);
+    if (!filterContentId || !filterEnabled || !hasEdl) return undefined;
+    const rk = String(filterContentId).replace(/^plex:/, '');
+    let cancelled = false;
+    fetch(`/api/v1/content-filter/${rk}/art`)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((a) => { if (!cancelled && a && 'source' in a) setFetchedCardArt({ poster: a.poster, background: a.background, logo: a.logo }); })
+      .catch((error) => { if (!cancelled) logger().warn('content-filter.art.fetch-failed', { rk, error: error?.message }); });
+    return () => { cancelled = true; };
+  }, [filterContentId, filterEnabled, hasEdl]);
+  const filterCardArt = fetchedCardArt || defaultCardArt;
 
   // --- Preview surround: publish live state; bind the transport and actions ---
   const ratingKey = filterContentId ? String(filterContentId).replace(/^plex:/, '') : null;

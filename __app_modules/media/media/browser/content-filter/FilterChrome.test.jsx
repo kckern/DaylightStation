@@ -15,6 +15,13 @@ describe('FilterBumper', () => {
     act(() => { img.dispatchEvent(new Event('error')); });
     expect(container.querySelector('img')).toBeNull();
   });
+  it('hides a logo narrower than 300 px once it loads', () => {
+    const { container } = render(<FilterBumper summary="" art={{ logo: '/logo', background: '/bg' }} theme={{}} />);
+    const img = container.querySelector('img');
+    Object.defineProperty(img, 'naturalWidth', { value: 54, configurable: true });
+    act(() => { img.dispatchEvent(new Event('load')); });
+    expect(container.querySelector('img')).toBeNull();
+  });
 });
 
 describe('FilterBadge', () => {

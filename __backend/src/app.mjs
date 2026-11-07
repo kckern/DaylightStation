@@ -1762,7 +1762,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // useContentFilter hook. Curated policy from data/household/content-filter/,
   // machine-fetched EDLs from media/content-filter/.
   v1Routers['content-filter'] = await createContentFilterRuntime({
-    configService, rootLogger,
+    configService, rootLogger, contentRegistry,
     aiGateway: scopedGateway(sharedAiGateway, { app: 'media', feature: 'content-filter-cards' }),
   });
 

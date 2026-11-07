@@ -103,6 +103,7 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
   const effective = groups.length - noEffect;
 
   // R4
+  const wordsAsExchanges = uniq(cues.filter((c) => c.wordAsExchange).map((c) => baseId(c.id))).length;
   const lineIds = (kind) => uniq(cues.filter((c) => c.line === kind).map((c) => baseId(c.id)));
   const cards = cues.filter((c) => c.effect === 'skip-card' && !String(c.category || '').startsWith('credits'));
   const generic = cards.filter((c) => !c.text || c.text === GENERIC_CARD).length;
@@ -143,7 +144,7 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     // a cue whose track never sighted its subject, or a stronger effect, plays full-frame.
     regions: { shown: shownCues.length, tracked: trackedCues.length, coarseEdge, share, withTrackData, dataShare, target: REGION_TARGET, pass: dataShare == null ? null : dataShare >= REGION_TARGET },
     subjects: { groups: groups.length, members: groups.reduce((n, [, ids]) => n + ids.length, 0), noEffect, resolvedOne, share: pct(resolvedOne, effective) },
-    lines: { muted: lineIds('remark').length, skipped: lineIds('exchange').length, cardsApproved: cards.length - generic, cardsGeneric: generic },
+    lines: { muted: lineIds('remark').length, skipped: lineIds('exchange').length, wordsAsExchanges, cardsApproved: cards.length - generic, cardsGeneric: generic },
     scenes: { total: (edl?.scenes || []).length, leaks, byEffect: cues.sceneSummary?.byEffect || {} },
     certification: { level: cert.level || 'none', ...(cert.blocking?.length ? { blocking: cert.blocking } : {}) },
     language,
@@ -160,7 +161,7 @@ export function formatAudit(r) {
     ['channel match', verdict(k.channel.ok), k.channel.ok ? 'none misplaced' : `audio on shown: ${k.channel.audioOnShown.join(', ') || '-'}; visual on said: ${k.channel.visualOnSaid.join(', ') || '-'}`],
     ['region tracks on shown', verdict(g.pass), `track data ${g.withTrackData}/${g.shown} (${p100(g.dataShare)}, target ${p100(g.target)}); resolved regional ${g.tracked}/${g.shown} (${p100(g.share)}), ${g.coarseEdge} coarse-edge`],
     ['same-subject groups', s.groups - s.noEffect ? verdict(s.resolvedOne === s.groups - s.noEffect) : 'n/a', `${s.groups} groups, ${s.members} members, ${s.resolvedOne} resolved to one effect (${p100(s.share)}), ${s.noEffect} with no effect (profile off or a scene covers them)`],
-    ['lines / exchanges (R4)', '', `${l.muted} lines muted, ${l.skipped} exchanges skipped; cards ${l.cardsApproved} approved, ${l.cardsGeneric} generic`],
+    ['lines / exchanges (R4)', '', `${l.muted} lines muted, ${l.skipped} exchanges skipped; ${l.wordsAsExchanges} words treated as exchanges; cards ${l.cardsApproved} approved, ${l.cardsGeneric} generic`],
     ['scene edge leaks', verdict(!sc.leaks.length), sc.leaks.length ? sc.leaks.map((x) => `${x.scene}: ${x.cues.join(' ')}`).join('; ') : `0 of ${sc.total} scenes`],
     ['certification', '', c.level + (c.blocking ? ` (approximate: ${c.blocking.join(', ')})` : '')],
   ];
