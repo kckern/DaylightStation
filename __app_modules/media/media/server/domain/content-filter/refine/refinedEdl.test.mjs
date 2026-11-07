@@ -96,3 +96,44 @@ describe('stripRefined', () => {
     expect(o).toEqual({ b: { effect: 'mute', nudgeMs: 20 }, c: { in: 5, out: 6 }, d: { disabled: true } });
   });
 });
+
+describe('buildRefinedEdl re-run safety (R7)', () => {
+  const base = { edl, cueOverrides, sync, anchors: [{ t: 100.1, kind: 'word', text: 'x', line: 'l' }], at: '2026-11-06', refinedFrom: { fps: '24/1', startTime: 0 } };
+  const first = buildRefinedEdl(base);
+  const previous = {
+    ...first,
+    scenes: [{ id: 's1', in: 10, out: 20 }],
+    sceneCalibration: { v: 1, gain: 0.5 },
+    futureKey: { keep: 'me' },
+    certification: { ...first.certification, level: 'parent', parent: { by: 'kc', at: '2026-11-05' } },
+  };
+
+  it('keeps scenes, sceneCalibration, parent sign-off and unknown keys from previous', () => {
+    const out = buildRefinedEdl({ ...base, previous });
+    expect(out.scenes).toEqual(previous.scenes);
+    expect(out.sceneCalibration).toEqual(previous.sceneCalibration);
+    expect(out.futureKey).toEqual({ keep: 'me' });
+    expect(out.certification.parent).toEqual({ by: 'kc', at: '2026-11-05' });
+  });
+
+  it('a re-run with identical inputs is deep-equal to previous', () => {
+    const out = buildRefinedEdl({ ...base, previous });
+    expect(out).toEqual(previous);
+  });
+
+  it('a partial run keeps other cues refined data from previous when the override no longer holds it', () => {
+    const onlyA = { a: cueOverrides.a };
+    const out = buildRefinedEdl({ ...base, cueOverrides: onlyA, previous, partial: true });
+    expect(out.cues).toEqual(previous.cues);
+    expect(out.timebase.refinedCount).toBe(previous.timebase.refinedCount);
+  });
+
+  it('a partial run replaces only the re-measured cue and keeps earlier anchors', () => {
+    const remeasured = { ...cueOverrides, a: { ...cueOverrides.a, in: 109, out: 109.3 } };
+    const out = buildRefinedEdl({ ...base, cueOverrides: { a: remeasured.a }, anchors: [{ t: 101, kind: 'word', text: 'y', line: 'm' }], previous, partial: true });
+    const byA = out.cues.find((c) => c.id === 'a');
+    expect(byA.in).toBeCloseTo(101, 6);
+    expect(out.cues.filter((c) => c.id !== 'a')).toEqual(previous.cues.filter((c) => c.id !== 'a'));
+    expect(out.timebase.anchors.map((x) => x.t)).toEqual([100.1, 101]);
+  });
+});

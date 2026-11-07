@@ -26,19 +26,22 @@ export function refinedEdlName(edl) {
  * @param {Array<object>} [p.anchors]
  * @param {object} [p.refinedFrom] - the reference copy: { runtimeSec, fps, startTime }
  * @param {string} p.at - date stamp for the certification (callers own the clock)
- * @param {object} [p.previous] - the refined EDL being replaced (keeps a parent sign-off)
+ * @param {object} [p.previous] - the refined EDL being replaced. R7: its scenes, sceneCalibration,
+ *   parent sign-off and any key refine does not produce survive; a cue it holds refined that this
+ *   run did not (re)measure keeps its refined data.
+ * @param {boolean} [p.partial] - a filtered run: anchors add to previous's instead of replacing them
  */
-export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], refinedFrom = {}, at = null, previous = null }) {
+export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], refinedFrom = {}, at = null, previous = null, partial = false }) {
+  const prevCue = new Map((previous?.cues || []).map((c) => [c.id, c]));
   const toVa = (t) => {
     const v = unmapTime(t, sync);
     if (v == null) throw new Error(`time ${t} is outside the copy's sync`);
     return ms(v);
   };
-  let refinedCount = 0;
   const measured = (edl.cues || []).map((cue) => {
     const o = cueOverrides[cue.id];
+    if ((!o?.refine || o.in == null) && prevCue.get(cue.id)?.refine) return prevCue.get(cue.id);
     if (!o?.refine || o.in == null) return { ...cue, precision: cue.precision || edl.precision || 'second-approx' };
-    refinedCount++;
     const out = { ...cue, in: toVa(o.in), out: toVa(o.out), precision: o.precision };
     for (const k of COPY_KEYS) delete out[k];
     if (o.segments?.length) out.segments = o.segments.map((s) => ({ in: toVa(s.in), out: toVa(s.out) }));
@@ -48,6 +51,7 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
     delete out.approx;
     return out;
   });
+  const refinedCount = measured.filter((c) => c.refine).length;
   // Mutes refine could not pin get a window wide enough for the tag's drift.
   const cues = applySafeWindows(measured);
   const { contentId, cues: _c, precision: _p, certification: _x, ...head } = edl;
@@ -55,14 +59,21 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
   // from the previous file while the bar still holds.
   if (!at) throw new Error('buildRefinedEdl needs `at` (the date to stamp the certification with)');
   const certification = certify({ cues, certification: previous?.certification }, { at });
+  // Keys refine does not produce (scenes, sceneCalibration, anything later) ride along from previous.
+  const { contentId: _i, cues: _pc, certification: _pk, timebase: _pt, precision: _pp, ...carried } = previous || {};
+  const prevAnchors = partial ? previous?.timebase?.anchors || [] : [];
+  const seen = new Set(anchors.map((a) => `${a.t}|${a.text}`));
+  const allAnchors = [...prevAnchors.filter((a) => !seen.has(`${a.t}|${a.text}`)), ...anchors].sort((a, b) => a.t - b.t);
   return {
     ...head,
+    ...carried,
     certification,
     timebase: {
+      ...(previous?.timebase || {}),
       clock: 'vidangel',
       runtimeSec: edl.runtimeUnalteredSec ?? null,
       refinedCount,
-      anchors,
+      anchors: allAnchors,
       refinedFrom: { ...refinedFrom, sync: plainSync(sync) },
     },
     cues,

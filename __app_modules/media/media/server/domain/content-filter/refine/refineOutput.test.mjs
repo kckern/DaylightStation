@@ -66,3 +66,33 @@ describe('refineScore', () => {
     expect(s).toMatchObject({ refined: 1, within30: 0, within80: 0, startMedian: 10, endMedian: 100 });
   });
 });
+
+describe('mergeRefine household rulings (R7)', () => {
+  it('leaves every ruling and unrefined cue override untouched, including a partial run', () => {
+    const override = {
+      sceneOverrides: { s1: { card: { text: 'Approved.' }, disabled: false } },
+      profilePatch: { language: { effect: 'mute' } },
+      cueOverrides: {
+        a: { in: 1, out: 2, precision: 'ms', refine: { v: 1, part: '101' }, card: { text: 'Hi' }, cardDraft: { text: 'Draft' } },
+        b: { in: 5, out: 6, precision: 'ms', refine: { v: 1, part: '101' }, disabled: true },
+        c: { card: { text: 'Only a ruling' } },
+      },
+    };
+    const snapshot = JSON.parse(JSON.stringify(override));
+    const { override: out } = mergeRefine(override, [{ id: 'a', status: 'refined', precision: 'ms', in: 9, out: 9.5 }], stamp);
+    expect(override).toEqual(snapshot); // input not mutated
+    expect(out.sceneOverrides).toEqual(snapshot.sceneOverrides);
+    expect(out.profilePatch).toEqual(snapshot.profilePatch);
+    expect(out.cueOverrides.b).toEqual(snapshot.cueOverrides.b);
+    expect(out.cueOverrides.c).toEqual(snapshot.cueOverrides.c);
+    expect(out.cueOverrides.a.card).toEqual({ text: 'Hi' });
+    expect(out.cueOverrides.a.cardDraft).toEqual({ text: 'Draft' });
+    expect(out.cueOverrides.a.in).toBe(9);
+  });
+
+  it('a failed re-measure leaves the previous refined entry as it was', () => {
+    const override = { cueOverrides: { a: { in: 1, out: 2, precision: 'ms', refine: { v: 1, part: '101' } } } };
+    const { override: out } = mergeRefine(override, [{ id: 'a', status: 'giveup', kind: 'speech', reason: 'x' }], stamp);
+    expect(out.cueOverrides.a).toEqual(override.cueOverrides.a);
+  });
+});

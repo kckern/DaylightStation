@@ -149,7 +149,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const refinedPath = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
   const previous = existsSync(refinedPath) ? yaml.load(readFileSync(refinedPath, 'utf8')) : null;
   const refined = buildRefinedEdl({
-    edl, cueOverrides: merged.cueOverrides, sync: vaSync, anchors, at, previous,
+    edl, cueOverrides: merged.cueOverrides, sync: vaSync, anchors, at, previous, partial,
     refinedFrom: { runtimeSec: Math.round(probe.duration * 1000) / 1000, ...frames },
   });
   mkdirSync(path.dirname(refinedPath), { recursive: true });

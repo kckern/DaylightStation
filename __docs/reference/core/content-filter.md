@@ -214,6 +214,15 @@ precision. Every word the film transcript misses stays approximate — and VidAn
 drift from the spoken word by several seconds, so an approximate mute can let the word
 play.
 
+**Re-running refine is safe (R7).** `buildRefinedEdl` takes the file it replaces as
+`previous` and keeps its `scenes`, `sceneCalibration`, `certification.parent` and any other
+top-level key refine does not produce. A cue previous holds refined that this run did not
+re-measure (a `--cues`/`--kinds`/`--limit` run, or a give-up) keeps its refined data, and a
+partial run adds its anchors to previous's. Refine writes the household override only
+through `mergeRefine`, which changes refine-measured keys of the cues it measured and
+leaves `sceneOverrides`, `profilePatch`, cards and every other key as it was. The CLI
+loads the existing refined EDL as `previous` before building.
+
 - **Safe windows** (`safeWindow.mjs`). A mute refine could not pin is widened to
   `tag.in − 3.5 s … tag.out + 3.0 s` with `precision: safe-window`; the tag span is
   kept as `tagIn`/`tagOut`, so applying it again is a no-op. The constants cover every
