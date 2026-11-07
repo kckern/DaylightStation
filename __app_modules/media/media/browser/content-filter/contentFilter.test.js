@@ -542,4 +542,17 @@ describe('word-sized tones and lines (R3, R4)', () => {
     const out = resolveEffectiveCues({ edl, profile, override });
     expect(out[0]).toMatchObject({ effect: 'skip-card', text: 'They argue.' });
   });
+
+  it('overlapping capped tones merge with no mute piece overlapping a bleep', () => {
+    const out = run([word({ id: 'a', in: 10, out: 13, precision: 'ms' }), word({ id: 'b', in: 10.2, out: 12.2, precision: 'ms' })]);
+    const ids = out.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const tones = out.filter((c) => c.effect === 'bleep');
+    expect(tones).toHaveLength(1);
+    expect(tones[0].out - tones[0].in).toBeCloseTo(1.5, 6);
+    for (const m of out.filter((c) => c.effect === 'mute')) {
+      expect(m.out <= tones[0].in + 1e-9 || m.in >= tones[0].out - 1e-9).toBe(true);
+    }
+    for (let t = 10; t < 13; t += 0.05) expect(out.some((c) => t >= c.in && t < c.out)).toBe(true);
+  });
 });

@@ -291,19 +291,24 @@ function sizeTones(out) {
     if (prev && t.in - prev.out < TONE_MERGE_GAP_SEC) {
       const merged = { ...prev, id: prev.id, in: Math.min(prev.in, t.in), out: Math.max(prev.out, t.out), words: prev.words + t.words, merged: true };
       delete merged.tagTime;
-      // Mute under the join, so nothing audible leaks where the tones met.
+      // The merged tone supersedes both tones' remainders (unique ids, no overlap
+      // with the tone); the window takes in their extent so nothing they muted
+      // is left uncovered, and mute fills what the merged tone does not cover.
+      let wIn = merged.in; let wOut = merged.out;
+      for (const id of [`${prev.id}#m0`, `${prev.id}#m1`, `${t.id}#m0`, `${t.id}#m1`]) {
+        const i = remainders.findIndex((r) => r.id === id);
+        if (i < 0) continue;
+        wIn = Math.min(wIn, remainders[i].in); wOut = Math.max(wOut, remainders[i].out);
+        remainders.splice(i, 1);
+      }
       if (merged.out - merged.in > TONE_MAX_SEC) {
-        // Re-cap: the old remainders are superseded (unique ids); the new window
-        // takes in their extent so nothing they muted is left uncovered.
-        const centre = (merged.in + merged.out) / 2;
-        for (const id of [`${prev.id}#m0`, `${prev.id}#m1`]) {
-          const i = remainders.findIndex((r) => r.id === id);
-          if (i < 0) continue;
-          merged.in = Math.min(merged.in, remainders[i].in); merged.out = Math.max(merged.out, remainders[i].out);
-          remainders.splice(i, 1);
-        }
-        sized[sized.length - 1] = cap({ ...merged, words: merged.words }, centre);
-      } else sized[sized.length - 1] = merged;
+        const mid = (merged.in + merged.out) / 2;
+        merged.in = mid - TONE_MAX_SEC / 2; merged.out = mid + TONE_MAX_SEC / 2;
+      }
+      const mute = (id, x, y) => remainders.push({ ...merged, id, effect: 'mute', in: x, out: y, toneRemainder: true, words: 0, sound: undefined });
+      if (merged.in > wIn) mute(`${merged.id}#m0`, wIn, merged.in);
+      if (wOut > merged.out) mute(`${merged.id}#m1`, merged.out, wOut);
+      sized[sized.length - 1] = merged;
     } else sized.push(t);
   }
   out.length = 0;
