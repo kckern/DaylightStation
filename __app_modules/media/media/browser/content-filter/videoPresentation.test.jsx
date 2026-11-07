@@ -57,7 +57,7 @@ describe('installed Media playback presentation', () => {
     const el = document.createElement('video');
     const { result } = renderHook(() => contract.useVideoPresentation({ media: { assetId: 'plex:42' }, isPlex: true, getMediaEl: () => el }));
     await waitFor(() => expect(result.current.overlay?.props.badge).toBeTruthy());
-    expect(result.current.overlay.props.badge).toEqual({ state: 'provisional', active: false });
+    expect(result.current.overlay.props.badge).toEqual({ state: 'provisional', active: false, onOpen: expect.any(Function) });
     expect(result.current.overlay.props.bumper).toBeNull();
     act(() => { el.currentTime = 0; el.dispatchEvent(new Event('playing')); });
     await waitFor(() => expect(result.current.overlay.props.bumper).toEqual({ summary: '1 word muted' }));
@@ -69,7 +69,7 @@ describe('installed Media playback presentation', () => {
     const contract = await import('../../../../../__capabilities/playback/browser/presentation.mjs');
     const el = document.createElement('video');
     const { result } = renderHook(() => contract.useVideoPresentation({ media: { assetId: 'plex:43' }, isPlex: true, getMediaEl: () => el }));
-    await waitFor(() => expect(result.current.overlay?.props.badge).toEqual({ state: 'failed', active: false }), { timeout: 5000 });
+    await waitFor(() => expect(result.current.overlay?.props.badge).toEqual({ state: 'failed', active: false, onOpen: expect.any(Function) }), { timeout: 5000 });
     act(() => { el.currentTime = 0; el.dispatchEvent(new Event('playing')); });
     expect(result.current.overlay.props.bumper).toBeNull();
   });
@@ -117,7 +117,7 @@ describe('installed Media playback presentation', () => {
   it('shows the failed badge on a load failure with no URL flag', async () => {
     const f = vi.fn(async () => ({ ok: false, status: 503 }));
     const { result } = await renderFor('', f, 'plex:54');
-    await waitFor(() => expect(result.current.overlay?.props.badge).toEqual({ state: 'failed', active: false }), { timeout: 5000 });
+    await waitFor(() => expect(result.current.overlay?.props.badge).toEqual({ state: 'failed', active: false, onOpen: expect.any(Function) }), { timeout: 5000 });
     expect(f).toHaveBeenCalledTimes(2);
     const { render } = await import('@testing-library/react');
     const { container } = render(result.current.overlay);

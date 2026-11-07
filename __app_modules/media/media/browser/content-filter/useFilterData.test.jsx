@@ -47,7 +47,7 @@ describe('useFilterData', () => {
   });
   it('idle when disabled', () => {
     const { result } = renderHook(() => useFilterData('plex:1', { enabled: false }));
-    expect(result.current).toEqual({ data: null, status: 'idle' });
+    expect(result.current).toEqual({ data: null, status: 'idle', reload: expect.any(Function) });
   });
   it("drops the previous title's data as soon as the content id changes", async () => {
     const edlA = { edl: { cues: [{ id: 'a' }] } };
@@ -60,9 +60,43 @@ describe('useFilterData', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current.data).toBe(edlA);
     rerender({ id: 'plex:2' });
-    expect(result.current).toEqual({ data: null, status: 'loading' });
+    expect(result.current).toEqual({ data: null, status: 'loading', reload: expect.any(Function) });
     const edlB = { edl: { cues: [{ id: 'b' }] } };
     resolveB({ ok: true, status: 200, json: async () => edlB });
     await waitFor(() => expect(result.current.data).toBe(edlB));
+  });
+});
+
+describe('useFilterData — reload', () => {
+  it('refetches without clearing the current data, and resolves when done', async () => {
+    let n = 0;
+    const f = vi.fn(async () => { n += 1; return { ok: true, status: 200, json: async () => ({ edl: { cues: [], n } }) }; });
+    vi.stubGlobal('fetch', f);
+    const { result } = renderHook(() => useFilterData('plex:1', { retryDelayMs: 0 }));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const seen = [];
+    const p = result.current.reload();
+    seen.push(result.current.data);
+    await p;
+    await waitFor(() => expect(result.current.data.edl.n).toBe(2));
+    expect(seen[0].edl.n).toBe(1);
+    expect(result.current.status).toBe('ready');
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed reload keeps the current data and resolves', async () => {
+    let n = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      n += 1;
+      if (n > 1) return { ok: false, status: 503 };
+      return { ok: true, status: 200, json: async () => ({ edl: { cues: [] } }) };
+    }));
+    const { result } = renderHook(() => useFilterData('plex:1', { retryDelayMs: 0 }));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const before = result.current.data;
+    await expect(result.current.reload()).resolves.toBeUndefined();
+    expect(result.current.data).toBe(before);
+    expect(result.current.status).toBe('ready');
+    expect(mockLogger.warn).toHaveBeenCalledWith('content-filter.reload.failed', expect.objectContaining({ ratingKey: '1' }));
   });
 });

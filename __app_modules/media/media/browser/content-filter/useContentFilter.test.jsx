@@ -531,3 +531,129 @@ describe('useContentFilter — media element replaced under a stable getMediaEl'
     expect(call?.[1]).toEqual({ from: 'none', gen: 1 });
   });
 });
+
+describe('useContentFilter — preview: re-resolve, bypass, lastFired', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('re-resolve while inside an already-done skip does not seek again', () => {
+    vi.useFakeTimers();
+    const mk = () => ({ cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped.', holdSec: 2.5 }] });
+    const el = makeFakeEl();
+    const transport = { seek: vi.fn() };                         // the seek is still in flight: playhead stays inside
+    const getMediaEl = () => el;
+    const pf = { categories: {} };
+    const hook = renderHook(({ e }) => useContentFilter({ getMediaEl, transport, edl: e, profile: pf, enabled: true }), { initialProps: { e: mk() } });
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    expect(transport.seek).toHaveBeenCalledTimes(1);
+    act(() => { vi.advanceTimersByTime(2600); });                // card ends; reseek (did not land)
+    const after = transport.seek.mock.calls.length;
+    hook.rerender({ e: mk() });                                  // refresh: new effectiveCues, same skip id
+    act(() => { el.currentTime = 12; el.fire('timeupdate'); });
+    expect(transport.seek).toHaveBeenCalledTimes(after);
+    vi.useRealTimers();
+  });
+
+  it('an entered mute whose cue disappears after re-resolve is released', () => {
+    const el = makeFakeEl();
+    const transport = { seek: vi.fn() };
+    const getMediaEl = () => el;
+    const pf = { categories: {} };
+    const withMute = { cues: [{ id: 'm', effect: 'mute', category: 'language/x', in: 20, out: 30 }] };
+    const hook = renderHook(({ e }) => useContentFilter({ getMediaEl, transport, edl: e, profile: pf, enabled: true }), { initialProps: { e: withMute } });
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(el.muted).toBe(true);
+    act(() => { hook.rerender({ e: { cues: [] } }); });
+    expect(el.muted).toBe(false);
+    act(() => { el.currentTime = 22; el.fire('timeupdate'); });
+    expect(el.muted).toBe(false);
+  });
+
+  it('a mute still present after re-resolve stays muted with no gap', () => {
+    const el = makeFakeEl();
+    const getMediaEl = () => el;
+    const pf = { categories: {} };
+    const mk = () => ({ cues: [{ id: 'm', effect: 'mute', category: 'language/x', in: 20, out: 30 }] });
+    const hook = renderHook(({ e }) => useContentFilter({ getMediaEl, transport: { seek: vi.fn() }, edl: e, profile: pf, enabled: true }), { initialProps: { e: mk() } });
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    act(() => { hook.rerender({ e: mk() }); });
+    expect(el.muted).toBe(true); // re-applied in the same commit, not on the next tick
+  });
+
+  it('unmounting mid-mute releases it', () => {
+    const el = makeFakeEl();
+    const getMediaEl = () => el;
+    const e = { cues: [{ id: 'm', effect: 'mute', category: 'language/x', in: 20, out: 30 }] };
+    const hook = renderHook(() => useContentFilter({ getMediaEl, transport: { seek: vi.fn() }, edl: e, profile: { categories: {} }, enabled: true }));
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(el.muted).toBe(true);
+    hook.unmount();
+    expect(el.muted).toBe(false);
+  });
+
+  it('a re-resolve inside a mute neither re-enters it nor counts another fire', () => {
+    const el = makeFakeEl();
+    const getMediaEl = () => el;
+    const pf = { categories: {} };
+    const mk = () => ({ cues: [{ id: 'm', effect: 'mute', category: 'language/x', in: 20, out: 30 }] });
+    const hook = renderHook(({ e }) => useContentFilter({ getMediaEl, transport: { seek: vi.fn() }, edl: e, profile: pf, enabled: true }), { initialProps: { e: mk() } });
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    act(() => { hook.rerender({ e: mk() }); });
+    act(() => { el.currentTime = 22; el.fire('timeupdate'); });
+    expect(hook.result.current.fireCount).toBe(1);
+    act(() => { el.currentTime = 31; el.fire('timeupdate'); });
+    expect(el.muted).toBe(false); // one hold, released once
+  });
+
+  it("peek('va1'): the mute does not apply inside va1; after passing va1.out it applies again on a later pass", () => {
+    const el = makeFakeEl();
+    const getMediaEl = () => el;
+    const pf = { categories: {} };
+    const e = { cues: [{ id: 'va1', effect: 'mute', category: 'language/x', in: 20, out: 30 }] };
+    const bypass = new Set(['va1']);
+    renderHook(() => useContentFilter({ getMediaEl, transport: { seek: vi.fn() }, edl: e, profile: pf, enabled: true, bypass }));
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(el.muted).toBe(false);
+    act(() => { el.currentTime = 31; el.fire('timeupdate'); });   // passed va1.out
+    expect(bypass.has('va1')).toBe(false);
+    act(() => { el.currentTime = 21; el.fire('seeking'); el.fire('seeked'); }); // a later pass
+    expect(el.muted).toBe(true);
+  });
+
+  it('bypass by scene id covers that scene’s pieces and its skip-card', () => {
+    const el = makeFakeEl();
+    const transport = { seek: vi.fn() };
+    const getMediaEl = () => el;
+    const e = { cues: [
+      { id: 's1#0', scene: 's1', effect: 'blackout', category: 'scene/v', in: 10, out: 15 },
+      { id: 's2', scene: 's2', effect: 'skip-card', category: 'scene/v', in: 50, out: 60 },
+    ] };
+    const bypass = new Set(['s1', 's2']);
+    const hook = renderHook(() => useContentFilter({ getMediaEl, transport, edl: e, profile: { categories: {} }, enabled: true, bypass }));
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    expect(hook.result.current.activeOverlays).toEqual([]);
+    act(() => { el.currentTime = 51; el.fire('timeupdate'); });
+    expect(transport.seek).not.toHaveBeenCalled();
+    expect(bypass.has('s1')).toBe(false); // passed s1's out on the way
+  });
+
+  it('lastFired is the most recently entered cue (skip-cards count, title-cards do not)', () => {
+    vi.useFakeTimers();
+    const el = makeFakeEl();
+    const transport = { seek: vi.fn() };
+    const getMediaEl = () => el;
+    const e = { cues: [
+      { id: 'm', effect: 'mute', category: 'language/x', in: 20, out: 22 },
+      { id: 't', effect: 'title-card', category: 'info', in: 30, out: 32, text: 'Hi' },
+      { id: 'sc', effect: 'skip-card', category: 'x', in: 40, out: 45, holdSec: 1 },
+    ] };
+    const hook = renderHook(() => useContentFilter({ getMediaEl, transport, edl: e, profile: { categories: {} }, enabled: true }));
+    expect(hook.result.current.lastFired).toBeNull();
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(hook.result.current.lastFired.id).toBe('m');
+    act(() => { el.currentTime = 31; el.fire('timeupdate'); });
+    expect(hook.result.current.lastFired.id).toBe('m');
+    act(() => { el.currentTime = 41; el.fire('timeupdate'); });
+    expect(hook.result.current.lastFired.id).toBe('sc');
+    vi.useRealTimers();
+  });
+});
