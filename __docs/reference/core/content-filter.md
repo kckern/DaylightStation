@@ -113,6 +113,51 @@ overlay effects including blur, censor bars, pixelation, full blur, and title ca
 Timing pads protect against playback-driver granularity and source drift. Approximate
 mute cues are widened more than skips because a narrow window can leak a spoken word.
 
+### Channel-matched effects (R1, R2)
+
+Every cue has a modality (`cueModality`, `shared/contracts/content-filter/cueModality.mjs`):
+`said` (VidAngel type `mute`, or refine judged it speech), `shown` (type `skip`/visual, or refine
+judged it shown; credits), `heard` (a non-speech sound). An effect must fit the cue's channel:
+audio effects (mute, bleep, duck) only on `said`, mute also on `heard`; visual effects (blur,
+full-blur, censor-bar, pixelate, blackout) only on `shown`; skip and skip-card on any. A profile
+effect that does not fit maps to the channel's equivalent (`fitEffectToChannel`): `shown` + audio
+effect or blur -> regional `blur` when the cue has a region track, else `full-blur` (R2);
+`said`/`heard` + a visual effect -> `mute`. The resolver logs the change as
+`content-filter.effect.adjusted`. Cues with neither a type nor a refine kind (hand-added) are left
+as authored.
+
+### Rules at a glance
+
+| Rule | Where it lives |
+|------|----------------|
+| R1 channel matches modality, R2 regional when tracked | above |
+| R3 tones are word-sized, R4 lines and exchanges | Audio effects |
+| R5 cue-level cards | Scenes (Cue cards) |
+| R6 same-subject tags, R7 refine is safe to re-run, R8 refine on the server | Refined EDLs |
+| R9 language is five groups | Profiles and settings (Language groups) |
+
+### Audit (`contentfilter audit <rk>`)
+
+`contentfilter audit <ratingKey> [--profile <name>] [--part <id>] [--json]`
+(`cli/contentfilter/auditCommand.mjs`) is the proof for a title. It loads the refined EDL (else
+the raw one), the override with its `profilePatch` and the profile (default `family`) the way the
+API does, runs the player's own `resolveEffectiveCues` and measures what would play. It writes
+nothing. Output is a table on stderr; `--json` also prints the report on stdout. It exits 1 when a
+hard check fails.
+
+- **Hard checks:** no bleep longer than 1.5 s (count and ids); no audio effect on a `shown` cue;
+  no visual effect on a `said` cue (ids).
+- **Region tracks:** share of `shown` cues that resolve to an overlay and have a region track
+  (target 70%, flagged pass/fail but not fatal); coarse-edge tracks are counted separately.
+- **Same-subject groups (R6):** groups of two or more `shown` cues, their members, and how many
+  resolve to a single effect.
+- **R4:** lines muted, exchanges skipped, and skip-cards with approved vs generic text.
+- **Scenes and certification:** scenes whose edges leave a member uncovered (the check refine logs
+  as `scene-edge-uncovered`) and the EDL's certification level.
+- **Language (R9):** count per group (profanity, blasphemy, sexual, slurs, childish, and `unknown`
+  for a language tag whose category names no group) with the effect each resolved to (`off` when
+  the profile turns it off).
+
 ### Audio effects: holds, bleep tone, pauses
 
 - **Tones are word-sized (R3).** A bleep sounds for one spoken word (a word label) for at

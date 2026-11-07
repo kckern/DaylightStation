@@ -684,7 +684,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
-  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence', '--profile': 'profile',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1084,6 +1084,20 @@ async function main() {
     return;
   }
 
+  if (command === 'audit') {
+    // The audit runs the player's own resolver, a browser module; let plain Node load it.
+    (await import('./contentfilter/registerExtensionless.mjs')).registerExtensionless();
+    const { runAudit, formatAudit, AUDIT_USAGE } = await import('./contentfilter/auditCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(AUDIT_USAGE); process.exit(1); }
+    let report;
+    try { report = runAudit({ rk, flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() }); } catch (err) { console.error(`audit ${rk} failed: ${err.message}`); process.exit(1); }
+    console.error(formatAudit(report));
+    if (flags.json) console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exit(1);
+    return;
+  }
+
   if (command === 'scenes') {
     const { runScenes, SCENES_USAGE } = await import('./contentfilter/scenesCommand.mjs');
     const { getDecisionGateway } = await import('../../../../cli/_bootstrap.mjs');
@@ -1364,6 +1378,8 @@ Commands:
   pin-page <ratingKey>  Clip page for safe-window mutes: mark where each word starts. --src.
   pin <ratingKey>       Snap the marks to the words and write them as ms mutes. --src, --marks, --write.
   scenes <ratingKey>    Group refined tags into scenes (shot-cut edges, situation + picture levels by Jev). --src, --same-scene, --out, --write.
+  audit <ratingKey>     Prove a title: tone cap, channel match, region-track share, same-subject groups, R4 counts,
+                        scene edge leaks, certification, language per group. --profile, --part, --json. Exit 1 on a hard fail.
   certify <ratingKey>   Show/recompute a refined EDL's certification (machine: every mute precise);
                         --parent --by <name> records a sign-off. --write.
   migrate-refined <rk>  Move a title's refined cue times from its override into the shareable
