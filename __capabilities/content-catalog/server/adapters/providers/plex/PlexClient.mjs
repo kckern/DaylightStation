@@ -208,7 +208,10 @@ export class PlexClient {
       url = `${url}${url.includes('?') ? '&' : '?'}X-Plex-Token=${this.#token}`;
       headers['X-Plex-Token'] = this.#token;
     }
-    const response = await this.#httpClient.requestRaw('GET', url, { headers, timeout, responseType: 'buffer' });
+    // Production wires axios (no requestRaw); the app's HttpClient has requestRaw. Support both.
+    const response = typeof this.#httpClient.requestRaw === 'function'
+      ? await this.#httpClient.requestRaw('GET', url, { headers, timeout, responseType: 'buffer' })
+      : await this.#httpClient.get(url, { headers, timeout, responseType: 'arraybuffer' });
     const body = response?.data ?? response?.body ?? null;
     return body ? Buffer.from(body) : null;
   }
