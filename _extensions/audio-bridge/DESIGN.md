@@ -448,3 +448,31 @@ Set `aec.enabled: false` to disable AEC and rely on volume ducking only.
 | `frontend/src/modules/Input/hooks/useAudioProbe.js` | Unchanged | Provides `status: 'no-mic'` trigger for fallback mode |
 | `frontend/src/modules/Input/hooks/useWebRTCPeer.js` | Unchanged | Consumes merged stream (source-agnostic) |
 | `frontend/src/modules/Input/hooks/useMediaDevices.js` | Unchanged | Now receives device-specific camera/mic preferences from VideoCall |
+
+## Gamepad recovery control API
+
+The bridge exposes an independent JSON HTTP control plane on port 8766. Reading
+Bluetooth state never starts microphone capture; the PCM WebSocket remains on 8765.
+Configure the device's `bluetooth_bridge.url` to the bridge's HTTP origin for the
+arcade server adapter. Keep that control port on the trusted device network.
+
+`GET /bluetooth` returns adapter state, observed bonds/HID connections, controller
+eligibility, pending pairing, capabilities and the last failure. JSON `POST` actions:
+`/bluetooth/scan` (`durationMs`, 1000–30000, default 12000), `/bluetooth/scan/stop`,
+`/bluetooth/pair`, `/bluetooth/unpair` (`address`), `/bluetooth/connect`,
+`/bluetooth/disconnect` (`address`, `profile: input`), `/bluetooth/pairing`
+(`address`, `accept`, optional `pin`). Mutations are asynchronous: HTTP 202 means
+accepted, not connected. Poll state to observe completion. Invalid requests return
+400, rejected operations 409, and GET mutations 405. Maximum body size is 8192 bytes.
+
+Management is restricted to discovered/bonded devices with a joystick/gamepad
+Bluetooth class; remotes and keyboards are read-only. Pairing replies require a
+matching explicit request within 60 seconds. PINs are never logged. Android may
+restrict confirmation/HID actions: the API reports those failures and never opens
+Settings or invokes ADB as a runtime fallback.
+
+Initial installation must grant location permission on Android 11, or nearby-device
+permissions on Android 12+, as well as the existing microphone permission. Android
+11 discovery also requires Location services enabled. Service teardown stops scans,
+cancels pending pairing and closes receivers/profile proxies. A running game or
+microphone call must not be interrupted for bridge installation/restart.
