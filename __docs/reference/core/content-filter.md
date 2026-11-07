@@ -499,11 +499,11 @@ old single `language` rule is the fallback. A level-2 key may use either taxonom
 (`language/language_racial` rules Slurs; the canonical `language/slurs` wins if both exist) (reading it as settings gives all five groups that
 value). Defaults when settings are written without a group: Profanity, Blasphemy, Sexual, Slurs
 mute; Childish off. **Per-word exceptions** (hand-edited YAML, no UI yet; values outside
-`off|mute|bleep` are ignored with a warning): `profile.languageWords: { <word>: off|mute|bleep }`
+`off|mute|bleep` are ignored with a warning; an empty value is invalid, so the group applies): `profile.languageWords: { <word>: off|mute|bleep }`
 (also honoured in a film's `profilePatch`) beats the group; the word is the category leaf
 (`language/childish/jerk` -> `jerk`) or an uncensored one-word label. The group rule chooses the
 audio effect for *said* cues; the R3 tone caps, R4 line rules and the channel fit apply on top, so
-a *shown* language tag (billboard) is still blurred, not muted. Word-list (SRT) cues (`source: srt`, ids `srt<ms>_<i>`) are governed too: their stamped
+a *shown* language tag (billboard) is still blurred, not muted. Word-list (SRT) cues (marked `source: srt` by the producer; the id shape is not consulted) are governed too: their stamped
 `effect: mute` is only a default, so the group and `languageWords` decide (Childish off unmutes
 "jerk"; Slurs bleep tones a racial word, R3-capped). A household `cueOverrides.<id>.effect` and a
 hand-authored `addCues` effect still win. The preview Settings tab has five rows (Profanity, Blasphemy,

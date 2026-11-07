@@ -721,6 +721,10 @@ describe('language groups (R9)', () => {
       const hand = run([{ id: 'h', effect: 'mute', category: 'language/childish/jerk', label: 'jerk', in: 10, out: 10.4 }], profile);
       expect(hand.map((c) => c.effect)).toEqual(['mute']);
     });
+    it('a hand-authored mute with an srt-looking id but no source: srt keeps its effect', () => {
+      const out = run([{ id: 'srt1', effect: 'mute', category: 'language/childish/jerk', label: 'jerk', in: 10, out: 10.4 }], profile);
+      expect(out.map((c) => c.effect)).toEqual(['mute']);
+    });
     it('with no profile rules at all a word-list cue keeps its own mute', () => {
       expect(run([srt('srt1000_0', 'language/profanity/damn', 'damn')], {}).map((c) => c.effect)).toEqual(['mute']);
     });

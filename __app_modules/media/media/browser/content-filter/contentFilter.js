@@ -60,7 +60,7 @@ export function resolveEffect(categoryPath, profile) {
 const WORD_EFFECTS = new Set(['off', 'mute', 'bleep']);
 
 /** A word-list (SRT) cue: its stamped `effect: mute` is a default, not a ruling. */
-export const isWordListCue = (cue) => cue?.source === 'srt' || /^srt\d+/.test(String(cue?.id || ''));
+export const isWordListCue = (cue) => cue?.source === 'srt';
 
 /**
  * R9: the rule for a language cue. Precedence: per-word exception
