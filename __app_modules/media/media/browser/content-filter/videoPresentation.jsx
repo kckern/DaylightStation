@@ -38,7 +38,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   const filterTransport = useMemo(() => ({
     seek: (s) => { const el = getMediaEl(); if (el && Number.isFinite(s)) { try { el.currentTime = s; } catch (_) { /* ignore */ } } },
   }), [getMediaEl]);
-  const { activeOverlays: filterOverlays, activeCard: filterCard, effectiveCues: filterCues, fireCount } = useContentFilter({
+  const { activeOverlays: filterOverlays, activeCard: filterCard, effectiveCues: filterCues, filterActive } = useContentFilter({
     getMediaEl,
     transport: filterTransport,
     edl: filterData?.edl,
@@ -81,7 +81,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
           theme={filterData?.profile?.theme || undefined}
           art={filterCardArt}
           bumper={bumperShown ? { summary: filterSummaryLine } : null}
-          badge={{ state: badgeState, fireCount }}
+          badge={{ state: badgeState, active: filterActive }}
         />
       ),
   };

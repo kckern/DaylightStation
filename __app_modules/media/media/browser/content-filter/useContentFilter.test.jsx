@@ -197,6 +197,27 @@ describe('useContentFilter', () => {
     expect(hook.result.current.activeCard).toBeNull(); // rendered via overlay only
   });
 
+  it('filterActive: false at t=0, true inside a mute cue, false after leaving it', () => {
+    const { el, hook } = setup();
+    expect(hook.result.current.filterActive).toBe(false);
+    act(() => { el.currentTime = 21; el.fire('timeupdate'); });
+    expect(hook.result.current.filterActive).toBe(true);
+    act(() => { el.currentTime = 30; el.fire('timeupdate'); });
+    expect(hook.result.current.filterActive).toBe(false);
+  });
+
+  it('filterActive: true while a skip-card is showing', () => {
+    vi.useFakeTimers();
+    const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped.', holdSec: 2.5 }] };
+    const { el, hook } = setup({ edl: scEdl, profile: { categories: {} } });
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    expect(hook.result.current.filterActive).toBe(true);
+    act(() => { vi.advanceTimersByTime(2600); });
+    act(() => { el.fire('timeupdate'); });
+    expect(hook.result.current.filterActive).toBe(false);
+    vi.useRealTimers();
+  });
+
   it('fireCount counts a skip-card once', () => {
     vi.useFakeTimers();
     const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped a scene.', holdSec: 2.5 }] };

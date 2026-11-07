@@ -80,7 +80,7 @@ export function createSfxPlayer(sounds, { tone = createBleepTone({ onDegraded: l
  *   Must be memoized: it is a dependency of the main effect, so a new object each
  *   render tears the filter down (exitAll) and re-attaches on every render.
  * @param {boolean} [args.enabled=true]
- * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array, fireCount: number}}
+ * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array, fireCount: number, filterActive: boolean}}
  */
 export function useContentFilter({ getMediaEl, transport, edl, profile, override, part = null, sfx, enabled = true } = {}) {
   const effectiveCues = useMemo(
@@ -102,6 +102,8 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
   const [activeCard, setActiveCard] = useState(null);
   // Bumped once per cue entry so the filter-active badge can pulse on each fire.
   const [fireCount, setFireCount] = useState(0);
+  // True while any cue is entered (mute/bleep/skip alike, not just overlays).
+  const [hasEntered, setHasEntered] = useState(false);
 
   // Cues currently "entered" (id -> cue), so we can fire onExit exactly once.
   const enteredRef = useRef(new Map());
@@ -140,6 +142,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (h?.onExit) { try { h.onExit({ el, transport, cue, sfx: sfxPlayer, mem: memRef.current }); } catch (_) { /* ignore */ } }
       });
       prev.clear();
+      setHasEntered(false);
     };
 
     // Tear down the overlay fade lifecycle (timers + tracked entries).
@@ -291,6 +294,8 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (h.kind === EFFECT_KINDS.OVERLAY) overlays.push({ effect: cue.effect, cue });
       }
 
+      setHasEntered(entered.size > 0);
+
       // Overlay fade lifecycle: mark active overlays visible (cancel any pending
       // removal); mark exited ones visible:false and schedule removal after the
       // fade so <FilterOverlay> can ramp the blur radius to 0 before unmount.
@@ -413,5 +418,6 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     setElGen(elGenRef.current);
   });
 
-  return { activeOverlays, activeCard, effectiveCues, fireCount };
+  const filterActive = hasEntered || activeOverlays.length > 0 || !!activeCard;
+  return { activeOverlays, activeCard, effectiveCues, fireCount, filterActive };
 }

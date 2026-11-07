@@ -21,7 +21,7 @@ import { FilterBumper, FilterBadge } from './FilterChrome.jsx';
  * for the common fill case.)
  *
  * The same layer carries the viewer chrome from FilterChrome.jsx: `bumper`
- * ({ summary }) over the opening, and `badge` ({ state, fireCount }) for as long
+ * ({ summary }) over the opening, and `badge` ({ state, active, onOpen }) for as long
  * as a filter is in force. The layer renders when either is present even with no
  * effect active. The bumper yields to a skip-card; the badge stays.
  */
@@ -203,7 +203,7 @@ export function FilterOverlay({ activeOverlays = [], activeCard = null, theme = 
       ))}
       {activeCard && <Card text={activeCard.text} theme={theme} art={art} fullFrame />}
       {bumper && !activeCard && <FilterBumper summary={bumper.summary} art={art} theme={theme} />}
-      {badge && <FilterBadge state={badge.state} fireCount={badge.fireCount} />}
+      {badge && <FilterBadge state={badge.state} active={!!badge.active} onOpen={badge.onOpen} />}
     </div>
   );
 }
@@ -229,5 +229,5 @@ FilterOverlay.propTypes = {
   theme: PropTypes.object,
   art: artShape,
   bumper: PropTypes.shape({ summary: PropTypes.string }),
-  badge: PropTypes.shape({ state: PropTypes.oneOf(['certified', 'provisional', 'failed']).isRequired, fireCount: PropTypes.number }),
+  badge: PropTypes.shape({ state: PropTypes.oneOf(['certified', 'provisional', 'failed']).isRequired, active: PropTypes.bool, onOpen: PropTypes.func }),
 };
