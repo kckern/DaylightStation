@@ -35,6 +35,8 @@ const AUDIO_EFFECTS = new Set(['mute', 'bleep', 'duck']);
 const REGIONAL = new Set(['blur', 'censor-bar', 'pixelate']);
 // Visual overlays: the effects a same-subject group (R6) can merge.
 const OVERLAY = new Set(['blur', 'full-blur', 'censor-bar', 'pixelate', 'blackout']);
+// How much of the picture an overlay hides: a group plays its strongest member's effect.
+const STRENGTH = { blur: 1, pixelate: 2, 'censor-bar': 2, 'full-blur': 3, blackout: 4, skip: 5, 'skip-card': 5 };
 
 // Params we carry from a profile rule / override onto the effective cue.
 const PARAM_KEYS = ['sound', 'rect', 'style', 'level', 'text'];
@@ -204,6 +206,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
 
     const eff = { ...cue, effect: rule.effect };
     let measured = ov;
+    const coarseEdges = (cue.refine?.edges ?? ov.refine?.edges) === 'coarse';
     if (synced && refinedEdl && PRECISE.has(cue.precision)) {
       if (syncFitsPart) {
         // Precise on the reference clock: map through this copy's sync, snap
@@ -233,7 +236,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     } else if (synced && sync) {
       const spans = syncSpan(cue.in, cue.out);
       // Coarse edges, measured region track (refined EDL): the track still applies over the synced window.
-      if (refinedEdl && syncFitsPart && cue.refine?.edges === 'coarse' && cue.regions?.length) {
+      if (refinedEdl && syncFitsPart && coarseEdges && cue.regions?.length) {
         measured = { regions: cue.regions.map((k) => ({ ...k, in: mapTime(k.in, sync) })).filter((k) => k.in != null) };
       }
       if (!spans.length) { notInCut++; continue; }
@@ -250,9 +253,20 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     const fitted = (cue.type || kind)
       ? fitEffectToChannel(eff.effect, modality, { hasRegions: !!measured?.regions?.length })
       : eff.effect;
+    // R6: what this cue asks of its group — the effect it would play if tracked (blur stays
+    // regional-able; an explicit full-blur or a stronger effect stays as it is).
+    const groupEffect = (cue.type || kind) ? fitEffectToChannel(eff.effect, modality, { hasRegions: true }) : eff.effect;
     if (fitted !== eff.effect) {
       logger().sampled('content-filter.effect.adjusted', { id: cue.id, from: eff.effect, to: fitted, modality, source: explicit ? 'override' : 'profile' }, { maxPerMinute: 10, aggregate: true });
       eff.effect = fitted;
+    }
+    // Coarse edges: the track covers only where it was seen, the cue's window is a guess. Hold
+    // the track over the whole (padded) window, so the regional blur never hides less time than
+    // the full-blur this cue would get untracked; an unsure keyframe inside hides the whole picture.
+    if (coarseEdges && measured?.regions?.length && REGIONAL.has(eff.effect)) {
+      const w = widenCue({ in: eff.in, out: eff.out, precision: eff.precision, effect: 'full-blur' }, profile?.treatments);
+      eff.in = w.in; eff.out = w.out;
+      measured = { ...measured, regions: coverTrack(measured.regions, eff.in, eff.out) };
     }
     // Param precedence: override > cue > profile rule.
     mergeParams(eff, ov, cue, rule);
@@ -302,7 +316,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     const subject = ov.subject ?? cue.subject;
     if (subject && modality === 'shown' && OVERLAY.has(eff.effect)) {
       if (!groups.has(subject)) groups.set(subject, []);
-      groups.get(subject).push({ eff, measured });
+      groups.get(subject).push({ eff, measured, groupEffect });
       continue;
     }
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
@@ -322,16 +336,19 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
 
 /**
  * R6: `shown` cues sharing a subject are one thing on screen: one effect over the union of their
- * spans (segments merged), following the best-tracked member's region track (most keyframes).
- * The strongest member effect wins (blur/full-blur follow the track: regional when tracked).
- * The track is held at either end so the whole union is covered. The piece id is the subject id.
- * Members' ids go in `cues` so scenes still recognise them.
+ * spans (segments merged). The group plays its STRONGEST member's effect (blackout > full-blur >
+ * censor-bar/pixelate > blur). Only blur becomes regional: it follows the best-tracked member's
+ * region track (most keyframes), else it is a full-blur; an explicit full-blur stays whole-frame.
+ * The track is held at either end and its gaps hide the whole picture, so no instant of any
+ * member's span is left uncovered. The piece id is the subject id; members' ids go in `cues` so
+ * scenes still recognise them.
  */
 function resolveSubject(subject, members) {
-  const rank = (e) => HIDE_RANK[e] ?? 0;
+  const strength = (m) => STRENGTH[m.groupEffect ?? m.eff.effect] ?? 0;
   const tracked = members.filter((m) => m.measured?.regions?.length)
     .sort((a, b) => b.measured.regions.length - a.measured.regions.length)[0];
-  const lead = [...members].sort((a, b) => rank(b.eff.effect) - rank(a.eff.effect))[0].eff;
+  const leader = [...members].sort((a, b) => strength(b) - strength(a))[0];
+  const lead = leader.groupEffect ?? leader.eff.effect;
   const spans = members.flatMap(({ eff, measured }) => (measured?.segments?.length > 1 ? measured.segments : [{ in: eff.in, out: eff.out }]))
     .sort((a, b) => a.in - b.in);
   const union = [];
@@ -341,18 +358,42 @@ function resolveSubject(subject, members) {
     else union.push({ in: sp.in, out: sp.out });
   }
   const first = union[0].in; const end = union[union.length - 1].out;
-  let regions;
-  if (tracked) {
-    regions = tracked.measured.regions.map((k) => ({ ...k }));
-    if (regions[0].in > first) regions.unshift({ ...regions[0], in: first });
-    const last = regions[regions.length - 1];
-    if (last.in < end) regions[regions.length - 1] = { ...last, in: end };
-  }
-  const effect = lead.effect === 'blur' || lead.effect === 'full-blur' ? (regions ? 'blur' : 'full-blur') : lead.effect;
-  const base = { ...(tracked?.eff || lead), effect, id: subject, subject, in: first, out: end, cues: members.map((m) => m.eff.id) };
-  delete base.segments; delete base.regions; delete base.rect;
+  const effect = lead === 'blur' ? (tracked ? 'blur' : 'full-blur') : lead;
+  const regions = tracked && REGIONAL.has(effect) ? coverTrack(tracked.measured.regions, first, end) : undefined;
+  const base = { ...leader.eff, effect, id: subject, subject, in: first, out: end, cues: members.map((m) => m.eff.id) };
+  delete base.segments; delete base.regions;
+  // An authored rect (e.g. a censor bar) stays when there is no track to follow.
+  if (regions || !REGIONAL.has(effect)) delete base.rect;
   if (members.some((m) => !PRECISE.has(m.eff.precision))) base.precision = 'second-approx';
   return expandMeasured(base, { segments: union.length > 1 ? union : undefined, regions });
+}
+
+const isTrackGap = (k) => !k.whole && !(k.cells && k.cells.length);
+
+/**
+ * A region track made to cover [from, to] with no uncovered instant. The last keyframe is the
+ * track's end marker. Before the first sighting the first box is held back to `from`; after the
+ * last sighting the last box is held forward (to `to`, or the marker if later); a gap (empty or
+ * unsure keyframe) between two sightings hides the whole picture. A track with no sighting at
+ * all is whole-frame throughout.
+ */
+function coverTrack(regions, from, to) {
+  const keys = [...regions].sort((a, b) => a.in - b.in);
+  const body = keys.length > 1 ? keys.slice(0, -1) : keys;
+  const endAt = Math.max(to, keys.length > 1 ? keys[keys.length - 1].in : to);
+  const firstSeen = body.findIndex((k) => !isTrackGap(k));
+  if (firstSeen < 0) return [{ in: Math.min(from, body[0].in), whole: true }, { in: endAt, cells: [] }];
+  let lastSeen = body.length - 1;
+  while (isTrackGap(body[lastSeen])) lastSeen--;
+  const out = body.map((k, i) => {
+    if (!isTrackGap(k)) return k;
+    if (i < firstSeen) return { ...body[firstSeen], in: k.in };
+    if (i > lastSeen) return { ...body[lastSeen], in: k.in };
+    return { in: k.in, whole: true };
+  });
+  if (out[0].in > from) out.unshift({ ...body[firstSeen], in: from });
+  out.push({ in: endAt, cells: [] });
+  return out;
 }
 
 /**
@@ -460,7 +501,13 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
       const rank = HIDE_RANK[c.effect];
       if (rank == null || rank > HIDE_RANK[effect] || String(c.category || '').startsWith('credits')) continue;
       const base = String(c.id).split(/[#@]/)[0];
-      if (members.has(base) || (c.cues || []).some((id) => members.has(id)) || (inside(c) && !keepOwn.has(base))) out.splice(i, 1);
+      const own = inside(c) && !keepOwn.has(base);
+      if (!own && !members.has(base) && !(c.cues || []).some((id) => members.has(id))) continue;
+      if (inside(c)) { out.splice(i, 1); continue; }
+      // A member (or a subject piece with a member in the scene) that reaches outside the scene:
+      // the scene takes over only its own time; the rest still hides.
+      const rest = outsideSpans(c, spans);
+      out.splice(i, 1, ...rest.map((r, k) => ({ ...c, id: rest.length > 1 ? `${c.id}#x${k}` : c.id, in: r.in, out: r.out })));
     }
     const approved = so.card?.text || null;
     const category = `scene/${(scene.groups || [])[0] || 'other'}`;
@@ -474,6 +521,18 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
     }
   }
   return summary;
+}
+
+/** The parts of [c.in, c.out] outside every span. */
+function outsideSpans(c, spans) {
+  let rest = [{ in: c.in, out: c.out }];
+  for (const sp of spans) {
+    rest = rest.flatMap((r) => {
+      if (sp.out <= r.in || sp.in >= r.out) return [r];
+      return [...(sp.in > r.in ? [{ in: r.in, out: sp.in }] : []), ...(sp.out < r.out ? [{ in: sp.out, out: r.out }] : [])];
+    });
+  }
+  return rest.filter((r) => r.out - r.in > 1e-6);
 }
 
 /** One line for the debug overlay: how this copy is synced, or why refined times are not used. */

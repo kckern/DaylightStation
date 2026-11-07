@@ -124,7 +124,9 @@ effect that does not fit maps to the channel's equivalent (`fitEffectToChannel`)
 effect or blur -> regional `blur` when the cue has a region track, else `full-blur` (R2);
 `said`/`heard` + a visual effect -> `mute`. The resolver logs the change as
 `content-filter.effect.adjusted`. Cues with neither a type nor a refine kind (hand-added) are left
-as authored.
+as authored. The refine kind comes from the refine stamp (`refine.kind`: speech, speech-line,
+visual, credits), written by refine on refined and coarse-edge cues alike; it beats the VidAngel
+type when both are present.
 
 ### Rules at a glance
 
@@ -147,11 +149,11 @@ hard check fails. (The frontend logger writes to stdout; the CLI sends it to std
 
 - **Hard checks:** no bleep longer than 1.5 s (count and ids); no audio effect on a `shown` cue;
   no visual effect on a `said` cue (ids).
-- **Region tracks:** share of `shown` cues that resolve to an overlay and have a region track
-  (target 70%, flagged pass/fail but not fatal); coarse-edge tracks are counted separately. The
-  table also prints `track data n/m`: shown cues whose data carries a track whatever the profile
-  chose (a profile's explicit `full-blur` stays whole-frame unless the cue is in a same-subject
-  group, so the resolved share can sit far below the data share).
+- **Region tracks:** `track data n/m` is the Proof metric: the share of `shown` cues (that
+  resolve to an overlay) whose data carries a region track, target 70%, flagged PASS/FAIL but not
+  fatal. `resolved regional n/m` is printed as information: the cues that actually play a
+  regional piece. It can sit far below the data share, because a profile's explicit `full-blur`
+  stays whole-frame (alone or in a same-subject group). Coarse-edge tracks are counted separately.
 - **Same-subject groups (R6):** groups of two or more `shown` cues, their members, and how many
   resolve to a single effect. A group nothing resolves for (profile off, or a scene covers it) is
   counted as "no effect" and does not fail the check.
@@ -285,7 +287,10 @@ timeout (`TimeoutDecisionGateway`, default 90 s, wrapped around the gateway by t
 but which Jev sees in the probe frames is still region-tracked over the first to last frame it
 was seen. It keeps its coarse VidAngel in/out and gains `regions` plus
 `refine: { edges: coarse }` (status `region` in refine results, `coarse-edges` on the review
-list). The player applies such a track over the synced coarse window; `refinedCount` counts
+list). The player applies such a track over the synced coarse window, never over less time than
+the cue would be hidden untracked: the window takes the full-blur pads and minimum width, the
+first seen box is held back to its start and the last forward to its end, and an empty or unsure
+keyframe between two sightings hides the whole picture. `refinedCount` counts
 only cues measured at ms/frame, and a cue refined at ms/frame is never replaced by a coarse one.
 When Jev sees the subject nowhere, or only judges it whole-frame, no track is written.
 
@@ -294,10 +299,15 @@ pairwise (`subjectGroups.mjs`, both labels plus one frame from the overlap, "the
 thing on screen?"). Only a confident yes groups; no, abstain, timeout and error leave the tags
 separate. Grouped cues carry `subject: <id>` in the refined EDL; a re-run keeps the subjects
 already there (`--resubject` asks again, `--no-subjects` skips the step). The resolver turns
-cues sharing a `subject` into ONE effect (id = the subject id) over the union of their spans,
-following the best-tracked member's region track (most keyframes; held at both ends to cover the
-union): regional blur when tracked, full-blur otherwise. `said`/`heard` cues never group, so a
-word inside the union still mutes on its own.
+cues sharing a `subject` into ONE effect (id = the subject id) over the union of their spans.
+The group plays its STRONGEST member's effect (blackout > full-blur > censor-bar/pixelate > blur;
+a member's audio or blur effect counts as blur), so no member is weakened by the group. Only blur
+becomes regional: it follows the best-tracked member's region track (most keyframes), else it is a
+full-blur; an explicit full-blur stays whole-frame even with a track. A censor-bar or pixelate group
+follows the track too, and keeps an authored `rect` when there is none. The track is held at both
+ends to cover the union, and a gap in it (empty or unsure keyframe) hides the whole picture, so no
+instant of any member's span is left uncovered. `said`/`heard` cues never group, so a word inside
+the union still mutes on its own.
 
 - **Safe windows** (`safeWindow.mjs`). A mute refine could not pin is widened to
   `tag.in − 3.5 s … tag.out + 3.0 s` with `precision: safe-window`; the tag span is
@@ -395,7 +405,9 @@ the generic "Scene skipped." (never the cue label). `cardDraft` never plays.
 - A scene with an effect drops the cues inside it that hide no more than it does
   (blur < full-blur < blackout < skip). Word mutes, credits and stronger cues stay;
   mutes are never clipped to a scene; cues of a scene a grown-up turned off stay
-  even inside an overlapping scene.
+  even inside an overlapping scene. A member cue, or a same-subject piece with a member in
+  the scene, that reaches outside the scene is clipped to its time outside the scene rather
+  than dropped, so a group member outside the scene stays hidden.
 - Neighbouring scenes sharing a group, with the same effect and ≤ 30 s apart, are
   **bridged** into one (one black, one card), at resolve time only.
 - **skip** → one `skip-card` (profile `holdSec`), text = approved card or "Scene skipped.".
