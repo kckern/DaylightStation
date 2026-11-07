@@ -18,8 +18,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
  * @param {Function} ctx.loadPlexConfig
  * @param {Function} ctx.getJson
  * @param {string} [ctx.verb] - for the progress line
+ * @param {boolean} [ctx.skipTranscript] - visual-only runs: never transcribe; use a cached one if present, else null
  */
-export async function prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb = 'Working on' }) {
+export async function prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb = 'Working on', skipTranscript = false }) {
   const { token, host } = loadPlexConfig();
   const meta = (await getJson(`${host}/library/metadata/${rk}?X-Plex-Token=${token}`))?.MediaContainer?.Metadata?.[0];
   const parts = (meta?.Media || []).flatMap((m) => m.Part || []);
@@ -37,6 +38,7 @@ export async function prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, g
   console.error(`${verb} ${rk} "${meta?.title || ''}" part ${partId}: ${probe.width}x${probe.height} ${probe.fps} fps, ${Math.round(probe.duration)} s`);
 
   const transcriptPath = flags.transcript || path.join(workDir, `words-${partId}.json`);
+  if (skipTranscript && !existsSync(transcriptPath)) return { meta, partId, src, workDir, media, probe, transcript: null };
   if (!existsSync(transcriptPath)) {
     console.error('Transcribing (word timestamps)… this runs once per part.');
     const cmd = (process.env.CONTENT_FILTER_TRANSCRIBE_PY || 'uv run --script').split(/\s+/);

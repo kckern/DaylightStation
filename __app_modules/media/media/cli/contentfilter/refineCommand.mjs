@@ -62,16 +62,20 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const overridePath = path.join(dataFilterDir, 'overrides', `${rk}.yml`);
   const override = existsSync(overridePath) ? yaml.load(readFileSync(overridePath, 'utf8')) || {} : {};
 
+  // A visual-only run (--kinds visual) region-tracks `shown` cues; it needs no transcript,
+  // so it neither transcribes nor re-fits the clock (the override's sync, if any, is used).
+  const visualOnly = Boolean(flags.kinds) && String(flags.kinds).split(',').every((k) => k === 'visual');
+
   // 1-2. Media part, source, probe and transcript (cached per part)
-  const { meta, partId, src, workDir, media, probe, transcript } = await prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Refining' });
+  const { meta, partId, src, workDir, media, probe, transcript } = await prepareCopy({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Refining', skipTranscript: visualOnly });
   const timebase = makeTimebase({ fps: probe.fps, startTime: probe.startTime });
 
   // 3. Clock sync from tagged words vs transcript
   const tags = (edl.cues || []).filter((c) => c.type === 'mute').map((c) => ({ t: c.in, id: c.id, match: wordMatcher(c) })).filter((t) => t.match);
-  const { coarse, pairs } = wordPairs(tags, transcript.words);
-  const fit = fitSync(pairs);
+  const { coarse, pairs } = transcript ? wordPairs(tags, transcript.words) : { coarse: null, pairs: [] };
+  const fit = transcript ? fitSync(pairs) : null;
   const manual = override.sync && (!override.sync.part || String(override.sync.part) === String(partId)) ? override.sync : null;
-  if (!fit && !manual && tags.length >= MISMATCH_MIN_TAGS) {
+  if (transcript && !fit && !manual && tags.length >= MISMATCH_MIN_TAGS) {
     // Enough tagged words that a matching file would pair them; none paired, so the
     // EDL most likely describes different media (same title, other cut or other work).
     throw new Error(`EDL does not match this media: ${pairs.length} of ${tags.length} tagged words found in the transcript `
@@ -79,7 +83,11 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   }
   const sync = fit ? { scale: fit.scale, offset: fit.offset }
     : { scale: manual?.scale || 1, offset: manual?.offsetSec || 0 };
-  console.error(fit
+  if (!transcript && !manual) {
+    throw new Error('A visual-only refine needs a clock sync and there is no transcript: run `contentfilter sync` or set sync in the override first.');
+  }
+  console.error(!transcript ? `Sync (visual-only, no transcript): local = va x ${sync.scale} + ${sync.offset} s from the override`
+    : fit
     ? `Sync: local = va x ${fit.scale} + ${fit.offset} s (${fit.used}/${fit.total} word pairs, median residual ${fit.medResid} s)`
     : `⚠ No transcript sync (${pairs.length} of ${tags.length} tagged words paired); using ${manual ? 'the override' : 'no'} offset: ${sync.offset} s`);
 
@@ -145,7 +153,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   // learns to read refined EDLs, so the override keeps them for now.
   const vaSync = { scale: sync.scale, offsetSec: sync.offset };
   const refinedById = Object.fromEntries(results.filter((r) => r.status === 'refined' && r.kind === 'speech').map((r) => [r.id, r]));
-  const anchors = anchorsFrom({ pairs, words: transcript.words, segments: transcript.segments, sync: vaSync, refinedById });
+  const anchors = anchorsFrom({ pairs, words: transcript?.words || [], segments: transcript?.segments || [], sync: vaSync, refinedById });
   const refinedPath = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
   const previous = existsSync(refinedPath) ? yaml.load(readFileSync(refinedPath, 'utf8')) : null;
   const refined = buildRefinedEdl({
