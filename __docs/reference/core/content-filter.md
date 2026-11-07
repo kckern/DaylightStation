@@ -464,16 +464,18 @@ the ruling), written to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene: *Tags
 `sceneOverrides` rulings as the admin screen). A selected cue whose effect is a skip shows the same card controls, via `POST /{rk}/cues/{cueId}/card` and `PUT /{rk}/cues/{cueId}` (see Cue cards). Each write refreshes the store so the change
 applies to the next pass. The Settings tab has **This film / Everywhere** and **Reset this film**.
 
-**Settings** (`shared/contracts/content-filter/filterSettings.mjs`). Four plain choices:
-`language` (`mute | bleep | off`) and `violence`, `nudity`, `sexual`
-(`off | blur | blackout | skip`). `profilePatchFromSettings` turns them into `categories` and
+**Settings** (`shared/contracts/content-filter/filterSettings.mjs`). Plain choices:
+`language`, an object of five groups (`profanity`, `blasphemy`, `sexual`, `slurs`, `childish`),
+each `mute | bleep | off`, and `violence`, `nudity`, `sexual` (`off | blur | blackout | skip`).
+The settings API also takes a partial `language` object (only the groups named change) or the
+legacy single string (sets all five). `profilePatchFromSettings` turns them into `categories` and
 `scenes` fragments; `mergeProfilePatch` lays a fragment over a profile (patch wins per key;
 name, treatments, theme, `requiresCertification` untouched); `settingsFromProfile` reads
 them back.
 
 | Setting | Level | Categories owned | Scene rule (`scenes.<group>`) |
 |---|---|---|---|
-| language | mute / bleep / off | `language` -> that effect | none |
+| language.\<group\> | mute / bleep / off | `language/<group>` -> that effect | none |
 | violence | off | `violence_blood_gore`, `/graphic`, `/gore` -> off | `{}` |
 | violence | blur | `/graphic`, `/gore` -> full-blur | `{}` |
 | violence | blackout | as blur | `violence_blood_gore: { blackout: { picture: 2 } }` |
@@ -484,6 +486,23 @@ them back.
 | sexual | off / blur | `sex_any`, `sex_any/sexual_assault` -> off / full-blur | `{}` |
 | sexual | blackout | as blur | `sex_any: { blackout: { picture: 2 } }` |
 | sexual | skip | as blur | `sex_any: { blackout: { picture: 2 }, skip: { situation: 3 } }` |
+
+**Language groups (R9)** (`shared/contracts/content-filter/languageGroups.mjs`). One alias table
+maps both taxonomies onto five groups: Profanity (`profanity`, `profanity_captions`), Blasphemy
+(`blasphemy`), Sexual (VidAngel `language_sexual`, word-list `vulgarity`), Slurs
+(`language_racial`, `racial`), Childish (`language_childish`, `childish`). A cue's group is the first
+segment of `language/<group>/<leaf>` the table knows; a language category with none (bare
+`language`, `language/x`) counts as profanity. The cue's effect comes from the profile rule
+`language/<group>`; a rule for a deeper path (`language/profanity/fuck`) beats the group, and the
+old single `language` rule is the fallback (reading it as settings gives all five groups that
+value). Defaults when settings are written without a group: Profanity, Blasphemy, Sexual, Slurs
+mute; Childish off. **Per-word exceptions:** `profile.languageWords: { <word>: off|mute|bleep }`
+(also honoured in a film's `profilePatch`) beats the group; the word is the category leaf
+(`language/childish/jerk` -> `jerk`) or an uncensored one-word label. The group rule chooses the
+audio effect for *said* cues; the R3 tone caps, R4 line rules and the channel fit apply on top, so
+a *shown* language tag (billboard) is still blurred, not muted. Cues carrying their own `effect`
+(word-list SRT cues) ignore both. The preview Settings tab has five rows (Profanity, Blasphemy,
+Sexual language, Slurs, Childish words), each This film / Everywhere.
 
 An empty `{}` scene rule is explicit "none" so it overrides a base entry. Settings apply at
 one of two scopes:

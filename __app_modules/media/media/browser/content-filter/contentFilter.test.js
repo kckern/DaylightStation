@@ -640,3 +640,58 @@ describe('word-sized tones and lines (R3, R4)', () => {
     for (let t = 10; t < 13; t += 0.05) expect(out.some((c) => t >= c.in && t < c.out)).toBe(true);
   });
 });
+
+describe('language groups (R9)', () => {
+  const word = (id, category, label, extra = {}) => ({ id, type: 'mute', category, label, in: 10, out: 10.4, precision: 'ms', ...extra });
+  const effects = (cues, profile, override) => Object.fromEntries(
+    resolveEffectiveCues({ edl: { cues }, profile, override }).map((c) => [c.id, c.effect]));
+  const profile = {
+    categories: {
+      'language/profanity': { effect: 'bleep' }, 'language/blasphemy': { effect: 'mute' },
+      'language/sexual': { effect: 'mute' }, 'language/slurs': { effect: 'bleep' }, 'language/childish': { effect: 'off' },
+    },
+  };
+
+  it('each cue takes its own group rule, in either taxonomy', () => {
+    const cues = [
+      word('a', 'language/profanity/fuck', 'f-word', { in: 10, out: 10.4 }),
+      word('b', 'language/blasphemy/god', 'G*d', { in: 20, out: 20.4 }),
+      word('c', 'language/vulgarity/ass', 'ass', { in: 30, out: 30.4 }),
+      word('d', 'language/racial/spic', 'spic', { in: 40, out: 40.4 }),
+      word('e', 'language/childish/jerk', 'jerk', { in: 50, out: 50.4 }),
+      word('f', 'language/language_racial/other_racial', 'p*ck*rw**d', { in: 60, out: 60.4 }),
+      word('g', 'language/other_childish', 'b*tthead', { in: 70, out: 70.4 }),
+    ];
+    expect(effects(cues, profile)).toEqual({ a: 'bleep', b: 'mute', c: 'mute', d: 'bleep', f: 'bleep' });
+  });
+
+  it('a per-word exception beats the group, both ways', () => {
+    const cues = [
+      word('damn', 'language/profanity/damn', 'damn', { in: 10, out: 10.4 }),
+      word('fuck', 'language/profanity/fuck', 'f-word', { in: 20, out: 20.4 }),
+      word('jerk', 'language/childish/jerk', 'jerk', { in: 30, out: 30.4 }),
+      word('god', 'language/blasphemy/god', 'G*d', { in: 40, out: 40.4 }),
+    ];
+    const languageWords = { damn: 'off', jerk: 'mute', god: 'bleep' };
+    expect(effects(cues, { ...profile, languageWords })).toEqual({ fuck: 'bleep', jerk: 'mute', god: 'bleep' });
+  });
+
+  it('the old single language rule still covers every group; a group rule beats it', () => {
+    const cues = [word('a', 'language/racial/spic', 'spic'), word('b', 'language/childish/jerk', 'jerk', { in: 20, out: 20.4 })];
+    expect(effects(cues, { categories: { language: { effect: 'mute' } } })).toEqual({ a: 'mute', b: 'mute' });
+    expect(effects(cues, { categories: { language: { effect: 'mute' }, 'language/childish': { effect: 'off' } } })).toEqual({ a: 'mute' });
+  });
+
+  it('tones keep the word-sized caps on top of the group rule', () => {
+    const cues = [word('w', 'language/slurs/x', 'spic', { in: 10, out: 14, precision: 'safe-window', tagIn: 12, tagOut: 12 })];
+    const out = resolveEffectiveCues({ edl: { cues: [{ ...cues[0], category: 'language/racial/spic' }] }, profile });
+    const tone = out.filter((c) => c.effect === 'bleep');
+    expect(tone).toHaveLength(1);
+    expect(tone[0].out - tone[0].in).toBeLessThanOrEqual(1.5 + 1e-9);
+  });
+
+  it('a shown language tag stays visual whatever its group says', () => {
+    const tag = { id: 't', type: 'skip', category: 'language/language_racial/other_racial', label: 'A sign shows a slur', in: 50, out: 55 };
+    expect(effects([tag], profile).t).toBe('full-blur');
+  });
+});

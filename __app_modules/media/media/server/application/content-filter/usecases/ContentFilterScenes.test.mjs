@@ -187,3 +187,26 @@ describe('ContentFilterScenes profile patch', () => {
     expect(out.scenes.every((s) => s.profileEffect !== 'blackout')).toBe(true);
   });
 });
+
+describe('ContentFilterScenes language groups (R9)', () => {
+  it('Everywhere changes only the named group and leaves the others', async () => {
+    const repo = memRepo();
+    repo.state.profile = { categories: { language: { effect: 'mute' } }, scenes: {} };
+    let saved;
+    repo.saveProfile = async (_n, p) => { saved = p; };
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });
+    await uc.setProfileSettings({ profileName: 'family', settings: { language: { slurs: 'bleep', childish: 'off' } } });
+    expect(saved.categories['language/slurs']).toEqual({ effect: 'bleep' });
+    expect(saved.categories['language/childish']).toEqual({ effect: 'off' });
+    expect(saved.categories['language/profanity']).toEqual({ effect: 'mute' });
+  });
+
+  it('This film stores a patch; a legacy string sets all five; bad groups and values are refused', async () => {
+    const repo = memRepo();
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });
+    await uc.setTitleSettings({ ratingKey: '5', settings: { language: 'bleep' } });
+    expect(Object.keys(repo.state.override.profilePatch.categories).filter((k) => k.startsWith('language/'))).toHaveLength(5);
+    await expect(uc.setTitleSettings({ ratingKey: '5', settings: { language: { rude: 'mute' } } })).rejects.toThrow(/language group/);
+    await expect(uc.setTitleSettings({ ratingKey: '5', settings: { language: { slurs: 'loud' } } })).rejects.toThrow(/slurs/);
+  });
+});

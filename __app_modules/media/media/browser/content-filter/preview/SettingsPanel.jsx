@@ -1,8 +1,8 @@
 /**
- * SettingsPanel — four plain choices for what the filter does (language, violence,
- * nudity, sexual content), applied to this film or everywhere. Reads the merged
- * profile the player received; each choice writes all four settings at once, then
- * refreshes the player's filter. Segmented buttons, mouse-only.
+ * SettingsPanel — plain choices for what the filter does (five language groups,
+ * violence, nudity, sexual content), applied to this film or everywhere. Reads the
+ * merged profile the player received; each choice writes only what changed (the
+ * server merges), then refreshes the player's filter. Segmented buttons, mouse-only.
  */
 import React, { useMemo, useState } from 'react';
 import { useFilterPreview } from './previewStore.js';
@@ -13,8 +13,14 @@ import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singl
 
 const PROFILE_NAME = 'family';
 const LEVELS = [['off', 'Off'], ['blur', 'Blur'], ['blackout', 'Blackout'], ['skip', 'Skip']];
+const SOUND = [['mute', 'Mute'], ['bleep', 'Bleep'], ['off', 'Off']];
+// Language is five groups (R9); `lang` names the group inside the `language` setting.
 const ROWS = [
-  { key: 'language', label: 'Language', options: [['mute', 'Mute'], ['bleep', 'Bleep'], ['off', 'Off']] },
+  { key: 'profanity', lang: 'profanity', label: 'Profanity', options: SOUND },
+  { key: 'blasphemy', lang: 'blasphemy', label: 'Blasphemy', options: SOUND },
+  { key: 'sexual-language', lang: 'sexual', label: 'Sexual language', options: SOUND },
+  { key: 'slurs', lang: 'slurs', label: 'Slurs', options: SOUND },
+  { key: 'childish', lang: 'childish', label: 'Childish words', options: SOUND },
   { key: 'violence', label: 'Violence', options: LEVELS },
   { key: 'nudity', label: 'Nudity', options: LEVELS },
   { key: 'sexual', label: 'Sexual content', options: LEVELS },
@@ -32,13 +38,14 @@ export default function SettingsPanel() {
   const hasFilmSettings = !!snap.override?.profilePatch;
   const base = `/api/v1/content-filter`;
 
-  const choose = (key, value) => {
-    if (current[key] === value) return;
-    const settings = { [key]: value }; // only the change; the server merges over its own current values
+  const valueOf = (row) => (row.lang ? current.language[row.lang] : current[row.key]);
+  const choose = (row, value) => {
+    if (valueOf(row) === value) return;
+    const settings = row.lang ? { language: { [row.lang]: value } } : { [row.key]: value }; // only the change; the server merges over its own current values
     const url = scope === 'film' ? `${base}/${encodeURIComponent(rk)}/settings` : `${base}/profiles/${PROFILE_NAME}/settings`;
     return write(
       () => DaylightAPI(url, { settings }, 'PUT'),
-      'content-filter.setting.changed', { ratingKey: rk, scope, setting: key, value },
+      'content-filter.setting.changed', { ratingKey: rk, scope, setting: row.lang ? `language.${row.lang}` : row.key, value },
     );
   };
   const reset = () => write(
@@ -62,7 +69,7 @@ export default function SettingsPanel() {
           <h4>{row.label}</h4>
           <div className="filter-rail__buttons" role="group" aria-label={row.label}>
             {row.options.map(([v, label]) => (
-              <button key={v} type="button" aria-pressed={current[row.key] === v} className={`filter-rail__btn${current[row.key] === v ? ' is-selected' : ''}`} disabled={busy} onClick={() => choose(row.key, v)}>{label}</button>
+              <button key={v} type="button" aria-pressed={valueOf(row) === v} className={`filter-rail__btn${valueOf(row) === v ? ' is-selected' : ''}`} disabled={busy} onClick={() => choose(row, v)}>{label}</button>
             ))}
           </div>
         </section>

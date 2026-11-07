@@ -8,7 +8,7 @@
  * child ever sees. Design: ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md
  */
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
-import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, LEVELS, LANGUAGE_VALUES } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
+import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, mergeSettings, LEVELS, LANGUAGE_VALUES, LANGUAGE_GROUPS } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 export const CARD_MAX_CHARS = 90;
@@ -56,8 +56,19 @@ export class ContentFilterScenes {
     if (!settings || typeof settings !== 'object') throw new Error('settings required');
     const out = {};
     if ('language' in settings) {
-      if (!LANGUAGE_VALUES.includes(settings.language)) throw new Error(`unknown language setting: ${settings.language}`);
-      out.language = settings.language;
+      const lang = settings.language;
+      if (typeof lang === 'string') {
+        // Legacy single value: sets every group.
+        if (!LANGUAGE_VALUES.includes(lang)) throw new Error(`unknown language setting: ${lang}`);
+        out.language = lang;
+      } else if (lang && typeof lang === 'object') {
+        out.language = {};
+        for (const [g, v] of Object.entries(lang)) {
+          if (!LANGUAGE_GROUPS.includes(g)) throw new Error(`unknown language group: ${g}`);
+          if (!LANGUAGE_VALUES.includes(v)) throw new Error(`unknown language setting for ${g}: ${v}`);
+          out.language[g] = v;
+        }
+      } else throw new Error(`unknown language setting: ${lang}`);
     }
     for (const k of ['violence', 'nudity', 'sexual']) {
       if (!(k in settings)) continue;
@@ -74,7 +85,7 @@ export class ContentFilterScenes {
       const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
       // Partial settings merge over this film's current effective settings.
       const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
-      const profilePatch = profilePatchFromSettings({ ...settingsFromProfile(effective), ...partial });
+      const profilePatch = profilePatchFromSettings(mergeSettings(settingsFromProfile(effective), partial));
       await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
       this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
       return { profilePatch };
@@ -100,7 +111,7 @@ export class ContentFilterScenes {
       const profile = await this.#repo.getProfile(profileName);
       if (!profile) return null;
       // Partial settings merge over the stored (unmerged) household profile, never a film's patch.
-      const next = applySettingsToProfile(profile, { ...settingsFromProfile(profile), ...partial });
+      const next = applySettingsToProfile(profile, mergeSettings(settingsFromProfile(profile), partial));
       await this.#repo.saveProfile(profileName, next);
       this.#logger.info?.('content-filter.settings.profile', { profile: profileName, settings });
       return { profile: next };

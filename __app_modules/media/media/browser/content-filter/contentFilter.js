@@ -15,6 +15,7 @@
 // Timing a refine pass measured on this file: no approximate widening.
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { cueModality, fitEffectToChannel, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
+import { languageGroupOf, languageWordOf } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
@@ -54,6 +55,32 @@ export function resolveEffect(categoryPath, profile) {
     return { ...rule, effect };
   }
   return null;
+}
+
+/**
+ * R9: the rule for a language cue. A per-word exception (`profile.languageWords`)
+ * beats the cue's group (`categories['language/<group>']`, either taxonomy's names
+ * aliased to the five groups); a rule written for a deeper category path beats the
+ * group; the old single `language` rule is the fallback. Not a language cue: the
+ * ordinary longest-prefix rule.
+ */
+export function resolveLanguageRule(cue, profile) {
+  const group = languageGroupOf(cue?.category);
+  if (!group) return resolveEffect(cue?.category, profile);
+  const words = profile?.languageWords;
+  const word = words ? languageWordOf(cue) : null;
+  if (word && Object.prototype.hasOwnProperty.call(words, word)) {
+    const effect = words[word];
+    return !effect || effect === 'off' ? null : { effect };
+  }
+  const rules = profile?.categories || {};
+  const segs = String(cue.category).split('/');
+  for (let n = segs.length; n > 2; n--) {
+    const rule = rules[segs.slice(0, n).join('/')];
+    if (rule) return resolveEffect(segs.slice(0, n).join('/'), profile);
+  }
+  if (rules[`language/${group}`]) return resolveEffect(`language/${group}`, profile);
+  return resolveEffect(cue.category, profile);
 }
 
 // Built-in widening defaults (ms). Pads absorb driver granularity + safety;
@@ -159,7 +186,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     const explicit = ov.effect || cue.effect;
     const hasProfileRules = profile?.categories && Object.keys(profile.categories).length > 0;
     if (explicit) rule = { effect: explicit };
-    else rule = resolveEffect(cue.category, profile) || (!hasProfileRules && cue.type ? { effect: cue.type } : null);
+    else rule = resolveLanguageRule(cue, profile) || (!hasProfileRules && cue.type ? { effect: cue.type } : null);
     if (!rule) continue;
 
     const eff = { ...cue, effect: rule.effect };
