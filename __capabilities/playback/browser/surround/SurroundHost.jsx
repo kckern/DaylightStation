@@ -47,6 +47,7 @@ import SurroundFrame from "./SurroundFrame.jsx";
 import { resolveContentId, railContentId } from "./segments.js";
 import { useSurroundSetting, SURROUND_OFF } from "./SurroundSettingContext.js";
 import { definitionModules } from "./surroundHostModules.js";
+import { SurroundOverrideContext } from "./surroundOverride.js";
 // Side-effect import: registers segment-map / cue-ticker / composer-card, so
 // neither seam needs a registration call of its own.
 
@@ -260,16 +261,49 @@ export default function SurroundHost({
 
   // The frame is on for exactly one reason: the backend attached a payload to
   // the item, and the screen did not say 'off'.
-  const active = !disabled && !!current.surround;
+  // An open override (caller-supplied data, e.g. the content-filter shield)
+  // wins over the item's own surround while open.
+  const [override, setOverride] = useState(null);
+  const frameData = override ?? current.surround;
+  const active = !disabled && !!frameData;
+
+  const overrideApi = useMemo(() => ({
+    open: (data) => {
+      if (!data || typeof data !== 'object') return;
+      hostLogger.info('surround.override.open', { surroundId: data.id ?? null });
+      setOverride(data);
+    },
+    close: () => {
+      setOverride((prev) => {
+        if (prev) hostLogger.info('surround.override.close', { surroundId: prev.id ?? null });
+        return null;
+      });
+    },
+    isOpen: !!override,
+  }), [hostLogger, override]);
+
+  // A new item (seam id or polled id) ends any on-demand surround.
+  const idKey = `${contentId == null ? '' : JSON.stringify(contentId)}|${current.contentId ?? ''}`;
+  const lastIdKey = useRef(idKey);
+  useEffect(() => {
+    if (lastIdKey.current === idKey) return;
+    const [prevSeam, prevPolled] = lastIdKey.current.split('|');
+    const [nextSeam] = idKey.split('|');
+    lastIdKey.current = idKey;
+    // The first poll resolving null -> id is not an item change.
+    if (prevPolled === '' && prevSeam === nextSeam) return;
+    setOverride(null);
+  }, [idKey]);
 
   // The seam's id is a hint for log correlation only, and only until the poll
   // resolves the real one.
   const seamId = useMemo(() => resolveContentId(contentId), [contentId]);
 
   return (
+    <SurroundOverrideContext.Provider value={overrideApi}>
     <SurroundStage
       contentId={current.contentId ?? seamId}
-      surround={current.surround}
+      surround={frameData}
       active={active}
       mode={mode}
       logger={hostLogger}
@@ -278,6 +312,7 @@ export default function SurroundHost({
     >
       {children}
     </SurroundStage>
+    </SurroundOverrideContext.Provider>
   );
 }
 

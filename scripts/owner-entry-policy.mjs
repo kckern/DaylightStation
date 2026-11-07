@@ -482,6 +482,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/content-catalog/browser/source-labels.mjs': null,
   '__capabilities/playback/browser/surround-frame.mjs': null,
   '__capabilities/playback/browser/surround-registry.mjs': null,
+  '__capabilities/playback/browser/surround-override.mjs': null,
   '__capabilities/playback/browser/surround-module-kit.mjs': null,
   '__capabilities/playback/browser/surround-fit.mjs': null,
   '__capabilities/playback/browser/surround-use-label-floor.mjs': null,
