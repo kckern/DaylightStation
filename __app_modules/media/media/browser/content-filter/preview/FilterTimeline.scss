@@ -1,80 +1,324 @@
 /**
  * FilterTimeline — the preview surround's bottom bar (`content-filter-timeline`).
  *
- * It lives in the surround's BOTTOM region and reads the frame's published
- * properties (parchment `--ink` on the band's stone; see SurroundFrame.scss),
- * not the Admin `--ds-*` tokens, which are undefined on the screen route.
- *
- * THE THREE MARKS MUST NOT BE CONFUSED, so each differs in more than colour:
- *   mute/bleep  — full-height brass hairline (a tick), deeper than the ink
- *   blur/other  — short centred parchment bar, half height
- *   scene block — full-height span: blackout is SOLID near-black with brass
- *                 edges (it used to be the bar's own ground, i.e. invisible);
- *                 skip-card is a parchment hatch.
- * The playhead is the brightest thing on the bar and rides above the marks.
+ * The one bold thing in the preview. Two lanes like an editor's tracks — Sound
+ * over Picture — so WHERE a mark sits already says what it does; colour and shape
+ * say it twice more:
+ *   words    amber tick, Sound lane
+ *   picture  sky bar, Picture lane
+ *   hidden   lavender solid block, Picture lane
+ *   skipped  rose hatched block, both lanes (a skip cuts sound and picture)
+ * Pointing at a mark lifts it and dims the rest; the hover card rises over the
+ * picture's lower edge (the theme lets the band overflow upward).
+ * Palette: `_palette.scss`. Sizes are em off the frame's measured label floor,
+ * so the bar keeps one apparent size on every screen root.
  */
-
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "./palette" as *;
 
 .filter-timeline {
+  @include cf-tokens;
+  --lane-label-w: 3.7em;
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.9rem;
-  color: var(--ink, #e9dfc8);
-  font-family: var(--surround-annotation, system-ui, sans-serif);
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35em;
+  padding: 0.6em 0.6em 0.5em;
+  box-sizing: border-box;
+  color: var(--cf-text);
+  font-family: var(--cf-font);
+  font-size: calc(var(--label-floor, 11.52px) * 1.35);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
 
-  &__btn {
-    cursor: pointer;
-    border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.28));
-    border-radius: var(--bond-radius, #{$bond-radius});
-    background: transparent;
-    color: var(--ink, #e9dfc8);
-    font: inherit;
-    padding: 0.3rem 0.8rem;
-    &:hover:not(:disabled) { border-color: var(--ink-soft, #a89a80); background: var(--hall-ink, #{$hall-ink}); }
-    &:focus-visible { outline: 2px solid var(--brass, #c79a3e); outline-offset: 1px; }
-    &:disabled { opacity: 0.35; cursor: default; }
+  &__track {
+    display: flex;
+    gap: 0.5em;
+    align-items: stretch;
+  }
+
+  &__lanes {
+    flex: 0 0 var(--lane-label-w);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    text-align: right;
+    color: var(--cf-text-soft);
+    font-size: 0.8em;
   }
 
   &__bar {
     position: relative;
-    flex: 1;
-    height: 28px;
+    flex: 1 1 auto;
+    height: 4.4em;
     cursor: pointer;
-    background: var(--bond-ground, #{$bond-ground});
-    border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.28));
-    border-radius: var(--bond-radius, #{$bond-radius});
-    overflow: hidden;
+    border-radius: var(--cf-radius);
+    background: var(--cf-raised);
+    box-shadow: inset 0 0 0 1px var(--cf-line);
+  }
+
+  &__lane {
+    position: absolute;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    &.is-sound { top: 0; height: 50%; }
+    &.is-picture { top: 50%; bottom: 0; border-top: 1px solid var(--cf-line); }
   }
 
   &__mark {
     position: absolute;
-    top: 0;
-    bottom: 0;
     pointer-events: none;
-    &.is-tick { width: 2px; background: var(--brass, #c79a3e); }
-    &.is-bar { width: 4px; top: 30%; bottom: 30%; background: var(--ink, #e9dfc8); border-radius: 1px; }
-    &.is-block { min-width: 4px; }
-    &.is-blackout {
-      background: var(--hall-shadow, #{$hall-shadow});
-      border-left: 2px solid var(--brass, #c79a3e);
-      border-right: 2px solid var(--brass, #c79a3e);
-      box-sizing: border-box;
+    box-sizing: border-box;
+    transition: opacity 120ms ease;
+
+    &.is-words {
+      top: 14%;
+      height: 26%;
+      min-width: 2px;
+      border-radius: 1px;
+      background: var(--cf-words);
     }
-    &.is-skip {
-      background: repeating-linear-gradient(45deg, var(--ink-soft, #a89a80) 0 3px, transparent 3px 6px);
+    &.is-picture {
+      top: 62%;
+      height: 24%;
+      min-width: 3px;
+      border-radius: 2px;
+      background: var(--cf-picture);
     }
+    &.is-hidden {
+      top: 56%;
+      height: 36%;
+      min-width: 4px;
+      border-radius: 2px;
+      background: var(--cf-hidden);
+    }
+    &.is-skipped {
+      top: 10%;
+      height: 82%;
+      min-width: 5px;
+      border-radius: 2px;
+      border: 1px solid var(--cf-skipped);
+      background: repeating-linear-gradient(135deg, var(--cf-skipped) 0 2px, transparent 2px 5px);
+    }
+
+    &.is-hot,
+    &.is-selected {
+      z-index: 2;
+      box-shadow: 0 0 0 1.5px var(--cf-focus);
+    }
+    &.is-selected { box-shadow: 0 0 0 2px var(--cf-focus), 0 0 0 4px var(--cf-ground); }
+  }
+
+  /* Pointing at one mark dims the rest, so a dense cluster resolves to one. */
+  &__bar.is-on-mark &__mark:not(.is-hot):not(.is-selected) {
+    opacity: 0.32;
   }
 
   &__playhead {
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: -0.3em;
+    bottom: -0.3em;
     width: 2px;
-    z-index: 1;
-    background: var(--ink, #e9dfc8);
-    box-shadow: 0 0 0 1px var(--hall-shadow, #{$hall-shadow});
+    margin-left: -1px;
+    z-index: 3;
+    border-radius: 1px;
+    background: var(--cf-focus);
+    box-shadow: 0 0 0 1px var(--cf-ground);
     pointer-events: none;
   }
+
+  &__scrub {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    z-index: 3;
+    background: var(--cf-scrub);
+    pointer-events: none;
+  }
+
+  /* Floating labels — hover time, hover card, the playhead's time — anchor at a
+     point and lean inward near either end so they never leave the bar. */
+  %anchored {
+    position: absolute;
+    &.is-center { transform: translateX(-50%); }
+    &.is-start { transform: translateX(-0.6em); }
+    &.is-end { transform: translateX(calc(-100% + 0.6em)); }
+  }
+
+  &__scrub-time {
+    @extend %anchored;
+    bottom: calc(100% + 0.45em);
+    z-index: 5;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+    padding: 0.2em 0.55em;
+    white-space: nowrap;
+    border-radius: var(--cf-radius);
+    background: var(--cf-raised);
+    box-shadow: 0 4px 14px var(--cf-shadow);
+    font-weight: 700;
+    pointer-events: none;
+  }
+  &__scrub-hint {
+    color: var(--cf-text-soft);
+    font-weight: 400;
+    font-size: 0.85em;
+  }
+
+  &__tip {
+    @extend %anchored;
+    bottom: calc(100% + 0.55em);
+    z-index: 6;
+    width: max-content;
+    max-width: 19em;
+    padding: 0.65em 0.8em 0.7em;
+    border: 1px solid var(--cf-line);
+    border-radius: calc(var(--cf-radius) + 2px);
+    background: var(--cf-raised);
+    box-shadow: 0 10px 28px var(--cf-shadow);
+    pointer-events: none;
+    font-size: 0.95em;
+  }
+  &__tip-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.35em;
+  }
+  &__tip-source { color: var(--cf-text-soft); font-size: 0.9em; }
+  &__tip-title {
+    font-size: 1.15em;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+  &__tip-cat { color: var(--cf-text-soft); margin-top: 0.1em; }
+  &__tip-what { margin-top: 0.45em; }
+  &__tip-time {
+    display: flex;
+    gap: 0.6em;
+    align-items: baseline;
+    margin-top: 0.3em;
+    font-weight: 700;
+  }
+  &__tip-len { color: var(--cf-text-soft); font-weight: 400; }
+  &__tip-act,
+  &__tip-more {
+    margin-top: 0.5em;
+    padding-top: 0.45em;
+    border-top: 1px solid var(--cf-line);
+    color: var(--cf-text-soft);
+    font-size: 0.9em;
+  }
+  &__tip-more { margin-top: 0.2em; padding-top: 0; border-top: 0; }
+
+  /* Effect chip: the kind's colour as a filled lozenge, dark text on it. */
+  &__chip {
+    display: inline-block;
+    padding: 0.05em 0.5em;
+    border-radius: 999px;
+    color: var(--cf-ground);
+    font-weight: 700;
+    font-size: 0.85em;
+    &.is-words { background: var(--cf-words); }
+    &.is-picture { background: var(--cf-picture); }
+    &.is-hidden { background: var(--cf-hidden); }
+    &.is-skipped { background: var(--cf-skipped); }
+  }
+
+  &__axis {
+    position: relative;
+    height: 1.45em;
+    margin-left: calc(var(--lane-label-w) + 0.5em);
+    color: var(--cf-text-soft);
+    font-size: 0.85em;
+  }
+  &__axis-end {
+    position: absolute;
+    top: 0.15em;
+    &.is-start { left: 0; }
+    &.is-end { right: 0; }
+  }
+  &__now {
+    @extend %anchored;
+    top: 0;
+    z-index: 1;
+    padding: 0.1em 0.5em;
+    border-radius: var(--cf-radius);
+    background: var(--cf-focus);
+    color: var(--cf-ground);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  &__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1em;
+    margin-top: 0.15em;
+    margin-left: calc(var(--lane-label-w) + 0.5em);
+  }
+
+  &__steps { display: flex; gap: 0.4em; }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    cursor: pointer;
+    padding: 0.35em 0.75em;
+    border: 1px solid var(--cf-line);
+    border-radius: var(--cf-radius);
+    background: var(--cf-raised);
+    color: var(--cf-text);
+    font: inherit;
+    font-weight: 600;
+    &:hover:not(:disabled) { background: var(--cf-raised-hover); }
+    &:focus-visible { outline: 2px solid var(--cf-focus); outline-offset: 2px; }
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+
+  &__legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.3em 1.1em;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.9em;
+  }
+  &__key {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    cursor: default;
+    &.is-none { opacity: 0.45; }
+  }
+  &__key-count { color: var(--cf-text-soft); }
+
+  &__swatch {
+    display: inline-block;
+    flex: 0 0 auto;
+    border-radius: 1px;
+    &.is-words { width: 3px; height: 0.9em; background: var(--cf-words); }
+    &.is-picture { width: 1em; height: 0.4em; border-radius: 2px; background: var(--cf-picture); }
+    &.is-hidden { width: 0.8em; height: 0.8em; border-radius: 2px; background: var(--cf-hidden); }
+    &.is-skipped {
+      width: 0.8em;
+      height: 0.8em;
+      border-radius: 2px;
+      box-sizing: border-box;
+      border: 1px solid var(--cf-skipped);
+      background: repeating-linear-gradient(135deg, var(--cf-skipped) 0 2px, transparent 2px 4px);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filter-timeline__mark { transition: none; }
 }

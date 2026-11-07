@@ -521,6 +521,34 @@ Borrow ArtMode's physical realism, but one plate, not a gallery:
   segments, a sidecar with no facts. The frame must still look composed.
 - `prefers-reduced-motion` honored.
 
+## Themes
+
+Everything above is the **`classical` theme**: the concert-hall programme. The
+frame's own stylesheet (`SurroundFrame.scss`) is split into neutral layout —
+the stage, media box, band and rail geometry, the entrance — and a look applied
+by theme. A surround definition names its theme:
+
+```yaml
+theme: classical      # the default when the key is absent
+```
+
+The frame resolves it (`surroundTheme`, `[a-z0-9-]` only, anything else falls
+back to `classical`) and carries it on the root as
+`surround-frame--theme-<name>` plus `data-surround-theme="<name>"`.
+
+| Theme | Where | Look |
+|---|---|---|
+| `classical` | `SurroundFrame.scss`, every rule under `:where(.surround-frame--theme-classical)` | Velvet drape, curtain bleed, paper stock, mahogany band and rail, the Garamonds. Worn by every classical work, station sequence and school lesson/reading frame, none of which name a theme. |
+| `content-filter` | `__app_modules/media/media/browser/content-filter/preview/contentFilterTheme.scss` (palette in `_palette.scss`) | Slate edit bay: no plate inset, no drape, Atkinson Hyperlegible Next. See [Content Filter, Preview surround](../../core/content-filter.md#preview-surround). |
+| *(unthemed)* | the bare `.surround-frame` rules | Black ground, system sans, no region fill. Nothing ships unthemed; it is what a new theme starts from. |
+
+**Classical rules are wrapped in `:where()`** so they keep exactly the
+specificity they had when they were the base, and nothing that overrode them
+before has to change. Verified pixel-identical against the pre-split build on a
+classical work (only the moving playhead differed). A new theme scopes its
+rules under `.surround-frame--theme-<name>` in the host module's own sheet and
+must not edit the classical block.
+
 ## Band configuration
 
 Three keys on the surround definition (`_surrounds/<id>.yml`), beside `regions`

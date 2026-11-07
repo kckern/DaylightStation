@@ -1,0 +1,37 @@
+/**
+ * The content-filter preview's palette — the ONE place its colours are typed.
+ *
+ * An edit bay at night: cool slate chrome that recedes beside the picture, and
+ * colour spent on one thing only — what kind of change the filter makes. The four
+ * kind colours are distinct for the common colour-vision deficiencies (an
+ * Okabe-Ito-derived set) and every one is ALSO coded by shape and lane on the
+ * timeline, so none depends on colour alone. All four, and both text tones,
+ * clear 4.5:1 on the raised surface they sit on.
+ *
+ * `cf-tokens` publishes them as custom properties; the theme root, the rail and
+ * the timeline each include it, so a module rendered outside the frame still
+ * reads the same values and nothing else in the preview writes a hex.
+ */
+
+@mixin cf-tokens {
+  --cf-ground: #10151c;        /* night slate: the frame behind everything */
+  --cf-panel: #161d26;         /* rail and band */
+  --cf-raised: #1f2833;        /* controls, rows, the track */
+  --cf-raised-hover: #283342;
+  --cf-line: #2f3a49;          /* the one divider tone */
+  --cf-text: #e7ecf2;
+  --cf-text-soft: #9eacbc;
+  --cf-focus: #f4f7fb;         /* focus rings and the playhead: plain light, not a hue */
+  --cf-shadow: rgba(0, 0, 0, 0.5);
+  --cf-scrub: rgba(231, 236, 242, 0.55);
+
+  --cf-words: #f2b34a;         /* sound: muted or bleeped words */
+  --cf-picture: #62b6ef;       /* picture blurred / pixelated / barred */
+  --cf-hidden: #b49dff;        /* picture hidden: dark or a card */
+  --cf-skipped: #ef7d8e;       /* skipped outright */
+  --cf-caution: #f2b34a;       /* provisional certification shares the warm tone */
+  --cf-good: #7fd6a4;          /* certified */
+
+  --cf-font: "Atkinson Hyperlegible Next", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --cf-radius: 6px;
+}
