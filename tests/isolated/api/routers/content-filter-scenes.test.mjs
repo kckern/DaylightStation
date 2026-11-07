@@ -91,4 +91,19 @@ describe('content-filter scenes routes', () => {
     expect((await request(app).put('/cf/77/cues/va1').send({ effect: 'explode' })).status).toBe(400);
     expect((await request(app).put('/cf/77/cues/zzz').send({ effect: 'mute' })).status).toBe(404);
   });
+
+  test('drafts a cue card (unapproved), approves it, withdraws it; 404/400 as for scenes', async () => {
+    const d = await request(app).post('/cf/77/cues/va1/card').send({});
+    expect(d.status).toBe(200);
+    expect(d.body.cardDraft.text).toBe('They get away.');
+    const read = () => yaml.load(readFileSync(path.join(householdDir, 'content-filter/overrides/77.yml'), 'utf8')).cueOverrides.va1;
+    expect(read().card).toBeUndefined();
+    expect((await request(app).put('/cf/77/cues/va1').send({ card: { approve: true }, by: 'parent' })).status).toBe(200);
+    expect(read().card).toMatchObject({ text: 'They get away.', approvedBy: 'parent' });
+    expect((await request(app).put('/cf/77/cues/va1').send({ card: null })).status).toBe(200);
+    expect(read().card).toBeUndefined();
+    expect(read().cardDraft.text).toBe('They get away.');
+    expect((await request(app).post('/cf/77/cues/zzz/card').send({})).status).toBe(404);
+    expect((await request(app).post('/cf/77/cues/va1%230/card').send({})).status).toBe(400);
+  });
 });

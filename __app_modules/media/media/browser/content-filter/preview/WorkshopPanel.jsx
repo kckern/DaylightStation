@@ -47,6 +47,35 @@ export default function WorkshopPanel() {
       () => DaylightAPI(`${base(rk)}/cues/${encodeURIComponent(cueId)}`, { effect }, 'PUT'),
       'content-filter.cue.ruled', { ratingKey: rk, cue: cueId, effect },
     );
+    const isSkip = ['skip', 'skip-card'].includes(ruling.effect || sel.effect);
+    const cueUrl = `${base(rk)}/cues/${encodeURIComponent(cueId)}`;
+    const approvedCue = ruling.card?.text || '';
+    const cueText = draft?.id === sel.id ? draft.text : (approvedCue || ruling.cardDraft?.text || '');
+    const draftCueCard = async () => {
+      setBusy(true); setError('');
+      logger.info('content-filter.cue-card.requested', { ratingKey: rk, cue: cueId });
+      try {
+        const out = await DaylightAPI(`${cueUrl}/card`, {}, 'POST');
+        setDraft({ id: sel.id, text: out?.cardDraft?.text || '' });
+        setEditing(false);
+        logger.info('content-filter.cue-card.drafted', { ratingKey: rk, cue: cueId });
+        await previewStore.refresh();
+      } catch (e) {
+        setError(`Could not draft a card: ${errText(e)}`);
+        logger.warn('content-filter.cue-card.failed', { ratingKey: rk, cue: cueId, error: errText(e) });
+      } finally { setBusy(false); }
+    };
+    const approveCue = async () => {
+      const ok = await write(
+        () => DaylightAPI(cueUrl, { card: { approve: true, text: cueText } }, 'PUT'),
+        'content-filter.cue-card.approved', { ratingKey: rk, cue: cueId },
+      );
+      if (ok !== undefined) { setDraft(null); setEditing(false); }
+    };
+    const withdrawCue = async () => {
+      const ok = await write(() => DaylightAPI(cueUrl, { card: null }, 'PUT'), 'content-filter.cue-card.withdrawn', { ratingKey: rk, cue: cueId });
+      if (ok !== undefined) setDraft(null);
+    };
     return (
       <section className="filter-rail__section" data-testid="workshop-panel">
         <h4>Rule this cue</h4>
@@ -56,6 +85,13 @@ export default function WorkshopPanel() {
           ))}
           <button type="button" className="filter-rail__btn" disabled={busy || !cur} onClick={() => rule('profile')}>Profile</button>
         </div>
+        {isSkip ? (
+          <CardControls
+            text={cueText} approved={approvedCue} editing={editing} busy={busy} id={sel.id}
+            onDraft={draftCueCard} onApprove={approveCue} onWithdraw={withdrawCue}
+            onEdit={() => setEditing((v) => !v)} onType={(t) => setDraft({ id: sel.id, text: t })}
+          />
+        ) : null}
         {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}
       </section>
     );
@@ -105,6 +141,20 @@ export default function WorkshopPanel() {
           <button key={o.value} type="button" className={`filter-rail__btn${o.current(ruling) ? ' is-selected' : ''}`} disabled={busy} onClick={() => rule(o.value)}>{o.label}</button>
         ))}
       </div>
+      <CardControls
+        text={text} approved={approved} editing={editing} busy={busy} id={sel.id}
+        onDraft={draftCard} onApprove={approve} onWithdraw={withdraw}
+        onEdit={() => setEditing((v) => !v)} onType={(t) => setDraft({ id: sel.id, text: t })}
+      />
+      {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}
+    </section>
+  );
+}
+
+/** The title-card editor shared by scenes and skip cues: draft, edit, approve, withdraw. */
+function CardControls({ text, approved, editing, busy, id, onDraft, onApprove, onWithdraw, onEdit, onType }) {
+  return (
+    <>
       <h4>Title card</h4>
       {editing ? (
         <textarea
@@ -112,19 +162,18 @@ export default function WorkshopPanel() {
           aria-label="Card text"
           value={text}
           maxLength={90}
-          onChange={(e) => setDraft({ id: sel.id, text: e.target.value })}
+          onChange={(e) => onType(e.target.value)}
         />
       ) : (
-        <div className="filter-rail__card" data-testid="workshop-card">{text || 'No card yet'}</div>
+        <div className="filter-rail__card" data-testid="workshop-card" data-card-for={id}>{text || 'No card yet'}</div>
       )}
       {approved && text === approved ? <div className="filter-rail__empty">Approved</div> : null}
       <div className="filter-rail__buttons">
-        <button type="button" className="filter-rail__btn" disabled={busy} onClick={draftCard}>{text ? 'Regenerate' : 'Draft with AI'}</button>
-        {text ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={() => setEditing((v) => !v)}>{editing ? 'Done' : 'Edit'}</button> : null}
-        {text && text !== approved ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={approve}>Approve</button> : null}
-        {approved ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={withdraw}>Withdraw</button> : null}
+        <button type="button" className="filter-rail__btn" disabled={busy} onClick={onDraft}>{text ? 'Regenerate' : 'Draft with AI'}</button>
+        {text ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={onEdit}>{editing ? 'Done' : 'Edit'}</button> : null}
+        {text && text !== approved ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={onApprove}>Approve</button> : null}
+        {approved ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={onWithdraw}>Withdraw</button> : null}
       </div>
-      {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}
-    </section>
+    </>
   );
 }

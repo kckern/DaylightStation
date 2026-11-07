@@ -543,6 +543,22 @@ describe('word-sized tones and lines (R3, R4)', () => {
     expect(out[0]).toMatchObject({ effect: 'skip-card', text: 'They argue.' });
   });
 
+  it('a skip cue with an approved card plays a skip-card with that text (R5)', () => {
+    const edl = { cues: [{ id: 'k', type: 'skip', category: 'sex/x', label: 'A kiss.', in: 30, out: 38, precision: 'ms' }] };
+    const override = { cueOverrides: { k: { effect: 'skip', card: { text: 'They kiss goodbye.', approvedBy: 'parent' } } } };
+    const out = resolveEffectiveCues({ edl, profile, override });
+    expect(out[0]).toMatchObject({ effect: 'skip-card', text: 'They kiss goodbye.' });
+  });
+
+  it('an unapproved cue card shows the generic text; a cardDraft never plays (R5)', () => {
+    const edl = { cues: [{ id: 'k', type: 'skip', category: 'sex/x', label: 'A kiss.', in: 30, out: 38, precision: 'ms' }] };
+    const plain = resolveEffectiveCues({ edl, profile, override: { cueOverrides: { k: { effect: 'skip', cardDraft: { text: 'Draft only.' } } } } });
+    expect(plain[0].effect).toBe('skip');
+    const long = { cues: [{ id: 'x', type: 'mute', category: 'language/x', label: 'They argue about the plan at length.', in: 30, out: 48, precision: 'ms' }] };
+    const ex = resolveEffectiveCues({ edl: long, profile, override: { cueOverrides: { x: { cardDraft: { text: 'Draft only.' } } } } });
+    expect(ex[0]).toMatchObject({ effect: 'skip-card', text: 'Scene skipped.' });
+  });
+
   it('overlapping capped tones merge with no mute piece overlapping a bleep', () => {
     const out = run([word({ id: 'a', in: 10, out: 13, precision: 'ms' }), word({ id: 'b', in: 10.2, out: 12.2, precision: 'ms' })]);
     const ids = out.map((c) => c.id);

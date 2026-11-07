@@ -79,4 +79,43 @@ describe('WorkshopPanel', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/77/cues/va1', { effect: 'bleep' }, 'PUT');
   });
+
+  describe('cue cards (R5)', () => {
+    const skipCue = { id: 'va9', label: 'A kiss.', effect: 'skip', in: 5, out: 9 };
+
+    it('a non-skip cue has no card controls', () => {
+      setup({ selected: { id: 'va9', effect: 'mute', in: 5, out: 6 } });
+      expect(screen.queryByRole('button', { name: 'Draft with AI' })).toBeNull();
+    });
+
+    it('drafts via the cue card route, approves with the text, then refreshes', async () => {
+      DaylightAPI.mockResolvedValueOnce({ cardDraft: { text: 'They kiss.' } }).mockResolvedValueOnce({ ruling: {} });
+      setup({ selected: skipCue });
+      fireEvent.click(screen.getByRole('button', { name: 'Draft with AI' }));
+      await screen.findByText('They kiss.');
+      expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/77/cues/va9/card', {}, 'POST');
+      refresh.mockClear();
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+      expect(DaylightAPI).toHaveBeenLastCalledWith('/api/v1/content-filter/77/cues/va9', { card: { approve: true, text: 'They kiss.' } }, 'PUT');
+    });
+
+    it('shows a stored draft and an approved card; Withdraw PUTs card:null', async () => {
+      DaylightAPI.mockResolvedValue({ ruling: {} });
+      setup({ selected: skipCue, override: { cueOverrides: { va9: { effect: 'skip', card: { text: 'They kiss.' } } } } });
+      expect(screen.getByTestId('workshop-card').textContent).toBe('They kiss.');
+      fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+      await waitFor(() => expect(refresh).toHaveBeenCalled());
+      expect(DaylightAPI).toHaveBeenLastCalledWith('/api/v1/content-filter/77/cues/va9', { card: null }, 'PUT');
+    });
+
+    it('a failed cue draft shows the error and does not refresh', async () => {
+      DaylightAPI.mockRejectedValue(new Error('500'));
+      setup({ selected: skipCue, override: { cueOverrides: { va9: { cardDraft: { text: 'Stored draft.' } } } } });
+      expect(screen.getByTestId('workshop-card').textContent).toBe('Stored draft.');
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }));
+      await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Could not draft a card/));
+      expect(refresh).not.toHaveBeenCalled();
+    });
+  });
 });

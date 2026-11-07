@@ -50,7 +50,8 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
   //   GET  /:ratingKey/scenes?profile=family     -> { title, calibration, scenes }
   //   POST /:ratingKey/scenes/cards {all, force} -> { drafted, scenes }   (LLM drafts)
   //   POST /:ratingKey/scenes/:sceneId/card -> { card }   (redraft one)
-  //   PUT  /:ratingKey/cues/:cueId {effect, disabled} -> { ruling }
+  //   PUT  /:ratingKey/cues/:cueId {effect, disabled, card, by} -> { ruling }
+  //   POST /:ratingKey/cues/:cueId/card -> { cardDraft }   (LLM draft, stored unapproved)
   //   PUT  /:ratingKey/scenes/:sceneId {effect, disabled, card, by} -> { ruling }
   if (contentFilterScenes) {
     const rk = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
@@ -131,15 +132,28 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     router.put('/:ratingKey/cues/:cueId', asyncHandler(async (req, res) => {
       const cueId = cleanId(req.params.cueId);
       if (cueId === null) return res.status(400).json({ error: 'invalid id', id: req.params.cueId });
-      const { effect, disabled, by } = req.body || {};
+      const { effect, disabled, card, by } = req.body || {};
       let ruling;
       try {
-        ruling = await contentFilterScenes.ruleCue({ ratingKey: rk(req), cueId, effect, disabled, by });
+        ruling = await contentFilterScenes.ruleCue({ ratingKey: rk(req), cueId, effect, disabled, card, by });
       } catch (error) {
         return res.status(400).json({ error: error.message });
       }
       if (!ruling) return res.status(404).json({ error: 'no such cue', cueId });
       res.json({ ruling });
+    }));
+
+    router.post('/:ratingKey/cues/:cueId/card', asyncHandler(async (req, res) => {
+      const cueId = cleanId(req.params.cueId);
+      if (cueId === null) return res.status(400).json({ error: 'invalid id', id: req.params.cueId });
+      let out;
+      try {
+        out = await contentFilterScenes.draftCueCard({ ratingKey: rk(req), cueId, profileName: profileOf(req) });
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (!out) return res.status(404).json({ error: 'no such cue', cueId });
+      res.json(out);
     }));
   }
 

@@ -240,9 +240,11 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // seeks to `out`, PAUSES so the seek buffers behind the card, shows the card
     // for `holdSec`, then resumes instantly. Kept as one cue; just attach holdSec
     // + resolved card text here (no skip+title-card expansion).
+    // R5: a skip the grown-up gave an approved card plays as a skip-card with that text.
+    if (eff.effect === 'skip' && eff.card) eff.effect = 'skip-card';
     if (eff.effect === 'skip-card') {
       eff.holdSec = profile?.treatments?.['skip-card']?.holdSec ?? 2.5;
-      eff.text = eff.line ? eff.text : (eff.card || eff.text || eff.label || 'Scene skipped.');
+      eff.text = eff.line ? eff.text : (eff.card || eff.text || 'Scene skipped.');
       out.push(eff);
       continue;
     }

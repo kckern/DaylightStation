@@ -296,6 +296,16 @@ only blurred a few seconds before.
 `disabled: true` (members play by their own rules), and `card: { text, approvedBy, at }`.
 The refined EDL's `card` is only a draft; **only an approved card is ever shown**.
 
+**Cue cards (R5)** — a cue whose effect is a skip can carry a card too. Cues have no refined-EDL
+home, so the AI draft lives in the household override at `cueOverrides.<id>.cardDraft`
+(`{ text, at }`, written by `POST /{rk}/cues/{cueId}/card` through the same scoped card-writer
+gateway as scene cards). Approving (`PUT /{rk}/cues/{cueId}` `{ card: { approve: true, text? } }`)
+copies the draft, or the edited text, to `cueOverrides.<id>.card` (`{ text, approvedBy, at }`);
+`card: null` withdraws it and keeps the cue's other rulings. The resolver plays only
+`card.text`: any cue that resolves to a skip-card (a long said exchange, or a `skip` cue that
+has an approved card, which then plays as a skip-card) shows it; without one the card reads
+the generic "Scene skipped." (never the cue label). `cardDraft` never plays.
+
 **Player** (`contentFilter.js` `applyScenes`, `sceneEffect.mjs` shared with the server):
 - A scene with an effect drops the cues inside it that hide no more than it does
   (blur < full-blur < blackout < skip). Word mutes, credits and stronger cues stay;
@@ -415,7 +425,7 @@ scene selected in the rail. Cue: *Off*, *Mute*, *Bleep*, *Blur*, *Skip*, or *Pro
 the ruling), written to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene: *Tags only* (off),
 *Blackout*, *Skip*, *Profile* via `PUT /{rk}/scenes/{id}`, plus **Draft with AI / Regenerate** (one scene's card,
 `POST /{rk}/scenes/{id}/card`), **Edit**, **Approve** and **Withdraw** (the same
-`sceneOverrides` rulings as the admin screen). Each write refreshes the store so the change
+`sceneOverrides` rulings as the admin screen). A selected cue whose effect is a skip shows the same card controls, via `POST /{rk}/cues/{cueId}/card` and `PUT /{rk}/cues/{cueId}` (see Cue cards). Each write refreshes the store so the change
 applies to the next pass. The Settings tab has **This film / Everywhere** and **Reset this film**.
 
 **Settings** (`shared/contracts/content-filter/filterSettings.mjs`). Four plain choices:
