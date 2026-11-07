@@ -51,9 +51,9 @@ describe('content-filter settings routes', () => {
     expect(res.status).toBe(200);
     const ov = read('content-filter/overrides/77.yml');
     expect(ov.sync.part).toBe('9');
-    expect(ov.profilePatch.categories.language).toEqual({ effect: 'bleep' });
+    expect(ov.profilePatch.categories['language/profanity']).toEqual({ effect: 'bleep' });
     const got = await request(app).get('/cf/77');
-    expect(got.body.profile.categories.language).toEqual({ effect: 'bleep' });
+    expect(got.body.profile.categories['language/profanity']).toEqual({ effect: 'bleep' });
     expect(got.body.profile.theme).toEqual(PROFILE.theme);
     expect(got.body.profile.scenes.violence_blood_gore).toEqual({ blackout: { picture: 2 } });
   });
@@ -66,7 +66,7 @@ describe('content-filter settings routes', () => {
     expect([ra.status, rb.status, rc.status]).toEqual([200, 200, 200]);
     const ov = read('content-filter/overrides/77.yml');
     expect(ov.sync.part).toBe('9');
-    expect(ov.profilePatch.categories.language).toEqual({ effect: 'mute' });
+    expect(ov.profilePatch.categories['language/profanity']).toEqual({ effect: 'mute' });
     expect(ov.cueOverrides.va1).toEqual({ effect: 'bleep' });
   });
 
@@ -75,11 +75,11 @@ describe('content-filter settings routes', () => {
     const res = await request(app).put('/cf/profiles/family/settings').send({ settings: { language: 'bleep' } });
     expect(res.status).toBe(200);
     const p = read('content-filter/profiles/family.yml');
-    expect(p.categories.language).toEqual({ effect: 'bleep' });
+    expect(p.categories['language/profanity']).toEqual({ effect: 'bleep' });
     expect(p.categories.sex_any).toEqual({ effect: 'full-blur' });
     expect(p.scenes.sex_any).toEqual({ blackout: { picture: 2 }, skip: { situation: 3 } });
     expect(p.scenes.violence_blood_gore).toBeUndefined();
-    expect(read('content-filter/overrides/77.yml').profilePatch.categories.language).toEqual({ effect: 'mute' });
+    expect(read('content-filter/overrides/77.yml').profilePatch.categories['language/profanity']).toEqual({ effect: 'mute' });
   });
 
   test('a partial film change keeps the film\'s other settings', async () => {
@@ -87,7 +87,7 @@ describe('content-filter settings routes', () => {
     await request(app).put('/cf/77/settings').send({ settings: { language: 'off' } });
     const got = (await request(app).get('/cf/77')).body.profile;
     expect(got.scenes.violence_blood_gore).toEqual({ skip: { picture: 2 } });
-    expect(got.categories.language).toEqual({ effect: 'off' });
+    expect(got.categories['language/profanity']).toEqual({ effect: 'off' });
   });
 
   test('DELETE /:rk/settings removes the patch only', async () => {
@@ -107,7 +107,7 @@ describe('content-filter settings routes', () => {
     expect(p.treatments).toEqual(PROFILE.treatments);
     expect(p.theme).toEqual(PROFILE.theme);
     expect(p.requiresCertification).toBe('parent');
-    expect(p.categories.language).toEqual({ effect: 'bleep' });
+    expect(p.categories['language/profanity']).toEqual({ effect: 'bleep' });
     expect(p.scenes).toEqual({ violence_blood_gore: { blackout: { picture: 2 } } });
   });
 
