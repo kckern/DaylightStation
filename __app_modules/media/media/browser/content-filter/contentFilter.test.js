@@ -520,4 +520,26 @@ describe('word-sized tones and lines (R3, R4)', () => {
     const out = run([{ id: 'x', type: 'mute', effect: 'skip', category: 'language/x', label: 'They argue about the plan at length.', in: 30, out: 48 }]);
     expect(out[0].effect).toBe('skip');
   });
+
+  it('merge + re-cap keeps every id unique and leaves no uncovered instant', () => {
+    const out = run([word({ id: 'a', in: 10, out: 13, precision: 'ms' }), word({ id: 'b', in: 12.4, out: 12.8, precision: 'ms' })]);
+    const ids = out.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const tones = out.filter((c) => c.effect === 'bleep');
+    expect(tones).toHaveLength(1);
+    expect(tones[0].out - tones[0].in).toBeCloseTo(1.5, 6);
+    for (let t = 10; t < 13; t += 0.05) expect(out.some((c) => t >= c.in && t < c.out)).toBe(true);
+  });
+
+  it('an unlabeled said cue is not a word: bleep profile gives mute, no tone', () => {
+    const out = run([{ id: 'u', type: 'mute', category: 'language/x', in: 5, out: 6, precision: 'ms' }]);
+    expect(out.map((c) => c.effect)).toEqual(['mute']);
+  });
+
+  it('a long exchange with an approved cue card plays a skip-card with that text', () => {
+    const edl = { cues: [{ id: 'x', type: 'mute', category: 'language/x', label: 'They argue about the plan at length.', in: 30, out: 48, precision: 'ms' }] };
+    const override = { cueOverrides: { x: { card: { text: 'They argue.', approvedBy: 'parent' } } } };
+    const out = resolveEffectiveCues({ edl, profile, override });
+    expect(out[0]).toMatchObject({ effect: 'skip-card', text: 'They argue.' });
+  });
 });

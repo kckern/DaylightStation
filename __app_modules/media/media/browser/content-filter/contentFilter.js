@@ -215,7 +215,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // R4: a said cue that is not a single word is a line or an exchange. Up to
     // LINE_MAX_SEC it is muted (never a tone); longer, the scene is skipped behind a card.
     const isLine = modality === 'said' && (cue.type || kind) && AUDIO_EFFECTS.has(eff.effect)
-      && cue.label && !isWordLabel(cue.label);
+      && !(cue.label && isWordLabel(cue.label));
     if (isLine) {
       const span = cue.tagIn != null && cue.tagOut != null ? cue.tagOut - cue.tagIn : eff.out - eff.in;
       if (span > LINE_MAX_SEC) {
@@ -292,8 +292,18 @@ function sizeTones(out) {
       const merged = { ...prev, id: prev.id, in: Math.min(prev.in, t.in), out: Math.max(prev.out, t.out), words: prev.words + t.words, merged: true };
       delete merged.tagTime;
       // Mute under the join, so nothing audible leaks where the tones met.
-      if (merged.out - merged.in > TONE_MAX_SEC) sized[sized.length - 1] = cap({ ...merged, words: merged.words }, (merged.in + merged.out) / 2);
-      else sized[sized.length - 1] = merged;
+      if (merged.out - merged.in > TONE_MAX_SEC) {
+        // Re-cap: the old remainders are superseded (unique ids); the new window
+        // takes in their extent so nothing they muted is left uncovered.
+        const centre = (merged.in + merged.out) / 2;
+        for (const id of [`${prev.id}#m0`, `${prev.id}#m1`]) {
+          const i = remainders.findIndex((r) => r.id === id);
+          if (i < 0) continue;
+          merged.in = Math.min(merged.in, remainders[i].in); merged.out = Math.max(merged.out, remainders[i].out);
+          remainders.splice(i, 1);
+        }
+        sized[sized.length - 1] = cap({ ...merged, words: merged.words }, centre);
+      } else sized[sized.length - 1] = merged;
     } else sized.push(t);
   }
   out.length = 0;
