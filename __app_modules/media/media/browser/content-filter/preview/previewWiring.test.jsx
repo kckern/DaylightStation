@@ -156,13 +156,13 @@ describe('content-filter preview wiring (useMediaVideoPresentation)', () => {
     let n = 0;
     const first = [{ id: 'a', effect: 'mute', in: 30, out: 31, category: 'language/x', precision: 'ms' }];
     const second = [...first, { id: 'b', effect: 'mute', in: 50, out: 51, category: 'language/x', precision: 'ms' }];
-    const { result, fetch } = render({ fetchImpl: async () => { n += 1; return { ok: true, status: 200, json: async () => payload(n === 1 ? first : second) }; } });
+    const { result, fetch } = render({ fetchImpl: async (u) => { if (String(u).endsWith('/art')) return { ok: false, status: 404 }; n += 1; return { ok: true, status: 200, json: async () => payload(n === 1 ? first : second) }; } });
     await waitFor(() => expect(previewStore.getSnapshot().cues.length).toBe(1));
     let p;
     act(() => { p = previewStore.refresh(); });
     expect(result.current.overlay).toBeTruthy(); // filter keeps running during the refresh
     await act(async () => { await p; });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls.filter(([u]) => !String(u).endsWith('/art'))).toHaveLength(2);
     await waitFor(() => expect(previewStore.getSnapshot().cues.length).toBe(2));
   });
 

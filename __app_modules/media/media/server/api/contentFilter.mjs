@@ -11,7 +11,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * ratingKey is the Plex rating key (contentId `plex:<ratingKey>`); it is
  * digit-sanitized to prevent path traversal.
  */
-export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, logger = console } = {}) {
+export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, contentFilterArt = null, logger = console } = {}) {
   if (!getContentFilter || typeof getContentFilter.execute !== 'function') {
     throw new Error('createContentFilterRouter requires getContentFilter');
   }
@@ -22,6 +22,15 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     router.get('/', asyncHandler(async (req, res) => {
       const profileName = String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
       res.json({ titles: await contentFilterScenes.titles({ profileName }) });
+    }));
+  }
+
+  // GET /:ratingKey/art -> { logo, background, poster, source }: card art, the logo chosen by cascade.
+  if (contentFilterArt) {
+    router.get('/:ratingKey/art', asyncHandler(async (req, res) => {
+      const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
+      if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
+      res.json(await contentFilterArt.execute({ ratingKey }));
     }));
   }
 
