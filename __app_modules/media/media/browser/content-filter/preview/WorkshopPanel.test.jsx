@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, cleanup } from '@testing-library/react';
 
 vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
@@ -7,7 +7,11 @@ import WorkshopPanel from './WorkshopPanel.jsx';
 import { previewStore } from './previewStore.js';
 
 function setup(partial) {
-  act(() => previewStore.publish({ ratingKey: '77', scenes: [{ id: 'sc1', cues: ['a'] }], override: {}, ...partial }));
+  // sc1 is cut (a skip-card piece plays), so its title card is offered.
+  act(() => previewStore.publish({
+    ratingKey: '77', scenes: [{ id: 'sc1', cues: ['a'] }, { id: 'sc2', cues: ['b'] }],
+    cues: [{ id: 'sc1', scene: 'sc1', effect: 'skip-card', in: 100, out: 120 }], override: {}, ...partial,
+  }));
   return render(<WorkshopPanel />);
 }
 
@@ -55,12 +59,28 @@ describe('WorkshopPanel', () => {
   it('scene effect buttons PUT the ruling; a failure shows the text and skips refresh', async () => {
     DaylightAPI.mockResolvedValueOnce({ ruling: {} }).mockRejectedValueOnce(new Error('boom'));
     setup({ selected: { id: 'sc1', kind: 'scene', in: 100 } });
-    fireEvent.click(screen.getByRole('button', { name: 'Tags only' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play it' }));
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
     expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/77/scenes/sc1', { effect: 'off' }, 'PUT');
     fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('boom'));
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a scene that plays offers no card until it is cut', () => {
+    setup({ selected: { id: 'sc2', kind: 'scene', in: 300 } });
+    expect(screen.queryByRole('button', { name: 'Draft with AI' })).toBeNull();
+    expect(screen.getByText(/once the scene is skipped or hidden/)).toBeTruthy();
+    for (const n of ['Play it', 'Hide picture', 'Skip', 'Use settings']) expect(screen.getByRole('button', { name: n })).toBeTruthy();
+  });
+
+  it('a cue offers Use settings only once it has a ruling of its own', () => {
+    setup({ selected: { id: 'va1', effect: 'mute', in: 5, out: 6 } });
+    expect(screen.queryByRole('button', { name: 'Use settings' })).toBeNull();
+    expect(screen.getByText('For this word')).toBeTruthy();
+    cleanup();
+    setup({ selected: { id: 'va1', effect: 'mute', in: 5, out: 6 }, override: { cueOverrides: { va1: { effect: 'bleep' } } } });
+    expect(screen.getByRole('button', { name: 'Use settings' })).toBeTruthy();
   });
 
   it('a measured cue id (va123#0) is ruled by its base id', async () => {
