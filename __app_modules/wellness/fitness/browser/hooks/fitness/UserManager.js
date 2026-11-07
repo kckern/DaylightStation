@@ -26,6 +26,9 @@ export class User {
     // hrDeviceId is a getter for backwards compat (returns first ID or null)
     this.hrDeviceIds = new Set();
     if (hrDeviceId) this.hrDeviceIds.add(String(hrDeviceId));
+    // Straps the household config gives this user (hrDeviceIds also gains
+    // straps he is assigned at runtime). Used by the one-sending-strap rule.
+    this.configuredHrDeviceIds = new Set(this.hrDeviceIds);
     this._pendingHR = new Map(); // deviceId → { hr, ts } for multi-device arbitration
     this._lastRealHrAt = null; // wall-clock of the last real (>0) reading, for HR_LOSS_GRACE_MS
     this.cadenceDeviceId = cadenceDeviceId;
@@ -381,6 +384,51 @@ export class UserManager {
     processUserList(usersConfig.friends, 'Friend', 'Friend');
   }
 
+  /**
+   * Install the session's strap-liveness probe ((deviceId) => true|false|null),
+   * used by the one-sending-strap rule in resolveUserForDevice.
+   */
+  setDeviceLivenessProbe(probe) {
+    this._deviceLivenessProbe = typeof probe === 'function' ? probe : null;
+  }
+
+  /**
+   * One member, one SENDING strap: the live strap another of this user's
+   * ledger entries holds, when that strap is NOT one his config gives him
+   * (a borrowed spare picked for him). Null otherwise. Without a probe (or
+   * when liveness is unknown) nothing is held — config ownership resolves as
+   * before. Config-owned multi-strap users are never affected.
+   * @returns {string|null} the holding device id
+   */
+  heldOnOtherLiveStrap(user, deviceId) {
+    const probe = this._deviceLivenessProbe;
+    if (!probe || !user || !this.assignmentLedger?.entries) return null;
+    const key = String(deviceId);
+    for (const [otherId, entry] of this.assignmentLedger.entries.entries()) {
+      if (otherId === key) continue;
+      const occupant = entry?.metadata?.profileId || entry?.occupantId;
+      if (occupant !== user.id) continue;
+      if (user.configuredHrDeviceIds?.has(String(otherId))) continue;
+      if (probe(otherId) === true) return String(otherId);
+    }
+    return null;
+  }
+
+  /**
+   * The configured owner of a strap who is currently held on another live
+   * strap (see heldOnOtherLiveStrap) — why resolveUserForDevice returned null.
+   * @returns {{ user: Object, heldDeviceId: string }|null}
+   */
+  findHeldConfiguredOwner(deviceId) {
+    const key = String(deviceId);
+    for (const user of this.users.values()) {
+      if (!user.configuredHrDeviceIds?.has(key)) continue;
+      const heldDeviceId = this.heldOnOtherLiveStrap(user, key);
+      if (heldDeviceId) return { user, heldDeviceId };
+    }
+    return null;
+  }
+
   setAssignmentLedger(ledger, { onChange } = {}) {
     this.assignmentLedger = ledger || null;
     this._onLedgerChange = typeof onChange === 'function' ? onChange : null;
@@ -423,7 +471,7 @@ export class UserManager {
       });
       // If backend sent multiple device IDs, add them all
       if (Array.isArray(hrDeviceIds)) {
-        for (const id of hrDeviceIds) user.hrDeviceIds.add(String(id));
+        for (const id of hrDeviceIds) { user.hrDeviceIds.add(String(id)); user.configuredHrDeviceIds.add(String(id)); }
       }
       getLogger().debug('usermanager.user_created', {
         configName: config.name,
@@ -440,9 +488,10 @@ export class UserManager {
       // Update existing user config if needed
       const user = this.users.get(resolvedUserId);
       if (Array.isArray(hrDeviceIds)) {
-        for (const id of hrDeviceIds) user.hrDeviceIds.add(String(id));
+        for (const id of hrDeviceIds) { user.hrDeviceIds.add(String(id)); user.configuredHrDeviceIds.add(String(id)); }
       } else if (hrDeviceId) {
         user.hrDeviceIds.add(String(hrDeviceId));
+        user.configuredHrDeviceIds.add(String(hrDeviceId));
       }
       user.cadenceDeviceId = cadenceDeviceId ?? user.cadenceDeviceId;
       user.groupLabel = groupLabel ?? user.groupLabel;
@@ -594,8 +643,12 @@ export class UserManager {
       }
     }
 
-    // Check registered users for direct device ID match
+    // Check registered users for direct device ID match. A member already
+    // riding a borrowed strap that is still sending does not take his own
+    // strap back when it reappears — it resolves to nobody (an unmapped strap
+    // the family can pick) until the borrowed strap goes silent.
     for (const user of this.users.values()) {
+      if (user.ownsHrDevice(idStr) && this.heldOnOtherLiveStrap(user, idStr)) continue;
       if (user.ownsHrDevice(idStr) ||
           (user.cadenceDeviceId && String(user.cadenceDeviceId) === idStr)) {
         return user;

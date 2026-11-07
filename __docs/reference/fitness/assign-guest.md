@@ -225,6 +225,16 @@ member (`occupantType: 'member'`): a member cannot be on two sending straps,
 and a member's ledger entry never stores the flag. When liveness cannot be read
 (no device manager) the guard keeps the old conservative behaviour and blocks.
 
+The same rule holds when the member's **own strap comes back** while he rides a
+borrowed one that is still sending: `UserManager.resolveUserForDevice` does not
+resolve the returning strap to him (`heldOnOtherLiveStrap`, liveness via the
+session's probe), so it stays an unmapped `device:<id>` card the family can
+pick, and auto-assign logs `fitness.auto_assign_skip` with reason
+`user-on-other-live-strap`. Once the borrowed strap is silent, his own strap
+resolves to him again and auto-assign takes him back, releasing the borrowed
+strap's stale entry the same way (`staleAssignment.js`). Straps his config
+gives him are never affected, so configured multi-strap riders work as before.
+
 Every rejection is logged at warn as `guest_assignment.rejected`
 (`code`, `deviceId`, `userId`, `existingDeviceId`), and `FitnessContext`
 additionally logs `assign-guest-failed` and shows a warning toast in the

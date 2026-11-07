@@ -9,10 +9,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const warn = vi.fn();
 const info = vi.fn();
+const sampled = vi.fn();
 vi.mock('../../../../../../frontend/src/lib/logging/Logger.js', () => {
   const logger = {
     warn: (...a) => warn(...a), info: (...a) => info(...a), debug: () => {}, error: () => {},
-    sampled: () => {}, child: () => logger,
+    sampled: (...a) => sampled(...a), child: () => logger,
   };
   return { default: () => logger, getLogger: () => logger };
 });
@@ -53,7 +54,7 @@ const send = (session, seconds, devices) => {
 };
 
 describe('GuestAssignmentService: a silent strap releases its wearer', () => {
-  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(1_790_213_728_000); warn.mockClear(); info.mockClear(); });
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(1_790_213_728_000); warn.mockClear(); info.mockClear(); sampled.mockClear(); });
   afterEach(() => { vi.useRealTimers(); });
 
   it('own strap goes silent → member picked on a spare strap → assigned, old stint closed', () => {
@@ -109,6 +110,35 @@ describe('GuestAssignmentService: a silent strap releases its wearer', () => {
     session.deviceManager.pruneStaleDevices({ inactive: 60_000, remove: 180_000 });
     expect(svc.assignGuest('10266', { ...memberPick, allowWhileAssigned: true }).ok).toBe(true);
     expect(ledger.get('10266').metadata.allowWhileAssigned).toBeUndefined();
+    session.reset();
+  });
+
+  it('own strap returns while he rides a live spare → left unmapped; spare goes silent → his own strap takes him back', () => {
+    const { session, ledger, svc } = build();
+    send(session, 10, ['8317']);
+    send(session, 90, ['10266']);
+    session.deviceManager.pruneStaleDevices({ inactive: 60_000, remove: 180_000 });
+    expect(svc.assignGuest('10266', memberPick).ok).toBe(true);
+    const spareStint = session.entityRegistry.getByDevice('10266');
+
+    // 8317 starts sending again while 10266 is live: not his, not auto-assigned.
+    send(session, 5, ['8317', '10266']);
+    expect(ledger.get('8317')).toBeNull();
+    expect(session.userManager.resolveUserForDevice('8317')).toBeNull();
+    expect(ledger.get('10266')).toMatchObject({ occupantId: 'rider_m' });
+    expect(sampled).toHaveBeenCalledWith('fitness.auto_assign_skip', expect.objectContaining({
+      deviceId: '8317', userId: 'rider_m', reason: 'user-on-other-live-strap', heldDeviceId: '10266'
+    }), expect.anything());
+    expect(session.roster.find((e) => e.hrDeviceId === '8317')?.id).toBe('device:8317');
+
+    // The spare falls silent; his own strap keeps sending → back to him.
+    send(session, 90, ['8317']);
+    session.deviceManager.pruneStaleDevices({ inactive: 60_000, remove: 180_000 });
+    send(session, 2, ['8317']);
+    expect(ledger.get('8317')).toMatchObject({ occupantId: 'rider_m' });
+    expect(ledger.get('10266')).toBeNull();
+    expect(spareStint).toMatchObject({ status: 'dropped', endReason: 'strap-silent-moved' });
+    expect(session.entityRegistry.getByDevice('8317')).toMatchObject({ profileId: 'rider_m', status: 'active' });
     session.reset();
   });
 });

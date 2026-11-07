@@ -2,6 +2,7 @@
 import { DeviceAssignmentLedger } from "./DeviceAssignmentLedger.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import { isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
+import { isDeviceLive, releaseStaleAssignment } from "./staleAssignment.js";
 
 /**
  * Continuous-usage threshold for session transfers.
@@ -95,46 +96,6 @@ export class GuestAssignmentService {
     return result;
   }
 
-  /**
-   * Whether a strap is sending right now, per the session's device manager:
-   * present and not marked inactive (DeviceManager.pruneStaleDevices stamps
-   * inactiveSince after the inactivity timeout and later deletes the device;
-   * "Remove user" deletes it at once). Null when liveness cannot be read —
-   * the caller then treats the strap as live, the old conservative behaviour.
-   */
-  #isDeviceLive(deviceId) {
-    const dm = this.session?.deviceManager;
-    if (!dm || typeof dm.getDevice !== 'function') return null;
-    const device = dm.getDevice(String(deviceId));
-    if (!device) return false;
-    return !device.inactiveSince;
-  }
-
-  /**
-   * Close a silent strap's stint for this member and drop its ledger entry, so
-   * he can be put on the strap he is actually wearing. The stint ends
-   * `dropped` at the strap's last packet, so attribution stops where the data
-   * stopped. Rings, beats and zones stay keyed by the member's id and carry on
-   * in the new strap's stint.
-   */
-  #releaseStaleEntry(deviceId, entry, { toDeviceId, now }) {
-    const session = this.session;
-    const occupantId = entry?.metadata?.profileId || entry?.occupantId || null;
-    const stint = session?.entityRegistry?.getByDevice?.(deviceId) || null;
-    const openStint = stint && stint.status === 'active' && stint.profileId === occupantId ? stint : null;
-    const entityId = openStint?.entityId || null;
-    const device = session?.deviceManager?.getDevice?.(String(deviceId)) || null;
-    const lastSeen = Number.isFinite(device?.lastSeen) ? device.lastSeen : null;
-    const endTime = lastSeen != null && lastSeen <= now ? lastSeen : now;
-    if (entityId && typeof session.endSessionEntity === 'function') {
-      session.endSessionEntity(entityId, { status: 'dropped', timestamp: endTime, reason: 'strap-silent-moved' });
-    }
-    session.userManager.assignGuest(deviceId, null);
-    this.#logEvent('STALE_ASSIGNMENT_RELEASED', { deviceId, occupantId, entityId, toDeviceId });
-    getLogger().info('guest_assignment.stale_entry_released', {
-      deviceId, userId: occupantId, entityId, toDeviceId, endTime
-    });
-  }
 
   assignGuest(deviceId, assignment) {
     if (deviceId == null) {
@@ -183,7 +144,7 @@ export class GuestAssignmentService {
         const existingAllowMulti = entry?.allowWhileAssigned || entry?.metadata?.allowWhileAssigned;
         if (existingProfileId !== newProfileId || existingAllowMulti) continue;
 
-        if (this.#isDeviceLive(existingDeviceId) === false) {
+        if (isDeviceLive(this.session?.deviceManager, existingDeviceId) === false) {
           staleEntries.push([existingDeviceId, entry]);
           continue;
         }
@@ -196,7 +157,7 @@ export class GuestAssignmentService {
         }, { deviceId: key, userId: newProfileId });
       }
       staleEntries.forEach(([existingDeviceId, entry]) => {
-        this.#releaseStaleEntry(existingDeviceId, entry, { toDeviceId: key, now });
+        releaseStaleAssignment(this.session, existingDeviceId, entry, { toDeviceId: key, now, journal: this.session?.eventJournal || this.ledger?.eventJournal });
       });
     }
 
