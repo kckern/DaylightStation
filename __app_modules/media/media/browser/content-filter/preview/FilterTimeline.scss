@@ -1,19 +1,40 @@
+/**
+ * FilterTimeline — the preview surround's bottom bar (`content-filter-timeline`).
+ *
+ * It lives in the surround's BOTTOM region and reads the frame's published
+ * properties (parchment `--ink` on the band's stone; see SurroundFrame.scss),
+ * not the Admin `--ds-*` tokens, which are undefined on the screen route.
+ *
+ * THE THREE MARKS MUST NOT BE CONFUSED, so each differs in more than colour:
+ *   mute/bleep  — full-height brass hairline (a tick)
+ *   blur/other  — short centred parchment bar, half height
+ *   scene block — full-height span: blackout is SOLID near-black with brass
+ *                 edges (it used to be the bar's own ground, i.e. invisible);
+ *                 skip-card is a parchment hatch.
+ * The playhead is the brightest thing on the bar and rides above the marks.
+ */
+
+@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+
 .filter-timeline {
   display: flex;
   align-items: center;
-  gap: var(--ds-space-3);
-  padding: var(--ds-space-2) var(--ds-space-3);
-  background: var(--ds-bg-surface);
-  color: var(--ds-text-primary);
+  gap: 0.75rem;
+  padding: 0.5rem 0.9rem;
+  color: var(--ink, #e9dfc8);
+  font-family: var(--surround-annotation, system-ui, sans-serif);
 
   &__btn {
     cursor: pointer;
-    border: 1px solid var(--ds-border);
-    border-radius: var(--ds-radius-sm);
-    background: var(--ds-bg-elevated);
-    color: inherit;
-    padding: var(--ds-space-1) var(--ds-space-3);
-    &:disabled { opacity: 0.4; cursor: default; }
+    border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.28));
+    border-radius: var(--bond-radius, #{$bond-radius});
+    background: transparent;
+    color: var(--ink, #e9dfc8);
+    font: inherit;
+    padding: 0.3rem 0.8rem;
+    &:hover:not(:disabled) { border-color: var(--ink-soft, #a89a80); background: var(--hall-ink, #{$hall-ink}); }
+    &:focus-visible { outline: 2px solid var(--brass, #c79a3e); outline-offset: 1px; }
+    &:disabled { opacity: 0.35; cursor: default; }
   }
 
   &__bar {
@@ -21,9 +42,9 @@
     flex: 1;
     height: 28px;
     cursor: pointer;
-    background: var(--ds-bg-elevated);
-    border: 1px solid var(--ds-border);
-    border-radius: var(--ds-radius-sm);
+    background: var(--bond-ground, #{$bond-ground});
+    border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.28));
+    border-radius: var(--bond-radius, #{$bond-radius});
     overflow: hidden;
   }
 
@@ -32,13 +53,17 @@
     top: 0;
     bottom: 0;
     pointer-events: none;
-    &.is-tick { width: 2px; background: var(--ds-accent); }
-    &.is-bar { width: 4px; top: 25%; bottom: 25%; background: var(--ds-text-muted); }
+    &.is-tick { width: 2px; background: var(--brass-lit, #f6e3a0); }
+    &.is-bar { width: 4px; top: 30%; bottom: 30%; background: var(--ink, #e9dfc8); border-radius: 1px; }
     &.is-block { min-width: 4px; }
-    &.is-blackout { background: var(--ds-bg-surface); border-left: 1px solid var(--ds-border); border-right: 1px solid var(--ds-border); }
+    &.is-blackout {
+      background: var(--hall-shadow, #{$hall-shadow});
+      border-left: 2px solid var(--brass, #c79a3e);
+      border-right: 2px solid var(--brass, #c79a3e);
+      box-sizing: border-box;
+    }
     &.is-skip {
-      background: repeating-linear-gradient(45deg, var(--ds-text-muted) 0 3px, transparent 3px 6px);
-      opacity: 0.7;
+      background: repeating-linear-gradient(45deg, var(--ink-soft, #a89a80) 0 3px, transparent 3px 6px);
     }
   }
 
@@ -47,7 +72,9 @@
     top: 0;
     bottom: 0;
     width: 2px;
-    background: var(--ds-text-primary);
+    z-index: 1;
+    background: var(--ink, #e9dfc8);
+    box-shadow: 0 0 0 1px var(--hall-shadow, #{$hall-shadow});
     pointer-events: none;
   }
 }

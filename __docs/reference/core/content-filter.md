@@ -146,6 +146,8 @@ filtered title plays, including D-pad TVs.
   (hidden if it fails to load), "Edited for content", and a summary built from the
   resolved cues by `filterSummary.js`, e.g. "152 words muted · 4 scenes blurred · credits
   skipped". It yields to a skip-card. Logs `content-filter.bumper.shown`.
+  To see it on a title with a saved resume, start from the top with
+  `?play=plex:<id>&start=0` (see `content/content-playback.md`, start position params).
 - **Badge.** A small shield bottom-right at about 40% opacity; it glows yellow while an
   effect is active (see [Preview surround](#preview-surround)). States:
 

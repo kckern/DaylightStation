@@ -41,6 +41,8 @@ const PASSTHROUGH_KEYS = new Set([
   'scanned_at', 'note', 'dispatchId', 'token', 'itemAction',
   // Show briefly is a command, never page content (WakeAndLoad delivers it by envelope).
   'brief', 'briefSeconds', 'title',
+  // Start-seek (player-support/reviewParams.js reads these from the URL directly).
+  'goto', 'start',
 ]);
 
 const BOOLEAN_CONFIG_KEYS = new Set(['shuffle', 'continuous', 'repeat', 'loop']);
