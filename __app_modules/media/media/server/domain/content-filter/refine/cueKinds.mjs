@@ -12,7 +12,7 @@
  * `needsRouting: true` and the refiner asks the decision model.
  */
 
-import { isWordLabel } from '../../../../../../../shared/contracts/content-filter/cueModality.mjs';
+import { isWordLabel, SOUND_LABEL } from '../../../../../../../shared/contracts/content-filter/cueModality.mjs';
 
 export { isWordLabel };
 
@@ -21,7 +21,7 @@ export function initialKind(cue) {
   const label = String(cue.label || '').trim();
   if (cat.startsWith('credits/')) return { kind: 'credits', needsRouting: false };
   if (cue.type === 'mute' && isWordLabel(label)) return { kind: 'speech', needsRouting: false };
-  if (/\b(heard|sound of|sounds? (of|can))\b/i.test(label) && cue.type === 'mute') return { kind: 'sound', needsRouting: false };
+  if (SOUND_LABEL.test(label) && cue.type === 'mute') return { kind: 'sound', needsRouting: false };
   if (cue.type === 'mute') return { kind: 'speech-line', needsRouting: true };
   if (cat.startsWith('language/')) return { kind: isWordLabel(label) ? 'speech' : 'speech-line', needsRouting: !isWordLabel(label) };
   return { kind: 'visual', needsRouting: false };

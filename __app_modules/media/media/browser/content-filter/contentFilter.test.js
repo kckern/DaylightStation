@@ -442,6 +442,16 @@ describe('channel-matched effects (R1, R2)', () => {
     ] };
     const out = resolveEffectiveCues({ edl, profile: { categories: { violence: { effect: 'blur' }, language: { effect: 'mute' } } } });
     expect(out.find((c) => c.id === 'word').effect).toBe('mute');
-    expect(out.find((c) => c.id === 'long').effect).toBe('blur');
+    expect(out.find((c) => c.id === 'long').effect).toBe('full-blur');
+  });
+  it('an untracked shown cue with profile blur becomes full-blur', () => {
+    const edl = { cues: [{ id: 'u', type: 'skip', category: 'sex/nudity', label: 'Nudity shown', in: 50, out: 60 }] };
+    const out = resolveEffectiveCues({ edl, profile: { categories: { sex: { effect: 'blur' } } } });
+    expect(out.every((c) => c.effect === 'full-blur')).toBe(true);
+  });
+  it('a heard cue with profile bleep becomes mute', () => {
+    const edl = { cues: [{ id: 'h', type: 'mute', category: 'violence/graphic', label: 'Gunfire can be heard', in: 30, out: 33 }] };
+    const out = resolveEffectiveCues({ edl, profile: { categories: { violence: { effect: 'bleep' } } } });
+    expect(out.map((c) => c.effect)).toEqual(['mute']);
   });
 });

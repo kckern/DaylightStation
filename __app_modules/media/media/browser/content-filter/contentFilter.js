@@ -197,7 +197,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
       ? fitEffectToChannel(eff.effect, modality, { hasRegions: !!measured?.regions?.length })
       : eff.effect;
     if (fitted !== eff.effect) {
-      if (explicit) logger().debug('content-filter.effect.adjusted', { cue: cue.id, from: eff.effect, to: fitted, modality });
+      logger().sampled('content-filter.effect.adjusted', { id: cue.id, from: eff.effect, to: fitted, modality, source: explicit ? 'override' : 'profile' }, { maxPerMinute: 10, aggregate: true });
       eff.effect = fitted;
     }
     // Param precedence: override > cue > profile rule.

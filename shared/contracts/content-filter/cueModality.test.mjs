@@ -33,7 +33,8 @@ describe('fitEffectToChannel', () => {
     expect(fitEffectToChannel('bleep', 'said', {})).toBe('bleep');
     expect(fitEffectToChannel('skip', 'shown', {})).toBe('skip');
     expect(fitEffectToChannel('skip-card', 'said', {})).toBe('skip-card');
-    expect(fitEffectToChannel('blur', 'shown', { hasRegions: false })).toBe('blur');
+    expect(fitEffectToChannel('blur', 'shown', { hasRegions: false })).toBe('full-blur');
+    expect(fitEffectToChannel('blur', 'shown', { hasRegions: true })).toBe('blur');
   });
   it('heard bleep -> mute; empty -> null', () => {
     expect(fitEffectToChannel('bleep', 'heard', {})).toBe('mute');

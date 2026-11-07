@@ -21,7 +21,7 @@ export function isWordLabel(label) {
 const AUDIO = new Set(['mute', 'bleep', 'duck']);
 const VISUAL = new Set(['blur', 'full-blur', 'censor-bar', 'pixelate', 'blackout']);
 const KIND_MODALITY = { speech: 'said', 'speech-line': 'said', visual: 'shown', credits: 'shown', sound: 'heard' };
-const SOUND_LABEL = /\b(heard|sound of|sounds? (of|can))\b/i;
+export const SOUND_LABEL = /\b(heard|sound of|sounds? (of|can))\b/i;
 
 /** @returns {'said'|'shown'|'heard'} */
 export function cueModality(cue) {
@@ -37,13 +37,16 @@ export function cueModality(cue) {
 
 /**
  * Map a profile/override effect onto the cue's channel.
- * shown + audio effect -> regional `blur` when tracked, else `full-blur`;
+ * shown + audio effect or blur -> regional `blur` when tracked, else `full-blur`;
  * said/heard + visual effect -> `mute`; heard + bleep/duck -> `mute`.
  * @returns {string|null} the effect to use (null when none given)
  */
 export function fitEffectToChannel(effect, modality, { hasRegions = false } = {}) {
   if (!effect) return null;
-  if (modality === 'shown') return AUDIO.has(effect) ? (hasRegions ? 'blur' : 'full-blur') : effect;
+  if (modality === 'shown') {
+    if (AUDIO.has(effect) || effect === 'blur') return hasRegions ? 'blur' : 'full-blur';
+    return effect;
+  }
   if (VISUAL.has(effect)) return 'mute';
   if (modality === 'heard' && (effect === 'bleep' || effect === 'duck')) return 'mute';
   return effect;
