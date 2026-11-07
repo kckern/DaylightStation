@@ -12,13 +12,9 @@
  * `needsRouting: true` and the refiner asks the decision model.
  */
 
-const PROSE = /\s/;
+import { isWordLabel } from '../../../../../../../shared/contracts/content-filter/cueModality.mjs';
 
-/** A label that names one word (possibly censored: "G*d", "b*tthead", "Irish bug"). */
-export function isWordLabel(label) {
-  const l = String(label || '').trim();
-  return !!l && (!PROSE.test(l) || l.length <= 14) && !/[.!?]$/.test(l) && l.split(/\s+/).length <= 2;
-}
+export { isWordLabel };
 
 export function initialKind(cue) {
   const cat = String(cue.category || '');

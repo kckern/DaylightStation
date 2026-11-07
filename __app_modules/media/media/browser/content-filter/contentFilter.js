@@ -14,7 +14,12 @@
 
 // Timing a refine pass measured on this file: no approximate widening.
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { cueModality, fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
+import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
+
+let _logger;
+const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
 
 export const PRECISE = new Set(['ms', 'frame']);
 
@@ -182,6 +187,18 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
       eff.out = spans[spans.length - 1].out;
       // optional per-cue manual nudge (ms), applied after the global sync
       if (typeof ov.nudgeMs === 'number') { eff.in += ov.nudgeMs / 1000; eff.out += ov.nudgeMs / 1000; }
+    }
+    // The effect must fit the cue's channel (said/shown/heard); a tracked shown
+    // cue gets the regional blur, an untracked one full-blur.
+    // Cues with no type or refine kind (hand-added) carry no channel evidence: left as authored.
+    const kind = cue.kind ?? cue.refine?.kind ?? ov.refine?.kind;
+    const modality = cueModality({ ...cue, ...(kind ? { kind } : {}) });
+    const fitted = (cue.type || kind)
+      ? fitEffectToChannel(eff.effect, modality, { hasRegions: !!measured?.regions?.length })
+      : eff.effect;
+    if (fitted !== eff.effect) {
+      if (explicit) logger().debug('content-filter.effect.adjusted', { cue: cue.id, from: eff.effect, to: fitted, modality });
+      eff.effect = fitted;
     }
     // Param precedence: override > cue > profile rule.
     mergeParams(eff, ov, cue, rule);

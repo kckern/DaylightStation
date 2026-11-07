@@ -404,3 +404,44 @@ describe('overlapping scenes and an Off ruling', () => {
     expect(out.some((c) => c.id === 'va5' && c.effect === 'full-blur')).toBe(true);
   });
 });
+
+describe('channel-matched effects (R1, R2)', () => {
+  const regions = Array.from({ length: 26 }, (_, i) => ({ in: 100 + i, cells: [1, 2], grid: 8 }));
+  const billboard = {
+    id: 'va3388989', type: 'skip', category: 'language/language_sexual/other_sexual', label: 'A billboard shows a crude word',
+    in: 100, out: 125, precision: 'frame', segments: [{ in: 100, out: 110 }, { in: 115, out: 125 }], regions,
+  };
+  const refined = (cues) => ({ timebase: { clock: 'vidangel' }, cues });
+  const profile = { categories: { language: { effect: 'bleep' } } };
+
+  it('a shown cue with a track under profile bleep becomes regional blur, no audio effect', () => {
+    const out = resolveEffectiveCues({ edl: refined([billboard]), profile, override: { sync: { offsetSec: 0, scale: 1 } } });
+    expect(out.length).toBeGreaterThan(2);
+    expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
+    expect(out.some((c) => ['bleep', 'mute'].includes(c.effect))).toBe(false);
+  });
+  it('untracked shown cue becomes full-blur', () => {
+    const { regions: _r, ...bare } = billboard;
+    const out = resolveEffectiveCues({ edl: refined([bare]), profile });
+    expect(out.every((c) => c.effect === 'full-blur')).toBe(true);
+  });
+  it('a said cue with profile blur becomes mute', () => {
+    const edl = { cues: [{ id: 'w', type: 'mute', category: 'language/profanity/damn', label: 'damn', in: 10, out: 10.4 }] };
+    const out = resolveEffectiveCues({ edl, profile: { categories: { language: { effect: 'blur' } } } });
+    expect(out.map((c) => c.effect)).toEqual(['mute']);
+  });
+  it('override bleep on a shown cue becomes blur', () => {
+    const edl = { cues: [{ id: 'v', type: 'skip', category: 'sex/nudity', label: 'Nudity shown', in: 50, out: 60 }] };
+    const out = resolveEffectiveCues({ edl, profile: { categories: { sex: { effect: 'skip' } } }, override: { cueOverrides: { v: { effect: 'bleep' } } } });
+    expect(out[0].effect).toBe('full-blur');
+  });
+  it('a word inside a long visual cue keeps its mute', () => {
+    const edl = { cues: [
+      { id: 'long', type: 'skip', category: 'violence/graphic', label: 'A long fight', in: 100, out: 160 },
+      { id: 'word', type: 'mute', category: 'language/profanity/damn', label: 'damn', in: 120, out: 120.4 },
+    ] };
+    const out = resolveEffectiveCues({ edl, profile: { categories: { violence: { effect: 'blur' }, language: { effect: 'mute' } } } });
+    expect(out.find((c) => c.id === 'word').effect).toBe('mute');
+    expect(out.find((c) => c.id === 'long').effect).toBe('blur');
+  });
+});
