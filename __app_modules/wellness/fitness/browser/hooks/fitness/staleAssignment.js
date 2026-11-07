@@ -38,6 +38,7 @@ export function releaseStaleAssignment(session, deviceId, entry, { toDeviceId = 
     session.endSessionEntity(entityId, { status: 'dropped', timestamp: endTime, reason: 'strap-silent-moved' });
   }
   session?.userManager?.assignGuest?.(key, null);
+  session?.userManager?.releaseRuntimeStrap?.(occupantId, key);
   try {
     (journal || session?.eventJournal)?.log?.('STALE_ASSIGNMENT_RELEASED', { deviceId: key, occupantId, entityId, toDeviceId });
   } catch (_) { /* ignore journal errors */ }

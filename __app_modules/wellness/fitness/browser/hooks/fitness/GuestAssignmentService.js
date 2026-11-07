@@ -341,6 +341,9 @@ export class GuestAssignmentService {
     }
 
     session.userManager.assignGuest(key, null);
+    // A strap he was only given at runtime is not his once cleared.
+    const previousOccupantId = previousEntry?.metadata?.profileId || previousEntry?.occupantId || null;
+    session.userManager.releaseRuntimeStrap?.(previousOccupantId, key);
     this.#logEvent('CLEAR_GUEST', { deviceId: key, entityId: previousEntityId });
     return { ok: true, data: { clearedEntityId: previousEntityId } };
   }

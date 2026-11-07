@@ -139,6 +139,29 @@ describe('GuestAssignmentService: a silent strap releases its wearer', () => {
     expect(ledger.get('10266')).toBeNull();
     expect(spareStint).toMatchObject({ status: 'dropped', endReason: 'strap-silent-moved' });
     expect(session.entityRegistry.getByDevice('8317')).toMatchObject({ profileId: 'rider_m', status: 'active' });
+
+    // The spare resumes (a sibling puts it on): it is not his any more.
+    expect(session.userManager.getUserById('rider_m').hrDeviceIds.has('10266')).toBe(false);
+    send(session, 5, ['8317', '10266']);
+    expect(ledger.get('10266')).toBeNull();
+    expect(session.userManager.resolveUserForDevice('10266')?.id ?? null).not.toBe('rider_m');
+    const active = session.entityRegistry.getAll().filter((e) => e.profileId === 'rider_m' && e.status === 'active');
+    expect(active.map((e) => e.deviceId)).toEqual(['8317']);
+    session.reset();
+  });
+
+  it('clearing a picked spare takes the spare back from him (config strap kept)', () => {
+    const { session, ledger, svc } = build();
+    send(session, 10, ['8317']);
+    send(session, 90, ['10266']);
+    session.deviceManager.pruneStaleDevices({ inactive: 60_000, remove: 180_000 });
+    expect(svc.assignGuest('10266', memberPick).ok).toBe(true);
+    const rider = session.userManager.getUserById('rider_m');
+    expect(rider.hrDeviceIds.has('10266')).toBe(true);
+    expect(svc.clearGuest('10266').ok).toBe(true);
+    expect(rider.hrDeviceIds.has('10266')).toBe(false);
+    expect(rider.hrDeviceIds.has('8317')).toBe(true);
+    expect(ledger.get('10266')).toBeNull();
     session.reset();
   });
 });

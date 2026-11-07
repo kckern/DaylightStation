@@ -435,6 +435,11 @@ export class DeviceManager {
       }
 
       // 1. Check for Inactivity (Connection Loss OR Stopped Pedaling)
+      // Deliberately NOT gated on transportStalled (unlike rpmZero/hrStale):
+      // a lone rider's strap dying IS a pipeline stall — "no packets from any
+      // device" cannot tell a link blip from the last strap going silent — and
+      // that strap must go inactive at the timeout with no held reading
+      // (DeviceManager.hrLiveness / FitnessSession.hrReadingLoss tests).
       if (timeSinceActivity > timeouts.inactive) {
         if (device.heartRate != null) {
           // An inactive device has no reading — never a held one.

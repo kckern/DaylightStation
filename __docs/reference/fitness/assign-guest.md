@@ -208,6 +208,20 @@ ledger entry sits on another strap **that is still sending** — code
 `DeviceManager`: the device is present and has no `inactiveSince` (set after
 `ant_devices.timeout.inactive`; "Ignore This Strap" deletes the device outright).
 
+"Live" means **packets, not readings**: a strap still sending packets with no
+heart rate (loose on a chest, lying on a bench) counts as live and still blocks.
+Use "⛔ Ignore This Strap" on it to release its wearer at once. The inactive
+clock is not paused during a whole-pipeline stall: "no packets from any device"
+cannot tell a link blip from a lone rider's strap dying, and the latter must go
+inactive on time. A stall longer than `ant_devices.timeout.inactive` therefore
+does mark straps inactive, so a member could then be picked onto another strap.
+
+When a stale entry is released or a guest is cleared, a strap the person was
+only given at runtime is also taken back out of his `hrDeviceIds`
+(`UserManager.releaseRuntimeStrap`; config-given straps are kept). Otherwise
+the spare's next packet would resolve to him by ownership and auto-assign him
+onto it again — a sibling wearing the spare would ride as him.
+
 A strap that has gone silent no longer holds its wearer. Before 2026-11-06
 nothing cleared such an entry — a member's own strap even survives
 `cleanupOrphanGuests`, because he owns it in config — so in session

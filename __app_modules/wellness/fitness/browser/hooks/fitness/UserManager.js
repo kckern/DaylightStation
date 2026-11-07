@@ -429,6 +429,25 @@ export class UserManager {
     return null;
   }
 
+  /**
+   * Take back a strap a user was given at RUNTIME (a pick onto a spare)
+   * when his entry on it is released or cleared. Without this the strap stays
+   * in his hrDeviceIds and its next packet resolves to him by ownership —
+   * auto-assigning him onto it again. Config-given straps are never removed.
+   * @returns {boolean} whether a strap was dropped
+   */
+  releaseRuntimeStrap(userId, deviceId) {
+    if (!userId || deviceId == null) return false;
+    const key = String(deviceId);
+    const user = this.getUserById(userId) || this.getUser?.(userId) || null;
+    if (!user || user.configuredHrDeviceIds?.has(key) || !user.hrDeviceIds?.has(key)) return false;
+    user.hrDeviceIds.delete(key);
+    user._pendingHR?.delete?.(key);
+    this._rebuildOwnershipIndex();
+    getLogger().info('usermanager.runtime_strap_released', { userId: user.id, deviceId: key });
+    return true;
+  }
+
   setAssignmentLedger(ledger, { onChange } = {}) {
     this.assignmentLedger = ledger || null;
     this._onLedgerChange = typeof onChange === 'function' ? onChange : null;
