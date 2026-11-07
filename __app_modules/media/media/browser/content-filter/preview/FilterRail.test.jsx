@@ -64,4 +64,9 @@ describe('FilterRail', () => {
     fireEvent.click(screen.getByRole('button', { name: /peek unfiltered/i }));
     expect(peek).toHaveBeenCalledWith('b');
   });
+
+  it('labels a scene piece with no label as "Scene" + effect word', () => {
+    setup({ lastFired: { id: 's1', effect: 'blur', in: 100, scene: 'sc1' } });
+    expect(screen.getAllByText('Scene blurred').length).toBeGreaterThan(0);
+  });
 });

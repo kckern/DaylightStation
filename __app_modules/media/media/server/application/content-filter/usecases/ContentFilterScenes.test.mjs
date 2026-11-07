@@ -98,6 +98,35 @@ describe('ContentFilterScenes', () => {
   });
 });
 
+describe('ContentFilterScenes workshop', () => {
+  it('ruleCue writes an effect, keeps other fields, off = disabled, profile clears, unknown = null', async () => {
+    const repo = memRepo();
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet, clock });
+    expect(await uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'bleep' })).toEqual({ effect: 'bleep' });
+    expect(repo.state.override.cueOverrides.va1).toEqual({ effect: 'bleep' });
+    expect(repo.state.override.sync.part).toBe('9');
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'off' });
+    expect(repo.state.override.cueOverrides.va1).toEqual({ disabled: true });
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'profile' });
+    expect(repo.state.override.cueOverrides).toEqual({});
+    expect(await uc.ruleCue({ ratingKey: '5', cueId: 'nope', effect: 'mute' })).toBeNull();
+    await expect(uc.ruleCue({ ratingKey: '5', cueId: 'va1', effect: 'explode' })).rejects.toThrow('unknown cue effect');
+  });
+
+  it('draftCard asks once with the usage tags and stores the draft on that scene only', async () => {
+    const repo = memRepo(); const calls = [];
+    const ai = { chat: async (m, o) => { calls.push({ m, o }); return 'They escape.'; } };
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, aiGateway: ai, logger: quiet, clock });
+    repo.state.refined.scenes[0].card = { text: 'Old.' };
+    expect(await uc.draftCard({ ratingKey: '5', sceneId: 'sc-va1' })).toEqual({ card: { text: 'They escape.', at: '2026-11-06' } });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].o.usageTags).toEqual({ app: 'media', feature: 'content-filter-cards' });
+    expect(repo.state.refined.scenes[0].card.text).toBe('They escape.');
+    expect(repo.state.refined.scenes[1].card).toBeUndefined();
+    expect(await uc.draftCard({ ratingKey: '5', sceneId: 'nope' })).toBeNull();
+  });
+});
+
 describe('cleanCard', () => {
   it('trims quotes and whitespace', () => { expect(cleanCard('  “Hi there.” \n')).toBe('Hi there.'); });
   it('rejects empty or too long', () => { expect(cleanCard('')).toBeNull(); expect(cleanCard('a'.repeat(91))).toBeNull(); });

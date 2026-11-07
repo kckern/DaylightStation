@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFilterPreview, previewStore } from './previewStore.js';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
+import WorkshopPanel from './WorkshopPanel.jsx';
 import './FilterRail.scss';
 
 const EFFECT_WORD = {
@@ -15,6 +16,8 @@ const EFFECT_WORD = {
   blackout: 'blacked out', skip: 'skipped', 'skip-card': 'skipped', 'title-card': 'card',
 };
 export const effectWord = (e) => EFFECT_WORD[e] || e || '';
+/** A row's label; scene pieces carry none, so fall back to "Scene" + effect word. */
+export const rowLabel = (item) => item?.label || `Scene ${effectWord(item?.effect)}`.trim();
 
 const NEXT_COUNT = 5;
 
@@ -31,7 +34,7 @@ export function upcomingItems(cues, scenes, position, count = NEXT_COUNT) {
       if (seen.has(sid)) continue;
       seen.add(sid);
       const scene = sceneById.get(sid);
-      items.push({ id: sid, kind: 'scene', cue, in: cue.in, effect: cue.effect, label: scene?.label || cue.label || sid });
+      items.push({ id: sid, kind: 'scene', cue, in: cue.in, effect: cue.effect, label: scene?.label || cue.label || '' });
     } else {
       items.push({ id: String(cue.id), kind: 'cue', cue, in: cue.in, effect: cue.effect, label: cue.label || String(cue.id) });
     }
@@ -71,7 +74,7 @@ export default function FilterRail({ position = 0 }) {
         {last ? (
           <>
             <div className="filter-rail__last">
-              <span className="filter-rail__label">{last.label}</span>
+              <span className="filter-rail__label">{rowLabel(last)}</span>
               <span className="filter-rail__effect">{effectWord(last.effect)}</span>
             </div>
             <button type="button" className="filter-rail__btn" aria-label="Replay last" onClick={() => previewStore.replayLast()}>Replay last</button>
@@ -91,7 +94,7 @@ export default function FilterRail({ position = 0 }) {
                   className={`filter-rail__row${selectedId === it.id ? ' is-selected' : ''}`}
                   onClick={() => select(it)}
                 >
-                  <span className="filter-rail__label">{it.label}</span>
+                  <span className="filter-rail__label">{rowLabel(it)}</span>
                   <span className="filter-rail__effect">{effectWord(it.effect)}</span>
                   <span className="filter-rail__away">{Math.max(0, Math.round(it.in - position))}s</span>
                 </button>
@@ -103,6 +106,8 @@ export default function FilterRail({ position = 0 }) {
           <button type="button" className="filter-rail__btn" aria-label="Peek unfiltered" onClick={() => previewStore.peek(selectedId)}>Peek unfiltered</button>
         ) : null}
       </section>
+
+      <WorkshopPanel />
     </aside>
   );
 }

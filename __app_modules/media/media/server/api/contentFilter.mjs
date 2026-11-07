@@ -49,6 +49,8 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
   // Scenes: the grown-up's review (Admin -> Content filter -> Scenes).
   //   GET  /:ratingKey/scenes?profile=family     -> { title, calibration, scenes }
   //   POST /:ratingKey/scenes/cards {all, force} -> { drafted, scenes }   (LLM drafts)
+  //   POST /:ratingKey/scenes/:sceneId/card -> { card }   (redraft one)
+  //   PUT  /:ratingKey/cues/:cueId {effect, disabled} -> { ruling }
   //   PUT  /:ratingKey/scenes/:sceneId {effect, disabled, card, by} -> { ruling }
   if (contentFilterScenes) {
     const rk = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
@@ -78,6 +80,30 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         return res.status(400).json({ error: error.message });
       }
       if (!ruling) return res.status(404).json({ error: 'no such scene', sceneId });
+      res.json({ ruling });
+    }));
+    router.post('/:ratingKey/scenes/:sceneId/card', asyncHandler(async (req, res) => {
+      const sceneId = String(req.params.sceneId).replace(/[^a-z0-9_-]/gi, '');
+      let out;
+      try {
+        out = await contentFilterScenes.draftCard({ ratingKey: rk(req), sceneId, profileName: profileOf(req) });
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (!out) return res.status(404).json({ error: 'no such scene', sceneId });
+      res.json(out);
+    }));
+
+    router.put('/:ratingKey/cues/:cueId', asyncHandler(async (req, res) => {
+      const cueId = String(req.params.cueId).replace(/[^a-z0-9_-]/gi, '');
+      const { effect, disabled, by } = req.body || {};
+      let ruling;
+      try {
+        ruling = await contentFilterScenes.ruleCue({ ratingKey: rk(req), cueId, effect, disabled, by });
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (!ruling) return res.status(404).json({ error: 'no such cue', cueId });
       res.json({ ruling });
     }));
   }

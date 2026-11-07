@@ -34,3 +34,16 @@
   &__btn { width: auto; }
   &__row.is-selected { border-color: var(--ds-accent); background: var(--ds-accent-subtle); }
 }
+
+.filter-rail {
+  &__buttons { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); margin-bottom: var(--ds-space-2); }
+  &__btn.is-selected { border-color: var(--ds-accent); background: var(--ds-accent-subtle); }
+  &__btn:disabled { opacity: 0.5; cursor: default; }
+  &__card { padding: var(--ds-space-2); border: 1px dashed var(--ds-border); border-radius: var(--ds-radius-sm); margin-bottom: var(--ds-space-2); }
+  &__card-input {
+    width: 100%; box-sizing: border-box; min-height: 4em; margin-bottom: var(--ds-space-2);
+    background: var(--ds-bg-elevated); color: inherit; border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-sm); padding: var(--ds-space-2); font: inherit;
+  }
+  &__error { color: var(--ds-danger, var(--ds-text-primary)); margin-top: var(--ds-space-2); }
+}
