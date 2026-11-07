@@ -65,6 +65,14 @@ describe('FilterRail', () => {
     expect(peek).toHaveBeenCalledWith('b');
   });
 
+  it('peeks a measured cue (va123#0) by its base id', () => {
+    const peek = vi.spyOn(previewStore, 'peek');
+    setup({ cues: [{ id: 'va123#0', in: 100, out: 101, effect: 'mute', label: 'w' }] });
+    fireEvent.click(screen.getAllByTestId('filter-rail-next')[0]);
+    fireEvent.click(screen.getByRole('button', { name: /peek unfiltered/i }));
+    expect(peek).toHaveBeenCalledWith('va123');
+  });
+
   it('labels a scene piece with no label as "Scene" + effect word', () => {
     setup({ lastFired: { id: 's1', effect: 'blur', in: 100, scene: 'sc1' } });
     expect(screen.getAllByText('Scene blurred').length).toBeGreaterThan(0);

@@ -255,6 +255,23 @@ describe('useContentFilter', () => {
     vi.useRealTimers();
   });
 
+  it('skip-card: a film the viewer had paused stays paused after the card', () => {
+    vi.useFakeTimers();
+    const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped.', holdSec: 2.5 }] };
+    const el = makeFakeEl();
+    el.paused = true;
+    const transport = { seek: vi.fn((s) => { el.currentTime = s; }) };
+    const hook = renderHook(() => useContentFilter({ getMediaEl: () => el, transport, edl: scEdl, profile: { categories: {} }, enabled: true }));
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    expect(hook.result.current.activeCard.text).toBe('Skipped.');
+    expect(transport.seek).toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(2600); });
+    expect(el.play).not.toHaveBeenCalled();
+    expect(hook.result.current.activeCard).toBeNull();
+    expect(isSkipCardPaused()).toBe(false);
+    vi.useRealTimers();
+  });
+
   it('skip-card: rewinding into a skipped scene skips it again', () => {
     vi.useFakeTimers();
     const scEdl = { cues: [{ id: 'sc', effect: 'skip-card', category: 'x', in: 10, out: 40, text: 'Skipped.', holdSec: 2.5 }] };

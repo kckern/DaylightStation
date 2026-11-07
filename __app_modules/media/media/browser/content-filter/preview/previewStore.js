@@ -37,6 +37,7 @@ const NOOP_BINDING = Object.freeze({
 
 let snapshot = INITIAL;
 let binding = NOOP_BINDING;
+let owner = null;
 const listeners = new Set();
 
 function notify() {
@@ -67,11 +68,16 @@ export const previewStore = {
   bind(handlers) {
     const mine = { ...NOOP_BINDING, ...handlers };
     binding = mine;
-    return () => { if (binding === mine) binding = NOOP_BINDING; };
+    owner = mine;
+    const unbind = () => { if (binding === mine) binding = NOOP_BINDING; };
+    // Empty the store, but only while this binding is still the latest one bound.
+    unbind.reset = () => { if (owner === mine) previewStore.reset(); };
+    return unbind;
   },
   /** Back to the empty, closed snapshot with no binding (player unmount; tests). */
   reset() {
     binding = NOOP_BINDING;
+    owner = null;
     snapshot = INITIAL;
     notify();
   },

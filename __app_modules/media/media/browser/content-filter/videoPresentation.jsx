@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import { useFilterData } from './useFilterData.js';
-import { useContentFilter } from './useContentFilter.js';
+import { useContentFilter, baseId } from './useContentFilter.js';
 import { FilterOverlay } from './FilterOverlay.jsx';
 import { filterMode } from './filterMode.js';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
@@ -42,6 +42,8 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   // Unfiltered peek: ids the preview asked to play once unfiltered. useContentFilter
   // reads it each tick and removes an id once playback passes that item's out.
   const bypassRef = useRef(new Set());
+  // A peek belongs to the title it was asked on: a new title starts with none.
+  useEffect(() => { bypassRef.current.clear(); }, [filterContentId]);
   const loggedRef = useRef(null);
   useEffect(() => {
     if (!filterContentId || mode.reason === 'loading') return;
@@ -126,11 +128,15 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
 
   const openSurround = useCallback(() => {
     if (previewStore.getSnapshot().open) { closeSurround(); return; }
-    surroundOpen(FILTER_SURROUND);
+    if (surroundOpen(FILTER_SURROUND) === false) {
+      logger().info('content-filter.surround.open-refused', { ratingKey: ratingKeyRef.current });
+      return;
+    }
     previewStore.publish({ open: true });
     logger().info('content-filter.surround.opened', { ratingKey: ratingKeyRef.current });
   }, [surroundOpen, closeSurround]);
 
+  const unbindRef = useRef(null);
   useEffect(() => {
     const seek = (s) => {
       logger().debug('content-filter.seek', { to: +s.toFixed(2) });
@@ -145,7 +151,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
       seek,
       play,
       peek: (id) => {
-        const items = cuesRef.current.filter((c) => c.id === id || c.scene === id || String(c.id).split(/[#@]/)[0] === id);
+        const items = cuesRef.current.filter((c) => c.id === id || c.scene === id || baseId(c.id) === id);
         if (!items.length) { logger().warn('content-filter.peek.unknown', { id }); return; }
         bypassRef.current.add(id);
         const start = Math.min(...items.map((c) => c.in));
@@ -155,6 +161,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
       refresh: () => reloadFilterData(),
       close: closeSurround,
     });
+    unbindRef.current = unbind;
     return unbind;
   }, [filterTransport, getMediaEl, reloadFilterData, closeSurround]);
 
@@ -172,7 +179,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
   // Player gone: close an open surround and empty the store.
   useEffect(() => () => {
     if (previewStore.getSnapshot().open) closeRef.current?.();
-    previewStore.reset();
+    unbindRef.current?.reset?.(); // only if this player still owns the store
   }, []);
 
   return {
@@ -183,7 +190,7 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
           theme={filterData?.profile?.theme || undefined}
           art={filterCardArt}
           bumper={bumperShown ? { summary: filterSummaryLine } : null}
-          badge={{ state: badgeState, active: filterActive, onOpen: openSurround }}
+          badge={{ state: badgeState, active: filterActive, onOpen: surround.available === false || badgeState === 'failed' ? undefined : openSurround }}
         />
       ),
   };

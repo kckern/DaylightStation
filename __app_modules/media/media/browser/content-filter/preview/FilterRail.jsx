@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFilterPreview, previewStore } from './previewStore.js';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
+import { baseId } from '../useContentFilter.js';
 import WorkshopPanel from './WorkshopPanel.jsx';
 import SettingsPanel from './SettingsPanel.jsx';
 import './FilterRail.scss';
@@ -113,7 +114,7 @@ export default function FilterRail({ position = 0 }) {
           </ul>
         )}
         {selectedId != null ? (
-          <button type="button" className="filter-rail__btn" aria-label="Peek unfiltered" onClick={() => previewStore.peek(selectedId)}>Peek unfiltered</button>
+          <button type="button" className="filter-rail__btn" aria-label="Peek unfiltered" onClick={() => previewStore.peek(baseId(selectedId))}>Peek unfiltered</button>
         ) : null}
       </section>
 

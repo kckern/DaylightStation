@@ -257,6 +257,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         setFireCount((n) => n + 1);
         setLastFired(sc);
         transport?.seek?.(sc.out + SKIP_EPSILON);
+        const wasPlaying = !el.paused; // a film the viewer paused stays paused after the card
         try { el.pause?.(); } catch (_) { /* ignore */ }
         setSkipCardPaused(true); // suppress the buffering spinner during the deliberate pause
         setActiveCard({ text: sc.text || 'Scene skipped.' });
@@ -269,7 +270,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
             logger().warn?.('content-filter.skip-card.reseek', { cue: sc.id, at: +el.currentTime.toFixed(2) });
             transport?.seek?.(sc.out + SKIP_EPSILON);
           }
-          try { el.play?.(); } catch (_) { /* ignore */ }
+          if (wasPlaying) { try { el.play?.(); } catch (_) { /* ignore */ } }
           setSkipCardPaused(false);
           setActiveCard(null);
         }, holdMs);
@@ -485,7 +486,7 @@ function releaseEntered(entered, { el, sfx, transport }, mem) {
   entered.clear();
 }
 
-const baseId = (id) => String(id).split(/[#@]/)[0];
+export const baseId = (id) => String(id).split(/[#@]/)[0];
 
 /** Does bypass `id` cover `cue` (its id, its base id, or its scene)? */
 const coveredBy = (cue, id) => cue.id === id || cue.scene === id || baseId(cue.id) === id;

@@ -54,6 +54,8 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
   //   PUT  /:ratingKey/scenes/:sceneId {effect, disabled, card, by} -> { ruling }
   if (contentFilterScenes) {
     const rk = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
+    // A scene/cue id is used as-is or refused: silently stripping `va123#0` to `va1230` would rule the wrong item.
+    const cleanId = (raw) => { const v = String(raw); return v === v.replace(/[^a-z0-9_-]/gi, '') ? v : null; };
     const profileOf = (req) => String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
 
     // Settings: four plain choices, for this film (override.profilePatch) or everywhere (the profile).
@@ -101,7 +103,8 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     }));
 
     router.put('/:ratingKey/scenes/:sceneId', asyncHandler(async (req, res) => {
-      const sceneId = String(req.params.sceneId).replace(/[^a-z0-9_-]/gi, '');
+      const sceneId = cleanId(req.params.sceneId);
+      if (sceneId === null) return res.status(400).json({ error: 'invalid id', id: req.params.sceneId });
       const { effect, disabled, card, by } = req.body || {};
       let ruling;
       try {
@@ -113,7 +116,8 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       res.json({ ruling });
     }));
     router.post('/:ratingKey/scenes/:sceneId/card', asyncHandler(async (req, res) => {
-      const sceneId = String(req.params.sceneId).replace(/[^a-z0-9_-]/gi, '');
+      const sceneId = cleanId(req.params.sceneId);
+      if (sceneId === null) return res.status(400).json({ error: 'invalid id', id: req.params.sceneId });
       let out;
       try {
         out = await contentFilterScenes.draftCard({ ratingKey: rk(req), sceneId, profileName: profileOf(req) });
@@ -125,7 +129,8 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     }));
 
     router.put('/:ratingKey/cues/:cueId', asyncHandler(async (req, res) => {
-      const cueId = String(req.params.cueId).replace(/[^a-z0-9_-]/gi, '');
+      const cueId = cleanId(req.params.cueId);
+      if (cueId === null) return res.status(400).json({ error: 'invalid id', id: req.params.cueId });
       const { effect, disabled, by } = req.body || {};
       let ruling;
       try {

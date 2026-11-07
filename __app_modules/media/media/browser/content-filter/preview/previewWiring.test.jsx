@@ -113,6 +113,45 @@ describe('content-filter preview wiring (useMediaVideoPresentation)', () => {
     expect(el.muted).toBe(true);
   });
 
+  it('a peek on one title does not bypass the same cue id on the next title', async () => {
+    const cues = [{ id: 'va1', effect: 'mute', in: 30, out: 31, category: 'language/x', precision: 'ms' }];
+    window.history.replaceState({}, '', '/');
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => payload(cues) })));
+    const el = makeEl();
+    const getMediaEl = () => el;
+    const { rerender } = renderHook(({ media }) => useMediaVideoPresentation({ media, isPlex: true, getMediaEl }), {
+      initialProps: { media: { assetId: 'plex:60', title: 'A' } },
+    });
+    await waitFor(() => expect(previewStore.getSnapshot().cues.length).toBe(1));
+    act(() => previewStore.peek('va1'));
+    rerender({ media: { assetId: 'plex:61', title: 'B' } });
+    await waitFor(() => expect(previewStore.getSnapshot().ratingKey).toBe('61'));
+    await waitFor(() => expect(previewStore.getSnapshot().cues.length).toBe(1));
+    act(() => { el.currentTime = 30.5; el.dispatchEvent(new Event('timeupdate')); });
+    expect(el.muted).toBe(true);
+  });
+
+  it('a host that is absent or a failed badge leaves the badge unclickable; a disabled host does not open', async () => {
+    const none = render({ fetchImpl: async () => ({ ok: true, status: 200, json: async () => payload([]) }) });
+    await waitFor(() => expect(none.result.current.overlay?.props.badge).toBeTruthy());
+    expect(none.result.current.overlay.props.badge.onOpen).toBeUndefined();
+    none.unmount();
+
+    const failed = render({ surround: { open: vi.fn(), close: vi.fn(), isOpen: false, available: true }, fetchImpl: async () => ({ ok: false, status: 503 }) });
+    await waitFor(() => expect(failed.result.current.overlay?.props.badge?.state).toBe('failed'), { timeout: 5000 });
+    expect(failed.result.current.overlay.props.badge.onOpen).toBeUndefined();
+    failed.unmount();
+
+    const refusing = { open: vi.fn(() => false), close: vi.fn(), isOpen: false, available: true };
+    const off = render({ surround: refusing, fetchImpl: async () => ({ ok: true, status: 200, json: async () => payload([]) }) });
+    await waitFor(() => expect(off.result.current.overlay?.props.badge?.onOpen).toBeTypeOf('function'));
+    mockLogger.info.mockClear();
+    act(() => off.result.current.overlay.props.badge.onOpen());
+    expect(refusing.open).toHaveBeenCalledTimes(1);
+    expect(previewStore.getSnapshot().open).toBe(false);
+    expect(mockLogger.info).not.toHaveBeenCalledWith('content-filter.surround.opened', expect.anything());
+  });
+
   it('refresh refetches and re-resolves without dropping the filter', async () => {
     let n = 0;
     const first = [{ id: 'a', effect: 'mute', in: 30, out: 31, category: 'language/x', precision: 'ms' }];

@@ -16,6 +16,22 @@ describe('previewStore', () => {
     await expect(previewStore.refresh()).resolves.toBeUndefined();
   });
 
+  it('a stale binder cannot reset a newer binder’s store', () => {
+    const unbindA = previewStore.bind({ seek: vi.fn() });
+    previewStore.publish({ title: 'A', ratingKey: '1' });
+    const seekB = vi.fn();
+    const unbindB = previewStore.bind({ seek: seekB });
+    previewStore.publish({ title: 'B', ratingKey: '2' });
+    unbindA();
+    unbindA.reset();
+    expect(previewStore.getSnapshot().title).toBe('B');
+    previewStore.seekTo(5);
+    expect(seekB).toHaveBeenCalledWith(5);
+    unbindB();
+    unbindB.reset();
+    expect(previewStore.getSnapshot().title).toBeNull();
+  });
+
   it('publish notifies subscribers once per call', () => {
     const fn = vi.fn();
     const unsub = previewStore.subscribe(fn);

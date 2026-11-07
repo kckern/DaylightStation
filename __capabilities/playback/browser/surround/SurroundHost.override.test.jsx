@@ -4,6 +4,7 @@ import { render, act, cleanup } from '@testing-library/react';
 import SurroundHost from "./SurroundHost.jsx";
 import { useSurroundOverride } from "./surroundOverride.js";
 import { registerSurroundModule } from "./registry.js";
+import { SurroundSettingContext } from "./SurroundSettingContext.js";
 
 const makeLogger = () => {
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() };
@@ -60,6 +61,22 @@ describe('SurroundHost override', () => {
     expect(queryByTestId('rail')).not.toBeNull();
     rerender(tree('b'));
     expect(queryByTestId('rail')).toBeNull();
+  });
+
+  it('open is a refused no-op when the surround setting is off', () => {
+    const { queryByTestId } = render(
+      <SurroundSettingContext.Provider value="off">
+        <SurroundHost getPlayerHandle={() => handle} contentId="a" logger={makeLogger()} pollMs={50}>
+          <Child />
+        </SurroundHost>
+      </SurroundSettingContext.Provider>,
+    );
+    let r;
+    act(() => { r = api.open(DATA); });
+    expect(r).toBe(false);
+    expect(queryByTestId('rail')).toBeNull();
+    expect(api.isOpen).toBe(false);
+    expect(api.available).toBe(false);
   });
 
   it('is a no-op outside a host', () => {

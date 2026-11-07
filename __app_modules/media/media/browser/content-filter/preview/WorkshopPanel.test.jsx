@@ -63,6 +63,14 @@ describe('WorkshopPanel', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  it('a measured cue id (va123#0) is ruled by its base id', async () => {
+    DaylightAPI.mockResolvedValue({ ruling: {} });
+    setup({ selected: { id: 'va123#0', effect: 'mute', in: 5, out: 6 } });
+    fireEvent.click(screen.getByRole('button', { name: 'Bleep' }));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/77/cues/va123', { effect: 'bleep' }, 'PUT');
+  });
+
   it('a selected cue offers Off/Mute/Bleep/Blur/Skip and PUTs to the cue route', async () => {
     DaylightAPI.mockResolvedValue({ ruling: {} });
     setup({ selected: { id: 'va1', label: 'A word', effect: 'mute', in: 5, out: 6 } });

@@ -45,6 +45,7 @@ describe('FilterBadge', () => {
     const { container } = render(<div onClick={parent}><FilterBadge state="certified" active={false} onOpen={onOpen} /></div>);
     const el = container.querySelector('[data-filter-badge]');
     expect(el.tabIndex).toBe(-1);
+    expect(el.getAttribute('role')).toBe('button');
     expect(el.style.pointerEvents).toBe('auto');
     fireEvent.keyDown(el, { key: 'Enter' });
     expect(onOpen).not.toHaveBeenCalled();

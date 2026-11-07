@@ -65,6 +65,7 @@ export function FilterBadge({ state, active = false, onOpen }) {
       data-active={active ? '1' : undefined}
       aria-hidden={clickable ? undefined : 'true'}
       aria-label={clickable ? 'Content filter preview' : undefined}
+      role={clickable ? 'button' : undefined}
       tabIndex={clickable ? -1 : undefined}
       onClick={handleClick}
       style={{

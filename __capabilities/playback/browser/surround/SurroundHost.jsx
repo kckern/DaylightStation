@@ -269,9 +269,14 @@ export default function SurroundHost({
 
   const overrideApi = useMemo(() => ({
     open: (data) => {
-      if (!data || typeof data !== 'object') return;
+      if (!data || typeof data !== 'object') return false;
+      if (disabled) {
+        hostLogger.debug('surround.override.refused', { surroundId: data.id ?? null, mode });
+        return false;
+      }
       hostLogger.info('surround.override.open', { surroundId: data.id ?? null });
       setOverride(data);
+      return true;
     },
     close: () => {
       setOverride((prev) => {
@@ -280,7 +285,8 @@ export default function SurroundHost({
       });
     },
     isOpen: !!override,
-  }), [hostLogger, override]);
+    available: !disabled,
+  }), [hostLogger, override, disabled, mode]);
 
   // A new item (seam id or polled id) ends any on-demand surround.
   const idKey = `${contentId == null ? '' : JSON.stringify(contentId)}|${current.contentId ?? ''}`;

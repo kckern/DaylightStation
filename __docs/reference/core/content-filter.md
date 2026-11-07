@@ -363,10 +363,10 @@ A grown-up reviews what the filter does while the film plays: a sidebar and a ti
 open around the video, which keeps playing. Design:
 `ops:docs/superpowers/specs/2026-11-06-content-filter-preview-surround-design.md`.
 
-**Default-on rule** (`filterMode.js`, `decideFilterMode`). A Plex title is filtered with
+**Default-on rule** (`filterMode.js`, `filterMode`). A Plex title is filtered with
 no flag when the API reports `certification.ready === true` (the refined EDL level meets
 the profile's `requiresCertification`). `?filter=0` forces off (no fetch); `?filter=1`
-forces on, provisional EDLs included. A load that `failed` is on only under `?filter=1`;
+forces on, provisional EDLs included — but only when there is filter data to apply: a title with none (404) is not filtered even under `?filter=1`. A load that `failed` is on only under `?filter=1`;
 either way the crossed shield shows. `content-filter.default.on|off` is logged once per
 title with `reason`: `forced-off | forced-on | certified | uncertified | no-data | loading`.
 There is no debug HUD and no `filter-debug` flag.
@@ -378,6 +378,8 @@ on it opens the surround; it takes no focus (`tabIndex -1`), so a D-pad or remot
 land on it — a child on the TV cannot open the review tools by accident. Click
 stops propagation so it does not toggle playback.
 
+**Cue ids.** Measured cues carry `#i`/`@k` suffixes (`va123#0`). The rail and workshop send the base id (`baseId`, exported from `useContentFilter.js`); the cue and scene routes answer 400 for an id that is not `[a-z0-9_-]` rather than stripping it.
+
 **Surround seam.** `videoPresentation.jsx` calls `useSurroundOverride()`
 (`__capabilities/playback/browser/surround-override.mjs`, context set by `SurroundHost`),
 whose `open(data)` shows an on-demand surround and `close()` removes it, without a surround
@@ -385,11 +387,10 @@ definition in the data volume. The content-filter surround is `FILTER_SURROUND` 
 `videoPresentation.jsx`: rail `content-filter-rail` in the right region and
 `content-filter-timeline` at the bottom, registered in
 `__app_modules/media/media/browser/surround/builtins.js`. The surround closes when the host
-replaces it (`by: host`) or the player unmounts.
+replaces it (`by: host`) or the player unmounts. It closes with the rail's ✕ (or the shield) only: there is no Escape handler, because the player owns Escape. When the surround setting is `off`, `open()` is refused (returns `false`, `available` is false), nothing is marked open and the shield is not clickable; the shield is also not clickable when there is no `SurroundHost` or the load `failed`.
 
 **Preview store** (`browser/content-filter/preview/previewStore.js`): the live state the
-rail and timeline read, and their actions. `seekTo(t)`; `jumpToCue(id)` seeks 4 s before the
-cue; `replayLast()` replays the last fired cue; `peek(id)` plays a cue unfiltered once;
+rail and timeline read, and their actions. `seekTo(t)`; `jumpToCue(cue)` takes a cue object and seeks 4 s before it; `replayLast()` replays the last fired cue; `peek(id)` plays a cue unfiltered once;
 `refresh()` re-fetches filter data after a ruling; `close()`.
 
 **Rail** (`FilterRail.jsx`, two tabs). *Review*: last fired cue/scene with Replay, the next 5
@@ -398,9 +399,9 @@ upcoming with Jump and Peek, and the `WorkshopPanel`. *Settings*: `SettingsPanel
 next cue buttons.
 
 **Workshop actions** (`WorkshopPanel.jsx`, writes via `useFilterWrite.js`), on the cue or
-scene selected in the rail. Cue: *Tags only* (off), *Blackout*, *Skip*, or *Profile* (clear
-the ruling), written to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene: the same four
-effects via `PUT /{rk}/scenes/{id}`, plus **Draft with AI / Regenerate** (one scene's card,
+scene selected in the rail. Cue: *Off*, *Mute*, *Bleep*, *Blur*, *Skip*, or *Profile* (clear
+the ruling), written to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene: *Tags only* (off),
+*Blackout*, *Skip*, *Profile* via `PUT /{rk}/scenes/{id}`, plus **Draft with AI / Regenerate** (one scene's card,
 `POST /{rk}/scenes/{id}/card`), **Edit**, **Approve** and **Withdraw** (the same
 `sceneOverrides` rulings as the admin screen). Each write refreshes the store so the change
 applies to the next pass. The Settings tab has **This film / Everywhere** and **Reset this film**.
@@ -437,7 +438,7 @@ one of two scopes:
 Routes (all take partial `settings`; omitted keys are left as they are):
 
 ```text
-PUT    /api/v1/content-filter/{rk}/settings?profile=   { settings } -> { profilePatch }
+PUT    /api/v1/content-filter/{rk}/settings?profile=   { settings } -> { profilePatch }   (profile defaults to `family`)
 DELETE /api/v1/content-filter/{rk}/settings                         -> { cleared }
 PUT    /api/v1/content-filter/profiles/{name}/settings  { settings } -> { profile }
 PUT    /api/v1/content-filter/{rk}/cues/{cueId}         { effect?, disabled?, by? } -> { ruling }

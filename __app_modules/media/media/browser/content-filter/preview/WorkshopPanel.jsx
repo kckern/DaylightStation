@@ -7,6 +7,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useFilterPreview, previewStore } from './previewStore.js';
+import { baseId } from '../useContentFilter.js';
 import { useFilterWrite, errText } from './useFilterWrite.js';
 import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
@@ -39,11 +40,12 @@ export default function WorkshopPanel() {
   const isScene = sel.kind === 'scene';
 
   if (!isScene) {
-    const ruling = snap.override?.cueOverrides?.[sel.id] || {};
+    const cueId = baseId(sel.id); // measured ids (va123#0) are ruled by their base id
+    const ruling = snap.override?.cueOverrides?.[cueId] || {};
     const cur = ruling.disabled ? 'off' : ruling.effect;
     const rule = (effect) => write(
-      () => DaylightAPI(`${base(rk)}/cues/${encodeURIComponent(sel.id)}`, { effect }, 'PUT'),
-      'content-filter.cue.ruled', { ratingKey: rk, cue: sel.id, effect },
+      () => DaylightAPI(`${base(rk)}/cues/${encodeURIComponent(cueId)}`, { effect }, 'PUT'),
+      'content-filter.cue.ruled', { ratingKey: rk, cue: cueId, effect },
     );
     return (
       <section className="filter-rail__section" data-testid="workshop-panel">
