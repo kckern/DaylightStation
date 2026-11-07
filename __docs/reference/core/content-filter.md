@@ -209,7 +209,10 @@ filtered title plays, including D-pad TVs.
   BTTF's 0–18 s credits, so not on a resume), a card shows for about 4 s over playback without pausing it: the clear logo
   (hidden if it fails to load), "Edited for content", and a summary built from the
   resolved cues by `filterSummary.js`, e.g. "152 words muted · 4 scenes blurred · credits
-  skipped". It yields to a skip-card. Logs `content-filter.bumper.shown`.
+  skipped". Counts are of THINGS, not resolved pieces (`unitKey`): a scene, a subject group, or a base
+  cue id (`va123#0@4` → `va123`) however many keyframe pieces a tracked blur was split into; a word
+  once across its tone piece and mute remainders (a merged tone counts the `words` it carries).
+  BTTF: 271 blur pieces → "37 scenes blurred". It yields to a skip-card. Logs `content-filter.bumper.shown`.
   To see it on a title with a saved resume, start from the top with
   `?play=plex:<id>&start=0` (see `content/content-playback.md`, start position params).
 - **Badge.** A small shield bottom-right at about 40% opacity; it glows yellow while an
@@ -566,7 +569,8 @@ plays from 4 s before." and how many more marks are close by. Click a mark: it i
 playback jumps 4 s before it (a scene to its first piece); click elsewhere: seek there. The
 playhead carries the current time on the axis under it, the running time at the right end.
 **Previous / Next** step one stop (a scene is one stop) and their hints name the target and
-its time. The legend names each kind with its count; a kind with none is dimmed.
+its time. The legend names each kind with its count — the same unit counting as the bumper summary
+(`kindCounts` → `filterSummary.js` `uniqueUnits` / `wordUnits`); a kind with none is dimmed.
 
 **Workshop actions** (`WorkshopPanel.jsx`, writes via `useFilterWrite.js`), on the cue or
 scene selected in the rail. Cue: *Off*, *Mute*, *Bleep*, *Blur*, *Skip*, or *Profile* (clear
