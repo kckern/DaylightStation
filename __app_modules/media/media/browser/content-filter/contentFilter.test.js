@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveEffect, resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
+import { filterSummary } from './filterSummary.js';
 
 describe('resolveEffect', () => {
   it('matches the longest category prefix and returns the effect + params', () => {
@@ -453,5 +454,70 @@ describe('channel-matched effects (R1, R2)', () => {
     const edl = { cues: [{ id: 'h', type: 'mute', category: 'violence/graphic', label: 'Gunfire can be heard', in: 30, out: 33 }] };
     const out = resolveEffectiveCues({ edl, profile: { categories: { violence: { effect: 'bleep' } } } });
     expect(out.map((c) => c.effect)).toEqual(['mute']);
+  });
+});
+
+describe('word-sized tones and lines (R3, R4)', () => {
+  const zero = { padLeadMs: 0, padTrailMs: 0, approxWidthMs: 0 };
+  const profile = {
+    categories: { language: { effect: 'bleep' } },
+    treatments: { bleep: zero, mute: zero, 'skip-card': { holdSec: 4.5 } },
+  };
+  const run = (cues, p = profile) => resolveEffectiveCues({ edl: { cues }, profile: p });
+  const word = (o) => ({ type: 'mute', category: 'language/profanity', label: 'damn', ...o });
+
+  it('safe-window word: one tone <= 1.5 s centred on the tag, mute for the rest', () => {
+    const out = run([word({ id: 'w', in: 100, out: 106.84, tagIn: 103.4, tagOut: 103.6, precision: 'safe-window' })]);
+    const tones = out.filter((c) => c.effect === 'bleep');
+    expect(tones).toHaveLength(1);
+    expect(tones[0].out - tones[0].in).toBeCloseTo(1.5, 6);
+    expect((tones[0].in + tones[0].out) / 2).toBeCloseTo(103.5, 6);
+    const mutes = out.filter((c) => c.effect === 'mute');
+    expect(mutes).toHaveLength(2);
+    expect(mutes[0].in).toBe(100); expect(mutes[0].out).toBeCloseTo(tones[0].in, 6);
+    expect(mutes[1].in).toBeCloseTo(tones[0].out, 6); expect(mutes[1].out).toBeCloseTo(106.84, 6);
+  });
+
+  it('ms-pinned word: bleep on its span, capped at 1.5 s', () => {
+    const out = run([word({ id: 'p', in: 50, out: 50.4, precision: 'ms' }), word({ id: 'long', in: 80, out: 83, precision: 'ms' })]);
+    const p = out.find((c) => c.id === 'p');
+    expect([p.effect, p.in, p.out]).toEqual(['bleep', 50, 50.4]);
+    const long = out.find((c) => c.id === 'long');
+    expect(long.out - long.in).toBeCloseTo(1.5, 6);
+    expect(out.filter((c) => c.toneRemainder)).toHaveLength(2);
+  });
+
+  it('two tones 0.2 s apart merge into one, counted as two words', () => {
+    const out = run([word({ id: 'a', in: 10, out: 10.4, precision: 'ms' }), word({ id: 'b', in: 10.6, out: 11, precision: 'ms' })]);
+    const tones = out.filter((c) => c.effect === 'bleep');
+    expect(tones).toHaveLength(1);
+    expect([tones[0].in, tones[0].out]).toEqual([10, 11]);
+    expect(filterSummary(out)).toBe('2 words bleeped');
+  });
+
+  it('a merged tone over 1.5 s is capped on its midpoint, mute fills the rest', () => {
+    const out = run([word({ id: 'a', in: 10, out: 11, precision: 'ms' }), word({ id: 'b', in: 11.1, out: 12.2, precision: 'ms' })]);
+    const tone = out.find((c) => c.effect === 'bleep');
+    expect(tone.out - tone.in).toBeCloseTo(1.5, 6);
+    expect((tone.in + tone.out) / 2).toBeCloseTo(11.1, 6);
+    const covered = (t) => out.some((c) => t >= c.in && t < c.out);
+    for (let t = 10; t < 12.2; t += 0.05) expect(covered(t)).toBe(true);
+  });
+
+  it('a said line of 3 s is muted, never a tone', () => {
+    const out = run([{ id: 'l', type: 'mute', category: 'language/x', label: 'He talks about his night out.', in: 20, out: 23, precision: 'ms' }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].effect).toBe('mute');
+  });
+
+  it('a said exchange over 4 s becomes a skip-card with generic text and the profile hold', () => {
+    const out = run([{ id: 'x', type: 'mute', category: 'language/x', label: 'They argue about the plan at length.', in: 30, out: 48, precision: 'ms' }]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ effect: 'skip-card', text: 'Scene skipped.', holdSec: 4.5, in: 30, out: 48 });
+  });
+
+  it('keeps an explicit skip effect on a long line as is', () => {
+    const out = run([{ id: 'x', type: 'mute', effect: 'skip', category: 'language/x', label: 'They argue about the plan at length.', in: 30, out: 48 }]);
+    expect(out[0].effect).toBe('skip');
   });
 });

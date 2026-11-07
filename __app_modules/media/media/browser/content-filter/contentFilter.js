@@ -14,7 +14,7 @@
 
 // Timing a refine pass measured on this file: no approximate widening.
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
-import { cueModality, fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
+import { cueModality, fitEffectToChannel, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
@@ -22,6 +22,13 @@ let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
 
 export const PRECISE = new Set(['ms', 'frame']);
+
+// R3/R4: a tone is word-sized; tones closer than this merge; a said cue that is
+// not a single word is muted up to LINE_MAX_SEC and skipped with a card beyond it.
+export const TONE_MAX_SEC = 1.5;
+export const TONE_MERGE_GAP_SEC = 0.3;
+export const LINE_MAX_SEC = 4;
+const AUDIO_EFFECTS = new Set(['mute', 'bleep', 'duck']);
 
 // Overlay effects can be confined to a region track; the rest act on the whole cue.
 const REGIONAL = new Set(['blur', 'censor-bar', 'pixelate']);
@@ -203,6 +210,31 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // Param precedence: override > cue > profile rule.
     mergeParams(eff, ov, cue, rule);
     if (cardByCue.has(cue.id)) eff.card = cardByCue.get(cue.id);
+    else if (ov.card?.text) eff.card = ov.card.text;
+
+    // R4: a said cue that is not a single word is a line or an exchange. Up to
+    // LINE_MAX_SEC it is muted (never a tone); longer, the scene is skipped behind a card.
+    const isLine = modality === 'said' && (cue.type || kind) && AUDIO_EFFECTS.has(eff.effect)
+      && cue.label && !isWordLabel(cue.label);
+    if (isLine) {
+      const span = cue.tagIn != null && cue.tagOut != null ? cue.tagOut - cue.tagIn : eff.out - eff.in;
+      if (span > LINE_MAX_SEC) {
+        eff.effect = 'skip-card';
+        eff.line = 'exchange';
+        eff.text = eff.card || 'Scene skipped.';
+        delete eff.sound;
+      } else if (eff.effect === 'bleep') {
+        eff.effect = 'mute';
+        delete eff.sound;
+      }
+      if (eff.effect === 'mute') eff.line = 'remark';
+    }
+    // R3: where a tone would sit in a safe window = the tag's instant (mapped onto this file).
+    if (eff.effect === 'bleep' && eff.precision === 'safe-window' && cue.tagIn != null) {
+      const mid = (cue.tagIn + (cue.tagOut ?? cue.tagIn)) / 2;
+      const t = synced && sync ? mapTime(mid, sync) : mid;
+      if (t != null) eff.tagTime = t + (synced && typeof ov.nudgeMs === 'number' ? ov.nudgeMs / 1000 : 0);
+    }
 
     // skip-card is driven by the hook (useContentFilter): on entering [in,out] it
     // seeks to `out`, PAUSES so the seek buffers behind the card, shows the card
@@ -210,7 +242,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // + resolved card text here (no skip+title-card expansion).
     if (eff.effect === 'skip-card') {
       eff.holdSec = profile?.treatments?.['skip-card']?.holdSec ?? 2.5;
-      eff.text = eff.card || eff.text || eff.label || 'Scene skipped.';
+      eff.text = eff.line ? eff.text : (eff.card || eff.text || eff.label || 'Scene skipped.');
       out.push(eff);
       continue;
     }
@@ -220,12 +252,52 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
   }
   const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
+  sizeTones(out);
   out.sort((a, b) => a.in - b.in || a.out - b.out);
   Object.defineProperty(out, 'sceneSummary', { value: sceneSummary, enumerable: false });
   // How many cues fall in scenes this copy does not have (for the debug overlay).
   Object.defineProperty(out, 'notInCut', { value: notInCut, enumerable: false });
   Object.defineProperty(out, 'syncSummary', { value: summarizeSync(sync, { refinedEdl, syncFitsPart }), enumerable: false });
   return out;
+}
+
+/**
+ * R3: a bleep tone is word-sized. Each bleep piece keeps at most TONE_MAX_SEC of
+ * tone (centred on the tag instant in a safe window, else on the piece); the rest
+ * of its window is muted. Tones less than TONE_MERGE_GAP_SEC apart become one tone,
+ * re-capped, with mute filling whatever the tone does not cover. Mutates `out`.
+ */
+function sizeTones(out) {
+  const tones = out.filter((c) => c.effect === 'bleep').sort((a, b) => a.in - b.in);
+  if (!tones.length) return;
+  const keep = (c) => !(c.effect === 'bleep');
+  const rest = out.filter(keep);
+  const remainders = [];
+  const cap = (c, centre) => {
+    const len = c.out - c.in;
+    if (len <= TONE_MAX_SEC) return { ...c, words: c.words || 1 };
+    const lo = Math.min(Math.max(centre - TONE_MAX_SEC / 2, c.in), c.out - TONE_MAX_SEC);
+    const hi = lo + TONE_MAX_SEC;
+    const mute = (id, a, b) => remainders.push({ ...c, id, effect: 'mute', in: a, out: b, toneRemainder: true, words: 0, sound: undefined });
+    if (lo > c.in) mute(`${c.id}#m0`, c.in, lo);
+    if (c.out > hi) mute(`${c.id}#m1`, hi, c.out);
+    return { ...c, in: lo, out: hi, words: c.words || 1 };
+  };
+  const sized = [];
+  for (const c of tones) {
+    const centre = c.tagTime ?? (c.in + c.out) / 2;
+    const t = cap(c, Math.min(Math.max(centre, c.in), c.out));
+    const prev = sized[sized.length - 1];
+    if (prev && t.in - prev.out < TONE_MERGE_GAP_SEC) {
+      const merged = { ...prev, id: prev.id, in: Math.min(prev.in, t.in), out: Math.max(prev.out, t.out), words: prev.words + t.words, merged: true };
+      delete merged.tagTime;
+      // Mute under the join, so nothing audible leaks where the tones met.
+      if (merged.out - merged.in > TONE_MAX_SEC) sized[sized.length - 1] = cap({ ...merged, words: merged.words }, (merged.in + merged.out) / 2);
+      else sized[sized.length - 1] = merged;
+    } else sized.push(t);
+  }
+  out.length = 0;
+  out.push(...rest, ...remainders, ...sized);
 }
 
 /**

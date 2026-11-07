@@ -115,6 +115,16 @@ mute cues are widened more than skips because a narrow window can leak a spoken 
 
 ### Audio effects: holds, bleep tone, pauses
 
+- **Tones are word-sized (R3).** A bleep sounds for one spoken word (a word label) for at
+  most 1.5 s: on the word when ms-pinned, else centred on the tag instant (`tagIn`/`tagOut`
+  mapped through the sync, window midpoint when absent) with mute filling the rest of the
+  window (`toneRemainder` pieces, not counted as words). Tones under 0.3 s apart merge into
+  one (`words` counts them), re-capped on the merged midpoint with mute for the remainder.
+- **Lines and exchanges (R4).** A said cue whose label is not a word: up to 4 s -> `mute`
+  (never a tone); over 4 s (tag span, or window when untagged) -> `skip-card` with the
+  `treatments.skip-card.holdSec` hold and the approved card text, else "Scene skipped.".
+  An explicit `skip`/`skip-card` effect is left alone.
+
 - **Overlapping word cues hold the mute together.** Padding makes neighbouring words
   overlap. Mute and bleep handlers count holds in the per-hook `mem`
   (`muteHolds`, `soundHolds`); only the last cue to exit unmutes or stops the sound,
