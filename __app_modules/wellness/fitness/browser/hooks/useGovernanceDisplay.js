@@ -117,6 +117,8 @@ export function resolveGovernanceDisplay(govState, displayMap = new Map(), zoneM
         targetHeartRate: Number.isFinite(personalTarget) ? personalTarget
           : (targetResult?.rangeMax ?? (zoneSequence.length ? null : display?.targetHeartRate ?? null)),
         holdProgress: source === 'challenge' ? (requirement.holdProgressByUser?.[userId] || null) : null,
+        // The engine freezes holds while the challenge is paused; the bar must too.
+        holdPaused: source === 'challenge' ? Boolean(requirement.paused) : false,
         groupLabel: display?.groupLabel || null,
         pedal: requirement.type === 'cadence_floor' ? {
           rpm: Math.max(0, Math.round(Number(requirement.currentRate) || 0)),

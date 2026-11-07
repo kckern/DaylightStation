@@ -441,6 +441,9 @@ describe('resolveGovernanceDisplay — scoped foreground obligations', () => {
     expect(recovered.rows.map((r) => r.userId)).toEqual(['a', 'b']);
     expect(recovered.rows[0].targetHeartRate).toBe(140);
     expect(recovered.rows[1].holdProgress).toEqual({ elapsedMs: 4000, remainingMs: 6000, totalMs: 10000 });
+    expect(recovered.rows[1].holdPaused).toBe(false);
+    const paused = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [{ ...repairFloor, satisfied: true, actualCount: 4, missingUsers: [] }], challenge: { ...repairChallenge, status: 'failed', paused: true } }), repairProfiles(), repairZones);
+    expect(paused.rows[1].holdPaused).toBe(true);
     expect(recovered.metRows.map((r) => r.userId)).toEqual(['c']);
   });
   it('pending challenges alone never supply a lock explanation', () => {

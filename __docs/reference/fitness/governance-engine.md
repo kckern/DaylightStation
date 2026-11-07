@@ -842,8 +842,21 @@ remains visible while untrusted, without an earned-zone treatment. The HR
 denominator is the displayed obligation's personal target threshold, even if
 several zones above the rider's current zone. The numeric percentage notch tracks
 HR progress and remains within the bar at 0–100%. Nonzero holds add a slim
-secondary visual with accessible individual timing, without visible Holding
-prose or another text line. Cadence blockers use a crank/pedal icon with an
+secondary hold bar (`player/overlays/HoldProgress.jsx`) under the rider's zone
+bar, with accessible individual timing and a quiet label on the same line — no
+Holding prose and no extra text row. The label reads `Hold Ns` (whole seconds
+remaining) while counting, `Keep going` once the rider is below the target zone
+(during the dip grace, or after the engine dropped the hold — the empty track
+stays so nothing jumps), and is blank once the engine reports the hold complete.
+Until then the live estimate never finishes on its own: the fill stops at 98%
+(`HOLD_VISUAL_CAP`) and the label at `Hold 1s`, so a late completion pulse
+cannot show a full bar that the rider has not yet been credited for. The engine only
+re-evaluates a few times per hold, so the fill is never stepped from snapshots:
+it runs one linear `transform: scaleX` CSS animation over the whole hold, entered
+part-way with a negative `animation-delay`, and is re-keyed only when a snapshot
+disagrees with it by more than 500 ms (reset, pause/resume, new total). While the
+challenge is paused (`row.holdPaused`, from `challenge.paused`) the fill is a
+static transform at the engine's frozen elapsed time. Cadence blockers use a crank/pedal icon with an
 accessible pedal OR zone instruction and a compact measurement in the existing
 row. Lock rows use natural height and bounded scrolling rather than blank
 reserved table space. Zone colors use the shared palette; HR strap identity
