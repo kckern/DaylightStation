@@ -34,7 +34,7 @@ export default function SettingsPanel() {
 
   const choose = (key, value) => {
     if (current[key] === value) return;
-    const settings = { ...current, [key]: value };
+    const settings = { [key]: value }; // only the change; the server merges over its own current values
     const url = scope === 'film' ? `${base}/${encodeURIComponent(rk)}/settings` : `${base}/profiles/${PROFILE_NAME}/settings`;
     return write(
       () => DaylightAPI(url, { settings }, 'PUT'),

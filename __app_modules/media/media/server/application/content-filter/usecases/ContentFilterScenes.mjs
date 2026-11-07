@@ -8,7 +8,7 @@
  * child ever sees. Design: ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md
  */
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
-import { mergeProfilePatch, applySettingsToProfile, profilePatchFromSettings, LEVELS, LANGUAGE_VALUES } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
+import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, LEVELS, LANGUAGE_VALUES } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 export const CARD_MAX_CHARS = 90;
@@ -51,19 +51,30 @@ export class ContentFilterScenes {
     return { ref, refined, profile: mergeProfilePatch(profile, override?.profilePatch), override: override || {} };
   }
 
-  /** Validate the four plain settings; throws on anything outside the vocabulary. */
+  /** Validate a (partial) settings object; throws on anything outside the vocabulary. Returns only known keys. */
   static #checkSettings(settings) {
     if (!settings || typeof settings !== 'object') throw new Error('settings required');
-    if (!LANGUAGE_VALUES.includes(settings.language)) throw new Error(`unknown language setting: ${settings.language}`);
-    for (const k of ['violence', 'nudity', 'sexual']) if (!LEVELS.includes(settings[k])) throw new Error(`unknown ${k} setting: ${settings[k]}`);
+    const out = {};
+    if ('language' in settings) {
+      if (!LANGUAGE_VALUES.includes(settings.language)) throw new Error(`unknown language setting: ${settings.language}`);
+      out.language = settings.language;
+    }
+    for (const k of ['violence', 'nudity', 'sexual']) {
+      if (!(k in settings)) continue;
+      if (!LEVELS.includes(settings[k])) throw new Error(`unknown ${k} setting: ${settings[k]}`);
+      out[k] = settings[k];
+    }
+    return out;
   }
 
   /** This film only: store the settings as `override.profilePatch`. */
-  async setTitleSettings({ ratingKey, settings }) {
-    ContentFilterScenes.#checkSettings(settings);
+  async setTitleSettings({ ratingKey, settings, profileName = 'family' }) {
+    const partial = ContentFilterScenes.#checkSettings(settings);
     return this.#serial(ratingKey, async () => {
       const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
-      const profilePatch = profilePatchFromSettings(settings);
+      // Partial settings merge over this film's current effective settings.
+      const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
+      const profilePatch = profilePatchFromSettings({ ...settingsFromProfile(effective), ...partial });
       await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
       this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
       return { profilePatch };
@@ -84,11 +95,12 @@ export class ContentFilterScenes {
 
   /** Everywhere: rewrite only the keys the settings own in the household profile. @returns null if no such profile */
   async setProfileSettings({ profileName, settings }) {
-    ContentFilterScenes.#checkSettings(settings);
+    const partial = ContentFilterScenes.#checkSettings(settings);
     return this.#serial(`profile:${profileName}`, async () => {
       const profile = await this.#repo.getProfile(profileName);
       if (!profile) return null;
-      const next = applySettingsToProfile(profile, settings);
+      // Partial settings merge over the stored (unmerged) household profile, never a film's patch.
+      const next = applySettingsToProfile(profile, { ...settingsFromProfile(profile), ...partial });
       await this.#repo.saveProfile(profileName, next);
       this.#logger.info?.('content-filter.settings.profile', { profile: profileName, settings });
       return { profile: next };

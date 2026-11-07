@@ -15,7 +15,6 @@ const PROFILE = {
   },
   scenes: { violence_blood_gore: { blackout: { picture: 2 } }, sex_nudity_immodesty: { blackout: { picture: 2 } }, sex_any: { skip: { situation: 3 } } },
 };
-const NOW = { language: 'mute', violence: 'blackout', nudity: 'blackout', sexual: 'skip' };
 
 describe('SettingsPanel', () => {
   let refresh;
@@ -40,7 +39,7 @@ describe('SettingsPanel', () => {
     render(<SettingsPanel />);
     fireEvent.click(within(screen.getByRole('group', { name: 'Violence' })).getByRole('button', { name: 'Skip' }));
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-    expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/77/settings', { settings: { ...NOW, violence: 'skip' } }, 'PUT');
+    expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/77/settings', { settings: { violence: 'skip' } }, 'PUT');
   });
 
   it('Everywhere PUTs the profile route', async () => {
@@ -49,7 +48,7 @@ describe('SettingsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Everywhere' }));
     fireEvent.click(within(screen.getByRole('group', { name: 'Language' })).getByRole('button', { name: 'Bleep' }));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
-    expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/profiles/family/settings', { settings: { ...NOW, language: 'bleep' } }, 'PUT');
+    expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/profiles/family/settings', { settings: { language: 'bleep' } }, 'PUT');
   });
 
   it('Reset this film DELETEs and refreshes; disabled with no film settings', async () => {
@@ -69,5 +68,20 @@ describe('SettingsPanel', () => {
     fireEvent.click(within(screen.getByRole('group', { name: 'Nudity' })).getByRole('button', { name: 'Off' }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('boom'));
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('after a save the refetched profile and override drive the checked and Reset states', async () => {
+    DaylightAPI.mockResolvedValue({});
+    refresh.mockImplementation(async () => previewStore.publish({
+      profile: { ...PROFILE, scenes: { ...PROFILE.scenes, violence_blood_gore: { skip: { picture: 2 } } } },
+      override: { profilePatch: { categories: {} } },
+    }));
+    render(<SettingsPanel />);
+    const violence = screen.getByRole('group', { name: 'Violence' });
+    expect(within(violence).getByRole('button', { name: 'Blackout' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Reset this film' }).disabled).toBe(true);
+    fireEvent.click(within(violence).getByRole('button', { name: 'Skip' }));
+    await waitFor(() => expect(within(violence).getByRole('button', { name: 'Skip' }).getAttribute('aria-pressed')).toBe('true'));
+    expect(screen.getByRole('button', { name: 'Reset this film' }).disabled).toBe(false);
   });
 });

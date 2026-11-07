@@ -76,7 +76,7 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     router.put('/:ratingKey/settings', asyncHandler(async (req, res) => {
       if (!rk(req)) return res.status(400).json({ error: 'invalid ratingKey' });
       try {
-        res.json(await contentFilterScenes.setTitleSettings({ ratingKey: rk(req), settings: req.body?.settings }));
+        res.json(await contentFilterScenes.setTitleSettings({ ratingKey: rk(req), settings: req.body?.settings, profileName: profileOf(req) }));
       } catch (error) {
         res.status(400).json({ error: error.message });
       }

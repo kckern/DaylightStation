@@ -138,6 +138,7 @@ describe('ContentFilterScenes profile patch', () => {
     repo.state.profile = { scenes: { violence_blood_gore: { blackout: { picture: 2 } } } };
     repo.state.override = { profilePatch: { categories: {}, scenes: { violence_blood_gore: {} } } };
     const out = await new ContentFilterScenes({ contentFilterRepository: repo }).list({ ratingKey: '77' });
+    expect(out.scenes.length).toBeGreaterThan(0);
     expect(out.scenes.every((s) => s.profileEffect !== 'blackout')).toBe(true);
   });
 });

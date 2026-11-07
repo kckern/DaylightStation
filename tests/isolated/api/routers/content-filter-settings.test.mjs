@@ -32,7 +32,7 @@ describe('content-filter settings routes', () => {
     for (const d of ['profiles', 'overrides']) mkdirSync(path.join(householdDir, 'content-filter', d), { recursive: true });
     for (const d of ['edl', 'refined']) mkdirSync(path.join(mediaDir, 'content-filter', d), { recursive: true });
     writeFileSync(path.join(mediaDir, 'content-filter/edl/77.edl.yml'), yaml.dump({ sourceRef: { workId: 5, tagSetId: 6 }, cues: [] }));
-    writeFileSync(path.join(mediaDir, 'content-filter/refined/5-6.edl.yml'), yaml.dump({ title: 'Film', cues: [], scenes: [] }));
+    writeFileSync(path.join(mediaDir, 'content-filter/refined/5-6.edl.yml'), yaml.dump({ title: 'Film', cues: [{ id: 'va1', label: 'A word.' }], scenes: [] }));
     writeFileSync(path.join(householdDir, 'content-filter/profiles/family.yml'), yaml.dump(PROFILE));
     writeFileSync(path.join(householdDir, 'content-filter/overrides/77.yml'), yaml.dump({ sync: { scale: 1, offsetSec: 10, part: '9' } }));
     const repo = new FilesystemContentFilterRepository({ householdDir, mediaDir, logger: quiet });
@@ -60,13 +60,34 @@ describe('content-filter settings routes', () => {
 
   test('two simultaneous settings PUTs both persist (serialized)', async () => {
     const a = request(app).put('/cf/77/settings').send({ settings: S });
-    const b = request(app).put('/cf/77/scenes/zzz').send({ effect: 'off' }); // unrelated write path, must not clobber
+    const b = request(app).put('/cf/77/cues/va1').send({ effect: 'bleep' }); // a ruling write to the same override
     const c = request(app).put('/cf/77/settings').send({ settings: { ...S, language: 'mute' } });
-    const [ra, , rc] = await Promise.all([a, b, c]);
-    expect([ra.status, rc.status]).toEqual([200, 200]);
+    const [ra, rb, rc] = await Promise.all([a, b, c]);
+    expect([ra.status, rb.status, rc.status]).toEqual([200, 200, 200]);
     const ov = read('content-filter/overrides/77.yml');
     expect(ov.sync.part).toBe('9');
     expect(ov.profilePatch.categories.language).toEqual({ effect: 'mute' });
+    expect(ov.cueOverrides.va1).toEqual({ effect: 'bleep' });
+  });
+
+  test('Everywhere with a partial change keeps the other household settings, ignoring a film patch', async () => {
+    await request(app).put('/cf/77/settings').send({ settings: { violence: 'off' } });
+    const res = await request(app).put('/cf/profiles/family/settings').send({ settings: { language: 'bleep' } });
+    expect(res.status).toBe(200);
+    const p = read('content-filter/profiles/family.yml');
+    expect(p.categories.language).toEqual({ effect: 'bleep' });
+    expect(p.categories.sex_any).toEqual({ effect: 'full-blur' });
+    expect(p.scenes.sex_any).toEqual({ blackout: { picture: 2 }, skip: { situation: 3 } });
+    expect(p.scenes.violence_blood_gore).toBeUndefined();
+    expect(read('content-filter/overrides/77.yml').profilePatch.categories.language).toEqual({ effect: 'mute' });
+  });
+
+  test('a partial film change keeps the film\'s other settings', async () => {
+    await request(app).put('/cf/77/settings').send({ settings: { violence: 'skip' } });
+    await request(app).put('/cf/77/settings').send({ settings: { language: 'off' } });
+    const got = (await request(app).get('/cf/77')).body.profile;
+    expect(got.scenes.violence_blood_gore).toEqual({ skip: { picture: 2 } });
+    expect(got.categories.language).toEqual({ effect: 'off' });
   });
 
   test('DELETE /:rk/settings removes the patch only', async () => {
