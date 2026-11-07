@@ -1,0 +1,18 @@
+.bluetooth-recovery {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: auto;
+  padding: 2rem;
+  color: #fff;
+  background: #141821;
+  text-align: left;
+  font-size: 1.15rem;
+  &__heading, &__actions { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
+  button, input { font: inherit; padding: 0.65rem 1rem; }
+  button:focus-visible, input:focus-visible { outline: 4px solid #7abaff; outline-offset: 3px; }
+  button:disabled { opacity: 0.5; }
+  &__devices { padding: 0; list-style: none; display: grid; gap: 1rem; }
+  &__devices li { display: grid; gap: 0.6rem; padding: 1rem; border: 1px solid currentColor; border-radius: 0.5rem; }
+  &__confirmation { border: 2px solid currentColor; padding: 1rem; }
+}

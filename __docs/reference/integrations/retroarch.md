@@ -112,3 +112,36 @@ The Games menu entry in `data/household/config/lists/menus/tvapp.yml`:
 **Launch fails with "device not found":** Check ADB connectivity to the target device. Verify `devices.yml` has the device configured with ADB host/port.
 
 **Launch fails with "device constraint mismatch":** The `device_constraint: android` in config means only android-type devices can launch RetroArch content.
+
+## Controller recovery in kiosk mode
+
+The arcade game-selection screen provides **Controllers**, reachable with the TV
+remote: move Up from the top row of games, then Select. Back returns to the same
+game selection. Recovery is performed before launching a game; it does not overlay
+RetroArch or navigate to Android Settings.
+
+For Android hosts, deploy the updated audio-bridge APK and configure its independent
+control origin on the fleet device definition:
+
+```yaml
+bluetooth_bridge:
+  url: http://<device-host>:8766
+```
+
+The browser uses its `fleet:` identity to call
+`GET /api/v1/arcade-bluetooth/:deviceId`; JSON POST actions below that path are
+`scan`, `scan/stop`, `pair`, `unpair`, `connect`, `disconnect`, and `pairing`.
+Only the server's registered bridge origin is used. Devices without that declaration
+return an explicit unavailable state. Existing garage BlueZ pairing stays separate.
+
+Find controllers discovers nearby devices. Pair, Connect, Disconnect, and confirmed
+Forget apply to joystick/gamepad devices; remotes and keyboards are view-only.
+A paired device can remain disconnected, and a successful request can remain pending:
+the UI waits for observed Bluetooth state and reports a timeout after 30 seconds.
+Pairing may require holding the controller's physical pairing button. Restricted
+native permissions/confirmation are reported in the panel, without opening Settings.
+
+Installation needs the original APK signing key and Bluetooth discovery permissions.
+Do not uninstall a working audio-bridge to work around a signing mismatch. Do not
+replace/restart it during a game or microphone call. See the audio-bridge module's
+`DESIGN.md` for the native API and setup requirements.
