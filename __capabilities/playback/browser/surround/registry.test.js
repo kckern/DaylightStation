@@ -124,7 +124,7 @@ describe('surround builtins', () => {
     const { SURROUND_BUILTIN_MODULES } = await import("../../../../__app_modules/media/media/browser/surround/builtins.js");
     expect([...SURROUND_BUILTIN_MODULES].sort())
       .toEqual([
-        'composer-card', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
+        'composer-card', 'content-filter-rail', 'content-filter-timeline', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
         'place-carousel', 'play-card', 'script-rail', 'segment-map', 'work-placard',
       ]);
   });

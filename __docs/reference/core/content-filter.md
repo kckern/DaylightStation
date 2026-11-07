@@ -1,9 +1,10 @@
 # Content Filter
 
-**Status:** Implemented core model and API; player integration in progress. Authoring is
-CLI-only today (`cli/contentfilter.cli.mjs`; there is no admin UI or API write path). A
-subtitle cue review queue (`srt-review`, below) gives a grown-up a model's second opinion
-on word-list mutes; it never edits cues.
+**Status:** Implemented: model, API, player integration (default-on for certified titles) and
+the preview surround (below). Bulk authoring is CLI (`cli/contentfilter.cli.mjs`); a
+grown-up reviews and rules on a title from the preview surround while it plays. A subtitle
+cue review queue (`srt-review`, below) gives a grown-up a model's second opinion on
+word-list mutes; it never edits cues.
 
 ## Purpose
 
@@ -145,9 +146,8 @@ filtered title plays, including D-pad TVs.
   (hidden if it fails to load), "Edited for content", and a summary built from the
   resolved cues by `filterSummary.js`, e.g. "152 words muted · 4 scenes blurred · credits
   skipped". It yields to a skip-card. Logs `content-filter.bumper.shown`.
-- **Badge.** A small shield bottom-right at about 40% opacity, brightening briefly each
-  time a cue fires (`fireCount` from `useContentFilter`: cue entries and skip-cards,
-  not title cards). States:
+- **Badge.** A small shield bottom-right at about 40% opacity; it glows yellow while an
+  effect is active (see [Preview surround](#preview-surround)). States:
 
   | State | Drawn as | When |
   |---|---|---|
@@ -155,7 +155,8 @@ filtered title plays, including D-pad TVs.
   | `provisional` | outline | no certification block (`isProvisional`); `unrefinedWordCount` counts the approximate mutes/bleeps that could leak |
   | `failed` | crossed shield | filter data failed to load after one retry |
 
-  The badge is display-only for now: no pointer events, no focus, `aria-hidden`.
+  With no `onOpen` the badge is display-only (no pointer events, `aria-hidden`); the
+  player passes one, see [Preview surround](#preview-surround).
 - **Loading.** `useFilterData` returns `{ data, status }` with status
   `idle | loading | ready | none | failed`. A `404` is `none` (no filter data, no
   chrome). A network error or `5xx` is retried once, then `failed`, logged as
@@ -356,24 +357,125 @@ to 0.7 (`--min-confidence`). The CLI's `content-filter.cue-review.summary` /
 store; the review file is the record. There is no review UI yet; the next
 slice is an admin screen that reads the review file and writes `cueOverrides`.
 
+## Preview surround
+
+A grown-up reviews what the filter does while the film plays: a sidebar and a timeline
+open around the video, which keeps playing. Design:
+`ops:docs/superpowers/specs/2026-11-06-content-filter-preview-surround-design.md`.
+
+**Default-on rule** (`filterMode.js`, `decideFilterMode`). A Plex title is filtered with
+no flag when the API reports `certification.ready === true` (the refined EDL level meets
+the profile's `requiresCertification`). `?filter=0` forces off (no fetch); `?filter=1`
+forces on, provisional EDLs included. A load that `failed` is on only under `?filter=1`;
+either way the crossed shield shows. `content-filter.default.on|off` is logged once per
+title with `reason`: `forced-off | forced-on | certified | uncertified | no-data | loading`.
+There is no debug HUD and no `filter-debug` flag.
+
+**The shield** (`FilterBadge`, `FilterChrome.jsx`): small (`clamp(16px, 1.5vw, 30px)`),
+bottom-right, 40% opacity. It glows yellow and goes to full opacity while any filter
+effect is active (`filterActive`; sampled `content-filter.badge.active`). A **mouse click**
+on it opens the surround; it takes no focus (`tabIndex -1`), so a D-pad or remote cannot
+land on it — a child on the TV cannot open the review tools by accident. Click
+stops propagation so it does not toggle playback.
+
+**Surround seam.** `videoPresentation.jsx` calls `useSurroundOverride()`
+(`__capabilities/playback/browser/surround-override.mjs`, context set by `SurroundHost`),
+whose `open(data)` shows an on-demand surround and `close()` removes it, without a surround
+definition in the data volume. The content-filter surround is `FILTER_SURROUND` in
+`videoPresentation.jsx`: rail `content-filter-rail` in the right region and
+`content-filter-timeline` at the bottom, registered in
+`__app_modules/media/media/browser/surround/builtins.js`. The surround closes when the host
+replaces it (`by: host`) or the player unmounts.
+
+**Preview store** (`browser/content-filter/preview/previewStore.js`): the live state the
+rail and timeline read, and their actions. `seekTo(t)`; `jumpToCue(id)` seeks 4 s before the
+cue; `replayLast()` replays the last fired cue; `peek(id)` plays a cue unfiltered once;
+`refresh()` re-fetches filter data after a ruling; `close()`.
+
+**Rail** (`FilterRail.jsx`, two tabs). *Review*: last fired cue/scene with Replay, the next 5
+upcoming with Jump and Peek, and the `WorkshopPanel`. *Settings*: `SettingsPanel`.
+**Timeline** (`FilterTimeline.jsx`): marks for every cue and scene, click to seek, previous/
+next cue buttons.
+
+**Workshop actions** (`WorkshopPanel.jsx`, writes via `useFilterWrite.js`), on the cue or
+scene selected in the rail. Cue: *Tags only* (off), *Blackout*, *Skip*, or *Profile* (clear
+the ruling), written to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene: the same four
+effects via `PUT /{rk}/scenes/{id}`, plus **Draft with AI / Regenerate** (one scene's card,
+`POST /{rk}/scenes/{id}/card`), **Edit**, **Approve** and **Withdraw** (the same
+`sceneOverrides` rulings as the admin screen). Each write refreshes the store so the change
+applies to the next pass. The Settings tab has **This film / Everywhere** and **Reset this film**.
+
+**Settings** (`shared/contracts/content-filter/filterSettings.mjs`). Four plain choices:
+`language` (`mute | bleep | off`) and `violence`, `nudity`, `sexual`
+(`off | blur | blackout | skip`). `profilePatchFromSettings` turns them into `categories` and
+`scenes` fragments; `mergeProfilePatch` lays a fragment over a profile (patch wins per key;
+name, treatments, theme, `requiresCertification` untouched); `settingsFromProfile` reads
+them back.
+
+| Setting | Level | Categories owned | Scene rule (`scenes.<group>`) |
+|---|---|---|---|
+| language | mute / bleep / off | `language` -> that effect | none |
+| violence | off | `violence_blood_gore`, `/graphic`, `/gore` -> off | `{}` |
+| violence | blur | `/graphic`, `/gore` -> full-blur | `{}` |
+| violence | blackout | as blur | `violence_blood_gore: { blackout: { picture: 2 } }` |
+| violence | skip | as blur | `violence_blood_gore: { skip: { picture: 2 } }` |
+| nudity | off / blur | `sex_nudity_immodesty`, `nudity` -> off / full-blur | `{}` |
+| nudity | blackout | as blur | `sex_nudity_immodesty: { blackout: { picture: 2 } }` |
+| nudity | skip | as blur | `sex_nudity_immodesty: { skip: { picture: 2 } }` |
+| sexual | off / blur | `sex_any`, `sex_any/sexual_assault` -> off / full-blur | `{}` |
+| sexual | blackout | as blur | `sex_any: { blackout: { picture: 2 } }` |
+| sexual | skip | as blur | `sex_any: { blackout: { picture: 2 }, skip: { situation: 3 } }` |
+
+An empty `{}` scene rule is explicit "none" so it overrides a base entry. Settings apply at
+one of two scopes:
+
+- **This film** — stored as `override.profilePatch` in the title's override;
+  `GetContentFilter` and `ContentFilterScenes` merge it over the profile on every read.
+- **Everywhere** — written into the profile file itself (`applySettingsToProfile`, which
+  drops owned scene groups left empty).
+
+Routes (all take partial `settings`; omitted keys are left as they are):
+
+```text
+PUT    /api/v1/content-filter/{rk}/settings?profile=   { settings } -> { profilePatch }
+DELETE /api/v1/content-filter/{rk}/settings                         -> { cleared }
+PUT    /api/v1/content-filter/profiles/{name}/settings  { settings } -> { profile }
+PUT    /api/v1/content-filter/{rk}/cues/{cueId}         { effect?, disabled?, by? } -> { ruling }
+POST   /api/v1/content-filter/{rk}/scenes/{sceneId}/card               -> draft one scene's card
+```
+
+(`400` on an invalid value, `404` for an unknown profile, cue or scene. Scene ruling and
+card routes are under [Scenes](#scenes).)
+
+**Logging.** `content-filter.default.on|off` (info, with `reason`),
+`content-filter.surround.opened|closed` (info; `by: host` when the host closed it),
+`content-filter.badge.active` (sampled), `content-filter.seek` / `.seek.play-refused` /
+`.peek` / `.peek.unknown`, `content-filter.cue.ruled`, `content-filter.scene.ruled`,
+`content-filter.setting.changed`, `content-filter.card.drafted|approved|withdrawn`,
+`content-filter.workshop.failed` (warn), plus `filter-rail.jump`,
+`filter-timeline.seek|step` (info).
+
+**No remote access, by design.** The shield is a mouse click on the screen itself and the
+rail's controls are plain pointer targets: nothing on the bus, no remote-control action and
+no D-pad path opens the surround, seeks through it or writes a ruling. Rulings are made by
+someone at the screen.
+
 ## QA and current limitations
 
-The resolver and player behavior have unit tests. There is no debug HUD; use
-`cli/player-review` to scrub cue-by-cue and verify arm/fire timing.
+The resolver and player behavior have unit tests. `cli/player-review` scrubs cue-by-cue to
+verify arm/fire timing; use the preview surround to check a title by eye.
 
-Filtering is **on by default** for a Plex title when the API reports
-`certification.ready === true` (the refined EDL level meets the profile's
-`requiresCertification`). `?filter=0` forces it off (no fetch); `?filter=1` forces
-it on, provisional EDLs included. The decision lives in `filterMode.js`; the
-`content-filter.default.on|off` log event records it once per title with a `reason`.
-
-The remaining work is primarily player wiring, default profile/SFX assets, letterbox-
-precise blur placement, pinning the remaining safe-window mutes, and an admin authoring interface. Coverage
-and correctness are therefore data-quality concerns, not guarantees of the file format.
+The remaining work is primarily default profile/SFX assets, letterbox-precise blur
+placement, pinning the remaining safe-window mutes, and bulk authoring in the admin screen.
+Coverage and correctness are therefore data-quality concerns, not guarantees of the file
+format.
 
 Related implementation:
 
 - `__app_modules/media/media/browser/content-filter/contentFilter.js`
 - `__app_modules/media/media/browser/content-filter/useContentFilter.js`
 - `__app_modules/media/media/server/adapters/persistence/FilesystemContentFilterRepository.mjs`
+- `__app_modules/media/media/browser/content-filter/filterMode.js`, `videoPresentation.jsx`
+- `__app_modules/media/media/browser/content-filter/preview/`
+- `shared/contracts/content-filter/filterSettings.mjs`
 - `__app_modules/media/media/server/api/contentFilter.mjs`
