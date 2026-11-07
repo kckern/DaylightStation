@@ -1,49 +1,100 @@
+/**
+ * FilterRail — the preview surround's right rail (`content-filter-rail`), also
+ * the home of WorkshopPanel and SettingsPanel.
+ *
+ * It lives in the surround's RIGHT region, not in Admin, so it reads the
+ * frame's own published properties (SurroundFrame.scss re-maps `--ink`,
+ * `--ink-soft` and `--programme-edge` to parchment-on-oxblood there) — the
+ * Admin `--ds-*` tokens are undefined on the screen route and left the text
+ * dark on dark. Same pattern as ScriptRail: no ground of its own (the region
+ * paints the rail's fibre), every colour a frame property with the literal
+ * fallback its siblings carry. Controls are hairline-bordered parchment ink;
+ * the pressed one is filled with the bond ground under a brass edge, so the
+ * choice reads from across the room.
+ */
+
+@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+
 .filter-rail {
+  flex: 1 1 auto;
   height: 100%;
+  min-height: 0;
   box-sizing: border-box;
-  padding: var(--ds-space-3);
+  padding: 0.85rem 0.8rem 0.6rem;
   display: flex;
   flex-direction: column;
-  gap: var(--ds-space-3);
+  gap: 0.9rem;
   overflow-y: auto;
-  background: var(--ds-bg-surface);
-  color: var(--ds-text-primary);
-  font-family: var(--ds-font-body);
-  font-size: 0.9rem;
+  color: var(--ink, #e9dfc8);
+  font-family: var(--surround-annotation, system-ui, sans-serif);
+  font-size: max(0.9rem, calc(var(--label-floor, #{$label-floor}) * 1.3));
+  line-height: 1.35;
 
-  h4 { margin: 0 0 var(--ds-space-2); color: var(--ds-text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+  h4 {
+    margin: 0 0 0.45rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+    color: var(--ink-soft, #a89a80);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: max(0.72rem, calc(var(--label-floor, #{$label-floor}) * 1.02));
+  }
 
-  &__cert { display: flex; justify-content: space-between; align-items: center; }
-  &__level { color: var(--ds-accent); font-weight: 700; }
-  &__summary { color: var(--ds-text-muted); margin-top: var(--ds-space-1); }
-  &__empty { color: var(--ds-text-muted); }
-  &__last, &__row { display: flex; gap: var(--ds-space-2); align-items: baseline; }
-  &__effect { color: var(--ds-text-muted); }
-  &__away { margin-left: auto; color: var(--ds-text-muted); }
-  &__list { list-style: none; margin: 0 0 var(--ds-space-2); padding: 0; display: flex; flex-direction: column; gap: var(--ds-space-1); }
+  &__cert { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+  &__level {
+    font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+    font-size: 1.6em;
+    font-weight: 600;
+    color: var(--brass-lit, #f6e3a0);
+  }
+  &__summary { color: var(--ink-soft, #a89a80); margin-top: 0.3rem; }
+  &__empty { color: var(--ink-soft, #a89a80); font-style: italic; }
+  &__label { color: var(--ink, #e9dfc8); }
+  &__last, &__row { display: flex; gap: 0.5rem; align-items: baseline; }
+  &__last { margin-bottom: 0.45rem; }
+  &__effect { color: var(--ink-soft, #a89a80); }
+  &__away { margin-left: auto; color: var(--ink-soft, #a89a80); font-variant-numeric: tabular-nums; }
+  &__list { list-style: none; margin: 0 0 0.45rem; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+
   &__btn, &__row {
     cursor: pointer;
-    border: 1px solid var(--ds-border);
-    border-radius: var(--ds-radius-sm);
-    background: var(--ds-bg-elevated);
-    color: inherit;
-    padding: var(--ds-space-2) var(--ds-space-3);
+    border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+    border-radius: var(--bond-radius, #{$bond-radius});
+    background: transparent;
+    color: var(--ink, #e9dfc8);
+    font: inherit;
+    padding: 0.4rem 0.7rem;
     text-align: left;
     width: 100%;
   }
   &__btn { width: auto; }
-  &__row.is-selected { border-color: var(--ds-accent); background: var(--ds-accent-subtle); }
-}
-
-.filter-rail {
-  &__buttons { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); margin-bottom: var(--ds-space-2); }
-  &__btn.is-selected { border-color: var(--ds-accent); background: var(--ds-accent-subtle); }
-  &__btn:disabled { opacity: 0.5; cursor: default; }
-  &__card { padding: var(--ds-space-2); border: 1px dashed var(--ds-border); border-radius: var(--ds-radius-sm); margin-bottom: var(--ds-space-2); }
-  &__card-input {
-    width: 100%; box-sizing: border-box; min-height: 4em; margin-bottom: var(--ds-space-2);
-    background: var(--ds-bg-elevated); color: inherit; border: 1px solid var(--ds-border);
-    border-radius: var(--ds-radius-sm); padding: var(--ds-space-2); font: inherit;
+  &__btn:hover:not(:disabled), &__row:hover {
+    border-color: var(--ink-soft, #a89a80);
+    background: var(--hall-ink, #{$hall-ink});
   }
-  &__error { color: var(--ds-danger, var(--ds-text-primary)); margin-top: var(--ds-space-2); }
+  &__btn.is-selected, &__row.is-selected {
+    border-color: var(--brass, #c79a3e);
+    background: var(--bond-ground, #{$bond-ground});
+    color: var(--brass-lit, #f6e3a0);
+    box-shadow: inset 3px 0 0 0 var(--brass, #c79a3e);
+  }
+  &__btn:focus-visible, &__row:focus-visible { outline: 2px solid var(--brass, #c79a3e); outline-offset: 1px; }
+
+  &__buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.45rem; }
+  &__btn:disabled { opacity: 0.45; cursor: default; }
+  &__card {
+    padding: 0.5rem 0.6rem;
+    border: 1px dashed var(--programme-edge, rgba(233, 223, 200, 0.26));
+    border-radius: var(--bond-radius, #{$bond-radius});
+    margin-bottom: 0.45rem;
+    font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  }
+  &__card-input {
+    width: 100%; box-sizing: border-box; min-height: 4em; margin-bottom: 0.45rem;
+    background: var(--hall-ink, #{$hall-ink}); color: var(--ink, #e9dfc8);
+    border: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+    border-radius: var(--bond-radius, #{$bond-radius}); padding: 0.5rem; font: inherit;
+  }
+  &__error { color: var(--brass-lit, #f6e3a0); margin-top: 0.45rem; font-weight: 600; }
 }

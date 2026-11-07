@@ -360,6 +360,22 @@ Composite playback layers a visual track and an audio track into a coordinated p
 ?play=plex:12345&overlay=plex:99      # video + audio overlay
 ```
 
+### Start position URL params (`goto` / `start`)
+
+```
+?play=plex:12345&start=0      # from the top, ignoring the saved resume
+?play=plex:12345&goto=1830    # straight to 30:30 (review / QA)
+```
+
+`goto=<seconds>` and its alias `start=<seconds>` start playback at that absolute
+time and suppress the saved resume (Plex `viewOffset` / `resume_position`), so
+the resilience layer cannot reassert it. Read once from the page URL by
+`__capabilities/playback/browser/player-support/reviewParams.js`
+(`parseStartParam`); a non-negative number is required, and `goto` wins when
+both are given. Because it is a page-URL param it applies to every video the
+page mounts until the URL changes. `parseAutoplayParams` treats both as
+pass-through keys, so neither is ever mistaken for content.
+
 ---
 
 ## Display API
