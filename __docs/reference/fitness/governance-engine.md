@@ -847,7 +847,10 @@ bar, with accessible individual timing and a quiet label on the same line — no
 Holding prose and no extra text row. The label reads `Hold Ns` (whole seconds
 remaining) while counting, `Keep going` once the rider is below the target zone
 (during the dip grace, or after the engine dropped the hold — the empty track
-stays so nothing jumps), and is blank when the hold is complete. The engine only
+stays so nothing jumps), and is blank once the engine reports the hold complete.
+Until then the live estimate never finishes on its own: the fill stops at 98%
+(`HOLD_VISUAL_CAP`) and the label at `Hold 1s`, so a late completion pulse
+cannot show a full bar that the rider has not yet been credited for. The engine only
 re-evaluates a few times per hold, so the fill is never stepped from snapshots:
 it runs one linear `transform: scaleX` CSS animation over the whole hold, entered
 part-way with a negative `animation-delay`, and is re-keyed only when a snapshot

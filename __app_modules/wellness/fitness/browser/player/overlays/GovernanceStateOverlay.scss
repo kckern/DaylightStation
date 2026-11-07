@@ -1139,7 +1139,8 @@ $warning-scrim-steps: (
 
 @keyframes governance-hold-fill {
   from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
+  // HOLD_VISUAL_CAP in HoldProgress.jsx: full only once the engine credits it.
+  to { transform: scaleX(0.98); }
 }
 
 .governance-overlay__panel--sections {

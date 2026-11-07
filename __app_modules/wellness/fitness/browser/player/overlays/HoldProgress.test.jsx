@@ -45,7 +45,7 @@ describe('HoldProgress', () => {
     const { container } = render(<HoldProgress row={row()} now={() => 50000} />);
     const f = fill(container);
     expect(f.classList.contains('governance-hold-progress__fill--running')).toBe(true);
-    expect(f.style.animationDuration).toBe('10000ms');
+    expect(f.style.animationDuration).toBe('9800ms'); // keyframes stop at 0.98 (HOLD_VISUAL_CAP)
     expect(f.style.animationDelay).toBe('-3000ms');
     expect(f.style.width).toBe('');
     expect(label(container)).toBe('Hold 7s');
@@ -100,6 +100,18 @@ describe('HoldProgress', () => {
     expect(fill(view.container).style.transform).toBe('scaleX(0)');
     expect(view.container.querySelector('.governance-hold--out')).toBeTruthy();
     view.rerender(<HoldProgress row={row({ holdProgress: { elapsedMs: 10000, remainingMs: 0, totalMs: 10000 } })} now={() => 61000} />);
+    expect(label(view.container)).toBe('');
+    expect(fill(view.container).style.transform).toBe('scaleX(1)');
+  });
+
+  it('wall clock past the total does not complete the hold before the engine does', () => {
+    let t = 50000;
+    const view = render(<HoldProgress row={row()} now={() => t} />);
+    t = 60000; // 3s elapsed + 10s: wall clock says done, engine has not pulsed
+    view.rerender(<HoldProgress row={row()} now={() => t} />);
+    expect(label(view.container)).toBe('Hold 1s');
+    expect(view.container.querySelector('.governance-hold--counting')).toBeTruthy();
+    view.rerender(<HoldProgress row={row({ holdProgress: { elapsedMs: 10000, remainingMs: 0, totalMs: 10000 } })} now={() => t} />);
     expect(label(view.container)).toBe('');
     expect(fill(view.container).style.transform).toBe('scaleX(1)');
   });

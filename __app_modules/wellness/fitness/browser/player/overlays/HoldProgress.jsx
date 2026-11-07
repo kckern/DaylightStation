@@ -19,6 +19,10 @@ import PropTypes from 'prop-types';
 // less than this is the same hold seen late (evaluation→render lag), not a reset.
 export const HOLD_RESYNC_TOLERANCE_MS = 500;
 
+// The running fill stops here until the engine reports the hold complete
+// (must match the `to` keyframe of governance-hold-fill in the SCSS).
+export const HOLD_VISUAL_CAP = 0.98;
+
 export const HOLD_LABELS = {
   counting: (seconds) => `Hold ${seconds}s`,
   out: 'Keep going',
@@ -99,9 +103,14 @@ export default function HoldProgress({ row, now = Date.now }) {
 
   // Live elapsed for the label: from the running anchor while counting, the
   // frozen engine value while paused.
+  // Only the engine completes a hold: the wall clock may run past the total
+  // before the completion pulse lands, so the live estimate stops 1ms short
+  // ("Hold 1s", fill held at HOLD_VISUAL_CAP) until a snapshot says it is done.
+  const engineDone = sync ? sync.receivedElapsed >= sync.totalMs : false;
+  const liveCap = sync ? (engineDone ? sync.totalMs : sync.totalMs - 1) : 0;
   const liveHold = sync
     ? { totalMs: sync.totalMs,
-      elapsedMs: sync.paused ? sync.frozenElapsed : Math.min(sync.totalMs, Math.max(0, t - sync.anchor)) }
+      elapsedMs: sync.paused ? sync.frozenElapsed : Math.min(liveCap, Math.max(0, t - sync.anchor)) }
     : null;
   const state = resolveHoldBar(liveHold, { paused, belowTarget: isBelowTarget(row), seenHold: seenRef.current });
 
@@ -124,7 +133,9 @@ export default function HoldProgress({ row, now = Date.now }) {
   if (state.phase === 'counting' && sync) {
     // One animation over the whole hold, entered part-way via negative delay.
     fillClass += ' governance-hold-progress__fill--running';
-    fillStyle.animationDuration = `${sync.totalMs}ms`;
+    // The keyframes stop at HOLD_VISUAL_CAP, so run them over that share of
+    // the hold: the fill tracks elapsed/total exactly, then waits for the engine.
+    fillStyle.animationDuration = `${Math.round(sync.totalMs * HOLD_VISUAL_CAP)}ms`;
     fillStyle.animationDelay = `${-Math.round(t - sync.anchor)}ms`;
   } else {
     fillStyle.transform = `scaleX(${state.fraction})`;
