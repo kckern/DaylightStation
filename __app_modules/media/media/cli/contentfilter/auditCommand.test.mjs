@@ -145,3 +145,12 @@ describe('formatAudit and runAudit', () => {
   });
   it('has a usage string', () => { expect(AUDIT_USAGE).toMatch(/audit <ratingKey>/); });
 });
+
+describe('computeAudit: words treated as exchanges', () => {
+  it('counts a word-labelled cue whose tag span is over 4 s', () => {
+    const e = film(); e.cues.push(word('wl', 500, { label: 'd*mn', out: 512, tagIn: 500, tagOut: 512 }));
+    const r = computeAudit({ edl: e, profile, override });
+    expect(r.lines.wordsAsExchanges).toBe(1);
+    expect(formatAudit(r)).toMatch(/1 words treated as exchanges/);
+  });
+});

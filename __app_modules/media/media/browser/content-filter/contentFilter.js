@@ -278,10 +278,19 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
 
     // R4: a said cue that is not a single word is a line or an exchange. Up to
     // LINE_MAX_SEC it is muted (never a tone); longer, the scene is skipped behind a card.
-    const isLine = modality === 'said' && (cue.type || kind) && AUDIO_EFFECTS.has(eff.effect)
-      && !(cue.label && isWordLabel(cue.label));
+    // A word label does not save a cue whose OWN tag span is longer than LINE_MAX_SEC: that is an
+    // exchange. The span is the tag's (tagIn/tagOut), else the pre-widening cue span - never a safe window.
+    const audioSaid = modality === 'said' && (cue.type || kind) && AUDIO_EFFECTS.has(eff.effect);
+    const lineSpan = cue.tagIn != null && cue.tagOut != null ? cue.tagOut - cue.tagIn : eff.out - eff.in;
+    const isWord = !!(cue.label && isWordLabel(cue.label));
+    const wordAsExchange = audioSaid && isWord && lineSpan > LINE_MAX_SEC;
+    if (wordAsExchange) {
+      eff.wordAsExchange = true;
+      logger().sampled('content-filter.word.as-exchange', { id: cue.id, label: cue.label, span: Math.round(lineSpan * 100) / 100 }, { maxPerMinute: 10, aggregate: true });
+    }
+    const isLine = audioSaid && (!isWord || wordAsExchange);
     if (isLine) {
-      const span = cue.tagIn != null && cue.tagOut != null ? cue.tagOut - cue.tagIn : eff.out - eff.in;
+      const span = lineSpan;
       if (span > LINE_MAX_SEC) {
         eff.effect = 'skip-card';
         eff.line = 'exchange';

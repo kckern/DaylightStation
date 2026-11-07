@@ -594,6 +594,24 @@ describe('word-sized tones and lines (R3, R4)', () => {
     expect(out[0]).toMatchObject({ effect: 'skip-card', text: 'Scene skipped.', holdSec: 4.5, in: 30, out: 48 });
   });
 
+  it('a word label with a tag span over 4 s is an exchange: skip-card', () => {
+    const out = run([word({ id: 'wx', label: 'd*mn', in: 40, out: 52, tagIn: 40, tagOut: 52, precision: 'ms' })]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ effect: 'skip-card', line: 'exchange', text: 'Scene skipped.' });
+  });
+
+  it('a word whose tag is 1 s but whose safe window is 6.84 s stays a word', () => {
+    const out = run([word({ id: 'ws', in: 100, out: 106.84, tagIn: 103, tagOut: 104, precision: 'safe-window' })]);
+    expect(out.some((c) => c.effect === 'skip-card')).toBe(false);
+    expect(out.filter((c) => c.effect === 'bleep')[0].out - out.filter((c) => c.effect === 'bleep')[0].in).toBeLessThanOrEqual(1.5 + 1e-6);
+    expect(out.some((c) => c.effect === 'mute')).toBe(true);
+  });
+
+  it('a non-word said cue of 3 s is still a mute', () => {
+    const out = run([{ id: 'l3', type: 'mute', category: 'language/x', label: 'He talks about his night out.', in: 20, out: 23, precision: 'ms' }]);
+    expect(out.map((c) => c.effect)).toEqual(['mute']);
+  });
+
   it('keeps an explicit skip effect on a long line as is', () => {
     const out = run([{ id: 'x', type: 'mute', effect: 'skip', category: 'language/x', label: 'They argue about the plan at length.', in: 30, out: 48 }]);
     expect(out[0].effect).toBe('skip');
