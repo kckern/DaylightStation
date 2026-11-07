@@ -1,7 +1,9 @@
 /**
  * WorkshopPanel — the grown-up's rulings for the selected scene or cue, inside the
- * preview rail. A scene: Tags only / Blackout / Skip / Profile plus its title card
- * (draft with AI, edit, approve, withdraw). A cue: Off / Mute / Bleep / Blur / Skip.
+ * preview rail. A scene: Play it (off) / Hide picture (blackout) / Skip / Use settings
+ * (clear the ruling), plus its title card (draft with AI, edit, approve, withdraw)
+ * once the scene is cut. A cue: Off / Mute / Bleep / Blur / Skip, and Use settings
+ * when it has a ruling of its own.
  * Every successful write refreshes the player's filter; a failure shows its text and
  * leaves the player alone. Mouse-only: plain buttons.
  */
@@ -9,14 +11,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useFilterPreview, previewStore } from './previewStore.js';
 import { baseId } from '../useContentFilter.js';
 import { useFilterWrite, errText } from './useFilterWrite.js';
+import { kindOf } from './effectKinds.js';
 import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
 
 const SCENE_EFFECTS = [
-  { label: 'Tags only', value: 'off', current: (r) => r.effect === 'off' },
-  { label: 'Blackout', value: 'blackout', current: (r) => r.effect === 'blackout' },
-  { label: 'Skip', value: 'skip', current: (r) => r.effect === 'skip' },
-  { label: 'Profile', value: 'profile', current: (r) => !r.effect },
+  { label: 'Play it', value: 'off', current: (r) => r.effect === 'off', hint: 'Play the scene. Its own words and moments are still muted or blurred.' },
+  { label: 'Hide picture', value: 'blackout', current: (r) => r.effect === 'blackout', hint: 'The picture goes dark; the sound keeps playing.' },
+  { label: 'Skip', value: 'skip', current: (r) => r.effect === 'skip', hint: 'Jump past the whole scene.' },
+  { label: 'Use settings', value: 'profile', current: (r) => !r.effect, hint: 'Do what Settings says for scenes like this.' },
 ];
 const CUE_EFFECTS = [
   { label: 'Off', value: 'off' }, { label: 'Mute', value: 'mute' }, { label: 'Bleep', value: 'bleep' },
@@ -78,12 +81,12 @@ export default function WorkshopPanel() {
     };
     return (
       <section className="filter-rail__section" data-testid="workshop-panel">
-        <h4>Rule this cue</h4>
+        <h4>{kindOf(sel.effect) === 'words' ? 'For this word' : 'For this moment'}</h4>
         <div className="filter-rail__buttons">
           {CUE_EFFECTS.map((o) => (
             <button key={o.value} type="button" className={`filter-rail__btn${cur === o.value ? ' is-selected' : ''}`} disabled={busy} onClick={() => rule(o.value)}>{o.label}</button>
           ))}
-          <button type="button" className="filter-rail__btn" disabled={busy || !cur} onClick={() => rule('profile')}>Profile</button>
+          {cur ? <button type="button" className="filter-rail__btn" disabled={busy} data-cf-hint="Drop this choice and do what Settings says." data-cf-hint-align="end" onClick={() => rule('profile')}>Use settings</button> : null}
         </div>
         {isSkip ? (
           <CardControls
@@ -103,6 +106,8 @@ export default function WorkshopPanel() {
   const drafted = scene?.card?.text || '';
   const text = draft?.id === sel.id ? draft.text : (approved || drafted);
   const url = `${base(rk)}/scenes/${encodeURIComponent(sel.id)}`;
+  // Is the scene cut right now (a skip or a hide is playing)? Only then does a card show.
+  const cut = (snap.cues || []).some((c) => String(c.scene) === String(sel.id));
 
   const rule = (effect) => write(
     () => DaylightAPI(url, { effect }, 'PUT'),
@@ -135,17 +140,17 @@ export default function WorkshopPanel() {
 
   return (
     <section className="filter-rail__section" data-testid="workshop-panel">
-      <h4>Rule this scene</h4>
+      <h4>For this scene</h4>
       <div className="filter-rail__buttons">
         {SCENE_EFFECTS.map((o) => (
-          <button key={o.value} type="button" className={`filter-rail__btn${o.current(ruling) ? ' is-selected' : ''}`} disabled={busy} onClick={() => rule(o.value)}>{o.label}</button>
+          <button key={o.value} type="button" aria-pressed={o.current(ruling)} data-cf-hint={o.hint} data-cf-hint-side="below" className={`filter-rail__btn${o.current(ruling) ? ' is-selected' : ''}`} disabled={busy} onClick={() => rule(o.value)}>{o.label}</button>
         ))}
       </div>
-      <CardControls
+      {cut || text ? <CardControls
         text={text} approved={approved} editing={editing} busy={busy} id={sel.id}
         onDraft={draftCard} onApprove={approve} onWithdraw={withdraw}
         onEdit={() => setEditing((v) => !v)} onType={(t) => setDraft({ id: sel.id, text: t })}
-      />
+      /> : <p className="filter-rail__note">A title card can be written once the scene is skipped or hidden.</p>}
       {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}
     </section>
   );

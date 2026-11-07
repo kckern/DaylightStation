@@ -550,14 +550,36 @@ so nothing floats over the list.
 **Rail** (`FilterRail.jsx`, two tabs). Header: "Filter preview", the film's title, the
 certification with a sentence saying how far to trust it (`machine`: every flagged word is
 covered, most to the millisecond, the rest with a safe margin; `parent`: signed off by a
-grown-up; anything else: not checked yet, amber edge), the summary one line per effect, and Close (✕). *Review*:
-**Last** (the cue/scene just fired, its glyph, tag, effect word and time, with **Replay**),
-**Next** (the next 5, a scene's pieces as one row: glyph, tag, effect, "in 42 s" under a minute, else m:ss as "in 1:12";
-choosing one jumps 4 s before it and selects it), **Peek unfiltered** with a static line under
-it saying what the selection does and that Peek plays it once without the filter, then the `WorkshopPanel`.
-*Settings*: one line of explanation and the `SettingsPanel`. The selection is the store's
-`selected`, so a timeline click and a rail row are the same selection. WorkshopPanel and
-SettingsPanel are styled only through the `filter-rail__*` classes they already carry.
+grown-up; anything else: not checked yet, amber edge), and Close (✕). The rail thinks in
+**moments** (`preview/railItems.js`): a cue's pieces fold by `unitKey` (from `filterSummary.js`),
+so a tracked blur in 30 keyframe pieces is one moment and a scene is one, the same unit the
+summary and the timeline legend count. Each moment is in one of three groups: *Words*
+(muted, bleeped), *Picture* (blurred, pixelated, barred) and *Scenes* (anything hidden or
+skipped, scene or lone moment).
+
+*Review* opens with a kind switch, **All / Words / Picture / Scenes**, each with its count,
+and a **Find** field. **All**: *Just filtered* (the moment just fired, with **Replay**) and
+*Next of each kind*, one row per group with how many more follow ("Muted, 82 more after it"),
+or "No more blurred moments from here." / "No blurred moments in this film."; one kind's
+density can never hide another. **Words** / **Picture**: the next five of that kind ("in 42 s"
+under a minute, else "in 1:12"), then **Show all N in film order** (past rows dimmed, clock
+times). **Scenes**: *Skipped or hidden* lists every cut scene or moment with its span and
+length, its judged levels in plain words per group ("Violence: people hurt or killed, mild on
+screen", from the SITUATION/PICTURE scales in `sceneQuestions.mjs`), its title card's status
+(*Card approved* / *Card drafted, not approved* / *No card yet*) with one-click **Approve card**
+(PUTs the drafted text) or **Draft card**, and the card text; then *Flagged scenes that play*
+(scenes with no scene effect, their own moments still filtered), each choosable so it can be
+cut. **Find** searches the chosen group over the whole film: label, category and effect, and a
+censored label by its letters ("hell" finds h\*ll). A kind with nothing in the film says so and
+offers **Open settings**. Choosing any row jumps 4 s before it and selects it.
+
+The **selection** (the store's `selected`, so a timeline click and a rail row are the same
+selection; any piece of a moment selects the moment) shows in one block above the lists: its
+name, effect chip, span and length, category or levels, what the viewer gets, **Jump there**,
+**Peek unfiltered** (with a static line saying it plays once without the filter; absent for a
+scene that plays) and **Clear selection** (✕), then the `WorkshopPanel`. *Settings*: one line of
+explanation and the `SettingsPanel`. WorkshopPanel and SettingsPanel are styled only through
+the `filter-rail__*` classes they already carry.
 
 **Timeline** (`FilterTimeline.jsx`). Two lanes, Sound over Picture, with every cue drawn at
 its real span (min widths keep a 0.3 s word visible). Pointing at the track: off a mark, a
@@ -573,9 +595,11 @@ its time. The legend names each kind with its count — the same unit counting a
 (`kindCounts` → `filterSummary.js` `uniqueUnits` / `wordUnits`); a kind with none is dimmed.
 
 **Workshop actions** (`WorkshopPanel.jsx`, writes via `useFilterWrite.js`), on the cue or
-scene selected in the rail. Cue: *Off*, *Mute*, *Bleep*, *Blur*, *Skip*, or *Profile* (clear
-the ruling), written to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene: *Tags only* (off),
-*Blackout*, *Skip*, *Profile* via `PUT /{rk}/scenes/{id}`, plus **Draft with AI / Regenerate** (one scene's card,
+scene selected in the rail. Cue ("For this word" / "For this moment"): *Off*, *Mute*, *Bleep*,
+*Blur*, *Skip*, and *Use settings* (clear the ruling; shown only when the cue has one), written
+to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene ("For this scene"): *Play it* (off),
+*Hide picture* (blackout), *Skip*, *Use settings* (clear) via `PUT /{rk}/scenes/{id}`; once the
+scene is cut (a scene piece is in the effective cues) or has a card, **Draft with AI / Regenerate** (one scene's card,
 `POST /{rk}/scenes/{id}/card`), **Edit**, **Approve** and **Withdraw** (the same
 `sceneOverrides` rulings as the admin screen). A selected cue whose effect is a skip shows the same card controls, via `POST /{rk}/cues/{cueId}/card` and `PUT /{rk}/cues/{cueId}` (see Cue cards). Each write refreshes the store so the change
 applies to the next pass. The Settings tab has **This film / Everywhere** and **Reset this film**.
@@ -650,7 +674,7 @@ card routes are under [Scenes](#scenes).)
 `content-filter.badge.active` (sampled), `content-filter.seek` / `.seek.play-refused` /
 `.peek` / `.peek.unknown`, `content-filter.cue.ruled`, `content-filter.scene.ruled`,
 `content-filter.setting.changed`, `content-filter.card.drafted|approved|withdrawn`,
-`content-filter.workshop.failed` (warn), plus `filter-rail.jump|tab|peek`,
+`content-filter.workshop.failed` (warn), plus `filter-rail.jump|tab|kind|peek`,
 `filter-timeline.seek|step|jump` (info) and `filter-timeline.hover` (debug).
 
 **No remote access, by design.** The shield is a mouse click on the screen itself and the
