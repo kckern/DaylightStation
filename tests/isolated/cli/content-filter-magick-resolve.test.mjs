@@ -1,19 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync, chmodSync, readFileSync } from 'fs';
+import { mkdtempSync, writeFileSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { resolveMagick } from '../../../__app_modules/media/media/server/adapters/content-filter/MagickRefineRenderer.mjs';
 
-const binDir = (...names) => {
-  const d = mkdtempSync(path.join(tmpdir(), 'cf-bin-'));
-  for (const n of names) { writeFileSync(path.join(d, n), '#!/bin/sh\n'); chmodSync(path.join(d, n), 0o755); }
-  return d;
-};
+const only = (...names) => (bin) => names.includes(bin);
 
 describe('resolveMagick', () => {
-  it('prefers magick (ImageMagick 7)', () => expect(resolveMagick(binDir('magick', 'convert'))).toBe('magick'));
-  it('falls back to convert (ImageMagick 6)', () => expect(resolveMagick(binDir('convert'))).toBe('convert'));
-  it('names magick when neither exists', () => expect(resolveMagick(binDir())).toBe('magick'));
+  it('prefers magick (ImageMagick 7)', () => expect(resolveMagick(only('magick', 'convert'))).toBe('magick'));
+  it('falls back to convert (ImageMagick 6)', () => expect(resolveMagick(only('convert'))).toBe('convert'));
+  it('names magick when neither exists', () => expect(resolveMagick(only())).toBe('magick'));
 });
 
 describe('renderer output size on this host\'s ImageMagick', () => {

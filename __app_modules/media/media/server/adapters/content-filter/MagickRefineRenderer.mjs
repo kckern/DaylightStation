@@ -9,10 +9,9 @@
  * takes the same arguments for every call here) and ffmpeg (spectrograms).
  */
 
-import { execFile } from 'child_process';
+import { execFile, spawnSync } from 'child_process';
 import { promisify } from 'util';
 import { createTempDir, deleteDir, readBinaryFromPath, writeBinary } from '#system/utils/FileIO.mjs';
-import { accessSync, constants } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 
@@ -22,11 +21,8 @@ const MIN_SIDE = 280;
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 /** `magick` when installed (ImageMagick 7), else `convert` (ImageMagick 6), else `magick` so the error names it. */
-export function resolveMagick(pathEnv = process.env.PATH || '') {
-  const has = (bin) => pathEnv.split(path.delimiter).filter(Boolean).some((d) => {
-    try { accessSync(path.join(d, bin), constants.X_OK); return true; } catch { return false; }
-  });
-  return has('magick') ? 'magick' : has('convert') ? 'convert' : 'magick';
+export function resolveMagick(installed = (bin) => spawnSync(bin, ['-version']).error?.code !== 'ENOENT') {
+  return installed('magick') ? 'magick' : installed('convert') ? 'convert' : 'magick';
 }
 
 export const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split(''); // no I/O: they read as 1/0
