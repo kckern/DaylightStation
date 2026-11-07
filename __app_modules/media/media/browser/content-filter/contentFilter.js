@@ -15,7 +15,7 @@
 // Timing a refine pass measured on this file: no approximate widening.
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { cueModality, fitEffectToChannel, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
-import { languageGroupOf, languageWordOf } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
+import { languageGroupOf, languageWordOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
@@ -57,12 +57,17 @@ export function resolveEffect(categoryPath, profile) {
   return null;
 }
 
+const WORD_EFFECTS = new Set(['off', 'mute', 'bleep']);
+
+/** A word-list (SRT) cue: its stamped `effect: mute` is a default, not a ruling. */
+export const isWordListCue = (cue) => cue?.source === 'srt' || /^srt\d+/.test(String(cue?.id || ''));
+
 /**
- * R9: the rule for a language cue. A per-word exception (`profile.languageWords`)
- * beats the cue's group (`categories['language/<group>']`, either taxonomy's names
- * aliased to the five groups); a rule written for a deeper category path beats the
- * group; the old single `language` rule is the fallback. Not a language cue: the
- * ordinary longest-prefix rule.
+ * R9: the rule for a language cue. Precedence: per-word exception
+ * (`profile.languageWords`, off|mute|bleep) > a rule for a deeper category path >
+ * a level-2 rule for the cue's group (`language/<group>` or any alias of it, e.g.
+ * `language/language_racial`; the canonical key wins) > the old single `language`
+ * rule. Not a language cue: the ordinary longest-prefix rule.
  */
 export function resolveLanguageRule(cue, profile) {
   const group = languageGroupOf(cue?.category);
@@ -71,15 +76,20 @@ export function resolveLanguageRule(cue, profile) {
   const word = words ? languageWordOf(cue) : null;
   if (word && Object.prototype.hasOwnProperty.call(words, word)) {
     const effect = words[word];
-    return !effect || effect === 'off' ? null : { effect };
+    if (WORD_EFFECTS.has(effect)) return effect === 'off' ? null : { effect };
+    logger().sampled('content-filter.language-word.invalid', { word, effect: String(effect) }, { maxPerMinute: 2, aggregate: true });
   }
   const rules = profile?.categories || {};
   const segs = String(cue.category).split('/');
   for (let n = segs.length; n > 2; n--) {
-    const rule = rules[segs.slice(0, n).join('/')];
-    if (rule) return resolveEffect(segs.slice(0, n).join('/'), profile);
+    const key = segs.slice(0, n).join('/');
+    if (rules[key]) return resolveEffect(key, profile);
   }
   if (rules[`language/${group}`]) return resolveEffect(`language/${group}`, profile);
+  for (const key of Object.keys(rules)) {
+    const k = key.split('/');
+    if (k.length === 2 && k[0] === 'language' && groupOfTerm(k[1]) === group) return resolveEffect(key, profile);
+  }
   return resolveEffect(cue.category, profile);
 }
 
@@ -183,10 +193,13 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // (an unmapped category means "don't filter"), so a family profile can e.g. leave
     // credits/alcohol unfiltered without the source default sneaking them back in.
     let rule = null;
-    const explicit = ov.effect || cue.effect;
+    // A word-list cue's stamped mute is a default: its language group and word exceptions decide (R9).
+    const wordList = !!languageGroupOf(cue.category) && isWordListCue(cue);
+    const explicit = ov.effect || (wordList ? null : cue.effect);
     const hasProfileRules = profile?.categories && Object.keys(profile.categories).length > 0;
     if (explicit) rule = { effect: explicit };
-    else rule = resolveLanguageRule(cue, profile) || (!hasProfileRules && cue.type ? { effect: cue.type } : null);
+    else rule = resolveLanguageRule(cue, profile)
+      || (!hasProfileRules ? (wordList && cue.effect ? { effect: cue.effect } : cue.type ? { effect: cue.type } : null) : null);
     if (!rule) continue;
 
     const eff = { ...cue, effect: rule.effect };

@@ -390,8 +390,9 @@ subtitle block (same start, index and word) is deduplicated. With `--write`,
 any `srt*` key in `cueOverrides` that no longer matches an emitted cue is
 printed as orphaned. Category is `language/<group>/<leaf>`; severity comes
 from the word's tier (`tolerant → high`, `moderate → medium`, `strict → low`).
-SRT cues carry an explicit `effect: mute`, so profiles do not change them —
-only `cueOverrides.<id>.disabled` does.
+SRT cues carry a stamped `effect: mute` that is only a default: the profile's language group
+and `languageWords` decide the effect (see Language groups); `cueOverrides.<id>.disabled` or
+`.effect` still rule per cue.
 
 `contentfilter srt-review <ratingKey>` is a second opinion for a grown-up.
 For every word hit it asks the typed-decision model (`IDecisionGateway`, Jev)
@@ -494,14 +495,18 @@ maps both taxonomies onto five groups: Profanity (`profanity`, `profanity_captio
 segment of `language/<group>/<leaf>` the table knows; a language category with none (bare
 `language`, `language/x`) counts as profanity. The cue's effect comes from the profile rule
 `language/<group>`; a rule for a deeper path (`language/profanity/fuck`) beats the group, and the
-old single `language` rule is the fallback (reading it as settings gives all five groups that
+old single `language` rule is the fallback. A level-2 key may use either taxonomy's name
+(`language/language_racial` rules Slurs; the canonical `language/slurs` wins if both exist) (reading it as settings gives all five groups that
 value). Defaults when settings are written without a group: Profanity, Blasphemy, Sexual, Slurs
-mute; Childish off. **Per-word exceptions:** `profile.languageWords: { <word>: off|mute|bleep }`
+mute; Childish off. **Per-word exceptions** (hand-edited YAML, no UI yet; values outside
+`off|mute|bleep` are ignored with a warning): `profile.languageWords: { <word>: off|mute|bleep }`
 (also honoured in a film's `profilePatch`) beats the group; the word is the category leaf
 (`language/childish/jerk` -> `jerk`) or an uncensored one-word label. The group rule chooses the
 audio effect for *said* cues; the R3 tone caps, R4 line rules and the channel fit apply on top, so
-a *shown* language tag (billboard) is still blurred, not muted. Cues carrying their own `effect`
-(word-list SRT cues) ignore both. The preview Settings tab has five rows (Profanity, Blasphemy,
+a *shown* language tag (billboard) is still blurred, not muted. Word-list (SRT) cues (`source: srt`, ids `srt<ms>_<i>`) are governed too: their stamped
+`effect: mute` is only a default, so the group and `languageWords` decide (Childish off unmutes
+"jerk"; Slurs bleep tones a racial word, R3-capped). A household `cueOverrides.<id>.effect` and a
+hand-authored `addCues` effect still win. The preview Settings tab has five rows (Profanity, Blasphemy,
 Sexual language, Slurs, Childish words), each This film / Everywhere.
 
 An empty `{}` scene rule is explicit "none" so it overrides a base entry. Settings apply at

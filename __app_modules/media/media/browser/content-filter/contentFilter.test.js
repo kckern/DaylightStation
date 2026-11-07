@@ -694,4 +694,45 @@ describe('language groups (R9)', () => {
     const tag = { id: 't', type: 'skip', category: 'language/language_racial/other_racial', label: 'A sign shows a slur', in: 50, out: 55 };
     expect(effects([tag], profile).t).toBe('full-blur');
   });
+
+  describe('word-list (SRT) cues', () => {
+    const srt = (id, category, label, at = 10) => ({ id, effect: 'mute', category, label, in: at, out: at + 0.05, source: 'srt', precision: 'srt-line' });
+    const run = (cues, prof, override = {}) => resolveEffectiveCues({ edl: { cues: [] }, profile: prof, override: { addCues: cues, ...override } });
+
+    it('childish off leaves a childish SRT word unmuted; other groups still mute', () => {
+      const out = run([srt('srt1000_0', 'language/childish/jerk', 'jerk'), srt('srt2000_0', 'language/profanity/damn', 'damn', 20)], profile);
+      expect(out.every((c) => c.id.startsWith('srt2000_0'))).toBe(true);
+      expect(out.some((c) => c.effect === 'bleep')).toBe(true); // profanity is bleep in this profile
+    });
+    it('a racial SRT word under slurs:bleep becomes a capped tone', () => {
+      const out = run([srt('srt3000_0', 'language/racial/spic', 'spic')], profile);
+      const tones = out.filter((c) => c.effect === 'bleep');
+      expect(tones).toHaveLength(1);
+      expect(tones[0].out - tones[0].in).toBeLessThanOrEqual(1.5 + 1e-9);
+    });
+    it('a languageWords exception beats the group for an SRT cue', () => {
+      const cues = [srt('srt1000_0', 'language/childish/jerk', 'jerk'), srt('srt2000_0', 'language/profanity/damn', 'damn', 20)];
+      const out = run(cues, { ...profile, languageWords: { jerk: 'mute', damn: 'off' } });
+      expect(out.map((c) => [c.id, c.effect])).toEqual([['srt1000_0', 'mute']]);
+    });
+    it('cueOverrides effect still wins; so does a hand-authored addCue effect', () => {
+      const out = run([srt('srt1000_0', 'language/childish/jerk', 'jerk')], profile, { cueOverrides: { srt1000_0: { effect: 'mute' } } });
+      expect(out.map((c) => c.effect)).toEqual(['mute']);
+      const hand = run([{ id: 'h', effect: 'mute', category: 'language/childish/jerk', label: 'jerk', in: 10, out: 10.4 }], profile);
+      expect(hand.map((c) => c.effect)).toEqual(['mute']);
+    });
+    it('with no profile rules at all a word-list cue keeps its own mute', () => {
+      expect(run([srt('srt1000_0', 'language/profanity/damn', 'damn')], {}).map((c) => c.effect)).toEqual(['mute']);
+    });
+  });
+
+  it('level-2 keys, canonical or aliased, rule their group; canonical wins; invalid word values are ignored', () => {
+    const w = (category, label = 'x') => ({ id: 'w', type: 'mute', category, label, in: 10, out: 10.4, precision: 'ms' });
+    const eff = (cue, prof) => effects([cue], prof).w;
+    expect(eff(w('language/language_racial/other_racial', 'p*ck*rw**d'), { categories: { 'language/language_racial': { effect: 'bleep' }, language: { effect: 'mute' } } })).toBe('bleep');
+    expect(eff(w('language/blasphemy/god', 'G*d'), { categories: { 'language/blasphemy': { effect: 'bleep' } } })).toBe('bleep');
+    expect(eff(w('language/racial/spic', 'spic'), { categories: { 'language/language_racial': { effect: 'bleep' }, 'language/slurs': { effect: 'mute' } } })).toBe('mute');
+    expect(eff(w('language/childish/jerk', 'jerk'), { categories: { 'language/language_childish': { effect: 'off' }, language: { effect: 'mute' } } })).toBeUndefined();
+    expect(eff(w('language/profanity/damn', 'damn'), { ...profile, languageWords: { damn: 'loud' } })).toBe('bleep');
+  });
 });
