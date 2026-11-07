@@ -14,7 +14,9 @@ const SKIP = new Set(['skip', 'skip-card']);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export function filterSummary(cues = []) {
-  const words = cues.filter((c) => WORD.has(c.effect));
+  // A tone's mute remainder is the same word; a merged tone carries `words`.
+  const words = cues.filter((c) => WORD.has(c.effect) && !c.toneRemainder);
+  const wordCount = words.reduce((n, c) => n + (c.words ?? 1), 0);
   const blurred = cues.filter((c) => HIDE_BLUR.has(c.effect)).length;
   // A scene split across sync segments is one scene.
   const hidden = cues.filter((c) => HIDE_SOLID.has(c.effect) && c.firstPiece !== false).length;
@@ -26,7 +28,7 @@ export function filterSummary(cues = []) {
   if (words.length) {
     const bleeps = words.filter((c) => c.effect === 'bleep').length;
     const verb = bleeps === words.length ? 'bleeped' : bleeps === 0 ? 'muted' : 'muted or bleeped';
-    parts.push(`${plural(words.length, 'word')} ${verb}`);
+    parts.push(`${plural(wordCount, 'word')} ${verb}`);
   }
   if (blurred) parts.push(`${plural(blurred, 'scene')} blurred`);
   if (hidden) parts.push(`${plural(hidden, 'scene')} hidden`);
@@ -47,7 +49,7 @@ export function isProvisional(cues = [], certification = null) {
 
 /** Word cues (mute/bleep) not yet at ms/frame precision — the ones that could leak. */
 export function unrefinedWordCount(cues = []) {
-  return cues.filter((c) => WORD.has(c.effect) && !PRECISE.has(c.precision)).length;
+  return cues.filter((c) => WORD.has(c.effect) && !c.toneRemainder && !PRECISE.has(c.precision)).length;
 }
 
 /**

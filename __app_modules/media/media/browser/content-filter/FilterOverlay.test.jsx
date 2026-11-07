@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { FilterOverlay } from "./FilterOverlay.jsx";
 
 const rect = { x: 0.4, y: 0.5, w: 0.2, h: 0.1 };
@@ -30,6 +30,16 @@ describe('FilterOverlay', () => {
     const el = container.querySelector('[data-filter-effect="blur"]');
     expect(el.style.left).toBe('40%');
     expect(el.style.backdropFilter || el.style['backdrop-filter']).toContain('blur');
+  });
+
+  it('a regional blur resolved from full-blur (heavy) uses the full-blur radius inside its rect', async () => {
+    const { container } = render(
+      <FilterOverlay activeOverlays={[{ effect: 'blur', cue: { id: 'h', rect, heavy: true } }, { effect: 'blur', cue: { id: 'l', rect } }]} />
+    );
+    const [heavy, light] = container.querySelectorAll('[data-filter-effect="blur"]');
+    expect(heavy.style.left).toBe('40%');
+    await waitFor(() => expect(heavy.style.backdropFilter || heavy.style['backdrop-filter']).toContain('blur(40px)'));
+    expect(light.style.backdropFilter || light.style['backdrop-filter']).toContain('blur(22px)');
   });
 
   it('covers the whole frame for full-blur (no rect)', () => {

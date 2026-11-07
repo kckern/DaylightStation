@@ -5,10 +5,11 @@
  * per-cell crops, and spectrograms with lettered markers. Every output is a
  * PNG sized inside the decision model's 280-1568 px range.
  *
- * Requires ImageMagick 7 (`magick`) and ffmpeg (spectrograms).
+ * Requires ImageMagick (`magick` for v7; hosts that only have v6 get `convert`, which
+ * takes the same arguments for every call here) and ffmpeg (spectrograms).
  */
 
-import { execFile } from 'child_process';
+import { execFile, spawnSync } from 'child_process';
 import { promisify } from 'util';
 import { createTempDir, deleteDir, readBinaryFromPath, writeBinary } from '#system/utils/FileIO.mjs';
 import { tmpdir } from 'os';
@@ -19,10 +20,15 @@ const MAX_SIDE = 1568;
 const MIN_SIDE = 280;
 const MAX_BUFFER = 256 * 1024 * 1024;
 
+/** `magick` when installed (ImageMagick 7), else `convert` (ImageMagick 6), else `magick` so the error names it. */
+export function resolveMagick(installed = (bin) => spawnSync(bin, ['-version']).error?.code !== 'ENOENT') {
+  return installed('magick') ? 'magick' : installed('convert') ? 'convert' : 'magick';
+}
+
 export const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split(''); // no I/O: they read as 1/0
 
 export class MagickRefineRenderer {
-  constructor({ magick = 'magick', ffmpeg = 'ffmpeg', tmpRoot = tmpdir() } = {}) {
+  constructor({ magick = resolveMagick(), ffmpeg = 'ffmpeg', tmpRoot = tmpdir() } = {}) {
     this.magick = magick;
     this.ffmpeg = ffmpeg;
     this.tmpRoot = tmpRoot;
@@ -61,9 +67,23 @@ export class MagickRefineRenderer {
         rows.push(rf);
       }
       const out = path.join(dir, 'sheet.png');
-      await run(this.magick, [...rows, '-background', 'white', '-splice', '0x8', '-append', ...fitArgs(), out]);
+      await run(this.magick, [...rows, '-background', 'white', '-splice', '0x8', '-append', ...this.#fit(), out]);
+      await this.#pad(out);
       return readBinaryFromPath(out);
     });
+  }
+
+  /** ImageMagick 6 cannot size `-extent` from the image itself, so it pads in a second pass (see #pad). */
+  get #v6() { return this.magick === 'convert'; }
+
+  #fit() { return fitArgs(this.#v6); }
+
+  async #pad(file) {
+    if (!this.#v6) return;
+    const { stdout } = await run('identify', ['-format', '%w %h', file]);
+    const [w, h] = stdout.trim().split(' ').map(Number);
+    if (w >= MIN_SIDE && h >= MIN_SIDE) return;
+    await run(this.magick, [file, '-background', 'white', '-gravity', 'center', '-extent', `${Math.max(w, MIN_SIDE)}x${Math.max(h, MIN_SIDE)}`, file]);
   }
 
   /**
@@ -90,7 +110,8 @@ export class MagickRefineRenderer {
       }
       await run(this.magick, [src, '-resize', `${width}x`, '-stroke', '#00ff66', '-strokewidth', '3', '-fill', 'none',
         '-draw', draw.join(' '), '-stroke', 'black', '-strokewidth', '1', '-fill', '#00ff66', '-pointsize', String(ps),
-        '-gravity', 'NorthWest', ...labels, ...fitArgs(), out]);
+        '-gravity', 'NorthWest', ...labels, ...this.#fit(), out]);
+      await this.#pad(out);
       return readBinaryFromPath(out);
     });
   }
@@ -110,7 +131,8 @@ export class MagickRefineRenderer {
       const cw = w / grid; const ch = h / grid;
       const x0 = Math.max(0, Math.round((c - pad) * cw)); const y0 = Math.max(0, Math.round((r - pad) * ch));
       const x1 = Math.min(w, Math.round((c + 1 + pad) * cw)); const y1 = Math.min(h, Math.round((r + 1 + pad) * ch));
-      await run(this.magick, [src, '-crop', `${x1 - x0}x${y1 - y0}+${x0}+${y0}`, '+repage', ...fitArgs(), out]);
+      await run(this.magick, [src, '-crop', `${x1 - x0}x${y1 - y0}+${x0}+${y0}`, '+repage', ...this.#fit(), out]);
+      await this.#pad(out);
       return readBinaryFromPath(out);
     });
   }
@@ -162,14 +184,16 @@ export class MagickRefineRenderer {
       await run(this.magick, [spec, '(', wave, '-background', 'black', '-flatten', ')', '-append',
         '-stroke', '#ff3030', '-strokewidth', '2', '-fill', 'none', '-draw', draw.join(' ') || 'point 0,0',
         '-stroke', 'black', '-strokewidth', '1', '-fill', '#ffff00', '-pointsize', '30', '-gravity', 'NorthWest', ...ann,
-        ...fitArgs(), out]);
+        ...this.#fit(), out]);
+      await this.#pad(out);
       return readBinaryFromPath(out);
     });
   }
 }
 
 /** Keep each side inside the model's accepted range. */
-function fitArgs() {
+function fitArgs(resizeOnly = false) {
+  if (resizeOnly) return ['-resize', `${MAX_SIDE}x${MAX_SIDE}>`];
   return ['-resize', `${MAX_SIDE}x${MAX_SIDE}>`, '-background', 'white', '-gravity', 'center', '-extent', `%[fx:max(w,${MIN_SIDE})]x%[fx:max(h,${MIN_SIDE})]`];
 }
 

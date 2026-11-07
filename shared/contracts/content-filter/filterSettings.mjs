@@ -1,12 +1,16 @@
 /**
  * Plain household settings <-> content-filter profile fragments.
  *
- * Four settings: language (mute|bleep|off) and violence / nudity / sexual
- * (off|blur|blackout|skip). `profilePatchFromSettings` yields the `categories`
+ * Four settings: language - five groups (profanity, blasphemy, sexual, slurs,
+ * childish), each mute|bleep|off (R9) - and violence / nudity / sexual
+ * (off|blur|blackout|skip). A group is stored as category `language/<group>`. `profilePatchFromSettings` yields the `categories`
  * and `scenes` fragments they own; `mergeProfilePatch` lays a fragment over a
  * profile (patch wins per key; name, treatments, theme, requiresCertification
  * are never touched); `settingsFromProfile` reads settings back.
  */
+import { LANGUAGE_GROUPS, LANGUAGE_DEFAULTS } from './languageGroups.mjs';
+
+export { LANGUAGE_GROUPS, LANGUAGE_DEFAULTS };
 export const LANGUAGE_VALUES = ['mute', 'bleep', 'off'];
 export const LEVELS = ['off', 'blur', 'blackout', 'skip'];
 
@@ -30,11 +34,32 @@ function sceneFor(level, key) {
   return {};
 }
 
+/** A language setting as all five groups: a legacy single value fills every group; gaps take the defaults. */
+export function normalizeLanguage(value) {
+  const out = {};
+  for (const g of LANGUAGE_GROUPS) {
+    const v = typeof value === 'string' ? value : value?.[g];
+    out[g] = LANGUAGE_VALUES.includes(v) ? v : LANGUAGE_DEFAULTS[g];
+  }
+  return out;
+}
+
+/** Overlay partial settings on current ones; `language` merges per group (a legacy string sets all five). */
+export function mergeSettings(current = {}, partial = {}) {
+  const out = { ...current, ...partial };
+  if ('language' in partial) {
+    out.language = typeof partial.language === 'string'
+      ? normalizeLanguage(partial.language)
+      : { ...(current.language || {}), ...(partial.language || {}) };
+  }
+  return out;
+}
+
 export function profilePatchFromSettings(settings = {}) {
   const categories = {};
   const scenes = {};
-  const language = LANGUAGE_VALUES.includes(settings.language) ? settings.language : 'off';
-  categories.language = { effect: language };
+  const language = normalizeLanguage(settings.language);
+  for (const g of LANGUAGE_GROUPS) categories[`language/${g}`] = { effect: language[g] };
   for (const [key, g] of Object.entries(GROUPS)) {
     const level = LEVELS.includes(settings[key]) ? settings[key] : 'off';
     for (const c of g.parents) categories[c] = { effect: 'off' };
@@ -45,8 +70,13 @@ export function profilePatchFromSettings(settings = {}) {
 }
 
 export function settingsFromProfile(profile) {
-  const language = effectOf(profile, 'language');
-  const out = { language: language === 'mute' || language === 'bleep' ? language : 'off' };
+  const legacy = effectOf(profile, 'language');
+  const language = {};
+  for (const g of LANGUAGE_GROUPS) {
+    const e = effectOf(profile, `language/${g}`) ?? legacy;
+    language[g] = e === 'mute' || e === 'bleep' ? e : 'off';
+  }
+  const out = { language };
   for (const [key, g] of Object.entries(GROUPS)) {
     const scene = profile?.scenes?.[g.group] || {};
     if (scene.skip) out[key] = 'skip';
@@ -59,11 +89,12 @@ export function settingsFromProfile(profile) {
 /** Overlay a patch ({ categories, scenes }) on a profile; the patch wins per key. Pure. */
 export function mergeProfilePatch(profile, patch) {
   if (!profile) return profile;
-  if (!patch || (!patch.categories && !patch.scenes)) return profile;
+  if (!patch || (!patch.categories && !patch.scenes && !patch.languageWords)) return profile;
   return {
     ...profile,
     categories: { ...(profile.categories || {}), ...(patch.categories || {}) },
     scenes: { ...(profile.scenes || {}), ...(patch.scenes || {}) },
+    ...(patch.languageWords ? { languageWords: { ...(profile.languageWords || {}), ...patch.languageWords } } : {}),
   };
 }
 

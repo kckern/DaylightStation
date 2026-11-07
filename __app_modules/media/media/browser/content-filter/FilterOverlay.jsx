@@ -64,7 +64,9 @@ function OverlayEffect({ effect, cue, theme, visible = true, art }) {
   const shown = useFadeShown(visible);
   const base = { pointerEvents: 'none', transition: FADE_TRANSITION, ...boxStyle(cue.rect) };
   const blur = (extra = '') => {
-    const value = `blur(${shown ? (BLUR_RADIUS[effect] || 0) : 0}px)${extra}`;
+    // A regional blur resolved from a full-blur (R2: tracked) keeps the full-blur radius.
+    const radius = effect === 'blur' && cue.heavy ? BLUR_RADIUS['full-blur'] : (BLUR_RADIUS[effect] || 0);
+    const value = `blur(${shown ? radius : 0}px)${extra}`;
     return { backdropFilter: value, WebkitBackdropFilter: value };
   };
   switch (effect) {

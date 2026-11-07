@@ -2,7 +2,7 @@
 # requires-python = ">=3.10,<3.13"
 # dependencies = [
 #   "mlx-whisper; sys_platform == 'darwin' and platform_machine == 'arm64'",
-#   "openai-whisper; sys_platform != 'darwin' or platform_machine != 'arm64'",
+#   "faster-whisper; sys_platform != 'darwin' or platform_machine != 'arm64'",
 # ]
 # ///
 """
@@ -11,13 +11,14 @@ Word-timestamp transcript of a whole media file, for `contentfilter refine`.
   uv run --script transcribe.py <media path or URL> <out.json> [--model NAME]
 
 Audio is decoded with ffmpeg to 16 kHz mono on the media timeline (sample 0 =
-media time 0). Uses mlx-whisper on Apple Silicon, openai-whisper elsewhere.
+media time 0). Uses mlx-whisper when it can be imported (Apple Silicon), otherwise
+faster-whisper on CPU (int8); the choice is automatic and recorded as `backend`.
 
 Output: { "model", "backend", "words": [{w, s, e, p, seg}], "segments": [{id, s, e, text}] }
 Times are media seconds. The transcript is a candidate source only: the
 refiner never takes a word time from it as the answer.
 """
-import json, os, platform, subprocess, sys, tempfile, time
+import json, os, subprocess, sys, tempfile, time
 
 
 RECONNECT = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1",
@@ -45,6 +46,54 @@ def decode(src, wav, attempts=4):
     raise RuntimeError(f"audio decode stayed short of {want:.0f} s; not writing a truncated transcript")
 
 
+def pick_backend():
+    """mlx-whisper when importable, else faster-whisper. Raises if neither is installed."""
+    try:
+        import mlx_whisper  # noqa: F401
+        return "mlx-whisper"
+    except ImportError:
+        pass
+    try:
+        import faster_whisper  # noqa: F401
+        return "faster-whisper"
+    except ImportError:
+        raise RuntimeError("no transcription backend: install mlx-whisper (Apple Silicon) or faster-whisper")
+
+
+def run_mlx(wav, model):
+    import mlx_whisper
+    model = model or "mlx-community/whisper-large-v3-turbo"
+    r = mlx_whisper.transcribe(wav, path_or_hf_repo=model, word_timestamps=True, language="en",
+                               condition_on_previous_text=False, verbose=False)
+    return r, model
+
+
+def run_faster(wav, model):
+    """CPU, int8. Returns the same shape mlx-whisper does: {"segments": [{id,start,end,text,words}]}."""
+    from faster_whisper import WhisperModel
+    model = model or "small.en"
+    m = WhisperModel(model, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
+    def collect(**extra):
+        segs, _info = m.transcribe(wav, language="en", word_timestamps=True, condition_on_previous_text=False, **extra)
+        out = []
+        for i, s in enumerate(segs):
+            out.append({"id": i, "start": s.start, "end": s.end, "text": s.text,
+                        "words": [{"word": w.word, "start": w.start, "end": w.end, "probability": w.probability}
+                                  for w in (s.words or [])]})
+        return out
+    try:
+        out = collect()
+    except IndexError:
+        # faster-whisper's word aligner can fail on a segment with no usable tokens (music, silence).
+        # Retrying with the voice-activity filter skips those stretches; times stay on the media timeline.
+        print("faster-whisper word alignment failed; retrying with vad_filter", file=sys.stderr)
+        out = collect(vad_filter=True)
+    return {"segments": out}, model
+
+
+TRANSCRIBERS = {"mlx-whisper": run_mlx, "faster-whisper": run_faster}
+
+
 def main():
     args = sys.argv[1:]
     if len(args) < 2:
@@ -53,22 +102,12 @@ def main():
     model = None
     if "--model" in args:
         model = args[args.index("--model") + 1]
-    apple = sys.platform == "darwin" and platform.machine() == "arm64"
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="cf-transcribe-") as d:
         wav = os.path.join(d, "a.wav")
         decode(src, wav)
-        opts = dict(word_timestamps=True, language="en", condition_on_previous_text=False, verbose=False)
-        if apple:
-            import mlx_whisper
-            model = model or "mlx-community/whisper-large-v3-turbo"
-            r = mlx_whisper.transcribe(wav, path_or_hf_repo=model, **opts)
-            backend = "mlx-whisper"
-        else:
-            import whisper
-            model = model or "small.en"
-            r = whisper.load_model(model).transcribe(wav, fp16=False, **opts)
-            backend = "openai-whisper"
+        backend = pick_backend()
+        r, model = TRANSCRIBERS[backend](wav, model)
     words, segs = [], []
     for s in r["segments"]:
         segs.append({"id": s["id"], "s": round(s["start"], 3), "e": round(s["end"], 3), "text": s["text"].strip()})

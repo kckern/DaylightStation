@@ -8,7 +8,7 @@
  * child ever sees. Design: ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md
  */
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
-import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, LEVELS, LANGUAGE_VALUES } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
+import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, mergeSettings, LEVELS, LANGUAGE_VALUES, LANGUAGE_GROUPS } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 
 export const CARD_MAX_CHARS = 90;
@@ -56,8 +56,19 @@ export class ContentFilterScenes {
     if (!settings || typeof settings !== 'object') throw new Error('settings required');
     const out = {};
     if ('language' in settings) {
-      if (!LANGUAGE_VALUES.includes(settings.language)) throw new Error(`unknown language setting: ${settings.language}`);
-      out.language = settings.language;
+      const lang = settings.language;
+      if (typeof lang === 'string') {
+        // Legacy single value: sets every group.
+        if (!LANGUAGE_VALUES.includes(lang)) throw new Error(`unknown language setting: ${lang}`);
+        out.language = lang;
+      } else if (lang && typeof lang === 'object') {
+        out.language = {};
+        for (const [g, v] of Object.entries(lang)) {
+          if (!LANGUAGE_GROUPS.includes(g)) throw new Error(`unknown language group: ${g}`);
+          if (!LANGUAGE_VALUES.includes(v)) throw new Error(`unknown language setting for ${g}: ${v}`);
+          out.language[g] = v;
+        }
+      } else throw new Error(`unknown language setting: ${lang}`);
     }
     for (const k of ['violence', 'nudity', 'sexual']) {
       if (!(k in settings)) continue;
@@ -74,7 +85,7 @@ export class ContentFilterScenes {
       const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
       // Partial settings merge over this film's current effective settings.
       const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
-      const profilePatch = profilePatchFromSettings({ ...settingsFromProfile(effective), ...partial });
+      const profilePatch = profilePatchFromSettings(mergeSettings(settingsFromProfile(effective), partial));
       await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
       this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
       return { profilePatch };
@@ -100,7 +111,7 @@ export class ContentFilterScenes {
       const profile = await this.#repo.getProfile(profileName);
       if (!profile) return null;
       // Partial settings merge over the stored (unmerged) household profile, never a film's patch.
-      const next = applySettingsToProfile(profile, { ...settingsFromProfile(profile), ...partial });
+      const next = applySettingsToProfile(profile, mergeSettings(settingsFromProfile(profile), partial));
       await this.#repo.saveProfile(profileName, next);
       this.#logger.info?.('content-filter.settings.profile', { profile: profileName, settings });
       return { profile: next };
@@ -187,22 +198,32 @@ export class ContentFilterScenes {
     return { drafted, scenes: scenes.length };
   }
 
-  /** Builds the card prompt for a scene: tag labels plus the dialogue around it. */
-  async #prompter(ratingKey, t) {
+  /** Dialogue between two reference-clock times, via this copy's sync ('' when there is none). */
+  async #lineReader(ratingKey, t) {
     const transcript = t.override.sync ? await this.#repo.getTranscript(ratingKey, t.override.sync.part) : null;
-    const lines = (a, b) => {
+    return (a, b) => {
       if (!transcript || !t.override.sync) return '';
       const fa = mapTime(a, t.override.sync); const fb = mapTime(b, t.override.sync);
       return transcript.segments.filter((s) => s.e >= fa && s.s <= fb).map((s) => String(s.text).trim()).join(' ');
     };
-    const labels = new Map((t.refined.cues || []).map((c) => [c.id, c.label]));
-    return (s) => [
+  }
+
+  /** Card prompt for a span: what the tags say it holds plus the dialogue around it. */
+  static #prompt(t, lines, tags, from, to) {
+    return [
       `Movie: ${t.refined.title}${t.refined.year ? ` (${t.refined.year})` : ''}`,
-      `What the hidden scene contains (from content tags; do not repeat): ${s.cues.map((id) => labels.get(id)).filter(Boolean).join('; ')}`,
-      `Said just before: ${lines(s.in - 30, s.in) || '(nothing)'}`,
-      `Said during: ${lines(s.in, s.out) || '(nothing)'}`,
-      `Said just after: ${lines(s.out, s.out + 30) || '(nothing)'}`,
+      `What the hidden scene contains (from content tags; do not repeat): ${tags.filter(Boolean).join('; ')}`,
+      `Said just before: ${lines(from - 30, from) || '(nothing)'}`,
+      `Said during: ${lines(from, to) || '(nothing)'}`,
+      `Said just after: ${lines(to, to + 30) || '(nothing)'}`,
     ].join('\n');
+  }
+
+  /** Builds the card prompt for a scene. */
+  async #prompter(ratingKey, t) {
+    const labels = new Map((t.refined.cues || []).map((c) => [c.id, c.label]));
+    const lines = await this.#lineReader(ratingKey, t);
+    return (s) => ContentFilterScenes.#prompt(t, lines, s.cues.map((id) => labels.get(id)), s.in, s.out);
   }
 
   #ask(prompt) {
@@ -229,10 +250,47 @@ export class ContentFilterScenes {
     });
   }
 
-  /** Rule one cue: effect off|mute|bleep|blur|full-blur|skip, 'profile' clears. */
+  /**
+   * Draft card text for one cue (R5). The draft lives at `cueOverrides.<id>.cardDraft` in the
+   * household override (a cue has no refined-EDL home) and never plays; approving it via
+   * `ruleCue({ card: { approve: true } })` copies it to `card`.
+   * @returns {Promise<null|{ cardDraft: { text, at } }>} null if the cue is unknown
+   */
+  async draftCueCard(args) {
+    if (!this.#ai) throw new Error('No AI gateway configured for title cards');
+    return this.#serial(args.ratingKey, async () => {
+      const { ratingKey, cueId, profileName = 'family' } = args;
+      const t = await this.#load(ratingKey, profileName);
+      const cue = t?.refined.cues?.find((c) => c.id === cueId);
+      if (!cue) return null;
+      this.#logger.info?.('content-filter.cue-card.requested', { ratingKey, cue: cueId });
+      try {
+        const lines = await this.#lineReader(ratingKey, t);
+        const from = cue.tagIn ?? cue.in; const to = cue.tagOut ?? cue.out ?? from;
+        const clean = cleanCard(await this.#ask(ContentFilterScenes.#prompt(t, lines, [cue.label], from, to)));
+        if (!clean) throw new Error('the model returned an unusable card');
+        const cardDraft = { text: clean, at: this.#clock().toISOString().slice(0, 10) };
+        const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
+        const all = { ...(override.cueOverrides || {}) };
+        all[cueId] = { ...(all[cueId] || {}), cardDraft };
+        await this.#repo.saveOverride(ratingKey, { ...override, cueOverrides: all });
+        this.#logger.info?.('content-filter.cue-card.drafted', { ratingKey, cue: cueId });
+        return { cardDraft };
+      } catch (error) {
+        this.#logger.warn?.('content-filter.cue-card.failed', { ratingKey, cue: cueId, error: error.message });
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Rule one cue: effect off|mute|bleep|blur|full-blur|skip, 'profile' clears.
+   * `card`: { approve: true, text? } approves (the cardDraft unless text is given); null withdraws
+   * the card and keeps every other ruling.
+   */
   async ruleCue(args) {
     return this.#serial(args.ratingKey, async () => {
-      const { ratingKey, cueId, effect, disabled } = args;
+      const { ratingKey, cueId, effect, disabled, card, by = 'admin' } = args;
       const raw = await this.#repo.getEdl(ratingKey);
       const ref = raw?.sourceRef;
       const refined = ref ? await this.#repo.getRefinedEdl({ workId: ref.workId, tagSetId: ref.tagSetId }) : null;
@@ -247,6 +305,15 @@ export class ContentFilterScenes {
         else throw new Error(`unknown cue effect: ${effect}`);
       }
       if (disabled !== undefined) { if (disabled) next.disabled = true; else delete next.disabled; }
+      if (card !== undefined) {
+        if (card === null) { delete next.card; this.#logger.info?.('content-filter.cue-card.withdrawn', { ratingKey, cue: cueId }); }
+        else {
+          const text = cleanCard(card.text ?? next.cardDraft?.text);
+          if (!text) throw new Error('no card text to approve');
+          next.card = { text, approvedBy: String(by), at: this.#clock().toISOString().slice(0, 10) };
+          this.#logger.info?.('content-filter.cue-card.approved', { ratingKey, cue: cueId });
+        }
+      }
       if (Object.keys(next).length) all[cueId] = next; else delete all[cueId];
       await this.#repo.saveOverride(ratingKey, { ...override, cueOverrides: all });
       this.#logger.info?.('content-filter.cue.override', { ratingKey, cue: cueId, ruling: next });

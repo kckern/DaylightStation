@@ -127,6 +127,51 @@ describe('ContentFilterScenes workshop', () => {
   });
 });
 
+describe('ContentFilterScenes cue cards (R5)', () => {
+  const mk = (reply = 'They kiss goodbye.') => {
+    const repo = memRepo(); const calls = []; const logs = [];
+    const log = { info: (e, d) => logs.push([e, d]), warn: (e, d) => logs.push([e, d]) };
+    const ai = { chat: async (m, o) => { calls.push({ m, o }); return reply; } };
+    return { repo, calls, logs, uc: new ContentFilterScenes({ contentFilterRepository: repo, aiGateway: ai, logger: log, clock }) };
+  };
+
+  it('draftCueCard stores cardDraft in the override (never card), via the scoped gateway', async () => {
+    const { repo, calls, uc, logs } = mk();
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va2', effect: 'skip' });
+    expect(await uc.draftCueCard({ ratingKey: '5', cueId: 'va2' })).toEqual({ cardDraft: { text: 'They kiss goodbye.', at: '2026-11-06' } });
+    expect(repo.state.override.cueOverrides.va2).toEqual({ effect: 'skip', cardDraft: { text: 'They kiss goodbye.', at: '2026-11-06' } });
+    expect(calls[0].o.usageTags).toEqual({ app: 'media', feature: 'content-filter-cards' });
+    expect(calls[0].m[1].content).toContain('A kiss.');
+    expect(repo.state.override.sync.part).toBe('9');
+    expect(logs.map((l) => l[0])).toContain('content-filter.cue-card.drafted');
+  });
+
+  it('draftCueCard: unknown cue = null; unusable reply throws and stores nothing', async () => {
+    const { repo, uc } = mk('x'.repeat(200));
+    expect(await uc.draftCueCard({ ratingKey: '5', cueId: 'nope' })).toBeNull();
+    await expect(uc.draftCueCard({ ratingKey: '5', cueId: 'va2' })).rejects.toThrow('unusable card');
+    expect(repo.state.override.cueOverrides).toBeUndefined();
+  });
+
+  it('approve copies the draft (or edited text) into card.text; withdraw removes only the card', async () => {
+    const { repo, uc } = mk();
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va2', effect: 'skip' });
+    await uc.draftCueCard({ ratingKey: '5', cueId: 'va2' });
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va2', card: { approve: true }, by: 'parent' });
+    expect(repo.state.override.cueOverrides.va2.card).toEqual({ text: 'They kiss goodbye.', approvedBy: 'parent', at: '2026-11-06' });
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va2', card: { approve: true, text: '  “They hug.” ' } });
+    expect(repo.state.override.cueOverrides.va2.card.text).toBe('They hug.');
+    await uc.ruleCue({ ratingKey: '5', cueId: 'va2', card: null });
+    expect(repo.state.override.cueOverrides.va2.card).toBeUndefined();
+    expect(repo.state.override.cueOverrides.va2.effect).toBe('skip');
+  });
+
+  it('approve with no draft and no text throws', async () => {
+    const { uc } = mk();
+    await expect(uc.ruleCue({ ratingKey: '5', cueId: 'va2', card: { approve: true } })).rejects.toThrow('no card text');
+  });
+});
+
 describe('cleanCard', () => {
   it('trims quotes and whitespace', () => { expect(cleanCard('  “Hi there.” \n')).toBe('Hi there.'); });
   it('rejects empty or too long', () => { expect(cleanCard('')).toBeNull(); expect(cleanCard('a'.repeat(91))).toBeNull(); });
@@ -140,5 +185,28 @@ describe('ContentFilterScenes profile patch', () => {
     const out = await new ContentFilterScenes({ contentFilterRepository: repo }).list({ ratingKey: '77' });
     expect(out.scenes.length).toBeGreaterThan(0);
     expect(out.scenes.every((s) => s.profileEffect !== 'blackout')).toBe(true);
+  });
+});
+
+describe('ContentFilterScenes language groups (R9)', () => {
+  it('Everywhere changes only the named group and leaves the others', async () => {
+    const repo = memRepo();
+    repo.state.profile = { categories: { language: { effect: 'mute' } }, scenes: {} };
+    let saved;
+    repo.saveProfile = async (_n, p) => { saved = p; };
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });
+    await uc.setProfileSettings({ profileName: 'family', settings: { language: { slurs: 'bleep', childish: 'off' } } });
+    expect(saved.categories['language/slurs']).toEqual({ effect: 'bleep' });
+    expect(saved.categories['language/childish']).toEqual({ effect: 'off' });
+    expect(saved.categories['language/profanity']).toEqual({ effect: 'mute' });
+  });
+
+  it('This film stores a patch; a legacy string sets all five; bad groups and values are refused', async () => {
+    const repo = memRepo();
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });
+    await uc.setTitleSettings({ ratingKey: '5', settings: { language: 'bleep' } });
+    expect(Object.keys(repo.state.override.profilePatch.categories).filter((k) => k.startsWith('language/'))).toHaveLength(5);
+    await expect(uc.setTitleSettings({ ratingKey: '5', settings: { language: { rude: 'mute' } } })).rejects.toThrow(/language group/);
+    await expect(uc.setTitleSettings({ ratingKey: '5', settings: { language: { slurs: 'loud' } } })).rejects.toThrow(/slurs/);
   });
 });

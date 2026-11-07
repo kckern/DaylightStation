@@ -113,7 +113,71 @@ overlay effects including blur, censor bars, pixelation, full blur, and title ca
 Timing pads protect against playback-driver granularity and source drift. Approximate
 mute cues are widened more than skips because a narrow window can leak a spoken word.
 
+### Channel-matched effects (R1, R2)
+
+Every cue has a modality (`cueModality`, `shared/contracts/content-filter/cueModality.mjs`):
+`said` (VidAngel type `mute`, or refine judged it speech), `shown` (type `skip`/visual, or refine
+judged it shown; credits), `heard` (a non-speech sound). An effect must fit the cue's channel:
+audio effects (mute, bleep, duck) only on `said`, mute also on `heard`; visual effects (blur,
+full-blur, censor-bar, pixelate, blackout) only on `shown`; skip and skip-card on any. A profile
+effect that does not fit maps to the channel's equivalent (`fitEffectToChannel`): `shown` + audio
+effect, blur or full-blur -> regional `blur` when the cue has a usable region track (at least one
+sighting), else `full-blur` (R2). A tracked cue that asked for `full-blur` (profile or a household
+`cueOverrides` effect) plays the regional blur at the full-blur radius (`heavy: true`); a household
+that wants more on a tracked cue picks `censor-bar`, `pixelate`, `blackout` or `skip`;
+`said`/`heard` + a visual effect -> `mute`. The resolver logs the change as
+`content-filter.effect.adjusted`. Cues with neither a type nor a refine kind (hand-added) are left
+as authored. The refine kind comes from the refine stamp (`refine.kind`: speech, speech-line,
+visual, credits), written by refine on refined and coarse-edge cues alike; it beats the VidAngel
+type when both are present.
+
+### Rules at a glance
+
+| Rule | Where it lives |
+|------|----------------|
+| R1 channel matches modality, R2 regional when tracked | above |
+| R3 tones are word-sized, R4 lines and exchanges | Audio effects |
+| R5 cue-level cards | Scenes (Cue cards) |
+| R6 same-subject tags, R7 refine is safe to re-run, R8 refine on the server | Refined EDLs |
+| R9 language is five groups | Profiles and settings (Language groups) |
+
+### Audit (`contentfilter audit <rk>`)
+
+`contentfilter audit <ratingKey> [--profile <name>] [--part <id>] [--json]`
+(`cli/contentfilter/auditCommand.mjs`) is the proof for a title. It loads the refined EDL (else
+the raw one), the override with its `profilePatch` and the profile (default `family`) the way the
+API does, runs the player's own `resolveEffectiveCues` and measures what would play. It writes
+nothing. Output is a table on stderr; `--json` also prints the report on stdout. It exits 1 when a
+hard check fails. (The frontend logger writes to stdout; the CLI sends it to stderr so `--json` stays parseable.)
+
+- **Hard checks:** no bleep longer than 1.5 s (count and ids); no audio effect on a `shown` cue;
+  no visual effect on a `said` cue (ids).
+- **Region tracks:** `track data n/m` is the Proof metric: the share of `shown` cues (that
+  resolve to an overlay) whose data carries a region track, target 70%, flagged PASS/FAIL but not
+  fatal. `resolved regional n/m` is printed as information: the cues that actually play a
+  regional piece. It sits below the data share only where a track never sighted its subject or
+  the effect is stronger than a blur (blackout, skip). Coarse-edge tracks are counted separately.
+- **Same-subject groups (R6):** groups of two or more `shown` cues, their members, and how many
+  resolve to a single effect. A group nothing resolves for (profile off, or a scene covers it) is
+  counted as "no effect" and does not fail the check.
+- **R4:** lines muted, exchanges skipped, and skip-cards with approved vs generic text.
+- **Scenes and certification:** scenes whose edges leave a member uncovered (the check refine logs
+  as `scene-edge-uncovered`) and the EDL's certification level.
+- **Language (R9):** count per group (profanity, blasphemy, sexual, slurs, childish, and `unknown`
+  for a language tag whose category names no group) with the effect each resolved to (`off` when
+  the profile turns it off).
+
 ### Audio effects: holds, bleep tone, pauses
+
+- **Tones are word-sized (R3).** A bleep sounds for one spoken word (a word label) for at
+  most 1.5 s: on the word when ms-pinned, else centred on the tag instant (`tagIn`/`tagOut`
+  mapped through the sync, window midpoint when absent) with mute filling the rest of the
+  window (`toneRemainder` pieces, not counted as words). Tones under 0.3 s apart merge into
+  one (`words` counts them), re-capped on the merged midpoint with mute for the remainder.
+- **Lines and exchanges (R4).** A said cue whose label is not a word: up to 4 s -> `mute`
+  (never a tone); over 4 s (tag span, or window when untagged) -> `skip-card` with the
+  `treatments.skip-card.holdSec` hold and the approved card text, else "Scene skipped.".
+  An explicit `skip`/`skip-card` effect is left alone.
 
 - **Overlapping word cues hold the mute together.** Padding makes neighbouring words
   overlap. Mute and bleep handlers count holds in the per-hook `mem`
@@ -204,6 +268,56 @@ precision. Every word the film transcript misses stays approximate — and VidAn
 drift from the spoken word by several seconds, so an approximate mute can let the word
 play.
 
+**Re-running refine is safe (R7).** `buildRefinedEdl` takes the file it replaces as
+`previous` and keeps its `scenes`, `sceneCalibration`, `certification.parent` and any other
+top-level key refine does not produce. A cue previous holds refined that this run did not
+re-measure (a `--cues`/`--kinds`/`--limit` run, or a give-up) keeps its refined data, and a
+partial run adds its anchors to previous's. Refine writes the household override only
+through `mergeRefine`, which changes refine-measured keys of the cues it measured and
+leaves `sceneOverrides`, `profilePatch`, cards and every other key as it was. The CLI
+loads the existing refined EDL as `previous` before building.
+
+**Refine on the server (R8).** `transcribe.py` uses mlx-whisper when it imports and otherwise
+faster-whisper on CPU (int8); the choice is automatic and written as `backend` in the words JSON.
+Hosts without `uv` set `CONTENT_FILTER_TRANSCRIBE_PY=python3` so the CLI runs `python3 transcribe.py`. Speech refine also forced-aligns each word (`align_words.py`, torch + torchaudio MMS): on such a host point `CONTENT_FILTER_ALIGN_PY` at a python that has them (a venv with the CPU wheels works); without it every speech cue ends `unknown` with `align_words failed: spawn uv ENOENT`.
+ImageMagick 6 hosts work too (the renderer falls back from `magick` to `convert`).
+`refine --kinds visual` needs no transcript (clock sync comes from the override) and selects
+`shown` cues, including `skip` cues under a language category. Every Jev request has a
+timeout (`TimeoutDecisionGateway`, default 90 s, wrapped around the gateway by the CLI): on timeout the call abstains, a warn line
+(`refine.jev.timeout`) goes to `log.jsonl`, and the cue ends `unknown` (`jev-timeout`).
+
+**Region-only cues.** A `shown` cue whose edges stay unsure (edge-all-unsure, bracketed edges)
+but which Jev sees in the probe frames is still region-tracked over the first to last frame it
+was seen. It keeps its coarse VidAngel in/out and gains `regions` plus
+`refine: { edges: coarse }` (status `region` in refine results, `coarse-edges` on the review
+list). The player applies such a track over the synced coarse window, never over less time than
+the cue would be hidden untracked: the window takes the full-blur pads and minimum width, the
+first seen box is held back to its start and the last forward to its end, and an empty or unsure
+keyframe between two sightings hides the box spanning both sightings when the next one comes within
+1 s (a missed keyframe, not the subject leaving), else the whole picture. A whole-frame sliver under
+0.1 s at a cut (frame snapping) takes the next box instead of flashing the whole picture. `refinedCount` counts
+only cues measured at ms/frame, and a cue refined at ms/frame is never replaced by a coarse one.
+When Jev sees the subject nowhere, or only judges it whole-frame, no track is written.
+
+**Same-subject tags (R6).** After measurement, `shown` cues whose spans overlap are asked of Jev
+pairwise (`subjectGroups.mjs`, both labels plus one frame from the overlap, "the same single
+thing on screen?"). Only a confident yes groups; no, abstain, timeout and error leave the tags
+separate. Grouped cues carry `subject: <id>` in the refined EDL; a re-run keeps the subjects
+already there (`--resubject` asks again, `--no-subjects` skips the step). The resolver turns
+cues sharing a `subject` into ONE effect (id = the subject id) over the union of their spans.
+Each member's span is first widened as it would be alone (its own effect's pads and minimum
+width), so the union never hides less time than any member untracked. With a usable track (the
+best-tracked member's, most keyframes, at least one sighting) blur and full-blur members become ONE
+regional blur along it (R2), at the full-blur radius when any member asked for full-blur; a
+censor-bar or pixelate member outranks them and follows the track; blackout and skips outrank all.
+Without a track every member counts as what it would play alone (an untracked blur is a full-blur)
+and the strongest wins (blackout > full-blur > censor-bar/pixelate). An authored `rect` stays only
+when there is no track and every member plays that same effect alone. The track is held at both
+ends to cover the union, and a gap in it (empty or unsure keyframe) hides the box spanning the
+sightings around it when it lasts 1 s or less, else the whole picture, so no instant of any
+member's span is left uncovered. `said`/`heard` cues never group, so a word inside
+the union still mutes on its own.
+
 - **Safe windows** (`safeWindow.mjs`). A mute refine could not pin is widened to
   `tag.in − 3.5 s … tag.out + 3.0 s` with `precision: safe-window`; the tag span is
   kept as `tagIn`/`tagOut`, so applying it again is a no-op. The constants cover every
@@ -286,11 +400,23 @@ only blurred a few seconds before.
 `disabled: true` (members play by their own rules), and `card: { text, approvedBy, at }`.
 The refined EDL's `card` is only a draft; **only an approved card is ever shown**.
 
+**Cue cards (R5)** — a cue whose effect is a skip can carry a card too. Cues have no refined-EDL
+home, so the AI draft lives in the household override at `cueOverrides.<id>.cardDraft`
+(`{ text, at }`, written by `POST /{rk}/cues/{cueId}/card` through the same scoped card-writer
+gateway as scene cards). Approving (`PUT /{rk}/cues/{cueId}` `{ card: { approve: true, text? } }`)
+copies the draft, or the edited text, to `cueOverrides.<id>.card` (`{ text, approvedBy, at }`);
+`card: null` withdraws it and keeps the cue's other rulings. The resolver plays only
+`card.text`: any cue that resolves to a skip-card (a long said exchange, or a `skip` cue that
+has an approved card, which then plays as a skip-card) shows it; without one the card reads
+the generic "Scene skipped." (never the cue label). `cardDraft` never plays.
+
 **Player** (`contentFilter.js` `applyScenes`, `sceneEffect.mjs` shared with the server):
 - A scene with an effect drops the cues inside it that hide no more than it does
   (blur < full-blur < blackout < skip). Word mutes, credits and stronger cues stay;
   mutes are never clipped to a scene; cues of a scene a grown-up turned off stay
-  even inside an overlapping scene.
+  even inside an overlapping scene. A member cue, or a same-subject piece with a member in
+  the scene, that reaches outside the scene is clipped to its time outside the scene rather
+  than dropped, so a group member outside the scene stays hidden.
 - Neighbouring scenes sharing a group, with the same effect and ≤ 30 s apart, are
   **bridged** into one (one black, one card), at resolve time only.
 - **skip** → one `skip-card` (profile `holdSec`), text = approved card or "Scene skipped.".
@@ -334,8 +460,9 @@ subtitle block (same start, index and word) is deduplicated. With `--write`,
 any `srt*` key in `cueOverrides` that no longer matches an emitted cue is
 printed as orphaned. Category is `language/<group>/<leaf>`; severity comes
 from the word's tier (`tolerant → high`, `moderate → medium`, `strict → low`).
-SRT cues carry an explicit `effect: mute`, so profiles do not change them —
-only `cueOverrides.<id>.disabled` does.
+SRT cues carry a stamped `effect: mute` that is only a default: the profile's language group
+and `languageWords` decide the effect (see Language groups); `cueOverrides.<id>.disabled` or
+`.effect` still rule per cue.
 
 `contentfilter srt-review <ratingKey>` is a second opinion for a grown-up.
 For every word hit it asks the typed-decision model (`IDecisionGateway`, Jev)
@@ -446,19 +573,21 @@ scene selected in the rail. Cue: *Off*, *Mute*, *Bleep*, *Blur*, *Skip*, or *Pro
 the ruling), written to `cueOverrides` by `PUT /{rk}/cues/{cueId}`. Scene: *Tags only* (off),
 *Blackout*, *Skip*, *Profile* via `PUT /{rk}/scenes/{id}`, plus **Draft with AI / Regenerate** (one scene's card,
 `POST /{rk}/scenes/{id}/card`), **Edit**, **Approve** and **Withdraw** (the same
-`sceneOverrides` rulings as the admin screen). Each write refreshes the store so the change
+`sceneOverrides` rulings as the admin screen). A selected cue whose effect is a skip shows the same card controls, via `POST /{rk}/cues/{cueId}/card` and `PUT /{rk}/cues/{cueId}` (see Cue cards). Each write refreshes the store so the change
 applies to the next pass. The Settings tab has **This film / Everywhere** and **Reset this film**.
 
-**Settings** (`shared/contracts/content-filter/filterSettings.mjs`). Four plain choices:
-`language` (`mute | bleep | off`) and `violence`, `nudity`, `sexual`
-(`off | blur | blackout | skip`). `profilePatchFromSettings` turns them into `categories` and
+**Settings** (`shared/contracts/content-filter/filterSettings.mjs`). Plain choices:
+`language`, an object of five groups (`profanity`, `blasphemy`, `sexual`, `slurs`, `childish`),
+each `mute | bleep | off`, and `violence`, `nudity`, `sexual` (`off | blur | blackout | skip`).
+The settings API also takes a partial `language` object (only the groups named change) or the
+legacy single string (sets all five). `profilePatchFromSettings` turns them into `categories` and
 `scenes` fragments; `mergeProfilePatch` lays a fragment over a profile (patch wins per key;
 name, treatments, theme, `requiresCertification` untouched); `settingsFromProfile` reads
 them back.
 
 | Setting | Level | Categories owned | Scene rule (`scenes.<group>`) |
 |---|---|---|---|
-| language | mute / bleep / off | `language` -> that effect | none |
+| language.\<group\> | mute / bleep / off | `language/<group>` -> that effect | none |
 | violence | off | `violence_blood_gore`, `/graphic`, `/gore` -> off | `{}` |
 | violence | blur | `/graphic`, `/gore` -> full-blur | `{}` |
 | violence | blackout | as blur | `violence_blood_gore: { blackout: { picture: 2 } }` |
@@ -469,6 +598,27 @@ them back.
 | sexual | off / blur | `sex_any`, `sex_any/sexual_assault` -> off / full-blur | `{}` |
 | sexual | blackout | as blur | `sex_any: { blackout: { picture: 2 } }` |
 | sexual | skip | as blur | `sex_any: { blackout: { picture: 2 }, skip: { situation: 3 } }` |
+
+**Language groups (R9)** (`shared/contracts/content-filter/languageGroups.mjs`). One alias table
+maps both taxonomies onto five groups: Profanity (`profanity`, `profanity_captions`), Blasphemy
+(`blasphemy`), Sexual (VidAngel `language_sexual`, word-list `vulgarity`), Slurs
+(`language_racial`, `racial`), Childish (`language_childish`, `childish`). A cue's group is the first
+segment of `language/<group>/<leaf>` the table knows; a language category with none (bare
+`language`, `language/x`) counts as profanity. The cue's effect comes from the profile rule
+`language/<group>`; a rule for a deeper path (`language/profanity/fuck`) beats the group, and the
+old single `language` rule is the fallback. A level-2 key may use either taxonomy's name
+(`language/language_racial` rules Slurs; the canonical `language/slurs` wins if both exist) (reading it as settings gives all five groups that
+value). Defaults when settings are written without a group: Profanity, Blasphemy, Sexual, Slurs
+mute; Childish off. **Per-word exceptions** (hand-edited YAML, no UI yet; values outside
+`off|mute|bleep` are ignored with a warning; an empty value is invalid, so the group applies): `profile.languageWords: { <word>: off|mute|bleep }`
+(also honoured in a film's `profilePatch`) beats the group; the word is the category leaf
+(`language/childish/jerk` -> `jerk`) or an uncensored one-word label. The group rule chooses the
+audio effect for *said* cues; the R3 tone caps, R4 line rules and the channel fit apply on top, so
+a *shown* language tag (billboard) is still blurred, not muted. Word-list (SRT) cues (marked `source: srt` by the producer; the id shape is not consulted) are governed too: their stamped
+`effect: mute` is only a default, so the group and `languageWords` decide (Childish off unmutes
+"jerk"; Slurs bleep tones a racial word, R3-capped). A household `cueOverrides.<id>.effect` and a
+hand-authored `addCues` effect still win. The preview Settings tab has five rows (Profanity, Blasphemy,
+Sexual language, Slurs, Childish words), each This film / Everywhere.
 
 An empty `{}` scene rule is explicit "none" so it overrides a base entry. Settings apply at
 one of two scopes:

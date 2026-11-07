@@ -9,6 +9,8 @@ import { previewStore } from './previewStore.js';
 const PROFILE = {
   categories: {
     language: { effect: 'mute' },
+    'language/childish': { effect: 'off' },
+    'language/slurs': { effect: 'bleep' },
     'violence_blood_gore/graphic': { effect: 'full-blur' },
     sex_nudity_immodesty: { effect: 'full-blur' },
     sex_any: { effect: 'full-blur' },
@@ -28,13 +30,15 @@ describe('SettingsPanel', () => {
 
   it('shows the current settings and defaults to This film', () => {
     render(<SettingsPanel />);
-    const lang = screen.getByRole('group', { name: 'Language' });
-    expect(within(lang).getByRole('button', { name: 'Mute' }).getAttribute('aria-pressed')).toBe('true');
+    const on = (group, button) => within(screen.getByRole('group', { name: group })).getByRole('button', { name: button }).getAttribute('aria-pressed');
+    for (const g of ['Profanity', 'Blasphemy', 'Sexual language']) expect(on(g, 'Mute')).toBe('true');
+    expect(on('Slurs', 'Bleep')).toBe('true');
+    expect(on('Childish words', 'Off')).toBe('true');
     expect(within(screen.getByRole('group', { name: 'Sexual content' })).getByRole('button', { name: 'Skip' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'This film' }).getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('a choice PUTs the film route with all four settings, then refreshes', async () => {
+  it('a choice PUTs the film route with only the change, then refreshes', async () => {
     DaylightAPI.mockResolvedValue({});
     render(<SettingsPanel />);
     fireEvent.click(within(screen.getByRole('group', { name: 'Violence' })).getByRole('button', { name: 'Skip' }));
@@ -46,9 +50,9 @@ describe('SettingsPanel', () => {
     DaylightAPI.mockResolvedValue({});
     render(<SettingsPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Everywhere' }));
-    fireEvent.click(within(screen.getByRole('group', { name: 'Language' })).getByRole('button', { name: 'Bleep' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Profanity' })).getByRole('button', { name: 'Bleep' }));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
-    expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/profiles/family/settings', { settings: { language: 'bleep' } }, 'PUT');
+    expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/profiles/family/settings', { settings: { language: { profanity: 'bleep' } } }, 'PUT');
   });
 
   it('Reset this film DELETEs and refreshes; disabled with no film settings', async () => {

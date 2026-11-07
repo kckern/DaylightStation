@@ -12,23 +12,30 @@
  * `needsRouting: true` and the refiner asks the decision model.
  */
 
-const PROSE = /\s/;
+import { isWordLabel, SOUND_LABEL } from '../../../../../../../shared/contracts/content-filter/cueModality.mjs';
 
-/** A label that names one word (possibly censored: "G*d", "b*tthead", "Irish bug"). */
-export function isWordLabel(label) {
-  const l = String(label || '').trim();
-  return !!l && (!PROSE.test(l) || l.length <= 14) && !/[.!?]$/.test(l) && l.split(/\s+/).length <= 2;
-}
+export { isWordLabel };
 
 export function initialKind(cue) {
   const cat = String(cue.category || '');
   const label = String(cue.label || '').trim();
   if (cat.startsWith('credits/')) return { kind: 'credits', needsRouting: false };
   if (cue.type === 'mute' && isWordLabel(label)) return { kind: 'speech', needsRouting: false };
-  if (/\b(heard|sound of|sounds? (of|can))\b/i.test(label) && cue.type === 'mute') return { kind: 'sound', needsRouting: false };
+  if (SOUND_LABEL.test(label) && cue.type === 'mute') return { kind: 'sound', needsRouting: false };
   if (cue.type === 'mute') return { kind: 'speech-line', needsRouting: true };
   if (cat.startsWith('language/')) return { kind: isWordLabel(label) ? 'speech' : 'speech-line', needsRouting: !isWordLabel(label) };
   return { kind: 'visual', needsRouting: false };
+}
+
+/**
+ * Does `cue` belong to a `--kinds` selection? A skip cue under a language category is
+ * `shown` (a sign, a billboard) however its label reads; `initialKind` calls it a line
+ * only because the router has to decide, so a `visual` selection must still reach it.
+ */
+export function cueMatchesKinds(cue, wanted) {
+  const { kind, needsRouting } = initialKind(cue);
+  if (wanted.has(kind)) return true;
+  return wanted.has('visual') && needsRouting && cue.type === 'skip';
 }
 
 // Spoken forms per category leaf. Compounds count for each part (goddammit is god and damn).

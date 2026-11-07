@@ -47,6 +47,7 @@ export const DEFAULTS = Object.freeze({
   coarseGrid: 3,
   fineGrid: 6,
   region: true,
+  decisionTimeoutMs: 90000, // asked of the gateway per request; the CLI also enforces it (TimeoutDecisionGateway), a timed-out call abstains (cue ends unknown)
 });
 
 /**
@@ -97,9 +98,9 @@ export class CueRefiner {
     const t0 = Date.now();
     let res;
     try {
-      res = await this.decisions.evaluate(built.state, built.questions, { timeout: 120000 });
+      res = await this.decisions.evaluate(built.state, built.questions, { timeout: this.o.decisionTimeoutMs });
     } catch (err) {
-      this.log({ cue: cue.id, step, v: QUESTION_VERSION, error: err.message, ...extra });
+      this.log({ cue: cue.id, step, v: QUESTION_VERSION, error: err.message, ...(err.code === 'JEV_TIMEOUT' ? { level: 'warn', event: 'refine.jev.timeout', timeoutMs: err.timeoutMs ?? null } : {}), ...extra });
       throw err;
     }
     const value = built.read(res.answers);
@@ -125,7 +126,7 @@ export class CueRefiner {
       if (kind === 'credits') return await this.#visual(ctx, 'Film credits: names or titles as text on screen', { region: false });
       return this.#unknown(ctx, kind, 'kind-unsupported');
     } catch (err) {
-      return this.#unknown(ctx, kind, 'error', { error: err.message });
+      return this.#unknown(ctx, kind, err.code === 'JEV_TIMEOUT' ? 'jev-timeout' : 'error', { error: err.message });
     }
   }
 
@@ -312,7 +313,8 @@ export class CueRefiner {
       const end = await this.#navigate(ctx, label, 'end', found.frame + Math.round(this.tb.fps));
       if (end.action !== 'done') return this.#unknown(ctx, 'visual', `end-${end.reason || end.action}`);
       if ([found, end].some((x) => String(x.reason || '').startsWith('bracketed'))) {
-        return this.#unknown(ctx, 'visual', 'bracketed-edge', { estimate: { frameIn: found.frame, frameOut: end.frame, ...this.tb.spanToTimes(found.frame, Math.max(found.frame, end.frame)) } });
+        const unknown = this.#unknown(ctx, 'visual', 'bracketed-edge', { estimate: { frameIn: found.frame, frameOut: end.frame, ...this.tb.spanToTimes(found.frame, Math.max(found.frame, end.frame)) } });
+        return await this.#coarseRegion(ctx, label, region, { frameIn: found.frame, frameOut: Math.max(found.frame, end.frame) }, unknown);
       }
       return this.#finishVisual(ctx, label, [{ frameIn: found.frame, frameOut: end.frame }], region);
     }
@@ -333,11 +335,13 @@ export class CueRefiner {
 
     // 4. Each run's edges: at a shot cut when the cut frame still shows it, else a contact-sheet search
     const segments = [];
+    // Where Jev sees the subject at all: first to last present probe. Used when the edges stay unsure.
+    const presentSpan = () => ({ frameIn: runs[0].firstF, frameOut: runs[runs.length - 1].lastF });
     for (const run of runs) {
       const startF = await this.#edge(ctx, label, 'start', shots[run.firstSi], run.firstF, before(run.firstF));
       const endF = await this.#edge(ctx, label, 'end', shots[run.lastSi], run.lastF, after(run.lastF));
-      if (startF.frame == null || endF.frame == null) return this.#unknown(ctx, 'visual', `edge-${startF.reason || endF.reason}`);
-      if (endF.frame < startF.frame) return this.#unknown(ctx, 'visual', 'edges-reversed');
+      if (startF.frame == null || endF.frame == null) return await this.#coarseRegion(ctx, label, region, presentSpan(), this.#unknown(ctx, 'visual', `edge-${startF.reason || endF.reason}`));
+      if (endF.frame < startF.frame) return await this.#coarseRegion(ctx, label, region, presentSpan(), this.#unknown(ctx, 'visual', 'edges-reversed'));
       const prev = segments[segments.length - 1];
       if (prev && startF.frame <= prev.frameOut + 1) { prev.frameOut = Math.max(prev.frameOut, endF.frame); continue; }
       segments.push({ frameIn: startF.frame, frameOut: endF.frame, uncertainty: Math.max(startF.uncertainty || 0, endF.uncertainty || 0), bracketed: !!(startF.bracketed || endF.bracketed) });
@@ -346,7 +350,8 @@ export class CueRefiner {
     // calibration: propose them for review instead of writing them.
     if (segments.some((x) => x.bracketed)) {
       const t = this.tb.spanToTimes(segments[0].frameIn, segments[segments.length - 1].frameOut);
-      return this.#unknown(ctx, 'visual', 'bracketed-edge', { estimate: { frameIn: segments[0].frameIn, frameOut: segments[segments.length - 1].frameOut, ...t } });
+      const unknown = this.#unknown(ctx, 'visual', 'bracketed-edge', { estimate: { frameIn: segments[0].frameIn, frameOut: segments[segments.length - 1].frameOut, ...t } });
+      return await this.#coarseRegion(ctx, label, region, presentSpan(), unknown);
     }
     return this.#finishVisual(ctx, label, segments, region);
   }
@@ -404,6 +409,22 @@ export class CueRefiner {
       }
     }
     return { action: 'unknown', reason: 'looks' };
+  }
+
+  /**
+   * The edges stayed unsure but Jev does see the subject: track its region over `span` (the frames
+   * where it was seen) and keep the cue's coarse in/out. Returns a `region` result when a regional
+   * track comes out; otherwise the `unknown` result it was given (no track, nothing written).
+   */
+  async #coarseRegion(ctx, label, region, span, unknown) {
+    if (!region || !span || span.frameOut < span.frameIn) return unknown;
+    const track = await this.#region(ctx, label, span);
+    if (!track || track.whole) {
+      ctx.path.push({ step: 'region-coarse', track: track?.track || 'whole', reason: track?.reason || null });
+      return unknown;
+    }
+    ctx.path.push({ step: 'region-coarse', keyframes: track.track.length, frameIn: span.frameIn, frameOut: span.frameOut });
+    return { id: ctx.cue.id, status: 'region', kind: 'visual', edges: 'coarse', reason: unknown.reason, frameIn: span.frameIn, frameOut: span.frameOut, segments: [{ ...span, region: track }], path: ctx.path };
   }
 
   async #finishVisual(ctx, label, segments, region) {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import yaml from 'js-yaml';
 import { buildRefinedEdl, anchorsFrom, refinedEdlName, stripRefined } from './refinedEdl.mjs';
 
 const edl = {
@@ -94,5 +95,117 @@ describe('stripRefined', () => {
     });
     expect(removed).toBe(2);
     expect(o).toEqual({ b: { effect: 'mute', nudgeMs: 20 }, c: { in: 5, out: 6 }, d: { disabled: true } });
+  });
+});
+
+describe('buildRefinedEdl re-run safety (R7)', () => {
+  const base = { edl, cueOverrides, sync, anchors: [{ t: 100.1, kind: 'word', text: 'x', line: 'l' }], at: '2026-11-06', refinedFrom: { fps: '24/1', startTime: 0 } };
+  const first = buildRefinedEdl(base);
+  const previous = {
+    ...first,
+    scenes: [{ id: 's1', in: 10, out: 20 }],
+    sceneCalibration: { v: 1, gain: 0.5 },
+    futureKey: { keep: 'me' },
+    certification: { ...first.certification, level: 'parent', parent: { by: 'kc', at: '2026-11-05' } },
+  };
+
+  it('keeps scenes, sceneCalibration, parent sign-off and unknown keys from previous', () => {
+    const out = buildRefinedEdl({ ...base, previous });
+    expect(out.scenes).toEqual(previous.scenes);
+    expect(out.sceneCalibration).toEqual(previous.sceneCalibration);
+    expect(out.futureKey).toEqual({ keep: 'me' });
+    expect(out.certification.parent).toEqual({ by: 'kc', at: '2026-11-05' });
+  });
+
+  it('a re-run with identical inputs is deep-equal to previous', () => {
+    const out = buildRefinedEdl({ ...base, previous });
+    expect(out).toEqual(previous);
+  });
+
+  it('a partial run keeps other cues refined data from previous when the override no longer holds it', () => {
+    const onlyA = { a: cueOverrides.a };
+    const out = buildRefinedEdl({ ...base, cueOverrides: onlyA, previous, partial: true });
+    expect(out.cues).toEqual(previous.cues);
+    expect(out.timebase.refinedCount).toBe(previous.timebase.refinedCount);
+  });
+
+  it('a partial run replaces only the re-measured cue and keeps earlier anchors', () => {
+    const remeasured = { ...cueOverrides, a: { ...cueOverrides.a, in: 109, out: 109.3 } };
+    const out = buildRefinedEdl({ ...base, cueOverrides: { a: remeasured.a }, anchors: [{ t: 101, kind: 'word', text: 'y', line: 'm' }], previous, partial: true });
+    const byA = out.cues.find((c) => c.id === 'a');
+    expect(byA.in).toBeCloseTo(101, 6);
+    expect(out.cues.filter((c) => c.id !== 'a')).toEqual(previous.cues.filter((c) => c.id !== 'a'));
+    expect(out.timebase.anchors.map((x) => x.t)).toEqual([100.1, 101]);
+  });
+
+  it('keeps previous key order, so a re-run dumps byte-identical YAML', () => {
+    const { cues, ...rest } = previous;
+    const ordered = { ...rest, cues }; // scenes etc. before cues
+    const withTail = { ...previous }; delete withTail.scenes; withTail.scenes = previous.scenes; // scenes after cues
+    for (const prev of [ordered, withTail]) {
+      const out = buildRefinedEdl({ ...base, previous: prev });
+      expect(Object.keys(out)).toEqual(Object.keys(prev));
+      expect(yaml.dump(out)).toBe(yaml.dump(prev));
+    }
+  });
+
+  it('fresh edl head fields win over stale previous ones', () => {
+    const stale = { ...previous, title: 'Old Title', runtimeUnalteredSec: 1 };
+    const out = buildRefinedEdl({ ...base, previous: stale });
+    expect(out.title).toBe('Test Film');
+    expect(out.runtimeUnalteredSec).toBe(6000);
+    expect(out.scenes).toEqual(previous.scenes);
+    expect(out.sceneCalibration).toEqual(previous.sceneCalibration);
+    expect(out.futureKey).toEqual({ keep: 'me' });
+    expect(out.certification.parent).toEqual({ by: 'kc', at: '2026-11-05' });
+  });
+});
+
+describe('buildRefinedEdl: coarse-edge region cues', () => {
+  const coarse = { regions: [{ in: 308, grid: 6, cells: [4] }, { in: 312, cells: [] }], refine: { v: 1, part: '777', at: '2026-11-06', edges: 'coarse' } };
+  const mk = (over = {}) => buildRefinedEdl({ edl, sync, anchors: [], at: '2026-11-06', refinedFrom: {}, cueOverrides: { c: coarse }, ...over });
+
+  it('keeps the cue\'s coarse times and gains the track on the VidAngel clock, not counted as refined', () => {
+    const out = mk();
+    const c = out.cues.find((x) => x.id === 'c');
+    expect(c).toMatchObject({ in: 300, out: 306, precision: 'second-approx', refine: { edges: 'coarse' } });
+    expect(c.refine.part).toBeUndefined();
+    expect(c.regions).toEqual([{ in: 300, grid: 6, cells: [4] }, { in: 304, cells: [] }]);
+    expect(out.timebase.refinedCount).toBe(0);
+  });
+
+  it('never replaces a cue previously refined at ms/frame', () => {
+    const was = { id: 'c', type: 'skip', category: 'sex/x', in: 300.5, out: 305, precision: 'frame', refine: { v: 1, at: 'x' } };
+    const out = mk({ previous: { cues: [was] } });
+    expect(out.cues.find((x) => x.id === 'c')).toEqual(was);
+  });
+});
+
+describe('buildRefinedEdl subjects (R6)', () => {
+  const base = { edl, cueOverrides, sync, anchors: [], at: '2026-11-06' };
+  it('writes the subject onto grouped cues', () => {
+    const out = buildRefinedEdl({ ...base, subjects: { b: 'subject-b', c: 'subject-b' } });
+    expect(out.cues.find((c) => c.id === 'b').subject).toBe('subject-b');
+    expect(out.cues.find((c) => c.id === 'c').subject).toBe('subject-b');
+    expect(out.cues.find((c) => c.id === 'a').subject).toBeUndefined();
+  });
+  it('a re-run keeps the previous subjects; null removes one', () => {
+    const first = buildRefinedEdl({ ...base, subjects: { b: 'subject-b', c: 'subject-b' } });
+    const again = buildRefinedEdl({ ...base, previous: first });
+    expect(again.cues.find((c) => c.id === 'b').subject).toBe('subject-b');
+    const cleared = buildRefinedEdl({ ...base, previous: first, subjects: { b: null, c: null } });
+    expect(cleared.cues.find((c) => c.id === 'b').subject).toBeUndefined();
+  });
+});
+
+describe('buildRefinedEdl: the refine kind reaches the shared EDL (R1)', () => {
+  it('keeps kind in the stamp of refined and coarse-edge cues', () => {
+    const ov = {
+      a: { ...cueOverrides.a, refine: { ...cueOverrides.a.refine, kind: 'speech' } },
+      c: { regions: [{ in: 308, grid: 6, cells: [4] }, { in: 312, cells: [] }], refine: { v: 1, part: '777', at: '2026-11-06', edges: 'coarse', kind: 'visual' } },
+    };
+    const out = buildRefinedEdl({ edl, cueOverrides: ov, sync, anchors: [], at: '2026-11-06', refinedFrom: {} });
+    expect(out.cues.find((x) => x.id === 'a').refine).toMatchObject({ kind: 'speech' });
+    expect(out.cues.find((x) => x.id === 'c').refine).toMatchObject({ kind: 'visual', edges: 'coarse' });
   });
 });
