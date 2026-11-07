@@ -5,6 +5,7 @@
  * Pure: reads resolved effective cues only.
  */
 import { PRECISE } from './contentFilter.js';
+import { baseId } from './useContentFilter.js';
 
 const WORD = new Set(['mute', 'bleep']);
 const HIDE_BLUR = new Set(['blur', 'full-blur', 'pixelate']);
@@ -13,14 +14,54 @@ const SKIP = new Set(['skip', 'skip-card']);
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * The ONE THING a cue piece belongs to. Resolution splits a cue into pieces — a
+ * tracked regional blur into one piece per keyframe (`va123#0@4`), a word into
+ * tone pieces and mute remainders (`…#m0`) — and a subject group (R6) or a scene
+ * is one thing on screen whatever its members. Counting pieces said "271 scenes
+ * blurred" for a title with ~58. Every count — this summary and the preview
+ * timeline's legend (`kindCounts`) — is taken over this key.
+ */
+export function unitKey(c) {
+  if (c?.scene != null) return `scene:${c.scene}`;
+  if (c?.subject != null) return `subject:${c.subject}`;
+  return `cue:${baseId(c?.id)}`;
+}
+
+/** Unique units among `cues` (first piece wins). */
+export function uniqueUnits(cues) {
+  const seen = new Map();
+  for (const c of cues) {
+    const k = unitKey(c);
+    if (!seen.has(k)) seen.set(k, c);
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Words, counted once per word: a tone's mute remainders are the same word, and
+ * the pieces of one base cue are one word (a merged tone carries `words`, so the
+ * unit takes its largest count). Returns `[{ n, effect }]`, one per word cue.
+ */
+export function wordUnits(cues) {
+  const byKey = new Map();
+  for (const c of cues) {
+    if (!WORD.has(c.effect) || c.toneRemainder) continue;
+    const k = `cue:${baseId(c.id)}`;
+    const n = c.words ?? 1;
+    const prev = byKey.get(k);
+    if (!prev || n > prev.n) byKey.set(k, { n, effect: c.effect });
+  }
+  return [...byKey.values()];
+}
+
 export function filterSummary(cues = []) {
-  // A tone's mute remainder is the same word; a merged tone carries `words`.
-  const words = cues.filter((c) => WORD.has(c.effect) && !c.toneRemainder);
-  const wordCount = words.reduce((n, c) => n + (c.words ?? 1), 0);
-  const blurred = cues.filter((c) => HIDE_BLUR.has(c.effect)).length;
+  const words = wordUnits(cues);
+  const wordCount = words.reduce((n, w) => n + w.n, 0);
+  const blurred = uniqueUnits(cues.filter((c) => HIDE_BLUR.has(c.effect))).length;
   // A scene split across sync segments is one scene.
-  const hidden = cues.filter((c) => HIDE_SOLID.has(c.effect) && c.firstPiece !== false).length;
-  const skips = cues.filter((c) => SKIP.has(c.effect));
+  const hidden = uniqueUnits(cues.filter((c) => HIDE_SOLID.has(c.effect) && c.firstPiece !== false)).length;
+  const skips = uniqueUnits(cues.filter((c) => SKIP.has(c.effect)));
   const credits = skips.filter((c) => String(c.category || '').startsWith('credits/')).length;
   const scenesSkipped = skips.length - credits;
 

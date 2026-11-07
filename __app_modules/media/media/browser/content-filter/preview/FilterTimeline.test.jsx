@@ -159,6 +159,16 @@ describe('FilterTimeline — legend, now, steps', () => {
     expect(kindCounts(CUES)).toEqual({ words: 2, picture: 1, hidden: 1, skipped: 1 });
   });
 
+  it('counts units, not pieces: one tracked blur split per keyframe is one, a word and its remainders one', () => {
+    const cues = [
+      ...Array.from({ length: 9 }, (_, i) => ({ id: `va9#0@${i}`, in: 10 + i, out: 11 + i, effect: 'blur' })),
+      { id: 'w1', in: 60, out: 60.4, effect: 'bleep', words: 1 },
+      { id: 'w1#m0', in: 59.8, out: 60, effect: 'mute', toneRemainder: true, words: 0 },
+      { id: 'sk#0', in: 500, out: 510, effect: 'skip' }, { id: 'sk#1', in: 510, out: 520, effect: 'skip' },
+    ];
+    expect(kindCounts(cues)).toEqual({ words: 1, picture: 1, hidden: 0, skipped: 1 });
+  });
+
   it('labels the playhead with the current time and the bar with the running time', () => {
     const c = setup(754, 1000);
     expect(screen.getByTestId('filter-timeline-now').textContent).toBe('12:34');

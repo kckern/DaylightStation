@@ -32,8 +32,8 @@
  * `overflow: hidden` is the last resort, not the budget.
  */
 
-/* The frame's shared literals - see `_tokens.scss`. */
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+/* The frame's shared literals - see `../themes/_classical-tokens.scss`. */
+@use "../themes/classical-tokens" as *;
 
 .surround-composer-card {
   height: 100%;

@@ -1,7 +1,10 @@
 # Surround visual design — concert-hall
 
-> Design tokens and rules for the `concert-hall` surround. Implementers follow
-> this exactly; it is what keeps four separately-built modules coherent.
+> Design tokens and rules for the `concert-hall` surround — the **`classical`
+> theme**. The surround frame itself is neutral; this look is opt-in
+> (`theme: classical` on the definition) and lives in the media module. See
+> [Themes](#themes) for the split and who names it. Implementers follow this
+> exactly; it is what keeps four separately-built modules coherent.
 
 ## Thesis
 
@@ -523,31 +526,66 @@ Borrow ArtMode's physical realism, but one plate, not a gallery:
 
 ## Themes
 
-Everything above is the **`classical` theme**: the concert-hall programme. The
-frame's own stylesheet (`SurroundFrame.scss`) is split into neutral layout —
-the stage, media box, band and rail geometry, the entrance — and a look applied
-by theme. A surround definition names its theme:
+**The frame is neutral; every look is an opt-in theme.** The playback
+capability (`__capabilities/playback/browser/surround/`) owns only layout and
+structure: `SurroundFrame.scss` (stage, media box and its aspect lock, band and
+rail geometry, z-order, the entrance and the lyric slide) and `_tokens.scss`
+(structural literals only: `$bond-radius`, `$label-floor`). It carries no
+palette, no faces and no curtain.
+
+Everything above this section is the **`classical` theme**, and it lives in the
+media module beside the classical surround modules:
+
+| File | Holds |
+|---|---|
+| `__app_modules/media/media/browser/surround/themes/classical.scss` | Every classical rule: hall-ink ground and the programme tokens, the velvet stage and the curtain bleed, programme stock, the mahogany band, the oxblood rail, the plate's shadow. |
+| `.../themes/_classical-tokens.scss` | The mahogany ramp and the bond's ground (the CIELAB table); `@forward`s the capability's structural tokens, so a classical module needs one `@use`. |
+| `.../themes/_classical-fonts.scss` | Cormorant Garamond + EB Garamond `@font-face` (files in `frontend/public/fonts/surround/`). |
+| `__app_modules/media/media/browser/surround-classical.mjs` | The public entry: imports the sheet, exports `CLASSICAL_SURROUND_THEME`. |
+
+A surround definition names its theme:
 
 ```yaml
-theme: classical      # the default when the key is absent
+theme: classical      # absent = neutral
 ```
 
-The frame resolves it (`surroundTheme`, `[a-z0-9-]` only, anything else falls
-back to `classical`) and carries it on the root as
+The frame resolves it (`surroundTheme`, `[a-z0-9-]` only; absent or anything
+else is `neutral`) and carries it on the root as
 `surround-frame--theme-<name>` plus `data-surround-theme="<name>"`.
 
 | Theme | Where | Look |
 |---|---|---|
-| `classical` | `SurroundFrame.scss`, every rule under `:where(.surround-frame--theme-classical)` | Velvet drape, curtain bleed, paper stock, mahogany band and rail, the Garamonds. Worn by every classical work, station sequence and school lesson/reading frame, none of which name a theme. |
+| `neutral` | `SurroundFrame.scss`, the zero-specificity `:where(.surround-frame)` ground | Black ground, system sans, no region fill, no curtain. What a definition that names no theme wears, and what a new theme starts from. |
+| `classical` | media module, `surround/themes/classical.scss` (above) | Velvet drape, curtain bleed, paper stock, mahogany band and rail, the Garamonds. |
 | `content-filter` | `__app_modules/media/media/browser/content-filter/preview/contentFilterTheme.scss` (palette in `_palette.scss`) | Slate edit bay: no plate inset, no drape, Atkinson Hyperlegible Next. See [Content Filter, Preview surround](../../core/content-filter.md#preview-surround). |
-| *(unthemed)* | the bare `.surround-frame` rules | Black ground, system sans, no region fill. Nothing ships unthemed; it is what a new theme starts from. |
 
-**Classical rules are wrapped in `:where()`** so they keep exactly the
-specificity they had when they were the base, and nothing that overrode them
-before has to change. Verified pixel-identical against the pre-split build on a
-classical work (only the moving playhead differed). A new theme scopes its
-rules under `.surround-frame--theme-<name>` in the host module's own sheet and
-must not edit the classical block.
+**Who names `classical`.** Every host that wants the concert hall says so:
+
+- **Sidecar surrounds (classical works, plays, station frames)** — the
+  definition files in the data volume, `content/surround/_surrounds/*.yml`
+  (`concert-hall`, `playhouse`, `playhouse-rail`), each author
+  `theme: classical`. `YamlSurroundStore` passes an authored `theme` through
+  into `payload.definition` (and adds nothing when it is absent), so the API
+  carries it. A new definition without `theme:` renders neutral.
+- **School lesson and reading frames** — `MediaLessonScreen.jsx` and
+  `ReadingSessionScreen.jsx` set `theme: CLASSICAL_SURROUND_THEME` on their
+  inline definitions and import `surround-classical.mjs` (they mount
+  `SurroundFrame` directly, so `builtins.js` is not loaded for them). Their
+  module sheets `@use` `_classical-tokens.scss` for the palette fallbacks.
+
+**Where the sheet is loaded.** `surround/builtins.js` imports
+`surround-classical.mjs` first, before the modules, so every frame mounted
+through `SurroundHost` has the theme; direct mounts import the entry themselves.
+
+**Specificity is unchanged.** Classical rules are scoped by
+`:where(.surround-frame--theme-classical)`, so each keeps exactly the
+specificity it had when it was the base. No classical rule sets a property the
+frame's layout rules set on the same element, and the neutral ground is at zero
+specificity, so the theme wins on the root whatever order the bundler emits the
+two sheets in. Verified pixel-identical against the classical-default build on a
+classical work. A new theme scopes its rules under
+`.surround-frame--theme-<name>` in the host module's own sheet; the capability's
+sheet is never edited for a look.
 
 ## Band configuration
 

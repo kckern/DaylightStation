@@ -9,6 +9,14 @@ piece to it.
 For the framework itself (seams, ports, module contract), see the design and spec
 in `ops:docs/_wip/plans/2026-08-18-player-surround-*.md`.
 
+**The look is opt-in.** The surround frame is neutral layout; the concert-hall
+look (curtain, programme stock, mahogany, the Garamonds) is the `classical`
+theme, owned by the media module at
+`__app_modules/media/media/browser/surround/themes/`. A definition in
+`_surrounds/` wears it only when it says `theme: classical` — every shipped one
+does. A new definition that omits it renders neutral. See
+[design.md § Themes](../design.md#themes).
+
 ---
 
 ## Structure
@@ -407,6 +415,7 @@ into. The shipped one:
 
 ```yaml
 id: concert-hall
+theme: classical                        # the concert-hall look; absent = neutral
 regions:
   top:
     module: work-placard
@@ -431,6 +440,10 @@ for the region that claims the band's slack. `collapse: first` marks the region
 dropped when the whole band falls under `collapse.footerFloor`. A module in a
 slot it was not registered for still renders and logs
 `surround.module.misplaced`.
+
+`theme:` names the frame's look and is passed through to the payload as
+`definition.theme`. Every shipped definition says `classical`; without it the
+frame is neutral (black ground, system sans, no curtain).
 
 `band:` is the third thing a definition says about a frame, beside `regions` and
 `collapse` — how the listening band and the segment rail are laid out relative

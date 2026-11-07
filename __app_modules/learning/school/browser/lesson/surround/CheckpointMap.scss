@@ -6,8 +6,8 @@
 // map is a FRAME, not a dashboard: one hairline rail, one mark per stop, and
 // nothing that competes with the picture above it.
 //
-// It borrows the frame's own materials (`../../../Surround/_tokens.scss` and the
-// `--ink` / `--brass` custom properties `SurroundFrame.scss` publishes) rather
+// It borrows the frame's own materials (`media/.../surround/themes/_classical-tokens.scss` and the
+// `--ink` / `--brass` custom properties the classical theme publishes) rather
 // than opening a second palette. The frame paints the ground these marks sit
 // on; a school-blue rail on mahogany would read as a different application
 // having crashed into the picture.
@@ -23,7 +23,7 @@
 //
 // The NODES do not move, so they are placed with `left` and cost nothing.
 
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../../../../../media/media/browser/surround/themes/classical-tokens" as *;
 
 /** The band's ramp, shared with the concert frame's playhead. */
 $ramp: 120ms linear;

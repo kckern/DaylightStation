@@ -14,7 +14,7 @@
  * a map rendered outside the surround entirely.
  */
 
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../themes/classical-tokens" as *;
 
 .surround-country-map {
   display: block;

@@ -20,6 +20,10 @@
  */
 
 import { registerSurroundModule } from "../../../../../__capabilities/playback/browser/surround-registry.mjs";
+// The concert-hall look the classical modules are drawn for. The capability's
+// frame is neutral; definitions opt in with `theme: classical`. Loaded here,
+// first, so it reaches the page before the modules' own sheets.
+import "../surround-classical.mjs";
 import SegmentMap from "./modules/SegmentMap.jsx";
 import CueTicker from "./modules/CueTicker.jsx";
 import ComposerCard from "./modules/ComposerCard.jsx";

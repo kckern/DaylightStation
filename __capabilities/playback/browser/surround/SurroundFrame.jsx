@@ -1,7 +1,10 @@
 // frontend/src/modules/Surround/SurroundFrame.jsx
 //
-// The concert programme frame: a darkened auditorium (--hall-ink) with the video
-// locked to 16:9 on the left and printed programme panels around it.
+// The surround frame: the video locked to its aspect ratio, with module regions
+// (a rail beside it, a band under it, a plate on its top edge) laid out around
+// it. Layout only — the look is a theme the definition opts into (see
+// `surroundTheme` below); the concert-hall programme is the media module's
+// `classical` theme.
 //
 // Layout geometry is a deliberate COPY of FitnessPlayerFrame's shell (main column
 // + rail + footer) in a `surround-frame__*` namespace. It is not
@@ -101,12 +104,13 @@ function regionStyle(region) {
 
 /**
  * The frame's LOOK. A definition may name a theme (`definition.theme`); one that
- * names none is `classical`, the concert-hall programme every classical, station
- * and school surround has always worn. The frame's own stylesheet is otherwise
- * neutral layout. Anything but `[a-z0-9-]` falls back to classical rather than
- * reaching a class name.
+ * names none is `neutral` — the frame's own plain dark room. Every other look is
+ * OPT-IN and lives with the host that owns it: `classical` (the concert hall,
+ * `media/.../surround/themes/classical.scss`, named by the `_surrounds/*.yml`
+ * definitions and the school's frames), `content-filter` (the preview). Anything
+ * but `[a-z0-9-]` falls back to neutral rather than reaching a class name.
  */
-export const DEFAULT_SURROUND_THEME = 'classical';
+export const DEFAULT_SURROUND_THEME = 'neutral';
 export function surroundTheme(definition) {
   const t = definition?.theme;
   return typeof t === 'string' && /^[a-z0-9-]+$/.test(t) ? t : DEFAULT_SURROUND_THEME;

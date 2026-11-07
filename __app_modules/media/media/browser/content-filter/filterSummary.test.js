@@ -67,3 +67,38 @@ describe('filterSummary with scenes', () => {
     expect(filterSummary(cues)).toBe('2 scenes hidden');
   });
 });
+
+// Resolution splits one cue into many pieces; every count is per CUE (base id),
+// per subject group, or per scene — never per piece. BTTF said "271 scenes
+// blurred" for ~58 tracked blurs before this.
+describe('filterSummary counts units, not pieces', () => {
+  it('counts one tracked cue split into many keyframe pieces as one scene', () => {
+    const pieces = Array.from({ length: 12 }, (_, i) => ({ id: `va123#0@${i}`, effect: 'blur', in: i, out: i + 1 }));
+    expect(filterSummary(pieces)).toBe('1 scene blurred');
+    const two = [...pieces, { id: 'va124#0@0', effect: 'blur', in: 50, out: 51 }, { id: 'va124#1@3', effect: 'blur', in: 52, out: 53 }];
+    expect(filterSummary(two)).toBe('2 scenes blurred');
+  });
+  it('counts a subject group once whatever its members', () => {
+    const cues = [
+      { id: 'va1#0@0', effect: 'blur', subject: 'poster' }, { id: 'va2#0@0', effect: 'blur', subject: 'poster' },
+      { id: 'va3', effect: 'blur' },
+    ];
+    expect(filterSummary(cues)).toBe('2 scenes blurred');
+  });
+  it('counts a word once across its tone piece and mute remainders', () => {
+    const cues = [
+      { id: 'w1', effect: 'bleep', words: 1 },
+      { id: 'w1#m0', effect: 'mute', toneRemainder: true, words: 0 },
+      { id: 'w1#m1', effect: 'mute', toneRemainder: true, words: 0 },
+      { id: 'w2#0', effect: 'mute' }, { id: 'w2#1', effect: 'mute' },
+    ];
+    expect(filterSummary(cues)).toBe('2 words muted or bleeped');
+  });
+  it('counts a merged tone as the words it carries', () => {
+    expect(filterSummary([{ id: 'w1', effect: 'bleep', words: 3 }, { id: 'w1#m1', effect: 'mute', toneRemainder: true, words: 0 }]))
+      .toBe('3 words bleeped');
+  });
+  it('counts a skip split into pieces once', () => {
+    expect(filterSummary([{ id: 'sk1#0', effect: 'skip' }, { id: 'sk1#1', effect: 'skip' }])).toBe('1 scene skipped');
+  });
+});

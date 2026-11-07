@@ -133,6 +133,11 @@ import CheckpointQuizOverlay from "./CheckpointQuizOverlay.jsx";
 // — the definition below names only lesson modules, and pulling the concert-hall
 // chrome into a school bundle for nothing is the dependency this feature keeps out.
 import "./surround/registerLessonSurround.js";
+// The frame is neutral; this screen wears the concert-hall look its modules are
+// drawn against (mahogany band, programme ink), so it names the `classical`
+// theme and loads its stylesheet. That is a stylesheet, not the classical
+// modules — `Surround/builtins.js` stays out of the school bundle.
+import { CLASSICAL_SURROUND_THEME } from "../../../../media/media/browser/surround-classical.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import "./MediaLessonScreen.scss";
 
@@ -147,6 +152,7 @@ import "./MediaLessonScreen.scss";
  * which is the region the frame's SCSS expects to absorb it.
  */
 const LESSON_SURROUND_DEFINITION = Object.freeze({
+  theme: CLASSICAL_SURROUND_THEME,
   regions: {
     top: { module: 'lesson-score' },
     bottom: { module: 'checkpoint-map', height: 'fill' },

@@ -20,6 +20,7 @@ import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singl
 import {
   KINDS, KIND_ORDER, kindOf, effectChip, effectSentence, sourceOf, categoryText, clock, lengthText, rowLabel,
 } from './effectKinds.js';
+import { uniqueUnits, wordUnits } from '../filterSummary.js';
 import './contentFilterTheme.scss';
 import './FilterTimeline.scss';
 
@@ -53,10 +54,17 @@ export function stepStops(cues) {
   return out;
 }
 
-/** Stops per kind, for the legend. */
+/**
+ * Per kind, for the legend — counted the way the summary counts
+ * (`filterSummary.js`): words once per word (tone pieces and mute remainders of
+ * one word are one word), everything else once per unit (a scene, a subject
+ * group, or a base cue however many keyframe pieces it was split into).
+ */
 export function kindCounts(cues) {
+  const list = (cues || []).filter((c) => Number.isFinite(c.in));
   const counts = { words: 0, picture: 0, hidden: 0, skipped: 0 };
-  for (const c of stepStops(cues)) counts[kindOf(c.effect)] += 1;
+  counts.words = wordUnits(list).reduce((n, w) => n + w.n, 0);
+  for (const k of ['picture', 'hidden', 'skipped']) counts[k] = uniqueUnits(list.filter((x) => kindOf(x.effect) === k)).length;
   return counts;
 }
 
