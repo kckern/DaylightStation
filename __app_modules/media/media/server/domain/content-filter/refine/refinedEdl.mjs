@@ -40,6 +40,14 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
   };
   const measured = (edl.cues || []).map((cue) => {
     const o = cueOverrides[cue.id];
+    // Coarse edges, measured region track (refine could not settle the edges): the cue keeps its
+    // VidAngel times and gains the track; it never replaces a cue refined at ms/frame.
+    if (o?.refine && o.in == null && o.regions?.length) {
+      const was = prevCue.get(cue.id);
+      if (was?.refine && was.refine.edges !== 'coarse') return was;
+      const { part, ...stamp } = o.refine;
+      return { ...cue, precision: cue.precision || edl.precision || 'second-approx', regions: o.regions.map((k) => ({ ...k, in: toVa(k.in) })), refine: stamp };
+    }
     if ((!o?.refine || o.in == null) && prevCue.get(cue.id)?.refine) return prevCue.get(cue.id);
     if (!o?.refine || o.in == null) return { ...cue, precision: cue.precision || edl.precision || 'second-approx' };
     const out = { ...cue, in: toVa(o.in), out: toVa(o.out), precision: o.precision };
@@ -51,7 +59,7 @@ export function buildRefinedEdl({ edl, cueOverrides = {}, sync, anchors = [], re
     delete out.approx;
     return out;
   });
-  const refinedCount = measured.filter((c) => c.refine).length;
+  const refinedCount = measured.filter((c) => c.refine && c.refine.edges !== 'coarse').length;
   // Mutes refine could not pin get a window wide enough for the tag's drift.
   const cues = applySafeWindows(measured);
   const { contentId, cues: _c, precision: _p, certification: _x, ...head } = edl;

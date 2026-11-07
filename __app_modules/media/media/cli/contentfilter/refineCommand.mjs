@@ -20,6 +20,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { prepareCopy } from './copySetup.mjs';
 import { MagickRefineRenderer } from '../../server/adapters/content-filter/MagickRefineRenderer.mjs';
+import { TimeoutDecisionGateway } from '../../server/adapters/content-filter/TimeoutDecisionGateway.mjs';
 import { PythonWordAligner } from '../../server/adapters/content-filter/PythonWordAligner.mjs';
 import { makeTimebase } from '../../server/domain/content-filter/refine/timebase.mjs';
 import { wordMatcher } from '../../server/domain/content-filter/refine/cueKinds.mjs';
@@ -42,6 +43,8 @@ export const REFINE_USAGE = `Usage: contentfilter refine <ratingKey> [options]
   --no-region          Skip region tracks
   --snap <sec>         Speech edge snap window (default 0.07; wider measured worse)
   --transcript <file>  Use this word transcript (JSON from transcribe.py) instead of making one
+                       (hosts without uv: set CONTENT_FILTER_TRANSCRIBE_PY=python3 so transcription runs python3 transcribe.py)
+  --kinds visual       Needs no transcript. A shown cue whose edges stay unsure is still region-tracked over where it was seen (coarse edges kept)
   --write              Merge results into the override and write the review list (default: dry run)`;
 
 /**
@@ -92,8 +95,9 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     : `⚠ No transcript sync (${pairs.length} of ${tags.length} tagged words paired); using ${manual ? 'the override' : 'no'} offset: ${sync.offset} s`);
 
   // 4. Decision model
-  const decisions = await getDecisionGateway({ logger: { debug() {}, info() {}, warn: console.warn, error: console.error } });
-  if (!decisions) throw new Error('No decision model configured (system auth jev.api_key). refine asks no other model.');
+  const gateway = await getDecisionGateway({ logger: { debug() {}, info() {}, warn: console.warn, error: console.error } });
+  if (!gateway) throw new Error('No decision model configured (system auth jev.api_key). refine asks no other model.');
+  const decisions = new TimeoutDecisionGateway(gateway); // a lost request abstains instead of hanging the run
 
   // 5. Cues
   let cues = edl.cues || [];
@@ -136,7 +140,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   // 6. Merge and review list
   const at = new Date().toISOString().slice(0, 10);
   const { override: merged, review, counts } = mergeRefine(override, results, { part: partId, at, version: QUESTION_VERSION });
-  console.error(`\n${results.length} cues in ${Math.round((Date.now() - t0) / 1000)} s: ${counts.written} refined, ${counts.unknown} unknown, ${counts.giveup} not found, ${counts.keptManual} kept (manual)`);
+  console.error(`\n${results.length} cues in ${Math.round((Date.now() - t0) / 1000)} s: ${counts.written} refined, ${counts.unknown} unknown, ${counts.giveup} not found, ${counts.keptManual} kept (manual), ${counts.region} region-only (coarse edges)`);
   if (!args.includes('--write')) {
     console.error('(dry run: pass --write to merge into the override and write the review list)');
     return { results, counts };

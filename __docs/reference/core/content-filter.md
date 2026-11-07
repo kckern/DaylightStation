@@ -223,6 +223,23 @@ through `mergeRefine`, which changes refine-measured keys of the cues it measure
 leaves `sceneOverrides`, `profilePatch`, cards and every other key as it was. The CLI
 loads the existing refined EDL as `previous` before building.
 
+**Refine on the server (R8).** `transcribe.py` uses mlx-whisper when it imports and otherwise
+faster-whisper on CPU (int8); the choice is automatic and written as `backend` in the words JSON.
+Hosts without `uv` set `CONTENT_FILTER_TRANSCRIBE_PY=python3` so the CLI runs `python3 transcribe.py`.
+ImageMagick 6 hosts work too (the renderer falls back from `magick` to `convert`).
+`refine --kinds visual` needs no transcript (clock sync comes from the override) and selects
+`shown` cues, including `skip` cues under a language category. Every Jev request has a
+timeout (`TimeoutDecisionGateway`, default 90 s, wrapped around the gateway by the CLI): on timeout the call abstains, a warn line
+(`refine.jev.timeout`) goes to `log.jsonl`, and the cue ends `unknown` (`jev-timeout`).
+
+**Region-only cues.** A `shown` cue whose edges stay unsure (edge-all-unsure, bracketed edges)
+but which Jev sees in the probe frames is still region-tracked over the first to last frame it
+was seen. It keeps its coarse VidAngel in/out and gains `regions` plus
+`refine: { edges: coarse }` (status `region` in refine results, `coarse-edges` on the review
+list). The player applies such a track over the synced coarse window; `refinedCount` counts
+only cues measured at ms/frame, and a cue refined at ms/frame is never replaced by a coarse one.
+When Jev sees the subject nowhere, or only judges it whole-frame, no track is written.
+
 - **Safe windows** (`safeWindow.mjs`). A mute refine could not pin is widened to
   `tag.in − 3.5 s … tag.out + 3.0 s` with `precision: safe-window`; the tag span is
   kept as `tagIn`/`tagOut`, so applying it again is a no-op. The constants cover every

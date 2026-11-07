@@ -421,6 +421,14 @@ describe('channel-matched effects (R1, R2)', () => {
     expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
     expect(out.some((c) => ['bleep', 'mute'].includes(c.effect))).toBe(false);
   });
+  it('a coarse-edge cue with a track (refined EDL) gets regional blur over its synced coarse window', () => {
+    const coarse = { id: 'va9', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A theater is visible', in: 100, out: 125, precision: 'second-approx',
+      regions: [{ in: 100, grid: 6, cells: [4], box: { x: 0.5, y: 0.2, w: 0.2, h: 0.2 } }, { in: 125, cells: [] }], refine: { v: 1, edges: 'coarse' } };
+    const out = resolveEffectiveCues({ edl: refined([coarse]), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync: { offsetSec: 8, scale: 1 } } });
+    expect(out.length).toBeGreaterThanOrEqual(1);
+    expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
+    expect(out[0].in).toBeCloseTo(108, 3);
+  });
   it('untracked shown cue becomes full-blur', () => {
     const { regions: _r, ...bare } = billboard;
     const out = resolveEffectiveCues({ edl: refined([bare]), profile });

@@ -189,6 +189,10 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
       eff.precision = ov.precision || 'ms';
     } else if (synced && sync) {
       const spans = syncSpan(cue.in, cue.out);
+      // Coarse edges, measured region track (refined EDL): the track still applies over the synced window.
+      if (refinedEdl && syncFitsPart && cue.refine?.edges === 'coarse' && cue.regions?.length) {
+        measured = { regions: cue.regions.map((k) => ({ ...k, in: mapTime(k.in, sync) })).filter((k) => k.in != null) };
+      }
       if (!spans.length) { notInCut++; continue; }
       eff.in = spans[0].in;
       eff.out = spans[spans.length - 1].out;

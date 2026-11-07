@@ -25,9 +25,22 @@ export function mergeRefine(override, results, { part, at, version = 1 }) {
   const doc = { ...(override || {}) };
   const cueOverrides = { ...(doc.cueOverrides || {}) };
   const review = [];
-  const counts = { written: 0, keptManual: 0, unknown: 0, giveup: 0 };
+  const counts = { written: 0, keptManual: 0, unknown: 0, giveup: 0, region: 0 };
 
   for (const r of results) {
+    if (r.status === 'region') {
+      // Edges unsure, region tracked: the cue keeps its coarse times and gains the track.
+      // Never replaces a measured cue (refined or manual); edges still go to review.
+      const prev = cueOverrides[r.id];
+      const regions = regionsOf(r);
+      review.push({ ...reviewItem(r), status: 'coarse-edges' });
+      if (!regions || (prev && (prev.in != null || prev.out != null))) { counts.unknown++; continue; }
+      const kept = {};
+      for (const [k, v] of Object.entries(prev || {})) if (!REFINE_KEYS.includes(k)) kept[k] = v;
+      cueOverrides[r.id] = { ...kept, regions, refine: { v: version, part: String(part), at, edges: 'coarse' } };
+      counts.region++;
+      continue;
+    }
     if (r.status !== 'refined') {
       counts[r.status === 'giveup' ? 'giveup' : 'unknown']++;
       review.push(reviewItem(r));

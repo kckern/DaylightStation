@@ -96,3 +96,24 @@ describe('mergeRefine household rulings (R7)', () => {
     expect(out.cueOverrides.a).toEqual(override.cueOverrides.a);
   });
 });
+
+describe('mergeRefine: region-only results (coarse edges)', () => {
+  const region = (id = 'va1') => ({ id, status: 'region', kind: 'visual', edges: 'coarse', reason: 'edge-all-unsure', path: [],
+    segments: [{ frameIn: 1, frameOut: 2, region: { whole: false, track: [{ in: 5, grid: 6, cells: [4], box: { x: 0, y: 0, w: 0.2, h: 0.2 } }, { in: 7, cells: [] }] } }] });
+
+  it('writes regions + a coarse stamp and no times, and lists the cue for review', () => {
+    const { override, review, counts } = mergeRefine({}, [region()], { part: '9', at: '2026-11-06' });
+    expect(override.cueOverrides.va1).toEqual({ regions: [expect.objectContaining({ in: 5, cells: [4] }), { in: 7, cells: [] }], refine: { v: 1, part: '9', at: '2026-11-06', edges: 'coarse' } });
+    expect(override.cueOverrides.va1.in).toBeUndefined();
+    expect(counts.region).toBe(1);
+    expect(review[0]).toMatchObject({ id: 'va1', status: 'coarse-edges', reason: 'edge-all-unsure' });
+  });
+
+  it('never replaces a measured entry and keeps a person\'s keys', () => {
+    const prev = { cueOverrides: { va1: { in: 10, out: 11, precision: 'frame', refine: { v: 1, part: '9', at: 'x' } }, va2: { effect: 'blur' } } };
+    const { override } = mergeRefine(prev, [region('va1'), region('va2')], { part: '9', at: '2026-11-06' });
+    expect(override.cueOverrides.va1).toEqual(prev.cueOverrides.va1);
+    expect(override.cueOverrides.va2.effect).toBe('blur');
+    expect(override.cueOverrides.va2.regions).toHaveLength(2);
+  });
+});

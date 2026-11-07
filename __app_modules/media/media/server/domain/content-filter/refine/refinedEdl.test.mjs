@@ -160,3 +160,23 @@ describe('buildRefinedEdl re-run safety (R7)', () => {
     expect(out.certification.parent).toEqual({ by: 'kc', at: '2026-11-05' });
   });
 });
+
+describe('buildRefinedEdl: coarse-edge region cues', () => {
+  const coarse = { regions: [{ in: 308, grid: 6, cells: [4] }, { in: 312, cells: [] }], refine: { v: 1, part: '777', at: '2026-11-06', edges: 'coarse' } };
+  const mk = (over = {}) => buildRefinedEdl({ edl, sync, anchors: [], at: '2026-11-06', refinedFrom: {}, cueOverrides: { c: coarse }, ...over });
+
+  it('keeps the cue\'s coarse times and gains the track on the VidAngel clock, not counted as refined', () => {
+    const out = mk();
+    const c = out.cues.find((x) => x.id === 'c');
+    expect(c).toMatchObject({ in: 300, out: 306, precision: 'second-approx', refine: { edges: 'coarse' } });
+    expect(c.refine.part).toBeUndefined();
+    expect(c.regions).toEqual([{ in: 300, grid: 6, cells: [4] }, { in: 304, cells: [] }]);
+    expect(out.timebase.refinedCount).toBe(0);
+  });
+
+  it('never replaces a cue previously refined at ms/frame', () => {
+    const was = { id: 'c', type: 'skip', category: 'sex/x', in: 300.5, out: 305, precision: 'frame', refine: { v: 1, at: 'x' } };
+    const out = mk({ previous: { cues: [was] } });
+    expect(out.cues.find((x) => x.id === 'c')).toEqual(was);
+  });
+});
