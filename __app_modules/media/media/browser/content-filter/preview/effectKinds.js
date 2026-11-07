@@ -99,17 +99,19 @@ export function lengthText(seconds) {
   return s ? `${m} min ${s} s` : `${m} min`;
 }
 
-/** How far ahead, for a rail row: "in 50s", "in 2:54". */
+/** How far ahead, for a rail row: "in 42 s" under a minute, else "in 1:12". */
 export function awayText(seconds) {
   const s = Math.max(0, Math.round(seconds));
-  return s < 90 ? `in ${s}s` : `in ${clock(s)}`;
+  return s < 60 ? `in ${s} s` : `in ${clock(s)}`;
 }
 
 /** Certification, in words a parent can act on. */
 export function certificationText(level) {
-  if (level === 'parent') return { tone: 'good', line: 'Signed off by a grown-up after checking every cue.' };
-  if (level === 'machine') return { tone: 'good', line: 'Checked by machine: every word is timed exactly.' };
-  return { tone: 'caution', line: 'Provisional: some timings are rough, so a word could slip through.' };
+  if (level === 'parent') return { tone: 'good', line: 'Signed off by a grown-up.' };
+  if (level === 'machine') {
+    return { tone: 'good', line: 'Checked by machine. Every flagged word is covered: most to the millisecond, the rest with a safe margin around them.' };
+  }
+  return { tone: 'caution', line: 'Not checked yet. Some timings are rough, so a word could slip through.' };
 }
 
 const EFFECT_WORD = {

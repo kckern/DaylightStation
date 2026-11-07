@@ -44,7 +44,7 @@ describe('FilterRail', () => {
     setup();
     const rows = screen.getAllByTestId('filter-rail-next');
     expect(rows).toHaveLength(2); // scene sc1 once, then b
-    expect(rows[0].textContent).toMatch(/50s/);
+    expect(rows[0].textContent).toMatch(/in 50 s/);
     fireEvent.click(rows[0]);
     expect(jump).toHaveBeenCalledWith(expect.objectContaining({ in: 100 }));
     expect(previewStore.getSnapshot().selected).toMatchObject({ id: 'sc1' });

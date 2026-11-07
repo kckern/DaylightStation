@@ -106,7 +106,7 @@ export default function FilterRail({ position = 0 }) {
         </div>
 
         <div className={`filter-rail__cert is-${cert.tone}`}>
-          <span className="filter-rail__level">{level || 'not certified'}</span>
+          <span className="filter-rail__level">{level && level !== 'none' ? level : 'not checked'}</span>
           <span className="filter-rail__cert-line">{cert.line}</span>
         </div>
 
@@ -187,14 +187,12 @@ export default function FilterRail({ position = 0 }) {
                   type="button"
                   className="filter-rail__btn"
                   aria-label="Peek unfiltered"
-                  data-cf-hint={`Plays from ${PREVIEW_LEAD_SEC} s before, just once, as the film really is. Then the filter is back on.`}
-                  data-cf-hint-align="start"
                   onClick={() => { previewStore.peek(baseId(selectedId)); logger.info('filter-rail.peek', { id: baseId(selectedId) }); }}
                 >
                   Peek unfiltered
                 </button>
                 <span className="filter-rail__note">
-                  {selectedItem ? `${effectSentence(selectedItem.effect)} ` : ''}Peek plays this once without the filter.
+                  {selectedItem ? `${effectSentence(selectedItem.effect)} ` : ''}{`Peek plays it once without the filter, from ${PREVIEW_LEAD_SEC} s before, then the filter is back on.`}
                 </span>
               </div>
             ) : null}

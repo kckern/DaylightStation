@@ -37,7 +37,8 @@ describe('effectKinds', () => {
     expect(clock(179.86, { precise: true })).toBe('2:59.9');
     expect(lengthText(0.34)).toBe('0.3 s');
     expect(lengthText(192)).toBe('3 min 12 s');
-    expect(awayText(50)).toBe('in 50s');
+    expect(awayText(50)).toBe('in 50 s');
+    expect(awayText(72)).toBe('in 1:12');
     expect(awayText(174)).toBe('in 2:54');
   });
 

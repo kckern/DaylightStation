@@ -413,16 +413,18 @@ the **kind** of change, shared by the timeline, legend, tooltip and rail through
 `effectKinds.js` also holds the plain words (`effectWord` "hidden", `effectChip` "Hidden",
 `effectSentence` "The picture goes dark; the sound keeps playing."), `sourceOf` (Word /
 Visual / Scene), `categoryText` ("Language: profanity", "Violence"), `clock` and the
-certification sentence. Controls carry a short CSS hint from `data-cf-hint` (shown after a
-beat on hover, at once on keyboard focus).
+certification sentence. Controls carry a short, opaque CSS hint from `data-cf-hint` (shown
+after a beat on hover, at once on keyboard focus). Peek has a static line instead of a hint,
+so nothing floats over the list.
 
 **Rail** (`FilterRail.jsx`, two tabs). Header: "Filter preview", the film's title, the
-certification level with a sentence saying how far to trust it (green edge when `machine` or
-`parent`, amber when provisional), the summary one line per effect, and Close (✕). *Review*:
+certification with a sentence saying how far to trust it (`machine`: every flagged word is
+covered, most to the millisecond, the rest with a safe margin; `parent`: signed off by a
+grown-up; anything else: not checked yet, amber edge), the summary one line per effect, and Close (✕). *Review*:
 **Last** (the cue/scene just fired, its glyph, tag, effect word and time, with **Replay**),
-**Next** (the next 5, a scene's pieces as one row: glyph, tag, effect, "in 50s" / "in 2:54";
-choosing one jumps 4 s before it and selects it), **Peek unfiltered** with a line saying what
-the selection does and that Peek plays it once without the filter, then the `WorkshopPanel`.
+**Next** (the next 5, a scene's pieces as one row: glyph, tag, effect, "in 42 s" under a minute, else m:ss as "in 1:12";
+choosing one jumps 4 s before it and selects it), **Peek unfiltered** with a static line under
+it saying what the selection does and that Peek plays it once without the filter, then the `WorkshopPanel`.
 *Settings*: one line of explanation and the `SettingsPanel`. The selection is the store's
 `selected`, so a timeline click and a rail row are the same selection. WorkshopPanel and
 SettingsPanel are styled only through the `filter-rail__*` classes they already carry.

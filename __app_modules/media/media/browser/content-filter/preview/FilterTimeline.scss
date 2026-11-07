@@ -157,7 +157,7 @@
     padding: 0.2em 0.55em;
     white-space: nowrap;
     border-radius: var(--cf-radius);
-    background: var(--cf-scrim);
+    background: var(--cf-raised);
     box-shadow: 0 4px 14px var(--cf-shadow);
     font-weight: 700;
     pointer-events: none;
@@ -177,7 +177,7 @@
     padding: 0.65em 0.8em 0.7em;
     border: 1px solid var(--cf-line);
     border-radius: calc(var(--cf-radius) + 2px);
-    background: var(--cf-scrim);
+    background: var(--cf-raised);
     box-shadow: 0 10px 28px var(--cf-shadow);
     pointer-events: none;
     font-size: 0.95em;
