@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  hrTrendRange, monotonePath, trendReady, trendsAvailable, trendTransform, trendVisible, zoneBands, zoneBarState,
+  hrTrendRange, monotonePath, pickZoneSequence, trendReady, trendsAvailable, trendTransform, trendVisible, zoneBands, zoneBarState,
   TREND_OFF_PX, TREND_ON_PX,
 } from './hrTrend.js';
 import { buildPrefix } from './hrTrendScale.js';
@@ -97,5 +97,16 @@ describe('zoneBands duplicate ids', () => {
   it('gives each band a unique key even when zone ids repeat', () => {
     const keys = zoneBands([{ id: 'warm', threshold: 0 }, { id: 'warm', threshold: 120 }]).map((b) => b.key);
     expect(new Set(keys).size).toBe(2);
+  });
+});
+
+describe('pickZoneSequence', () => {
+  const seq = [{ id: 'cool', threshold: 0 }, { id: 'active', threshold: 100 }];
+  it('takes the first candidate that has real thresholds, skipping empty and missing ones', () => {
+    expect(pickZoneSequence(undefined, [], seq)).toBe(seq);
+    expect(pickZoneSequence([{ id: 'cool', threshold: null }], seq)).toBe(seq);
+  });
+  it('returns an empty list when no candidate has thresholds', () => {
+    expect(pickZoneSequence(null, [], undefined)).toEqual([]);
   });
 });

@@ -98,6 +98,17 @@ function runPath(run) {
   return d;
 }
 
+// The rider's zone ladder, from the first source that actually has one. The
+// ZoneProfileStore profile is the source that carries it in production; vitals
+// and zone-progress entries usually don't (an empty array is truthy, so a plain
+// `a || b` would stop at it and colour the whole line neutral).
+export function pickZoneSequence(...candidates) {
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.some((z) => Number.isFinite(z?.threshold))) return candidate;
+  }
+  return [];
+}
+
 // One band per zone, threshold to next threshold in bpm. The line is clipped
 // to each band and stroked in its colour, so the colour changes exactly where
 // the line crosses a threshold, mid-segment included.
