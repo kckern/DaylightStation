@@ -26,7 +26,7 @@
  *   tags <slug|workId>      Summarize a title's filter categories + tag counts
  *   export <slug|workId>    Emit a normalized FilterEDL (YAML) to stdout
  *   preflight <ratingKey>   Can a pipeline run happen here? (refine deps, Plex part)
- *   worker                  The filter worker loop: claim queued Admin runs and run them
+ *   worker [--app <url>] [--data-dir <dir>]  The filter worker: claim Admin runs over HTTP, run them, hand back results
  *   match [--section <id>]  Cross-reference your Plex movie library vs VidAngel
  *
  * Options:
@@ -686,7 +686,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
-  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence', '--profile': 'profile',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence', '--profile': 'profile', '--app': 'app', '--data-dir': 'data-dir', '--stage-dir': 'stage-dir',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1088,15 +1088,21 @@ async function main() {
 
   if (command === 'worker') {
     const os = await import('os');
-    const { runWorker } = await import('./contentfilter/workerCommand.mjs');
-    const { createFilterJobs } = await import('../server/composition/content-filter-jobs.mjs');
-    const dataDir = resolveDataDir(); const mediaDir = resolveMediaDir();
+    const { runWorker, httpWorkerApi, STEP_TIMEOUT_MS } = await import('./contentfilter/workerCommand.mjs');
+    const { ChildProcessContentFilterCli } = await import('../server/adapters/content-filter/ChildProcessContentFilterCli.mjs');
+    const appUrl = flags.app || process.env.DAYLIGHT_APP_URL || 'http://localhost:3111';
+    // Read-only: lends the staged runs the app's auth and Plex config. Nothing is written there.
+    let realDataDir = flags['data-dir'] || null;
+    if (!realDataDir) { try { realDataDir = resolveDataDir(); } catch { realDataDir = null; } }
+    const stageRoot = flags['stage-dir'] || path.join(os.tmpdir(), 'daylight-cf-worker');
     const owner = `${os.hostname()}:${process.pid}`;
     const say = (event, data = {}) => console.error(JSON.stringify({ at: new Date().toISOString(), event, ...data }));
-    const logger = { info: say, warn: say, debug() {}, error: say };
-    const { jobs } = await createFilterJobs({ householdDir: path.join(dataDir, 'household'), dataDir, mediaDir, logger,
-      executor: 'inline', schedule: (fn, ms) => setTimeout(fn, ms) });
-    await runWorker({ jobs, owner, log: say });
+    const cliPath = new URL(import.meta.url).pathname;
+    await runWorker({
+      api: httpWorkerApi(appUrl), owner, stageRoot, realDataDir, log: say,
+      runStep: (name, ctx) => new ChildProcessContentFilterCli({ cliPath, env: { DAYLIGHT_DATA_DIR: ctx.dataDir, DAYLIGHT_MEDIA_DIR: ctx.mediaDir } })
+        .run(name, ctx.args, { logPath: path.join(ctx.dir, 'run.log'), timeoutMs: STEP_TIMEOUT_MS[name] ?? 0 }),
+    });
     return;
   }
 

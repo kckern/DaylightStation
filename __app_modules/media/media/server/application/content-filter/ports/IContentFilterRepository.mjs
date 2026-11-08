@@ -34,6 +34,15 @@ export class IContentFilterRepository {
     throw new Error('IContentFilterRepository.saveProfile not implemented');
   }
 
+  /** Write a film's base (VidAngel) EDL (a pipeline export). */
+  async saveEdl(_ratingKey, _edl) { throw new Error('IContentFilterRepository.saveEdl not implemented'); }
+  /** The refine review list (`review/<rk>.refine.yml`), or null. */
+  async getRefineReview(_ratingKey) { throw new Error('IContentFilterRepository.getRefineReview not implemented'); }
+  async saveRefineReview(_ratingKey, _review) { throw new Error('IContentFilterRepository.saveRefineReview not implemented'); }
+  /** Every refine transcript file for a film, raw: { [part]: object }. */
+  async listTranscriptFiles(_ratingKey) { throw new Error('IContentFilterRepository.listTranscriptFiles not implemented'); }
+  async saveTranscriptFile(_ratingKey, _part, _words) { throw new Error('IContentFilterRepository.saveTranscriptFile not implemented'); }
+
   /** The Plex -> VidAngel match index: { map: { 'plex:<rk>': { title, vidangel: { id, slug, tagCount }, confidence } } }, or null. */
   async getMatchIndex() {
     throw new Error('IContentFilterRepository.getMatchIndex not implemented');

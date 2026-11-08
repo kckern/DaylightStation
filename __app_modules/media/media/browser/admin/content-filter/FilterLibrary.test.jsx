@@ -5,13 +5,15 @@ import { MemoryRouter } from 'react-router-dom';
 
 const calls = [];
 let failNext = null;
+let worker = { alive: true };
 const films = [
   { ratingKey: '77', title: 'Annie', year: 1982, stage: 'rough', job: null, reviewed: null },
+  { ratingKey: '80', title: 'Zorro', year: 1998, stage: 'running', job: { status: 'queued', step: null, error: null }, reviewed: null },
   { ratingKey: '78', title: 'Back to the Future', year: 1985, stage: 'running', job: { status: 'running', step: 'refine', error: null }, reviewed: null },
   { ratingKey: '79', title: 'Matilda', year: 1996, stage: 'audited', job: { status: 'failed', step: 'scenes', error: 'Jev timed out' }, reviewed: { n: 3, m: 40 } },
 ];
 vi.mock('../../../../../../frontend/src/lib/hooks/useApiResource.js', () => ({
-  useApiResource: () => ({ data: { films }, loading: false, error: null, reload: () => {} }),
+  useApiResource: () => ({ data: { films, worker }, loading: false, error: null, reload: () => {} }),
 }));
 vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({
   DaylightAPI: async (path, body, method) => {
@@ -58,5 +60,12 @@ describe('FilterLibrary', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Search titles' }), { target: { value: 'mat' } });
     expect(screen.queryByRole('link', { name: 'Annie' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Matilda' })).toBeTruthy();
+  });
+  it('a queued run waits visibly when no filter worker is running', () => {
+    worker = { alive: false };
+    show();
+    expect(within(row('Zorro')).getByText('Waiting for a filter worker')).toBeTruthy();
+    expect(screen.getByText(/No filter worker is running/)).toBeTruthy();
+    worker = { alive: true };
   });
 });

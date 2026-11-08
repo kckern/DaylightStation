@@ -34,3 +34,25 @@ describe('content-filter jobs routes', () => {
     expect((await request(mk({ enqueue })).post('/cf/42/jobs').send({ cues: ['../x'] })).status).toBe(400);
   });
 });
+
+describe('remote filter worker routes', () => {
+  test('claim: 204 when nothing is queued, the claim otherwise; owner required', async () => {
+    let next = null;
+    const app = mk({ claimRemote: async ({ owner }) => (next ? { ...next, owner } : null) });
+    expect((await request(app).post('/cf/jobs/claim').send({})).status).toBe(400);
+    expect((await request(app).post('/cf/jobs/claim').send({ owner: 'w1' })).status).toBe(204);
+    next = { ratingKey: '77', run: { id: 'r1' }, steps: ['refine'], inputs: {} };
+    const res = await request(app).post('/cf/jobs/claim').send({ owner: 'w1' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ratingKey: '77', owner: 'w1' });
+  });
+  test('progress and complete pass through; a run that is no longer yours is 409', async () => {
+    const complete = vi.fn(async () => ({ status: 'done' }));
+    const app = mk({ progress: async () => { throw new JobConflict('This run is no longer yours.'); }, complete });
+    const p = await request(app).post('/cf/77/jobs/r1/progress').send({ owner: 'w1', step: { name: 'refine', status: 'running' } });
+    expect(p.status).toBe(409);
+    const c = await request(app).post('/cf/77/jobs/r1/complete').send({ owner: 'w1', status: 'done', results: { refined: { cues: [] } } });
+    expect(c.status).toBe(200);
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ ratingKey: '77', runId: 'r1', owner: 'w1', status: 'done', results: { refined: { cues: [] } } }));
+  });
+});

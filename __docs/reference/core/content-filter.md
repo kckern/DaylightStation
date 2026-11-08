@@ -731,18 +731,31 @@ and after every write that changes what the household gets.
 Run state lives in `household/content-filter/jobs/<rk>.yml` (last 10 runs and the latest audit,
 whose `rows` are the review list); step logs in `media/content-filter/refine/<rk>/jobs/<runId>.log`.
 
-Runs execute in the **filter worker** (`docker/content-filter-worker/`): a Debian container with
-refine's Python stack (faster-whisper, torch/torchaudio — no musl wheels for the Alpine app image).
-It runs `contentfilter worker`: claim the oldest queued run (an exclusive claim file), run it with a
-heartbeat every 20 s, and mark runs whose heartbeat is older than 60 s interrupted. The app only
-queues and reports, and polls the run state every 10 s: it refreshes the library, prunes review
-marks, reaps a dead worker's run, and drafts card text for any finished run whose cards the worker
-skipped (the worker has no AI gateway; `cardsDrafted` marks it done, so an app restart catches up),
-then re-audits. App and worker update a film's run file under a shared lock file
-(`jobs/locks/<rk>.lock`). The review player is an auxiliary Player: no watch-progress logging.
-`CONTENT_FILTER_EXECUTOR=inline` runs everything in the app instead (then a restart marks open runs
-interrupted). `contentfilter preflight <rk>` names what is missing ("Refine cannot run here:
-faster-whisper is not installed") before anything is written.
+Heavy runs execute in the **filter worker**, an optional process anyone can run with Node and
+refine's Python tools (faster-whisper, torch/torchaudio; mlx-whisper on Apple silicon):
+
+```bash
+node __app_modules/media/media/cli/contentfilter.cli.mjs worker --app <app url> [--data-dir <app data dir>]
+```
+
+It talks to the app only over HTTP and never writes the app's data folders: `POST /jobs/claim
+{ owner }` returns the oldest queued run with its steps and inputs (EDL, refined EDL, override,
+profile, refine review, transcripts) or 204; the worker lays them out in a scratch folder, runs
+`preflight`, `export`, `refine`, `scenes` there (send-back drops the cues' hand fixes in its copy
+only after preflight passes), sends `POST /:rk/jobs/:runId/progress` per step and as a heartbeat
+every 20 s, and finishes with `POST /:rk/jobs/:runId/complete { status, results | step + error }`.
+The app saves the results, drafts card text and audits, then settles the run. A run whose heartbeat
+is older than 60 s is marked interrupted; only the claiming worker can report on a run.
+`--data-dir` (read-only) lends the worker the app's Plex and Jev credentials; without it set
+`PLEX_HOST`/`PLEX_TOKEN` and the Jev key in its environment. With no worker running, queued runs
+wait and the library says "Waiting for a filter worker" (an idle worker asks for work every 5 s).
+Audit and card-draft stages never need a worker: the app runs them at once.
+`CONTENT_FILTER_EXECUTOR=inline` runs heavy steps in the app process instead (for a host whose app
+has the Python tools). `contentfilter preflight <rk>` names what is missing ("Refine cannot run
+here: faster-whisper is not installed") before anything is written. The app polls run state every
+10 s to refresh the library and reap dead workers; app and worker updates of a film's run file go
+through the app, under a lock file (`jobs/locks/<rk>.lock`). The review player is an auxiliary
+Player: no watch-progress logging.
 
 While a run's export, refine or scenes step writes a film, every write to that film answers 409
 "A filter run is writing this film. Try again when it finishes."

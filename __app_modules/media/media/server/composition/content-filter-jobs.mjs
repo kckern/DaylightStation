@@ -4,9 +4,9 @@ import { fileURLToPath } from 'url';
 const CLI_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../cli/contentfilter.cli.mjs');
 
 /**
- * The content-filter run machinery, wired once for both processes that use it: the app
- * (executor 'worker': queues and reports) and the filter worker (executor 'inline': claims and
- * runs). ops:docs/superpowers/specs/2026-11-07-content-filter-admin-workshop-design.md.
+ * The content-filter run machinery. executor 'worker': the app queues runs and a remote filter
+ * worker (`contentfilter worker --app <url>`) claims them over HTTP and hands back results, which
+ * only the app writes. executor 'inline': the app runs everything itself. ops:docs/superpowers/specs/2026-11-07-content-filter-admin-workshop-design.md.
  */
 export async function createFilterJobs({ householdDir, dataDir, mediaDir, logger, executor, draftCards = null, schedule }) {
   const { FilesystemContentFilterRepository } = await import('../adapters/persistence/FilesystemContentFilterRepository.mjs');
@@ -46,6 +46,29 @@ export async function createFilterJobs({ householdDir, dataDir, mediaDir, logger
         }
       }
       await contentFilterRepository.saveOverride(rk, ov);
+    },
+    // Remote worker: everything a run needs, and where its results go (only the app writes).
+    inputsOf: async (rk) => {
+      const { edl, refined } = await refinedFor(rk);
+      return {
+        edl, refined, override: await contentFilterRepository.getOverride(rk),
+        profiles: { family: await contentFilterRepository.getProfile('family') },
+        refineReview: await contentFilterRepository.getRefineReview(rk),
+        transcripts: await contentFilterRepository.listTranscriptFiles(rk),
+      };
+    },
+    applyResults: async (rk, results) => {
+      const { edl = null, refined = null, override = null, refineReview = null, transcripts = null } = results || {};
+      if (edl) await contentFilterRepository.saveEdl(rk, edl);
+      if (refined) {
+        const ref = (edl || await contentFilterRepository.getEdl(rk))?.sourceRef;
+        if (ref?.workId == null || ref?.tagSetId == null) throw new Error('No VidAngel tag set for this film; cannot save its refined EDL');
+        await contentFilterRepository.saveRefinedEdl(ref, refined);
+      }
+      if (override) await contentFilterRepository.saveOverride(rk, override);
+      if (refineReview) await contentFilterRepository.saveRefineReview(rk, refineReview);
+      for (const [part, words] of Object.entries(transcripts || {})) await contentFilterRepository.saveTranscriptFile(rk, part, words);
+      logger.info?.('content-filter.job.results', { ratingKey: rk, edl: !!edl, refined: !!refined, override: !!override, review: !!refineReview, transcripts: Object.keys(transcripts || {}).length });
     },
     logPath: (rk, runId) => path.join(mediaDir, 'content-filter', 'refine', String(rk), 'jobs', `${runId}.log`),
     schedule,

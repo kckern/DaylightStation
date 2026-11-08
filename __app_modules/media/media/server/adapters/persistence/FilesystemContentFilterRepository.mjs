@@ -1,10 +1,12 @@
 import {
   buildContainedPath,
   fileExists,
+  listFiles,
   listYamlFiles,
   readFile,
   readYamlFromPath,
   saveYamlToPathAtomic,
+  writeFileAtomic,
 } from '#system/utils/FileIO.mjs';
 import { IContentFilterRepository } from "../../application/content-filter/ports/IContentFilterRepository.mjs";
 
@@ -70,6 +72,39 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
     const name = String(profileName ?? '');
     if (!/^[a-z0-9_-]+$/.test(name)) throw new Error('saveProfile needs a profile name of [a-z0-9_-]');
     this.#writeYaml(this.#householdDir, `content-filter/profiles/${name}.yml`, profile);
+  }
+
+  async saveEdl(ratingKey, edl) {
+    if (!/^\d+$/.test(String(ratingKey ?? ''))) throw new Error('saveEdl needs a numeric ratingKey');
+    this.#writeYaml(this.#mediaDir, `content-filter/edl/${ratingKey}.edl.yml`, edl);
+  }
+
+  async getRefineReview(ratingKey) {
+    if (!/^\d+$/.test(String(ratingKey ?? ''))) return null;
+    return this.#readYaml(this.#householdDir, `content-filter/review/${ratingKey}.refine.yml`);
+  }
+
+  async saveRefineReview(ratingKey, review) {
+    if (!/^\d+$/.test(String(ratingKey ?? ''))) throw new Error('saveRefineReview needs a numeric ratingKey');
+    this.#writeYaml(this.#householdDir, `content-filter/review/${ratingKey}.refine.yml`, review);
+  }
+
+  async listTranscriptFiles(ratingKey) {
+    if (!/^\d+$/.test(String(ratingKey ?? ''))) return {};
+    const dir = buildContainedPath(this.#mediaDir, `content-filter/refine/${ratingKey}`);
+    const out = {};
+    for (const name of dir ? listFiles(dir) : []) {
+      const m = /^words-(\d+)\.json$/.exec(name);
+      if (!m) continue;
+      try { out[m[1]] = JSON.parse(readFile(`${dir}/${name}`)); } catch { /* skip a broken file */ }
+    }
+    return out;
+  }
+
+  async saveTranscriptFile(ratingKey, part, words) {
+    if (!/^\d+$/.test(String(ratingKey ?? '')) || !/^\d+$/.test(String(part ?? ''))) throw new Error('saveTranscriptFile needs numeric ratingKey and part');
+    const filePath = buildContainedPath(this.#mediaDir, `content-filter/refine/${ratingKey}/words-${part}.json`);
+    writeFileAtomic(filePath, JSON.stringify(words));
   }
 
   async getMatchIndex() {
