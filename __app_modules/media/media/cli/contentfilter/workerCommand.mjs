@@ -32,8 +32,12 @@ export function stageRun(claimed, { root, realDataDir = null }) {
   const cfMedia = path.join(mediaDir, 'content-filter');
   mkdirSync(cfData, { recursive: true }); mkdirSync(cfMedia, { recursive: true });
   // Auth and config are read from the app's data dir, never written.
+  // Every top-level folder is linked (the CLI's bootstrap loads the whole config: system, users,
+  // household…), except the household content-filter folder, which is the staged copy.
   if (realDataDir) {
-    if (existsSync(path.join(realDataDir, 'system'))) symlinkSync(path.join(realDataDir, 'system'), path.join(dataDir, 'system'));
+    for (const name of readdirSync(realDataDir)) {
+      if (name !== 'household') symlinkSync(path.join(realDataDir, name), path.join(dataDir, name));
+    }
     for (const name of existsSync(path.join(realDataDir, 'household')) ? readdirSync(path.join(realDataDir, 'household')) : []) {
       if (name !== 'content-filter') symlinkSync(path.join(realDataDir, 'household', name), path.join(dataDir, 'household', name));
     }
