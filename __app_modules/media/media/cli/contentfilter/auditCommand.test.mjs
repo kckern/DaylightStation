@@ -154,3 +154,13 @@ describe('computeAudit: words treated as exchanges', () => {
     expect(formatAudit(r)).toMatch(/1 words treated as exchanges/);
   });
 });
+
+describe('computeAudit certification counts nudges', () => {
+  it('a nudge that uncovers a word blocks certification', () => {
+    const edl = { timebase: { clock: 'vidangel' }, certification: { level: 'machine' },
+      cues: [{ id: 'va1', type: 'mute', category: 'language/x', in: 100.2, out: 100.6, precision: 'ms' }] };
+    const r = computeAudit({ edl, profile: { categories: { 'language/x': { effect: 'mute' } } },
+      override: { cueOverrides: { va1: { startMs: 100300, endMs: 100700 } } } });
+    expect(r.certification).toEqual({ level: 'none', blocking: ['va1'] });
+  });
+});

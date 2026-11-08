@@ -1044,3 +1044,47 @@ describe('final review fixes', () => {
     });
   });
 });
+
+describe('household nudges (startMs/endMs)', () => {
+  const zero = { padLeadMs: 0, padTrailMs: 0, approxWidthMs: 0 };
+  const profile = { categories: { 'language/x': { effect: 'mute' }, 'violence_blood_gore/graphic': { effect: 'full-blur' } },
+    treatments: { mute: zero, 'full-blur': zero, skip: zero, 'skip-card': { holdSec: 4.5 } },
+    scenes: { violence_blood_gore: { blackout: { picture: 2 }, skip: { situation: 3 } } } };
+  const sync = { scale: 1, offsetSec: 2, part: 'p' };
+  const edl = {
+    timebase: { clock: 'vidangel' }, sceneCalibration: { situation: 'trusted', picture: 'trusted' },
+    cues: [
+      { id: 'w', type: 'mute', category: 'language/x', in: 12.1, out: 12.5, precision: 'ms' },
+      { id: 's', type: 'mute', category: 'language/x', in: 50, out: 57, precision: 'safe-window' },
+      { id: 'v', type: 'skip', category: 'violence_blood_gore/graphic', in: 110, out: 112, precision: 'frame' },
+    ],
+    scenes: [{ id: 'sc1', in: 100, out: 160, edges: 'cut', cues: ['v'], groups: ['violence_blood_gore'],
+      level: { violence_blood_gore: { situation: 3, picture: 3 } } }],
+  };
+  const run = (ov) => resolveEffectiveCues({ edl, profile, override: { sync, ...ov }, part: 'p' });
+
+  it('a nudged ms cue spans the nudge mapped through the sync and is hand-fixed', () => {
+    const w = run({ cueOverrides: { w: { startMs: 12000, endMs: 12800 } } }).find((c) => c.id === 'w');
+    expect(w.in).toBeCloseTo(14.0, 6);
+    expect(w.out).toBeCloseTo(14.8, 6);
+    expect(w.handFixed).toBe(true);
+  });
+  it('a nudged safe-window word mutes only the nudged span', () => {
+    const s = run({ cueOverrides: { s: { startMs: 53000, endMs: 53600 } } }).filter((c) => c.id === 's');
+    expect(s).toHaveLength(1);
+    expect(s[0].effect).toBe('mute');
+    expect(s[0].in).toBeCloseTo(55.0, 6);
+    expect(s[0].out).toBeCloseTo(55.6, 6);
+  });
+  it('a nudged scene skips over the nudged span', () => {
+    const out = run({ sceneOverrides: { sc1: { startMs: 120000, endMs: 150000 } } });
+    const skip = out.find((c) => /skip/.test(c.effect) && c.scene);
+    expect(skip.in).toBeCloseTo(122, 6);
+    expect(skip.out).toBeCloseTo(152, 6);
+  });
+  it('a cue without a nudge keeps nudgeMs behaviour', () => {
+    const w = run({ cueOverrides: { w: { nudgeMs: 500 } } }).find((c) => c.id === 'w');
+    expect(w.in).toBeCloseTo(14.6, 6);
+    expect(w.handFixed).toBeUndefined();
+  });
+});

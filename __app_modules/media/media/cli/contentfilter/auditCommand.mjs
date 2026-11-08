@@ -19,6 +19,7 @@ import { cueModality } from '../../../../../shared/contracts/content-filter/cueM
 import { LANGUAGE_GROUPS, languageGroupOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { mergeProfilePatch } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
+import { certify } from '../../server/domain/content-filter/refine/certification.mjs';
 
 export const AUDIT_USAGE = 'Usage: contentfilter audit <ratingKey> [--profile <name>] [--part <id>] [--json]\n\n'
   + 'Resolve the title as the player does and report: tone cap, channel match, region-track share,\n'
@@ -131,7 +132,11 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     bucket.effects[effect] = (bucket.effects[effect] || 0) + 1;
   }
 
-  const cert = edl?.certification || {};
+  // Household nudges count (certification.mjs): a nudge that uncovers a word blocks.
+  const nudged = Object.values(overrides).some((ov) => Number.isFinite(ov?.startMs) || Number.isFinite(ov?.endMs));
+  const cert = edl?.timebase?.clock === 'vidangel' && nudged
+    ? certify(edl, { at: edl.certification?.machine?.at ?? null, cueOverrides: overrides })
+    : (edl?.certification || {});
   const checks = {
     toneCap: { ok: toneIds.length === 0, violations: toneIds.length, ids: toneIds, maxSec: TONE_MAX_SEC },
     channel: { ok: !audioOnShown.length && !visualOnSaid.length, audioOnShown: uniq(audioOnShown), visualOnSaid: uniq(visualOnSaid) },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { certify, signOff, LEVELS } from './certification.mjs';
+import { certify, signOff, LEVELS, nudgeCovers } from './certification.mjs';
 
 const edl = (cues, extra = {}) => ({ cues, ...extra });
 const mute = (id, precision) => ({ id, type: 'mute', precision });
@@ -55,5 +55,39 @@ describe('LEVELS', () => {
   it('orders the levels', () => {
     expect(LEVELS.indexOf('parent')).toBeGreaterThan(LEVELS.indexOf('machine'));
     expect(LEVELS.indexOf('machine')).toBeGreaterThan(LEVELS.indexOf('none'));
+  });
+});
+
+describe('certify with hand nudges', () => {
+  const word = { id: 'va1', type: 'mute', in: 100.2, out: 100.6, precision: 'ms' };
+  const signed = { certification: { level: 'parent', parent: { by: 'KC', at: '2026-11-07' } } };
+  it('a nudged ms mute that still contains the word stays covered', () => {
+    const c = certify(edl([word]), { at: 'x', cueOverrides: { va1: { startMs: 100100, endMs: 100700 } } });
+    expect(c.level).toBe('machine');
+  });
+  it('a nudged ms mute that no longer contains the word blocks and drops a parent sign-off', () => {
+    const c = certify(edl([word], signed), { at: 'x', cueOverrides: { va1: { startMs: 100300, endMs: 100700 } } });
+    expect(c.level).toBe('none');
+    expect(c.blocking).toEqual(['va1']);
+    expect(c.parent).toBeUndefined();
+  });
+  it('a nudged safe-window or approximate mute counts as pinned', () => {
+    const c = certify(edl([{ ...word, precision: 'safe-window' }, { id: 'b', type: 'mute', in: 5, out: 6, precision: 'second-approx' }]),
+      { at: 'x', cueOverrides: { va1: { startMs: 1, endMs: 900 }, b: { startMs: 5000, endMs: 6000 } } });
+    expect(c.level).toBe('machine');
+    expect(c.counts.mute.safeWindow).toBe(2);
+  });
+  it('cues without nudges are unchanged', () => {
+    expect(certify(edl([word]), { at: 'x', cueOverrides: { other: { effect: 'off' } } }).counts.mute.precise).toBe(1);
+  });
+});
+
+describe('nudgeCovers', () => {
+  it('needs both edges, and on a precise cue must contain the word', () => {
+    const w = { in: 1, out: 2, precision: 'ms' };
+    expect(nudgeCovers(w, { startMs: 900, endMs: 2100 })).toBe(true);
+    expect(nudgeCovers(w, { startMs: 1100, endMs: 2100 })).toBe(false);
+    expect(nudgeCovers(w, { effect: 'off' })).toBe(false);
+    expect(nudgeCovers({ in: 1, out: 2, precision: 'safe-window' }, { startMs: 0, endMs: 10 })).toBe(true);
   });
 });
