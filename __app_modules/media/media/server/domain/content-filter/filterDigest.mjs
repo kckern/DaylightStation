@@ -1,6 +1,7 @@
 /**
  * What an audit saw: a digest of the refined EDL and the household override, minus review
- * marks (marking a row reviewed does not make the audit stale). The Admin sign-off requires
+ * marks and the stored certification (marking a row reviewed or signing the film off does not
+ * make the audit stale). The Admin sign-off requires
  * the latest audit's digest to match the current one.
  */
 import { createHash } from 'crypto';
@@ -16,5 +17,6 @@ function stable(v) {
 /** @returns {string} sha1 hex */
 export function filterDigest({ refined, override }) {
   const { review: _review, ...rest } = override || {};
-  return createHash('sha1').update(stable({ refined: refined ?? null, override: rest })).digest('hex');
+  const { certification: _cert, ...edl } = refined || {};
+  return createHash('sha1').update(stable({ refined: refined ? edl : null, override: rest })).digest('hex');
 }

@@ -43,4 +43,18 @@ describe('ContentFilterJobs with a filter worker', () => {
     expect(settled).toEqual([{ ratingKey: '1', runId: 'a', status: 'done' }]);
     expect(drafted).toEqual(['1']);
   });
+  it('a finished worker run whose cards were never drafted is drafted on the first tick (app restarted), once', async () => {
+    const store = memStore({ 1: { ratingKey: '1', runs: [{ id: 'a', kind: 'make', status: 'done', step: 'audit', steps: [{ name: 'cards', status: 'skipped', note: 'worker' }] }] } });
+    const drafted = [];
+    const app = make({ store, draftCards: async (rk) => { drafted.push(rk); return { drafted: 1 }; } });
+    await app.watchOnce(); await app.watchOnce();
+    expect(drafted).toEqual(['1']);
+    expect((await app.record('1')).runs[0].cardsDrafted).toBe(true);
+  });
+  it('the app watcher also reaps a dead worker\'s run, so a stopped worker cannot pin the gate', async () => {
+    const store = memStore({ 1: { ratingKey: '1', runs: [{ id: 'a', kind: 'make', status: 'running', step: 'refine', steps: [], worker: 'w1', heartbeatAt: '2026-11-08T00:00:00.000Z' }] } });
+    const app = make({ store, now: () => new Date('2026-11-08T00:05:00Z') });
+    await app.watchOnce();
+    expect((await app.record('1')).runs[0].status).toBe('interrupted');
+  });
 });

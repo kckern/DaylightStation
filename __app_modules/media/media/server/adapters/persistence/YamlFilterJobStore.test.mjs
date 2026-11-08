@@ -31,3 +31,14 @@ describe('YamlFilterJobStore.claim', () => {
     expect(await a.claim('42', 'r-2', 'w1')).toBe(true);
   });
 });
+
+describe('YamlFilterJobStore.update (cross-process)', () => {
+  it('serialises read-modify-write across store instances', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'cf-upd-'));
+    const a = new YamlFilterJobStore({ householdDir: dir }); const b = new YamlFilterJobStore({ householdDir: dir });
+    await a.save('9', { runs: [], n: 0 });
+    const bump = (s) => s.update('9', async (r) => { const n = r.n; await new Promise((x) => setTimeout(x, 5)); r.n = n + 1; });
+    await Promise.all([bump(a), bump(b), bump(a), bump(b)]);
+    expect((await a.load('9')).n).toBe(4);
+  });
+});

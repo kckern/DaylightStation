@@ -33,7 +33,10 @@ export class ContentFilterLibrary {
   }
 
   async #film(rk, indexTitle) {
-    if (this.#facts.has(rk)) return this.#facts.get(rk);
+    const cached = this.#facts.get(rk);
+    // A run moves through its steps in another process: an active film is re-read every time.
+    if (cached && !(cached.job && (cached.job.status === 'queued' || cached.job.status === 'running'))) return cached;
+    if (cached) this.#facts.delete(rk);
     const raw = await this.#repo.getEdl(rk);
     const ref = raw?.sourceRef;
     const refined = ref?.workId != null && ref?.tagSetId != null ? await this.#repo.getRefinedEdl(ref) : null;

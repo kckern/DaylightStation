@@ -42,4 +42,12 @@ describe('ContentFilterLibrary', () => {
     await lib.list({});
     expect(repo.getEdl.mock.calls.length).toBe(calls - 1 + 1);
   });
+  it('a film with an active run shows its current step without invalidation', async () => {
+    const { lib, jobs } = setup();
+    let step = 'preflight';
+    jobs.record.mockImplementation(async (rk) => (rk === '2' ? { runs: [{ status: 'running', step, steps: [] }] } : null));
+    expect((await lib.list({ q: 'annie' })).films[0].job).toMatchObject({ status: 'running', step: 'preflight' });
+    step = 'refine';
+    expect((await lib.list({ q: 'annie' })).films[0].job).toMatchObject({ status: 'running', step: 'refine' });
+  });
 });

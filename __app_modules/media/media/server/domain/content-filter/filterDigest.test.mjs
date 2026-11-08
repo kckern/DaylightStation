@@ -13,3 +13,10 @@ describe('filterDigest', () => {
     expect(filterDigest({ refined, override: {} })).not.toBe(filterDigest({ refined, override: { cueOverrides: { a: { startMs: 1 } } } }));
   });
 });
+
+describe('filterDigest and certification', () => {
+  it('ignores the stored certification (a sign-off must not make the audit stale)', () => {
+    const refined = { cues: [{ id: 'a' }], certification: { level: 'machine' } };
+    expect(filterDigest({ refined, override: {} })).toBe(filterDigest({ refined: { ...refined, certification: { level: 'parent', parent: { by: 'p' } } }, override: {} }));
+  });
+});

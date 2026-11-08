@@ -84,6 +84,8 @@ export class ContentFilterScenes {
       // Partial settings merge over this film's current effective settings.
       const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
       const profilePatch = profilePatchFromSettings(mergeSettings(settingsFromProfile(effective), partial));
+      // Settings are groups; this film's per-word rulings (Admin review) live beside them.
+      if (override.profilePatch?.languageWords) profilePatch.languageWords = override.profilePatch.languageWords;
       await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
       this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
       return { profilePatch };

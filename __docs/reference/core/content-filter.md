@@ -723,8 +723,9 @@ audit lands or the film is written.
 film already has one queued or running). `GET /jobs` is the queue state (the deploy gate reads it);
 `GET /:rk/jobs` one film's record. A **make** run's steps: `preflight` → `export` (only without an
 EDL) → `refine --write` → `scenes --write` (only without a `scenes` key) → `cards` → `audit --json`.
-**Send back** clears the cues' hand nudges, then `refine --cues … --write` and an audit. **Stage**
-runs one step, then an audit. One heavy run at a time, FIFO; audits run on a separate light lane
+**Send back** runs `preflight`, then clears the cues' hand nudges and runs `refine --cues … --write`
+and an audit. **Stage** runs `preflight` and one step (cards and audit need no preflight), then an
+audit. One heavy run at a time, FIFO; audits run on a separate light lane
 and after every write that changes what the household gets.
 
 Run state lives in `household/content-filter/jobs/<rk>.yml` (last 10 runs and the latest audit,
@@ -734,8 +735,11 @@ Runs execute in the **filter worker** (`docker/content-filter-worker/`): a Debia
 refine's Python stack (faster-whisper, torch/torchaudio — no musl wheels for the Alpine app image).
 It runs `contentfilter worker`: claim the oldest queued run (an exclusive claim file), run it with a
 heartbeat every 20 s, and mark runs whose heartbeat is older than 60 s interrupted. The app only
-queues and reports, and polls the run state every 10 s to notice runs finish: it refreshes the
-library, prunes review marks and drafts card text (the worker has no AI gateway), then re-audits.
+queues and reports, and polls the run state every 10 s: it refreshes the library, prunes review
+marks, reaps a dead worker's run, and drafts card text for any finished run whose cards the worker
+skipped (the worker has no AI gateway; `cardsDrafted` marks it done, so an app restart catches up),
+then re-audits. App and worker update a film's run file under a shared lock file
+(`jobs/locks/<rk>.lock`). The review player is an auxiliary Player: no watch-progress logging.
 `CONTENT_FILTER_EXECUTOR=inline` runs everything in the app instead (then a restart marks open runs
 interrupted). `contentfilter preflight <rk>` names what is missing ("Refine cannot run here:
 faster-whisper is not installed") before anything is written.
@@ -764,7 +768,9 @@ Per row: effect (only what fits the channel, R1), this film's ruling for a word
   if it still contains a measured (`ms`/`frame`) word; on a safe-window word the nudge *is* the pin.
 - **Mark reviewed** — `PUT /:rk/review/:rowId { span }` stores `review.<rowId>` in the override
   with the span reviewed; 409 "This part moved. Reload the list." when the span no longer matches.
-  A mark stops counting when a later audit moves its row, and is pruned when that audit lands.
+  A mark stops counting when a later audit moves its row (it stays, named as "changed since you
+  reviewed it", until re-marked); a mark whose row is gone is pruned when the audit lands. Sign-off
+  does not make the audit stale (the digest leaves out the stored certification).
 - **Approve for family** — `POST /:rk/signoff` writes `certification.parent` only when the film is
   machine-certified with nudges counted, the audit passed and is current, and every row is reviewed;
   otherwise 409 with the missing lines ("N of M parts not reviewed", "N parts changed since you

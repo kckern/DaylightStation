@@ -201,6 +201,14 @@ describe('ContentFilterScenes language groups (R9)', () => {
     expect(saved.categories['language/profanity']).toEqual({ effect: 'mute' });
   });
 
+  it('a film setting keeps the film\'s per-word rulings', async () => {
+    const repo = memRepo();
+    repo.state.override = { ...(repo.state.override || {}), profilePatch: { languageWords: { damn: 'bleep' } } };
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });
+    await uc.setTitleSettings({ ratingKey: '5', settings: { language: { profanity: 'mute' } } });
+    expect(repo.state.override.profilePatch.languageWords).toEqual({ damn: 'bleep' });
+  });
+
   it('This film stores a patch; a legacy string sets all five; bad groups and values are refused', async () => {
     const repo = memRepo();
     const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });

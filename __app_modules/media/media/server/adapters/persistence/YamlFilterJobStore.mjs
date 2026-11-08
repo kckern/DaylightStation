@@ -3,10 +3,14 @@
  * Keeps the last 10 runs plus the latest audit. Writes are atomic.
  */
 import path from 'path';
-import { buildContainedPath, fileExists, listYamlFiles, readYamlFromPath, saveYamlToPathAtomic, writeFileExclusive } from '#system/utils/FileIO.mjs';
+import { buildContainedPath, deleteFile, fileExists, fileMtimeMs, listYamlFiles, readYamlFromPath, saveYamlToPathAtomic, writeFileExclusive } from '#system/utils/FileIO.mjs';
 import { IFilterJobStore } from '../../application/content-filter/ports/IFilterJobStore.mjs';
 
 export const KEEP_RUNS = 10;
+const LOCK_WAIT_MS = 10000;
+const LOCK_STALE_MS = 30000;
+const LOCK_RETRY_MS = 20;
+const pause = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
 export class YamlFilterJobStore extends IFilterJobStore {
   #dir;
@@ -30,6 +34,31 @@ export class YamlFilterJobStore extends IFilterJobStore {
   async save(rk, record) {
     const runs = (record.runs || []).slice(-KEEP_RUNS);
     saveYamlToPathAtomic(this.#path(rk), { ...record, ratingKey: String(rk), runs }, { lineWidth: 140 });
+  }
+
+  /**
+   * Read-modify-write one film's record under a lock file, so the app and the worker (two
+   * processes) never lose each other's writes. fn(record) mutates in place; its value is returned.
+   */
+  async update(rk, fn) {
+    this.#path(rk); // validates the rating key
+    const lock = buildContainedPath(this.#dir, `locks/${rk}.lock`);
+    const until = Date.now() + LOCK_WAIT_MS;
+    for (;;) {
+      try { writeFileExclusive(lock, `${process.pid}\n`); break; } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+        const age = Date.now() - (fileMtimeMs(lock) ?? Date.now());
+        if (age > LOCK_STALE_MS) { deleteFile(lock); continue; }
+        if (Date.now() > until) throw new Error(`content-filter jobs: ${rk} stayed locked`);
+        await pause(LOCK_RETRY_MS);
+      }
+    }
+    try {
+      const rec = (await this.load(rk)) || { ratingKey: String(rk), runs: [] };
+      const out = await fn(rec);
+      await this.save(rk, rec);
+      return out;
+    } finally { deleteFile(lock); }
   }
 
   /** Atomic across processes: the first worker to create the claim file owns the run. */

@@ -42,6 +42,8 @@ export class ContentFilterJobs {
     this.#locks.set(rk, prev.then(() => mine));
     await prev;
     try {
+      // Across processes (app and worker) the store's own lock; in-process the chain above.
+      if (typeof this.#store.update === 'function') return await this.#store.update(rk, fn);
       const rec = (await this.#store.load(rk)) || { ratingKey: rk, runs: [] };
       const out = await fn(rec);
       await this.#store.save(rk, rec);
@@ -76,8 +78,9 @@ export class ContentFilterJobs {
   }
 
   #plan(run) {
-    if (run.kind === 'send-back') return ['refine', 'audit'];
-    if (run.kind === 'stage') return run.stage === 'audit' ? ['audit'] : [run.stage, 'audit'];
+    // Every run that spawns pipeline work checks the machine first (preflight writes nothing).
+    if (run.kind === 'send-back') return ['preflight', 'refine', 'audit'];
+    if (run.kind === 'stage') return run.stage === 'audit' ? ['audit'] : run.stage === 'cards' ? ['cards', 'audit'] : ['preflight', run.stage, 'audit'];
     return ['preflight', 'export', 'refine', 'scenes', 'cards', 'audit'];
   }
 
@@ -102,7 +105,6 @@ export class ContentFilterJobs {
 
   async #runSteps(rk, run) {
     this.#logger.info?.('content-filter.job.started', { ratingKey: rk, runId: run.id, kind: run.kind });
-    if (run.kind === 'send-back') await this.#clearNudges(rk, run.cues);
     let failed = null;
     for (const name of this.#plan(run)) {
       await this.#step(rk, run.id, { name, status: 'running', startedAt: this.#now().toISOString() });
@@ -147,7 +149,10 @@ export class ContentFilterJobs {
       case 'export':
         if (run.kind === 'make' && film?.hasEdl) return { status: 'skipped' };
         return this.#cliStep(rk, run, 'export', film?.exportArgs || [rk]);
-      case 'refine': return this.#cliStep(rk, run, 'refine', run.kind === 'send-back' ? [rk, '--cues', run.cues.join(','), '--write'] : [rk, '--write']);
+      case 'refine':
+        // A send-back drops the hand fix only once the run can actually measure again.
+        if (run.kind === 'send-back') await this.#clearNudges(rk, run.cues);
+        return this.#cliStep(rk, run, 'refine', run.kind === 'send-back' ? [rk, '--cues', run.cues.join(','), '--write'] : [rk, '--write']);
       case 'scenes':
         if (run.kind === 'make' && film?.hasScenes) return { status: 'skipped' };
         return this.#cliStep(rk, run, 'scenes', [rk, '--write']);
@@ -252,6 +257,8 @@ export class ContentFilterJobs {
    * finished make run whose cards the worker skipped.
    */
   async watchOnce() {
+    // A dead worker's run must not stay 'running' (it would pin the deploy gate).
+    await this.reapStale();
     const first = this.#seen === null;
     const prev = this.#seen || new Map();
     const next = new Map();
@@ -272,13 +279,21 @@ export class ContentFilterJobs {
     for (const rk of audited) for (const fn of this.#audited) { try { await fn(rk); } catch { /* listener */ } }
     for (const { rk, run } of settled) {
       for (const fn of this.#settled) { try { fn({ ratingKey: rk, runId: run.id, status: run.status }); } catch { /* listener */ } }
-      const skipped = run.steps?.find((x) => x.name === 'cards' && x.status === 'skipped' && x.note === 'worker');
-      if (run.status === 'done' && skipped && this.#draftCards) {
-        try {
-          const r = await this.#draftCards(rk);
-          this.#logger.info?.('content-filter.job.cards', { ratingKey: rk, runId: run.id, drafted: r?.drafted ?? 0 });
-          await this.audit(rk);
-        } catch (e) { this.#logger.warn?.('content-filter.job.cards_failed', { ratingKey: rk, error: e.message }); }
+    }
+    // Cards the worker skipped, drafted once whenever the app sees them (also after an app restart).
+    if (this.#draftCards) {
+      for (const rec of await this.#store.list()) {
+        const rk = String(rec.ratingKey);
+        for (const run of rec.runs || []) {
+          const skipped = run.steps?.some((x) => x.name === 'cards' && x.status === 'skipped' && x.note === 'worker');
+          if (run.status !== 'done' || !skipped || run.cardsDrafted) continue;
+          try {
+            const r = await this.#draftCards(rk);
+            await this.#withRecord(rk, (x) => { const y = x.runs.find((z) => z.id === run.id); if (y) y.cardsDrafted = true; });
+            this.#logger.info?.('content-filter.job.cards', { ratingKey: rk, runId: run.id, drafted: r?.drafted ?? 0 });
+            await this.audit(rk);
+          } catch (e) { this.#logger.warn?.('content-filter.job.cards_failed', { ratingKey: rk, error: e.message }); }
+        }
       }
     }
   }

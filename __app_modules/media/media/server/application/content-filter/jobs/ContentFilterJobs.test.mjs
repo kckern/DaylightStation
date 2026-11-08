@@ -87,7 +87,7 @@ describe('ContentFilterJobs', () => {
     const jobs = make({ cli, clearNudges: async (rk, ids) => { cleared.push([rk, ids]); } });
     await jobs.enqueue({ ratingKey: '1', kind: 'send-back', cues: ['va1', 'va2'] }); await jobs.idle();
     expect(cleared).toEqual([['1', ['va1', 'va2']]]);
-    expect(cli.calls).toEqual([['refine', '1', '--cues', 'va1,va2', '--write'], ['audit', '1', '--json']]);
+    expect(cli.calls).toEqual([['preflight', '1'], ['refine', '1', '--cues', 'va1,va2', '--write'], ['audit', '1', '--json']]);
   });
   it('an audit requested during a long refine runs at once on the light lane', async () => {
     const gate = deferred(); const cli = fakeCli({}, { refine: gate.p }); const jobs = make({ cli });
@@ -101,7 +101,14 @@ describe('ContentFilterJobs', () => {
   it('a stage run runs that one step, then audits; an unknown stage is refused', async () => {
     const cli = fakeCli(); const jobs = make({ cli });
     await jobs.enqueue({ ratingKey: '1', kind: 'stage', stage: 'scenes' }); await jobs.idle();
-    expect(cli.calls).toEqual([['scenes', '1', '--write'], ['audit', '1', '--json']]);
+    expect(cli.calls).toEqual([['preflight', '1'], ['scenes', '1', '--write'], ['audit', '1', '--json']]);
     await expect(jobs.enqueue({ ratingKey: '1', kind: 'stage', stage: 'nope' })).rejects.toThrow('Unknown stage');
+  });
+  it('a send-back whose preflight fails keeps the hand fix', async () => {
+    const cleared = [];
+    const jobs = make({ cli: fakeCli({ preflight: 'Refine cannot run here: torch and torchaudio are not installed' }), clearNudges: async (rk, ids) => { cleared.push(ids); } });
+    await jobs.enqueue({ ratingKey: '1', kind: 'send-back', cues: ['va1'] }); await jobs.idle();
+    expect(cleared).toEqual([]);
+    expect((await jobs.record('1')).runs[0]).toMatchObject({ status: 'failed', step: 'preflight' });
   });
 });

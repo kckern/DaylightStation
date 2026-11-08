@@ -71,15 +71,16 @@ describe('ContentFilterReview marks and sign-off', () => {
     expect(state.refined.certification.parent).toBeUndefined();
     expect(state.refined.certification.level).toBe('machine');
   });
-  it('a moved row stops counting and is pruned when the audit lands', async () => {
-    const s = base(); s.override.review = { 'cue:va1': { by: 'p', at: 'x', span: [110.2, 110.6] } };
+  it('a moved row stops counting and stays named as changed; a mark whose row is gone is pruned', async () => {
+    const s = base(); s.override.review = { 'cue:va1': { by: 'p', at: 'x', span: [110.2, 110.6] }, 'cue:gone': { by: 'p', at: 'x', span: [1, 2] } };
     const moved = [{ id: 'cue:va1', in: 110.25, out: 110.6 }, { id: 'cue:va2', in: 210, out: 212 }];
     const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rows: moved } });
     const r = await review.get({ ratingKey: '9' });
     expect(r.reviewed).toBe(0);
     expect(r.signOff.missing).toEqual(['1 of 2 parts not reviewed', '1 parts changed since you reviewed them']);
     await review.pruneMarks('9');
-    expect(state.override.review).toEqual({});
+    expect(Object.keys(state.override.review)).toEqual(['cue:va1']);
+    expect((await review.get({ ratingKey: '9' })).signOff.missing).toContain('1 parts changed since you reviewed them');
   });
   it('an uncovered nudge, a failed audit and a stale audit are named', async () => {
     const s = base(); s.override.cueOverrides = { va1: { startMs: 100300, endMs: 100700 } };

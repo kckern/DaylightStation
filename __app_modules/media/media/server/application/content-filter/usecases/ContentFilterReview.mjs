@@ -121,7 +121,10 @@ export class ContentFilterReview {
     });
   }
 
-  /** Drop marks whose row is gone or moved (after an audit lands). */
+  /**
+   * Drop marks whose row is gone (after an audit lands). A mark whose row moved stays, so the
+   * page can say "N parts changed since you reviewed them"; it does not count until re-marked.
+   */
   async pruneMarks(ratingKey) {
     return this.#queue.run(ratingKey, async () => {
       const rows = new Map(((await this.#audit(ratingKey))?.rows || []).map((r) => [r.id, r]));
@@ -130,7 +133,7 @@ export class ContentFilterReview {
       const review = {}; let pruned = 0;
       for (const [id, m] of Object.entries(override.review)) {
         const row = rows.get(id);
-        if (row && sameSpan(m.span, [row.in, row.out])) review[id] = m; else pruned++;
+        if (rows.has(id)) review[id] = m; else pruned++;
       }
       if (pruned) {
         await this.#repo.saveOverride(ratingKey, { ...override, review });
