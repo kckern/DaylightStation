@@ -14,6 +14,7 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
   const { ContentFilterArt } = await import("../application/content-filter/usecases/ContentFilterArt.mjs");
   const { ContentFilterJobs } = await import("../application/content-filter/jobs/ContentFilterJobs.mjs");
   const { ContentFilterReview } = await import("../application/content-filter/usecases/ContentFilterReview.mjs");
+  const { ContentFilterLibrary } = await import("../application/content-filter/usecases/ContentFilterLibrary.mjs");
   const { createTitleQueue } = await import("../application/content-filter/titleQueue.mjs");
   const { filterDigest } = await import("../domain/content-filter/filterDigest.mjs");
   const logger = rootLogger.child({ module: 'content-filter-api' });
@@ -64,7 +65,9 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
   });
   const contentFilterReview = new ContentFilterReview({ contentFilterRepository, jobs, digestOf, logger, titleQueue });
   // A landed audit drops review marks whose row moved or went away.
-  jobs.onAudit((rk) => contentFilterReview.pruneMarks(rk));
+  const contentFilterLibrary = new ContentFilterLibrary({ contentFilterRepository, jobs, digestOf });
+  jobs.onAudit(async (rk) => { await contentFilterReview.pruneMarks(rk); contentFilterLibrary.invalidate(rk); });
+  jobs.onSettled(({ ratingKey }) => contentFilterLibrary.invalidate(ratingKey));
   // Inline runs die with this process. A worker's runs outlive an app restart; the worker
   // itself marks a run interrupted when its heartbeat goes stale (Task 9).
   if (process.env.CONTENT_FILTER_EXECUTOR === 'inline') await jobs.recover();
@@ -73,6 +76,7 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
     getContentFilter: new GetContentFilter({ contentFilterRepository }),
     contentFilterScenes,
     contentFilterReview,
+    contentFilterLibrary,
     jobs,
     logger,
   });

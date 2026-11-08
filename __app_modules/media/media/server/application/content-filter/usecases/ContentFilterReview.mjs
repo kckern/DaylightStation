@@ -19,6 +19,16 @@ const WORD_VALUES = new Set(['off', 'mute', 'bleep']);
 const sameSpan = (a, b) => Array.isArray(a) && Array.isArray(b) && Math.abs(a[0] - b[0]) <= SPAN_EPS && Math.abs(a[1] - b[1]) <= SPAN_EPS;
 const ms3 = (t) => Math.round(t * 1000) / 1000;
 
+/** Marks that still count against the audit rows: { reviewed, changed } (a moved row's mark is `changed`). */
+export function countReviewed(rows = [], marks = {}) {
+  let reviewed = 0; let changed = 0;
+  for (const r of rows) {
+    const m = marks[r.id];
+    if (m && sameSpan(m.span, [r.in, r.out])) reviewed++; else if (m) changed++;
+  }
+  return { reviewed, changed };
+}
+
 export class ContentFilterReview {
   #repo; #jobs; #digestOf; #logger; #clock; #queue;
 

@@ -54,3 +54,17 @@ describe('content-filter review routes', () => {
     expect((await request(app).get('/cf/9/review')).body.signOff.ready).toBe(false);
   });
 });
+
+describe('GET /library', () => {
+  test('passes stage and q, and a write invalidates the film', async () => {
+    const list = vi.fn(async () => ({ films: [] })); const invalidate = vi.fn();
+    const app = express(); app.use(express.json());
+    const jobs = { busyWriting: async () => false, audit: async () => true };
+    app.use('/cf', createContentFilterRouter({ getContentFilter: { execute: async () => ({}) }, contentFilterScenes: { ruleCue: async () => ({}) },
+      contentFilterLibrary: { list, invalidate }, jobs, logger: { info() {}, warn() {} } }));
+    await request(app).get('/cf/library?stage=rough&q=annie');
+    expect(list).toHaveBeenCalledWith({ stage: 'rough', q: 'annie' });
+    await request(app).put('/cf/9/cues/va1').send({ effect: 'mute' });
+    expect(invalidate).toHaveBeenCalledWith('9');
+  });
+});

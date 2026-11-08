@@ -11,7 +11,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * ratingKey is the Plex rating key (contentId `plex:<ratingKey>`); it is
  * digit-sanitized to prevent path traversal.
  */
-export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, contentFilterArt = null, contentFilterReview = null, jobs = null, logger = console } = {}) {
+export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, contentFilterArt = null, contentFilterReview = null, contentFilterLibrary = null, jobs = null, logger = console } = {}) {
   if (!getContentFilter || typeof getContentFilter.execute !== 'function') {
     throw new Error('createContentFilterRouter requires getContentFilter');
   }
@@ -33,7 +33,9 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     const NO_REAUDIT = /^\/(jobs|review|signoff)(\/|$)/;
     router.use('/:ratingKey', asyncHandler(async (req, res, next) => {
       const key = String(req.params.ratingKey);
-      if (!WRITE.has(req.method) || !/^\d+$/.test(key) || /^\/jobs(\/|$)/.test(req.path)) return next();
+      if (!WRITE.has(req.method) || !/^\d+$/.test(key)) return next();
+      if (contentFilterLibrary) res.on('finish', () => { if (res.statusCode < 300) contentFilterLibrary.invalidate(key); });
+      if (/^\/jobs(\/|$)/.test(req.path)) return next();
       if (await jobs.busyWriting(key)) {
         return res.status(409).json({ error: 'A filter run is writing this film. Try again when it finishes.' });
       }
@@ -41,6 +43,15 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         res.on('finish', () => { if (res.statusCode < 300) jobs.audit(key).catch?.(() => {}); });
       }
       next();
+    }));
+  }
+
+  // GET /library?stage=&q= -> { films: [{ ratingKey, title, year, stage, job, reviewed }] } (Admin library)
+  if (contentFilterLibrary) {
+    router.get('/library', asyncHandler(async (req, res) => {
+      const stage = req.query.stage ? String(req.query.stage) : null;
+      const q = req.query.q ? String(req.query.q).slice(0, 100) : null;
+      res.json(await contentFilterLibrary.list({ stage, q }));
     }));
   }
 
