@@ -81,7 +81,9 @@ window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones =
     fitnessSessionInstance: { getEquipmentUser: () => null },
     ...(ticks ? {
       timelineTimebase: { tickCount: ticks, intervalMs: 5000 },
-      getUserVitals: () => ({ zoneSequence: [['cool', 0], ['active', 100], ['warm', 120], ['hot', 140], ['fire', 160]].map(([id, threshold], index) => ({ id, threshold, index })) }),
+      // Zones arrive the way production delivers them: on the ZoneProfileStore
+      // profile, NOT on vitals entries (userVitalsMap carries no zoneSequence).
+      zoneProfiles: devices.map((d) => ({ id: d.profileId, name: d.name, zoneSequence: [['cool', 0], ['active', 100], ['warm', 120], ['hot', 140], ['fire', 160]].map(([id, threshold], index) => ({ id, threshold, index })) })),
       getParticipantTimelineSeries: (id, metric) => Array.from({ length: ticks }, (_, t) => {
         const hr = Math.round(110 + 40 * Math.sin(t / 15 + id.length));
         return metric === 'heart_rate' ? hr : (hr >= 140 ? 'hot' : hr >= 120 ? 'warm' : 'active');
@@ -330,13 +332,14 @@ try {
     const trend = await page.evaluate(() => {
       const cards=[...document.querySelectorAll('.fitness-device.heart-rate')];
       return cards.map(card=>{const r=card.getBoundingClientRect();const svg=card.querySelector('.rider-hr-trend');const s=svg?.getBoundingClientRect();
-        return {height:r.height,trend:!!svg,loading:!!card.querySelector('.rider-hr-trend--loading'),lines:card.querySelectorAll('.rider-hr-trend use').length,drawn:!!card.querySelector('path.rider-hr-trend__line')?.getAttribute('d'),inside:!s||(s.top>=r.top-0.5&&s.bottom<=r.bottom+0.5&&s.left>=r.left-0.5&&s.right<=r.right+0.5),chartHeight:s?.height||0};});
+        return {height:r.height,trend:!!svg,loading:!!card.querySelector('.rider-hr-trend--loading'),lines:card.querySelectorAll('.rider-hr-trend use').length,drawn:!!card.querySelector('path.rider-hr-trend__line')?.getAttribute('d'),zoneColoured:[...card.querySelectorAll('.rider-hr-trend use')].some(u=>u.getAttribute('stroke')==='#ffd43b'),inside:!s||(s.top>=r.top-0.5&&s.bottom<=r.bottom+0.5&&s.left>=r.left-0.5&&s.right<=r.right+0.5),chartHeight:s?.height||0};});
     });
     for (const card of trend) {
       assert.equal(card.trend, card.height>=116 && options.ticks>=1, 'trend iff tall card with a timeline: '+JSON.stringify({options,card}));
       assert.ok(card.inside,'trend inside its card: '+JSON.stringify(card));
       if (card.trend && options.ticks<5) assert.ok(card.loading && card.chartHeight>=20,'collecting spinner holds the box: '+JSON.stringify(card));
       if (card.trend && options.ticks>=5) assert.ok(!card.loading && card.lines>0 && card.drawn && card.chartHeight>=20,'chart has room and a line: '+JSON.stringify(card));
+      if (card.trend && options.ticks>=5) assert.ok(card.zoneColoured,'line is coloured by the rider zone bands: '+JSON.stringify(card));
     }
     if (options.count===1) assert.ok(options.ticks>=1 ? trend[0].height>132 : trend[0].height<=132,'single-rider cap follows the trend: '+JSON.stringify(trend));
     evidence.push({trend:options,cards:trend});

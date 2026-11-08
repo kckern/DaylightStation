@@ -12,7 +12,7 @@ import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
 import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX, RIDER_SINGLE_CAP_PX } from "./riderListDensity.js";
-import { trendVisible, trendsAvailable as trendsAvailableFor, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
+import { pickZoneSequence, trendVisible, trendsAvailable as trendsAvailableFor, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
 import RiderHrTrend from "./RiderHrTrend.jsx";
 import { committedZoneId } from "../../lib/committedZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
@@ -892,7 +892,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 }
                 return getParticipantTimelineSeries(trendUserId, metric, options);
               };
-              const trendSequence = progressInfo?.zoneSequence || userVitalsEntry?.zoneSequence || [];
+              // The zone ladder lives on the ZoneProfileStore profile; vitals and
+              // progress entries don't carry it (2026-11-08: every line drew grey).
+              const trendProfile = resolveZoneProfile(participantEntry?.profileId)
+                || resolveZoneProfile(participantEntry?.id) || resolveZoneProfile(profileId);
+              const trendSequence = pickZoneSequence(trendProfile?.zoneSequence, progressInfo?.zoneSequence, userVitalsEntry?.zoneSequence);
 
               const removalCountdown = device.removalCountdown;
               const isCountdownActive = Number.isFinite(removalCountdown);

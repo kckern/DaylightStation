@@ -22,7 +22,11 @@ timeline user. "Now" is the series' own last slot, so a rider who joined late
 still ends at the right edge.
 
 The timeline's `zone_id` series is **not** read. Colour comes from height against
-the rider's own `zoneSequence` (`progressInfo` or the user's vitals).
+the rider's own `zoneSequence`, taken from the ZoneProfileStore profile
+(`resolveZoneProfile`) via `pickZoneSequence`. Vitals and zone-progress entries
+do not carry the ladder in production (`userVitalsMap` builds them without it), so
+they are only fallbacks; an empty array must not win, or every line draws in the
+neutral band.
 
 ## States
 
