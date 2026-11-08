@@ -17,6 +17,7 @@ export const HEARTBEAT_MS = 20e3;
 export const STALE_MS = 60e3;
 export const WATCH_MS = 10e3;
 const WRITING = new Set(['export', 'refine', 'scenes']);
+const LIGHT_STAGES = new Set(['audit', 'cards']);
 const OPEN = new Set(['queued', 'running']);
 const TAIL = 500;
 
@@ -65,6 +66,11 @@ export class ContentFilterJobs {
       return r;
     });
     this.#logger.info?.('content-filter.job.queued', { ratingKey: rk, runId: run.id, kind, stage, cues: cues?.length ?? null, by });
+    // Audit and card drafts need no Python: they run here at once, whoever executes heavy runs.
+    if (kind === 'stage' && LIGHT_STAGES.has(stage)) {
+      this.runNext(rk).catch((e) => this.#logger.warn?.('content-filter.job.crashed', { ratingKey: rk, error: e.message }));
+      return run;
+    }
     this.#queue.push(rk);
     this.#kick();
     return run;
@@ -222,7 +228,7 @@ export class ContentFilterJobs {
     const { running, queued } = await this.state();
     const busy = new Set(running.map((r) => r.ratingKey));
     for (const q of queued) {
-      if (busy.has(q.ratingKey)) continue;
+      if (busy.has(q.ratingKey) || (q.kind === 'stage' && LIGHT_STAGES.has(q.stage))) continue; // the app runs those
       if (typeof this.#store.claim === 'function' && !(await this.#store.claim(q.ratingKey, q.runId, owner))) continue;
       this.#logger.info?.('content-filter.job.claimed', { ratingKey: q.ratingKey, runId: q.runId, worker: owner });
       return q.ratingKey;
@@ -310,7 +316,7 @@ export class ContentFilterJobs {
     for (const rec of await this.#store.list()) {
       for (const r of rec.runs || []) {
         if (r.status === 'running') running.push({ ratingKey: String(rec.ratingKey), runId: r.id, step: r.step });
-        if (r.status === 'queued') queued.push({ ratingKey: String(rec.ratingKey), runId: r.id, queuedAt: r.queuedAt });
+        if (r.status === 'queued') queued.push({ ratingKey: String(rec.ratingKey), runId: r.id, queuedAt: r.queuedAt, kind: r.kind, ...(r.stage ? { stage: r.stage } : {}) });
       }
     }
     queued.sort((a, b) => String(a.queuedAt).localeCompare(String(b.queuedAt)));
