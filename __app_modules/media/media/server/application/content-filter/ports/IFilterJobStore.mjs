@@ -10,6 +10,8 @@ export class IFilterJobStore {
   /** @returns {Promise<object|null>} */
   async load(_ratingKey) { throw new Error('IFilterJobStore.load not implemented'); }
   async save(_ratingKey, _record) { throw new Error('IFilterJobStore.save not implemented'); }
+  /** Claim one run for a worker; true for exactly one caller across processes. */
+  async claim(_ratingKey, _runId, _owner) { throw new Error('IFilterJobStore.claim not implemented'); }
   /** @returns {Promise<object[]>} every record */
   async list() { throw new Error('IFilterJobStore.list not implemented'); }
 }

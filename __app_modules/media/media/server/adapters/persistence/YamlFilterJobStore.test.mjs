@@ -21,3 +21,13 @@ describe('YamlFilterJobStore', () => {
     await expect(store.load('../x')).rejects.toThrow('bad ratingKey');
   });
 });
+
+describe('YamlFilterJobStore.claim', () => {
+  it('lets exactly one caller claim a run', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'cf-claim-'));
+    const a = new YamlFilterJobStore({ householdDir: dir }); const b = new YamlFilterJobStore({ householdDir: dir });
+    const got = await Promise.all([a.claim('42', 'r-1', 'w1'), b.claim('42', 'r-1', 'w2')]);
+    expect(got.filter(Boolean)).toHaveLength(1);
+    expect(await a.claim('42', 'r-2', 'w1')).toBe(true);
+  });
+});

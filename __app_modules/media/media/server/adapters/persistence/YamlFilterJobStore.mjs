@@ -3,7 +3,7 @@
  * Keeps the last 10 runs plus the latest audit. Writes are atomic.
  */
 import path from 'path';
-import { buildContainedPath, fileExists, listYamlFiles, readYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
+import { buildContainedPath, fileExists, listYamlFiles, readYamlFromPath, saveYamlToPathAtomic, writeFileExclusive } from '#system/utils/FileIO.mjs';
 import { IFilterJobStore } from '../../application/content-filter/ports/IFilterJobStore.mjs';
 
 export const KEEP_RUNS = 10;
@@ -30,6 +30,19 @@ export class YamlFilterJobStore extends IFilterJobStore {
   async save(rk, record) {
     const runs = (record.runs || []).slice(-KEEP_RUNS);
     saveYamlToPathAtomic(this.#path(rk), { ...record, ratingKey: String(rk), runs }, { lineWidth: 140 });
+  }
+
+  /** Atomic across processes: the first worker to create the claim file owns the run. */
+  async claim(rk, runId, owner) {
+    if (!/^\d+$/.test(String(rk ?? ''))) throw new Error(`bad ratingKey: ${rk}`);
+    if (!/^[A-Za-z0-9-]+$/.test(String(runId))) throw new Error(`bad runId: ${runId}`);
+    try {
+      writeFileExclusive(buildContainedPath(this.#dir, `claims/${rk}-${runId}.claim`), `${owner}\n`);
+      return true;
+    } catch (e) {
+      if (e.code === 'EEXIST') return false;
+      throw e;
+    }
   }
 
   async list() {

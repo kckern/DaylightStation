@@ -13,6 +13,9 @@ export class JobConflict extends Error {
 
 export const STEP_TIMEOUT_MS = { preflight: 60e3, export: 5 * 60e3, refine: 6 * 3600e3, scenes: 2 * 3600e3, audit: 2 * 60e3 };
 export const STAGES = ['export', 'refine', 'scenes', 'cards', 'audit'];
+export const HEARTBEAT_MS = 20e3;
+export const STALE_MS = 60e3;
+export const WATCH_MS = 10e3;
 const WRITING = new Set(['export', 'refine', 'scenes']);
 const OPEN = new Set(['queued', 'running']);
 const TAIL = 500;
@@ -78,14 +81,26 @@ export class ContentFilterJobs {
     return ['preflight', 'export', 'refine', 'scenes', 'cards', 'audit'];
   }
 
-  /** Run the film's queued run (the worker calls this after claiming). */
-  async runNext(rk) {
+  /** Run the film's queued run (the worker calls this after claiming, with its owner id). */
+  async runNext(rk, { owner = null } = {}) {
     const run = await this.#withRecord(rk, (rec) => {
       const r = rec.runs.find((x) => x.status === 'queued');
-      if (r) Object.assign(r, { status: 'running', startedAt: this.#now().toISOString(), log: this.#logPath(rk, r.id) });
+      const at = this.#now().toISOString();
+      if (r) Object.assign(r, { status: 'running', startedAt: at, log: this.#logPath(rk, r.id), ...(owner ? { worker: owner, heartbeatAt: at } : {}) });
       return r ? structuredClone(r) : null;
     });
     if (!run) return null;
+    let beating = !!owner;
+    const beat = () => {
+      if (!beating) return;
+      this.#withRecord(rk, (rec) => { const r = rec.runs.find((x) => x.id === run.id); if (r && r.status === 'running') r.heartbeatAt = this.#now().toISOString(); })
+        .catch(() => {}).finally(() => this.#schedule(beat, HEARTBEAT_MS));
+    };
+    if (owner) this.#schedule(beat, HEARTBEAT_MS);
+    try { return await this.#runSteps(rk, run); } finally { beating = false; }
+  }
+
+  async #runSteps(rk, run) {
     this.#logger.info?.('content-filter.job.started', { ratingKey: rk, runId: run.id, kind: run.kind });
     if (run.kind === 'send-back') await this.#clearNudges(rk, run.cues);
     let failed = null;
@@ -137,7 +152,8 @@ export class ContentFilterJobs {
         if (run.kind === 'make' && film?.hasScenes) return { status: 'skipped' };
         return this.#cliStep(rk, run, 'scenes', [rk, '--write']);
       case 'cards': {
-        if (!this.#draftCards) return { status: 'skipped', note: 'No card writer configured' };
+        // The worker has no card writer: the app drafts them when it sees the run settle (watchOnce).
+        if (!this.#draftCards) return { status: 'skipped', note: run.worker ? 'worker' : 'No card writer configured' };
         const r = await this.#draftCards(rk);
         return { status: 'done', note: `${r?.drafted ?? 0} drafted` };
       }
@@ -194,6 +210,84 @@ export class ContentFilterJobs {
       });
       for (const h of hit) this.#logger.warn?.('content-filter.job.interrupted', { ratingKey: rk, ...h });
     }
+  }
+
+  /** Worker: claim the oldest queued run (atomic across workers via store.claim). Returns its film or null. */
+  async claimNext(owner) {
+    const { running, queued } = await this.state();
+    const busy = new Set(running.map((r) => r.ratingKey));
+    for (const q of queued) {
+      if (busy.has(q.ratingKey)) continue;
+      if (typeof this.#store.claim === 'function' && !(await this.#store.claim(q.ratingKey, q.runId, owner))) continue;
+      this.#logger.info?.('content-filter.job.claimed', { ratingKey: q.ratingKey, runId: q.runId, worker: owner });
+      return q.ratingKey;
+    }
+    return null;
+  }
+
+  /** Worker runs whose heartbeat stopped (the worker died) become interrupted. Returns how many. */
+  async reapStale({ maxAgeMs = STALE_MS } = {}) {
+    const now = this.#now().getTime(); let n = 0;
+    for (const rec of await this.#store.list()) {
+      const rk = String(rec.ratingKey);
+      const stale = (r) => r.status === 'running' && r.worker && (!r.heartbeatAt || now - Date.parse(r.heartbeatAt) > maxAgeMs);
+      if (!(rec.runs || []).some(stale)) continue;
+      n += await this.#withRecord(rk, (r) => {
+        const hit = r.runs.filter(stale);
+        for (const x of hit) {
+          Object.assign(x, { status: 'interrupted', endedAt: this.#now().toISOString() });
+          this.#logger.warn?.('content-filter.job.interrupted', { ratingKey: rk, runId: x.id, step: x.step, worker: x.worker, reason: 'heartbeat' });
+        }
+        return hit.length;
+      });
+    }
+    return n;
+  }
+
+  #seen = null; // runId -> status, and rk -> audit.at, from the last watch tick
+
+  /**
+   * App side, worker mode: notice what the worker finished. Fires onSettled for runs that left
+   * queued/running, onAudit for a newly stored audit, and drafts cards (then re-audits) for a
+   * finished make run whose cards the worker skipped.
+   */
+  async watchOnce() {
+    const first = this.#seen === null;
+    const prev = this.#seen || new Map();
+    const next = new Map();
+    const settled = []; const audited = [];
+    for (const rec of await this.#store.list()) {
+      const rk = String(rec.ratingKey);
+      for (const r of rec.runs || []) {
+        next.set(`run:${r.id}`, r.status);
+        const was = prev.get(`run:${r.id}`);
+        if (!first && OPEN.has(was) && !OPEN.has(r.status)) settled.push({ rk, run: r });
+      }
+      if (rec.audit?.at) {
+        next.set(`audit:${rk}`, rec.audit.at);
+        if (!first && prev.get(`audit:${rk}`) !== rec.audit.at) audited.push(rk);
+      }
+    }
+    this.#seen = next;
+    for (const rk of audited) for (const fn of this.#audited) { try { await fn(rk); } catch { /* listener */ } }
+    for (const { rk, run } of settled) {
+      for (const fn of this.#settled) { try { fn({ ratingKey: rk, runId: run.id, status: run.status }); } catch { /* listener */ } }
+      const skipped = run.steps?.find((x) => x.name === 'cards' && x.status === 'skipped' && x.note === 'worker');
+      if (run.status === 'done' && skipped && this.#draftCards) {
+        try {
+          const r = await this.#draftCards(rk);
+          this.#logger.info?.('content-filter.job.cards', { ratingKey: rk, runId: run.id, drafted: r?.drafted ?? 0 });
+          await this.audit(rk);
+        } catch (e) { this.#logger.warn?.('content-filter.job.cards_failed', { ratingKey: rk, error: e.message }); }
+      }
+    }
+  }
+
+  /** Poll watchOnce every WATCH_MS (app, worker mode). */
+  watch({ intervalMs = WATCH_MS } = {}) {
+    const tick = () => this.watchOnce().catch((e) => this.#logger.warn?.('content-filter.job.watch_failed', { error: e.message }))
+      .finally(() => this.#schedule(tick, intervalMs));
+    tick();
   }
 
   async state() {

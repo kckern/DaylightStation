@@ -26,6 +26,7 @@
  *   tags <slug|workId>      Summarize a title's filter categories + tag counts
  *   export <slug|workId>    Emit a normalized FilterEDL (YAML) to stdout
  *   preflight <ratingKey>   Can a pipeline run happen here? (refine deps, Plex part)
+ *   worker                  The filter worker loop: claim queued Admin runs and run them
  *   match [--section <id>]  Cross-reference your Plex movie library vs VidAngel
  *
  * Options:
@@ -1082,6 +1083,20 @@ async function main() {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error(CERTIFY_USAGE); process.exit(1); }
     try { runCertify({ rk, flags, args, mediaFilterDir: filterMediaDir() }); } catch (err) { console.error(`certify ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
+  if (command === 'worker') {
+    const os = await import('os');
+    const { runWorker } = await import('./contentfilter/workerCommand.mjs');
+    const { createFilterJobs } = await import('../server/composition/content-filter-jobs.mjs');
+    const dataDir = resolveDataDir(); const mediaDir = resolveMediaDir();
+    const owner = `${os.hostname()}:${process.pid}`;
+    const say = (event, data = {}) => console.error(JSON.stringify({ at: new Date().toISOString(), event, ...data }));
+    const logger = { info: say, warn: say, debug() {}, error: say };
+    const { jobs } = await createFilterJobs({ householdDir: path.join(dataDir, 'household'), dataDir, mediaDir, logger,
+      executor: 'inline', schedule: (fn, ms) => setTimeout(fn, ms) });
+    await runWorker({ jobs, owner, log: say });
     return;
   }
 
