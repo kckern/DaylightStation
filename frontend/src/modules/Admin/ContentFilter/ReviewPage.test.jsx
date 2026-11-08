@@ -8,8 +8,8 @@ const payload = {
   rows: [{ id: 'cue:w1', peekId: 'w1', kind: 'words', group: 'profanity', label: 'damn', modality: 'said', in: 70, out: 70.5, effect: 'mute', card: null, handFixed: false, unsure: [], reviewed: null }],
   reviewed: 0, total: 1, job: { status: 'failed', step: 'scenes', error: 'boom' }, signOff: { ready: false, missing: ['1 of 1 parts not reviewed'], parent: null },
 };
-vi.mock('../../../../../../frontend/src/lib/hooks/useApiResource.js', () => ({ useApiResource: () => ({ data: payload, loading: false, error: null, reload: () => {} }) }));
-vi.mock('../../playback.mjs', () => ({ default: () => <div data-testid="player" /> }));
+vi.mock('../../../lib/hooks/useApiResource.js', () => ({ useApiResource: () => ({ data: payload, loading: false, error: null, reload: () => {} }) }));
+vi.mock('../../../../../__app_modules/media/media/browser/playback.mjs', () => ({ default: () => <div data-testid="player" /> }));
 const { ContentFilterReview } = await import('./ContentFilterAdmin.jsx');
 
 describe('Content filter review page', () => {

@@ -12,10 +12,10 @@ const films = [
   { ratingKey: '78', title: 'Back to the Future', year: 1985, stage: 'running', job: { status: 'running', step: 'refine', error: null }, reviewed: null },
   { ratingKey: '79', title: 'Matilda', year: 1996, stage: 'audited', job: { status: 'failed', step: 'scenes', error: 'Jev timed out' }, reviewed: { n: 3, m: 40 } },
 ];
-vi.mock('../../../../../../frontend/src/lib/hooks/useApiResource.js', () => ({
+vi.mock('../../../lib/hooks/useApiResource.js', () => ({
   useApiResource: () => ({ data: { films, worker }, loading: false, error: null, reload: () => {} }),
 }));
-vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({
+vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: async (path, body, method) => {
     calls.push({ path, body, method });
     if (failNext) { const e = new Error(failNext); failNext = null; throw e; }

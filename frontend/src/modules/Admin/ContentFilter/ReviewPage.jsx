@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Anchor, Badge, Group, Stack, Text } from '@mantine/core';
-import { useApiResource } from '../../../../../../frontend/src/lib/hooks/useApiResource.js';
-import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../../../../frontend/src/lib/ui/index.js';
+import { Anchor, Badge, Button, Group, Stack, Text } from '@mantine/core';
+import { DaylightAPI } from '../../../lib/api.mjs';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
 import { ReviewList } from './ReviewList.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
@@ -24,6 +25,8 @@ export function ReviewPage() {
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
   const { data, loading, error, reload } = useApiResource(url, { label: 'review', logger });
   const [selected, setSelected] = useState(null);
+  const [picked, setPicked] = useState(() => new Set());
+  const [notice, setNotice] = useState(null);
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
   const waiting = !!data && (running || (data.audit && !data.audit.fresh));
 
@@ -33,6 +36,31 @@ export function ReviewPage() {
     const id = setInterval(() => reload(), POLL_MS);
     return () => clearInterval(id);
   }, [waiting, reload]);
+
+  // Rows in a queued/running send-back carry its step ("Sent back: refine").
+  const sentBack = useMemo(() => {
+    const job = data?.job;
+    if (!job || job.kind !== 'send-back' || !(job.status === 'queued' || job.status === 'running')) return {};
+    const cues = new Set(job.cues || []);
+    const out = {};
+    for (const r of data.rows || []) if ((r.members || []).some((id) => cues.has(id))) out[r.id] = job.status === 'queued' ? 'waiting' : (job.step || 'starting');
+    return out;
+  }, [data]);
+  const pick = (id, on) => setPicked((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
+  const sendBackPicked = async () => {
+    const cues = [...new Set((data?.rows || []).filter((r) => picked.has(r.id)).flatMap((r) => r.members || []))];
+    setNotice(null);
+    try {
+      await DaylightAPI(`${API}/${encodeURIComponent(ratingKey)}/jobs`, { kind: 'send-back', cues }, 'POST');
+      logger.info('review.send-back', { ratingKey, rows: picked.size, cues: cues.length });
+      setPicked(new Set());
+      setNotice(`Sent ${cues.length} back to the pipeline.`);
+      reload();
+    } catch (err) {
+      logger.warn('review.send-back_failed', { ratingKey, error: err.message });
+      setNotice(err.message || 'That did not work.');
+    }
+  };
 
   if (loading && !data) return <LoadingState label="review" rows={6} />;
   if (error) return <ErrorState error={error} onRetry={reload} label="Review" />;
@@ -50,12 +78,22 @@ export function ReviewPage() {
         <div className="cf-review">
           <Stack gap="sm" className="cf-review__side">
             <ReviewPlayer ratingKey={ratingKey} />
-            {row ? <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText} />
+            {row ? <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
+              auditFresh={!!data.audit?.fresh} wordRulings={data.wordRulings || {}} />
               : <Text size="sm" c="dimmed">Pick a part in the list to change how it is handled.</Text>}
             <SignOffPanel ratingKey={ratingKey} signOff={data.signOff} onChanged={reload} busyText={busyText} />
           </Stack>
-          <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
-            selectedId={row?.id ?? null} onSelect={setSelected} busy={Boolean(busyText)} />
+          <Stack gap="xs">
+            {picked.size ? (
+              <Group gap="xs">
+                <Button size="compact-xs" disabled={Boolean(busyText)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
+                <Button size="compact-xs" variant="subtle" onClick={() => setPicked(new Set())}>Clear selection</Button>
+              </Group>
+            ) : null}
+            {notice ? <Text size="sm" role="status">{notice}</Text> : null}
+            <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
+              selectedId={row?.id ?? null} onSelect={setSelected} picked={picked} onPick={pick} sentBack={sentBack} />
+          </Stack>
         </div>
       </Stack>
     </SectionCard>

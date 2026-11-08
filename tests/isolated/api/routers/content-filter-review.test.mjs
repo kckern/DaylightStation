@@ -68,3 +68,14 @@ describe('GET /library', () => {
     expect(invalidate).toHaveBeenCalledWith('9');
   });
 });
+
+describe('nudge with an invalid effect', () => {
+  test('is refused before anything is saved', async () => {
+    const nudgeCue = vi.fn(async () => ({})); const nudgeScene = vi.fn(async () => ({}));
+    const { app } = mk({ review: { nudgeCue, nudgeScene } });
+    expect((await request(app).put('/cf/9/cues/va1').send({ nudge: { in: 1, out: 2 }, effect: 'explode' })).status).toBe(400);
+    expect((await request(app).put('/cf/9/scenes/sc1').send({ nudge: { in: 1, out: 2 }, effect: 'mute' })).status).toBe(400);
+    expect(nudgeCue).not.toHaveBeenCalled();
+    expect(nudgeScene).not.toHaveBeenCalled();
+  });
+});

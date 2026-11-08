@@ -1,9 +1,9 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { LoadingState } from '../../../../../../frontend/src/lib/ui/index.js';
-import { previewStore } from '../../content-filter/preview/previewStore.js';
+import { LoadingState } from '../../../lib/ui/index.js';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
 // The Media Player is heavy: load it with the review page only.
-const Player = lazy(() => import('../../playback.mjs'));
+const Player = lazy(() => import('../../../../../__app_modules/media/media/browser/playback.mjs'));
 
 /**
  * The film in the Media Player with the filter forced on, whatever its certification, so a

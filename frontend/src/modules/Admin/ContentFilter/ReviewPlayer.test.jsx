@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { previewStore } from '../../content-filter/preview/previewStore.js';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
 const seen = [];
-vi.mock('../../playback.mjs', () => ({ default: (props) => { seen.push({ play: props.play, forced: previewStore.isForced('77'), auxiliary: props.auxiliary }); return <div data-testid="player" />; } }));
+vi.mock('../../../../../__app_modules/media/media/browser/playback.mjs', () => ({ default: (props) => { seen.push({ play: props.play, forced: previewStore.isForced('77'), auxiliary: props.auxiliary }); return <div data-testid="player" />; } }));
 const { ReviewPlayer } = await import('./ReviewPlayer.jsx');
 
 describe('ReviewPlayer', () => {

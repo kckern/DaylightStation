@@ -11,14 +11,14 @@ const base = () => ({
   override: { sync: { scale: 1, offsetSec: 10 } },
 });
 const rowsOf = () => [{ id: 'cue:va1', in: 110.2, out: 110.6 }, { id: 'cue:va2', in: 210, out: 212 }];
-const setup = ({ audit = { ok: true, digest: 'D', rows: rowsOf() }, digest = 'D', state = base() } = {}) => {
+const setup = ({ audit = { ok: true, digest: 'D', rows: rowsOf() }, digest = 'D', state = base(), auditing = false } = {}) => {
   const repo = {
     getEdl: async () => state.raw, getRefinedEdl: async () => state.refined,
     saveRefinedEdl: async (_r, e) => { state.refined = e; },
     getOverride: async () => state.override, saveOverride: async (_rk, o) => { state.override = o; },
     getProfile: async () => ({}),
   };
-  const jobs = { record: async () => ({ runs: [], audit }) };
+  const jobs = { record: async () => ({ runs: [], audit }), isAuditing: () => auditing };
   const review = new ContentFilterReview({ contentFilterRepository: repo, jobs, digestOf: async () => digest,
     logger: { info() {}, warn() {} }, clock: () => new Date('2026-11-08T00:00:00Z') });
   return { review, state };
@@ -84,9 +84,9 @@ describe('ContentFilterReview marks and sign-off', () => {
   });
   it('an uncovered nudge, a failed audit and a stale audit are named', async () => {
     const s = base(); s.override.cueOverrides = { va1: { startMs: 100300, endMs: 100700 } };
-    const r = await setup({ state: s, audit: { ok: false, digest: 'OLD', rows: [] }, digest: 'NEW' }).review.get({ ratingKey: '9' });
+    const r = await setup({ state: s, audit: { ok: false, digest: 'OLD', rows: [{ id: 'cue:va1', in: 110.2, out: 110.6, label: 'damn', members: ['va1'] }] }, digest: 'NEW' }).review.get({ ratingKey: '9' });
     expect(r.audit.fresh).toBe(false);
-    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word', 'The audit has not passed', 'The audit is still running']);
+    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The audit has not passed', 'The audit is out of date. Run Stage again → Audit.', '1 of 1 parts not reviewed']);
   });
   it('sets and clears a word ruling for this film', async () => {
     const { review, state } = setup();
@@ -95,5 +95,14 @@ describe('ContentFilterReview marks and sign-off', () => {
     await review.setTitleWord({ ratingKey: '9', word: 'damn', value: null });
     expect(state.override.profilePatch?.languageWords?.damn).toBeUndefined();
     await expect(review.setTitleWord({ ratingKey: '9', word: 'damn', value: 'loud' })).rejects.toMatchObject({ status: 400 });
+  });
+  it('while an audit is queued or running, it says so', async () => {
+    const r = await setup({ audit: { ok: true, digest: 'OLD', rows: rowsOf() }, digest: 'NEW', auditing: true }).review.get({ ratingKey: '9' });
+    expect(r.signOff.missing).toContain('The audit is still running');
+    expect(r.audit.running).toBe(true);
+  });
+  it('returns this film\'s word rulings', async () => {
+    const s = base(); s.override.profilePatch = { languageWords: { damn: 'bleep' } };
+    expect((await setup({ state: s }).review.get({ ratingKey: '9' })).wordRulings).toEqual({ damn: 'bleep' });
   });
 });

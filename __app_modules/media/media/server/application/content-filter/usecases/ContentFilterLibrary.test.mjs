@@ -17,7 +17,8 @@ const setup = () => {
   };
   const records = { 1: { runs: [{ status: 'failed', step: 'refine', steps: [{ name: 'refine', error: 'boom' }] }], audit: { ok: true, digest: 'D', rows: [{ id: 'cue:a', in: 1, out: 2 }, { id: 'cue:b', in: 3, out: 4 }] } } };
   const jobs = { record: vi.fn(async (rk) => records[rk] || null) };
-  return { repo, jobs, lib: new ContentFilterLibrary({ contentFilterRepository: repo, jobs, digestOf: async () => 'D' }) };
+  const clock = { t: 0 };
+  return { repo, jobs, clock, lib: new ContentFilterLibrary({ contentFilterRepository: repo, jobs, digestOf: async () => 'D', now: () => clock.t }) };
 };
 
 describe('ContentFilterLibrary', () => {
@@ -49,5 +50,14 @@ describe('ContentFilterLibrary', () => {
     expect((await lib.list({ q: 'annie' })).films[0].job).toMatchObject({ status: 'running', step: 'preflight' });
     step = 'refine';
     expect((await lib.list({ q: 'annie' })).films[0].job).toMatchObject({ status: 'running', step: 'refine' });
+  });
+  it('re-reads the title index after 10 minutes (new matches appear without a restart)', async () => {
+    const { lib, repo, clock } = setup();
+    await lib.list({});
+    await lib.list({});
+    expect(repo.getMatchIndex).toHaveBeenCalledTimes(1);
+    clock.t += 10 * 60 * 1000 + 1;
+    await lib.list({});
+    expect(repo.getMatchIndex).toHaveBeenCalledTimes(2);
   });
 });

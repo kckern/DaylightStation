@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { previewStore } from '../../content-filter/preview/previewStore.js';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
 const calls = [];
 let fail = null;
-vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({
+vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: async (path, body, method) => { calls.push({ path, body, method }); if (fail) { const e = new Error(fail); fail = null; throw e; } return {}; },
 }));
 const { RowEditor } = await import('./RowEditor.jsx');
@@ -62,6 +62,19 @@ describe('RowEditor', () => {
     show(word, { busyText: 'Running: refine' });
     expect(screen.getByText('Running: refine')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Mark reviewed' }).disabled).toBe(true);
+  });
+});
+
+describe('RowEditor states', () => {
+  beforeEach(() => { calls.length = 0; });
+  it('Mark reviewed waits for a current audit', () => {
+    show(word, { auditFresh: false });
+    expect(screen.getByRole('button', { name: 'Mark reviewed' }).disabled).toBe(true);
+    expect(screen.getByText('Mark reviewed once the audit is current.')).toBeTruthy();
+  });
+  it('the word control shows this film\'s ruling for the word', () => {
+    show(word, { wordRulings: { damn: 'bleep' } });
+    expect(screen.getByRole('radio', { name: 'Bleep this word' }).checked).toBe(true);
   });
 });
 
