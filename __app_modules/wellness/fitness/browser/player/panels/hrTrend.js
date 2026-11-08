@@ -26,6 +26,14 @@ export function trendVisible(wasVisible, cardHeight) {
   return wasVisible ? cardHeight >= TREND_OFF_PX : cardHeight >= TREND_ON_PX;
 }
 
+// The session always carries a fallback timebase (no tickCount); only a real
+// timeline has one. Without it there is no series to draw, so no trend box —
+// otherwise a strap flapping before any session would hold a tall card and a
+// spinner that never resolves.
+export function trendsAvailable(getSeries, timebase) {
+  return typeof getSeries === 'function' && Number.isFinite(timebase?.tickCount);
+}
+
 export function trendReady(prefix) {
   return Boolean(prefix) && prefix.count[prefix.length] >= TREND_MIN_READINGS;
 }
@@ -98,8 +106,9 @@ export function zoneBands(zoneSequence) {
     .filter((z) => Number.isFinite(z?.threshold))
     .slice()
     .sort((a, b) => a.threshold - b.threshold);
-  if (!zones.length) return [{ id: 'none', color: NEUTRAL, lo: BAND_FLOOR, hi: BAND_CEILING }];
+  if (!zones.length) return [{ key: '0-none', id: 'none', color: NEUTRAL, lo: BAND_FLOOR, hi: BAND_CEILING }];
   return zones.map((z, i) => ({
+    key: `${i}-${String(z.id).replace(/[^a-zA-Z0-9_-]/g, '')}`,
     id: String(z.id),
     color: ZONE_COLORS[String(z.id).toLowerCase()] || z.color || NEUTRAL,
     lo: i === 0 ? BAND_FLOOR : z.threshold,

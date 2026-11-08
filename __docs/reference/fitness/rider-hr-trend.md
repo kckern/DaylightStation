@@ -26,8 +26,10 @@ the rider's own `zoneSequence` (`progressInfo` or the user's vitals).
 
 ## States
 
-- **No timeline** (`timelineTimebase` absent, or no series selector): no chart;
-  single-rider cards keep the 132 px cap.
+- **No timeline** (`trendsAvailable`: no series selector, or a timebase without
+  `tickCount` — the session always carries a fallback timebase, so "has a
+  timebase" is not the test): no chart; single-rider cards keep the 132 px cap.
+  A strap that connects before any session starts stays a short card.
 - **Collecting**: from session start the card takes its trend height (single
   rider: up to `TREND_SINGLE_CAP_PX = 560`) and shows a quiet spinner
   (`role="status"`) until the rider has `TREND_MIN_READINGS = 5` real readings.

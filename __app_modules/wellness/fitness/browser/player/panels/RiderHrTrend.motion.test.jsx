@@ -32,12 +32,20 @@ const scaleOf = (c) => Number(c.querySelector('.rider-hr-trend__plot').getAttrib
 function setup(readings = [120, 125, 130, 135, 140, 145]) {
   const s = { heart_rate: [...readings] };
   const props = { participantId: '|rider-a', profileId: 'rider-a', cardHeight: 200, tickMs: 5000, zones, getSeries: (_i, m) => s[m] };
-  const view = render(<RiderHrTrend {...props} tickCount={s.heart_rate.length} />);
+  let tickCount = s.heart_rate.length;
+  const view = render(<RiderHrTrend {...props} tickCount={tickCount} />);
   const tick = (...values) => {
     s.heart_rate.push(...values);
-    view.rerender(<RiderHrTrend {...props} tickCount={s.heart_rate.length} />);
+    tickCount = s.heart_rate.length;
+    view.rerender(<RiderHrTrend {...props} tickCount={tickCount} />);
   };
-  return { ...view, tick };
+  // A tick whose props differ from the last one (rider switch, no growth).
+  const tickWith = (extra, values = []) => {
+    s.heart_rate.push(...values);
+    tickCount += 1;
+    view.rerender(<RiderHrTrend {...props} {...extra} tickCount={tickCount} />);
+  };
+  return { ...view, tick, tickWith, series: s };
 }
 
 beforeEach(() => {
@@ -97,6 +105,20 @@ describe('RiderHrTrend motion', () => {
     now += TREND_FRAME_MIN_MS - 100 - 20; // next frame lands 20ms short of the cap
     frame(0.4);
     expect(spy.mock.calls.filter(([a]) => a === 'd')).toHaveLength(1);
+  });
+
+  it('a rider switch on the same tick snaps instead of gliding from the other rider', () => {
+    const { container, tickWith } = setup();
+    tickWith({ participantId: '|rider-b' }, [160]);
+    expect(clock.onTick).not.toHaveBeenCalled();
+    expect(lastPoint(container)).toEqual([100, 160]);
+  });
+
+  it('a tick where the series did not grow does not replay the last step', () => {
+    const { container, tickWith } = setup();
+    tickWith({});
+    expect(clock.onTick).not.toHaveBeenCalled();
+    expect(lastPoint(container)).toEqual([100, 145]);
   });
 
   it('unmount stops the clock', () => {

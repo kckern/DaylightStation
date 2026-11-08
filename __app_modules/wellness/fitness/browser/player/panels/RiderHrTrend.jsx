@@ -86,7 +86,7 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
   const pathRef = useRef(null);
   const plotRef = useRef(null);
   const frameRef = useRef(null);
-  const lastTickRef = useRef({ tickCount: null, range: null });
+  const lastTickRef = useRef({ tickCount: null, range: null, participantId: null, length: 0 });
   const lastWriteRef = useRef(-Infinity);
 
   const writeFrame = (f, force = false) => {
@@ -113,12 +113,15 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
   useLayoutEffect(() => {
     if (!chart?.ready) return;
     const last = lastTickRef.current;
-    // Only a single-tick step glides; a jump (hidden tab, first draw, late
-    // ready) lands on the newest state rather than replaying a catch-up.
+    // Only a single-tick step of the same rider's series, grown by exactly one
+    // slot, glides. A jump (hidden tab, first draw, late ready), a rider switch
+    // or a series that didn't grow lands on the newest state instead.
+    const length = chart.prefix.length;
     const animate = last.tickCount != null && tickCount - last.tickCount === 1
+      && last.participantId === participantId && length === last.length + 1
       && Boolean(last.range) && !prefersReducedMotion();
     frameRef.current = { chart, prevRange: last.range || chart.range, animate };
-    lastTickRef.current = { tickCount, range: chart.range };
+    lastTickRef.current = { tickCount, range: chart.range, participantId, length };
     writeFrame(animate ? 0 : 1, true);
     if (animate) clockRef.current.onTick();
   }, [chart]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -154,17 +157,17 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
       <defs>
         <path ref={pathRef} id={lineId} className="rider-hr-trend__line" />
         {bands.map((band) => (
-          <clipPath key={band.id} id={`${uid}-band-${band.id}`} clipPathUnits="userSpaceOnUse">
+          <clipPath key={band.key} id={`${uid}-band-${band.key}`} clipPathUnits="userSpaceOnUse">
             <rect x="-1" width="102" y={band.lo} height={band.hi - band.lo} />
           </clipPath>
         ))}
       </defs>
       <g ref={plotRef} className="rider-hr-trend__plot">
         {bands.slice(1).filter((b) => b.lo > lo && b.lo < hi).map((b) => (
-          <line key={`g${b.id}`} className="rider-hr-trend__guide" x1="0" x2="100" y1={b.lo} y2={b.lo} />
+          <line key={`g${b.key}`} className="rider-hr-trend__guide" x1="0" x2="100" y1={b.lo} y2={b.lo} />
         ))}
         {bands.map((band) => (
-          <use key={band.id} href={`#${lineId}`} clipPath={`url(#${uid}-band-${band.id})`} stroke={band.color} />
+          <use key={band.key} href={`#${lineId}`} clipPath={`url(#${uid}-band-${band.key})`} stroke={band.color} />
         ))}
       </g>
     </svg>

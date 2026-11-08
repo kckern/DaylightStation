@@ -12,7 +12,7 @@ import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
 import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX, RIDER_SINGLE_CAP_PX } from "./riderListDensity.js";
-import { trendVisible, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
+import { trendVisible, trendsAvailable as trendsAvailableFor, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
 import RiderHrTrend from "./RiderHrTrend.jsx";
 import { committedZoneId } from "../../lib/committedZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
@@ -604,7 +604,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   // 2026-10-23).
   const timelineTicks = Number(timelineTimebase?.tickCount) || 0;
   const timelineTickMs = Number(timelineTimebase?.intervalMs) || 5000;
-  const trendsAvailable = typeof getParticipantTimelineSeries === 'function' && timelineTimebase != null;
+  const trendsAvailable = trendsAvailableFor(getParticipantTimelineSeries, timelineTimebase);
   const singleCap = trendsAvailable ? TREND_SINGLE_CAP_PX : RIDER_SINGLE_CAP_PX;
   const trendShownRef = React.useRef(false);
   const showTrend = trendsAvailable && trendVisible(trendShownRef.current, cardHeight);
