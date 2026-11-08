@@ -21,9 +21,9 @@ export const STAGE_LABELS = {
 };
 const STAGE_TONE = { rough: 'gray', running: 'blue', refined: 'gray', scenes: 'gray', audited: 'yellow', machine: 'teal', parent: 'green' };
 
-export function runText(job) {
+export function runText(job, worker = null) {
   if (!job) return null;
-  if (job.status === 'queued') return 'Queued';
+  if (job.status === 'queued') return worker && !worker.alive ? 'Waiting for a filter worker' : 'Queued';
   if (job.status === 'running') return `Running: ${job.step || 'starting'}`;
   if (job.status === 'failed') return `Failed at ${job.step}${job.error ? `: ${job.error}` : ''}`;
   if (job.status === 'interrupted') return `Interrupted at ${job.step || 'start'}`;
@@ -75,6 +75,10 @@ export function FilterLibrary() {
           <Text size="xs" c="dimmed">{shown.length} of {films.length} films</Text>
         </Group>
         {notice ? <Text size="sm" role="alert">{notice}</Text> : null}
+        {data?.worker && !data.worker.alive && films.some((f) => f.job?.status === 'queued') ? (
+          <Text size="sm" c="dimmed">No filter worker is running. Queued runs wait until one starts
+            (<code>contentfilter worker</code> on a machine with the pipeline's Python tools).</Text>
+        ) : null}
         {!shown.length ? <EmptyState title="No films" hint="Nothing matches. Clear the search or the stage." /> : (
           <div className="cf-library__table">
             <Table highlightOnHover verticalSpacing={4}>
@@ -87,7 +91,7 @@ export function FilterLibrary() {
                     <Table.Td><Anchor component={Link} to={`/admin/content/filter/${f.ratingKey}`}>{f.title || `Film ${f.ratingKey}`}</Anchor></Table.Td>
                     <Table.Td>{f.year ?? ''}</Table.Td>
                     <Table.Td><Badge size="sm" variant="light" color={STAGE_TONE[f.stage]}>{STAGE_LABELS[f.stage] ?? f.stage}</Badge></Table.Td>
-                    <Table.Td><Text size="sm" c={f.job?.status === 'failed' ? 'red' : undefined}>{runText(f.job)}</Text></Table.Td>
+                    <Table.Td><Text size="sm" c={f.job?.status === 'failed' ? 'red' : undefined}>{runText(f.job, data?.worker)}</Text></Table.Td>
                     <Table.Td>{f.reviewed ? `${f.reviewed.n} of ${f.reviewed.m}` : ''}</Table.Td>
                     <Table.Td>
                       <Button size="compact-xs" variant={f.stage === 'rough' ? 'filled' : 'light'} loading={busy === f.ratingKey}

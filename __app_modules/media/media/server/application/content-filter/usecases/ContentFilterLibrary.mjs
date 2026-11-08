@@ -72,7 +72,7 @@ export class ContentFilterLibrary {
       films.push(f);
     }
     films.sort((a, b) => String(a.title ?? '').localeCompare(String(b.title ?? '')));
-    return { films };
+    return { films, worker: typeof this.#jobs.workerStatus === 'function' ? this.#jobs.workerStatus() : null };
   }
 }
 

@@ -51,6 +51,29 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
   if (jobs) {
     // GET /jobs -> { running: [{ ratingKey, runId, step }], queued: [...] } (also read by the deploy gate)
     router.get('/jobs', asyncHandler(async (req, res) => { res.json(await jobs.state()); }));
+    // Remote filter worker: claim the next run, report progress, hand back results.
+    const owner = (req) => String(req.body?.owner || '').slice(0, 120);
+    const remote = (fn) => asyncHandler(async (req, res) => {
+      if (!owner(req)) return res.status(400).json({ error: 'owner required' });
+      try { await fn(req, res); } catch (error) {
+        if (error.status === 409 || error.status === 400) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
+    });
+    router.post('/jobs/claim', remote(async (req, res) => {
+      const claimed = await jobs.claimRemote({ owner: owner(req) });
+      if (!claimed) return res.status(204).end();
+      res.json(claimed);
+    }));
+    router.post('/:ratingKey/jobs/:runId/progress', remote(async (req, res) => {
+      await jobs.progress({ ratingKey: String(req.params.ratingKey).replace(/[^0-9]/g, ''), runId: req.params.runId, owner: owner(req), step: req.body?.step || null });
+      res.json({ ok: true });
+    }));
+    // Results carry the refined EDL, the override and transcripts (the app's JSON limit is 50 MB).
+    router.post('/:ratingKey/jobs/:runId/complete', remote(async (req, res) => {
+      const { status, step = null, error = null, results = null } = req.body || {};
+      res.json(await jobs.complete({ ratingKey: String(req.params.ratingKey).replace(/[^0-9]/g, ''), runId: req.params.runId, owner: owner(req), status, step, error, results }));
+    }));
     router.get('/:ratingKey/jobs', asyncHandler(async (req, res) => {
       const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
       if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });

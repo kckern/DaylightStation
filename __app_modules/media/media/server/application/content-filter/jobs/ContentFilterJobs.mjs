@@ -16,20 +16,26 @@ export const STAGES = ['export', 'refine', 'scenes', 'cards', 'audit'];
 export const HEARTBEAT_MS = 20e3;
 export const STALE_MS = 60e3;
 export const WATCH_MS = 10e3;
+export const WORKER_ALIVE_MS = 30e3;
 const WRITING = new Set(['export', 'refine', 'scenes']);
 const LIGHT_STAGES = new Set(['audit', 'cards']);
+/** Steps the app always runs itself (no Python): after a remote worker's results land. */
+const APP_STEPS = new Set(['cards', 'audit']);
 const OPEN = new Set(['queued', 'running']);
 const TAIL = 500;
 
 export class ContentFilterJobs {
-  #store; #cli; #film; #digestOf; #draftCards; #clearNudges; #logPath; #logger; #now; #executor; #debounceMs; #schedule;
+  #store; #cli; #film; #digestOf; #draftCards; #clearNudges; #logPath; #logger; #now; #executor; #debounceMs; #schedule; #inputsOf; #applyResults;
   #queue = []; #heavy = null; #audits = new Map(); #auditChain = Promise.resolve(); #locks = new Map(); #settled = new Set(); #audited = new Set();
 
   constructor({ store, cli, film, digestOf, draftCards = null, clearNudges = async () => {}, logPath = () => null,
-    logger = console, now = () => new Date(), executor = 'worker', auditDebounceMs = 2000, schedule }) {
+    logger = console, now = () => new Date(), executor = 'worker', auditDebounceMs = 2000, schedule,
+    inputsOf = async () => null, applyResults = async () => {} }) {
     if (!store || !cli || !film || !digestOf || !schedule) throw new Error('ContentFilterJobs requires store, cli, film, digestOf and schedule');
     /** schedule(fn, ms): the composition's timer (application code holds no global timers). */
     this.#schedule = schedule;
+    /** Remote worker: what a claimed run gets (inputsOf) and how its results are saved (applyResults). */
+    this.#inputsOf = inputsOf; this.#applyResults = applyResults;
     this.#store = store; this.#cli = cli; this.#film = film; this.#digestOf = digestOf; this.#draftCards = draftCards;
     this.#clearNudges = clearNudges; this.#logPath = logPath; this.#logger = logger; this.#now = now;
     this.#executor = executor; this.#debounceMs = auditDebounceMs;
@@ -223,6 +229,97 @@ export class ContentFilterJobs {
     }
   }
 
+  // ── Remote filter worker (talks to the app over HTTP; never touches the data folders) ──
+
+  /** Claim the oldest queued run for `owner`: { ratingKey, run, steps, inputs } or null. */
+  async claimRemote({ owner }) {
+    this.#workerSeen = { owner, at: this.#now().getTime() };
+    const rk = await this.claimNext(owner);
+    if (!rk) return null;
+    const film = await this.#film(rk);
+    const run = await this.#withRecord(rk, (rec) => {
+      const r = rec.runs.find((x) => x.status === 'queued');
+      if (!r) return null;
+      const at = this.#now().toISOString();
+      Object.assign(r, { status: 'running', startedAt: at, worker: owner, heartbeatAt: at, step: 'claimed', remote: true });
+      if (r.kind === 'make' && film?.hasEdl) r.steps.push({ name: 'export', status: 'skipped', endedAt: at });
+      if (r.kind === 'make' && film?.hasScenes) r.steps.push({ name: 'scenes', status: 'skipped', endedAt: at });
+      return structuredClone(r);
+    });
+    if (!run) return null;
+    const skipped = new Set(run.steps.map((x) => x.name));
+    const steps = this.#plan(run).filter((n) => !APP_STEPS.has(n) && !skipped.has(n));
+    this.#logger.info?.('content-filter.job.started', { ratingKey: rk, runId: run.id, kind: run.kind, worker: owner, remote: true });
+    return { ratingKey: rk, run, steps, ...(film?.exportArgs ? { exportArgs: film.exportArgs } : {}), inputs: await this.#inputsOf(rk) };
+  }
+
+  #workerSeen = null;
+
+  /** Is a filter worker serving the queue? An idle worker asks for work every few seconds. */
+  workerStatus() {
+    const w = this.#workerSeen;
+    if (!w) return { alive: false, owner: null, seenAt: null };
+    return { alive: this.#now().getTime() - w.at < WORKER_ALIVE_MS, owner: w.owner, seenAt: new Date(w.at).toISOString() };
+  }
+
+  async #mine(rk, runId, owner, fn) {
+    this.#workerSeen = { owner, at: this.#now().getTime() };
+    return this.#withRecord(rk, (rec) => {
+      const r = rec.runs.find((x) => x.id === runId);
+      if (!r || r.status !== 'running' || r.worker !== owner) throw new JobConflict('This run is no longer yours.');
+      r.heartbeatAt = this.#now().toISOString();
+      return fn(r);
+    });
+  }
+
+  /** Heartbeat, optionally with a step entry ({ name, status, error?, note? }). */
+  async progress({ ratingKey, runId, owner, step = null }) {
+    const rk = String(ratingKey);
+    await this.#mine(rk, runId, owner, (r) => {
+      if (!step?.name) return;
+      r.step = String(step.name);
+      const entry = { name: r.step, status: step.status || 'running', ...(step.error ? { error: String(step.error).slice(-TAIL) } : {}), ...(step.note ? { note: String(step.note) } : {}),
+        ...(step.status === 'running' ? { startedAt: this.#now().toISOString() } : { endedAt: this.#now().toISOString() }) };
+      const i = r.steps.findIndex((x) => x.name === r.step);
+      if (i < 0) r.steps.push(entry); else r.steps[i] = { ...r.steps[i], ...entry };
+    });
+    if (step?.name) this.#logger.info?.('content-filter.job.step', { ratingKey: rk, runId, step: step.name, status: step.status, remote: true });
+  }
+
+  /** The worker is done: save its results, run cards and the audit here, settle the run. */
+  async complete({ ratingKey, runId, owner, status, step = null, error = null, results = null }) {
+    const rk = String(ratingKey);
+    const run = await this.#mine(rk, runId, owner, (r) => structuredClone(r));
+    let failed = status === 'done' ? null : { step: step || run.step, error: String(error || 'The filter worker reported a failure.').slice(-TAIL) };
+    if (!failed) {
+      try { await this.#applyResults(rk, results || {}); } catch (e) { failed = { step: 'save', error: e.message }; }
+    }
+    if (!failed) {
+      for (const name of this.#plan(run).filter((n) => APP_STEPS.has(n))) {
+        await this.#step(rk, run.id, { name, status: 'running', startedAt: this.#now().toISOString() });
+        let res;
+        try { res = await this.#runStep(rk, run, name); } catch (e) { res = { status: 'failed', error: e.message }; }
+        await this.#step(rk, run.id, { name, status: res.status, endedAt: this.#now().toISOString(), ...(res.error ? { error: String(res.error).slice(-TAIL) } : {}), ...(res.note ? { note: res.note } : {}) });
+        if (res.status === 'failed') { failed = { step: name, error: res.error }; break; }
+      }
+    }
+    await this.#withRecord(rk, (rec) => {
+      const r = rec.runs.find((x) => x.id === run.id);
+      if (!r) return;
+      Object.assign(r, { status: failed ? 'failed' : 'done', endedAt: this.#now().toISOString(), cardsDrafted: true });
+      if (failed) {
+        r.step = failed.step;
+        const i = r.steps.findIndex((x) => x.name === failed.step);
+        const entry = { name: failed.step, status: 'failed', error: failed.error, endedAt: this.#now().toISOString() };
+        if (i < 0) r.steps.push(entry); else r.steps[i] = { ...r.steps[i], ...entry };
+      }
+    });
+    if (failed) this.#logger.warn?.('content-filter.job.failed', { ratingKey: rk, runId: run.id, ...failed, remote: true });
+    else this.#logger.info?.('content-filter.job.done', { ratingKey: rk, runId: run.id, remote: true });
+    for (const fn of this.#settled) { try { fn({ ratingKey: rk, runId: run.id, status: failed ? 'failed' : 'done' }); } catch { /* listener */ } }
+    return { status: failed ? 'failed' : 'done' };
+  }
+
   /** Worker: claim the oldest queued run (atomic across workers via store.claim). Returns its film or null. */
   async claimNext(owner) {
     const { running, queued } = await this.state();
@@ -320,13 +417,14 @@ export class ContentFilterJobs {
       }
     }
     queued.sort((a, b) => String(a.queuedAt).localeCompare(String(b.queuedAt)));
-    return { running, queued };
+    return { running, queued, worker: this.workerStatus() };
   }
 
   /** True while a run's export, refine or scenes step is writing this film's files. */
   async busyWriting(ratingKey) {
     const rec = await this.#store.load(String(ratingKey));
-    return !!rec?.runs?.some((r) => r.status === 'running' && WRITING.has(r.step));
+    // A remote worker's run holds the film for its whole life: its results replace the files.
+    return !!rec?.runs?.some((r) => r.status === 'running' && (WRITING.has(r.step) || r.remote));
   }
 
   record(ratingKey) { return this.#store.load(String(ratingKey)); }
