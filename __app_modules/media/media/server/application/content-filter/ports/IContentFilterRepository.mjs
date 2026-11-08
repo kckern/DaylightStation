@@ -34,6 +34,11 @@ export class IContentFilterRepository {
     throw new Error('IContentFilterRepository.saveProfile not implemented');
   }
 
+  /** The Plex -> VidAngel match index: { map: { 'plex:<rk>': { title, vidangel: { id, slug, tagCount }, confidence } } }, or null. */
+  async getMatchIndex() {
+    throw new Error('IContentFilterRepository.getMatchIndex not implemented');
+  }
+
   async getOverride(_ratingKey) {
     throw new Error('IContentFilterRepository.getOverride not implemented');
   }

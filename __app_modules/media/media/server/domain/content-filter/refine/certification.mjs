@@ -14,11 +14,24 @@ export const LEVELS = ['none', 'machine', 'parent'];
 export const BAR = 'every-mute-covered';
 const PRECISE = new Set(['ms', 'frame']);
 
+const hasNudge = (ov) => Number.isFinite(ov?.startMs) && Number.isFinite(ov?.endMs);
+
+/**
+ * Whether a household nudge (`startMs`/`endMs`, VidAngel clock) covers a mute.
+ * On an ms/frame cue it must contain the measured word; on any other cue the
+ * nudge is the pin (a person placed it on the word) — owner's ruling 2026-11-07.
+ */
+export function nudgeCovers(cue, ov) {
+  if (!hasNudge(ov) || ov.startMs >= ov.endMs) return false;
+  if (!PRECISE.has(cue.precision)) return true;
+  return ov.startMs <= Math.round(cue.in * 1000) && ov.endMs >= Math.round(cue.out * 1000);
+}
+
 /**
  * @param {{ cues: Array<{ id: string, type: string, precision?: string }>, certification?: object }} edl
- * @param {{ at: string }} o
+ * @param {{ at: string, cueOverrides?: object }} o  household nudges count (nudgeCovers)
  */
-export function certify(edl, { at }) {
+export function certify(edl, { at, cueOverrides = {} }) {
   const counts = { mute: { precise: 0, safeWindow: 0, approx: 0 }, visual: { precise: 0, approx: 0 } };
   const blocking = [];
   const seen = new Set();
@@ -27,7 +40,12 @@ export function certify(edl, { at }) {
     if (seen.has(c.id)) continue;
     seen.add(c.id);
     const precise = PRECISE.has(c.precision);
-    if (c.type === 'mute') {
+    const ov = cueOverrides?.[c.id];
+    if (c.type === 'mute' && hasNudge(ov)) {
+      const covers = nudgeCovers(c, ov);
+      counts.mute[!covers ? 'approx' : precise ? 'precise' : 'safeWindow']++;
+      if (!covers) blocking.push(c.id);
+    } else if (c.type === 'mute') {
       // A safe window (wide enough for the tag's measured drift) also keeps the word from playing.
       // 'pinned': a person marked the word and the span covers it, without ms edges.
       const kind = precise ? 'precise' : (c.precision === 'safe-window' || c.precision === 'pinned') ? 'safeWindow' : 'approx';

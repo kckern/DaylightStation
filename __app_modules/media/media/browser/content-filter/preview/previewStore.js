@@ -28,6 +28,7 @@ const INITIAL = Object.freeze({
 });
 
 const NOOP_BINDING = Object.freeze({
+  position: () => null,
   seek() {},
   play() {},
   peek() {},
@@ -38,6 +39,10 @@ const NOOP_BINDING = Object.freeze({
 let snapshot = INITIAL;
 let binding = NOOP_BINDING;
 let owner = null;
+// The title a host forces the filter on for (Admin review player). Outlives a player reset:
+// the host owns it, not the player.
+let forced = null;
+const digits = (id) => String(id ?? '').replace(/[^0-9]/g, '');
 const listeners = new Set();
 
 function notify() {
@@ -62,7 +67,7 @@ export const previewStore = {
     notify();
   },
   /**
-   * Bind the player: `{ seek(s), play(), peek(id), refresh(), close() }` (any subset).
+   * Bind the player: `{ position(), seek(s), play(), peek(id), refresh(), close() }` (any subset).
    * Returns an unbind that only clears this binding (a newer player keeps its own).
    */
   bind(handlers) {
@@ -86,6 +91,11 @@ export const previewStore = {
   jumpToCue(cue) { jumpTo(cue); },
   replayLast() { jumpTo(snapshot.lastFired); },
   peek(id) { if (id != null) binding.peek(String(id)); },
+  /** The bound player's position in seconds, or null. */
+  currentTime() { const t = binding.position(); return Number.isFinite(t) ? t : null; },
+  /** Force the filter on for one title (rating key or content id); null clears. */
+  forceFilter(id) { forced = id == null ? null : digits(id); },
+  isForced(id) { return forced != null && forced !== '' && digits(id) === forced; },
   refresh() { return Promise.resolve(binding.refresh()).then(() => undefined); },
   close() { binding.close(); },
 };

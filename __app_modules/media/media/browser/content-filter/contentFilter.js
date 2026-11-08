@@ -46,6 +46,9 @@ const PARAM_KEYS = ['sound', 'rect', 'style', 'level', 'text'];
  * Accepts either `{ effect }` or the legacy `{ action }` shorthand.
  * @returns {{effect: string}|null} rule (with normalized `effect`) or null when off/unmatched.
  */
+/** A resolved piece's source cue id: `va123#0@4` / `va123#m0` -> `va123`. */
+export const baseId = (id) => String(id).split(/[#@]/)[0];
+
 export function resolveEffect(categoryPath, profile) {
   const rules = profile?.categories || {};
   const segments = String(categoryPath || '').split('/');
@@ -207,7 +210,18 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     const eff = { ...cue, effect: rule.effect };
     let measured = ov;
     const coarseEdges = (cue.refine?.edges ?? ov.refine?.edges) === 'coarse';
-    if (synced && refinedEdl && PRECISE.has(cue.precision)) {
+    const handNudge = synced && refinedEdl && Number.isFinite(ov.startMs) && Number.isFinite(ov.endMs);
+    if (handNudge) {
+      // A household nudge (VidAngel clock, ms) replaces the pipeline's span: one span, no
+      // segments, mapped through this copy's sync. It is also the pin for a safe-window word.
+      const spans = syncSpan(ov.startMs / 1000, ov.endMs / 1000);
+      if (!spans.length) { notInCut++; continue; }
+      eff.in = spans[0].in; eff.out = spans[spans.length - 1].out;
+      eff.precision = syncFitsPart ? 'ms' : 'second-approx';
+      eff.handFixed = true;
+      delete eff.segments; delete eff.tagIn;
+      measured = { regions: cue.regions?.map((k) => ({ ...k, in: sync ? mapTime(k.in, sync) : k.in })).filter((k) => k.in != null) };
+    } else if (synced && refinedEdl && PRECISE.has(cue.precision)) {
       if (syncFitsPart) {
         // Precise on the reference clock: map through this copy's sync, snap
         // frame cues to this copy's frame grid. Segments and regions map too.
@@ -522,7 +536,13 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
   }).flatMap((sc) => sc.cues || []));
   // Effects first, then bridge neighbours of a shared group with the same effect
   // across a short gap, so the child sees one black (or one card), not black-picture-black.
-  const ruled = [...scenes].sort((a, b) => a.in - b.in)
+  // A household nudge on a scene (VidAngel clock, ms) replaces its in/out.
+  const nudged = scenes.map((sc) => {
+    const so = ov[sc.id];
+    return Number.isFinite(so?.startMs) && Number.isFinite(so?.endMs)
+      ? { ...sc, in: so.startMs / 1000, out: so.endMs / 1000, handFixed: true } : sc;
+  });
+  const ruled = [...nudged].sort((a, b) => a.in - b.in)
     .map((scene) => ({ scene, so: ov[scene.id] || {}, effect: sceneEffect(scene, { profile, sceneOverride: ov[scene.id] || {}, trusted }) }))
     .filter((r) => r.effect);
   const bridged = [];

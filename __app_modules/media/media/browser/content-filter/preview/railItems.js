@@ -14,7 +14,7 @@
  */
 import { kindOf, categoryText, effectWord } from './effectKinds.js';
 import { unitKey } from '../filterSummary.js';
-import { baseId } from '../useContentFilter.js';
+import { baseId } from '../contentFilter.js';
 
 export const GROUPS = Object.freeze([
   { key: 'all', name: 'All', hint: 'Everything the filter changes' },

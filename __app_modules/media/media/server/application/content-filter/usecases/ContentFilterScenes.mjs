@@ -10,6 +10,7 @@
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, mergeSettings, LEVELS, LANGUAGE_VALUES, LANGUAGE_GROUPS } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { createTitleQueue } from '../titleQueue.mjs';
 
 export const CARD_MAX_CHARS = 90;
 const EFFECTS = new Set(['off', 'blackout', 'skip']);
@@ -23,24 +24,20 @@ Examples: "George stands up to Biff and knocks him down. Lorraine goes with Geor
 Reply with the sentence only.`;
 
 export class ContentFilterScenes {
-  #repo; #ai; #logger; #clock;
-  #queues = new Map(); // ratingKey -> tail promise: one read-modify-write at a time per title
+  #repo; #ai; #logger; #clock; #queue;
 
   /** Run fn after any earlier write for the same title (two Admin tabs must not clobber each other). */
   #serial(ratingKey, fn) {
-    const prev = this.#queues.get(ratingKey) || Promise.resolve();
-    const next = prev.catch(() => {}).then(fn);
-    this.#queues.set(ratingKey, next);
-    next.finally(() => { if (this.#queues.get(ratingKey) === next) this.#queues.delete(ratingKey); }).catch(() => {});
-    return next;
+    return this.#queue.run(ratingKey, fn);
   }
 
-  constructor({ contentFilterRepository, aiGateway = null, logger = console, clock = () => new Date() } = {}) {
+  constructor({ contentFilterRepository, aiGateway = null, logger = console, clock = () => new Date(), titleQueue = createTitleQueue() } = {}) {
     if (!contentFilterRepository) throw new Error('ContentFilterScenes requires contentFilterRepository');
     this.#repo = contentFilterRepository;
     this.#ai = aiGateway;
     this.#logger = logger;
     this.#clock = clock;
+    this.#queue = titleQueue;
   }
 
   async #load(ratingKey, profileName) {
@@ -87,6 +84,8 @@ export class ContentFilterScenes {
       // Partial settings merge over this film's current effective settings.
       const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
       const profilePatch = profilePatchFromSettings(mergeSettings(settingsFromProfile(effective), partial));
+      // Settings are groups; this film's per-word rulings (Admin review) live beside them.
+      if (override.profilePatch?.languageWords) profilePatch.languageWords = override.profilePatch.languageWords;
       await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
       this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
       return { profilePatch };
@@ -120,25 +119,6 @@ export class ContentFilterScenes {
   }
 
   /** Titles with a refined filter, for the Admin index. */
-  async titles({ profileName = 'family' } = {}) {
-    const out = [];
-    for (const ratingKey of await this.#repo.listOverrides()) {
-      const t = await this.#load(ratingKey, profileName);
-      if (!t) continue;
-      const trusted = trustedAxes(t.refined);
-      const ov = t.override.sceneOverrides || {};
-      const scenes = t.refined.scenes || [];
-      const hiding = scenes.filter((s) => sceneEffect(s, { profile: t.profile, sceneOverride: ov[s.id] || {}, trusted }));
-      out.push({
-        ratingKey, title: t.refined.title, year: t.refined.year ?? null,
-        certification: t.refined.certification?.level ?? 'none',
-        scenes: scenes.length, hiding: hiding.length,
-        cardsApproved: hiding.filter((s) => ov[s.id]?.card?.text).length,
-      });
-    }
-    return out.sort((a, b) => String(a.title).localeCompare(String(b.title)));
-  }
-
   /** @returns {Promise<null|{ title, calibration, scenes: Array }>} */
   async list({ ratingKey, profileName = 'family' }) {
     const t = await this.#load(ratingKey, profileName);

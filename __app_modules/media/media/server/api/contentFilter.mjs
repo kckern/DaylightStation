@@ -11,17 +11,66 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * ratingKey is the Plex rating key (contentId `plex:<ratingKey>`); it is
  * digit-sanitized to prevent path traversal.
  */
-export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, contentFilterArt = null, logger = console } = {}) {
+export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, contentFilterArt = null, contentFilterReview = null, contentFilterLibrary = null, jobs = null, logger = console } = {}) {
   if (!getContentFilter || typeof getContentFilter.execute !== 'function') {
     throw new Error('createContentFilterRouter requires getContentFilter');
   }
   const router = express.Router();
 
-  if (contentFilterScenes) {
-    // GET / -> { titles }: every title with a refined filter (Admin index).
-    router.get('/', asyncHandler(async (req, res) => {
-      const profileName = String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
-      res.json({ titles: await contentFilterScenes.titles({ profileName }) });
+  // Every write to a film is refused while a run is writing its files (the child writes the same
+  // override and refined EDL). A write that changes what the household gets re-audits the film;
+  // review marks, sign-off and runs do not.
+  if (jobs) {
+    const WRITE = new Set(['PUT', 'POST', 'DELETE']);
+    const NO_REAUDIT = /^\/(jobs|review|signoff)(\/|$)/;
+    router.use('/:ratingKey', asyncHandler(async (req, res, next) => {
+      const key = String(req.params.ratingKey);
+      if (!WRITE.has(req.method) || !/^\d+$/.test(key)) return next();
+      if (contentFilterLibrary) res.on('finish', () => { if (res.statusCode < 300) contentFilterLibrary.invalidate(key); });
+      if (/^\/jobs(\/|$)/.test(req.path)) return next();
+      if (await jobs.busyWriting(key)) {
+        return res.status(409).json({ error: 'A filter run is writing this film. Try again when it finishes.' });
+      }
+      if (!NO_REAUDIT.test(req.path)) {
+        res.on('finish', () => { if (res.statusCode < 300) jobs.audit(key).catch?.(() => {}); });
+      }
+      next();
+    }));
+  }
+
+  // GET /library?stage=&q= -> { films: [{ ratingKey, title, year, stage, job, reviewed }] } (Admin library)
+  if (contentFilterLibrary) {
+    router.get('/library', asyncHandler(async (req, res) => {
+      const stage = req.query.stage ? String(req.query.stage) : null;
+      const q = req.query.q ? String(req.query.q).slice(0, 100) : null;
+      res.json(await contentFilterLibrary.list({ stage, q }));
+    }));
+  }
+
+  // Pipeline runs (Admin "Make filter"; ContentFilterJobs). Registered before /:ratingKey.
+  if (jobs) {
+    // GET /jobs -> { running: [{ ratingKey, runId, step }], queued: [...] } (also read by the deploy gate)
+    router.get('/jobs', asyncHandler(async (req, res) => { res.json(await jobs.state()); }));
+    router.get('/:ratingKey/jobs', asyncHandler(async (req, res) => {
+      const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
+      if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
+      res.json((await jobs.record(ratingKey)) || { ratingKey, runs: [] });
+    }));
+    // POST /:ratingKey/jobs { kind: make|send-back|stage, cues?, stage? } -> 202 { run }
+    router.post('/:ratingKey/jobs', asyncHandler(async (req, res) => {
+      const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
+      if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
+      const { kind = 'make', cues = null, stage = null } = req.body || {};
+      if (cues != null && !(Array.isArray(cues) && cues.every((c) => /^[A-Za-z0-9_-]+$/.test(String(c))))) {
+        return res.status(400).json({ error: 'cues must be cue ids' });
+      }
+      try {
+        const run = await jobs.enqueue({ ratingKey, kind, cues, stage, by: req.body?.by || 'admin' });
+        res.status(202).json({ run });
+      } catch (error) {
+        if (error.status === 409 || error.status === 400) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
     }));
   }
 
@@ -118,9 +167,10 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       const { effect, disabled, card, by } = req.body || {};
       let ruling;
       try {
+        if (contentFilterReview && 'nudge' in (req.body || {})) await contentFilterReview.nudgeScene({ ratingKey: rk(req), sceneId, nudge: req.body.nudge });
         ruling = await contentFilterScenes.rule({ ratingKey: rk(req), sceneId, effect, disabled, card, by });
       } catch (error) {
-        return res.status(400).json({ error: error.message });
+        return res.status(error.status || 400).json({ error: error.message });
       }
       if (!ruling) return res.status(404).json({ error: 'no such scene', sceneId });
       res.json({ ruling });
@@ -144,9 +194,10 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       const { effect, disabled, card, by } = req.body || {};
       let ruling;
       try {
+        if (contentFilterReview && 'nudge' in (req.body || {})) await contentFilterReview.nudgeCue({ ratingKey: rk(req), cueId, nudge: req.body.nudge });
         ruling = await contentFilterScenes.ruleCue({ ratingKey: rk(req), cueId, effect, disabled, card, by });
       } catch (error) {
-        return res.status(400).json({ error: error.message });
+        return res.status(error.status || 400).json({ error: error.message });
       }
       if (!ruling) return res.status(404).json({ error: 'no such cue', cueId });
       res.json({ ruling });
@@ -163,6 +214,38 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       }
       if (!out) return res.status(404).json({ error: 'no such cue', cueId });
       res.json(out);
+    }));
+  }
+
+  if (contentFilterReview) {
+    const send = (res, error) => {
+      if (!error.status) throw error;
+      return res.status(error.status).json({ error: error.message, ...(error.missing ? { missing: error.missing } : {}) });
+    };
+    const key = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
+    const ROW = /^(cue|scene|subject):[A-Za-z0-9_-]+$/;
+    // GET /:rk/review -> { title, certification, audit, rows, reviewed, total, job, signOff }
+    router.get('/:ratingKey/review', asyncHandler(async (req, res) => {
+      try { res.json(await contentFilterReview.get({ ratingKey: key(req) })); } catch (e) { send(res, e); }
+    }));
+    router.put('/:ratingKey/review/:rowId', asyncHandler(async (req, res) => {
+      if (!ROW.test(req.params.rowId)) return res.status(400).json({ error: 'invalid row id' });
+      try { res.json({ mark: await contentFilterReview.markReviewed({ ratingKey: key(req), rowId: req.params.rowId, span: req.body?.span, by: req.body?.by }) }); } catch (e) { send(res, e); }
+    }));
+    router.delete('/:ratingKey/review/:rowId', asyncHandler(async (req, res) => {
+      if (!ROW.test(req.params.rowId)) return res.status(400).json({ error: 'invalid row id' });
+      try { await contentFilterReview.unmarkReviewed({ ratingKey: key(req), rowId: req.params.rowId }); res.json({ ok: true }); } catch (e) { send(res, e); }
+    }));
+    // PUT /:rk/words/:word { value: off|mute|bleep|null } -> this film's ruling for one word
+    router.put('/:ratingKey/words/:word', asyncHandler(async (req, res) => {
+      try { res.json(await contentFilterReview.setTitleWord({ ratingKey: key(req), word: req.params.word, value: req.body?.value ?? null })); } catch (e) { send(res, e); }
+    }));
+    // POST /:rk/signoff -> Approve for family (409 with `missing` unless ready); DELETE withdraws.
+    router.post('/:ratingKey/signoff', asyncHandler(async (req, res) => {
+      try { res.json({ certification: await contentFilterReview.approve({ ratingKey: key(req), by: req.body?.by }) }); } catch (e) { send(res, e); }
+    }));
+    router.delete('/:ratingKey/signoff', asyncHandler(async (req, res) => {
+      try { res.json({ certification: await contentFilterReview.withdraw({ ratingKey: key(req), by: req.body?.by }) }); } catch (e) { send(res, e); }
     }));
   }
 

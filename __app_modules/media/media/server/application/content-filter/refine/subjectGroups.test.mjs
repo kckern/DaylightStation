@@ -54,12 +54,12 @@ describe('jevSameSubject', () => {
   const media = { async frames(_s, pts) { return [{ pts, png: Buffer.from('F') }]; } };
   const gw = (p, calls = []) => ({ async evaluate(state, q) { calls.push({ state, q }); return { model: 'fake', answers: { same: { probability: p } } }; } });
   const a = shown('a', 0, 10, 'Billboard'); const b = shown('b', 5, 15, 'Crude word');
-  it('asks with both labels and a frame from the overlap; only a confident yes counts', async () => {
+  it('asks with both labels and a frame from the overlap; only a confident yes groups, an abstain is null', async () => {
     const calls = [];
     expect(await jevSameSubject({ decisions: gw(0.9, calls), media, src: 'f', timebase })(a, b, { in: 5, out: 10 })).toBe(true);
     expect(calls[0].state).toMatchObject({ a: 'Billboard', b: 'Crude word' });
     expect(calls[0].state.frame).toBeTruthy();
-    expect(await jevSameSubject({ decisions: gw(0.5), media, src: 'f', timebase })(a, b, { in: 5, out: 10 })).toBe(false);
+    expect(await jevSameSubject({ decisions: gw(0.5), media, src: 'f', timebase })(a, b, { in: 5, out: 10 })).toBe(null);
     expect(await jevSameSubject({ decisions: gw(0.1), media, src: 'f', timebase })(a, b, { in: 5, out: 10 })).toBe(false);
   });
   it('widens the frame for a scope picture so its short side reaches the model minimum (T2 640x266 was refused)', async () => {
@@ -74,5 +74,17 @@ describe('jevSameSubject', () => {
     const decisions = { async evaluate() { throw Object.assign(new Error('late'), { code: 'JEV_TIMEOUT' }); } };
     const r = await groupSubjects({ cues: [a, b], ask: jevSameSubject({ decisions, media, src: 'f', timebase }) });
     expect(r.groups).toEqual([]);
+  });
+});
+
+describe('groupSubjects unsure pairs', () => {
+  const two = bttf.slice(0, 2);
+  it('an abstain or an error lands in unsure', async () => {
+    expect((await groupSubjects({ cues: two, ask: async () => null })).unsure).toEqual([['va3388987', 'va3388988']]);
+    expect((await groupSubjects({ cues: two, ask: async () => { throw new Error('x'); } })).unsure).toEqual([['va3388987', 'va3388988']]);
+  });
+  it('a plain no or a yes is not unsure', async () => {
+    expect((await groupSubjects({ cues: two, ask: async () => false })).unsure).toEqual([]);
+    expect((await groupSubjects({ cues: two, ask: async () => true })).unsure).toEqual([]);
   });
 });

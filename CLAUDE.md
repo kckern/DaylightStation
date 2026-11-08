@@ -269,6 +269,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Push notifications (text standard, school push copy, HA relay contract) | `__docs/reference/notifications/push-standard.md` |
 | Harvester health (failed harvests, failing/stale pushes, token rotation, Withings reconnect) | `__docs/reference/harvesters/health-and-reconnect.md` |
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
+| Content filter Admin workshop (library, Make filter runs + filter worker, review list, nudges, review marks, parent sign-off) | `__docs/reference/core/content-filter.md` (Admin workshop) |
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
 
 ---

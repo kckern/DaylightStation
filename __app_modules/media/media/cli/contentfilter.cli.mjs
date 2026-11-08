@@ -25,6 +25,8 @@
  *   works                   Popular filterable titles available on your services
  *   tags <slug|workId>      Summarize a title's filter categories + tag counts
  *   export <slug|workId>    Emit a normalized FilterEDL (YAML) to stdout
+ *   preflight <ratingKey>   Can a pipeline run happen here? (refine deps, Plex part)
+ *   worker                  The filter worker loop: claim queued Admin runs and run them
  *   match [--section <id>]  Cross-reference your Plex movie library vs VidAngel
  *
  * Options:
@@ -1084,6 +1086,34 @@ async function main() {
     return;
   }
 
+  if (command === 'worker') {
+    const os = await import('os');
+    const { runWorker } = await import('./contentfilter/workerCommand.mjs');
+    const { createFilterJobs } = await import('../server/composition/content-filter-jobs.mjs');
+    const dataDir = resolveDataDir(); const mediaDir = resolveMediaDir();
+    const owner = `${os.hostname()}:${process.pid}`;
+    const say = (event, data = {}) => console.error(JSON.stringify({ at: new Date().toISOString(), event, ...data }));
+    const logger = { info: say, warn: say, debug() {}, error: say };
+    const { jobs } = await createFilterJobs({ householdDir: path.join(dataDir, 'household'), dataDir, mediaDir, logger,
+      executor: 'inline', schedule: (fn, ms) => setTimeout(fn, ms) });
+    await runWorker({ jobs, owner, log: say });
+    return;
+  }
+
+  if (command === 'preflight') {
+    const rk = String(cmdArgs[0] || '');
+    if (!/^\d+$/.test(String(rk || ''))) { console.error('Usage: contentfilter preflight <ratingKey>'); process.exit(1); }
+    const { preflight } = await import('./contentfilter/preflightCommand.mjs');
+    const problem = await preflight({ rk, partOf: async (key) => {
+      const { token, host } = loadPlexConfig();
+      const res = await axios.get(`${host}/library/metadata/${key}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' }, timeout: 15000 });
+      return res.data?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0]?.key || null;
+    } });
+    if (problem) { console.error(problem); process.exit(1); }
+    console.error(`✓ preflight ok for ${rk}`);
+    return;
+  }
+
   if (command === 'audit') {
     // The audit runs the player's own resolver, a browser module; let plain Node load it.
     (await import('./contentfilter/registerExtensionless.mjs')).registerExtensionless();
@@ -1106,7 +1136,10 @@ async function main() {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error(SCENES_USAGE); process.exit(1); }
     try {
-      await runScenes({ rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir(), getDecisionGateway });
+      await runScenes({
+        rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir(), getDecisionGateway, loadPlexConfig,
+        getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+      });
     } catch (err) { console.error(`scenes ${rk} failed: ${err.message}`); process.exit(1); }
     return;
   }

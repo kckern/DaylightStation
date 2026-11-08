@@ -36,7 +36,7 @@ export class GetContentFilter {
       this.#repository.getOverride(ratingKey),
     ]);
     const profile = mergeProfilePatch(baseProfile, override?.profilePatch);
-    return { edl, profile, override, certification: readiness(edl, profile) };
+    return { edl, profile, override, certification: readiness(edl, profile, override) };
   }
 }
 

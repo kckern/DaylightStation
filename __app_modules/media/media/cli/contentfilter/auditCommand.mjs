@@ -19,6 +19,8 @@ import { cueModality } from '../../../../../shared/contracts/content-filter/cueM
 import { LANGUAGE_GROUPS, languageGroupOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { mergeProfilePatch } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
+import { reviewRows } from './reviewRows.mjs';
+import { certify } from '../../server/domain/content-filter/refine/certification.mjs';
 
 export const AUDIT_USAGE = 'Usage: contentfilter audit <ratingKey> [--profile <name>] [--part <id>] [--json]\n\n'
   + 'Resolve the title as the player does and report: tone cap, channel match, region-track share,\n'
@@ -39,7 +41,7 @@ const uniq = (a) => [...new Set(a)];
  * Pure: measure one title. `resolve` is injectable so the hard checks can be exercised
  * with output the real resolver would never produce.
  */
-export function computeAudit({ edl, profile, override, part = null, resolve = resolveEffectiveCues }) {
+export function computeAudit({ edl, profile, override, part = null, refineReview = null, resolve = resolveEffectiveCues }) {
   const overrides = override?.cueOverrides || {};
   const sourceCues = [...(edl?.cues || []), ...(override?.addCues || [])];
   const info = new Map();
@@ -131,7 +133,11 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     bucket.effects[effect] = (bucket.effects[effect] || 0) + 1;
   }
 
-  const cert = edl?.certification || {};
+  // Household nudges count (certification.mjs): a nudge that uncovers a word blocks.
+  const nudged = Object.values(overrides).some((ov) => Number.isFinite(ov?.startMs) || Number.isFinite(ov?.endMs));
+  const cert = edl?.timebase?.clock === 'vidangel' && nudged
+    ? certify(edl, { at: edl.certification?.machine?.at ?? null, cueOverrides: overrides })
+    : (edl?.certification || {});
   const checks = {
     toneCap: { ok: toneIds.length === 0, violations: toneIds.length, ids: toneIds, maxSec: TONE_MAX_SEC },
     channel: { ok: !audioOnShown.length && !visualOnSaid.length, audioOnShown: uniq(audioOnShown), visualOnSaid: uniq(visualOnSaid) },
@@ -148,6 +154,8 @@ export function computeAudit({ edl, profile, override, part = null, resolve = re
     scenes: { total: (edl?.scenes || []).length, leaks, byEffect: cues.sceneSummary?.byEffect || {} },
     certification: { level: cert.level || 'none', ...(cert.blocking?.length ? { blocking: cert.blocking } : {}) },
     language,
+    // The Admin review list: one row per moment, as the household gets it (reviewRows.mjs).
+    rows: reviewRows({ cues, refined: edl, override, refineReview }),
   };
 }
 
@@ -193,6 +201,8 @@ export function runAudit({ rk, flags = {}, mediaFilterDir, dataFilterDir }) {
   const overridePath = path.join(dataFilterDir, 'overrides', `${rk}.yml`);
   const override = existsSync(overridePath) ? readYaml(overridePath) : {};
   const profile = mergeProfilePatch(readYaml(profilePath), override.profilePatch);
-  const report = computeAudit({ edl, profile, override, part: flags.part ?? null });
+  const reviewPath = path.join(dataFilterDir, 'review', `${rk}.refine.yml`);
+  const refineReview = existsSync(reviewPath) ? readYaml(reviewPath) : null;
+  const report = computeAudit({ edl, profile, override, part: flags.part ?? null, refineReview });
   return { ...report, rk, profile: name };
 }

@@ -701,6 +701,81 @@ rail's controls are plain pointer targets: nothing on the bus, no remote-control
 no D-pad path opens the surround, seeks through it or writes a ruling. Rulings are made by
 someone at the screen.
 
+## Admin workshop
+
+Admin → Content filter (`/admin/content/filter`) is where a grown-up builds a film's filter and
+checks it before it counts as safe. Two jobs: **build it** (library and pipeline runs) and
+**check it** (one film's review). The preview surround stays the in-film editable preview.
+
+### Library and stages
+
+`GET /api/v1/content-filter/library?stage=&q=` lists every matched movie with VidAngel tags
+(`media/content-filter/plex-vidangel-map.yml`) plus every title with an override, each with a
+stage (`filmStage.mjs`): Rough → Running → Refined → Scenes built → Audited → Machine-certified →
+Parent-certified. Machine and parent need a passing audit that is current (its digest matches the
+refined EDL and the override, review marks excluded). A failed or interrupted run is a flag on the
+film (step and error), not a stage. Facts are cached in memory and dropped when a run settles, an
+audit lands or the film is written.
+
+### Pipeline runs
+
+`POST /:rk/jobs { kind: make | send-back | stage, cues?, stage? }` queues a run (202; 409 when the
+film already has one queued or running). `GET /jobs` is the queue state (the deploy gate reads it);
+`GET /:rk/jobs` one film's record. A **make** run's steps: `preflight` → `export` (only without an
+EDL) → `refine --write` → `scenes --write` (only without a `scenes` key) → `cards` → `audit --json`.
+**Send back** runs `preflight`, then clears the cues' hand nudges and runs `refine --cues … --write`
+and an audit. **Stage** runs `preflight` and one step (cards and audit need no preflight), then an
+audit. One heavy run at a time, FIFO; audits run on a separate light lane
+and after every write that changes what the household gets.
+
+Run state lives in `household/content-filter/jobs/<rk>.yml` (last 10 runs and the latest audit,
+whose `rows` are the review list); step logs in `media/content-filter/refine/<rk>/jobs/<runId>.log`.
+
+Runs execute in the **filter worker** (`docker/content-filter-worker/`): a Debian container with
+refine's Python stack (faster-whisper, torch/torchaudio — no musl wheels for the Alpine app image).
+It runs `contentfilter worker`: claim the oldest queued run (an exclusive claim file), run it with a
+heartbeat every 20 s, and mark runs whose heartbeat is older than 60 s interrupted. The app only
+queues and reports, and polls the run state every 10 s: it refreshes the library, prunes review
+marks, reaps a dead worker's run, and drafts card text for any finished run whose cards the worker
+skipped (the worker has no AI gateway; `cardsDrafted` marks it done, so an app restart catches up),
+then re-audits. App and worker update a film's run file under a shared lock file
+(`jobs/locks/<rk>.lock`). The review player is an auxiliary Player: no watch-progress logging.
+`CONTENT_FILTER_EXECUTOR=inline` runs everything in the app instead (then a restart marks open runs
+interrupted). `contentfilter preflight <rk>` names what is missing ("Refine cannot run here:
+faster-whisper is not installed") before anything is written.
+
+While a run's export, refine or scenes step writes a film, every write to that film answers 409
+"A filter run is writing this film. Try again when it finishes."
+
+### Review
+
+`GET /:rk/review` returns the latest audit's rows (`cli/contentfilter/reviewRows.mjs`): one row per
+moment as the household gets it (the preview rail's moments: a subject group is one row, a scene
+swallows its cues), with kind, group, modality, local span, effect, card, `handFixed`, `members`
+(the cue ids a ruling applies to) and the reasons the machine is unsure (`refine-<status>`,
+`safe-window`, `check-levels`, `exchange-by-length`, `untracked-visual`, `subject-unsure`), unsure
+first. The page plays the film in the Media Player with the filter forced on
+(`previewStore.forceFilter`), "Play with effect" (4 s lead) and "Play without" (peek).
+
+Per row: effect (only what fits the channel, R1), this film's ruling for a word
+(`PUT /:rk/words/:word`, `profilePatch.languageWords`) or its whole group (settings), the card
+(draft, edit, approve, withdraw), a hand nudge, send back, and mark reviewed.
+
+- **Nudge** — `PUT /:rk/cues/:id` or `/scenes/:id` with `nudge: { in, out }` (local seconds;
+  null drops it), stored as `startMs`/`endMs` on the VidAngel clock. Each edge may move at most
+  30 s, `in < out`, and both must map through the copy's sync. The resolver plays a nudged cue on
+  that span (`handFixed: true`). A nudged mute counts as covering its word for certification only
+  if it still contains a measured (`ms`/`frame`) word; on a safe-window word the nudge *is* the pin.
+- **Mark reviewed** — `PUT /:rk/review/:rowId { span }` stores `review.<rowId>` in the override
+  with the span reviewed; 409 "This part moved. Reload the list." when the span no longer matches.
+  A mark stops counting when a later audit moves its row (it stays, named as "changed since you
+  reviewed it", until re-marked); a mark whose row is gone is pruned when the audit lands. Sign-off
+  does not make the audit stale (the digest leaves out the stored certification).
+- **Approve for family** — `POST /:rk/signoff` writes `certification.parent` only when the film is
+  machine-certified with nudges counted, the audit passed and is current, and every row is reviewed;
+  otherwise 409 with the missing lines ("N of M parts not reviewed", "N parts changed since you
+  reviewed them", …). No override. `DELETE` withdraws.
+
 ## QA and current limitations
 
 The resolver and player behavior have unit tests. `cli/player-review` scrubs cue-by-cue to
