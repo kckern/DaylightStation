@@ -5,6 +5,8 @@ import { useApiResource } from '../../../../../../frontend/src/lib/hooks/useApiR
 import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../../../../frontend/src/lib/ui/index.js';
 import { ReviewList } from './ReviewList.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
+import { RowEditor } from './RowEditor.jsx';
+import { SignOffPanel } from './SignOffPanel.jsx';
 import { runText } from './FilterLibrary.jsx';
 import './ContentFilterAdmin.scss';
 
@@ -17,7 +19,7 @@ const API = 'api/v1/content-filter';
 const POLL_MS = 3000;
 const LEVEL = { none: 'Not certified', machine: 'Machine-certified', parent: 'Parent-certified' };
 
-export function ReviewPage({ children = null }) {
+export function ReviewPage() {
   const { ratingKey } = useParams();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
   const { data, loading, error, reload } = useApiResource(url, { label: 'review', logger });
@@ -35,6 +37,7 @@ export function ReviewPage({ children = null }) {
   if (loading && !data) return <LoadingState label="review" rows={6} />;
   if (error) return <ErrorState error={error} onRetry={reload} label="Review" />;
   const row = data.rows.find((r) => r.id === selected?.id) || null;
+  const busyText = running ? `Running: ${data.job.step || 'starting'}` : null;
   return (
     <SectionCard title={data.title || `Film ${ratingKey}`}
       actions={<Anchor component={Link} to="/admin/content/filter" size="sm">All films</Anchor>}>
@@ -47,10 +50,12 @@ export function ReviewPage({ children = null }) {
         <div className="cf-review">
           <Stack gap="sm" className="cf-review__side">
             <ReviewPlayer ratingKey={ratingKey} />
-            {typeof children === 'function' ? children({ data, row, reload, busy: running }) : null}
+            {row ? <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText} />
+              : <Text size="sm" c="dimmed">Pick a part in the list to change how it is handled.</Text>}
+            <SignOffPanel ratingKey={ratingKey} signOff={data.signOff} onChanged={reload} busyText={busyText} />
           </Stack>
           <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
-            selectedId={row?.id ?? null} onSelect={setSelected} busy={false} />
+            selectedId={row?.id ?? null} onSelect={setSelected} busy={Boolean(busyText)} />
         </div>
       </Stack>
     </SectionCard>

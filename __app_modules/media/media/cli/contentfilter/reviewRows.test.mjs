@@ -23,6 +23,9 @@ describe('reviewRows', () => {
     expect(rows.map((r) => r.id).sort()).toEqual(['cue:h1', 'cue:v1', 'cue:w1', 'cue:w2', 'cue:w3', 'scene:sc-1', 'subject:subject-b1'].sort());
     expect(byId['subject:subject-b1'].out).toBe(58);
     expect(byId['scene:sc-1'].peekId).toBe('sc-1');
+    expect(byId['subject:subject-b1'].members).toEqual(['b1', 'b2']);
+    expect(byId['cue:w1'].members).toEqual(['w1']);
+    expect(byId['scene:sc-1'].members).toEqual([]);
   });
   it('carries kind, group, modality, effect, card and hand-fixed, with times rounded to ms', () => {
     expect(byId['cue:w1']).toMatchObject({ kind: 'words', group: 'profanity', modality: 'said', effect: 'mute', in: 10.123 });

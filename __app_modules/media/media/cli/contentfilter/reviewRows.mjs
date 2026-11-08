@@ -5,7 +5,8 @@
  * `unitKey`), so Admin and the preview count the same things.
  *
  * Row = { id, peekId, kind: 'words'|'picture'|'scenes', group, label, category, modality, in, out,
- *         effect, card: { text, approved }|null, handFixed, unsure: string[] }
+ *         effect, card: { text, approved }|null, handFixed, unsure: string[], members: string[] }
+ * members: the cue ids a ruling or a send-back applies to (one for a cue, all for a subject, none for a scene).
  */
 import { buildMoments } from '../../browser/content-filter/preview/railItems.js';
 import { cueModality, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
@@ -65,6 +66,7 @@ export function reviewRows({ cues, refined = null, override = null, refineReview
       card: cardOf(m, override),
       handFixed: all.some((c) => c.handFixed === true),
       unsure: [...new Set(unsure)],
+      members,
     };
   });
   return rows.sort((a, b) => (b.unsure.length > 0) - (a.unsure.length > 0) || a.in - b.in);
