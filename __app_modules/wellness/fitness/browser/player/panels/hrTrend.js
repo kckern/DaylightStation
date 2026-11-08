@@ -1,8 +1,9 @@
 // Whole-session heart-rate sparkline for tall rider cards: pure helpers.
-// The series are the 5s timeline (one slot per tick, null while the strap is
-// silent). Everything here is O(ticks) and runs once per tick per card.
+// The series is the 5s timeline (one slot per tick, null while the strap is
+// silent); hrTrendScale.js samples it onto the log time axis. Paths are drawn
+// in (x 0..100, bpm) user space and trendTransform maps bpm onto the viewBox.
+import { ZONE_COLORS } from '../../shared/constants/fitness.js';
 
-export const TREND_MAX_BUCKETS = 120;
 // A card shows its trend at >= ON px and hides it below OFF px, so a
 // ResizeObserver wobble or a zone header appearing can't flicker it.
 export const TREND_ON_PX = 116;
@@ -12,39 +13,29 @@ export const TREND_OFF_PX = 108;
 // decision 2026-10-23: taller is fine when the space is used well). The cap
 // only stops absurd heights on very tall screens. Without a trend: 132.
 export const TREND_SINGLE_CAP_PX = 560;
-
-const ZONE_RANK = { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 };
-const rank = (zone) => (zone && Object.hasOwn(ZONE_RANK, zone) ? ZONE_RANK[zone] : -1);
+// Below this many real readings the card shows a collecting spinner instead
+// of a line too sparse to read. Readings, not ticks: a dropout doesn't count.
+export const TREND_MIN_READINGS = 5;
+// Zone bands are open-ended in practice: the outer bands reach these bounds.
+const BAND_FLOOR = 0;
+const BAND_CEILING = 400;
+const NEUTRAL = 'rgba(255,255,255,0.6)';
 
 export function trendVisible(wasVisible, cardHeight) {
   if (!Number.isFinite(cardHeight)) return false;
   return wasVisible ? cardHeight >= TREND_OFF_PX : cardHeight >= TREND_ON_PX;
 }
 
-// Mean of the non-null HR in each bucket and the bucket's HIGHEST zone, so a
-// short Fire spike keeps its colour. A bucket with no reading stays null.
-export function bucketHrSeries(hr, zones, maxBuckets = TREND_MAX_BUCKETS) {
-  const length = Array.isArray(hr) ? hr.length : 0;
-  if (!length) return [];
-  const count = Math.min(length, maxBuckets);
-  const buckets = [];
-  for (let b = 0; b < count; b++) {
-    const start = Math.floor((b * length) / count);
-    const end = Math.floor(((b + 1) * length) / count);
-    let sum = 0;
-    let n = 0;
-    let zone = null;
-    for (let i = start; i < end; i++) {
-      const value = hr[i];
-      if (!Number.isFinite(value) || value <= 0) continue;
-      sum += value;
-      n++;
-      const z = zones?.[i] ? String(zones[i]).toLowerCase() : null;
-      if (rank(z) > rank(zone)) zone = z;
-    }
-    buckets.push(n ? { hr: sum / n, zone } : { hr: null, zone: null });
-  }
-  return buckets;
+// The session always carries a fallback timebase (no tickCount); only a real
+// timeline has one. Without it there is no series to draw, so no trend box —
+// otherwise a strap flapping before any session would hold a tall card and a
+// spinner that never resolves.
+export function trendsAvailable(getSeries, timebase) {
+  return typeof getSeries === 'function' && Number.isFinite(timebase?.tickCount);
+}
+
+export function trendReady(prefix) {
+  return Boolean(prefix) && prefix.count[prefix.length] >= TREND_MIN_READINGS;
 }
 
 // Stable per-rider y-range: the rider's own zone thresholds bound it, and it
@@ -62,38 +53,74 @@ export function hrTrendRange(buckets, thresholds = []) {
   return [lo, hi];
 }
 
-// One polyline per zone run, in a viewBox of width N (bucket count) by 100.
-// A null bucket breaks the line (a dropout reads as a gap); a zone change
-// starts the next run at the previous point so the colours join seamlessly.
-export function hrTrendRuns(buckets, range) {
-  if (!range || !buckets.length) return [];
-  const [lo, hi] = range;
-  const y = (v) => Math.round((100 - ((v - lo) / (hi - lo)) * 100) * 10) / 10;
-  const x = (i) => i + 0.5;
+const r2 = (v) => Math.round(v * 100) / 100;
+
+// Monotone cubic (Fritsch–Carlson) through each run of non-null points, so the
+// line is smooth but never overshoots a reading. A null starts a new subpath
+// (a dropout reads as a gap); a lone point is a dot under the round cap.
+export function monotonePath(points) {
   const runs = [];
-  let current = null;
-  let previousPoint = null;
-  buckets.forEach((bucket, i) => {
-    if (!Number.isFinite(bucket.hr)) { current = null; previousPoint = null; return; }
-    const point = [x(i), y(bucket.hr)];
-    if (!current || current.zone !== bucket.zone) {
-      current = { zone: bucket.zone, points: previousPoint ? [previousPoint] : [] };
-      runs.push(current);
-    }
-    current.points.push(point);
-    previousPoint = point;
-  });
-  return runs
-    .filter((run) => run.points.length >= 2)
-    .map((run) => ({ zone: run.zone, points: run.points.map((p) => p.join(',')).join(' ') }));
+  let run = [];
+  for (const p of points || []) {
+    if (Number.isFinite(p?.hr)) run.push(p);
+    else if (run.length) { runs.push(run); run = []; }
+  }
+  if (run.length) runs.push(run);
+  return runs.map(runPath).join(' ');
 }
 
-export function thresholdLines(range, thresholds = []) {
-  if (!range) return [];
-  const [lo, hi] = range;
-  return thresholds
-    .filter((t) => Number.isFinite(t) && t > lo && t < hi)
-    .map((t) => Math.round((100 - ((t - lo) / (hi - lo)) * 100) * 10) / 10);
+function runPath(run) {
+  const n = run.length;
+  const head = `M${r2(run[0].x)},${r2(run[0].hr)}`;
+  if (n === 1) return `${head} h0.01`;
+  if (n === 2) return `${head} L${r2(run[1].x)},${r2(run[1].hr)}`;
+  const dx = [];
+  const m = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx[i] = run[i + 1].x - run[i].x;
+    m[i] = dx[i] > 0 ? (run[i + 1].hr - run[i].hr) / dx[i] : 0;
+  }
+  const t = [m[0]];
+  for (let i = 1; i < n - 1; i++) {
+    if (m[i - 1] * m[i] <= 0) { t[i] = 0; continue; }
+    const w1 = 2 * dx[i] + dx[i - 1];
+    const w2 = dx[i] + 2 * dx[i - 1];
+    t[i] = (w1 + w2) / (w1 / m[i - 1] + w2 / m[i]);
+  }
+  t[n - 1] = m[n - 2];
+  let d = head;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    const a = run[i];
+    const b = run[i + 1];
+    d += ` C${r2(a.x + h)},${r2(a.hr + t[i] * h)} ${r2(b.x - h)},${r2(b.hr - t[i + 1] * h)} ${r2(b.x)},${r2(b.hr)}`;
+  }
+  return d;
+}
+
+// One band per zone, threshold to next threshold in bpm. The line is clipped
+// to each band and stroked in its colour, so the colour changes exactly where
+// the line crosses a threshold, mid-segment included.
+export function zoneBands(zoneSequence) {
+  const zones = (Array.isArray(zoneSequence) ? zoneSequence : [])
+    .filter((z) => Number.isFinite(z?.threshold))
+    .slice()
+    .sort((a, b) => a.threshold - b.threshold);
+  if (!zones.length) return [{ key: '0-none', id: 'none', color: NEUTRAL, lo: BAND_FLOOR, hi: BAND_CEILING }];
+  return zones.map((z, i) => ({
+    key: `${i}-${String(z.id).replace(/[^a-zA-Z0-9_-]/g, '')}`,
+    id: String(z.id),
+    color: ZONE_COLORS[String(z.id).toLowerCase()] || z.color || NEUTRAL,
+    lo: i === 0 ? BAND_FLOOR : z.threshold,
+    hi: i === zones.length - 1 ? BAND_CEILING : zones[i + 1].threshold,
+  }));
+}
+
+// Maps bpm user space onto viewBox y: hi → 0, lo → 100. x passes through.
+export function trendTransform([lo, hi]) {
+  const a = -100 / (hi - lo);
+  const b = (100 * hi) / (hi - lo);
+  return `matrix(1 0 0 ${+a.toFixed(4)} 0 ${+b.toFixed(4)})`;
 }
 
 // Fire has no next zone, so the progress bar would be an empty track. On

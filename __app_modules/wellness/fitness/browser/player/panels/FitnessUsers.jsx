@@ -12,7 +12,7 @@ import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
 import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX, RIDER_SINGLE_CAP_PX } from "./riderListDensity.js";
-import { trendVisible, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
+import { trendVisible, trendsAvailable as trendsAvailableFor, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
 import RiderHrTrend from "./RiderHrTrend.jsx";
 import { committedZoneId } from "../../lib/committedZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
@@ -597,11 +597,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   }, []);
   const onRosterAnimationFinish = React.useCallback(() => setListResizes((n) => n + 1), []);
   const densitySignatureRef = React.useRef('');
-  // HR trend (hrTrend.js): the timeline ticks every 5s; once it has two ticks a
-  // tall card has something to draw, and a single rider may grow past 132px
-  // so the chart gets real room (owner decision 2026-10-23).
+  // HR trend (RiderHrTrend): available from session start — a tall card shows
+  // a collecting spinner until the rider has enough readings, so the card takes
+  // its trend height once instead of jumping when the line appears. A single
+  // rider may grow past 132px so the chart gets real room (owner decision
+  // 2026-10-23).
   const timelineTicks = Number(timelineTimebase?.tickCount) || 0;
-  const trendsAvailable = typeof getParticipantTimelineSeries === 'function' && timelineTicks >= 2;
+  const timelineTickMs = Number(timelineTimebase?.intervalMs) || 5000;
+  const trendsAvailable = trendsAvailableFor(getParticipantTimelineSeries, timelineTimebase);
   const singleCap = trendsAvailable ? TREND_SINGLE_CAP_PX : RIDER_SINGLE_CAP_PX;
   const trendShownRef = React.useRef(false);
   const showTrend = trendsAvailable && trendVisible(trendShownRef.current, cardHeight);
@@ -890,7 +893,6 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 return getParticipantTimelineSeries(trendUserId, metric, options);
               };
               const trendSequence = progressInfo?.zoneSequence || userVitalsEntry?.zoneSequence || [];
-              const trendThresholds = Array.isArray(trendSequence) ? trendSequence.map((z) => z?.threshold) : [];
 
               const removalCountdown = device.removalCountdown;
               const isCountdownActive = Number.isFinite(removalCountdown);
@@ -997,7 +999,8 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                         participantId={trendParticipantId}
                         getSeries={readTrendSeries}
                         tickCount={timelineTicks}
-                        thresholds={trendThresholds}
+                        tickMs={timelineTickMs}
+                        zones={trendSequence}
                         profileId={profileId}
                         cardHeight={cardHeight}
                       />

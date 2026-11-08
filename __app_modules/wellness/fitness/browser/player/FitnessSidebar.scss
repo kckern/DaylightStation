@@ -1796,17 +1796,43 @@
     &.zone-fire .zone-progress-bar--max .zone-progress-fill { animation: none; opacity: 1; }
   }
 
-  // Whole-session HR sparkline (RiderHrTrend). Static SVG, no animation.
+  // Whole-session HR sparkline (RiderHrTrend). One path in <defs>, drawn by a
+  // <use> per zone band (clipped to the band, stroked in its colour); motion
+  // is written per frame from JS, so nothing here animates the line.
   .rider-hr-trend {
     display: block;
     overflow: visible;
   }
   .rider-hr-trend__line {
     fill: none;
+  }
+  .rider-hr-trend__line,
+  .rider-hr-trend use {
     stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
+  }
+  // Collecting state: same box as the chart, a quiet ring until the rider has
+  // enough readings to draw.
+  .rider-hr-trend--loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rider-hr-trend__spinner {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: rgba(255, 255, 255, 0.6);
+    animation: rider-hr-trend-spin 1s linear infinite;
+  }
+  @keyframes rider-hr-trend-spin {
+    to { transform: rotate(360deg); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rider-hr-trend__spinner { animation: none; opacity: 0.4; }
   }
   .rider-hr-trend__guide {
     stroke: rgba(255, 255, 255, 0.1);

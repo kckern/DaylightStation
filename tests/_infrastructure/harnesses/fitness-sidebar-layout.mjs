@@ -81,6 +81,7 @@ window.renderFixture = ({ count = 5, width = 300, height = 650, rpm = 0, zones =
     fitnessSessionInstance: { getEquipmentUser: () => null },
     ...(ticks ? {
       timelineTimebase: { tickCount: ticks, intervalMs: 5000 },
+      getUserVitals: () => ({ zoneSequence: [['cool', 0], ['active', 100], ['warm', 120], ['hot', 140], ['fire', 160]].map(([id, threshold], index) => ({ id, threshold, index })) }),
       getParticipantTimelineSeries: (id, metric) => Array.from({ length: ticks }, (_, t) => {
         const hr = Math.round(110 + 40 * Math.sin(t / 15 + id.length));
         return metric === 'heart_rate' ? hr : (hr >= 140 ? 'hot' : hr >= 120 ? 'warm' : 'active');
@@ -130,7 +131,7 @@ const bundle = await build({
     builder.onLoad({filter:/.*/,namespace:'singleton'},()=>({contents:'export const getChildLogger = () => ({info:()=>{},debug:()=>{},warn:()=>{},error:()=>{},sampled:()=>{}});'}));
     builder.onResolve({ filter: /logging\/Logger\.js$/ }, () => ({ path: 'fixture-logger', namespace: 'logger' }));
     builder.onLoad({ filter: /.*/, namespace: 'logger' }, () => ({ contents:
-      'const noop = () => {}; const capture = (event, data) => { (window.fixtureEvents ||= []).push({event,data}); }; const logger = { child: () => logger, debug: noop, info: capture, warn: capture, error: capture, sampled: noop }; export default () => logger; export const getLogger = () => logger; export const getRecentEvents = () => [];' }));
+      'const noop = () => {}; const capture = (event, data) => { (window.fixtureEvents ||= []).push({event,data}); }; const logger = { child: () => logger, debug: noop, info: capture, warn: capture, error: capture, sampled: noop }; export default () => logger; export const getLogger = () => logger; export const getRecentEvents = () => []; export const flushLogs = async () => {};' }));
     builder.onLoad({ filter: /\.scss$/ }, async ({ path }) => ({
       contents: (await sass.compileAsync(path, { logger: sass.Logger.silent, loadPaths: [join(repo, 'frontend/node_modules')] })).css,
       loader: 'css', resolveDir: dirname(path),
@@ -319,23 +320,25 @@ try {
     await page.screenshot({path:artifact(viewport.width+'-roster.png')});
     }
   }
-  // HR trend (hrTrend.js): cards >= 116px draw a whole-session sparkline; a
-  // single rider grows past 132px to give it room; short cards never draw one.
-  for (const options of (has('trend') ? [{count:1,ticks:600},{count:2,ticks:600},{count:5,ticks:600},{count:1,ticks:1}] : [])) {
+  // HR trend (RiderHrTrend): with a timeline, cards >= 116px hold the trend box
+  // from session start — a collecting spinner until 5 readings, then the line;
+  // a single rider grows past 132px to give it room; short cards never draw one.
+  for (const options of (has('trend') ? [{count:1,ticks:600},{count:2,ticks:600},{count:5,ticks:600},{count:1,ticks:3},{count:1,ticks:0}] : [])) {
     await page.setViewportSize({width:1381,height:777});
     await page.evaluate(o=>window.renderFixture({...o,media:true,width:250,height:737,zones:Math.min(3,o.count)}),options);
     await page.waitForTimeout(900);
     const trend = await page.evaluate(() => {
       const cards=[...document.querySelectorAll('.fitness-device.heart-rate')];
       return cards.map(card=>{const r=card.getBoundingClientRect();const svg=card.querySelector('.rider-hr-trend');const s=svg?.getBoundingClientRect();
-        return {height:r.height,trend:!!svg,lines:card.querySelectorAll('polyline').length,inside:!s||(s.top>=r.top-0.5&&s.bottom<=r.bottom+0.5&&s.left>=r.left-0.5&&s.right<=r.right+0.5),chartHeight:s?.height||0};});
+        return {height:r.height,trend:!!svg,loading:!!card.querySelector('.rider-hr-trend--loading'),lines:card.querySelectorAll('.rider-hr-trend use').length,drawn:!!card.querySelector('path.rider-hr-trend__line')?.getAttribute('d'),inside:!s||(s.top>=r.top-0.5&&s.bottom<=r.bottom+0.5&&s.left>=r.left-0.5&&s.right<=r.right+0.5),chartHeight:s?.height||0};});
     });
     for (const card of trend) {
-      assert.equal(card.trend, card.height>=116 && options.ticks>=2, 'trend iff tall card with a timeline: '+JSON.stringify({options,card}));
+      assert.equal(card.trend, card.height>=116 && options.ticks>=1, 'trend iff tall card with a timeline: '+JSON.stringify({options,card}));
       assert.ok(card.inside,'trend inside its card: '+JSON.stringify(card));
-      if (card.trend) assert.ok(card.lines>0 && card.chartHeight>=20,'chart has room and lines: '+JSON.stringify(card));
+      if (card.trend && options.ticks<5) assert.ok(card.loading && card.chartHeight>=20,'collecting spinner holds the box: '+JSON.stringify(card));
+      if (card.trend && options.ticks>=5) assert.ok(!card.loading && card.lines>0 && card.drawn && card.chartHeight>=20,'chart has room and a line: '+JSON.stringify(card));
     }
-    if (options.count===1) assert.ok(options.ticks>=2 ? trend[0].height>132 : trend[0].height<=132,'single-rider cap follows the trend: '+JSON.stringify(trend));
+    if (options.count===1) assert.ok(options.ticks>=1 ? trend[0].height>132 : trend[0].height<=132,'single-rider cap follows the trend: '+JSON.stringify(trend));
     evidence.push({trend:options,cards:trend});
     await page.screenshot({path:artifact('trend-'+options.count+'-'+options.ticks+'.png')});
   }
