@@ -72,6 +72,10 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
     this.#writeYaml(this.#householdDir, `content-filter/profiles/${name}.yml`, profile);
   }
 
+  async getMatchIndex() {
+    return this.#readYaml(this.#mediaDir, 'content-filter/plex-vidangel-map.yml');
+  }
+
   async getOverride(ratingKey) {
     return this.#readYaml(this.#householdDir, `content-filter/overrides/${ratingKey}.yml`);
   }

@@ -11,7 +11,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * ratingKey is the Plex rating key (contentId `plex:<ratingKey>`); it is
  * digit-sanitized to prevent path traversal.
  */
-export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, contentFilterArt = null, logger = console } = {}) {
+export function createContentFilterRouter({ getContentFilter, contentFilterScenes = null, contentFilterArt = null, jobs = null, logger = console } = {}) {
   if (!getContentFilter || typeof getContentFilter.execute !== 'function') {
     throw new Error('createContentFilterRouter requires getContentFilter');
   }
@@ -22,6 +22,33 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     router.get('/', asyncHandler(async (req, res) => {
       const profileName = String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
       res.json({ titles: await contentFilterScenes.titles({ profileName }) });
+    }));
+  }
+
+  // Pipeline runs (Admin "Make filter"; ContentFilterJobs). Registered before /:ratingKey.
+  if (jobs) {
+    // GET /jobs -> { running: [{ ratingKey, runId, step }], queued: [...] } (also read by the deploy gate)
+    router.get('/jobs', asyncHandler(async (req, res) => { res.json(await jobs.state()); }));
+    router.get('/:ratingKey/jobs', asyncHandler(async (req, res) => {
+      const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
+      if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
+      res.json((await jobs.record(ratingKey)) || { ratingKey, runs: [] });
+    }));
+    // POST /:ratingKey/jobs { kind: make|send-back|stage, cues?, stage? } -> 202 { run }
+    router.post('/:ratingKey/jobs', asyncHandler(async (req, res) => {
+      const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
+      if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
+      const { kind = 'make', cues = null, stage = null } = req.body || {};
+      if (cues != null && !(Array.isArray(cues) && cues.every((c) => /^[A-Za-z0-9_-]+$/.test(String(c))))) {
+        return res.status(400).json({ error: 'cues must be cue ids' });
+      }
+      try {
+        const run = await jobs.enqueue({ ratingKey, kind, cues, stage, by: req.body?.by || 'admin' });
+        res.status(202).json({ run });
+      } catch (error) {
+        if (error.status === 409 || error.status === 400) return res.status(error.status).json({ error: error.message });
+        throw error;
+      }
     }));
   }
 

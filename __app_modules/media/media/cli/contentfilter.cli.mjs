@@ -25,6 +25,7 @@
  *   works                   Popular filterable titles available on your services
  *   tags <slug|workId>      Summarize a title's filter categories + tag counts
  *   export <slug|workId>    Emit a normalized FilterEDL (YAML) to stdout
+ *   preflight <ratingKey>   Can a pipeline run happen here? (refine deps, Plex part)
  *   match [--section <id>]  Cross-reference your Plex movie library vs VidAngel
  *
  * Options:
@@ -1081,6 +1082,20 @@ async function main() {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error(CERTIFY_USAGE); process.exit(1); }
     try { runCertify({ rk, flags, args, mediaFilterDir: filterMediaDir() }); } catch (err) { console.error(`certify ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
+  if (command === 'preflight') {
+    const rk = String(cmdArgs[0] || '');
+    if (!/^\d+$/.test(String(rk || ''))) { console.error('Usage: contentfilter preflight <ratingKey>'); process.exit(1); }
+    const { preflight } = await import('./contentfilter/preflightCommand.mjs');
+    const problem = await preflight({ rk, partOf: async (key) => {
+      const { token, host } = loadPlexConfig();
+      const res = await axios.get(`${host}/library/metadata/${key}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' }, timeout: 15000 });
+      return res.data?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0]?.key || null;
+    } });
+    if (problem) { console.error(problem); process.exit(1); }
+    console.error(`✓ preflight ok for ${rk}`);
     return;
   }
 
