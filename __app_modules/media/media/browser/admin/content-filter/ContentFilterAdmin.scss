@@ -1,3 +1,16 @@
 // Admin content-filter workshop. Admin tokens only (frontend/src/modules/Admin/Admin.variables.scss).
 .cf-library__search { min-width: 220px; }
 .cf-library__table { overflow-x: auto; }
+
+// Review page: player (and row tools) beside the list; stacked below 900 px.
+.cf-review { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--ds-space-4); align-items: start; }
+@media (max-width: 900px) { .cf-review { grid-template-columns: minmax(0, 1fr); } }
+.cf-review__side { position: sticky; top: var(--ds-space-2); min-width: 0; }
+.cf-review__player { aspect-ratio: 16 / 9; width: 100%; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
+.cf-review__list { max-height: calc(100vh - 220px); overflow-y: auto; min-width: 0; }
+.cf-review__row { padding: var(--ds-space-2); border-top: 1px solid var(--ds-border); }
+.cf-review__row.is-selected { background: var(--ds-accent-subtle); }
+.cf-review__row-main { min-width: 0; }
+.cf-review__pick { text-align: left; }
+.cf-review__time { font-variant-numeric: tabular-nums; }
+.cf-review__tick { color: var(--ds-success); }

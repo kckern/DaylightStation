@@ -490,7 +490,7 @@ export { baseId } from './contentFilter.js';
 import { baseId } from './contentFilter.js';
 
 /** Does bypass `id` cover `cue` (its id, its base id, or its scene)? */
-const coveredBy = (cue, id) => cue.id === id || cue.scene === id || baseId(cue.id) === id;
+const coveredBy = (cue, id) => cue.id === id || cue.scene === id || cue.subject === id || baseId(cue.id) === id;
 
 /**
  * Drop bypassed cues from `active`, and expire bypass ids whose cues the playhead

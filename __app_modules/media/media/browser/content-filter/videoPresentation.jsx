@@ -39,7 +39,8 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
     ? (media?.assetId || media?.key || media?.plex || null)
     : null;
   const { data: filterData, status: filterStatus, reload: reloadFilterData } = useFilterData(filterContentId, { enabled: !!filterContentId });
-  const mode = filterMode({ search, certification: filterData?.certification ?? null, status: filterStatus });
+  const mode = filterMode({ search, certification: filterData?.certification ?? null, status: filterStatus,
+    force: filterContentId && previewStore.isForced(filterContentId) ? 'on' : null });
   const filterEnabled = mode.enabled;
   // Unfiltered peek: ids the preview asked to play once unfiltered. useContentFilter
   // reads it each tick and removes an id once playback passes that item's out.
@@ -165,10 +166,11 @@ export function useMediaVideoPresentation({ media, isPlex, getMediaEl }) {
       try { el?.play?.()?.catch?.(refused); } catch (e) { refused(e); }
     };
     const unbind = previewStore.bind({
+      position: () => { const t = getMediaEl?.()?.currentTime; return Number.isFinite(t) ? t : null; },
       seek,
       play,
       peek: (id) => {
-        const items = cuesRef.current.filter((c) => c.id === id || c.scene === id || baseId(c.id) === id);
+        const items = cuesRef.current.filter((c) => c.id === id || c.scene === id || c.subject === id || baseId(c.id) === id);
         if (!items.length) { logger().warn('content-filter.peek.unknown', { id }); return; }
         bypassRef.current.add(id);
         const start = Math.min(...items.map((c) => c.in));

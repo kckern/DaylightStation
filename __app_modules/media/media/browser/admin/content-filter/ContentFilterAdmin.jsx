@@ -22,6 +22,8 @@ const clock = (t) => (t == null ? '—' : `${Math.floor(t / 60)}:${String(Math.f
 
 /** The library (Task 6); the film route keeps the scenes view until the review page lands. */
 export { FilterLibrary as ContentFilterLibrary } from './FilterLibrary.jsx';
+/** One film's review: the player with the effect applied beside every part the filter acts on. */
+export { ReviewPage as ContentFilterReview } from './ReviewPage.jsx';
 
 export function ContentFilterScenes() {
   const { ratingKey } = useParams();

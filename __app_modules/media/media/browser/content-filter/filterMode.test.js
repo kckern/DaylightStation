@@ -22,3 +22,13 @@ describe('filterMode', () => {
     expect(filterMode({ search: '', certification: null, status: 'loading' })).toMatchObject({ fetch: true, enabled: false, reason: 'loading' });
   });
 });
+
+describe('filterMode with a host force', () => {
+  it('force "on" behaves as ?filter=1 on an uncertified title', () => {
+    expect(filterMode({ certification: { ready: false }, status: 'ready', force: 'on' })).toEqual({ fetch: true, enabled: true, reason: 'forced-on' });
+  });
+  it('force "on" still waits for the data, and ?filter=0 still wins', () => {
+    expect(filterMode({ status: 'loading', force: 'on' }).enabled).toBe(false);
+    expect(filterMode({ search: '?filter=0', status: 'ready', force: 'on' }).enabled).toBe(false);
+  });
+});

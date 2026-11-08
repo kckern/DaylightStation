@@ -96,3 +96,21 @@ describe('previewStore', () => {
     expect(result.current.title).toBe('Film');
   });
 });
+
+describe('previewStore review-player additions', () => {
+  it('currentTime() reads the bound position, null when unbound', () => {
+    previewStore.reset();
+    expect(previewStore.currentTime()).toBeNull();
+    const unbind = previewStore.bind({ position: () => 12.5 });
+    expect(previewStore.currentTime()).toBe(12.5);
+    unbind();
+  });
+  it('a forced title survives a player reset until the host clears it', () => {
+    previewStore.forceFilter('77');
+    previewStore.reset();
+    expect(previewStore.isForced('plex:77')).toBe(true);
+    expect(previewStore.isForced('78')).toBe(false);
+    previewStore.forceFilter(null);
+    expect(previewStore.isForced('77')).toBe(false);
+  });
+});
