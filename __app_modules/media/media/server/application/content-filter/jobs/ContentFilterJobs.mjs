@@ -26,7 +26,7 @@ const TAIL = 500;
 
 export class ContentFilterJobs {
   #store; #cli; #film; #digestOf; #draftCards; #clearNudges; #logPath; #logger; #now; #executor; #debounceMs; #schedule; #inputsOf; #applyResults;
-  #queue = []; #heavy = null; #audits = new Map(); #auditChain = Promise.resolve(); #locks = new Map(); #settled = new Set(); #audited = new Set();
+  #queue = []; #heavy = null; #audits = new Map(); #auditChain = Promise.resolve(); #locks = new Map(); #settled = new Set(); #audited = new Set(); #auditing = new Set();
 
   constructor({ store, cli, film, digestOf, draftCards = null, clearNudges = async () => {}, logPath = () => null,
     logger = console, now = () => new Date(), executor = 'worker', auditDebounceMs = 2000, schedule,
@@ -181,7 +181,15 @@ export class ContentFilterJobs {
 
   #lastAuditError = null;
 
+  /** Is an audit queued or running for this film right now (this process)? */
+  isAuditing(ratingKey) { const rk = String(ratingKey); return this.#audits.has(rk) || this.#auditing.has(rk); }
+
   async #audit(rk, run = null) {
+    this.#auditing.add(rk);
+    try { return await this.#auditNow(rk, run); } finally { this.#auditing.delete(rk); }
+  }
+
+  async #auditNow(rk, run) {
     const digest = await this.#digestOf(rk);
     const r = await this.#cli.run('audit', [rk, '--json'], { logPath: run ? this.#logPath(rk, run.id) : null, timeoutMs: STEP_TIMEOUT_MS.audit });
     let report = null;

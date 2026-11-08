@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Group, List, Select, Stack, Text } from '@mantine/core';
-import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
-import { createAppLogger } from '../../../../../../frontend/src/lib/ui/index.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
+import { createAppLogger } from '../../../lib/ui/index.js';
 
 /**
  * Approve the film for family use (parent certification): only when the machine bar holds, the

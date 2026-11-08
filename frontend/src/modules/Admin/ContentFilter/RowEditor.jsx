@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Group, SegmentedControl, Select, Stack, Text, TextInput } from '@mantine/core';
-import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
-import { createAppLogger } from '../../../../../../frontend/src/lib/ui/index.js';
-import { fitEffectToChannel } from '../../../../../../shared/contracts/content-filter/cueModality.mjs';
-import { LANGUAGE_GROUPS } from '../../../../../../shared/contracts/content-filter/languageGroups.mjs';
-import { previewStore } from '../../content-filter/preview/previewStore.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
+import { createAppLogger } from '../../../lib/ui/index.js';
+import { fitEffectToChannel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
+import { LANGUAGE_GROUPS } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { groupLabel, timecode } from './ReviewList.jsx';
 
 /**
@@ -26,7 +26,7 @@ export function effectChoices(modality) {
     ...CUE_EFFECTS.filter(([e]) => fits(e)).map(([value, label]) => ({ label, value }))];
 }
 
-export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = null }) {
+export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = null, auditFresh = true, wordRulings = {} }) {
   const [notice, setNotice] = useState(null);
   const [pending, setPending] = useState(null);
   const [span, setSpan] = useState([row.in, row.out]);
@@ -76,7 +76,7 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       <SegmentedControl size="xs" fullWidth data={effects} value={current} disabled={disabled} onChange={setEffect} aria-label="Effect" />
       {isWord ? (
         <>
-          <SegmentedControl size="xs" fullWidth data={WORD_CHOICES} value="profile" disabled={disabled} aria-label="This word in this film"
+          <SegmentedControl size="xs" fullWidth data={WORD_CHOICES} value={wordRulings[String(row.label).toLowerCase()] || 'profile'} disabled={disabled} aria-label="This word in this film"
             onChange={(v) => act('word', [[`${base}/words/${encodeURIComponent(String(row.label).toLowerCase())}`, { value: v === 'profile' ? null : v }, 'PUT']])} />
           <Select size="xs" label={`All ${groupLabel(row.group).toLowerCase()} words in this film`} placeholder="Use settings" data={GROUP_CHOICES} disabled={disabled}
             onChange={(v) => v && act('group', [[`${base}/settings`, { settings: { language: { [row.group]: v } } }, 'PUT']])} />
@@ -112,12 +112,13 @@ export function RowEditor({ ratingKey, row, onChanged = () => {}, busyText = nul
       <Group gap="xs" wrap="wrap">
         {row.reviewed
           ? <Button size="compact-xs" variant="light" disabled={disabled} onClick={() => act('unmark', [[`${base}/review/${encodeURIComponent(row.id)}`, {}, 'DELETE']])}>Unmark</Button>
-          : <Button size="compact-xs" disabled={disabled} onClick={() => act('mark', [[`${base}/review/${encodeURIComponent(row.id)}`, { span: [row.in, row.out] }, 'PUT']])}>Mark reviewed</Button>}
+          : <Button size="compact-xs" disabled={disabled || !auditFresh} onClick={() => act('mark', [[`${base}/review/${encodeURIComponent(row.id)}`, { span: [row.in, row.out] }, 'PUT']])}>Mark reviewed</Button>}
         {!isScene && members.length ? (
           <Button size="compact-xs" variant="subtle" disabled={disabled} title="Sends this back to the pipeline; your hand fix on it is dropped."
             onClick={() => act('send-back', [[`${base}/jobs`, { kind: 'send-back', cues: members }, 'POST']], 'Sent back to the pipeline.')}>Send back</Button>
         ) : null}
       </Group>
+      {!row.reviewed && !auditFresh ? <Text size="xs" c="dimmed">Mark reviewed once the audit is current.</Text> : null}
       {!isScene ? <Text size="xs" c="dimmed">Send back: the pipeline measures this again; your hand fix on it is dropped.</Text> : null}
       {notice ? <Text size="sm" role="status">{notice}</Text> : null}
     </Stack>

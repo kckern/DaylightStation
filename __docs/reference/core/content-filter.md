@@ -703,8 +703,10 @@ someone at the screen.
 
 ## Admin workshop
 
-Admin → Content filter (`/admin/content/filter`) is where a grown-up builds a film's filter and
-checks it before it counts as safe. Two jobs: **build it** (library and pipeline runs) and
+Admin → Content filter (`/admin/content/filter`, `frontend/src/modules/Admin/ContentFilter/`) is
+where a grown-up builds a film's filter and checks it before it counts as safe. It reaches the
+media module only through its public entries (`browser/content-filter/adminWorkspace.mjs` for the
+preview store and effect words, `browser/playback.mjs` for the Player). Two jobs: **build it** (library and pipeline runs) and
 **check it** (one film's review). The preview surround stays the in-film editable preview.
 
 ### Library and stages
@@ -771,8 +773,15 @@ first. The page plays the film in the Media Player with the filter forced on
 (`previewStore.forceFilter`), "Play with effect" (4 s lead) and "Play without" (peek).
 
 Per row: effect (only what fits the channel, R1), this film's ruling for a word
-(`PUT /:rk/words/:word`, `profilePatch.languageWords`) or its whole group (settings), the card
-(draft, edit, approve, withdraw), a hand nudge, send back, and mark reviewed.
+(`PUT /:rk/words/:word`, `profilePatch.languageWords`, shown as the current choice) or its whole
+group (settings; per-word rulings survive it), the card (draft, edit, approve, withdraw), a hand
+nudge, send back, and mark reviewed (only while the audit is current). Rows can be selected for one
+multi-row send-back; rows in a queued or running send-back read "Sent back: <step>". Play with and
+without the effect always works, even while a run writes the film. "Needs review" lists the rows
+not reviewed yet. The sign-off names up to three words whose mute no longer covers them, and tells a
+running audit ("still running") from a stale one ("out of date. Run Stage again → Audit."). A PUT
+with a nudge and an unknown effect is refused before anything is saved. The library re-reads its
+title index every 10 minutes.
 
 - **Nudge** — `PUT /:rk/cues/:id` or `/scenes/:id` with `nudge: { in, out }` (local seconds;
   null drops it), stored as `startMs`/`endMs` on the VidAngel clock. Each edge may move at most

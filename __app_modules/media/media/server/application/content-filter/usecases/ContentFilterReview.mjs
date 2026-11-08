@@ -158,19 +158,26 @@ export class ContentFilterReview {
       return { ...r, reviewed: ok ? { by: m.by, at: m.at } : null };
     });
     const total = rows.length;
+    const auditing = typeof this.#jobs.isAuditing === 'function' && this.#jobs.isAuditing(ratingKey);
     const missing = [];
-    if (cert.level === 'none') missing.push(`Not machine-certified: ${cert.blocking.length} mutes do not cover their word`);
+    if (cert.level === 'none') {
+      // Name the words (up to three) so the parent knows which rows to fix.
+      const names = cert.blocking.map((id) => rows.find((r) => (r.members || []).includes(id) || r.id === `cue:${id}`)?.label).filter(Boolean);
+      const shown = [...new Set(names)].slice(0, 3);
+      missing.push(`Not machine-certified: ${cert.blocking.length} mutes do not cover their word${shown.length ? ` (${shown.join(', ')}${cert.blocking.length > shown.length ? ', …' : ''})` : ''}`);
+    }
     if (audit && audit.ok === false) missing.push('The audit has not passed');
-    if (!fresh) missing.push('The audit is still running');
+    if (!fresh) missing.push(auditing ? 'The audit is still running' : 'The audit is out of date. Run Stage again → Audit.');
     if (total - reviewed - changed > 0) missing.push(`${total - reviewed - changed} of ${total} parts not reviewed`);
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
     const run = (record?.runs || []).at(-1) || null;
     return {
       title: raw?.title ?? null,
       certification: { level: cert.level, ...(cert.blocking ? { blocking: cert.blocking } : {}) },
-      audit: audit ? { ok: audit.ok, at: audit.at, fresh, failures: audit.failures || [] } : null,
+      audit: audit ? { ok: audit.ok, at: audit.at, fresh, running: auditing, failures: audit.failures || [] } : null,
+      wordRulings: override.profilePatch?.languageWords || {},
       rows, reviewed, total,
-      job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps } : null,
+      job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}) } : null,
       signOff: { ready: missing.length === 0, missing, parent: refined.certification?.parent || null },
     };
   }

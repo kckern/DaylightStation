@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { previewStore } from '../../content-filter/preview/previewStore.js';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { ReviewList } from './ReviewList.jsx';
 
 const rows = [
@@ -44,7 +44,29 @@ describe('ReviewList', () => {
     expect(screen.getByText('Fight')).toBeTruthy();
   });
   it('says the audit is running while it is not fresh', () => {
-    show({ audit: { ok: true, fresh: false } });
+    show({ audit: { ok: true, fresh: false, running: true } });
     expect(screen.getByText('Audit running…')).toBeTruthy();
+  });
+  it('a reviewed unsure row is not "needs review"', () => {
+    const reviewedUnsure = rows.map((r) => (r.id === 'cue:w1' ? { ...r, reviewed: { by: 'p' } } : r));
+    render(<MantineProvider><ReviewList rows={reviewedUnsure} reviewed={2} total={3} audit={{ ok: true, fresh: true }} /></MantineProvider>);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Needs review' }));
+    expect(screen.queryByText('damn')).toBeNull();
+  });
+  it('Play stays available while a run writes the film', () => {
+    show({ busy: true });
+    expect(within(item('damn')).getByRole('button', { name: 'Play with effect' }).disabled).toBe(false);
+  });
+  it('rows can be selected for a multi-row send-back; scenes cannot', () => {
+    const onPick = vi.fn();
+    show({ picked: new Set(), onPick });
+    fireEvent.click(within(item('damn')).getByRole('checkbox', { name: 'Select damn' }));
+    expect(onPick).toHaveBeenCalledWith('cue:w1', true);
+    expect(within(item('Fight')).queryByRole('checkbox')).toBeNull();
+  });
+  it('shows "Sent back" on rows in a send-back run, and an out-of-date audit as such', () => {
+    show({ sentBack: { 'cue:w1': 'refine' }, audit: { ok: true, fresh: false, running: false } });
+    expect(within(item('damn')).getByText('Sent back: refine')).toBeTruthy();
+    expect(screen.getByText('Audit out of date')).toBeTruthy();
   });
 });

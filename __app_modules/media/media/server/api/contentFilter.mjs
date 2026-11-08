@@ -38,6 +38,16 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     }));
   }
 
+  // A nudge sent with an effect is only saved if the effect is valid (nothing half-applied).
+  const CUE_EFFECTS = new Set(['profile', 'off', 'mute', 'bleep', 'blur', 'full-blur', 'skip']);
+  const SCENE_EFFECTS = new Set(['profile', 'off', 'blackout', 'skip']);
+  router.put(['/:ratingKey/cues/:id', '/:ratingKey/scenes/:id'], (req, res, next) => {
+    const effect = req.body?.effect;
+    const allowed = req.path.includes('/scenes/') ? SCENE_EFFECTS : CUE_EFFECTS;
+    if ('nudge' in (req.body || {}) && effect != null && !allowed.has(effect)) return res.status(400).json({ error: `unknown effect: ${effect}` });
+    next();
+  });
+
   // GET /library?stage=&q= -> { films: [{ ratingKey, title, year, stage, job, reviewed }] } (Admin library)
   if (contentFilterLibrary) {
     router.get('/library', asyncHandler(async (req, res) => {

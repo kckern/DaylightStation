@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Badge, Button, Checkbox, Group, SegmentedControl, Select, Stack, Text, UnstyledButton } from '@mantine/core';
-import { previewStore } from '../../content-filter/preview/previewStore.js';
-import { effectChip } from '../../content-filter/preview/effectKinds.js';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
+import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 
 /**
  * Every part the filter acts on in one film, as the household gets it (the latest audit's rows),
@@ -30,18 +30,19 @@ export function timecode(t) {
   return `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
 }
 
-export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {}, busy = false }) {
+export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {},
+  picked = null, onPick = null, sentBack = {} }) {
   const [kind, setKind] = useState('all');
   const [group, setGroup] = useState(null);
   const [needs, setNeeds] = useState(false);
   const groups = useMemo(() => [...new Set(rows.map((r) => r.group).filter(Boolean))].sort(), [rows]);
   const shown = rows.filter((r) => (kind === 'all' || r.kind === kind) && (!group || r.group === group)
-    && (!needs || !r.reviewed || r.unsure.length > 0));
+    && (!needs || !r.reviewed));
   return (
     <Stack gap="xs" className="cf-review__list">
       <Group justify="space-between" wrap="wrap" gap="xs">
         <Text fw={600}>{reviewed} of {total} reviewed</Text>
-        {audit && !audit.fresh ? <Text size="sm" c="dimmed">Audit running…</Text>
+        {audit && !audit.fresh ? <Text size="sm" c="dimmed">{audit.running ? 'Audit running…' : 'Audit out of date'}</Text>
           : audit && !audit.ok ? <Text size="sm" c="red">The audit has not passed</Text> : null}
       </Group>
       <Group gap="xs" wrap="wrap">
@@ -54,6 +55,9 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
           <Group justify="space-between" wrap="nowrap" gap="xs" align="flex-start">
             <Stack gap={2} className="cf-review__row-main">
               <Group gap={6} wrap="wrap">
+                {onPick && r.kind !== 'scenes' ? (
+                  <Checkbox size="xs" aria-label={`Select ${r.label}`} checked={!!picked?.has(r.id)} onChange={(e) => onPick(r.id, e.currentTarget.checked)} />
+                ) : null}
                 {r.reviewed ? <Text span aria-label="Reviewed" className="cf-review__tick">✓</Text> : null}
                 <UnstyledButton onClick={() => onSelect(r)} aria-pressed={r.id === selectedId} className="cf-review__pick">
                   <Text fw={500} size="sm" span>{r.label}</Text>
@@ -64,13 +68,14 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                 <Text size="xs" className="cf-review__time">{timecode(r.in)}–{timecode(r.out)}</Text>
                 <Badge size="xs" variant="light">{effectChip(r.effect)}</Badge>
                 {r.handFixed ? <Badge size="xs" variant="outline">hand-fixed</Badge> : null}
+                {sentBack[r.id] ? <Badge size="xs" color="blue" variant="light">Sent back: {sentBack[r.id]}</Badge> : null}
                 {r.unsure.map((u) => <Badge key={u} size="xs" color="orange" variant="light">{UNSURE_LABELS[u] || u}</Badge>)}
               </Group>
               {r.card ? <Text size="xs" c="dimmed">{r.card.approved ? 'Card: ' : 'Draft card: '}{r.card.text}</Text> : null}
             </Stack>
             <Stack gap={4}>
-              <Button size="compact-xs" variant="light" disabled={busy} onClick={() => { onSelect(r); previewStore.jumpToCue({ in: r.in }); }}>Play with effect</Button>
-              <Button size="compact-xs" variant="subtle" disabled={busy} onClick={() => { onSelect(r); previewStore.peek(r.peekId); }}>Play without</Button>
+              <Button size="compact-xs" variant="light" onClick={() => { onSelect(r); previewStore.jumpToCue({ in: r.in }); }}>Play with effect</Button>
+              <Button size="compact-xs" variant="subtle" onClick={() => { onSelect(r); previewStore.peek(r.peekId); }}>Play without</Button>
             </Stack>
           </Group>
         </div>

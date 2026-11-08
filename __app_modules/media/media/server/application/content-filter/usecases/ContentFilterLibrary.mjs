@@ -6,12 +6,14 @@
 import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { countReviewed } from './ContentFilterReview.mjs';
 
-export class ContentFilterLibrary {
-  #repo; #jobs; #digestOf; #index = null; #facts = new Map();
+export const INDEX_TTL_MS = 10 * 60 * 1000;
 
-  constructor({ contentFilterRepository, jobs, digestOf }) {
+export class ContentFilterLibrary {
+  #repo; #jobs; #digestOf; #now; #index = null; #indexAt = 0; #facts = new Map();
+
+  constructor({ contentFilterRepository, jobs, digestOf, now = () => Date.now() }) {
     if (!contentFilterRepository || !jobs || !digestOf) throw new Error('ContentFilterLibrary requires contentFilterRepository, jobs and digestOf');
-    this.#repo = contentFilterRepository; this.#jobs = jobs; this.#digestOf = digestOf;
+    this.#repo = contentFilterRepository; this.#jobs = jobs; this.#digestOf = digestOf; this.#now = now;
   }
 
   /** Forget one film's facts (or everything, with no key: the index too). */
@@ -21,7 +23,8 @@ export class ContentFilterLibrary {
   }
 
   async #titles() {
-    if (this.#index) return this.#index;
+    // New matches and overrides appear within INDEX_TTL_MS without a restart.
+    if (this.#index && this.#now() - this.#indexAt <= INDEX_TTL_MS) return this.#index;
     const out = new Map();
     for (const [key, m] of Object.entries((await this.#repo.getMatchIndex())?.map || {})) {
       const rk = key.replace(/^plex:/, '');
@@ -29,6 +32,7 @@ export class ContentFilterLibrary {
     }
     for (const rk of await this.#repo.listOverrides()) if (!out.has(String(rk))) out.set(String(rk), null);
     this.#index = out;
+    this.#indexAt = this.#now();
     return out;
   }
 

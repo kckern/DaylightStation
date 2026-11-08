@@ -184,7 +184,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/games/chess/browser/ChessBoard.jsx': null,
   '__app_modules/games/chess/browser/pieceAssets.js': null,
   '__app_modules/media/media/browser/admin/playback-hub/PlaybackHubPage.jsx': null,
-  '__app_modules/media/media/browser/admin/content-filter/ContentFilterAdmin.jsx': null,
+  '__app_modules/media/media/browser/content-filter/adminWorkspace.mjs': null,
   '__capabilities/screen-host/server/adapters/persistence/FilesystemScreensRepository.mjs': 'adapters',
   '__app_modules/media/art/server/adapters/FilesystemArtScreenPresetRepository.mjs': 'adapters',
   '__app_modules/media/art/server/application/screenPresetEnricher.mjs': 'application',

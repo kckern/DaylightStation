@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Anchor, Badge, Button, Group, Select, Stack, Table, Text, TextInput } from '@mantine/core';
-import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
-import { useApiResource } from '../../../../../../frontend/src/lib/hooks/useApiResource.js';
-import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger } from '../../../../../../frontend/src/lib/ui/index.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
 import './ContentFilterAdmin.scss';
 
 /**
