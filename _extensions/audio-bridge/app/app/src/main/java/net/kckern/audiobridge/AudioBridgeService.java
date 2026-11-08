@@ -41,6 +41,8 @@ public class AudioBridgeService extends Service {
     private static final int[] INIT_RETRY_DELAYS_MS = {500, 1000, 2000};
 
     private AudioBridgeServer wsServer;
+    private BluetoothControls bluetooth;
+    private ControlServer controlServer;
 
     @Override
     public void onCreate() {
@@ -69,6 +71,13 @@ public class AudioBridgeService extends Service {
         startForeground(NOTIFICATION_ID, notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
 
+        if (controlServer == null) {
+            bluetooth = new BluetoothControls(this);
+            bluetooth.start();
+            controlServer = new ControlServer(8766, new BluetoothController(bluetooth, System::currentTimeMillis));
+            try { controlServer.start(5000, false); Log.i(TAG, "bluetooth.control.started"); }
+            catch (java.io.IOException e) { controlServer.stop(); controlServer = null; bluetooth.close(); bluetooth = null; Log.e(TAG, "bluetooth.control.start-failed", e); }
+        }
         if (wsServer == null) {
             wsServer = new AudioBridgeServer(new InetSocketAddress(WS_PORT));
             wsServer.start();
@@ -81,6 +90,8 @@ public class AudioBridgeService extends Service {
     @Override
     public void onDestroy() {
         Log.i(TAG, "Service destroying");
+        if (controlServer != null) controlServer.stop();
+        if (bluetooth != null) bluetooth.close();
         if (wsServer != null) {
             try {
                 wsServer.stop();

@@ -101,6 +101,7 @@ import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from "../../__app_modules/media/media/server/composition/hubFleetBridge.mjs";
 import { createPlexHubSessions } from "../../__app_modules/media/media/server/composition/plexHubSessions.mjs";
+import { createArcadeBluetoothRuntime } from "../../__app_modules/games/arcade/server/composition/arcadeBluetooth.mjs";
 import { createArcadeGameSessionTracking } from "../../__app_modules/games/arcade/server/composition/arcadeGameSessions.mjs";
 import { createArcadeGameSessionsRouter } from "../../__app_modules/games/arcade/server/api/arcadeGameSessions.mjs";
 import { createApiRouters } from "./5_composition/modules/contentApi.mjs";
@@ -2408,6 +2409,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // HTTP surface: push ingress for surfaces that report their own lifecycle,
   // plus session and health reads. Present even when nothing is metered, so a
   // caller gets an explicit 503 rather than a 404 that looks like a typo.
+  v1Routers['arcade-bluetooth'] = createArcadeBluetoothRuntime({
+    devicesConfig,
+    logger: rootLogger.child({ module: 'arcade-bluetooth-api' }),
+  });
+
   v1Routers['arcade-game-sessions'] = createArcadeGameSessionsRouter({
     recordObservation: arcadeGameSessionTracking.recordObservation,
     sessions: arcadeGameSessionTracking.sessions,

@@ -11,12 +11,19 @@ public class MainActivity extends Activity {
 
     private static final String TAG = "AudioBridge";
     private boolean serviceStarted = false;
+    private boolean permissionsRequested = false;
 
     @Override
     protected void onResume() {
         super.onResume();
 
         if (serviceStarted) return;
+        String[] permissions = android.os.Build.VERSION.SDK_INT >= 31
+            ? new String[]{"android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT", "android.permission.RECORD_AUDIO"}
+            : new String[]{"android.permission.ACCESS_FINE_LOCATION", "android.permission.RECORD_AUDIO"};
+        java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+        for (String p : permissions) if (checkSelfPermission(p) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(p);
+        if (!permissionsRequested && !missing.isEmpty()) { permissionsRequested = true; requestPermissions(missing.toArray(new String[0]), 1); return; }
         serviceStarted = true;
 
         Log.i(TAG, "MainActivity onResume — restarting service from foreground context");

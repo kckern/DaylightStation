@@ -39,6 +39,8 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/media/server/domain/value-objects/PlexClientIdentity.mjs': 'domain',
   '__capabilities/book-catalog/server/composition/booksApi.mjs': 'composition',
   '__app_modules/games/arcade/server/api/arcadeGameSessions.mjs': 'api',
+  '__app_modules/games/arcade/server/composition/arcadeBluetooth.mjs': 'composition',
+  '__app_modules/games/emulator/browser/bluetooth.mjs': null,
   '__capabilities/exercise-catalog/server/adapters/index.mjs': 'adapters',
   '__capabilities/screen-host/server/application/ScreensQueryService.mjs': 'application',
   '__app_modules/games/party-games/server/application/effects/partyGamesBuzzerInput.mjs': 'application',
