@@ -19,6 +19,7 @@ import { useSessionSourceContext } from "../../../../../__capabilities/playback/
 import { getScreenItemActions } from './screenItemActions.js';
 
 let _logger;
+import { withLoopAlias } from './loopAlias.js';
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'ScreenActionHandler' });
   return _logger;
@@ -273,7 +274,8 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   // handles an in-place swap (play-now) or on-deck push (play-next), preserving
   // queue state.
   // Idle player → mount a fresh Player overlay.
-  const handleMediaQueueOp = useCallback((payload) => {
+  const handleMediaQueueOp = useCallback((rawPayload) => {
+    const payload = withLoopAlias(rawPayload);
     const op = payload?.op;
 
     if (op === 'item-action' || op === 'undo') {
