@@ -57,4 +57,15 @@ describe('ContentFilterJobs with a filter worker', () => {
     await app.watchOnce();
     expect((await app.record('1')).runs[0].status).toBe('interrupted');
   });
+  it('audit and card-draft stages run in the app at once, even in worker mode', async () => {
+    const c = cli(); const store = memStore();
+    const app = make({ store, cli: c, draftCards: async () => ({ drafted: 2 }) });
+    await app.enqueue({ ratingKey: '1', kind: 'stage', stage: 'audit' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(c.calls).toEqual([['audit', '1', '--json']]);
+    expect((await app.record('1')).runs[0].status).toBe('done');
+    await app.enqueue({ ratingKey: '1', kind: 'stage', stage: 'cards' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect((await app.record('1')).runs[1]).toMatchObject({ status: 'done', steps: [{ name: 'cards', status: 'done', note: '2 drafted' }, { name: 'audit', status: 'done' }] });
+  });
 });
