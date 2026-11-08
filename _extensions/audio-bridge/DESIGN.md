@@ -64,6 +64,20 @@ TCP keepalive handles dead connection detection. The format header on connect is
 - Single external dependency: `org.java-websocket:Java-WebSocket`
 - Target: sideload via `adb install`
 
+### Microphone on Android 11: overlay anchor (required)
+
+A foreground service started from the background (boot, or while FKB's kiosk owns the screen) is denied the mic on Android 11 (`allowWhileInUsePermissionInFgs=false`, `AudioRecord init failed`). The system decides this when the start is *requested*, so `OverlayAnchor` shows a 1x1 transparent overlay window in the caller (`BootReceiver`, `MainActivity`) and the start follows 400 ms later. Verified on the Shield: boot start and launcher start both stream.
+
+One-time grant after installing (survives reboots and `adb install -r`):
+
+```bash
+adb shell appops set net.kckern.audiobridge SYSTEM_ALERT_WINDOW allow
+adb shell pm grant net.kckern.audiobridge android.permission.RECORD_AUDIO
+adb shell pm grant net.kckern.audiobridge android.permission.ACCESS_FINE_LOCATION
+```
+
+Build: `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew assembleDebug` in `app/`. The APK is debug-signed; reinstalling over the live app needs the original debug keystore (cert SHA-256 starting `3663E947`), otherwise Android refuses the update.
+
 ---
 
 ## Device Configuration

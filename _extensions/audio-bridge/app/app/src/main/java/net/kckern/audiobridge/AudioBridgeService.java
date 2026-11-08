@@ -55,12 +55,11 @@ public class AudioBridgeService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "Service starting");
 
-        // Promote to foreground service with MICROPHONE type. This requires
-        // the Activity to have been in the foreground when startForegroundService()
-        // was called (createdFromFg=true). On Android 11 (Shield TV API 30),
-        // foreground services started from background are denied while-in-use
-        // permissions (microphone). The Activity uses Theme.Translucent and
-        // delays finish() to ensure it reaches onResume() before starting us.
+        // Android 11 denies the microphone to a foreground service started
+        // from the background (boot, or while FKB's kiosk owns the screen).
+        // The callers show an OverlayAnchor window before requesting the
+        // start; ensure() here covers a start from anywhere else.
+        OverlayAnchor.ensure(this);
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("Audio Bridge")
                 .setContentText("Streaming microphone audio")
@@ -90,6 +89,7 @@ public class AudioBridgeService extends Service {
     @Override
     public void onDestroy() {
         Log.i(TAG, "Service destroying");
+        OverlayAnchor.remove(this);
         if (controlServer != null) controlServer.stop();
         if (bluetooth != null) bluetooth.close();
         if (wsServer != null) {

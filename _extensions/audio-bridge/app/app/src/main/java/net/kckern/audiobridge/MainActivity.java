@@ -34,10 +34,16 @@ public class MainActivity extends Activity {
         // from a background context (createdFromFg=false), which blocks mic access
         // on Android 11+. Stopping and recreating it from this foreground Activity
         // gives it createdFromFg=true and allowWhileInUsePermissionInFgs=true.
-        stopService(serviceIntent);
-        startForegroundService(serviceIntent);
-        Log.i(TAG, "Foreground service started from Activity");
+        // The overlay goes up first and gets time to register, so the start
+        // counts as foreground even if FKB takes the screen back meanwhile.
+        OverlayAnchor.ensure(this);
+        Handler handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(() -> {
+            stopService(serviceIntent);
+            startForegroundService(serviceIntent);
+            Log.i(TAG, "Foreground service started from Activity");
+        }, OverlayAnchor.SETTLE_MS);
 
-        new Handler(Looper.getMainLooper()).postDelayed(this::finish, 1000);
+        handler.postDelayed(this::finish, OverlayAnchor.SETTLE_MS + 1000);
     }
 }
