@@ -486,7 +486,8 @@ function releaseEntered(entered, { el, sfx, transport }, mem) {
   entered.clear();
 }
 
-export const baseId = (id) => String(id).split(/[#@]/)[0];
+export { baseId } from './contentFilter.js';
+import { baseId } from './contentFilter.js';
 
 /** Does bypass `id` cover `cue` (its id, its base id, or its scene)? */
 const coveredBy = (cue, id) => cue.id === id || cue.scene === id || baseId(cue.id) === id;

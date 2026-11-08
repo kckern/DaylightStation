@@ -41,7 +41,7 @@ export function overlapPairs(cues) {
  * @param {boolean} [p.reask] - ignore `existing` and ask every overlapping pair again
  * @param {(a: object, b: object, overlap: {in: number, out: number}) => Promise<boolean|null>} p.ask
  * @param {(entry: object) => void} [p.log]
- * @returns {Promise<{ subjects: Record<string, string|null>, groups: string[][], asked: number, yes: number }>}
+ * @returns {Promise<{ subjects: Record<string, string|null>, groups: string[][], asked: number, yes: number, unsure: string[][] }>}
  *   subjects: cue id -> subject id (null = ungrouped, only set where a re-ask removed one);
  *   unchanged cues are omitted.
  */
@@ -57,13 +57,17 @@ export async function groupSubjects({ cues, existing = {}, reask = false, ask, l
   for (const id of parent.keys()) if (prior[id]) bySubject.set(prior[id], [...(bySubject.get(prior[id]) || []), id]);
   for (const ids of bySubject.values()) for (const id of ids.slice(1)) union(ids[0], id);
   let asked = 0; let yes = 0;
+  const unsure = [];
   for (const { a, b, overlap } of pairs) {
     if (find(a.id) === find(b.id)) continue;
     asked++;
-    let same = false;
-    try { same = (await ask(a, b, overlap)) === true; } catch (err) {
+    let answer = null;
+    try { answer = await ask(a, b, overlap); } catch (err) {
       log({ event: 'refine.subject.error', a: a.id, b: b.id, error: err.message, ...(err.code === 'JEV_TIMEOUT' ? { timeout: true } : {}) });
     }
+    const same = answer === true;
+    // Anything but a plain yes or no (abstain, timeout, error) is for a person to look at.
+    if (answer !== true && answer !== false) unsure.push([a.id, b.id]);
     log({ event: 'refine.subject.pair', a: a.id, b: b.id, same });
     if (same) { yes++; union(a.id, b.id); }
   }
@@ -78,12 +82,12 @@ export async function groupSubjects({ cues, existing = {}, reask = false, ask, l
     for (const id of ids) subjects[id] = subject;
     groups.push(ids);
   }
-  return { subjects, groups, asked, yes };
+  return { subjects, groups, asked, yes, unsure };
 }
 
 /**
  * The `ask` that uses Jev: one frame from the overlap plus both labels. Only a confident yes
- * counts; timeout, error and abstain are "no".
+ * groups; timeout, error and abstain keep them apart and are recorded as unsure.
  * @param {object} p
  * @param {{ evaluate: Function }} p.decisions - IDecisionGateway
  * @param {{ frames: Function }} p.media
@@ -105,6 +109,7 @@ export function jevSameSubject({ decisions, media, src, timebase, width: baseWid
     const res = await decisions.evaluate(built.state, built.questions, { timeout: timeoutMs });
     const value = built.read(res.answers);
     log({ step: 'same-subject', a: a.id, b: b.id, v: QUESTION_VERSION, model: res.model, ms: Date.now() - t0, value });
-    return value.v === true;
+    // true | false | null (abstain): only a yes groups; null is recorded as unsure.
+    return value.v;
   };
 }

@@ -1,5 +1,5 @@
 /**
- * contentfilter scenes <ratingKey> --src <file> [--same-scene] [--out <json>] [--write]
+ * contentfilter scenes <ratingKey> [--src <file>] [--same-scene] [--out <json>] [--write]
  *
  * Group a title's refined tags into scenes (edges on shot cuts, situation and
  * picture levels per group, all judged by the decision model) and, with
@@ -13,15 +13,15 @@ import { FfmpegRefineMedia } from '../../server/adapters/content-filter/FfmpegRe
 import { SceneBuilder } from '../../server/application/content-filter/refine/SceneBuilder.mjs';
 import { carryForward } from '../../server/domain/content-filter/refine/scenes.mjs';
 import { refinedEdlName } from '../../server/domain/content-filter/refine/refinedEdl.mjs';
+import { prepareCopy } from './copySetup.mjs';
 
-export const SCENES_USAGE = `Usage: contentfilter scenes <ratingKey> --src <file> [--same-scene] [--out <json>] [--write] [--trust situation,picture --evidence <ref>]
+export const SCENES_USAGE = `Usage: contentfilter scenes <ratingKey> [--src <file|url>] (default: the Plex part) [--same-scene] [--out <json>] [--write] [--trust situation,picture --evidence <ref>]
 
 --trust records which axes calibration showed can be acted on (sceneCalibration);
 the player uses an untrusted axis for nothing. Without it the stored value is kept.`;
 const GROUP_SHORT = { violence_blood_gore: 'violence', sex_nudity_immodesty: 'nudity', sex_any: 'sexual' };
 
-export async function runScenes({ rk, flags, args, mediaFilterDir, dataFilterDir, getDecisionGateway }) {
-  if (!flags.src) throw new Error('scenes needs --src <media file>');
+export async function runScenes({ rk, flags, args, mediaFilterDir, dataFilterDir, getDecisionGateway, loadPlexConfig, getJson, prepare = prepareCopy }) {
   const edl = yaml.load(readFileSync(path.join(mediaFilterDir, 'edl', `${rk}.edl.yml`), 'utf8'));
   const refinedPath = path.join(mediaFilterDir, 'refined', refinedEdlName(edl));
   if (!existsSync(refinedPath)) throw new Error(`No refined EDL for ${rk}; run refine first`);
@@ -33,11 +33,13 @@ export async function runScenes({ rk, flags, args, mediaFilterDir, dataFilterDir
   const segments = existsSync(wordsPath) ? JSON.parse(readFileSync(wordsPath, 'utf8')).segments || [] : [];
   if (!segments.length) console.error(`⚠ no transcript at ${wordsPath}: situations are judged from tags alone`);
 
+  // No --src: the Plex part URL, as refine does (no transcript needed: words come from refine).
+  const src = flags.src || (await prepare({ rk, flags, mediaFilterDir, loadPlexConfig, getJson, verb: 'Building scenes for', skipTranscript: true })).src;
   const decisions = await getDecisionGateway({ logger: { debug() {}, info() {}, warn: console.warn, error: console.error } });
   if (!decisions) throw new Error('No decision model configured (system auth jev.api_key).');
   mkdirSync(workDir, { recursive: true });
   const builder = new SceneBuilder({
-    media: new FfmpegRefineMedia(), decisions, src: flags.src, sync: override.sync, segments, title: edl.title,
+    media: new FfmpegRefineMedia(), decisions, src, sync: override.sync, segments, title: edl.title,
     log: (e) => appendFileSync(path.join(workDir, 'log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), ...e })}\n`),
     options: { sameScene: args.includes('--same-scene') },
   });

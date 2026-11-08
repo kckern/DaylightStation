@@ -164,3 +164,13 @@ describe('computeAudit certification counts nudges', () => {
     expect(r.certification).toEqual({ level: 'none', blocking: ['va1'] });
   });
 });
+
+describe('computeAudit rows', () => {
+  it('carries the review rows for the resolved cues', () => {
+    const edl = { cues: [{ id: 'w1', type: 'mute', category: 'language/x', label: 'damn', in: 10, out: 10.4, precision: 'ms' }] };
+    const r = computeAudit({ edl, profile: { categories: { 'language/x': { effect: 'mute' } } }, override: {},
+      refineReview: { items: [{ id: 'w1', status: 'unknown' }] } });
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ id: 'cue:w1', effect: 'mute', unsure: ['refine-unknown'] });
+  });
+});

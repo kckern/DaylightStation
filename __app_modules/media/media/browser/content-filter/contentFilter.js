@@ -46,6 +46,9 @@ const PARAM_KEYS = ['sound', 'rect', 'style', 'level', 'text'];
  * Accepts either `{ effect }` or the legacy `{ action }` shorthand.
  * @returns {{effect: string}|null} rule (with normalized `effect`) or null when off/unmatched.
  */
+/** A resolved piece's source cue id: `va123#0@4` / `va123#m0` -> `va123`. */
+export const baseId = (id) => String(id).split(/[#@]/)[0];
+
 export function resolveEffect(categoryPath, profile) {
   const rules = profile?.categories || {};
   const segments = String(categoryPath || '').split('/');

@@ -166,6 +166,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
   const previous = existsSync(refinedPath) ? yaml.load(readFileSync(refinedPath, 'utf8')) : null;
   // R6: shown tags overlapping in time that Jev says are one thing on screen share a subject.
   let subjects = {};
+  let subjectsUnsure = [];
   if (!args.includes('--no-subjects')) {
     const kindOf = Object.fromEntries(results.map((r) => [r.id, r.kind]));
     const prevCues = new Map((previous?.cues || []).map((c) => [c.id, c]));
@@ -181,6 +182,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     const ask = jevSameSubject({ decisions, media, src, timebase, aspect: probe.width / probe.height, log });
     const g = await groupSubjects({ cues: spanned, existing, reask: args.includes('--resubject'), ask, log });
     subjects = g.subjects;
+    subjectsUnsure = g.unsure;
     console.error(`Subjects: ${g.asked} pairs asked, ${g.yes} same; ${g.groups.length} group(s)${g.groups.length ? ` (${g.groups.map((x) => x.join('+')).join(', ')})` : ''}`);
   }
   const refined = buildRefinedEdl({
@@ -194,7 +196,7 @@ export async function runRefine({ rk, flags, args, dataFilterDir, mediaFilterDir
     + `${cert.blocking ? `, ${cert.blocking.length} mutes still approximate` : ''}) -> ${refinedPath}`);
   const reviewPath = path.join(dataFilterDir, 'review', `${rk}.refine.yml`);
   mkdirSync(path.dirname(reviewPath), { recursive: true });
-  writeFileSync(reviewPath, yaml.dump({ contentId: `plex:${rk}`, part: partId, generatedAt: new Date().toISOString(), counts, items: review }, { lineWidth: 140 }));
+  writeFileSync(reviewPath, yaml.dump({ contentId: `plex:${rk}`, part: partId, generatedAt: new Date().toISOString(), counts, items: review, subjectsUnsure }, { lineWidth: 140 }));
   console.error(`✓ override -> ${overridePath}\n✓ review (${review.length}) -> ${reviewPath}`);
   return { results, counts };
 }

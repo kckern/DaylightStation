@@ -1106,7 +1106,10 @@ async function main() {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error(SCENES_USAGE); process.exit(1); }
     try {
-      await runScenes({ rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir(), getDecisionGateway });
+      await runScenes({
+        rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir(), getDecisionGateway, loadPlexConfig,
+        getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+      });
     } catch (err) { console.error(`scenes ${rk} failed: ${err.message}`); process.exit(1); }
     return;
   }
