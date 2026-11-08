@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  hrTrendRange, monotonePath, thresholdLines, trendReady, trendTransform, trendVisible, zoneBands, zoneBarState,
+  hrTrendRange, monotonePath, trendReady, trendTransform, trendVisible, zoneBands, zoneBarState,
   TREND_OFF_PX, TREND_ON_PX,
 } from './hrTrend.js';
 import { buildPrefix } from './hrTrendScale.js';
@@ -24,12 +24,6 @@ describe('hrTrendRange', () => {
   it('pads data-only ranges and never collapses to a flat line', () => {
     expect(hrTrendRange([{ hr: 120 }, { hr: 122 }], [])).toEqual([111, 131]);
     expect(hrTrendRange([], [])).toBeNull();
-  });
-});
-
-describe('thresholdLines', () => {
-  it('places threshold guides inside the range only', () => {
-    expect(thresholdLines([100, 200], [0, 100, 150, 250])).toEqual([50]);
   });
 });
 

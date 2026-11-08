@@ -114,14 +114,6 @@ export function trendTransform([lo, hi]) {
   return `matrix(1 0 0 ${+a.toFixed(4)} 0 ${+b.toFixed(4)})`;
 }
 
-export function thresholdLines(range, thresholds = []) {
-  if (!range) return [];
-  const [lo, hi] = range;
-  return thresholds
-    .filter((t) => Number.isFinite(t) && t > lo && t < hi)
-    .map((t) => Math.round((100 - ((t - lo) / (hi - lo)) * 100) * 10) / 10);
-}
-
 // Fire has no next zone, so the progress bar would be an empty track. On
 // committed Fire it renders full and pulses instead.
 export function zoneBarState({ committedZoneId, showBar, progress }) {
