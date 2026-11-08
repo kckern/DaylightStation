@@ -81,11 +81,47 @@ describe('Charades deterministic selection', () => {
     expect(result.order).toHaveLength(1);
   });
 
+  it('deals early-reader words only to reader participants, and never to anyone else', () => {
+    const withReader = [
+      ...challenges,
+      ...Array.from({ length: 5 }, (_, index) => ({ id: `reader-${index}`, activity: 'charades', prompt: `Hop ${index}`, category: 'early-reader' })),
+    ];
+    const turnOrder = createSeededRoundOrder(performers, 3, 42);
+    const result = createCharadesChallengeOrder({
+      challenges: withReader, turnOrder: turnOrder.order, cluesPerTurn: 1,
+      imageParticipantIds: ['a'], readerParticipantIds: ['b'], seed: turnOrder.rngState,
+    });
+    result.order.forEach((challengeIndex, turn) => {
+      const performer = turnOrder.order[turn];
+      const clue = withReader[challengeIndex];
+      const expected = performer === 'a' ? 'image' : performer === 'b' ? 'reader' : 'text';
+      expect(result.presentations[turn]).toBe(expected);
+      expect(clue.category === 'early-reader').toBe(expected === 'reader');
+      expect(Boolean(clue.decoder?.image)).toBe(expected === 'image');
+    });
+  });
+
+  it('uses unplayed early-reader words first, like the other piles', () => {
+    const readerWords = Array.from({ length: 4 }, (_, index) => ({ id: `reader-${index}`, activity: 'charades', prompt: `Run ${index}`, category: 'early-reader' }));
+    const result = createCharadesChallengeOrder({
+      challenges: [...challenges, ...readerWords], turnOrder: ['r', 'r'], cluesPerTurn: 1,
+      readerParticipantIds: ['r'], historyIds: ['reader-0', 'reader-1'], seed: 7,
+    });
+    const picked = result.order.map((index) => [...challenges, ...readerWords][index].id).sort();
+    expect(picked).toEqual(['reader-2', 'reader-3']);
+  });
+
   it('rejects a missing pool instead of changing the configured presentation', () => {
     const textOnly = challenges.filter(({ decoder }) => !decoder);
     expect(() => createCharadesChallengeOrder({
       challenges: textOnly, turnOrder: ['preschooler'], cluesPerTurn: 1,
       imageParticipantIds: ['preschooler'], seed: 1,
     })).toThrow('image challenge pool');
+  });
+
+  it('rejects a reader participant when the bank has no early-reader words', () => {
+    expect(() => createCharadesChallengeOrder({
+      challenges, turnOrder: ['kid'], cluesPerTurn: 1, readerParticipantIds: ['kid'], seed: 1,
+    })).toThrow('reader challenge pool');
   });
 });
