@@ -17,14 +17,6 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
   }
   const router = express.Router();
 
-  if (contentFilterScenes) {
-    // GET / -> { titles }: every title with a refined filter (Admin index).
-    router.get('/', asyncHandler(async (req, res) => {
-      const profileName = String(req.query.profile || 'family').replace(/[^a-z0-9_-]/gi, '');
-      res.json({ titles: await contentFilterScenes.titles({ profileName }) });
-    }));
-  }
-
   // Every write to a film is refused while a run is writing its files (the child writes the same
   // override and refined EDL). A write that changes what the household gets re-audits the film;
   // review marks, sign-off and runs do not.

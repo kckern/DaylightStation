@@ -42,11 +42,6 @@ describe('content-filter scenes routes', () => {
   });
   afterAll(() => rmSync(tmpRoot, { recursive: true, force: true }));
 
-  test('lists titles with a refined filter', async () => {
-    const res = await request(app).get('/cf/');
-    expect(res.body.titles).toEqual([{ ratingKey: '77', title: 'Film', year: null, certification: 'none', scenes: 1, hiding: 1, cardsApproved: 0 }]);
-  });
-
   test('lists scenes with the profile effect', async () => {
     const res = await request(app).get('/cf/77/scenes');
     expect(res.status).toBe(200);

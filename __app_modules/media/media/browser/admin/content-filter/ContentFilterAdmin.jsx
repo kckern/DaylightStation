@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Anchor, Badge, Button, Group, SegmentedControl, Stack, Table, Text, TextInput } from '@mantine/core';
+import { Anchor, Badge, Button, Group, SegmentedControl, Stack, Text, TextInput } from '@mantine/core';
 import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
 import { useApiResource } from '../../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger } from '../../../../../../frontend/src/lib/ui/index.js';
@@ -20,36 +20,8 @@ const GROUP = { violence_blood_gore: 'Violence', sex_nudity_immodesty: 'Nudity',
 const EFFECT_LABEL = { blackout: 'Blackout', skip: 'Skip', null: 'Plays' };
 const clock = (t) => (t == null ? '—' : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`);
 
-export function ContentFilterIndex() {
-  const { data, loading, error, reload } = useApiResource(API, { label: 'content filters', logger });
-  if (loading) return <LoadingState label="content filters" rows={3} />;
-  if (error) return <ErrorState error={error} onRetry={reload} label="Content filters" />;
-  const titles = data?.titles ?? [];
-  return (
-    <SectionCard title="Content filter">
-      {!titles.length ? (
-        <EmptyState title="No refined filters yet" hint="A title appears here once refine has written its refined filter." />
-      ) : (
-        <Table highlightOnHover>
-          <Table.Thead>
-            <Table.Tr><Table.Th>Title</Table.Th><Table.Th>Scenes</Table.Th><Table.Th>Hidden</Table.Th><Table.Th>Cards approved</Table.Th><Table.Th>Certified</Table.Th></Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {titles.map((t) => (
-              <Table.Tr key={t.ratingKey}>
-                <Table.Td><Anchor component={Link} to={`/admin/content/filter/${t.ratingKey}`}>{t.title}</Anchor>{t.year ? <Text span c="dimmed" size="sm"> ({t.year})</Text> : null}</Table.Td>
-                <Table.Td>{t.scenes}</Table.Td>
-                <Table.Td>{t.hiding}</Table.Td>
-                <Table.Td>{t.cardsApproved} / {t.hiding}</Table.Td>
-                <Table.Td><Badge size="sm" variant="light" color={t.certification === 'none' ? 'gray' : 'green'}>{t.certification}</Badge></Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      )}
-    </SectionCard>
-  );
-}
+/** The library (Task 6); the film route keeps the scenes view until the review page lands. */
+export { FilterLibrary as ContentFilterLibrary } from './FilterLibrary.jsx';
 
 export function ContentFilterScenes() {
   const { ratingKey } = useParams();

@@ -18,13 +18,12 @@ vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({
   DaylightAPI: async (path, body, method) => { calls.push({ path, body, method }); return { drafted: 0 }; },
 }));
 
-const { ContentFilterIndex, ContentFilterScenes } = await import('./ContentFilterAdmin.jsx');
+const { ContentFilterScenes } = await import('./ContentFilterAdmin.jsx');
 
 const at = (path, el) => render(
   <MantineProvider>
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/admin/content/filter" element={<ContentFilterIndex />} />
         <Route path="/admin/content/filter/:ratingKey" element={el} />
       </Routes>
     </MemoryRouter>
@@ -33,11 +32,6 @@ const at = (path, el) => render(
 
 describe('ContentFilterAdmin', () => {
   beforeEach(() => { calls.length = 0; });
-
-  it('lists titles with links to their scenes', () => {
-    at('/admin/content/filter', null);
-    expect(screen.getByRole('link', { name: 'Film' }).getAttribute('href')).toBe('/admin/content/filter/77');
-  });
 
   it('shows a scene with its levels, draft card and a filtered play link at the copy time', () => {
     at('/admin/content/filter/77', <ContentFilterScenes />);

@@ -117,25 +117,6 @@ export class ContentFilterScenes {
   }
 
   /** Titles with a refined filter, for the Admin index. */
-  async titles({ profileName = 'family' } = {}) {
-    const out = [];
-    for (const ratingKey of await this.#repo.listOverrides()) {
-      const t = await this.#load(ratingKey, profileName);
-      if (!t) continue;
-      const trusted = trustedAxes(t.refined);
-      const ov = t.override.sceneOverrides || {};
-      const scenes = t.refined.scenes || [];
-      const hiding = scenes.filter((s) => sceneEffect(s, { profile: t.profile, sceneOverride: ov[s.id] || {}, trusted }));
-      out.push({
-        ratingKey, title: t.refined.title, year: t.refined.year ?? null,
-        certification: t.refined.certification?.level ?? 'none',
-        scenes: scenes.length, hiding: hiding.length,
-        cardsApproved: hiding.filter((s) => ov[s.id]?.card?.text).length,
-      });
-    }
-    return out.sort((a, b) => String(a.title).localeCompare(String(b.title)));
-  }
-
   /** @returns {Promise<null|{ title, calibration, scenes: Array }>} */
   async list({ ratingKey, profileName = 'family' }) {
     const t = await this.#load(ratingKey, profileName);
