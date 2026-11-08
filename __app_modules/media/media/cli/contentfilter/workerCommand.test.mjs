@@ -25,8 +25,15 @@ describe('stageRun', () => {
     const real = mkdtempSync(path.join(os.tmpdir(), 'cf-real-'));
     mkdirSync(path.join(real, 'household', 'auth'), { recursive: true });
     writeFileSync(path.join(real, 'household', 'auth', 'plex.yml'), 'token: t');
+    mkdirSync(path.join(real, 'users', 'kc'), { recursive: true });
+    writeFileSync(path.join(real, 'users', 'kc', 'profile.yml'), 'name: kc');
+    mkdirSync(path.join(real, 'household', 'content-filter', 'overrides'), { recursive: true });
+    writeFileSync(path.join(real, 'household', 'content-filter', 'overrides', '77.yml'), 'live: true');
     const s = stageRun(claimed(), { root: mkdtempSync(path.join(os.tmpdir(), 'cf-stage-')), realDataDir: real });
     expect(readFileSync(path.join(s.dataDir, 'household', 'auth', 'plex.yml'), 'utf8')).toBe('token: t');
+    expect(readFileSync(path.join(s.dataDir, 'users', 'kc', 'profile.yml'), 'utf8')).toBe('name: kc');
+    // The live content-filter folder is never linked: the staged copy is what the run writes.
+    expect(readFileSync(path.join(s.dataDir, 'household', 'content-filter', 'overrides', '77.yml'), 'utf8')).not.toContain('live');
     expect(existsSync(path.join(s.mediaDir, 'content-filter', 'edl', '77.edl.yml'))).toBe(true);
     expect(existsSync(path.join(s.mediaDir, 'content-filter', 'refined', refinedEdlName(edl)))).toBe(true);
     expect(existsSync(path.join(s.mediaDir, 'content-filter', 'refine', '77', 'words-9.json'))).toBe(true);
