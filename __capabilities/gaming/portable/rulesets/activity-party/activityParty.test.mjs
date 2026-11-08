@@ -247,6 +247,8 @@ describe('Activity Party rules', () => {
   });
 
   it('rejects invalid casual settings and missing eligible challenge pools', () => {
+    expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, presentation: { image_participants: ['a'], reader_participants: 'b' } })).toMatchObject({ valid: false });
+    expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, presentation: { image_participants: ['a'], reader_participants: ['a'] } })).toMatchObject({ valid: false });
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, turn_selection: 'random' })).toMatchObject({ valid: false });
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, clues_per_turn: 0 })).toMatchObject({ valid: false });
     expect(activityPartyRuleModule.validateDefinition({ ...casualDefinition, guessing_music: { source: '', volume: 2 } })).toMatchObject({ valid: false });
@@ -255,5 +257,21 @@ describe('Activity Party rules', () => {
       ...casualDefinition,
       challenges: casualDefinition.challenges.filter((challenge) => !challenge.decoder?.image),
     }, { seed: 2, seats: [{ id: 'a' }] })).toThrow('image challenge pool');
+  });
+
+  it('deals early-reader words to presentation.reader_participants', () => {
+    const readerDefinition = {
+      ...casualDefinition,
+      presentation: { image_participants: ['a'], reader_participants: ['b'] },
+      challenges: [
+        ...casualDefinition.challenges,
+        ...Array.from({ length: 4 }, (_, index) => ({ id: `reader-${index}`, activity: 'charades', prompt: `Sit ${index}`, category: 'early-reader' })),
+      ],
+    };
+    expect(activityPartyRuleModule.validateDefinition(readerDefinition)).toMatchObject({ valid: true });
+    const state = activityPartyRuleModule.createInitialState(readerDefinition, { seed: 3, participants: ['a', 'b', 'c'].map((id) => ({ id })) });
+    const turns = state.clue_presentations.map((presentation, index) => [presentation, readerDefinition.challenges[state.challenge_order[index]]]);
+    expect(turns.filter(([p]) => p === 'reader')).toHaveLength(3);
+    expect(turns.every(([p, clue]) => (p === 'reader') === (clue.category === 'early-reader'))).toBe(true);
   });
 });

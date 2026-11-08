@@ -358,13 +358,18 @@ root is distinct from the legacy Party Games sound/media directory.
 
 The corresponding rules use `rounds`, `timer_ms`, `clues_per_turn`,
 `turn_selection: seeded-rounds`, and `presentation.image_participants` for the
-household's image-player IDs. Image and text-only pools are separate, so word
-turns cannot consume picture clues needed by young players.
+household's image-player IDs. An optional `presentation.reader_participants`
+lists beginning readers: they draw only from clues in the `early-reader`
+category (short words a five-year-old can read, e.g. "Hop", "Eat a cake"), and
+those clues never reach the regular word pile. A participant may be in only one
+of the two lists. The image, early-reader and text pools are separate, so word
+turns cannot consume picture clues or early-reader words needed by young players.
+Remember to add `early-reader` to the content's `clue_filter.categories`.
 
 Completed casual Charades turns are recorded in
 `household/gaming/history/charades.yml`. New sessions consume the unused clues
-in each presentation pool before beginning a fresh cycle; the image and text
-pools exhaust independently, and a clue is not repeated merely because old
+in each presentation pool before beginning a fresh cycle; the image,
+early-reader and text pools exhaust independently, and a clue is not repeated merely because old
 session snapshots or replay journals still exist. The session captures the
 history it selected against, so replay remains deterministic when the ledger
 later grows.
