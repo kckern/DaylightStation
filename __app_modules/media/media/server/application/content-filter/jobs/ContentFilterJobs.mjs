@@ -19,7 +19,7 @@ const TAIL = 500;
 
 export class ContentFilterJobs {
   #store; #cli; #film; #digestOf; #draftCards; #clearNudges; #logPath; #logger; #now; #executor; #debounceMs; #schedule;
-  #queue = []; #heavy = null; #audits = new Map(); #auditChain = Promise.resolve(); #locks = new Map(); #settled = new Set();
+  #queue = []; #heavy = null; #audits = new Map(); #auditChain = Promise.resolve(); #locks = new Map(); #settled = new Set(); #audited = new Set();
 
   constructor({ store, cli, film, digestOf, draftCards = null, clearNudges = async () => {}, logPath = () => null,
     logger = console, now = () => new Date(), executor = 'worker', auditDebounceMs = 2000, schedule }) {
@@ -160,6 +160,7 @@ export class ContentFilterJobs {
         ...(report.certification?.blocking ? { blocking: report.certification.blocking } : {}), rows: report.rows || [], failures };
     });
     this.#logger.info?.('content-filter.audit.stored', { ratingKey: rk, ok: report.ok === true, rows: (report.rows || []).length });
+    for (const fn of this.#audited) { try { await fn(rk); } catch (e) { this.#logger.warn?.('content-filter.audit.listener', { ratingKey: rk, error: e.message }); } }
     return true;
   }
 
@@ -216,6 +217,9 @@ export class ContentFilterJobs {
   record(ratingKey) { return this.#store.load(String(ratingKey)); }
 
   onSettled(fn) { this.#settled.add(fn); return () => this.#settled.delete(fn); }
+
+  /** fn(ratingKey) after every stored audit (review marks are pruned against it). */
+  onAudit(fn) { this.#audited.add(fn); return () => this.#audited.delete(fn); }
 
   /** Both lanes drained (tests, shutdown). */
   async idle() {

@@ -10,6 +10,7 @@
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, mergeSettings, LEVELS, LANGUAGE_VALUES, LANGUAGE_GROUPS } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
+import { createTitleQueue } from '../titleQueue.mjs';
 
 export const CARD_MAX_CHARS = 90;
 const EFFECTS = new Set(['off', 'blackout', 'skip']);
@@ -23,24 +24,20 @@ Examples: "George stands up to Biff and knocks him down. Lorraine goes with Geor
 Reply with the sentence only.`;
 
 export class ContentFilterScenes {
-  #repo; #ai; #logger; #clock;
-  #queues = new Map(); // ratingKey -> tail promise: one read-modify-write at a time per title
+  #repo; #ai; #logger; #clock; #queue;
 
   /** Run fn after any earlier write for the same title (two Admin tabs must not clobber each other). */
   #serial(ratingKey, fn) {
-    const prev = this.#queues.get(ratingKey) || Promise.resolve();
-    const next = prev.catch(() => {}).then(fn);
-    this.#queues.set(ratingKey, next);
-    next.finally(() => { if (this.#queues.get(ratingKey) === next) this.#queues.delete(ratingKey); }).catch(() => {});
-    return next;
+    return this.#queue.run(ratingKey, fn);
   }
 
-  constructor({ contentFilterRepository, aiGateway = null, logger = console, clock = () => new Date() } = {}) {
+  constructor({ contentFilterRepository, aiGateway = null, logger = console, clock = () => new Date(), titleQueue = createTitleQueue() } = {}) {
     if (!contentFilterRepository) throw new Error('ContentFilterScenes requires contentFilterRepository');
     this.#repo = contentFilterRepository;
     this.#ai = aiGateway;
     this.#logger = logger;
     this.#clock = clock;
+    this.#queue = titleQueue;
   }
 
   async #load(ratingKey, profileName) {

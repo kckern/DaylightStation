@@ -13,12 +13,15 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
   const { ContentFilterScenes } = await import("../application/content-filter/usecases/ContentFilterScenes.mjs");
   const { ContentFilterArt } = await import("../application/content-filter/usecases/ContentFilterArt.mjs");
   const { ContentFilterJobs } = await import("../application/content-filter/jobs/ContentFilterJobs.mjs");
+  const { ContentFilterReview } = await import("../application/content-filter/usecases/ContentFilterReview.mjs");
+  const { createTitleQueue } = await import("../application/content-filter/titleQueue.mjs");
   const { filterDigest } = await import("../domain/content-filter/filterDigest.mjs");
   const logger = rootLogger.child({ module: 'content-filter-api' });
   const householdDir = configService.getHouseholdPath('');
   const mediaDir = configService.getMediaDir();
   const contentFilterRepository = new FilesystemContentFilterRepository({ householdDir, mediaDir });
-  const contentFilterScenes = new ContentFilterScenes({ contentFilterRepository, aiGateway, logger });
+  const titleQueue = createTitleQueue();
+  const contentFilterScenes = new ContentFilterScenes({ contentFilterRepository, aiGateway, logger, titleQueue });
   const plexClient = contentRegistry?.get?.('plex')?.client || null;
 
   const refinedFor = async (rk) => {
@@ -26,6 +29,7 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
     const ref = edl?.sourceRef;
     return { edl, refined: ref?.workId != null && ref?.tagSetId != null ? await contentFilterRepository.getRefinedEdl(ref) : null };
   };
+  const digestOf = async (rk) => filterDigest({ refined: (await refinedFor(rk)).refined, override: await contentFilterRepository.getOverride(rk) });
   const jobs = new ContentFilterJobs({
     store: new YamlFilterJobStore({ householdDir }),
     cli: new ChildProcessContentFilterCli({ cliPath: CLI_PATH, env: { DAYLIGHT_DATA_DIR: configService.getDataDir(), DAYLIGHT_MEDIA_DIR: mediaDir } }),
@@ -40,7 +44,7 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
         exportArgs: slug ? [slug, '--content-id', `plex:${rk}`, '--out', path.join(mediaDir, 'content-filter', 'edl', `${rk}.edl.yml`)] : null,
       };
     },
-    digestOf: async (rk) => filterDigest({ refined: (await refinedFor(rk)).refined, override: await contentFilterRepository.getOverride(rk) }),
+    digestOf,
     draftCards: aiGateway ? (rk) => contentFilterScenes.draftCards({ ratingKey: rk }) : null,
     clearNudges: async (rk, ids) => {
       const ov = await contentFilterRepository.getOverride(rk);
@@ -58,6 +62,9 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
     schedule: (fn, ms) => setTimeout(fn, ms),
     logger,
   });
+  const contentFilterReview = new ContentFilterReview({ contentFilterRepository, jobs, digestOf, logger, titleQueue });
+  // A landed audit drops review marks whose row moved or went away.
+  jobs.onAudit((rk) => contentFilterReview.pruneMarks(rk));
   // Inline runs die with this process. A worker's runs outlive an app restart; the worker
   // itself marks a run interrupted when its heartbeat goes stale (Task 9).
   if (process.env.CONTENT_FILTER_EXECUTOR === 'inline') await jobs.recover();
@@ -65,6 +72,7 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
     contentFilterArt: plexClient ? new ContentFilterArt({ plex: plexClient, logger }) : null,
     getContentFilter: new GetContentFilter({ contentFilterRepository }),
     contentFilterScenes,
+    contentFilterReview,
     jobs,
     logger,
   });
