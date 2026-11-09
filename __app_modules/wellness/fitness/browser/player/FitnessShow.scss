@@ -898,13 +898,12 @@
             object-fit: cover;
             opacity: 0;
             transform: scale(1.02);
-            filter: brightness(0.7);
-            transition: opacity 400ms ease, transform 600ms ease, filter 600ms ease;
+            // Fade in on opacity/transform only — an animated filter repaints every frame.
+            transition: opacity 400ms ease, transform 600ms ease;
 
             &.loaded {
               opacity: 1;
               transform: scale(1);
-              filter: none;
             }
           }
 
@@ -1157,13 +1156,11 @@
         aspect-ratio: 1 / 1.5;
         opacity: 0;
         transform: scale(1.04);
-        filter: brightness(0.65);
-        transition: opacity 450ms ease, transform 650ms ease, filter 650ms ease;
+        transition: opacity 450ms ease, transform 650ms ease;
 
         &.loaded {
           opacity: 1;
           transform: scale(1);
-          filter: none;
         }
       }
 
