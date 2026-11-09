@@ -52,7 +52,7 @@ export function createSchoolDebriefRouter({ service, grants, teacherGate, audioS
     if (!found) { res.status(404).end(); return; }
     res.type(found.mimeType).send(found.buffer);
   });
-  for (const action of ['excuse', 'reject', 'rescore']) {
+  for (const action of ['excuse', 'reject', 'rescore', 'discussed']) {
     router.post(`/teacher/:learnerId/day/:day/${action}`, express.json(), wrap(async (req) => {
       if (!STUDY_DAY_RE.test(req.params.day)) throw new RouteError('bad day', 400);
       const by = teacher(req, `school.debrief.${action}`);
