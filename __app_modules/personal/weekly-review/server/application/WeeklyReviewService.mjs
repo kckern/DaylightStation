@@ -38,7 +38,7 @@ export class WeeklyReviewService {
     this.sweepStaleDrafts().catch(err => this.#logger.warn?.('weekly-review.sweep.failed', { error: err.message }));
     const start = weekStart || this.#defaultWeekStart();
     // end is INCLUSIVE here — the Immich adapter returns days `start..end` inclusive.
-    // For an 8-day window starting at `start` (= today-8), end is `today-1` (yesterday).
+    // For the default 8-day window starting at `start` (= today-7), end is today.
     const end = this.#addDays(start, 7);
     const bootstrapStart = Date.now();
 
@@ -46,7 +46,7 @@ export class WeeklyReviewService {
 
     // Build date list for the week (inclusive of `end` to match the adapter).
     const dates = [];
-    for (let d = new Date(`${start}T00:00:00Z`); d.toISOString().slice(0, 10) <= end; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(`${start}T00:00:00Z`); d.toISOString().slice(0, 10) <= end; d.setUTCDate(d.getUTCDate() + 1)) {
       dates.push(d.toISOString().slice(0, 10));
     }
 
@@ -326,7 +326,14 @@ export class WeeklyReviewService {
 
   #getRecordingStatus(week) {
     try {
-      const status = this.#reviewStore.getRecordingStatus(week);
+      let status = this.#reviewStore.getRecordingStatus(week);
+      // Until 2026-11-08 the default window was [today-8, today-1], so a review
+      // recorded on the same day is keyed one day before today's window start.
+      // Keep showing it rather than calling this week unrecorded.
+      if (!status.exists) {
+        const legacy = this.#reviewStore.getRecordingStatus(this.#addDays(week, -1));
+        if (legacy.exists) status = { ...legacy, legacyWeek: this.#addDays(week, -1) };
+      }
       if (status.exists) this.#logger.debug?.('weekly-review.recording-status.found', { week, recordedAt: status.recordedAt, duration: status.duration });
       else this.#logger.debug?.('weekly-review.recording-status.none', { week });
       return status;
@@ -337,20 +344,17 @@ export class WeeklyReviewService {
   }
 
   #defaultWeekStart() {
-    // Past 8 days, excluding today. Window = [today-8, today-1].
-    const tz = this.#timezone;
-    const now = new Date();
-    const start = new Date(now);
-    start.setDate(now.getDate() - 8);
-    const year = start.toLocaleString('en-CA', { year: 'numeric', timeZone: tz });
-    const month = start.toLocaleString('en-CA', { month: '2-digit', timeZone: tz });
-    const day = start.toLocaleString('en-CA', { day: '2-digit', timeZone: tz });
-    return `${year}-${month}-${day}`;
+    // The last 8 days INCLUDING today: [today-7, today]. The review is done on
+    // the evening of the day it ends (Sunday), so today's photos belong in it.
+    // (Before 2026-11-08 it was [today-8, today-1] and today never showed.)
+    // 8 days, not 9: the client pages and lays out the grid in 8-day windows.
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: this.#timezone });
+    return this.#addDays(today, -7);
   }
 
   #addDays(dateStr, days) {
     const d = new Date(`${dateStr}T00:00:00Z`);
-    d.setDate(d.getDate() + days);
+    d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().slice(0, 10);
   }
 }
