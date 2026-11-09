@@ -26,6 +26,7 @@ export const schoolDebriefLog = {
   chips: (d) => emit('chips', d),
   stall: (d) => emit('stall', d),
   resume: (d) => emit('resume', d),
+  probeRecovered: (d) => emit('probe.recovered', d),
   apiRejected: (d) => emit('api.rejected', d, 'warn'),
   apiFailed: (d) => emit('api.failed', d, 'error'),
   error: (d) => emit('error', d, 'error'),

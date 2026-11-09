@@ -78,6 +78,21 @@ describe('SchoolDebriefService', () => {
     expect(v3.probes).toHaveLength(2);
     expect(questioner.ask).toHaveBeenCalledTimes(3);
   });
+  it('a resent probe reply after the probe was answered returns the day and appends nothing; other text still 409s', async () => {
+    const { svc, questioner, debriefs } = make({ level: 2 });
+    questioner.ask.mockResolvedValueOnce({ level: 2, levelReason: 'r', probe: 'Which pieces?', questions: QS, questioner: 'model', questionSource: 'model', ms: 1 })
+      .mockResolvedValueOnce({ level: 4, levelReason: 'r', probe: null, questions: QS, questioner: 'model', questionSource: 'model', ms: 1 });
+    await fill(svc);
+    await svc.submit('test-learner', '2026-10-21');
+    const v = await svc.clarify('test-learner', '2026-10-21', { text: 'paper and card', via: 'typed' });
+    expect(v.phase).toBe('questions');
+    const count = debriefs.days['test-learner/2026-10-21'].length;
+    const again = await svc.clarify('test-learner', '2026-10-21', { text: '  paper and card ', via: 'typed' });
+    expect(again).toEqual(v);
+    expect(debriefs.days['test-learner/2026-10-21']).toHaveLength(count);
+    expect(questioner.ask).toHaveBeenCalledTimes(2);
+    await expect(svc.clarify('test-learner', '2026-10-21', { text: 'something else', via: 'typed' })).rejects.toMatchObject({ status: 409 });
+  });
   it('level 4 asks no probe and freezes the questions', async () => {
     const { svc } = make({ level: 4, probe: 'ignored?' });
     await fill(svc);

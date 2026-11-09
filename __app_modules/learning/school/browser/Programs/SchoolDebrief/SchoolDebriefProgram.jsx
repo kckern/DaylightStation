@@ -101,13 +101,25 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     }
     setBusy(false);
   };
-  // A probe reply moves to a fresh field only once the server has it: a failed
-  // send keeps the child's words on screen, and Next (Enter) sends them again.
+  // A probe reply moves to a fresh field only once the server has it. A failed
+  // send re-reads the day: if the server got the reply anyway (the response was
+  // lost) the view moves on; otherwise the words stay and Next sends them again.
   const sendProbe = async (b) => {
     setBusy(true);
+    const asked = view?.clarify?.prompt ?? null;
     let r;
     try { r = await api.clarify(day, b); } catch { r = { ok: false, data: null }; }
     if (apply(r)) setProbeN((n) => n + 1);
+    else {
+      let now;
+      try { now = await api.day(day); } catch { now = null; }
+      const moved = now?.ok && (now.data?.phase !== 'clarify' || (now.data?.clarify?.prompt ?? null) !== asked);
+      if (moved) {
+        schoolDebriefLog.probeRecovered({ day, phase: now.data.phase });
+        setView(now.data); setError(null);
+        if (now.data.phase === 'clarify') setProbeN((n) => n + 1);
+      }
+    }
     setBusy(false);
   };
   const answering = useRef(false);

@@ -135,7 +135,12 @@ export class SchoolDebriefService {
   async clarify(learnerId, day, { text, via = 'typed', audioRef = null }) {
     return this.#once(`${learnerId}/${day}/questions`, async () => {
     const s = await this.#assertOpen(learnerId, day);
-    if (!s.clarify || s.clarify.text !== null) throw new DebriefError('No clarification was asked.', 409);
+    if (!s.clarify || s.clarify.text !== null) {
+      // A resend of the reply already saved (its response was lost) is answered like submit's: idempotent.
+      const last = s.probes.filter((p) => p.text !== null).at(-1);
+      if (last && String(last.text).trim() === String(text ?? '').trim()) return this.day(learnerId, day);
+      throw new DebriefError('No clarification was asked.', 409);
+    }
     await this.#append(learnerId, day, { type: 'clarify', text: String(text ?? '').slice(0, 4000), via, audioRef });
     await this.#probeOrFreeze(learnerId, day, deriveDebriefState(await this.#events(learnerId, day)));
     return this.day(learnerId, day);

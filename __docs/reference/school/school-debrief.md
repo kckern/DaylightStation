@@ -58,9 +58,11 @@ the server sends them to the kiosk in `prompts`, with `{teachTo}` filled in):
   and a legacy `learned` satisfies the required `teach`. Legacy days are never
   re-scored: they keep `substance` (1-10) and have no `level`.
 - **Legacy prompt ids on a new entry:** a Portal still running the old bundle
-  posts `learned` or `notable`. The server saves them as `teach` and `hard`
-  (logging `school.debrief.legacy-prompt-id` with `from` / `to`) so the child is
-  not stopped until the kiosk reloads. Any other unknown id is a 400.
+  posts `learned` or `notable`. The server accepts them and saves them as
+  `teach` and `hard` (logging `school.debrief.legacy-prompt-id` with `from` /
+  `to`), so nothing the child typed is lost. The old kiosk still cannot finish
+  the day: submit needs `moment`, which the old bundle never asks. It can finish
+  once the kiosk reloads, which every deploy does. Any other unknown id is a 400.
 
 ## Records
 
@@ -261,7 +263,7 @@ never bound (FKB captures it). One key map per screen:
 | Start card (today / resume / yesterday late) | Enter starts the first offer; 1-2 pick an offer |
 | Classes chips | 1-9 and 0 toggle the first ten chips; Enter submits (empty is fine); Left arrow goes back; digits are ignored while the Other field has focus |
 | Prompt x3 (moment, teach, hard) | typing goes in the field; Space records or stops **only when the field is empty** (or while recording) and never types a space then; Enter submits; Tab reads the prompt aloud; Left arrow goes back |
-| Each probe | as Prompt, but no Back (a probe follows a submit and cannot be stepped back from); if a reply fails to send, the words stay in the field and Enter sends them again |
+| Each probe | as Prompt, but no Back (a probe follows a submit and cannot be stepped back from). If a reply fails to send, the kiosk re-reads the day: when the server got it anyway, the next probe (or the questions) shows; otherwise the words stay in the field and Enter sends them again. The server treats a resend of the last saved reply as a no-op and returns the day |
 | Choice (2-4) | 1-4 or A-D answer; result and correct answer show at once; Space or Enter continues |
 | Short answer | as Prompt, then Space or Enter continues |
 | Summary | Enter or Space finishes |
@@ -314,7 +316,7 @@ POST, plus the PIN or capability proof. A malformed day or range is a 400.
   `.legacy-prompt-id` (an old-bundle `learned`/`notable` entry was renamed), `.excused` / `.rejected` / `.rescored` / `.discussed`
   (learnerId, day, by), `.launch-failed` (warn), plus `school.direct-launch.issued` for the code-free door. Browser events come
   from the `schoolDebriefLog` facade as `school.debrief.ui.*` (`mounted`,
-  `take.start`, `take.kept`, `take.refused`, `submit`, `chips`, `stall`, `resume`,
+  `take.start`, `take.kept`, `take.refused`, `submit`, `chips`, `stall`, `resume`, `probe.recovered`,
   API failures). AI spend is under `school/debrief` in the usage ledger.
 - **Parent hook push:** when a day completes with a hook, each teacher in
   `school.yml -> teachers` gets one low-priority push (see

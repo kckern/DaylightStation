@@ -292,6 +292,23 @@ describe('SchoolDebriefProgram start card', () => {
       expect(api.clarify.mock.calls[1][1]).toMatchObject({ text: 'my sister' });
       expect(screen.queryByRole('alert')).toBeNull();
     });
+    it('a probe reply that reached the server before the call failed moves on to the next probe', async () => {
+      const entries = { classes: { text: '' }, moment: { text: 'x' }, teach: { text: 'y' }, hard: { text: '' } };
+      let second = false;
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'clarify', next: { kind: 'clarify' }, entries, clarify: { prompt: second ? 'What happened next?' : 'Who was with you?' } }));
+      api.open = api.day;
+      // The server saved the reply and asked probe 2, but the response never arrived.
+      api.clarify = vi.fn(async () => { second = true; return { ok: false, status: 0, data: null }; });
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /pick up/i }));
+      const field = await screen.findByRole('textbox');
+      fireEvent.change(field, { target: { value: 'my sister' } });
+      fireEvent.keyDown(field, { code: 'Enter', key: 'Enter' });
+      expect(await screen.findByText('What happened next?')).toBeInTheDocument();
+      expect(screen.getByRole('textbox')).toHaveValue('');
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(api.clarify).toHaveBeenCalledTimes(1);
+    });
     it('summary shows the reason and the earned bonus lines', async () => {
       school.economyBank.mockReset(); school.economyBank.mockResolvedValue(ok({ mode: 'dry-run' }));
       api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'completed', next: null, entries: {}, late: false,
