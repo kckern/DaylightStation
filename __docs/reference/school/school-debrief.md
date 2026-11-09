@@ -62,7 +62,10 @@ the server sends them to the kiosk in `prompts`, with `{teachTo}` filled in):
   `teach` and `hard` (logging `school.debrief.legacy-prompt-id` with `from` /
   `to`), so nothing the child typed is lost. The old kiosk still cannot finish
   the day: submit needs `moment`, which the old bundle never asks. It can finish
-  once the kiosk reloads, which every deploy does. Any other unknown id is a 400.
+  only once the Portal loads the new bundle: a reload after the deploy
+  (`cli/fkb.cli.mjs reload` against the Portal; a deploy alone does not reload
+  it), or the stale-chunk guard when it next opens a lazy screen. Any other
+  unknown id is a 400.
 
 ## Records
 
