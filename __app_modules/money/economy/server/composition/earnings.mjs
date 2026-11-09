@@ -132,6 +132,8 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
                 learnerId, week,
                 quizPassRatio: schoolLifecycle.debriefConfig?.quizPassRatio ?? 0.67,
                 substantiveScore: schoolLifecycle.debriefConfig?.substantiveScore ?? 6,
+                richLevel: schoolLifecycle.debriefConfig?.richLevel ?? 3,
+                teachableLevel: schoolLifecycle.debriefConfig?.teachableLevel ?? 4,
               }),
             }
             : null,

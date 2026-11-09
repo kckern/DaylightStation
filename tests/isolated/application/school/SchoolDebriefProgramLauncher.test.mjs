@@ -87,6 +87,16 @@ describe('SchoolDebriefProgramLauncher', () => {
       { type: 'answer', questionId: 'f1', response: 'a', correct: true, at: 'y' }, { type: 'completed', at: 'z' }] });
     expect(row).toMatchObject({ substantive: true, quizPassed: true });
   });
+  it('weekFacts: rubric level drives substantive (on time, >= richLevel) and teachable (late allowed, >= teachableLevel); legacy substance still works', async () => {
+    const q = (extra, level) => ({ type: 'questions', level, questions: [], questioner: 'model', at: 'x', ...extra });
+    const facts = (days) => make({ days }).weekFacts({ learnerId: 'test-learner', week: { from: '2026-10-20', to: '2026-10-20' }, quizPassRatio: 0.67, substantiveScore: 6, richLevel: 3, teachableLevel: 4 });
+    const [onTime] = await facts({ '2026-10-20': [q({}, 3), { type: 'completed', at: 'z' }] });
+    expect(onTime).toMatchObject({ substantive: true, teachable: false });
+    const [late] = await facts({ '2026-10-20': [{ type: 'opened', late: true, at: 'x' }, q({ late: true }, 4), { type: 'completed', late: true, at: 'z' }] });
+    expect(late).toMatchObject({ substantive: false, teachable: true });
+    const [legacy] = await facts({ '2026-10-20': [q({ substance: 6 }, undefined), { type: 'completed', at: 'z' }] });
+    expect(legacy).toMatchObject({ substantive: true, teachable: false });
+  });
   it('owedDays: the owed days in range, never past today; default is the last 14 owed days', async () => {
     const l = make();
     expect(await l.owedDays('test-learner', { from: '2026-10-16', to: '2026-10-30' })).toEqual(['2026-10-16', '2026-10-20', '2026-10-21']); // 17/18 weekend, 19 except

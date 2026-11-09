@@ -67,7 +67,7 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
     try { return (await this.#debriefs.week({ learnerId, week })) ?? []; }
     catch (error) {
       this.#logger.warn?.('school.earning-evidence.debriefs-failed', { learnerId, error: error?.message });
-      return [{ day: week.from, state: 'unknown', timeliness: ON_TIME, substantive: false, quiz: { right: 0, graded: 0 }, quizPassed: false }];
+      return [{ day: week.from, state: 'unknown', timeliness: ON_TIME, substantive: false, teachable: false, quiz: { right: 0, graded: 0 }, quizPassed: false }];
     }
   }
 

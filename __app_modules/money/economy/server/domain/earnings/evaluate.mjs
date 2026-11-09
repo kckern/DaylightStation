@@ -290,6 +290,7 @@ const DEBRIEF_PASS = {
   completed: (f) => f.state === 'completed',
   substantive: (f) => f.state === 'completed' && f.timeliness === 'on-time' && f.substantive === true,
   'quiz-passed': (f) => f.state === 'completed' && f.quizPassed === true,
+  teachable: (f) => f.state === 'completed' && f.teachable === true,
 };
 
 function debriefDay(rule, facts, ctx) {

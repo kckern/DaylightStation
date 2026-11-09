@@ -29,7 +29,7 @@ export class SchoolDebriefProgramLauncher {
   get surface() { return 'portal'; }
   get replayable() { return true; }
   /** One fact row per owed day in [week.from, week.to] (spec §5). Null when not enrolled. Throws when a day cannot be read. */
-  async weekFacts({ learnerId, week, quizPassRatio, substantiveScore }) {
+  async weekFacts({ learnerId, week, quizPassRatio, substantiveScore, richLevel = 3, teachableLevel = 4 }) {
     const enrollment = await this.#enrollment(learnerId);
     if (!enrollment) return null;
     const today = this.studyDay(); const graceDay = previousStudyDay(today);
@@ -42,7 +42,10 @@ export class SchoolDebriefProgramLauncher {
       rows.push({
         day, state: done ? state.phase : (day >= graceDay ? 'open' : 'missed'),
         timeliness: state.late ? 'late' : 'on-time',
-        substantive: !state.late && state.questioner === 'model' && Number.isInteger(state.substance) && state.substance >= substantiveScore,
+        // Same rule as the service's day summary: the 0-5 rubric level when the day has one, else legacy substance 1-10.
+        substantive: !state.late && state.questioner === 'model'
+          && (Number.isInteger(state.level) ? state.level >= richLevel : Number.isInteger(state.substance) && state.substance >= substantiveScore),
+        teachable: state.questioner === 'model' && Number.isInteger(state.level) && state.level >= teachableLevel,
         // A fallback day's questions come from the child's own words: no quiz bonus (substantive is already false).
         quiz, quizPassed: state.questionSource !== 'fallback' && quiz.graded > 0 && quiz.right / quiz.graded >= quizPassRatio,
       });
