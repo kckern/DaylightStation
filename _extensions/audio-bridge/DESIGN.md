@@ -485,6 +485,20 @@ matching explicit request within 60 seconds. PINs are never logged. Android may
 restrict confirmation/HID actions: the API reports those failures and never opens
 Settings or invokes ADB as a runtime fallback.
 
+**Discovery needs the service's `location` type (Android 11).** `startDiscovery()`
+checks the fine-location app-op, whose UID mode is `foreground` for a while-in-use
+grant; the bridge is never a foreground *app*, so it only passes when the running
+foreground service declares `FOREGROUND_SERVICE_TYPE_LOCATION`
+(`microphone|location`, manifest and `startForeground`). A microphone-only build
+logs `BluetoothUtils: Permission denial: Need ACCESS_FINE_LOCATION permission to
+get scan results` and every scan is refused. `appops set --uid … COARSE_LOCATION
+allow` does not stick — the permission policy resets it. The source carries the
+fix; it takes effect only once a build signed with the original key is installed.
+Until then the Controllers screen re-pairs a forgotten pad BY ADDRESS (`createBond`
+pages a known Classic device without discovery), and a refused scan no longer
+clears the unpaired list (it did before the same change, which would have dropped
+that forgotten pad).
+
 Initial installation must grant location permission on Android 11, or nearby-device
 permissions on Android 12+, as well as the existing microphone permission. Android
 11 discovery also requires Location services enabled. Service teardown stops scans,

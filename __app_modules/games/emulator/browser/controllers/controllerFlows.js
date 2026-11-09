@@ -27,7 +27,10 @@ export const SEARCH_MS = 120000;
 const SCAN_MS = 30000;
 const PAIR_MS = 60000;
 
-export class FlowError extends Error {}
+export class FlowError extends Error {
+  /** `retry`: the pad was not ready (not in pairing mode yet); asking again later may work. */
+  constructor(message, { retry = false } = {}) { super(message); this.retry = retry; }
+}
 
 const isAbort = (error) => error?.name === 'AbortError';
 const aborted = () => Object.assign(new Error('Stopped'), { name: 'AbortError' });
@@ -140,7 +143,7 @@ async function pair(api, signal, address, prompts) {
     after = await api.command('pair', { address });
   } catch (error) {
     if (isAbort(error)) throw error;
-    if (findDevice(api.current(), address)?.bond !== 'bonding') throw new FlowError(`The TV would not start pairing${bridgeSays(api)}. Try again.`);
+    if (findDevice(api.current(), address)?.bond !== 'bonding') throw new FlowError(`The TV would not start pairing${bridgeSays(api)}. Try again.`, { retry: true });
     after = Date.now();
   }
   let answered = null;
@@ -159,7 +162,7 @@ async function pair(api, signal, address, prompts) {
     }, deadline - Date.now(), { after, signal });
     const device = findDevice(state, address);
     if (device?.bond === 'bonded') return;
-    if (device?.bond === 'none' && !state.pairing) throw new FlowError('The controller did not accept the pairing. Put it back in pairing mode (fast blink) and try again.');
+    if (device?.bond === 'none' && !state.pairing) throw new FlowError('The controller did not accept the pairing. Put it back in pairing mode (fast blink) and try again.', { retry: true });
     const prompt = state.pairing;
     answered = prompt.expiresAtMs;
     if (prompt.variant === 'pin') {
@@ -174,7 +177,35 @@ async function pair(api, signal, address, prompts) {
       await api.command('pairing', { address, accept: true });
     }
   }
-  throw new FlowError('Pairing did not finish in time. Put the controller back in pairing mode and try again.');
+  throw new FlowError('Pairing did not finish in time. Put the controller back in pairing mode and try again.', { retry: true });
+}
+
+/**
+ * Get a just-forgotten pad bonded again. Android can pair a Classic pad it
+ * already knows BY ADDRESS — no discovery needed — as soon as the pad is in
+ * pairing mode, so keep asking until it answers. That matters on the Shield:
+ * the bridge's foreground service is microphone-typed, so Android denies it the
+ * location access discovery requires, and a refused scan also clears the
+ * bridge's list of unpaired devices. Discovery is only the fallback for a pad
+ * the bridge no longer lists (its list was rebuilt), where there is nothing to lose.
+ */
+async function reacquire(api, signal, target, deadline, prompts) {
+  let address = target.address;
+  if (!findDevice(api.current(), address)) {
+    address = (await search(api, signal, (s) => repairCandidate(s, target), deadline)).address;
+  }
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      await pair(api, signal, address, prompts);
+      return address;
+    } catch (error) {
+      if (isAbort(error) || !(error instanceof FlowError) || !error.retry) throw error;
+      last = error;
+      await pause(2000, signal);
+    }
+  }
+  throw new FlowError(`The controller did not answer${last ? '' : ' in time'}. Make sure its light is blinking fast (pairing mode), using the steps shown, then try again.`);
 }
 
 /**
@@ -219,13 +250,14 @@ export async function runControllerFlow({ mode, device, api, signal, report, pro
       step('forget', 'done');
       const endsAt = Date.now() + SEARCH_MS;
       step('search', 'active', { endsAt });
-      const found = await search(api, signal, (s) => repairCandidate(s, { address, name: device.name }), endsAt);
-      address = found.address;
+      address = await reacquire(api, signal, { address, name: device.name }, endsAt, prompts);
       step('search', 'done');
+      step('pair', 'done');
+    } else {
+      step('pair', 'active');
+      await pair(api, signal, address, prompts);
+      step('pair', 'done');
     }
-    step('pair', 'active');
-    await pair(api, signal, address, prompts);
-    step('pair', 'done');
     step('link', 'active');
     // A freshly bonded pad usually opens its own input link; give it a moment first.
     try { await api.waitFor(connected(address), 8000, { signal }); } catch (error) { if (isAbort(error)) throw error; }

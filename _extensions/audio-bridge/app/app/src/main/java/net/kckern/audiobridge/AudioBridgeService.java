@@ -67,8 +67,13 @@ public class AudioBridgeService extends Service {
                 .setOngoing(true)
                 .build();
 
+        // LOCATION as well: Bluetooth discovery is gated on fine location, and on
+        // Android 11 a foreground service only gets while-in-use location if it
+        // declares this type (the app is never otherwise in the foreground, so a
+        // microphone-only service had startDiscovery() denied — "Need
+        // ACCESS_FINE_LOCATION permission to get scan results").
         startForeground(NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
 
         if (controlServer == null) {
             bluetooth = new BluetoothControls(this);

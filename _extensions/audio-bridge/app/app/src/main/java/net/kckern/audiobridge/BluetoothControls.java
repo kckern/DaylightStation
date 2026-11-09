@@ -110,8 +110,11 @@ public final class BluetoothControls implements BluetoothController.Port {
         LocationManager location = (LocationManager)ctx.getSystemService(Context.LOCATION_SERVICE);
         if (Build.VERSION.SDK_INT <= 30 && !location.isLocationEnabled()) return fail("Location services must be enabled during bridge setup for discovery");
         stopScan();
-        seen.entrySet().removeIf(e -> e.getValue().getBondState() == BluetoothDevice.BOND_NONE);
         if (!adapter.startDiscovery()) return fail("Bluetooth discovery was not accepted");
+        // Only a scan that actually started replaces the unpaired list: a refused one
+        // must not drop a just-forgotten pad the client can still pair by address.
+        // (ACTION_FOUND is delivered on this lock, so nothing lands before the clear.)
+        seen.entrySet().removeIf(e -> e.getValue().getBondState() == BluetoothDevice.BOND_NONE);
         handler.postDelayed(stopDiscovery, durationMs);
         lastError = null;
         Log.i("AudioBridge", "bluetooth.scan.started");
