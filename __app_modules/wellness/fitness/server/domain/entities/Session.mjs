@@ -33,7 +33,7 @@ export class Session {
     strava = null,     // Strava activity metadata (name, type, sportType, etc.)
     strava_notes = null, // Manually-entered Strava notes pulled back via reconciliation
     finalized = false,
-    provisional = false, // Real but sub-5-min, not-yet-finalized session (resumable; hidden from history; GC'd if never matured). See PersistenceManager Stage 3.
+    provisional = false, // Real but sub-5-min, not-yet-finalized session (resumable). Junk is kept out by shared/junkSession.mjs, not this flag. See PersistenceManager Stage 3.
     timelapse = null, // Session time-lapse recap status/record
     strength = null // Strength runs performed in this session: { runs: [...] }. Absent on a session with no strength work.
   }) {

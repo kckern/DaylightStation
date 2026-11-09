@@ -24,6 +24,7 @@ import { buildSessionSummary } from "./buildSessionSummary.js";
 import { flattenCumulativeRegressions } from "./cumulativeGuard.js";
 import { getClientId } from "../../../../../../frontend/src/lib/clientId.js";
 import { runSessionBackfill } from "./sessionBackfill.js";
+import { evaluateJunkSession } from "../../../shared/junkSession.mjs";
 
 // -------------------- Constants --------------------
 
@@ -1025,6 +1026,20 @@ export class PersistenceManager {
       return { ok: false, reason: 'no-meaningful-data' };
     }
 
+    // A strap that flashed a few seconds of HR and then nothing (a stray guest
+    // strap advertising nearby) is not a workout. Hold the first save until there
+    // is a minute of HR or any other sign of activity; once saved, keep saving.
+    if (!this.hasSuccessfulSave(sessionData.sessionId)) {
+      const junk = evaluateJunkSession({
+        series,
+        events: sessionData.timeline?.events,
+        voiceMemos: sessionData.voiceMemos,
+      });
+      if (junk.junk) {
+        return { ok: false, reason: 'no-activity', hrReadings: junk.hrReadings };
+      }
+    }
+
     // Validate series lengths
     if (this._validateSeriesLengths) {
       const { ok: lengthsOk, issues } = this._validateSeriesLengths(sessionData.timeline?.timebase || {}, series);
@@ -1087,7 +1102,8 @@ export class PersistenceManager {
       const BENIGN_VALIDATION_REASONS = new Set([
         'session-too-short',
         'session-too-short-and-empty',
-        'insufficient-ticks'
+        'insufficient-ticks',
+        'no-activity'
       ]);
       if (BENIGN_VALIDATION_REASONS.has(validation?.reason)) {
         getLogger().sampled('fitness.persistence.validation_skipped', validationDetail, { maxPerMinute: 4, aggregate: true });
@@ -1168,9 +1184,9 @@ export class PersistenceManager {
       },
       finalized: !!sessionData.finalized,
       // Provisional: a real but sub-5-min, not-yet-finalized session. Resumable
-      // (non-finalized) so a reload continues it; filtered from user-facing
-      // history and GC'd server-side if never matured. Cleared once the session
-      // crosses 5min or is finalized.
+      // (non-finalized) so a reload continues it. Cleared once the session
+      // crosses 5min or is finalized. Junk never reaches here: the 'no-activity'
+      // gate above holds the first save, and the server list hides any that slip.
       provisional: !sessionData.finalized && Number(sessionData.durationMs) < 300000,
       participants
     };

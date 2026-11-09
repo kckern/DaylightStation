@@ -431,6 +431,7 @@ PersistenceManager._persistSession()
      │       • Duration >= 60s?
      │       • Has participants?
      │       • Has timeline data?
+     │       • First save only: any real activity? (junk rule, below)
      │       [FAIL → skip save, log reason]
      │
      ├──▶ 2. Build session payload
@@ -883,6 +884,27 @@ starting value, then relabels the stint. A handover moves nothing. Per-person
 cumulative series therefore never decrease; `cumulativeGuard.js` flattens and
 logs (`fitness.persistence.cumulative_regressed`) any that do at save time. See
 `assign-guest.md` → Correction vs Handover.
+
+### Junk sessions
+
+A strap that flashes a few seconds of heart rate and then goes quiet (a stray
+guest strap advertising nearby) is not a workout. `shared/junkSession.mjs` holds
+the one rule, used by the browser and the server: a session is **junk** when it
+has under a minute of HR readings (12 ticks) **and** no timeline events, voice
+memos, rings, strength runs, outside record (Strava link or `session.source`),
+or equipment series that took two or more distinct values. Any single sign of
+activity clears it.
+
+- **Save gate:** `PersistenceManager.validateSessionPayload` holds the *first*
+  save of a junk session (`no-activity`, logged as a sampled
+  `fitness.persistence.validation_skipped`). Once a session has saved, a quiet
+  stretch never stops later saves.
+- **History list:** `YamlSessionDatastore.findByDate` leaves junk records out of
+  the list and everything built on it (index shards, weekly totals,
+  suggestions). The file stays on disk and its detail URL still opens.
+
+The `provisional` flag (sub-5-min, not finalized) only marks a session as
+resumable; it does not hide or clean anything up.
 
 ### Ring celebrations
 

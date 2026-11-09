@@ -26,6 +26,7 @@ import { ItemId } from "../../../../../../__capabilities/content-catalog/server/
 import { selectPrimaryMedia, selectPrimaryMediaSummary, buildSelectionConfig } from "../../domain-services-select-primary-media.mjs";
 import { hydrateTimeline, dehydrateTimeline } from "./SessionTimelineCodec.mjs";
 import { stampIntegrity } from "../../domain-services-session-integrity.mjs";
+import { evaluateJunkSessionRecord } from "../../../shared/junkSession.mjs";
 
 // ── Session list index (derived read cache) ──────────────────────────────
 // The /sessions?since=Nd and /suggestions endpoints build per-session summaries
@@ -42,7 +43,8 @@ const INDEX_DIR_NAME = '_index';
 // v5: media.primary carries the episode's description (Health's exercise rows).
 // v6: each participant carries hrAvg (Health credits home sessions from it).
 // v7: each participant carries isGuest (the show screen's per-rider episode badge).
-const INDEX_VERSION = 7;
+// v8: junk sessions (shared/junkSession.mjs) are left out of the list.
+const INDEX_VERSION = 8;
 
 /**
  * Derive session date from sessionId
@@ -404,6 +406,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
       const basePath = path.join(sessionsDir, baseName);
       const data = loadYamlSafe(basePath);
       if (!data) continue;
+      // A stray strap's few seconds of HR is not a workout — keep it out of
+      // history (and everything built on this list). The file stays on disk.
+      if (evaluateJunkSessionRecord(data).junk) continue;
 
       const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
       const startTime = parseToUnixMs(data.startTime, tz)
