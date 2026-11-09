@@ -96,3 +96,30 @@ it('when a row swaps its buttons, focus stays on that row', async () => {
   await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
   expect(document.activeElement.closest('li').textContent).toMatch(/Second pad/);
 });
+
+const gamepad = (index, id, pressedIdx = []) => ({ index, id, connected: true, axes: [0, 0, 0, 0],
+  buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressedIdx.includes(i), value: pressedIdx.includes(i) ? 1 : 0 })) });
+
+it('mashing a connected pad lights its row lamp and the live panel, and never clicks the focused button', async () => {
+  let pads = [gamepad(0, '8Bitdo SN30 Pro (STANDARD GAMEPAD)')];
+  vi.stubGlobal('navigator', { ...navigator, getGamepads: () => pads });
+  const onClose = vi.fn();
+  const client = clientFor(() => snapshot([pad({ connected: true, profiles: ['input'] })]));
+  render(<ControllerManager deviceId="tv" client={client} onClose={onClose} />);
+  await screen.findByRole('button', { name: 'Disconnect' });
+  expect(screen.getByText('Player 1')).toBeTruthy();
+  expect(screen.getByText('Press a button')).toBeTruthy();
+  pads = [gamepad(0, '8Bitdo SN30 Pro (STANDARD GAMEPAD)', [1])];
+  expect(await screen.findByText('I’m here!')).toBeTruthy();
+  expect(screen.getByText(/I’m here! right face button/)).toBeTruthy();
+  // Android's B → Back fallback arrives while B is held: swallowed, the screen stays.
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.keyDown(window, { key: 'Enter' });
+  expect(onClose).not.toHaveBeenCalled();
+  expect(client.command).not.toHaveBeenCalled();
+  pads = [gamepad(0, '8Bitdo SN30 Pro (STANDARD GAMEPAD)')];
+  await vi.waitFor(() => expect(screen.queryByText('I’m here!')).toBeNull(), { timeout: 2000 });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  vi.unstubAllGlobals();
+});

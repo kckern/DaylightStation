@@ -133,6 +133,20 @@ Paired · not connected, Pairing…, Found · not paired, or Paired · link stat
 (the bridge cannot see the HID link right now; never guessed). Remotes and
 keyboards are listed view-only and can never be forgotten from here.
 
+**Live input.** A right-hand panel shows every controller the browser sees
+(`navigator.getGamepads()`, the TV remote excluded) as *Player N* with a pad
+diagram whose buttons and sticks light while held, plus "I'm here!" and what was
+pressed (named by position — "right face button" — since 8BitDo and Xbox pads
+print A in different places). A connected row's lamp lights too, but only when
+exactly one connected row carries that pad's name: the browser exposes no
+Bluetooth address, so two identical pads are told apart by the panel, not the
+rows. "Ready to play" ends with "press any button to check". Controllers only
+light up here; the remote drives the screen. Reading the Gamepad API makes
+Chromium stop turning pad buttons into keys, and any key that arrives while a pad
+button is held is swallowed anyway (Android's A → OK and B → Back fallbacks), so
+mashing cannot click Forget or close the screen. Code: `liveInput.js`,
+`useGamepadActivity.js`, `PadDiagram.jsx`.
+
 **What it does.** Each action is a checklist that only ticks on observed state,
 never on an accepted request:
 
