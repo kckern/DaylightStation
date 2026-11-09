@@ -39,3 +39,13 @@ it('rejects arbitrary destinations and malformed mutation bodies before networki
  await expect(service.command('tv','power',{})).rejects.toMatchObject({status:400});
  expect(calls).toBe(0);
 });
+it('adds the device-configured pairing guide to status, and only when one is configured', async()=>{
+ const { pairingGuide } = await import('../application/services/ArcadeBluetoothService.mjs');
+ expect(pairingGuide(null)).toBeNull();expect(pairingGuide({steps:[' ','']})).toBeNull();
+ expect(pairingGuide({mode:'Android mode',steps:['Hold START',' Hold PAIR '],troubleshoot:7})).toEqual({mode:'Android mode',steps:['Hold START','Hold PAIR'],troubleshoot:null});
+ const native=await listen((_req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(state));});
+ try {
+  const service=createArcadeBluetoothService({devicesConfig:{tv:{bluetooth_bridge:{url:native.url,pairing:{steps:['Hold PAIR']}}}}});
+  expect((await service.state('tv')).guide).toEqual({mode:null,steps:['Hold PAIR'],troubleshoot:null});
+ }finally{await native.close();}
+});

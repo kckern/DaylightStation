@@ -243,6 +243,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |
 | Arcade save progress (battery vs state resume, launch card, autosave, Restart vs Erase, recovery, manual restore) | `__docs/reference/gaming/emulator-progress.md` |
 | Controller pairing (garage BT pads: guided steps from input.yml, D-Bus pair helper, bond/HID checks, reconnect, status badges) | `__docs/reference/gaming/controller-pairing.md` |
+| Living-room Controllers screen (home-menu Bluetooth gamepad manager on the Shield: status, Fix, Re-pair from scratch, PIN, audio-bridge `/bluetooth` API) | `__docs/reference/integrations/retroarch.md` (Controllers screen) |
 | Shield RetroArch savestate auto-load (off by default; per-game `resume` in catalog overrides; launch-time override files) | `__docs/reference/gaming/retroarch-game-overrides.md` |
 | Household economy (coins, payouts, early pass; the CoinIcon standard) | `__docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `__docs/reference/state-gates/README.md` |

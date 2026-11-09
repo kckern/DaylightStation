@@ -12,7 +12,7 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { packLayout } from "./arcadePacker.js";
 import { RetryImg } from "./RetryImg.jsx";
 import "./ArcadeSelector.scss";
-import { BluetoothRecoveryPanel, currentBluetoothDeviceId } from '../../../../games/emulator/browser/bluetooth.mjs';
+import { ControllerManager, currentBluetoothDeviceId } from '../../../../games/emulator/browser/bluetooth.mjs';
 
 /**
  * ArcadeSelector: Hero-style game selector with large boxart on the left
@@ -344,7 +344,7 @@ export function ArcadeSelector({
       <button type="button" ref={controllerEntry} className="arcade-selector__controllers"
         aria-expanded={recoveryOpen} onFocus={() => setControllerEntryFocused(true)}
         onClick={() => setRecoveryOpen(true)}>Controllers</button>
-      {recoveryOpen && <BluetoothRecoveryPanel deviceId={currentBluetoothDeviceId()} onClose={closeRecovery} />}
+      {recoveryOpen && <ControllerManager deviceId={currentBluetoothDeviceId()} onClose={closeRecovery} />}
       {/* LEFT: Hero panel */}
       <div className="arcade-selector__hero">
         <div className="arcade-selector__hero-art" ref={heroArtRef} key={selectedIndex}>
