@@ -20,3 +20,7 @@
 .sd-summary__earned { list-style: none; padding: 0; font-size: 1.4rem; }
 .sd-summary__week { font-weight: 700; margin-top: 0.5rem; }
 .sd-summary__soon { font-size: 1.3rem; color: var(--ds-text-mid); }
+
+.sd-chips__grid { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+.sd-chips__other { max-width: 28rem; }
+.sd-summary__reason { margin: 0.3rem 0; font-size: 1.4rem; }

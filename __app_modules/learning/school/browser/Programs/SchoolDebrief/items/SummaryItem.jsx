@@ -8,10 +8,13 @@ import { useSchoolDebriefKeys } from "../useSchoolDebriefKeys.js";
 export default function SummaryItem({ view, earned = null, coinsLive = false, onFinish }) {
   useSchoolDebriefKeys({ enter: onFinish, ' ': onFinish });
   const quiz = view.summary?.quiz ?? { right: 0, graded: 0 };
+  const reason = view.summary?.levelReason || view.entries?.teach?.text || view.entries?.learned?.text;
   return (
     <section className="sd-item sd-summary" aria-label="Summary">
       <h2><Icon name="keep" /> Thanks for telling me about school!</h2>
-      {view.entries?.learned?.text && <blockquote className="sd-summary__quote">{view.entries.learned.text}</blockquote>}
+      {reason && <blockquote className="sd-summary__quote">{reason}</blockquote>}
+      {view.summary?.rich && <p className="sd-summary__reason">You told me a real moment</p>}
+      {view.summary?.teachable && <p className="sd-summary__reason">You explained it so someone could try it</p>}
       <p>{quiz.graded ? `${quiz.right} of ${quiz.graded} questions right` : 'Questions saved'} · {view.late ? 'Late' : 'On time'}</p>
       {coinsLive === false && <p className="sd-summary__soon">{COINS_SOON}</p>}
       {coinsLive && earned && earned.lines.length > 0 && (

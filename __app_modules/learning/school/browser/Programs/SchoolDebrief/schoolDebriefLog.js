@@ -23,6 +23,7 @@ export const schoolDebriefLog = {
   takeKept: (d) => emit('take.kept', d),
   takeRefused: (d) => emit('take.refused', d, 'warn'),
   submit: (d) => emit('submit', d),
+  chips: (d) => emit('chips', d),
   stall: (d) => emit('stall', d),
   resume: (d) => emit('resume', d),
   apiRejected: (d) => emit('api.rejected', d, 'warn'),
