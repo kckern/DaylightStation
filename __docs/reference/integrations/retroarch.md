@@ -171,10 +171,12 @@ mode, so the flow pages it every few seconds for up to 2 minutes while showing t
 pairing-mode steps. Discovery is only the fallback for a pad the bridge no longer
 lists (keeping it running across Android's ~12 s inquiry; a pad is matched by
 address, or by name when exactly one unpaired pad of that name appears — an 8BitDo
-in another mode comes back under a new address). On the Shield, discovery itself is
-refused until the audio-bridge build with the `location` service type is installed
-(see its DESIGN.md); until then **Find new controllers** says so, and only pads the
-TV already knows can be (re)paired.
+in another mode comes back under a new address). On the Shield, discovery needs the
+audio-bridge build whose service has the `location` type (installed 2026-11-08; see
+its DESIGN.md). An older build has every scan refused; **Find new controllers** then
+says so, and only pads the TV already knows can be (re)paired. Unpaired
+non-controllers a search turns up (neighbours' TVs, nameless beacons) are not
+listed.
 A legacy **PIN** prompt is answered on screen (with a "Use 0000" shortcut). A
 **confirm-code** prompt cannot be answered by a sideloaded app (`capabilities.confirm`
 is false without `BLUETOOTH_PRIVILEGED`), so the flow declines it and says so
