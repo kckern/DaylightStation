@@ -140,4 +140,56 @@ describe('FitnessShow episode panel', () => {
     await waitFor(() => within(panel(container)).getByRole('button', { name: /^Play/ }));
     expect(within(panel(container)).queryByRole('button', { name: /Resume/ })).toBeNull();
   });
+
+  describe('gamepad and arrow keys', () => {
+    it('moves focus along the grid without playing anything', async () => {
+      mockApi(show());
+      const { container, setFitnessPlayQueue } = renderShow();
+      await waitFor(() => expect(panel(container)?.textContent).toContain('Ep 1'));
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await waitFor(() => expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 2'));
+      expect(container.querySelector('[data-plex-id="402"]').closest('.episode-card').className).toContain('pad-focused');
+      fireEvent.keyDown(window, { key: 'ArrowLeft' });
+      await waitFor(() => expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 1'));
+      expect(setFitnessPlayQueue).not.toHaveBeenCalled();
+    });
+
+    it('plays the focused episode on Enter', async () => {
+      mockApi(show());
+      const { container, setFitnessPlayQueue } = renderShow();
+      await waitFor(() => expect(panel(container)?.textContent).toContain('Ep 1'));
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await waitFor(() => expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 2'));
+      fireEvent.keyDown(window, { key: 'Enter' });
+      expect(setFitnessPlayQueue.mock.calls.at(-1)[0][0]).toMatchObject({ plex: '402' });
+    });
+
+    it('leaves the keys to the sidebar menu while it is open', async () => {
+      mockApi(show());
+      const { container } = renderShow();
+      await waitFor(() => expect(panel(container)?.textContent).toContain('Ep 1'));
+      const menu = document.createElement('div');
+      menu.className = 'fitness-sidebar-menu';
+      document.body.appendChild(menu);
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 1');
+      menu.remove();
+    });
+
+    it('focuses one card when episodes carry only an id (no plex field)', async () => {
+      const data = show();
+      data.items = data.items.map(({ plex, ...rest }) => rest);
+      mockApi(data);
+      const { container } = renderShow();
+      await waitFor(() => expect(panel(container)?.textContent).toContain('Ep 1'));
+      expect(container.querySelectorAll('.episode-card.selected')).toHaveLength(1);
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await waitFor(() => expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 2'));
+      expect(container.querySelectorAll('.episode-card.pad-focused')).toHaveLength(1);
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      await new Promise((r) => setTimeout(r, 30));
+      expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 2');
+    });
+  });
 });

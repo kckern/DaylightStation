@@ -13,6 +13,7 @@ import usePresenceGate from "../hooks/usePresenceGate.js";
 import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import LockIcon from "./overlays/LockIcon.jsx";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
+import { useGamepadKeys } from "../lib/useGamepadKeys.js";
 import getLogger from '@/lib/logging/Logger.js';
 import { isGovernedContainer } from "../hooks/fitness/governedContent.js";
 import { gridBadge } from "../lib/episodeHistory.js";
@@ -105,6 +106,12 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
     </div>
   );
 };
+
+/**
+ * An episode's identity. Playable items may carry only `id` ("plex:600747")
+ * with no `plex` field — comparing `.plex` alone matches every such episode.
+ */
+const episodeKey = (ep) => (ep ? String(ep.plex || ep.id || '') || null : null);
 
 /** A season's display name: its title, else "Season N", else "Season". */
 const seasonNameOf = (parent = {}) => {
@@ -1053,7 +1060,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
       : items;
     if (!filtered.length) return;
-    if (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex)) {
+    if (!selectedEpisode || !filtered.some(ep => episodeKey(ep) === episodeKey(selectedEpisode))) {
       setSelectedEpisode(filtered[0]);
     }
   }, [items, seasons, activeSeasonId, selectedEpisode]);
@@ -1134,6 +1141,61 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       : episode;
     handlePlayEpisode(target);
   };
+
+  // Gamepad / arrow keys: the D-pad walks the grid and focus selects (the panel
+  // follows); A / Enter plays the focused episode. Focus alone never launches,
+  // and a locked episode is left to its tap-to-unlock path. Keys belong to the
+  // sidebar menu while it is open, and to the player while something plays.
+  const [padFocused, setPadFocused] = useState(false);
+  const handleShowKey = (key) => {
+    if (typeof document !== 'undefined' && document.querySelector('.fitness-sidebar-menu')) return false;
+    if (fitnessPlayQueue?.length > 0 || pendingUnlock) return false;
+    const list = filteredItems;
+    if (!list.length) return false;
+    const current = Math.max(0, list.findIndex((ep) => episodeKey(ep) === episodeKey(panelEpisode)));
+    if (key === 'Enter') {
+      const ep = list[current];
+      if (lockedEpisodeIds.has(ep.plex || ep.id)) {
+        getLogger().child({ component: 'FitnessShow' }).info('fitness.show.pad_play_locked', { episode: ep.plex || ep.id });
+        return true;
+      }
+      const resumable = isResumable && !ep.isWatched && deriveResumeMeta(ep).resolvedSeconds > 0;
+      playFromPanel(ep, resumable ? 'resume' : 'play');
+      return true;
+    }
+    const grid = typeof document !== 'undefined' ? document.querySelector('.fitness-show .episodes-grid') : null;
+    const columns = (() => {
+      const tpl = grid ? getComputedStyle(grid).gridTemplateColumns : '';
+      const n = tpl ? tpl.split(' ').filter(Boolean).length : 0;
+      return n > 0 ? n : 3;
+    })();
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[key];
+    if (step == null) return false;
+    const next = list[Math.min(list.length - 1, Math.max(0, current + step))];
+    setPadFocused(true);
+    focusEpisode(next);
+    const card = document.querySelector(`.fitness-show [data-plex-id="${next.plex || next.id}"]`)?.closest('.episode-card');
+    card?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    return true;
+  };
+  const showKeyRef = useRef(handleShowKey);
+  showKeyRef.current = handleShowKey;
+  useGamepadKeys(true, (key) => showKeyRef.current(key));
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const tag = event.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
+      if (showKeyRef.current(event.key)) event.preventDefault();
+    };
+    // A touch anywhere drops the pad focus ring; the next D-pad press brings it back.
+    const onPointerDown = () => setPadFocused(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+    };
+  }, []);
 
   // Early return UI states (after all hooks above to keep hook order stable)
   if (!showId) {
@@ -1391,7 +1453,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                           return (
                           <div
                             key={episode.plex || index}
-                            className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''} ${isWatched ? 'watched' : ''} ${showProgressBar ? 'in-progress' : ''} ${isLocked ? 'locked' : ''}`}
+                            className={`episode-card vertical ${episodeKey(selectedEpisode) === episodeKey(episode) ? 'selected' : ''} ${padFocused && episodeKey(panelEpisode) === episodeKey(episode) ? 'pad-focused' : ''} ${isWatched ? 'watched' : ''} ${showProgressBar ? 'in-progress' : ''} ${isLocked ? 'locked' : ''}`}
                             title={episode.label}
                           >
                             {episode.image && (
