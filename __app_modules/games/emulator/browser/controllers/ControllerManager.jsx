@@ -93,7 +93,13 @@ export default function ControllerManager({ deviceId, onClose, client }) {
   const findNew = useCallback(async () => {
     setNotice(null);
     try { await api.command(scanning ? 'scan/stop' : 'scan', { durationMs: 30000 }); }
-    catch { setNotice('Could not start a search. Try again.'); }
+    catch {
+      // Android denies discovery to a bridge whose service lacks the location
+      // type (audio-bridge DESIGN.md). Say what still works instead of "try again".
+      setNotice(/discovery was not accepted/i.test(api.current()?.lastError || '')
+        ? 'This TV cannot search for brand-new controllers until the audio-bridge update is installed. Controllers listed here can still be fixed and re-paired.'
+        : 'Could not start a search. Try again.');
+    }
   }, [api, scanning]);
 
   const answerPin = (value) => { const resolve = pinResolve.current; pinResolve.current = null; setPinPrompt(null); resolve?.(value); };

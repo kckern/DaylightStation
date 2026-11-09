@@ -8,7 +8,7 @@ const PAD = 'E4:17:D8:1C:7C:7A';
  * report a beat late, inquiry lapses after 12 s, a fresh bond opens its own
  * input link, and a new scan clears unpaired entries.
  */
-function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt = false, wakes = true, rejectConnect = false, rejectFirstScans = 0, pairIgnored = false, staleBonding = false } = {}) {
+function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt = false, wakes = true, rejectConnect = false, rejectFirstScans = 0, pairIgnored = false, staleBonding = false, forgetsFromList = false } = {}) {
   const pad = { address: PAD, name: '8Bitdo SN30 Pro', manageable: true, bond: 'bonded', connected: false, profiles: [] };
   const state = { ok: true, adapter: { supported: true, enabled: true, discovering: false }, devices: [pad, { address: '3C:6D:66:06:E4:B5', name: 'Remote', manageable: false, bond: 'bonded', connected: true }], pairing: null, capabilities: { scan: true, pair: true, unpair: true, input: true, pin: true, confirm: false } };
   const t0 = Date.now();
@@ -23,7 +23,7 @@ function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt
       if (action === 'pair' && state.devices[0].bond === 'bonding') throw new Error('Bluetooth did not accept the action.');
       if (action === 'pair' && pairIgnored) return Date.now();
       if (action === 'connect') { if (pad.bond === 'bonded' && wakes) later(1500, () => { pad.connected = true; pad.profiles = ['input']; }); }
-      if (action === 'unpair') later(800, () => { pad.bond = 'none'; pad.connected = false; });
+      if (action === 'unpair') later(800, () => { pad.bond = 'none'; pad.connected = false; if (forgetsFromList) state.devices = state.devices.filter((d) => d !== pad); });
       if (action === 'scan') {
         state.devices = state.devices.filter((d) => d.bond !== 'none');
         later(500, () => { state.adapter.discovering = true; });
@@ -34,6 +34,8 @@ function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt
       if (action === 'scan/stop') state.adapter.discovering = false;
       if (action === 'pair') {
         expect(body.address).toBe(PAD);
+        // Paging a pad that is not in pairing mode yet: Android tries for ~5 s, then gives up.
+        if (Date.now() - t0 < inPairingModeAfterMs) { later(700, () => { pad.bond = 'bonding'; later(5000, () => { pad.bond = 'none'; }); }); return Date.now(); }
         later(700, () => {
           pad.bond = 'bonding';
           if (pinPrompt || confirmPrompt) state.pairing = { address: PAD, variant: pinPrompt ? 'pin' : 'confirm', expiresAtMs: Date.now() + 60000 };
@@ -81,14 +83,15 @@ const run = async (bridge, mode, extra = {}) => {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-it('re-pairs a bonded pad from scratch: forget → find → pair → connect', async () => {
+it('re-pairs a bonded pad from scratch by address — no discovery — retrying until the pad is in pairing mode', async () => {
   const bridge = fakeBridge({ inPairingModeAfterMs: 20000 });
   const { value, error, steps } = await run(bridge, 'repair');
   expect(error).toBeUndefined();
   expect(value).toBe(PAD);
-  expect(bridge.log.filter((a) => a !== 'scan')).toEqual(['scan/stop', 'unpair', 'pair']);
-  expect(bridge.log.filter((a) => a === 'scan').length).toBeGreaterThan(1); // inquiry lapsed at 12 s and was re-issued
-  expect(steps.filter((s, i) => s !== steps[i - 1])).toEqual(['forget:active', 'forget:done', 'search:active', 'search:done', 'pair:active', 'pair:done', 'link:active', 'link:done']);
+  expect(bridge.log).not.toContain('scan'); // a refused scan would wipe the forgotten pad from the bridge's list
+  expect(bridge.log.slice(0, 2)).toEqual(['scan/stop', 'unpair']);
+  expect(bridge.log.filter((a) => a === 'pair').length).toBeGreaterThan(1); // paged until it answered
+  expect(steps.filter((s, i) => s !== steps[i - 1])).toEqual(['forget:active', 'forget:done', 'search:active', 'search:done', 'pair:done', 'link:active', 'link:done']);
   expect(bridge.state.devices[0]).toMatchObject({ bond: 'bonded', connected: true });
 });
 
@@ -126,11 +129,17 @@ it('fails fast with an explanation when Android wants a confirmation the TV cann
   expect(bridge.command).toHaveBeenCalledWith('pairing', { address: PAD, accept: false });
 });
 
-it('gives up searching with instructions when the pad never enters pairing mode', async () => {
+it('gives up with instructions when the pad never enters pairing mode', async () => {
   const bridge = fakeBridge({ inPairingModeAfterMs: 10 ** 9 });
   const { error } = await run(bridge, 'repair');
   expect(error).toBeInstanceOf(FlowError);
   expect(error.message).toMatch(/blinking fast/);
+});
+
+it('gives up searching for an unlisted pad that never appears', async () => {
+  const bridge = fakeBridge({ inPairingModeAfterMs: 10 ** 9, forgetsFromList: true });
+  const { error } = await run(bridge, 'repair');
+  expect(error.message).toMatch(/not found.*blinking fast/);
 });
 
 it('cancel stops discovery and rejects as an abort', async () => {
@@ -152,8 +161,8 @@ it('fix never forgets a pad when the TV itself refuses to connect', async () => 
   expect(steps).not.toContain('forget:active');
 });
 
-it('a refused scan is retried, not the end of the search', async () => {
-  const bridge = fakeBridge({ rejectFirstScans: 2, inPairingModeAfterMs: 6000 });
+it('a pad the bridge no longer lists is found by discovery, and a refused scan is retried', async () => {
+  const bridge = fakeBridge({ rejectFirstScans: 2, inPairingModeAfterMs: 6000, forgetsFromList: true });
   const { value, error } = await run(bridge, 'repair');
   expect(error).toBeUndefined();
   expect(value).toBe(PAD);
