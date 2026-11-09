@@ -24,6 +24,7 @@ export const APP_REGISTRY = {
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import("../../../__app_modules/personal/weekly-review/browser/widget.mjs") },
   'party-games':      { label: 'Party Games',       icon: null,               param: { name: 'definitionId' }, component: () => import("../../../__app_modules/games/party-games/browser/widget.mjs") },
   'school':          { label: 'School',           icon: null,               param: null, component: () => import("../../../__app_modules/learning/school/browser/kiosk.mjs") },
+  'controllers':     { label: 'Controllers',      icon: null,               param: null, component: () => import("../../../__app_modules/games/emulator/browser/bluetooth.mjs").then((m) => ({ default: m.ControllersApp })) },
 };
 
 /**

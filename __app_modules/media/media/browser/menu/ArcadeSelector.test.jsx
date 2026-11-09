@@ -11,7 +11,7 @@ it('remote reaches Controllers, panel owns input, and Back restores game selecti
  fireEvent.keyDown(window,{key:'ArrowUp'});
  expect(document.activeElement).toBe(screen.getByRole('button',{name:'Controllers'}));
  fireEvent.keyDown(window,{key:'Enter'});
- expect(await screen.findByRole('dialog',{name:'Controller recovery'})).toBeTruthy();
+ expect(await screen.findByRole('dialog',{name:'Controllers'})).toBeTruthy();
  fireEvent.keyDown(window,{key:'ArrowDown'});fireEvent.keyDown(window,{key:'ArrowUp'});
  expect(select).not.toHaveBeenCalled();
  fireEvent.keyDown(window,{key:'BrowserBack'});

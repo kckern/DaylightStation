@@ -52,6 +52,7 @@ export function createContentRegistry(config, deps = {}) {
     'family-selector': { label: 'Family Selector', param: { name: 'winner', options: 'household' } },
     glympse:           { label: 'Glympse', param: { name: 'id' } },
     websocket:         { label: 'WebSocket', param: { name: 'path' } },
+    controllers:       { label: 'Controllers' },
   };
   registry.register(
     new AppRegistryAdapter({ apps: appDefs }),

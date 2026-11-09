@@ -113,33 +113,67 @@ The Games menu entry in `data/household/config/lists/menus/tvapp.yml`:
 
 **Launch fails with "device constraint mismatch":** The `device_constraint: android` in config means only android-type devices can launch RetroArch content.
 
-## Controller recovery in kiosk mode
+## Controllers screen (Bluetooth gamepads in kiosk mode)
 
-The arcade game-selection screen provides **Controllers**, reachable with the TV
-remote: move Up from the top row of games, then Select. Back returns to the same
-game selection. Recovery is performed before launching a game; it does not overlay
-RetroArch or navigate to Android Settings.
+One screen manages the TV's Bluetooth gamepads end to end from the remote, without
+Android Settings (which Fully Kiosk will not let you reach). It opens two ways:
 
-For Android hosts, deploy the updated audio-bridge APK and configure its independent
-control origin on the fleet device definition:
+- **Home menu → Controllers** — a menu item with `input: app:controllers`,
+  `action: Open` in `content/lists/menus/tvapp.yml` (app id `controllers` in
+  `frontend/src/lib/appRegistry.js`).
+- **Games → Controllers** — move Up from the top row of games, then Select. Back
+  returns to the same game selection.
+
+Code: `__app_modules/games/emulator/browser/controllers/` (`ControllerManager.jsx`
+view, `useBluetoothManager.js` poller, `controllerFlows.js` lifecycle,
+`controllerModel.js` pure reads). It never overlays RetroArch.
+
+**What it shows.** Every game controller with its OBSERVED state — Connected,
+Paired · not connected, Pairing…, Found · not paired, or Paired · link status unknown
+(the bridge cannot see the HID link right now; never guessed). Remotes and
+keyboards are listed view-only and can never be forgotten from here.
+
+**What it does.** Each action is a checklist that only ticks on observed state,
+never on an accepted request:
+
+| Action | Steps |
+|---|---|
+| **Fix** (paired pad) | Reconnect → if no answer in 12 s: Forget → pairing mode + search → Pair → Connect |
+| **Re-pair** | Forget → pairing mode + search → Pair → Connect (from scratch) |
+| **Connect** / **Disconnect** | the one link change |
+| **Forget** | asks first ("Keep it" is focused) |
+| **Find new controllers** → **Pair** | Pair → Connect |
+
+The search keeps discovery running for up to 2 minutes (Android's inquiry lapses
+after ~12 s and is re-issued) and shows the pairing-mode steps while it looks. A
+re-paired pad is matched by address, or by name when exactly one unpaired pad of
+that name appears (an 8BitDo in another mode comes back under a new address).
+A legacy **PIN** prompt is answered on screen (with a "Use 0000" shortcut). A
+**confirm-code** prompt cannot be answered by a sideloaded app (`capabilities.confirm`
+is false without `BLUETOOTH_PRIVILEGED`), so the flow declines it and says so
+immediately rather than waiting out the 60 s window; a pad that pairs "Just Works"
+when the TV starts the pairing (8BitDo in Android mode) never asks.
+
+**Configuration** on the fleet device in `household/hardware/devices.yml`:
 
 ```yaml
 bluetooth_bridge:
   url: http://<device-host>:8766
+  pairing:                 # optional; words shown during the search step
+    mode: Android mode
+    steps:
+      - "..."
+    troubleshoot: "..."    # shown when a flow fails
 ```
 
-The browser uses its `fleet:` identity to call
-`GET /api/v1/arcade-bluetooth/:deviceId`; JSON POST actions below that path are
-`scan`, `scan/stop`, `pair`, `unpair`, `connect`, `disconnect`, and `pairing`.
-Only the server's registered bridge origin is used. Devices without that declaration
-return an explicit unavailable state. Existing garage BlueZ pairing stays separate.
-
-Find controllers discovers nearby devices. Pair, Connect, Disconnect, and confirmed
-Forget apply to joystick/gamepad devices; remotes and keyboards are view-only.
-A paired device can remain disconnected, and a successful request can remain pending:
-the UI waits for observed Bluetooth state and reports a timeout after 30 seconds.
-Pairing may require holding the controller's physical pairing button. Restricted
-native permissions/confirmation are reported in the panel, without opening Settings.
+The browser uses its `fleet:` identity (set by the screen from
+`websocket.guardrails.device`) to call `GET /api/v1/arcade-bluetooth/:deviceId`;
+JSON POST actions below that path are `scan`, `scan/stop`, `pair`, `unpair`,
+`connect`, `disconnect`, and `pairing`. The status response carries `guide` when
+`pairing` is configured. Only the server's registered bridge origin is used; a
+device without `bluetooth_bridge` returns an explicit 503. The route must be listed
+in the v1 `routeMap` (`__backend/src/4_api/v1/routers/api.mjs`) — registering it in
+`v1Routers` alone 404s. Existing garage BlueZ pairing stays separate.
 
 Installation needs the original APK signing key and Bluetooth discovery permissions.
 Do not uninstall a working audio-bridge to work around a signing mismatch. Do not
