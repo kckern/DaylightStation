@@ -4,6 +4,10 @@ import { useBluetoothManager } from './useBluetoothManager.js';
 import { deviceStatus, STATUS_LABEL, splitDevices, shortAddress, findDevice } from './controllerModel.js';
 import { runControllerFlow, flowSteps, STEP_LABEL, FlowError } from './controllerFlows.js';
 import { useRemoteFocus } from './useRemoteFocus.js';
+import { useGamepadActivity, isControllerKey, isLit } from './useGamepadActivity.js';
+import { getActionBus } from '../../../../../frontend/src/lib/input/ActionBus.js';
+import { attributePads } from './liveInput.js';
+import PadDiagram from './PadDiagram.jsx';
 import './ControllerManager.scss';
 
 const FLOW_TITLE = { fix: 'Fixing', repair: 'Re-pairing', pair: 'Pairing', connect: 'Connecting' };
@@ -112,7 +116,20 @@ export default function ControllerManager({ deviceId, onClose, client }) {
     onClose?.();
   }, [pinPrompt, confirmForget, flow, onClose]);
 
-  useRemoteFocus({ scope: flow || confirmForget ? overlay : root, onBack: back });
+  // Controllers under test only light up; the TV remote drives this screen.
+  // The screen host's GamepadAdapter turns pad buttons into semantic actions
+  // (L1/R2/Select → escape: dismiss the overlay, or reload) BEFORE any key
+  // event exists, so claim those actions on the bus while this screen is up;
+  // its synthetic keys and Android's fallback keys are swallowed by `ignore`.
+  // The remote never reaches the bus here: useRemoteFocus handles its keys in
+  // the capture phase and stops them.
+  useEffect(() => getActionBus().capture(['navigate', 'select', 'escape'], () => true), []);
+  useRemoteFocus({ scope: flow || confirmForget ? overlay : root, onBack: back, ignore: isControllerKey });
+
+  const { pads, lastSeen, now: padNow } = useGamepadActivity();
+  const padFor = attributePads(pads, controllers.filter((d) => d.connected === true));
+  const padLit = (index) => index != null && isLit(lastSeen[index], padNow);
+  const anyLit = pads.some((p) => padLit(p.index));
 
   // Buttons are disabled until the first status read, so the remote would
   // otherwise start on Back. Once status arrives, start on the thing most
@@ -140,15 +157,24 @@ export default function ControllerManager({ deviceId, onClose, client }) {
       <button type="button" onClick={() => onClose?.()}>Back</button>
     </header>
 
-    {(readError || state?.lastError || notice) && <p className="ctl-manager__notice" role="status">{notice || readError || state.lastError}</p>}
+    {/* The bridge's lastError is sticky (it outlives the action that set it), so the
+        main view shows only this screen's own notices; flows quote the bridge
+        when one of THEIR steps fails. */}
+    {(readError || notice) && <p className="ctl-manager__notice" role="status">{notice || readError}</p>}
 
+    <div className="ctl-manager__body">
     <ul className="ctl-manager__list">
       {controllers.map((d) => {
         const status = deviceStatus(d);
         return <li key={d.address} className={`ctl-manager__row is-${status}`} data-nav-row={d.address}>
           <PadIcon />
           <div className="ctl-manager__name"><strong>{d.name}</strong><small>…{shortAddress(d.address)}</small></div>
-          <span className={`ctl-manager__status is-${status}`}>{STATUS_LABEL[status]}</span>
+          <span className={`ctl-manager__status is-${status}`}>
+            {STATUS_LABEL[status]}
+            {status === 'connected' && <span className={`ctl-manager__lamp${padLit(padFor.get(d.address)) ? ' is-lit' : ''}`}>
+              {padLit(padFor.get(d.address)) ? 'I’m here!' : padFor.has(d.address) ? 'Press a button' : 'Press a button →'}
+            </span>}
+          </span>
           <div className="ctl-manager__actions">
             {status === 'connected' && <>
               <button type="button" disabled={!ready || !caps.input} onClick={() => single('disconnect', d, (s) => findDevice(s, d.address)?.connected === false)}>Disconnect</button>
@@ -169,6 +195,22 @@ export default function ControllerManager({ deviceId, onClose, client }) {
         No game controllers yet. Put a controller in pairing mode, then choose <b>Find new controllers</b>.
       </li>}
     </ul>
+
+    <aside className="ctl-manager__live" aria-label="Live input">
+      <h2>Live input</h2>
+      {pads.length === 0
+        ? <p className="ctl-manager__live-empty">Press any button on a connected controller — it shows up here and lights up as you press.</p>
+        : pads.map((p) => {
+          const lit = padLit(p.index);
+          return <div key={p.index} className={`ctl-manager__pad${lit ? ' is-lit' : ''}`}>
+            <div className="ctl-manager__pad-head"><strong>Player {p.player}</strong><small>{p.name}</small></div>
+            <PadDiagram pressed={p.pressed} axes={p.axes} />
+            <p className="ctl-manager__pad-press">{lit ? `I’m here! ${lastSeen[p.index]?.press || ''}` : 'Waiting for a press…'}</p>
+          </div>;
+        })}
+      <p className="ctl-manager__live-hint">Controller buttons only light up here. Use the TV remote to choose.</p>
+    </aside>
+    </div>
 
     {others.length > 0 && <p className="ctl-manager__others">
       Other Bluetooth devices (view only): {others.map((d) => `${d.name} — ${STATUS_LABEL[deviceStatus(d)]}`).join(' · ')}
@@ -214,6 +256,15 @@ export default function ControllerManager({ deviceId, onClose, client }) {
         {flow.error && <p className="ctl-manager__error" role="alert">{flow.error}</p>}
         {flow.error && guide?.troubleshoot && <p className="ctl-manager__hint">{guide.troubleshoot}</p>}
         {flow.result && <p className="ctl-manager__success">{live?.name || flow.device.name} is connected.</p>}
+        {flow.result && (() => {
+          // Attributed by name when unambiguous; otherwise any controller's press
+          // counts — the one just connected is the one being mashed.
+          const index = padFor.get(flow.result);
+          const lit = index != null ? padLit(index) : anyLit;
+          return <p className={`ctl-manager__check${lit ? ' is-lit' : ''}`}>
+            {lit ? 'I’m here! Buttons are coming through.' : 'Press any button on it to check — this lights up.'}
+          </p>;
+        })()}
         <div data-nav-row="flow" className="ctl-manager__actions">
           {flow.result && <button type="button" className="is-primary" onClick={() => onClose?.()}>Done — back to the menu</button>}
           {flow.result && <button type="button" onClick={() => setFlow(null)}>Manage more controllers</button>}

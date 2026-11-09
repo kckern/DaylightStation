@@ -32,9 +32,11 @@ function restore(grid, last) {
  * the host screen's own Escape handling never sees a key this view used.
  * Focus is kept inside `scope` even when a poll re-renders the row it was on.
  */
-export function useRemoteFocus({ scope, onBack }) {
+export function useRemoteFocus({ scope, onBack, ignore }) {
   const back = useRef(onBack);
   back.current = onBack;
+  const skip = useRef(ignore);
+  skip.current = ignore;
   const memory = useRef(new WeakMap());
 
   // Remember where focus is per scope element — an overlay's position never
@@ -67,6 +69,7 @@ export function useRemoteFocus({ scope, onBack }) {
     const key = (event) => {
       const el = scope.current;
       if (!el) return;
+      if (skip.current?.(event)) { event.preventDefault(); event.stopImmediatePropagation(); return; }
       const typing = event.target?.tagName === 'INPUT';
       if (BACK_KEYS.includes(event.key) || event.keyCode === 4) {
         if (typing && event.key === 'Backspace') return;
