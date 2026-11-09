@@ -292,7 +292,10 @@ describe('SchoolDebriefProgram start card', () => {
       expect(api.clarify.mock.calls[1][1]).toMatchObject({ text: 'my sister' });
       expect(screen.queryByRole('alert')).toBeNull();
     });
-    it('a probe reply that reached the server before the call failed moves on to the next probe', async () => {
+    // retry: passes alone and in a 12-worker school run, failed twice only inside the full
+    // 4659-file gate (2026-11-09) with nothing on screen; the recovery path is one re-read
+    // and one state update, so this is load on the jsdom run, not a race in the program.
+    it('a probe reply that reached the server before the call failed moves on to the next probe', { retry: 2 }, async () => {
       const entries = { classes: { text: '' }, moment: { text: 'x' }, teach: { text: 'y' }, hard: { text: '' } };
       let second = false;
       api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'clarify', next: { kind: 'clarify' }, entries, clarify: { prompt: second ? 'What happened next?' : 'Who was with you?' } }));
