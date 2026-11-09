@@ -20,9 +20,22 @@ describe('DayReel', () => {
     expect(screen.getByText(/Enter/)).toBeInTheDocument();
   });
 
-  it('renders a video element when playing', () => {
+  it('renders a looping video element when playing', () => {
     const { container } = render(<DayReel item={video} index={1} total={3} dayLabel={dayLabel} playing={true} muted paused={false} onEnded={() => {}} />);
-    expect(container.querySelector('video')).not.toBeNull();
+    const el = container.querySelector('video');
+    expect(el).not.toBeNull();
+    expect(el.loop).toBe(true);
+  });
+
+  it('captions a video exactly like a photo: full-width bottom caption with day, time and position', () => {
+    const { container } = render(<DayReel item={{ ...video, people: ['Mara'] }} index={1} total={3} dayLabel={dayLabel} playing={true} muted paused={false} />);
+    const caption = container.querySelector('.weekly-review-fullscreen-image > .fullscreen-image-overlay');
+    expect(caption).not.toBeNull(); // a child of the full-screen frame, not of a box hugging the picture
+    expect(caption.textContent).toContain(dayLabel);
+    expect(caption.textContent).toContain('3:00 PM');
+    expect(caption.textContent).toContain('2 / 3');
+    expect(caption.textContent).toContain('Mara');
+    expect(caption.textContent).toContain('Enter to unmute');
   });
 
   it('surfaces the day data points when there is no media', () => {

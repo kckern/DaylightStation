@@ -1,6 +1,6 @@
 // frontend/src/modules/WeeklyReview/components/DayReel.jsx
 import React, { useEffect, useRef } from 'react';
-import FullscreenImage from "./FullscreenImage.jsx";
+import FullscreenImage, { MediaCaption } from "./FullscreenImage.jsx";
 import DayDataPoints from "./DayDataPoints.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 
@@ -16,6 +16,8 @@ function ReelVideo({ item, muted, paused, onEnded }) {
     const el = ref.current;
     if (!el) return;
     const onErr = () => logger().error('reel.video-error', { error: el.error?.message || 'unknown' });
+    // `loop` means 'ended' only fires if looping is ever turned off; keep the
+    // hook so a caller can still react to a real end.
     const onEnd = () => { logger().info('reel.video-ended'); onEnded?.(); };
     el.addEventListener('error', onErr);
     el.addEventListener('ended', onEnd);
@@ -39,12 +41,9 @@ function ReelVideo({ item, muted, paused, onEnded }) {
       src={item.original}
       className="reel-video"
       autoPlay
+      loop
       playsInline
       muted={muted}
-      // Intrinsic dimensions arrive with metadata, and the stage sizes itself
-      // from the element — so fetch them early to shorten the window where the
-      // video still reports its 300x150 default and the chrome hugs that
-      // instead of the picture.
       preload="metadata"
       poster={item.thumbnail}
     />
@@ -66,14 +65,12 @@ export default function DayReel({ item, day, index, total, dayLabel, playing, mu
   if (item.type === 'video') {
     return (
       <div className="weekly-review-reel weekly-review-reel--video">
-        {/* The chrome hugs the picture, so it has to be a sibling of the media
-            inside a box that IS the picture. Pinning the overlay to the reel
-            instead left it aligned to the letterbox whenever the video's aspect
-            ratio differed from the screen's. The stage shrink-wraps whatever it
-            holds, and the media sizes intrinsically under a 100% cap, so the
-            two always agree. (Photos deliberately do the opposite — see
-            .fullscreen-image-overlay, whose gradient bleeds to the screen edge.) */}
-        <div className="reel-stage">
+        {/* Same frame as a photo: the media fills the screen (letterboxed by
+            object-fit), and the caption's gradient runs the full screen width
+            at the bottom. It used to hug the picture, so a portrait or small
+            clip got a narrow strip of fade floating mid-screen. Clips loop
+            until you move on, like a live photo. */}
+        <div className="weekly-review-fullscreen-image">
           {playing ? (
             <ReelVideo item={item} muted={muted} paused={paused} onEnded={onEnded} />
           ) : (
@@ -82,11 +79,9 @@ export default function DayReel({ item, day, index, total, dayLabel, playing, mu
               <div className="reel-play-hint">▶ Enter to play</div>
             </>
           )}
-          <div className="reel-overlay">
-            <div className="reel-day-label">{dayLabel}</div>
-            <div className="reel-index">{index + 1} / {total}</div>
+          <MediaCaption item={item} index={index} total={total} dayLabel={dayLabel}>
             {playing && <div className="reel-mute-state">{muted ? '🔇 Enter to unmute' : '🔊'}</div>}
-          </div>
+          </MediaCaption>
         </div>
       </div>
     );
