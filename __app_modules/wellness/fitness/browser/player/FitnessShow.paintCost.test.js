@@ -14,4 +14,11 @@ describe('FitnessShow.scss paint cost', () => {
       .filter(([, line]) => /^\s*(transition|animation)[^:]*:.*\bfilter\b/.test(line));
     expect(offenders).toEqual([]);
   });
+
+  it('never transitions `all` (which sweeps filter and outline along with it)', () => {
+    const offenders = scss.split('\n')
+      .map((line, i) => [i + 1, line])
+      .filter(([, line]) => /^\s*transition\s*:\s*all\b/.test(line));
+    expect(offenders).toEqual([]);
+  });
 });

@@ -45,8 +45,16 @@ export function playedEpisodes(session) {
   const list = items && items.length
     ? items.map((m) => ({ contentId: normalizeEpisodeId(m?.contentId), playedMs: Number.isFinite(m?.playedMs) ? m.playedMs : null }))
     : [{ contentId: normalizeEpisodeId(session?.media?.primary?.contentId), playedMs: null }];
-  const seen = new Set();
-  return list.filter((e) => e.contentId && !seen.has(e.contentId) && seen.add(e.contentId));
+  // A video opened and backed out of (played 0ms) was not done; a video played
+  // in two goes (restarted mid-session) counts its whole time.
+  const byId = new Map();
+  for (const e of list) {
+    if (!e.contentId || e.playedMs === 0 || (e.playedMs != null && e.playedMs < 0)) continue;
+    const prior = byId.get(e.contentId);
+    if (!prior) byId.set(e.contentId, { ...e });
+    else if (prior.playedMs != null && e.playedMs != null) prior.playedMs += e.playedMs;
+  }
+  return [...byId.values()];
 }
 
 export class QueryEpisodeHistory {

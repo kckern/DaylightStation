@@ -105,4 +105,25 @@ describe('QueryEpisodeHistory', () => {
     expect(row).toMatchObject({ playedMs: null });
     expect(row.riders[0].minutes).toBe(28);
   });
+
+  it('does not credit a video that never actually played', async () => {
+    const { uc } = makeUseCase([{
+      sessionId: 's', date: '2026-10-07', startTime: 1,
+      participants: { 'rider-a': rider(30) },
+      media: { primary: { contentId: 'plex:2' }, items: [{ contentId: 'plex:3', playedMs: 0 }, { contentId: 'plex:2', playedMs: 1800000 }] },
+    }]);
+    const { episodes } = await uc.execute({ episodeIds: ['2', '3'] });
+    expect(Object.keys(episodes)).toEqual(['plex:2']);
+  });
+
+  it('adds up a video played in two goes', async () => {
+    const { uc } = makeUseCase([{
+      sessionId: 's', date: '2026-10-07', startTime: 1,
+      participants: { 'rider-a': rider(45) },
+      media: { primary: { contentId: 'plex:5' }, items: [{ contentId: 'plex:5', playedMs: 240000 }, { contentId: 'plex:5', playedMs: 1560000 }] },
+    }]);
+    const [row] = (await uc.execute({ episodeIds: ['5'] })).episodes['plex:5'];
+    expect(row.playedMs).toBe(1800000);
+    expect(row.riders[0].minutes).toBe(30);
+  });
 });

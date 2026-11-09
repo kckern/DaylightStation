@@ -19,6 +19,12 @@ const RestartIcon = () => (
   </svg>
 );
 
+const LockGlyph = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+);
+
 const clock = (seconds) => {
   const s = Math.max(0, Math.round(Number(seconds) || 0));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -78,6 +84,8 @@ export default function EpisodePanel({
   formatDate,
   onFocus,
   onPlay,
+  locked = false,
+  onUnlock = null,
   headerExtras = null,
 }) {
   if (!episode) return null;
@@ -143,15 +151,28 @@ export default function EpisodePanel({
       <h3 className="episode-panel__title">{title}</h3>
 
       <div className="episode-panel__actions">
-        <TouchButton data-testid="play-episode-button" onClick={() => onPlay(episode, resumable ? 'resume' : 'play')}>
-          <PlayIcon />
-          {resumable ? `Resume ${clock(resumeSeconds)}` : 'Play'}
-        </TouchButton>
-        {resumable && (
-          <TouchButton variant="secondary" onClick={() => onPlay(episode, 'start-over')}>
-            <RestartIcon />
-            Start over
-          </TouchButton>
+        {locked ? (
+          onUnlock ? (
+            <TouchButton variant="secondary" onClick={() => onUnlock(episode)}>
+              <LockGlyph />
+              Unlock
+            </TouchButton>
+          ) : (
+            <span className="episode-panel__locked"><LockGlyph />Locked — finish the earlier episodes first</span>
+          )
+        ) : (
+          <>
+            <TouchButton data-testid="play-episode-button" onClick={() => onPlay(episode, resumable ? 'resume' : 'play')}>
+              <PlayIcon />
+              {resumable ? `Resume ${clock(resumeSeconds)}` : 'Play'}
+            </TouchButton>
+            {resumable && (
+              <TouchButton variant="secondary" onClick={() => onPlay(episode, 'start-over')}>
+                <RestartIcon />
+                Start over
+              </TouchButton>
+            )}
+          </>
         )}
       </div>
 

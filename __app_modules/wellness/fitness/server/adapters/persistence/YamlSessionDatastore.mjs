@@ -482,11 +482,12 @@ export class YamlSessionDatastore extends ISessionDatastore {
           // Every video the session played — episode history credits each one
           // and caps riders' minutes at how long it ran.
           items: summaryMediaObjects
-            .filter(m => m.contentId && m.mediaType !== 'audio')
+            // A video that never ran (opened and backed out of) is not "played".
+            .filter(m => m.contentId && m.mediaType !== 'audio' && !(Number(m.durationMs) <= 0))
             .map(m => ({
               contentId: ItemId.normalize(m.contentId, ItemId.extractSource(m.contentId)),
-              playedMs: Number.isFinite(Number(m.durationMs)) ? Number(m.durationMs) : null,
-              rings: Number.isFinite(Number(m.rings)) ? Number(m.rings) : null,
+              playedMs: m.durationMs != null && Number.isFinite(Number(m.durationMs)) ? Number(m.durationMs) : null,
+              rings: m.rings != null && Number.isFinite(Number(m.rings)) ? Number(m.rings) : null,
             })),
         };
       }

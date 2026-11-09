@@ -438,10 +438,6 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     return { width: rect.width, height: rect.height };
   }, [viewportRef]);
 
-  const handleEpisodeSelect = (episode) => {
-    setSelectedEpisode(episode);
-  };
-
   // Scroll behavior utilities (touch-first): only activate action if element fully visible with margin
   const getScrollParent = (el, axis = 'y') => {
     if (!el) return null;
@@ -1135,6 +1131,11 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     return same.length ? same : filteredItems;
   }, [filteredItems, panelEpisode]);
   const playFromPanel = (episode, mode) => {
+    // A locked (sequential) episode is only ever reached through its unlock prompt.
+    if (lockedEpisodeIds.has(episode.plex || episode.id)) {
+      getLogger().child({ component: 'FitnessShow' }).warn('fitness.show.panel_play_locked', { episode: episode.plex || episode.id });
+      return;
+    }
     getLogger().child({ component: 'FitnessShow' }).info('fitness.show.panel_play', { showId: showIdRef.current, episode: episode.plex || episode.id, mode });
     const target = mode === 'start-over'
       ? { ...episode, watchSeconds: 0, watchProgress: 0, seconds: 0, resumeSeconds: 0 }
@@ -1148,8 +1149,16 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   // sidebar menu while it is open, and to the player while something plays.
   const [padFocused, setPadFocused] = useState(false);
   const handleShowKey = (key) => {
-    if (typeof document !== 'undefined' && document.querySelector('.fitness-sidebar-menu')) return false;
+    // Anything on top of the grid owns the keys: the sidebar menu, a modal
+    // (unlock / feedback prompt), the voice-memo overlay, the player.
+    if (typeof document !== 'undefined'
+      && document.querySelector('.fitness-sidebar-menu, .voice-memo-overlay, [aria-modal="true"]')) return false;
     if (fitnessPlayQueue?.length > 0 || pendingUnlock) return false;
+    // Behind the presence gate nothing is browsed or played; while loading or
+    // failed the grid is not on screen.
+    if (presencePrompt.blocked || presencePrompt.open || loading || error) return false;
+    // The panel is showing a season, not an episode: there is nothing to play.
+    if (selectedInfo && infoType === 'season') return false;
     const list = filteredItems;
     if (!list.length) return false;
     const current = Math.max(0, list.findIndex((ep) => episodeKey(ep) === episodeKey(panelEpisode)));
@@ -1180,7 +1189,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   };
   const showKeyRef = useRef(handleShowKey);
   showKeyRef.current = handleShowKey;
-  useGamepadKeys(true, (key) => showKeyRef.current(key));
+  useGamepadKeys(!(fitnessPlayQueue?.length > 0) && !presencePrompt.blocked, (key) => showKeyRef.current(key));
   useEffect(() => {
     const onKeyDown = (event) => {
       const tag = event.target?.tagName;
@@ -1378,6 +1387,8 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
               formatDate={formatWatchedDate}
               onFocus={focusEpisode}
               onPlay={playFromPanel}
+              locked={lockedEpisodeIds.has(panelEpisode.plex || panelEpisode.id)}
+              onUnlock={isLockActive('skip_content') ? (ep) => handleLockedEpisodeUnlockTap(ep) : null}
               headerExtras={titleBadges}
             />
           )}

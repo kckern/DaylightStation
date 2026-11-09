@@ -23,7 +23,7 @@ describe('YamlSessionDatastore — media.items in findByDate', () => {
   });
   afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
-  it('lists each video with its played time and rings, skipping audio', async () => {
+  it('lists each video with its played time and rings, skipping audio and videos that never played', async () => {
     const dir = path.join(tmpDir, 'fitness/log', DATE);
     fs.mkdirSync(dir, { recursive: true });
     saveYaml(path.join(dir, '20261007132927'), {
@@ -38,6 +38,8 @@ describe('YamlSessionDatastore — media.items in findByDate', () => {
           { contentId: 'plex:600750', title: 'Max Out Abs', mediaType: 'video', durationMs: 936516, rings: 560, primary: true },
           { contentId: 'plex:622573', title: 'Power Up Ride', mediaType: 'video', durationMs: 625927, rings: 281 },
           { contentId: 'plex:9001', title: 'A song', mediaType: 'audio', durationMs: 200000 },
+          { contentId: 'plex:7', title: 'Opened by mistake', mediaType: 'video', durationMs: 0 },
+          { contentId: 'plex:8', title: 'No rings recorded', durationMs: 60000 },
         ],
       },
     });
@@ -46,6 +48,7 @@ describe('YamlSessionDatastore — media.items in findByDate', () => {
     expect(session.media.items).toEqual([
       { contentId: 'plex:600750', playedMs: 936516, rings: 560 },
       { contentId: 'plex:622573', playedMs: 625927, rings: 281 },
+      { contentId: 'plex:8', playedMs: 60000, rings: null },
     ]);
   });
 });

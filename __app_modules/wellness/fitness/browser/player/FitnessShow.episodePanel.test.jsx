@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor, within } from '@testing-library/react';
 
 // The always-on episode panel: season mosaic, coverage, who's done it, and
@@ -191,5 +191,65 @@ describe('FitnessShow episode panel', () => {
       await new Promise((r) => setTimeout(r, 30));
       expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 2');
     });
+
+    it('ignores the pad while a modal overlay (voice memo, feedback, prompt) is open', async () => {
+      mockApi(show());
+      const { container, setFitnessPlayQueue } = renderShow();
+      await waitFor(() => expect(panel(container)?.textContent).toContain('Ep 1'));
+      for (const make of [
+        () => Object.assign(document.createElement('div'), { className: 'voice-memo-overlay voice-memo-overlay--record' }),
+        () => { const d = document.createElement('div'); d.setAttribute('aria-modal', 'true'); return d; },
+      ]) {
+        const el = make();
+        document.body.appendChild(el);
+        fireEvent.keyDown(window, { key: 'ArrowRight' });
+        fireEvent.keyDown(window, { key: 'Enter' });
+        await new Promise((r) => setTimeout(r, 30));
+        el.remove();
+      }
+      expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 1');
+      expect(setFitnessPlayQueue).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('FitnessShow episode panel — season selected', () => {
+  beforeEach(() => { DaylightAPI.mockReset(); });
+
+  it('Enter plays nothing while a season, not an episode, is on the panel', async () => {
+    const data = show();
+    data.items = [...data.items, { plex: '501', id: 'plex:501', label: 'S2 Ep 1', parentId: 'p2', itemIndex: 1, image: 'f1.jpg', duration: 1800 }];
+    data.parents = { ...data.parents, p2: { index: 2, title: 'Season 2' } };
+    mockApi(data);
+    const { container, setFitnessPlayQueue } = renderShow();
+    const seasonButtons = await waitFor(() => {
+      const el = container.querySelectorAll('.season-item');
+      expect(el.length).toBe(2);
+      return el;
+    });
+    fireEvent.pointerDown(seasonButtons[1]);
+    await waitFor(() => expect(container.querySelector('[data-testid="episode-panel"]')).toBeNull());
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(setFitnessPlayQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('FitnessShow episode panel — sequential lock', () => {
+  beforeEach(() => { DaylightAPI.mockReset(); mockCtx.plexConfig = { sequential_labels: ['sequential'] }; });
+  afterEach(() => { mockCtx.plexConfig = { resumable_labels: ['resumable'] }; });
+
+  it('never offers Play for a locked episode focused from the mosaic', async () => {
+    mockApi(show(['Sequential']));
+    const { container, setFitnessPlayQueue } = renderShow();
+    const mosaic = await waitFor(() => {
+      const el = container.querySelector('[data-testid="episode-mosaic"]');
+      expect(el).toBeTruthy();
+      return el;
+    });
+    fireEvent.click(mosaic.querySelectorAll('[role="button"]')[1]);
+    await waitFor(() => expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 2'));
+    expect(within(panel(container)).queryByRole('button', { name: /Play|Resume|Start over/ })).toBeNull();
+    expect(panel(container).textContent).toContain('Locked');
+    expect(setFitnessPlayQueue).not.toHaveBeenCalled();
   });
 });
