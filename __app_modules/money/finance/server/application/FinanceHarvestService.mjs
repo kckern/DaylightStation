@@ -330,6 +330,7 @@ export class FinanceHarvestService {
     let totalProcessed = 0;
     let totalFailed = 0;
     const seenIds = new Set();
+    let unreadable = false;
 
     for (const budget of budgets) {
       if (budget.closed) continue;
@@ -337,6 +338,7 @@ export class FinanceHarvestService {
       const startDate = this.#toDateString(budget.timeframe.start);
       const transactions = this.#financeStore.getTransactions(startDate, householdId);
 
+      if (!transactions) unreadable = true;
       if (!transactions?.length) continue;
       for (const txn of transactions) seenIds.add(String(txn.id));
 
@@ -354,8 +356,12 @@ export class FinanceHarvestService {
       totalFailed += failed.length;
     }
 
-    // Settled entries are pruned against the ids seen across ALL periods of this run
-    this.#categorizationService.pruneSettled?.(seenIds, householdId);
+    // Settled entries are pruned against the ids seen across ALL periods of this run.
+    // Never prune on a run that saw nothing, or that could not read an open period:
+    // a partial view would wipe entries and cost a re-ask per row.
+    if (seenIds.size > 0 && !unreadable) {
+      this.#categorizationService.pruneSettled?.(seenIds, householdId);
+    }
 
     this.#log('info', 'harvest.categorization.complete', {
       processed: totalProcessed,

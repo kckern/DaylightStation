@@ -410,4 +410,40 @@ describe('FinanceHarvestService', () => {
       await expect(svc.categorizeAll()).rejects.toThrow('Categorization service not configured');
     });
   });
+  describe('settled-map pruning', () => {
+    const twoPeriods = {
+      budget: [
+        { timeframe: { start: '2026-01-01', end: '2026-06-30' } },
+        { timeframe: { start: '2026-07-01', end: '2026-12-31' } },
+      ],
+    };
+    beforeEach(() => {
+      mockFinanceStore.getBudgetConfig.mockReturnValue(twoPeriods);
+      mockCategorizationService.pruneSettled = vi.fn();
+    });
+
+    it('does not prune when every period is empty or null', async () => {
+      mockFinanceStore.getTransactions.mockReturnValueOnce(null).mockReturnValueOnce([]);
+      await service.categorizeAll();
+      expect(mockCategorizationService.pruneSettled).not.toHaveBeenCalled();
+    });
+
+    it('does not prune when one open period cannot be read', async () => {
+      mockFinanceStore.getTransactions
+        .mockReturnValueOnce([{ id: 'a1', description: 'x', tagNames: ['Dining'] }])
+        .mockReturnValueOnce(null);
+      await service.categorizeAll();
+      expect(mockCategorizationService.pruneSettled).not.toHaveBeenCalled();
+    });
+
+    it('prunes once against the union of ids across periods', async () => {
+      mockFinanceStore.getTransactions
+        .mockReturnValueOnce([{ id: 'a1', description: 'x', tagNames: ['Dining'] }])
+        .mockReturnValueOnce([{ id: 'b1', description: 'y', tagNames: ['Dining'] }]);
+      await service.categorizeAll();
+      expect(mockCategorizationService.pruneSettled).toHaveBeenCalledTimes(1);
+      const [ids] = mockCategorizationService.pruneSettled.mock.calls[0];
+      expect([...ids].sort()).toEqual(['a1', 'b1']);
+    });
+  });
 });
