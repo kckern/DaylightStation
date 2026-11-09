@@ -61,7 +61,7 @@ function Loaded({ learnerId, learnerName, actorId }) {
               <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'reject')}>Reject</button>
               {d.discussedAt
                 ? <span className="teacher-debrief__talked">Talked about ✓</span>
-                : <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'discussed')}>We talked about it</button>}
+                : d.phase === 'completed' && <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'discussed')}>We talked about it</button>}
               {d.questioner === 'fallback' && <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'rescore')}>Re-score</button>}
               {['excuse', 'reject', 'rescore', 'discussed'].map((a) => errors?.[`${d.studyDay}:${a}`]
                 && <span key={a} role="alert" className="teacher-panel__error">{errors[`${d.studyDay}:${a}`]}</span>)}

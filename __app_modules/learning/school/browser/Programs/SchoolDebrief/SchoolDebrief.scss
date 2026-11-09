@@ -13,7 +13,7 @@
 .sd-choices button.is-answer:disabled { opacity: 1; border-color: var(--ds-success); color: var(--ds-text-high); }
 .sd-result { font-size: 1.6rem; &.is-right { color: var(--ds-success); } &.is-wrong { color: var(--ds-text-high); } }
 .sd-controls { display: flex; gap: 1rem; justify-content: flex-end; &--stack { flex-direction: column; align-items: stretch; } }
-.sd-prompt__hearing { font-size: 1.3rem; margin: 0; color: var(--ds-text-medium, var(--ds-text-high)); }
+.sd-prompt__hearing { font-size: 1.3rem; margin: 0; color: var(--ds-text-mid, var(--ds-text-high)); }
 .sd-notice, .sd-nudge { font-size: 1.3rem; color: var(--ds-warning); }
 .sd-thinking { font-size: 1.8rem; text-align: center; margin-top: 6rem; color: var(--ds-text-mid); }
 .sd-summary__quote { font-size: 1.6rem; border-left: 4px solid var(--ds-accent); padding-left: 1rem; margin: 0; }

@@ -77,6 +77,17 @@ describe('DebriefsPanel', () => {
     expect(screen.getByText(/Who ran it\?/)).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
   });
+  it('a day the child has not finished offers no "We talked about it"', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [{ ...RICH, studyDay: '2026-10-22', phase: 'not-started', entries: { learned: { text: 'fractions' } }, questions: null, answers: {}, summary: null }] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    await screen.findByText('fractions');
+    expect(screen.queryByRole('button', { name: /we talked about it/i })).toBeNull();
+  });
+  it('a completed day offers "We talked about it"', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [RICH] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    expect(await screen.findByRole('button', { name: /we talked about it/i })).toBeInTheDocument();
+  });
   it('legacy day still shows detail substance/10', async () => {
     api.teacherDebriefs.mockResolvedValue(ok({ days: [{ ...DAY, substance: 7 }] }));
     render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
