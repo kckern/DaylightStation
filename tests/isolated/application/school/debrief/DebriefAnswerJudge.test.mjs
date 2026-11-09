@@ -1,6 +1,6 @@
 // tests/isolated/application/school/debrief/DebriefAnswerJudge.test.mjs
 import { describe, it, expect, vi } from 'vitest';
-import { DebriefAnswerJudge } from "../../../../../__app_modules/learning/school/server/application/debrief/DebriefAnswerJudge.mjs";
+import { DebriefAnswerJudge, JUDGE_SYSTEM } from "../../../../../__app_modules/learning/school/server/application/debrief/DebriefAnswerJudge.mjs";
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const choice = { id: 'q1', kind: 'choice', prompt: 'P', options: ['A', 'B'], answer: 'B' };
 const short = { id: 'q3', kind: 'short', prompt: 'Explain', expected: 'plants make food from light' };
@@ -42,5 +42,23 @@ describe('DebriefAnswerJudge', () => {
     expect((await j.grade(short, 'x')).correct).toBe(true);
     await new Promise((r) => setTimeout(r, 0));
     expect(info).toHaveBeenCalledWith('school.debrief.judge-shadow', expect.objectContaining({ llm: 9 }));
+  });
+  it('JUDGE_SYSTEM is lenient: one example, any language, extra detail is fine', () => {
+    expect(JUDGE_SYSTEM).toContain('expected is one example answer, not the only one');
+    expect(JUDGE_SYSTEM).toContain('Any language');
+    expect(JUDGE_SYSTEM).toContain('Extra correct detail is never a fault');
+  });
+  it('sends JUDGE_SYSTEM as the system message with the JSON data', async () => {
+    const chatStructured = vi.fn(async () => ({ score: 7, reason: 'ok' }));
+    const q = { id: 'q9', kind: 'short', prompt: 'Why not look at the keys?', expected: 'Type faster' };
+    await new DebriefAnswerJudge({ aiGateway: { chatStructured }, logger: silent })
+      .grade(q, 'so you do not peck; you learn nothing if you peck');
+    const [messages] = chatStructured.mock.calls[0];
+    expect(messages[0]).toEqual({ role: 'system', content: JUDGE_SYSTEM });
+    expect(JSON.parse(messages[1].content)).toEqual({
+      question: 'Why not look at the keys?',
+      expected: 'Type faster',
+      attempt: 'so you do not peck; you learn nothing if you peck',
+    });
   });
 });
