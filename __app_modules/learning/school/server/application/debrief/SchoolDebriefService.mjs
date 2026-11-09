@@ -7,6 +7,7 @@
 import { PROMPTS, TEACHER_EVENTS, deriveDebriefState, promptsFor, shouldProbe, debriefMetrics } from "../../domain/schoolDebrief.mjs";
 
 const MIN_TAKE_BYTES = 1000;
+const LEGACY_TO_CURRENT = Object.freeze({ learned: 'teach', notable: 'hard' });
 class DebriefError extends Error { constructor(message, status = 400) { super(message); this.name = 'DebriefError'; this.status = status; } }
 
 export class SchoolDebriefService {
@@ -84,7 +85,10 @@ export class SchoolDebriefService {
     if (['completed', 'excused', 'rejected'].includes(s.phase)) throw new DebriefError('This debrief is already finished.', 409);
     return s;
   }
-  async entry(learnerId, day, { promptId, text, via = 'typed', audioRef = null }) {
+  async entry(learnerId, day, { promptId: sent, text, via = 'typed', audioRef = null }) {
+    // A Portal still on the pre-redesign bundle sends the old ids until it reloads.
+    const promptId = LEGACY_TO_CURRENT[sent] ?? sent;
+    if (promptId !== sent) this.#logger.info?.('school.debrief.legacy-prompt-id', { learnerId, day, from: sent, to: promptId });
     if (!PROMPTS.some((p) => p.id === promptId)) throw new DebriefError(`unknown prompt: ${promptId}`);
     const s = await this.#assertOpen(learnerId, day);
     if (s.questions) throw new DebriefError('Questions have started; the entry is closed.', 409);

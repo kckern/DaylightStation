@@ -44,6 +44,7 @@ describe('QUESTIONER_SYSTEM', () => {
       expect(QUESTIONER_SYSTEM).toContain(s);
     }
     for (let n = 0; n <= 5; n += 1) expect(QUESTIONER_SYSTEM).toContain(`${n} =`);
+    expect(QUESTIONER_SYSTEM).toContain('Be warm and brief; a thin day is never a fault. Never mention the level, a score, or coins.');
     expect(QUESTIONER_SYSTEM).not.toContain('nothing about other people');
   });
 });

@@ -113,6 +113,9 @@ describe('prompts and config', () => {
     expect(ps.map((p) => p.required)).toEqual([false, true, true, false]);
     expect(LEGACY_PROMPT_IDS).toEqual(['learned', 'notable']);
   });
+  it('promptsFor inserts teachTo literally, even with $ patterns', () => {
+    expect(promptsFor({ teachTo: 'a $& kid' })[2].text).toBe("What can you do or know now that you couldn't this morning? Explain it so a $& kid could try it.");
+  });
   it('config defaults and overrides', () => {
     const c = debriefConfigOf({});
     expect(c).toMatchObject({ richLevel: 3, teachableLevel: 4, maxProbes: 2, teachTo: 'a younger kid', priorPromptDays: 20 });
@@ -139,6 +142,9 @@ describe('filterQuestions', () => {
     ];
     expect(filterQuestions(qs, ['Why is it helpful to not look at the keyboard  while typing']).map((q) => q.id)).toEqual(['c']);
   });
+  it('drops a question that asks back the classes prompt', () => {
+    expect(filterQuestions([{ id: 'a', prompt: 'Which classes did you have today?' }, { id: 'b', prompt: 'What would you change next time?' }]).map((q) => q.id)).toEqual(['b']);
+  });
 });
 
 describe('debriefMetrics and probes', () => {
@@ -150,6 +156,13 @@ describe('debriefMetrics and probes', () => {
       { type: 'clarify', text: 'about ten of them', at: at(3) },
     ]);
     expect(debriefMetrics(s)).toEqual({ level: null, words: 10 + 4, markers: 3, probes: 1, voiceEntries: 1 });
+  });
+  it('class chips count toward neither words nor markers', () => {
+    const s = deriveDebriefState([
+      { type: 'entry', promptId: 'classes', text: 'Math, Science, Then 2 more', via: 'chips', at: at(1) },
+      { type: 'entry', promptId: 'moment', text: 'We built a ramp because', via: 'typed', at: at(2) },
+    ]);
+    expect(debriefMetrics(s)).toMatchObject({ words: 5, markers: 1 });
   });
   it('two asks, one reply: second is open', () => {
     const s = deriveDebriefState([
@@ -182,11 +195,11 @@ describe('debriefConfigOf / previousStudyDay', () => {
   it('fills defaults', () => {
     expect(debriefConfigOf({})).toEqual({
       questioner: { model: 'gpt-5-mini', timeoutMs: 30000 }, judge: { model: 'gpt-5-nano', timeoutMs: 8000 },
-      substantiveScore: 6, clarifyBelow: 4, quizPassRatio: 0.67,
+      substantiveScore: 6, quizPassRatio: 0.67,
       richLevel: 3, teachableLevel: 4, maxProbes: 2, teachTo: 'a younger kid', priorPromptDays: 20,
       classOptions: ['Reading', 'Writing', 'Math', 'Typing', 'Spelling', 'Grammar', 'Science', 'P.E.', 'Art', 'Music', 'Quest', 'Field trip'],
     });
-    expect(debriefConfigOf({ debrief: { clarify_below: 3 } }).clarifyBelow).toBe(3);
+    expect(debriefConfigOf({ debrief: { clarify_below: 3 } })).not.toHaveProperty('clarifyBelow');
   });
   it('steps back across a month boundary', () => {
     expect(previousStudyDay('2026-11-01')).toBe('2026-10-31');

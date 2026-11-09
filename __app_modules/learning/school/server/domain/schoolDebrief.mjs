@@ -22,7 +22,7 @@ export const LEGACY_PROMPT_IDS = Object.freeze(['learned', 'notable']);
 
 export function promptsFor(config = {}) {
   const teachTo = config?.teachTo ?? 'a younger kid';
-  return PROMPTS.map((p) => ({ ...p, text: p.text.replaceAll('{teachTo}', teachTo) }));
+  return PROMPTS.map((p) => ({ ...p, text: p.text.replaceAll('{teachTo}', () => teachTo) }));
 }
 
 export function validateSchoolDebriefEnrollment(raw = {}) {
@@ -41,7 +41,6 @@ export function debriefConfigOf(schoolConfig = {}) {
     questioner: { model: d.questioner?.model ?? 'gpt-5-mini', timeoutMs: num(d.questioner?.timeout_ms, 30000) },
     judge: { model: d.judge?.model ?? 'gpt-5-nano', timeoutMs: num(d.judge?.timeout_ms, 8000) },
     substantiveScore: num(d.substantive_score, 6),
-    clarifyBelow: num(d.clarify_below, 4),
     quizPassRatio: num(d.quiz_pass_ratio, 0.67),
     richLevel: num(d.rich_level, 3),
     teachableLevel: num(d.teachable_level, 4),
@@ -60,7 +59,7 @@ export function shouldProbe({ level, asked, maxProbes, teachableLevel }) {
 }
 
 const normPrompt = (t) => String(t ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const ECHO_RE = /\b(the child|you said|did you say|according to you)\b/i;
+const ECHO_RE = /\b(the child|you said|did you say|did you have|according to you)\b/i;
 
 /** Drop echo questions, repeats of earlier days' prompts, and duplicates within the list. */
 export function filterQuestions(questions = [], priorPrompts = []) {
@@ -82,7 +81,8 @@ const countMarkers = (t) => (String(t ?? '').match(/\b(because|so|then|how|first
 
 export function debriefMetrics(state = {}) {
   const entries = Object.values(state.entries ?? {});
-  const texts = [...entries.map((e) => e.text), ...(state.probes ?? []).map((p) => p.text)];
+  // Class chips are a picked list, not the child's words: they never count toward length or detail.
+  const texts = [...entries.filter((e) => e.via !== 'chips').map((e) => e.text), ...(state.probes ?? []).map((p) => p.text)];
   return {
     level: Number.isInteger(state.level) ? state.level : null,
     words: texts.reduce((n, t) => n + countWords(t), 0),

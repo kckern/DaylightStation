@@ -57,6 +57,10 @@ the server sends them to the kiosk in `prompts`, with `{teachTo}` filled in):
   `notable` entries. They stay in the day's state, still reach the questioner,
   and a legacy `learned` satisfies the required `teach`. Legacy days are never
   re-scored: they keep `substance` (1-10) and have no `level`.
+- **Legacy prompt ids on a new entry:** a Portal still running the old bundle
+  posts `learned` or `notable`. The server saves them as `teach` and `hard`
+  (logging `school.debrief.legacy-prompt-id` with `from` / `to`) so the child is
+  not stopped until the kiosk reloads. Any other unknown id is a 400.
 
 ## Records
 
@@ -139,7 +143,6 @@ debrief:
   prior_prompt_days: 20    # days of earlier question prompts passed to the questioner
   # legacy days only:
   substantive_score: 6     # substance (1-10) a pre-rubric day needed
-  clarify_below: 4
   quiz_pass_ratio: 0.67    # share of graded follow-ups right for `quiz-passed`
 ```
 
@@ -172,7 +175,7 @@ have been asked; otherwise the questions freeze, whatever the level. So the loop
 stops at the teachable level or after `max_probes` probes, never a third.
 
 **Question guards** (`filterQuestions`, applied to the model's questions):
-echo questions ("the child", "you said", "did you say", "according to you") are
+echo questions ("the child", "you said", "did you say", "did you have", "according to you") are
 dropped, as is any prompt equal (case and punctuation aside) to one asked in the
 last `prior_prompt_days` debrief days, or duplicated within the list. If every
 question is dropped the deterministic fallback question is used and the event is
@@ -181,10 +184,16 @@ marked `questionSource: fallback` (the child is never shown zero questions).
 **Fallback.** A schema failure gets one retry. A second failure, a timeout or an
 unconfigured gateway gives `questioner: 'fallback'` with no level: one question
 built from the learner's own `teach` words ("What is one step someone would need
-to try what you explained?"). A fallback day, or a day whose questions fell back,
-pays no substantive, teachable or quiz bonus (the questions come from the
-child's own words, so passing them proves little); a grown-up can re-score a
-fallback day.
+to try what you explained?"). Two cases differ in what they withhold:
+
+- `questioner: 'fallback'` (the AI never scored the day): no level, so no
+  `substantive` and no `teachable`, and its questions are the fallback's, so no
+  `quiz-passed` either. A grown-up can re-score it.
+- `questionSource: 'fallback'` with `questioner: 'model'` (the AI scored the day,
+  but every question it wrote was filtered out, or a re-score kept answered
+  fallback questions): the level stands, so `substantive` and `teachable` are
+  earned as usual; only `quiz-passed` is withheld, because questions built from
+  the child's own words prove little.
 
 **`DebriefAnswerJudge`:** multiple choice is graded in code against the stored
 key. A short answer gets one call returning a 1-10 grade and a reason against
@@ -224,9 +233,11 @@ The rules in `earn-rules.yml` read these facts:
 | week bonus | `debrief-week` | every owed day completed or excused, at least one completed |
 
 A legacy day (no `level`) keeps the old rule: `substantive` needs
-`substance >= substantive_score`; it can never be `teachable`. A fallback day
-earns neither `substantive` nor `teachable`. `quiz-passed` is still a valid
-criterion but the shipped rules do not use it.
+`substance >= substantive_score`; it can never be `teachable`. A day the AI
+never scored (`questioner: 'fallback'`) earns neither `substantive` nor
+`teachable`. A day whose questions fell back but whose level the AI set
+(`questionSource: 'fallback'`) keeps both and loses only `quiz-passed`.
+`quiz-passed` is still a valid criterion but the shipped rules do not use it.
 
 **Visible reasons.** The summary tells the child why, from the same facts the
 economy reads: their `levelReason` as the quote, "You told me a real moment"
@@ -249,7 +260,8 @@ never bound (FKB captures it). One key map per screen:
 |---|---|
 | Start card (today / resume / yesterday late) | Enter starts the first offer; 1-2 pick an offer |
 | Classes chips | 1-9 and 0 toggle the first ten chips; Enter submits (empty is fine); Left arrow goes back; digits are ignored while the Other field has focus |
-| Prompt x3 (moment, teach, hard) and each probe | typing goes in the field; Space records or stops **only when the field is empty** (or while recording) and never types a space then; Enter submits; Tab reads the prompt aloud; Left arrow goes back |
+| Prompt x3 (moment, teach, hard) | typing goes in the field; Space records or stops **only when the field is empty** (or while recording) and never types a space then; Enter submits; Tab reads the prompt aloud; Left arrow goes back |
+| Each probe | as Prompt, but no Back (a probe follows a submit and cannot be stepped back from); if a reply fails to send, the words stay in the field and Enter sends them again |
 | Choice (2-4) | 1-4 or A-D answer; result and correct answer show at once; Space or Enter continues |
 | Short answer | as Prompt, then Space or Enter continues |
 | Summary | Enter or Space finishes |
@@ -296,9 +308,10 @@ POST, plus the PIN or capability proof. A malformed day or range is a 400.
 - **Log events** (`context.app:school`): `school.debrief.opened`, `.entry`,
   `.clarify` (a probe was asked: level, asked), `.questions` (level, count,
   questioner, model, ms), `.questions-filtered` (dropped), `.fallback`,
-  `.answer`, `.completed` (summary plus level, words, markers, probes,
+  `.answer`, `.completed` (summary plus level, words and markers (class chips not counted), probes,
   voiceEntries), `.hook-failed` (warn: the parent push did not go; completion
-  still succeeded), `.excused` / `.rejected` / `.rescored` / `.discussed`
+  still succeeded), `.hook-skipped` (the hook did not read cleanly, so no push),
+  `.legacy-prompt-id` (an old-bundle `learned`/`notable` entry was renamed), `.excused` / `.rejected` / `.rescored` / `.discussed`
   (learnerId, day, by), `.launch-failed` (warn), plus `school.direct-launch.issued` for the code-free door. Browser events come
   from the `schoolDebriefLog` facade as `school.debrief.ui.*` (`mounted`,
   `take.start`, `take.kept`, `take.refused`, `submit`, `chips`, `stall`, `resume`,
@@ -311,8 +324,8 @@ POST, plus the PIN or capability proof. A malformed day or range is a 400.
   not sent.
 - **Teacher panel:** the Debriefs tab shows each day's detail level (`n/5`) and
   its reason, the hook as "Talk about: ...", the probes with the child's
-  replies, the entries, and a "We talked about it" button (posts `discussed`;
-  shows "Talked about" afterwards).
+  replies, the entries, and, on a completed day, a "We talked about it" button
+  (posts `discussed`; shows "Talked about" afterwards).
 - **Excuse, reject, re-score:** the teacher console's Debriefs tab, behind the
   teacher PIN gate. Excuse pays nothing and does not block the week bonus (but a
   week with no completed day earns no week bonus); reject pays nothing and

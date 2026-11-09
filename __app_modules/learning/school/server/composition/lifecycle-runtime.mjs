@@ -952,7 +952,7 @@ try {
       let child = null;
       try { child = (await learnerDisplayName(learnerId)) || null; } catch { child = null; }
       const push = composeSchoolPush({ kind: 'debrief-hook', learnerId, child, studyDay: day, hook });
-      if (!push) return;
+      if (!push) { debriefLogger.info('school.debrief.hook-skipped', { learnerId, day }); return; }
       const usernames = (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [];
       if (!usernames.length) throw new Error('no teachers configured');
       for (const username of usernames) {

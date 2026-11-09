@@ -93,9 +93,18 @@ describe('SchoolDebriefService', () => {
     await svc.entry('test-learner', '2026-10-21', { promptId: 'classes', text: 'math', via: 'typed' });
     await expect(svc.submit('test-learner', '2026-10-21')).rejects.toThrow(/moment, teach/);
   });
-  it('entry rejects legacy prompt ids', async () => {
+  it('entry rejects unknown prompt ids', async () => {
     const { svc } = make();
-    await expect(svc.entry('test-learner', '2026-10-21', { promptId: 'learned', text: 'x' })).rejects.toMatchObject({ status: 400 });
+    await expect(svc.entry('test-learner', '2026-10-21', { promptId: 'nonsense', text: 'x' })).rejects.toMatchObject({ status: 400 });
+  });
+  it.each([['learned', 'teach'], ['notable', 'hard']])('an old-bundle %s entry is saved as %s', async (legacy, current) => {
+    const { svc, debriefs, logger } = make();
+    await svc.open('test-learner', '2026-10-21');
+    const v = await svc.entry('test-learner', '2026-10-21', { promptId: legacy, text: 'from the old kiosk', via: 'typed' });
+    expect(v.entries[current].text).toBe('from the old kiosk');
+    expect(v.entries[legacy]).toBeUndefined();
+    expect(debriefs.days['test-learner/2026-10-21'].at(-1)).toMatchObject({ type: 'entry', promptId: current });
+    expect(logger.info).toHaveBeenCalledWith('school.debrief.legacy-prompt-id', { learnerId: 'test-learner', day: '2026-10-21', from: legacy, to: current });
   });
   it('a legacy learned entry satisfies teach and reaches the questioner', async () => {
     const { svc, debriefs, questioner } = make();
