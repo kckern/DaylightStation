@@ -458,4 +458,56 @@ describe('BudgetCompilationService', () => {
       expect(jan31.endingBalance).toBe(-100);
     });
   });
+  describe('day-to-day month metrics', () => {
+    const pastConfig = (dayToDay) => ({
+      budget: [{
+        timeframe: { start: '2025-01-01', end: '2025-06-30' },
+        accounts: ['Checking'],
+        income: {
+          salary: { amount: 60000, payCheckCount: 24, payFrequencyInDays: 14, firstPaycheckDate: '2025-01-10' },
+          tags: ['Income'],
+          extra: []
+        },
+        dayToDay,
+        monthly: [{ label: 'Rent', amount: 1500, tags: ['Rent'] }],
+        shortTerm: [{ label: 'Home', amount: 500, flex: 1, tags: ['Housewares'] }]
+      }],
+      mortgage: null
+    });
+    const overspend = [
+      { id: '1', date: '2025-01-15', amount: 2500, expenseAmount: -2500, description: 'Paycheck', tagNames: ['Income'], type: 'income' },
+      { id: '2', date: '2025-01-10', amount: 300, expenseAmount: 300, description: 'Groceries', tagNames: ['Groceries'], type: 'expense' },
+      { id: '3', date: '2025-01-20', amount: 300, expenseAmount: 300, description: 'More Groceries', tagNames: ['Groceries'], type: 'expense' },
+    ];
+
+    it('spent is budget minus the closing balance, not spending minus it', async () => {
+      mockFinanceStore.getBudgetConfig.mockReturnValue(pastConfig({ amount: 500, tags: ['Groceries'] }));
+      mockFinanceStore.getTransactions.mockReturnValue(overspend);
+
+      const result = await service.compile();
+      const jan = result.budgets['2025-01-01'].dayToDayBudget['2025-01'];
+
+      // $600 against a $500 budget closes at -100: spent is 600, not 600 - (-100) = 700.
+      expect(jan.balance).toBe(-100);
+      expect(jan.spent).toBe(600);
+      expect(jan.dailySpend).toBe(Math.round((600 / 31) * 100) / 100);
+    });
+
+    it('passes the dayToDay rebalance rule through to the compiled budget', async () => {
+      const rebalance = { payees: ['Amazon'], dayTag: 'Groceries', swingTag: 'Housewares', tolerance: 20 };
+      mockFinanceStore.getBudgetConfig.mockReturnValue(pastConfig({ amount: 500, tags: ['Groceries'], rebalance }));
+      mockFinanceStore.getTransactions.mockReturnValue(overspend);
+
+      const result = await service.compile();
+      expect(result.budgets['2025-01-01'].dayToDayRebalance).toEqual(rebalance);
+    });
+
+    it('compiles dayToDayRebalance as null when no rule is configured', async () => {
+      mockFinanceStore.getBudgetConfig.mockReturnValue(pastConfig({ amount: 500, tags: ['Groceries'] }));
+      mockFinanceStore.getTransactions.mockReturnValue(overspend);
+
+      const result = await service.compile();
+      expect(result.budgets['2025-01-01'].dayToDayRebalance).toBeNull();
+    });
+  });
 });

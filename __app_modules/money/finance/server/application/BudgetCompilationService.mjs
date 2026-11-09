@@ -175,6 +175,9 @@ export class BudgetCompilationService {
       budgetEnd,
       accounts: config.accounts,
       dayToDayBudget,
+      // Swing-payee retag rule for keeping day-to-day on the burn-down (see
+      // browser/lib/dayToDayRebalance.mjs); null when the period sets none.
+      dayToDayRebalance: config.dayToDay?.rebalance ?? null,
       monthlyBudget,
       totalBudget,
       shortTermBuckets,
@@ -557,7 +560,10 @@ export class BudgetCompilationService {
       // Calculate daily metrics
       const daysInMonth = this.#getDaysInMonth(month);
       const lastBalance = Object.values(dailyBalances).pop()?.endingBalance ?? balance;
-      const spent = this.#round(spending - lastBalance);
+      // Spent is what left the budget. In the current month `spending` also
+      // carries the anticipated filler that pads it to the full budget, and in a
+      // past month it is the true sum — `budget - lastBalance` is right for both.
+      const spent = this.#round(budget - lastBalance);
 
       const endOfMonth = new Date(`${month}-01`);
       endOfMonth.setMonth(endOfMonth.getMonth() + 1);

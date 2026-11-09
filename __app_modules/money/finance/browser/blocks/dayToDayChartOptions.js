@@ -20,21 +20,23 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   const currentMonth = now.format('YYYY-MM');
   const daysInMonth = moment(inferredMonth).daysInMonth();
   const isCurrentMonth = inferredMonth === currentMonth;
-  const today = now.date() - 1; // Convert to 0-based for array indexing
+  // x is the day of the month: x=0 is the opening balance (the baseline's
+  // start), x=N is the close of day N. Bars and baseline share that axis.
+  const todayX = now.date();
 
-  // Build the actual data series
-  const actualData = dayKeys.map((dateKey, idx) => {
+  // Build the actual data series; x=0 carries no bar.
+  const actualData = [{ y: null }].concat(dayKeys.map((dateKey, idx) => {
     const day = dailyBalances[dateKey];
     const isFirstDay = idx === 0;
     const isWeekend = moment(dateKey).day() === 0 || moment(dateKey).day() === 6;
-    const highlightToday = isCurrentMonth && idx === today;
+    const highlightToday = isCurrentMonth && idx + 1 === todayX;
     const overspent = day.overspent;
     return {
       y: day.endingBalance,
       actualBalance: day.endingBalance,
       color: overspent ? PALETTE.over : (highlightToday || isFirstDay) ? PALETTE.spent : (isWeekend ? '#777' : undefined)
     };
-  });
+  }));
 
   // Budget stats
   const startKey = `${inferredMonth}-start`;
@@ -42,24 +44,17 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   const endingBalance = dailyBalances[lastDayKey]?.endingBalance ?? 0;
   const spent = initialBudget - endingBalance;
 
-  // Build projected data for future days in the current month
-  // Replicates the original logic where index == today is used
-  let projectedDataSeries = [];
-  const averageDailyBurn = isCurrentMonth && today < daysInMonth && actualData[today]
-    ? (actualData[0].y - actualData[today].y) / (today + 1)
-    : 0;
-
-  const projectedData = isCurrentMonth && today < daysInMonth && actualData[today] && today >= 0
-    ? [actualData[today].y].concat(
-        Array.from({ length: daysInMonth - today }, (_, i) => {
-          const val = actualData[today].y - (i + 1) * averageDailyBurn;
-          return Math.max(0, val);
-        })
+  // Projection for the current month: the pace so far (everything that left the
+  // budget, over the days elapsed) carried from today's close to the month's end.
+  const todayBalance = isCurrentMonth ? actualData[todayX]?.y : null;
+  const hasProjection = todayBalance != null;
+  const averageDailyBurn = hasProjection ? (initialBudget - todayBalance) / todayX : 0;
+  const daysLeft = daysInMonth - todayX;
+  const projectedDataWithNulls = hasProjection
+    ? Array(todayX).fill(null).concat(
+        [todayBalance],
+        Array.from({ length: daysLeft }, (_, i) => Math.max(0, todayBalance - (i + 1) * averageDailyBurn))
       )
-    : [];
-
-  const projectedDataWithNulls = isCurrentMonth && today < daysInMonth && actualData[today] && today >= 0
-    ? Array(today).fill(null).concat(projectedData)
     : [];
 
   const firstNonNullIndex = projectedDataWithNulls.findIndex((v) => v !== null);
@@ -67,12 +62,10 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
 
   // Color reflects where the pace ACTUALLY lands, not the 0-clamped plot value —
   // Math.max(0, …) on plotted points made the "over budget" red unreachable.
-  const endingProjectedUnclamped = isCurrentMonth && today < daysInMonth && actualData[today] && today >= 0
-    ? actualData[today].y - (daysInMonth - today) * averageDailyBurn
-    : 0;
+  const endingProjectedUnclamped = hasProjection ? todayBalance - daysLeft * averageDailyBurn : 0;
   const projectionColor = endingProjectedUnclamped < 0 ? PALETTE.projectionOver : PALETTE.projectionOk;
 
-  projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
+  const projectedDataSeries = projectedDataWithNulls.map((val, idx) => ({
     y: val,
     marker: {
       enabled: idx === firstNonNullIndex || idx === lastIndex,
@@ -88,7 +81,8 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
   });
 
   // Identify where the balance crosses below zero (shaded area)
-  const zeroCrossingIndex = dayKeys.findIndex(key => dailyBalances[key].overspent);
+  const firstOverspentIdx = dayKeys.findIndex(key => dailyBalances[key].overspent);
+  const zeroCrossingIndex = firstOverspentIdx >= 0 ? firstOverspentIdx + 1 : -1;
   const categories = [''].concat(Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString()));
 
   return {
@@ -96,7 +90,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     tooltip: {
       formatter: function () {
         if (!this.y && this.y !== 0) return false;
-        const dayNum = parseInt(this.key) || this.x + 1;
+        const dayNum = parseInt(this.key) || this.x;
         const date = moment(inferredMonth).date(dayNum).format('MMMM D, YYYY');
         const displayValue = this.point?.actualBalance != null
           ? formatAsCurrency(this.point.actualBalance)
@@ -186,7 +180,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
           ...actualData
         ].map((d, idx) => {
           // Hide future data points on the bar chart
-          if (isCurrentMonth && idx > today) {
+          if (isCurrentMonth && idx > todayX) {
             return { ...d, y: null };
           }
           return d;
