@@ -195,6 +195,18 @@ export function composeSchoolPush(event = {}) {
         data: metadata(event, 'needsYou', `card-ladder-${event.package ?? 'words'}`),
       };
     }
+    case 'debrief-hook': {
+      // A conversation starter written by the debrief questioner (model text):
+      // shown only if it reads cleanly, else the grown-up hears nothing.
+      const hook = typeof event.hook === 'string' ? event.hook.trim().replace(/[.\s]+$/, '') : '';
+      if (!hook || DOTTED_ID.test(hook) || findPushTextDefects(hook).length) return null;
+      const day = formatStudyDay(event.studyDay);
+      return {
+        title: event.child ? `💬 ${event.child} — after school` : '💬 After school',
+        message: [hook, day].filter(Boolean).join(' · '),
+        data: metadata(event, 'progress', `debrief-${event.studyDay ?? 'today'}`),
+      };
+    }
     case 'digest': {
       const learners = Array.isArray(event.learners) ? event.learners.filter(Boolean) : [];
       if (!learners.length) return null;

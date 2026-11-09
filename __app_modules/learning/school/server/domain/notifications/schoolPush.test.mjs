@@ -228,3 +228,26 @@ describe('one phone card per sheet lineage', () => {
     expect(fixed.data.tag).toBe('school-user_4-ses_a');
   });
 });
+
+describe('debrief parent hook', () => {
+  const hookEvent = { kind: 'debrief-hook', learnerId: 'test-learner', child: 'Sam', studyDay: '2026-11-06', hook: 'Ask about the furnace workshop' };
+
+  it('is a low-lane conversation starter tagged per learner per day', () => {
+    const push = composeSchoolPush(hookEvent);
+    expect(push.title).toBe('💬 Sam — after school');
+    expect(push.message.startsWith('Ask about the furnace workshop')).toBe(true);
+    expect(push.data.tag).toBe('school-test-learner-debrief-2026-11-06');
+    expect(push.data.channel).toBe('School progress');
+    expect(findPushTextDefects(push.title)).toEqual([]);
+    expect(findPushTextDefects(push.message)).toEqual([]);
+  });
+
+  it('drops the name, not the push, when the name is missing', () => {
+    expect(composeSchoolPush({ ...hookEvent, child: null }).title).toBe('💬 After school');
+  });
+
+  it('says nothing for an empty hook or one that leaks an id', () => {
+    expect(composeSchoolPush({ ...hookEvent, hook: '  ' })).toBeNull();
+    expect(composeSchoolPush({ ...hookEvent, hook: 'See school.debrief.x' })).toBeNull();
+  });
+});
