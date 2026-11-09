@@ -24,20 +24,33 @@ function parseLocalTime(isoStr) {
  */
 export default function FullscreenImage({ photo, index, total, dayLabel }) {
   if (!photo) return null;
-  const time = parseLocalTime(photo.takenAt);
   return (
     <div className="weekly-review-fullscreen-image">
       <img className="fullscreen-image-img" src={photo.original} alt="" />
-      <div className="fullscreen-image-overlay">
-        <div className="fullscreen-image-day">
-          {dayLabel}
-          {time && <span className="fullscreen-image-time"> · {time}</span>}
-        </div>
-        <div className="fullscreen-image-index">{index + 1} / {total}</div>
-        {photo.people?.length > 0 && (
-          <div className="fullscreen-image-people">{photo.people.join(', ')}</div>
-        )}
+      <MediaCaption item={photo} index={index} total={total} dayLabel={dayLabel} />
+    </div>
+  );
+}
+
+/**
+ * The bottom caption every reel item wears — day · time, position, people —
+ * on a gradient flush to the screen's bottom and side edges. Shared by photos
+ * and videos so the two read as one reel; `children` adds item-specific state
+ * (a video's mute hint) at the trailing end.
+ */
+export function MediaCaption({ item, index, total, dayLabel, children }) {
+  const time = parseLocalTime(item.takenAt);
+  return (
+    <div className="fullscreen-image-overlay">
+      <div className="fullscreen-image-day">
+        {dayLabel}
+        {time && <span className="fullscreen-image-time"> · {time}</span>}
       </div>
+      <div className="fullscreen-image-index">{index + 1} / {total}</div>
+      {item.people?.length > 0 && (
+        <div className="fullscreen-image-people">{item.people.join(', ')}</div>
+      )}
+      {children}
     </div>
   );
 }

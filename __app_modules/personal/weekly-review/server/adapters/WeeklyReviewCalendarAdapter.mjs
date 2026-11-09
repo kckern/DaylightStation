@@ -132,7 +132,7 @@ export class WeeklyReviewCalendarAdapter {
           results.push({ date: dateStr, events: dayEvents });
         }
       }
-      cursor.setDate(cursor.getDate() + 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 1); // UTC: see WeeklyReviewImmichAdapter (DST)
     }
     return results;
   }

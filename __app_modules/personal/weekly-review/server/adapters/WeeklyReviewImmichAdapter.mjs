@@ -36,7 +36,7 @@ export class WeeklyReviewImmichAdapter {
   async searchOldest({ startDate, endDate }) {
     const takenAfter = new Date(`${startDate}T00:00:00.000Z`).toISOString();
     const endPlusOne = new Date(`${endDate}T00:00:00.000Z`);
-    endPlusOne.setDate(endPlusOne.getDate() + 1);
+    endPlusOne.setUTCDate(endPlusOne.getUTCDate() + 1);
     const takenBefore = endPlusOne.toISOString();
 
     const hidden = await this.#hiddenAssetIds({ takenAfter, takenBefore });
@@ -66,7 +66,7 @@ export class WeeklyReviewImmichAdapter {
   async getPhotosForDateRange(startDate, endDate) {
     const takenAfter = new Date(`${startDate}T00:00:00.000Z`).toISOString();
     const endPlusOne = new Date(`${endDate}T00:00:00.000Z`);
-    endPlusOne.setDate(endPlusOne.getDate() + 1);
+    endPlusOne.setUTCDate(endPlusOne.getUTCDate() + 1);
     const takenBefore = endPlusOne.toISOString();
 
     this.#logger.debug?.('weekly-review.immich.search', { startDate, endDate, takenAfter, takenBefore });
@@ -108,7 +108,10 @@ export class WeeklyReviewImmichAdapter {
         heroSelected: processed.photos.some(p => p.isHero),
       });
       days.push(processed);
-      cursor.setDate(cursor.getDate() + 1);
+      // UTC, not local: the container's TZ is America/Los_Angeles, and a local
+      // +1 day across a DST change lands an hour off — after 'fall back' the
+      // cursor ran 01:00Z, failed `<= end`, and the last day was dropped.
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
     this.#logger.info?.('weekly-review.immich.done', {
