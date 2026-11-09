@@ -3,6 +3,9 @@ import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { createBluetoothClient } from '../input/bluetoothClient.js';
 
 const POLL_MS = 1000;
+// One dropped read on Shield Wi-Fi must not disable every button (and drop
+// the remote's focus); only a run of failures makes the view stale.
+const STALE_AFTER_FAILURES = 3;
 
 /**
  * Polls the bridge once a second and exposes a promise API the controller
@@ -24,6 +27,7 @@ export function useBluetoothManager({ deviceId, client: injected }) {
   useEffect(() => {
     const abort = new AbortController();
     let timer;
+    let failures = 0;
     latest.current = { state: null, readAt: 0, fresh: false };
     logger.info('bluetooth-manager.open', { deviceId });
     const notify = () => { for (const w of [...waiters.current]) w.check(); };
@@ -32,12 +36,16 @@ export function useBluetoothManager({ deviceId, client: injected }) {
       try {
         const state = await client.state({ signal: abort.signal });
         if (abort.signal.aborted) return;
+        failures = 0;
         latest.current = { state, readAt: startedAt, fresh: true };
         setSnapshot({ state, fresh: true, readError: null });
       } catch (error) {
         if (abort.signal.aborted) return;
-        latest.current = { ...latest.current, fresh: false };
-        setSnapshot((prev) => ({ ...prev, fresh: false, readError: error.message || 'Could not read controller status.' }));
+        failures += 1;
+        if (failures >= STALE_AFTER_FAILURES || !latest.current.state) {
+          latest.current = { ...latest.current, fresh: false };
+          setSnapshot((prev) => ({ ...prev, fresh: false, readError: error.message || 'Could not read controller status.' }));
+        }
         logger.sampled('bluetooth-manager.read-failed', { deviceId, error: error.message }, { maxPerMinute: 4, aggregate: true });
       } finally {
         if (!abort.signal.aborted) { notify(); timer = setTimeout(poll, POLL_MS); }

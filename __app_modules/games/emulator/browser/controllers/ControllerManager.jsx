@@ -125,7 +125,7 @@ export default function ControllerManager({ deviceId, onClose, client }) {
   const guide = state?.guide;
 
   return <div className="ctl-manager" ref={root} role="dialog" aria-modal="true" aria-label="Controllers">
-    <header className="ctl-manager__header" data-nav-row>
+    <header className="ctl-manager__header" data-nav-row="header">
       <h1>Controllers</h1>
       <span className={`ctl-manager__chip ${fresh && enabled ? 'is-ok' : 'is-bad'}`}>
         {!state ? 'Checking Bluetooth…' : !fresh ? 'Bluetooth status unavailable' : enabled ? (scanning ? 'Searching…' : 'Bluetooth on') : 'Bluetooth off'}
@@ -139,7 +139,7 @@ export default function ControllerManager({ deviceId, onClose, client }) {
     <ul className="ctl-manager__list">
       {controllers.map((d) => {
         const status = deviceStatus(d);
-        return <li key={d.address} className={`ctl-manager__row is-${status}`} data-nav-row>
+        return <li key={d.address} className={`ctl-manager__row is-${status}`} data-nav-row={d.address}>
           <PadIcon />
           <div className="ctl-manager__name"><strong>{d.name}</strong><small>…{shortAddress(d.address)}</small></div>
           <span className={`ctl-manager__status is-${status}`}>{STATUS_LABEL[status]}</span>
@@ -150,7 +150,7 @@ export default function ControllerManager({ deviceId, onClose, client }) {
               <button type="button" disabled={!ready || !caps.unpair} onClick={() => setConfirmForget(d)}>Forget</button>
             </>}
             {(status === 'paired' || status === 'unknown') && <>
-              <button type="button" className="is-primary" disabled={!ready} onClick={() => start('fix', d)}>Fix</button>
+              <button type="button" className="is-primary" disabled={!ready || !caps.input} onClick={() => start('fix', d)}>Fix</button>
               <button type="button" disabled={!ready || !caps.input} onClick={() => start('connect', d)}>Connect</button>
               <button type="button" disabled={!ready || !caps.unpair} onClick={() => start('repair', d)}>Re-pair</button>
               <button type="button" disabled={!ready || !caps.unpair} onClick={() => setConfirmForget(d)}>Forget</button>
@@ -172,7 +172,7 @@ export default function ControllerManager({ deviceId, onClose, client }) {
       <div className="ctl-manager__card">
         <h2>Forget {confirmForget.name}?</h2>
         <p>The TV will stop recognising it until it is paired again.</p>
-        <div data-nav-row className="ctl-manager__actions">
+        <div data-nav-row="confirm" className="ctl-manager__actions">
           <button type="button" onClick={() => setConfirmForget(null)}>Keep it</button>
           <button type="button" className="is-danger" onClick={() => { const d = confirmForget; setConfirmForget(null); single('unpair', d, (s) => { const x = findDevice(s, d.address); return !x || x.bond === 'none'; }); }}>Forget</button>
         </div>
@@ -198,7 +198,7 @@ export default function ControllerManager({ deviceId, onClose, client }) {
             <ol>{guide.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
           </> : <p>Turn the controller on and hold its pairing button until the light blinks fast.</p>}
         </div>}
-        {pinPrompt && <form className="ctl-manager__pin" onSubmit={(e) => { e.preventDefault(); answerPin(pin || null); }} data-nav-row>
+        {pinPrompt && <form className="ctl-manager__pin" onSubmit={(e) => { e.preventDefault(); answerPin(pin || null); }} data-nav-row="pin">
           <label>The controller asks for a PIN (often 0000)
             <input type="text" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} />
           </label>
@@ -208,7 +208,7 @@ export default function ControllerManager({ deviceId, onClose, client }) {
         {flow.error && <p className="ctl-manager__error" role="alert">{flow.error}</p>}
         {flow.error && guide?.troubleshoot && <p className="ctl-manager__hint">{guide.troubleshoot}</p>}
         {flow.result && <p className="ctl-manager__success">{live?.name || flow.device.name} is connected.</p>}
-        <div data-nav-row className="ctl-manager__actions">
+        <div data-nav-row="flow" className="ctl-manager__actions">
           {flow.result && <button type="button" className="is-primary" onClick={() => onClose?.()}>Done — back to the menu</button>}
           {flow.result && <button type="button" onClick={() => setFlow(null)}>Manage more controllers</button>}
           {flow.error && <button type="button" className="is-primary" onClick={() => { const { mode, device } = flow; setFlow(null); start(mode === 'fix' ? 'repair' : mode, device); }}>Try again</button>}

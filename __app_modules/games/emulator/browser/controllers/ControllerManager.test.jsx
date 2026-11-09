@@ -69,3 +69,30 @@ it('remote arrows move between rows and within a row', async () => {
   fireEvent.keyDown(window, { key: 'ArrowUp' });
   expect(document.activeElement.textContent).toBe('Back');
 });
+
+it('one dropped status read does not disable the buttons', async () => {
+  vi.useFakeTimers();
+  let fail = false;
+  const client = { state: vi.fn(async () => { if (fail) throw new Error('offline'); return snapshot([pad()]); }), command: vi.fn() };
+  render(<ControllerManager deviceId="tv" client={client} onClose={() => {}} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  fail = true;
+  await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+  expect(screen.getByRole('button', { name: 'Fix' }).disabled).toBe(false);
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(screen.getByRole('button', { name: 'Fix' }).disabled).toBe(true);
+  expect(screen.getByText('Bluetooth status unavailable')).toBeTruthy();
+});
+
+it('when a row swaps its buttons, focus stays on that row', async () => {
+  vi.useFakeTimers();
+  const second = pad({ address: 'E4:17:D8:00:00:09', name: 'Second pad' });
+  const state = snapshot([pad(), second]);
+  render(<ControllerManager deviceId="tv" client={clientFor(() => state)} onClose={() => {}} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  const secondConnect = screen.getAllByRole('button', { name: 'Connect' })[1];
+  act(() => secondConnect.focus());
+  state.devices[1].connected = true; state.devices[1].profiles = ['input'];
+  await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+  expect(document.activeElement.closest('li').textContent).toMatch(/Second pad/);
+});

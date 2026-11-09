@@ -8,7 +8,7 @@ const PAD = 'E4:17:D8:1C:7C:7A';
  * report a beat late, inquiry lapses after 12 s, a fresh bond opens its own
  * input link, and a new scan clears unpaired entries.
  */
-function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt = false, wakes = true } = {}) {
+function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt = false, wakes = true, rejectConnect = false, rejectFirstScans = 0, pairIgnored = false, staleBonding = false } = {}) {
   const pad = { address: PAD, name: '8Bitdo SN30 Pro', manageable: true, bond: 'bonded', connected: false, profiles: [] };
   const state = { ok: true, adapter: { supported: true, enabled: true, discovering: false }, devices: [pad, { address: '3C:6D:66:06:E4:B5', name: 'Remote', manageable: false, bond: 'bonded', connected: true }], pairing: null, capabilities: { scan: true, pair: true, unpair: true, input: true, pin: true, confirm: false } };
   const t0 = Date.now();
@@ -18,6 +18,10 @@ function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt
     state, log,
     command: vi.fn(async (action, body) => {
       log.push(action);
+      if (action === 'connect' && rejectConnect) { state.lastError = 'Controller connection service is starting; try again'; throw new Error('Bluetooth did not accept the action.'); }
+      if (action === 'scan' && rejectFirstScans > 0) { rejectFirstScans -= 1; throw new Error('Bluetooth did not accept the action.'); }
+      if (action === 'pair' && state.devices[0].bond === 'bonding') throw new Error('Bluetooth did not accept the action.');
+      if (action === 'pair' && pairIgnored) return Date.now();
       if (action === 'connect') { if (pad.bond === 'bonded' && wakes) later(1500, () => { pad.connected = true; pad.profiles = ['input']; }); }
       if (action === 'unpair') later(800, () => { pad.bond = 'none'; pad.connected = false; });
       if (action === 'scan') {
@@ -61,6 +65,7 @@ function fakeBridge({ inPairingModeAfterMs = 0, pinPrompt = false, confirmPrompt
       setTimeout(tick, 0);
     }),
   };
+  if (staleBonding) { pad.bond = 'bonding'; setTimeout(() => { pad.bond = 'none'; }, 40000); }
   return bridge;
 }
 
@@ -135,4 +140,42 @@ it('cancel stops discovery and rejects as an abort', async () => {
   const { error } = await run(bridge, 'repair', { signal: abort.signal });
   expect(error.name).toBe('AbortError');
   expect(bridge.log.at(-1)).toBe('scan/stop');
+});
+
+it('fix never forgets a pad when the TV itself refuses to connect', async () => {
+  const bridge = fakeBridge({ rejectConnect: true });
+  const { error, steps } = await run(bridge, 'fix');
+  expect(error).toBeInstanceOf(FlowError);
+  expect(error.message).toMatch(/would not start the connection.*service is starting/);
+  expect(bridge.log).not.toContain('unpair');
+  expect(bridge.log.filter((a) => a === 'connect')).toHaveLength(3);
+  expect(steps).not.toContain('forget:active');
+});
+
+it('a refused scan is retried, not the end of the search', async () => {
+  const bridge = fakeBridge({ rejectFirstScans: 2, inPairingModeAfterMs: 6000 });
+  const { value, error } = await run(bridge, 'repair');
+  expect(error).toBeUndefined();
+  expect(value).toBe(PAD);
+});
+
+it('a pad that stopped listening fails pairing in seconds, not after the 60 s window', async () => {
+  const bridge = fakeBridge({ pairIgnored: true });
+  const started = Date.now();
+  let failedAt;
+  const promise = runControllerFlow({ mode: 'pair', device: { ...bridge.state.devices[0], bond: 'none' }, api: bridge.api, report: () => {}, prompts: {} })
+    .catch((e) => { failedAt = Date.now(); return e; });
+  bridge.state.devices[0].bond = 'none';
+  await vi.advanceTimersByTimeAsync(70000);
+  const error = await promise;
+  expect(error.message).toMatch(/did not accept the pairing/);
+  expect(failedAt - started).toBeLessThan(15000);
+});
+
+it('re-pair waits out a pairing left running by a cancelled attempt', async () => {
+  const bridge = fakeBridge({ staleBonding: true, inPairingModeAfterMs: 45000 });
+  const { value, error } = await run(bridge, 'repair');
+  expect(error).toBeUndefined();
+  expect(value).toBe(PAD);
+  expect(bridge.log).not.toContain('unpair'); // it ended unbonded on its own
 });

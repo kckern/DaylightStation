@@ -9,10 +9,21 @@ function rows(scope) {
   const index = new Map();
   for (const el of scope.querySelectorAll('button:not(:disabled), input:not(:disabled)')) {
     const row = el.closest('[data-nav-row]') || el;
-    if (!index.has(row)) { index.set(row, out.length); out.push([]); }
+    if (!index.has(row)) { index.set(row, out.length); out.push(Object.assign([], { key: row.getAttribute?.('data-nav-row') || null })); }
     out[index.get(row)].push(el);
   }
   return out;
+}
+
+/**
+ * Where focus goes when the focused control vanished (a poll swapped a row's
+ * buttons, or disabled them): the same row by key, else the same position.
+ */
+function restore(grid, last) {
+  if (!grid.length) return null;
+  const same = last?.key ? grid.find((row) => row.key === last.key) : null;
+  const row = same || grid[Math.min(last?.row ?? 0, grid.length - 1)];
+  return row[Math.min(last?.col ?? 0, row.length - 1)];
 }
 
 /**
@@ -24,11 +35,33 @@ function rows(scope) {
 export function useRemoteFocus({ scope, onBack }) {
   const back = useRef(onBack);
   back.current = onBack;
+  const memory = useRef(new WeakMap());
+
+  // Remember where focus is per scope element — an overlay's position never
+  // steers the list underneath, and closing one lands back on the row it came
+  // from. Put focus back there whenever its control vanishes.
+  const remember = (el) => {
+    const grid = rows(el);
+    const r = grid.findIndex((row) => row.includes(document.activeElement));
+    if (r >= 0) memory.current.set(el, { key: grid[r].key, row: r, col: grid[r].indexOf(document.activeElement) });
+    return { grid, found: r >= 0 };
+  };
+  const mine = (el) => memory.current.get(el) || null;
 
   useEffect(() => {
     const el = scope.current;
-    if (el && !el.contains(document.activeElement)) rows(el)[0]?.[0]?.focus();
+    if (!el) return;
+    const { grid, found } = remember(el);
+    if (!found) restore(grid, mine(el))?.focus();
   });
+
+  useEffect(() => {
+    const el = scope.current;
+    if (!el) return undefined;
+    const track = () => remember(el);
+    el.addEventListener('focusin', track);
+    return () => el.removeEventListener('focusin', track);
+  }, [scope]);
 
   useEffect(() => {
     const key = (event) => {
@@ -48,7 +81,7 @@ export function useRemoteFocus({ scope, onBack }) {
       if (event.key.startsWith('Arrow')) {
         if (typing && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) return;
         event.preventDefault(); event.stopImmediatePropagation();
-        if (r < 0) { grid[0][0].focus(); return; }
+        if (r < 0) { restore(grid, mine(el))?.focus(); return; }
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           r = Math.max(0, Math.min(grid.length - 1, r + (event.key === 'ArrowUp' ? -1 : 1)));
           c = Math.min(c, grid[r].length - 1);
