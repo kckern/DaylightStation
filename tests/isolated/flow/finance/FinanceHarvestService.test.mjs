@@ -109,6 +109,7 @@ describe('FinanceHarvestService', () => {
 
   describe('harvest', () => {
     it('fetches and saves transactions for open budget periods', async () => {
+      mockFinanceStore.getTransactions.mockReturnValue(null); // nothing stored yet
       const result = await service.harvest();
 
       expect(result.status).toBe('success');
@@ -119,6 +120,7 @@ describe('FinanceHarvestService', () => {
     });
 
     it('skips closed budget periods', async () => {
+      mockFinanceStore.getTransactions.mockReturnValue(null); // nothing stored yet
       await service.harvest();
 
       // Only one saveTransactions call (for the open period)
@@ -246,6 +248,48 @@ describe('FinanceHarvestService', () => {
       });
     });
 
+    describe('unchanged periods', () => {
+      it('does not save when Buxfer returns the stored rows (any order), and reports changed:false', async () => {
+        mockFinanceStore.getTransactions.mockReturnValue([...mockTransactions].reverse().map(t => ({ ...t })));
+        const result = await service.harvest(undefined, { skipCategorization: true });
+
+        expect(mockFinanceStore.saveTransactions).not.toHaveBeenCalled();
+        expect(result.details.budgetPeriods[0].changed).toBe(false);
+        expect(mockLogger.debug).toHaveBeenCalledWith('harvest.period.unchanged', { startDate: '2026-01-01', transactionCount: 2 });
+      });
+
+      it('saves when a row differs, and reports changed:true', async () => {
+        mockFinanceStore.getTransactions.mockReturnValue([
+          mockTransactions[0],
+          { ...mockTransactions[1], tagNames: ['Fuel'] }
+        ]);
+        const result = await service.harvest(undefined, { skipCategorization: true });
+
+        expect(mockFinanceStore.saveTransactions).toHaveBeenCalledTimes(1);
+        expect(result.details.budgetPeriods[0].changed).toBe(true);
+      });
+
+      it('treats a row with reordered keys as unchanged', async () => {
+        mockFinanceStore.getTransactions.mockReturnValue(mockTransactions.map(t => Object.fromEntries(Object.entries(t).reverse())));
+        await service.harvest(undefined, { skipCategorization: true });
+        expect(mockFinanceStore.saveTransactions).not.toHaveBeenCalled();
+      });
+
+      it('saves when nothing is stored yet', async () => {
+        mockFinanceStore.getTransactions.mockReturnValue(null);
+        const result = await service.harvest(undefined, { skipCategorization: true });
+
+        expect(mockFinanceStore.saveTransactions).toHaveBeenCalledTimes(1);
+        expect(result.details.budgetPeriods[0].changed).toBe(true);
+      });
+
+      it('refreshPeriod skips the write when nothing changed', async () => {
+        const result = await service.refreshPeriod('2026-01-01', '2026-06-30', ['Checking']);
+        expect(mockFinanceStore.saveTransactions).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'success', transactionCount: 2, changed: false });
+      });
+    });
+
     describe('single-flight', () => {
       const deferred = () => { let release; const promise = new Promise(r => { release = r; }); return { promise, release }; };
 
@@ -302,6 +346,7 @@ describe('FinanceHarvestService', () => {
 
   describe('refreshPeriod', () => {
     it('fetches and saves transactions for a specific period', async () => {
+      mockFinanceStore.getTransactions.mockReturnValue(null); // nothing stored yet
       const result = await service.refreshPeriod(
         '2026-01-01',
         '2026-06-30',

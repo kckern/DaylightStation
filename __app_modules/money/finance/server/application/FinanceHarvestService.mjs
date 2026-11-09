@@ -144,13 +144,14 @@ export class FinanceHarvestService {
         budget.accounts
       );
 
-      // Save transactions
-      this.#financeStore.saveTransactions(startDate, transactions, householdId);
+      // Save transactions only when Buxfer changed them (the file lives on a synced volume)
+      const changed = this.#saveIfChanged(startDate, transactions, householdId);
 
       results.budgetPeriods.push({
         startDate,
         endDate,
-        transactionCount: transactions.length
+        transactionCount: transactions.length,
+        changed
       });
 
       this.#log('info', 'harvest.period.complete', {
@@ -222,9 +223,9 @@ export class FinanceHarvestService {
     this.#log('info', 'harvest.period.refresh', { startDate, endDate, accounts });
 
     const transactions = await this.#fetchTransactions(startDate, endDate, accounts);
-    this.#financeStore.saveTransactions(startDate, transactions, householdId);
+    const changed = this.#saveIfChanged(startDate, transactions, householdId);
 
-    return { status: 'success', transactionCount: transactions.length };
+    return { status: 'success', transactionCount: transactions.length, changed };
   }
 
   /**
@@ -357,6 +358,30 @@ export class FinanceHarvestService {
     });
 
     return { processed: totalProcessed, failed: totalFailed };
+  }
+
+  /**
+   * Save a period's transactions unless they equal the stored copy.
+   * @returns {boolean} true when written
+   */
+  #saveIfChanged(startDate, transactions, householdId) {
+    const stored = this.#financeStore.getTransactions(startDate, householdId);
+    if (this.#sameTransactions(stored, transactions)) {
+      this.#log('debug', 'harvest.period.unchanged', { startDate, transactionCount: transactions.length });
+      return false;
+    }
+    this.#financeStore.saveTransactions(startDate, transactions, householdId);
+    return true;
+  }
+
+  #sameTransactions(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    const byId = (x, y) => String(x?.id).localeCompare(String(y?.id));
+    // Sorted keys: a YAML round trip may reorder fields without changing a row.
+    const canon = (_k, v) => (v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]]))
+      : v);
+    return JSON.stringify([...a].sort(byId), canon) === JSON.stringify([...b].sort(byId), canon);
   }
 
   #toDateString(date) {
