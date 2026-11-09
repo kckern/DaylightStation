@@ -269,6 +269,29 @@ describe('SchoolDebriefProgram start card', () => {
       expect(screen.getByRole('button', { name: /^Next/ })).toBeDisabled();
       expect(api.clarify).toHaveBeenCalledTimes(1);
     });
+    it('a failed probe reply keeps the text, and Next sends it again', async () => {
+      const entries = { classes: { text: '' }, moment: { text: 'x' }, teach: { text: 'y' }, hard: { text: '' } };
+      let second = false;
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'clarify', next: { kind: 'clarify' }, entries, clarify: { prompt: second ? 'What happened next?' : 'Who was with you?' } }));
+      api.open = api.day;
+      api.clarify = vi.fn()
+        .mockResolvedValueOnce({ ok: false, status: 0, data: null })
+        .mockImplementation(async (d) => { second = true; return api.day(d); });
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /pick up/i }));
+      const field = await screen.findByRole('textbox');
+      fireEvent.change(field, { target: { value: 'my sister' } });
+      fireEvent.keyDown(field, { code: 'Enter', key: 'Enter' });
+      expect(await screen.findByRole('alert')).toHaveTextContent(/try again/i);
+      expect(screen.getByText('Who was with you?')).toBeInTheDocument();
+      expect(screen.getByRole('textbox')).toHaveValue('my sister');
+      await waitFor(() => expect(screen.getByRole('button', { name: /^Next/ })).not.toBeDisabled());
+      fireEvent.click(screen.getByRole('button', { name: /^Next/ }));
+      expect(await screen.findByText('What happened next?')).toBeInTheDocument();
+      expect(api.clarify).toHaveBeenCalledTimes(2);
+      expect(api.clarify.mock.calls[1][1]).toMatchObject({ text: 'my sister' });
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
     it('summary shows the reason and the earned bonus lines', async () => {
       school.economyBank.mockReset(); school.economyBank.mockResolvedValue(ok({ mode: 'dry-run' }));
       api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'completed', next: null, entries: {}, late: false,

@@ -101,6 +101,15 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     }
     setBusy(false);
   };
+  // A probe reply moves to a fresh field only once the server has it: a failed
+  // send keeps the child's words on screen, and Next (Enter) sends them again.
+  const sendProbe = async (b) => {
+    setBusy(true);
+    let r;
+    try { r = await api.clarify(day, b); } catch { r = { ok: false, data: null }; }
+    if (apply(r)) setProbeN((n) => n + 1);
+    setBusy(false);
+  };
   const answering = useRef(false);
   const answer = async (question, response) => {
     if (answering.current) return;
@@ -192,7 +201,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
       ? <ChipsItem prompt={p} options={view.classOptions ?? todayView?.classOptions ?? []} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onBack={back} onSubmit={(b) => submitPrompt(p.id, b)} />
       : <PromptItem prompt={p} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onTake={takeFor} onBack={back} onSubmit={(b) => submitPrompt(p.id, b)} />;
   } else if (view.phase === 'clarify') {
-    body = <PromptItem key={`clarify-${probeN}-${view.clarify.prompt}`} prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" busy={busy} onTake={takeFor} onSubmit={async (b) => { setBusy(true); apply(await api.clarify(day, b)); setProbeN((n) => n + 1); setBusy(false); }} />;
+    body = <PromptItem key={`clarify-${probeN}-${view.clarify.prompt}`} prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" busy={busy} onTake={takeFor} onSubmit={sendProbe} />;
   } else if (!view.questions) body = waiting('Reading your answer…');
   else if (view.next?.kind === 'question' || result) {
     const q = view.questions.find((x) => x.id === (result ? currentQid : view.next.id));
