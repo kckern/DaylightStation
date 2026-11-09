@@ -27,9 +27,9 @@ function Loaded({ learnerId, learnerName, actorId }) {
   });
   const { run, busy, errors } = useTeacherWrite({ panel: PANEL });
   const act = (day, action) => run(`${day}:${action}`,
-    ({ actorId: by, pin }) => schoolApi.teacherDebriefAction(learnerId, day, action, { by, pin, reason: action === 'rescore' ? null : (reason.trim() || null) }),
+    ({ actorId: by, pin }) => schoolApi.teacherDebriefAction(learnerId, day, action, { by, pin, reason: (action === 'rescore' || action === 'discussed') ? null : (reason.trim() || null) }),
     // The reason belongs to the action just taken: clear it so it cannot ride along on the next day's.
-    { onSuccess: () => { setReason(''); record.retry(); } });
+    { onSuccess: () => { if (action !== 'discussed') setReason(''); record.retry(); } });
   const days = record.data?.days ?? [];
   return (
     <PanelFrame title="Debriefs" state={record.state} retry={record.retry}
@@ -40,7 +40,13 @@ function Loaded({ learnerId, learnerName, actorId }) {
         {days.map((d) => (
           <article key={d.studyDay} className="teacher-debrief">
             <header><strong>{d.studyDay}</strong> · {PHASE[d.phase] ?? d.phase}{d.late ? ' · late' : ''}{d.questioner === 'fallback' ? ' · fallback questions' : ''}
-              {Number.isInteger(d.substance) && <> · detail {d.substance}/10</>}</header>
+              {Number.isInteger(d.level)
+                ? <> · detail {d.level}/5{d.levelReason ? <> · {d.levelReason}</> : null}</>
+                : Number.isInteger(d.substance) && <> · detail {d.substance}/10</>}</header>
+            {d.hook && <p className="teacher-debrief__hook">Talk about: {d.hook}</p>}
+            {d.probes?.length > 0 && <ul className="teacher-debrief__probes">{d.probes.map((p, i) => (
+              <li key={i}>{p.prompt} — <strong>{p.text || '—'}</strong></li>
+            ))}</ul>}
             {Object.entries(d.entries ?? {}).map(([id, e]) => (
               <p key={id} className="teacher-debrief__entry"><em>{id}</em>: <span>{e.text}</span>
                 {e.audioRef && <audio controls preload="none" src={audioSrc(e.audioRef, actorId)} />}</p>
@@ -53,8 +59,11 @@ function Loaded({ learnerId, learnerName, actorId }) {
             <div className="teacher-debrief__actions">
               <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'excuse')}>Excuse</button>
               <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'reject')}>Reject</button>
+              {d.discussedAt
+                ? <span className="teacher-debrief__talked">Talked about ✓</span>
+                : d.phase === 'completed' && <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'discussed')}>We talked about it</button>}
               {d.questioner === 'fallback' && <button type="button" disabled={busy != null} onClick={() => act(d.studyDay, 'rescore')}>Re-score</button>}
-              {['excuse', 'reject', 'rescore'].map((a) => errors?.[`${d.studyDay}:${a}`]
+              {['excuse', 'reject', 'rescore', 'discussed'].map((a) => errors?.[`${d.studyDay}:${a}`]
                 && <span key={a} role="alert" className="teacher-panel__error">{errors[`${d.studyDay}:${a}`]}</span>)}
             </div>
           </article>

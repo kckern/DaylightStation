@@ -16,15 +16,15 @@ function memStore() {
     listDays: async () => Object.keys(days).map((k) => k.split('/')[1]).sort(),
   };
 }
-function make({ substance = 7, clarify = null, today = '2026-10-21', transcribe = async () => 'hello', owed = [] } = {}) {
+function make({ level = 4, probe = null, notify = null, today = '2026-10-21', transcribe = async () => 'hello', owed = [] } = {}) {
   const debriefs = memStore();
   const launcher = { today, studyDay() { return this.today; }, owedDays: vi.fn(async () => owed) };
   const logger = { info: vi.fn(), warn: vi.fn(), error() {}, debug() {} };
-  const questioner = { ask: vi.fn(async ({ clarify: c }) => ({ substance: c ? 7 : substance, substanceReason: 'r', clarify: c ? null : clarify, questions: QS, questioner: 'model', model: 'm', ms: 1 })) };
+  const questioner = { ask: vi.fn(async () => ({ level, levelReason: 'r', probe, hook: 'a hook', questions: QS, questioner: 'model', questionSource: 'model', model: 'm', ms: 1 })) };
   const judge = { grade: vi.fn(async (q, r) => ({ correct: r === q.answer, grade: null, reason: null })) };
   const svc = new SchoolDebriefService({
     debriefs, launcher, questioner, judge,
-    transcribe, saveAudio: async () => 'media/x.webm',
+    transcribe, notify, saveAudio: async () => 'media/x.webm',
     config: debriefConfigOf({}), clock: () => new Date('2026-10-21T22:00:00Z'), logger,
   });
   return { svc, debriefs, questioner, judge, launcher, logger };
@@ -45,7 +45,7 @@ describe('SchoolDebriefService', () => {
     await svc.answer('test-learner', '2026-10-21', { questionId: 'q2', response: 'C' });
     const done = await svc.complete('test-learner', '2026-10-21');
     expect(done.phase).toBe('completed');
-    expect(done.summary).toEqual({ substance: 7, substantive: true, quiz: { right: 1, graded: 2 } });
+    expect(done.summary).toEqual({ quiz: { right: 1, graded: 2 }, level: 4, levelReason: 'r', rich: true, teachable: true, substantive: true });
   });
   it('submit is idempotent once questions exist (no second AI call)', async () => {
     const { svc, questioner } = make();
@@ -62,20 +62,138 @@ describe('SchoolDebriefService', () => {
     expect(again.correct).toBe(true);
     expect(judge.grade).toHaveBeenCalledTimes(1);
   });
-  it('low substance asks to clarify exactly once', async () => {
-    const { svc, questioner } = make({ substance: 2, clarify: 'What experiment?' });
+  it('level 2 probes until the budget is spent, then freezes whatever the level', async () => {
+    const { svc, questioner } = make({ level: 2 });
+    questioner.ask.mockResolvedValueOnce({ level: 2, levelReason: 'r', probe: 'Which pieces?', questions: QS, questioner: 'model', questionSource: 'model', ms: 1 })
+      .mockResolvedValueOnce({ level: 2, levelReason: 'r', probe: 'Where do they end up?', questions: QS, questioner: 'model', questionSource: 'model', ms: 1 })
+      .mockResolvedValueOnce({ level: 2, levelReason: 'r', probe: 'A third?', questions: QS, questioner: 'model', questionSource: 'model', ms: 1 });
     await fill(svc);
     const v = await svc.submit('test-learner', '2026-10-21');
-    expect(v).toMatchObject({ phase: 'clarify', clarify: { prompt: 'What experiment?' } });
-    const after = await svc.clarify('test-learner', '2026-10-21', { text: 'we grew beans', via: 'typed' });
-    expect(after.phase).toBe('questions');
-    expect(questioner.ask).toHaveBeenCalledTimes(2);
-    expect(questioner.ask.mock.calls[1][0].clarify).toEqual({ prompt: 'What experiment?', text: 'we grew beans' });
+    expect(v).toMatchObject({ phase: 'clarify', clarify: { prompt: 'Which pieces?' } });
+    const v2 = await svc.clarify('test-learner', '2026-10-21', { text: '종이, 카드보드, 패인트', via: 'typed' });
+    expect(v2).toMatchObject({ phase: 'clarify', clarify: { prompt: 'Where do they end up?' } });
+    expect(questioner.ask.mock.calls[1][0].probes[0]).toMatchObject({ prompt: 'Which pieces?', text: '종이, 카드보드, 패인트' });
+    const v3 = await svc.clarify('test-learner', '2026-10-21', { text: 'the bin', via: 'typed' });
+    expect(v3.phase).toBe('questions');
+    expect(v3.probes).toHaveLength(2);
+    expect(questioner.ask).toHaveBeenCalledTimes(3);
   });
-  it('submit refuses when the required prompt is empty', async () => {
+  it('a resent probe reply after the probe was answered returns the day and appends nothing; other text still 409s', async () => {
+    const { svc, questioner, debriefs } = make({ level: 2 });
+    questioner.ask.mockResolvedValueOnce({ level: 2, levelReason: 'r', probe: 'Which pieces?', questions: QS, questioner: 'model', questionSource: 'model', ms: 1 })
+      .mockResolvedValueOnce({ level: 4, levelReason: 'r', probe: null, questions: QS, questioner: 'model', questionSource: 'model', ms: 1 });
+    await fill(svc);
+    await svc.submit('test-learner', '2026-10-21');
+    const v = await svc.clarify('test-learner', '2026-10-21', { text: 'paper and card', via: 'typed' });
+    expect(v.phase).toBe('questions');
+    const count = debriefs.days['test-learner/2026-10-21'].length;
+    const again = await svc.clarify('test-learner', '2026-10-21', { text: '  paper and card ', via: 'typed' });
+    expect(again).toEqual(v);
+    expect(debriefs.days['test-learner/2026-10-21']).toHaveLength(count);
+    expect(questioner.ask).toHaveBeenCalledTimes(2);
+    await expect(svc.clarify('test-learner', '2026-10-21', { text: 'something else', via: 'typed' })).rejects.toMatchObject({ status: 409 });
+  });
+  it('level 4 asks no probe and freezes the questions', async () => {
+    const { svc } = make({ level: 4, probe: 'ignored?' });
+    await fill(svc);
+    const v = await svc.submit('test-learner', '2026-10-21');
+    expect(v.phase).toBe('questions');
+    expect(v.probes).toEqual([]);
+    expect(v).toMatchObject({ level: 4, levelReason: 'r' });
+    expect(v.prompts.map((p) => p.id)).toEqual(['classes', 'moment', 'teach', 'hard']);
+    expect(v.classOptions).toContain('Math');
+  });
+  it('submit refuses when a required prompt is empty', async () => {
     const { svc } = make();
     await svc.entry('test-learner', '2026-10-21', { promptId: 'classes', text: 'math', via: 'typed' });
-    await expect(svc.submit('test-learner', '2026-10-21')).rejects.toThrow(/learned/);
+    await expect(svc.submit('test-learner', '2026-10-21')).rejects.toThrow(/moment, teach/);
+  });
+  it('entry rejects unknown prompt ids', async () => {
+    const { svc } = make();
+    await expect(svc.entry('test-learner', '2026-10-21', { promptId: 'nonsense', text: 'x' })).rejects.toMatchObject({ status: 400 });
+  });
+  it.each([['learned', 'teach'], ['notable', 'hard']])('an old-bundle %s entry is saved as %s', async (legacy, current) => {
+    const { svc, debriefs, logger } = make();
+    await svc.open('test-learner', '2026-10-21');
+    const v = await svc.entry('test-learner', '2026-10-21', { promptId: legacy, text: 'from the old kiosk', via: 'typed' });
+    expect(v.entries[current].text).toBe('from the old kiosk');
+    expect(v.entries[legacy]).toBeUndefined();
+    expect(debriefs.days['test-learner/2026-10-21'].at(-1)).toMatchObject({ type: 'entry', promptId: current });
+    expect(logger.info).toHaveBeenCalledWith('school.debrief.legacy-prompt-id', { learnerId: 'test-learner', day: '2026-10-21', from: legacy, to: current });
+  });
+  it('a legacy learned entry satisfies teach and reaches the questioner', async () => {
+    const { svc, debriefs, questioner } = make();
+    debriefs.days['test-learner/2026-10-21'] = [{ type: 'opened' }, { type: 'entry', promptId: 'learned', text: 'fractions', via: 'typed' }];
+    await svc.entry('test-learner', '2026-10-21', { promptId: 'moment', text: 'at the table', via: 'typed' });
+    const v = await svc.submit('test-learner', '2026-10-21');
+    expect(v.phase).toBe('questions');
+    expect(questioner.ask.mock.calls[0][0].entries.learned.text).toBe('fractions');
+    expect(questioner.ask.mock.calls[0][0].teachTo).toBe('a younger kid');
+  });
+  describe('summary reasons', () => {
+    const done = async (svc, day) => {
+      await fill(svc, day); await svc.submit('test-learner', day);
+      for (const q of QS) await svc.answer('test-learner', day, { questionId: q.id, response: q.answer });
+      return svc.complete('test-learner', day);
+    };
+    it('level 3 on time is rich but not teachable', async () => {
+      const { svc } = make({ level: 3 });
+      expect((await done(svc, '2026-10-21')).summary).toMatchObject({ rich: true, teachable: false, level: 3 });
+    });
+    it('level 4 late is teachable but not rich', async () => {
+      const { svc } = make({ level: 4 });
+      expect((await done(svc, '2026-10-20')).summary).toMatchObject({ rich: false, teachable: true });
+    });
+    it('a legacy day with substance and no level is rich by substance', async () => {
+      const { svc, debriefs } = make();
+      debriefs.days['test-learner/2026-10-21'] = [{ type: 'entry', promptId: 'learned', text: 'x' }, { type: 'questions', substance: 7, questions: QS, questioner: 'model' },
+        { type: 'answer', questionId: 'q1', response: 'B', correct: true }, { type: 'answer', questionId: 'q2', response: 'A', correct: true }];
+      expect((await svc.day('test-learner', '2026-10-21')).summary).toMatchObject({ rich: true, teachable: false, level: null });
+    });
+  });
+  describe('completion hook and metrics', () => {
+    const finish = async (svc) => {
+      await fill(svc); await svc.submit('test-learner', '2026-10-21');
+      for (const q of QS) await svc.answer('test-learner', '2026-10-21', { questionId: q.id, response: q.answer });
+      return svc.complete('test-learner', '2026-10-21');
+    };
+    it('a rejecting notify still completes and logs hook-failed once', async () => {
+      const notify = vi.fn(async () => { throw new Error('down'); });
+      const { svc, logger } = make({ notify });
+      const v = await finish(svc);
+      expect(v.phase).toBe('completed');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(logger.warn.mock.calls.filter((c) => c[0] === 'school.debrief.hook-failed')).toHaveLength(1);
+    });
+    it('a resolving notify is called once with learner, day and hook', async () => {
+      const notify = vi.fn(async () => {});
+      const { svc } = make({ notify });
+      await finish(svc);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith({ learnerId: 'test-learner', day: '2026-10-21', hook: 'a hook' });
+    });
+    it('completed log carries metrics', async () => {
+      const { svc, logger } = make();
+      await finish(svc);
+      expect(logger.info).toHaveBeenCalledWith('school.debrief.completed', expect.objectContaining({ words: expect.any(Number), markers: expect.any(Number), probes: 0, voiceEntries: 0, level: 4 }));
+    });
+  });
+  it('reads prior prompts from at most 20 prior days', async () => {
+    const { svc, debriefs, questioner } = make();
+    for (let i = 1; i <= 25; i++) debriefs.days[`test-learner/2026-09-${String(i).padStart(2, '0')}`] = [{ type: 'questions', questions: [{ id: 'q', kind: 'short', prompt: `Prior ${i}` }], questioner: 'model' }];
+    await fill(svc); await svc.submit('test-learner', '2026-10-21');
+    const prior = questioner.ask.mock.calls[0][0].priorPrompts;
+    expect(prior).toHaveLength(20);
+    expect(prior[0]).toBe('Prior 6');
+  });
+  it('discussed appends a teacher event and is never late', async () => {
+    const { svc, debriefs, launcher } = make();
+    await svc.open('test-learner', '2026-10-21');
+    launcher.today = '2026-10-22';
+    await svc.discussed('test-learner', '2026-10-21', { by: 'parent' });
+    expect(debriefs.days['test-learner/2026-10-21'].find((e) => e.type === 'discussed')).toMatchObject({ by: 'parent' });
+    expect((await svc.history('test-learner'))[0]).toMatchObject({ discussedAt: expect.any(String), late: false });
   });
   it('late day: no substantive bonus, events marked late', async () => {
     const { svc, debriefs } = make();
@@ -97,10 +215,10 @@ describe('SchoolDebriefService', () => {
   });
   it('rescore only for fallback days with no answers (or a teacher)', async () => {
     const { svc, questioner } = make();
-    questioner.ask.mockResolvedValueOnce({ substance: null, substanceReason: null, clarify: null, questions: QS, questioner: 'fallback', model: null, ms: 1 });
+    questioner.ask.mockResolvedValueOnce({ level: null, probe: null, questions: QS, questioner: 'fallback', model: null, ms: 1 });
     await fill(svc); await svc.submit('test-learner', '2026-10-21');
     const v = await svc.rescore('test-learner', '2026-10-21', { by: 'parent' });
-    expect(v.substance ?? v.summary.substance).toBe(7);
+    expect(v.level).toBe(4);
   });
   it('concurrent answers to one question grade and append once', async () => {
     const { svc, judge, debriefs } = make();
@@ -119,7 +237,7 @@ describe('SchoolDebriefService', () => {
   });
 
   describe('grown-up actions never make a day late', () => {
-    const FALLBACK = { substance: null, substanceReason: null, clarify: null, questions: QS, questioner: 'fallback', model: null, ms: 1 };
+    const FALLBACK = { level: null, levelReason: null, probe: null, hook: null, questions: QS, questioner: 'fallback', questionSource: 'fallback', model: null, ms: 1 };
     it('a fallback day finished on time and re-scored the next day stays on time and can be substantive', async () => {
       const { svc, questioner, launcher, debriefs } = make();
       questioner.ask.mockResolvedValueOnce(FALLBACK);
@@ -130,7 +248,7 @@ describe('SchoolDebriefService', () => {
       const v = await svc.rescore('test-learner', '2026-10-21', { by: 'parent' });
       expect(debriefs.days['test-learner/2026-10-21'].find((e) => e.type === 'rescored')).not.toHaveProperty('late');
       expect(v.phase).toBe('completed');
-      expect((await svc.history('test-learner'))[0]).toMatchObject({ studyDay: '2026-10-21', late: false, summary: { substantive: true } });
+      expect((await svc.history('test-learner'))[0]).toMatchObject({ studyDay: '2026-10-21', late: false, summary: { rich: true } });
     });
     it('an on-time day excused the next day is not late', async () => {
       const { svc, launcher, debriefs } = make();
@@ -159,7 +277,7 @@ describe('SchoolDebriefService', () => {
   });
   it('excuse, reject and re-score each log who did it', async () => {
     const { svc, questioner, logger } = make();
-    questioner.ask.mockResolvedValueOnce({ substance: null, substanceReason: null, clarify: null, questions: QS, questioner: 'fallback', model: null, ms: 1 });
+    questioner.ask.mockResolvedValueOnce({ level: null, probe: null, questions: QS, questioner: 'fallback', model: null, ms: 1 });
     await fill(svc); await svc.submit('test-learner', '2026-10-21');
     await svc.rescore('test-learner', '2026-10-21', { by: 'parent' });
     await svc.reject('test-learner', '2026-10-21', { by: 'parent', reason: 'junk' });

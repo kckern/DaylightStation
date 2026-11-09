@@ -11,7 +11,7 @@ function app({ gateThrows = false } = {}) {
     day: vi.fn(async () => ({ phase: 'not-started' })), open: vi.fn(async () => ({ phase: 'entry' })),
     entry: vi.fn(async () => ({ phase: 'entry' })), answer: vi.fn(async () => ({ correct: true })),
     take: vi.fn(async () => ({ audioRef: 'a', text: 't' })), history: vi.fn(async () => []),
-    excuse: vi.fn(async () => ({ phase: 'excused' })),
+    excuse: vi.fn(async () => ({ phase: 'excused' })), discussed: vi.fn(async () => ({ phase: 'completed' })),
     submit: vi.fn(async () => { const e = new Error('Please answer: learned'); e.status = 400; throw e; }),
   };
   const teacherGate = { assert: vi.fn(() => { if (gateThrows) { const e = new Error('no'); e.name = 'GuestForbiddenError'; throw e; } }) };
@@ -20,6 +20,12 @@ function app({ gateThrows = false } = {}) {
 }
 
 describe('school debrief router', () => {
+  it('teacher discussed route calls the service behind the gate', async () => {
+    const { a, service, teacherGate } = app();
+    expect((await request(a).post('/debrief/teacher/test-learner/day/2026-10-21/discussed').send({ by: 'parent', pin: '1' })).status).toBe(200);
+    expect(teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({ action: 'school.debrief.discussed' }));
+    expect(service.discussed).toHaveBeenCalled();
+  });
   it('refuses a missing or wrong-day grant with 403', async () => {
     const { a } = app();
     expect((await request(a).get('/debrief/test-learner/day/2026-10-21')).status).toBe(403);

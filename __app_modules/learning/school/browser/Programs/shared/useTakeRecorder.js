@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import useVoiceCapture from "../SentenceLadder/rungs/useVoiceCapture.js";
-import { SILENT_LEVEL, judgeTake } from "./speechFloor.js";
+import { MIN_TAKE_MS, SILENT_LEVEL, judgeTake } from "./speechFloor.js";
 
 /**
  * One card-ladder take: record, judge against the shared speech floor
@@ -31,12 +31,17 @@ function micApiPresent() {
   } catch { return false; }
 }
 
-export default function useTakeRecorder({ onTake, holdAudio = () => {} } = {}) {
+const DEFAULT_FLOOR = Object.freeze({ silentLevel: SILENT_LEVEL, minTakeMs: MIN_TAKE_MS });
+
+export default function useTakeRecorder({ onTake, holdAudio = () => {}, floor = DEFAULT_FLOOR } = {}) {
   const [phase, setPhase] = useState('idle'); // idle | recording | saving
   const [verdict, setVerdict] = useState(null);
+  const [heard, setHeard] = useState(false);
   const [unavailable, setUnavailable] = useState(() => !micApiPresent());
 
   const silenceRef = useRef({ heard: false, sampled: false });
+  const floorRef = useRef(floor);
+  floorRef.current = floor;
   const handlerRef = useRef(onTake);
   handlerRef.current = onTake;
   // False once the caller has unmounted. A take STOPPED just before unmount
@@ -50,7 +55,7 @@ export default function useTakeRecorder({ onTake, holdAudio = () => {} } = {}) {
     holdAudio(false);
     if (!liveRef.current) return;
     const { heard, sampled } = silenceRef.current;
-    const result = judgeTake({ heard, sampled: sampled === true, durationMs });
+    const result = judgeTake({ heard, sampled: sampled === true, durationMs, minTakeMs: floorRef.current.minTakeMs });
     setVerdict(result);
     setPhase('idle');
     // A refused take is never handed on — see the module doc above.
@@ -69,6 +74,7 @@ export default function useTakeRecorder({ onTake, holdAudio = () => {} } = {}) {
 
   const start = useCallback(async () => {
     setVerdict(null);
+    setHeard(false);
     silenceRef.current = { heard: false, sampled: false };
     // Silence the lane BEFORE the mic opens: nothing may play over a take
     // (`holdAudio`). Released when the take stops, fails, or is abandoned.
@@ -88,7 +94,10 @@ export default function useTakeRecorder({ onTake, holdAudio = () => {} } = {}) {
   const onLevel = useCallback((level) => {
     const s = silenceRef.current;
     s.sampled = true;
-    if (level >= SILENT_LEVEL) s.heard = true;
+    if (level >= floorRef.current.silentLevel) {
+      if (!s.heard) setHeard(true);
+      s.heard = true;
+    }
   }, []);
 
   // A take in progress when the caller unmounts (a new item arrived, the
@@ -102,6 +111,6 @@ export default function useTakeRecorder({ onTake, holdAudio = () => {} } = {}) {
   useEffect(() => () => holdAudio(false), []);
 
   return {
-    start, stop, phase, verdict, stream, onLevel, release, unavailable,
+    start, stop, phase, verdict, stream, onLevel, release, unavailable, heard,
   };
 }

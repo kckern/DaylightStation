@@ -63,6 +63,7 @@ clause; it never renders an id.
 | Rows blank or double-marked, unreadable/refused card, nothing marked | ⚠️ | School needs you (high) |
 | Unmarked old record on a card whose other work graded | none (logged `school.push.suppressed`) | — |
 | Card ladder: the tuning agent read a day as a concern | 🔤 | School needs you (high) |
+| Debrief finished: parent conversation hook | 💬 | School progress (low) |
 | Parent digest: the day for every child (`digest`) | none | School progress (low) |
 | Two study days in a row with nothing done (`zero-days`) | 📭 | School needs you (high) |
 
@@ -73,6 +74,12 @@ clause; it never renders an id.
   sheet's 🔁 or 🙋 card. With no learner it is `school-card-{sessionId ?? testId}`.
 - `group` is `school-{learnerId}`: one stack per child.
 - A piano lesson is tagged `school-{learnerId}-piano-{studyDay}`.
+- A finished after-school debrief is tagged `school-{learnerId}-debrief-{studyDay}`.
+  Its title is `💬 {Child} — after school`; the body is the questioner's
+  one-line conversation starter (model text, shown only when
+  `findPushTextDefects` passes it, else nothing is sent) then the study day.
+  It goes to each teacher at low urgency and is never awaited by the child's
+  completion.
 - A card-ladder concern is tagged `school-{learnerId}-card-ladder-{package}`, so
   the next day's concern replaces the card. Its title is `🔤 {Child} — {Deck}`.
   The body is the tuner's first note only when `findPushTextDefects` passes it,

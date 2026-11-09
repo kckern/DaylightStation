@@ -37,6 +37,7 @@ import { createSchoolBookScansRouter as createSchoolBookScansRouter } from "../a
 import { createSchoolBooksRouter as createSchoolBooksRouter } from "../api/schoolBooks.mjs";
 import { BookEntryPolicy as BookEntryPolicy } from "../application/BookEntryPolicy.mjs";
 import { SchoolDebriefService } from "../application/debrief/SchoolDebriefService.mjs";
+import { composeSchoolPush } from "../domain/notifications/schoolPush.mjs";
 import { DebriefQuestioner } from "../application/debrief/DebriefQuestioner.mjs";
 import { DebriefAnswerJudge } from "../application/debrief/DebriefAnswerJudge.mjs";
 import { debriefConfigOf } from "../domain/schoolDebrief.mjs";
@@ -44,7 +45,7 @@ import { createSchoolDebriefRouter } from "../api/schoolDebrief.mjs";
 import { FilesystemDebriefAudio } from "../adapters/debrief/FilesystemDebriefAudio.mjs";
 
 export async function createSchoolLifecycleRuntime(dependencies) {
-  const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
+  const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, notificationService, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
   const { SetAcademicPeriods: SetAcademicPeriods } = await import("../application/usecases/SetAcademicPeriods.mjs");
   const { SetPassOverride: SetPassOverride } = await import("../application/usecases/SetPassOverride.mjs");
   const { SetMilestones: SetMilestones } = await import("../application/usecases/SetMilestones.mjs");
@@ -945,7 +946,30 @@ try {
     if (!debriefAi?.chatStructured) rootLogger.warn('school.debrief.ai-unavailable', {});
     const debriefLogger = rootLogger.child({ module: 'school-debrief' });
     const debriefAudio = new FilesystemDebriefAudio({ rootDir: path.join(configService.getMediaDir(), 'school/debriefs') });
+    // Low-priority conversation starter for each teacher when a child finishes.
+    // Throws when nobody is configured or delivery fails; the service logs it.
+    const notifyDebriefHook = notificationService?.send ? async ({ learnerId, day, hook }) => {
+      let child = null;
+      try { child = (await learnerDisplayName(learnerId)) || null; } catch { child = null; }
+      const push = composeSchoolPush({ kind: 'debrief-hook', learnerId, child, studyDay: day, hook });
+      if (!push) { debriefLogger.info('school.debrief.hook-skipped', { learnerId, day }); return; }
+      const usernames = (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [];
+      if (!usernames.length) throw new Error('no teachers configured');
+      for (const username of usernames) {
+        // eslint-disable-next-line no-await-in-loop
+        await notificationService.send({
+          title: push.title,
+          body: push.message,
+          category: 'school',
+          urgency: 'low',
+          actions: [{ label: 'Open the console', action: 'open', data: { url: '/school/teacher' } }],
+          metadata: { username, pushData: push.data },
+          dedupeKey: `debrief-hook:${username}:${learnerId}:${day}`,
+        });
+      }
+    } : null;
     const debriefService = new SchoolDebriefService({
+      notify: notifyDebriefHook,
       debriefs: dependencies.schoolLifecycle.debriefStore,
       launcher: debriefLauncher,
       questioner: new DebriefQuestioner({ aiGateway: debriefAi, model: debriefConfig.questioner.model, timeoutMs: debriefConfig.questioner.timeoutMs, logger: debriefLogger }),

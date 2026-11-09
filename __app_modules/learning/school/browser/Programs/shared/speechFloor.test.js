@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_TAKE_MS, SILENT_AFTER_MS, SILENT_LEVEL, judgeTake } from "./speechFloor.js";
+import { DEBRIEF_FLOOR, MIN_TAKE_MS, SILENT_AFTER_MS, SILENT_LEVEL, judgeTake } from "./speechFloor.js";
 
 describe('speech floor', () => {
   it('keeps the measured thresholds', () => {
@@ -14,6 +14,18 @@ describe('speech floor', () => {
   it('refuses a take shorter than the floor', () => {
     expect(judgeTake({ heard: true, sampled: true, durationMs: 1199 })).toBe('too-short');
     expect(judgeTake({ heard: true, sampled: true, durationMs: 1200 })).toBeNull();
+  });
+});
+
+describe('judgeTake with a custom minTakeMs', () => {
+  it('accepts a 900ms take when the floor is 800ms, and still refuses it by default', () => {
+    expect(judgeTake({ heard: true, sampled: true, durationMs: 900, minTakeMs: 800 })).toBeNull();
+    expect(judgeTake({ heard: true, sampled: true, durationMs: 900 })).toBe('too-short');
+  });
+  it('the debrief floor is gentler than the default and frozen', () => {
+    expect(DEBRIEF_FLOOR).toEqual({ silentLevel: 0.02, minTakeMs: 1200 });
+    expect(DEBRIEF_FLOOR.silentLevel).toBeLessThan(SILENT_LEVEL);
+    expect(Object.isFrozen(DEBRIEF_FLOOR)).toBe(true);
   });
 });
 

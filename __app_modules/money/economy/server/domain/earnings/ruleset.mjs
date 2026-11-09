@@ -24,7 +24,7 @@
  *   activity-contest race | ring-improved
  *   milestone        race-pb | glider-act | glider-bells | board-game-level | piano-rung
  *                    | perfect-sheet | cards-mastered | book-finished | rings-lifetime
- *   debrief-day     each day's after-school debrief, by criterion  School × Day (completed | substantive | quiz-passed)
+ *   debrief-day     each day's after-school debrief, by criterion  School × Day (completed | substantive | quiz-passed | teachable)
  *   debrief-week    every owed debrief done (late counts) or excused  School × Week
  *
  * A rule that pays twice is two rules: there is no `bonus`.
@@ -45,7 +45,7 @@ export const ACTIVITIES = Object.freeze({
   'activity-contest': Object.freeze(['race', 'ring-improved']),
   milestone: Object.freeze(['race-pb', 'glider-act', 'glider-bells', 'board-game-level', 'piano-rung', 'perfect-sheet', 'cards-mastered', 'book-finished', 'rings-lifetime']),
 });
-const DEBRIEF_CRITERIA = ['completed', 'substantive', 'quiz-passed'];
+const DEBRIEF_CRITERIA = ['completed', 'substantive', 'quiz-passed', 'teachable'];
 const SECTION_KINDS = new Set(['section-day', 'section-week']);
 const TIES = new Set(['all', 'split', 'none']);
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;

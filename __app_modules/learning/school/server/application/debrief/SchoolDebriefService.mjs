@@ -4,16 +4,17 @@
  * state is always re-derived. Answer keys never leave here before the matching
  * answer is recorded.
  */
-import { PROMPTS, TEACHER_EVENTS, deriveDebriefState } from "../../domain/schoolDebrief.mjs";
+import { PROMPTS, TEACHER_EVENTS, deriveDebriefState, promptsFor, shouldProbe, debriefMetrics } from "../../domain/schoolDebrief.mjs";
 
 const MIN_TAKE_BYTES = 1000;
+const LEGACY_TO_CURRENT = Object.freeze({ learned: 'teach', notable: 'hard' });
 class DebriefError extends Error { constructor(message, status = 400) { super(message); this.name = 'DebriefError'; this.status = status; } }
 
 export class SchoolDebriefService {
-  #debriefs; #launcher; #questioner; #judge; #transcribe; #saveAudio; #config; #clock; #logger;
-  constructor({ debriefs, launcher, questioner, judge, transcribe = null, saveAudio = null, config, clock = () => new Date(), logger = console }) {
+  #debriefs; #launcher; #questioner; #judge; #transcribe; #saveAudio; #notify; #config; #clock; #logger;
+  constructor({ debriefs, launcher, questioner, judge, transcribe = null, saveAudio = null, notify = null, config, clock = () => new Date(), logger = console }) {
     this.#debriefs = debriefs; this.#launcher = launcher; this.#questioner = questioner; this.#judge = judge;
-    this.#transcribe = transcribe; this.#saveAudio = saveAudio; this.#config = config; this.#clock = clock; this.#logger = logger;
+    this.#transcribe = transcribe; this.#saveAudio = saveAudio; this.#notify = notify; this.#config = config; this.#clock = clock; this.#logger = logger;
   }
   #inflight = new Map();
   // Collapse concurrent identical calls (double Enter) into one: later callers await the first.
@@ -47,9 +48,18 @@ export class SchoolDebriefService {
       if (q.kind === 'choice') return answered ? q : { id: q.id, kind: q.kind, prompt: q.prompt, options: q.options };
       return answered ? q : { id: q.id, kind: q.kind, prompt: q.prompt };
     };
-    const summary = s.summary ? { ...s.summary, substantive: !late && s.questioner === 'model' && Number.isInteger(s.substance) && s.substance >= this.#config.substantiveScore } : null;
+    const cfg = this.#config;
+    let summary = null;
+    if (s.summary) {
+      const rich = !late && s.questioner === 'model' && (s.level != null ? s.level >= cfg.richLevel : Number.isInteger(s.substance) && s.substance >= cfg.substantiveScore);
+      const teachable = s.questioner === 'model' && s.level != null && s.level >= cfg.teachableLevel;
+      summary = { quiz: s.summary.quiz, level: s.level, levelReason: s.levelReason, rich, teachable, substantive: rich };
+    }
     return {
       studyDay: day, late, phase: s.phase, entries: s.entries,
+      prompts: promptsFor(cfg), classOptions: cfg.classOptions,
+      probes: s.probes.map((p) => ({ prompt: p.prompt, text: p.text })),
+      level: s.level, levelReason: s.levelReason,
       clarify: s.clarify ? { prompt: s.clarify.prompt } : null,
       questions: s.questions ? s.questions.map(strip) : null,
       answers: s.answers, next: s.next, summary, questioner: s.questioner, substance: s.substance,
@@ -75,7 +85,10 @@ export class SchoolDebriefService {
     if (['completed', 'excused', 'rejected'].includes(s.phase)) throw new DebriefError('This debrief is already finished.', 409);
     return s;
   }
-  async entry(learnerId, day, { promptId, text, via = 'typed', audioRef = null }) {
+  async entry(learnerId, day, { promptId: sent, text, via = 'typed', audioRef = null }) {
+    // A Portal still on the pre-redesign bundle sends the old ids until it reloads.
+    const promptId = LEGACY_TO_CURRENT[sent] ?? sent;
+    if (promptId !== sent) this.#logger.info?.('school.debrief.legacy-prompt-id', { learnerId, day, from: sent, to: promptId });
     if (!PROMPTS.some((p) => p.id === promptId)) throw new DebriefError(`unknown prompt: ${promptId}`);
     const s = await this.#assertOpen(learnerId, day);
     if (s.questions) throw new DebriefError('Questions have started; the entry is closed.', 409);
@@ -84,41 +97,52 @@ export class SchoolDebriefService {
     return this.day(learnerId, day);
   }
   async #runQuestioner(learnerId, day, s) {
-    const priorDays = (await this.#debriefs.listDays(learnerId, {})).filter((d) => d < day).slice(-5);
+    const priorDays = (await this.#debriefs.listDays(learnerId, {})).filter((d) => d < day).slice(-this.#config.priorPromptDays);
     const priorPrompts = [];
     for (const d of priorDays) {
       try { priorPrompts.push(...(deriveDebriefState((await this.#debriefs.read(learnerId, d)).events).questions ?? []).map((q) => q.prompt)); } catch { /* history is best-effort */ }
     }
-    return this.#questioner.ask({ entries: s.entries, clarify: s.clarify, priorPrompts: priorPrompts.slice(-20) });
+    return this.#questioner.ask({ entries: s.entries, probes: s.probes, priorPrompts, teachTo: this.#config.teachTo });
+  }
+  // Ask another probe while the answer is below teachable and the budget lasts; otherwise freeze the questions.
+  async #probeOrFreeze(learnerId, day, s) {
+    const out = await this.#runQuestioner(learnerId, day, s);
+    const asked = s.probes.length;
+    if (out.probe && shouldProbe({ level: out.level, asked, maxProbes: this.#config.maxProbes, teachableLevel: this.#config.teachableLevel })) {
+      await this.#append(learnerId, day, { type: 'clarify-asked', prompt: out.probe });
+      this.#logger.info?.('school.debrief.clarify', { learnerId, day, level: out.level, asked });
+      return;
+    }
+    await this.#freeze(learnerId, day, out, 'questions');
   }
   async submit(learnerId, day) {
     return this.#once(`${learnerId}/${day}/questions`, async () => {
     const s = await this.#assertOpen(learnerId, day);
     if (s.questions) return this.day(learnerId, day);
     if (s.clarify && s.clarify.text === null) return this.day(learnerId, day);
-    const required = PROMPTS.filter((p) => p.required && !String(s.entries[p.id]?.text ?? '').trim());
+    // A day begun before the redesign may hold a legacy `learned` entry; that satisfies `teach`.
+    const filled = (id) => String(s.entries[id]?.text ?? '').trim() || (id === 'teach' ? String(s.entries.learned?.text ?? '').trim() : '');
+    const required = PROMPTS.filter((p) => p.required && !filled(p.id));
     if (required.length) throw new DebriefError(`Please answer: ${required.map((p) => p.id).join(', ')}`);
-    const out = await this.#runQuestioner(learnerId, day, s);
-    if (out.questioner === 'model' && !s.clarify && out.clarify && out.substance < this.#config.clarifyBelow) {
-      await this.#append(learnerId, day, { type: 'clarify-asked', prompt: out.clarify });
-      this.#logger.info?.('school.debrief.clarify', { learnerId, day, substance: out.substance });
-      return this.day(learnerId, day);
-    }
-    await this.#freeze(learnerId, day, out, 'questions');
+    await this.#probeOrFreeze(learnerId, day, s);
     return this.day(learnerId, day);
       });
   }
   async #freeze(learnerId, day, out, type) {
-    await this.#append(learnerId, day, { type, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: out.questions, questioner: out.questioner, questionSource: out.questioner, model: out.model ?? null });
-    this.#logger.info?.('school.debrief.questions', { learnerId, day, type, substance: out.substance, count: out.questions.length, questioner: out.questioner, model: out.model, ms: out.ms });
+    await this.#append(learnerId, day, { type, level: out.level ?? null, levelReason: out.levelReason ?? null, hook: out.hook ?? null, substance: null, substanceReason: null, questions: out.questions, questioner: out.questioner, questionSource: out.questionSource ?? out.questioner, model: out.model ?? null });
+    this.#logger.info?.('school.debrief.questions', { learnerId, day, type, level: out.level ?? null, count: out.questions.length, questioner: out.questioner, model: out.model, ms: out.ms });
   }
   async clarify(learnerId, day, { text, via = 'typed', audioRef = null }) {
     return this.#once(`${learnerId}/${day}/questions`, async () => {
     const s = await this.#assertOpen(learnerId, day);
-    if (!s.clarify || s.clarify.text !== null) throw new DebriefError('No clarification was asked.', 409);
+    if (!s.clarify || s.clarify.text !== null) {
+      // A resend of the reply already saved (its response was lost) is answered like submit's: idempotent.
+      const last = s.probes.filter((p) => p.text !== null).at(-1);
+      if (last && String(last.text).trim() === String(text ?? '').trim()) return this.day(learnerId, day);
+      throw new DebriefError('No clarification was asked.', 409);
+    }
     await this.#append(learnerId, day, { type: 'clarify', text: String(text ?? '').slice(0, 4000), via, audioRef });
-    const after = deriveDebriefState(await this.#events(learnerId, day));
-    await this.#freeze(learnerId, day, await this.#runQuestioner(learnerId, day, after), 'questions');
+    await this.#probeOrFreeze(learnerId, day, deriveDebriefState(await this.#events(learnerId, day)));
     return this.day(learnerId, day);
       });
   }
@@ -142,7 +166,13 @@ export class SchoolDebriefService {
     if (!s.questions || s.next?.kind !== 'complete') throw new DebriefError('There are unanswered questions.', 409);
     await this.#append(learnerId, day, { type: 'completed' });
     const v = await this.day(learnerId, day);
-    this.#logger.info?.('school.debrief.completed', { learnerId, day, late: v.late, ...v.summary });
+    const state = deriveDebriefState(await this.#events(learnerId, day));
+    this.#logger.info?.('school.debrief.completed', { learnerId, day, late: v.late, ...v.summary, ...debriefMetrics(state) });
+    if (this.#notify && state.hook) {
+      // Never awaited: a down notifier or an empty teacher list must not fail the child's completion.
+      Promise.resolve().then(() => this.#notify({ learnerId, day, hook: state.hook }))
+        .catch((err) => this.#logger.warn?.('school.debrief.hook-failed', { learnerId, day, error: err?.message }));
+    }
     return v;
       });
   }
@@ -166,8 +196,8 @@ export class SchoolDebriefService {
     // questionSource records that the kept questions are still the fallback's (no quiz bonus).
     const kept = Object.keys(s.answers).length > 0;
     const keep = kept ? s.questions : out.questions;
-    await this.#append(learnerId, day, { type: 'rescored', by: by ?? null, substance: out.substance, substanceReason: out.substanceReason ?? null, questions: keep, questioner: 'model', questionSource: kept ? 'fallback' : 'model', model: out.model ?? null });
-    this.#logger.info?.('school.debrief.rescored', { learnerId, day, by: by ?? null, substance: out.substance });
+    await this.#append(learnerId, day, { type: 'rescored', by: by ?? null, level: out.level ?? null, levelReason: out.levelReason ?? null, hook: out.hook ?? null, substance: null, substanceReason: null, questions: keep, questioner: 'model', questionSource: kept ? 'fallback' : 'model', model: out.model ?? null });
+    this.#logger.info?.('school.debrief.rescored', { learnerId, day, by: by ?? null, level: out.level ?? null });
     return this.day(learnerId, day);
   }
   /**
@@ -190,9 +220,14 @@ export class SchoolDebriefService {
     }
     return rows.reverse();
   }
+  async discussed(learnerId, day, { by }) {
+    await this.#append(learnerId, day, { type: 'discussed', by: by ?? null });
+    this.#logger.info?.('school.debrief.discussed', { learnerId, day, by: by ?? null });
+    return this.day(learnerId, day);
+  }
   #teacherView(day, events) {
     const s = deriveDebriefState(events);
-    return { phase: s.phase, late: s.late, entries: s.entries, clarify: s.clarify, questions: s.questions, answers: s.answers, substance: s.substance, substanceReason: s.substanceReason, questioner: s.questioner, summary: this.#view(day, events).summary };
+    return { phase: s.phase, late: s.late, entries: s.entries, clarify: s.clarify, questions: s.questions, answers: s.answers, substance: s.substance, substanceReason: s.substanceReason, level: s.level, levelReason: s.levelReason, hook: s.hook, probes: s.probes, discussedAt: s.discussedAt, questioner: s.questioner, summary: this.#view(day, events).summary };
   }
 }
 export { DebriefError };

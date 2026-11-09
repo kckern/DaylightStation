@@ -64,6 +64,49 @@ describe('DebriefsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /^reject$/i }));
     await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenLastCalledWith('test-learner', '2026-10-21', 'reject', { by: 'parent', pin: null, reason: null }));
   });
+  const RICH = { ...DAY, substance: undefined, level: 3, levelReason: 'named a cause', hook: 'Ask about the furnace workshop',
+    probes: [{ prompt: 'Why hot?', text: 'the fire' }, { prompt: 'Who ran it?', text: null }], discussedAt: null };
+  it('shows level/5 with its reason, the hook, and each probe with its reply', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [RICH] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    expect(await screen.findByText(/detail 3\/5/)).toBeInTheDocument();
+    expect(screen.getByText(/named a cause/)).toBeInTheDocument();
+    expect(screen.getByText('Talk about: Ask about the furnace workshop')).toBeInTheDocument();
+    expect(screen.getByText(/Why hot\?/)).toBeInTheDocument();
+    expect(screen.getByText('the fire')).toBeInTheDocument();
+    expect(screen.getByText(/Who ran it\?/)).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+  it('a day the child has not finished offers no "We talked about it"', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [{ ...RICH, studyDay: '2026-10-22', phase: 'not-started', entries: { learned: { text: 'fractions' } }, questions: null, answers: {}, summary: null }] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    await screen.findByText('fractions');
+    expect(screen.queryByRole('button', { name: /we talked about it/i })).toBeNull();
+  });
+  it('a completed day offers "We talked about it"', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [RICH] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    expect(await screen.findByRole('button', { name: /we talked about it/i })).toBeInTheDocument();
+  });
+  it('legacy day still shows detail substance/10', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [{ ...DAY, substance: 7 }] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    expect(await screen.findByText(/detail 7\/10/)).toBeInTheDocument();
+  });
+  it('We talked about it posts discussed without the typed reason', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [RICH] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    fireEvent.change(await screen.findByLabelText(/reason/i), { target: { value: 'sick' } });
+    fireEvent.click(screen.getByRole('button', { name: /we talked about it/i }));
+    await waitFor(() => expect(api.teacherDebriefAction).toHaveBeenCalledWith('test-learner', '2026-10-21', 'discussed', { by: 'parent', pin: null, reason: null }));
+    await waitFor(() => expect(api.teacherDebriefs).toHaveBeenCalledTimes(2));
+  });
+  it('a discussed day shows Talked about and no button', async () => {
+    api.teacherDebriefs.mockResolvedValue(ok({ days: [{ ...RICH, discussedAt: '2026-10-22T01:00:00Z' }] }));
+    render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);
+    expect(await screen.findByText('Talked about ✓')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /we talked about it/i })).toBeNull();
+  });
   it('without a current teacher it asks for one and fires no request', () => {
     profile.current = { currentTeacher: null };
     render(<DebriefsPanel learnerId="test-learner" learnerName="Test" />);

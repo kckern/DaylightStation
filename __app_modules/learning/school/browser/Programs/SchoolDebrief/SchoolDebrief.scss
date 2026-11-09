@@ -13,9 +13,14 @@
 .sd-choices button.is-answer:disabled { opacity: 1; border-color: var(--ds-success); color: var(--ds-text-high); }
 .sd-result { font-size: 1.6rem; &.is-right { color: var(--ds-success); } &.is-wrong { color: var(--ds-text-high); } }
 .sd-controls { display: flex; gap: 1rem; justify-content: flex-end; &--stack { flex-direction: column; align-items: stretch; } }
+.sd-prompt__hearing { font-size: 1.3rem; margin: 0; color: var(--ds-text-mid, var(--ds-text-high)); }
 .sd-notice, .sd-nudge { font-size: 1.3rem; color: var(--ds-warning); }
 .sd-thinking { font-size: 1.8rem; text-align: center; margin-top: 6rem; color: var(--ds-text-mid); }
 .sd-summary__quote { font-size: 1.6rem; border-left: 4px solid var(--ds-accent); padding-left: 1rem; margin: 0; }
 .sd-summary__earned { list-style: none; padding: 0; font-size: 1.4rem; }
 .sd-summary__week { font-weight: 700; margin-top: 0.5rem; }
 .sd-summary__soon { font-size: 1.3rem; color: var(--ds-text-mid); }
+
+.sd-chips__grid { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+.sd-chips__other { max-width: 28rem; }
+.sd-summary__reason { margin: 0.3rem 0; font-size: 1.4rem; }

@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import useTakeRecorder from "./useTakeRecorder.js";
+import { DEBRIEF_FLOOR } from "./speechFloor.js";
 
 // The real hook opens an actual microphone; card ladder only needs to know
 // this wrapper judges what `useVoiceCapture` hands it, so the capture layer
@@ -111,6 +112,43 @@ describe('useTakeRecorder', () => {
     // MediaRecorder's onstop arrives after the item is gone (Stop -> Next).
     captured.opts.onTake({ blob: new Blob(['x']), durationMs: 2000 });
     expect(onTake).not.toHaveBeenCalled();
+  });
+});
+
+describe('useTakeRecorder — floor option and heard state', () => {
+  it('with the debrief floor, a 0.03 level is heard and a 1500ms take is kept', async () => {
+    const onTake = vi.fn();
+    const { result } = renderHook(() => useTakeRecorder({ onTake, floor: DEBRIEF_FLOOR }));
+    await act(async () => { await result.current.start(); });
+    expect(result.current.heard).toBe(false);
+    act(() => { result.current.onLevel(0.03); });
+    expect(result.current.heard).toBe(true);
+    const blob = new Blob(['x']);
+    act(() => { captured.opts.onTake({ blob, durationMs: 1500 }); });
+    expect(onTake).toHaveBeenCalledWith({ blob, durationMs: 1500 });
+  });
+
+  it('with the default floor, 0.03 is not heard and the take is refused too-quiet', async () => {
+    const onTake = vi.fn();
+    const { result } = renderHook(() => useTakeRecorder({ onTake }));
+    await act(async () => { await result.current.start(); });
+    act(() => { result.current.onLevel(0.03); });
+    expect(result.current.heard).toBe(false);
+    act(() => { captured.opts.onTake({ blob: new Blob(['x']), durationMs: 1500 }); });
+    expect(onTake).not.toHaveBeenCalled();
+    expect(result.current.verdict).toBe('too-quiet');
+  });
+
+  it('a custom minTakeMs lets a shorter take through, and heard resets on the next start', async () => {
+    const onTake = vi.fn();
+    const { result } = renderHook(() => useTakeRecorder({ onTake, floor: { silentLevel: 0.02, minTakeMs: 800 } }));
+    await act(async () => { await result.current.start(); });
+    act(() => { result.current.onLevel(0.5); });
+    act(() => { captured.opts.onTake({ blob: new Blob(['x']), durationMs: 900 }); });
+    expect(onTake).toHaveBeenCalled();
+    expect(result.current.heard).toBe(true);
+    await act(async () => { await result.current.start(); });
+    expect(result.current.heard).toBe(false);
   });
 });
 

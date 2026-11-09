@@ -104,6 +104,6 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
     const make = (debriefs) => new SchoolEarningEvidence({ termVerdicts: termVerdicts(TERM), sessions: sessions([]), debriefs, logger: silent });
     expect((await make({ week: async () => rows }).schoolWeek({ learnerId: 'kid', week: WEEK })).debriefs).toEqual(rows);
     expect((await make({ week: async () => null }).schoolWeek({ learnerId: 'kid', week: WEEK })).debriefs).toEqual([]);
-    expect((await make({ week: async () => { throw new Error('x'); } }).schoolWeek({ learnerId: 'kid', week: WEEK })).debriefs).toEqual([{ day: WEEK.from, state: 'unknown', timeliness: 'on-time', substantive: false, quiz: { right: 0, graded: 0 }, quizPassed: false }]);
+    expect((await make({ week: async () => { throw new Error('x'); } }).schoolWeek({ learnerId: 'kid', week: WEEK })).debriefs).toEqual([{ day: WEEK.from, state: 'unknown', timeliness: 'on-time', substantive: false, teachable: false, quiz: { right: 0, graded: 0 }, quizPassed: false }]);
   });
 });

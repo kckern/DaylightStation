@@ -495,6 +495,12 @@ describe('debrief kinds', () => {
     const out = evaluate(ruleset(DEBRIEF_RULES), { debriefs: debriefs([['2026-09-22', 'completed', 'late']]) });
     expect(line(out, 'debrief-done').evidence[0].ref).toBe('earn:kid:debrief-done:2026-09-22:late');
   });
+  it('teachable criterion validates and pays per completed teachable row', () => {
+    const rs = ruleset([{ id: 'debrief-teach', kind: 'debrief-day', match: { criterion: 'teachable' }, reward: { silver: 1 } }]);
+    const rows = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed'], ['2026-09-23', 'open']]).map((r, i) => ({ ...r, teachable: i !== 1 }));
+    expect(line(evaluate(rs, { debriefs: rows }), 'debrief-teach')).toMatchObject({ count: 1, amount: { silver: 1, gems: 0 } });
+    expect(() => ruleset([{ id: 'x', kind: 'debrief-day', match: { criterion: 'bogus' }, reward: 1 }])).toThrow(/criterion/);
+  });
   it('validation: debrief-day needs a known criterion', () => {
     expect(() => ruleset([{ id: 'x', kind: 'debrief-day', match: { criterion: 'vibes' }, reward: 1 }])).toThrow(/criterion/);
   });

@@ -5,6 +5,7 @@ import { useInputStall } from "../shared/useInputStall.js";
 import SchoolDebriefStartCard from "./SchoolDebriefStartCard.jsx";
 import SchoolDebriefHeader from "./SchoolDebriefHeader.jsx";
 import PromptItem from "./items/PromptItem.jsx";
+import ChipsItem from "./items/ChipsItem.jsx";
 import ChoiceItem from "./items/ChoiceItem.jsx";
 import ShortAnswerItem from "./items/ShortAnswerItem.jsx";
 import RetryButton from "./RetryButton.jsx";
@@ -13,15 +14,12 @@ import TalkToGrownUpItem from "./items/TalkToGrownUpItem.jsx";
 import { schoolApi } from "../../schoolApi.js";
 import "./SchoolDebrief.scss";
 
-const PROMPTS = [
-  { id: 'classes', text: 'What classes or subjects did you have today?', required: false },
-  { id: 'learned', text: 'Tell me one thing you learned.', required: true },
-  { id: 'notable', text: 'What was hard, funny, or interesting?', required: false },
-];
 // "Still there?" at the first stall (45 s, spec §6); close to the keypad 5 minutes after the last input.
 const NUDGE_AT_MS = 45_000;
 const EXIT_AFTER_MS = 5 * 60 * 1000;
 const FINISHED = ['completed', 'excused', 'rejected'];
+const LOAD_FAILED = 'The debrief could not load. Try again.';
+const firstMissing = (prompts, entries, from = 0) => prompts.findIndex((p, i) => i >= from && !(p.id in (entries ?? {})));
 const QUOTE_LIMIT_MS = 2000;
 const withLimit = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), QUOTE_LIMIT_MS))]);
 
@@ -39,6 +37,8 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   const [weekBefore, setWeekBefore] = useState(null);
   const [retry, setRetry] = useState(0);
   const [failedStart, setFailedStart] = useState(null);
+  const prompts = view?.prompts ?? todayView?.prompts ?? null; // the server owns the list; never a local fallback
+  const [probeN, setProbeN] = useState(0); // each probe is its own PromptItem: a reply must never carry into the next probe
   const [currentQid, setCurrentQid] = useState(null); // the question on screen; the server's `next` moves on once it is answered
 
   useEffect(() => { schoolDebriefLog.mounted({ learnerId, lateDay }); return () => schoolDebriefLog.unmounted({ learnerId }); }, [learnerId, lateDay]);
@@ -81,8 +81,9 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     if (!apply(r)) { setFailedStart(d); return; }
     setFailedStart(null);
     setDay(d);
-    const firstMissing = PROMPTS.findIndex((p) => !(p.id in (r.data.entries ?? {})));
-    setPromptIdx(firstMissing < 0 ? PROMPTS.length : firstMissing);
+    const list = r.data.prompts ?? prompts;
+    const missing = list ? firstMissing(list, r.data.entries) : -1;
+    setPromptIdx(!list || missing < 0 ? (list?.length ?? 0) : missing);
     schoolDebriefLog.resume({ day: d, phase: r.data.phase });
     setWeekBefore(await weekSilver());
   }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -93,9 +94,31 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
     setBusy(true);
     const r = await api.entry(day, { promptId, ...body });
     if (apply(r)) {
-      const next = PROMPTS.findIndex((p, i) => i > promptIdx && !(p.id in r.data.entries));
+      const list = r.data.prompts ?? prompts ?? [];
+      const next = firstMissing(list, r.data.entries, promptIdx + 1);
       if (next >= 0) setPromptIdx(next);
-      else setPromptIdx(PROMPTS.length); // the submit effect below takes it from here
+      else setPromptIdx(list.length); // the submit effect below takes it from here
+    }
+    setBusy(false);
+  };
+  // A probe reply moves to a fresh field only once the server has it. A failed
+  // send re-reads the day: if the server got the reply anyway (the response was
+  // lost) the view moves on; otherwise the words stay and Next sends them again.
+  const sendProbe = async (b) => {
+    setBusy(true);
+    const asked = view?.clarify?.prompt ?? null;
+    let r;
+    try { r = await api.clarify(day, b); } catch { r = { ok: false, data: null }; }
+    if (apply(r)) setProbeN((n) => n + 1);
+    else {
+      let now;
+      try { now = await api.day(day); } catch { now = null; }
+      const moved = now?.ok && (now.data?.phase !== 'clarify' || (now.data?.clarify?.prompt ?? null) !== asked);
+      if (moved) {
+        schoolDebriefLog.probeRecovered({ day, phase: now.data.phase });
+        setView(now.data); setError(null);
+        if (now.data.phase === 'clarify') setProbeN((n) => n + 1);
+      }
     }
     setBusy(false);
   };
@@ -124,7 +147,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   // After the last prompt the server wants a submit. Re-entry with all three
   // entries saved lands here too. Ref-guarded like complete.
   const submitting = useRef(false);
-  const readyToSubmit = Boolean(day) && Boolean(view) && promptIdx >= PROMPTS.length && !view.questions
+  const readyToSubmit = Boolean(day) && Boolean(view) && Boolean(prompts) && promptIdx >= prompts.length && !view.questions
     && !['clarify', ...FINISHED].includes(view.phase) && !busy && !error;
   useEffect(() => {
     if (!readyToSubmit || submitting.current) return;
@@ -180,13 +203,17 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   else if (!day && error && failedStart) body = <RetryButton onRetry={tryAgain} />;
   else if (!day) body = todayView ? <SchoolDebriefStartCard today={todayView} lateDay={lateDay} onStart={start} /> : <p className="sd-notice">Loading…</p>;
   else if (!view) body = <p className="sd-notice">Loading…</p>;
+  else if (!['completed', 'excused', 'rejected'].includes(view.phase) && !prompts) body = <><p className="sd-notice">{LOAD_FAILED}</p><RetryButton onRetry={tryAgain} /></>;
   else if (['completed', 'excused'].includes(view.phase)) body = <SummaryItem view={view} earned={earned} coinsLive={coinsLive} onFinish={onExit} />;
   else if (view.phase === 'rejected') body = <TalkToGrownUpItem onFinish={onExit} />;
-  else if (promptIdx < PROMPTS.length && !view.questions && view.phase !== 'clarify') {
-    const p = PROMPTS[promptIdx];
-    body = <PromptItem prompt={p} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onTake={takeFor} onBack={promptIdx > 0 ? () => setPromptIdx(promptIdx - 1) : null} onSubmit={(b) => submitPrompt(p.id, b)} />;
+  else if (promptIdx < prompts.length && !view.questions && view.phase !== 'clarify') {
+    const p = prompts[promptIdx];
+    const back = promptIdx > 0 ? () => setPromptIdx(promptIdx - 1) : null;
+    body = p.kind === 'chips'
+      ? <ChipsItem prompt={p} options={view.classOptions ?? todayView?.classOptions ?? []} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onBack={back} onSubmit={(b) => submitPrompt(p.id, b)} />
+      : <PromptItem prompt={p} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onTake={takeFor} onBack={back} onSubmit={(b) => submitPrompt(p.id, b)} />;
   } else if (view.phase === 'clarify') {
-    body = <PromptItem prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" busy={busy} onTake={takeFor} onSubmit={async (b) => { setBusy(true); apply(await api.clarify(day, b)); setBusy(false); }} />;
+    body = <PromptItem key={`clarify-${probeN}-${view.clarify.prompt}`} prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" busy={busy} onTake={takeFor} onSubmit={sendProbe} />;
   } else if (!view.questions) body = waiting('Reading your answer…');
   else if (view.next?.kind === 'question' || result) {
     const q = view.questions.find((x) => x.id === (result ? currentQid : view.next.id));
@@ -198,7 +225,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
 
   return (
     <div className="sd-program">
-      <SchoolDebriefHeader view={view} late={view?.late ?? (day && day === lateDay)} promptIdx={promptIdx} promptCount={PROMPTS.length} />
+      <SchoolDebriefHeader view={view} late={view?.late ?? (day && day === lateDay)} promptIdx={promptIdx} promptCount={prompts?.length ?? 0} />
       {nudge && <p className="sd-nudge" role="status">Still there? Press any key to keep going.</p>}
       {error && view && <p className="sd-notice" role="alert">{error}</p>}
       {body}

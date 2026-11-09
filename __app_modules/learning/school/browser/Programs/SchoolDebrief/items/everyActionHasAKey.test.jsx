@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import PromptItem from "./PromptItem.jsx";
 import ChoiceItem from "./ChoiceItem.jsx";
 import ShortAnswerItem from "./ShortAnswerItem.jsx";
+import ChipsItem from "./ChipsItem.jsx";
 import SummaryItem from "./SummaryItem.jsx";
 
 const recorder = vi.hoisted(() => ({ phase: 'idle', start: vi.fn(), stop: vi.fn(), unavailable: false }));
@@ -48,6 +49,24 @@ describe('every debrief action has a key', () => {
     expect(onAnswer).toHaveBeenCalledWith('light');
     rerender(<ShortAnswerItem question={q} result={{ correct: true, expected: 'x' }} onAnswer={onAnswer} onContinue={onContinue} onTake={vi.fn()} />);
     key('Space', ' '); expect(onContinue).toHaveBeenCalled();
+  });
+  it('chips: digits toggle, Enter submits, ArrowLeft goes back; digits ignored in the Other field', () => {
+    const onSubmit = vi.fn(); const onBack = vi.fn();
+    render(<ChipsItem prompt={{ id: 'classes', text: 'Which?', required: false, kind: 'chips' }} options={['Reading', 'Writing', 'Math']} onSubmit={onSubmit} onBack={onBack} />);
+    key('Digit1', '1'); key('Digit3', '3');
+    key('ArrowLeft', 'ArrowLeft'); expect(onBack).toHaveBeenCalled();
+    const other = screen.getByRole('textbox', { name: /other/i });
+    expect(document.activeElement).not.toBe(other);
+    fireEvent.keyDown(other, { code: 'Digit2', key: '2' });
+    fireEvent.change(other, { target: { value: 'Chess' } });
+    fireEvent.keyDown(other, { code: 'Enter', key: 'Enter' });
+    expect(onSubmit).toHaveBeenCalledWith({ text: 'Reading, Math, Chess', via: 'chips', audioRef: null });
+  });
+  it('chips: an empty pick may be submitted with Enter', () => {
+    const onSubmit = vi.fn();
+    render(<ChipsItem prompt={{ id: 'classes', text: 'Which?', kind: 'chips' }} options={['Reading']} onSubmit={onSubmit} />);
+    key('Enter', 'Enter');
+    expect(onSubmit).toHaveBeenCalledWith({ text: '', via: 'chips', audioRef: null });
   });
   it('summary: Enter finishes', () => {
     const onFinish = vi.fn();
