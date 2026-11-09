@@ -13,7 +13,6 @@
 
 export const CREDIT_FRACTION = 0.5;
 export const GRID_MAX_AVATARS = 3;
-export const DETAIL_MAX_SESSIONS = 5;
 
 export function isCredited(rider, episodeDurationSeconds) {
   const minutes = Number(rider?.minutes);
@@ -25,7 +24,7 @@ export function isCredited(rider, episodeDurationSeconds) {
 
 /**
  * Sessions where at least one rider is credited, riders narrowed to the
- * credited ones (guests included — the detail list is a plain record).
+ * credited ones (guests included — the panel lists everyone who rode).
  */
 export function creditedSessions(sessions, episodeDurationSeconds) {
   return (Array.isArray(sessions) ? sessions : [])
@@ -55,11 +54,6 @@ export function gridBadge(sessions, episodeDurationSeconds) {
     overflow: Math.max(0, riders.length - GRID_MAX_AVATARS),
     latestStartTime: latest,
   };
-}
-
-/** The detail list: the newest credited sessions, capped. */
-export function detailRows(sessions, episodeDurationSeconds) {
-  return creditedSessions(sessions, episodeDurationSeconds).slice(0, DETAIL_MAX_SESSIONS);
 }
 
 /**

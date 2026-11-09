@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor, act } from '@testing-library/react';
 
 // Per-rider episode history on the show screen: the grid chip's avatars and
-// the session list in an episode's details.
+// the per-rider panel lives in FitnessShow.episodePanel.test.jsx.
 
 beforeAll(() => {
   if (!global.ResizeObserver) {
@@ -121,26 +121,5 @@ describe('FitnessShow episode history', () => {
     await waitFor(() => expect(card(container, '401')?.querySelector('[data-testid="episode-rider-badge"]')).toBeTruthy());
     const historyCalls = DaylightAPI.mock.calls.filter(([url]) => url.includes('/sessions/episode-history'));
     expect(historyCalls).toHaveLength(2);
-  });
-
-  it('lists the sessions under the description in the episode details', async () => {
-    mockApi();
-    const { container } = renderShow();
-    await waitFor(() => expect(card(container, '401')?.querySelector('[data-testid="episode-rider-badge"]')).toBeTruthy());
-    fireEvent.pointerDown(card(container, '401').querySelector('.episode-title'));
-
-    const list = await waitFor(() => {
-      const el = container.querySelector('[data-testid="episode-history"]');
-      expect(el).toBeTruthy();
-      return el;
-    });
-    const rows = [...list.querySelectorAll('.episode-history__row')];
-    expect(rows).toHaveLength(2);
-    // A shared session: every credited rider, guests included, and no per-rider rings.
-    expect(rows[0].querySelectorAll('.episode-rider-avatar')).toHaveLength(3);
-    expect(rows[0].textContent).toMatch(/Oct 14 · 31 min$/);
-    // A session where only one rider counts reads as that rider's.
-    expect(rows[1].querySelectorAll('.episode-rider-avatar')).toHaveLength(1);
-    expect(rows[1].textContent).toMatch(/Oct 1 · 28 min · 40 rings$/);
   });
 });

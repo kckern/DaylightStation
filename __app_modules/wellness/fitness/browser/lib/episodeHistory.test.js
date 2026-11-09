@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCredited, gridBadge, detailRows, creditedSessions, riderSummary, seasonCoverage, mosaicThumb } from './episodeHistory.js';
+import { isCredited, gridBadge, creditedSessions, riderSummary, seasonCoverage, mosaicThumb } from './episodeHistory.js';
 
 const r = (id, minutes, extra = {}) => ({ id, displayName: id, minutes, rings: 10, isGuest: false, ...extra });
 const s = (sessionId, startTime, riders) => ({ sessionId, startTime, date: '2026-10-22', riders });
@@ -54,14 +54,6 @@ describe('gridBadge', () => {
     expect(gridBadge([s('1', 1, [r('guest', 30, { isGuest: true }), r('a', 2)])], 1800)).toBeNull();
     expect(gridBadge([], 1800)).toBeNull();
     expect(gridBadge(undefined, 1800)).toBeNull();
-  });
-});
-
-describe('detailRows', () => {
-  it('keeps the newest five credited sessions, guests included', () => {
-    const sessions = Array.from({ length: 7 }, (_, i) => s(String(7 - i), 7 - i, [r('guest', 30, { isGuest: true })]));
-    const rows = detailRows(sessions, 1800);
-    expect(rows.map((x) => x.sessionId)).toEqual(['7', '6', '5', '4', '3']);
   });
 });
 

@@ -15,8 +15,9 @@ import LockIcon from "./overlays/LockIcon.jsx";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
 import getLogger from '@/lib/logging/Logger.js';
 import { isGovernedContainer } from "../hooks/fitness/governedContent.js";
-import { gridBadge, detailRows } from "../lib/episodeHistory.js";
-import { RiderStack, EpisodeHistoryList } from "./EpisodeHistory.jsx";
+import { gridBadge } from "../lib/episodeHistory.js";
+import { RiderStack } from "./EpisodeHistory.jsx";
+import EpisodePanel from "./EpisodePanel.jsx";
 
 // Accepts the media server's "YYYY-MM-DD hh:mm:ssa" string or a session's epoch ms.
 const formatWatchedDate = (dateInput) => {
@@ -105,82 +106,12 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
   );
 };
 
-// Episode Info Component - Rich layout for an episode with parent (season) context
-const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay, historyRows = null }) => {
-  if (!episode) return null;
-  const parentId = episode.parentId;
-  // Try map first, then list
-  const parentFromMap = parentsMap && parentId ? parentsMap[parentId] : null;
-  const parentFromList = !parentFromMap && parentsList ? parentsList.find(s => s.id === parentId) : null;
-  const parent = parentFromMap || parentFromList || {};
-  // Robust parent (season) name fallback priority
-  const rawParentName = parent.title || parent.name;
-  const numericParent = (() => {
-    // prefer explicit numeric properties
-    if (Number.isFinite(parent.index)) return parent.index;
-    if (Number.isFinite(parent.number)) return parent.number;
-    const parsed = parseInt(parent.id, 10);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  })();
-  const parentName = rawParentName && rawParentName.toString().trim().length
-    ? rawParentName
-    : (Number.isFinite(numericParent) ? `Season ${numericParent}` : 'Season');
-
-  // Parent (season) description fallback chain: explicit summary/description -> show summary
-  const parentDescription = [parent.summary, parent.description, showInfo?.summary]
-    .find(v => typeof v === 'string' && v.trim().length) || '';
-
-  // For playlist episodes, use the actual show poster (grandparentId) instead of the virtual season's poster
-  const isVirtualParent = parentId && String(parentId).startsWith('virtual-');
-  const parentImage = isVirtualParent && episode.grandparentId
-    ? ContentDisplayUrl(episode.grandparentId)
-    : normalizeImageUrl(parent.thumbnail || parent.image) || (parentId ? ContentDisplayUrl(parent.contentId || parentId) : normalizeImageUrl(showInfo?.image));
-  // Use the same episode image source as grid: primary is episode.image; fallback to thumbId path
-  const episodeImage = (episode.image && episode.image.trim())
-    ? normalizeImageUrl(episode.image)
-    : (episode.thumbId ? ContentDisplayUrl(episode.thumbId) : null);
-  const durationText = episode.duration ? formatDuration(episode.duration) : null;
-  const epTitle = episode.label || episode.title || `Episode ${episode.itemIndex || ''}`.trim();
-  const epNumber = episode.itemIndex;
-  const epDescription = episode.episodeDescription || episode.summary || '';
-
-  return (
-    <div className="episode-info">
-      <div className="episode-season-header">
-        {parentImage && (
-          <div className="season-thumb-wrapper">
-            <img key={parentImage} src={parentImage} alt={parentName} className="season-thumb" />
-          </div>
-        )}
-        <div className="season-meta">
-          <h2 className="show-name">{isVirtualParent && episode.grandparentTitle ? episode.grandparentTitle : showInfo?.title}</h2>
-          {parentDescription && (
-            <div className="season-description"><p>{parentName}—{parentDescription}</p></div>
-          )}
-        </div>
-      </div>
-      <div className="episode-media-section">
-        {episodeImage && (
-          <div className="episode-image-wrapper">
-            <img src={episodeImage} alt={epTitle} className="episode-image" />
-          </div>
-        )}
-        <div className="episode-meta-block">
-          <div className="episode-heading-row">
-            <h3 className="episode-heading">
-              {epNumber != null && <span className="episode-number">E{epNumber}</span>} {epTitle}
-            </h3>
-            {durationText && <span className="duration-badge">{durationText}</span>}
-          </div>
-          {epDescription && <div className="episode-description"><p>{epDescription}</p></div>}
-          <EpisodeHistoryList rows={historyRows} formatDate={formatWatchedDate} />
-        </div>
-      </div>
-      <div className="episode-actions center">
-  <button className="play-button" data-testid="play-episode-button" onPointerDown={(e) => onPlay && onPlay(episode, null, e)}>▶ Play</button>
-      </div>
-    </div>
-  );
+/** A season's display name: its title, else "Season N", else "Season". */
+const seasonNameOf = (parent = {}) => {
+  const raw = parent.title || parent.name;
+  if (raw && String(raw).trim()) return String(raw);
+  const n = Number.isFinite(parent.index) ? parent.index : (Number.isFinite(parent.number) ? parent.number : parseInt(parent.id, 10));
+  return Number.isFinite(n) ? `Season ${n}` : 'Season';
 };
 
 // Utility function to format duration from seconds to mm:ss
@@ -1154,6 +1085,25 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   }, [historyEpisodeIds, historyRefresh]);
   const historyFor = useCallback((episode) => episodeHistory[episode?.id] || episodeHistory[`plex:${episode?.plex}`] || null, [episodeHistory]);
 
+  // The panel always describes the focused episode: the next-up one on load,
+  // then whatever was tapped (title strip, mosaic) or reached with the pad.
+  const panelEpisode = (infoType === 'episode' && selectedInfo) || selectedEpisode || null;
+  const focusEpisode = useCallback((episode) => {
+    if (!episode) return;
+    setSelectedInfo(null);
+    setInfoType('episode');
+    setSelectedEpisode(episode);
+    getLogger().child({ component: 'FitnessShow' }).debug('fitness.show.episode_focus', { showId: showIdRef.current, episode: episode.plex || episode.id });
+  }, []);
+  // Household riders (never guests) for "who's done it" and season coverage.
+  const household = useMemo(() => {
+    const primary = fitnessContext.usersConfig?.primary;
+    return (Array.isArray(primary) ? primary : [])
+      .filter((u) => u && u.id)
+      .map((u) => ({ id: u.id, displayName: u.name || u.id }));
+  }, [fitnessContext.usersConfig]);
+  const activeRiderIds = (fitnessSessionInstance?.roster || []).map((e) => e?.id || e?.profileId).filter(Boolean);
+
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)
       ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
@@ -1169,6 +1119,21 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       return String(a.label || '').localeCompare(String(b.label || ''));
     });
   }, [items, seasons, activeSeasonId]);
+
+  // The mosaic shows the focused episode's season as the grid has it (a
+  // playlist's current page of 20 included).
+  const panelSeasonEpisodes = useMemo(() => {
+    if (!panelEpisode) return [];
+    const same = filteredItems.filter((ep) => String(ep.parentId) === String(panelEpisode.parentId));
+    return same.length ? same : filteredItems;
+  }, [filteredItems, panelEpisode]);
+  const playFromPanel = (episode, mode) => {
+    getLogger().child({ component: 'FitnessShow' }).info('fitness.show.panel_play', { showId: showIdRef.current, episode: episode.plex || episode.id, mode });
+    const target = mode === 'start-over'
+      ? { ...episode, watchSeconds: 0, watchProgress: 0, seconds: 0, resumeSeconds: 0 }
+      : episode;
+    handlePlayEpisode(target);
+  };
 
   // Early return UI states (after all hooks above to keep hook order stable)
   if (!showId) {
@@ -1268,6 +1233,65 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
 
   // Helper function to add an episode to the queue
     
+  // The governed-show lock and the voice-memo button ride beside the show title,
+  // wherever the panel puts it.
+  const titleBadges = (
+    <>
+      {isGovernedShow && (
+        governanceBypassed ? (
+          <span
+            className="governed-lock-icon governed-lock-icon--unlocked"
+            title="Governance unlocked"
+            aria-label="Governance unlocked"
+            role="img"
+          >
+            🔓
+          </span>
+        ) : isLockActive('governance_bypass') ? (
+          <button
+            type="button"
+            className="governed-lock-icon governed-lock-icon--button"
+            title="Unlock governed content"
+            aria-label="Unlock governed content"
+            onPointerDown={handleGovernanceUnlockTap}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleGovernanceUnlockTap();
+              }
+            }}
+          >
+            <LockIcon />
+          </button>
+        ) : (
+          <span
+            className="governed-lock-icon"
+            title="Governed content"
+            aria-label="Governed content"
+            role="img"
+          >
+            <LockIcon />
+          </span>
+        )
+      )}
+      {fitnessSessionInstance?.isActive && (
+        <button
+          type="button"
+          className="show-voice-memo-btn"
+          onClick={() => openVoiceMemoCapture?.(null)}
+          aria-label="Record voice memo"
+          title="Record voice memo"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+          </svg>
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="fitness-show">
 
@@ -1277,17 +1301,25 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
           {selectedInfo && infoType === 'season' && (
             <SeasonInfo item={selectedInfo} type="season" showSummary={info?.summary} />
           )}
-          {selectedInfo && infoType === 'episode' && (
-            <EpisodeInfo
-              episode={selectedInfo}
-              showInfo={info}
-              parentsMap={parentsMap}
-              parentsList={seasons}
-              onPlay={handlePlayEpisode}
-              historyRows={detailRows(historyFor(selectedInfo), selectedInfo?.duration)}
+          {!(selectedInfo && infoType === 'season') && panelEpisode && (
+            <EpisodePanel
+              episode={panelEpisode}
+              showTitle={panelEpisode.grandparentTitle && String(panelEpisode.parentId || '').startsWith('virtual-')
+                ? panelEpisode.grandparentTitle
+                : info?.title}
+              seasonName={seasonNameOf((parentsMap && parentsMap[panelEpisode.parentId]) || seasons.find((x) => x.id === panelEpisode.parentId) || {})}
+              seasonEpisodes={panelSeasonEpisodes}
+              historyFor={historyFor}
+              household={household}
+              activeIds={activeRiderIds}
+              resumeSeconds={isResumable && !panelEpisode.isWatched ? deriveResumeMeta(panelEpisode).resolvedSeconds : 0}
+              formatDate={formatWatchedDate}
+              onFocus={focusEpisode}
+              onPlay={playFromPanel}
+              headerExtras={titleBadges}
             />
           )}
-          {!selectedInfo && info && (
+          {!(selectedInfo && infoType === 'season') && !panelEpisode && info && (
             <>
               {/* Show Image - Top 50% */}
               <div className="show-poster" ref={posterRef}>
@@ -1308,58 +1340,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
               <div className="show-description">
                 <div className="show-title-row">
                   <h1 className="show-title">{info.title}</h1>
-                  {isGovernedShow && (
-                    governanceBypassed ? (
-                      <span
-                        className="governed-lock-icon governed-lock-icon--unlocked"
-                        title="Governance unlocked"
-                        aria-label="Governance unlocked"
-                        role="img"
-                      >
-                        🔓
-                      </span>
-                    ) : isLockActive('governance_bypass') ? (
-                      <button
-                        type="button"
-                        className="governed-lock-icon governed-lock-icon--button"
-                        title="Unlock governed content"
-                        aria-label="Unlock governed content"
-                        onPointerDown={handleGovernanceUnlockTap}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleGovernanceUnlockTap();
-                          }
-                        }}
-                      >
-                        <LockIcon />
-                      </button>
-                    ) : (
-                      <span
-                        className="governed-lock-icon"
-                        title="Governed content"
-                        aria-label="Governed content"
-                        role="img"
-                      >
-                        <LockIcon />
-                      </span>
-                    )
-                  )}
-                  {fitnessSessionInstance?.isActive && (
-                    <button
-                      type="button"
-                      className="show-voice-memo-btn"
-                      onClick={() => openVoiceMemoCapture?.(null)}
-                      aria-label="Record voice memo"
-                      title="Record voice memo"
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                        <line x1="12" y1="19" x2="12" y2="22" />
-                      </svg>
-                    </button>
-                  )}
+                  {titleBadges}
                 </div>
                 {info.tagline && <div className="show-tagline">{info.tagline}</div>}
                 {info.summary && (
@@ -1470,9 +1451,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                                 const card = e.currentTarget.closest('.episode-card');
                                 const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
                                 if (didScroll) return; // require second tap when visible
-                                setSelectedInfo({ ...episode, title: episode.label });
-                                setInfoType('episode');
-                                handleEpisodeSelect(episode);
+                                focusEpisode(episode);
                               }}
                             >
                               <div className="episode-title-flex">
