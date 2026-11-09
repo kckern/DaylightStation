@@ -141,11 +141,18 @@ print A in different places). A connected row's lamp lights too, but only when
 exactly one connected row carries that pad's name: the browser exposes no
 Bluetooth address, so two identical pads are told apart by the panel, not the
 rows. "Ready to play" ends with "press any button to check". Controllers only
-light up here; the remote drives the screen. Reading the Gamepad API makes
-Chromium stop turning pad buttons into keys, and any key that arrives while a pad
-button is held is swallowed anyway (Android's A → OK and B → Back fallbacks), so
-mashing cannot click Forget or close the screen. Code: `liveInput.js`,
-`useGamepadActivity.js`, `PadDiagram.jsx`.
+light up here; the remote drives the screen. The screen host's `GamepadAdapter`
+turns pad buttons into ActionBus actions *before* any key exists (L1/R2/Select →
+`escape`, which dismisses the overlay or reloads the page), so the screen claims
+`navigate`/`select`/`escape` on the bus while it is up; its synthetic keys
+(`__gamepadSynthetic`) and Android's own A → OK / B → Back fallbacks (a key within
+250 ms of a pad button going down) are swallowed. The guard is edge-based, never
+"a button is held", so a pad lying on a button cannot lock out the remote. Mice,
+keyboards and other HID receivers Chromium lists as gamepads (the Shield shows a
+"wireless 2.4G Mouse" at slot 0) are skipped, and a phantom twin (one pad
+enumerated at two indices, pressing in lockstep) is hidden after its first
+mirrored press — a same-name pad ever pressed on its own stays. Code:
+`liveInput.js`, `useGamepadActivity.js`, `PadDiagram.jsx`.
 
 **What it does.** Each action is a checklist that only ticks on observed state,
 never on an accepted request:

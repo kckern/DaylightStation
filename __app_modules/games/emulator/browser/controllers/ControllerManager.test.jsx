@@ -2,6 +2,7 @@ import React from 'react';
 import { it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import ControllerManager from './ControllerManager.jsx';
+import { getActionBus } from '../../../../../frontend/src/lib/input/ActionBus.js';
 
 const pad = (over) => ({ address: 'E4:17:D8:1C:7C:7A', name: '8Bitdo SN30 Pro', type: 'classic', bond: 'bonded', connected: false, profiles: [], manageable: true, ...over });
 const snapshot = (devices, extra = {}) => ({ ok: true, adapter: { supported: true, enabled: true, discovering: false }, devices, pairing: null, lastError: null,
@@ -100,8 +101,8 @@ it('when a row swaps its buttons, focus stays on that row', async () => {
 const gamepad = (index, id, pressedIdx = []) => ({ index, id, connected: true, axes: [0, 0, 0, 0],
   buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressedIdx.includes(i), value: pressedIdx.includes(i) ? 1 : 0 })) });
 
-it('mashing a connected pad lights its row lamp and the live panel, and never clicks the focused button', async () => {
-  let pads = [gamepad(0, '8Bitdo SN30 Pro (STANDARD GAMEPAD)')];
+it('mashing a connected pad lights its row lamp and the live panel, and never acts on the screen', async () => {
+  let pads = [gamepad(0, '8Bitdo SN30 Pro (Vendor: 2dc8 Product: 6101)')];
   vi.stubGlobal('navigator', { ...navigator, getGamepads: () => pads });
   const onClose = vi.fn();
   const client = clientFor(() => snapshot([pad({ connected: true, profiles: ['input'] })]));
@@ -109,17 +110,39 @@ it('mashing a connected pad lights its row lamp and the live panel, and never cl
   await screen.findByRole('button', { name: 'Disconnect' });
   expect(screen.getByText('Player 1')).toBeTruthy();
   expect(screen.getByText('Press a button')).toBeTruthy();
-  pads = [gamepad(0, '8Bitdo SN30 Pro (STANDARD GAMEPAD)', [1])];
+  pads = [gamepad(0, '8Bitdo SN30 Pro (Vendor: 2dc8 Product: 6101)', [4])];
   expect(await screen.findByText('I’m here!')).toBeTruthy();
-  expect(screen.getByText(/I’m here! right face button/)).toBeTruthy();
-  // Android's B → Back fallback arrives while B is held: swallowed, the screen stays.
-  fireEvent.keyDown(window, { key: 'Escape' });
-  fireEvent.keyDown(window, { key: 'Enter' });
+  expect(screen.getByText(/I’m here! L/)).toBeTruthy();
+  // The screen host's GamepadAdapter emits L1 as 'escape' on the bus first: claimed here.
+  expect(getActionBus().emit('escape', {})).toBe(true);
+  expect(getActionBus().emit('select', {})).toBe(true);
+  // ...and its synthetic key, if one were sent, is swallowed too.
+  const synthetic = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  synthetic.__gamepadSynthetic = true;
+  window.dispatchEvent(synthetic);
   expect(onClose).not.toHaveBeenCalled();
   expect(client.command).not.toHaveBeenCalled();
-  pads = [gamepad(0, '8Bitdo SN30 Pro (STANDARD GAMEPAD)')];
+  pads = [gamepad(0, '8Bitdo SN30 Pro (Vendor: 2dc8 Product: 6101)')];
   await vi.waitFor(() => expect(screen.queryByText('I’m here!')).toBeNull(), { timeout: 2000 });
+  fireEvent.keyDown(window, { key: 'Escape' }); // the remote's Back still works
+  expect(onClose).toHaveBeenCalledTimes(1);
+  vi.unstubAllGlobals();
+});
+
+it('a pad lying on a held button does not lock out the remote', async () => {
+  vi.stubGlobal('navigator', { ...navigator, getGamepads: () => [gamepad(0, '8Bitdo SN30 Pro', [0])] });
+  const onClose = vi.fn();
+  render(<ControllerManager deviceId="tv" client={clientFor(() => snapshot([pad()]))} onClose={onClose} />);
+  await screen.findByRole('button', { name: 'Fix' });
+  await new Promise((r) => setTimeout(r, 300)); // past the press edge window
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(onClose).toHaveBeenCalledTimes(1);
   vi.unstubAllGlobals();
+});
+
+it('releases the bus when it closes', async () => {
+  const { unmount } = render(<ControllerManager deviceId="tv" client={clientFor(() => snapshot([]))} onClose={() => {}} />);
+  expect(getActionBus().emit('escape', {})).toBe(true);
+  unmount();
+  expect(getActionBus().emit('escape', {})).toBe(false);
 });

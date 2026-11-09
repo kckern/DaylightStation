@@ -4,7 +4,8 @@ import { useBluetoothManager } from './useBluetoothManager.js';
 import { deviceStatus, STATUS_LABEL, splitDevices, shortAddress, findDevice } from './controllerModel.js';
 import { runControllerFlow, flowSteps, STEP_LABEL, FlowError } from './controllerFlows.js';
 import { useRemoteFocus } from './useRemoteFocus.js';
-import { useGamepadActivity, gamepadIsPressing, isLit } from './useGamepadActivity.js';
+import { useGamepadActivity, isControllerKey, isLit } from './useGamepadActivity.js';
+import { getActionBus } from '../../../../../frontend/src/lib/input/ActionBus.js';
 import { attributePads } from './liveInput.js';
 import PadDiagram from './PadDiagram.jsx';
 import './ControllerManager.scss';
@@ -116,9 +117,14 @@ export default function ControllerManager({ deviceId, onClose, client }) {
   }, [pinPrompt, confirmForget, flow, onClose]);
 
   // Controllers under test only light up; the TV remote drives this screen.
-  // A key that arrives while a pad button is held came from the pad (Android's
-  // A → OK, B → Back fallbacks), so mashing can never click Forget or leave.
-  useRemoteFocus({ scope: flow || confirmForget ? overlay : root, onBack: back, ignore: gamepadIsPressing });
+  // The screen host's GamepadAdapter turns pad buttons into semantic actions
+  // (L1/R2/Select → escape: dismiss the overlay, or reload) BEFORE any key
+  // event exists, so claim those actions on the bus while this screen is up;
+  // its synthetic keys and Android's fallback keys are swallowed by `ignore`.
+  // The remote never reaches the bus here: useRemoteFocus handles its keys in
+  // the capture phase and stops them.
+  useEffect(() => getActionBus().capture(['navigate', 'select', 'escape'], () => true), []);
+  useRemoteFocus({ scope: flow || confirmForget ? overlay : root, onBack: back, ignore: isControllerKey });
 
   const { pads, lastSeen, now: padNow } = useGamepadActivity();
   const padFor = attributePads(pads, controllers.filter((d) => d.connected === true));
@@ -197,7 +203,7 @@ export default function ControllerManager({ deviceId, onClose, client }) {
         : pads.map((p) => {
           const lit = padLit(p.index);
           return <div key={p.index} className={`ctl-manager__pad${lit ? ' is-lit' : ''}`}>
-            <div className="ctl-manager__pad-head"><strong>Player {p.index + 1}</strong><small>{p.name}</small></div>
+            <div className="ctl-manager__pad-head"><strong>Player {p.player}</strong><small>{p.name}</small></div>
             <PadDiagram pressed={p.pressed} axes={p.axes} />
             <p className="ctl-manager__pad-press">{lit ? `I’m here! ${lastSeen[p.index]?.press || ''}` : 'Waiting for a press…'}</p>
           </div>;
