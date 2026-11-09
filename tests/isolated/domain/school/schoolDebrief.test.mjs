@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SCHOOL_DEBRIEF_PROGRAM_ID, PROMPTS, validateSchoolDebriefEnrollment, deriveDebriefState,
   fallbackQuestions, debriefConfigOf, previousStudyDay,
+  LEGACY_PROMPT_IDS, promptsFor, shouldProbe, filterQuestions, debriefMetrics,
 } from "../../../../__app_modules/learning/school/server/domain/schoolDebrief.mjs";
 
 const at = (m) => `2026-10-21T22:${String(m).padStart(2, '0')}:00.000Z`;
@@ -34,7 +35,7 @@ describe('deriveDebriefState', () => {
     const s = deriveDebriefState([{ type: 'opened', at: at(0) }, entry('classes', 'old', 1), entry('classes', 'new', 2)]);
     expect(s.entries.classes.text).toBe('new');
     expect(s.phase).toBe('entry');
-    expect(s.next).toEqual({ kind: 'prompt', id: 'learned' });
+    expect(s.next).toEqual({ kind: 'prompt', id: 'moment' });
   });
   it('after all prompts, next is submit', () => {
     const s = deriveDebriefState(PROMPTS.map((p, i) => entry(p.id, 't', i)));
@@ -91,28 +92,89 @@ describe('deriveDebriefState', () => {
 });
 
 describe('fallbackQuestions', () => {
-  it('f1 has exactly one said class among unsaid options; there is no free yes/no question', () => {
-    const qs = fallbackQuestions({ classes: { text: 'math, science, art' }, learned: { text: 'fractions' } });
-    expect(qs.map((q) => q.id)).toEqual(['f1', 'f3']);
-    const f1 = qs[0];
-    expect(f1.options).toContain(f1.answer);
-    expect(f1.options.filter((o) => ['math', 'science', 'art'].includes(o.toLowerCase()))).toEqual([f1.answer]);
+  it('only f3: a short question expecting the teach text; no echo question', () => {
+    const qs = fallbackQuestions({ classes: { text: 'math, science' }, teach: { text: 'how to press apples' } });
+    expect(qs).toEqual([{ id: 'f3', kind: 'short', prompt: 'What is one step someone would need to try what you explained?', expected: 'how to press apples' }]);
   });
-  it('f1 answer position varies with the text and is stable for the same text', () => {
-    const at = (classes, learned) => { const f1 = fallbackQuestions({ classes: { text: classes }, learned: { text: learned } })[0]; return f1.options.indexOf(f1.answer); };
-    const positions = new Set();
-    for (let i = 0; i < 12; i += 1) positions.add(at('math, reading', `thing ${i}`));
-    expect(positions.size).toBeGreaterThan(1);
-    expect(at('math', 'beans')).toBe(at('math', 'beans'));
+  it('falls back to the legacy learned text', () => {
+    expect(fallbackQuestions({ learned: { text: 'fractions' } })[0].expected).toBe('fractions');
   });
-  it('a 4th named class is excluded from the distractors too', () => {
-    for (let i = 0; i < 6; i += 1) {
-      const f1 = fallbackQuestions({ classes: { text: `math, science, art, Music` }, learned: { text: `thing ${i}` } })[0];
-      expect(f1.options.filter((o) => o.toLowerCase() === 'music')).toEqual([]);
-    }
+  it('nothing to ask from: no questions', () => {
+    expect(fallbackQuestions({ classes: { text: 'math' } })).toEqual([]);
   });
-  it('no classes: no f1 (nothing to ask), only the reflection', () => {
-    expect(fallbackQuestions({ learned: { text: 'fractions' } }).map((q) => q.id)).toEqual(['f3']);
+});
+
+describe('prompts and config', () => {
+  it('promptsFor fills teachTo', () => {
+    const ps = promptsFor({ teachTo: 'Max' });
+    expect(ps.map((p) => p.id)).toEqual(['classes', 'moment', 'teach', 'hard']);
+    expect(ps[2].text.endsWith('Explain it so Max could try it.')).toBe(true);
+    expect(ps[0].kind).toBe('chips');
+    expect(ps.map((p) => p.required)).toEqual([false, true, true, false]);
+    expect(LEGACY_PROMPT_IDS).toEqual(['learned', 'notable']);
+  });
+  it('config defaults and overrides', () => {
+    const c = debriefConfigOf({});
+    expect(c).toMatchObject({ richLevel: 3, teachableLevel: 4, maxProbes: 2, teachTo: 'a younger kid', priorPromptDays: 20 });
+    expect(c.classOptions).toHaveLength(12);
+    expect(debriefConfigOf({ debrief: { max_probes: 1, teach_to: 'Max' } })).toMatchObject({ maxProbes: 1, teachTo: 'Max' });
+  });
+  it('shouldProbe', () => {
+    const b = { maxProbes: 2, teachableLevel: 4 };
+    expect(shouldProbe({ ...b, level: 2, asked: 0 })).toBe(true);
+    expect(shouldProbe({ ...b, level: 3, asked: 1 })).toBe(true);
+    expect(shouldProbe({ ...b, level: 3, asked: 2 })).toBe(false);
+    expect(shouldProbe({ ...b, level: 4, asked: 0 })).toBe(false);
+    expect(shouldProbe({ ...b, level: null, asked: 0 })).toBe(false);
+  });
+});
+
+describe('filterQuestions', () => {
+  it('drops echoes and repeats of prior prompts, keeps fresh ones', () => {
+    const qs = [
+      { id: 'a', prompt: 'Which classes did the child say they had today?' },
+      { id: 'b', prompt: 'Why is it helpful to not look at the keyboard while typing?' },
+      { id: 'c', prompt: 'If you wanted more juice from the press, what would you change?' },
+      { id: 'd', prompt: 'If you wanted more juice from the press what would you change' },
+    ];
+    expect(filterQuestions(qs, ['Why is it helpful to not look at the keyboard  while typing']).map((q) => q.id)).toEqual(['c']);
+  });
+});
+
+describe('debriefMetrics and probes', () => {
+  it('counts words, markers, probes, voice entries', () => {
+    const text = 'We pressed apples because it was cold, then 41 cups';
+    const s = deriveDebriefState([
+      { type: 'entry', promptId: 'moment', text, via: 'voice', at: at(1) },
+      { type: 'clarify-asked', prompt: 'P?', at: at(2) },
+      { type: 'clarify', text: 'about ten of them', at: at(3) },
+    ]);
+    expect(debriefMetrics(s)).toEqual({ level: null, words: 10 + 4, markers: 3, probes: 1, voiceEntries: 1 });
+  });
+  it('two asks, one reply: second is open', () => {
+    const s = deriveDebriefState([
+      { type: 'opened', at: at(0) },
+      { type: 'clarify-asked', prompt: 'first', at: at(1) },
+      { type: 'clarify', text: 'r', at: at(2) },
+      { type: 'clarify-asked', prompt: 'second', at: at(3) },
+    ]);
+    expect(s.probes).toHaveLength(2);
+    expect(s.clarify.prompt).toBe('second');
+    expect(s.phase).toBe('clarify');
+  });
+  it('legacy entries stay and the day continues on new prompts', () => {
+    const s = deriveDebriefState([{ type: 'opened', at: at(0) }, entry('classes', 'math', 1), entry('learned', 'x', 2), entry('notable', 'y', 3)]);
+    expect(s.entries.learned.text).toBe('x');
+    expect(s.next).toEqual({ kind: 'prompt', id: 'moment' });
+  });
+  it('level/hook come from the latest questions event', () => {
+    const s = deriveDebriefState([{ type: 'questions', level: 3, levelReason: 'r', hook: 'h', questions: [], at: at(1) }]);
+    expect([s.level, s.levelReason, s.hook]).toEqual([3, 'r', 'h']);
+  });
+  it('discussed never changes phase', () => {
+    const s = deriveDebriefState([{ type: 'questions', questions: [], at: at(1) }, { type: 'completed', at: at(2) }, { type: 'discussed', at: at(3) }]);
+    expect(s.phase).toBe('completed');
+    expect(s.discussedAt).toBe(at(3));
   });
 });
 
@@ -121,6 +183,8 @@ describe('debriefConfigOf / previousStudyDay', () => {
     expect(debriefConfigOf({})).toEqual({
       questioner: { model: 'gpt-5-mini', timeoutMs: 30000 }, judge: { model: 'gpt-5-nano', timeoutMs: 8000 },
       substantiveScore: 6, clarifyBelow: 4, quizPassRatio: 0.67,
+      richLevel: 3, teachableLevel: 4, maxProbes: 2, teachTo: 'a younger kid', priorPromptDays: 20,
+      classOptions: ['Reading', 'Writing', 'Math', 'Typing', 'Spelling', 'Grammar', 'Science', 'P.E.', 'Art', 'Music', 'Quest', 'Field trip'],
     });
     expect(debriefConfigOf({ debrief: { clarify_below: 3 } }).clarifyBelow).toBe(3);
   });

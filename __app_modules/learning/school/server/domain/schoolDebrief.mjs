@@ -10,11 +10,20 @@ export const SCHOOL_DEBRIEF_UNIT_ID = 'school-debrief:daily';
 export const SCHOOL_DEBRIEF_TITLE = 'After-school debrief';
 const DEFAULT_SUBJECT = 'writing';
 
+const P = (id, text, required, kind) => Object.freeze({ id, text, required, kind });
 export const PROMPTS = Object.freeze([
-  Object.freeze({ id: 'classes', text: 'What classes or subjects did you have today?', required: false }),
-  Object.freeze({ id: 'learned', text: 'Tell me one thing you learned.', required: true }),
-  Object.freeze({ id: 'notable', text: 'What was hard, funny, or interesting?', required: false }),
+  P('classes', 'Which classes did you have today?', false, 'chips'),
+  P('moment', 'Tell me about one moment from today. Where were you, who was there, what happened?', true, 'text'),
+  P('teach', "What can you do or know now that you couldn't this morning? Explain it so {teachTo} could try it.", true, 'text'),
+  P('hard', 'What was hard, and what did you do about it?', false, 'text'),
 ]);
+/** Prompt ids from before the rich-answers redesign; their entries stay in a day's state untouched. */
+export const LEGACY_PROMPT_IDS = Object.freeze(['learned', 'notable']);
+
+export function promptsFor(config = {}) {
+  const teachTo = config?.teachTo ?? 'a younger kid';
+  return PROMPTS.map((p) => ({ ...p, text: p.text.replaceAll('{teachTo}', teachTo) }));
+}
 
 export function validateSchoolDebriefEnrollment(raw = {}) {
   const errors = [];
@@ -34,6 +43,52 @@ export function debriefConfigOf(schoolConfig = {}) {
     substantiveScore: num(d.substantive_score, 6),
     clarifyBelow: num(d.clarify_below, 4),
     quizPassRatio: num(d.quiz_pass_ratio, 0.67),
+    richLevel: num(d.rich_level, 3),
+    teachableLevel: num(d.teachable_level, 4),
+    maxProbes: num(d.max_probes, 2),
+    teachTo: typeof d.teach_to === 'string' && d.teach_to.trim() ? d.teach_to.trim() : 'a younger kid',
+    classOptions: Array.isArray(d.class_options) && d.class_options.length ? d.class_options.map(String) : [...DEFAULT_CLASS_OPTIONS],
+    priorPromptDays: num(d.prior_prompt_days, 20),
+  };
+}
+
+const DEFAULT_CLASS_OPTIONS = ['Reading', 'Writing', 'Math', 'Typing', 'Spelling', 'Grammar', 'Science', 'P.E.', 'Art', 'Music', 'Quest', 'Field trip'];
+
+/** Ask another probe only while the answer is below teachable and the budget is unspent. */
+export function shouldProbe({ level, asked, maxProbes, teachableLevel }) {
+  return Number.isInteger(level) && level < teachableLevel && asked < maxProbes;
+}
+
+const normPrompt = (t) => String(t ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const ECHO_RE = /\b(the child|you said|did you say|according to you)\b/i;
+
+/** Drop echo questions, repeats of earlier days' prompts, and duplicates within the list. */
+export function filterQuestions(questions = [], priorPrompts = []) {
+  const seen = new Set((priorPrompts ?? []).map(normPrompt));
+  const out = [];
+  for (const q of questions ?? []) {
+    const prompt = String(q?.prompt ?? '');
+    if (ECHO_RE.test(prompt)) continue;
+    const n = normPrompt(prompt);
+    if (seen.has(n)) continue;
+    seen.add(n);
+    out.push(q);
+  }
+  return out;
+}
+
+const countWords = (t) => (String(t ?? '').match(/\S+/g) ?? []).length;
+const countMarkers = (t) => (String(t ?? '').match(/\b(because|so|then|how|first|next|after|why)\b/gi) ?? []).length + (String(t ?? '').match(/\d+/g) ?? []).length;
+
+export function debriefMetrics(state = {}) {
+  const entries = Object.values(state.entries ?? {});
+  const texts = [...entries.map((e) => e.text), ...(state.probes ?? []).map((p) => p.text)];
+  return {
+    level: Number.isInteger(state.level) ? state.level : null,
+    words: texts.reduce((n, t) => n + countWords(t), 0),
+    markers: texts.reduce((n, t) => n + countMarkers(t), 0),
+    probes: (state.probes ?? []).filter((p) => p.text !== null && p.text !== undefined).length,
+    voiceEntries: entries.filter((e) => e.via === 'voice').length,
   };
 }
 
@@ -47,11 +102,11 @@ export function previousStudyDay(day) {
 
 const QUESTION_EVENTS = new Set(['questions', 'rescored']);
 /** Grown-up actions (spec §2 events table). Never late: a teacher acting tomorrow must not make today late. */
-export const TEACHER_EVENTS = Object.freeze(new Set(['excused', 'rejected', 'rescored']));
+export const TEACHER_EVENTS = Object.freeze(new Set(['excused', 'rejected', 'rescored', 'discussed']));
 
 export function deriveDebriefState(events = []) {
   const s = {
-    phase: 'not-started', late: false, entries: {}, clarify: null, questions: null, substance: null,
+    phase: 'not-started', late: false, entries: {}, clarify: null, probes: [], questions: null, level: null, levelReason: null, hook: null, discussedAt: null, substance: null,
     substanceReason: null, questioner: null, questionSource: null, answers: {}, next: null, summary: null, completedAt: null,
   };
   let completed = false; let override = null;
@@ -59,13 +114,17 @@ export function deriveDebriefState(events = []) {
     if (!e || typeof e !== 'object') continue;
     if (e.late === true && !TEACHER_EVENTS.has(e.type)) s.late = true;
     if (e.type === 'entry' && e.promptId) s.entries[e.promptId] = { text: e.text ?? '', via: e.via ?? null, audioRef: e.audioRef ?? null };
-    else if (e.type === 'clarify-asked') s.clarify = { prompt: e.prompt, text: null };
-    else if (e.type === 'clarify' && s.clarify) s.clarify = { ...s.clarify, text: e.text ?? '' };
+    else if (e.type === 'clarify-asked') s.probes.push({ prompt: e.prompt, text: null });
+    else if (e.type === 'clarify') { const open = s.probes.find((p) => p.text === null); if (open) open.text = e.text ?? ''; }
+    else if (e.type === 'discussed') s.discussedAt = e.at ?? null;
     else if (QUESTION_EVENTS.has(e.type)) {
       s.questions = Array.isArray(e.questions) ? e.questions : [];
       s.substance = Number.isInteger(e.substance) ? e.substance : null;
       s.substanceReason = e.substanceReason ?? null;
       s.questioner = e.questioner ?? null;
+      s.level = Number.isInteger(e.level) ? e.level : null;
+      s.levelReason = e.levelReason ?? null;
+      s.hook = e.hook ?? null;
       // Where the QUESTIONS came from; old events predate the field, so they default to the questioner.
       s.questionSource = e.questionSource ?? e.questioner ?? null;
     } else if (e.type === 'answer' && e.questionId && !(e.questionId in s.answers)) {
@@ -73,6 +132,8 @@ export function deriveDebriefState(events = []) {
     } else if (e.type === 'completed') { completed = true; s.completedAt = e.at ?? null; }
     else if (e.type === 'excused' || e.type === 'rejected') override = e.type;
   }
+  const openProbe = s.probes.find((p) => p.text === null);
+  s.clarify = openProbe ? { prompt: openProbe.prompt, text: null } : null;
   if (s.questions) {
     const graded = s.questions.filter((q) => s.answers[q.id] && s.answers[q.id].correct !== null);
     s.summary = { substance: s.substance, substantive: null, quiz: { right: graded.filter((q) => s.answers[q.id].correct === true).length, graded: graded.length } };
@@ -86,43 +147,20 @@ export function deriveDebriefState(events = []) {
     if (!Object.keys(s.answers).length && open) s.phase = 'questions';
     return s;
   }
-  if (s.clarify && s.clarify.text === null) { s.phase = 'clarify'; s.next = { kind: 'clarify', id: null }; return s; }
+  if (s.clarify) { s.phase = 'clarify'; s.next = { kind: 'clarify', id: null }; return s; }
   const missing = PROMPTS.find((p) => !(p.id in s.entries));
   s.phase = Object.keys(s.entries).length || events.some((e) => e?.type === 'opened') ? 'entry' : 'not-started';
   s.next = missing ? { kind: 'prompt', id: missing.id } : { kind: 'submit', id: null };
   return s;
 }
 
-/** A small stable hash of the entries' text, so the fallback's option order is pure but not fixed. */
-function textHash(entries) {
-  const text = PROMPTS.map((p) => String(entries[p.id]?.text ?? '')).join('\u0000');
-  let h = 0;
-  for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-  return h;
-}
-const FALLBACK_DISTRACTORS = ['Lunch', 'Recess', 'Music', 'Library', 'Gym', 'Art'];
-
 /**
  * Deterministic questions when the AI is unavailable: built only from what the learner said.
- * f1 names one class they said among classes they did not; its position rotates with the
- * text, so "always pick the first" is not a strategy. f3 is a real reflection. A fallback
- * day never earns the quiz bonus (SchoolDebriefProgramLauncher.weekFacts).
+ * The old "which of these did you say" question was an echo and is gone; one real
+ * reflection remains. A fallback day never earns the quiz bonus (SchoolDebriefProgramLauncher.weekFacts).
  */
 export function fallbackQuestions(entries = {}) {
-  const named = String(entries.classes?.text ?? '').split(/,|\band\b|\n/).map((x) => x.trim()).filter(Boolean);
-  const classes = named.slice(0, 3);
-  const learned = String(entries.learned?.text ?? '').trim();
-  const qs = [];
-  if (classes.length) {
-    const h = textHash(entries);
-    const said = new Set(named.map((c) => c.toLowerCase()));
-    const answer = classes[h % classes.length];
-    const distractors = FALLBACK_DISTRACTORS.filter((d) => !said.has(d.toLowerCase())).slice(0, 3);
-    const options = [answer, ...distractors];
-    const shift = h % options.length;
-    const rotated = [...options.slice(shift), ...options.slice(0, shift)];
-    qs.push({ id: 'f1', kind: 'choice', prompt: 'Which of these did you say you had today?', options: rotated, answer });
-  }
-  if (learned) qs.push({ id: 'f3', kind: 'short', prompt: 'Explain the thing you learned in one sentence, as if teaching a younger kid.', expected: learned });
-  return qs;
+  const taught = String(entries.teach?.text ?? '').trim() || String(entries.learned?.text ?? '').trim();
+  if (!taught) return [];
+  return [{ id: 'f3', kind: 'short', prompt: 'What is one step someone would need to try what you explained?', expected: taught }];
 }
