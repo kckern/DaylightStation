@@ -304,7 +304,8 @@ describe('SchoolDebriefProgram start card', () => {
       const field = await screen.findByRole('textbox');
       fireEvent.change(field, { target: { value: 'my sister' } });
       fireEvent.keyDown(field, { code: 'Enter', key: 'Enter' });
-      expect(await screen.findByText('What happened next?')).toBeInTheDocument();
+      // Failed send → day re-read → re-key: three round trips, so allow for a loaded gate run.
+      expect(await screen.findByText('What happened next?', {}, { timeout: 5000 })).toBeInTheDocument();
       expect(screen.getByRole('textbox')).toHaveValue('');
       expect(screen.queryByRole('alert')).toBeNull();
       expect(api.clarify).toHaveBeenCalledTimes(1);
