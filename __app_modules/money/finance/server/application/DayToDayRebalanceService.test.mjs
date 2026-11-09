@@ -90,6 +90,38 @@ describe('DayToDayRebalanceService', () => {
     expect(result.months).toEqual([]);
   });
 
+  it('a Buxfer edit answered with a non-OK status counts as failed and is not mirrored', async () => {
+    const monthData = november({ 2: 1300 }, [txn(2, '2026-11-04', 180, 'Amazon', ['Shopping'])]);
+    const updateTransaction = vi.fn(async () => ({ status: 'ERROR: transaction is locked' }));
+    const { service, financeStore, compilationService } = setup({ monthData, updateTransaction });
+    const result = await service.rebalance('default');
+    expect(result).toMatchObject({ moved: 0, failed: 1, recompiled: false });
+    expect(financeStore.saveTransactions).not.toHaveBeenCalled();
+    expect(compilationService.compile).not.toHaveBeenCalled();
+  });
+
+  it('caps moves at the room left in the bucket that owns the swing tag', async () => {
+    const monthData = november({ 2: 1300 }, [
+      txn(1, '2026-11-02', 120, 'Amazon', ['Shopping']),
+      txn(2, '2026-11-04', 180, 'Amazon', ['Shopping']),
+    ]);
+    const { service, financeStore, transactionGateway } = setup({
+      monthData,
+      shortTermBuckets: { 'Home & Auto': { balance: 130, transactions: [] } },
+    });
+    financeStore.getBudgetConfig.mockReturnValue({
+      budget: [{
+        timeframe: { start: new Date('2026-04-01T00:00:00Z') },
+        dayToDay: { amount: 3000, tags: ['Shopping'], rebalance: rule },
+        shortTerm: [{ label: 'Home & Auto', tags: ['Home', 'Housewares'] }],
+      }],
+    });
+    const result = await service.rebalance('default');
+    expect(transactionGateway.updateTransaction).toHaveBeenCalledTimes(1);
+    expect(transactionGateway.updateTransaction).toHaveBeenCalledWith(1, { tags: ['Housewares'] });
+    expect(result.months[0].swingRoom).toBe(130);
+  });
+
   it('a failed Buxfer edit is counted and not mirrored locally', async () => {
     const monthData = november({ 2: 1300 }, [
       txn(1, '2026-11-02', 120, 'Amazon', ['Shopping']),

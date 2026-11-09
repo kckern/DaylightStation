@@ -64,22 +64,33 @@ export class DayToDayRebalanceService {
       for (const month of [previousMonth(today.slice(0, 7)), today.slice(0, 7)]) {
         const monthData = budget.dayToDayBudget[month];
         if (!monthData) continue;
-        const plan = planDayToDayRebalance({ month, monthData, shortTermBuckets: budget.shortTermBuckets, rule, today });
+        const plan = planDayToDayRebalance({
+          month, monthData, shortTermBuckets: budget.shortTermBuckets, rule, today,
+          swingRoom: this.#swingRoom(period, budget, rule),
+        });
         if (!plan) continue;
 
         const summary = {
           month, status: plan.status, asOf: plan.asOf, balance: plan.balance, target: plan.target,
-          gap: plan.gap, candidates: plan.candidateCount ?? 0, moves: [], balanceAfter: plan.balance,
+          gap: plan.gap, candidates: plan.candidateCount ?? 0, swingRoom: plan.swingRoom ?? null,
+          moves: [], balanceAfter: plan.balance,
         };
         if (plan.status !== 'on-pace' && !plan.moves.length) {
           // No fungible purchases to move — Groceries, Fuel etc. stay where they are.
-          this.#logger.info?.('finance.rebalance.no_wiggle_room', { month, status: plan.status, gap: plan.gap, from: plan.from });
+          this.#logger.info?.('finance.rebalance.no_wiggle_room', {
+            month, status: plan.status, gap: plan.gap, from: plan.from, candidates: plan.candidateCount, swingRoom: plan.swingRoom,
+          });
         }
 
         let movedTotal = 0;
         for (const move of plan.moves) {
           try {
-            await this.#transactionGateway.updateTransaction(move.id, { tags: move.tags });
+            const response = await this.#transactionGateway.updateTransaction(move.id, { tags: move.tags });
+            // Buxfer answers an edit it refused with 200 and a non-OK status;
+            // counting that as moved would mirror a tag Buxfer never took.
+            if (response?.status && !/^OK/i.test(response.status)) {
+              throw new Error(`Buxfer refused the edit: ${response.status}`);
+            }
             retagged.set(String(move.id), move.tags);
             movedTotal += move.amount;
             summary.moves.push({ id: move.id, date: move.date, description: move.description, amount: move.amount, from: move.from, to: move.to });
@@ -104,6 +115,13 @@ export class DayToDayRebalanceService {
       result.recompiled = true;
     }
     return result;
+  }
+
+  /** Dollars left in the short-term bucket whose tags hold `swingTag`; undefined when none does. */
+  #swingRoom(period, budget, rule) {
+    const bucket = (period.shortTerm || []).find((b) => (b.tags || []).includes(rule.swingTag));
+    const balance = bucket ? budget.shortTermBuckets?.[bucket.label]?.balance : undefined;
+    return typeof balance === 'number' ? balance : undefined;
   }
 
   /** Write the new tags into the stored period so the recompile sees them without a re-fetch. */

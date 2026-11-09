@@ -51,7 +51,8 @@ dayToDay:
     swingTag: Housewares    # short-term side (must be one of a shortTerm bucket's tags)
     payees: [Amazon]        # optional; description substring, case-insensitive.
                             # Omit to treat every purchase with the tag as fungible.
-    tolerance: 67           # optional dollars left alone; default one day of budget
+    tolerance: 67           # optional dollars left alone in the running month; default one day of budget
+    closedTolerance: 5      # optional, the same for the month just closed; default 5
 ```
 
 No `rebalance` key means no rebalancing for that period. A `closed` period is
@@ -68,25 +69,41 @@ two months:
 | previous (if in the same period) | $0 at month end |
 
 `gap = balance − target`. Within `tolerance` the month is **on-pace** and nothing
-moves.
+moves. In the running month, moving buys back *in* waits until the gap passes
+**twice** the tolerance. The target is today's close, so the month reads up to a
+day under pace before the day's spending lands. Without this, one quiet day would
+pull swing buys in and the next grocery run would push them straight back out.
 
 - **Overspent** (gap < 0): candidates are this month's day-to-day transactions
   tagged `dayTag`, from a `payees` match, dated up to today. They move to `swingTag`.
 - **Underspent** (gap > 0): candidates are short-term transactions tagged
   `swingTag`, from a `payees` match, dated in the month up to today. They move to `dayTag`.
 
-The planner picks the subset of candidates whose total is closest to `|gap|`
-(0/1 subset sum in cents; ties go to fewer moves, then to not overshooting).
-Only the swing tag is replaced; other tags on the row stay.
+Candidates carry **exactly one tag**. A row tagged `[Shopping, Groceries]`
+would stay in day-to-day after its Shopping tag moved, so retagging it would not
+move it.
+
+The planner goes **largest first**: it retags the biggest candidate, re-measures
+the gap, then takes the next biggest, and stops once the remaining gap is within
+`tolerance`. A candidate that would carry the balance past the line by more than
+`tolerance` is skipped for the next smaller one. Overshooting would put the
+month off pace in the other direction, and the next hourly run would move buys
+straight back. The result is the fewest, most recognisable retags.
+
+**Room in the swing bucket.** Over pace, the total moved is capped at the
+`balance` left in the short-term bucket whose `tags` include `swingTag`. Moving an
+overspend into a bucket that is already spent would only hide it.
 
 Each move is written to Buxfer (`updateTransaction(id, { tags })`) and mirrored
 into the stored period `transactions.yml`, so the recompile that follows sees it
-without a re-fetch. A failed Buxfer edit is logged and not mirrored. A rebalance
-error never fails the sync; it lands in `details.rebalance.error`.
+without a re-fetch. A Buxfer edit that throws, or that answers with a non-`OK`
+`status`, is logged as failed and is not mirrored. A rebalance error never fails
+the sync; it lands in `details.rebalance.error`.
 
-**No wiggle room.** If the month is off pace and has no fungible candidates, nothing
-moves and `finance.rebalance.no_wiggle_room` is logged. The chart then shows the
-real overspend.
+**No wiggle room.** If the month is off pace and nothing fungible can move
+(no single-tag swing buys, or no room left in the swing bucket), nothing moves
+and `finance.rebalance.no_wiggle_room` is logged. The chart then shows the real
+overspend.
 
 **Opting out of a run:** `POST /api/v1/finance/refresh` with `{"skipRebalance": true}`.
 The scheduled job always rebalances.
@@ -97,8 +114,8 @@ The scheduled job always rebalances.
 |---|---|
 | `finance.rebalance.month` | every planned month: status, balance, target, gap, candidates, moves, movedTotal, balanceAfter |
 | `finance.rebalance.moved` | each retag: id, date, amount, from → to |
-| `finance.rebalance.move_failed` | a Buxfer edit threw |
-| `finance.rebalance.no_wiggle_room` | off pace with nothing fungible to move |
+| `finance.rebalance.move_failed` | a Buxfer edit threw or answered non-`OK` |
+| `finance.rebalance.no_wiggle_room` | off pace with nothing fungible to move: no candidates, or no room in the swing bucket |
 | `harvest.rebalance.failed` | the step itself threw |
 
 ```bash
@@ -109,8 +126,17 @@ curl -s {env.log_store_url}/select/logsql/query \
 ## 5. Known limits
 
 - **Swings move both ways across the month.** A buy moved out early when the
-  month runs hot can move back later when it cools. That is intended; the
-  tolerance keeps the sync from flipping on every run.
+  month runs hot can move back later when it cools. That is intended. The
+  no-overshoot rule and the doubled pull-back threshold keep a row from bouncing
+  between runs.
+- **The previous month is closed out in both directions.** A month that finished
+  under budget has swing buys pulled back into day-to-day until it reads $0.
+- **Description rules must not tag swing payees.** An account-scoped rule in
+  `gpt.yml` with a `tag` re-tags its rows on every harvest, before the rebalance
+  runs. A rule like `AMAZON → Amazon, tag: Shopping, account: Capital One` would
+  undo every rebalance each hour. Give swing-payee rules no `tag`.
+- **Refunds stay where they land.** A refund is an income row and is never a
+  candidate, so a moved purchase's refund still credits day-to-day.
 - **The previous month keeps rebalancing toward $0** for as long as it is the
   previous month, including after a manual retag. Retag a row to a non-swing
   tag to take it out of play.
