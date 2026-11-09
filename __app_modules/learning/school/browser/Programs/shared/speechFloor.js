@@ -47,14 +47,22 @@ export const AUTO_STOP_SILENT_MS = 3000;
 export const MIN_TAKE_MS = 1200;
 
 /**
+ * The debrief's own, gentler floor. Telling a day's story is longer and quieter
+ * than saying one 2-second sentence, and the floor above (tuned for the latter)
+ * refused the debrief child twice in 2026-11, after which he stopped using
+ * voice. A lower level threshold hears a soft talker; the length floor stays.
+ */
+export const DEBRIEF_FLOOR = Object.freeze({ silentLevel: 0.02, minTakeMs: 1200 });
+
+/**
  * The finished take's verdict. WE ONLY REFUSE ON WHAT WE COULD MEASURE:
  * `heard` comes from a live level meter that needs an AudioContext, so
  * loudness is judged only when a level actually arrived (`sampled`); length
  * is judged always.
  */
-export function judgeTake({ heard, sampled, durationMs }) {
+export function judgeTake({ heard, sampled, durationMs, minTakeMs = MIN_TAKE_MS }) {
   if (sampled === true && !heard) return 'too-quiet';
-  if (durationMs < MIN_TAKE_MS) return 'too-short';
+  if (durationMs < minTakeMs) return 'too-short';
   return null;
 }
 

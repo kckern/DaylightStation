@@ -3,6 +3,7 @@ import { TouchButton } from "../../../../../../../frontend/src/lib/ui/index.js";
 import Icon from "../../../home/icons/Icon.jsx";
 import VoiceBand from "../../SentenceLadder/rungs/VoiceBand.jsx";
 import useTakeRecorder from "../../shared/useTakeRecorder.js";
+import { DEBRIEF_FLOOR } from "../../shared/speechFloor.js";
 import { useSchoolDebriefKeys, speak } from "../useSchoolDebriefKeys.js";
 import { schoolDebriefLog } from "../schoolDebriefLog.js";
 
@@ -21,6 +22,7 @@ export default function PromptItem({ prompt, initial = '', onSubmit, onBack = nu
   useEffect(() => { setText(initial); setAudioRef(null); setVia(initial ? 'typed' : null); setNotice(null); }, [prompt.id, initial]);
 
   const recorder = useTakeRecorder({
+    floor: DEBRIEF_FLOOR,
     onTake: useCallback(async ({ blob }) => {
       setBusy(true);
       const res = await onTake(blob);
@@ -65,6 +67,7 @@ export default function PromptItem({ prompt, initial = '', onSubmit, onBack = nu
         }}
       />
       {!recorder.unavailable && <VoiceBand stream={recording ? recorder.stream : null} onLevel={recording ? recorder.onLevel : null} />}
+      {recording && <p className="sd-prompt__hearing" role="status">{recorder.heard ? 'I hear you' : 'Listening…'}</p>}
       {notice && <p className="sd-notice" role="status">{notice}</p>}
       <div className="sd-controls">
         {onBack && <TouchButton variant="secondary" keyHint="←" onClick={onBack}><Icon name="back" /> Back</TouchButton>}
