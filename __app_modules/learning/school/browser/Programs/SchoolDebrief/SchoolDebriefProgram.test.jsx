@@ -37,7 +37,7 @@ describe('SchoolDebriefProgram start card', () => {
   it('a done day shows only the summary', async () => {
     api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'completed', next: null, entries: {}, late: false, summary: { substance: 7, substantive: true, quiz: { right: 2, graded: 2 } } }));
     render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText(/2 of 2/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('On time')).toBeInTheDocument());
   });
 
   describe('coins on the summary', () => {
@@ -122,7 +122,7 @@ describe('SchoolDebriefProgram start card', () => {
       await go();
       await screen.findByRole('button', { name: /try again/i });
       enter();
-      expect(await screen.findByText(/1 of 2/)).toBeInTheDocument();
+      expect(await screen.findByText('On time')).toBeInTheDocument();
     });
     it('a failed open shows the error and Enter retries it', async () => {
       api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'not-started', next: { kind: 'prompt', id: 'classes' }, entries: {} }));
@@ -206,7 +206,7 @@ describe('SchoolDebriefProgram start card', () => {
       school.economyBank.mockResolvedValue(ok({ mode: 'live' }));
       school.earningsPreview.mockResolvedValue(ok({ totals: { silver: 0 }, lines: [] }));
       render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
-      await screen.findByText(/2 of 2/);
+      await screen.findByText('On time');
       await waitFor(() => expect(school.economyBank).toHaveBeenCalled());
       await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
       expect(screen.queryByText('Coins start soon')).toBeNull();
@@ -252,6 +252,22 @@ describe('SchoolDebriefProgram start card', () => {
       render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
       fireEvent.click(await screen.findByRole('button', { name: /pick up/i }));
       expect(await screen.findByText('Who was with you?')).toBeInTheDocument();
+    });
+    it('the second probe opens with an empty field and Next disabled', async () => {
+      const entries = { classes: { text: '' }, moment: { text: 'x' }, teach: { text: 'y' }, hard: { text: '' } };
+      let second = false;
+      api.day = vi.fn(async (d) => ok({ studyDay: d, phase: 'clarify', next: { kind: 'clarify' }, entries, clarify: { prompt: second ? 'What happened next?' : 'Who was with you?' } }));
+      api.open = api.day;
+      api.clarify = vi.fn(async (d) => { second = true; return api.day(d); });
+      render(<SchoolDebriefProgram learnerId="test-learner" debriefGrant="g" lateDay={null} today="2026-10-21" onExit={vi.fn()} />);
+      fireEvent.click(await screen.findByRole('button', { name: /pick up/i }));
+      const field = await screen.findByRole('textbox');
+      fireEvent.change(field, { target: { value: 'my sister' } });
+      fireEvent.keyDown(field, { code: 'Enter', key: 'Enter' });
+      expect(await screen.findByText('What happened next?')).toBeInTheDocument();
+      expect(screen.getByRole('textbox')).toHaveValue('');
+      expect(screen.getByRole('button', { name: /^Next/ })).toBeDisabled();
+      expect(api.clarify).toHaveBeenCalledTimes(1);
     });
     it('summary shows the reason and the earned bonus lines', async () => {
       school.economyBank.mockReset(); school.economyBank.mockResolvedValue(ok({ mode: 'dry-run' }));

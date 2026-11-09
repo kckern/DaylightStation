@@ -38,6 +38,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
   const [retry, setRetry] = useState(0);
   const [failedStart, setFailedStart] = useState(null);
   const prompts = view?.prompts ?? todayView?.prompts ?? null; // the server owns the list; never a local fallback
+  const [probeN, setProbeN] = useState(0); // each probe is its own PromptItem: a reply must never carry into the next probe
   const [currentQid, setCurrentQid] = useState(null); // the question on screen; the server's `next` moves on once it is answered
 
   useEffect(() => { schoolDebriefLog.mounted({ learnerId, lateDay }); return () => schoolDebriefLog.unmounted({ learnerId }); }, [learnerId, lateDay]);
@@ -191,7 +192,7 @@ export default function SchoolDebriefProgram({ learnerId, debriefGrant, lateDay 
       ? <ChipsItem prompt={p} options={view.classOptions ?? todayView?.classOptions ?? []} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onBack={back} onSubmit={(b) => submitPrompt(p.id, b)} />
       : <PromptItem prompt={p} initial={view.entries?.[p.id]?.text ?? ''} busy={busy} onTake={takeFor} onBack={back} onSubmit={(b) => submitPrompt(p.id, b)} />;
   } else if (view.phase === 'clarify') {
-    body = <PromptItem prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" busy={busy} onTake={takeFor} onSubmit={async (b) => { setBusy(true); apply(await api.clarify(day, b)); setBusy(false); }} />;
+    body = <PromptItem key={`clarify-${probeN}-${view.clarify.prompt}`} prompt={{ id: 'clarify', text: view.clarify.prompt, required: true }} initial="" busy={busy} onTake={takeFor} onSubmit={async (b) => { setBusy(true); apply(await api.clarify(day, b)); setProbeN((n) => n + 1); setBusy(false); }} />;
   } else if (!view.questions) body = waiting('Reading your answer…');
   else if (view.next?.kind === 'question' || result) {
     const q = view.questions.find((x) => x.id === (result ? currentQid : view.next.id));
