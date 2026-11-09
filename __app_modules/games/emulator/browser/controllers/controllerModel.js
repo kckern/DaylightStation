@@ -31,7 +31,9 @@ export function splitDevices(state) {
   const byRank = (a, b) => rank(a) - rank(b) || String(a.name).localeCompare(String(b.name));
   return {
     controllers: devices.filter((d) => d.manageable).sort(byRank),
-    others: devices.filter((d) => !d.manageable).sort(byRank),
+    // View-only list = the TV's own paired gear (remote, keyboard). A search
+    // also turns up neighbours' TVs and nameless beacons; those are noise here.
+    others: devices.filter((d) => !d.manageable && d.bond !== 'none').sort(byRank),
   };
 }
 

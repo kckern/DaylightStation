@@ -146,3 +146,12 @@ it('releases the bus when it closes', async () => {
   unmount();
   expect(getActionBus().emit('escape', {})).toBe(false);
 });
+
+it('lists only paired non-controllers as view-only, not whatever a search turned up nearby', async () => {
+  render(<ControllerManager deviceId="tv" client={clientFor(() => snapshot([pad(),
+    { address: '3C:6D:66:06:E4:B5', name: 'NVIDIA SHIELD Remote', bond: 'bonded', connected: true, manageable: false },
+    { address: '11:22:33:44:55:66', name: '[LG] webOS TV', bond: 'none', connected: false, manageable: false },
+    { address: '11:22:33:44:55:67', name: 'Unnamed device', bond: 'none', connected: false, manageable: false }]))} onClose={() => {}} />);
+  expect(await screen.findByText(/NVIDIA SHIELD Remote — Connected/)).toBeTruthy();
+  expect(screen.queryByText(/webOS|Unnamed/)).toBeNull();
+});

@@ -492,9 +492,11 @@ foreground service declares `FOREGROUND_SERVICE_TYPE_LOCATION`
 (`microphone|location`, manifest and `startForeground`). A microphone-only build
 logs `BluetoothUtils: Permission denial: Need ACCESS_FINE_LOCATION permission to
 get scan results` and every scan is refused. `appops set --uid … COARSE_LOCATION
-allow` does not stick — the permission policy resets it. The source carries the
-fix; it takes effect only once a build signed with the original key is installed.
-Until then the Controllers screen re-pairs a forgotten pad BY ADDRESS (`createBond`
+allow` does not stick — the permission policy resets it. The fix is the
+`microphone|location` service type, installed on the living-room Shield 2026-11-08
+(19:32; verified: `bluetooth.scan.started`, nearby devices discovered, microphone PCM
+still streaming). Reinstalling needs the original signing key. Independently of
+discovery, the Controllers screen re-pairs a forgotten pad BY ADDRESS (`createBond`
 pages a known Classic device without discovery), and a refused scan no longer
 clears the unpaired list (it did before the same change, which would have dropped
 that forgotten pad).
