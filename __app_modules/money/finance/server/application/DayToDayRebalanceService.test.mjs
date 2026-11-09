@@ -90,7 +90,18 @@ describe('DayToDayRebalanceService', () => {
     expect(result.months).toEqual([]);
   });
 
-  it('a Buxfer edit answered with a non-OK status counts as failed and is not mirrored', async () => {
+  it('an edit echoing the transaction back (status "cleared") counts as moved', async () => {
+    // Live 2026-11-09: transaction_edit answers with the edited transaction, whose
+    // status is the transaction status. Reading that as a refusal skipped the mirror.
+    const monthData = november({ 2: 1300 }, [txn(2, '2026-11-04', 180, 'Amazon', ['Shopping'])]);
+    const updateTransaction = vi.fn(async (id) => ({ id, status: 'cleared', tags: 'Housewares' }));
+    const { service, financeStore } = setup({ monthData, updateTransaction });
+    const result = await service.rebalance('default');
+    expect(result).toMatchObject({ moved: 1, failed: 0, recompiled: true });
+    expect(financeStore.saveTransactions).toHaveBeenCalled();
+  });
+
+  it('a Buxfer edit answered with an error body counts as failed and is not mirrored', async () => {
     const monthData = november({ 2: 1300 }, [txn(2, '2026-11-04', 180, 'Amazon', ['Shopping'])]);
     const updateTransaction = vi.fn(async () => ({ status: 'ERROR: transaction is locked' }));
     const { service, financeStore, compilationService } = setup({ monthData, updateTransaction });

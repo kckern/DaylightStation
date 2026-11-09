@@ -86,10 +86,11 @@ export class DayToDayRebalanceService {
         for (const move of plan.moves) {
           try {
             const response = await this.#transactionGateway.updateTransaction(move.id, { tags: move.tags });
-            // Buxfer answers an edit it refused with 200 and a non-OK status;
-            // counting that as moved would mirror a tag Buxfer never took.
-            if (response?.status && !/^OK/i.test(response.status)) {
-              throw new Error(`Buxfer refused the edit: ${response.status}`);
+            // A successful edit echoes the transaction back (its `status` is the
+            // transaction's own, e.g. "cleared"). A refusal can arrive with 200 and
+            // an error body; counting that as moved would mirror a tag Buxfer never took.
+            if (response?.error || /^ERROR/i.test(String(response?.status ?? ''))) {
+              throw new Error(`Buxfer refused the edit: ${response.error?.message || response.error || response.status}`);
             }
             retagged.set(String(move.id), move.tags);
             movedTotal += move.amount;

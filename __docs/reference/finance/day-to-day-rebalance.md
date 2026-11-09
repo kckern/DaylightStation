@@ -96,8 +96,10 @@ overspend into a bucket that is already spent would only hide it.
 
 Each move is written to Buxfer (`updateTransaction(id, { tags })`) and mirrored
 into the stored period `transactions.yml`, so the recompile that follows sees it
-without a re-fetch. A Buxfer edit that throws, or that answers with a non-`OK`
-`status`, is logged as failed and is not mirrored. A rebalance error never fails
+without a re-fetch. A Buxfer edit that throws, or that answers with an `error`
+body or an `ERROR…` status, is logged as failed and is not mirrored. A successful
+edit echoes the transaction back, and that echo's `status` is the transaction's
+own (`cleared`), not an API OK. A rebalance error never fails
 the sync; it lands in `details.rebalance.error`.
 
 **No wiggle room.** If the month is off pace and nothing fungible can move
@@ -114,7 +116,7 @@ The scheduled job always rebalances.
 |---|---|
 | `finance.rebalance.month` | every planned month: status, balance, target, gap, candidates, moves, movedTotal, balanceAfter |
 | `finance.rebalance.moved` | each retag: id, date, amount, from → to |
-| `finance.rebalance.move_failed` | a Buxfer edit threw or answered non-`OK` |
+| `finance.rebalance.move_failed` | a Buxfer edit threw or answered with an error |
 | `finance.rebalance.no_wiggle_room` | off pace with nothing fungible to move: no candidates, or no room in the swing bucket |
 | `harvest.rebalance.failed` | the step itself threw |
 
