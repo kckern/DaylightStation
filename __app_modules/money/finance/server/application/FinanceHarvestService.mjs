@@ -25,6 +25,7 @@ export class FinanceHarvestService {
   #compilationService;
   #rebalanceService;
   #logger;
+  #inFlight = new Map();
 
   /**
    * @param {Object} deps - Dependencies
@@ -66,7 +67,21 @@ export class FinanceHarvestService {
    * @param {boolean} [options.skipRebalance=false] - Skip the day-to-day rebalance (runs after compilation)
    * @returns {Promise<{status: string, details: Object}>}
    */
-  async harvest(householdId, options = {}) {
+  harvest(householdId, options = {}) {
+    // Single-flight per household: a manual refresh during the hourly sync
+    // joins the run already in progress (its options are ignored).
+    const running = this.#inFlight.get(householdId);
+    if (running) {
+      this.#log('info', 'harvest.joined', { householdId });
+      return running;
+    }
+    const run = this.#runHarvest(householdId, options)
+      .finally(() => this.#inFlight.delete(householdId));
+    this.#inFlight.set(householdId, run);
+    return run;
+  }
+
+  async #runHarvest(householdId, options) {
     const { skipCategorization = false, skipCompilation = false, skipRebalance = false } = options;
 
     this.#log('info', 'harvest.start', { householdId, options });

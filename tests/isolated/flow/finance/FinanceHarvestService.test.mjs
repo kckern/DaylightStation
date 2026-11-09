@@ -32,6 +32,9 @@ describe('FinanceHarvestService', () => {
     }
   };
 
+  // Fixed clock so the fixture's 2026-06-30 period is not "finished" by the real date.
+  const TODAY = '2026-07-15';
+
   const mockTransactions = [
     { id: '1', date: '2026-01-15', amount: 50, description: 'Grocery' },
     { id: '2', date: '2026-01-20', amount: 100, description: 'Gas' }
@@ -77,7 +80,8 @@ describe('FinanceHarvestService', () => {
       financeStore: mockFinanceStore,
       categorizationService: mockCategorizationService,
       compilationService: mockCompilationService,
-      logger: mockLogger
+      logger: mockLogger,
+      today: () => TODAY
     });
   });
 
@@ -200,6 +204,53 @@ describe('FinanceHarvestService', () => {
         expect(result.status).toBe('success');
         expect(result.details.rebalance).toEqual({ error: 'buxfer down' });
         expect(mockLogger.warn).toHaveBeenCalledWith('harvest.rebalance.failed', { error: 'buxfer down' });
+      });
+    });
+
+    describe('single-flight', () => {
+      const deferred = () => { let release; const promise = new Promise(r => { release = r; }); return { promise, release }; };
+
+      it('a second harvest while one is running joins it instead of starting another', async () => {
+        const gate = deferred();
+        mockTransactionSource.getTransactions.mockImplementation(async () => { await gate.promise; return mockTransactions; });
+
+        const a = service.harvest('default');
+        const b = service.harvest('default', { skipCompilation: true });
+        gate.release();
+        const [ra, rb] = await Promise.all([a, b]);
+
+        // One harvest's worth: one open period + one mortgage fetch.
+        expect(mockTransactionSource.getTransactions).toHaveBeenCalledTimes(2);
+        expect(mockCompilationService.compile).toHaveBeenCalledTimes(1);
+        expect(rb).toBe(ra);
+        expect(mockLogger.info).toHaveBeenCalledWith('harvest.joined', { householdId: 'default' });
+      });
+
+      it('a failed in-flight harvest rejects both callers, and the next call starts fresh', async () => {
+        const gate = deferred();
+        mockTransactionSource.getTransactions.mockImplementationOnce(async () => { await gate.promise; throw new Error('buxfer down'); });
+
+        const a = service.harvest('default');
+        const b = service.harvest('default');
+        const settled = Promise.allSettled([a, b]);
+        gate.release();
+        const [ra, rb] = await settled;
+        expect(ra.status).toBe('rejected');
+        expect(rb.status).toBe('rejected');
+        expect(rb.reason).toBe(ra.reason);
+
+        const next = await service.harvest('default');
+        expect(next.status).toBe('success');
+      });
+
+      it('harvests for different households do not join', async () => {
+        const gate = deferred();
+        mockTransactionSource.getTransactions.mockImplementation(async () => { await gate.promise; return mockTransactions; });
+        const a = service.harvest('one');
+        const b = service.harvest('two');
+        gate.release();
+        await Promise.all([a, b]);
+        expect(mockCompilationService.compile).toHaveBeenCalledTimes(2);
       });
     });
 
