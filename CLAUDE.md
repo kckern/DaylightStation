@@ -251,6 +251,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Home dashboard (`/home`: Today timeline lanes, device mosaic, history drawer, doorbell clips, rooms, cameras; `household/home/dashboard.yml` entities/timeline/mosaic policy) | `__docs/reference/home/README.md` |
 | Nutrition (scan-enriched food logging) | `__docs/reference/nutrition/README.md` |
 | Finance transaction categorization (rules, LLM naming, Jev category shadow/promote) | `__docs/reference/finance/categorization.md` |
+| Finance day-to-day burn-down + rebalance (chart, fungible Shopping↔Housewares retags in the hourly sync, `dayToDay.rebalance` rule) | `__docs/reference/finance/day-to-day-rebalance.md` |
 | Health app (log-first food logging, budget, medical) | `__docs/reference/health/README.md` |
 | Nutrition auditor (AI cleanup agent: triggers, gates, permissions, journal, cost) | `__docs/reference/health/nutrition-auditor.md` |
 | AI spend attribution (ledger app/feature/origin, scoped gateways, openai-usage CLI) | `__docs/reference/core/configuration.md` (AI usage ledger) |

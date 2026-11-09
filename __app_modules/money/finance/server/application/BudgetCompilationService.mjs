@@ -175,9 +175,6 @@ export class BudgetCompilationService {
       budgetEnd,
       accounts: config.accounts,
       dayToDayBudget,
-      // Swing-payee retag rule for keeping day-to-day on the burn-down (see
-      // browser/lib/dayToDayRebalance.mjs); null when the period sets none.
-      dayToDayRebalance: config.dayToDay?.rebalance ?? null,
       monthlyBudget,
       totalBudget,
       shortTermBuckets,

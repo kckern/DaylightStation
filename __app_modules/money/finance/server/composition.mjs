@@ -2,6 +2,7 @@ import { scopedGateway } from "#apps/common/ports/IAIGateway.mjs";
 import { YamlFinanceDatastore } from "./adapters/persistence/YamlFinanceDatastore.mjs";
 import { BudgetCompilationService } from "./application/BudgetCompilationService.mjs";
 import { FinanceHarvestService } from "./application/FinanceHarvestService.mjs";
+import { DayToDayRebalanceService } from "./application/DayToDayRebalanceService.mjs";
 import { TransactionCategorizationService } from "./application/TransactionCategorizationService.mjs";
 import { PayrollSyncService } from "./application/PayrollSyncService.mjs";
 import { TriNetPayrollGateway } from "./adapters/TriNetPayrollGateway.mjs";
@@ -63,6 +64,12 @@ export function createFinanceServices(config) {
       financeStore,
       compilationService,
       categorizationService,
+      rebalanceService: new DayToDayRebalanceService({
+        financeStore,
+        transactionGateway: buxferAdapter,
+        compilationService,
+        logger
+      }),
       logger
     });
   }

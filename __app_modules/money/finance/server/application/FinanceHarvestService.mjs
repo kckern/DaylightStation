@@ -23,6 +23,7 @@ export class FinanceHarvestService {
   #financeStore;
   #categorizationService;
   #compilationService;
+  #rebalanceService;
   #logger;
 
   /**
@@ -38,6 +39,7 @@ export class FinanceHarvestService {
     financeStore,
     categorizationService,
     compilationService,
+    rebalanceService,
     logger
   }) {
     if (!transactionSource) {
@@ -50,6 +52,7 @@ export class FinanceHarvestService {
     this.#financeStore = financeStore;
     this.#categorizationService = categorizationService;
     this.#compilationService = compilationService;
+    this.#rebalanceService = rebalanceService;
     this.#logger = logger || console;
   }
 
@@ -60,10 +63,11 @@ export class FinanceHarvestService {
    * @param {Object} [options] - Harvest options
    * @param {boolean} [options.skipCategorization=false] - Skip AI categorization
    * @param {boolean} [options.skipCompilation=false] - Skip budget compilation
+   * @param {boolean} [options.skipRebalance=false] - Skip the day-to-day rebalance (runs after compilation)
    * @returns {Promise<{status: string, details: Object}>}
    */
   async harvest(householdId, options = {}) {
-    const { skipCategorization = false, skipCompilation = false } = options;
+    const { skipCategorization = false, skipCompilation = false, skipRebalance = false } = options;
 
     this.#log('info', 'harvest.start', { householdId, options });
 
@@ -79,7 +83,8 @@ export class FinanceHarvestService {
       accountBalances: null,
       mortgageTransactions: null,
       categorization: null,
-      compilation: null
+      compilation: null,
+      rebalance: null
     };
 
     // Collect all unique accounts across budget periods
@@ -157,6 +162,17 @@ export class FinanceHarvestService {
       await this.#compilationService.compile(householdId);
       results.compilation = 'success';
       this.#log('info', 'harvest.compilation.complete');
+
+      // Keep day-to-day on its burn-down by retagging fungible buys; it reads
+      // the compilation above and recompiles when it moves anything.
+      if (!skipRebalance && this.#rebalanceService) {
+        try {
+          results.rebalance = await this.#rebalanceService.rebalance(householdId);
+        } catch (error) {
+          results.rebalance = { error: error.message };
+          this.#log('warn', 'harvest.rebalance.failed', { error: error.message });
+        }
+      }
     }
 
     this.#log('info', 'harvest.complete', { results });

@@ -492,22 +492,5 @@ describe('BudgetCompilationService', () => {
       expect(jan.spent).toBe(600);
       expect(jan.dailySpend).toBe(Math.round((600 / 31) * 100) / 100);
     });
-
-    it('passes the dayToDay rebalance rule through to the compiled budget', async () => {
-      const rebalance = { payees: ['Amazon'], dayTag: 'Groceries', swingTag: 'Housewares', tolerance: 20 };
-      mockFinanceStore.getBudgetConfig.mockReturnValue(pastConfig({ amount: 500, tags: ['Groceries'], rebalance }));
-      mockFinanceStore.getTransactions.mockReturnValue(overspend);
-
-      const result = await service.compile();
-      expect(result.budgets['2025-01-01'].dayToDayRebalance).toEqual(rebalance);
-    });
-
-    it('compiles dayToDayRebalance as null when no rule is configured', async () => {
-      mockFinanceStore.getBudgetConfig.mockReturnValue(pastConfig({ amount: 500, tags: ['Groceries'] }));
-      mockFinanceStore.getTransactions.mockReturnValue(overspend);
-
-      const result = await service.compile();
-      expect(result.budgets['2025-01-01'].dayToDayRebalance).toBeNull();
-    });
   });
 });

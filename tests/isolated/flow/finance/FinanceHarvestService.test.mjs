@@ -166,6 +166,43 @@ describe('FinanceHarvestService', () => {
       expect(mockCompilationService.compile).not.toHaveBeenCalled();
     });
 
+    describe('day-to-day rebalance', () => {
+      const withRebalance = (rebalanceService) => new FinanceHarvestService({
+        transactionSource: mockTransactionSource,
+        financeStore: mockFinanceStore,
+        compilationService: mockCompilationService,
+        rebalanceService,
+        logger: mockLogger
+      });
+
+      it('runs after compilation and reports its result', async () => {
+        const order = [];
+        mockCompilationService.compile.mockImplementation(async () => { order.push('compile'); });
+        const rebalanceService = { rebalance: vi.fn(async () => { order.push('rebalance'); return { moved: 2 }; }) };
+
+        const result = await withRebalance(rebalanceService).harvest('default');
+
+        expect(order).toEqual(['compile', 'rebalance']);
+        expect(rebalanceService.rebalance).toHaveBeenCalledWith('default');
+        expect(result.details.rebalance).toEqual({ moved: 2 });
+      });
+
+      it('skips when option is set, and when compilation is skipped', async () => {
+        const rebalanceService = { rebalance: vi.fn() };
+        await withRebalance(rebalanceService).harvest(undefined, { skipRebalance: true });
+        await withRebalance(rebalanceService).harvest(undefined, { skipCompilation: true });
+        expect(rebalanceService.rebalance).not.toHaveBeenCalled();
+      });
+
+      it('a rebalance failure does not fail the sync', async () => {
+        const rebalanceService = { rebalance: vi.fn().mockRejectedValue(new Error('buxfer down')) };
+        const result = await withRebalance(rebalanceService).harvest();
+        expect(result.status).toBe('success');
+        expect(result.details.rebalance).toEqual({ error: 'buxfer down' });
+        expect(mockLogger.warn).toHaveBeenCalledWith('harvest.rebalance.failed', { error: 'buxfer down' });
+      });
+    });
+
     it('throws when budget config is not found', async () => {
       mockFinanceStore.getBudgetConfig.mockReturnValue(null);
 
