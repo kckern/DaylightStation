@@ -32,8 +32,10 @@ export class TransactionCategorizationService {
   // id → the description this service wrote when that description still looks
   // raw to the patterns below (e.g. "Direct Deposit" vs /^Direct/). Without it
   // the next harvest re-sends the row to the LLM forever. In-process only: a
-  // restart costs one re-ask per such row.
+  // restart costs one re-ask per such row. Persisted through the finance store
+  // (loaded once, saved after a run that added entries).
   #settled = new Map();
+  #settledLoaded = false;
 
   // Patterns that indicate raw/unprocessed descriptions
   #rawDescriptionPatterns = [
@@ -79,6 +81,7 @@ export class TransactionCategorizationService {
    * @returns {Promise<{processed: Object[], failed: Object[], skipped: Object[]}>}
    */
   async categorize(transactions, householdId) {
+    this.#ensureSettled(householdId);
     const config = this.#financeStore.getCategorizationConfig(householdId);
     if (!config?.validTags) {
       this.#log('warn', 'categorization.config.missing');
@@ -104,6 +107,7 @@ export class TransactionCategorizationService {
 
     const processed = [];
     const failed = [];
+    let settledAdded = false;
 
     for (const txn of needsProcessing) {
       try {
@@ -123,6 +127,7 @@ export class TransactionCategorizationService {
           if (result.memo) txn.memo = result.memo;
           if (this.#hasRawDescription(result.friendlyName)) {
             this.#settled.set(String(txn.id), result.friendlyName);
+            settledAdded = true;
             this.#log('info', 'categorization.settled', { id: txn.id, friendlyName: result.friendlyName });
           }
 
@@ -172,6 +177,8 @@ export class TransactionCategorizationService {
       }
     }
 
+    if (settledAdded) this.#saveSettled(householdId);
+
     this.#log('info', 'categorization.complete', {
       processed: processed.length,
       failed: failed.length,
@@ -179,6 +186,45 @@ export class TransactionCategorizationService {
     });
 
     return { processed: [...ruleResults, ...processed], failed, skipped };
+  }
+
+  /**
+   * Drop settled entries for ids not in `seenIds`. Callers pass the union of ids
+   * seen across every period of one run (categorize works per period, so it
+   * cannot prune on its own without dropping another period's entries).
+   * @param {Iterable<string|number>} seenIds
+   * @param {string} [householdId]
+   */
+  pruneSettled(seenIds, householdId) {
+    this.#ensureSettled(householdId);
+    const seen = new Set([...seenIds].map(String));
+    let dropped = 0;
+    for (const id of [...this.#settled.keys()]) {
+      if (!seen.has(id)) { this.#settled.delete(id); dropped++; }
+    }
+    if (dropped > 0) {
+      this.#saveSettled(householdId);
+      this.#log('info', 'categorization.settled.pruned', { dropped, kept: this.#settled.size });
+    }
+  }
+
+  #ensureSettled(householdId) {
+    if (this.#settledLoaded) return;
+    this.#settledLoaded = true;
+    try {
+      const stored = this.#financeStore.getCategorizationSettled?.(householdId);
+      for (const [id, name] of Object.entries(stored || {})) this.#settled.set(String(id), name);
+    } catch (error) {
+      this.#log('warn', 'categorization.settled.load_failed', { error: error.message });
+    }
+  }
+
+  #saveSettled(householdId) {
+    try {
+      this.#financeStore.saveCategorizationSettled?.(Object.fromEntries(this.#settled), householdId);
+    } catch (error) {
+      this.#log('warn', 'categorization.settled.save_failed', { error: error.message });
+    }
   }
 
   /**
@@ -190,6 +236,7 @@ export class TransactionCategorizationService {
    * @returns {Promise<{suggestions: Object[], failed: Object[]}>}
    */
   async preview(transactions, householdId) {
+    this.#ensureSettled(householdId);
     const config = this.#financeStore.getCategorizationConfig(householdId);
     if (!config?.validTags) {
       return { suggestions: [], failed: [] };

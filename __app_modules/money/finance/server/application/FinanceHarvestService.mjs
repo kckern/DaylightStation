@@ -329,6 +329,7 @@ export class FinanceHarvestService {
   async #runCategorization(householdId, budgets) {
     let totalProcessed = 0;
     let totalFailed = 0;
+    const seenIds = new Set();
 
     for (const budget of budgets) {
       if (budget.closed) continue;
@@ -337,6 +338,7 @@ export class FinanceHarvestService {
       const transactions = this.#financeStore.getTransactions(startDate, householdId);
 
       if (!transactions?.length) continue;
+      for (const txn of transactions) seenIds.add(String(txn.id));
 
       const { processed, failed } = await this.#categorizationService.categorize(
         transactions,
@@ -351,6 +353,9 @@ export class FinanceHarvestService {
       totalProcessed += processed.length;
       totalFailed += failed.length;
     }
+
+    // Settled entries are pruned against the ids seen across ALL periods of this run
+    this.#categorizationService.pruneSettled?.(seenIds, householdId);
 
     this.#log('info', 'harvest.categorization.complete', {
       processed: totalProcessed,

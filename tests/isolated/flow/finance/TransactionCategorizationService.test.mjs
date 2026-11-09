@@ -383,6 +383,51 @@ describe('TransactionCategorizationService', () => {
     });
   });
 
+  describe('settled map persistence', () => {
+    const directDeposit = () => [{ id: 245703143, date: '2026-09-15', description: 'Direct Deposit', tagNames: ['Income'] }];
+
+    it('a fresh instance loads the stored map and does not re-ask', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({ '245703143': 'Direct Deposit' });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      const result = await service.categorize(directDeposit());
+      expect(mockAIGateway.chatStructured).not.toHaveBeenCalled();
+      expect(result.skipped).toHaveLength(1);
+    });
+
+    it('saves the map after settling a new row', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue(null);
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }], 'h1');
+      expect(mockFinanceStore.saveCategorizationSettled).toHaveBeenCalledWith({ '9': 'Direct Deposit' }, 'h1');
+    });
+
+    it('a throwing load logs a warning and categorization still runs', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn(() => { throw new Error('disk'); });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      const result = await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+      expect(result.processed).toHaveLength(1);
+      expect(mockLogger.warn).toHaveBeenCalledWith('categorization.settled.load_failed', { error: 'disk' });
+    });
+
+    it('a throwing save logs a warning and never fails categorization', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({});
+      mockFinanceStore.saveCategorizationSettled = vi.fn(() => { throw new Error('ro'); });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      const result = await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+      expect(result.processed).toHaveLength(1);
+      expect(mockLogger.warn).toHaveBeenCalledWith('categorization.settled.save_failed', { error: 'ro' });
+    });
+
+    it('pruneSettled drops ids not seen in the run, keeps seen ones', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({ '1': 'Direct Deposit', '2': 'Direct Deposit' });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      await service.pruneSettled(['1'], 'h1');
+      expect(mockFinanceStore.saveCategorizationSettled).toHaveBeenCalledWith({ '1': 'Direct Deposit' }, 'h1');
+    });
+  });
+
   describe('Jev category shadow', () => {
     let decisionGateway;
     const jevSays = (category, confidence) => decisionGateway.evaluate.mockResolvedValue({

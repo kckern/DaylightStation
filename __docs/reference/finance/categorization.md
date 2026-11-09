@@ -238,8 +238,11 @@ no baseline numbers. Record the first run here (date, period, `--limit`,
 
 ## 6. Known limits
 
-- **The settled map is in-process.** A restart forgets it, which costs one
-  re-ask per settled row.
+- **The settled map is stored** in `<finance base>/categorization.settled.yml`
+  (`id: friendlyName`), loaded on first use and saved after a run that settles a
+  row, so it survives restarts. The harvest prunes entries for ids absent from
+  every open period of the run. A load or save failure logs
+  `categorization.settled.load_failed` / `.save_failed` and never fails the run.
 - **CJK accuracy is weaker** per the provider. `cjk` is logged on every
   comparison and broken out by the replay.
 - **LLM few-shot drift.** Few-shot examples in `chat` that use categories not
