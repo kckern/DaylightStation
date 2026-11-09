@@ -182,10 +182,18 @@ season IDs so selection changes can be reconstructed from production logs.
 The household watched state above is one shared mark: it can say an episode was
 done, not by whom. The session log can. `FitnessShow` asks
 `GET /api/fitness/sessions/episode-history?episodes=<ids>` once per show (all
-its episode ids, comma-separated) and gets, per episode, the sessions whose
-**primary** episode it was — newest first, each rider with `minutes` (sum of
-zone minutes), `rings` and `isGuest`. It reads the existing per-month session
-index (`QueryEpisodeHistory`); `isGuest` is in the index since `INDEX_VERSION` 7.
+its episode ids, comma-separated) and gets, per episode, every session that
+**played** it — newest first, with `playedMs` (how long that video ran in the
+session) and each rider's `minutes`, `rings`, `isGuest` and `hrAvg`. It reads
+the per-month session index (`QueryEpisodeHistory`). Since `INDEX_VERSION` 9
+the index lists each video a session played as `media.items
+[{contentId, playedMs, rings}]` (audio skipped); older entries only name the
+primary, and match on that.
+
+A rider's `minutes` are their zone minutes for the whole session, **capped at
+`playedMs`** — nobody rode a 15-minute episode for 139 minutes. The cap fixes
+the absurd figures; it cannot split one rider's minutes between two episodes
+of the same session.
 
 **Credit rule** (`browser/lib/episodeHistory.js`): a rider did the episode when
 they rode at least **half** of it. A rider with no recorded zone minutes, or an
@@ -196,14 +204,33 @@ episode with no duration, is credited — the session is the only evidence.
   place of the check mark, dated by the newest of them. With no credited
   household rider — or if the history call fails — the chip is the plain
   media-server one, unchanged. An in-progress episode keeps its % badge.
-- **Episode details.** Under the description, up to five credited sessions:
-  avatars, date, minutes (the longest credited rider), and rings when the row is
-  one rider. No history → nothing is shown.
+- **Episode panel** (`player/EpisodePanel.jsx`). The show screen's left column
+  always describes the focused episode — the next-up one on load, then whatever
+  is tapped (title strip or mosaic) or reached with the pad. Top to bottom:
+  show and season (with the governed lock and voice-memo button); a **mosaic**
+  of the season's episodes (`?w=160&h=90` thumbnails; done = full colour, not
+  done = dimmed by opacity, in progress = amber underline, focused = white
+  outline; one row up to six, then 5 or 6 wide); **coverage** chips
+  (`seasonCoverage`: each household rider's done/total for the season); the
+  hero with E#, duration and a resume bar; **Resume m:ss + Start over** on a
+  resumable show with a saved position, else **Play**; **who's done it**
+  (`riderSummary`): one row per rider with count, latest date, minutes and
+  rings — riders on the bike now first, household members who never did it
+  dimmed as "Not yet"; then the description, three lines. Household = the
+  `primary` users in the fitness config. Text is 16px+, rider names 18px.
+- **Gamepad / arrow keys.** The D-pad walks the grid (columns read from the
+  grid), focus selects and puts a solid ring on the card; A / Enter plays the
+  focused episode (Resume when it resumes). Focus never launches, and a locked
+  episode is left to its tap-to-unlock path. Keys belong to the sidebar menu
+  while it is open and to the player while something plays. Episodes are
+  compared by `episodeKey` (`plex`, else `id`) — playable items may carry only
+  `id`.
 
-Only a session's primary episode counts, so a short episode played before the
-main one in the same session is not credited. Logs:
-`fitness.episode_history.query` (backend: requested, matched, scanned, totalMs),
-`fitness.show.episode_history_loaded` / `fitness.show.episode_history_failed`.
+Logs: `fitness.episode_history.query` (backend: requested, matched, scanned,
+totalMs), `fitness.show.episode_history_loaded` /
+`fitness.show.episode_history_failed`, `fitness.show.episode_focus` (debug),
+`fitness.show.panel_play` (mode: play / resume / start-over),
+`fitness.show.pad_play_locked`.
 
 ---
 
