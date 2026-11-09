@@ -44,7 +44,8 @@ const INDEX_DIR_NAME = '_index';
 // v6: each participant carries hrAvg (Health credits home sessions from it).
 // v7: each participant carries isGuest (the show screen's per-rider episode badge).
 // v8: junk sessions (shared/junkSession.mjs) are left out of the list.
-const INDEX_VERSION = 8;
+// v9: media.items lists every video played (episode history credits each).
+const INDEX_VERSION = 9;
 
 /**
  * Derive session date from sessionId
@@ -478,6 +479,15 @@ export class YamlSessionDatastore extends ISessionDatastore {
         };
         media = {
           primary: primaryItem ? formatMedia(primaryItem) : null,
+          // Every video the session played — episode history credits each one
+          // and caps riders' minutes at how long it ran.
+          items: summaryMediaObjects
+            .filter(m => m.contentId && m.mediaType !== 'audio')
+            .map(m => ({
+              contentId: ItemId.normalize(m.contentId, ItemId.extractSource(m.contentId)),
+              playedMs: Number.isFinite(Number(m.durationMs)) ? Number(m.durationMs) : null,
+              rings: Number.isFinite(Number(m.rings)) ? Number(m.rings) : null,
+            })),
         };
       }
 

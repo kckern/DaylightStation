@@ -35,7 +35,7 @@ describe('QueryEpisodeHistory', () => {
     expect(Object.keys(episodes).sort()).toEqual(['plex:1', 'plex:2']);
     expect(episodes['plex:1'].map((s) => s.sessionId)).toEqual(['20261022070000', '20261014070000']);
     expect(episodes['plex:1'][0].riders.map((r) => r.id)).toEqual(['rider-a', 'rider-b']);
-    expect(episodes['plex:1'][0].riders[0]).toEqual({ id: 'rider-a', displayName: 'Rider', minutes: 31, rings: 10, isGuest: false });
+    expect(episodes['plex:1'][0].riders[0]).toEqual({ id: 'rider-a', displayName: 'Rider', minutes: 31, rings: 10, isGuest: false, hrAvg: null });
     expect(calls[0]).toEqual({ start: '2010-01-01', end: '2026-10-22', hid: 'hh' });
   });
 
@@ -67,5 +67,42 @@ describe('QueryEpisodeHistory', () => {
     expect(riderMinutes({ zoneMinutes: { cool: 21, active: 5.5, warm: 1.08 } })).toBe(27.6);
     expect(riderMinutes({ zoneMinutes: { cool: 0 } })).toBeNull();
     expect(riderMinutes({})).toBeNull();
+  });
+
+  // Episode-scoped history: a session plays several videos; each one it played
+  // gets the session, and nobody is credited more minutes than the video ran.
+  it('credits every video a session played, not only the primary one', async () => {
+    const { uc } = makeUseCase([{
+      sessionId: '20261007132927', date: '2026-10-07', startTime: 5000,
+      participants: { 'rider-a': rider(139) },
+      media: {
+        primary: { contentId: 'plex:600750' },
+        items: [
+          { contentId: 'plex:600750', playedMs: 936516, rings: 560 },
+          { contentId: 'plex:622573', playedMs: 625927, rings: 281 },
+        ],
+      },
+    }]);
+    const { episodes } = await uc.execute({ episodeIds: ['600750', '622573'] });
+    expect(Object.keys(episodes).sort()).toEqual(['plex:600750', 'plex:622573']);
+    expect(episodes['plex:622573'][0]).toMatchObject({ sessionId: '20261007132927', playedMs: 625927 });
+  });
+
+  it("clamps a rider's minutes to how long the episode actually played", async () => {
+    const { uc } = makeUseCase([{
+      sessionId: '20261007132927', date: '2026-10-07', startTime: 5000,
+      participants: { 'rider-a': rider(139, { hrAvg: 128 }), 'rider-b': rider(9) },
+      media: { primary: { contentId: 'plex:600750' }, items: [{ contentId: 'plex:600750', playedMs: 936516, rings: 560 }] },
+    }]);
+    const [row] = (await uc.execute({ episodeIds: ['600750'] })).episodes['plex:600750'];
+    expect(row.riders.find((r) => r.id === 'rider-a')).toMatchObject({ minutes: 15.6, hrAvg: 128 });
+    expect(row.riders.find((r) => r.id === 'rider-b').minutes).toBe(9);
+  });
+
+  it('still matches an older index entry that only has a primary', async () => {
+    const { uc } = makeUseCase([session('20261014070000', 1000, 'plex:1', { 'rider-a': rider(28) })]);
+    const [row] = (await uc.execute({ episodeIds: ['1'] })).episodes['plex:1'];
+    expect(row).toMatchObject({ playedMs: null });
+    expect(row.riders[0].minutes).toBe(28);
   });
 });
