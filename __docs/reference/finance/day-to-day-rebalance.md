@@ -60,6 +60,11 @@ skipped.
 
 ## 3. What the sync does
 
+The harvest fetches transactions only for periods that are not `closed` and did
+not end more than 60 days ago; a finished period keeps its stored
+`transactions.yml` (compile still reads it). Only one harvest runs per household
+at a time; a refresh during the hourly sync joins it.
+
 On every harvest, after compilation, for each open period with a rule it plans
 two months:
 

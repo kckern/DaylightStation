@@ -18,6 +18,11 @@
 import { nowDate } from '#system/utils/time.mjs';
 import { NotFoundError, ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
+// A budget year that ended this long ago no longer changes in Buxfer; its stored
+// transactions.yml is kept as is (compile still reads it).
+const FINISHED_PERIOD_GRACE_DAYS = 60;
+const DAY_MS = 86400000;
+
 export class FinanceHarvestService {
   #transactionSource;
   #financeStore;
@@ -26,6 +31,7 @@ export class FinanceHarvestService {
   #rebalanceService;
   #logger;
   #inFlight = new Map();
+  #today;
 
   /**
    * @param {Object} deps - Dependencies
@@ -34,6 +40,7 @@ export class FinanceHarvestService {
    * @param {Object} [deps.categorizationService] - TransactionCategorizationService instance
    * @param {Object} [deps.compilationService] - BudgetCompilationService instance
    * @param {Object} [deps.logger] - Logger instance
+   * @param {() => string} [deps.today] - Household-local date (YYYY-MM-DD); defaults to nowDate
    */
   constructor({
     transactionSource,
@@ -41,7 +48,8 @@ export class FinanceHarvestService {
     categorizationService,
     compilationService,
     rebalanceService,
-    logger
+    logger,
+    today = nowDate
   }) {
     if (!transactionSource) {
       throw new ValidationError('FinanceHarvestService requires transactionSource', { field: 'transactionSource' });
@@ -55,6 +63,7 @@ export class FinanceHarvestService {
     this.#compilationService = compilationService;
     this.#rebalanceService = rebalanceService;
     this.#logger = logger || console;
+    this.#today = today;
   }
 
   /**
@@ -117,6 +126,11 @@ export class FinanceHarvestService {
 
       const startDate = this.#toDateString(budget.timeframe.start);
       const endDate = this.#toDateString(budget.timeframe.end);
+
+      if (this.#isFinished(endDate)) {
+        this.#log('debug', 'harvest.period.skipped', { start: startDate, end: endDate, reason: 'finished' });
+        continue;
+      }
 
       // Add accounts to set
       budget.accounts?.forEach(acc => allAccounts.add(acc));
@@ -347,6 +361,11 @@ export class FinanceHarvestService {
 
   #toDateString(date) {
     return new Date(date).toISOString().slice(0, 10);
+  }
+
+  #isFinished(endDate) {
+    const days = (Date.parse(this.#today()) - Date.parse(endDate)) / DAY_MS;
+    return days > FINISHED_PERIOD_GRACE_DAYS;
   }
 
   #getCurrentDate() {

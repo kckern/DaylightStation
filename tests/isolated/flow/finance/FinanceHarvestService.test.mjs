@@ -207,6 +207,45 @@ describe('FinanceHarvestService', () => {
       });
     });
 
+    describe('finished periods', () => {
+      const withToday = (today) => new FinanceHarvestService({
+        transactionSource: mockTransactionSource,
+        financeStore: mockFinanceStore,
+        logger: mockLogger,
+        today: () => today
+      });
+      const periodEnding = (end, start = '2025-04-01') => ({
+        budget: [{ timeframe: { start, end }, accounts: ['Checking'], closed: false }]
+      });
+
+      it('does not fetch or save a period that ended long ago, and logs why', async () => {
+        mockFinanceStore.getBudgetConfig.mockReturnValue({
+          budget: [
+            ...periodEnding('2025-03-31', '2024-04-01').budget,
+            ...mockBudgetConfig.budget.slice(0, 1)
+          ]
+        });
+        const result = await withToday('2026-11-09').harvest();
+
+        expect(result.details.budgetPeriods).toEqual([]);
+        expect(mockFinanceStore.saveTransactions).not.toHaveBeenCalled();
+        expect(mockLogger.debug).toHaveBeenCalledWith('harvest.period.skipped', expect.objectContaining({ reason: 'finished' }));
+      });
+
+      it('fetches a period that ended exactly 60 days before today', async () => {
+        mockFinanceStore.getBudgetConfig.mockReturnValue(periodEnding('2026-09-10'));
+        mockFinanceStore.getTransactions.mockReturnValue(null);
+        const result = await withToday('2026-11-09').harvest(undefined, { skipCategorization: true });
+        expect(result.details.budgetPeriods).toHaveLength(1);
+      });
+
+      it('skips a period that ended 61 days before today', async () => {
+        mockFinanceStore.getBudgetConfig.mockReturnValue(periodEnding('2026-09-09'));
+        const result = await withToday('2026-11-09').harvest();
+        expect(result.details.budgetPeriods).toEqual([]);
+      });
+    });
+
     describe('single-flight', () => {
       const deferred = () => { let release; const promise = new Promise(r => { release = r; }); return { promise, release }; };
 
