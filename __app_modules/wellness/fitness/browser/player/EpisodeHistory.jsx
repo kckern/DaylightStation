@@ -1,9 +1,9 @@
 import React from 'react';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 
-// Per-rider episode history: the avatar stack on a grid tile's "done" chip,
-// and the quiet session list under an episode's description. Data shaping
-// (who is credited) lives in ../lib/episodeHistory.js.
+// Per-rider episode history: the avatar used across the show screen and the
+// stack on a grid tile's "done" chip. Data shaping (who is credited) lives in
+// ../lib/episodeHistory.js; the panel's rows are in EpisodePanel.jsx.
 
 const FALLBACK_AVATAR = '/static/img/users/user';
 
@@ -28,31 +28,3 @@ export const RiderStack = ({ riders, overflow = 0 }) => (
     {overflow > 0 ? <span className="episode-rider-overflow">+{overflow}</span> : null}
   </span>
 );
-
-const rowStats = (riders) => {
-  const minutes = Math.max(0, ...riders.map((r) => (Number.isFinite(r.minutes) ? r.minutes : 0)));
-  const parts = [];
-  if (minutes > 0) parts.push(`${Math.round(minutes)} min`);
-  // Rings are per rider, so a shared row would have to pick one — show them
-  // only when the row is one person.
-  if (riders.length === 1 && Number.isFinite(riders[0].rings) && riders[0].rings > 0) {
-    parts.push(`${riders[0].rings} rings`);
-  }
-  return parts;
-};
-
-export const EpisodeHistoryList = ({ rows, formatDate }) => {
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  return (
-    <ul className="episode-history" data-testid="episode-history">
-      {rows.map((row) => (
-        <li key={row.sessionId} className="episode-history__row">
-          <RiderStack riders={row.riders} />
-          <span className="episode-history__text">
-            {[formatDate(row.startTime), ...rowStats(row.riders)].filter(Boolean).join(' · ')}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-};

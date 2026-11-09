@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, act, waitFor, cleanup } from '@testing-library/react';
+import { render, fireEvent, screen, act, waitFor, cleanup } from '@testing-library/react';
 
 beforeAll(() => {
   if (!global.ResizeObserver) {
@@ -91,6 +91,18 @@ describe('FitnessShow presence gate', () => {
     expect(screen.queryByText('Plain Show')).not.toBeInTheDocument();
     expect(screen.queryByText('Ep 1')).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Fingerprint unlock' })).toBeVisible();
+  });
+
+  it('adult away → a pad A / Enter press plays nothing behind the gate', async () => {
+    presence = { enabled: true, home: false, state: 'off', reason: null };
+    mockCtx = ctx({ presence_gate: { ...GATE_CFG, gate: ['show'] } });
+    const setFitnessPlayQueue = vi.fn();
+    render(<FitnessShow showId="plex:9000" setFitnessPlayQueue={setFitnessPlayQueue} onPlay={vi.fn()} onBack={vi.fn()} />);
+    await waitFor(() => expect(identity.registerAdmin).toHaveBeenCalled());
+    // The prompt is cancelled: only the notice remains, no modal on screen.
+    document.querySelectorAll('[aria-modal="true"]').forEach((el) => el.removeAttribute('aria-modal'));
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(setFitnessPlayQueue).not.toHaveBeenCalled();
   });
 
   it('sensor unavailable → gated (fail closed)', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCredited, gridBadge, detailRows, creditedSessions } from './episodeHistory.js';
+import { isCredited, gridBadge, creditedSessions, riderSummary, seasonCoverage, mosaicThumb } from './episodeHistory.js';
 
 const r = (id, minutes, extra = {}) => ({ id, displayName: id, minutes, rings: 10, isGuest: false, ...extra });
 const s = (sessionId, startTime, riders) => ({ sessionId, startTime, date: '2026-10-22', riders });
@@ -57,10 +57,56 @@ describe('gridBadge', () => {
   });
 });
 
-describe('detailRows', () => {
-  it('keeps the newest five credited sessions, guests included', () => {
-    const sessions = Array.from({ length: 7 }, (_, i) => s(String(7 - i), 7 - i, [r('guest', 30, { isGuest: true })]));
-    const rows = detailRows(sessions, 1800);
-    expect(rows.map((x) => x.sessionId)).toEqual(['7', '6', '5', '4', '3']);
+// ── The redesigned panel: one row per rider, season coverage, mosaic thumbs ──
+
+describe('riderSummary', () => {
+  const sessions = [
+    s('s3', 3000, [r('rider-a', 30, { rings: 90 })]),
+    s('s2', 2000, [r('rider-a', 25), r('rider-b', 3), r('guest-1', 28, { isGuest: true })]),
+    s('s1', 1000, [r('rider-b', 29)]),
+  ];
+  const household = [{ id: 'rider-a', displayName: 'Rider A' }, { id: 'rider-b', displayName: 'Rider B' }, { id: 'rider-c', displayName: 'Rider C' }];
+
+  it('gives one row per credited rider with their count and latest ride', () => {
+    const rows = riderSummary(sessions, 1800, { household });
+    expect(rows.find((x) => x.id === 'rider-a')).toMatchObject({ count: 2, lastStartTime: 3000, lastMinutes: 30, lastRings: 90, done: true });
+    // Rider B's 3-minute drop-in does not count; his full ride on s1 does.
+    expect(rows.find((x) => x.id === 'rider-b')).toMatchObject({ count: 1, lastStartTime: 1000, done: true });
+    expect(rows.find((x) => x.id === 'guest-1')).toMatchObject({ isGuest: true, done: true });
+  });
+
+  it('lists household members who never did it, after everyone who did', () => {
+    const rows = riderSummary(sessions, 1800, { household });
+    expect(rows.at(-1)).toMatchObject({ id: 'rider-c', displayName: 'Rider C', count: 0, done: false });
+    expect(rows.map((x) => x.id)).toEqual(['rider-a', 'guest-1', 'rider-b', 'rider-c']);
+  });
+
+  it('puts riders on the bike now first', () => {
+    const rows = riderSummary(sessions, 1800, { household, activeIds: ['rider-c', 'rider-b'] });
+    expect(rows.slice(0, 2).map((x) => [x.id, x.active])).toEqual([['rider-b', true], ['rider-c', true]]);
+  });
+});
+
+describe('seasonCoverage', () => {
+  it('counts the season episodes each household rider did', () => {
+    const eps = [{ id: 'e1', duration: 1800 }, { id: 'e2', duration: 1800 }, { id: 'e3', duration: 1800 }];
+    const history = {
+      e1: [s('a', 1, [r('rider-a', 30), r('guest-1', 30, { isGuest: true })])],
+      e2: [s('b', 2, [r('rider-a', 30), r('rider-b', 30)])],
+      e3: [s('c', 3, [r('rider-b', 2)])],
+    };
+    const household = [{ id: 'rider-a', displayName: 'Rider A' }, { id: 'rider-b', displayName: 'Rider B' }, { id: 'rider-c', displayName: 'Rider C' }];
+    expect(seasonCoverage(eps, (ep) => history[ep.id], household)).toEqual([
+      { id: 'rider-a', displayName: 'Rider A', done: 2, total: 3 },
+      { id: 'rider-b', displayName: 'Rider B', done: 1, total: 3 },
+    ]);
+  });
+});
+
+describe('mosaicThumb', () => {
+  it('asks the image proxy for a small copy', () => {
+    expect(mosaicThumb('/api/v1/proxy/plex/library/metadata/1/thumb/2', 160, 90)).toBe('/api/v1/proxy/plex/library/metadata/1/thumb/2?w=160&h=90');
+    expect(mosaicThumb('/x?a=1', 160, 90)).toBe('/x?a=1&w=160&h=90');
+    expect(mosaicThumb(null, 160, 90)).toBeNull();
   });
 });
