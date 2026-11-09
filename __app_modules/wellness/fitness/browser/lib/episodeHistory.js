@@ -61,3 +61,59 @@ export function gridBadge(sessions, episodeDurationSeconds) {
 export function detailRows(sessions, episodeDurationSeconds) {
   return creditedSessions(sessions, episodeDurationSeconds).slice(0, DETAIL_MAX_SESSIONS);
 }
+
+/**
+ * The panel's "who's done it": one row per rider who did the episode (newest
+ * ride first), then household members who never have, so absence reads too.
+ * Riders on the bike now come first. `household` is [{id, displayName}].
+ */
+export function riderSummary(sessions, episodeDurationSeconds, { household = [], activeIds = [] } = {}) {
+  const active = new Set(activeIds);
+  const names = new Map(household.map((m) => [m.id, m.displayName]));
+  const rows = new Map();
+  for (const s of creditedSessions(sessions, episodeDurationSeconds)) {
+    for (const r of s.riders) {
+      const row = rows.get(r.id);
+      if (row) { row.count += 1; continue; }
+      rows.set(r.id, {
+        id: r.id,
+        displayName: names.get(r.id) || r.displayName || r.id,
+        count: 1,
+        lastStartTime: s.startTime ?? null,
+        lastMinutes: Number.isFinite(r.minutes) ? r.minutes : null,
+        lastRings: Number.isFinite(r.rings) ? r.rings : null,
+        isGuest: r.isGuest === true,
+        done: true,
+      });
+    }
+  }
+  for (const m of household) {
+    if (!rows.has(m.id)) {
+      rows.set(m.id, { id: m.id, displayName: m.displayName || m.id, count: 0, lastStartTime: null, lastMinutes: null, lastRings: null, isGuest: false, done: false });
+    }
+  }
+  const list = [...rows.values()].map((row) => ({ ...row, active: active.has(row.id) }));
+  // Map order is already done-by-recency, then household order: a stable sort keeps it.
+  return list.sort((a, b) => (b.active - a.active) || (b.done - a.done));
+}
+
+/** Season coverage chips: how many of these episodes each household rider did. */
+export function seasonCoverage(episodes, historyFor, household = []) {
+  const list = Array.isArray(episodes) ? episodes : [];
+  return household
+    .map((m) => ({
+      id: m.id,
+      displayName: m.displayName || m.id,
+      done: list.filter((ep) => creditedSessions(historyFor(ep), ep?.duration)
+        .some((s) => s.riders.some((r) => r.id === m.id && !r.isGuest))).length,
+      total: list.length,
+    }))
+    .filter((c) => c.done > 0)
+    .sort((a, b) => b.done - a.done);
+}
+
+/** A small copy of an episode image — the proxy resizes on `w`/`h`. */
+export function mosaicThumb(url, width, height) {
+  if (!url) return null;
+  return `${url}${url.includes('?') ? '&' : '?'}w=${width}&h=${height}`;
+}
