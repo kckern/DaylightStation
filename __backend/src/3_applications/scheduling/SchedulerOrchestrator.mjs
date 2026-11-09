@@ -34,6 +34,7 @@ export class SchedulerOrchestrator {
     newsReporterExecutor = null,
     schoolExecutor = null,
     runInJobContext = null,
+    logger = null,
     clock = () => new Date()
   }) {
     this.schedulerService = schedulerService;
@@ -55,6 +56,7 @@ export class SchedulerOrchestrator {
     this.newsReporterExecutor = newsReporterExecutor;
     this.schoolExecutor = schoolExecutor;
     this.#clock = clock;
+    this.logger = logger;
     this.runningJobs = new Map();
     // Composition supplies this to run each job's work under a `job:<id>`
     // context (the AI usage ledger's origin). Identity when absent.
@@ -262,8 +264,17 @@ export class SchedulerOrchestrator {
 
     const execution = await this.executeJob(job, executionId, manual, timestamp);
 
-    // Compute next run time
-    const nextRun = this.schedulerService.computeNextRun(job, now);
+    // Anchor the next run on the scheduled slot when the tick landed early, so the
+    // slot we just ran can never be computed as the next one (double-run).
+    let anchor = now;
+    if (!manual) {
+      const slot = Date.parse(state.nextRun);
+      if (!Number.isNaN(slot) && slot > now.getTime()) {
+        this.logger?.debug?.('scheduler.job.early_tick', { jobId: job.id, msEarly: slot - now.getTime() });
+        anchor = new Date(slot);
+      }
+    }
+    const nextRun = this.schedulerService.computeNextRun(job, anchor);
 
     // Update state
     state.updateAfterExecution(execution, this.timestampCodec.format(nextRun));

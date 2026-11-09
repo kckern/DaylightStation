@@ -3948,7 +3948,8 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     newsReporterExecutor: newsReporter.executor,
     schoolExecutor: schoolMaintenanceExecutor,
     // AI spend a job causes is stamped `job:<id>` in the usage ledger.
-    runInJobContext: (jobId, work) => runWithOrigin(`job:${jobId}`, work)
+    runInJobContext: (jobId, work) => runWithOrigin(`job:${jobId}`, work),
+    logger: rootLogger.child({ module: 'scheduler' })
   });
 
   const scheduler = new Scheduler({
