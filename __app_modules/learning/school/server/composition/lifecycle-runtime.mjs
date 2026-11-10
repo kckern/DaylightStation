@@ -260,6 +260,25 @@ try {
   // writes but not against each other, a real read-modify-write race this
   // avoids by construction. Wired only once the lifecycle itself is (no
   // lifecycle, no allocationStore/repository to resolve against either).
+  // Presence hook: same adapter, `presence_hook` block of school.yml. Same
+  // guard and its own try/catch for the same reason as above.
+  // Exposed from the runtime so the card-tap handler and the HTTP sources share it.
+  let presenceHook = null;
+  if (homeAutomationAdapters.haGateway) {
+    try {
+      const { SchoolGradingHookAdapter } = await import("../adapters/SchoolGradingHookAdapter.mjs");
+      presenceHook = new SchoolGradingHookAdapter({
+        gateway: homeAutomationAdapters.haGateway,
+        loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+        resolveStudent: learnerDisplayName,
+        configKey: 'presence_hook',
+        logger: rootLogger.child({ module: 'school-presence-hook' }),
+      });
+    } catch (err) {
+      presenceHook = null;
+      schoolLifecycleLogger.warn('school.presence_hook.wiring-failed', { error: err.message });
+    }
+  }
   if (dependencies.schoolLifecycle.wired && dependencies.schoolLifecycle.stores?.allocationStore && dependencies.schoolLifecycle.stores?.printDocuments) {
     try {
       const { createSchoolPrintScanConsumer } = await import("./schoolPrintScanConsumer.mjs");
@@ -333,6 +352,7 @@ try {
             : null;
         })(),
         gradingHook,
+        presenceHook,
         // Every non-graded feed prints a notice slip through the same
         // thermal printer the result receipts use (2026-09-15).
         receipts: dependencies.schoolLifecycle.receipts ?? null,
@@ -997,5 +1017,5 @@ try {
   if (dependencies.schoolLifecycle.selfServiceRouter) {
     v1Routers.school.use('/self-service', dependencies.schoolLifecycle.selfServiceRouter);
   }
-  return { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes };
+  return { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook };
 }

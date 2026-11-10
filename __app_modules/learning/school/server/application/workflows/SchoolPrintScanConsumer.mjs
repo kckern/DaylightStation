@@ -54,6 +54,8 @@ import { courseDisplay } from "../../domain/curriculum/display.mjs";
  * @param {{getPublished: Function}} [deps.printDocuments] - resolves a
  *   sheet's published title for the slip and the panel; absent, slips are
  *   untitled.
+ * @param {{fire: Function}} [deps.presenceHook] - reports someone is at the desk
+ *   (once per sheet event, readable or not); detached, never awaited.
  * @param {{fire: Function}} [deps.gradingHook] - `SchoolGradingHookAdapter`-shaped
  *   (or any fake with a `fire(outcome)`), optional. Fired fire-and-forget
  *   (never awaited) at each of the four terminal scan outcomes — unresolved,
@@ -82,7 +84,7 @@ import { courseDisplay } from "../../domain/curriculum/display.mjs";
  */
 export function createSchoolPrintScanConsumer({
   realtime, config = {}, resolveCardScan, recordCardScanOutcome = null,
-  closeSessionOutcome = null, gradingHook = null, logger = console,
+  closeSessionOutcome = null, gradingHook = null, presenceHook = null, logger = console,
   receipts = null, printDocuments = null, replaceUnreadableCard = null,
   curriculum = null, studentName = null, today = null,
   scheduler = null, pushLabelTimeoutMs = 2000,
@@ -300,6 +302,14 @@ export function createSchoolPrintScanConsumer({
       }
       return sheets;
     };
+
+    // Presence: a sheet at the reader means someone is working, whether or not
+    // it reads. Detached from everything below.
+    if (presenceHook) {
+      Promise.resolve()
+        .then(() => presenceHook.fire({ source: 'omr', device: payload.device ?? null, result: 'present' }))
+        .catch(() => {});
+    }
 
     if (payload.error?.code === 'OMR_COLUMN_COUNT') {
       logger.warn?.('school.print.scan-frame-invalid', payload.error);

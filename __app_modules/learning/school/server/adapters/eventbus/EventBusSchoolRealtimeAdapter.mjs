@@ -106,7 +106,7 @@ export class EventBusSchoolRealtimeAdapter extends ISchoolRealtimeGateway {
   }
   onPrintSheet(config, handler) {
     const unsubscribers = printTopics(config).map((topic) => this.#on(topic, handler, (wire) => (
-      wire?.event === 'sheet' && Array.isArray(wire.marks) ? decodePrintSheet(wire.marks) : null
+      wire?.event === 'sheet' && Array.isArray(wire.marks) ? { ...decodePrintSheet(wire.marks), device: topic } : null
     )));
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
   }

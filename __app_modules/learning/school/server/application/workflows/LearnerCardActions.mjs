@@ -36,7 +36,7 @@
  * @param {object} [deps.logger]
  * @returns {(args: {learnerId: string, location?: string}) => Promise<object>}
  */
-export function makePrintAgendaHandler({ resolvePersonalCard, realtime, clock = () => new Date(), logger = console } = {}) {
+export function makePrintAgendaHandler({ resolvePersonalCard, realtime, presenceHook = null, clock = () => new Date(), logger = console } = {}) {
   return async ({ learnerId, location } = {}) => {
     const result = await resolvePersonalCard.execute({ learnerId });
 
@@ -45,6 +45,15 @@ export function makePrintAgendaHandler({ resolvePersonalCard, realtime, clock = 
         location, learnerId, status: result?.status ?? null, printed: result?.printed ?? null,
       });
     } catch { /* the tap outranks the log line */ }
+
+    // Presence for the room lights: every outcome counts (a tap is someone at
+    // the desk, printed or not). Detached — never awaited, never throws into
+    // the tap; Home Assistant being slow or down must not delay an agenda.
+    if (presenceHook) {
+      Promise.resolve()
+        .then(() => presenceHook.fire({ source: 'card', location, learnerId, event: result?.status ?? null, result: 'present' }))
+        .catch(() => {});
+    }
 
     if (result?.status === 'agenda_suppressed') {
       try {
