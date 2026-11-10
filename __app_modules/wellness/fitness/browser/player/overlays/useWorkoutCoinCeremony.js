@@ -38,7 +38,9 @@ export function isRunOnScreen({ moduleLive = false, queueLength = 0, pathname = 
 }
 
 export const WORKOUT_FINISHED_EVENT = 'fitness-workout-finished';
-const SEEN_KEY = 'fitness.coinCeremony.seen';
+// v2: v1 baselines recorded nothing for rides listed as groups (looked up by group id), so re-baseline once.
+const SEEN_KEY = 'fitness.coinCeremony.seen.v2';
+const MAX_LOOK_IDS = 8;
 const MAX_AGE_MS = 7 * 86_400_000;
 const SETTLE_MS = 1200;
 
@@ -48,6 +50,21 @@ const shownThisPage = new Set();
 // without marking them seen.
 const pendingIds = new Set();
 let skippedLogged = false;
+
+/** Session ids to look up: a merged-ride group expands to its segment ids (payouts are keyed by segment). */
+export function expandSessionIds(list) {
+  const out = [];
+  for (const s of list || []) {
+    if (!s) continue;
+    if (s.isGroup || Array.isArray(s.segments)) {
+      for (const seg of s.segments || []) if (seg?.sessionId) out.push(String(seg.sessionId));
+    } else {
+      const id = s.sessionId ?? s.id;
+      if (id) out.push(String(id));
+    }
+  }
+  return [...new Set(out)].slice(0, MAX_LOOK_IDS);
+}
 
 /** True when this browser has never recorded a seen set (or cannot read one). */
 function isFirstRun() {
@@ -153,7 +170,7 @@ export function useWorkoutCoinCeremony({ hold = false } = {}) {
         let ids = sessionIds;
         if (!ids) {
           const list = await DaylightAPI(`/api/v1/fitness/sessions?since=${since}&limit=${limit}`);
-          ids = (list?.sessions || []).map((s) => s?.sessionId).filter(Boolean).map(String);
+          ids = expandSessionIds(list?.sessions);
         }
         const bodies = [];
         for (const id of ids) {

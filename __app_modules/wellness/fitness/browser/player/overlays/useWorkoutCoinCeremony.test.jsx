@@ -19,7 +19,7 @@ const learner = (id, entries, wallet) => ({ learnerId: id, learnerName: id.toUpp
 let sessions; let paid;
 function serve() {
   api.mockImplementation(async (url) => {
-    if (url.startsWith('/api/v1/fitness/sessions')) return { sessions: sessions.map((sessionId) => ({ sessionId })) };
+    if (url.startsWith('/api/v1/fitness/sessions')) return { sessions: sessions.map((s) => (typeof s === 'string' ? { sessionId: s } : s)) };
     const m = url.match(/^\/api\/v1\/earnings\/workout\/([^/]+)\/paid$/);
     if (m) return { sessionId: m[1], mode: 'live', learners: paid[m[1]] || [] };
     throw new Error(`unexpected ${url}`);
@@ -32,7 +32,7 @@ const mount = async (opts) => {
 };
 
 describe('useWorkoutCoinCeremony', () => {
-  beforeEach(() => { api.mockReset(); localStorage.clear(); localStorage.setItem('fitness.coinCeremony.seen', '{}'); __resetShownForTest(); logSpy.debug.mockClear(); logSpy.info.mockClear(); wsHandler = null; sessions = ['s1']; paid = {}; serve(); });
+  beforeEach(() => { api.mockReset(); localStorage.clear(); localStorage.setItem('fitness.coinCeremony.seen.v2', '{}'); __resetShownForTest(); logSpy.debug.mockClear(); logSpy.info.mockClear(); wsHandler = null; sessions = ['s1']; paid = {}; serve(); });
   afterEach(() => vi.useRealTimers());
 
   it('plays an unseen minted payout on load, from the ledger entries and wallet', async () => {
@@ -131,7 +131,7 @@ describe('first run baseline', () => {
     const { result } = await mount();
     expect(result.current.ceremony).toBeNull();
     expect(logSpy.info).toHaveBeenCalledWith('fitness.coin_ceremony.baselined', { txnIds: ['t1', 't2'] });
-    expect(Object.keys(JSON.parse(localStorage.getItem('fitness.coinCeremony.seen')))).toEqual(['t1', 't2']);
+    expect(Object.keys(JSON.parse(localStorage.getItem('fitness.coinCeremony.seen.v2')))).toEqual(['t1', 't2']);
   });
 
   it('a second load with a newly minted entry plays only that one', async () => {
@@ -146,7 +146,7 @@ describe('first run baseline', () => {
   it('a baseline that finds nothing still records the key, so the next load plays a payout minted in the gap', async () => {
     paid.s1 = [];
     const first = await mount();
-    expect(localStorage.getItem('fitness.coinCeremony.seen')).toBe('{}');
+    expect(localStorage.getItem('fitness.coinCeremony.seen.v2')).toBe('{}');
     first.unmount();
     paid.s1 = [learner('learner-a', [entry('t1', 2, 1000)], 4)];
     const second = await mount();
@@ -159,8 +159,31 @@ describe('first run baseline', () => {
   });
 });
 
+describe('grouped rides', () => {
+  beforeEach(() => { api.mockReset(); localStorage.clear(); localStorage.setItem('fitness.coinCeremony.seen.v2', '{}'); __resetShownForTest(); wsHandler = null; paid = {}; });
+
+  it('a group entry is looked up by its segment ids, never the group id; plain entries unchanged', async () => {
+    sessions = [{ id: 'group:g1', isGroup: true, segments: [{ sessionId: 'a1', rings: 10 }, { sessionId: 'a2', rings: 0 }, { sessionId: 'a1' }] }, { sessionId: 'p1' }];
+    serve();
+    renderHook(() => useWorkoutCoinCeremony());
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/api/v1/earnings/workout/p1/paid'));
+    const urls = api.mock.calls.map((c) => c[0]);
+    expect(urls).toContain('/api/v1/earnings/workout/a1/paid');
+    expect(urls).toContain('/api/v1/earnings/workout/a2/paid');
+    expect(urls.filter((u) => u.includes('a1/paid'))).toHaveLength(1);
+    expect(urls.some((u) => u.includes('group:'))).toBe(false);
+  });
+
+  it('the seen record lives under the v2 key', async () => {
+    localStorage.clear(); sessions = ['s1']; serve();
+    renderHook(() => useWorkoutCoinCeremony());
+    await waitFor(() => expect(localStorage.getItem('fitness.coinCeremony.seen.v2')).toBe('{}'));
+    expect(localStorage.getItem('fitness.coinCeremony.seen')).toBeNull();
+  });
+});
+
 describe('hold (a live run on screen)', () => {
-  beforeEach(() => { api.mockReset(); localStorage.clear(); localStorage.setItem('fitness.coinCeremony.seen', '{}'); __resetShownForTest(); logSpy.info.mockClear(); wsHandler = null; sessions = ['s1']; paid = {}; serve(); });
+  beforeEach(() => { api.mockReset(); localStorage.clear(); localStorage.setItem('fitness.coinCeremony.seen.v2', '{}'); __resetShownForTest(); logSpy.info.mockClear(); wsHandler = null; sessions = ['s1']; paid = {}; serve(); });
   afterEach(() => vi.useRealTimers());
 
   it('a payout during hold waits, is not stamped, and plays once when the hold drops', async () => {
@@ -168,12 +191,12 @@ describe('hold (a live run on screen)', () => {
     const { result, rerender, unmount } = await mount({ hold: true });
     await fire('s1');
     expect(result.current.ceremony).toBeNull();
-    expect(JSON.parse(localStorage.getItem('fitness.coinCeremony.seen'))).toEqual({});
+    expect(JSON.parse(localStorage.getItem('fitness.coinCeremony.seen.v2'))).toEqual({});
     // A second look while parked cannot double-queue.
     await fire('s1');
     rerender({ hold: false });
     await waitFor(() => expect(result.current.ceremony?.txnIds).toEqual(['t1']));
-    expect(Object.keys(JSON.parse(localStorage.getItem('fitness.coinCeremony.seen')))).toEqual(['t1']);
+    expect(Object.keys(JSON.parse(localStorage.getItem('fitness.coinCeremony.seen.v2')))).toEqual(['t1']);
     act(() => result.current.dismiss());
     expect(result.current.ceremony).toBeNull();
     unmount();
@@ -211,7 +234,7 @@ describe('module hold', () => {
 
   it('with a module active, coins-changed shows nothing; leaving it plays one ceremony', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    localStorage.setItem('fitness.coinCeremony.seen', '{}');
+    localStorage.setItem('fitness.coinCeremony.seen.v2', '{}');
     __resetShownForTest(); sessions = ['s1']; paid = {}; serve();
     const { result, rerender } = await mount({ hold: isRunOnScreen({ moduleLive: true }) });
     paid.s1 = [learner('learner-a', [entry('t8', 1, 100)], 3)];
@@ -224,11 +247,11 @@ describe('module hold', () => {
 });
 
 describe('skipped logging', () => {
-  beforeEach(() => { api.mockReset(); localStorage.clear(); localStorage.setItem('fitness.coinCeremony.seen', '{}'); __resetShownForTest(); logSpy.info.mockClear(); logSpy.debug.mockClear(); wsHandler = null; sessions = ['s1', 's2']; paid = {}; });
+  beforeEach(() => { api.mockReset(); localStorage.clear(); localStorage.setItem('fitness.coinCeremony.seen.v2', '{}'); __resetShownForTest(); logSpy.info.mockClear(); logSpy.debug.mockClear(); wsHandler = null; sessions = ['s1', 's2']; paid = {}; });
 
   it('the first /paid failure per page is info, later ones debug', async () => {
     api.mockImplementation(async (url) => {
-      if (url.startsWith('/api/v1/fitness/sessions')) return { sessions: sessions.map((sessionId) => ({ sessionId })) };
+      if (url.startsWith('/api/v1/fitness/sessions')) return { sessions: sessions.map((s) => (typeof s === 'string' ? { sessionId: s } : s)) };
       throw new Error('503');
     });
     await mount();
