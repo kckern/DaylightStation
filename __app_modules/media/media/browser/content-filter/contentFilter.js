@@ -113,6 +113,7 @@ const WIDEN_DEFAULTS = {
   // Blur a few seconds around the flagged moment.
   'full-blur': { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
   'censor-bar': { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
+  blackout: { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
   pixelate: { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
 };
 
@@ -150,8 +151,9 @@ function widenCue(eff, treatments) {
  * `treatments.blackout.cardSec`, else the skip-card hold, else 2.5.
  */
 export function hidePiece(src, { in: from, out: to }, { text, cardSec, firstPiece } = {}, treatments) {
+  const { rect: _r, regions: _g, heavy: _h, ...rest } = src;
   return {
-    ...src,
+    ...rest,
     effect: 'blackout',
     in: from,
     out: to,
@@ -376,7 +378,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
     if (eff.effect === 'blackout') {
       const treatments = profile?.treatments;
       const text = eff.card ?? treatments?.blackout?.text ?? 'Picture hidden.';
-      expandMeasured(eff, measured).forEach((piece, i) => {
+      expandMeasured(eff, measured).map((p) => widenCue(p, treatments)).forEach((piece, i) => {
         out.push(hidePiece(piece, { in: piece.in, out: piece.out }, { text, firstPiece: i === 0 }, treatments));
       });
       logger().sampled('content-filter.blackout.cue', { id: cue.id, category: cue.category }, { maxPerMinute: 10, aggregate: true });
@@ -462,7 +464,7 @@ function resolvePictureStacking(out) {
       continue;
     }
     logger().sampled('content-filter.picture.stack.trimmed', { id: c.id, effect: c.effect, under: over.map((s) => s.id), parts: parts.length }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
-    kept.push(...parts.map((r, k) => ({ ...c, id: parts.length > 1 || r.in !== c.in || r.out !== c.out ? `${c.id}#s${k}` : c.id, in: r.in, out: r.out })));
+    kept.push(...parts.map((r, k) => ({ ...c, id: parts.length > 1 || r.in !== c.in || r.out !== c.out ? `${c.id}#s${k}` : c.id, in: r.in, out: r.out, ...(c.firstPiece !== undefined ? { firstPiece: c.firstPiece && k === 0 } : {}) })));
   }
   out.splice(0, out.length, ...rest, ...kept);
 }
@@ -709,7 +711,7 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
       // A member (or a subject piece with a member in the scene) that reaches outside the scene:
       // the scene takes over only its own time; the rest still hides.
       const rest = outsideSpans(c, spans);
-      out.splice(i, 1, ...rest.map((r, k) => ({ ...c, id: rest.length > 1 ? `${c.id}#x${k}` : c.id, in: r.in, out: r.out })));
+      out.splice(i, 1, ...rest.map((r, k) => ({ ...c, id: rest.length > 1 ? `${c.id}#x${k}` : c.id, in: r.in, out: r.out, ...(c.firstPiece !== undefined ? { firstPiece: c.firstPiece && k === 0 } : {}) })));
     }
     const approved = so.card?.text || null;
     const category = `scene/${(scene.groups || [])[0] || 'other'}`;

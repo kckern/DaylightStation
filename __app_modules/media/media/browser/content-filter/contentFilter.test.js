@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveEffect, resolveEffectiveCues, cuesActiveAt, pictureOverlaps } from "./contentFilter.js";
+import { hidePiece, resolveEffect, resolveEffectiveCues, cuesActiveAt, pictureOverlaps } from "./contentFilter.js";
 import { filterSummary } from './filterSummary.js';
 
 describe('resolveEffect', () => {
@@ -1222,5 +1222,15 @@ describe('hide picture as a per-filter treatment', () => {
   it('a human-chosen blackout on a spoken cue still fits to mute (channel rule unchanged)', () => {
     const said = { id: 's', type: 'mute', kind: 'said', category: 'language/profanity/damn', label: 'damn', in: 5, out: 5.4, precision: 'ms' };
     expect(run([said], { cueOverrides: { s: { effect: 'blackout' } } })[0].effect).toBe('mute');
+  });
+  it('a zero-width second-approx blackout cue widens to at least 3 s and carries the card', () => {
+    const out = run([gore({ in: 100, out: 100, precision: 'second-approx' })]);
+    expect(out).toHaveLength(1);
+    expect(out[0].out - out[0].in).toBeGreaterThanOrEqual(3);
+    expect(out[0]).toMatchObject({ effect: 'blackout', text: 'Picture hidden.', firstPiece: true });
+  });
+  it('hidePiece drops regional fields', () => {
+    const p = hidePiece({ id: 'x', effect: 'blur', rect: { x: 0, y: 0, w: 1, h: 1 }, regions: [], heavy: true }, { in: 1, out: 2 }, {});
+    expect(p.rect).toBeUndefined(); expect(p.regions).toBeUndefined(); expect(p.heavy).toBeUndefined();
   });
 });
