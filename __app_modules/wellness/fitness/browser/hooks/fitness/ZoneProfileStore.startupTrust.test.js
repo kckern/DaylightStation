@@ -118,6 +118,47 @@ describe('ZoneProfileStore resume from recent trusted evidence', () => {
     advance(1000);
     expect(read(187)).toMatchObject({ zoneTrusted: false, currentZoneId: null });
   });
+
+  // Kiosk reload, 2026-11-10: a rider mid-workout at Warm sat at NO ZONE for
+  // 68 min because a fresh session demanded a fresh Cool. Reload evidence is
+  // seeded with a 30 min window; a water break keeps the hour.
+  const seedReload = (evidence) => store.seedTrustEvidence('rider-a', evidence, { windowMs: 30 * 60 * 1000 });
+
+  it('reload evidence resumes a rider who never read Cool in this page', () => {
+    seedReload({ deviceId: 'strap-c1', zoneId: 'warm', heartRate: 150, at: Date.now() - 5 * 60 * 1000 });
+    const back = read(152);
+    expect(back).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm' });
+    expect(back.zoneEntry).toMatchObject({ resumed: true });
+  });
+
+  it('reload evidence resumes at 29 min and is refused past 30 min', () => {
+    seedReload({ deviceId: 'strap-c1', zoneId: 'warm', heartRate: 150, at: Date.now() - 29 * 60 * 1000 });
+    expect(read(150).zoneTrusted).toBe(true);
+    store = new ZoneProfileStore();
+    seedReload({ deviceId: 'strap-c1', zoneId: 'warm', heartRate: 150, at: Date.now() - 31 * 60 * 1000 });
+    expect(read(150)).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+  });
+
+  it('a water break still resumes within the hour (59 min)', () => {
+    trustedAtHot(); loseReading(); advance(59 * 60 * 1000);
+    expect(read(170)).toMatchObject({ zoneTrusted: true, currentZoneId: 'hot' });
+  });
+
+  it('reload evidence on another strap is refused', () => {
+    seedReload({ deviceId: 'strap-c1', zoneId: 'warm', heartRate: 150, at: Date.now() - 60000 });
+    expect(read(150, { zoneReadingDeviceId: 'strap-other' })).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+  });
+
+  it('seeding keeps the newer of two readings', () => {
+    expect(seedReload({ deviceId: 'strap-c1', zoneId: 'hot', heartRate: 170, at: Date.now() - 1000 })).toBe(true);
+    expect(seedReload({ deviceId: 'strap-c1', zoneId: 'cool', heartRate: 90, at: Date.now() - 600000 })).toBe(false);
+    expect(store.getTrustEvidence('rider-a')).toMatchObject({ heartRate: 170 });
+  });
+
+  it('marks evidence from a simulated reading', () => {
+    read(90, { zoneReadingSimulated: true });
+    expect(store.getTrustEvidence('rider-a')).toMatchObject({ simulated: true });
+  });
 });
 
 describe('ZoneProfileStore wearer and session boundaries', () => {

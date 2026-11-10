@@ -76,7 +76,7 @@ WebSocket message arrives
     │       ├──▶ ZoneProfileStore.syncFromUsers(allUsers)
     │       │       Derives: raw zone from HR + zone thresholds
     │       │       Requires: accepted real Cool baseline for each wearer,
-    │       │                 or recent same-strap evidence (resume, <= 60 min)
+    │       │                 or recent same-strap evidence (resume: <= 60 min after a dropout, <= 30 min after a reload)
     │       │       Applies: upward confirmation (2 samples >= 1s),
     │       │                hysteresis (5s cooldown, 3s stability)
     │       │       Stores: zoneTrusted, currentZoneId, accepted zoneEntry evidence
@@ -449,9 +449,30 @@ For each HR update:
   `consistent-samples`), `resume_held` (an implausible first reading back) and
   `resume_refused` (`evidence-expired` / `different-strap`, once per loss).
   Known, accepted miss: a rider who comes back already in Fire gets no
-  ceremony for that return; the next real crossing into Fire celebrates. A
-  kiosk reload resumes the same way (v2 snapshot), so riders are untrusted for
-  about a second after a reload, well inside governance grace.
+  ceremony for that return; the next real crossing into Fire celebrates.
+- **Resume after a kiosk reload.** A reload resumes through the same rule, but
+  its evidence vouches for only `ZONE_TRUST_RELOAD_WINDOW_MS` (30 min); the
+  seeded evidence carries `windowMs` and the store honours it in place of the
+  hour. A reload is where a kid arriving with a hot strap could slip in, so it
+  gets the shorter window. Evidence reaches the new page two ways, and the
+  newer `at` wins when both have it:
+  - **The kiosk's own storage** (`zoneTrustLocalStore.js`, key
+    `fitness.zoneTrust.v1`). The session writes every rider's evidence after
+    zone syncs (at most every 5 s, skipped when unchanged) and on `pagehide`,
+    and seeds it at construction. This works when the reload starts a fresh
+    session, e.g. onto a menu with nothing playing, where the backend
+    resume never runs (2026-11-10: a rider mid-workout at Warm sat at NO ZONE
+    for 68 min). Simulated readings are never stored. Storage is passed in by
+    `FitnessContext` (`browserZoneTrustStorage()`); the default is none, so
+    tests and other hosts are unaffected. Logged as `fitness.zone_trust.restored`
+    / `not_restored` with `via: 'local'` (`evidence-too-old`,
+    `storage-unavailable`) and a sampled `fitness.zone_trust.local_saved`.
+  - **The resumed session's `zone_trust` metadata** (v2 snapshot), when the
+    reload resumes the previous session.
+
+  Either way the rider is untrusted for about a second, until a plausible
+  reading on the same strap arrives, which is well inside governance grace.
+  A strap now worn by another rider gets nothing from the old wearer's evidence.
 - **Reload restore without evidence (v1 snapshot).** `restoreTrust` re-admits
   the rider with no evidence and no smoothing state, so their first reading
   commits instantly with no upward confirmation. That first entry is marked
