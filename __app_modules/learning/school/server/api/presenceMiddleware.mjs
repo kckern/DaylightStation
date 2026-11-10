@@ -23,7 +23,7 @@ const IGNORED_PREFIXES = [
   '/reading/',          // reading-session acks/ends are fired by the screen itself
 ];
 const IGNORED_SUFFIXES = [
-  '/heartbeat',         // flashcard (30s) and media-lesson playhead timers, no human action
+  '/heartbeat',         // flashcard 30s timer, no human action (the media-lesson playhead, /lesson/:id/position, is deliberately counted: someone is watching)
 ];
 // Deliberately NOT ignored: remote-launch `POST /sessions` - a grown-up sending
 // work to the school room implies a child is about to be there.

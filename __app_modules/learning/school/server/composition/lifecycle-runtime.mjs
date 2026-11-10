@@ -250,16 +250,6 @@ try {
     dependencies.schoolLifecycle.teacherGate.bindCapabilitySessions(teacherCapabilitySessions);
   }
 
-  // Print-document scan-back (Task 7, spec §9): ResolveCardScan joins the
-  // SAME decoded-scan stream createQuizScanRecorder (wired much earlier,
-  // above) already persists — see schoolPrintScanConsumer.mjs's own header.
-  // Reuses schoolLifecycle's OWN allocationStore/printDocuments repository
-  // instances (not fresh ones) so a live scan resolves against exactly what
-  // IssueDocument's tracked-quiz path just wrote — two YamlAllocationStore
-  // instances pointed at the same directory would each serialize their OWN
-  // writes but not against each other, a real read-modify-write race this
-  // avoids by construction. Wired only once the lifecycle itself is (no
-  // lifecycle, no allocationStore/repository to resolve against either).
   // Presence hook: same adapter, `presence_hook` block of school.yml. Same
   // guard and its own try/catch for the same reason as above.
   // Exposed from the runtime so the card-tap handler and the HTTP sources share it.
@@ -279,6 +269,16 @@ try {
       schoolLifecycleLogger.warn('school.presence_hook.wiring-failed', { error: err.message });
     }
   }
+  // Print-document scan-back (Task 7, spec §9): ResolveCardScan joins the
+  // SAME decoded-scan stream createQuizScanRecorder (wired much earlier,
+  // above) already persists — see schoolPrintScanConsumer.mjs's own header.
+  // Reuses schoolLifecycle's OWN allocationStore/printDocuments repository
+  // instances (not fresh ones) so a live scan resolves against exactly what
+  // IssueDocument's tracked-quiz path just wrote — two YamlAllocationStore
+  // instances pointed at the same directory would each serialize their OWN
+  // writes but not against each other, a real read-modify-write race this
+  // avoids by construction. Wired only once the lifecycle itself is (no
+  // lifecycle, no allocationStore/repository to resolve against either).
   if (dependencies.schoolLifecycle.wired && dependencies.schoolLifecycle.stores?.allocationStore && dependencies.schoolLifecycle.stores?.printDocuments) {
     try {
       const { createSchoolPrintScanConsumer } = await import("./schoolPrintScanConsumer.mjs");

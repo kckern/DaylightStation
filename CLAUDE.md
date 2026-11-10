@@ -268,7 +268,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `__docs/reference/school/media-lessons.md` |
 | School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold, weekly dictation from `dictation:` week tags; formerly "word ladder") | `__docs/reference/school/card-ladder.md` |
 | School after-school debrief (outside-school learner: voice/typed day account, AI follow-ups, preview silver) | `__docs/reference/school/school-debrief.md` |
-| School day-to-day operations (troubleshooting, logs, hardware, HA grading hook) | `__docs/runbooks/school/README.md` |
+| School day-to-day operations (troubleshooting, logs, hardware, HA grading hook, presence → lights hook) | `__docs/runbooks/school/README.md` (presence → lights: `__docs/runbooks/school/home-assistant-grading-hook.md` §7) |
 | Push notifications (text standard, school push copy, HA relay contract) | `__docs/reference/notifications/push-standard.md` |
 | Harvester health (failed harvests, failing/stale pushes, token rotation, Withings reconnect) | `__docs/reference/harvesters/health-and-reconnect.md` |
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
