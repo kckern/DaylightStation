@@ -128,6 +128,32 @@ different areas never trim one another, and a skip inside a scene's blackout is 
 rule (it keeps the cues that hide more), not a stack. Audio effects are never touched.
 `resolveEffectiveCues({ stackGuard: false })` skips the pass for the scan only.
 
+### Hide picture, and long hides (`treatments`)
+
+`effect: blackout` on a category rule (or a cue/override ruling) is **Hide picture**: a black
+picture with a title card for its first seconds, sound untouched, never regional. It is built by
+`hidePiece` in `contentFilter.js`, the same shape a scene blackout takes, so one renderer draws both;
+a segmented cue cards once (only its first piece carries `firstPiece`). The card text is the approved
+card, else `treatments.blackout.text` (default "Picture hidden."); the card holds
+`treatments.blackout.cardSec`, else `treatments['skip-card'].holdSec`, else 2.5 s. Pads and minimum
+widths for approximate cues are the full-blur ones.
+
+A long whole-frame blur is not watchable, so it plays as the same card over the same sound
+(`convertLongHides`, `longHide.js`). Every maximal run of whole-frame blur pieces (`full-blur` or an
+overlay with no rect, gaps up to the resolver's 1 s bridge joined) lasting longer than
+`treatments['full-blur'].maxSec` (default 5; `null` or `0` turns it off) becomes one blackout over
+the run's union, bridged gaps included. Shorter runs stay blurs; regional pieces do not count.
+A tracked cue in a category without `regional: true` resolves whole-frame, so it counts. An explicit
+household ruling is never second-guessed, except that a ruled whole-frame blur (`full-blur`, or
+`blur`/`pixelate`/`censor-bar` with no rect) counts like any other.
+Hiding only grows: a conversion never replaces a blur with less.
+
+Order inside `resolveEffectiveCues`: picture stacking, then the long-hide conversion, then stacking
+again (drops regional pieces now under the blackout), then scenes. A skip inside a run still skips,
+and a scene blackout covering the run leaves one card, not two. `stackGuard: false` (the
+stacked-moments scan) skips the conversion with the stacking. A profile with no `treatments` uses
+the defaults; the log event is `content-filter.long-hide.converted` (debug).
+
 ### Channel-matched effects (R1, R2)
 
 Every cue has a modality (`cueModality`, `shared/contracts/content-filter/cueModality.mjs`):
@@ -137,7 +163,9 @@ audio effects (mute, bleep, duck) only on `said`, mute also on `heard`; visual e
 full-blur, censor-bar, pixelate, blackout) only on `shown`; skip and skip-card on any. A profile
 effect that does not fit maps to the channel's equivalent (`fitEffectToChannel`): `shown` + audio
 effect, blur or full-blur -> regional `blur` when the cue has a usable region track (at least one
-sighting), else `full-blur` (R2). A tracked cue that asked for `full-blur` (profile or a household
+sighting) **and its category rule says `regional: true`**, else `full-blur` (R2): regional blur is
+opt-in per category, never the default. The flag survives a per-film settings patch and the household
+"Everywhere" toggle (they change the effect, not the permission). A tracked cue that asked for `full-blur` (profile or a household
 `cueOverrides` effect) plays the regional blur at the full-blur radius (`heavy: true`); a household
 that wants more on a tracked cue picks `censor-bar`, `pixelate`, `blackout` or `skip`;
 `said`/`heard` + a visual effect -> `mute`. The resolver logs the change as

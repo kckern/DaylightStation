@@ -94,7 +94,7 @@ registerEffectHandler('blur', { kind: EFFECT_KINDS.OVERLAY });        // regiona
 registerEffectHandler('censor-bar', { kind: EFFECT_KINDS.OVERLAY });  // solid bar (rect)
 registerEffectHandler('pixelate', { kind: EFFECT_KINDS.OVERLAY });    // pixelate (rect)
 registerEffectHandler('full-blur', { kind: EFFECT_KINDS.OVERLAY });   // whole-frame blur/black (audio keeps playing)
-registerEffectHandler('blackout', { kind: EFFECT_KINDS.OVERLAY });    // a scene's picture fully black, sound plays (scenes only)
+registerEffectHandler('blackout', { kind: EFFECT_KINDS.OVERLAY });    // a scene's picture fully black, sound plays (scenes, and converted long hides)
 // Standalone plot/warning card — visual overlay + OPTIONAL narration audio while shown.
 registerEffectHandler('title-card', {
   kind: EFFECT_KINDS.OVERLAY,

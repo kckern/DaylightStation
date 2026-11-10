@@ -16,6 +16,7 @@
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { cueModality, fitEffectToChannel, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { languageGroupOf, languageWordOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
+import { convertLongHides } from './longHide.js';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
@@ -113,6 +114,7 @@ const WIDEN_DEFAULTS = {
   // Blur a few seconds around the flagged moment.
   'full-blur': { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
   'censor-bar': { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
+  blackout: { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
   pixelate: { padLeadMs: 150, padTrailMs: 250, approxWidthMs: 3000, srtLineWidthMs: 0 },
 };
 
@@ -142,6 +144,24 @@ function widenCue(eff, treatments) {
   eff.in = Math.max(0, start);
   eff.out = Math.max(eff.in + 0.001, end);
   return eff;
+}
+
+/**
+ * A "hide picture" piece: black over the span with a title card for its first seconds. The same
+ * shape the scene path builds, so the one renderer draws both. `cardSec` defaults to the profile's
+ * `treatments.blackout.cardSec`, else the skip-card hold, else 2.5.
+ */
+export function hidePiece(src, { in: from, out: to }, { text, cardSec, firstPiece } = {}, treatments) {
+  const { rect: _r, regions: _g, heavy: _h, ...rest } = src;
+  return {
+    ...rest,
+    effect: 'blackout',
+    in: from,
+    out: to,
+    text: text ?? treatments?.blackout?.text ?? 'Picture hidden.',
+    cardSec: cardSec ?? treatments?.blackout?.cardSec ?? treatments?.['skip-card']?.holdSec ?? 2.5,
+    firstPiece: firstPiece !== false,
+  };
 }
 
 function mergeParams(target, ...sources) {
@@ -207,6 +227,9 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
       || (!hasProfileRules ? (wordList && cue.effect ? { effect: cue.effect } : cue.type ? { effect: cue.type } : null) : null);
     if (!rule) continue;
 
+    // A box that follows something around the frame draws the eye to it: regional blur is for
+    // categories the profile marks `regional`, a human ruling, or a profile with no rules at all.
+    const regionalOk = !!explicit || !hasProfileRules || rule.regional === true;
     const eff = { ...cue, effect: rule.effect };
     let measured = ov;
     const coarseEdges = (cue.refine?.edges ?? ov.refine?.edges) === 'coarse';
@@ -266,12 +289,18 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
     const kind = cue.kind ?? cue.refine?.kind ?? ov.refine?.kind;
     const modality = cueModality({ ...cue, ...(kind ? { kind } : {}) });
     const typed = !!(cue.type || kind);
-    const fitted = typed ? fitEffectToChannel(eff.effect, modality, { hasRegions: hasSighting(measured?.regions) }) : eff.effect;
+    const fitted = typed ? fitEffectToChannel(eff.effect, modality, { hasRegions: hasSighting(measured?.regions) && regionalOk }) : eff.effect;
+    if (!regionalOk && (hasSighting(measured?.regions) || hasSighting(eff.regions))) {
+      logger().sampled('content-filter.regional.withheld', { id: cue.id, category: cue.category }, { maxPerMinute: 10, aggregate: true });
+      // The track is not followed: the cue plays whole-frame and carries no track.
+      delete eff.regions;
+      if (measured?.regions) measured = { ...measured, regions: undefined };
+    }
     // R6: what this cue asks of its group when the group has a track: blur (audio effects fit to
     // it), full-blur, or a stronger effect as it is. The group decides what becomes regional.
     const groupEffect = !typed ? eff.effect
       : (modality === 'shown' && eff.effect === 'full-blur') ? 'full-blur'
-        : fitEffectToChannel(eff.effect, modality, { hasRegions: true });
+        : fitEffectToChannel(eff.effect, modality, { hasRegions: regionalOk });
     if (fitted !== eff.effect) {
       logger().sampled('content-filter.effect.adjusted', { id: cue.id, from: eff.effect, to: fitted, modality, source: explicit ? 'override' : 'profile' }, { maxPerMinute: 10, aggregate: true });
       if (eff.effect === 'full-blur' && fitted === 'blur') eff.heavy = true;
@@ -340,9 +369,20 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
     // survive driver granularity. Runs after sync so pads are in local time.
     // R6: shown cues of one subject resolve together, after the loop, to a single effect.
     const subject = ov.subject ?? cue.subject;
-    if (subject && modality === 'shown' && OVERLAY.has(eff.effect)) {
+    if (subject && modality === 'shown' && regionalOk && OVERLAY.has(eff.effect)) {
       if (!groups.has(subject)) groups.set(subject, []);
       groups.get(subject).push({ eff, measured, groupEffect });
+      continue;
+    }
+    // "Hide picture" on one filter: a black picture with a title card, sound untouched. It is
+    // never regional and plays whole-frame; only the first piece of a segmented cue carries the card.
+    if (eff.effect === 'blackout') {
+      const treatments = profile?.treatments;
+      const text = eff.card ?? treatments?.blackout?.text ?? 'Picture hidden.';
+      expandMeasured(eff, measured).map((p) => widenCue(p, treatments)).forEach((piece, i) => {
+        out.push(hidePiece(piece, { in: piece.in, out: piece.out }, { text, firstPiece: i === 0 }, treatments));
+      });
+      logger().sampled('content-filter.blackout.cue', { id: cue.id, category: cue.category }, { maxPerMinute: 10, aggregate: true });
       continue;
     }
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
@@ -353,7 +393,16 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
   }
   // Picture effects never stack: the strongest wins each instant (before scenes take over their own cues).
   // `stackGuard: false` is for the stacked-moments scan only; the player always runs the pass.
-  if (stackGuard) resolvePictureStacking(out);
+  // A long whole-frame blur becomes a carded black picture over the sound; the second pass then
+  // drops regional pieces now under it and trims the blackout around any skip. Scenes come last.
+  if (stackGuard) {
+    resolvePictureStacking(out);
+    const long = convertLongHides(out, profile?.treatments);
+    if (long.runs > 0) {
+      logger().sampled('content-filter.long-hide.converted', long, { maxPerMinute: 10, aggregate: true, level: 'debug' });
+      resolvePictureStacking(out);
+    }
+  }
   const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
   sizeTones(out);
   out.sort((a, b) => a.in - b.in || a.out - b.out);
@@ -372,7 +421,9 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
  * between effects of one rank (full-blur > rectless blur; pixelate = censor-bar).
  */
 const PICTURE = new Set([...OVERLAY, 'skip', 'skip-card']);
-const wholeFrame = (c) => !(REGIONAL.has(c.effect) && c.rect);
+/** A piece that hides the whole frame: a `full-blur`, or an overlay with no rect. Regional pieces are not. */
+export function isWholeFrame(c) { return !(REGIONAL.has(c.effect) && c.rect); }
+const wholeFrame = isWholeFrame;
 const pictureRank = (c) => (REGIONAL.has(c.effect) && wholeFrame(c) ? 2 : HIDE_RANK[c.effect]);
 const comparePicture = (a, b) => (pictureRank(a) - pictureRank(b)) || ((STRENGTH[a.effect] ?? 0) - (STRENGTH[b.effect] ?? 0));
 const STACK_EPS = 1e-6;
@@ -425,7 +476,7 @@ function resolvePictureStacking(out) {
       continue;
     }
     logger().sampled('content-filter.picture.stack.trimmed', { id: c.id, effect: c.effect, under: over.map((s) => s.id), parts: parts.length }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
-    kept.push(...parts.map((r, k) => ({ ...c, id: parts.length > 1 || r.in !== c.in || r.out !== c.out ? `${c.id}#s${k}` : c.id, in: r.in, out: r.out })));
+    kept.push(...parts.map((r, k) => ({ ...c, id: parts.length > 1 || r.in !== c.in || r.out !== c.out ? `${c.id}#s${k}` : c.id, in: r.in, out: r.out, ...(c.firstPiece !== undefined ? { firstPiece: c.firstPiece && k === 0 } : {}) })));
   }
   out.splice(0, out.length, ...rest, ...kept);
 }
@@ -501,7 +552,11 @@ function resolveSubject(subject, members, treatments) {
   const keepRect = !regions && REGIONAL.has(effect) && members.every((m) => m.eff.effect === effect);
   if (!keepRect) delete base.rect;
   if (members.some((m) => !PRECISE.has(m.eff.precision))) base.precision = 'second-approx';
-  return expandMeasured(base, { segments: union.length > 1 ? union : undefined, regions });
+  const pieces = expandMeasured(base, { segments: union.length > 1 ? union : undefined, regions });
+  // A group that plays blackout (a member asked for it) draws the same card a lone blackout does.
+  if (effect !== 'blackout') return pieces;
+  const text = members.map((m) => m.eff.card).find(Boolean) ?? treatments?.blackout?.text ?? 'Picture hidden.';
+  return pieces.map((p, i) => hidePiece(p, { in: p.in, out: p.out }, { text, firstPiece: i === 0 }, treatments));
 }
 
 /** A region track that saw its subject at least once (an all-gap track hides nothing regionally). */
@@ -510,7 +565,7 @@ const hasSighting = (regions) => Array.isArray(regions) && regions.some((k) => !
 const isTrackGap = (k) => !k.whole && !(k.cells && k.cells.length);
 // A miss this short between two sightings is a keyframe Jev did not see the subject in, not the
 // subject leaving: the box spanning both sightings is held over it.
-const BRIDGE_SEC = 1;
+export const BRIDGE_SEC = 1;
 // A whole-frame piece this short at a cut (frame snapping) is held under the next box instead.
 const SLIVER_SEC = 0.1;
 const keyRect = (k) => k.box || cellsRect(k.grid, k.cells);
@@ -668,7 +723,7 @@ function applyScenes(out, { edl, profile, override, sync, refinedEdl }) {
       // A member (or a subject piece with a member in the scene) that reaches outside the scene:
       // the scene takes over only its own time; the rest still hides.
       const rest = outsideSpans(c, spans);
-      out.splice(i, 1, ...rest.map((r, k) => ({ ...c, id: rest.length > 1 ? `${c.id}#x${k}` : c.id, in: r.in, out: r.out })));
+      out.splice(i, 1, ...rest.map((r, k) => ({ ...c, id: rest.length > 1 ? `${c.id}#x${k}` : c.id, in: r.in, out: r.out, ...(c.firstPiece !== undefined ? { firstPiece: c.firstPiece && k === 0 } : {}) })));
     }
     const approved = so.card?.text || null;
     const category = `scene/${(scene.groups || [])[0] || 'other'}`;

@@ -60,6 +60,15 @@ describe('filterSettings', () => {
     expect(out.scenes).toEqual({ sex_any: { blackout: { picture: 2 } } });
   });
 
+  it('mergeProfilePatch keeps rule fields the patch does not set', () => {
+    const base = { categories: { 'violence_blood_gore/gore': { effect: 'full-blur', regional: true } } };
+    const m = mergeProfilePatch(base, { categories: { 'violence_blood_gore/gore': { effect: 'off' } } });
+    expect(m.categories['violence_blood_gore/gore']).toEqual({ effect: 'off', regional: true });
+    const a = applySettingsToProfile(base, { violence: 'blur' });
+    expect(a.categories['violence_blood_gore/gore'].regional).toBe(true);
+    expect(a.categories['violence_blood_gore/gore'].effect).not.toBe('off');
+  });
+
   it('merge: patch wins per key and theme is kept', () => {
     const m = mergeProfilePatch(FAMILY, { categories: { language: { effect: 'off' } }, scenes: { sex_any: {} } });
     expect(m.categories.language).toEqual({ effect: 'off' });

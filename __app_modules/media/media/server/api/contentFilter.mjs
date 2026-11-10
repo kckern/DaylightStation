@@ -42,7 +42,7 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
   }
 
   // A nudge sent with an effect is only saved if the effect is valid (nothing half-applied).
-  const CUE_EFFECTS = new Set(['profile', 'off', 'mute', 'bleep', 'blur', 'full-blur', 'skip']);
+  const CUE_EFFECTS = new Set(['profile', 'off', 'mute', 'bleep', 'blur', 'full-blur', 'blackout', 'skip']);
   const SCENE_EFFECTS = new Set(['profile', 'off', 'blackout', 'skip']);
   router.put(['/:ratingKey/cues/:id', '/:ratingKey/scenes/:id'], (req, res, next) => {
     const effect = req.body?.effect;

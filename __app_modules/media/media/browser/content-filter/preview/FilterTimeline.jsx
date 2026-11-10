@@ -33,7 +33,7 @@ function markClass(cue) {
   const kind = kindOf(cue.effect);
   let shape = 'is-bar';
   if (kind === 'words') shape = 'is-tick';
-  else if (cue.scene != null && cue.effect === 'blackout') shape = 'is-block is-blackout';
+  else if (cue.effect === 'blackout') shape = 'is-block is-blackout';
   else if (cue.scene != null && cue.effect === 'skip-card') shape = 'is-block is-skip';
   else if (kind === 'hidden' || kind === 'skipped') shape = 'is-block';
   return `${shape} is-${kind}`;

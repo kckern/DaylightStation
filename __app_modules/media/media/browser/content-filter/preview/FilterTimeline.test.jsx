@@ -32,6 +32,12 @@ describe('FilterTimeline', () => {
     expect(container.querySelector('.is-skip')).toBeTruthy();
   });
 
+  it('shapes a blackout without a scene as a blackout block too', () => {
+    act(() => previewStore.publish({ cues: [{ id: 'r', in: 10, out: 20, effect: 'blackout' }], open: true }));
+    const { container } = render(<FilterTimeline position={0} duration={100} />);
+    expect(container.querySelector('.is-blackout')).toBeTruthy();
+  });
+
   it('places the playhead at position/duration', () => {
     const { container } = setup(250, 1000);
     expect(container.querySelector('.filter-timeline__playhead').style.left).toBe('25%');

@@ -31,6 +31,12 @@ describe('content-filter review routes', () => {
     await new Promise((r) => setTimeout(r, 5));
     expect(audit).toHaveBeenCalledWith('9');
   });
+  test('a cue may be hidden (blackout) with a nudge', async () => {
+    const nudgeCue = vi.fn(async () => ({}));
+    const { app } = mk({ review: { nudgeCue } });
+    const res = await request(app).put('/cf/9/cues/va1').send({ effect: 'blackout', nudge: { in: 1, out: 2 } });
+    expect(res.status).not.toBe(400);
+  });
   test('a refused nudge keeps its status', async () => {
     const { app } = mk({ review: { nudgeCue: async () => { throw new ReviewError('A nudge can move each edge at most 30 seconds.', 400); } } });
     expect((await request(app).put('/cf/9/cues/va1').send({ nudge: { in: 1, out: 99 } })).status).toBe(400);

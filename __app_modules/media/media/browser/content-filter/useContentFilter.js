@@ -234,7 +234,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     }
 
     // Per-session apply tally (emitted at teardown).
-    const session = { applied: {}, blurAudioSec: 0 };
+    const session = { applied: {}, blurAudioSec: 0, blackoutSec: 0 };
 
     const tick = () => {
       // While a skip-card is showing, the element is PAUSED (rVFC won't fire) and a
@@ -318,9 +318,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
           if (!NOT_A_FIRE.has(cue.effect) && cue.firstPiece !== false) setFireCount((n) => n + 1);
           if (cue.effect !== 'title-card') setLastFired(cue);
           if (cue.scene) logger().debug?.('content-filter.scene.enter', { scene: cue.scene, effect: cue.effect });
-          if (cue.effect === 'blackout' && cue.firstPiece) logger().info?.('content-filter.blackout.shown', { scene: cue.scene, sec: +(cue.out - cue.in).toFixed(1) });
+          if (cue.effect === 'blackout' && cue.firstPiece) logger().info?.('content-filter.blackout.shown', { scene: cue.scene, cue: cue.id, cues: cue.cues, sec: +(cue.out - cue.in).toFixed(1) });
           session.applied[cue.effect] = (session.applied[cue.effect] || 0) + 1;
-          if (cue.effect === 'full-blur') session.blurAudioSec += Math.max(0, cue.out - cue.in);
+          // Picture hidden while the sound plays: full-blur and blackout both leak audio.
+          if (cue.effect === 'full-blur' || cue.effect === 'blackout') session.blurAudioSec += Math.max(0, cue.out - cue.in);
+          if (cue.effect === 'blackout') session.blackoutSec += Math.max(0, cue.out - cue.in);
           // Rate-limited so it's visible in prod without spamming per-cue (mute is
           // the leak-prone effect — this is how we confirm a mute actually fired).
           logger().sampled?.('content-filter.applied',
@@ -441,7 +443,7 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       // Session summary (info): what actually fired this segment + blur-with-audio
       // exposure (seconds where video was hidden but audio kept — leak surface).
       logger().info?.('content-filter.session', {
-        applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1),
+        applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1), blackoutSec: +session.blackoutSec.toFixed(1),
       });
     };
   // override?.sync?.offsetSec is read only for the 'content-filter.resolved' log

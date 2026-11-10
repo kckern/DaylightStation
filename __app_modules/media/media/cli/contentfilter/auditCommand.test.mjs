@@ -10,7 +10,9 @@ const track = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => ({ in: a + i
 const shown = (id, a, b, over = {}) => ({ id, type: 'skip', category: 'sex_any/sexually_suggestive', label: `sign ${id}`, in: a, out: b, precision: 'frame', ...over });
 const word = (id, t, over = {}) => ({ id, type: 'mute', category: 'language/profanity/damn', label: 'damn', in: t, out: t + 0.4, precision: 'ms', ...over });
 const line = (id, a, b, over = {}) => ({ id, type: 'mute', category: 'language/profanity/other', label: 'He says something rude to her', in: a, out: b, tagIn: a, tagOut: b, precision: 'second-approx', ...over });
-const profile = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'blur' } } };
+// These cases audit region coverage over long cues; the long-hide conversion has its own suite.
+const noLongHide = { 'full-blur': { maxSec: 0 } };
+const profile = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'blur', regional: true } }, treatments: noLongHide };
 
 const film = () => ({
   title: 'Fixture', timebase: { clock: 'vidangel' },
@@ -47,7 +49,7 @@ describe('computeAudit', () => {
     expect(low.ok).toBe(true); // soft target: does not fail the exit
   });
   it('a profile full-blur on tracked cues resolves regional too (R2); the data share is counted alongside', () => {
-    const fullFrame = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'full-blur' } } };
+    const fullFrame = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'full-blur', regional: true } }, treatments: noLongHide };
     const f = computeAudit({ edl: film(), profile: fullFrame, override });
     expect(f.regions.tracked).toBe(4); // a full-blur with a track is the regional blur, alone or in a group
     expect(f.regions).toMatchObject({ shown: 5, withTrackData: 3 });
@@ -55,7 +57,7 @@ describe('computeAudit', () => {
     expect(formatAudit(f)).toMatch(/track data 3\/5/);
   });
   it('PASS/FAIL on the region target follows the data share; the resolved share is printed as info', () => {
-    const fullFrame = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'full-blur' } } };
+    const fullFrame = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'full-blur', regional: true } }, treatments: noLongHide };
     const e = film(); e.cues = e.cues.map((c) => (c.id === 's1' || c.id === 's5' ? { ...c, regions: track(c.in, c.out) } : c));
     const f = computeAudit({ edl: e, profile: fullFrame, override });
     expect(f.regions.tracked).toBe(5);
