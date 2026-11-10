@@ -59,7 +59,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                   <Checkbox size="xs" aria-label={`Select ${r.label}`} checked={!!picked?.has(r.id)} onChange={(e) => onPick(r.id, e.currentTarget.checked)} />
                 ) : null}
                 {r.reviewed ? <Text span aria-label="Reviewed" className="cf-review__tick">✓</Text> : null}
-                <UnstyledButton onClick={() => onSelect(r)} aria-pressed={r.id === selectedId} className="cf-review__pick">
+                <UnstyledButton onClick={() => { onSelect(r); previewStore.jumpToCue({ in: r.in }); }} aria-pressed={r.id === selectedId} className="cf-review__pick">
                   <Text fw={500} size="sm" span>{r.label}</Text>
                 </UnstyledButton>
                 <Text size="xs" c="dimmed">{[r.group && groupLabel(r.group), MODALITY[r.modality]].filter(Boolean).join(', ')}</Text>

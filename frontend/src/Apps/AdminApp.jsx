@@ -153,7 +153,7 @@ function AdminApp() {
               <Route path="content/games/:consoleId" element={<ConsoleDetail />} />
               <Route path="content/art" element={<ArtLibrary />} />
               <Route path="content/filter" element={<ContentFilterLibrary />} />
-              <Route path="content/filter/:ratingKey" element={<ContentFilterReview />} />
+              <Route path="content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} />
               {/* Apps */}
               <Route path="apps/:appId" element={<AppConfigEditor />} />
 

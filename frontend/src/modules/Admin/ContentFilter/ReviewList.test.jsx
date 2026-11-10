@@ -32,6 +32,13 @@ describe('ReviewList', () => {
     fireEvent.click(within(item('Billboard')).getByRole('button', { name: 'Play without' }));
     expect(peek).toHaveBeenCalledWith('subject-b1');
   });
+  it('clicking a row title seeks to the row and selects it', () => {
+    const jump = vi.spyOn(previewStore, 'jumpToCue'); const onSelect = vi.fn();
+    show({ onSelect });
+    fireEvent.click(within(item('damn')).getByText('damn'));
+    expect(jump).toHaveBeenCalledWith({ in: 70.25 });
+    expect(onSelect).toHaveBeenCalledWith(rows[0]);
+  });
   it('kind and "needs review" filters narrow the rows', () => {
     show();
     fireEvent.click(screen.getByRole('radio', { name: 'Scenes' }));

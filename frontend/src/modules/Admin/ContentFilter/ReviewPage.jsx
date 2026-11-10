@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Anchor, Badge, Button, Group, Stack, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
 import { ReviewList } from './ReviewList.jsx';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
@@ -21,7 +22,8 @@ const POLL_MS = 3000;
 const LEVEL = { none: 'Not certified', machine: 'Machine-certified', parent: 'Parent-certified' };
 
 export function ReviewPage() {
-  const { ratingKey } = useParams();
+  const { ratingKey, rowId } = useParams();
+  const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
   const { data, loading, error, reload } = useApiResource(url, { label: 'review', logger });
   const [selected, setSelected] = useState(null);
@@ -30,6 +32,23 @@ export function ReviewPage() {
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
   const waiting = !!data && (running || (data.audit && !data.audit.fresh));
 
+  // Selecting a row keeps the URL (the filter's permalink) in step; the page state is the source of truth.
+  const opened = useRef(null);
+  const select = (r) => {
+    setSelected(r);
+    if (r?.id) opened.current = r.id;
+    if (r?.id && r.id !== rowId) navigate(`/admin/content/filter/${encodeURIComponent(ratingKey)}/${encodeURIComponent(r.id)}`, { replace: true });
+  };
+  // Opening a permalink: select the row and seek to it once (the store holds the jump until the player binds).
+  useEffect(() => {
+    if (!rowId || !data?.rows || opened.current === rowId) return;
+    opened.current = rowId;
+    const found = data.rows.find((r) => r.id === rowId);
+    logger.info('content_filter.review.permalink.opened', { rk: ratingKey, rowId, found: !!found });
+    if (!found) { setNotice("That filter isn't in this film any more"); return; }
+    setSelected(found);
+    previewStore.jumpToCue({ in: found.in });
+  }, [rowId, data, ratingKey]);
   useEffect(() => { logger.info('review.mounted', { ratingKey }); }, [ratingKey]);
   useEffect(() => {
     if (!waiting) return undefined;
@@ -92,7 +111,7 @@ export function ReviewPage() {
             ) : null}
             {notice ? <Text size="sm" role="status">{notice}</Text> : null}
             <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
-              selectedId={row?.id ?? null} onSelect={setSelected} picked={picked} onPick={pick} sentBack={sentBack} />
+              selectedId={row?.id ?? null} onSelect={select} picked={picked} onPick={pick} sentBack={sentBack} />
           </Stack>
         </div>
       </Stack>

@@ -39,6 +39,8 @@ const NOOP_BINDING = Object.freeze({
 let snapshot = INITIAL;
 let binding = NOOP_BINDING;
 let owner = null;
+// One jump asked for before any player bound (a permalink opening); applied on bind, newest wins.
+let pendingJump = null;
 // The title a host forces the filter on for (Admin review player). Outlives a player reset:
 // the host owns it, not the player.
 let forced = null;
@@ -51,6 +53,7 @@ function notify() {
 
 function jumpTo(cue) {
   if (!cue || !Number.isFinite(cue.in)) return;
+  if (binding === NOOP_BINDING) { pendingJump = cue; return; }
   binding.seek(Math.max(0, cue.in - PREVIEW_LEAD_SEC));
   binding.play();
 }
@@ -74,6 +77,7 @@ export const previewStore = {
     const mine = { ...NOOP_BINDING, ...handlers };
     binding = mine;
     owner = mine;
+    if (pendingJump) { const cue = pendingJump; pendingJump = null; jumpTo(cue); }
     const unbind = () => { if (binding === mine) binding = NOOP_BINDING; };
     // Empty the store, but only while this binding is still the latest one bound.
     unbind.reset = () => { if (owner === mine) previewStore.reset(); };
@@ -83,6 +87,7 @@ export const previewStore = {
   reset() {
     binding = NOOP_BINDING;
     owner = null;
+    pendingJump = null;
     snapshot = INITIAL;
     notify();
   },
