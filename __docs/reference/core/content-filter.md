@@ -808,9 +808,14 @@ title index every 10 minutes.
   reviewed it", until re-marked); a mark whose row is gone is pruned when the audit lands. Sign-off
   does not make the audit stale (the digest leaves out the stored certification).
 - **Approve for family** — `POST /:rk/signoff` writes `certification.parent` only when the film is
-  machine-certified with nudges counted, the audit passed and is current, and every row is reviewed;
-  otherwise 409 with the missing lines ("N of M parts not reviewed", "N parts changed since you
+  machine-certified with nudges counted, the audit passed and is current, every row has a verdict and none is `redo`;
+  otherwise 409 with the missing lines ("N rows have no verdict", "N rows wait for redo", "N parts changed since you
   reviewed them", …). No override. `DELETE` withdraws.
+- **Verdicts** — `PUT /:rk/review/:rowId` takes `verdict` (`approve` default, `remove`, `ignore`, `redo` + optional
+  `reason` edges|category|action|timing|other), `change: {from, to}` (an in-place action change the client already
+  applied) and `dwellMs`/`replays`. `remove` disables the cue/scene; `DELETE` is undo and reverts what the verdict
+  applied (re-enable, restore `from`). Every verdict and undo appends to `household/content-filter/review-history/<rk>.yml`
+  (append-only, via the repository) and logs `content_filter.review.verdict.recorded`. A moved span drops the verdict.
 
 ## QA and current limitations
 

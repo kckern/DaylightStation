@@ -17,6 +17,8 @@ const setup = ({ audit = { ok: true, digest: 'D', rows: rowsOf() }, digest = 'D'
     saveRefinedEdl: async (_r, e) => { state.refined = e; },
     getOverride: async () => state.override, saveOverride: async (_rk, o) => { state.override = o; },
     getProfile: async () => ({}),
+    appendReviewHistory: async (_rk, e) => { state.history = [...(state.history || []), e]; },
+    readReviewHistory: async () => state.history || [],
   };
   const jobs = { record: async () => ({ runs: [], audit }), isAuditing: () => auditing };
   const review = new ContentFilterReview({ contentFilterRepository: repo, jobs, digestOf: async () => digest,
@@ -59,7 +61,7 @@ describe('ContentFilterReview marks and sign-off', () => {
   it('approve is refused with the exact missing lines, then accepted when all hold; withdraw removes parent', async () => {
     const { review, state } = setup();
     let r = await review.get({ ratingKey: '9' });
-    expect(r.signOff).toMatchObject({ ready: false, missing: ['2 of 2 parts not reviewed'] });
+    expect(r.signOff).toMatchObject({ ready: false, missing: ['2 rows have no verdict'] });
     await expect(review.approve({ ratingKey: '9', by: 'p' })).rejects.toBeInstanceOf(ReviewError);
     await review.markReviewed({ ratingKey: '9', rowId: 'cue:va1', span: [110.2, 110.6], by: 'p' });
     await review.markReviewed({ ratingKey: '9', rowId: 'cue:va2', span: [210, 212], by: 'p' });
@@ -77,7 +79,7 @@ describe('ContentFilterReview marks and sign-off', () => {
     const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rows: moved } });
     const r = await review.get({ ratingKey: '9' });
     expect(r.reviewed).toBe(0);
-    expect(r.signOff.missing).toEqual(['1 of 2 parts not reviewed', '1 parts changed since you reviewed them']);
+    expect(r.signOff.missing).toEqual(['1 rows have no verdict', '1 parts changed since you reviewed them']);
     await review.pruneMarks('9');
     expect(Object.keys(state.override.review)).toEqual(['cue:va1']);
     expect((await review.get({ ratingKey: '9' })).signOff.missing).toContain('1 parts changed since you reviewed them');
@@ -86,7 +88,7 @@ describe('ContentFilterReview marks and sign-off', () => {
     const s = base(); s.override.cueOverrides = { va1: { startMs: 100300, endMs: 100700 } };
     const r = await setup({ state: s, audit: { ok: false, digest: 'OLD', rows: [{ id: 'cue:va1', in: 110.2, out: 110.6, label: 'damn', members: ['va1'] }] }, digest: 'NEW' }).review.get({ ratingKey: '9' });
     expect(r.audit.fresh).toBe(false);
-    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The audit has not passed', 'The audit is out of date. Run Stage again → Audit.', '1 of 1 parts not reviewed']);
+    expect(r.signOff.missing).toEqual(['Not machine-certified: 1 mutes do not cover their word (damn)', 'The audit has not passed', 'The audit is out of date. Run Stage again → Audit.', '1 rows have no verdict']);
   });
   it('sets and clears a word ruling for this film', async () => {
     const { review, state } = setup();
@@ -104,5 +106,78 @@ describe('ContentFilterReview marks and sign-off', () => {
   it('returns this film\'s word rulings', async () => {
     const s = base(); s.override.profilePatch = { languageWords: { damn: 'bleep' } };
     expect((await setup({ state: s }).review.get({ ratingKey: '9' })).wordRulings).toEqual({ damn: 'bleep' });
+  });
+});
+
+describe('ContentFilterReview verdicts', () => {
+  const rows = () => [
+    { id: 'cue:va1', kind: 'words', category: 'language/x', modality: 'heard', in: 110.2, out: 110.6, effect: 'mute', handFixed: false, unsure: ['safe-window'], members: ['va1'] },
+    { id: 'cue:va2', kind: 'picture', category: 'violence/x', modality: 'shown', in: 210, out: 212, effect: 'skip', handFixed: true, unsure: [], members: ['va2'] },
+  ];
+  const run = () => setup({ audit: { ok: true, digest: 'D', rows: rows() } });
+  const span1 = [110.2, 110.6];
+
+  it('stores each verdict, reads a plain mark as approve, and appends history with machine provenance', async () => {
+    const { review, state } = run();
+    await review.setVerdict('9', 'cue:va1', { verdict: 'redo', reason: 'edges', span: span1, by: 'p', dwellMs: 1500, replays: 2 });
+    await review.markReviewed({ ratingKey: '9', rowId: 'cue:va2', span: [210, 212], by: 'p' });
+    const r = await review.get({ ratingKey: '9' });
+    expect(r.rows[0].verdict).toMatchObject({ verdict: 'redo', reason: 'edges', by: 'p' });
+    expect(r.rows[1].verdict).toMatchObject({ verdict: 'approve' });
+    expect(state.history[0]).toMatchObject({
+      by: 'p', rowId: 'cue:va1', kind: 'words', category: 'language/x', modality: 'heard', effect: 'mute', span: [110.2, 110.6],
+      verdict: 'redo', reason: 'edges', dwellMs: 1500, replays: 2,
+      machine: { unsure: ['safe-window'], handFixed: false }, film: { stage: 'machine' },
+    });
+    expect(typeof state.history[0].at).toBe('string');
+    expect(state.history).toHaveLength(2);
+  });
+  it('rejects an unknown verdict or redo reason', async () => {
+    const { review } = run();
+    await expect(review.setVerdict('9', 'cue:va1', { verdict: 'maybe', span: span1 })).rejects.toMatchObject({ status: 400 });
+    await expect(review.setVerdict('9', 'cue:va1', { verdict: 'redo', reason: 'vibes', span: span1 })).rejects.toMatchObject({ status: 400 });
+  });
+  it('remove disables the cue and undo re-enables it, each appending history', async () => {
+    const { review, state } = run();
+    await review.setVerdict('9', 'cue:va1', { verdict: 'remove', span: span1, by: 'p' });
+    expect(state.override.cueOverrides.va1.disabled).toBe(true);
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1', by: 'p' });
+    expect(state.override.cueOverrides?.va1?.disabled).toBeUndefined();
+    expect(state.override.review['cue:va1']).toBeUndefined();
+    expect(state.history.map((h) => h.verdict)).toEqual(['remove', 'undo']);
+    expect(state.history[1]).toMatchObject({ rowId: 'cue:va1', undid: 'remove' });
+  });
+  it('undo leaves a cue that was already disabled disabled', async () => {
+    const s = base(); s.override.cueOverrides = { va1: { disabled: true } };
+    const { review, state } = setup({ state: s, audit: { ok: true, digest: 'D', rows: rows() } });
+    await review.setVerdict('9', 'cue:va1', { verdict: 'remove', span: span1 });
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
+    expect(state.override.cueOverrides.va1.disabled).toBe(true);
+  });
+  it('an in-place action change is recorded and undo restores the previous effect', async () => {
+    const { review, state } = run();
+    state.override.cueOverrides = { va1: { effect: 'bleep' } }; // the client already applied mute -> bleep
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: 'mute', to: 'bleep' }, span: span1, by: 'p' });
+    expect(state.history[0].change).toEqual({ from: 'mute', to: 'bleep' });
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
+    expect(state.override.cueOverrides.va1.effect).toBe('mute');
+  });
+  it('a verdict on a moved row is refused, and a stored one stops counting', async () => {
+    const s = base(); s.override.review = { 'cue:va1': { by: 'p', at: 'x', span: [110.2, 110.6], verdict: 'approve' } };
+    const moved = rows(); moved[0].in = 110.25;
+    const { review } = setup({ state: s, audit: { ok: true, digest: 'D', rows: moved } });
+    const r = await review.get({ ratingKey: '9' });
+    expect(r.rows[0].verdict).toBeNull();
+    await expect(review.setVerdict('9', 'cue:va1', { verdict: 'approve', span: span1 })).rejects.toMatchObject({ status: 409 });
+  });
+  it('sign-off is blocked by rows without a verdict and by redo rows', async () => {
+    const { review } = run();
+    await review.setVerdict('9', 'cue:va1', { verdict: 'redo', span: span1, by: 'p' });
+    let r = await review.get({ ratingKey: '9' });
+    expect(r.signOff.missing).toEqual(['1 rows have no verdict', '1 rows wait for redo']);
+    await review.setVerdict('9', 'cue:va1', { verdict: 'ignore', span: span1, by: 'p' });
+    await review.setVerdict('9', 'cue:va2', { verdict: 'approve', span: [210, 212], by: 'p' });
+    r = await review.get({ ratingKey: '9' });
+    expect(r.signOff).toMatchObject({ ready: true, missing: [] });
   });
 });

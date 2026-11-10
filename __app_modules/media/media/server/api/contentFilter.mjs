@@ -261,13 +261,28 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     router.get('/:ratingKey/review', asyncHandler(async (req, res) => {
       try { res.json(await contentFilterReview.get({ ratingKey: key(req) })); } catch (e) { send(res, e); }
     }));
+    // PUT /:rk/review/:rowId { span, by, verdict?, reason?, change?, dwellMs?, replays? } -> { mark }
+    // (no verdict = approve). A remove or an in-place change alters what the household gets, so it
+    // re-audits the film; DELETE is the undo and reverts whatever the verdict applied.
+    const reaudit = (res, rk) => { res.on('finish', () => { if (res.statusCode < 300) jobs?.audit?.(rk)?.catch?.(() => {}); }); };
     router.put('/:ratingKey/review/:rowId', asyncHandler(async (req, res) => {
       if (!ROW.test(req.params.rowId)) return res.status(400).json({ error: 'invalid row id' });
-      try { res.json({ mark: await contentFilterReview.markReviewed({ ratingKey: key(req), rowId: req.params.rowId, span: req.body?.span, by: req.body?.by }) }); } catch (e) { send(res, e); }
+      const b = req.body || {};
+      try {
+        const mark = await contentFilterReview.setVerdict(key(req), req.params.rowId, {
+          verdict: b.verdict ?? 'approve', reason: b.reason, change: b.change, span: b.span, by: b.by, dwellMs: b.dwellMs, replays: b.replays,
+        });
+        if (b.verdict === 'remove' || b.change) reaudit(res, key(req));
+        res.json({ mark });
+      } catch (e) { send(res, e); }
     }));
     router.delete('/:ratingKey/review/:rowId', asyncHandler(async (req, res) => {
       if (!ROW.test(req.params.rowId)) return res.status(400).json({ error: 'invalid row id' });
-      try { await contentFilterReview.unmarkReviewed({ ratingKey: key(req), rowId: req.params.rowId }); res.json({ ok: true }); } catch (e) { send(res, e); }
+      try {
+        await contentFilterReview.clearVerdict({ ratingKey: key(req), rowId: req.params.rowId, by: req.body?.by ?? req.query?.by });
+        reaudit(res, key(req));
+        res.json({ ok: true });
+      } catch (e) { send(res, e); }
     }));
     // PUT /:rk/words/:word { value: off|mute|bleep|null } -> this film's ruling for one word
     router.put('/:ratingKey/words/:word', asyncHandler(async (req, res) => {

@@ -64,6 +64,16 @@ export class IContentFilterRepository {
   async saveOverride(_ratingKey, _override) {
     throw new Error('IContentFilterRepository.saveOverride not implemented');
   }
+
+  /** Append one review verdict/undo to a film's append-only history. */
+  async appendReviewHistory(_ratingKey, _entry) {
+    throw new Error('IContentFilterRepository.appendReviewHistory not implemented');
+  }
+
+  /** The newest `limit` history entries for a film, oldest first. */
+  async readReviewHistory(_ratingKey, _opts) {
+    throw new Error('IContentFilterRepository.readReviewHistory not implemented');
+  }
 }
 
 export default IContentFilterRepository;

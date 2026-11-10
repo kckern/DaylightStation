@@ -15,6 +15,8 @@ export class ReviewError extends Error {
 export const MAX_NUDGE_SEC = 30;
 const SPAN_EPS = 0.0011; // ±1 ms
 const ROW_ID = /^(cue|scene|subject):[A-Za-z0-9_-]+$/;
+const VERDICTS = new Set(['approve', 'remove', 'ignore', 'redo']);
+const REDO_REASONS = new Set(['edges', 'category', 'action', 'timing', 'other']);
 const WORD_VALUES = new Set(['off', 'mute', 'bleep']);
 const sameSpan = (a, b) => Array.isArray(a) && Array.isArray(b) && Math.abs(a[0] - b[0]) <= SPAN_EPS && Math.abs(a[1] - b[1]) <= SPAN_EPS;
 const ms3 = (t) => Math.round(t * 1000) / 1000;
@@ -97,29 +99,109 @@ export class ContentFilterReview {
 
   async #audit(ratingKey) { return (await this.#jobs.record(ratingKey))?.audit || null; }
 
-  async markReviewed({ ratingKey, rowId, span, by }) {
+  /** Cue/scene override ids a row's rulings apply to. */
+  static #targets(row, rowId) {
+    if (rowId.startsWith('scene:')) return { key: 'sceneOverrides', ids: [rowId.slice(6)] };
+    const members = (row?.members || []).map(String);
+    return { key: 'cueOverrides', ids: members.length ? members : [rowId.replace(/^(cue|subject):/, '')] };
+  }
+
+  /** Put an effect back the way a cue/scene ruling would (mirrors ContentFilterScenes). */
+  static #restoreEffect(next, effect) {
+    if (effect == null || effect === 'profile') { delete next.effect; delete next.disabled; }
+    else if (effect === 'off') { delete next.effect; next.disabled = true; }
+    else { next.effect = effect; delete next.disabled; }
+  }
+
+  /** Undo what a verdict applied: re-enable cues it disabled, restore the effect a recorded change left. */
+  static #revert(override, mark) {
+    let out = override;
+    const touch = (key, id, fn) => {
+      const all = { ...(out[key] || {}) }; const next = { ...(all[id] || {}) };
+      fn(next);
+      if (Object.keys(next).length) all[id] = next; else delete all[id];
+      out = { ...out, [key]: all };
+    };
+    for (const id of mark.applied?.ids || []) touch(mark.applied.key, id, (n) => { delete n.disabled; });
+    if (mark.targets && mark.change && 'from' in mark.change && (mark.change.from === null || typeof mark.change.from === 'string')) {
+      for (const id of mark.targets.ids) touch(mark.targets.key, id, (n) => ContentFilterReview.#restoreEffect(n, mark.change.from));
+    }
+    return out;
+  }
+
+  /**
+   * Record a verdict on one row: approve | remove | ignore | redo (reason: edges|category|action|timing|other).
+   * `remove` disables the cue/scene (undo re-enables what this call disabled). `change: { from, to }`
+   * on an approve records an in-place action change the client already applied (undo restores `from`).
+   * A span that no longer matches the audit row is refused (409), like any review mark.
+   */
+  async setVerdict(ratingKey, rowId, { verdict = 'approve', reason, change, span, by, dwellMs, replays } = {}) {
     if (!ROW_ID.test(String(rowId))) throw new ReviewError(`Bad row id: ${rowId}`, 400);
+    if (!VERDICTS.has(verdict)) throw new ReviewError(`Unknown verdict: ${verdict}`, 400);
+    if (reason != null && (verdict !== 'redo' || !REDO_REASONS.has(reason))) throw new ReviewError(`Unknown redo reason: ${reason}`, 400);
     return this.#queue.run(ratingKey, async () => {
-      const row = (await this.#audit(ratingKey))?.rows?.find((r) => r.id === rowId);
+      const record = await this.#jobs.record(ratingKey);
+      const row = record?.audit?.rows?.find((r) => r.id === rowId);
       if (!row || !sameSpan(span, [row.in, row.out])) throw new ReviewError('This part moved. Reload the list.', 409);
       const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
-      const mark = { by: String(by || 'admin'), at: this.#clock().toISOString(), span: [ms3(row.in), ms3(row.out)] };
-      await this.#repo.saveOverride(ratingKey, { ...override, review: { ...(override.review || {}), [rowId]: mark } });
-      this.#logger.info?.('content-filter.review.marked', { ratingKey, rowId, by: mark.by });
+      const prior = override.review?.[rowId];
+      const mark = { by: String(by || 'admin'), at: this.#clock().toISOString(), span: [ms3(row.in), ms3(row.out)], verdict };
+      if (reason) mark.reason = reason;
+      const target = ContentFilterReview.#targets(row, rowId);
+      if (change && typeof change === 'object') { mark.change = { from: change.from ?? null, to: change.to ?? null }; mark.targets = target; }
+      // A re-verdict replaces the old one: undo what the old one applied first, so nothing leaks.
+      let next = prior ? ContentFilterReview.#revert(override, prior) : override;
+      if (verdict === 'remove') {
+        const all = { ...(next[target.key] || {}) }; const applied = [];
+        for (const id of target.ids) {
+          if (all[id]?.disabled) continue;
+          all[id] = { ...(all[id] || {}), disabled: true }; applied.push(id);
+        }
+        next = { ...next, [target.key]: all };
+        mark.applied = { key: target.key, ids: applied };
+      }
+      await this.#repo.saveOverride(ratingKey, { ...next, review: { ...(next.review || {}), [rowId]: mark } });
+      const run = (record?.runs || []).at(-1) || null;
+      const refined = await this.#repo.getRefinedEdl((await this.#repo.getEdl(ratingKey))?.sourceRef || {});
+      const entry = {
+        at: mark.at, by: mark.by, rowId, kind: row.kind ?? null, category: row.category ?? null, modality: row.modality ?? null,
+        effect: row.effect ?? null, span: mark.span, verdict, reason: reason ?? null, change: mark.change ?? null,
+        dwellMs: Number.isFinite(dwellMs) ? dwellMs : null, replays: Number.isFinite(replays) ? replays : null,
+        machine: { stage: run?.step ?? run?.kind ?? null, unsure: row.unsure || [], ...(row.jev ? { jev: row.jev } : {}), handFixed: !!row.handFixed },
+        film: { stage: refined?.certification?.level ?? 'none' },
+      };
+      await this.#repo.appendReviewHistory(ratingKey, entry);
+      this.#logger.info?.('content_filter.review.verdict.recorded', { ratingKey, rowId, kind: entry.kind, category: entry.category, verdict, reason: entry.reason, by: mark.by });
       return mark;
     });
   }
 
-  async unmarkReviewed({ ratingKey, rowId }) {
+  markReviewed({ ratingKey, rowId, span, by }) { return this.setVerdict(ratingKey, rowId, { verdict: 'approve', span, by }); }
+
+  /** Undo: drop the verdict and revert what it applied; appends an `undo` history entry. */
+  async clearVerdict({ ratingKey, rowId, by }) {
     if (!ROW_ID.test(String(rowId))) throw new ReviewError(`Bad row id: ${rowId}`, 400);
     return this.#queue.run(ratingKey, async () => {
       const override = (await this.#repo.getOverride(ratingKey)) || {};
+      const mark = override.review?.[rowId];
       const review = { ...(override.review || {}) };
       delete review[rowId];
-      await this.#repo.saveOverride(ratingKey, { ...override, review });
+      let next = { ...override, review };
+      if (mark) next = ContentFilterReview.#revert(next, mark);
+      await this.#repo.saveOverride(ratingKey, next);
+      if (mark) {
+        const who = String(by || 'admin');
+        await this.#repo.appendReviewHistory(ratingKey, {
+          at: this.#clock().toISOString(), by: who, rowId, verdict: 'undo', undid: mark.verdict || 'approve',
+          span: mark.span ?? null, change: mark.change ?? null,
+        });
+        this.#logger.info?.('content_filter.review.verdict.recorded', { ratingKey, rowId, verdict: 'undo', undid: mark.verdict || 'approve', by: who });
+      }
       this.#logger.info?.('content-filter.review.unmarked', { ratingKey, rowId });
     });
   }
+
+  unmarkReviewed(args) { return this.clearVerdict(args); }
 
   /**
    * Drop marks whose row is gone (after an audit lands). A mark whose row moved stays, so the
@@ -150,12 +232,14 @@ export class ContentFilterReview {
     const fresh = !!audit && audit.digest === (await this.#digestOf(ratingKey));
     const cert = certify(refined, { at: refined.certification?.machine?.at ?? null, cueOverrides: override.cueOverrides || {} });
     const marks = override.review || {};
-    let reviewed = 0; let changed = 0;
+    let reviewed = 0; let changed = 0; let redo = 0;
     const rows = (audit?.rows || []).map((r) => {
       const m = marks[r.id];
       const ok = !!m && sameSpan(m.span, [r.in, r.out]);
       if (ok) reviewed++; else if (m) changed++;
-      return { ...r, reviewed: ok ? { by: m.by, at: m.at } : null };
+      const verdict = ok ? { verdict: m.verdict || 'approve', ...(m.reason ? { reason: m.reason } : {}), ...(m.change ? { change: m.change } : {}), by: m.by, at: m.at } : null;
+      if (verdict?.verdict === 'redo') redo++;
+      return { ...r, reviewed: ok ? { by: m.by, at: m.at } : null, verdict };
     });
     const total = rows.length;
     const auditing = typeof this.#jobs.isAuditing === 'function' && this.#jobs.isAuditing(ratingKey);
@@ -168,15 +252,16 @@ export class ContentFilterReview {
     }
     if (audit && audit.ok === false) missing.push('The audit has not passed');
     if (!fresh) missing.push(auditing ? 'The audit is still running' : 'The audit is out of date. Run Stage again → Audit.');
-    if (total - reviewed - changed > 0) missing.push(`${total - reviewed - changed} of ${total} parts not reviewed`);
+    if (total - reviewed - changed > 0) missing.push(`${total - reviewed - changed} rows have no verdict`);
     if (changed) missing.push(`${changed} parts changed since you reviewed them`);
+    if (redo) missing.push(`${redo} rows wait for redo`);
     const run = (record?.runs || []).at(-1) || null;
     return {
       title: raw?.title ?? null,
       certification: { level: cert.level, ...(cert.blocking ? { blocking: cert.blocking } : {}) },
       audit: audit ? { ok: audit.ok, at: audit.at, fresh, running: auditing, failures: audit.failures || [] } : null,
       wordRulings: override.profilePatch?.languageWords || {},
-      rows, reviewed, total,
+      rows, reviewed, total, redo,
       job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}) } : null,
       signOff: { ready: missing.length === 0, missing, parent: refined.certification?.parent || null },
     };

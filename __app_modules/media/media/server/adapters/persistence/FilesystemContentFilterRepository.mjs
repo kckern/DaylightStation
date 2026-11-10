@@ -134,6 +134,21 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
     this.#writeYaml(this.#householdDir, `content-filter/overrides/${ratingKey}.yml`, override);
   }
 
+  /** Append one review-history entry (append-only: nothing rewrites or drops earlier entries). */
+  async appendReviewHistory(ratingKey, entry) {
+    const rel = `content-filter/review-history/${ratingKey}.yml`;
+    const prior = this.#readYaml(this.#householdDir, rel);
+    const entries = Array.isArray(prior?.entries) ? prior.entries : [];
+    this.#writeYaml(this.#householdDir, rel, { entries: [...entries, entry] });
+  }
+
+  /** The newest `limit` history entries, oldest first. */
+  async readReviewHistory(ratingKey, { limit = 200 } = {}) {
+    const prior = this.#readYaml(this.#householdDir, `content-filter/review-history/${ratingKey}.yml`);
+    const entries = Array.isArray(prior?.entries) ? prior.entries : [];
+    return limit > 0 ? entries.slice(-limit) : entries;
+  }
+
   #writeYaml(root, relativePath, content) {
     const filePath = buildContainedPath(root, relativePath);
     if (!filePath) throw new Error(`content-filter path escapes its root: ${relativePath}`);

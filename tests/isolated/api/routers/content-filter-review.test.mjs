@@ -36,7 +36,7 @@ describe('content-filter review routes', () => {
     expect((await request(app).put('/cf/9/cues/va1').send({ nudge: { in: 1, out: 99 } })).status).toBe(400);
   });
   test('marks: a stale span is 409, a bad row id is 400, and marks do not re-audit', async () => {
-    const { app, audit } = mk({ review: { markReviewed: async () => { throw new ReviewError('This part moved. Reload the list.', 409); } } });
+    const { app, audit } = mk({ review: { setVerdict: async () => { throw new ReviewError('This part moved. Reload the list.', 409); } } });
     const stale = await request(app).put('/cf/9/review/cue:va1').send({ span: [1, 2] });
     expect(stale.status).toBe(409);
     expect(stale.body.error).toBe('This part moved. Reload the list.');
@@ -52,6 +52,37 @@ describe('content-filter review routes', () => {
     expect(res.status).toBe(409);
     expect(res.body.missing).toEqual(['2 of 2 parts not reviewed']);
     expect((await request(app).get('/cf/9/review')).body.signOff.ready).toBe(false);
+  });
+});
+
+describe('review verdict routes', () => {
+  test('a plain PUT is an approve; the body verdict, reason, change and telemetry pass through', async () => {
+    const setVerdict = vi.fn(async () => ({ verdict: 'x' }));
+    const { app, audit } = mk({ review: { setVerdict } });
+    await request(app).put('/cf/9/review/cue:va1').send({ span: [1, 2], by: 'p' });
+    expect(setVerdict).toHaveBeenLastCalledWith('9', 'cue:va1', { verdict: 'approve', reason: undefined, change: undefined, span: [1, 2], by: 'p', dwellMs: undefined, replays: undefined });
+    await request(app).put('/cf/9/review/cue:va1').send({ span: [1, 2], verdict: 'redo', reason: 'edges', dwellMs: 900, replays: 1 });
+    expect(setVerdict).toHaveBeenLastCalledWith('9', 'cue:va1', expect.objectContaining({ verdict: 'redo', reason: 'edges', dwellMs: 900, replays: 1 }));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(audit).not.toHaveBeenCalled();
+  });
+  test('a remove or an in-place change re-audits; an unknown verdict is 400', async () => {
+    const setVerdict = vi.fn(async (_rk, _id, { verdict }) => { if (verdict === 'maybe') throw new ReviewError('Unknown verdict: maybe', 400); return {}; });
+    const { app, audit } = mk({ review: { setVerdict } });
+    await request(app).put('/cf/9/review/cue:va1').send({ span: [1, 2], verdict: 'remove' });
+    await request(app).put('/cf/9/review/cue:va2').send({ span: [1, 2], change: { from: 'mute', to: 'bleep' } });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(audit).toHaveBeenCalledTimes(2);
+    expect((await request(app).put('/cf/9/review/cue:va1').send({ verdict: 'maybe' })).status).toBe(400);
+  });
+  test('DELETE is the undo: it clears the verdict and re-audits', async () => {
+    const clearVerdict = vi.fn(async () => {});
+    const { app, audit } = mk({ review: { clearVerdict } });
+    const res = await request(app).delete('/cf/9/review/cue:va1').send({ by: 'p' });
+    expect(res.status).toBe(200);
+    expect(clearVerdict).toHaveBeenCalledWith({ ratingKey: '9', rowId: 'cue:va1', by: 'p' });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(audit).toHaveBeenCalledWith('9');
   });
 });
 
