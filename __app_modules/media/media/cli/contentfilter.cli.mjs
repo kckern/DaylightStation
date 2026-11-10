@@ -27,6 +27,7 @@
  *   export <slug|workId>    Emit a normalized FilterEDL (YAML) to stdout
  *   preflight <ratingKey>   Can a pipeline run happen here? (refine deps, Plex part)
  *   worker [--app <url>] [--data-dir <dir>]  The filter worker: claim Admin runs over HTTP, run them, hand back results
+ *   review-stats [--since 30d] [--rk <id>]  Human review verdicts as machine-certification feedback (read-only)
  *   match [--section <id>]  Cross-reference your Plex movie library vs VidAngel
  *
  * Options:
@@ -686,7 +687,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
-  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence', '--profile': 'profile', '--app': 'app', '--data-dir': 'data-dir', '--stage-dir': 'stage-dir',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence', '--profile': 'profile', '--app': 'app', '--since': 'since', '--rk': 'rk', '--data-dir': 'data-dir', '--stage-dir': 'stage-dir',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -1086,6 +1087,14 @@ async function main() {
     return;
   }
 
+  if (command === 'review-stats') {
+    const { runReviewStats, formatReviewStats } = await import('./contentfilter/reviewStatsCommand.mjs');
+    let report;
+    try { report = runReviewStats({ historyDir: path.join(filterCacheDir(), 'review-history'), flags }); } catch (err) { console.error(`review-stats failed: ${err.message}`); process.exit(1); }
+    if (flags.json) console.log(JSON.stringify(report, null, 2)); else console.log(formatReviewStats(report));
+    return;
+  }
+
   if (command === 'worker') {
     const os = await import('os');
     const { runWorker, httpWorkerApi, STEP_TIMEOUT_MS } = await import('./contentfilter/workerCommand.mjs');
@@ -1421,6 +1430,9 @@ Commands:
   scenes <ratingKey>    Group refined tags into scenes (shot-cut edges, situation + picture levels by Jev). --src, --same-scene, --out, --write.
   audit <ratingKey>     Prove a title: tone cap, channel match, region-track share, same-subject groups, R4 counts,
                         scene edge leaks, certification, language per group. --profile, --part, --json. Exit 1 on a hard fail.
+  review-stats          Human review verdicts as machine-certification feedback: counts by kind/category/effect/stage,
+                        remove rate by machine stage + unsure, action-change matrix, redo reasons, median dwell.
+                        --since 30d|12h|date, --rk, --json. Read-only.
   certify <ratingKey>   Show/recompute a refined EDL's certification (machine: every mute precise);
                         --parent --by <name> records a sign-off. --write.
   migrate-refined <rk>  Move a title's refined cue times from its override into the shareable

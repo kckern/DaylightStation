@@ -817,6 +817,24 @@ title index every 10 minutes.
   applied (re-enable, restore `from`). Every verdict and undo appends to `household/content-filter/review-history/<rk>.yml`
   (append-only, via the repository) and logs `content_filter.review.verdict.recorded`. A moved span drops the verdict.
 
+### Review history and `review-stats`
+
+The history file is the durable record of human judgement: `household/content-filter/review-history/<rk>.yml`,
+`entries: [...]`, append-only (nothing rewrites or drops an entry, so it survives a re-audit that clears the
+live marks). Each entry carries `at`, `by`, `rowId`, the row snapshot (`kind`, `category`, `modality`, `effect`,
+`span`), `verdict`, `reason`, `change`, `dwellMs`, `replays`, `machine: { stage, unsure, handFixed }` and
+`film: { stage }`. An `undo` entry cancels the verdict before it.
+
+`contentfilter review-stats [--since 30d|12h|<date>] [--rk <id>] [--json]` is read-only and reports, over the
+NET verdict per row (latest verdict not undone, not raw entries): verdict counts by kind, category, effect and
+machine stage; remove rate by machine stage and by `unsure` reason (where the machine's certification is wrong
+most); the action-change matrix (`bleep -> mute`, `blur -> skip`, `edges`); redo reasons; median dwell. Use it to
+tighten machine certification where humans keep removing or changing the same kind of row.
+
+The review station's keymap and verdict lifecycle are described under Review above. The bleep level is the
+profile setting `bleepLevel` (default 0.25, clamp 0-1) with a per-film override in film settings; effective =
+film ?? profile ?? 0.25, applied at playback.
+
 ## QA and current limitations
 
 The resolver and player behavior have unit tests. `cli/player-review` scrubs cue-by-cue to
