@@ -90,6 +90,17 @@ export function MedalIcon() {
   );
 }
 
+/** Three-dot "more" glyph for the race menu button (was a text ⋯ in the plan sketch). */
+export function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
+    </svg>
+  );
+}
+
 /** Speaker glyph for the volume control; a muted variant swaps the waves for an ✕. */
 export function VolumeIcon({ muted }) {
   return (

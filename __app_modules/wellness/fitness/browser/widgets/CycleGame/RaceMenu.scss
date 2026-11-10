@@ -1,0 +1,167 @@
+@use "./cgTokens" as cg;
+
+// Race menu — the one way to stop a race. Mounted inside the container's
+// position:relative root. Layering against its neighbours in this widget:
+//   CycleEventToast 30 · CountdownStoplight 50 · countdown rider strip 51 ·
+//   lobby pickers 50 · RaceRecap / ghost confirm 60.
+// The open button sits above the stoplight overlay so it can be reached during
+// the countdown; the sheet sits above every other layer in the widget.
+$race-menu-z-open: 55;
+$race-menu-z-sheet: 70;
+
+// No spacing/radius tokens exist in _cgTokens; these mirror the values the
+// widget already uses (18px corner inset of the old cancel button, the picker
+// sheet's 18px radius and 22px padding).
+$race-menu-inset: 18px;
+$race-menu-open-size: 64px;   // touch target (floor 56px)
+$race-menu-item-min: 84px;    // touch target (floor 72px)
+
+.cg-race-menu__open {
+  position: absolute;
+  top: $race-menu-inset;
+  right: $race-menu-inset;
+  z-index: $race-menu-z-open;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: $race-menu-open-size;
+  height: $race-menu-open-size;
+  min-width: 56px;
+  min-height: 56px;
+  padding: 0;
+  border-radius: 50%;
+  color: cg.$cg-text;
+  background: rgba(cg.$cg-panel, 0.7);
+  border: 1px solid cg.$cg-border;
+  // Deliberately recessive: it must never read as the thing to press.
+  opacity: 0.45;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: opacity 0.15s ease;
+
+  svg { width: 30px; height: 30px; display: block; }
+
+  &:active,
+  &:focus-visible,
+  &[aria-expanded="true"] { opacity: 1; }
+  &:focus-visible { outline: 2px solid cg.$cg-text; outline-offset: 3px; }
+}
+
+.cg-race-menu {
+  position: absolute;
+  inset: 0;
+  z-index: $race-menu-z-sheet;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: cg.$cg-display;
+
+  // No backdrop blur (the lobby pickers use one): this scrim sits over a live
+  // race with a WebGL panel, and a blur would be re-rasterised every frame.
+  &__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(cg.$cg-bg, 0.72);
+    animation: cg-race-menu-fade 160ms ease both;
+  }
+
+  &__sheet {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: min(560px, 86%);
+    max-height: 90%;
+    overflow-y: auto;
+    padding: 22px;
+    background: cg.$cg-panel;
+    border: 1px solid cg.$cg-border;
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+    animation: cg-race-menu-rise 200ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+  }
+
+  &__item {
+    appearance: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    min-height: $race-menu-item-min;
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-family: inherit;
+    text-align: center;
+    color: cg.$cg-text;
+    background: transparent;
+    border: 1px solid cg.$cg-border;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: opacity 0.2s ease, border-color 0.15s ease, background 0.15s ease;
+
+    &:active { background: cg.$cg-panel-2; }
+    &:focus-visible { outline: 2px solid cg.$cg-text; outline-offset: 3px; }
+    // Inert for the first 600 ms after the sheet opens (accidental-tap guard).
+    &[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+
+    // The only filled item: staying in the race is the default answer.
+    &--primary {
+      color: cg.$cg-bg;
+      background: cg.$cg-cyan;
+      border-color: cg.$cg-cyan;
+      &:active { background: darken(cg.$cg-cyan, 8%); }
+      &:focus-visible { outline-color: cg.$cg-text; }
+    }
+
+    &--danger {
+      .cg-race-menu__label { color: cg.$cg-danger; }
+      border-color: rgba(cg.$cg-danger, 0.45);
+      &:active { background: rgba(cg.$cg-danger, 0.12); }
+    }
+  }
+
+  &__label {
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1.1;
+  }
+
+  &__sub {
+    font-size: cg.$tv-micro; // shown while racing: the 10-foot floor
+    font-weight: 500;
+    line-height: 1.25;
+    color: cg.$cg-muted;
+  }
+
+  // Sets Discard apart from End race here: two different outcomes must not be
+  // neighbouring targets of equal weight.
+  &__divider {
+    flex: 0 0 auto;
+    height: 1px;
+    margin: 14px 0;
+    background: cg.$cg-border;
+  }
+}
+
+@keyframes cg-race-menu-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cg-race-menu-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-race-menu__scrim,
+  .cg-race-menu__sheet { animation: none; }
+  .cg-race-menu__open,
+  .cg-race-menu__item { transition: none; }
+}
