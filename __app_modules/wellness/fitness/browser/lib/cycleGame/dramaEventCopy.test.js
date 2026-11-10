@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dramaEventToasts } from "./dramaEventCopy.js";
+import { dramaEventToasts, beatToasts } from "./dramaEventCopy.js";
 
 const riders = { a: { displayName: 'Ada' }, b: { displayName: 'Ben' }, c: { displayName: 'Cy' } };
 
@@ -59,5 +59,60 @@ describe('dramaEventToasts', () => {
 
   it('an unrecognized event type produces no toasts', () => {
     expect(dramaEventToasts({ type: 'UNKNOWN', riderIds: [] }, {}, riders)).toEqual([]);
+  });
+});
+
+describe('beatToasts', () => {
+  const ahead = (gapS, extra = {}) => ({ gapM: 20, gapS, ahead: true, ...extra });
+  const behind = (gapS, extra = {}) => ({ gapM: 20, gapS, ahead: false, ...extra });
+
+  it('HALFWAY with no delta has a title only', () => {
+    expect(beatToasts('HALFWAY')).toEqual([{ variant: 'halfway', title: 'Halfway' }]);
+    expect(beatToasts('HALFWAY', { delta: null, rivalName: 'rider-a' })).toEqual([{ variant: 'halfway', title: 'Halfway' }]);
+  });
+  it('HALFWAY ahead of a named rival', () => {
+    expect(beatToasts('HALFWAY', { delta: ahead(4.2), rivalName: 'rider-a', rivalKind: 'live' }))
+      .toEqual([{ variant: 'halfway', title: 'Halfway', subtitle: '4 s ahead of rider-a' }]);
+  });
+  it('HALFWAY behind your own best', () => {
+    expect(beatToasts('HALFWAY', { delta: behind(-6), rivalName: 'x', rivalKind: 'self' })[0].subtitle).toBe('6 s behind your best');
+    expect(beatToasts('HALFWAY', { delta: behind(6.4), rivalKind: 'self' })[0].subtitle).toBe('6 s behind your best');
+  });
+  it('household rival reads as the name plus best', () => {
+    expect(beatToasts('HALFWAY', { delta: ahead(3), rivalName: 'rider-a', rivalKind: 'household' })[0].subtitle).toBe("3 s ahead of rider-a's best");
+  });
+  it('par rival reads as par', () => {
+    expect(beatToasts('HALFWAY', { delta: behind(9), rivalKind: 'par' })[0].subtitle).toBe('9 s behind par');
+  });
+  it('falls back to metres when there is no gapS', () => {
+    expect(beatToasts('HALFWAY', { delta: { gapM: 12.6, gapS: null, ahead: true }, rivalName: 'rider-a' })[0].subtitle).toBe('13 m ahead of rider-a');
+    expect(beatToasts('SPLIT', { delta: { gapM: 40.2, gapS: null, ahead: false }, rivalKind: 'self', elapsedS: 60 })[0].subtitle).toBe('40 m behind your best');
+  });
+  it('a rounded gap of 0 reads level', () => {
+    expect(beatToasts('HALFWAY', { delta: ahead(0.3), rivalName: 'rider-a' })[0].subtitle).toBe('level with rider-a');
+    expect(beatToasts('SPLIT', { delta: { gapM: 0.2, gapS: null, ahead: true }, rivalKind: 'self', elapsedS: 60 })[0].subtitle).toBe('level with your best');
+  });
+  it('SPLIT titles with the elapsed minute and carries the delta', () => {
+    expect(beatToasts('SPLIT', { delta: ahead(4), rivalName: 'rider-a', elapsedS: 180 }))
+      .toEqual([{ variant: 'split', title: '3:00', subtitle: '4 s ahead of rider-a' }]);
+    expect(beatToasts('SPLIT', { delta: ahead(4), rivalName: 'rider-a', elapsedS: 60.4 })[0].title).toBe('1:00');
+  });
+  it('SPLIT with no delta (or no options) returns no toast', () => {
+    expect(beatToasts('SPLIT', { elapsedS: 60 })).toEqual([]);
+    expect(beatToasts('SPLIT', { delta: null, elapsedS: 60 })).toEqual([]);
+    expect(beatToasts('SPLIT')).toEqual([]);
+  });
+  it('LAST_MINUTE and LAST_STRETCH have fixed titles and no subtitle', () => {
+    expect(beatToasts('LAST_MINUTE')).toEqual([{ variant: 'last-minute', title: 'One minute left' }]);
+    expect(beatToasts('LAST_STRETCH', { delta: ahead(4), rivalName: 'rider-a' })).toEqual([{ variant: 'last-stretch', title: 'Last stretch' }]);
+  });
+  it('FINAL_SECONDS and unknown beats return no toast', () => {
+    expect(beatToasts('FINAL_SECONDS', { secondsLeft: 5 })).toEqual([]);
+    expect(beatToasts('NOPE')).toEqual([]);
+    expect(beatToasts(undefined)).toEqual([]);
+  });
+  it('does not throw on NaN gaps', () => {
+    expect(() => beatToasts('HALFWAY', { delta: { gapM: NaN, gapS: NaN, ahead: true }, rivalName: 'rider-a' })).not.toThrow();
+    expect(beatToasts('HALFWAY', { delta: { gapM: NaN, gapS: NaN, ahead: true } })).toEqual([{ variant: 'halfway', title: 'Halfway' }]);
   });
 });

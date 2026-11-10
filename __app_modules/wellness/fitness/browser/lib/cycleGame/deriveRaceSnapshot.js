@@ -5,6 +5,9 @@ import { lapCount, lapProgress } from "./lapModel.js";
 const EARLY_EXIT = 0.15;   // EARLY while progress < 0.15
 const FINALE_ENTER = 0.85, FINALE_EXIT = 0.80; // FINALE once > 0.85, until < 0.80
 const PHOTO_FINISH_GAP_M = 25;
+const LEAD_MARGIN_M = 3;    // the new leader must be clear by this much
+const LEAD_HOLD_S = 3;      // and stay clear this long
+const LEAD_COOLDOWN_S = 10; // and announcements are at least this far apart
 
 function progressOf(state) {
   if (state.winCondition === 'distance') {
@@ -25,6 +28,21 @@ function nextPhase(prevPhase, started, finished, progress) {
   return progress >= EARLY_EXIT ? 'MID' : 'EARLY';
 }
 
+/**
+ * Derive the per-tick race snapshot (phase, leader, tension metrics, edge-triggered events).
+ *
+ * `leaderId` is the raw distance leader and changes every tick in a close race.
+ * `announcedLeaderId` lags it: a LEAD_CHANGE event fires only when a challenger
+ * is clear by LEAD_MARGIN_M, has held that for LEAD_HOLD_S, and at least
+ * LEAD_COOLDOWN_S have passed since the last announcement. Riders listed in
+ * `config.awayIds` (array or Set; the controller owns the parked/away state)
+ * are never announced or treated as challenger, and do not set the margin.
+ *
+ * @param {object} state engine state ({ riders, elapsedS, winCondition, goalM, timeCapS, finished })
+ * @param {{lapLengthM?: number, awayIds?: string[]|Set<string>}} [config]
+ * @param {object|null} [prevSnapshot] the previous call's result
+ * @returns {object} JSON-serialisable snapshot
+ */
 export function deriveRaceSnapshot(state, config = {}, prevSnapshot = null) {
   const lapLengthM = Number.isFinite(config.lapLengthM) && config.lapLengthM > 0 ? config.lapLengthM : 0;
   const lapsEnabled = lapLengthM > 0;
@@ -75,8 +93,35 @@ export function deriveRaceSnapshot(state, config = {}, prevSnapshot = null) {
   // Edge-triggered drama events.
   const events = [];
   const fire = (type, riderIds = []) => events.push({ type, riderIds, firedAtClock: state.elapsedS });
+
+  // Announced leader lags the raw leader (see JSDoc). Away riders are excluded.
+  const away = new Set(config.awayIds ? Array.from(config.awayIds) : []);
+  const eligible = byDist.filter((id) => !away.has(id));
+  const distOf = (id) => state.riders[id].cumulativeDistanceM || 0;
+  const eligibleLeaderId = eligible[0] ?? null;
+  const eligibleGapM = eligible.length >= 2 ? distOf(eligible[0]) - distOf(eligible[1]) : 0;
+  let announcedLeaderId = prevSnapshot ? (prevSnapshot.announcedLeaderId ?? eligibleLeaderId) : eligibleLeaderId;
+  let challengerId = null;
+  let challengerSinceS = null;
+  let lastLeadChangeS = prevSnapshot?.lastLeadChangeS ?? null;
+  if (prevSnapshot && eligibleLeaderId && eligibleLeaderId !== announcedLeaderId && eligibleGapM >= LEAD_MARGIN_M) {
+    challengerId = eligibleLeaderId;
+    challengerSinceS = prevSnapshot.challengerId === eligibleLeaderId && prevSnapshot.challengerSinceS != null
+      ? prevSnapshot.challengerSinceS : state.elapsedS;
+    const held = state.elapsedS - challengerSinceS >= LEAD_HOLD_S;
+    const cooled = lastLeadChangeS == null || state.elapsedS - lastLeadChangeS >= LEAD_COOLDOWN_S;
+    if (held && cooled) {
+      announcedLeaderId = eligibleLeaderId;
+      lastLeadChangeS = state.elapsedS;
+      challengerId = null;
+      challengerSinceS = null;
+      fire('LEAD_CHANGE', [announcedLeaderId]);
+    }
+  }
+  if (!Number.isFinite(challengerSinceS)) challengerSinceS = null;
+  if (!Number.isFinite(lastLeadChangeS)) lastLeadChangeS = null;
+
   if (prevSnapshot) {
-    if (leaderId && prevSnapshot.leaderId && leaderId !== prevSnapshot.leaderId) fire('LEAD_CHANGE', [leaderId]);
     const newlyFinished = ids.filter((id) => ridersView[id].finishTimeS != null
       && (prevSnapshot.ridersView?.[id]?.finishTimeS == null));
     if (newlyFinished.length) fire('RIDER_FINISHED', newlyFinished);
@@ -94,7 +139,8 @@ export function deriveRaceSnapshot(state, config = {}, prevSnapshot = null) {
   return {
     elapsedS: state.elapsedS, winCondition: state.winCondition, goalM: state.goalM,
     fieldSize, humanCount, ghostCount, isSolo, lapsEnabled, lapLengthM,
-    phase, progress, leaderId, leaderGapM, tightestPairGapM, lapDeltaMax, closingRateMPS,
+    phase, progress, leaderId, leaderGapM,
+    announcedLeaderId: announcedLeaderId ?? null, challengerId, challengerSinceS, lastLeadChangeS, tightestPairGapM, lapDeltaMax, closingRateMPS,
     ridersView, events
   };
 }
