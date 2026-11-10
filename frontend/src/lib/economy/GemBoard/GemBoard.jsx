@@ -11,8 +11,13 @@
  * cell, a gem still in reach is a faint gem inside a ring of day segments,
  * an unreadable source a muted "?".
  *
- * Input: tap, Escape (closes), ←/→ (move the highlighted column), Enter
- * (toggle this week / last week). A surface with a gamepad hands its button
+ * A cell with something behind it opens a detail box (GemDetail.jsx): which
+ * days counted, which milestones were paid, how a contest stands.
+ *
+ * Input: tap (a cell opens its detail), Escape (closes the detail, then the
+ * board), ←/→ (move the highlighted column), ↑/↓ (move a row cursor), Enter
+ * (open the cell under the cursor; with no cursor, or nothing to open there,
+ * toggle this week / last week). A surface with a gamepad hands its button
  * presses in through `keyRef` (the fitness screen does) — this file reads no
  * gamepad itself. Closes on its own after `idleMs` without input.
  */
@@ -20,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
 import GemGlyph, { glyphLook, glyphWords } from './GemGlyph.jsx';
+import GemDetail from './GemDetail.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './GemBoard.scss';
 
@@ -48,12 +54,15 @@ function Avatar({ id, name }) {
   return <img className="gem-board__avatar" src={`/api/v1/static/img/users/${id}`} alt="" onError={() => setFailed(true)} />;
 }
 
+/** A cell has a detail box to open when it shows anything and carries its parts. */
+const cellOpenable = (cell) => (cell?.parts?.length ?? 0) > 0 && glyphLook(cell) !== 'none';
+
 /** One child's cell in one gem row. Exported for tests. */
 export function GemCell({ cell, color, name, rowLabel, onOpen = null, cursor = false }) {
   const look = glyphLook(cell);
   const label = `${name}, ${rowLabel}: ${glyphWords(cell)}`;
   const glyph = <GemGlyph cell={cell} color={color} />;
-  const openable = onOpen && (cell?.parts?.length ?? 0) > 0 && look !== 'none';
+  const openable = onOpen && cellOpenable(cell);
   return (
     <div className={`gem-board__cell${cursor ? ' is-cursor' : ''}`} role="cell" data-look={look} data-state={cell?.state ?? 'none'}>
       {openable
@@ -155,6 +164,8 @@ export default function GemBoardOverlay({
   const [weekOffset, setWeekOffset] = useState(0); // 0 this week, -1 last week
   const [state, setState] = useState({ board: null, error: null, loading: false });
   const [focus, setFocus] = useState(focusLearnerId);
+  const [rowCursor, setRowCursor] = useState(null); // the row under ↑/↓; with `focus`, one cell
+  const [picked, setPicked] = useState(null); // {rowId, learnerId} of the open detail
   const openedAt = useRef(0);
   const thisWeek = useRef(null); // the current week's Monday, once the first read lands
   const idle = useRef(null);
@@ -175,6 +186,8 @@ export default function GemBoardOverlay({
     openedAt.current = Date.now();
     setWeekOffset(0);
     setFocus(focusLearnerId);
+    setRowCursor(null);
+    setPicked(null);
     logger().info('gem-board.open', { surface, focusLearnerId });
     poke();
     return () => { if (idle.current) clearTimeout(idle.current); };
@@ -201,17 +214,64 @@ export default function GemBoardOverlay({
     return () => { live = false; };
   }, [open, weekOffset, load, surface]);
 
+  // The open detail, when its row, child and cell are all on the board in hand.
+  const detail = useMemo(() => {
+    const board = state.board;
+    if (!picked || !board || board.mode === 'off') return null;
+    const row = (board.categories ?? []).find((c) => c.id === picked.rowId);
+    const learner = (board.learners ?? []).find((l) => l.learnerId === picked.learnerId);
+    const cell = board.cells?.[picked.rowId]?.[picked.learnerId];
+    return row && learner && cell ? { row, learner, cell } : null;
+  }, [picked, state.board]);
+
+  const openDetail = useCallback((rowId, learnerId, via) => {
+    poke();
+    setPicked({ rowId, learnerId });
+    logger().info('gem-board.detail-open', { surface, rowId, learnerId, via });
+  }, [poke, surface]);
+
+  const closeDetail = useCallback((reason) => {
+    poke();
+    if (picked) logger().debug('gem-board.detail-close', { surface, rowId: picked.rowId, learnerId: picked.learnerId, reason });
+    setPicked(null);
+  }, [picked, poke, surface]);
+
   const step = useCallback((offset) => {
     poke();
+    if (picked) closeDetail('week');
+    setRowCursor(null);
     setWeekOffset(offset);
     logger().debug('gem-board.week-step', { surface, offset });
-  }, [poke, surface]);
+  }, [closeDetail, picked, poke, surface]);
 
   const handleKey = useCallback((key) => {
     poke();
-    const ids = (state.board?.learners ?? []).map((l) => l.learnerId);
+    const board = state.board;
+    const ids = (board?.learners ?? []).map((l) => l.learnerId);
+    if (detail) {
+      // The detail is on top: Escape and Enter close it, arrows are swallowed.
+      if (key === 'Escape') { closeDetail('back'); return true; }
+      if (key === 'Enter') { closeDetail('key'); return true; }
+      return key.startsWith('Arrow');
+    }
     if (key === 'Escape') { close('back'); return true; }
-    if (key === 'Enter') { step(weekOffset === 0 ? -1 : 0); return true; }
+    if (key === 'Enter') {
+      if (rowCursor && focus && cellOpenable(board?.cells?.[rowCursor]?.[focus])) openDetail(rowCursor, focus, 'key');
+      else step(weekOffset === 0 ? -1 : 0);
+      return true;
+    }
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      const rows = board && board.mode !== 'off' ? boardRowIds(board) : [];
+      if (!rows.length) return false;
+      setRowCursor((cur) => {
+        const at = rows.indexOf(cur);
+        const next = key === 'ArrowUp' ? (at <= 0 ? rows.length - 1 : at - 1) : (at < 0 || at >= rows.length - 1 ? 0 : at + 1);
+        return rows[next];
+      });
+      // A cursor needs a column: with none highlighted yet, take the first child.
+      if (ids.length) setFocus((cur) => (ids.includes(cur) ? cur : ids[0]));
+      return true;
+    }
     if ((key === 'ArrowLeft' || key === 'ArrowRight') && ids.length) {
       setFocus((cur) => {
         const at = ids.indexOf(cur);
@@ -221,7 +281,7 @@ export default function GemBoardOverlay({
       return true;
     }
     return false;
-  }, [close, poke, state.board, step, weekOffset]);
+  }, [close, closeDetail, detail, focus, openDetail, poke, rowCursor, state.board, step, weekOffset]);
 
   useEffect(() => {
     if (!keyRef) return undefined;
@@ -257,8 +317,11 @@ export default function GemBoardOverlay({
         {board && board.mode === 'off' && <div className="gem-board__empty">Gems are switched off.</div>}
         {board && board.mode !== 'off' && (
           <div className={`gem-board__body${loading ? ' is-loading' : ''}`}>
-            <GemBoardGrid board={board} focusLearnerId={focus} />
+            <GemBoardGrid board={board} focusLearnerId={focus} cursorRowId={rowCursor} onOpen={(rowId, learnerId) => openDetail(rowId, learnerId, 'tap')} />
           </div>
+        )}
+        {detail && (
+          <GemDetail row={detail.row} learner={detail.learner} cell={detail.cell} windows={board?.windows} today={board?.today} onClose={closeDetail} />
         )}
       </div>
     </div>
