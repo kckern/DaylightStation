@@ -1,70 +1,101 @@
 @use "./cgTokens" as cg;
 
+// Results board for the 1920x1080 garage TV, read from a bike 2-3 m away.
+// FIT RULE: the board is exactly one viewport tall (height: 100vh, no page scroll).
+// The list region is the flexible part (flex: 1 1 auto; min-height: 0; overflow: hidden);
+// title, banners, notes and the button row are flex: 0 0 auto, so the buttons can never
+// be pushed off screen. From 5 rows the component adds .race-results--dense and rows
+// compact; the splits table is only rendered up to 3 rows.
+// Type floor: names 1.6rem, metrics 1.9rem, secondary lines 1.1rem; nothing under 1rem.
+
 .race-results {
   color: cg.$cg-text;
-  padding: 22px 24px;
+  padding: 28px 24px 32px;
   text-align: center;
   width: 100%;
   box-sizing: border-box;
-  min-height: 100vh;            // backdrop fills the full app height
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 4px;
+  gap: 6px;
   @include cg.cg-backdrop;
 
-  &__eyebrow { @include cg.cg-eyebrow; animation: cg-rr-in 0.4s ease both; }
-  // Save-failure banner — quiet but unmistakable, never blocks the podium.
+  > * { flex: 0 0 auto; }
+
+  &__eyebrow { @include cg.cg-eyebrow; font-size: 1.1rem; animation: cg-rr-in 0.4s ease both; }
+  // Save-failure banner: unmistakable, never blocks the podium.
   &__save-failed {
-    margin: 0 auto 14px;
-    padding: 0.35rem 0.9rem;
+    margin: 0 auto 8px;
+    padding: 0.4rem 1rem;
     border: 1px solid rgba(cg.$cg-danger, 0.5);
     border-radius: 8px;
     font-family: cg.$cg-display;
-    font-size: 1rem;
+    font-size: 1.1rem;
     color: cg.$cg-danger;
     animation: cg-rr-in 0.4s ease both;
   }
   &__title {
     font-family: cg.$cg-display;
-    font-size: 2.4rem; font-weight: 800; letter-spacing: 0.02em;
-    margin: 2px 0 22px;
+    font-size: 3rem; font-weight: 800; letter-spacing: 0.02em;
+    margin: 0 0 10px;
     animation: cg-rr-in 0.45s ease both;
   }
 
-  &__list { list-style: none; margin: 0 auto; padding: 0; width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; }
+  // "You beat your best by 12 s" — one sentence above the list.
+  &__versus {
+    font-family: cg.$cg-display; font-weight: 700;
+    font-size: 1.9rem; color: cg.$cg-gold;
+    margin: 0 0 10px;
+    animation: cg-rr-in 0.5s ease both;
+  }
 
-  // Mario-Kart fly-in: each row rushes in from the left, overshoots, snaps home.
+  &__list {
+    list-style: none; margin: 0 auto; padding: 0;
+    width: min(1100px, 86vw);
+    display: flex; flex-direction: column; gap: 12px;
+    flex: 1 1 auto; min-height: 0; overflow: hidden;
+    justify-content: center;
+  }
   &__row {
+    flex: 0 0 auto;
     animation: cg-rr-fly 0.55s cubic-bezier(0.2, 0.85, 0.3, 1.2) both;
   }
 
   &__place {
-    display: flex; align-items: center; gap: 16px;
+    display: flex; align-items: center; gap: 22px;
+    box-sizing: border-box;
+    min-height: 92px;
     background: linear-gradient(180deg, cg.$cg-panel, cg.$cg-bg-2);
     border: 1px solid cg.$cg-border;
-    border-radius: 14px;
-    padding: 12px 18px;
+    border-radius: 16px;
+    padding: 12px 28px;
   }
   &__placement {
-    @include cg.cg-numeral(cg.$cg-cyan);
-    font-size: 1.5rem;
-    color: cg.$cg-muted; min-width: 1.6em; text-align: center;
+    flex: 0 0 auto; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+    color: cg.$cg-muted;
+    svg { width: 100%; height: 100%; display: block; }
   }
   &__avatar { flex-shrink: 0; display: flex; }
   &__name {
-    flex: 1; text-align: left; font-family: cg.$cg-display;
-    font-size: 1.15rem; font-weight: 700; letter-spacing: 0.01em;
-    display: flex; align-items: center; gap: 8px;
+    flex: 1; min-width: 0; text-align: left; font-family: cg.$cg-display;
+    font-size: 1.6rem; font-weight: 700; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 12px;
   }
-  &__crown { font-size: 1.1rem; filter: drop-shadow(0 0 6px rgba(255, 213, 74, 0.8)) drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+  &__name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__ghost-mark { flex: 0 0 auto; display: inline-flex; width: 1.5rem; height: 1.5rem; color: cg.$cg-muted; svg { width: 100%; height: 100%; } }
+  &__crown {
+    flex: 0 0 auto; display: inline-flex; width: 2rem; height: 2rem; color: cg.$cg-gold;
+    filter: drop-shadow(0 0 8px rgba(255, 213, 74, 0.8)) drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+    svg { width: 100%; height: 100%; }
+  }
   &__metric {
-    font-family: cg.$cg-mono; font-size: 1.15rem; font-weight: 600;
-    color: cg.$cg-cyan; font-variant-numeric: tabular-nums;
+    font-family: cg.$cg-display; font-size: 1.9rem; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: cg.$cg-cyan; white-space: nowrap;
     text-shadow: 0 0 8px rgba(33, 230, 255, 0.4);
   }
-  // Stopped (parked or no signal at the close): their real distance, muted.
   &__metric--stopped { color: cg.$cg-muted; text-shadow: none; }
-  // "OT" badge — the rider kept riding until the race closed around them; a real
-  // metric, just tagged.
   &__ot-tag {
     display: inline-block;
     margin-left: 0.5em;
@@ -80,88 +111,107 @@
     background: rgba(cg.$cg-warn, 0.14);
   }
 
-  // Medal accents.
-  &__row--p1 .race-results__place {
-    border-color: rgba(255, 213, 74, 0.55);
-    background: linear-gradient(180deg, rgba(255, 213, 74, 0.12), cg.$cg-bg-2);
-    box-shadow: 0 0 0 1px rgba(255, 213, 74, 0.3), 0 8px 26px rgba(0, 0, 0, 0.45);
-    .race-results__placement { color: cg.$cg-gold; }
-  }
-  &__row--p2 .race-results__place {
-    border-color: rgba(203, 213, 225, 0.4);
-    .race-results__placement { color: cg.$cg-silver; }
-  }
-  &__row--p3 .race-results__place {
-    border-color: rgba(208, 138, 82, 0.45);
-    .race-results__placement { color: cg.$cg-bronze; }
+  // History comparison, one line under the rider's row.
+  &__compare {
+    display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px 22px;
+    padding: 6px 28px 0 calc(28px + 52px + 22px);
+    font-family: cg.$cg-display; font-size: 1.2rem; line-height: 1.2; color: cg.$cg-muted;
+    .is-emphasis { color: cg.$cg-gold; font-weight: 800; }
   }
 
-  // Winner — magenta spotlight + glowing crown.
+  // Medal accents.
+  &__row--p1 .race-results__place { border-color: rgba(255, 213, 74, 0.55); background: linear-gradient(180deg, rgba(255, 213, 74, 0.12), cg.$cg-bg-2); }
+  &__row--p2 .race-results__place { border-color: rgba(203, 213, 225, 0.4); }
+  &__row--p3 .race-results__place { border-color: rgba(208, 138, 82, 0.45); }
+
+  // Winner: visibly larger, magenta spotlight.
   &__row.is-winner {
     .race-results__place {
+      min-height: 120px;
       border-color: rgba(255, 45, 149, 0.6);
       background: linear-gradient(180deg, rgba(255, 45, 149, 0.16), cg.$cg-bg-2);
       box-shadow: 0 0 0 1px rgba(255, 45, 149, 0.4), 0 0 32px rgba(255, 45, 149, 0.35), 0 8px 26px rgba(0, 0, 0, 0.5);
     }
-    .race-results__placement { color: cg.$cg-gold; font-size: 1.9rem; }
-    .race-results__name { font-size: 1.4rem; text-shadow: 0 0 14px rgba(255, 45, 149, 0.5); }
-    .race-results__crown { filter: drop-shadow(0 0 10px rgba(255, 213, 74, 0.95)) drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
-    .race-results__metric { color: cg.$cg-gold; font-size: 1.3rem; }
+    .race-results__placement { width: 68px; height: 68px; }
+    .race-results__name { font-size: 2.3rem; text-shadow: 0 0 14px rgba(255, 45, 149, 0.5); }
+    .race-results__crown { width: 2.6rem; height: 2.6rem; }
+    .race-results__metric { color: cg.$cg-gold; font-size: 2.7rem; }
+    .race-results__compare { padding-left: calc(28px + 68px + 22px); }
   }
 
-  // Weekly-ladder movement callouts (e.g. "User_3: 2nd this week — 0:04 behind
-  // Dad") — sits right under the podium, ahead of the splits table.
+  // Dense: 5+ rows. Compact the cards so six rows plus comparison lines fit.
+  &--dense {
+    gap: 2px;
+    .race-results__title { font-size: 2.4rem; margin-bottom: 4px; }
+    .race-results__list { gap: 6px; }
+    .race-results__place { min-height: 84px; padding: 6px 22px; gap: 18px; }
+    .race-results__placement { width: 44px; height: 44px; }
+    .race-results__compare { padding-top: 3px; padding-left: calc(22px + 44px + 18px); }
+    .race-results__row.is-winner {
+      .race-results__place { min-height: 100px; }
+      .race-results__placement { width: 56px; height: 56px; }
+      .race-results__name { font-size: 2rem; }
+      .race-results__metric { font-size: 2.3rem; }
+      .race-results__compare { padding-left: calc(22px + 56px + 18px); }
+    }
+  }
+
+  // Weekly-ladder movement callouts, and the "Ended early: ..." line.
   &__ladder {
-    margin: 0.6rem auto 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 1.15rem;
+    margin: 10px auto 0;
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 1.2rem;
   }
   &__ladder-note {
-    font-family: cg.$cg-display;
-    font-weight: 700;
-    color: cg.$cg-cyan;
-    text-shadow: 0 0 8px rgba(33, 230, 255, 0.35);
+    font-family: cg.$cg-display; font-weight: 700;
+    color: cg.$cg-cyan; text-shadow: 0 0 8px rgba(33, 230, 255, 0.35);
   }
 
-  // Full lap splits table below the podium — sizes to its content and caps at a
-  // fraction of the viewport (it owns its own sticky header / scroll), so it never
-  // grows into a big empty box or pushes the podium off-screen.
+  // Lap splits (rendered only up to 3 rows): owns its own scroll, capped by viewport.
   &__splits {
-    width: 100%; max-width: 620px; margin: 16px auto 0;
-    flex: 0 1 auto; min-height: 0; max-height: 38vh;
+    width: min(1100px, 86vw); margin: 12px auto 0;
+    flex: 0 1 auto; min-height: 0; max-height: 28vh;
     border: 1px solid cg.$cg-border; border-radius: 12px;
     background: rgba(0, 0, 0, 0.28); overflow: hidden;
     animation: cg-rr-in 0.6s ease both;
   }
 
-  // Auto-exit countdown (last few seconds before returning to the lobby).
+  // Button row never shrinks, so it can never be pushed off screen.
+  &__exit-row {
+    margin-top: 14px; flex: 0 0 auto;
+    display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; justify-content: center;
+  }
+  &__rematch {
+    min-width: 280px; min-height: 72px; padding: 0 56px;
+    border: 0; border-radius: 18px; cursor: pointer;
+    background: cg.$cg-magenta; color: #fff;
+    font-family: cg.$cg-display; font-weight: 800; font-size: 2rem; letter-spacing: 0.04em;
+    box-shadow: 0 0 28px rgba(255, 45, 149, 0.5), 0 6px 18px rgba(0, 0, 0, 0.5);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    &:active { transform: scale(0.97); }
+  }
+  &__exit {
+    min-height: 56px; padding: 0 28px;
+    background: transparent; border: 0; border-radius: 12px; cursor: pointer;
+    color: cg.$cg-muted; font-family: cg.$cg-display; font-weight: 700; font-size: 1.4rem;
+    text-decoration: underline; text-underline-offset: 0.25em;
+    &:hover { color: cg.$cg-text; }
+  }
   &__countdown {
     flex: 0 0 auto;
-    font-family: cg.$cg-mono; font-size: 1rem; font-weight: 700;
-    color: cg.$cg-gold; letter-spacing: 0.04em;
-    animation: cg-rr-pulse 1s ease-in-out infinite;
+    font-family: cg.$cg-display; font-size: 1.2rem; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: cg.$cg-muted;
   }
 
-  // Row holding the countdown text and the manual exit button side-by-side.
-  &__exit-row { margin-top: 16px; flex: 0 0 auto; display: flex; gap: 14px; align-items: center; justify-content: center; }
-  &__exit {
-    background: cg.$cg-panel; border: 1px solid cg.$cg-border; color: cg.$cg-text;
-    font-family: cg.$cg-display; font-weight: 700; font-size: 1rem;
-    padding: 8px 22px; border-radius: 10px; cursor: pointer;
-  }
-  &__exit:hover { border-color: cg.$cg-cyan; }
-
-  // Acronym legend — spells out the badges that appeared above.
+  // Acronym legend.
   &__legend {
-    margin: 14px auto 0; padding: 0; max-width: 560px; flex: 0 0 auto;
+    margin: 10px auto 0; padding: 0; max-width: 700px; flex: 0 0 auto;
     display: flex; flex-direction: column; gap: 4px;
     animation: cg-rr-in 0.5s ease both;
   }
   &__legend-item {
-    display: flex; align-items: baseline; gap: 10px;
-    font-family: cg.$cg-display; font-size: 0.9rem; color: cg.$cg-muted;
+    display: flex; align-items: baseline; gap: 12px;
+    font-family: cg.$cg-display; font-size: 1.1rem; color: cg.$cg-muted;
     dt { flex: 0 0 auto; min-width: 2.6em; font-weight: 800; color: cg.$cg-text; letter-spacing: 0.04em; }
     dd { margin: 0; }
   }
@@ -176,7 +226,13 @@
   70%  { opacity: 1; transform: translateX(8px) scale(1.03); }
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
-@keyframes cg-rr-pulse {
-  0%, 100% { opacity: 0.6; }
-  50%      { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .race-results,
+  .race-results__eyebrow, .race-results__title, .race-results__versus, .race-results__row,
+  .race-results__save-failed, .race-results__splits, .race-results__legend,
+  .race-results__rematch {
+    animation: none !important;
+    transition: none !important;
+  }
 }
