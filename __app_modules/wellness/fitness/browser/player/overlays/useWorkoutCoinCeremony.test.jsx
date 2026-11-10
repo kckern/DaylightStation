@@ -8,7 +8,7 @@ vi.mock('@/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: (_f, cb) =
 const logSpy = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => logSpy }) }));
 
-import { useWorkoutCoinCeremony, WORKOUT_FINISHED_EVENT, announceWorkoutFinished, __resetShownForTest } from './useWorkoutCoinCeremony.js';
+import { useWorkoutCoinCeremony, WORKOUT_FINISHED_EVENT, announceWorkoutFinished, isRunOnScreen, __resetShownForTest } from './useWorkoutCoinCeremony.js';
 
 const fire = (sessionId) => act(async () => { window.dispatchEvent(new CustomEvent(WORKOUT_FINISHED_EVENT, { detail: { sessionId } })); });
 const iso = (msAgo = 60_000) => new Date(Date.now() - msAgo).toISOString();
@@ -143,6 +143,16 @@ describe('first run baseline', () => {
     await waitFor(() => expect(second.result.current.ceremony?.txnIds).toEqual(['t2']));
   });
 
+  it('a baseline that finds nothing still records the key, so the next load plays a payout minted in the gap', async () => {
+    paid.s1 = [];
+    const first = await mount();
+    expect(localStorage.getItem('fitness.coinCeremony.seen')).toBe('{}');
+    first.unmount();
+    paid.s1 = [learner('learner-a', [entry('t1', 2, 1000)], 4)];
+    const second = await mount();
+    await waitFor(() => expect(second.result.current.ceremony?.txnIds).toEqual(['t1']));
+  });
+
   it('the mount look asks for 2 days, 5 sessions', async () => {
     await mount();
     expect(api).toHaveBeenCalledWith('/api/v1/fitness/sessions?since=2d&limit=5');
@@ -187,6 +197,29 @@ describe('hold (a live run on screen)', () => {
     expect(result.current.ceremony).toBeNull();
     rerender({ hold: false });
     await waitFor(() => expect(result.current.ceremony?.txnIds).toEqual(['t7']));
+  });
+});
+
+describe('module hold', () => {
+  it('any active module, a video queue or a live route holds; the menu does not', () => {
+    expect(isRunOnScreen({ moduleLive: true })).toBe(true);
+    expect(isRunOnScreen({ queueLength: 1 })).toBe(true);
+    expect(isRunOnScreen({ pathname: '/fitness/module/skyline' })).toBe(true);
+    expect(isRunOnScreen({ pathname: '/fitness/menu/all' })).toBe(false);
+    expect(isRunOnScreen({})).toBe(false);
+  });
+
+  it('with a module active, coins-changed shows nothing; leaving it plays one ceremony', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    localStorage.setItem('fitness.coinCeremony.seen', '{}');
+    __resetShownForTest(); sessions = ['s1']; paid = {}; serve();
+    const { result, rerender } = await mount({ hold: isRunOnScreen({ moduleLive: true }) });
+    paid.s1 = [learner('learner-a', [entry('t8', 1, 100)], 3)];
+    await act(async () => { wsHandler({ event: 'coins-changed', userId: 'learner-a' }); await vi.advanceTimersByTimeAsync(2000); });
+    expect(result.current.ceremony).toBeNull();
+    rerender({ hold: isRunOnScreen({ moduleLive: false }) });
+    await waitFor(() => expect(result.current.ceremony?.txnIds).toEqual(['t8']));
+    vi.useRealTimers();
   });
 });
 

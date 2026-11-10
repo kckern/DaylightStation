@@ -32,6 +32,11 @@ import getLogger from '@/lib/logging/Logger.js';
 
 export function __resetShownForTest() { shownThisPage.clear(); pendingIds.clear(); skippedLogged = false; }
 
+/** True while something live owns the screen: a video queue, a deep-linked game, or any active module (race, Skyline, arcade). */
+export function isRunOnScreen({ moduleLive = false, queueLength = 0, pathname = '' } = {}) {
+  return Boolean(moduleLive) || queueLength > 0 || /\/fitness\/(play|games|module)\//.test(pathname || '');
+}
+
 export const WORKOUT_FINISHED_EVENT = 'fitness-workout-finished';
 const SEEN_KEY = 'fitness.coinCeremony.seen';
 const MAX_AGE_MS = 7 * 86_400_000;
@@ -72,6 +77,8 @@ function markSeen(txnIds) {
 
 /** Baseline: stamp every recent minted entry seen without showing anything. */
 function baselineEntries(bodies) {
+  // Always record the key (an empty set is fine) so the next load is no longer a first run.
+  writeSeen(readSeen());
   const floor = Date.now() - MAX_AGE_MS;
   const txnIds = [];
   for (const body of bodies) {
