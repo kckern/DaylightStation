@@ -181,3 +181,64 @@ describe('ContentFilterReview verdicts', () => {
     expect(r.signOff).toMatchObject({ ready: true, missing: [] });
   });
 });
+
+describe('ContentFilterReview verdicts: review round 1', () => {
+  const rows = () => [
+    { id: 'cue:va1', kind: 'words', category: 'language/x', modality: 'heard', in: 110.2, out: 110.6, effect: 'mute', handFixed: false, unsure: [], members: ['va1'] },
+    { id: 'scene:sc1', kind: 'scenes', category: null, modality: null, in: 310, out: 370, effect: 'skip', handFixed: false, unsure: [], members: [] },
+    { id: 'cue:ghost', kind: 'words', category: 'language/x', modality: 'heard', in: 50, out: 51, effect: 'mute', handFixed: false, unsure: [], members: ['ghost'] },
+  ];
+  const mkr = (extra = {}) => setup({ audit: { ok: true, digest: 'D', rows: rows() }, ...extra });
+  const va1 = [110.2, 110.6]; const sc1 = [310, 370];
+
+  it('a scene change undoes with scene semantics: effect only, disabled untouched', async () => {
+    const s = base(); s.override.sceneOverrides = { sc1: { effect: 'off', disabled: true, card: { text: 't' } } };
+    const { review, state } = mkr({ state: s });
+    const before = JSON.parse(JSON.stringify(state.override.sceneOverrides));
+    state.override.sceneOverrides.sc1.effect = 'skip'; // client applied off -> skip
+    await review.setVerdict('9', 'scene:sc1', { verdict: 'approve', change: { from: 'off', to: 'skip' }, span: sc1 });
+    await review.clearVerdict({ ratingKey: '9', rowId: 'scene:sc1' });
+    expect(state.override.sceneOverrides).toEqual(before);
+  });
+  it('a plain re-approve over an approve-with-change keeps the change, and undo still restores it', async () => {
+    const { review, state } = mkr();
+    state.override.cueOverrides = { va1: { effect: 'bleep' } };
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: 'mute', to: 'bleep' }, span: va1 });
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', span: va1 });
+    expect(state.override.cueOverrides.va1.effect).toBe('bleep');
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
+    expect(state.override.cueOverrides.va1.effect).toBe('mute');
+  });
+  it('approve then remove then approve re-enables the cue', async () => {
+    const { review, state } = mkr();
+    await review.setVerdict('9', 'cue:va1', { verdict: 'remove', span: va1 });
+    expect(state.override.cueOverrides.va1.disabled).toBe(true);
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', span: va1 });
+    expect(state.override.cueOverrides?.va1?.disabled).toBeUndefined();
+  });
+  it('a widen (edges change) undoes to the prior edges, or clears the nudge when there were none', async () => {
+    const { review, state } = mkr();
+    state.override.cueOverrides = { va1: { startMs: 100000, endMs: 100800 } }; // widened (sync offset 10 s)
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: { in: 110.1, out: 110.7 }, to: { in: 110, out: 110.8 } }, span: va1 });
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
+    expect(state.override.cueOverrides.va1).toEqual({ startMs: 100100, endMs: 100700 });
+    state.override.cueOverrides = { va1: { startMs: 100000, endMs: 100800 } };
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: { in: null, out: null }, to: { in: 110, out: 110.8 } }, span: va1 });
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
+    expect(state.override.cueOverrides?.va1).toBeUndefined();
+  });
+  it('machine.stage and film.stage come from filmStage; no jev field', async () => {
+    const s = base(); s.refined.certification = { level: 'parent', machine: { at: 'x' }, parent: { by: 'p' } };
+    const { review, state } = mkr({ state: s });
+    await review.setVerdict('9', 'cue:va1', { verdict: 'ignore', span: va1 });
+    expect(state.history[0].machine).toEqual({ stage: 'machine', unsure: [], handFixed: false });
+    expect(state.history[0].film.stage).toBe('parent');
+  });
+  it('remove on an id missing from the refined EDL is refused and writes nothing', async () => {
+    const { review, state } = mkr();
+    const before = JSON.stringify(state.override);
+    await expect(review.setVerdict('9', 'cue:ghost', { verdict: 'remove', span: [50, 51] })).rejects.toMatchObject({ status: 404 });
+    expect(JSON.stringify(state.override)).toBe(before);
+    expect(state.history).toBeUndefined();
+  });
+});

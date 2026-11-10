@@ -6,6 +6,7 @@
  */
 import { unmapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { certify, signOff } from '../../../domain/content-filter/refine/certification.mjs';
+import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { createTitleQueue } from '../titleQueue.mjs';
 
 export class ReviewError extends Error {
@@ -106,15 +107,28 @@ export class ContentFilterReview {
     return { key: 'cueOverrides', ids: members.length ? members : [rowId.replace(/^(cue|subject):/, '')] };
   }
 
-  /** Put an effect back the way a cue/scene ruling would (mirrors ContentFilterScenes). */
-  static #restoreEffect(next, effect) {
+  /**
+   * Put an effect back the way its own setter would: cues (ContentFilterScenes.ruleCue) store
+   * `off` as `disabled: true`; scenes (#rule) store `effect: 'off'` and leave `disabled` alone.
+   */
+  static #restoreEffect(next, effect, key) {
+    if (key === 'sceneOverrides') {
+      if (effect == null || effect === 'profile') delete next.effect; else next.effect = effect;
+      return;
+    }
     if (effect == null || effect === 'profile') { delete next.effect; delete next.disabled; }
     else if (effect === 'off') { delete next.effect; next.disabled = true; }
     else { next.effect = effect; delete next.disabled; }
   }
 
-  /** Undo what a verdict applied: re-enable cues it disabled, restore the effect a recorded change left. */
-  static #revert(override, mark) {
+  /** A `change` side is an effect string/null or `{ effect?, in?, out? }` (in/out = local seconds; null clears the nudge). */
+  static #side(v) { return v !== null && typeof v === 'object' ? v : { effect: v ?? null }; }
+
+  /**
+   * Undo what a verdict applied: re-enable cues it disabled; restore the effect and/or edges a
+   * recorded change left behind (edges only for a single-target row — a subject nudges per cue).
+   */
+  static #revert(override, mark, { refined = null } = {}) {
     let out = override;
     const touch = (key, id, fn) => {
       const all = { ...(out[key] || {}) }; const next = { ...(all[id] || {}) };
@@ -123,8 +137,20 @@ export class ContentFilterReview {
       out = { ...out, [key]: all };
     };
     for (const id of mark.applied?.ids || []) touch(mark.applied.key, id, (n) => { delete n.disabled; });
-    if (mark.targets && mark.change && 'from' in mark.change && (mark.change.from === null || typeof mark.change.from === 'string')) {
-      for (const id of mark.targets.ids) touch(mark.targets.key, id, (n) => ContentFilterReview.#restoreEffect(n, mark.change.from));
+    if (mark.targets && mark.change && 'from' in mark.change) {
+      const f = ContentFilterReview.#side(mark.change.from);
+      const { key, ids } = mark.targets;
+      for (const id of ids) {
+        touch(key, id, (n) => {
+          if ('effect' in f) ContentFilterReview.#restoreEffect(n, f.effect, key);
+          if (ids.length === 1 && ('in' in f || 'out' in f)) {
+            if (f.in == null && f.out == null) { delete n.startMs; delete n.endMs; return; }
+            const item = (key === 'cueOverrides' ? refined?.cues : refined?.scenes)?.find((x) => x.id === id);
+            if (!item) return;
+            try { Object.assign(n, ContentFilterReview.#toVa({ in: f.in, out: f.out }, item, out.sync)); } catch { /* prior edges unmappable: leave the nudge */ }
+          }
+        });
+      }
     }
     return out;
   }
@@ -132,8 +158,10 @@ export class ContentFilterReview {
   /**
    * Record a verdict on one row: approve | remove | ignore | redo (reason: edges|category|action|timing|other).
    * `remove` disables the cue/scene (undo re-enables what this call disabled). `change: { from, to }`
-   * on an approve records an in-place action change the client already applied (undo restores `from`).
-   * A span that no longer matches the audit row is refused (409), like any review mark.
+   * records an in-place change the client already applied (effect string, or `{ effect?, in?, out? }`
+   * for edges); undo restores `from`. A span that no longer matches the audit row is refused (409).
+   * A re-verdict keeps an earlier change and any earlier remove unless the new outcome differs
+   * (anything but `remove` re-enables); only an explicit undo (clearVerdict) reverts a change.
    */
   async setVerdict(ratingKey, rowId, { verdict = 'approve', reason, change, span, by, dwellMs, replays } = {}) {
     if (!ROW_ID.test(String(rowId))) throw new ReviewError(`Bad row id: ${rowId}`, 400);
@@ -143,36 +171,58 @@ export class ContentFilterReview {
       const record = await this.#jobs.record(ratingKey);
       const row = record?.audit?.rows?.find((r) => r.id === rowId);
       if (!row || !sameSpan(span, [row.in, row.out])) throw new ReviewError('This part moved. Reload the list.', 409);
-      const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
+      const { refined, override: stored } = await this.#film(ratingKey);
+      const override = { ...stored, contentId: stored.contentId || `plex:${ratingKey}` };
+      const target = ContentFilterReview.#targets(row, rowId);
+      const hasChange = !!change && typeof change === 'object';
+      if (verdict === 'remove' || hasChange) {
+        const known = new Set((target.key === 'sceneOverrides' ? refined.scenes : refined.cues || []).map((x) => String(x.id)));
+        const bad = target.ids.find((id) => !known.has(id));
+        if (bad) throw new ReviewError(`Unknown ${target.key === 'sceneOverrides' ? 'scene' : 'cue'}: ${bad}`, 404);
+      }
       const prior = override.review?.[rowId];
       const mark = { by: String(by || 'admin'), at: this.#clock().toISOString(), span: [ms3(row.in), ms3(row.out)], verdict };
       if (reason) mark.reason = reason;
-      const target = ContentFilterReview.#targets(row, rowId);
-      if (change && typeof change === 'object') { mark.change = { from: change.from ?? null, to: change.to ?? null }; mark.targets = target; }
-      // A re-verdict replaces the old one: undo what the old one applied first, so nothing leaks.
-      let next = prior ? ContentFilterReview.#revert(override, prior) : override;
+      if (hasChange) {
+        mark.change = { from: prior?.change ? prior.change.from : (change.from ?? null), to: change.to ?? null };
+        mark.targets = target;
+      } else if (prior?.change) { mark.change = prior.change; mark.targets = prior.targets; }
+      let next = override;
+      const priorIds = prior?.applied?.ids || [];
       if (verdict === 'remove') {
-        const all = { ...(next[target.key] || {}) }; const applied = [];
+        const all = { ...(next[target.key] || {}) }; const applied = [...priorIds];
         for (const id of target.ids) {
           if (all[id]?.disabled) continue;
           all[id] = { ...(all[id] || {}), disabled: true }; applied.push(id);
         }
         next = { ...next, [target.key]: all };
         mark.applied = { key: target.key, ids: applied };
+      } else if (priorIds.length) {
+        next = ContentFilterReview.#revert(next, { applied: prior.applied });
       }
       await this.#repo.saveOverride(ratingKey, { ...next, review: { ...(next.review || {}), [rowId]: mark } });
-      const run = (record?.runs || []).at(-1) || null;
-      const refined = await this.#repo.getRefinedEdl((await this.#repo.getEdl(ratingKey))?.sourceRef || {});
       const entry = {
         at: mark.at, by: mark.by, rowId, kind: row.kind ?? null, category: row.category ?? null, modality: row.modality ?? null,
         effect: row.effect ?? null, span: mark.span, verdict, reason: reason ?? null, change: mark.change ?? null,
         dwellMs: Number.isFinite(dwellMs) ? dwellMs : null, replays: Number.isFinite(replays) ? replays : null,
-        machine: { stage: run?.step ?? run?.kind ?? null, unsure: row.unsure || [], ...(row.jev ? { jev: row.jev } : {}), handFixed: !!row.handFixed },
-        film: { stage: refined?.certification?.level ?? 'none' },
+        // machine.stage = the pipeline stage the machine's output had reached (a parent sign-off is a
+        // human step, so it reads as `machine`); film.stage = the film's readiness stage now (filmStage).
+        machine: { stage: await this.#stage(ratingKey, record, refined, 'machine'), unsure: row.unsure || [], handFixed: !!row.handFixed },
+        film: { stage: await this.#stage(ratingKey, record, refined) },
       };
       await this.#repo.appendReviewHistory(ratingKey, entry);
       this.#logger.info?.('content_filter.review.verdict.recorded', { ratingKey, rowId, kind: entry.kind, category: entry.category, verdict, reason: entry.reason, by: mark.by });
       return mark;
+    });
+  }
+
+  async #stage(ratingKey, record, refined, cap = null) {
+    const audit = record?.audit || null;
+    const level = refined?.certification?.level ?? 'none';
+    return filmStage({
+      hasRefined: !!refined, hasScenesKey: Array.isArray(refined?.scenes),
+      audit: audit ? { ok: audit.ok, fresh: audit.digest === (await this.#digestOf(ratingKey)) } : null,
+      certificationLevel: cap === 'machine' && level === 'parent' ? 'machine' : level, job: null,
     });
   }
 
@@ -187,7 +237,10 @@ export class ContentFilterReview {
       const review = { ...(override.review || {}) };
       delete review[rowId];
       let next = { ...override, review };
-      if (mark) next = ContentFilterReview.#revert(next, mark);
+      if (mark) {
+        const refined = await this.#film(ratingKey).then((f) => f.refined, () => null);
+        next = ContentFilterReview.#revert(next, mark, { refined });
+      }
       await this.#repo.saveOverride(ratingKey, next);
       if (mark) {
         const who = String(by || 'admin');
