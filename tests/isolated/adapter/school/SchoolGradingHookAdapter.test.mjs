@@ -32,6 +32,7 @@ describe('SchoolGradingHookAdapter', () => {
       session_id: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
       pending_review: null, reasons: [], items: [], code: null,
       subject: null, course: null, unit: null, lesson: null, notification: null,
+      source: null, location: null, device: null, event: null,
     });
   });
 
@@ -56,6 +57,7 @@ describe('SchoolGradingHookAdapter', () => {
       session_id: null, percent: null, earned: null, total: null,
       pending_review: null, reasons: [], items: [], code: 'CARD_ID_UNREADABLE',
       subject: null, course: null, unit: null, lesson: null, notification: null,
+      source: null, location: null, device: null, event: null,
     });
   });
 
@@ -181,6 +183,7 @@ describe('SchoolGradingHookAdapter', () => {
       session_id: null, percent: null, earned: null, total: null,
       pending_review: null, reasons: [], items: [], code: null,
       subject: null, course: null, unit: null, lesson: null, notification: null,
+      source: null, location: null, device: null, event: null,
     });
   });
 
