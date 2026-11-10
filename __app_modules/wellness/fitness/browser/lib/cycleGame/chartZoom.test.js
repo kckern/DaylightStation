@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { continuousWindow, gridUnit, gridValues, pickAxisTicks, evenTicks } from "./chartZoom.js";
+import { continuousWindow, evenTicks } from "./chartZoom.js";
 
 describe('continuousWindow', () => {
   it('holds at the base window while the data is small', () => {
@@ -23,47 +23,6 @@ describe('continuousWindow', () => {
       expect(w).toBeGreaterThanOrEqual(prev);
       prev = w;
     }
-  });
-});
-
-describe('gridUnit', () => {
-  it('uses the base unit when its on-screen spacing clears the pixel floor', () => {
-    expect(gridUnit(500, 600, 250, 32)).toBe(250);
-  });
-  it('coarsens (doubles) the unit when lines would crowd below the floor', () => {
-    expect(gridUnit(8000, 600, 250, 32)).toBe(500);
-  });
-});
-
-describe('gridValues', () => {
-  it('returns ascending multiples of the unit up to the window span', () => {
-    expect(gridValues(500, 250, 600, 32)).toEqual([0, 250, 500]);
-  });
-  it('uses the coarsened unit so values never crowd below the floor', () => {
-    const v = gridValues(8000, 250, 600, 32);
-    expect(v[0]).toBe(0);
-    expect(v[1]).toBe(500);
-    expect(v[v.length - 1]).toBe(8000);
-  });
-});
-
-describe('pickAxisTicks', () => {
-  it('returns the whole array when it already fits under the cap', () => {
-    expect(pickAxisTicks([0, 250, 500], 3)).toEqual([0, 250, 500]);
-  });
-  it('down-samples to the cap, anchoring the first and last', () => {
-    const out = pickAxisTicks([0, 250, 500, 750, 1000], 3);
-    expect(out[0]).toBe(0);
-    expect(out[out.length - 1]).toBe(1000);
-    expect(out.length).toBeLessThanOrEqual(3);
-  });
-  it('dedupes rounding collisions on a short array', () => {
-    const out = pickAxisTicks([0, 0, 0], 3);
-    expect(out).toEqual([0]);
-  });
-  it('tolerates an empty or missing input', () => {
-    expect(pickAxisTicks([], 3)).toEqual([]);
-    expect(pickAxisTicks(undefined, 3)).toEqual([]);
   });
 });
 

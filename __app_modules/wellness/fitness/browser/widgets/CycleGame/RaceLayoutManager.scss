@@ -29,7 +29,21 @@
   // centreline until their badges overlap. 33% ≈ 410px at 1080p, the width the
   // POV had in the top row before it and the tower traded places.
   &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) minmax(220px, 33%); grid-template-rows: 1fr; gap: 8px; }
-  .race-layout__wide-main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(200px, 42%); gap: 8px; }
+  .race-layout__wide-main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(220px, 42%); gap: 8px; }
   .race-layout__wide-main--no-speedo { grid-template-rows: 1fr; }
   .race-layout__top3 { display: grid; min-height: 0; grid-template-columns: 2fr 1fr; gap: 8px; }
+
+  // Solo mode: main column (chart over the gauge + pace band) beside the POV
+  // road as a right column at 28% of the width. Every track has an explicit
+  // size so no zone collapses: the chart row is 55fr, the band 45fr with the
+  // same 260px floor as the sidebar's speedo row, so the sidebar gauge caps
+  // (SPEEDO_MIN/MAX_GAUGE_SIDEBAR) hold here too (layoutSizing.test.js checks
+  // gauge + chrome against that floor).
+  // In the band the gauge column is 2fr and the pace panel 3fr: at 1080p that
+  // is ~540px for a ≤360px gauge, the rest for the pace headline.
+  &--solo { display: grid; height: 100%; grid-template-columns: minmax(0, 72fr) minmax(0, 28fr); grid-template-rows: 1fr; gap: 8px; }
+  .race-layout__solo-main { display: grid; min-height: 0; min-width: 0; grid-template-rows: minmax(0, 55fr) minmax(260px, 45fr); gap: 8px; }
+  .race-layout__solo-band { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px; }
+  // No gauge (a caller passing showSpeedos=false): the pace panel takes the band.
+  .race-layout__solo-band--no-speedo { grid-template-columns: minmax(0, 1fr); }
 }

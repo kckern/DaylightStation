@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  computeOverlayBoxes, boxesIntersect, boxWithin, multiplierChipBox,
-  MULTIPLIER_CHIP_MIN_WIDTH_PX, MULTIPLIER_CHIP_MIN_HEIGHT_PX
-} from "./speedometerOverlayLayout.js";
+import { computeOverlayBoxes, boxesIntersect, boxWithin } from "./speedometerOverlayLayout.js";
 
 // audit UX §3.1-3.2 — the old fixed-percentage/fixed-rem overlay geometry
 // collided (rpm digits atop the 12-o'clock tick label) or collapsed (badge
@@ -12,18 +9,14 @@ import {
 describe('speedometerOverlayLayout — bounding-box invariants', () => {
   const SIZES = [96, 360];
   const PAIRS = [
-    ['avatar', 'badge'],
     ['avatar', 'speed'],
     ['avatar', 'rpm'],
-    ['badge', 'speed'],
-    ['badge', 'rpm'],
     ['speed', 'rpm']
   ];
 
   it.each(SIZES)('every overlay box fits inside the gauge box at gaugePx=%i', (gaugePx) => {
     const boxes = computeOverlayBoxes(gaugePx);
     expect(boxWithin(boxes.avatar, boxes.gauge)).toBe(true);
-    expect(boxWithin(boxes.badge, boxes.gauge)).toBe(true);
     expect(boxWithin(boxes.speed, boxes.gauge)).toBe(true);
     expect(boxWithin(boxes.rpm, boxes.gauge)).toBe(true);
   });
@@ -41,45 +34,23 @@ describe('speedometerOverlayLayout — bounding-box invariants', () => {
     // at or below the vertical center at EVERY size (ratio-based, so this holds
     // for any gaugePx — checked at a few representative sizes for sanity).
     for (const gaugePx of [96, 150, 220, 280, 360]) {
-      const { speed, gauge } = computeOverlayBoxes(gaugePx);
-      expect(speed.y).toBeGreaterThanOrEqual(gauge.height / 2);
+      const { rpm, speed, gauge } = computeOverlayBoxes(gaugePx);
+      // rpm (the hero) is on top of the block.
+      expect(rpm.y).toBeGreaterThanOrEqual(gauge.height / 2);
+      expect(speed.y).toBeGreaterThan(rpm.y);
     }
   });
 
-  // 2026-07-02 legibility fix: the multiplier badge used to be a circle capped
-  // at 30% of the avatar's diameter, which shrank to an unreadable ~11px dot at
-  // the wide-mode floor (96px gauge) — the number had to move out to tiny
-  // inline text elsewhere. It's now a PILL, sized off the gauge (not the
-  // avatar) with an absolute px floor, so it never drops below a legible size.
-  it('the multiplier pill never shrinks below its legible min-size floor, even at the smallest gauge', () => {
-    const chip = multiplierChipBox(96); // wide-mode floor — the exact size that broke before
-    expect(chip.width).toBeGreaterThanOrEqual(MULTIPLIER_CHIP_MIN_WIDTH_PX);
-    expect(chip.height).toBeGreaterThanOrEqual(MULTIPLIER_CHIP_MIN_HEIGHT_PX);
-    // Comfortably wide enough to hold "×1.4" / "×1.6" at a 1.1rem (~17.6px) font.
-    expect(chip.width).toBeGreaterThanOrEqual(50);
-  });
-
-  it('the multiplier pill grows past its floor at larger gauges', () => {
-    const small = multiplierChipBox(96);
-    const big = multiplierChipBox(360);
-    expect(big.width).toBeGreaterThan(small.width);
-    expect(big.height).toBeGreaterThan(small.height);
-  });
-
-  it('the multiplier pill sits inside the gauge at the top-right, never overlapping the avatar', () => {
+  // Nothing sits in the top hemisphere where the dial's tick labels are: the
+  // multiplier badge that used to cover the top-right label is gone.
+  it('no overlay box reaches into the top hemisphere except the centred avatar', () => {
     for (const gaugePx of [96, 150, 220, 280, 360]) {
-      const { avatar, badge, gauge } = computeOverlayBoxes(gaugePx);
-      expect(boxWithin(badge, gauge)).toBe(true);
-      expect(boxesIntersect(badge, avatar)).toBe(false);
-      // top-right quadrant: right-anchored, and above the gauge's vertical center.
-      expect(badge.x + badge.width).toBeLessThanOrEqual(gauge.width);
-      expect(badge.y).toBeLessThan(gauge.height / 2);
+      const boxes = computeOverlayBoxes(gaugePx);
+      expect(Object.keys(boxes).sort()).toEqual(['avatar', 'gauge', 'rpm', 'speed']);
     }
   });
 
   it('scales linearly — doubling gaugePx doubles avatar/speed/rpm box dimensions', () => {
-    // The multiplier pill is excluded here — it has a min-size floor, so it is
-    // deliberately NOT linear at small sizes (that's the whole point of the fix).
     const small = computeOverlayBoxes(100);
     const big = computeOverlayBoxes(200);
     for (const key of ['avatar', 'speed', 'rpm']) {

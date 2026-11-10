@@ -24,6 +24,16 @@ describe('CycleEventToast', () => {
     expect(CYCLE_TOAST_VARIANTS).not.toContain('penalty');
   });
 
+  // A heart-rate zone going up is good news: its own positive variant.
+  it('has a boost variant and shows it', () => {
+    expect(CYCLE_TOAST_VARIANTS).toContain('boost');
+    const { getByTestId } = render(
+      <CycleEventToast toast={{ id: 9, variant: 'boost', icon: null, title: 'Rider A: Hot ×1.4' }} onDone={() => {}} />
+    );
+    expect(getByTestId('cycle-event-toast').getAttribute('data-variant')).toBe('boost');
+    expect(getByTestId('cycle-event-toast').className).toContain('cycle-event-toast--boost');
+  });
+
   it('auto-dismisses after its duration via onDone', () => {
     vi.useFakeTimers();
     try {

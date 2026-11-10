@@ -16,6 +16,9 @@ export const CYCLE_TOAST_VARIANTS = Object.freeze([
   // Drama events (audit C2) — LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/
   // FINAL_LAP/LAPPING_IMMINENT, routed through deriveRaceSnapshot.
   'lead-change', 'finished', 'photo-finish', 'final-lap', 'lapping',
+  // A rider's heart-rate zone went UP mid-race (more distance per stroke).
+  // Good news, never an alarm. Nothing is raised when it goes down.
+  'boost',
 ]);
 
 let _logger;

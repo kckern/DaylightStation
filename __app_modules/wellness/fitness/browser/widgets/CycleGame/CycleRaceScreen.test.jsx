@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, within } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, within, act } from '@testing-library/react';
 import CycleRaceScreen from "./CycleRaceScreen.jsx";
 
 const BANDS = [{ id: 'warmup', min: 0, color: '#5b6470' }, { id: 'cruising', min: 40, color: '#2ecc71' }];
@@ -34,6 +34,7 @@ const base4RiderProps = {
 };
 
 describe('CycleRaceScreen', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
   it('renders sidebar mode for ≤3 riders with chart, pov, standings tower', () => {
     const { getByTestId } = render(<CycleRaceScreen {...props} />);
     expect(getByTestId('race-layout').dataset.mode).toBe('sidebar');
@@ -112,6 +113,38 @@ describe('CycleRaceScreen', () => {
     );
     // No speedometer gauges rendered when showSpeedos=false (zone slot is empty)
     expect(container.querySelector('.cycle-speedometer')).toBeNull();
+  });
+  // One distance per rider per frame: the odometer, chart tag, chart header,
+  // tower and POV badge all print the SAME engine value through the same
+  // formatter. A rider at a fractional distance used to show a counted-up
+  // odometer that lagged the other readouts by up to a tick.
+  it('prints the same distance on every readout for a rider', () => {
+    const queue = [];
+    vi.stubGlobal('requestAnimationFrame', (cb) => { queue.push(cb); return queue.length; });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const flushFrames = () => {
+      const now = performance.now() + 100; // 10% into a 1 s tick
+      queue.splice(0).forEach((cb) => cb(now));
+    };
+    const riders = {
+      rider_a: { userId: 'rider_a', displayName: 'Rider A', cumulativeDistanceM: 457.4, distanceSeries: [150, 300, 454.1, 457.4] },
+      rider_b: { userId: 'rider_b', displayName: 'Rider B', cumulativeDistanceM: 300.6, distanceSeries: [100, 200, 300.6] }
+    };
+    const first = render(
+      <CycleRaceScreen winCondition="time" timeCapS={300} elapsedS={3} riders={{ rider_a: { ...riders.rider_a, cumulativeDistanceM: 454.1 }, rider_b: riders.rider_b }}
+        riderLive={{ rider_a: { placement: 1 }, rider_b: { placement: 2 } }} />
+    );
+    first.rerender(
+      <CycleRaceScreen winCondition="time" timeCapS={300} elapsedS={4} riders={riders}
+        riderLive={{ rider_a: { placement: 1 }, rider_b: { placement: 2 } }} />
+    );
+    // A frame shortly after the tick: every motion clock writes its glide now.
+    act(() => flushFrames());
+    const readouts = [...first.container.querySelectorAll('[data-distance-readout="rider_a"]')];
+    // odometer, chart tag (leader shows total), chart header (Leader …), tower, POV badge
+    expect(readouts.length).toBeGreaterThanOrEqual(5);
+    const texts = new Set(readouts.map((el) => el.textContent.trim()));
+    expect([...texts]).toEqual(['457 m']);
   });
   it('scales each speedometer to the rider\'s per-equipment max RPM', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [0], cumulativeDistanceM: 0, finishTimeS: null, isGhost: false } };

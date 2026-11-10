@@ -22,14 +22,19 @@ export function fitScale(content = {}, zone = {}) {
   return Math.min(1, zw / cw, zh / ch);
 }
 
-// Honest budget for the chrome BELOW the dial (odometer pill + its gap to the
-// gauge) — audit UX §3.3 found the old `zoneH - 50` estimate under-budgeted the
+// Honest budget for the chrome BELOW the dial. The odometer pill + its gap to
+// the gauge (ODOMETER_CHROME_PX) — audit UX §3.3 found the old `zoneH - 50` estimate under-budgeted the
 // real ~56-66px the odometer pill actually occupies, so the speedo band bled
 // into the zone above it (the zone was `overflow: visible`, which papered over
 // the shortfall by letting the overflow show instead of clipping it — RaceLayoutManager.scss
 // now sets `overflow: hidden` on that zone, so an under-budget here would clip
 // the odometer instead of merely bleeding; this constant must stay honest).
-export const CHROME_BELOW_GAUGE_PX = 68;
+export const ODOMETER_CHROME_PX = 68;
+// The boost meter row between the gauge and the odometer: its fixed CSS height
+// (CycleSpeedometer.scss .cycle-speedometer__boost) and one more column gap.
+export const BOOST_ROW_PX = 40;
+export const SPEEDO_STACK_GAP_PX = 10; // .cycle-speedometer { gap }
+export const CHROME_BELOW_GAUGE_PX = ODOMETER_CHROME_PX + BOOST_ROW_PX + SPEEDO_STACK_GAP_PX;
 
 // gaugeRowSize: the per-gauge pixel size for the speedo row, derived from the
 // zone box the LAYOUT measured (not the row's own content height — that
@@ -50,17 +55,18 @@ export function gaugeRowSize({ zoneW = 0, zoneH = 0, count = 1, gap = 28, min = 
 // exceeds the band the layout actually reserves (verified by the
 // `layoutSizing.test.js` "band never exceeds its grid row" invariant).
 //
-// Sidebar mode (≤3 riders): `.race-layout__main` row is `minmax(260px, 46%)`.
-//   floor = 260 - 68 = 192; keep a small margin → 190.
-export const SPEEDO_MIN_GAUGE_SIDEBAR = 190;
+// Sidebar mode (≤3 riders) and the solo band: the speedo row is
+// `minmax(260px, …)`. floor = 260 - 118 = 142; keep a small margin → 140.
+export const SPEEDO_MIN_GAUGE_SIDEBAR = 140;
 export const SPEEDO_MAX_GAUGE_SIDEBAR = 360;
-// Wide mode (≥4 riders): `.race-layout__wide-main` row is `minmax(200px, 42%)`.
-//   floor = 200 - 68 = 132; 96 already clears it with margin.
+// Wide mode (≥4 riders): `.race-layout__wide-main` row is `minmax(220px, 42%)`.
+//   floor = 220 - 118 = 102; 96 clears it.
 export const SPEEDO_MIN_GAUGE_WIDE = 96;
 export const SPEEDO_MAX_GAUGE_WIDE = 280;
 
 export default {
   columnTemplateFor, fitScale, gaugeRowSize, CHROME_BELOW_GAUGE_PX,
+  ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX,
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
 };
 

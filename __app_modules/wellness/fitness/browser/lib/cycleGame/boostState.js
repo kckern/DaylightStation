@@ -35,3 +35,13 @@ export function boostRange(zones, hrlessMultiplier = 1) {
   }
   return { min: Math.min(...all), max: Math.max(...all) };
 }
+
+/**
+ * A distance multiplier as printed: at most one decimal, no trailing ".0"
+ * (1 → "1", 1.25 → "1.3", 0.8 → "0.8"). Non-numbers print as "1".
+ * @param {number} mult
+ * @returns {string}
+ */
+export function formatMultiplier(mult) {
+  return String(Math.round(finiteOr(mult, 1) * 10) / 10);
+}

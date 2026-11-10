@@ -87,6 +87,25 @@ describe('RaceRecap', () => {
     expect(srcs.some((s) => s.endsWith('/users/ghost'))).toBe(false);
   });
 
+  // A recap of a rider against their rival stays on the sidebar layout: a
+  // 12 s replay reads as standings, and every participant keeps a gauge.
+  it('a one-rider-plus-ghost recap stays on the sidebar layout with a gauge each', () => {
+    const ghostCand = {
+      ...candidate,
+      participants: [
+        candidate.participants[0],
+        { id: 'ghost:20260601090000:rider-b', displayName: 'Rider B 👻',
+          distanceSeries: JSON.stringify([10, 50, 90]), hrSeries: JSON.stringify([]),
+          finalDistanceM: 90, finalTimeS: null, placement: 2 }
+      ]
+    };
+    const { getByTestId, queryByTestId, container } = render(<RaceRecap candidate={ghostCand} onClose={() => {}} />);
+    expect(getByTestId('race-layout').dataset.mode).toBe('sidebar');
+    expect(getByTestId('standings-tower')).toBeInTheDocument();
+    expect(queryByTestId('pace-delta')).toBeNull();
+    expect(container.querySelectorAll('.cycle-speedometer').length).toBe(2);
+  });
+
   it('parks a rider whose series ended: 0 km/h and 0 rpm while others ride on', () => {
     const mixed = {
       ...candidate,

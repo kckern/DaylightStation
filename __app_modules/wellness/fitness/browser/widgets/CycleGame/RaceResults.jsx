@@ -1,14 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import resolveParticipantIdentity from "../../lib/cycleGame/participantIdentity.js";
+import { comparisonLines } from "../../lib/cycleGame/resultsComparison.js";
+import { MedalIcon, CrownIcon, GhostIcon } from "./home/icons.jsx";
 import SplitsChart from "./panels/SplitsChart.jsx";
 import "./RaceResults.scss";
 
 const AVATAR_BASE = '/api/v1/static/img/users';
 const FALLBACK_AVATAR = `${AVATAR_BASE}/user`;
-const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
+
+// Fit rules for a 1920x1080 board (see RaceResults.scss): from DENSE_MIN_ROWS rows the
+// rows compact; the lap-splits table (tallest optional block) only shows up to
+// SPLITS_MAX_ROWS rows.
+const DENSE_MIN_ROWS = 5;
+const SPLITS_MAX_ROWS = 3;
+
+// Ghost display names arrive with a trailing ghost emoji; the board shows the SVG
+// GhostIcon instead.
+const TRAILING_EMOJI = /[\s\p{Extended_Pictographic}\uFE0F\u200D]+$/u;
+const cleanName = (n) => String(n ?? '').replace(TRAILING_EMOJI, '') || String(n ?? '');
+const isGhostId = (id, riders) => !!riders[id]?.isGhost || String(id).startsWith('ghost:');
 
 const fmtTime = (s) => {
   if (!Number.isFinite(s)) return '—';
@@ -43,8 +56,8 @@ function useCountUp(target, active, durationMs = 950) {
 }
 
 // One finishing-order row — slides into place (CSS) with its metric ticking up.
-function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, animate }) {
-  const name = riders[s.userId]?.displayName || s.userId;
+function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, animate, comparison }) {
+  const name = cleanName(riders[s.userId]?.displayName || s.userId);
   // Stopped = parked or no-sensor when the race closed. Nobody is eliminated:
   // they keep the distance they rode, worded "Stopped at 412 m".
   const isStopped = stoppedSet.has(s.userId);
@@ -57,7 +70,7 @@ function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, an
   // exclude only stopped/overtime (a race closed before ANY finisher has no winner).
   const isWinner = s.placement === 1 && !isStopped && !isOvertime;
   const rider = riders[s.userId] || {};
-  const isGhost = !!rider.isGhost || String(s.userId).startsWith('ghost:');
+  const isGhost = isGhostId(s.userId, riders);
   const sourceId = isGhost ? resolveParticipantIdentity(String(s.userId)).sourceId : s.userId;
   const avatarSrc = rider.avatarSrc || `${AVATAR_BASE}/${sourceId}`;
   const medalClass = s.placement <= 3 ? ` race-results__row--p${s.placement}` : '';
@@ -73,6 +86,8 @@ function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, an
     : finished ? (winCondition === 'distance' ? fmtTime(counted) : formatDistance(counted))
     : formatDistance(counted);
 
+  const lines = !isGhost && !isStopped && comparison ? comparisonLines(comparison, winCondition) : [];
+
   return (
     <li
       className={`race-results__row${medalClass}${isWinner ? ' is-winner' : ''}`}
@@ -81,14 +96,15 @@ function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, an
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <span className="race-results__place" data-testid={`result-row-${s.userId}`}>
-        <span className="race-results__placement">{MEDALS[s.placement] || s.placement}</span>
+        <span className="race-results__placement"><MedalIcon place={s.placement} /></span>
         <span className={`race-results__avatar${isGhost ? ' cg-ghost' : ''}`}>
           <CircularUserAvatar name={name} avatarSrc={avatarSrc} fallbackSrc={FALLBACK_AVATAR}
-            size={isWinner ? 64 : 50} showGauge={false} showIndicator={false} />
+            size={isWinner ? 84 : 64} showGauge={false} showIndicator={false} />
         </span>
         <span className="race-results__name">
-          {name}
-          {isWinner && <span className="race-results__crown" aria-hidden="true">👑</span>}
+          <span className="race-results__name-text">{name}</span>
+          {isGhost && <span className="race-results__ghost-mark" aria-label="ghost"><GhostIcon /></span>}
+          {isWinner && <span className="race-results__crown" aria-hidden="true"><CrownIcon /></span>}
         </span>
         <span className={`race-results__metric${isStopped ? ' race-results__metric--stopped' : ''}`}>
           {metric}
@@ -97,14 +113,45 @@ function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, an
           )}
         </span>
       </span>
+      {lines.length > 0 && (
+        <div className="race-results__compare" data-testid={`result-compare-${s.userId}`}>
+          {lines.map((line, i) => (
+            <span key={line} className={i === 0 && (line === 'New best' || line === 'First ride at this length') ? 'is-emphasis' : undefined}>{line}</span>
+          ))}
+        </div>
+      )}
     </li>
   );
 }
 ResultRow.propTypes = {
   s: PropTypes.object.isRequired, riders: PropTypes.object.isRequired,
   winCondition: PropTypes.string, stoppedSet: PropTypes.instanceOf(Set), overtimeSet: PropTypes.instanceOf(Set),
-  index: PropTypes.number, animate: PropTypes.bool
+  index: PropTypes.number, animate: PropTypes.bool, comparison: PropTypes.object
 };
+
+// One sentence comparing the single live rider with the pace rival they raced.
+// Distance race: finish times when both have one, else metres at the close.
+// Time race: distance covered. Null when it cannot be said (tie, no data, a stopped rider).
+function versusSentence({ standings, riders, stoppedSet, rivalId, rivalLabel, winCondition }) {
+  if (!rivalId || !rivalLabel) return null;
+  const rival = standings.find((s) => s.userId === rivalId);
+  const live = standings.filter((s) => s.userId !== rivalId && !isGhostId(s.userId, riders) && !stoppedSet.has(s.userId));
+  if (!rival || live.length !== 1 || standings.length !== 2) return null;
+  const me = live[0];
+  const num = Number.isFinite;
+  if (winCondition === 'distance' && num(me.finishTimeS) && num(rival.finishTimeS)) {
+    const d = Math.round(Math.abs(me.finishTimeS - rival.finishTimeS));
+    if (d === 0) return null;
+    return me.finishTimeS < rival.finishTimeS ? `You beat ${rivalLabel} by ${d} s` : `${rivalLabel} finished ${d} s ahead`;
+  }
+  if (!num(me.distanceM) || !num(rival.distanceM)) return null;
+  const d = Math.abs(me.distanceM - rival.distanceM);
+  if (Math.round(d) === 0) return null;
+  const dist = formatDistance(d);
+  const won = me.distanceM > rival.distanceM;
+  if (winCondition === 'distance') return won ? `You beat ${rivalLabel} by ${dist}` : `${rivalLabel} finished ${dist} ahead`;
+  return won ? `You went ${dist} further than ${rivalLabel}` : `${rivalLabel} went ${dist} further`;
+}
 
 /**
  * Race results board — a Mario-Kart-style finish: rows slide into their finishing
@@ -112,13 +159,30 @@ ResultRow.propTypes = {
  * crown. When laps were completed, the lap-by-lap splits table reviews the race
  * below the podium (skipped for short races that never finish a lap). A
  * config-driven dwell auto-returns to the lobby; the last few seconds show a
- * countdown. Distance races headline finish time; time races headline distance.
+ * countdown for the whole dwell. Distance races headline finish time; time races headline distance.
  */
 export default function RaceResults({
   standings = [], riders = {}, winCondition = 'distance', stopped = [], overtime = [],
   lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true, onExit = null,
-  ladderNotes = [], saveFailed = false
+  ladderNotes = [], saveFailed = false,
+  onRematch = null, onHold = null, comparisons = null, rivalId = null, rivalLabel = ''
 }) {
+  const heldRef = useRef(false);
+  useEffect(() => {
+    if (!onHold || typeof document === 'undefined') return undefined;
+    const hold = () => {
+      if (heldRef.current) return;
+      heldRef.current = true;
+      onHold();
+    };
+    document.addEventListener('pointerdown', hold, true);
+    document.addEventListener('keydown', hold, true);
+    return () => {
+      document.removeEventListener('pointerdown', hold, true);
+      document.removeEventListener('keydown', hold, true);
+    };
+  }, [onHold]);
+
   const stoppedSet = new Set(stopped);
   const overtimeSet = new Set(overtime);
   const anyOvertime = standings.some((s) => !stoppedSet.has(s.userId) && overtimeSet.has(s.userId));
@@ -126,10 +190,13 @@ export default function RaceResults({
   // SplitsChart falls back to a "live order" list that just duplicates the podium
   // above — an empty box that inflates the page (short races never finish a lap).
   const anyLapsCompleted = standings.some((s) => (riders[s.userId]?.lapSplits || []).length > 0);
-  const showSplits = Number.isFinite(lapLengthM) && lapLengthM > 0 && standings.length > 0 && anyLapsCompleted;
+  const showSplits = Number.isFinite(lapLengthM) && lapLengthM > 0 && standings.length > 0 && standings.length <= SPLITS_MAX_ROWS && anyLapsCompleted;
+  const dense = standings.length >= DENSE_MIN_ROWS;
+  const versus = versusSentence({ standings, riders, stoppedSet, rivalId, rivalLabel, winCondition });
+  const showCountdown = Number.isFinite(secondsLeft) && secondsLeft > 0;
 
   return (
-    <div className="race-results" data-testid="race-results">
+    <div className={`race-results${dense ? ' race-results--dense' : ''}`} data-testid="race-results">
       <div className="race-results__eyebrow">Finish</div>
       <h2 className="race-results__title">Results</h2>
       {saveFailed && (
@@ -137,10 +204,11 @@ export default function RaceResults({
           Race could not be saved — it won&rsquo;t appear in history or the ladder
         </div>
       )}
+      {versus && <div className="race-results__versus" data-testid="race-results-versus">{versus}</div>}
       <ol className="race-results__list">
         {standings.map((s, i) => (
           <ResultRow key={s.userId} s={s} riders={riders} winCondition={winCondition}
-            stoppedSet={stoppedSet} overtimeSet={overtimeSet} index={i} animate={animate} />
+            stoppedSet={stoppedSet} overtimeSet={overtimeSet} index={i} animate={animate} comparison={comparisons?.[s.userId]} />
         ))}
       </ol>
 
@@ -168,15 +236,20 @@ export default function RaceResults({
       )}
 
       <div className="race-results__exit-row">
-        {Number.isFinite(secondsLeft) && secondsLeft > 0 && secondsLeft <= 5 && (
-          <span className="race-results__countdown" data-testid="race-results-countdown" aria-live="polite">
-            Back to lobby in {secondsLeft}…
-          </span>
+        {onRematch && (
+          <button type="button" className="race-results__rematch is-primary" data-testid="race-results-rematch" onClick={onRematch}>
+            Rematch
+          </button>
         )}
         {onExit && (
           <button type="button" className="race-results__exit" data-testid="race-results-exit" onClick={onExit}>
             Exit
           </button>
+        )}
+        {showCountdown && (
+          <span className="race-results__countdown" data-testid="race-results-countdown" aria-live="off">
+            Back to lobby in {secondsLeft}
+          </span>
         )}
       </div>
     </div>
@@ -195,5 +268,10 @@ RaceResults.propTypes = {
   animate: PropTypes.bool,
   onExit: PropTypes.func,
   ladderNotes: PropTypes.arrayOf(PropTypes.string),
-  saveFailed: PropTypes.bool
+  saveFailed: PropTypes.bool,
+  onRematch: PropTypes.func,
+  onHold: PropTypes.func,
+  comparisons: PropTypes.object,
+  rivalId: PropTypes.string,
+  rivalLabel: PropTypes.string
 };

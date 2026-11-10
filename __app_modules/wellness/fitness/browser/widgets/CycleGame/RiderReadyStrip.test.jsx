@@ -65,4 +65,18 @@ describe('RiderReadyStrip', () => {
     expect(ghost.textContent).not.toContain('NO SIGNAL');
     expect(ghost.textContent).not.toContain('rpm');
   });
+
+  // The strapless handicap is known before the race: a live rider with no
+  // heart rate reads "No strap · ×0.8" under their name.
+  it('shows the strapless handicap under a live rider with no heart rate', () => {
+    const strapless = [
+      { id: 'user_1', name: 'User_1', rpm: 0, sensorLive: true, heartRate: 140 },
+      { id: 'user_2', name: 'User_2', rpm: 0, sensorLive: true, heartRate: null, noStrapMultiplier: 0.8 },
+      { id: 'ghost:par:par', name: 'Par', rpm: 0, isGhost: true, noStrapMultiplier: 0.8 }
+    ];
+    const { getByTestId, queryByTestId } = render(<RiderReadyStrip riders={strapless} />);
+    expect(getByTestId('ready-rider-strap-user_2').textContent).toBe('No strap · ×0.8');
+    expect(queryByTestId('ready-rider-strap-user_1')).toBeNull();
+    expect(queryByTestId('ready-rider-strap-ghost:par:par')).toBeNull();
+  });
 });

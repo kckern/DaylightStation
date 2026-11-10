@@ -221,6 +221,16 @@ describe('povBadges (rank + gap-to-next)', () => {
     expect(badges.c.text).toBe('3rd · −30 m'); // 80 − 50
   });
 
+  // Solo layout: nobody to rank, so every badge is the rider's own distance.
+  it('unranked (solo): no ordinal, every rider shows their own distance', () => {
+    const riderLive = { a: { placement: 1 }, b: { placement: 2 }, c: { parked: true, placement: 3 } };
+    const badges = povBadges({ riderIds: ['a', 'b', 'c'], riders, riderLive, winCondition: 'time', ranked: false });
+    expect(badges.a.text).toBe('120 m');
+    expect(badges.b.text).toBe('80 m');
+    expect(badges.c.text).toBe('Parked · 50 m');
+    Object.values(badges).forEach((b) => { expect(b.ordinal).toBe(''); expect(b.ownDistance).toBe(true); });
+  });
+
   it('falls back to live distance order when placement is absent', () => {
     const badges = povBadges({ riderIds: ['c', 'a', 'b'], riders, riderLive: {}, winCondition: 'distance' });
     expect(badges.a.rank).toBe(1);

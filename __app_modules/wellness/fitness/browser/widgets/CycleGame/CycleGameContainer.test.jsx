@@ -1200,14 +1200,17 @@ describe('CycleGameContainer — automatic pace rival', () => {
       return ticks[ticks.length - 1].riders.find((r) => r.userId === 'ghost:par:par').distanceM;
     };
 
-    it("the par rival's gauge reads its constant 80 rpm cadence", async () => {
+    // Solo layout: the rider's own gauge only; the par rival is on the chart,
+    // the road and the pace panel ("vs par pace"), never on a gauge.
+    it('a solo race against par shows the rider\'s gauge only and the pace panel against par', async () => {
       const view = await renderLobby([]);
       await startRaceOf(view);
       raceFiveSeconds();
+      expect(view.getByTestId('race-layout').dataset.mode).toBe('solo');
       const gauges = view.getAllByTestId('cycle-speedometer-rpm').map((el) => parseInt(el.textContent, 10));
-      expect(gauges).toHaveLength(2);
-      expect(gauges).toContain(80);   // par
-      expect(gauges).toContain(100);  // the live rider's sensor
+      expect(gauges).toEqual([100]);  // the live rider's sensor
+      expect(view.getByTestId('pace-delta').textContent).toContain('vs par pace');
+      expect(view.queryByTestId('standings-tower')).toBeNull();
       expect(parDistanceM()).toBe(25); // 18 km/h default = 5 m/s
     });
 
