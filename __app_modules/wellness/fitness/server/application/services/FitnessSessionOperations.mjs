@@ -36,9 +36,11 @@ export class FitnessSessionOperations {
       const endMs = typeof rawEnd === 'number' ? rawEnd : (rawEnd ? Date.parse(rawEnd) : NaN);
       if (!Number.isFinite(endMs)) return;
       const sessionId = String(session?.sessionId?.toString?.() ?? session?.sessionId ?? fallbackId ?? '');
+      const rawStart = session?.startTime;
+      const startMs = typeof rawStart === 'number' ? rawStart : (rawStart ? Date.parse(rawStart) : NaN);
       const learnerIds = Object.keys(session?.participants ?? {});
       if (!sessionId || !learnerIds.length) return;
-      this.publications.ended({ sessionId, learnerIds, endMs, finalized: session.finalized === true });
+      this.publications.ended({ sessionId, learnerIds, endMs, startMs, finalized: session.finalized === true });
     } catch (error) {
       this.logger.warn?.('fitness.sessions.ended-publish-failed', { sessionId: fallbackId, error: error?.message });
     }
@@ -97,9 +99,20 @@ export class FitnessSessionOperations {
       });
       return { kind: 'forbidden' };
     }
+    // What was stored before: a re-save of a session already ended (and as final)
+    // is not news and must not re-settle anyone.
+    let before = null;
+    try {
+      if (sessionData?.sessionId && typeof this.sessions.getSession === 'function') {
+        before = await this.sessions.getSession(String(sessionData.sessionId), householdId, { decodeTimeline: false });
+      }
+    } catch { before = null; }
     const value = await this.sessions.saveSessionWithReceipt(sessionData, householdId);
     this.notifySessionsChanged({ operation: 'saved', sessionId: sessionData?.sessionId ?? null, householdId });
-    this.publishEnded(value?.session, sessionData?.sessionId);
+    const after = value?.session;
+    const was = (before && before.endTime) ? { endTime: before.endTime, finalized: before.finalized === true } : null;
+    const news = !was || String(was.endTime) !== String(after?.endTime) || (after?.finalized === true && !was.finalized);
+    if (news) this.publishEnded(after, sessionData?.sessionId);
     return { kind: 'saved', ...value };
   }
 }

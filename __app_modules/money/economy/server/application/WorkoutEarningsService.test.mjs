@@ -12,9 +12,9 @@ const ringLine = (learnerId, sessions, extra = {}) => ({
 const contestLine = (learnerId, status, leader) => ({ ruleId: 'ring-contest', kind: 'ring-contest', status, leader, ref: `earn:${learnerId}:ring-contest:2026-10-19:on-time` });
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
-function make({ learners, balances = {}, history = {}, mode = 'live', contestClosed = false, failWallet = null }) {
+function make({ rosters = null, learners, balances = {}, history = {}, mode = 'live', contestClosed = false, failWallet = null }) {
   return new WorkoutEarningsService({
-    preview: { async roster() { return { contestClosed, learners }; } },
+    preview: { async roster({ week } = {}) { return rosters ? rosters(week) : { contestClosed, learners }; } },
     economy: {
       hasUser: (id) => id in balances,
       async peekBalance(id) { if (id === failWallet) throw new Error('boom'); return balances[id]; },
@@ -157,5 +157,17 @@ describe('WorkoutEarningsService.paid', () => {
 
   it('catalog off: mode off, no learners', async () => {
     expect(await make({ learners, balances, history, mode: 'off' }).paid('20261020100000')).toEqual({ sessionId: '20261020100000', mode: 'off', learners: [] });
+  });
+
+  it('a ride from last award week (final after the Monday rollover) is found there', async () => {
+    const lastWeek = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [ringLine('learner-a', [session('20260927200000', 1000, 120)])] }];
+    const seen = [];
+    const svc = make({
+      balances, history: { 'learner-a': [payout('t1', 1, '20260927200000', 120)] },
+      rosters: (week) => { seen.push(week); return week ? { today: '2026-09-28', learners: lastWeek } : { today: '2026-09-28', learners: [] }; },
+    });
+    const res = await svc.paid('20260927200000');
+    expect(seen).toEqual([null, '2026-09-21']);
+    expect(res.learners.map((l) => [l.learnerId, l.entries.map((e) => e.txnId)])).toEqual([['learner-a', ['t1']]]);
   });
 });

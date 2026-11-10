@@ -106,7 +106,14 @@ export class WorkoutEarningsService {
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { sessionId, mode, learners: [] };
     const want = normalizeWorkoutSessionId(sessionId);
-    const roster = await this.#preview.roster({ week: null });
+    // The ride's own award week: this one, or (a ride that started before the
+    // Monday rollover and turned final after it) the one before.
+    const hasRide = (r) => (r?.learners ?? []).some((l) => (ringLineOf(l)?.sessions ?? []).some((s) => normalizeWorkoutSessionId(s?.sessionId) === want));
+    let roster = await this.#preview.roster({ week: null });
+    if (!hasRide(roster) && /^\d{4}-\d{2}-\d{2}$/.test(roster?.today ?? '')) {
+      const before = await this.#preview.roster({ week: new Date(Date.parse(`${roster.today}T00:00:00.000Z`) - 7 * 86_400_000).toISOString().slice(0, 10) });
+      if (hasRide(before)) roster = before;
+    }
     const learners = [];
     for (const learner of roster?.learners ?? []) {
       const ride = (ringLineOf(learner)?.sessions ?? []).find((s) => normalizeWorkoutSessionId(s?.sessionId) === want);

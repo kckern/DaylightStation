@@ -111,6 +111,9 @@ export class PayoutService {
    */
   currentStudyDay() { return this.#preview.currentStudyDay(); }
 
+  /** The study day an instant falls in (null when the preview cannot say). */
+  studyDayFor(ms) { return this.#preview.studyDayFor?.(ms) ?? null; }
+
   // Per call, so a config reload (dry-run → live) applies without a restart.
   #mode() { return this.#config.catalog().mode; }
 

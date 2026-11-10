@@ -49,7 +49,7 @@ export function createEarningsRouter({ earningsPreview, earnRules, workoutEarnin
   };
 
   router.get('/workout/:sessionId/paid', asyncHandler(async (req, res) => {
-    if (!workoutEarnings?.paid || needWorkout(res)) { if (!res.headersSent) res.status(503).json({ error: 'workout earnings unavailable' }); return; }
+    if (!workoutEarnings?.paid) { res.status(503).json({ error: 'workout earnings unavailable' }); return; }
     res.set('Cache-Control', 'no-store').json(await workoutEarnings.paid(String(req.params.sessionId)));
   }));
 

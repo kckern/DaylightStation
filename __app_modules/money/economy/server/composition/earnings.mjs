@@ -321,10 +321,22 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
   // A workout becoming final pays now, not at the next hourly reconcile.
   // `fresh` skips the 60 s achievement cache so the just-final session counts.
   const pendingWorkouts = new Map();
-  const settleWorkout = (learnerIds) => {
+  // The award week is the ride's own: one that started before the Monday
+  // rollover is priced into the week it belongs to, however late it turns final.
+  const weekOfRide = (startMs) => {
+    if (!Number.isFinite(startMs)) return null;
+    const named = payoutService.studyDayFor?.(startMs);
+    if (!DAY.test(named ?? '')) return null;
+    return mondayOf(named) !== mondayOf(today()) ? mondayOf(named) : null;
+  };
+  // Re-saves of a finalized session repeat the same fact; settle it once a minute at most.
+  const recentFinal = new Map();
+  const settleWorkout = (learnerIds, startMs) => {
+    let week = null;
+    try { week = weekOfRide(startMs); } catch (err) { fail(null, err); }
     for (const learnerId of learnerIds) {
       Promise.resolve()
-        .then(() => payoutService.settle({ learnerId, week: null, fresh: true }))
+        .then(() => payoutService.settle({ learnerId, week, fresh: true }))
         .catch((err) => fail(learnerId, err));
     }
   };
@@ -339,8 +351,13 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
       timers.clearTimeout(pendingWorkouts.get(sessionId));
       pendingWorkouts.delete(sessionId);
       if (payload.finalized === true) {
+        const memo = `${sessionId}|${payload.endMs ?? ''}`;
+        const at = now();
+        for (const [k, t] of recentFinal) if (at - t > 60_000) recentFinal.delete(k);
+        if (recentFinal.has(memo)) return;
+        recentFinal.set(memo, at);
         logger.info?.('economy.payout.fitness-trigger', { sessionId, learners, reason: 'finalized' });
-        settleWorkout(learners);
+        settleWorkout(learners, payload.startMs);
         return;
       }
       const endMs = Number.isFinite(payload.endMs) ? payload.endMs : now();
@@ -351,7 +368,7 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
         try {
           if (off()) return;
           logger.info?.('economy.payout.fitness-trigger', { sessionId, learners, reason: 'window' });
-          settleWorkout(learners);
+          settleWorkout(learners, payload.startMs);
         } catch (err) {
           fail(null, err);
         }

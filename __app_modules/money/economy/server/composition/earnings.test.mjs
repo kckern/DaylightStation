@@ -36,6 +36,7 @@ const WEDNESDAY = '2026-09-30';
 const FRIDAY = '2026-10-02';
 
 const T0 = 1_800_000_000_000;
+const SUNDAY_START = 42;
 const WINDOW = 30 * 60 * 1000 + 5000;
 
 function setup({ mode = 'live', settle = async () => ({}), settleAll = async () => ({}), now = WEDNESDAY, enabled = true } = {}) {
@@ -44,7 +45,7 @@ function setup({ mode = 'live', settle = async () => ({}), settleAll = async () 
   const bus = fakeBus();
   const tasks = new Map();
   const scheduler = { registerTask: vi.fn((key, cron, fn) => tasks.set(key, { cron, fn })) };
-  const payoutService = { settle: vi.fn(settle), settleAll: vi.fn(settleAll), currentStudyDay: vi.fn(() => now) };
+  const payoutService = { settle: vi.fn(settle), settleAll: vi.fn(settleAll), currentStudyDay: vi.fn(() => now), studyDayFor: vi.fn((ms) => (ms === SUNDAY_START ? '2026-09-27' : now)) };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const wiring = startEconomyPayouts({
     payoutService, config: { catalog: () => ({ mode: state.mode }) }, eventBus: bus, scheduler, logger, enabled,
@@ -65,6 +66,24 @@ describe('startEconomyPayouts: a workout becoming final', () => {
       { learnerId: 'test-learner-b', week: null, fresh: true },
     ]);
     expect(logger.info).toHaveBeenCalledWith('economy.payout.fitness-trigger', { sessionId: '20261109120000', learners: ['test-learner', 'test-learner-b'], reason: 'finalized' });
+  });
+
+  it('a ride that started in last week settles into last week; this week passes null', async () => {
+    const { bus, payoutService, clock } = setup({ now: '2026-09-28' });
+    bus.emit('fitness.session.ended', ended({ startMs: SUNDAY_START, learnerIds: ['test-learner'] }));
+    await clock.advance(0);
+    expect(payoutService.settle).toHaveBeenCalledWith({ learnerId: 'test-learner', week: '2026-09-21', fresh: true });
+    bus.emit('fitness.session.ended', ended({ sessionId: 'later', startMs: 7, learnerIds: ['test-learner'] }));
+    await clock.advance(0);
+    expect(payoutService.settle).toHaveBeenLastCalledWith({ learnerId: 'test-learner', week: null, fresh: true });
+  });
+
+  it('a repeated finalized end for the same session settles once', async () => {
+    const { bus, payoutService, clock } = setup();
+    bus.emit('fitness.session.ended', ended());
+    bus.emit('fitness.session.ended', ended());
+    await clock.advance(0);
+    expect(payoutService.settle).toHaveBeenCalledTimes(2);
   });
 
   it('an unfinalized end settles once, at endMs + 30 min + 5 s', async () => {

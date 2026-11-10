@@ -69,6 +69,11 @@ export class EarningsPreviewService {
     return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
   }
 
+  /** The study day an instant (ms) falls in: the clock's timezone and boundary hour. */
+  studyDayFor(ms) {
+    return studyDayForInstant(ms, { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
+  }
+
   /** One learner's week. `week` is any study day inside it (default: today's). `fresh` skips the minute-old achievement cache. */
   async preview({ learnerId, week = null, fresh = false } = {}) {
     const roster = await this.#roster();
