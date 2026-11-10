@@ -199,7 +199,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
             </div>
             {layout.placed.map((g) => g.rows.map((row, i) => (
               <div key={row.id} className={`gem-board__col${focus}`} data-row={row.id} data-learner={l.learnerId} style={at(FIRST + li, g.start + i)}>
-                {pending ? <div className="gem-board__cell" role="cell"><span className="gem-board__ghost" aria-hidden="true" /></div> : <GemCell
+                {pending ? <div className="gem-board__cell" role="cell" /> : <GemCell
                   cell={board.cells?.[row.id]?.[l.learnerId]}
                   color={row.color}
                   area={row.area ?? row.group}

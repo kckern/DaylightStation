@@ -338,14 +338,15 @@ describe('GemBoardOverlay', () => {
     const grid = document.querySelector('.gem-board__grid');
     expect(grid.getAttribute('aria-busy')).toBe('true');
     const outline = { columns: grid.style.gridTemplateColumns, names: [...grid.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...grid.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) };
-    expect(grid.querySelectorAll('.gem-board__ghost')).toHaveLength(8);
+    expect(grid.querySelectorAll('.gem-board__cell')).toHaveLength(8); // blank cells, nothing drawn in them
+    expect(grid.querySelector('.gem-board__cell').textContent).toBe('');
+    expect(grid.querySelector('.gem-board__cell *')).toBeNull();
     expect(grid.querySelector('.gem-glyph')).toBeNull();
     expect(grid.querySelector('button')).toBeNull();
     expect([...grid.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['', '']);
     await act(async () => { release(); });
     const loaded = document.querySelector('.gem-board__grid');
     expect(loaded.hasAttribute('aria-busy')).toBe(false);
-    expect(loaded.querySelector('.gem-board__ghost')).toBeNull();
     expect({ columns: loaded.style.gridTemplateColumns, names: [...loaded.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...loaded.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) }).toEqual(outline);
   });
 

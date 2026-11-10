@@ -157,4 +157,10 @@ describe('GemGlyph', () => {
     expect(glyphCss).not.toMatch(/every-day|__tag|data-tagged/);
     expect(glyphCss).not.toMatch(/255,\s*180,\s*76|#ffb44c|amber/i);
   });
+
+  it('the whole board stylesheet has no partial opacity and no animation', () => {
+    const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+    expect(css).not.toMatch(/opacity\s*:/);
+    expect(css).not.toMatch(/@keyframes|animation\s*:|__ghost/);
+  });
 });
