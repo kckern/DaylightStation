@@ -30,7 +30,23 @@ export default {
   // Numeric loopback avoids DNS during confined middleware-only test startup.
   server: { host: '127.0.0.1' },
   // React plugin enables automatic JSX runtime so test files don't need `import React`.
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      // Modules under __app_modules/ and __capabilities/ import frontend
+      // dependencies (three, vexflow, highcharts, ...) that live only in
+      // frontend/node_modules, out of reach of Node's upward lookup. The
+      // production vite config builds them with frontend as root; mirror that
+      // by falling back to frontend/node_modules for any bare specifier the
+      // normal lookup could not find.
+      name: 'frontend-deps-fallback',
+      enforce: 'post',
+      async resolveId(id, importer, options) {
+        if (!importer || /^[./\\\0]/.test(id) || path.isAbsolute(id) || id.startsWith('node:')) return null;
+        return this.resolve(path.join(frontendNodeModules, id), importer, { ...options, skipSelf: true });
+      },
+    },
+  ],
   resolve: {
     alias: {
       '#frontend': path.resolve(__dirname, 'frontend/src'),
@@ -52,6 +68,12 @@ export default {
       'dash-video-element': path.join(frontendNodeModules, 'dash-video-element'),
       // Out-of-tree modules (__capabilities/music-notation) import abcjs, a frontend dependency.
       'abcjs': path.join(frontendNodeModules, 'abcjs'),
+      'vexflow': path.join(frontendNodeModules, 'vexflow'),
+      // The root copy is CJS and require()s a `react` that only frontend has.
+      '@tabler/icons-react': path.join(frontendNodeModules, '@tabler/icons-react'),
+      // Same for the charts (money/finance widgets, pulled in via the widget registry).
+      'highcharts-react-official': path.join(frontendNodeModules, 'highcharts-react-official'),
+      'highcharts': path.join(frontendNodeModules, 'highcharts'),
       // Bundled UI fonts (gaming/party-games `fonts.js`) are a frontend dependency.
       '@fontsource': path.join(frontendNodeModules, '@fontsource'),
       'react': path.join(frontendNodeModules, 'react'),
