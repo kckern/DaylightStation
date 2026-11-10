@@ -139,7 +139,7 @@ React phases in `applySnapshot()`.
 | `staging` | `staged` | `RiderReadyStrip` ("to your bikes") | Start, if `staging_buffer_ms > 0` | buffer elapsed **and** all riders at RPM 0 (see §10) |
 | `countdown` | `staged`→`countdown` | `CountdownStoplight` + `RiderReadyStrip` | staging gate clears (or Start if buffer 0) | countdown reaches the green light |
 | `go` | `racing` | `CountdownStoplight` (GREEN) — engine already live | green light | brief hold (`GO_HOLD_MS` ≈ 800 ms) |
-| `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` | go-hold ends | all riders finished/DNF, time cap, or operator **Finish race** |
+| `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` | go-hold ends | all **live** riders finished/DNF (a ghost still on the road is not waited for: it has lost), time cap, or operator **Finish race** |
 | `results` | `finished`→`results` | `RaceResults` | engine `finished` | manual **Exit** or auto-dwell countdown → `idle` |
 
 ### A dead sensor is not a lazy child
@@ -760,12 +760,11 @@ resolves.
   course manually, since matching is by `course_id`, not by entry point.
 - **Ride It** builds the race through the normal `buildRaceConfigFromCourse` path
   (which sets `course_id` for free) and **pre-arms a rival ghost**:
-  - the rider directly assigned to the first bike, if **ranked** on the ladder →
-    the rider **one rung above** becomes the ghost;
-  - if that rider is the **leader** → their own **all-time personal best**
+  - the rival is the **week's high score**: for the rider directly assigned to
+    the first bike, ranked or not (or when no rider is assigned yet), the
+    ladder **leader's** best race this week becomes the ghost;
+  - if that rider **is** the leader → their own **all-time personal best**
     (via the personal-bests endpoint) becomes the ghost;
-  - if **unranked** (or no rider assigned yet) → the **tail** (lowest-ranked)
-    rider becomes the ghost;
   - no ladder data at all → no ghost; the race proceeds plain.
   Ghost lookups are best-effort: any fetch failure just starts the race without a
   ghost, never blocking Ride It. The ghost is armed through the same

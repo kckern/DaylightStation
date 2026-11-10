@@ -17,15 +17,16 @@ describe('courseStartOverride', () => {
 });
 
 describe('pickRival', () => {
-  it('rung above for a ranked rider; self-pb for the leader; tail for unranked; none when empty', () => {
-    expect(pickRival({ standings: ROWS, riderId: 'user_3' })).toEqual({ kind: 'above', raceId: 'r2', rivalUserId: 'mom' });
+  it('the week\'s leader for everyone below them, ranked or not; self-pb for the leader; none when empty', () => {
+    expect(pickRival({ standings: ROWS, riderId: 'user_3' })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
+    expect(pickRival({ standings: ROWS, riderId: 'mom' })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
     expect(pickRival({ standings: ROWS, riderId: 'dad' })).toEqual({ kind: 'self-pb', raceId: null, rivalUserId: 'dad' });
-    expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'user_3' });
+    expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
     expect(pickRival({ standings: [], riderId: 'dad' })).toEqual({ kind: 'none', raceId: null, rivalUserId: null });
   });
 
-  it('with no rider assigned (riderId: null), arms the bottom rung (tail) — accepted: startRace no-ops with a no_riders warn when no bike is claimed, so an armed-but-unused ghost is harmless', () => {
-    expect(pickRival({ standings: ROWS, riderId: null })).toEqual({ kind: 'tail', raceId: 'r3', rivalUserId: 'user_3' });
+  it('with no rider assigned (riderId: null), arms the leader: startRace no-ops with a no_riders warn when no bike is claimed, so an armed-but-unused ghost is harmless', () => {
+    expect(pickRival({ standings: ROWS, riderId: null })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
   });
 });
 

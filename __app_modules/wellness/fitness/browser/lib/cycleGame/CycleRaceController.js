@@ -216,10 +216,14 @@ export class CycleRaceController {
   _isFinished() {
     const s = this.engine.getState();
     if (this.config.winCondition === 'time') return s.finished;
-    return Object.values(s.riders).every(
-      (r) => r.finishTimeS != null || this.dnf.has(r.userId) || this.overtime.has(r.userId)
-        || this.noSensor.has(r.userId)
-    );
+    const settled = (r) => r.finishTimeS != null || this.dnf.has(r.userId) || this.overtime.has(r.userId)
+      || this.noSensor.has(r.userId);
+    const riders = Object.values(s.riders);
+    // A ghost never holds a distance race open: once every live rider is
+    // settled the race is over, and a ghost still on the road has lost (it keeps
+    // the distance it had reached). A field of ghosts alone runs to the line.
+    const live = riders.filter((r) => !this.ghosts.has(r.userId));
+    return (live.length ? live : riders).every(settled);
   }
 
   showResults() {
