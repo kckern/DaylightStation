@@ -332,7 +332,7 @@ curl -s {env.log_store_url}/select/logsql/query \
 
 - `school.print.scan-bleed-resolved`: a row was settled because the rows beside
   it explained the extra marks. Nothing to do; if the child says the graded
-  letter is wrong, the raw marks are in `given` (known failure: a true answer
+  letter is wrong, the raw marks are in `given`, and `bleed`/`resolvedLetter` (or `ambiguous: true` for fallback-scored rows) are stored on the verdict-sheet entry and the attempt's `provenance` (known failure: a true answer
   equal to a neighbour's letter plus a stray mark resolves to the stray).
 - `school.print.scan-ambiguous-scored`: `scan.ambiguousFallback` is
   `incorrect`, so the row was scored wrong with `ambiguous: true` and no slip

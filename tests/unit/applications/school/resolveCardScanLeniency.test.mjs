@@ -172,8 +172,10 @@ describe('ResolveCardScan — bounded eraser-leniency (spec §5.4, 2026-08-22 po
     expect(byRow[2]).toMatchObject({ status: 'correct', leniency: 'eraser' });
     // NEIGHBOUR BLEED (added after this fixture): this dense fixture's rows
     // 3, 4 and 6 each have exactly one mark the rows beside them do not
-    // explain, so they now resolve to that letter (all wrong, key = Alpha)
-    // instead of staying ambiguous. They are graded, never eraser-credited.
+    // explain, so they now resolve to that letter (graded against the one unexplained letter)
+    // instead of staying ambiguous (row 3 contains the key
+    // and is eraser-eligible, but row 2 already spent the cap and bleed never
+    // consumes the eraser budget).
     expect(byRow[3]).toMatchObject({
       status: 'incorrect', given: ['A', 'C'], resolvedLetter: 'C', bleed: 'neighbour', earned: 0,
     });
@@ -407,10 +409,22 @@ describe('ResolveCardScan — neighbour bleed + configurable tolerance/fallback'
     }));
   });
 
+  it('a two-mark row holding the key is eraser-credited even when its key letter is shared with a neighbour (bleed runs after the eraser pass)', async () => {
+    // Row 2 [A,C], key Alpha. Row 1 shares the key letter A, row 3 does not
+    // carry C, so bleed alone would resolve row 2 to the OTHER mark (C) and
+    // dock it. The eraser rule goes first and credits it.
+    const answers = {
+      1: 'A', 2: ['A', 'C'], 3: 'B', 4: 'B', 5: 'B', 6: 'C', 7: 'C', 8: 'A', 9: 'B',
+    };
+    const { byRow } = await run({ options: { leniencyRowsPerCredit: 1 }, answers });
+    expect(byRow[2]).toMatchObject({ status: 'correct', leniency: 'eraser', earned: 1 });
+    expect(byRow[2].bleed).toBeUndefined();
+  });
+
   it('leniencyRowsPerCredit: 1 eraser-credits every two-mark row with a correct mark', async () => {
     const { byRow } = await run({ options: { leniencyRowsPerCredit: 1 } });
     for (const r of [4, 5, 6, 8]) expect(byRow[r]).toMatchObject({ status: 'correct', leniency: 'eraser' });
-    expect(byRow[2].bleed).toBe('neighbour');
+    expect(byRow[2]).toMatchObject({ status: 'correct', bleed: 'neighbour' });
   });
 
   it("ambiguousFallback: 'incorrect' scores leftovers incorrect with ambiguous:true, no ambiguous status", async () => {
@@ -456,8 +470,8 @@ describe('ResolveCardScan — neighbour bleed + configurable tolerance/fallback'
     const repository = fakeRepository();
     const allocationStore = fakeAllocationStore();
     const three = (prefix) => [1, 2, 3].map((n) => mcQuestion(`${prefix}${n}`, n, { choices: CH, answer: 'Alpha' }));
-    const docA = sourceDoc(`bleed-a-${Math.random().toString(36).slice(2)}`, three('a'), { archetype: 'worksheet' });
-    const docB = sourceDoc(`bleed-b-${Math.random().toString(36).slice(2)}`, three('b'), { archetype: 'worksheet' });
+    const docA = sourceDoc(`bleed-a-${Math.random().toString(36).slice(2)}`, three('a'), { archetype: 'quiz' });
+    const docB = sourceDoc(`bleed-b-${Math.random().toString(36).slice(2)}`, three('b'), { archetype: 'quiz' });
     const { allocation: a } = await publishAndAllocate({
       repository, allocationStore, source: docA, context: { freshCard: true, learnerId: 'test-learner' },
     });
@@ -486,6 +500,7 @@ describe('ResolveCardScan — neighbour bleed + configurable tolerance/fallback'
   it('invalid config falls back to defaults with a warning', async () => {
     const { byRow, logger } = await run({ options: { leniencyRowsPerCredit: 0, ambiguousFallback: 'bogus' } });
     expect(byRow[5].status).toBe('ambiguous');
-    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-config-invalid', expect.objectContaining({ key: 'leniencyRowsPerCredit' }));
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-config-invalid', expect.objectContaining({ key: 'ambiguousFallback' }));
   });
 });

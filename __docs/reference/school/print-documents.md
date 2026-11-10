@@ -551,7 +551,9 @@ queued for a person to look at — **except for the eraser signature**
   one bubble and fills another often leaves enough graphite for the reader to
   see both — that reads as an eraser, not a guess.
 - **Everything else about a multi-mark row still holds for review, never
-  guessed at.** Three or more marks never earn credit, even when one of them
+  guessed at** — except where the rows beside it explain the extra marks
+  ([Neighbour bleed](#neighbour-bleed-2026-11-09)) or `scan.ambiguousFallback`
+  is `incorrect` ([Scan settings](#scan-settings-scan-in-the-household-schoolyml)). Three or more marks never earn credit, even when one of them
   is correct. Two marks where *both* are wrong never earn credit. Marks
   covering **every available choice** never earn credit regardless of count —
   this is what stops a true/false row (only two choices) from being
@@ -564,8 +566,12 @@ queued for a person to look at — **except for the eraser signature**
   like an ordinary ambiguous row.
 - **Strictness is archetype-driven.** A `worksheet` (low-stakes practice) is
   graded leniently; a `quiz` (and `infopage`) is strict — the cap is 0, so a
-  quiz's double-marks are never credited and always hold for review, exactly
-  as before this policy existed.
+  quiz's double-marks are never *eraser*-credited and hold for review, exactly
+  as before this policy existed, unless neighbour bleed resolves them or the
+  fallback scores them.
+
+**Order of resolution:** eraser leniency first, then neighbour bleed on the rows
+that are *still* ambiguous, then the configured fallback on whatever is left.
 
 A row this rule promotes is recorded as `correct` with a `leniency: 'eraser'`
 marker carried through to the verdict sheet (`gradedBy: 'engine-leniency'`
@@ -574,8 +580,8 @@ there, distinct from a plain `'engine'` verdict) — auditable, never silent.
 #### Neighbour bleed (2026-11-09)
 
 A dark bubble in the row above or below can show through and read as a faint
-extra mark on the row between. Before the eraser rule runs, a **single-answer**
-row (`multiple_choice` / `true_false`) with several marks is checked against
+extra mark on the row between. After the eraser rule has run, a **single-answer**
+row still ambiguous (`multiple_choice` / `true_false`) with several marks is checked against
 the sheet's **raw marks** on the rows immediately above and below (row ±1,
 looked up across the whole card, so a neighbour owned by a different record
 counts):
@@ -583,8 +589,13 @@ counts):
 - If every mark but **exactly one** is explained by a neighbour's mark in that
   same column, the row is graded as if that one unexplained letter had been
   given. It carries `bleed: 'neighbour'`, `resolvedLetter`, and the raw marks
-  in `given` for audit. Any other pattern (zero or two-plus unexplained
-  marks) is left alone and falls to the eraser rule, then to the fallback below.
+  in `given` for audit; these markers are also stored on the verdict-sheet
+  entry and the attempt's `provenance`. Any other pattern (zero or two-plus
+  unexplained marks) is left alone and falls to the fallback below.
+- It is strictly additive: a two-mark row that contains the key is
+  eraser-credited first, even if its key letter is shared with a neighbour.
+- A corrected-sheet retake never keeps bleed credit: such a row goes to a
+  grown-up, like an eraser row.
 - It never spends the eraser budget, runs on every archetype (a `quiz` stays
   strict about *eraser* credit but still resolves bleed), and never touches a
   `multi_select` row.
@@ -605,7 +616,7 @@ Invalid values fall back to the defaults with a warning.
 | Key | Default | Meaning |
 |---|---|---|
 | `leniencyRowsPerCredit` | `5` | Eraser budget is `max(1, floor(rowCount / N))` per sheet (worksheet only). `1` credits **every** eligible two-mark row that includes the key, which also **doubles a blind guesser's odds** on double-marked rows. |
-| `ambiguousFallback` | `review` | What a row still ambiguous after bleed and eraser becomes. `review` queues it for a grown-up and prints a "grown-up needed" slip. `incorrect` scores it `incorrect` with `ambiguous: true`, **no** review entry and **no** slip. |
+| `ambiguousFallback` | `review` | What a row still ambiguous after eraser leniency and bleed becomes. `review` queues it for a grown-up and prints a "grown-up needed" slip. `incorrect` scores it `incorrect` with `ambiguous: true` (stored on the verdict-sheet entry and the attempt's `provenance`), **no** review entry and **no** slip. |
 
 Trade-off of `incorrect`: the child is never stalled waiting on an adult, but a
 genuine eraser smudge on a spent budget costs a point instead of a look. The

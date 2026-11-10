@@ -442,6 +442,9 @@ export class RecordCardScanOutcome {
           recordId: card.recordId,
           row: row.row,
           rowStatus: row.status,
+          ...(row.leniency ? { leniency: row.leniency } : {}),
+          ...(row.bleed ? { bleed: row.bleed, resolvedLetter: row.resolvedLetter ?? null } : {}),
+          ...(row.ambiguous ? { ambiguous: true } : {}),
           scanKey: key,
           ...(card.sectionId ? { sectionId: card.sectionId } : {}),
           ...(card.reScored ? { reScored: true } : {}),
@@ -580,8 +583,14 @@ export class RecordCardScanOutcome {
       });
 
       const results = card.results.map((row) => {
-        if (row.leniency !== 'eraser') return row;
-        const { leniency, ...rest } = row;
+        // Machine-extended credit never survives a corrected retake: the
+        // eraser rule AND a neighbour-bleed resolution (a child adding the key
+        // beside a wrong mark while a neighbour carries the wrong letter) both
+        // go back to a grown-up. Markers are stripped with the credit.
+        if (row.leniency !== 'eraser' && row.bleed !== 'neighbour') return row;
+        const {
+          leniency, bleed, resolvedLetter, ...rest
+        } = row;
         return { ...rest, status: 'ambiguous', earned: 0 };
       });
       return {
@@ -791,6 +800,8 @@ export class RecordCardScanOutcome {
             gradedAt: at,
             attemptId: attemptIdByItem.get(row.itemId) ?? null,
             ...(row.leniency ? { leniency: row.leniency } : {}),
+            ...(row.bleed ? { bleed: row.bleed, resolvedLetter: row.resolvedLetter ?? null } : {}),
+            ...(row.ambiguous ? { ambiguous: true } : {}),
             // The eraser-leniency rationale is written for the RECORD, not
             // the child (Slice H, 2026-08-22): `internalNote` is the field
             // `reviewNoteLines`/the result receipt's "NOTES FOR YOU" block
@@ -801,6 +812,12 @@ export class RecordCardScanOutcome {
             // a 3rd-grader's receipt.
             ...(row.leniency === 'eraser' ? {
               internalNote: `Eraser signature: marks ${JSON.stringify(row.given)}, one correct — credited in full per the bounded eraser-leniency rule (spec §5.4).`,
+            } : {}),
+            ...(row.bleed === 'neighbour' ? {
+              internalNote: `Neighbour bleed: marks ${JSON.stringify(row.given)}, the rows beside it explain all but ${JSON.stringify(row.resolvedLetter)} — graded as that one answer.`,
+            } : {}),
+            ...(row.ambiguous ? {
+              internalNote: `Ambiguous fallback: marks ${JSON.stringify(row.given)} could not be resolved — scored incorrect per scan.ambiguousFallback.`,
             } : {}),
           }));
         const pending = [

@@ -1175,26 +1175,7 @@ export class ResolveCardScan {
           });
         }
         const points = pointsForRow(prepared, planned.blockPath);
-        // Neighbour bleed (single-answer items only): resolve BEFORE gradeRow
-        // so gradeRow stays pure. The resolved row is graded as if the one
-        // unexplained letter had been given; the raw marks stay in `given`
-        // for audit and the letter is carried as `resolvedLetter`.
-        const rawGiven = answers[planned.row];
-        let graded;
-        if ((item.type === 'multiple_choice' || item.type === 'true_false') && Array.isArray(rawGiven)) {
-          const bleed = resolveNeighbourBleed({ row: planned.row, answers });
-          if (bleed) {
-            graded = {
-              ...gradeRow(item, bleed.letter, points),
-              given: rawGiven, resolvedLetter: bleed.letter, bleed: 'neighbour',
-            };
-            this.#logger?.info?.('school.print.scan-bleed-resolved', {
-              itemId, row: planned.row, given: rawGiven, resolvedLetter: bleed.letter,
-              neighbours: { above: bleed.above, below: bleed.below },
-            });
-          }
-        }
-        graded ??= gradeRow(item, rawGiven, points);
+        const graded = gradeRow(item, answers[planned.row], points);
         if (graded.status === 'ambiguous') {
           rowContext.set(planned.row, { item, choiceCount: planned.choiceCount });
         }
@@ -1258,19 +1239,39 @@ export class ResolveCardScan {
       results: questionRows, archetype: prepared.archetype, rowContext, logger: this.#logger,
       rowsPerCredit: this.#leniencyRowsPerCredit,
     });
-    // Configured fallback for rows STILL ambiguous after bleed + leniency:
+    // Neighbour bleed runs AFTER eraser leniency and only on rows still
+    // `ambiguous`: it is strictly additive and never consumes the eraser
+    // budget, so a two-mark row containing the key is credited by the eraser
+    // rule exactly as before even when its key letter also sits in a neighbour.
+    const bleedResults = leniencyResults.map((row) => {
+      const context = rowContext.get(row.row);
+      if (row.status !== 'ambiguous' || !context || !Array.isArray(answers[row.row])) return row;
+      if (context.item.type !== 'multiple_choice' && context.item.type !== 'true_false') return row;
+      const bleed = resolveNeighbourBleed({ row: row.row, answers });
+      if (!bleed) return row;
+      this.#logger?.info?.('school.print.scan-bleed-resolved', {
+        itemId: row.itemId, row: row.row, given: answers[row.row], resolvedLetter: bleed.letter,
+        neighbours: { above: bleed.above, below: bleed.below },
+      });
+      return {
+        ...row,
+        ...gradeRow(context.item, bleed.letter, row.points),
+        given: answers[row.row], resolvedLetter: bleed.letter, bleed: 'neighbour',
+      };
+    });
+    // Configured fallback for rows STILL ambiguous after leniency + bleed:
     // 'incorrect' scores them (ambiguous: true marks the audit trail) so they
     // reach neither the review queue nor the "needs a grown-up" slip, both of
     // which are driven by status === 'ambiguous'.
     const rowResults = this.#ambiguousFallback === 'incorrect'
-      ? leniencyResults.map((row) => {
+      ? bleedResults.map((row) => {
         if (row.status !== 'ambiguous') return row;
         this.#logger?.info?.('school.print.scan-ambiguous-scored', {
           itemId: row.itemId, row: row.row, given: row.given, fallback: 'incorrect',
         });
         return { ...row, status: 'incorrect', earned: 0, ambiguous: true };
       })
-      : leniencyResults;
+      : bleedResults;
 
     // Content-aware row-shift check (never a prior scan — that is
     // omrAlignmentError's job). Runs over fully-marked, multiple_choice rows

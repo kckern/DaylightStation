@@ -708,6 +708,17 @@ describe('corrected-sheet retake', () => {
     expect((await sessions.readEvents('ws-retake-1')).map((e) => e.type)).toEqual(['created', 'issued', 'submitted']);
   });
 
+  it('a row only neighbour-bleed would credit goes to a grown-up on a retake', async () => {
+    const { sessions, useCase } = await failedSheet();
+    const card = corrected();
+    card.results[1] = {
+      ...card.results[1], given: ['cat', 'fox'], bleed: 'neighbour', resolvedLetter: 'B', status: 'correct', earned: 1,
+    };
+    const outcome = await useCase.execute({ testId: '1234567', card });
+    expect(outcome.session).toMatchObject({ sessionId: 'ws-retake-1', advancedTo: 'submitted', reason: 'awaiting-review' });
+    expect((await sessions.readEvents('ws-retake-1')).map((e) => e.type)).toEqual(['created', 'issued', 'submitted']);
+  });
+
   it('when no retry may be opened (round cap), the scan is refused as before', async () => {
     const openRemediation = { execute: vi.fn(async () => ({ status: 'unavailable', reason: 'remediation_capped' })) };
     const { sessions, useCase } = await failedSheet({ openRemediation });

@@ -8,8 +8,10 @@
  *
  * Known wrong-resolution case: if the true answer equals a neighbour's
  * letter, the other mark can be chosen instead (e.g. 24:'B', 25:['B','C'],
- * 26:'D' resolves 25 to 'C'). Accepted: the rule only ever turns an
- * "ambiguous" row into a graded one.
+ * 26:'D' resolves 25 to 'C'). Accepted: ResolveCardScan runs this
+ * only on rows still "ambiguous" AFTER eraser leniency, so it is strictly
+ * additive — it only ever turns an ambiguous row into a graded one and never
+ * takes credit the eraser rule would give.
  *
  * Pure. `answers` is the RAW decoded sheet map (row -> letter | letters[]).
  */
