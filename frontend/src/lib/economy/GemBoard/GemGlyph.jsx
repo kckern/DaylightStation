@@ -73,11 +73,13 @@ export default function GemGlyph({ cell, color }) {
   const ringColor = (streak && cell.parts?.find((p) => p.ruleId === streak.ruleId)?.color) || color;
   const ring = streak ? <Ring streak={streak} color={ringColor} /> : null;
   let inner = null;
-  if (look === 'lit' || look === 'streak' || look === 'open' || look === 'holding') inner = <GemIcon className="gem-glyph__gem" color={color} size="1.5em" />;
+  // A gem with nothing drawn around it fills the cell; inside a ring or a holding circle it sits within it.
+  const ringed = Boolean(ring) || look === 'holding';
+  if (look === 'lit' || look === 'streak' || look === 'open' || look === 'holding') inner = <GemIcon className="gem-glyph__gem" color={color} size={ringed ? '1.55em' : '2.5em'} />;
   else if (look === 'unknown') inner = <span className="gem-glyph__muted">?</span>;
   else if (look === 'off') inner = <span className="gem-glyph__muted">–</span>;
   return (
-    <span className="gem-glyph" data-look={look}>
+    <span className="gem-glyph" data-look={look} data-ringed={ringed ? '' : undefined}>
       {ring}
       {look === 'holding' && <svg className="gem-glyph__hold" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><circle cx="20" cy="20" r={R} /></svg>}
       {inner}

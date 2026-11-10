@@ -4,9 +4,10 @@
  * chart and the school agenda. Design:
  * ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md §5.
  *
- * Columns are the children in roster order — never ranked. One table: rows
- * are gem categories under the sections the response names in `groups`
- * (Move, Games, School). A cell is one glyph (GemGlyph.jsx) and carries no
+ * One line per child, in roster order — never ranked. The columns are the gem
+ * rows the response names in `categories`, gathered under its `groups`
+ * (Move, Games, School), each with its name leaning over it; the child's gem
+ * count for the week closes the line. A cell is one glyph (GemGlyph.jsx) and carries no
  * numerals but a ×n badge. No failure marks: a gem not earned is a blank
  * cell, a gem still in reach is a faint gem inside a ring of day segments,
  * an unreadable source a muted "?".
@@ -15,9 +16,10 @@
  * days counted, which milestones were paid, how a contest stands.
  *
  * Input: tap (a cell opens its detail), Escape (closes the detail, then the
- * board), ←/→ (move the highlighted column), ↑/↓ (move a row cursor; past
- * either end it is put away again), Enter (open the cell under the cursor;
- * with no cursor, or nothing to open there, toggle this week / last week). A surface with a gamepad hands its button
+ * board), ↑/↓ (move the highlighted child), ←/→ (move a cursor along that
+ * child's gems; past either end it is put away again), Enter (open the cell
+ * under the cursor; with no cursor, or nothing to open there, toggle this
+ * week / last week). A surface with a gamepad hands its button
  * presses in through `keyRef` (the fitness screen does) — this file reads no
  * gamepad itself. Closes on its own after `idleMs` without input.
  */
@@ -77,71 +79,87 @@ const boardSections = (board) => (board?.groups ?? [])
   .map((g) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.group === g.id) }))
   .filter((g) => g.rows.length);
 
-/** Row ids top to bottom, as drawn (for the overlay's up / down keys). */
+/** Gem row ids in the order their columns are drawn (for the overlay's left / right keys). */
 export const boardRowIds = (board) => boardSections(board).flatMap((g) => g.rows.map((c) => c.id));
 
 /**
  * The board itself, from a `/earnings/gems` response. Pure display: no fetch.
+ * One line per child, one column per gem row, columns gathered into their
+ * sections; the column names lean over the columns so thirteen of them fit.
  * @param {object} props
  * @param {object} props.board
- * @param {string|null} [props.focusLearnerId] - the highlighted column
- * @param {string|null} [props.cursorRowId] - with the focus column, the one cell under the cursor
+ * @param {string|null} [props.focusLearnerId] - the highlighted child (a line)
+ * @param {string|null} [props.cursorRowId] - with the focused child, the one cell under the cursor
  * @param {((rowId: string, learnerId: string) => void)|null} [props.onOpen] - makes cells with detail into buttons
  */
 export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null }) {
   const learners = board?.learners ?? [];
   const sections = useMemo(() => boardSections(board), [board]);
-  const columns = `minmax(9rem, 1.7fr) repeat(${Math.max(learners.length, 1)}, minmax(0, 1fr))`;
-  const focusClass = (id) => (id === focusLearnerId ? ' is-focus' : '');
+  // Tracks: names | gap, a section's columns | … | gap, totals. Lines: column names, section names, one per child.
+  const layout = useMemo(() => {
+    const tracks = ['max-content'];
+    let col = 2;
+    const placed = sections.map((g) => {
+      tracks.push('var(--gem-gap)', `repeat(${g.rows.length}, var(--gem-col))`);
+      const start = col + 1;
+      col = start + g.rows.length;
+      return { ...g, start, end: col };
+    });
+    tracks.push('var(--gem-gap)', 'max-content');
+    return { placed, totalCol: col + 1, columns: tracks.join(' ') };
+  }, [sections]);
+  const FIRST = 3; // the first child's grid line
+  const at = (row, col, colEnd = null) => ({ gridRow: row, gridColumn: colEnd ? `${col} / ${colEnd}` : col });
 
   if (!learners.length || !sections.length) {
     return <div className="gem-board__empty">No gems to show yet.</div>;
   }
+  const focusAt = learners.findIndex((l) => l.learnerId === focusLearnerId);
   return (
-    <div className="gem-board__grid" role="table" aria-label="Gems by child" style={{ gridTemplateColumns: columns }}>
-      <div className="gem-board__corner" role="columnheader" />
-      {learners.map((l) => (
-        <div key={l.learnerId} className={`gem-board__head${focusClass(l.learnerId)}`} role="columnheader">
-          <Avatar id={l.learnerId} name={l.name} />
-          <span className="gem-board__name">{l.name}</span>
-        </div>
+    <div className="gem-board__grid" role="table" aria-label="Gems by child" style={{ gridTemplateColumns: layout.columns }}>
+      {layout.placed.map((g) => (
+        <div key={g.id} className="gem-board__band" data-group={g.id} aria-hidden="true" style={{ gridRow: `2 / ${FIRST + learners.length}`, gridColumn: `${g.start} / ${g.end}` }} />
       ))}
-      {sections.map((group) => (
-        <div key={group.id} className="gem-board__group" role="rowgroup">
-          <div className="gem-board__group-label" role="row"><span role="rowheader">{group.label}</span></div>
-          {group.rows.map((row) => (
-            <div key={row.id} className="gem-board__row" role="row">
-              <div className="gem-board__row-label" role="rowheader"><span>{row.label}</span></div>
-              {learners.map((l) => (
-                <div key={l.learnerId} className={`gem-board__col${focusClass(l.learnerId)}`} data-row={row.id} data-learner={l.learnerId}>
-                  <GemCell
-                    cell={board.cells?.[row.id]?.[l.learnerId]}
-                    color={row.color}
-                    name={l.name}
-                    rowLabel={row.label}
-                    onOpen={onOpen ? () => onOpen(row.id, l.learnerId) : null}
-                    cursor={row.id === cursorRowId && l.learnerId === focusLearnerId}
-                  />
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      ))}
-      <div className="gem-board__row gem-board__row--totals" role="row">
-        <div className="gem-board__row-label" role="rowheader"><span>Gems</span></div>
-        {learners.map((l) => {
-          const t = board.totals?.[l.learnerId] ?? { week: 0, lifetime: 0 };
-          return (
-            <div key={l.learnerId} className={`gem-board__col${focusClass(l.learnerId)}`}>
-              <div className="gem-board__total" role="cell" aria-label={`${l.name}: ${t.week} this week, ${t.lifetime} in all`}>
-                <span className="gem-board__total-week">{t.week}</span>
-                <span className="gem-board__total-life">{t.lifetime} in all</span>
-              </div>
-            </div>
-          );
-        })}
+      {focusAt >= 0 && <div className="gem-board__lane" aria-hidden="true" style={at(FIRST + focusAt, 1, -1)} />}
+
+      <div className="gem-board__row" role="row">
+        <div className="gem-board__corner" role="columnheader" style={at(1, 1)} />
+        {layout.placed.map((g) => g.rows.map((row, i) => (
+          <div key={row.id} className="gem-board__cat" role="columnheader" data-group={g.id} style={at(1, g.start + i)}><span>{row.label}</span></div>
+        )))}
       </div>
+      <div className="gem-board__row" role="row">
+        {layout.placed.map((g) => (
+          <div key={g.id} className="gem-board__group-label" role="columnheader" aria-colspan={g.rows.length} data-group={g.id} style={at(2, g.start, g.end)}>{g.label}</div>
+        ))}
+        <div className="gem-board__total-label" role="columnheader" style={at(2, layout.totalCol)}>This week</div>
+      </div>
+
+      {learners.map((l, li) => {
+        const focus = l.learnerId === focusLearnerId ? ' is-focus' : '';
+        const week = board.totals?.[l.learnerId]?.week ?? 0;
+        return (
+          <div key={l.learnerId} className="gem-board__row" role="row">
+            <div className={`gem-board__head${focus}`} role="rowheader" style={at(FIRST + li, 1)}>
+              <Avatar id={l.learnerId} name={l.name} />
+              <span className="gem-board__name">{l.name}</span>
+            </div>
+            {layout.placed.map((g) => g.rows.map((row, i) => (
+              <div key={row.id} className={`gem-board__col${focus}`} data-row={row.id} data-learner={l.learnerId} style={at(FIRST + li, g.start + i)}>
+                <GemCell
+                  cell={board.cells?.[row.id]?.[l.learnerId]}
+                  color={row.color}
+                  name={l.name}
+                  rowLabel={row.label}
+                  onOpen={onOpen ? () => onOpen(row.id, l.learnerId) : null}
+                  cursor={row.id === cursorRowId && l.learnerId === focusLearnerId}
+                />
+              </div>
+            )))}
+            <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} this week`} style={at(FIRST + li, layout.totalCol)}>{week}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -164,7 +182,7 @@ export default function GemBoardOverlay({
   const [weekOffset, setWeekOffset] = useState(0); // 0 this week, -1 last week
   const [state, setState] = useState({ board: null, error: null, loading: false });
   const [focus, setFocus] = useState(focusLearnerId);
-  const [rowCursor, setRowCursor] = useState(null); // the row under ↑/↓; with `focus`, one cell
+  const [rowCursor, setRowCursor] = useState(null); // the gem row under ←/→; with `focus`, one cell
   const [picked, setPicked] = useState(null); // {rowId, learnerId} of the open detail
   const openedAt = useRef(0);
   const thisWeek = useRef(null); // the current week's Monday, once the first read lands
@@ -283,23 +301,23 @@ export default function GemBoardOverlay({
       else step(weekOffset === 0 ? -1 : 0);
       return true;
     }
-    if (key === 'ArrowUp' || key === 'ArrowDown') {
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
       const rows = board && board.mode !== 'off' ? boardRowIds(board) : [];
       if (!rows.length) return false;
       setRowCursor((cur) => {
         const at = rows.indexOf(cur);
-        if (at < 0) return key === 'ArrowUp' ? rows[rows.length - 1] : rows[0];
+        if (at < 0) return key === 'ArrowLeft' ? rows[rows.length - 1] : rows[0];
         // Past either end the cursor is put away, so Enter is the week switch again.
-        return rows[key === 'ArrowUp' ? at - 1 : at + 1] ?? null;
+        return rows[key === 'ArrowLeft' ? at - 1 : at + 1] ?? null;
       });
-      // A cursor needs a column: with none highlighted yet, take the first child.
+      // A cursor needs a child: with none highlighted yet, take the first.
       if (ids.length) setFocus((cur) => (ids.includes(cur) ? cur : ids[0]));
       return true;
     }
-    if ((key === 'ArrowLeft' || key === 'ArrowRight') && ids.length) {
+    if ((key === 'ArrowUp' || key === 'ArrowDown') && ids.length) {
       setFocus((cur) => {
         const at = ids.indexOf(cur);
-        const next = key === 'ArrowLeft' ? (at <= 0 ? ids.length - 1 : at - 1) : (at < 0 || at >= ids.length - 1 ? 0 : at + 1);
+        const next = key === 'ArrowUp' ? (at <= 0 ? ids.length - 1 : at - 1) : (at < 0 || at >= ids.length - 1 ? 0 : at + 1);
         return ids[next];
       });
       return true;

@@ -39,8 +39,9 @@ describe('GemDetail', () => {
     expect(days).toHaveLength(7);
     expect(days.map((d) => d.className.replace('gem-detail__day', '').trim())).toEqual(['', 'is-done', 'is-today', 'is-ahead', 'is-ahead', 'is-ahead', 'is-ahead']);
     expect(container.textContent).toContain('1 of 4 days · 4 days left');
-    expect(container.textContent).toContain('Frog and Toad · Tue');
-    expect(container.textContent).toContain('4 in all');
+    expect(container.querySelector('.gem-detail__items li').textContent).toBe('Frog and ToadTue');
+    expect(container.textContent).not.toContain('in all'); // the week only, no running totals
+    expect(container.querySelector('.gem-detail__glyph .gem-glyph')).toBeTruthy(); // the cell's own glyph heads the box
     fireEvent.click(screen.getByLabelText('Close'));
     expect(onClose).toHaveBeenCalledWith('tap');
   });
@@ -49,7 +50,8 @@ describe('GemDetail', () => {
     const lead = { state: 'leading', week: 0, parts: [{ ...base, ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest', state: 'leading', score: { mine: 320, best: 320 } }] };
     const a = render(<GemDetail row={row} learner={ann} cell={lead} windows={WINDOWS} today="2026-11-04" onClose={() => {}} />);
     expect(a.container.textContent).toContain('Leading so far');
-    expect(a.container.textContent).toContain('320 — best 320');
+    expect(a.container.querySelector('.gem-detail__score-mine').textContent).toBe('320');
+    expect(a.container.querySelector('.gem-detail__score-best').textContent).toBe('best 320');
     cleanup();
     const b = render(<GemDetail row={row} learner={ann} cell={{ state: 'none', week: 0, parts: [{ ...base, ruleId: 'x', label: 'X', cadence: 'weekly' }] }} windows={WINDOWS} today="2026-11-04" onClose={() => {}} />);
     expect(b.container.textContent).toContain('Not this week');
@@ -59,7 +61,7 @@ describe('GemDetail', () => {
     const cell = { state: 'none', week: 0, parts: [{ ...base, ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest', score: { mine: 320, best: null } }] };
     const { container } = render(<GemDetail row={row} learner={ann} cell={cell} windows={WINDOWS} today="2026-11-04" onClose={() => {}} />);
     expect(container.textContent).toContain('Not leading');
-    expect(container.querySelector('.gem-detail__score').textContent).toBe('320');
+    expect(container.querySelector('.gem-detail__score-mine').textContent).toBe('320');
     expect(container.textContent).not.toContain('best');
   });
 
@@ -82,14 +84,16 @@ describe('GemDetail', () => {
     const cell = { state: 'unknown', week: 0, parts: [
       { ...base, ruleId: 'off', label: 'Switched off', cadence: 'weekly', state: 'disabled', lifetime: 2 },
       { ...base, ruleId: 'green-week', label: 'Green week', cadence: 'weekly', state: 'unknown' },
-      { ...base, ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', lifetime: 3 },
+      { ...base, ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', state: 'pending', lifetime: 3 },
+      { ...base, ruleId: 'old-books', label: 'Other weeks', cadence: 'milestone', lifetime: 3 },
     ] };
     const onClose = vi.fn();
     const { container } = render(<GemDetail row={row} learner={ann} cell={cell} windows={WINDOWS} today="2026-11-04" onClose={onClose} />);
     expect(container.textContent).not.toContain('Switched off');
     expect(container.textContent).toContain('Can’t tell yet');
-    expect(container.textContent).toContain('None this week');
-    expect(container.textContent).toContain('3 in all');
+    expect(container.textContent).toContain('Still in reach');
+    expect(container.textContent).not.toContain('Other weeks'); // gems from other weeks are not this week's news
+    expect(container.textContent).not.toContain('in all');
     fireEvent.click(container.querySelector('.gem-detail__backdrop'));
     expect(onClose).toHaveBeenCalledWith('tap');
   });
@@ -102,7 +106,7 @@ describe('GemDetail', () => {
     expect(detailParts(undefined)).toEqual([]);
     expect(detailParts({ parts: [p({ cadence: 'contest', score: { mine: 3, best: 9 } })] })).toHaveLength(1);
     expect(detailParts({ parts: [p({ days: [{ day: '2026-11-02', state: 'short' }] })] })).toHaveLength(1);
-    expect(detailParts({ parts: [p({ cadence: 'milestone', lifetime: 2 })] })).toHaveLength(1);
+    expect(detailParts({ parts: [p({ cadence: 'milestone', lifetime: 2 })] })).toHaveLength(0);
     expect(detailParts({ parts: [p({ state: 'unknown' }), p({ ruleId: 'q' })] }).map((x) => x.ruleId)).toEqual(['r']);
   });
 

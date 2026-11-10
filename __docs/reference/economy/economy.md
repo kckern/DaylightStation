@@ -518,24 +518,33 @@ shared copy, so a race that just landed shows at once.
 the fitness ring chart (`FitnessMomentum`: each card's purse, and the
 headline's **Gems** chip; the garage pads drive it through `useGamepadKeys`)
 and the school agenda (the board header's **Gems** door and each card's gem
-door). It draws the sections top to bottom, then a totals row (this week's
-count and "n in all"), with a This week / Last week switch in the header.
+door), with a This week / Last week switch in the header. It draws one line
+per child in roster order and one column per gem row. The columns are gathered
+into their sections, each a tinted block under its name, and every column's
+name leans over it so all of them fit. The child's gem count for the week
+closes the line. Everything on the board is about the week shown: the
+response's lifetime counts are not drawn anywhere.
+
+Everything inside the panel is sized in `em` from one font size that follows
+the screen (`min(1.25vw, 2.3vh)`, clamped), so the same board fills the garage
+TV and fits a 1280×800 tablet with no separate layout.
 
 Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
 
 | Look | When | Draws |
 |---|---|---|
-| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour; a `×n` badge when `week > 1`; the day ring too if a `streak` is still running (its done segments grey when that streak is `out`) |
+| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour, filling the cell; a `×n` badge when `week > 1`; the day ring too if a `streak` is still running (its done segments grey when that streak is `out`) |
 | `streak` | a `streak` whose `reach` is `on-track` or `tight` | a faint gem inside a ring of `need` segments, the first `have` in the ring's colour; when `tight` the unfilled segments are amber |
 | `out` | a `streak` whose `reach` is `out` | the ring alone, its done segments grey, no gem |
 | `holding` | `leading` | a dimmed gem inside a dashed circle |
-| `open` | `pending` with no day-count | a faint gem |
+| `open` | `pending` with no day-count | a faint gem, filling the cell |
 | `unknown` | the evidence could not be read | a muted `?` |
 | `off` | `disabled` | a muted `–` |
 | `none` | anything else | a blank cell |
 
-A cell carries no numerals but the `×n` badge; counts and lifetime tallies live
-in the detail box. Nothing marks failure: a gem not earned is a blank cell and a
+A gem with a ring or a holding circle around it is drawn smaller, inside it; a
+gem with neither fills the cell. A cell carries no numerals but the `×n`
+badge; day counts and scores live in the detail box. Nothing marks failure: a gem not earned is a blank cell and a
 week out of reach is a grey ring, never a cross. Each cell's `aria-label` says
 the same in words ("3 of 5 days, on track"; a lead held in a row that also
 counts days reads "leading, and 2 of 4 days, on track").
@@ -546,33 +555,34 @@ same part colour, so the two always match.
 
 **The detail box** (`GemDetail.jsx`). A cell is a button when its detail would
 have something to say, however it looks at a glance: at least one part that is
-not `disabled` and is either in a state other than `none` or has days, items,
-a lifetime count or a score (`detailParts`, the one rule the board and the box
-share). So a blank-looking cell still opens for a contest score that is not
-the lead, a day-count that fell short, or a milestone row with gems from
-earlier weeks; a cell whose rules are all off, or with nothing at all, does
-not. The card sits over the board, titled with the learner and the row, one
-block per such part. Each block is headed by its rule's label, except when the
-card shows a single part named like the row.
+not `disabled` and is either in a state other than `none` or has days, items
+or a score (`detailParts`, the one rule the board and the box share). So a
+blank-looking cell still opens for a contest score that is not the lead or a
+day-count that fell short; a cell whose rules are all off, or with nothing
+this week, does not. The card sits over the board. Its head is tinted in the
+row's colour and carries the cell's own glyph, the row's name and the child's
+name; below it is one band per such part, the rule's label on the left and how
+it stands on the right. The label is left out when the card shows a single
+part named like the row.
 
 | Part | Shows |
 |---|---|
 | day-count | the week Monday → Sunday as seven lettered days: counted days filled in the part's colour, short days outlined, today ringed, days ahead dimmed, days after the part's `lastDay` closed (fainter, no outline: Sunday for a `ring-days` rule), an empty past day plain. Then one line: `Earned`, `2 of 4 days · 3 days left`, `· needs every day left` (tight), `· out of reach this week` (out) |
-| milestone | this week's items (`label · Tue`) or `None this week`, then `4 in all` when the lifetime is above zero |
-| contest | `Won`, `Leading so far` or `Not leading`, with `320 — best 320` when there is a score |
+| milestone | this week's items, each with its weekday, or `None this week` |
+| contest | `Won`, `Leading so far` or `Not leading`; with a score, the child's number, `best 320` beside it when a best is known, and a bar showing the one against the other |
 | `unknown` | `Can’t tell yet` |
 
 | Input | Does |
 |---|---|
 | tap a cell | opens its detail |
-| ←/→ | moves the highlighted column |
-| ↑/↓ | moves a row cursor through the rows as drawn; unset until first pressed (down lands on the first row, up on the last). Up from the first row or down from the last puts it away again, which gives Enter back to the week switch |
-| Enter | with a row cursor on an openable cell, opens the detail; otherwise toggles this week / last week. Closes an open detail |
+| ↑/↓ | moves the highlighted child |
+| ←/→ | moves a cursor along that child's gems in the order drawn; unset until first pressed (right lands on the first gem, left on the last). Left from the first or right from the last puts it away again, which gives Enter back to the week switch |
+| Enter | with the cursor on an openable cell, opens the detail; otherwise toggles this week / last week. Closes an open detail |
 | Escape | closes an open detail, else the board |
 | tap outside, × | closes the detail when open, else the board |
 
 Arrows do nothing while the detail is open. Switching week closes the detail
-and clears the row cursor. Last week is asked for by this week's Monday, so
+and clears the cursor. Last week is asked for by this week's Monday, so
 its button is disabled, and Enter does nothing, until the first read lands.
 Closing the board drops the loaded board, the detail and the cursor.
 

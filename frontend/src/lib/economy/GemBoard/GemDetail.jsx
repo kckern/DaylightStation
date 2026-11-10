@@ -2,6 +2,7 @@
  * GemDetail — the box a Gem Board cell opens: which days counted, which
  * milestones were paid, how a contest stands. One block per rule folded into
  * the row (the cell's `parts`). The board at a glance carries none of this.
+ * Everything here is about the week on the board: no running totals.
  *
  * No failure marks here either: a past day with nothing on it is plain and
  * dim, never a cross. A day after the rule's own last day (`part.lastDay`: a
@@ -12,6 +13,7 @@
  * are any.
  */
 import { useEffect, useRef } from 'react';
+import GemGlyph from './GemGlyph.jsx';
 
 const DAY_MS = 86_400_000;
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * DAY_MS).toISOString().slice(0, 10);
@@ -45,7 +47,7 @@ const isDayCount = (part) => part.progress != null || (part.days?.length ?? 0) >
 /** Does this part have anything to show? */
 const partSpeaks = (part) => Boolean(part) && part.state !== 'disabled' && (
   (part.state ?? 'none') !== 'none' || (part.days?.length ?? 0) > 0 || (part.items?.length ?? 0) > 0
-  || (part.lifetime ?? 0) > 0 || part.score != null
+  || part.score != null
 );
 
 /** The parts of a cell the detail box shows; none means the cell has nothing to open. */
@@ -68,52 +70,59 @@ function DayStrip({ part, color, from, today }) {
   );
 }
 
-function scoreText(score) {
+/** A contest score: the child's own, and against the best when someone else's is known. */
+function Score({ score, color }) {
   if (!score || !Number.isFinite(score.mine)) return null;
-  return Number.isFinite(score.best) ? `${score.mine} — best ${score.best}` : `${score.mine}`;
+  const best = Number.isFinite(score.best) ? score.best : null;
+  const share = best ? Math.max(0, Math.min(1, score.mine / best)) : 1;
+  return (
+    <div className="gem-detail__score">
+      <span className="gem-detail__score-mine">{score.mine}</span>
+      {best != null && <span className="gem-detail__score-best">best {best}</span>}
+      <span className="gem-detail__score-bar" aria-hidden="true"><span style={{ width: `${share * 100}%`, background: color }} /></span>
+    </div>
+  );
 }
 
 function Part({ part, color, from, today, heading = true }) {
-  let body;
+  let status = null;
+  let body = null;
   if (part.state === 'unknown') {
-    body = <div className="gem-detail__line">Can’t tell yet</div>;
+    status = 'Can’t tell yet';
   } else if (isDayCount(part)) {
-    const line = streakLine(part);
-    body = (
-      <>
-        <DayStrip part={part} color={color} from={from} today={today} />
-        {line && <div className="gem-detail__line">{line}</div>}
-      </>
-    );
+    status = streakLine(part);
+    body = <DayStrip part={part} color={color} from={from} today={today} />;
   } else if (part.cadence === 'contest') {
-    const standing = STATE_LINE[part.state] ?? (part.score ? 'Not leading' : null);
-    const score = scoreText(part.score);
-    body = (
-      <>
-        {standing && <div className="gem-detail__line">{standing}</div>}
-        {score && <div className="gem-detail__line gem-detail__score">{score}</div>}
-      </>
-    );
+    status = STATE_LINE[part.state] ?? (part.score ? 'Not leading' : null);
+    body = <Score score={part.score} color={color} />;
   } else if (part.cadence === 'milestone') {
     const items = part.items ?? [];
-    body = items.length
-      ? (
+    if (items.length) {
+      body = (
         <ul className="gem-detail__items">
-          {items.map((item, i) => {
-            const when = item.day ? weekdayOf(item.day, 'short') : null;
-            return <li key={`${item.day}:${i}`}>{[item.label, when].filter(Boolean).join(' · ')}</li>;
-          })}
+          {items.map((item, i) => (
+            <li key={`${item.day}:${i}`}>
+              <span>{item.label}</span>
+              {item.day && <span className="gem-detail__when">{weekdayOf(item.day, 'short')}</span>}
+            </li>
+          ))}
         </ul>
-      )
-      : <div className="gem-detail__line">{STATE_LINE[part.state] ?? 'None this week'}</div>;
+      );
+    } else {
+      status = STATE_LINE[part.state] ?? 'None this week';
+    }
   } else {
-    body = STATE_LINE[part.state] ? <div className="gem-detail__line">{STATE_LINE[part.state]}</div> : null;
+    status = STATE_LINE[part.state] ?? null;
   }
   return (
-    <div className="gem-detail__part" data-rule={part.ruleId} data-state={part.state ?? 'none'}>
-      {heading && <div className="gem-detail__part-label">{part.label}</div>}
+    <div className="gem-detail__part" data-rule={part.ruleId} data-state={part.state ?? 'none'} data-reach={part.reach ?? undefined}>
+      {(heading || status) && (
+        <div className="gem-detail__part-head">
+          {heading && <span className="gem-detail__part-label">{part.label}</span>}
+          {status && <span className="gem-detail__line">{status}</span>}
+        </div>
+      )}
       {body}
-      {(part.lifetime ?? 0) > 0 && <div className="gem-detail__line gem-detail__life">{part.lifetime} in all</div>}
     </div>
   );
 }
@@ -138,17 +147,18 @@ export default function GemDetail({ row, learner, cell, windows, today, onClose 
   return (
     <div className="gem-detail" role="dialog" aria-label={`${learner.name}, ${row.label}`}>
       <div className="gem-detail__backdrop" onClick={() => onClose?.('tap')} />
-      <div className="gem-detail__card">
+      <div className="gem-detail__card" style={{ '--gem': row.color }}>
         <div className="gem-detail__head">
+          <span className="gem-detail__glyph"><GemGlyph cell={cell} color={row.color} /></span>
           <div className="gem-detail__title">
-            <span className="gem-detail__who">{learner.name}</span>
             <span className="gem-detail__row">{row.label}</span>
+            <span className="gem-detail__who">{learner.name}</span>
           </div>
           <button ref={closeRef} type="button" className="gem-detail__close" aria-label="Close" onClick={() => onClose?.('tap')}>×</button>
         </div>
         {parts.length
           ? parts.map((part) => <Part key={part.ruleId} part={part} color={part.color ?? row.color} from={from} today={today} heading={heading} />)
-          : <div className="gem-detail__line">Not this week</div>}
+          : <div className="gem-detail__part"><span className="gem-detail__line">Not this week</span></div>}
       </div>
     </div>
   );
