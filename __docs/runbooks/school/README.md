@@ -317,6 +317,33 @@ scan rows themselves are on record in
 `records/assessments/omr/<reader>/<date>.yml`; a row missing there is a
 bubble missing on paper, not a grading fault.
 
+## A slip says a grown-up is needed for a double-marked row
+
+A row with several marks that neither the neighbour-bleed rule nor the eraser
+rule can settle is held as `ambiguous`: a review entry plus a notice slip.
+Check what the scan already did before reaching for the paper:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.print.scan-bleed-resolved" AND _time:2h'
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.print.scan-ambiguous-scored" AND _time:2h'
+```
+
+- `school.print.scan-bleed-resolved`: a row was settled because the rows beside
+  it explained the extra marks. Nothing to do; if the child says the graded
+  letter is wrong, the raw marks are in `given` (known failure: a true answer
+  equal to a neighbour's letter plus a stray mark resolves to the stray).
+- `school.print.scan-ambiguous-scored`: `scan.ambiguousFallback` is
+  `incorrect`, so the row was scored wrong with `ambiguous: true` and no slip
+  or review entry exists. To get slips and review back set it to `review`
+  (restart; config is boot-cached).
+- Neither event and a slip printed: the row is genuinely undecidable and waits
+  in Admin review. Settle it there, or have the child erase and scan again.
+
+Related knobs (`scan.leniencyRowsPerCredit`, `scan.ambiguousFallback`) are in
+`__docs/reference/school/print-documents.md` §5.
+
 ## Maintenance: the nightly stale sweep
 
 The `school-stale-sweep` job (`data/system/config/jobs.yml`, 02:20,

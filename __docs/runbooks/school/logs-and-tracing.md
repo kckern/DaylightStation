@@ -216,6 +216,8 @@ this event, what does it mean."
 |---|---|---|
 | `school.print.scan-resolved` | info | Healthy — a live/satisfied allocation matched |
 | `school.print.scan-unresolved` | warn | Card ID unreadable, or ambiguous among candidates |
+| `school.print.scan-bleed-resolved` | info | A multi-mark single-answer row was settled by the rows beside it (`resolvedLetter`, `neighbours`) |
+| `school.print.scan-ambiguous-scored` | info | `scan.ambiguousFallback: incorrect` scored a still-ambiguous row incorrect (no review entry, no slip) |
 | `school.print.scan-unknown-card` | warn | Real answers, but the store has never seen this card ID — usually a mis-bubbled ID; near-miss suggestions included |
 | `school.print.scan-dead-card` | warn | Every record on the card is retired, yet marks arrived — a retired sheet was fed |
 | `school.print.scan-no-allocation` | debug→warn* | Card is ours but nothing matches. *Promoted to `warn` when the card DOES carry a live record — that case is never routine |

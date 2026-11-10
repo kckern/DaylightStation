@@ -571,6 +571,47 @@ A row this rule promotes is recorded as `correct` with a `leniency: 'eraser'`
 marker carried through to the verdict sheet (`gradedBy: 'engine-leniency'`
 there, distinct from a plain `'engine'` verdict) — auditable, never silent.
 
+#### Neighbour bleed (2026-11-09)
+
+A dark bubble in the row above or below can show through and read as a faint
+extra mark on the row between. Before the eraser rule runs, a **single-answer**
+row (`multiple_choice` / `true_false`) with several marks is checked against
+the sheet's **raw marks** on the rows immediately above and below (row ±1,
+looked up across the whole card, so a neighbour owned by a different record
+counts):
+
+- If every mark but **exactly one** is explained by a neighbour's mark in that
+  same column, the row is graded as if that one unexplained letter had been
+  given. It carries `bleed: 'neighbour'`, `resolvedLetter`, and the raw marks
+  in `given` for audit. Any other pattern (zero or two-plus unexplained
+  marks) is left alone and falls to the eraser rule, then to the fallback below.
+- It never spends the eraser budget, runs on every archetype (a `quiz` stays
+  strict about *eraser* credit but still resolves bleed), and never touches a
+  `multi_select` row.
+- **Known failure mode.** The rule is conservative but cannot see intent: if
+  the child's true answer happens to equal a neighbour's letter *and* a stray
+  mark is present, the stray is the single unexplained letter and the row
+  resolves to it. This is documented and covered by a test; the raw marks stay
+  on the record so a grown-up can audit.
+
+Log: `school.print.scan-bleed-resolved` (info) with `row`, `given`,
+`resolvedLetter` and the `neighbours` that explained the rest.
+
+#### Scan settings (`scan:` in the household `school.yml`)
+
+Config is cached at boot: restart (or reload household config) after editing.
+Invalid values fall back to the defaults with a warning.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `leniencyRowsPerCredit` | `5` | Eraser budget is `max(1, floor(rowCount / N))` per sheet (worksheet only). `1` credits **every** eligible two-mark row that includes the key, which also **doubles a blind guesser's odds** on double-marked rows. |
+| `ambiguousFallback` | `review` | What a row still ambiguous after bleed and eraser becomes. `review` queues it for a grown-up and prints a "grown-up needed" slip. `incorrect` scores it `incorrect` with `ambiguous: true`, **no** review entry and **no** slip. |
+
+Trade-off of `incorrect`: the child is never stalled waiting on an adult, but a
+genuine eraser smudge on a spent budget costs a point instead of a look. The
+`ambiguous: true` marker keeps these rows auditable and countable. Log:
+`school.print.scan-ambiguous-scored` (info), per row, with `fallback`.
+
 Every card-backed render writes (or reuses) an **allocation record** at
 `data/content/school/print-documents/allocations/<cardId>.yml`:
 

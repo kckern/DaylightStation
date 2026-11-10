@@ -452,6 +452,37 @@ describe('ResolveCardScan — neighbour bleed + configurable tolerance/fallback'
     expect(byRow[2].bleed).toBeUndefined();
   });
 
+  it('looks across records: row 3 (record A) is explained only by row 4 (record B)', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const three = (prefix) => [1, 2, 3].map((n) => mcQuestion(`${prefix}${n}`, n, { choices: CH, answer: 'Alpha' }));
+    const docA = sourceDoc(`bleed-a-${Math.random().toString(36).slice(2)}`, three('a'), { archetype: 'worksheet' });
+    const docB = sourceDoc(`bleed-b-${Math.random().toString(36).slice(2)}`, three('b'), { archetype: 'worksheet' });
+    const { allocation: a } = await publishAndAllocate({
+      repository, allocationStore, source: docA, context: { freshCard: true, learnerId: 'test-learner' },
+    });
+    const { allocation: b } = await publishAndAllocate({
+      repository, allocationStore, source: docB, context: { cardId: a.cardId, startRow: 4, learnerId: 'test-learner' },
+    });
+    expect(b.cardId).toBe(a.cardId);
+    expect(b.rowRange).toEqual({ start: 4, end: 6 });
+    const logger = {
+      info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
+    };
+    const useCase = new ResolveCardScan({ allocationStore, repository, logger });
+    // Row 3 [A,C]: its C is explained by record B's row 4 (C); A is the one unexplained mark.
+    const result = await useCase.execute({
+      testId: a.cardId,
+      answers: { 1: 'B', 2: 'B', 3: ['A', 'C'], 4: 'C', 5: 'B', 6: 'B' },
+    });
+    const rows = result.results.flatMap((c) => c.results);
+    const row3 = rows.find((r) => r.row === 3);
+    expect(row3).toMatchObject({
+      status: 'correct', bleed: 'neighbour', resolvedLetter: 'A', given: ['A', 'C'],
+    });
+    expect(row3.leniency).toBeUndefined();
+  });
+
   it('invalid config falls back to defaults with a warning', async () => {
     const { byRow, logger } = await run({ options: { leniencyRowsPerCredit: 0, ambiguousFallback: 'bogus' } });
     expect(byRow[5].status).toBe('ambiguous');
