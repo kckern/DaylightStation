@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../../components/CircularUserAvatar.jsx";
 import RpmDeviceAvatar from "../../../components/RpmDeviceAvatar.jsx";
 import { EQUIPMENT_FALLBACK, FALLBACK_AVATAR } from "./constants.js";
+import { SensorWarnIcon, ReadyTickIcon } from "./icons.jsx";
 import "./BikeSlot.scss";
 
 /**
@@ -14,8 +15,11 @@ export function BikeSlot({ bike, person, onPick, lane, disabled = false }) {
   const filled = !!person;
   const rpm = Number.isFinite(bike.rpm) ? bike.rpm : 0;
   const spinDuration = rpm > 0 ? `${(60 / rpm).toFixed(2)}s` : '0s';
+  // sensorLive: true = reporting, false = silent, undefined = unknown (shows nothing).
+  const noSignal = filled && bike.sensorLive === false;
+  const ready = filled && bike.sensorLive === true;
   return (
-    <div className={`cgh-slot${filled ? ' is-filled' : ''}`} data-testid={`bike-${bike.id}`}>
+    <div className={`cgh-slot${filled ? ' is-filled' : ''}${noSignal ? ' is-no-signal' : ''}`} data-testid={`bike-${bike.id}`}>
       <span className="cgh-slot__lane" aria-hidden="true">{lane}</span>
       <button
         type="button"
@@ -56,7 +60,18 @@ export function BikeSlot({ bike, person, onPick, lane, disabled = false }) {
         {!filled && (
           <span className="cgh-slot__add" aria-hidden="true">+ Add rider</span>
         )}
+        {filled && <span className="cgh-slot__name">{person.name}</span>}
       </button>
+      {noSignal && (
+        <span className="cgh-slot__signal cgh-slot__signal--none" data-testid={`bike-${bike.id}-no-signal`}>
+          <SensorWarnIcon />No signal
+        </span>
+      )}
+      {ready && (
+        <span className="cgh-slot__signal cgh-slot__signal--ok">
+          <ReadyTickIcon />Ready
+        </span>
+      )}
     </div>
   );
 }

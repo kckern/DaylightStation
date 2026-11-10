@@ -118,3 +118,23 @@ export function VolumeIcon({ muted }) {
   );
 }
 VolumeIcon.propTypes = { muted: PropTypes.bool };
+
+/** Triangle-with-bang glyph for a bike whose cadence sensor is silent. */
+export function SensorWarnIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" focusable="false">
+      <path d="M12 3 2.5 20h19Z" />
+      <line x1="12" y1="10" x2="12" y2="14.5" />
+      <circle cx="12" cy="17.2" r="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Small tick for a bike whose cadence sensor is reporting. */
+export function ReadyTickIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  );
+}

@@ -66,6 +66,8 @@
     // The one control that moves the lobby forward: it never shrinks and never
     // gets displaced by whatever the starting grid is doing above it.
     flex-shrink: 0;
+    // Anchor for the sensor warning, which overlays the row (see below).
+    position: relative;
   }
 
   &__start {
@@ -226,4 +228,46 @@
 @keyframes cgh-notice-in {
   from { opacity: 0; transform: translate(-50%, -8px); }
   to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+// ── Sensor warning. Overlays the actions row, bottom-anchored just above the
+//    Start button, so it takes no layout space: the fixed-height lobby and the
+//    Start button never move when it appears.
+.cgh-sensor-warning {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: 100%;
+  padding: 10px 14px;
+  background: t.$cg-panel-2;
+  border: 1.5px solid t.$cg-warn;
+  border-radius: 12px;
+  color: t.$cg-text;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  > svg { width: 22px; height: 22px; flex-shrink: 0; color: t.$cg-warn; }
+  &__text { font-size: 0.95rem; font-weight: 600; }
+  &__btn {
+    appearance: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid t.$cg-border;
+    background: t.$cg-panel;
+    color: t.$cg-text;
+    font-size: 0.9rem;
+    font-weight: 700;
+    &--go { border-color: t.$cg-warn; color: t.$cg-warn; }
+    &:active { transform: scale(0.97); }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cgh-sensor-warning__btn:active { transform: none; }
 }

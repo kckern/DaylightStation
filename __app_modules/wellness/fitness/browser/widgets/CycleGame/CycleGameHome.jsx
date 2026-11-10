@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { uiLog } from "./home/uiLog.js";
-import { RaceFlagIcon, VolumeIcon } from "./home/icons.jsx";
+import { RaceFlagIcon, VolumeIcon, SensorWarnIcon } from "./home/icons.jsx";
 import RaceTypePicker from "./home/RaceTypePicker.jsx";
 import BikeSlot from "./home/BikeSlot.jsx";
 import GhostSlot from "./home/GhostSlot.jsx";
@@ -65,6 +65,41 @@ export default function CycleGameHome({
     const id = setTimeout(() => setNoticeVisible(false), RECOVERED_NOTICE_DURATION_MS);
     return () => clearTimeout(id);
   }, [recoveredNotice]);
+
+  // Sensor check: pressing Start while a claimed bike reads silent warns first.
+  // The warning is derived from the live bike list, so it clears by itself the
+  // moment every claimed bike reports, the bike is unclaimed, or a start begins.
+  const [sensorWarningOpen, setSensorWarningOpen] = useState(false);
+  const silentBikes = useMemo(
+    () => bikes.filter((b) => b.rider && b.sensorLive === false),
+    [bikes]
+  );
+  const silentKey = silentBikes.map((b) => b.id).join('|');
+  const showSensorWarning = sensorWarningOpen && !busy && silentBikes.length > 0;
+  useEffect(() => {
+    if (sensorWarningOpen && (busy || silentBikes.length === 0)) setSensorWarningOpen(false);
+  }, [sensorWarningOpen, busy, silentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleStart = () => {
+    if (busy) return;
+    if (silentBikes.length > 0) {
+      setSensorWarningOpen(true);
+      uiLog().warn('cycle_game.ui.sensor_warning', { bikes: silentBikes.map((b) => b.id) });
+      return;
+    }
+    onStart?.();
+  };
+  const handleStartAnyway = () => {
+    if (busy) return;
+    uiLog().info('cycle_game.ui.sensor_warning_override', { bikes: silentBikes.map((b) => b.id) });
+    setSensorWarningOpen(false);
+    onStart?.();
+  };
+  const silentNames = silentBikes.map((b) => b.name || b.id);
+  const silentList = silentNames.length > 1
+    ? `${silentNames.slice(0, -1).join(', ')} and ${silentNames[silentNames.length - 1]}`
+    : silentNames[0];
+  const silentVerb = silentNames.length > 1 ? 'are' : 'is';
 
   const peopleById = useMemo(() => {
     const map = new Map();
@@ -149,12 +184,24 @@ export default function CycleGameHome({
         </section>
 
         <div className="cycle-game-home__actions">
+          {showSensorWarning && (
+            <div className="cgh-sensor-warning" data-testid="sensor-warning" role="alert">
+              <SensorWarnIcon />
+              <span className="cgh-sensor-warning__text">
+                {silentList} {silentVerb} not reporting. Spin the pedals once, or check the sensor.
+              </span>
+              <button type="button" className="cgh-sensor-warning__btn" data-testid="sensor-warning-back"
+                onClick={() => setSensorWarningOpen(false)}>Back</button>
+              <button type="button" className="cgh-sensor-warning__btn cgh-sensor-warning__btn--go" data-testid="sensor-warning-start"
+                onClick={handleStartAnyway}>Start anyway</button>
+            </div>
+          )}
           <button
             type="button"
             className="cycle-game-home__start"
             data-testid="cycle-game-start"
             disabled={!canStart || busy}
-            onClick={() => onStart?.()}
+            onClick={handleStart}
           >
             <RaceFlagIcon />
             {busy ? 'Starting…' : 'Start race'}

@@ -242,15 +242,25 @@ The lobby is a pure presentational component; all state and handlers live in
 `CycleGameContainer`. Flows:
 
 1. **Race type** — three tiles: **Distance**, **Time**, **Ghost**. Selected tile is
-   `aria-pressed`.
+   `aria-pressed` and filled (not only outlined), as is the selected preset.
 2. **Value** — preset tiers plus a +/- custom stepper (reserved-height slot):
    - Distance tiers: **100 / 300 / 1000 / 2500 (default) / 5000 m**.
    - Time tiers: **60 / 120 / 180 / 300 (default) / 600 s**.
+   - The stepper uses `lib/cycleGame/raceValueStep.js` (`stepRaceValue`). Distance
+     steps **100 m below 1 km and 500 m from 1 km up**, so it lands on every
+     preset; time steps **one minute**. Limits: distance **100 m to 10 km**, time
+     **1 to 30 min**. The - button is disabled at the minimum and + at the
+     maximum. A value that arrives out of range or off the grid is shown as is,
+     and the first press of either button snaps it onto the grid inside the limits.
    - Picking a ghost **locks** type + value to that recording.
 3. **Starting grid** — one `BikeSlot` per cadence bike. The **entire slot** is one
    touch target → opens the **rider picker**. Filled slots show the equipment icon
-   (RPM-rotated) with the rider's avatar overlaid — **not** the rider's name (a
-   test asserts names are absent on slots).
+   (RPM-rotated) with the rider's avatar overlaid and the rider's **name** under
+   it (two guests share the default avatar). A claimed bike also shows its sensor
+   state when the container supplies `sensorLive` on the bike: **Ready** (small
+   tick) when the cadence sensor is reporting, **No signal** (amber, icon plus
+   word, class `is-no-signal`) when it is not; unknown state shows nothing, as
+   does an unclaimed slot.
 4. **Rider picker** (modal) — people grouped into **Household / Family / Guests**
    tabs; each tile shows avatar, name, and a "live" badge for an active HR strap.
    Built-in **Guest (Adult)** / **Guest (Kid)** lead the Guests tab. `Escape` closes.
@@ -278,7 +288,16 @@ The lobby is a pure presentational component; all state and handlers live in
    real rider's face/name via `participantIdentity`. Tapping a row opens the
    **Recap**. Empty state: "No races yet."
 7. **Volume** — touch +/- with a readout.
-8. **Start** — disabled until `canStart`; checkered-flag icon.
+8. **Start** — disabled until `canStart`; checkered-flag icon. **Sensor check:**
+   if any claimed bike has `sensorLive === false`, Start does not start. It shows
+   a warning (`role="alert"`) naming the bikes ("Bike A is not reporting. Spin the
+   pedals once, or check the sensor.", "A and B are…", "A, B and C are…") with
+   **Back** and **Start anyway**, and logs `cycle_game.ui.sensor_warning` (warn).
+   Start anyway logs `cycle_game.ui.sensor_warning_override` and starts. The
+   warning clears by itself when every claimed bike reports, when the bike is
+   unclaimed, or when `busy` turns true; once everything is live the next Start
+   goes straight through. It overlays the actions row just above Start, so the
+   fixed-height lobby does not shift.
 9. **Starting…** — a lone rider's Start first looks up their rival (§5), and
    "Ride it" first fetches its ladder rival (§16); either can take up to 1.5 s
    (the two share that one budget on a featured ride). From the press until the

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, act, cleanup } from '@testing-library/react';
 import CycleGameHome from "./CycleGameHome.jsx";
+import * as uiLogMod from "./home/uiLog.js";
 
 const bikes = [
   { id: 'cycle_ace', name: 'CycleAce', rider: 'user_3' },
@@ -88,14 +89,15 @@ describe('CycleGameHome', () => {
     expect(getByTestId('bike-cycle_ace')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
     // a filled slot keeps the equipment hero AND shows the rider's avatar
-    // (no name label on the slot — names live in the picker)
+    // the rider's name sits under the filled slot (guests share an avatar)
     const filled = getByTestId('bike-cycle_ace');
     expect(filled.querySelector('.cgh-slot__device')).toBeTruthy();
     expect(filled.querySelector('.cgh-slot__rider-avatar')).toBeTruthy();
-    expect(filled.querySelector('.cgh-slot__rider-name')).toBeNull();
+    expect(filled.querySelector('.cgh-slot__name').textContent).toBe('User_3');
     // an empty slot has no rider avatar, still has the equipment hero
     const empty = getByTestId('bike-tricycle');
     expect(empty.querySelector('.cgh-slot__rider-avatar')).toBeNull();
+    expect(empty.querySelector('.cgh-slot__name')).toBeNull();
     expect(empty.querySelector('.cgh-slot__device')).toBeTruthy();
   });
 
@@ -774,5 +776,197 @@ describe('CycleGameHome — history row labels', () => {
     expect(cell.getAttribute('aria-label')).toBe('640 m ridden, did not finish');
     expect(cell.getAttribute('title')).toBe('Distance ridden (did not finish)');
     expect(btn.getAttribute('aria-label')).toBe('User_3 — 640 m ridden, did not finish, 1.00 km, Today 6:12p');
+  });
+});
+
+describe('CycleGameHome — sensor check', () => {
+  const mk = (a, b) => ([
+    { id: 'bike_a', name: 'Bike A', rider: 'user_3', sensorLive: a },
+    { id: 'bike_b', name: 'Bike B', rider: 'user_2', sensorLive: b },
+    { id: 'bike_c', name: 'Bike C', rider: null, sensorLive: false }
+  ]);
+  const view = (bikesProp, props = {}) => {
+    const onStart = vi.fn();
+    const ui = (b, p = {}) => (
+      <CycleGameHome bikes={b} people={people} records={[]} canStart onStart={onStart} {...props} {...p} />
+    );
+    const r = render(ui(bikesProp));
+    return { ...r, onStart, again: (b, p) => r.rerender(ui(b, p)) };
+  };
+
+  it('a claimed bike with no signal shows the No signal label and class; unclaimed shows nothing', () => {
+    const { getByTestId } = view(mk(false, true));
+    const a = getByTestId('bike-bike_a');
+    expect(a.className).toContain('is-no-signal');
+    expect(a.textContent).toContain('No signal');
+    expect(a.textContent).not.toContain('Ready');
+    const c = getByTestId('bike-bike_c');
+    expect(c.className).not.toContain('is-no-signal');
+    expect(c.textContent).not.toContain('No signal');
+    expect(c.textContent).not.toContain('Ready');
+  });
+
+  it('a claimed live bike shows Ready; unknown sensor state shows neither', () => {
+    const { getByTestId } = view(mk(true, undefined));
+    expect(getByTestId('bike-bike_a').textContent).toContain('Ready');
+    const b = getByTestId('bike-bike_b');
+    expect(b.textContent).not.toContain('Ready');
+    expect(b.textContent).not.toContain('No signal');
+    expect(b.className).not.toContain('is-no-signal');
+  });
+
+  it('Start with a silent claimed bike does not start and shows the warning', () => {
+    const { getByTestId, onStart } = view(mk(false, true));
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(onStart).not.toHaveBeenCalled();
+    const w = getByTestId('sensor-warning');
+    expect(w.getAttribute('role')).toBe('alert');
+    expect(w.textContent).toContain('Bike A is not reporting. Spin the pedals once, or check the sensor.');
+  });
+
+  it('names two silent bikes with "and"', () => {
+    const { getByTestId } = view(mk(false, false));
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(getByTestId('sensor-warning').textContent).toContain('Bike A and Bike B are not reporting.');
+  });
+
+  it('names three or more silent bikes with commas and "and"', () => {
+    const three = [
+      { id: 'bike_a', name: 'Bike A', rider: 'user_3', sensorLive: false },
+      { id: 'bike_b', name: 'Bike B', rider: 'user_2', sensorLive: false },
+      { id: 'bike_c', name: 'Bike C', rider: 'user_2', sensorLive: false }
+    ];
+    const { getByTestId } = view(three);
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(getByTestId('sensor-warning').textContent).toContain('Bike A, Bike B and Bike C are not reporting.');
+  });
+
+  it('Start anyway starts; Back dismisses without starting', () => {
+    const { getByTestId, queryByTestId, onStart } = view(mk(false, true));
+    fireEvent.click(getByTestId('cycle-game-start'));
+    fireEvent.click(getByTestId('sensor-warning-back'));
+    expect(queryByTestId('sensor-warning')).toBeNull();
+    expect(onStart).not.toHaveBeenCalled();
+    fireEvent.click(getByTestId('cycle-game-start'));
+    fireEvent.click(getByTestId('sensor-warning-start'));
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('all claimed bikes live, or sensor state unknown, starts at once', () => {
+    const a = view(mk(true, true));
+    fireEvent.click(a.getByTestId('cycle-game-start'));
+    expect(a.onStart).toHaveBeenCalledTimes(1);
+    expect(a.queryByTestId('sensor-warning')).toBeNull();
+    cleanup();
+    const b = view(mk(undefined, undefined));
+    fireEvent.click(b.getByTestId('cycle-game-start'));
+    expect(b.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('the warning clears when every claimed bike reports', () => {
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    expect(v.queryByTestId('sensor-warning')).toBeTruthy();
+    v.again(mk(true, true));
+    expect(v.queryByTestId('sensor-warning')).toBeNull();
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    expect(v.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('the warning clears when the offending bike is unclaimed', () => {
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    v.again([{ id: 'bike_a', name: 'Bike A', rider: null, sensorLive: false }, mk(false, true)[1]]);
+    expect(v.queryByTestId('sensor-warning')).toBeNull();
+  });
+
+  it('the warning clears when busy turns true, and its buttons are inert while busy', () => {
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    v.again(mk(false, true), { busy: true });
+    expect(v.queryByTestId('sensor-warning')).toBeNull();
+    expect(v.onStart).not.toHaveBeenCalled();
+  });
+
+  it('logs the warning and the override', () => {
+    const calls = [];
+    const spy = vi.spyOn(uiLogMod, 'uiLog').mockReturnValue({
+      debug: () => {}, info: (e, d) => calls.push(['info', e, d]), warn: (e, d) => calls.push(['warn', e, d]), error: () => {}
+    });
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    expect(calls).toContainEqual(['warn', 'cycle_game.ui.sensor_warning', { bikes: ['bike_a'] }]);
+    fireEvent.click(v.getByTestId('sensor-warning-start'));
+    expect(calls.some((c) => c[0] === 'info' && c[1] === 'cycle_game.ui.sensor_warning_override')).toBe(true);
+    spy.mockRestore();
+  });
+});
+
+describe('CycleGameHome — race value stepper', () => {
+  const view = (raceType, raceValue, props = {}) => {
+    const onSetRaceValue = vi.fn();
+    const r = render(
+      <CycleGameHome bikes={[]} people={[]} records={[]} raceType={raceType} raceValue={raceValue}
+        onSetRaceValue={onSetRaceValue} {...props} />
+    );
+    return { ...r, onSetRaceValue, inc: () => r.getByLabelText('increase'), dec: () => r.getByLabelText('decrease') };
+  };
+  const press = (v, which, from) => {
+    fireEvent.click(which === '+' ? v.inc() : v.dec());
+    return v.onSetRaceValue.mock.calls.at(-1)[0];
+  };
+
+  it('+ and - walk the distance grid and reach 100 m and 300 m', () => {
+    expect(press(view('distance', 100), '+')).toBe(200); cleanup();
+    expect(press(view('distance', 900), '+')).toBe(1000); cleanup();
+    expect(press(view('distance', 1000), '+')).toBe(1500); cleanup();
+    expect(press(view('distance', 1500), '-')).toBe(1000); cleanup();
+    expect(press(view('distance', 1000), '-')).toBe(900); cleanup();
+    expect(press(view('time', 300), '+')).toBe(360);
+  });
+
+  it('- is disabled at the minimum, + at the maximum, and neither steps', () => {
+    let v = view('distance', 100);
+    expect(v.dec().disabled).toBe(true);
+    fireEvent.click(v.dec());
+    expect(v.onSetRaceValue).not.toHaveBeenCalled();
+    cleanup();
+    v = view('time', 60);
+    expect(v.dec().disabled).toBe(true);
+    cleanup();
+    v = view('distance', 10000);
+    expect(v.inc().disabled).toBe(true);
+    fireEvent.click(v.inc());
+    expect(v.onSetRaceValue).not.toHaveBeenCalled();
+    expect(v.getByTestId('cgh-value').textContent).toContain('10 km');
+    cleanup();
+    v = view('time', 1800);
+    expect(v.inc().disabled).toBe(true);
+    expect(v.getByTestId('cgh-value').textContent).toContain('30 min');
+  });
+
+  it('an off-grid or out-of-range value shows as is and the first press snaps it in', () => {
+    let v = view('distance', 20000);
+    expect(v.getByTestId('cgh-value').textContent).toContain('20 km');
+    expect(press(v, '-')).toBe(10000);
+    cleanup();
+    v = view('time', 3060);
+    expect(press(v, '-')).toBe(1800);
+    cleanup();
+    v = view('distance', 250);
+    expect(press(v, '+')).toBe(300);
+  });
+
+  it('the selected preset has aria-pressed true, the others false', () => {
+    const v = view('distance', 1000);
+    expect(v.getByTestId('tier-short').getAttribute('aria-pressed')).toBe('true');
+    expect(v.getByTestId('tier-sprint').getAttribute('aria-pressed')).toBe('false');
+    expect(v.getByTestId('tier-long').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('the stepper buttons are inert when disabled', () => {
+    const v = view('distance', 1000, { busy: true });
+    expect(v.inc().disabled).toBe(true);
+    expect(v.dec().disabled).toBe(true);
   });
 });

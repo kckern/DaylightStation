@@ -2,7 +2,8 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { DistanceIcon, TimeIcon, GhostIcon } from "./icons.jsx";
 import { formatDistance, formatTime } from "./formatters.js";
-import { DISTANCE_TIERS, TIME_TIERS, DEFAULT_TIER_KEY, DISTANCE_STEP_M, TIME_STEP_S } from "./constants.js";
+import { DISTANCE_TIERS, TIME_TIERS, DEFAULT_TIER_KEY } from "./constants.js";
+import { stepRaceValue, RACE_VALUE_LIMITS } from "../../../lib/cycleGame/raceValueStep.js";
 import "./RaceTypePicker.scss";
 
 /**
@@ -17,8 +18,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
   const isTime = !hasGhost && raceType === 'time';
 
   const tiers = raceType === 'time' ? TIME_TIERS : DISTANCE_TIERS;
-  const step = raceType === 'time' ? TIME_STEP_S : DISTANCE_STEP_M;
-  const minValue = step;
+  const limits = raceType === 'time' ? RACE_VALUE_LIMITS.time : RACE_VALUE_LIMITS.distance;
   const fmt = raceType === 'time' ? formatTime : formatDistance;
   const defaultTierValue = (tiers.find((t) => t.key === DEFAULT_TIER_KEY) || tiers[0]).value;
   // Effective value: the chosen value, or the default (Medium) tier.
@@ -104,6 +104,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
                     type="button"
                     data-testid={`tier-${t.key}`}
                     className={`cgh-preset cgh-preset--tier${value === t.value ? ' is-selected' : ''}`}
+                    aria-pressed={value === t.value}
                     disabled={disabled}
                     onClick={() => onSetRaceValue?.(t.value)}
                   >
@@ -117,8 +118,8 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
                   type="button"
                   className="cgh-stepper__btn"
                   aria-label="decrease"
-                  disabled={disabled || value <= minValue}
-                  onClick={() => onSetRaceValue?.(Math.max(minValue, value - step))}
+                  disabled={disabled || value <= limits.min}
+                  onClick={() => onSetRaceValue?.(stepRaceValue(raceType, value, -1))}
                 >
                   −
                 </button>
@@ -127,8 +128,8 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
                   type="button"
                   className="cgh-stepper__btn"
                   aria-label="increase"
-                  disabled={disabled}
-                  onClick={() => onSetRaceValue?.(value + step)}
+                  disabled={disabled || value >= limits.max}
+                  onClick={() => onSetRaceValue?.(stepRaceValue(raceType, value, 1))}
                 >
                   +
                 </button>

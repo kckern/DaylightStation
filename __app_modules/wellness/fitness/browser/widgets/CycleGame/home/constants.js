@@ -23,6 +23,3 @@ export const TIME_TIERS = [
   { key: 'long', label: 'Long', value: 600 }
 ];
 export const DEFAULT_TIER_KEY = 'medium';
-
-export const DISTANCE_STEP_M = 500;
-export const TIME_STEP_S = 60;

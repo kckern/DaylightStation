@@ -118,6 +118,33 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   }
 
+  &__name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: t.$cg-cyan;
+    text-align: center;
+  }
+
+  // Sensor state: always a word plus an icon, never colour alone.
+  &__signal {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    svg { width: 14px; height: 14px; flex-shrink: 0; }
+    &--none { color: t.$cg-warn; }
+    &--ok { color: t.$cg-success; font-weight: 600; opacity: 0.85; }
+  }
+  &.is-no-signal {
+    border-color: t.$cg-warn;
+    box-shadow: 0 0 14px rgba(255, 177, 61, 0.22);
+  }
+
   &__rider-name {
     min-height: 16px;
     font-size: 0.82rem;
