@@ -164,7 +164,7 @@ describe('useGemCeremony', () => {
   });
 
   it('without learnOnMount, a remount shows what landed while it was away — once', async () => {
-    localStorage.setItem('daylight.gemCeremony.t2', JSON.stringify(gemSnapshot(board(NONE))));
+    localStorage.setItem('daylight.gemCeremony.v2.t2', JSON.stringify(gemSnapshot(board(NONE))));
     const load = async () => board({ ...NONE, 'perfect-sheet': { a: cell('none'), b: cell('earned', 1) } });
     const first = render(<Probe surface="t2" load={load} />);
     await flush();
@@ -176,13 +176,13 @@ describe('useGemCeremony', () => {
   });
 
   it('handed a stored snapshot in the old per-row shape, learns the week without celebrating, then celebrates what is new', async () => {
-    localStorage.setItem('daylight.gemCeremony.t3', JSON.stringify({ week: '2026-11-02', cells: { a: { 'reader-week': ['earned', 1] }, b: {} } }));
+    localStorage.setItem('daylight.gemCeremony.v2.t3', JSON.stringify({ week: '2026-11-02', cells: { a: { 'reader-week': ['earned', 1] }, b: {} } }));
     let current = merged(rows({ reading: reading(1, 1), racing: racing('leading') }));
     const load = async () => current;
     render(<Probe surface="t3" events={['book-logged']} load={load} settleMs={10} />);
     await flush();
     expect(screen.getByTestId('probe').dataset.n).toBe('0');
-    expect(JSON.parse(localStorage.getItem('daylight.gemCeremony.t3'))).toEqual(gemSnapshot(current));
+    expect(JSON.parse(localStorage.getItem('daylight.gemCeremony.v2.t3'))).toEqual(gemSnapshot(current));
     current = merged(rows({ reading: reading(1, 2), racing: racing('leading') }));
     act(() => { window.dispatchEvent(new CustomEvent('book-logged')); vi.advanceTimersByTime(11); });
     await flush();
@@ -190,11 +190,11 @@ describe('useGemCeremony', () => {
   });
 
   it('learnOnMount over an old-shape snapshot writes the per-rule one, so the next look replays nothing', async () => {
-    localStorage.setItem('daylight.gemCeremony.t4', JSON.stringify({ week: '2026-11-02', cells: { a: { racing: ['earned', 1] } } }));
+    localStorage.setItem('daylight.gemCeremony.v2.t4', JSON.stringify({ week: '2026-11-02', cells: { a: { racing: ['earned', 1] } } }));
     const held = merged(rows({ racing: racing('leading', 1) }));
     render(<Probe surface="t4" events={['race-saved']} learnOnMount load={async () => held} settleMs={10} />);
     await flush();
-    expect(JSON.parse(localStorage.getItem('daylight.gemCeremony.t4'))).toEqual(gemSnapshot(held));
+    expect(JSON.parse(localStorage.getItem('daylight.gemCeremony.v2.t4'))).toEqual(gemSnapshot(held));
     act(() => { window.dispatchEvent(new CustomEvent('race-saved')); vi.advanceTimersByTime(11); });
     await flush();
     expect(screen.getByTestId('probe').dataset.n).toBe('0');

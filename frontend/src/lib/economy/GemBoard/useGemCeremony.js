@@ -25,7 +25,10 @@ import getLogger from '@/lib/logging/Logger.js';
 import { fetchGemBoard } from './GemBoard.jsx';
 import { gemAwards, gemSnapshot } from './gemCeremonyModel.js';
 
-const keyFor = (surface) => `daylight.gemCeremony.${surface}`;
+// The per-rule snapshot has its own key: a kiosk still running a cached bundle
+// from before it keeps reading (and writing) the old key in the old shape, so
+// neither bundle ever meets the other's snapshot and replays the week.
+const keyFor = (surface) => `daylight.gemCeremony.v2.${surface}`;
 
 function readSnapshot(surface) {
   try { return JSON.parse(localStorage.getItem(keyFor(surface)) || 'null'); } catch { return null; }
