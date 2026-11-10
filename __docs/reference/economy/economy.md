@@ -1146,6 +1146,25 @@ built from `economyApi` (`composition/economyApi.mjs`).
     that learner works again; a learner off the roster is null, unwarned. The
     cache means a section finished a moment ago can still show its `+N` for up
     to a minute.
+- **School: coins on paper (`earningsQuote`).** The worksheet header's
+  `Worth 2 silver` reads `rewardFor` (above); its day-bonus clause and the
+  result receipt's `+2 silver · Math (each day done)` / `25 silver this week`
+  lines read the preview through a second late-bound port,
+  `economyApi.earningsQuote()`, which the earnings runtime binds to the
+  **uncached** `EarningsPreviewService` (`useEarningsQuote`): a receipt quotes
+  the week before and after one grade, which the 60 s cache would hide.
+  - `quote({learnerId})`: the current week, as `preview` returns it.
+  - `ifDone({learnerId, subject, unitId, courseId, finishesDay})`: from one
+    facts read, the week priced as it is and as if `subject` were done today
+    (`withSubjectDone`, pure, in `domain/earnings/whatIf.mjs`: today's section
+    rows for the subject become `served`, a passed unit is added, and with
+    `finishesDay` today's `days` row becomes `met`). Returns `{silver, gems,
+    dayBonus: {silver, gems}, lines}` (only lines whose amount rose), or null
+    when the school evidence is unavailable or outside the term. The economy
+    never decides whether a day is green; School says so (`finishesDay`).
+  - School wraps both in `EarningsQuoteClient` (2 s limit, never throws,
+    nothing priced unless the catalog mode is `live`). See
+    [print-documents.md](../school/print-documents.md#coins-on-paper-the-worksheets-worth-and-the-receipts-silver).
 - **School: the agenda tape's economy line.** The morning agenda opens with
   `In the bank: 7 silver · Next: Math`, only while the catalog mode is `live`
   (an `economyMode` reader, `() => configProjection.catalog().mode`, is handed

@@ -1106,7 +1106,14 @@ export async function createSchoolLifecycle({
   // after the learner's rows are already claimed (2026-09-15).
   const publishPrintDocument = new PublishPrintDocument({ repository: printDocuments, texLint: lintTex });
 
-  const earningsQuote = new EarningsQuoteClient({ getService: getEarningsPreview, logger });
+  // Paper's prices (the worksheet's worth line, the result receipt's coin
+  // lines): the same sheet-reward port the Portal reads, plus the economy's
+  // uncached preview, priced only while coins are live.
+  const earningsQuote = new EarningsQuoteClient({
+    getService: getEarningsPreview, rewardFor,
+    isLive: () => (typeof economyMode === 'function' ? economyMode() === 'live' : false),
+    logger,
+  });
 
   const issueDocument = new IssueDocument({
     practiceAssessments,

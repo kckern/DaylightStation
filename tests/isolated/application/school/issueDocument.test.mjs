@@ -939,7 +939,11 @@ describe('the worksheet header prints what the sheet is worth', () => {
     };
   }
 
-  function harness({ price = { silver: 2, gems: 0, dayBonus: { silver: 0, gems: 0 }, lines: [] }, sections = null } = {}) {
+  function harness({
+    reward = { silver: 2, gems: 0 },
+    price = { silver: 2, gems: 0, dayBonus: { silver: 5, gems: 0 }, lines: [] },
+    sections = null,
+  } = {}) {
     const clock = fakeClock();
     const sessions = new FakeSessionRepository();
     const printer = new FakeLaserPrinter();
@@ -967,7 +971,9 @@ describe('the worksheet header prints what the sheet is worth', () => {
       },
     };
     const instances = new Map();
-    const earningsQuote = { ifDone: vi.fn(async () => price) };
+    // The sheet's own price is the SAME `rewardFor` the Portal and the agenda
+    // tape show; `ifDone` is asked only for the finishing-the-day bonus.
+    const earningsQuote = { rewardFor: vi.fn(async () => reward), ifDone: vi.fn(async () => price) };
     const planProjection = sections
       ? { project: vi.fn(async () => ({ plan: { entries: [] }, sections })) }
       : null;
@@ -1011,30 +1017,35 @@ describe('the worksheet header prints what the sheet is worth', () => {
     const sid = await open();
     const first = await useCase.execute({ sessionId: sid });
     expect(first).toMatchObject({ status: 'issued' });
-    expect(pdfText(printer.jobs[0].pdf)).toContain('Worth 2 silver');
-    expect(earningsQuote.ifDone).toHaveBeenCalledTimes(1);
-    expect(earningsQuote.ifDone).toHaveBeenCalledWith({
-      learnerId: LEARNER, subject: 'math', unitId: UNIT.unitId, courseId: 'math-course', finishesDay: false,
+    const text = pdfText(printer.jobs[0].pdf);
+    expect(text).toContain('Worth 2 silver');
+    expect(text).not.toContain('finishes your day');
+    expect(earningsQuote.rewardFor).toHaveBeenCalledTimes(1);
+    expect(earningsQuote.rewardFor).toHaveBeenCalledWith({
+      learnerId: LEARNER, unit: { unitId: UNIT.unitId, title: 'Fractions', subject: 'math' },
     });
+    // Not the last thing today (no plan says so): no day bonus is asked for.
+    expect(earningsQuote.ifDone).not.toHaveBeenCalled();
 
     clock.advanceMs(11 * 60_000); // past the print debounce — a REAL reprint
     const second = await useCase.execute({ sessionId: sid });
     expect(second.status).toBe('reprinted');
-    expect(earningsQuote.ifDone).toHaveBeenCalledTimes(1);
+    expect(earningsQuote.rewardFor).toHaveBeenCalledTimes(1);
     expect(printer.jobs).toHaveLength(2);
     expect(pdfText(printer.jobs[1].pdf)).toContain('Worth 2 silver');
   });
 
   it('prints no worth line when there is no price', async () => {
     requirePdftotext();
-    const { useCase, printer, open } = harness({ price: null });
+    const { useCase, printer, open } = harness({ reward: null });
     await useCase.execute({ sessionId: await open() });
     expect(printer.jobs).toHaveLength(1);
     expect(pdfText(printer.jobs[0].pdf)).not.toContain('Worth');
   });
 
-  it('says the sheet finishes the day when it is the only obligated section left', async () => {
-    const { useCase, earningsQuote, planProjection, open } = harness({
+  it('adds the day bonus when the sheet is the only obligated section left', async () => {
+    requirePdftotext();
+    const { useCase, printer, earningsQuote, planProjection, open } = harness({
       sections: [
         { subject: 'math', obligation: { state: 'obligated' }, next: { unitId: UNIT.unitId } },
         { subject: 'reading', obligation: { state: 'served' }, next: null },
@@ -1042,6 +1053,33 @@ describe('the worksheet header prints what the sheet is worth', () => {
     });
     await useCase.execute({ sessionId: await open() });
     expect(planProjection.project).toHaveBeenCalledWith({ learnerId: LEARNER });
-    expect(earningsQuote.ifDone).toHaveBeenCalledWith(expect.objectContaining({ finishesDay: true }));
+    expect(earningsQuote.ifDone).toHaveBeenCalledWith({
+      learnerId: LEARNER, subject: 'math', unitId: UNIT.unitId, courseId: 'math-course', finishesDay: true,
+    });
+    expect(pdfText(printer.jobs[0].pdf)).toContain('+5 silver if it finishes your day');
+  });
+
+  it('a day bonus alone prints nothing: the sheet itself must be worth something', async () => {
+    requirePdftotext();
+    const { useCase, printer, open } = harness({
+      reward: null,
+      sections: [{ subject: 'math', obligation: { state: 'obligated' }, next: { unitId: UNIT.unitId } }],
+    });
+    await useCase.execute({ sessionId: await open() });
+    expect(pdfText(printer.jobs[0].pdf)).not.toContain('Worth');
+  });
+
+  it('an elective today is priced as one (the plan reads its section excused)', async () => {
+    const { useCase, earningsQuote, open } = harness({
+      sections: [
+        { subject: 'math', obligation: { state: 'excused', reason: 'optional_backlog' }, next: { unitId: UNIT.unitId } },
+        { subject: 'reading', obligation: { state: 'obligated' }, next: { unitId: 'reading-1' } },
+      ],
+    });
+    await useCase.execute({ sessionId: await open() });
+    expect(earningsQuote.rewardFor).toHaveBeenCalledWith({
+      learnerId: LEARNER, unit: { unitId: UNIT.unitId, title: 'Fractions', subject: 'math', elective: true },
+    });
+    expect(earningsQuote.ifDone).not.toHaveBeenCalled();
   });
 });

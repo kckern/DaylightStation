@@ -458,6 +458,11 @@ describe('resultDocument', () => {
     it('names gems when a line has them', () => {
       const e = { lines: [{ label: 'Korean (each day done)', silver: 2, gems: 1 }], weekSilver: 25 };
       expect(textOf(resultDocument({ ...pass, earned: e }))).toContain('+2 silver · +1 gem · Korean (each day done)');
+      // Gems alone: no "+0 silver" in front of them.
+      const g = { lines: [{ label: 'Book finished', silver: 0, gems: 2 }], weekSilver: 25 };
+      const tg = textOf(resultDocument({ ...pass, earned: g }));
+      expect(tg).toContain('+2 gems · Book finished');
+      expect(tg).not.toContain('+0 silver');
     });
     it('prints only the total when no lines', () => {
       const t = textOf(resultDocument({ ...pass, earned: { lines: [], weekSilver: 25 } }));

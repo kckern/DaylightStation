@@ -739,9 +739,15 @@ export class IssueDocument {
   /**
    * The worth line for a bank worksheet, or null. A replacement for an artifact
    * that was already retained reuses the price that artifact was printed with;
-   * otherwise the economy is asked once. `ifDone` never throws (its client has
-   * its own time limit), so a slow or absent economy prints no worth line and
-   * never holds up the paper.
+   * otherwise the economy is asked once, at print time.
+   *
+   * The sheet's own price is `rewardFor` — the SAME answer the Portal's "print
+   * my next sheet" and the agenda tape's `Next: Math +2` show, so paper and
+   * screen cannot disagree. Only when this sheet is the learner's last
+   * obligated section today is `ifDone` asked for the finishing-the-day bonus
+   * (`day-met` and friends, which `rewardFor` never credits to a sheet). Both
+   * run at once under the client's own time limit and never throw, so a slow,
+   * absent or not-live economy prints no worth line and never holds up paper.
    */
   async #worthFor({ state, unit, course, replacementArtifactId }) {
     if (!this.#earningsQuote) return null;
@@ -751,22 +757,41 @@ export class IssueDocument {
       const stored = prior?.manifest?.renderContext;
       if (stored && Object.hasOwn(stored, 'worth')) return stored.worth ?? null;
     }
-    const finishesDay = await this.#isLastUnfinished(state.learnerId, unit.unitId);
-    const price = await this.#earningsQuote.ifDone({
-      learnerId: state.learnerId, subject: unit.subject ?? null, unitId: unit.unitId ?? null,
-      courseId: unit.courseId ?? course?.courseId ?? null, finishesDay,
-    });
-    return worthLine(price);
+    const learnerId = state.learnerId;
+    const subject = unit.subject ?? null;
+    const sections = await this.#todaysSections(learnerId);
+    const mine = sections?.find((s) => s?.subject === subject) ?? null;
+    // An elective today (its section `excused`) is priced as one, exactly as
+    // `IssueSubjectNext`'s `unitView` asks the same port.
+    const elective = mine?.obligation?.state === 'excused';
+    const open = (sections ?? []).filter((s) => s?.obligation?.state === 'obligated');
+    const finishesDay = open.length === 1 && open[0]?.next?.unitId === unit.unitId;
+    const [reward, whatIf] = await Promise.all([
+      this.#earningsQuote.rewardFor({
+        learnerId,
+        unit: { unitId: unit.unitId ?? null, title: unit.title ?? null, subject, ...(elective ? { elective: true } : {}) },
+      }),
+      finishesDay
+        ? this.#earningsQuote.ifDone({
+          learnerId, subject, unitId: unit.unitId ?? null,
+          courseId: unit.courseId ?? course?.courseId ?? null, finishesDay: true,
+        })
+        : null,
+    ]);
+    if (!reward) return null;
+    return worthLine({ silver: reward.silver ?? 0, gems: reward.gems ?? 0, dayBonus: whatIf?.dayBonus ?? null });
   }
 
-  /** True when this unit is the learner's ONLY section still obligated today. */
-  async #isLastUnfinished(learnerId, unitId) {
-    if (!this.#planProjection?.project) return false;
+  /** Today's plan sections for the learner, or null when there is no plan reader or it fails. */
+  async #todaysSections(learnerId) {
+    if (!this.#planProjection?.project) return null;
     try {
       const { sections = [] } = await this.#planProjection.project({ learnerId });
-      const open = sections.filter((s) => s?.obligation?.state === 'obligated');
-      return open.length === 1 && open[0]?.next?.unitId === unitId;
-    } catch { return false; }
+      return Array.isArray(sections) ? sections : null;
+    } catch (error) {
+      this.#logger.warn?.('school.issue.worth-plan-failed', { learnerId, error: error?.message ?? String(error) });
+      return null;
+    }
   }
 
   async #issueWorksheetInstance({

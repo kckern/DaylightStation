@@ -46,4 +46,41 @@ describe('EarningsQuoteClient', () => {
       expect(log.warn).toHaveBeenCalledWith('school.earnings-quote.failed', expect.objectContaining({ op: 'ifDone', timeout: true }));
     } finally { vi.useRealTimers(); }
   });
+
+  it('rewardFor asks the sheet-reward port under the same limit', async () => {
+    const rewardFor = vi.fn(async () => ({ silver: 2, gems: 0 }));
+    const c = new EarningsQuoteClient({ getService: () => null, rewardFor, logger: logger() });
+    const unit = { unitId: 'u1', title: 'U', subject: 'math' };
+    expect(await c.rewardFor({ learnerId: 'learner1', unit })).toEqual({ silver: 2, gems: 0 });
+    expect(rewardFor).toHaveBeenCalledWith({ learnerId: 'learner1', unit });
+  });
+
+  it('rewardFor with no port answers null quietly', async () => {
+    const log = logger();
+    const c = new EarningsQuoteClient({ getService: () => null, logger: log });
+    expect(await c.rewardFor({ learnerId: 'learner1', unit: {} })).toBeNull();
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('prices nothing while coins are not live, without asking the economy', async () => {
+    const service = { quote: vi.fn(async () => ({ totals: { silver: 3 } })), ifDone: vi.fn() };
+    const rewardFor = vi.fn();
+    const log = logger();
+    const c = new EarningsQuoteClient({ getService: () => service, rewardFor, isLive: () => false, logger: log });
+    expect(await c.quote('learner1')).toBeNull();
+    expect(await c.ifDone({ learnerId: 'learner1', subject: 'math' })).toBeNull();
+    expect(await c.rewardFor({ learnerId: 'learner1', unit: {} })).toBeNull();
+    expect(service.quote).not.toHaveBeenCalled();
+    expect(rewardFor).not.toHaveBeenCalled();
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('a mode reader that throws counts as not live, and is logged', async () => {
+    const log = logger();
+    const service = { quote: vi.fn() };
+    const c = new EarningsQuoteClient({ getService: () => service, isLive: () => { throw new Error('catalog'); }, logger: log });
+    expect(await c.quote('learner1')).toBeNull();
+    expect(service.quote).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith('school.earnings-quote.failed', expect.objectContaining({ op: 'quote', error: 'catalog' }));
+  });
 });

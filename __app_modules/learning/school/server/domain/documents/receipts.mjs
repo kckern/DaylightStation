@@ -1075,8 +1075,11 @@ export function resultDocument({
   if (earned && Number.isFinite(earned.weekSilver)) {
     if (passed) {
       (earned.lines ?? []).forEach((l) => {
-        const gems = l.gems > 0 ? ` · +${l.gems} ${l.gems === 1 ? 'gem' : 'gems'}` : '';
-        blocks.push(text(`+${l.silver} silver${gems} · ${l.label}`));
+        const parts = [];
+        if (l.silver > 0) parts.push(`+${l.silver} silver`);
+        if (l.gems > 0) parts.push(`+${l.gems} ${l.gems === 1 ? 'gem' : 'gems'}`);
+        if (!parts.length) return;
+        blocks.push(text([...parts, l.label].filter(isNonEmptyString).join(' · ')));
       });
     }
     blocks.push(text(`${earned.weekSilver} silver this week`));

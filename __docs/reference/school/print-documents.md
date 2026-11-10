@@ -1141,6 +1141,66 @@ bibliographic fallback. The course's pacing `source.title` is never a worksheet
 reading source. Single and composed worksheets share that rule. Already-issued
 artifacts remain immutable and exact reprints retain their original wording.
 
+### Coins on paper: the worksheet's worth and the receipt's silver
+
+A child sees on paper how school work turns into coins, before and after.
+Both lines are priced by the economy (School imports no economy code; it holds
+one composition-wired `EarningsQuoteClient`), and both print **only while the
+catalog mode is `live`**: dry-run coins are not real, so paper never shows them.
+
+**Before: the worksheet header.** A bank worksheet prints one caption line
+under the answer-sheet badge, e.g. `Worth 2 silver` or
+`Worth 2 silver · +5 silver if it finishes your day`.
+
+- The sheet's price is `rewardFor({learnerId, unit})`, the same answer the
+  Portal's "print my next sheet", the bank screen and the agenda tape's
+  `Next: Math +2` show, so paper and screen cannot disagree. Its rules (what a
+  sheet can be credited with, total-gain pricing, null when unclear) are in the
+  [economy reference](../economy/economy.md#integration-points). An elective
+  (today's section `excused` in the plan) is priced as one.
+- The day bonus is added only when this sheet is the learner's **only**
+  obligated section left today (read from `PlanProjection`). It is
+  `ifDone({..., finishesDay: true}).dayBonus`: what turning today green would
+  add (`day-met`, and `week-met` when today closes the week). It never prints
+  on its own: a sheet whose own price is null prints no line at all, so a
+  retry or a second sheet of a subject already done today prints nothing.
+- The price is asked once, at print time, and frozen into the retained render
+  context (`worth`). An exact reprint replays it, and a regeneration under the
+  same artifact id reuses it, so a reprint says what the sheet was worth when
+  it first came out of the tray.
+- The header measure reserves one caption line for it, so the fit trial and
+  the drawn page agree.
+
+**After: the result receipt.** Below the score panel and notes, a passed
+sheet prints what the grade added, one line per earn rule whose amount rose,
+then the week's running total:
+
+```
++2 silver · Math (each day done)
++5 silver · Whole day done
+25 silver this week
+```
+
+- `CloseSessionOutcome` quotes the learner's week (`quote`, the uncached
+  preview) before the outcome is recorded and again before the receipt is
+  built; `earnedLines(before, after)` takes the difference per rule. A line
+  that only moved gems reads `+1 gem · <label>`.
+- A failed sheet prints only the running total (a fail adds nothing). A
+  re-settle or corrected receipt has no "before" quote, so it prints only the
+  total, never a whole week as "+25".
+- The total is the week's earnings preview (what the board calls this week's
+  silver), not the unspent balance the agenda tape prints as `In the bank`.
+- The legacy per-unit `You earned N coins.` line is separate and unchanged
+  (and off: school work is paid by PayoutService only).
+
+**Failure.** Every price has a **2-second** limit. A timeout, an error, the
+economy not built yet (startup order) or not live means that paper prints **no
+coin line** (if only the "before" quote fails, the receipt prints the total
+alone); the print is never delayed past the limit. Failures log
+`school.earnings-quote.failed` `{op, learnerId, error|timeout}`; a plan read
+that fails while pricing logs `school.issue.worth-plan-failed` and claims no
+day bonus.
+
 ### Card-ladder quizzes
 
 `node cli/school.mjs card-ladder quiz --deck <deckId|slug>` writes a
