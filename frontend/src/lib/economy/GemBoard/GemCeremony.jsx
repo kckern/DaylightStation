@@ -40,7 +40,7 @@ export default function GemCeremony({ awards = [], surface, contained = false, o
   };
 
   useEffect(() => {
-    log.info('gem-ceremony.shown', { surface, awards: awards.map((a) => `${a.learnerId}:${a.categoryId}:${a.kind}`) });
+    log.info('gem-ceremony.shown', { surface, awards: awards.map((a) => `${a.learnerId}:${a.ruleId ?? a.categoryId}:${a.kind}`) });
     try { onShow?.(awards); } catch { /* a sound that cannot play is not a failed ceremony */ }
     const timer = setTimeout(() => finish('timeout'), gemCeremonyDurationMs(shown.length));
     // Capture phase, consumed: the screen underneath also listens.
@@ -62,7 +62,7 @@ export default function GemCeremony({ awards = [], surface, contained = false, o
     >
       <div className="gem-ceremony__cards">
         {shown.map((a) => (
-          <div key={`${a.learnerId}:${a.categoryId}`} className={`gem-ceremony__card is-${a.kind}`}>
+          <div key={`${a.learnerId}:${a.categoryId}:${a.ruleId ?? ''}`} className={`gem-ceremony__card is-${a.kind}`}>
             <Face id={a.learnerId} name={a.name} />
             <GemIcon className="gem-ceremony__gem" color={a.color} size="5.5rem" label={`${a.label} gem`} />
             <span className="gem-ceremony__name">{a.name}</span>
