@@ -7,14 +7,15 @@
  * and measures what would play. Read-only.
  *
  * Hard checks (exit non-zero): no tone longer than 1.5 s; no audio effect on a `shown` cue; no
- * visual effect on a `said` cue. Reported (target flagged, not fatal): region-track DATA share of
+ * visual effect on a `said` cue; no stacked picture effects (`picture-overlap`: resolved picture
+ * pieces that overlap in time, one finding per overlapping group). Reported (target flagged, not fatal): region-track DATA share of
  * `shown` cues (>= 70%), same-subject groups resolved to one effect, R4 line/exchange/card
  * counts, scene edge leaks, certification level, and language counts per R9 group.
  */
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { resolveEffectiveCues, TONE_MAX_SEC } from '../../browser/content-filter/contentFilter.js';
+import { resolveEffectiveCues, pictureOverlaps, TONE_MAX_SEC } from '../../browser/content-filter/contentFilter.js';
 import { cueModality } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { LANGUAGE_GROUPS, languageGroupOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
 import { mergeProfilePatch } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
@@ -25,7 +26,7 @@ import { certify } from '../../server/domain/content-filter/refine/certification
 export const AUDIT_USAGE = 'Usage: contentfilter audit <ratingKey> [--profile <name>] [--part <id>] [--json]\n\n'
   + 'Resolve the title as the player does and report: tone cap, channel match, region-track share,\n'
   + 'same-subject groups, R4 counts, scene edge leaks, certification and language counts per group.\n'
-  + 'Exits 1 when a hard check (tone cap, channel match) fails.';
+  + 'Exits 1 when a hard check (tone cap, channel match, picture overlap) fails.';
 
 export const REGION_TARGET = 0.7;
 const AUDIO = new Set(['mute', 'bleep', 'duck']);
@@ -138,13 +139,16 @@ export function computeAudit({ edl, profile, override, part = null, refineReview
   const cert = edl?.timebase?.clock === 'vidangel' && nudged
     ? certify(edl, { at: edl.certification?.machine?.at ?? null, cueOverrides: overrides })
     : (edl?.certification || {});
+  // hard: picture overlap - the player never composes stacked picture effects; one entry per group
+  const overlaps = pictureOverlaps(cues);
   const checks = {
+    pictureOverlap: { ok: overlaps.length === 0, groups: overlaps.length, overlaps },
     toneCap: { ok: toneIds.length === 0, violations: toneIds.length, ids: toneIds, maxSec: TONE_MAX_SEC },
     channel: { ok: !audioOnShown.length && !visualOnSaid.length, audioOnShown: uniq(audioOnShown), visualOnSaid: uniq(visualOnSaid) },
   };
   return {
     rk: null, title: edl?.title ?? null, profile: null,
-    ok: checks.toneCap.ok && checks.channel.ok,
+    ok: checks.toneCap.ok && checks.channel.ok && checks.pictureOverlap.ok,
     checks,
     // Proof metric: the DATA share (shown cues carrying a track). The resolved share is info:
     // a cue whose track never sighted its subject, or a stronger effect, plays full-frame.
@@ -160,6 +164,7 @@ export function computeAudit({ edl, profile, override, part = null, refineReview
 }
 
 const p100 = (x) => (x == null ? 'n/a' : `${Math.round(x * 100)}%`);
+const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 const verdict = (ok) => (ok == null ? 'n/a' : ok ? 'PASS' : 'FAIL');
 
 export function formatAudit(r) {
@@ -167,6 +172,7 @@ export function formatAudit(r) {
   const rows = [
     ['tone cap (<= 1.5 s)', verdict(k.toneCap.ok), k.toneCap.violations ? `${k.toneCap.violations} over: ${k.toneCap.ids.join(', ')}` : '0 over'],
     ['channel match', verdict(k.channel.ok), k.channel.ok ? 'none misplaced' : `audio on shown: ${k.channel.audioOnShown.join(', ') || '-'}; visual on said: ${k.channel.visualOnSaid.join(', ') || '-'}`],
+    ['picture overlap', verdict(k.pictureOverlap.ok), k.pictureOverlap.ok ? 'none stacked' : `${k.pictureOverlap.groups} stacked: ${k.pictureOverlap.overlaps.map((o) => `${fmt(o.in)}-${fmt(o.out)} ${o.ids.join('+')}`).join('; ')}`],
     ['region tracks on shown', verdict(g.pass), `track data ${g.withTrackData}/${g.shown} (${p100(g.dataShare)}, target ${p100(g.target)}); resolved regional ${g.tracked}/${g.shown} (${p100(g.share)}), ${g.coarseEdge} coarse-edge`],
     ['same-subject groups', s.groups - s.noEffect ? verdict(s.resolvedOne === s.groups - s.noEffect) : 'n/a', `${s.groups} groups, ${s.members} members, ${s.resolvedOne} resolved to one effect (${p100(s.share)}), ${s.noEffect} with no effect (profile off or a scene covers them)`],
     ['lines / exchanges (R4)', '', `${l.muted} lines muted, ${l.skipped} exchanges skipped; ${l.wordsAsExchanges} words treated as exchanges; cards ${l.cardsApproved} approved, ${l.cardsGeneric} generic`],
@@ -185,8 +191,8 @@ export function formatAudit(r) {
 
 const readYaml = (p) => yaml.load(readFileSync(p, 'utf8')) || {};
 
-/** Load the cascade the way GetContentFilter does, then audit. Read-only. */
-export function runAudit({ rk, flags = {}, mediaFilterDir, dataFilterDir }) {
+/** Load the cascade the way GetContentFilter does: refined EDL (else raw), override, merged profile. Read-only. */
+export function loadCascade({ rk, flags = {}, mediaFilterDir, dataFilterDir }) {
   const rawPath = path.join(mediaFilterDir, 'edl', `${rk}.edl.yml`);
   if (!existsSync(rawPath)) throw new Error(`No EDL for ${rk} (${rawPath})`);
   const raw = readYaml(rawPath);
@@ -203,6 +209,12 @@ export function runAudit({ rk, flags = {}, mediaFilterDir, dataFilterDir }) {
   const profile = mergeProfilePatch(readYaml(profilePath), override.profilePatch);
   const reviewPath = path.join(dataFilterDir, 'review', `${rk}.refine.yml`);
   const refineReview = existsSync(reviewPath) ? readYaml(reviewPath) : null;
+  return { edl, profile, override, refineReview, name, refined: edl !== raw };
+}
+
+/** Load the cascade, then audit. Read-only. */
+export function runAudit({ rk, flags = {}, mediaFilterDir, dataFilterDir }) {
+  const { edl, profile, override, refineReview, name } = loadCascade({ rk, flags, mediaFilterDir, dataFilterDir });
   const report = computeAudit({ edl, profile, override, part: flags.part ?? null, refineReview });
   return { ...report, rk, profile: name };
 }

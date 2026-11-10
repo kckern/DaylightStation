@@ -174,3 +174,28 @@ describe('computeAudit rows', () => {
     expect(r.rows[0]).toMatchObject({ id: 'cue:w1', effect: 'mute', unsure: ['refine-unknown'] });
   });
 });
+
+describe('picture-overlap check', () => {
+  const piece = (id, effect, a, b, over = {}) => ({ id, effect, in: a, out: b, category: 'sex_any/sexually_suggestive', ...over });
+  const stackedOut = [
+    piece('f1', 'full-blur', 100, 110),
+    piece('r1@0', 'blur', 102, 105, { rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }),
+    piece('r1@1', 'blur', 105, 108, { rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }),
+    piece('f2', 'full-blur', 300, 310), piece('f3', 'full-blur', 305, 312),
+  ];
+  const resolveStacked = () => Object.assign([...stackedOut], { sceneSummary: {} });
+  it('fails with one finding per overlapping group, naming the cue ids', () => {
+    const r = computeAudit({ edl: film(), profile, override, resolve: resolveStacked });
+    expect(r.checks.pictureOverlap.ok).toBe(false);
+    expect(r.checks.pictureOverlap.groups).toBe(2); // not three pairs
+    expect(r.checks.pictureOverlap.overlaps[0].ids.sort()).toEqual(['f1', 'r1']);
+    expect(r.ok).toBe(false);
+    expect(formatAudit(r)).toMatch(/picture overlap\s+FAIL\s+2 stacked: 1:40-1:50 f1\+r1/);
+  });
+  it('passes once the precedence pass has run (the real resolver)', () => {
+    const stack = { ...film(), cues: [shown('p1', 100, 110), shown('p2', 103, 106, { regions: track(103, 106) })] };
+    const r = computeAudit({ edl: stack, profile: { categories: { sex_any: { effect: 'full-blur' } } }, override });
+    expect(r.checks.pictureOverlap).toMatchObject({ ok: true, groups: 0 });
+    expect(r.ok).toBe(true);
+  });
+});

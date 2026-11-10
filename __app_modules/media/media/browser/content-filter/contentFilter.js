@@ -163,7 +163,7 @@ function mergeParams(target, ...sources) {
  *   part: the media part being played. Refined cue times (`cueOverrides[id].refine.part`)
  *   apply only to that part; on another part the cue falls back to the synced coarse time.
  */
-export function resolveEffectiveCues({ edl, profile, override, part = null } = {}) {
+export function resolveEffectiveCues({ edl, profile, override, part = null, stackGuard = true } = {}) {
   const overrides = override?.cueOverrides || {};
   const cardByCue = new Map((override?.cards || []).map((c) => [c.after, c.text]));
   // sync remaps imported (foreign-timed) cues onto this file: t_local = t*scale + offset.
@@ -351,6 +351,9 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
     // Members are widened one by one inside resolveSubject; the pieces are not widened again.
     for (const piece of resolveSubject(subject, members, profile?.treatments)) out.push(piece);
   }
+  // Picture effects never stack: the strongest wins each instant (before scenes take over their own cues).
+  // `stackGuard: false` is for the stacked-moments scan only; the player always runs the pass.
+  if (stackGuard) resolvePictureStacking(out);
   const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
   sizeTones(out);
   out.sort((a, b) => a.in - b.in || a.out - b.out);
@@ -359,6 +362,96 @@ export function resolveEffectiveCues({ edl, profile, override, part = null } = {
   Object.defineProperty(out, 'notInCut', { value: notInCut, enumerable: false });
   Object.defineProperty(out, 'syncSummary', { value: summarizeSync(sync, { refinedEdl, syncFitsPart }), enumerable: false });
   return out;
+}
+
+/**
+ * Picture precedence: which of two overlapping picture pieces hides more of the frame.
+ * The ORDER lives here, one place: skip/skip-card > blackout > whole-frame blur (a `full-blur`,
+ * or any overlay with no rect) > regional (censor-bar / pixelate / blur on a rect). It is the
+ * scene HIDE_RANK with a rectless overlay lifted to whole-frame (2); STRENGTH breaks ties
+ * between effects of one rank (full-blur > rectless blur; pixelate = censor-bar).
+ */
+const PICTURE = new Set([...OVERLAY, 'skip', 'skip-card']);
+const wholeFrame = (c) => !(REGIONAL.has(c.effect) && c.rect);
+const pictureRank = (c) => (REGIONAL.has(c.effect) && wholeFrame(c) ? 2 : HIDE_RANK[c.effect]);
+const comparePicture = (a, b) => (pictureRank(a) - pictureRank(b)) || ((STRENGTH[a.effect] ?? 0) - (STRENGTH[b.effect] ?? 0));
+const STACK_EPS = 1e-6;
+const timeOverlap = (a, b) => a.in < b.out - STACK_EPS && b.in < a.out - STACK_EPS;
+const SKIPS = new Set(['skip', 'skip-card']);
+const isCard = (c) => c.effect === 'skip-card';
+/** Same effect over the same area: one thing on screen, so the two are one piece. */
+const sameArea = (a, b) => a.effect === b.effect && !isCard(a) && a.effect !== 'skip'
+  && (wholeFrame(a) ? wholeFrame(b) : (!wholeFrame(b) && JSON.stringify(a.rect) === JSON.stringify(b.rect)));
+/** Two pieces that would be drawn on top of one another (no skip-card pair: the hook owns those). */
+function stacked(a, b) {
+  if (!timeOverlap(a, b) || (isCard(a) && isCard(b))) return false;
+  // A skip inside a scene's blackout is deliberate (a scene keeps the cues that hide more than it does).
+  if ((a.effect === 'blackout' && SKIPS.has(b.effect)) || (b.effect === 'blackout' && SKIPS.has(a.effect))) return false;
+  if (sameArea(a, b)) return true;
+  return Math.max(pictureRank(a), pictureRank(b)) >= 2 && comparePicture(a, b) !== 0;
+}
+
+/**
+ * Overlapping picture effects never stack: for any instant the strongest effect wins (order at
+ * `pictureRank`), same-effect overlaps over the same area become one span, and a weaker piece is
+ * trimmed to the time outside every stronger one (dropped when nothing remains). Two regional
+ * pieces over different areas do not conflict: they are not on top of one another. Audio effects
+ * are never touched. Mutates `out`.
+ */
+function resolvePictureStacking(out) {
+  const picture = out.filter((c) => PICTURE.has(c.effect));
+  if (picture.length < 2) return;
+  const rest = out.filter((c) => !PICTURE.has(c.effect));
+  // 1. same effect, same area: union.
+  const merged = [];
+  const open = [];
+  for (const c of [...picture].sort((a, b) => a.in - b.in || a.out - b.out)) {
+    const into = open.find((m) => sameArea(m, c) && timeOverlap(m, c));
+    if (!into) { const m = { ...c }; open.push(m); merged.push(m); continue; }
+    into.out = Math.max(into.out, c.out);
+    into.cues = [...new Set([...(into.cues || [baseId(into.id)]), ...(c.cues || [baseId(c.id)])])];
+    if (c.heavy) into.heavy = true;
+  }
+  // 2. weaker trimmed to outside every stronger piece it is stacked under.
+  const kept = [];
+  for (const c of merged) {
+    const over = merged.filter((s) => s !== c && stacked(s, c) && comparePicture(s, c) > 0);
+    if (!over.length) { kept.push(c); continue; }
+    const parts = outsideSpans(c, over);
+    if (!parts.length) {
+      logger().sampled('content-filter.picture.stack.dropped', { id: c.id, effect: c.effect, under: over.map((s) => s.id) }, { maxPerMinute: 20, aggregate: true });
+      continue;
+    }
+    logger().sampled('content-filter.picture.stack.trimmed', { id: c.id, effect: c.effect, under: over.map((s) => s.id), parts: parts.length }, { maxPerMinute: 20, aggregate: true });
+    kept.push(...parts.map((r, k) => ({ ...c, id: parts.length > 1 || r.in !== c.in || r.out !== c.out ? `${c.id}#s${k}` : c.id, in: r.in, out: r.out })));
+  }
+  out.splice(0, out.length, ...rest, ...kept);
+}
+
+/**
+ * Stacked picture effects among resolved cues, one entry per connected group of overlapping
+ * pieces (never one per pair): `{ in, out, ids }` with the source cue ids. Empty when the
+ * precedence pass did its job. The audit's `picture-overlap` check and the scan both use it.
+ */
+export function pictureOverlaps(cues) {
+  const pieces = (cues || []).filter((c) => PICTURE.has(c.effect));
+  const parent = pieces.map((_, i) => i);
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const linked = new Set();
+  for (let i = 0; i < pieces.length; i++) {
+    for (let j = i + 1; j < pieces.length; j++) {
+      if (!stacked(pieces[i], pieces[j])) continue;
+      parent[find(i)] = find(j); linked.add(i); linked.add(j);
+    }
+  }
+  const groups = new Map();
+  for (const i of linked) {
+    const g = groups.get(find(i)) || { in: Infinity, out: -Infinity, ids: new Set() };
+    g.in = Math.min(g.in, pieces[i].in); g.out = Math.max(g.out, pieces[i].out);
+    for (const id of (pieces[i].cues?.length ? pieces[i].cues : [baseId(pieces[i].id)])) g.ids.add(id);
+    groups.set(find(i), g);
+  }
+  return [...groups.values()].map((g) => ({ in: g.in, out: g.out, ids: [...g.ids] })).sort((a, b) => a.in - b.in);
 }
 
 /**

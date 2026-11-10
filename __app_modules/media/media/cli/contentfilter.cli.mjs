@@ -28,6 +28,7 @@
  *   preflight <ratingKey>   Can a pipeline run happen here? (refine deps, Plex part)
  *   worker [--app <url>] [--data-dir <dir>]  The filter worker: claim Admin runs over HTTP, run them, hand back results
  *   review-stats [--since 30d] [--rk <id>]  Human review verdicts as machine-certification feedback (read-only)
+ *   stack-scan [--profile <name>] [--json]  Films whose refined EDL stacks picture effects (read-only)
  *   match [--section <id>]  Cross-reference your Plex movie library vs VidAngel
  *
  * Options:
@@ -1095,6 +1096,17 @@ async function main() {
     return;
   }
 
+  if (command === 'stack-scan') {
+    // Runs the player's resolver, a browser module; let plain Node load it. Its logger prints to stdout.
+    (await import('./contentfilter/registerExtensionless.mjs')).registerExtensionless();
+    const { runStackScan, formatStackScan } = await import('./contentfilter/stackScanCommand.mjs');
+    let report;
+    const stdoutWrite = process.stdout.write; process.stdout.write = (...a) => process.stderr.write(...a);
+    try { report = runStackScan({ flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() }); } catch (err) { console.error(`stack-scan failed: ${err.message}`); process.exit(1); } finally { process.stdout.write = stdoutWrite; }
+    if (flags.json) console.log(JSON.stringify(report, null, 2)); else console.log(formatStackScan(report));
+    return;
+  }
+
   if (command === 'worker') {
     const os = await import('os');
     const { runWorker, httpWorkerApi, STEP_TIMEOUT_MS } = await import('./contentfilter/workerCommand.mjs');
@@ -1433,6 +1445,8 @@ Commands:
   review-stats          Human review verdicts as machine-certification feedback: counts by kind/category/effect/stage,
                         remove rate by machine stage + unsure, action-change matrix, redo reasons, median dwell.
                         --since 30d|12h|date, --rk, --json. Read-only.
+  stack-scan            Films whose refined EDL stacks picture effects (whole-frame blur under regional blurs ...):
+                        overlapping groups before/after the precedence guardrail. --profile, --json. Read-only.
   certify <ratingKey>   Show/recompute a refined EDL's certification (machine: every mute precise);
                         --parent --by <name> records a sign-off. --write.
   migrate-refined <rk>  Move a title's refined cue times from its override into the shareable

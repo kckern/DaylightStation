@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveEffect, resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
+import { resolveEffect, resolveEffectiveCues, cuesActiveAt, pictureOverlaps } from "./contentFilter.js";
 import { filterSummary } from './filterSummary.js';
 
 describe('resolveEffect', () => {
@@ -497,10 +497,13 @@ describe('same-subject cues resolve to one effect (R6)', () => {
     const sorted = [...out].sort((a, b) => a.in - b.in);
     sorted.slice(1).forEach((c, i) => expect(c.in).toBeGreaterThanOrEqual(sorted[i].out - 0.5));
   });
-  it('without a subject the same tags stay separate effects', () => {
+  it('without a subject the same tags still never stack: the whole-frame blur wins, the rest is trimmed', () => {
     const cues = bttf().map(({ subject: _s, ...c }) => c);
     const out = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync } });
-    expect(new Set(out.map((c) => String(c.id).split(/[@#]/)[0])).size).toBe(4);
+    expect(pictureOverlaps(out)).toEqual([]);
+    for (let t = 100; t < 125; t += 0.05) expect(out.filter((c) => t >= c.in && t < c.out && c.effect !== 'bleep').length).toBeLessThanOrEqual(1);
+    const stacked = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync }, stackGuard: false });
+    expect(pictureOverlaps(stacked).length).toBeGreaterThan(0);
   });
   it('an untracked group is one full-blur over the union', () => {
     const cues = bttf().map(({ regions: _r, ...c }) => c);
@@ -1086,5 +1089,76 @@ describe('household nudges (startMs/endMs)', () => {
     const w = run({ cueOverrides: { w: { nudgeMs: 500 } } }).find((c) => c.id === 'w');
     expect(w.in).toBeCloseTo(14.6, 6);
     expect(w.handFixed).toBeUndefined();
+  });
+});
+
+describe('picture-effect precedence (no stacked blurs)', () => {
+  const sync = { offsetSec: 0, scale: 1 };
+  const zero = { pad: { in: 0, out: 0 }, minSec: 0 };
+  const profile = {
+    categories: { sex_any: { effect: 'full-blur' }, violence: { effect: 'blur' }, language: { effect: 'mute' } },
+    treatments: { 'full-blur': zero, blur: zero, mute: zero },
+  };
+  const shown = (id, a, b, over = {}) => ({ id, type: 'skip', category: 'sex_any/sexually_suggestive', in: a, out: b, precision: 'frame', ...over });
+  const track = (a, b) => [{ in: a, grid: 6, cells: [8, 9], box: { x: 0.3, y: 0.2, w: 0.3, h: 0.2 } }, { in: b, cells: [] }];
+  const run = (cues, over = {}, prof = profile) => resolveEffectiveCues({ edl: { timebase: { clock: 'vidangel' }, cues }, profile: prof, override: { sync, ...over }, part: 'p' });
+  const picture = (out) => out.filter((c) => ['blur', 'full-blur', 'censor-bar', 'pixelate', 'blackout'].includes(c.effect));
+
+  it('a whole-frame blur over a regional heavy blur resolves to the whole-frame blur alone', () => {
+    const out = picture(run([
+      shown('fb', 100, 110),
+      shown('rg', 103, 106, { regions: track(103, 106) }),
+    ]));
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ effect: 'full-blur' });
+    expect(out[0].in).toBeLessThanOrEqual(100); expect(out[0].out).toBeGreaterThanOrEqual(110);
+  });
+  it('an identical whole-frame pair is one piece', () => {
+    const out = picture(run([shown('a', 100, 110), shown('b', 100, 110)]));
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ effect: 'full-blur' });
+    expect(out[0].in).toBeLessThanOrEqual(100); expect(out[0].out).toBeGreaterThanOrEqual(110);
+  });
+  it('partly overlapping whole-frame blurs merge into one span', () => {
+    const out = picture(run([shown('a', 100, 110), shown('b', 105, 120)]));
+    expect(out).toHaveLength(1);
+    expect(out[0].in).toBeLessThanOrEqual(100); expect(out[0].out).toBeGreaterThanOrEqual(120);
+  });
+  it('a regional blur sticking out of a whole-frame blur is trimmed to the outside part', () => {
+    const out = picture(run([
+      shown('fb', 100, 110),
+      shown('rg', 108, 115, { regions: track(108, 115) }),
+    ]));
+    const rg = out.filter((c) => c.effect === 'blur');
+    expect(rg).toHaveLength(1);
+    const fb = out.find((c) => c.effect === 'full-blur');
+    expect(rg[0].in).toBeCloseTo(fb.out, 6);   // starts where the whole-frame blur ends
+    expect(rg[0].out).toBeGreaterThan(114.9);
+    expect(pictureOverlaps(out)).toEqual([]);
+  });
+  it('regional blurs in different places never trim one another', () => {
+    const other = [{ in: 100, grid: 6, cells: [20], box: { x: 0.7, y: 0.6, w: 0.2, h: 0.2 } }, { in: 110, cells: [] }];
+    const out = picture(run([shown('r1', 100, 110, { regions: track(100, 110) }), shown('r2', 100, 110, { regions: other })]));
+    expect(new Set(out.map((c) => c.id.split('@')[0]))).toEqual(new Set(['r1', 'r2']));
+    expect(out.every((c) => c.in >= 100 && c.out <= 110)).toBe(true);
+  });
+  it('audio effects are untouched by a picture span over them', () => {
+    const word = { id: 'w', type: 'mute', category: 'language/profanity/damn', label: 'damn', in: 104, out: 104.4, precision: 'ms' };
+    const alone = run([word]).find((c) => c.id === 'w');
+    const under = run([shown('fb', 100, 110), word]).find((c) => c.id === 'w');
+    expect(under).toEqual(alone);
+  });
+  it('a skip-card trims a whole-frame blur under it; a skip inside a blackout is not a stack', () => {
+    const out = run([shown('fb', 100, 120), shown('sk', 110, 115, { category: 'violence/gore' })], {}, { ...profile, categories: { ...profile.categories, violence: { effect: 'skip' } } });
+    const card = out.find((c) => c.effect === 'skip-card' || c.effect === 'skip');
+    expect(card).toBeTruthy();
+    expect(pictureOverlaps(out)).toEqual([]);
+    expect(out.filter((c) => c.effect === 'full-blur').every((c) => c.out <= card.in + 1e-6 || c.in >= card.out - 1e-6)).toBe(true);
+    expect(pictureOverlaps([{ id: 'b', effect: 'blackout', in: 0, out: 10 }, { id: 's', effect: 'skip-card', in: 2, out: 4 }])).toEqual([]);
+  });
+  it('a disabled override cue never resolves, nor adds a stacked piece next to an active one', () => {
+    const out = run([shown('on', 100, 110), shown('off', 101, 109)], { cueOverrides: { off: { disabled: true } } });
+    expect(out.some((c) => c.id.startsWith('off') || (c.cues || []).includes('off'))).toBe(false);
+    expect(picture(out)).toHaveLength(1);
   });
 });

@@ -113,6 +113,21 @@ overlay effects including blur, censor bars, pixelation, full blur, and title ca
 Timing pads protect against playback-driver granularity and source drift. Approximate
 mute cues are widened more than skips because a narrow window can leak a spoken word.
 
+### Picture effects never stack
+
+Overlapping picture effects (whole-frame blur under regional blurs, an identical pair, a blur under a
+blackout) resolve to the strongest for each instant, in one pass that runs after the per-cue and
+same-subject resolution and before scenes (`resolvePictureStacking` in `contentFilter.js`). The
+strength order is defined once there (`pictureRank`): `skip`/`skip-card` > `blackout` >
+whole-frame blur (`full-blur`, or any overlay with no rect) > regional (`censor-bar`, `pixelate`,
+`blur` on a rect). It reuses the scene `HIDE_RANK` with a rectless overlay lifted to whole-frame;
+ties between effects of one rank fall to `STRENGTH`. A weaker piece is trimmed to the time outside
+every stronger one (`outsideSpans`, ids gain `#s<n>`; dropped when nothing remains). Same effect
+over the same area (whole-frame, or the same rect) merges into one span. Two regional pieces over
+different areas never trim one another, and a skip inside a scene's blackout is the scene's own
+rule (it keeps the cues that hide more), not a stack. Audio effects are never touched.
+`resolveEffectiveCues({ stackGuard: false })` skips the pass for the scan only.
+
 ### Channel-matched effects (R1, R2)
 
 Every cue has a modality (`cueModality`, `shared/contracts/content-filter/cueModality.mjs`):
@@ -152,6 +167,9 @@ hard check fails. (The frontend logger writes to stdout; the CLI sends it to std
 
 - **Hard checks:** no bleep longer than 1.5 s (count and ids); no audio effect on a `shown` cue;
   no visual effect on a `said` cue (ids).
+  `picture-overlap`: resolved picture pieces that stack (`pictureOverlaps`), one finding per overlapping
+  group with its time span and source cue ids. The precedence pass keeps it empty; a failure means a
+  stacking path the pass does not cover.
 - **Region tracks:** `track data n/m` is the Proof metric: the share of `shown` cues (that
   resolve to an overlay) whose data carries a region track, target 70%, flagged PASS/FAIL but not
   fatal. `resolved regional n/m` is printed as information: the cues that actually play a
@@ -166,6 +184,11 @@ hard check fails. (The frontend logger writes to stdout; the CLI sends it to std
 - **Language (R9):** count per group (profanity, blasphemy, sexual, slurs, childish, and `unknown`
   for a language tag whose category names no group) with the effect each resolved to (`off` when
   the profile turns it off).
+
+`contentfilter stack-scan [--profile <name>] [--json]` (`cli/contentfilter/stackScanCommand.mjs`) is the
+read-only survey: for every film with a refined EDL it counts the overlapping picture groups the
+resolver produces without the precedence pass (`before`) and with it (`after`, must be 0), and lists
+only film ids and counts.
 
 ### Audio effects: holds, bleep tone, pauses
 
