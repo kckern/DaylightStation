@@ -174,6 +174,26 @@ describe('grouped rides', () => {
     expect(urls.some((u) => u.includes('group:'))).toBe(false);
   });
 
+  it('a group with more than 8 segments still fetches its newest segment (segments are oldest-first)', async () => {
+    const segments = Array.from({ length: 10 }, (_, i) => ({ sessionId: `g${i}`, rings: 1 }));
+    sessions = [{ id: 'group:big', isGroup: true, segments }];
+    serve();
+    renderHook(() => useWorkoutCoinCeremony());
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/api/v1/earnings/workout/g9/paid'));
+    expect(api.mock.calls.filter((c) => c[0].endsWith('/paid'))).toHaveLength(8);
+    expect(api).not.toHaveBeenCalledWith('/api/v1/earnings/workout/g0/paid');
+  });
+
+  it('a payout keyed by a segment id behind a group entry plays a ceremony', async () => {
+    sessions = [{ id: 'group:g1', isGroup: true, segments: [{ sessionId: 'a1', rings: 10 }] }];
+    paid.a1 = [learner('learner-a', [entry('t9', 5, 1000)], 40)];
+    serve();
+    const { result } = await mount();
+    await waitFor(() => expect(result.current.ceremony).not.toBeNull());
+    expect(result.current.ceremony.sessionId).toBe('a1');
+    expect(result.current.ceremony.learners[0]).toMatchObject({ gained: { silver: 5 } });
+  });
+
   it('the seen record lives under the v2 key', async () => {
     localStorage.clear(); sessions = ['s1']; serve();
     renderHook(() => useWorkoutCoinCeremony());

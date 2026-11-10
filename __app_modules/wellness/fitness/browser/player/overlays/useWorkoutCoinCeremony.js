@@ -57,7 +57,7 @@ export function expandSessionIds(list) {
   for (const s of list || []) {
     if (!s) continue;
     if (s.isGroup || Array.isArray(s.segments)) {
-      for (const seg of s.segments || []) if (seg?.sessionId) out.push(String(seg.sessionId));
+      for (const seg of [...(s.segments || [])].reverse()) if (seg?.sessionId) out.push(String(seg.sessionId));
     } else {
       const id = s.sessionId ?? s.id;
       if (id) out.push(String(id));
