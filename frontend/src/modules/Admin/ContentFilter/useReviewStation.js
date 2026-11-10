@@ -17,6 +17,7 @@ const round3 = (v) => Math.round(v * 1000) / 1000;
 const SCENE_EFFECTS = new Set(['skip', 'blackout']);
 // A held [ or ] changes the level many times a second; the film's setting is written once it settles.
 const LEVEL_DEBOUNCE_MS = 400;
+const REWORK_ARM_MS = 4000;
 
 export function useReviewStation({ ratingKey, data, reload, selected, select, runBusy = false }) {
   const rk = String(ratingKey);
@@ -181,6 +182,16 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
     });
   };
 
+  // Shift+D arms; a second press within REWORK_ARM_MS sends. The button click is one step (`rework`).
+  const armed = useRef(null);
+  const reworkKey = () => {
+    if (!flagged.length || runBusy) { rework(); return; }
+    if (armed.current) { clearTimeout(armed.current); armed.current = null; rework(); return; }
+    setMessage(`Shift+D again to send ${flagged.length} for rework`);
+    armed.current = setTimeout(() => { armed.current = null; setMessage((m) => (String(m || '').startsWith('Shift+D again') ? null : m)); }, REWORK_ARM_MS);
+  };
+  useEffect(() => () => clearTimeout(armed.current), []);
+
   const replay = () => {
     if (!row) return;
     arrived.current.replays += 1;
@@ -209,8 +220,8 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
       const r = latest.current.rows?.find((x) => x.id === latest.current.selectedId);
       if (r) previewStore.jumpToCue({ in: r.in });
     } catch (err) {
-      if (latest.current.rk !== rk) return;
       logger.warn('content_filter.review.bleep_level_failed', { rk, level: value, error: err.message });
+      if (latest.current.rk !== rk) return;
       setMessage(err.message || 'The bleep level did not save.');
     } finally {
       if (st.value === value) { st.value = null; setPendingLevel(null); }
@@ -242,7 +253,7 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
   }), [rows]);
 
   const handlers = {
-    next: () => step(1), prev: () => step(-1), replay, rework, verdict, undo, effect, widen,
+    next: () => step(1), prev: () => step(-1), replay, rework: reworkKey, helpOpen, verdict, undo, effect, widen,
     cycleKind: () => setScope({ ...scope, kind: nextKind(scope.kind) }),
     bleepLevel: changeBleepLevel,
     help: () => setHelpOpen((v) => !v),

@@ -860,19 +860,21 @@ level. `?` opens the whole keymap, Esc closes it.
   words `M` mute, `P` bleep; picture `B` blur, `K` skip; scenes `K` skip, `B` blackout. An action key
   applies the effect through the existing `PUT /:rk/cues/:id` / `/scenes/:id` and records an `approve`
   carrying `change: { from, to }`. `W` works on single-part rows (a scene, or a group of one cue); a
-  multi-cue group says "Widen one part at a time."
+  multi-cue group says "Widen one part at a time." The approve survives the re-audit that shifts the
+  row: a mark also holds when the row's span equals the mark's recorded `change.to` edges (an edge
+  nudge moves the re-audited row). While the `?` sheet is open only `?` and `Esc` act.
 - **Verdict semantics.** `approve` = fine as it is; `ignore` = no opinion and counts as done; `remove`
   disables the cue or scene (a false positive; it is terminal once the re-audit lands, because the row
   leaves the audit); `redo` = rework, with an optional reason. Undo (`U`, or `DELETE`) drops the verdict
   and reverts what it applied, including merged in-place changes (the effect or edges go back to `from`,
-  a removed row is re-enabled). A verdict whose row's span later moves is dropped and the row returns to
+  a removed row is re-enabled; re-verdicting over a `remove` also re-enables and re-audits). A verdict whose row's span later moves is dropped and the row returns to
   unreviewed.
 - **Permalinks.** Every filter has one: `/admin/content/filter/<ratingKey>/<rowId>` selects and seeks
   that row (an unknown id says "That filter isn't in this film any more"); selecting a row updates the
   URL in place.
 - **Timeline.** Under the player, a review timeline shows the rows in the current scope (it follows the
   kind and action filters) with the cursor; clicking a row seeks to it.
-- **Rework.** `Shift+D` queues one run for only the rows flagged redo: a send-back of their cues, or the
+- **Rework.** `Shift+D` (press once to arm, again within 4 s to send; the button is one step; at most 500 reasons) queues one run for only the rows flagged redo: a send-back of their cues, or the
   scenes stage when only scene rows are flagged (scene rows stay flagged when mixed with cues). Each
   row's redo reason is stored on the run.
 - **Bleep level.** The bleep tone volume, effective = film setting, else household profile `bleepLevel`,

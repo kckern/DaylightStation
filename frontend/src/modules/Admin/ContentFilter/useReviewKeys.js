@@ -56,6 +56,8 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
         return take(() => openRedo(false));
       }
       if (key === 'Escape') { if (h.escape?.()) take(); return; }
+      // The help sheet is read-only: only Esc and ? (which closes it) act while it is open.
+      if (h.helpOpen && key !== '?') return take();
       if (key === 'ArrowRight' || (key === 'Tab' && !e.shiftKey)) return take(h.next);
       if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) return take(h.prev);
       if (key === ' ') return take(h.replay);

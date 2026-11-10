@@ -26,9 +26,12 @@ describe('rework flagged', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ path: 'api/v1/content-filter/77/jobs', body: { kind: 'send-back', cues: ['a', 'b', 'c'], reasons: { 'cue:a': 'edges' } }, method: 'POST' });
   });
-  it('Shift+D triggers the same rework', async () => {
+  it('Shift+D arms, then a second press triggers the same rework', async () => {
     payload = base([row('cue:a', 'words', ['a'], redo('timing'))]);
     show();
+    fireEvent.keyDown(document.body, { key: 'D', shiftKey: true });
+    expect(await screen.findByText('Shift+D again to send 1 for rework')).toBeTruthy();
+    expect(calls).toHaveLength(0);
     fireEvent.keyDown(document.body, { key: 'D', shiftKey: true });
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toEqual({ kind: 'send-back', cues: ['a'], reasons: { 'cue:a': 'timing' } });

@@ -45,7 +45,7 @@ export function ReviewPage() {
   };
   // Opening a permalink: select the row and seek to it once (the store holds the jump until the player binds).
   // A different film on a mounted page: forget the old selection, parked jump and handled permalink.
-  useEffect(() => () => { opened.current = null; setSelected(null); previewStore.clearPending(); }, [ratingKey]);
+  useEffect(() => () => { opened.current = null; setSelected(null); setNotice(null); previewStore.clearPending(); }, [ratingKey]);
   useEffect(() => {
     if (!rowId || !data?.rows || opened.current === rowId) return;
     opened.current = rowId;

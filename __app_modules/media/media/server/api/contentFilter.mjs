@@ -101,6 +101,7 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         return res.status(400).json({ error: 'cues must be cue ids' });
       }
       if (reasons != null && !(typeof reasons === 'object' && !Array.isArray(reasons)
+        && Object.keys(reasons).length <= 500
         && Object.entries(reasons).every(([k, v]) => /^[A-Za-z0-9_:-]+$/.test(k) && /^[a-z]+$/.test(String(v))))) {
         return res.status(400).json({ error: 'reasons must map row ids to a reason' });
       }
@@ -279,8 +280,9 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         const mark = await contentFilterReview.setVerdict(key(req), req.params.rowId, {
           verdict: b.verdict ?? 'approve', reason: b.reason, change: b.change, span: b.span, by: b.by, dwellMs: b.dwellMs, replays: b.replays,
         });
-        if (b.verdict === 'remove' || b.change) reaudit(res, key(req));
-        res.json({ mark });
+        if (b.verdict === 'remove' || b.change || mark.reenabled) reaudit(res, key(req));
+        const { reenabled: _re, ...stored } = mark;
+        res.json({ mark: stored });
       } catch (e) { send(res, e); }
     }));
     router.delete('/:ratingKey/review/:rowId', asyncHandler(async (req, res) => {

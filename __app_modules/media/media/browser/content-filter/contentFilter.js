@@ -411,6 +411,8 @@ function resolvePictureStacking(out) {
     into.out = Math.max(into.out, c.out);
     into.cues = [...new Set([...(into.cues || [baseId(into.id)]), ...(c.cues || [baseId(c.id)])])];
     if (c.heavy) into.heavy = true;
+    // Merging must never weaken the effect: the stronger (higher) level wins.
+    if (typeof c.level === 'number' && !(typeof into.level === 'number' && into.level >= c.level)) into.level = c.level;
   }
   // 2. weaker trimmed to outside every stronger piece it is stacked under.
   const kept = [];
@@ -419,10 +421,10 @@ function resolvePictureStacking(out) {
     if (!over.length) { kept.push(c); continue; }
     const parts = outsideSpans(c, over);
     if (!parts.length) {
-      logger().sampled('content-filter.picture.stack.dropped', { id: c.id, effect: c.effect, under: over.map((s) => s.id) }, { maxPerMinute: 20, aggregate: true });
+      logger().sampled('content-filter.picture.stack.dropped', { id: c.id, effect: c.effect, under: over.map((s) => s.id) }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
       continue;
     }
-    logger().sampled('content-filter.picture.stack.trimmed', { id: c.id, effect: c.effect, under: over.map((s) => s.id), parts: parts.length }, { maxPerMinute: 20, aggregate: true });
+    logger().sampled('content-filter.picture.stack.trimmed', { id: c.id, effect: c.effect, under: over.map((s) => s.id), parts: parts.length }, { maxPerMinute: 20, aggregate: true, level: 'debug' });
     kept.push(...parts.map((r, k) => ({ ...c, id: parts.length > 1 || r.in !== c.in || r.out !== c.out ? `${c.id}#s${k}` : c.id, in: r.in, out: r.out })));
   }
   out.splice(0, out.length, ...rest, ...kept);

@@ -250,7 +250,6 @@ describe('ContentFilterReview verdicts: review round 2', () => {
   ];
   const va1 = [110.2, 110.6];
   it.each([['effect then widen', 0], ['widen then effect', 1]])('%s: undo restores both the original effect and the original edges', async (_n, order) => {
-    const warns = [];
     const { review, state } = setup({ audit: { ok: true, digest: 'D', rows: rows() } });
     state.override.cueOverrides = { va1: { effect: 'mute', startMs: 100100, endMs: 100700 } };
     const eff = { from: 'mute', to: 'bleep' };
@@ -260,7 +259,6 @@ describe('ContentFilterReview verdicts: review round 2', () => {
     state.override.cueOverrides.va1 = { effect: 'bleep', startMs: 100000, endMs: 100800 };
     await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
     expect(state.override.cueOverrides.va1).toEqual({ effect: 'mute', startMs: 100100, endMs: 100700 });
-    void warns;
   });
   it('warns when an edge restore is skipped (partial edges)', async () => {
     const warn = vi.fn();
@@ -272,6 +270,29 @@ describe('ContentFilterReview verdicts: review round 2', () => {
     await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: { in: 110.1 }, to: { in: 110, out: 110.8 } }, span: va1 });
     await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
     expect(warn).toHaveBeenCalledWith('content-filter.review.undo.edges-skipped', expect.objectContaining({ rowId: 'cue:va1' }));
+  });
+  it('a widen keeps its approve once the re-audit shifts the row to the widened span', async () => {
+    const audit = { ok: true, digest: 'D', rows: rows() };
+    const { review } = setup({ audit });
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: { in: 110.2, out: 110.6 }, to: { in: 109.7, out: 111.1 } }, span: va1 });
+    audit.rows = [{ ...audit.rows[0], in: 109.7, out: 111.1 }, audit.rows[1]];
+    const r = await review.get({ ratingKey: '9' });
+    expect(r.reviewed).toBe(1);
+    expect(r.rows[0].verdict).toMatchObject({ verdict: 'approve' });
+    expect(r.signOff.missing.join('|')).not.toMatch(/changed since/);
+  });
+  it('a mark whose row moved somewhere other than its recorded change still reads as changed', async () => {
+    const audit = { ok: true, digest: 'D', rows: rows() };
+    const { review } = setup({ audit });
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: { in: 110.2, out: 110.6 }, to: { in: 109.7, out: 111.1 } }, span: va1 });
+    audit.rows = [{ ...audit.rows[0], in: 109, out: 111.1 }, audit.rows[1]];
+    expect((await review.get({ ratingKey: '9' })).reviewed).toBe(0);
+  });
+  it('re-verdict over a remove reports that the cue was re-enabled', async () => {
+    const { review } = setup({ audit: { ok: true, digest: 'D', rows: rows() } });
+    await review.setVerdict('9', 'cue:va1', { verdict: 'remove', span: va1 });
+    const m = await review.setVerdict('9', 'cue:va1', { verdict: 'approve', span: va1 });
+    expect(m.reenabled).toBe(true);
   });
   it('a scene target on a refined EDL with no scenes array is a 404, not a TypeError', async () => {
     const s = base(); delete s.refined.scenes;

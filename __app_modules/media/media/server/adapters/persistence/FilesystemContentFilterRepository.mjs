@@ -137,8 +137,14 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
   /** Append one review-history entry (append-only: nothing rewrites or drops earlier entries). */
   async appendReviewHistory(ratingKey, entry) {
     const rel = `content-filter/review-history/${ratingKey}.yml`;
-    const prior = this.#readYaml(this.#householdDir, rel);
-    const entries = Array.isArray(prior?.entries) ? prior.entries : [];
+    const filePath = buildContainedPath(this.#householdDir, rel);
+    let entries = [];
+    if (filePath && fileExists(filePath)) {
+      // An unreadable history is never rewritten from scratch: that would erase every earlier entry.
+      const prior = readYamlFromPath(filePath);
+      if (prior != null && !Array.isArray(prior.entries)) throw new Error(`review history for ${ratingKey} has no entries list; refusing to overwrite it`);
+      entries = prior?.entries || [];
+    }
     this.#writeYaml(this.#householdDir, rel, { entries: [...entries, entry] });
   }
 

@@ -24,7 +24,7 @@ function Lane({ name, label, rows, from, span, selectedId, onSelect }) {
             <button key={r.id} type="button" tabIndex={-1} data-mark={r.id} className={cls}
               aria-label={`${r.label}, ${timecode(r.in)}`} title={`${r.label} ${timecode(r.in)}–${timecode(out)}`}
               style={{ left: pct((r.in - from) / span), width: `max(4px, ${pct((out - r.in) / span)})` }}
-              onClick={() => onSelect(r)} />
+              onMouseDown={(e) => e.preventDefault()} onClick={() => onSelect(r)} />
           );
         })}
       </div>

@@ -65,4 +65,12 @@ describe('useReviewKeys', () => {
     const lvl = vi.fn(); render(<Host h={{ ...handlers(), bleepLevel: lvl }} />);
     press(']'); press('['); expect(lvl.mock.calls.map((c) => c[0])).toEqual([0.05, -0.05]);
   });
+  it('while the help sheet is open, verdict and action keys do nothing; ? still closes it', () => {
+    const h = { ...handlers(), helpOpen: true };
+    render(<Host h={h} />);
+    for (const k of ['a', 'r', 'w', 'm', 'ArrowRight', ' ']) press(k);
+    expect(h.verdict).not.toHaveBeenCalled(); expect(h.widen).not.toHaveBeenCalled(); expect(h.effect).not.toHaveBeenCalled();
+    expect(h.next).not.toHaveBeenCalled(); expect(h.replay).not.toHaveBeenCalled();
+    press('?', { shiftKey: true }); expect(h.help).toHaveBeenCalled();
+  });
 });

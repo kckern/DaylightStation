@@ -14,7 +14,7 @@ export const INDEX_TTL_MS = 10 * 60 * 1000;
 const FAILED_LIVE_TTL_MS = 30 * 1000;
 
 export class ContentFilterLibrary {
-  #repo; #jobs; #digestOf; #now; #plex; #live = null; #liveAt = null; #liveP = null; #index = null; #indexAt = 0; #facts = new Map();
+  #repo; #jobs; #digestOf; #now; #plex; #live = null; #liveAt = null; #liveP = null; #gen = 0; #index = null; #indexAt = 0; #facts = new Map();
 
   constructor({ contentFilterRepository, jobs, digestOf, now = () => Date.now(), plex = null }) {
     if (!contentFilterRepository || !jobs || !digestOf) throw new Error('ContentFilterLibrary requires contentFilterRepository, jobs and digestOf');
@@ -23,7 +23,7 @@ export class ContentFilterLibrary {
 
   /** Forget one film's facts (or everything, with no key: the index too). */
   invalidate(ratingKey) {
-    if (ratingKey == null) { this.#index = null; this.#live = null; this.#liveAt = null; this.#facts.clear(); return; }
+    if (ratingKey == null) { this.#index = null; this.#live = null; this.#liveAt = null; this.#liveP = null; this.#gen++; this.#facts.clear(); return; }
     this.#facts.delete(String(ratingKey));
   }
 
@@ -46,24 +46,30 @@ export class ContentFilterLibrary {
     if (!this.#plex) return null;
     const ttl = this.#live ? INDEX_TTL_MS : FAILED_LIVE_TTL_MS;
     if (this.#liveAt !== null && this.#now() - this.#liveAt <= ttl) return this.#live;
-    this.#liveP ??= this.#sweepLive().finally(() => { this.#liveP = null; });
+    if (!this.#liveP) {
+      const p = this.#sweepLive().finally(() => { if (this.#liveP === p) this.#liveP = null; });
+      this.#liveP = p;
+    }
     return this.#liveP;
   }
 
   async #sweepLive() {
-    const live = new Map();
+    const gen = this.#gen;
+    let live = new Map();
     try {
       const sections = (await this.#plex.getLibrarySections())?.MediaContainer?.Directory || [];
       for (const sec of sections.filter((d) => d.type === 'movie')) {
         const items = (await this.#plex.getContainer(`/library/sections/${sec.key}/all`))?.MediaContainer?.Metadata || [];
         for (const it of items) live.set(String(it.ratingKey), { title: it.title ?? null, year: it.year ?? null });
       }
-      this.#live = live;
+      if (gen === this.#gen) this.#live = live;
     } catch {
-      this.#live = null;
+      live = null;
+      if (gen === this.#gen) this.#live = null;
     }
-    this.#liveAt = this.#now();
-    return this.#live;
+    // A sweep that began before an invalidate() hands its answer to its caller but does not cache it.
+    if (gen === this.#gen) this.#liveAt = this.#now();
+    return gen === this.#gen ? this.#live : live;
   }
 
   async #film(rk, indexTitle) {

@@ -20,6 +20,17 @@ const VERDICTS = new Set(['approve', 'remove', 'ignore', 'redo']);
 const REDO_REASONS = new Set(['edges', 'category', 'action', 'timing', 'other']);
 const WORD_VALUES = new Set(['off', 'mute', 'bleep']);
 const sameSpan = (a, b) => Array.isArray(a) && Array.isArray(b) && Math.abs(a[0] - b[0]) <= SPAN_EPS && Math.abs(a[1] - b[1]) <= SPAN_EPS;
+/**
+ * A mark holds while its row still sits where the mark was made, or where the mark's own recorded
+ * change put it (an edge nudge shifts the re-audited row; change sides are local seconds, like spans).
+ */
+function markHolds(m, r) {
+  const span = [r.in, r.out];
+  if (sameSpan(m.span, span)) return true;
+  const to = m.change?.to;
+  if (!to || typeof to !== 'object' || !Array.isArray(m.span)) return false;
+  return sameSpan([to.in ?? m.span[0], to.out ?? m.span[1]], span);
+}
 const ms3 = (t) => Math.round(t * 1000) / 1000;
 
 /** Marks that still count against the audit rows: { reviewed, changed } (a moved row's mark is `changed`). */
@@ -27,7 +38,7 @@ export function countReviewed(rows = [], marks = {}) {
   let reviewed = 0; let changed = 0;
   for (const r of rows) {
     const m = marks[r.id];
-    if (m && sameSpan(m.span, [r.in, r.out])) reviewed++; else if (m) changed++;
+    if (m && markHolds(m, r)) reviewed++; else if (m) changed++;
   }
   return { reviewed, changed };
 }
@@ -147,7 +158,7 @@ export class ContentFilterReview {
             if (ids.length !== 1) { warn('content-filter.review.undo.edges-skipped', { id, reason: 'multi-member row' }); return; }
             if (f.in == null && f.out == null) { delete n.startMs; delete n.endMs; return; }
             const item = (key === 'cueOverrides' ? refined?.cues : refined?.scenes)?.find((x) => x.id === id);
-            if (!item) return;
+            if (!item) { warn('content-filter.review.undo.edges-skipped', { id, reason: 'no refined item' }); return; }
             try { Object.assign(n, ContentFilterReview.#toVa({ in: f.in, out: f.out }, item, out.sync)); } catch (e) { warn('content-filter.review.undo.edges-skipped', { id, reason: e.message }); }
           }
         });
@@ -173,6 +184,7 @@ export class ContentFilterReview {
       const row = record?.audit?.rows?.find((r) => r.id === rowId);
       if (!row || !sameSpan(span, [row.in, row.out])) throw new ReviewError('This part moved. Reload the list.', 409);
       const { refined, override: stored } = await this.#film(ratingKey);
+      if (!refined) throw new ReviewError('This film has no refined filter yet.', 404);
       const override = { ...stored, contentId: stored.contentId || `plex:${ratingKey}` };
       const target = ContentFilterReview.#targets(row, rowId);
       const hasChange = !!change && typeof change === 'object';
@@ -187,7 +199,7 @@ export class ContentFilterReview {
       if (hasChange) {
         const S = ContentFilterReview.#side;
         // Per field: the earliest `from` (what to restore) and the latest `to`.
-        mark.change = prior?.change
+        mark.change = prior?.change && 'from' in prior.change && 'from' in change
           ? { from: { ...S(change.from), ...S(prior.change.from) }, to: { ...S(prior.change.to), ...S(change.to) } }
           : { from: change.from ?? null, to: change.to ?? null };
         mark.targets = target;
@@ -217,7 +229,8 @@ export class ContentFilterReview {
       };
       await this.#repo.appendReviewHistory(ratingKey, entry);
       this.#logger.info?.('content_filter.review.verdict.recorded', { ratingKey, rowId, kind: entry.kind, category: entry.category, verdict, reason: entry.reason, by: mark.by });
-      return mark;
+      // `reenabled` is a signal to the caller (re-audit), not part of the stored mark.
+      return priorIds.length && verdict !== 'remove' ? { ...mark, reenabled: true } : mark;
     });
   }
 
@@ -272,7 +285,6 @@ export class ContentFilterReview {
       if (!override?.review) return 0;
       const review = {}; let pruned = 0;
       for (const [id, m] of Object.entries(override.review)) {
-        const row = rows.get(id);
         if (rows.has(id)) review[id] = m; else pruned++;
       }
       if (pruned) {
@@ -293,7 +305,7 @@ export class ContentFilterReview {
     let reviewed = 0; let changed = 0; let redo = 0;
     const rows = (audit?.rows || []).map((r) => {
       const m = marks[r.id];
-      const ok = !!m && sameSpan(m.span, [r.in, r.out]);
+      const ok = !!m && markHolds(m, r);
       if (ok) reviewed++; else if (m) changed++;
       const verdict = ok ? { verdict: m.verdict || 'approve', ...(m.reason ? { reason: m.reason } : {}), ...(m.change ? { change: m.change } : {}), by: m.by, at: m.at } : null;
       if (verdict?.verdict === 'redo') redo++;
