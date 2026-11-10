@@ -1,3 +1,4 @@
+@use "sass:color";
 @use "./cgTokens" as cg;
 
 // Race menu — the one way to stop a race. Mounted inside the container's
@@ -25,22 +26,29 @@ $race-menu-item-min: 84px;    // touch target (floor 72px)
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: $race-menu-open-size;
   height: $race-menu-open-size;
   min-width: 56px;
   min-height: 56px;
   padding: 0;
   border-radius: 50%;
+  // Deliberately low-contrast. The old race screen led with a bright green
+  // "Finish race" pill, and riders pressed it by accident or as a quit button.
+  // Stopping a race is a rare, considered act, so its control must never read
+  // as the thing to press: neutral colour, no accent, 45% opacity. It still has
+  // to be FOUND from a bike 2-3 m away, so the quietness comes from the opacity
+  // alone: the glyph is large (40px, three r=3 dots) and the ring is the same
+  // neutral as the glyph rather than the near-invisible panel border.
   color: cg.$cg-text;
   background: rgba(cg.$cg-panel, 0.7);
-  border: 1px solid cg.$cg-border;
-  // Deliberately recessive: it must never read as the thing to press.
+  border: 2px solid rgba(cg.$cg-text, 0.7);
   opacity: 0.45;
   cursor: pointer;
   touch-action: manipulation;
   transition: opacity 0.15s ease;
 
-  svg { width: 30px; height: 30px; display: block; }
+  svg { width: 40px; height: 40px; display: block; }
 
   &:active,
   &:focus-visible,
@@ -69,6 +77,9 @@ $race-menu-item-min: 84px;    // touch target (floor 72px)
   &__sheet {
     position: relative;
     z-index: 1;
+    // Explicit, not inherited from an app-wide reset: max-height must include
+    // the padding, and the reserved slot (a div) must size like the buttons.
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -90,7 +101,11 @@ $race-menu-item-min: 84px;    // touch target (floor 72px)
     align-items: center;
     justify-content: center;
     gap: 4px;
+    box-sizing: border-box;
     width: 100%;
+    // Never squeezed: on a short container the sheet scrolls (max-height +
+    // overflow-y above) instead of crushing a two-line item under its target size.
+    flex-shrink: 0;
     min-height: $race-menu-item-min;
     padding: 14px 20px;
     border-radius: 12px;
@@ -101,19 +116,27 @@ $race-menu-item-min: 84px;    // touch target (floor 72px)
     border: 1px solid cg.$cg-border;
     cursor: pointer;
     touch-action: manipulation;
-    transition: opacity 0.2s ease, border-color 0.15s ease, background 0.15s ease;
+    transition: border-color 0.15s ease, background 0.15s ease;
 
     &:active { background: cg.$cg-panel-2; }
     &:focus-visible { outline: 2px solid cg.$cg-text; outline-offset: 3px; }
-    // Inert for the first 600 ms after the sheet opens (accidental-tap guard).
-    &[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+    // Guarded items (aria-disabled for the first 600 ms) look exactly like armed
+    // ones on purpose: a change of brightness when the guard lifts would be the
+    // only movement in a settled sheet, pulling the eye to the destructive items.
+
+    // The reserved "End race here" slot during staging/countdown: takes the
+    // item's exact space, shows nothing, takes no input.
+    &--slot {
+      visibility: hidden;
+      pointer-events: none;
+    }
 
     // The only filled item: staying in the race is the default answer.
     &--primary {
       color: cg.$cg-bg;
       background: cg.$cg-cyan;
       border-color: cg.$cg-cyan;
-      &:active { background: darken(cg.$cg-cyan, 8%); }
+      &:active { background: color.adjust(cg.$cg-cyan, $lightness: -8%); }
       &:focus-visible { outline-color: cg.$cg-text; }
     }
 

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
-import { useEscapeToClose } from "./home/useEscapeToClose.js";
 import { MenuIcon } from "./home/icons.jsx";
 import "./RaceMenu.scss";
 
@@ -12,6 +11,9 @@ import "./RaceMenu.scss";
 export const RACE_MENU_GUARD_MS = 600;
 /** An untouched sheet closes itself: a race is running underneath. */
 export const RACE_MENU_AUTO_CLOSE_MS = 15000;
+
+const END_LABEL = 'End race here';
+const END_SUB = 'Saves this ride. It will not count for records or the ladder.';
 
 /**
  * The one way to stop a race. A low-contrast corner button opens a sheet; the
@@ -32,14 +34,38 @@ export default function RaceMenu({ onEnd, onDiscard, canEnd = true, onOpenChange
   const sheetRef = useRef(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
+  const openRef = useRef(open);
+  openRef.current = open;
 
   const close = useCallback((reason) => {
     log.debug('cycle_game.ui.race_menu_close', { reason });
     setOpen(false);
   }, [log]);
 
-  const onEscape = useCallback(() => close('escape'), [close]);
-  useEscapeToClose(open ? onEscape : null);
+  // The open sheet owns Escape. A capture-phase listener on document runs before
+  // every bubble-phase document/window listener (the pickers' useEscapeToClose,
+  // the player's and FullScreenContainer's exit-on-Escape), and stops the event
+  // there: Escape closes this sheet and nothing else. Not useEscapeToClose, which
+  // listens in the bubble phase and lets the key carry on.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      close('escape');
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, close]);
+
+  // Unmounted while open (the phase changed underneath, or the container went
+  // away): the container still hears the close, and the log says why.
+  useEffect(() => () => {
+    if (!openRef.current) return;
+    log.debug('cycle_game.ui.race_menu_close', { reason: 'unmount' });
+    onOpenChangeRef.current?.(false);
+  }, [log]);
 
   // Focus follows the sheet, and the container hears about each change. The
   // first run (mount, closed) is skipped: nothing has changed yet.
@@ -52,13 +78,23 @@ export default function RaceMenu({ onEnd, onDiscard, canEnd = true, onOpenChange
     onOpenChangeRef.current?.(open);
   }, [open]);
 
-  // Accidental-tap guard: destructive items arm RACE_MENU_GUARD_MS after open.
+  // Accidental-tap guard: destructive items arm RACE_MENU_GUARD_MS after open,
+  // and again whenever canEnd changes under an open sheet (countdown → racing
+  // swaps "End race here" in): an item that has only just become real must not
+  // take a tap that was already on its way.
   useEffect(() => {
     if (!open) return undefined;
     setArmed(false);
     const id = setTimeout(() => setArmed(true), RACE_MENU_GUARD_MS);
     return () => clearTimeout(id);
-  }, [open]);
+  }, [open, canEnd]);
+
+  // If the focused item went away with canEnd, focus would fall to <body> and
+  // the Tab trap would have nothing to hold on to. Send it to Keep racing.
+  useEffect(() => {
+    if (!open) return;
+    if (!sheetRef.current?.contains(document.activeElement)) keepRef.current?.focus();
+  }, [open, canEnd]);
 
   // Auto-close after RACE_MENU_AUTO_CLOSE_MS without a touch or key in the sheet.
   useEffect(() => {
@@ -76,10 +112,23 @@ export default function RaceMenu({ onEnd, onDiscard, canEnd = true, onOpenChange
     setOpen(true);
   };
 
-  const choose = (reason, handler) => {
-    if (!armed) return;
-    close(reason);
-    handler?.();
+  const guardedTap = (item) => log.debug('cycle_game.ui.race_menu_guarded_tap', { item });
+
+  const choose = (item, handler) => {
+    if (!armed) { guardedTap(item); return; }
+    close(item);
+    // The sheet is already closing; a handler that throws must not leave it up
+    // or take the race screen down with it.
+    try {
+      handler?.();
+    } catch (err) {
+      log.error('cycle_game.ui.race_menu_handler_failed', { item, error: err?.message || String(err) });
+    }
+  };
+
+  const onScrim = () => {
+    if (!armed) { guardedTap('scrim'); return; }
+    close('scrim');
   };
 
   // aria-modal promises that focus stays inside; keep Tab within the sheet.
@@ -112,7 +161,7 @@ export default function RaceMenu({ onEnd, onDiscard, canEnd = true, onOpenChange
       </button>
       {open && (
         <div className="cg-race-menu">
-          <div className="cg-race-menu__scrim" data-testid="race-menu-scrim" onClick={() => { if (armed) close('scrim'); }} />
+          <div className="cg-race-menu__scrim" data-testid="race-menu-scrim" onClick={onScrim} />
           <div
             ref={sheetRef}
             className="cg-race-menu__sheet"
@@ -132,7 +181,7 @@ export default function RaceMenu({ onEnd, onDiscard, canEnd = true, onOpenChange
             >
               <span className="cg-race-menu__label">Keep racing</span>
             </button>
-            {canEnd && (
+            {canEnd ? (
               <button
                 type="button"
                 className="cg-race-menu__item"
@@ -140,9 +189,18 @@ export default function RaceMenu({ onEnd, onDiscard, canEnd = true, onOpenChange
                 aria-disabled={guarded}
                 onClick={() => choose('end', onEnd)}
               >
-                <span className="cg-race-menu__label">End race here</span>
-                <span className="cg-race-menu__sub">Saves this ride. It will not count for records or the ladder.</span>
+                <span className="cg-race-menu__label">{END_LABEL}</span>
+                <span className="cg-race-menu__sub">{END_SUB}</span>
               </button>
+            ) : (
+              // Staging and countdown: nothing to end yet. The slot is still
+              // reserved (same two lines, invisible, not a control) so Keep
+              // racing and Discard race sit exactly where they will once the
+              // race starts and the item appears.
+              <div className="cg-race-menu__item cg-race-menu__item--slot" data-testid="race-menu-end-slot" aria-hidden="true">
+                <span className="cg-race-menu__label">{END_LABEL}</span>
+                <span className="cg-race-menu__sub">{END_SUB}</span>
+              </div>
             )}
             <div className="cg-race-menu__divider" aria-hidden="true" />
             <button
