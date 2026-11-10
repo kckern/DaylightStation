@@ -140,6 +140,40 @@ describe('gemAwards by rule', () => {
   });
 });
 
+describe('gemAwards through an unreadable look', () => {
+  const unknownBook = (week = 1) => ({ state: 'earned', week, parts: [part('reader-week', 'Story time 4 days', 'weekly', 'earned', week), part('book-finished', 'Book finished', 'milestone', 'unknown', 0)] });
+  it('earned, then unreadable, then earned again is not a new gem: the snapshot keeps what it knew', () => {
+    const earned = merged(rows({ reading: reading(1, 2) }));
+    const first = gemSnapshot(earned);
+    const blind = gemAwards(first, merged(rows({ reading: unknownBook() })));
+    expect(blind.awards).toEqual([]);
+    expect(blind.snapshot.parts.a['book-finished']).toEqual(['earned', 2]);
+    expect(blind.snapshot.parts.a['reader-week']).toEqual(['earned', 1]);
+    expect(gemAwards(blind.snapshot, earned).awards).toEqual([]);
+  });
+
+  it('a lead unreadable for one look is still the same lead', () => {
+    const leading = merged(rows({ rings: rings('leading') }));
+    const blind = gemAwards(gemSnapshot(leading), merged(rows({ rings: rings('unknown') })));
+    expect(blind.snapshot.parts.a['ring-contest']).toEqual(['leading', 0]);
+    expect(gemAwards(blind.snapshot, leading).awards).toEqual([]);
+  });
+
+  it('nothing, then unreadable, then earned celebrates once; with nothing known the unreadable state is what is kept', () => {
+    const blind = gemAwards(gemSnapshot(merged(rows())), merged(rows({ reading: unknownBook(0) })));
+    expect(blind.snapshot.parts.a['book-finished']).toEqual(['none', 0]);
+    const earned = merged(rows({ reading: reading(0, 1) }));
+    const after = gemAwards(blind.snapshot, earned);
+    expect(after.awards.map((x) => [x.ruleId, x.kind, x.count])).toEqual([['book-finished', 'earned', 1]]);
+    expect(gemAwards(after.snapshot, earned).awards).toEqual([]);
+    // No earlier look, another week's look, or an old-shape one: nothing to keep.
+    const unreadable = merged(rows({ reading: unknownBook(0) }));
+    expect(gemSnapshot(unreadable).parts.a['book-finished']).toEqual(['unknown', 0]);
+    expect(gemSnapshot(unreadable, gemSnapshot(merged(rows({ reading: reading(0, 1) }), '2026-10-26'))).parts.a['book-finished']).toEqual(['unknown', 0]);
+    expect(gemSnapshot(unreadable, { week: '2026-11-02', cells: {} }).parts.a['book-finished']).toEqual(['unknown', 0]);
+  });
+});
+
 function Probe(props) {
   const { ceremony, done } = useGemCeremony(props);
   return <div data-testid="probe" data-n={ceremony ? ceremony.awards.length : 0} onClick={done} />;
@@ -198,6 +232,25 @@ describe('useGemCeremony', () => {
     act(() => { window.dispatchEvent(new CustomEvent('race-saved')); vi.advanceTimersByTime(11); });
     await flush();
     expect(screen.getByTestId('probe').dataset.n).toBe('0');
+  });
+
+  it('learnOnMount through an unreadable board keeps what the last look knew; every write clears the key the older bundle used', async () => {
+    const earned = merged(rows({ reading: reading(1, 2) }));
+    localStorage.setItem('daylight.gemCeremony.v2.t5', JSON.stringify(gemSnapshot(earned)));
+    localStorage.setItem('daylight.gemCeremony.t5', JSON.stringify({ week: '2026-11-02', cells: {} }));
+    localStorage.setItem('daylight.gemCeremony.other', 'kept');
+    let current = merged(rows({ reading: { state: 'earned', week: 1, parts: [part('reader-week', 'Story time 4 days', 'weekly', 'earned', 1), part('book-finished', 'Book finished', 'milestone', 'unknown', 0)] } }));
+    render(<Probe surface="t5" events={['book-logged']} learnOnMount load={async () => current} settleMs={10} />);
+    await flush();
+    expect(localStorage.getItem('daylight.gemCeremony.t5')).toBeNull();
+    expect(localStorage.getItem('daylight.gemCeremony.other')).toBe('kept');
+    expect(JSON.parse(localStorage.getItem('daylight.gemCeremony.v2.t5'))).toEqual(gemSnapshot(earned));
+    current = earned;
+    localStorage.setItem('daylight.gemCeremony.t5', 'back again');
+    act(() => { window.dispatchEvent(new CustomEvent('book-logged')); vi.advanceTimersByTime(11); });
+    await flush();
+    expect(screen.getByTestId('probe').dataset.n).toBe('0');
+    expect(localStorage.getItem('daylight.gemCeremony.t5')).toBeNull();
   });
 });
 

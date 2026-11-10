@@ -24,6 +24,10 @@
  * board without celebrating — a page load is not an achievement. The same
  * goes for a snapshot in the older per-row shape (no `v: 2`): its keys were
  * row ids, which cannot be compared with rules.
+ *
+ * A rule whose evidence could not be read this look (`unknown`) is not news
+ * either way: the snapshot keeps what it knew of that rule, so a gem that
+ * comes back readable on the next look is the same gem, not a new one.
  */
 const HELD = new Set(['earned', 'won', 'leading']);
 const VERSION = 2;
@@ -33,16 +37,26 @@ const partsOf = (categoryId, cell) => (Array.isArray(cell?.parts) && cell.parts.
   ? cell.parts
   : [{ ruleId: categoryId, state: cell?.state, week: cell?.week }]);
 
-/** `{week, v: 2, parts: {learnerId: {ruleId: [state, week]}}}` — what a surface remembers. */
-export function gemSnapshot(board) {
+/**
+ * `{week, v: 2, parts: {learnerId: {ruleId: [state, week]}}}` — what a surface remembers.
+ * @param {object} board
+ * @param {object|null} [previous] - the last look; where this board cannot read
+ *   a rule (`unknown`), a same-week `previous` entry for it is carried over
+ */
+export function gemSnapshot(board, previous = null) {
+  const week = board?.week ?? null;
+  const known = previous?.v === VERSION && previous.week === week ? previous.parts ?? {} : {};
   const parts = {};
   for (const [categoryId, byLearner] of Object.entries(board?.cells ?? {})) {
     for (const [learnerId, cell] of Object.entries(byLearner ?? {})) {
       const mine = (parts[learnerId] ??= {});
-      for (const part of partsOf(categoryId, cell)) mine[part.ruleId] = [part.state ?? 'none', part.week ?? 0];
+      for (const part of partsOf(categoryId, cell)) {
+        const was = part.state === 'unknown' ? known[learnerId]?.[part.ruleId] : null;
+        mine[part.ruleId] = was ?? [part.state ?? 'none', part.week ?? 0];
+      }
     }
   }
-  return { week: board?.week ?? null, v: VERSION, parts };
+  return { week, v: VERSION, parts };
 }
 
 /**
@@ -50,7 +64,7 @@ export function gemSnapshot(board) {
  *   awards in row order, then roster order, then the row's rule order
  */
 export function gemAwards(previous, board) {
-  const snapshot = gemSnapshot(board);
+  const snapshot = gemSnapshot(board, previous);
   if (!board || board.mode === 'off' || !previous || previous.v !== VERSION || previous.week !== snapshot.week) return { awards: [], snapshot };
   const names = Object.fromEntries((board.learners ?? []).map((l) => [l.learnerId, l.name ?? l.learnerId]));
   const awards = [];

@@ -25,16 +25,19 @@ import getLogger from '@/lib/logging/Logger.js';
 import { fetchGemBoard } from './GemBoard.jsx';
 import { gemAwards, gemSnapshot } from './gemCeremonyModel.js';
 
-// The per-rule snapshot has its own key: a kiosk still running a cached bundle
-// from before it keeps reading (and writing) the old key in the old shape, so
-// neither bundle ever meets the other's snapshot and replays the week.
+// The per-rule snapshot has its own key, so it never meets a per-row one that
+// a bundle from before it left behind. That older key is removed on each write.
 const keyFor = (surface) => `daylight.gemCeremony.v2.${surface}`;
+const oldKeyFor = (surface) => `daylight.gemCeremony.${surface}`;
 
 function readSnapshot(surface) {
   try { return JSON.parse(localStorage.getItem(keyFor(surface)) || 'null'); } catch { return null; }
 }
 function writeSnapshot(surface, snapshot) {
-  try { localStorage.setItem(keyFor(surface), JSON.stringify(snapshot)); } catch { /* storage off: a repeat is the worst case */ }
+  try {
+    localStorage.setItem(keyFor(surface), JSON.stringify(snapshot));
+    localStorage.removeItem(oldKeyFor(surface));
+  } catch { /* storage off: a repeat is the worst case */ }
 }
 
 export function useGemCeremony({
@@ -54,8 +57,9 @@ export function useGemCeremony({
       if (!board || board.mode === 'off') return;
       if (silent) {
         // Learn without celebrating: the board as it stands becomes the last
-        // look, whatever shape the stored one had, so nothing on it replays.
-        writeSnapshot(surface, gemSnapshot(board));
+        // look, so nothing on it replays. What it cannot read this time keeps
+        // what the stored look knew.
+        writeSnapshot(surface, gemSnapshot(board, readSnapshot(surface)));
         return;
       }
       const { awards, snapshot } = gemAwards(readSnapshot(surface), board);
