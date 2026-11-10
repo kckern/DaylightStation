@@ -62,10 +62,10 @@ describe('GemBoardService', () => {
         ],
       },
     }).board();
-    expect(board.categories.map((c) => c.id)).toEqual(['exercise', 'contest']);
+    expect(board.categories.map((c) => c.id)).toEqual(['exercise', 'ring-contests']);
     expect(board.cells.exercise.a).toMatchObject({ state: 'earned', week: 1 });
     expect(board.cells.exercise.b).toMatchObject({ state: 'pending', progress: { have: 1, need: 2 } });
-    expect(board.cells.contest.a.state).toBe('leading');
+    expect(board.cells['ring-contests'].a.state).toBe('leading');
     // Lifetime from the ledger only for a household user; the wallet's gems are the total.
     expect(board.cells.exercise.a.lifetime).toBe(1);
     expect(board.totals).toEqual({ a: { week: 2, earned: 1, lifetime: 4 }, b: { week: 0, earned: 0, lifetime: 0 } });

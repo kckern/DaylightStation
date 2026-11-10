@@ -402,14 +402,14 @@ describe('Games mode — gem ceremony', () => {
   });
 
   it('picker shows the gem ceremony for a gem earned since the last look', async () => {
-    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    localStorage.setItem('daylight.gemCeremony.v2.piano', JSON.stringify({ week: 7, v: 2, parts: { learner1: { piano: ['none', 0] } } }));
     gemBoard.board = boardWith('earned', 1);
     renderGames();
     expect(await screen.findByTestId('gem-ceremony')).toBeTruthy();
   });
 
   it('a game route renders no ceremony and never looks at the board', async () => {
-    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    localStorage.setItem('daylight.gemCeremony.v2.piano', JSON.stringify({ week: 7, v: 2, parts: { learner1: { piano: ['none', 0] } } }));
     gemBoard.board = boardWith('earned', 1);
     renderGames('/games/probe-game');
     await waitFor(() => expect(screen.getByTestId('probe-game')).toBeTruthy());
@@ -418,7 +418,7 @@ describe('Games mode — gem ceremony', () => {
   });
 
   it('a ceremony interrupted by opening a game shows again on return to the picker', async () => {
-    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    localStorage.setItem('daylight.gemCeremony.v2.piano', JSON.stringify({ week: 7, v: 2, parts: { learner1: { piano: ['none', 0] } } }));
     gemBoard.board = boardWith('earned', 1);
     renderGames('/games', 'guest', testConfig, ['/games/probe-game', '/games']);
     const first = await screen.findByTestId('gem-ceremony');
@@ -437,7 +437,7 @@ describe('Games mode — gem ceremony', () => {
   });
 
   it('a dismissed ceremony does not repeat when the picker remounts', async () => {
-    localStorage.setItem('daylight.gemCeremony.piano', JSON.stringify({ week: 7, cells: { learner1: { piano: ['none', 0] } } }));
+    localStorage.setItem('daylight.gemCeremony.v2.piano', JSON.stringify({ week: 7, v: 2, parts: { learner1: { piano: ['none', 0] } } }));
     gemBoard.board = boardWith('earned', 1);
     const first = renderGames();
     fireEvent.pointerDown(await screen.findByTestId('gem-ceremony'));
