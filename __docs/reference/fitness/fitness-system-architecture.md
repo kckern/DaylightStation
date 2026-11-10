@@ -1080,7 +1080,7 @@ kid from that kid's own unseen entries: "+N" silver and the wallet total
 ("-> 27 silver"). One coin sound plays through fitness's own cue element
 (`ringCelebrationAudio.js`) with School's `school/_ux/coin.mp3`. A click,
 Enter/Space/Escape (consumed in the capture phase) or the clock (4 s + 1.5 s per
-extra card, max 10 s) dismisses it. localStorage `fitness.coinCeremony.seen`
+extra card, max 10 s) dismisses it. localStorage `fitness.coinCeremony.seen.v2` (grouped rides are looked up by segment id)
 keeps each shown entry's txnId; entries older than 7 days are ignored, a first
 load is not silent, and a reload never replays (with unusable storage, an
 in-memory set covers the page's life). Logs:
