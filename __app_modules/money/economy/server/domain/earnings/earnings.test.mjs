@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  RULE_KINDS, DEFAULT_RULESET, validateRuleset, resolveRules, withUserOverride, evaluateEarnings, earningRef,
+  RULE_KINDS, CURRENCIES, DEFAULT_RULESET, validateRuleset, resolveRules, withUserOverride, evaluateEarnings, earningRef,
 } from "./index.mjs";
+import { CURRENCIES as LEDGER_CURRENCIES } from "../index.mjs";
 
 const WEEK = { from: '2026-09-21', to: '2026-09-27' };
 const RINGS_WEEK = { from: '2026-09-21T11:00:00.000Z', to: '2026-09-26T19:00:00.000Z' };
@@ -20,8 +21,8 @@ function evaluate(rs, facts = {}, extra = {}) {
 const line = (out, id) => out.lines.find((l) => l.ruleId === id);
 
 describe('validateRuleset', () => {
-  it('knows seven kinds, one per earning trigger', () => {
-    expect(RULE_KINDS).toEqual(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest']);
+  it('knows thirteen kinds, one per earning trigger', () => {
+    expect(RULE_KINDS).toEqual(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week', 'ring-days', 'activity-days', 'activity-contest', 'milestone']);
   });
 
   it('normalizes a bare number reward to silver and fills defaults', () => {
@@ -42,6 +43,12 @@ describe('validateRuleset', () => {
     expect(() => ruleset(rules, { kid: { rules: { nope: { reward: 1 } } } })).toThrow(/nope/);
     expect(() => ruleset(rules, { kid: { multiplier: 0 } })).toThrow(/multiplier/);
     expect(() => ruleset(rules, { kid: { multiplier: 11 } })).toThrow(/multiplier/);
+  });
+
+  it('shares the ledger currency list, but a rule never pays gold', () => {
+    expect(CURRENCIES).toBe(LEDGER_CURRENCIES);
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: { copper: 1 } }])).toThrow(/unknown currency/);
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: { silver: 1, gold: 1 } }])).toThrow(/gold/);
   });
 
   it('sorts ring thresholds and refuses a non-positive one', () => {
@@ -186,6 +193,52 @@ describe('evaluateEarnings — school kinds', () => {
     expect(line(out, 'green-week').note).toMatch(/2026-09-21.*2026-09-24/);
   });
 
+  it('a settled red Monday ends green week on Tuesday', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'none'], ['2026-09-22', 'none']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-22' });
+    expect(line(out, 'green-week')).toMatchObject({ status: 'none' });
+    expect(line(out, 'green-week').note).toBe('Not green: 2026-09-21');
+  });
+
+  it('with no today (a closed week) a non-green day ends green week, not pending', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'none'], ['2026-09-25', 'met'], ['2026-09-26', 'met']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: false },
+    }, { today: null });
+    expect(line(out, 'green-week')).toMatchObject({ status: 'none', note: 'Not green: 2026-09-24' });
+  });
+
+  it('an unsettled red day (today) keeps green week pending', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'none']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-22' });
+    expect(line(out, 'green-week').status).toBe('pending');
+  });
+
+  it('a past day not worked out yet never ends green week early', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'unknown', 'pending'], ['2026-09-22', 'met']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-23' });
+    expect(line(out, 'green-week').status).toBe('indeterminate');
+  });
+
+  it('all green so far stays pending mid-week', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'none']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-23' });
+    expect(line(out, 'green-week').status).toBe('pending');
+  });
+
   it('a week cannot pay before its Friday: all-green-so-far on a Wednesday is pending', () => {
     const rs = ruleset([
       { id: 'green-week', kind: 'week-met', reward: 5 },
@@ -298,6 +351,22 @@ describe('evaluateEarnings — school kinds', () => {
     expect(line(out, 'math-units')).toMatchObject({ status: 'earned', count: 2, amount: { silver: 2, gems: 0 } });
   });
 
+  it('unit pays nothing for a failed worksheet, and once for a unit retaken until it passed (2026-10-28)', () => {
+    const rs = ruleset([{ id: 'worksheet-done', kind: 'unit', match: {}, reward: 1 }]);
+    const out = evaluate(rs, { units: [
+      { day: '2026-10-26', unitId: 'atlas-us-p080-new-mexico', result: 'needs_remediation' },
+      { day: '2026-10-28', unitId: 'atlas-us-p080-new-mexico', result: 'passed' },
+      { day: '2026-10-26', unitId: 'cfm-w44-d1-jeremiah-31', result: 'passed' },
+      { day: '2026-10-27', unitId: 'atlas-us-p104-texas', result: 'failed' },
+      { day: '2026-10-27', unitId: 'em23-01', result: null },
+    ] });
+    const worksheets = line(out, 'worksheet-done');
+    expect(worksheets).toMatchObject({ status: 'earned', count: 3, amount: { silver: 3, gems: 0 } });
+    expect(worksheets.evidence.map((e) => [e.unitId, e.day])).toEqual([
+      ['cfm-w44-d1-jeremiah-31', '2026-10-26'], ['em23-01', '2026-10-27'], ['atlas-us-p080-new-mexico', '2026-10-28'],
+    ]);
+  });
+
   it('when School evidence is unavailable, every school line is indeterminate — never "not done"', () => {
     const rs = ruleset([
       { id: 'korean', kind: 'section-day', match: { subject: 'language' }, reward: 2 },
@@ -403,6 +472,8 @@ describe('evaluateEarnings — per-learner pricing and refs', () => {
     const out = evaluate(rs, { sectionDays: sections('language', [['2026-09-21', 'served']]) });
     expect(line(out, 'korean').ref).toBe(earningRef({ learnerId: 'kid', ruleId: 'korean', period: WEEK.from }));
     expect(line(out, 'korean').ref).toBe('earn:kid:korean:2026-09-21:on-time');
+    // The payout stamps the line's timeliness on the ledger entry; it is the ref's last part.
+    expect(line(out, 'korean').timeliness).toBe('on-time');
     expect(line(out, 'korean').evidence[0].ref).toBe('earn:kid:korean:2026-09-21:on-time');
     const bumped = evaluate({ ...rs, revision: 9 }, { sectionDays: sections('language', [['2026-09-21', 'served']]) });
     expect(line(bumped, 'korean').ref).toBe(line(out, 'korean').ref);
@@ -413,5 +484,70 @@ describe('evaluateEarnings — per-learner pricing and refs', () => {
     const out = evaluate(rs, {});
     expect(out).toMatchObject({ learnerId: 'kid', currency: 'silver', multiplier: 1.5, windows: { school: WEEK, rings: RINGS_WEEK } });
     expect(evaluateEarnings({ ruleset: rs, learnerId: 'other', facts: {}, windows: { school: WEEK, rings: RINGS_WEEK } }).multiplier).toBe(1);
+  });
+});
+
+const debriefs = (list) => list.map(([day, state, timeliness = 'on-time', substantive = false, quizPassed = false]) =>
+  ({ day, state, timeliness, substantive, quiz: { right: quizPassed ? 2 : 0, graded: 2 }, quizPassed }));
+const DEBRIEF_RULES = [
+  { id: 'debrief-done', kind: 'debrief-day', match: { criterion: 'completed' }, reward: 2 },
+  { id: 'debrief-substantive', kind: 'debrief-day', match: { criterion: 'substantive' }, reward: 1 },
+  { id: 'debrief-quiz', kind: 'debrief-day', match: { criterion: 'quiz-passed' }, reward: 1 },
+  { id: 'debrief-week', kind: 'debrief-week', reward: { silver: 5, gems: 1 } },
+];
+
+describe('debrief kinds', () => {
+  it('prices completed, substantive and quiz per day; late pays completion and quiz only', () => {
+    const out = evaluate(ruleset(DEBRIEF_RULES), { debriefs: debriefs([
+      ['2026-09-21', 'completed', 'on-time', true, true],
+      ['2026-09-22', 'completed', 'late', false, true],
+      ['2026-09-23', 'rejected', 'on-time', true, true],
+    ]) });
+    expect(line(out, 'debrief-done')).toMatchObject({ status: 'earned', count: 2, amount: { silver: 4, gems: 0 } });
+    expect(line(out, 'debrief-substantive')).toMatchObject({ count: 1 });
+    expect(line(out, 'debrief-quiz')).toMatchObject({ count: 2 });
+  });
+  it('week pays when every owed day is completed (late counts) or excused', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    const full = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed', 'late'], ['2026-09-23', 'excused'], ['2026-09-24', 'completed'], ['2026-09-25', 'completed']]);
+    expect(line(evaluate(rs, { debriefs: full }, { today: '2026-09-27' }), 'debrief-week')).toMatchObject({ status: 'earned', amount: { silver: 5, gems: 1 } });
+  });
+  it('week is pending until Friday grace closes (end of Saturday)', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    const rows = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed'], ['2026-09-23', 'completed'], ['2026-09-24', 'completed'], ['2026-09-25', 'open']]);
+    expect(line(evaluate(rs, { debriefs: rows }, { today: '2026-09-26' }), 'debrief-week').status).toBe('pending');
+    expect(line(evaluate(rs, { debriefs: debriefs([['2026-09-21', 'missed'], ['2026-09-22', 'completed']]) }, { today: '2026-09-27' }), 'debrief-week').status).toBe('none');
+  });
+  it('rejected blocks the week; an unknown day makes lines indeterminate', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    expect(line(evaluate(rs, { debriefs: debriefs([['2026-09-21', 'rejected'], ['2026-09-22', 'completed']]) }, { today: '2026-09-27' }), 'debrief-week').status).toBe('none');
+    const unk = evaluate(rs, { debriefs: debriefs([['2026-09-21', 'unknown']]) });
+    expect(line(unk, 'debrief-done').status).toBe('indeterminate');
+    expect(line(unk, 'debrief-week').status).toBe('indeterminate');
+  });
+  it('an all-excused week pays no week bonus (excused only does not block); one completed day is enough', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    const allExcused = debriefs([['2026-09-21', 'excused'], ['2026-09-22', 'excused'], ['2026-09-23', 'excused']]);
+    expect(line(evaluate(rs, { debriefs: allExcused }, { today: '2026-09-27' }), 'debrief-week')).toMatchObject({ status: 'none', amount: { silver: 0, gems: 0 }, note: 'No debriefs done this week' });
+    const oneDone = debriefs([['2026-09-21', 'excused'], ['2026-09-22', 'completed'], ['2026-09-23', 'excused']]);
+    expect(line(evaluate(rs, { debriefs: oneDone }, { today: '2026-09-27' }), 'debrief-week').status).toBe('earned');
+    const stillOpen = debriefs([['2026-09-21', 'excused'], ['2026-09-22', 'open']]);
+    expect(line(evaluate(rs, { debriefs: stillOpen }, { today: '2026-09-22' }), 'debrief-week').status).toBe('pending');
+  });
+  it('a learner with no debrief facts earns nothing and is not indeterminate', () => {
+    expect(line(evaluate(ruleset(DEBRIEF_RULES), {}), 'debrief-done')).toMatchObject({ status: 'none', count: 0 });
+  });
+  it('per-day refs carry timeliness', () => {
+    const out = evaluate(ruleset(DEBRIEF_RULES), { debriefs: debriefs([['2026-09-22', 'completed', 'late']]) });
+    expect(line(out, 'debrief-done').evidence[0].ref).toBe('earn:kid:debrief-done:2026-09-22:late');
+  });
+  it('teachable criterion validates and pays per completed teachable row', () => {
+    const rs = ruleset([{ id: 'debrief-teach', kind: 'debrief-day', match: { criterion: 'teachable' }, reward: { silver: 1 } }]);
+    const rows = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed'], ['2026-09-23', 'open']]).map((r, i) => ({ ...r, teachable: i !== 1 }));
+    expect(line(evaluate(rs, { debriefs: rows }), 'debrief-teach')).toMatchObject({ count: 1, amount: { silver: 1, gems: 0 } });
+    expect(() => ruleset([{ id: 'x', kind: 'debrief-day', match: { criterion: 'bogus' }, reward: 1 }])).toThrow(/criterion/);
+  });
+  it('validation: debrief-day needs a known criterion', () => {
+    expect(() => ruleset([{ id: 'x', kind: 'debrief-day', match: { criterion: 'vibes' }, reward: 1 }])).toThrow(/criterion/);
   });
 });

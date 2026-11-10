@@ -1,5 +1,7 @@
 import { usePlayerSessionBinding } from '../../../../../__capabilities/playback/browser/sessions.mjs';
 import { usePlaybackTimelineRecorder } from './usePlaybackTimelineRecorder.js';
+import { announceWorkoutFinished } from './overlays/useWorkoutCoinCeremony.js';
+import { landSessionAfterClose } from './landSessionAfterClose.js';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import FitnessSidebar from "./FitnessSidebar.jsx";
 import "./FitnessPlayer.scss";
@@ -26,8 +28,10 @@ import { FitnessPlayerFrame } from "./frames/index.js";
 import { useVolumeSync } from "../hooks/useVolumeSync.js";
 import { useGovernanceAudioDuck } from "./hooks/useGovernanceAudioDuck.js";
 import { installCueAudioUnlock } from "./hooks/audioCuePlayer.js";
-import GovernanceWarningScrim from "./overlays/GovernanceWarningScrim.jsx";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
+import PresenceGateNotice from "./overlays/PresenceGateNotice.jsx";
+import usePresenceGate from "../hooks/usePresenceGate.js";
+import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import { useIdentity } from "../identity/useIdentity.js";
 import { shouldBypassGovernance } from "./governanceBypass.js";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
@@ -278,11 +282,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     registerVideoPlayer(mediaElement);
   }, [mediaElement, registerVideoPlayer]);
 
-  const { boostLevel, setBoost } = useMediaAmplifier(mediaElement, {
-    grandparentId: currentItem?.grandparentId,
-    parentId: currentItem?.parentId,
-    trackId: currentItem?.id
-  });
   const seekIntentRef = useRef(null); // Track seek/resume intent to override actual time
   const [isSeeking, setIsSeeking] = useState(false);
   const seekTimeoutRef = useRef(null);
@@ -413,7 +412,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // Live content starts through exercise governance. Fingerprint content
   // authorization is reserved for Fitness Home session replays.
   const budgetBlocked = Boolean(playbackBudget?.blocked);
-  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || budgetBlocked;
+
+  // Presence gate (fitness config `presence_gate`): while the supervising adult
+  // is away, STARTING an item needs an admin fingerprint. Admission is per item
+  // and sticky — the adult leaving mid-video never pauses what is playing.
+  const presenceGate = usePresenceGate('play');
+  const presenceDismissRef = useRef(null);
+  const presencePrompt = usePresenceGatePrompt(presenceGate, currentItemId != null ? String(currentItemId) : null, {
+    kind: 'play',
+    onDismiss: () => presenceDismissRef.current?.(),
+  });
+  const presenceBlocked = presencePrompt.blocked;
+  // Holds that are not exercise governance: they pause and refuse autoplay alike.
+  const externalHold = budgetBlocked || presenceBlocked;
+  const videoHeld = Boolean(effectiveGovernanceState?.videoLocked) || externalHold;
 
   const [showChart, setShowChart] = useState(true);
 
@@ -446,13 +458,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     gates: [
       { blocked: Boolean(effectiveGovernanceState?.videoLocked), id: GATE_ID.GOVERNANCE, seekCeiling: null },
       { blocked: budgetBlocked, id: GATE_ID.PLAYBACK_BUDGET, seekCeiling: null },
+      { blocked: presenceBlocked, id: GATE_ID.PRESENCE, seekCeiling: null },
     ],
     resilience: {
       stalled: resilienceState?.stalled,
       waiting: resilienceState?.waitingToPlay
     },
     user: { paused: isPaused }
-  }), [isSeeking, videoHeld, budgetBlocked, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
+  }), [isSeeking, videoHeld, budgetBlocked, presenceBlocked, effectiveGovernanceState?.videoLocked, resilienceState?.stalled, resilienceState?.waitingToPlay, isPaused]);
 
   const governancePaused = pauseDecision.reason === PAUSE_REASON.GATE && pauseDecision.gate === GATE_ID.GOVERNANCE && pauseDecision.paused;
   // Live governance verdict for callbacks. Handlers handed to <Player> can
@@ -462,7 +475,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     enforce: enforceGovernance,
     isLocked: isGovernanceLocked,
   } = useGovernanceProgressEnforcer({
-    governancePaused: governancePaused || budgetBlocked,
+    governancePaused: governancePaused || externalHold,
     pausePlayback,
     setVideoPlayerPaused,
     logger,
@@ -573,6 +586,12 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     });
   }, [currentItem, setGovernanceMedia]);
 
+  // Closing the player must stop governance evaluating; the effect above only
+  // clears when currentItem becomes null while still mounted.
+  useEffect(() => () => {
+    setGovernanceMedia?.(null);
+  }, [setGovernanceMedia]);
+
   // Governance lock decision is now solely from GovernanceEngine.state.videoLocked (SSoT)
   // Removed: local label/type matching that duplicated GovernanceEngine._mediaIsGoverned()
 
@@ -680,7 +699,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       elementPaused: Boolean(mediaElement?.paused),
       wePausedIt: wasPlayingBeforeVoiceMemoRef.current,
       // If governance is locked, the governance unlock effect will handle resume.
-      governanceLocked: governancePaused || budgetBlocked,
+      governanceLocked: governancePaused || externalHold,
     });
 
     if (action === 'pause') {
@@ -705,7 +724,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         // Ignore play errors (e.g. user gesture requirements which should already be met)
       });
     }
-  }, [videoPlayerPaused, mediaElement, governancePaused, budgetBlocked]);
+  }, [videoPlayerPaused, mediaElement, governancePaused, externalHold]);
 
   const TimeDisplay = useMemo(() => React.memo(function TimeDisplay({ ct, dur }) {
     return <>{formatTime(ct)} / {formatTime(dur)}</>;
@@ -820,7 +839,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     governance: effectiveGovernanceState,
     pauseDecision: {
       ...pauseDecision,
-      holdReason: budgetBlocked ? GATE_ID.PLAYBACK_BUDGET : voiceMemoOverlayState?.open ? 'voice_memo'
+      holdReason: budgetBlocked ? GATE_ID.PLAYBACK_BUDGET : presenceBlocked ? GATE_ID.PRESENCE : voiceMemoOverlayState?.open ? 'voice_memo'
         : emergencyPhase && emergencyPhase !== 'normal' ? 'emergency' : null,
     },
     resilience: resilienceState,
@@ -841,6 +860,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     videoGrandparentId: grandparentId,
     videoParentId: parentId,
     videoTrackId: currentMediaIdentity
+  });
+
+  // WebAudio boost amplifier. It takes the UN-DUCKED level so normal playback
+  // keeps its loudness while a governance duck scales the output by exactly
+  // duck_to (see useMediaAmplifier and __docs/reference/fitness/audio-duck-cues.md).
+  const { boostLevel, setBoost } = useMediaAmplifier(mediaElement, {
+    grandparentId: currentItem?.grandparentId,
+    parentId: currentItem?.parentId,
+    trackId: currentItem?.id,
+    level: videoVolume?.volume
   });
 
   // Apply persisted volume when media element becomes available or after recovery
@@ -1174,14 +1203,13 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // Check if currently stalled (3C fix)
     const isStalled = Boolean(resilienceState?.stalled || resilienceState?.waitingToPlay);
 
+    // Completion is the backend's call (the library's watch_completion rule);
+    // this only reports a natural end as finished.
     let status = 'none';
-    if (durationSeconds < 30 && naturalEnd && !isStalled) {
-      status = 'completed';
-    } else if ((naturalEnd || (percent != null && percent >= 90)) && !isStalled) {
-      // Only mark completed if not stalled (3C fix)
+    if (naturalEnd && !isStalled) {
       status = 'completed';
     } else if (percent != null && percent >= 90 && isStalled) {
-      // Near end but stalled - don't mark as completed (3C fix)
+      // Near the end but stalled - don't post at all (3C fix)
       status = 'stalled_near_end';
     } else if (percent != null && percent >= 10) {
       status = 'in_progress';
@@ -1254,21 +1282,27 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       // could be stuck (voice memo wait, redirect resolution). Mark as forced.
       statusUpdateRef.current.endSent = true;
       pendingCloseRef.current = false;
+      // Unguarded by the stuck path: a stalled save only delays this refresh.
+      landSessionAfterClose(fitnessSessionInstance).finally(() => refetchScreenData?.('sessions'));
       if (setQueue) setQueue([]);
       setCurrentItem(null);
       if (typeof onSessionEndRedirect === 'function') {
         // Same shape as the normal close: FitnessApp reads view/screenId, and a
         // bare { to: 'home' } set currentView to undefined — a blank screen.
         const sid = fitnessSessionInstance?.sessionId ?? null;
+        const redirect = resolvePostEpisodeRedirect({ hasActiveSession: Boolean(sid), sessionId: sid });
         try {
           onSessionEndRedirect({
-            ...resolvePostEpisodeRedirect({ hasActiveSession: Boolean(sid), sessionId: sid }),
+            ...redirect,
             reason: 'close-watchdog-fired',
             context: ctx,
           });
         } catch (err) {
           // best effort; we're already in a recovery path
         }
+        // A forced close still finished a workout; the hook's per-session
+        // guard keeps it from doubling a ceremony the normal path already showed.
+        announceWorkoutFinished({ sessionId: sid, redirect, session: fitnessSessionInstance });
       }
     }
   });
@@ -1297,6 +1331,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
     statusUpdateRef.current.endSent = true;
     postEpisodeStatus({ naturalEnd: false, reason: 'close' });
+
+    // Before the redirect, so the landing page mounts with the memo and the end
+    // of playback in hand; this save is also what its refresh below reads.
+    const landed = landSessionAfterClose(fitnessSessionInstance);
 
     // Short "browse" exit: the video never ran long enough to trigger the
     // voice-memo prompt (see handleClose's meetsPromptThreshold) and no memo was
@@ -1327,21 +1365,30 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     // Refresh the sessions list once the final save has landed, so the just-saved
     // voice memo (and final stats) show on the session entry without a manual re-nav.
     if (typeof refetchScreenData === 'function') {
-      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
+      landed
         .finally(() => {
           refetchScreenData('sessions');
           // The suggestions snapshot went stale with this workout's saves; this
           // request waits for its rebuild, so home lands on fresh Resume / Next Up.
           refetchScreenData('suggestions');
+          // The home cards' silver and gem moved with this workout's rings.
+          refetchScreenData('standings');
         });
     }
+
+    // The coin ceremony: what the ride was worth. Only when the close lands on
+    // the finished session (not a short browse-out back to the show). Closing
+    // the player does not end the session, so this waits for the LAST AUTOSAVE
+    // (≤15 s old), not a final save: the ride is priced as of then, and the
+    // bank entry that lands later may be a few rings higher.
+    announceWorkoutFinished({ sessionId: sid, redirect, session: fitnessSessionInstance });
 
     // School assessment starts only after Fitness has finished its own final
     // persistence. The callback carries playback coordination facts; the
     // backend independently re-derives HR, cadence, strength and memo evidence
     // from the saved Fitness session before deciding pass/remediation.
     if (typeof onSchoolAttemptClosed === 'function') {
-      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
+      landed
         .then(
           () => onSchoolAttemptClosed({
             fitnessSessionId: sid,
@@ -2076,6 +2123,10 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     ? `${enhancedCurrentItem.contentId || enhancedCurrentItem.assetId || enhancedCurrentItem.plex || enhancedCurrentItem.id}:${currentItem?.seconds ?? 0}`
     : 'fitness-player-empty';
 
+  // A dismissed (cancelled / timed-out) presence prompt leaves the player. The
+  // gate hook sits with the other holds above, before handleClose exists.
+  presenceDismissRef.current = handleClose;
+
   // Video content with overlay and chart
   const videoContent = (
     <div className="fitness-video-shell">
@@ -2088,6 +2139,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       {playbackBudget?.status === 'ready' && <span className="playback-budget-remaining" aria-label="Unattended playback remaining">
         {Math.ceil(playbackBudget.remainingMs / 60000)} min remaining
       </span>}
+      {presenceBlocked && !presencePrompt.open && presenceGate.settled && (
+        <PresenceGateNotice onUnlock={presencePrompt.retry} onBack={handleClose} />
+      )}
       <FitnessPlayerOverlay
         playerRef={playerRef}
         showFullscreenVitals={playerMode === 'fullscreen'}
@@ -2234,12 +2288,6 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
           <span className="fitness-mirror-hotspot__icon" aria-hidden="true">⇄</span>
         </div>
       ))}
-      {govStatus === 'warning' && (
-        <GovernanceWarningScrim
-          deadline={effectiveGovernanceState?.deadline}
-          totalSeconds={effectiveGovernanceState?.gracePeriodTotal}
-        />
-      )}
     </div>
   );
 
@@ -2266,6 +2314,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         sessionId={fitnessSessionInstance?.sessionId ?? null}
         intervalMs={Number.isFinite(timelapseCfg.capture_interval_ms) ? timelapseCfg.capture_interval_ms : 1000}
         enabled={captureAllowed}
+      />
+      <UnlockPrompt
+        open={presencePrompt.open}
+        state={presencePrompt.state}
+        lockLabel="Grown-up needed"
+        unlockedUser={presencePrompt.unlockedUser}
+        onCancel={presencePrompt.cancel}
+        timeoutMs={30000}
       />
       <UnlockPrompt
         open={unlockPromptOpen}

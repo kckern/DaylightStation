@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import SchoolApp from "./SchoolApp.jsx";
 import { schoolApi } from "./schoolApi.js";
 import { HmacSchoolBookGrantIssuer } from "../server/adapters/actions/HmacSchoolBookGrantIssuer.mjs";
@@ -53,7 +53,11 @@ const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
 vi.mock("./schoolApi.js", () => ({
   schoolApi: {
-    bookScans: { pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn() },
+    bookScans: {
+      pending: vi.fn(async () => ({ ok: true, data: { intent: null } })), claim: vi.fn(), dismiss: vi.fn(), open: vi.fn(),
+      pile: vi.fn(async () => ({ ok: true, data: { pile: { screenId: 'portal', cards: [], reader: null, live: false, quietGapMs: 120000, lastScanAt: null } } })),
+      filePile: vi.fn(), moveCard: vi.fn(), removeCard: vi.fn(),
+    },
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }] })),
     banks: (...a) => banksMock(...a),
     bank: vi.fn(async (id) => ({
@@ -87,13 +91,27 @@ vi.mock("./schoolApi.js", () => ({
     selfServiceAct: (...a) => actMock(...a),
     selfServicePrinterStatus: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
+    earningsRoster: (...a) => earningsRosterMock(...a),
     teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [] } })),
     directLaunch: (...a) => directLaunchMock(...a),
+    // The coin bank door and screen (economy slice 1, C3), and the strip.
+    bankOpen: (...a) => bankOpenMock(...a),
+    economyBank: (...a) => economyBankMock(...a),
+    nextItem: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     // The live FSRS flashcards mount; a /test door must never reach it.
     flashcardDeck: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   },
 }));
 const directLaunchMock = vi.fn();
+const bankOpenMock = vi.fn();
+// What prices the board's coin cell, the door to a kid's bank. A wide window
+// so the figure is "this week" whatever the clock says.
+const earningsRosterMock = vi.fn(async () => ({ ok: false, status: 0, data: null }));
+const pricedKid1 = () => ({ ok: true, status: 200, data: {
+  windows: { school: { from: '2000-01-01', to: '2999-12-31' } },
+  learners: [{ learnerId: 'kid1', totals: { silver: 4, gems: 0 }, pending: { silver: 0, gems: 0 }, lines: [{ status: 'earned' }], windows: { school: { from: '2000-01-01', to: '2999-12-31' } } }],
+} });
+const economyBankMock = vi.fn(async () => ({ ok: false, status: 503, data: null }));
 const resolveMock = vi.fn();
 const actMock = vi.fn();
 
@@ -119,12 +137,17 @@ vi.mock("../../../../__capabilities/playback/browser/player/Player.jsx", () => (
 // fetches. The cube runner is stubbed likewise so "the shelf, not the cube"
 // is a direct observation rather than an absence.
 const bookShelfProps = vi.fn();
-vi.mock("./books/BookShelf.jsx", () => ({
-  default: (props) => {
-    bookShelfProps(props);
-    return <section className="school-books"><h2>Reading</h2></section>;
-  },
-}));
+const bookShelfMounts = vi.fn();
+vi.mock("./books/BookShelf.jsx", async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: (props) => {
+      bookShelfProps(props);
+      useEffect(() => { bookShelfMounts(); }, []);
+      return <section className="school-books"><h2>Reading</h2></section>;
+    },
+  };
+});
 vi.mock("./Programs/RubiksCube/RubiksCubeProgram.jsx", () => ({
   default: () => <div data-testid="cube-stub">cube</div>,
 }));
@@ -169,6 +192,11 @@ beforeEach(() => {
   actMock.mockReset();
   schoolApi.teacherDay.mockReset().mockResolvedValue({ ok: true, data: { studyDay: '2026-09-07', learners: [] } });
   bookShelfProps.mockClear();
+  bookShelfMounts.mockClear();
+  // The pile's mocks carry state between tests unless reset here.
+  schoolApi.bookScans.pile.mockReset().mockResolvedValue({ ok: true, data: { pile: { screenId: 'portal', cards: [], reader: null, live: false, quietGapMs: 120000, lastScanAt: null } } });
+  for (const name of ['filePile', 'moveCard', 'removeCard', 'open', 'claim', 'dismiss']) schoolApi.bookScans[name].mockReset();
+  schoolApi.bookScans.pending.mockReset().mockResolvedValue({ ok: true, data: { intent: null } });
   launchHook.claim = null;
   launchHook.onLaunch = null;
   banksMock.mockReset().mockResolvedValue({
@@ -558,6 +586,117 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
   });
 });
 
+// The coin bank (economy slice 1, C3): the panel's bank door mints a grant,
+// the target lands in `onPortalLaunch`, and the bank screen mounts over the
+// locked panel with its own Back. Memory only, and it closes on a lapse.
+describe('SchoolApp — the bank door opens one kid\'s bank on the locked panel', () => {
+  const BANK_TARGET = { kind: 'program', program: 'economy-bank', learnerId: 'kid1' };
+  beforeEach(() => {
+    earningsRosterMock.mockReset().mockImplementation(async () => pricedKid1());
+    bankOpenMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { launchTarget: BANK_TARGET } });
+    economyBankMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {
+      mode: 'live', balances: { silver: 6, gold: 3, gems: 0 }, history: [], pass: {}, offers: {},
+      weekEndsAt: null, weekEndsOn: null, studyDay: '2026-09-07',
+    } });
+    window.history.replaceState({}, '', '/');
+  });
+
+  async function openBankFromDoor() {
+    render(<SchoolApp mode="locked" />);
+    // A whole locked SchoolApp: the coin cell exists only once the status board's
+    // per-kid loads settle, which outran the 15s default on a loaded host.
+    const slow = { timeout: 45000 };
+    await screen.findByTestId('selfservice-keypad', {}, slow);
+    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ }, slow)));
+    return screen.findByTestId('bank-screen', {}, slow);
+  }
+
+  it('coin cell → the kid\'s bank, with no Done overlay and no path of its own', { timeout: 120000 }, async () => {
+    const path = window.location.pathname;
+    const bank = await openBankFromDoor();
+    expect(bankOpenMock).toHaveBeenCalledWith(expect.objectContaining({ learnerId: 'kid1' }));
+    expect(bank).toHaveTextContent('Alpha');
+    expect(await screen.findByTestId('bank-balances')).toHaveTextContent('6');
+    expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
+    expect(screen.queryByTestId('selfservice-section-exit')).toBeNull();
+    expect(window.location.pathname).toBe(path);
+
+    fireEvent.click(within(bank).getByTestId('screen-header-back'));
+    expect(screen.queryByTestId('bank-screen')).toBeNull();
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+
+  it('an identity lapse closes the bank: the keypad, never someone\'s coins', { timeout: 120000 }, async () => {
+    await openBankFromDoor();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 11 * 60_000);
+    try {
+      await act(async () => { fireEvent.pointerDown(window); });
+    } finally {
+      clock.mockRestore();
+    }
+    expect(screen.queryByTestId('bank-screen')).toBeNull();
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+
+  it('a bank target for one kid launched as another answers false and mounts nothing', async () => {
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await screen.findByText('Civilization');
+    let mounted;
+    await act(async () => {
+      launchHook.claim('kid1');
+      mounted = await launchHook.onLaunch({ kind: 'program', program: 'economy-bank', learnerId: 'kid2' }, 'kid1');
+    });
+    expect(mounted).toBe(false);
+    expect(screen.queryByTestId('bank-screen')).toBeNull();
+    expect(bankLogMock).toHaveBeenCalledWith('economy-bank-refused', { reason: 'learner-mismatch' });
+  });
+
+  it('a refusal sheet does not outlive the resting view: a runner and home again leave no sheet', async () => {
+    bankOpenMock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Choose a current School learner.' } });
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
+    expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
+
+    // Something else takes the panel (a reading shelf, here), then goes home.
+    await act(async () => {
+      launchHook.claim('kid1');
+      await launchHook.onLaunch({ kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'g' }, 'kid1');
+    });
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
+    await act(async () => { bookShelfProps.mock.calls.at(-1)[0].onExit('done'); });
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
+    expect(screen.queryByText('Choose a current School learner.')).toBeNull();
+  });
+
+  it('a code typed under a refusal sheet takes the panel, and the sheet is gone when it returns', async () => {
+    bankOpenMock.mockResolvedValue({ ok: false, status: 403, data: { error: 'Choose a current School learner.' } });
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: {
+      ok: true, learner: 'kid1', subject: 'math', title: 'Math', sentence: null,
+      schema: 'school.self-service-card/v2',
+      context: { learner: { id: 'kid1', displayName: 'Alpha' }, taxonomy: { subject: { id: 'math', label: 'Math' } }, trail: [], progress: [] },
+      presentation: { status: 'ready', message: null },
+      actions: [{ kind: 'print', label: 'Print it', role: 'primary' }, { kind: 'exit', label: 'Go back', role: 'secondary' }],
+    } });
+    render(<SchoolApp mode="locked" />);
+    await screen.findByTestId('selfservice-keypad');
+    await act(async () => fireEvent.click(await screen.findByRole('button', { name: /^Alpha's bank/ })));
+    expect(screen.getByRole('dialog', { name: 'Whose bank' })).toBeInTheDocument();
+    for (const d of '123456') {
+      const key = screen.getByRole('button', { name: d });
+      fireEvent.pointerDown(key);
+      fireEvent.click(key);
+    }
+    await waitFor(() => expect(screen.queryByTestId('selfservice-keypad')).toBeNull());
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Go back' })));
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Whose bank' })).toBeNull();
+  });
+});
+
 // The code-free door: `/school/go/<learner>/<program>`, for a grown-up's
 // browser. Every runner behind it gates on `currentUser`, which is a lookup
 // into the ROSTER — so a learner the roster does not know produces a claim
@@ -629,54 +768,64 @@ describe('SchoolApp — turning the diagnostics up', () => {
   });
 });
 
-it('Portal scan waits for keypad digits, hands returned grant to the shelf, and a scan while that shelf is open is claimed for its child', async () => {
+it('Portal scans pile up while the keypad is busy, and one face files the pile — no shelf, no claim', async () => {
   const oldUrl = window.location.pathname;
   window.history.replaceState({}, '', '/screens/portal');
-  const scan = { id: 'portal-scan', screenId: 'portal', isbn13: '9780064400558', status: 'ready', book: { isbn13: '9780064400558', title: 'Hatchet' }, expiresAt: new Date(Date.now() + 300000).toISOString() };
-  schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: null } });
-  schoolApi.bookScans.claim.mockResolvedValue({ ok: true, data: { intentId: scan.id, launchTarget: { kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'returned-scan-grant' }, bookEntry: { isbn13: scan.isbn13, book: scan.book } } });
+  const pileOf = (over) => ({ ok: true, data: { pile: { screenId: 'portal', reader: null, live: true, quietGapMs: 120000, lastScanAt: new Date().toISOString(), cards: [], ...over } } });
+  const card = { id: 'card-1', isbn13: '9780064400558', status: 'ready', state: 'unfiled', duplicates: 0, book: { isbn13: '9780064400558', title: 'Hatchet' } };
   const r = render(<SchoolApp mode="locked" />);
   try {
     await screen.findByTestId('selfservice-keypad');
     fireEvent.click(screen.getByRole('button', { name: '1' }));
-    schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: scan } });
-    await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: scan.id }));
-    expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
-    // Deferred, but NOT a dead end: the corner card names the book and offers
-    // a way in. Nothing is claimed by tapping it — it clears the panel, and the
-    // dialog that follows is the one place "who's reading?" is asked.
-    expect(screen.getByText('Hatchet was scanned')).toBeInTheDocument();
+    schoolApi.bookScans.pile.mockResolvedValue(pileOf({ cards: [card] }));
+    await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: card.id }));
+    // Deferred while digits are half-typed, but NOT a dead end: the corner
+    // offers the pile, and opening it files nothing by itself.
+    expect(screen.queryByRole('heading', { name: /Books to file/ })).toBeNull();
+    expect(screen.getByText('1 book scanned — open when ready')).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open it' })); });
+    expect(schoolApi.bookScans.filePile).not.toHaveBeenCalled();
+    await screen.findByRole('heading', { name: 'Books to file · 1' });
+    schoolApi.bookScans.filePile.mockResolvedValue(pileOf({ reader: 'kid1', cards: [{ ...card, state: 'filed', learnerId: 'kid1', outcome: 'finished-new' }] }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Alpha' })); });
+    expect(schoolApi.bookScans.filePile).toHaveBeenCalledWith({ screenId: 'portal', learnerId: 'kid1' });
     expect(schoolApi.bookScans.claim).not.toHaveBeenCalled();
-    await screen.findByRole('dialog', { name: 'This book was just scanned' });
-    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
-    await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({ learnerId: 'kid1', grant: 'returned-scan-grant', initialBookEntry: { intentId: scan.id, isbn13: scan.isbn13 } }));
-    // A SCAN WHILE A CHILD'S SHELF IS OPEN IS THAT CHILD'S (2026-09-30). The
-    // shelf itself says "scan the barcode", and the learner is already known —
-    // asking "who's reading?" again (after sending them home) was the bug.
-    // Mid-entry (the shelf is NOT asking for a scan) the old offer stands: a
-    // scan must not remount the shelf over a half-entered book.
-    await act(async () => bookShelfProps.mock.calls.at(-1)[0].onScanReadyChange(false));
-    const midEntry = { ...scan, id: 'mid-entry-scan', book: { title: 'Mid entry book' } };
-    schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: midEntry } });
-    const claimsBefore = schoolApi.bookScans.claim.mock.calls.length;
-    await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: midEntry.id }));
-    expect(screen.getByText('Mid entry book was scanned')).toBeInTheDocument();
-    expect(schoolApi.bookScans.claim.mock.calls.length).toBe(claimsBefore);
-    schoolApi.bookScans.dismiss.mockResolvedValue({ ok: true });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss' })); });
-    // Asking for a barcode: the scan is this child's.
+    expect(await screen.findByRole('heading', { name: 'Filing to Alpha' })).toBeInTheDocument();
+  } finally { r.unmount(); window.history.replaceState({}, '', oldUrl); }
+});
+
+it('a scan while a child\'s shelf asks for a barcode is claimed for that child, and the pile stands aside', async () => {
+  const oldUrl = window.location.pathname;
+  window.history.replaceState({}, '', '/screens/portal');
+  schoolApi.bookScans.open.mockResolvedValue({ ok: true, data: { launchTarget: { kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'door-grant' } } });
+  const r = render(<SchoolApp mode="locked" />);
+  try {
+    await screen.findByTestId('selfservice-keypad');
+    await act(async () => { fireEvent.click(screen.getByTestId('book-shelf-door')); });
+    const who = screen.getByRole('dialog', { name: 'Who is logging a book' });
+    await act(async () => { fireEvent.click(within(who).getByRole('button', { name: 'Alpha' })); });
+    await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({ learnerId: 'kid1', grant: 'door-grant' }));
+    // Asking for a barcode: the scan is this child's (2026-09-30).
     await act(async () => bookShelfProps.mock.calls.at(-1)[0].onScanReadyChange(true));
-    const next = { ...scan, id: 'next-scan', isbn13: '9780439023528', book: { isbn13: '9780439023528', title: 'Next book' } };
-    schoolApi.bookScans.claim.mockResolvedValue({ ok: true, data: { intentId: next.id, launchTarget: { kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'scoped-grant' }, bookEntry: { isbn13: next.isbn13, book: next.book } } });
+    const next = { id: 'next-scan', screenId: 'portal', isbn13: '9780439023528', status: 'ready', book: { isbn13: '9780439023528', title: 'Next book' }, expiresAt: new Date(Date.now() + 300000).toISOString() };
+    // As the server does: a claimed scan's card leaves the unfiled pile.
+    schoolApi.bookScans.claim.mockImplementation(async () => {
+      schoolApi.bookScans.pile.mockResolvedValue({ ok: true, data: { pile: { screenId: 'portal', reader: 'kid2', live: true, quietGapMs: 120000, lastScanAt: new Date().toISOString(),
+        cards: [{ id: 'next-scan', isbn13: next.isbn13, status: 'ready', state: 'claimed', duplicates: 0, book: next.book }] } } });
+      return { ok: true, data: { intentId: next.id, launchTarget: { kind: 'program', program: 'book-log', learnerId: 'kid1', bookGrant: 'scoped-grant' }, bookEntry: { isbn13: next.isbn13, book: next.book } } };
+    });
     schoolApi.bookScans.pending.mockResolvedValue({ ok: true, data: { intent: next } });
+    schoolApi.bookScans.pile.mockResolvedValue({ ok: true, data: { pile: { screenId: 'portal', reader: 'kid2', live: true, quietGapMs: 120000, lastScanAt: new Date().toISOString(),
+      cards: [{ id: 'next-scan', isbn13: next.isbn13, status: 'ready', state: 'unfiled', duplicates: 0, book: next.book }] } } });
     await act(async () => h.byTopic.school({ type: 'school.book-scan', screenId: 'portal', intentId: next.id }));
     await waitFor(() => expect(schoolApi.bookScans.claim).toHaveBeenLastCalledWith('next-scan', { screenId: 'portal', learnerId: 'kid1' }));
-    expect(screen.queryByText('Next book was scanned')).toBeNull();
-    expect(screen.queryByRole('dialog', { name: 'This book was just scanned' })).toBeNull();
+    expect(schoolApi.bookScans.filePile.mock.calls).toEqual([]);
+    expect(screen.queryByRole('heading', { name: /Books to file/ })).toBeNull();
     await waitFor(() => expect(bookShelfProps.mock.calls.at(-1)?.[0]).toMatchObject({
       learnerId: 'kid1', grant: 'scoped-grant', initialBookEntry: { intentId: 'next-scan', isbn13: next.isbn13 },
     }));
+    // Handed to the mounted shelf, not delivered by remounting it (2026-11-05).
+    expect(bookShelfMounts).toHaveBeenCalledTimes(1);
   } finally { r.unmount(); window.history.replaceState({}, '', oldUrl); }
 });
 
@@ -694,7 +843,7 @@ describe('SchoolApp — card-ladder flashcards target', () => {
     expect(mounted).toBe(true);
     expect(await screen.findByTestId('card-ladder-stub')).toBeInTheDocument();
     const props = cardLadderProps.mock.calls.at(-1)[0];
-    expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1', test: false, scenario: null });
+    expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1', test: false, scenario: null, entry: null });
     expect(typeof props.onExit).toBe('function');
     expect(typeof props.resolveAssetUrl).toBe('function');
   });
@@ -723,7 +872,7 @@ describe('SchoolApp — the /test door', () => {
       // The reserved final segment is a flag, never an instance.
       expect(directLaunchMock).toHaveBeenCalledWith('test-learner', 'card-ladder', null);
       expect(cardLadderProps.mock.calls.at(-1)[0].descriptor).toEqual({
-        deckId: 'language/korean/week-01-classroom', userId: 'test-learner', test: true, scenario: 'round-end',
+        deckId: 'language/korean/week-01-classroom', userId: 'test-learner', test: true, scenario: 'round-end', entry: null,
       });
     } finally {
       window.history.replaceState({}, '', oldUrl);

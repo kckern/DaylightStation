@@ -97,6 +97,29 @@ describe('TermVerdictService.read', () => {
     expect(completion.asked).toEqual([]);
   });
 
+  it('a completion input voids a fresh row, so a payout settled seconds after a day turns green sees it', async () => {
+    const cache = new MemoryCache();
+    let at = NOW;
+    const completion = completionDouble({ [TODAY]: { state: 'incomplete', sections: [{ subject: 'math', state: 'obligated', reason: null }] } });
+    const service = new TermVerdictService({
+      getLearnerDayCompletion: completion, cache, academicPeriods: periods, window: { from: '2026-09-01' },
+      timezone: 'America/Los_Angeles', clock: () => new Date(at), freshMs: 60_000, logger: silent,
+    });
+    await service.read('kid'); await service.read('other'); await settle();
+    expect((await service.read('kid')).days.at(-1).state).not.toBe('met');
+
+    at = `${TODAY}T18:00:10.000Z`;
+    // The last sheet is graded: the day is complete now, ten seconds after the row was computed.
+    const done = completionDouble();
+    completion.execute = done.execute.bind(done);
+    service.invalidate('kid');
+    expect((await service.read('kid')).days.at(-1)).toMatchObject({ studyDay: TODAY, state: 'met' });
+    // Only the learner whose work changed is recomputed.
+    expect(done.asked).toEqual(['2026-09-08', TODAY]);
+    await service.read('other');
+    expect(done.asked).toEqual(['2026-09-08', TODAY]);
+  });
+
   it('a cache from an older ladder version is discarded whole', async () => {
     const cache = new MemoryCache();
     cache.docs.set('kid/2026-fall', { version: 0, computedAt: NOW, days: { '2026-09-02': { state: 'met', computedAt: NOW } } });
@@ -185,5 +208,42 @@ describe('TermVerdictService.rebuild', () => {
     const { service } = build({ cache, at: '2026-09-25T18:00:00.000Z' });
     await service.rebuild('kid');
     expect(cache.writes).toBe(3); // 25 days → 10 + 10 + 5
+  });
+});
+
+describe('TermVerdictService.dayRow', () => {
+  const cachedDoc = (days) => ({ version: VERDICT_VERSION, computedAt: NOW, days });
+
+  it('reads a day before yesterday from the cache, without a replay', async () => {
+    const cache = new MemoryCache();
+    await cache.write('kid', '2026-fall', cachedDoc({ '2026-09-03': { state: 'none', reason: null, served: 0, asked: 2, computedAt: NOW } }));
+    const { service, completion } = build({ cache });
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'none', served: 0, asked: 2 });
+    expect(completion.asked).toEqual([]);
+  });
+
+  it('replays a missing older day once and keeps it in the cache', async () => {
+    const { service, completion, cache } = build();
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'met' });
+    await settle();
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'met' });
+    expect(completion.asked).toEqual(['2026-09-03']);
+    expect((await cache.read('kid', '2026-fall')).days['2026-09-03']).toMatchObject({ state: 'met' });
+  });
+
+  it('recomputes yesterday and today even when cached', async () => {
+    const cache = new MemoryCache();
+    await cache.write('kid', '2026-fall', cachedDoc({ '2026-09-08': { state: 'none', served: 0, asked: 1, computedAt: NOW } }));
+    const { service, completion } = build({ cache });
+    expect(await service.dayRow('kid', '2026-09-08')).toMatchObject({ state: 'met' });
+    expect(completion.asked).toEqual(['2026-09-08']);
+  });
+
+  it('replays a cached unknown whose retry is due', async () => {
+    const cache = new MemoryCache();
+    await cache.write('kid', '2026-fall', cachedDoc({ '2026-09-03': { state: 'unknown', reason: 'replay_failed', served: 0, asked: 0, retryAfter: '2026-09-05T00:00:00.000Z' } }));
+    const { service, completion } = build({ cache });
+    expect(await service.dayRow('kid', '2026-09-03')).toMatchObject({ state: 'met' });
+    expect(completion.asked).toEqual(['2026-09-03']);
   });
 });

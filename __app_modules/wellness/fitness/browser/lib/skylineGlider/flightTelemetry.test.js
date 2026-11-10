@@ -19,6 +19,17 @@ const state = (overrides = {}) => ({
 });
 
 describe('flight telemetry', () => {
+  it('records missile and boost activations separately', () => {
+    const report=collectFlightTelemetry({previous:state(),next:state({missilesFired:1,missilesLeft:2,boostsUsed:1}),input:{connected:true},course,lastSampleSecond:-1});
+    expect(report.events).toContainEqual({type:'weapon.fired',data:{weapon:'missile',count:1,missilesLeft:2}});
+    expect(report.events).toContainEqual({type:'boost.activated',data:{count:1,cameraTime:.9}});
+  });
+  it('reports a gate as cleared once the craft tail passes it, flagging shutters and the dash', () => {
+    const gate = { class: 'solid', group: 'g', at_s: 10, width_s: .8, height: .37 };
+    const gated = { ...course, entities: [{ ...gate, id: 'g-top', piece: 'top', altitude: .37 }, { ...gate, id: 'g-shutter', piece: 'shutter', altitude: .63, height: .26, closes_at_s: 9 }] };
+    const report = collectFlightTelemetry({ previous: state({ courseTime: 11.06 }), next: state({ courseTime: 11.1, boostOffset: 2.4 }), input: { connected: true }, course: gated, lastSampleSecond: 99 });
+    expect(report.events).toContainEqual({ type: 'gate.cleared', data: { gateId: 'g', shutter: true, boostOffset: 2.4 } });
+  });
   it('emits exactly one complete state sample for each crossed course second', () => {
     const first = collectFlightTelemetry({
       previous: state(), next: state({ courseTime: 1.04 }),
@@ -111,7 +122,7 @@ describe('flight telemetry', () => {
     const result = collectFlightTelemetry({
       previous: state({ courseTime: 9.9 }),
       next: state({
-        courseTime: 10.1, phase: 'crashed', lives: 0, collisions: 1, lastCollisionSegmentId: 'nose-hit',
+        courseTime: 10.1, phase: 'crashed', lives: 0, collisions: 1, lastCollisionSegmentId: 'nose-hit', crashCause: 'terrain',
         collectedIds: ['bell-1'], checkpoint: { id: 'ridge', time: 10 },
       }),
       input: { rpm: 40, connected: true, transportStalled: false },
@@ -119,10 +130,24 @@ describe('flight telemetry', () => {
       lastSampleSecond: 9, course,
     });
 
-    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, segmentId: 'nose-hit' } });
+    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 0, kind: 'crash', segmentId: 'nose-hit', entityId: null } });
     expect(result.events).toContainEqual({ type: 'collectible', data: { collectibleId: 'bell-1' } });
     expect(result.events).toContainEqual({ type: 'checkpoint', data: { checkpointId: 'ridge', checkpointTime: 10 } });
-    expect(result.events).toContainEqual({ type: 'crashed', data: {} });
+    const crashed = result.events.find((event) => event.type === 'crashed');
+    expect(crashed.data).toMatchObject({ cause: 'terrain', segmentId: 'nose-hit', entityId: null, courseTime: 10.1, rawRpm: 40 });
+    expect(crashed.data).toHaveProperty('altitude');
+    expect(crashed.data).toHaveProperty('filteredRpm');
+  });
+
+  it('names the entity in a breakable hit', () => {
+    const result = collectFlightTelemetry({
+      previous: state({ courseTime: 9.9 }),
+      next: state({ courseTime: 10, lives: 2, collisions: 1, lastCollisionEntityId: 'pine-01' }),
+      input: { rpm: 40, connected: true, transportStalled: false },
+      previousInput: { rpm: 40, connected: true, transportStalled: false },
+      lastSampleSecond: 9, course,
+    });
+    expect(result.events).toContainEqual({ type: 'collision', data: { count: 1, lives: 2, kind: 'breakable', segmentId: null, entityId: 'pine-01' } });
   });
 
   it('reports restart and completion transitions', () => {
@@ -139,5 +164,21 @@ describe('flight telemetry', () => {
 
     expect(restarted.events).toContainEqual({ type: 'restarted', data: { restartCount: 1, checkpointId: 'start' } });
     expect(completed.events).toContainEqual({ type: 'completed', data: {} });
+  });
+
+  it('reports shots, detonations and destroyed entities once each', () => {
+    const base = state({ courseTime: 4, shotsFired: 0, bombsDropped: 0, bombsLeft: 5, blasts: [], destroyedBy: {} });
+    const next = { ...base, shotsFired: 1, bombsDropped: 1, bombsLeft: 4, blasts: [{ id: 'bomb-1', at_s: 4, altitude: 0.7, remaining: 0.5 }], destroyedBy: { tree: 'laser', rock: 'bomb' } };
+    const { events, sample } = collectFlightTelemetry({ previous: base, next, input: { connected: true }, previousInput: { connected: true }, course });
+    expect(events).toEqual([
+      { type: 'weapon.fired', data: { weapon: 'laser', count: 1 } },
+      { type: 'weapon.fired', data: { weapon: 'bomb', count: 1, bombsLeft: 4 } },
+      { type: 'bomb.detonated', data: { shotId: 'bomb-1', atSeconds: 4, altitude: 0.7 } },
+      { type: 'entity.destroyed', data: { entityId: 'tree', by: 'laser' } },
+      { type: 'entity.destroyed', data: { entityId: 'rock', by: 'bomb' } },
+    ]);
+    expect(sample.bombsLeft).toBe(4);
+    const again = collectFlightTelemetry({ previous: next, next: { ...next, blasts: [{ ...next.blasts[0], remaining: 0.4 }] }, input: { connected: true }, previousInput: { connected: true }, course });
+    expect(again.events).toEqual([]);
   });
 });

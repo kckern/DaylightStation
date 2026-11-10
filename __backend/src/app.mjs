@@ -11,7 +11,7 @@ import { configureLifelogArchive } from "../../__app_modules/personal/lifelog/se
 import { createLifelogWeightService } from "../../__app_modules/wellness/health/server/composition/lifelog-weight.mjs";
 import { registerFeedHeadlineHarvester } from "../../__app_modules/media/feed/server/composition/harvester.mjs";
 import { installAutomotiveRelay } from "../../__app_modules/household/auto/server/composition/ingress.mjs";
-import {createEconomyEarningsRuntime} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
+import {createEconomyEarningsRuntime,startEconomyPayouts,startWeekClose} from "../../__app_modules/money/economy/server/composition/earnings.mjs";
 import {studyDayFor,isInWindow} from "../../__app_modules/learning/school/server/study-calendar.mjs";
 import {createChessRuntime} from "../../__app_modules/games/chess/server/composition/runtime.mjs";
 import {createEmulatorRuntime} from "../../__app_modules/games/emulator/server/composition/runtime.mjs";
@@ -101,6 +101,7 @@ import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
 import { createPlaybackStallDetector } from '#composition/modules/playbackStall.mjs';
 import { createHubFleetBridge } from "../../__app_modules/media/media/server/composition/hubFleetBridge.mjs";
 import { createPlexHubSessions } from "../../__app_modules/media/media/server/composition/plexHubSessions.mjs";
+import { createArcadeBluetoothRuntime } from "../../__app_modules/games/arcade/server/composition/arcadeBluetooth.mjs";
 import { createArcadeGameSessionTracking } from "../../__app_modules/games/arcade/server/composition/arcadeGameSessions.mjs";
 import { createArcadeGameSessionsRouter } from "../../__app_modules/games/arcade/server/api/arcadeGameSessions.mjs";
 import { createApiRouters } from "./5_composition/modules/contentApi.mjs";
@@ -137,7 +138,7 @@ import { createCalendarApiRouter } from "../../__app_modules/personal/calendar/s
 import { createScreenPresenceService } from '#composition/modules/screenPresence.mjs';
 import { createPianoScreenPowerSync } from '../../__app_modules/learning/piano/server/composition/screen-power-sync.mjs';
 import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/composition/midi-wake.mjs";
-import { createPianoBridgeSupervisor } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
+import { createPianoBridgeSupervisor, PIANO_BRIDGE_SUPERVISOR_LOG_MODULE } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
@@ -183,6 +184,7 @@ import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
 import { createEventBusRouter } from "./4_api/v1/routers/admin/eventbus.mjs";
 import { createAdminRouter } from "./4_api/v1/routers/admin/index.mjs";
+import { createOAuthRouter } from "./4_api/v1/routers/admin/oauth.mjs";
 // Admin app-services (constructed HERE at the composition root and injected into
 // the admin router; keeps 4_api/**/admin/* free of #apps imports).
 import { HouseholdAdminService } from '#apps/admin/HouseholdAdminService.mjs';
@@ -1093,6 +1095,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // router itself is mounted below where the other v1Routers are assembled.
   const economyApi = createEconomyApi({
     configService,
+    // The same setting the weekly measures read; the earnings preview takes
+    // its study calendar from here, so passes and the preview share "today".
+    timezone: configService.getHouseholdTimezone?.(householdId) || 'UTC',
+    // Writes that move coins publish `economy.coins-changed`; School forwards
+    // it to the Portal's bank strip.
+    eventBus,
     logger: rootLogger.child({ module: 'economy-api' })
   });
 
@@ -1569,6 +1577,38 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Register headline harvester so scheduler can run feed-headlines job
   registerFeedHeadlineHarvester({ harvesterServices, feedServices, rootLogger });
 
+  // Harvester health: every harvest result feeds the monitor, which pushes the
+  // head of household when a source keeps failing, goes stale, or comes back.
+  const { HarvesterHealthMonitor } = await import("./3_applications/harvester/HarvesterHealthMonitor.mjs");
+  const { YamlHarvesterHealthStore } = await import("./1_adapters/harvester/YamlHarvesterHealthStore.mjs");
+  const harvesterHealthLogger = rootLogger.child({ module: 'harvester-health' });
+  const harvesterHealth = new HarvesterHealthMonitor({
+    store: new YamlHarvesterHealthStore({ path: configService.getHouseholdPath('harvester-health') }),
+    sendPush: async ({ title, message, data }) => {
+      // Resolved per push so a later household reload is picked up.
+      const haGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
+      const recipient = configService.getHeadOfHousehold?.();
+      const notifyService = recipient
+        ? userService.getProfile(recipient)?.identities?.homeassistant?.notify_service
+        : null;
+      if (!haGateway || !notifyService) {
+        harvesterHealthLogger.warn?.('harvester.health.no_push_target', { recipient: recipient || null });
+        return;
+      }
+      await haGateway.callService('notify', notifyService, { title, message, data });
+    },
+    // Same zone the harvesters themselves use (bootstrap harvesterTimezone).
+    timezone: configService.getTimezone?.() || null,
+    failureThreshold: 3, // keep ≤ the harvesters' circuit-breaker maxFailures
+    staleAfterDays: { withings: 7 },
+    skip: ['strava'], // StravaSyncHealth already pushes for Strava
+    logger: harvesterHealthLogger,
+  });
+  // Record (and push) only in the copy that owns the data; elsewhere GET /harvest
+  // still reads the shared state.
+  const { canRotateOAuthTokens } = await import("#system/runtime/runtimeEnvironment.mjs");
+  harvesterHealth.watch(harvesterServices.harvesterService, { enabled: canRotateOAuthTokens() });
+
   // Create harvest router using HarvesterService
   const { DefaultPrincipalResolver } = await import("./3_applications/common/context/DefaultPrincipalResolver.mjs");
   const { NodePromiseDeadline } = await import("./1_adapters/scheduling/NodePromiseDeadline.mjs");
@@ -1582,6 +1622,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     requestIds: { next: crypto.randomUUID },
     deadline: new NodePromiseDeadline(),
     timeoutPolicy: () => 120_000,
+    healthReport: () => harvesterHealth.report(),
     logger: rootLogger.child({ module: 'harvest-api' })
   });
 
@@ -1655,7 +1696,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'presentation-api' }),
   });
 
-  const chessRuntime = createChessRuntime({configService,dataService,rootLogger,server});
+  // One dated rung log for every ladder that can raise a rung (chess, checkers,
+  // connect-four; match + addressing ladders): the gems' piano-rung milestones.
+  const { createPianoRungLog } = await import("../../__app_modules/learning/piano/server/composition/rungLog.mjs");
+  const pianoRungLog = createPianoRungLog({ dataService, logger: rootLogger.child({ module: 'piano-games' }) });
+  const chessRuntime = createChessRuntime({configService,dataService,rootLogger,server,rungLog: pianoRungLog});
   const pianoBoardGameDayService = createPianoBoardGameDayRuntime({configService,householdId,rootLogger});
   // The native Chess router retains its compatibility endpoints, but their
   // dialogue and rivalry work is delegated to the shared board-game services
@@ -1692,6 +1737,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     nativeRouters: { chess: pianoChessRouter },
     boardGameDayService: pianoBoardGameDayService,
     aiGateway: scopedGateway(sharedAiGateway, { app: 'piano-games' }),
+    rungLog: pianoRungLog,
   });
   server?.once?.('close', () => pianoGamesModule.container.dispose());
   v1Routers['piano-games'] = pianoGamesModule.router;
@@ -1716,7 +1762,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Curated policy from data/household/content-filter/,
   // machine-fetched EDLs from media/content-filter/.
-  v1Routers['content-filter'] = await createContentFilterRuntime({configService,rootLogger});
+  v1Routers['content-filter'] = await createContentFilterRuntime({
+    configService, rootLogger, contentRegistry,
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'media', feature: 'content-filter-cards' }),
+  });
 
   v1Routers.emulator = createEmulatorRuntime({configService,rootLogger,eventBus});
 
@@ -1836,7 +1885,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     ],
     onSelectorSelect: (selection) => {
       if (selection?.equipmentId === 'party-games') {
-        handlePartyGamesBuzz(selection);
+        if (selection.userId) handlePartyGamesBuzz(selection);
         return;
       }
       // selection: { selectorId, equipmentId, userId, action }
@@ -2145,7 +2194,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // PianoContainer (persistence + the two course algorithms), inject the
   // container into the thin router. fitnessPlayableService provides Plex
   // enrichment for the /courses/:id/playable + /courses/progress endpoints.
-  const { router: pianoRouter, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate } = await createPianoModule({
+  const { router: pianoRouter, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate } = await createPianoModule({
     configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, PianoConfigProjection,
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
   });
@@ -2205,7 +2254,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // so a gate misfiring at 8pm would otherwise need a container restart to
   // relieve — the worst possible recovery story for a control that will
   // sometimes be wrong. `gate.force: open|closed|auto` is the parent's lever.
-  const { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, languageReelService, rubiksCubeService, languageTranscription, languageStudyService } = await createSchoolLanguageRuntime({ configService, rootLogger, jwtSecret, PANEL_BOOK_GRANT_TTL_MS, createLanguageTranscriptionService, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, schoolFullConfig, eventBus, presenceStore });
+  const { schoolStudyGrants, schoolReelGrants, schoolCubeGrants, schoolBookGrants, schoolBookPanelGrants, schoolLaunchPreviewTokens, schoolDebriefGrants, languageReelService, rubiksCubeService, languageTranscription, languageStudyService } = await createSchoolLanguageRuntime({ configService, rootLogger, jwtSecret, PANEL_BOOK_GRANT_TTL_MS, createLanguageTranscriptionService, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, schoolFullConfig, eventBus, presenceStore });
   // School lifecycle (+ its report/print-service/router mounting) moved
   // further down this function (Task 13) — it now depends on the real,
   // household-level DoNow service, which itself depends on seams
@@ -2360,6 +2409,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // HTTP surface: push ingress for surfaces that report their own lifecycle,
   // plus session and health reads. Present even when nothing is metered, so a
   // caller gets an explicit 503 rather than a 404 that looks like a typo.
+  v1Routers['arcade-bluetooth'] = createArcadeBluetoothRuntime({
+    devicesConfig,
+    logger: rootLogger.child({ module: 'arcade-bluetooth-api' }),
+  });
+
   v1Routers['arcade-game-sessions'] = createArcadeGameSessionsRouter({
     recordObservation: arcadeGameSessionTracking.recordObservation,
     sessions: arcadeGameSessionTracking.sessions,
@@ -2521,6 +2575,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // "no reader declares anything".
   let triggerNfcLocations = null;
   const nfcLocationsForReachability = () => triggerNfcLocations;
+  // The trigger owner's content-tag query, so a refused story-time book can
+  // suggest the other stickered books. Null until the trigger API is composed
+  // below.
+  let triggerContentTags = null;
+  const contentTagsForStoryTime = () => triggerContentTags?.() ?? null;
 
   let schoolLifecycle = {
     wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
@@ -2554,9 +2613,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // one repository and one resolver.
   const books = createBooksModule({ configService, logger: rootLogger });
 
-  // Late-bound: the economy earnings runtime is composed further down.
-  let schoolEarningsPreview = null;
-  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes } = await createSchoolLifecycleRuntime({ getEarningsPreview: () => schoolEarningsPreview, nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter });
+  const { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook: schoolPresenceHook } = await createSchoolLifecycleRuntime({ nfcLocationsForReachability, get schoolDebriefGrants() { return schoolDebriefGrants; }, get notificationService() { return notificationStack?.notificationService ?? null; }, scopedGateway, get sharedAiGateway() { return sharedAiGateway; }, get decisionGateway() { return decisionGateway; }, contentTagsForStoryTime, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, get startReadingSession() { return startReadingSession; }, languageStudyService, get schoolStudyGrants() { return schoolStudyGrants; }, languageReelService, get schoolReelGrants() { return schoolReelGrants; }, get schoolLaunchPreviewTokens() { return schoolLaunchPreviewTokens; }, pianoContainer, pianoDayActivity, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, get pianoLessonHook() { return pianoLessonHook; }, flashcardStudy, cardLadderStudy, rubiksCubeService, get schoolCubeGrants() { return schoolCubeGrants; }, get schoolBookGrants() { return schoolBookGrants; }, books, get donowModule() { return donowModule; }, get schoolCalc() { return schoolCalc; }, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, get schoolLifecycle() { return schoolLifecycle; }, set schoolLifecycle(value) { schoolLifecycle = value; }, schoolLearnerDirectory, get schoolBookPanelGrants() { return schoolBookPanelGrants; }, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, get getMaterialProgressSummary() { return getMaterialProgressSummary; }, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, get cardLadderTuning() { return cardLadderTuning; }, cardLadderConfig, flashcardAssets, get getMaterialCatalog() { return getMaterialCatalog; }, get getMaterialUnits() { return getMaterialUnits; }, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, get issueContinuationCode() { return issueContinuationCode; }, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter });
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).
@@ -2728,6 +2785,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     const { makePrintAgendaHandler } = await import("../../__app_modules/learning/school/server/composition-learner-card-actions.mjs");
     learnerActions.register('print-agenda', makePrintAgendaHandler({
       resolvePersonalCard: schoolLifecycle.useCases.resolvePersonalCard,
+      presenceHook: schoolPresenceHook ?? null,
       eventBus,
       logger: rootLogger.child({ module: 'trigger-learner' }),
     }));
@@ -2745,7 +2803,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService, triggerConfig, contentTags: triggerContentTagsQuery } = createTriggerApiRouter({
     listDir,
     learnerActions,
     deviceServices,
@@ -2777,6 +2835,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // The school reachability check can now answer for real (it has been
   // returning "could not tell" for every projection until this line).
   triggerNfcLocations = triggerConfig?.nfc?.locations ?? null;
+  triggerContentTags = triggerContentTagsQuery ?? null;
   reportUnreachableSchoolPrograms({
     launchers: schoolLifecycle?.launchers ?? null,
     declared: declaredEntryActions(triggerNfcLocations),
@@ -2858,9 +2917,61 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // under the household earn rules. Read-only (no ledger writes); evidence
   // through ports School and Fitness implement. Reads at /api/v1/earnings;
   // the teacher console's rate edits go through the school router's gate.
-  const earningsRuntime = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger});
-  v1Routers.earnings = earningsRuntime.router;
-  schoolEarningsPreview = earningsRuntime.earningsPreview;
+  // A failure here must not stop School booting: without it there is no
+  // earnings preview, no payouts and no week close, and it says so.
+  let economyEarnings = { router: null, payoutService: null, weekCloseService: null };
+  // Achievement evidence for the gem rules (ops:docs/superpowers/specs/
+  // 2026-11-04-achievement-gems-design.md): each module's provider. One that
+  // cannot be built is left out and its gem rows read "can't tell".
+  const achievementProviders = [];
+  const addAchievementProvider = async (name, build) => {
+    try { achievementProviders.push(await build()); } catch (error) { rootLogger.warn('economy.gems.provider-unavailable', { provider: name, error: error.message }); }
+  };
+  await addAchievementProvider('fitness', async () => {
+    const { createFitnessAchievementProvider } = await import("../../__app_modules/wellness/fitness/server/application/measures/fitnessAchievementProvider.mjs");
+    return createFitnessAchievementProvider({
+      races: fitnessServices.cycleRaceService,
+      cycleGameConfig: () => fitnessConfigService.getCycleGameConfig(householdId),
+      gliderRuns: fitnessServices.skylineGliderRunService,
+      gliderActs: fitnessServices.skylineGliderCourseCatalog,
+      fitnessRings,
+      sessions: fitnessServices.sessionService,
+      householdId,
+      logger: rootLogger.child({ module: 'fitness-achievements' }),
+    });
+  });
+  await addAchievementProvider('piano', async () => {
+    const { createPianoAchievementEvidence } = await import("../../__app_modules/learning/piano/server/composition/achievements.mjs");
+    return createPianoAchievementEvidence({
+      configService, dataService, rootLogger,
+      rungLog: pianoGamesModule?.rungLog ?? pianoRungLog,
+      gameHistory: pianoGamesModule?.repository ?? null,
+    });
+  });
+  await addAchievementProvider('school', async () => {
+    const { createSchoolAchievementProvider } = await import("../../__app_modules/learning/school/server/application/SchoolAchievementProvider.mjs");
+    const stores = schoolLifecycle?.stores ?? {};
+    return createSchoolAchievementProvider({
+      cardLadder: cardLadderStudy ?? null,
+      readingLog: stores.readingLog ?? null,
+      bookLog: stores.bookLog ?? null,
+      books: stores.bookRepository ?? null,
+      sessions: schoolLifecycle?.listLearnerSessions ?? null,
+      curriculum: stores.curriculum ?? null,
+      logger: rootLogger.child({ module: 'school-achievements' }),
+    });
+  });
+  try {
+    economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders,
+      sessionParticipants: async (sessionId) => {
+        const id = String(sessionId ?? '').replace(/^fs_/, '');
+        const session = await fitnessServices.sessionService.getSession(id, householdId, { decodeTimeline: false });
+        return Object.keys(session?.participants ?? {});
+      }});
+  } catch (error) {
+    rootLogger.error('economy.earnings.unavailable', { error: error.message });
+  }
+  v1Routers.earnings = economyEarnings.router;
   try {
     const { WeeklyMeasuresStateGatesProducer } = await import("../../__app_modules/wellness/fitness/server/application/measures/WeeklyMeasuresStateGatesProducer.mjs");
     fitnessStateGatesProducer = new WeeklyMeasuresStateGatesProducer({
@@ -3296,6 +3407,42 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     rootLogger.error('nutrition.cleanup.unavailable', { error: error.message });
   }
 
+  // Weekly earnings payouts (economy B3): mint what the earnings preview
+  // says was earned. Settles on school outcomes and piano lessons (debounced
+  // per learner and week) and in the hourly reconcile. Gated like the other
+  // scheduled jobs; inert while economy/config.yml reads `mode: off`, and
+  // `dry-run` only logs. School's own per-unit reward
+  // (`lifecycle.economy.enabled`) stays off so a unit is never paid twice.
+  // Skipped when the earnings runtime did not build (economy.earnings.unavailable).
+  if (economyEarnings.payoutService && economyEarnings.weekCloseService) {
+    try {
+      startEconomyPayouts({
+        payoutService: economyEarnings.payoutService,
+        config: economyApi.configProjection,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        eventBus,
+        scheduler: agentsServices.scheduler,
+        logger: rootLogger.child({ module: 'economy-payout' }),
+      });
+    } catch (error) {
+      rootLogger.error('economy.earnings.unavailable', { error: error.message, job: 'payouts' });
+    }
+    // Sunday week close (economy B4): settle the week once more, then unspent
+    // silver converts to gold on `week_close.cron` (read at boot; a change needs
+    // a restart). Same gate and modes as the payouts.
+    try {
+      startWeekClose({
+        weekCloseService: economyEarnings.weekCloseService,
+        config: economyApi.configProjection,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        scheduler: agentsServices.scheduler,
+        logger: rootLogger.child({ module: 'economy-week-close' }),
+      });
+    } catch (error) {
+      rootLogger.error('economy.earnings.unavailable', { error: error.message, job: 'week-close' });
+    }
+  }
+
   // Lifeplan ceremony reminders — hourly check for due ceremonies across all
   // users with a life plan. CeremonyScheduler gates each ceremony to its
   // household-local delivery hour (plan.ceremonies[type].at or per-type
@@ -3348,6 +3495,39 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
         rootLogger.warn('school.teacher-nudge.failed', { error: err.message });
       }
     });
+  }
+
+  // Parent digest (school economy C6): one push to each teacher at the
+  // economy catalog's `digest.cron` (read here, at boot: a change needs a
+  // restart; null registers nothing) summing each child's school day, plus a
+  // `zero-days` alert after `digest.zero_days_alert` study days in a row with
+  // work asked and none done. A push held by quiet hours is resent by an
+  // hourly retry tick. Gated like the economy payouts.
+  if (agentsServices.scheduler && notificationStack?.notificationService
+      && schoolLifecycle.useCases?.getLearnerDayCompletion) {
+    try {
+      const { createSchoolParentDigest } = await import("../../__app_modules/learning/school/server/composition-parent-digest.mjs");
+      createSchoolParentDigest({
+        economyConfig: economyApi.configProjection,
+        economyService: economyApi.economyService,
+        // One zone and 4 am boundary for both School's day and the economy's
+        // (getHouseholdTimezone || 'UTC', set where economyApi is built).
+        studyCalendar: economyApi.studyCalendar,
+        roster: () => schoolLearnerDirectory.listLearners(),
+        learnerName: learnerDisplayName,
+        getLearnerDayCompletion: schoolLifecycle.useCases.getLearnerDayCompletion,
+        termVerdicts: schoolLifecycle.useCases.termVerdicts ?? null,
+        sessions: schoolLifecycle.stores?.sessions ?? null,
+        notificationService: notificationStack.notificationService,
+        teachers: () => (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [],
+        logsDir: path.join(configService.getMediaDir(), 'logs'),
+        scheduler: agentsServices.scheduler,
+        enabled: enableScheduler && (process.env.NODE_ENV === 'production' || process.env.ENABLE_CRON === 'true'),
+        logger: rootLogger.child({ module: 'school-parent-digest' }),
+      });
+    } catch (err) {
+      rootLogger.error('school.parent-digest.unavailable', { error: err.message });
+    }
   }
 
   // Relay staleness watchdog — the hardware relays are pass-throughs that keep
@@ -3688,7 +3868,18 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   });
 
 
-  const {mediaExecutor,mediaDownloadService}=await createMediaJobsRuntime({rootLogger,mediaBasePath,loadFile});
+  // Course watchlist job (jobs.yml: course-sequence) needs the content registry,
+  // progress memory and the data-root YAML store besides the media basics.
+  const {mediaExecutor,mediaDownloadService}=await createMediaJobsRuntime({
+    rootLogger,mediaBasePath,loadFile,
+    courseSequence: {
+      contentRegistry,
+      mediaProgressMemory,
+      documents: new HouseholdYamlDocumentStore({ householdDirectory: dataDir }),
+      timezone: configService.getTimezone?.() || null,
+      newUid: crypto.randomUUID,
+    },
+  });
 
   // Camera detection ledger (Pipeline C). Registered unconditionally: it needs
   // no media path and no NAS — only the Reolink search API — so it should keep
@@ -3731,6 +3922,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     const { SchoolMaintenanceExecutor } = await import("../../__app_modules/learning/school/server/application-school-maintenance-executor.mjs");
     schoolMaintenanceExecutor = new SchoolMaintenanceExecutor({
       markSessionAbandoned: schoolLifecycle.useCases.markSessionAbandoned,
+      sweepAnswerSheets: schoolLifecycle.useCases.sweepAnswerSheets ?? null,
       logger: rootLogger.child({ module: 'school-maintenance' }),
     });
   }
@@ -3762,7 +3954,8 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     newsReporterExecutor: newsReporter.executor,
     schoolExecutor: schoolMaintenanceExecutor,
     // AI spend a job causes is stamped `job:<id>` in the usage ledger.
-    runInJobContext: (jobId, work) => runWithOrigin(`job:${jobId}`, work)
+    runInJobContext: (jobId, work) => runWithOrigin(`job:${jobId}`, work),
+    logger: rootLogger.child({ module: 'scheduler' })
   });
 
   const scheduler = new Scheduler({
@@ -3872,7 +4065,10 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
       remoteAdmin: deviceRemoteAdministrationService,
       haGateway: homeAutomationAdapters.haGateway,
       householdId,
-      logger: rootLogger.child({ module: 'piano-bridge-supervisor' }),
+      eventBus,
+      deviceService: deviceServices.deviceService,
+      getScreenOverrideService,
+      logger: rootLogger.child({ module: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE }),
     });
   } else {
     rootLogger.info?.('piano-bridge.supervisor.skipped', { reason: 'not the prod container', isDocker, enableScheduler });
@@ -3918,6 +4114,30 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     ledger: notificationStack.ledgerStore,
   });
 
+  // Withings reconnect: admin-only, server-side code exchange (Withings codes
+  // expire in ~30s, so the exchange has to happen in the callback itself).
+  // The redirect URI must match one registered with the Withings app; set
+  // system auth withings.connect_redirect_uri when the request host differs.
+  let oauthRouter = null;
+  if (harvesterServices.withingsOAuth) {
+    oauthRouter = createOAuthRouter({
+      withingsOAuth: harvesterServices.withingsOAuth,
+      authStore: harvesterServices.authStore,
+      harvesterService: harvesterServices.harvesterService,
+      resolveUsername: () => configService.getHeadOfHousehold(),
+      // Only household members (same roster normalization as the /life switcher).
+      isKnownUser: (username) => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+        .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
+        .includes(username),
+      redirectUri: (req) => configService.getSystemAuth?.('withings', 'connect_redirect_uri')
+        || `${(req.get('x-forwarded-proto') || req.protocol).split(',')[0].trim()}://${req.get('host')}${req.baseUrl}/withings/callback`,
+      newState: () => crypto.randomUUID(),
+      logger: adminApiLogger.child?.({ submodule: 'oauth' }) || adminApiLogger,
+    });
+  } else {
+    adminApiLogger.info?.('oauth.withings.disabled', { reason: 'Withings client_id/client_secret not configured' });
+  }
+
   // Admin router - combined content, images, and eventbus management
   v1Routers.admin = createAdminRouter({
     householdContext,
@@ -3935,6 +4155,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     notificationLedgerStore: notificationStack.ledgerStore,
     stateGatesAdministration: stateGatesModule.administrationOperations,
     stateGatesActorFromRequest: stateGatesModule.actorFromRequest,
+    oauthRouter,
     logger: adminApiLogger
   });
 
@@ -3968,9 +4189,44 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: rootLogger.child({ module: 'adb-launcher' })
   });
 
+  // RetroArch per-game overrides: before a game launches, its override file on
+  // the device gets the catalog's `resume` flag as savestate_auto_load. The ADB
+  // endpoint is the configured device's content_control.fallback.
+  let prepareLaunch = null;
+  const gamesLaunchConfig = configService.getHouseholdAppConfig(null, 'games')?.launch;
+  const overrideDeviceId = gamesLaunchConfig?.game_overrides?.device;
+  if (overrideDeviceId) {
+    const overrideLogger = rootLogger.child({ module: 'retroarch-overrides' });
+    const adbFallback = configService.getDeviceConfig(overrideDeviceId)?.content_control?.fallback;
+    if (adbFallback?.provider === 'adb' && adbFallback.host) {
+      const { AdbAdapter } = await import('#adapters/devices/AdbAdapter.mjs');
+      const { createRetroArchPrepareLaunch } = await import("../../__capabilities/content-catalog/server/composition/retroarch-overrides.mjs");
+      const overrideAdb = new AdbAdapter({ host: adbFallback.host, port: adbFallback.port }, { logger: overrideLogger });
+      let adbConnected = false;
+      prepareLaunch = createRetroArchPrepareLaunch({
+        shell: async (script) => {
+          if (!adbConnected) {
+            const conn = await overrideAdb.connect();
+            if (!conn.ok) return conn;
+            adbConnected = true;
+          }
+          const result = await overrideAdb.shellArgv(script);
+          if (!result.ok) adbConnected = false;
+          return result;
+        },
+        getConfig: () => configService.getHouseholdAppConfig(null, 'games'),
+        readCatalog: () => dataService.household.read('gaming/retroarch/catalog'),
+        logger: overrideLogger
+      });
+    } else {
+      overrideLogger.warn?.('retroarch.override.disabled', { reason: 'device has no adb fallback', device: overrideDeviceId });
+    }
+  }
+
   const launchService = new LaunchService({
     contentCatalog: contentServices.contentCatalog,
     deviceLauncher: adbLauncher,
+    prepareLaunch,
     logger: rootLogger.child({ module: 'launch-service' })
   });
 
@@ -4213,6 +4469,18 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
         rootLogger.info?.('school.completion-bridge.shutdown.complete');
       } catch (err) {
         rootLogger.error?.('school.completion-bridge.shutdown.error', { error: err?.message });
+      }
+    });
+  }
+
+  // Graceful shutdown: stop forwarding the economy's coins-changed to the Portal.
+  if (schoolLifecycle.coinsChangedRelay) {
+    process.on('SIGTERM', () => {
+      try {
+        schoolLifecycle.coinsChangedRelay.stop();
+        rootLogger.info?.('school.coins-changed-relay.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('school.coins-changed-relay.shutdown.error', { error: err?.message });
       }
     });
   }

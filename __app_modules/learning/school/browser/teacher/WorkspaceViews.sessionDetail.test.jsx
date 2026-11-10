@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { SessionInspector, LearnerDayScreen } from "./WorkspaceViews.jsx";
 
 vi.mock("../schoolApi.js", () => ({
@@ -26,9 +26,9 @@ const teacherAuth = vi.hoisted(() => ({
   requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
 }));
 vi.mock("./TeacherProfileContext.jsx", () => ({
-  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' }, teachers: [{ id: 'teacher-a', name: 'Teacher A' }] }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -62,7 +62,7 @@ const SESSION = {
       { itemId: 'q-year', questionNumber: 20, prompt: 'Statehood year?', given: '1808', expected: ['1818'], verdict: 'incorrect' },
     ],
   },
-  artifacts: [{ artifactId: 'art_1', kind: 'worksheet', availability: 'regenerable', originalPdfUrl: '/worksheet.pdf', thumbnailUrl: '/worksheet.png' }],
+  artifacts: [{ artifactId: 'art_1', kind: 'worksheet', availability: 'regenerable', reprintable: true, originalPdfUrl: '/worksheet.pdf', thumbnailUrl: '/worksheet.png' }],
   events: [],
 };
 
@@ -162,11 +162,85 @@ describe('SessionInspector detail coherence', () => {
     expect(credit).not.toHaveClass('teacher-back');
   });
 
+  // Both repairs land on the child's Operations page with the lesson or day
+  // already picked, not on a bare page that knows neither.
+  it('sends More actions to operations with the lesson and day', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, state: { ...SESSION.state, unitId: 'unit-a', studyDay: '2026-10-20' },
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const credit = await screen.findByRole('link', { name: /Give credit for work completed offline/ });
+    expect(credit).toHaveAttribute('href', '/school/teacher/students/user_2/operations?unit=unit-a');
+    expect(screen.getByRole('link', { name: /This was another child’s work/ }))
+      .toHaveAttribute('href', '/school/teacher/students/user_2/operations?day=2026-10-20');
+  });
+
+  // `updatedAt` is last activity: a lesson rescanned days later must not file
+  // its reassign under the rescan day. The `created` event is the fallback.
+  it('opens another-child on the day the lesson was opened, not last touched', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, updatedAt: '2026-10-24T15:00:00.000Z',
+      events: [{ type: 'created', at: '2026-10-20T15:00:00.000Z' }, { type: 'submitted', at: '2026-10-24T15:00:00.000Z' }],
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const link = await screen.findByRole('link', { name: /another child’s work/ });
+    expect(new URL(link.getAttribute('href'), 'http://x').searchParams.get('day')).toBe('2026-10-20');
+  });
+
+  it('names who did each lifecycle step — a child by kid name, a grown-up by teacher name', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION,
+      events: [
+        { type: 'submitted', at: '2026-10-20T15:00:00.000Z', by: 'user_2' },
+        { type: 'graded', at: '2026-10-21T15:00:00.000Z', gradedBy: 'teacher-a' },
+      ],
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const list = (await screen.findByText('Teacher A')).closest('ol');
+    expect(within(list).getByText('User_2')).toBeInTheDocument();
+    expect(within(list).queryByText(/teacher-a|user_2/)).toBeNull();
+  });
+
+  // With no owner both links are hidden; the disclosure must not open onto nothing.
+  it('shows no More actions when the lesson has no owner', async () => {
+    const { learnerId: _owner, ...ownerless } = SESSION.state;
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: { ...SESSION, state: ownerless } });
+    render(<SessionInspector learnerId={null} sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await screen.findByRole('button', { name: 'Fix a marked answer' });
+    expect(screen.queryByText('More actions')).toBeNull();
+  });
+
   it('puts the reprint control inside the card it reprints', async () => {
     teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
     render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
     const reprint = await screen.findByRole('button', { name: /Print another copy/i });
     expect(reprint.closest('.teacher-issued-artifact')).not.toBeNull();
+  });
+
+  // The server says which paper it will reprint (a worksheet only while it is
+  // still out and its lesson is not paused); a button it would refuse is not offered.
+  it('offers no reprint for paper the server will not reprint', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, artifacts: SESSION.artifacts.map((artifact) => ({ ...artifact, reprintable: false })),
+    } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await screen.findByText('Issued materials and results');
+    expect(screen.queryByRole('button', { name: /Print another copy/i })).toBeNull();
+  });
+
+  // A retained receipt reprints after hand-in (ReprintResultReceiptArtifact
+  // has no session-state gate), so a marked lesson still offers it.
+  it('offers another copy of a receipt on a marked lesson', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION,
+      artifacts: [{ artifactId: 'rcpt_1', kind: 'result-receipt', role: 'result-receipt', availability: 'exact',
+        exactBytesRetained: true, reprintable: true, representation: { mediaType: 'image/png' } }],
+    } });
+    teacherWorkspaceApi.reprintArtifact.mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, artifactId: 'rcpt_1' } });
+    render(<SessionInspector learnerId="user_2" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    (await screen.findByRole('button', { name: /Print another copy/i })).click();
+    expect(await screen.findByText('Result receipt ready to print')).toBeInTheDocument();
+    expect(teacherWorkspaceApi.reprintArtifact.mock.calls[0][0]).toBe('rcpt_1');
   });
 
   // `artifact.reprint` is ReprintIssuedArtifact's audit label; it is not one of
@@ -270,5 +344,18 @@ describe('LearnerDayScreen study day', () => {
       return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     })();
     expect(input.value).toBe(expected);
+  });
+
+  it('puts the week above the day, and a day column opens that day', async () => {
+    const onChangeStudyDay = vi.fn();
+    render(<LearnerDayScreen learnerId="user_2" learnerName="User_2" studyDay="2026-08-20"
+      onChangeStudyDay={onChangeStudyDay} onOpenSession={() => {}} />);
+    expect(await screen.findByRole('heading', { name: 'This week' })).toBeInTheDocument();
+    const today = (() => {
+      const now = new Date();
+      return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(now);
+    })();
+    (await screen.findByRole('button', { name: new RegExp(`^${today}`) })).click();
+    expect(onChangeStudyDay).toHaveBeenCalledTimes(1);
   });
 });

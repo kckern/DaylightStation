@@ -228,6 +228,19 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
           // on Tuesday and annotated on Thursday was still passed on Tuesday.
           resultAt: state.outcome?.at ?? null,
           gradedPercent: state.gradedPercent ?? null, updatedAt: last?.at ?? null,
+          // The session this one retries, from its own `created` event. The
+          // row is reduced from the log on every read (there is no stored
+          // index to go stale), so every row carries it: null on an original,
+          // never absent. The remediation cap walks these links back to the
+          // first sheet without reading a single event.
+          remediationOf: state.remediationOf ?? null,
+          // The grade's own facts, for a reader asking "was this sheet marked,
+          // and how" (the economy's perfect-sheet gem): a `graded` event's
+          // stamp and counts, and whether the evidence was later invalidated.
+          gradedAt: state.gradedAt ?? null,
+          gradedCorrectCount: state.gradedCorrectCount ?? null,
+          gradedTotalCount: state.gradedTotalCount ?? null,
+          evidenceInvalidated: state.evidenceInvalidated === true,
         } });
       }
     }
@@ -264,6 +277,11 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
         day,
         studyDay: row.studyDay ?? null,
         updatedAt: row.updatedAt ?? null,
+        remediationOf: row.remediationOf ?? null,
+        gradedAt: row.gradedAt ?? null,
+        gradedCorrectCount: row.gradedCorrectCount ?? null,
+        gradedTotalCount: row.gradedTotalCount ?? null,
+        evidenceInvalidated: row.evidenceInvalidated === true,
       });
     }
     return facts;

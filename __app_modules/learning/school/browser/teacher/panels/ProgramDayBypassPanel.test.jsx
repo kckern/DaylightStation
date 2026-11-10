@@ -15,9 +15,9 @@ vi.mock("../../schoolApi.js", () => ({
 // A claimed, server-authorized teacher, so useTeacherWrite calls straight
 // through without exposing or forwarding a PIN.
 vi.mock("../TeacherProfileContext.jsx", () => ({
-  useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
+  useTeacherProfileOptional: () => ({ currentTeacher: { id: 'teacher-a', name: 'Teacher A' }, teachers: [{ id: 'teacher-a', name: 'Teacher A' }, { id: 'teacher-b', name: 'Teacher B' }] }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher-a', name: 'Teacher A' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -33,7 +33,7 @@ const ok = (data) => ({ ok: true, status: 200, data });
 const ACTIVE = {
   schema: 'school.program-day-bypass/v1', operation: 'applied', bypassId: 'pdb_1',
   learnerId: 'kid1', programId: 'piano-course', studyDate: '2026-08-27',
-  reason: 'Recital tonight', decidedBy: 'kckern', decidedAt: '2026-08-27T14:00:00-07:00',
+  reason: 'Recital tonight', decidedBy: 'teacher-b', decidedAt: '2026-08-27T14:00:00-07:00',
 };
 
 const mount = () => render(<ProgramDayBypassPanel learnerId="kid1" learnerName="Kid One" />);
@@ -84,7 +84,7 @@ describe('ProgramDayBypassPanel — granting', () => {
 
     await waitFor(() => expect(schoolApi.grantProgramDayBypass).toHaveBeenCalledWith({
       learnerId: 'kid1', programId: 'piano-course', reason: 'Recital tonight',
-      decidedBy: 'kckern', pin: null,
+      decidedBy: 'teacher-a', pin: null,
     }));
   });
 
@@ -103,7 +103,7 @@ describe('ProgramDayBypassPanel — an active excusal', () => {
   it('shows who excused it and why, instead of the grant form', async () => {
     setup({ bypasses: { active: [ACTIVE], history: [ACTIVE] } });
     mount();
-    expect(await screen.findByText(/Excused by kckern/)).toBeInTheDocument();
+    expect(await screen.findByText(/Excused by Teacher B/)).toBeInTheDocument();
     expect(screen.getByText(/Recital tonight/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /excuse today.s piano lesson/i })).toBeNull();
   });
@@ -122,7 +122,7 @@ describe('ProgramDayBypassPanel — an active excusal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retract' }));
 
     await waitFor(() => expect(schoolApi.retractProgramDayBypass).toHaveBeenCalledWith('pdb_1', {
-      reason: 'Wrong kid', retractedBy: 'kckern', pin: null,
+      reason: 'Wrong kid', retractedBy: 'teacher-a', pin: null,
     }));
   });
 

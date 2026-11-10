@@ -52,8 +52,10 @@ describe('GATE_ID', () => {
 describe('FitnessPlayer uses the shared constant on BOTH sides', () => {
   const source = codeOf(FITNESS_PLAYER);
 
-  it('imports GATE_ID', () => {
-    expect(source).toMatch(/import\s*\{[^}]*GATE_ID[^}]*\}\s*from\s*"\.\.\/\.\.\/\.\.\/\.\.\/capabilities\/playback\/browser\/player\-support\/gate\/gateIds\.js"/);
+  it('imports GATE_ID from the shared module', () => {
+    const specifier = source.match(/import\s*\{[^}]*\bGATE_ID\b[^}]*\}\s*from\s*["']([^"']+)["']/)?.[1];
+    expect(specifier).toBeTypeOf('string');
+    expect(path.resolve(path.dirname(FITNESS_PLAYER), specifier)).toBe(path.resolve(HERE, 'gateIds.js'));
   });
 
   it('produces the verdict with GATE_ID.GOVERNANCE', () => {

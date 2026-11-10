@@ -33,7 +33,12 @@
 
 import { sizedPlexImage, ART_BOX } from "../plexImage.js";
 
-/** contentId -> cover url, or null for "asked, and there isn't one". */
+/**
+ * contentId -> `{image, title}` as `/info` sent them (the UNSIZED image), or
+ * null for "asked, and there isn't one". Sizing happens on the way out, so the
+ * shelf and the refusal's suggestions share one lookup per book and each gets
+ * the box it draws in.
+ */
 const cache = new Map();
 /** contentId -> the in-flight promise, so concurrent callers share one request. */
 const inflight = new Map();
@@ -51,35 +56,60 @@ async function lookup(contentId, fetchImpl) {
   try {
     const r = await fetchImpl(`/api/v1/info/${encodeURIComponent(contentId)}`, { credentials: 'same-origin' });
     const data = r?.ok ? await r.json() : null;
-    const raw = data?.image ?? data?.thumbnail ?? data?.imageUrl ?? null;
-    return sizedPlexImage(raw, ...ART_BOX.readingShelf);
+    if (!data) return null;
+    const image = data.image ?? data.thumbnail ?? data.imageUrl ?? null;
+    const title = typeof data.title === 'string' && data.title.trim() ? data.title.trim() : null;
+    return image || title ? { image, title } : null;
   } catch {
     return null;
   }
 }
 
-/**
- * @param {string} contentId
- * @param {Function} [fetchImpl] injectable for tests
- * @returns {Promise<string|null>} the cover url, or null when there isn't one
- */
-export function bookCover(contentId, fetchImpl = globalThis.fetch) {
-  if (!contentId) return Promise.resolve(null);
+/** The one deduped, sequential `/info` lookup behind both exports. */
+function lookupOnce(contentId, fetchImpl) {
   if (cache.has(contentId)) return Promise.resolve(cache.get(contentId));
   if (inflight.has(contentId)) return inflight.get(contentId);
 
   const queued = chain
     .then(() => lookup(contentId, fetchImpl))
-    .then((url) => {
-      cache.set(contentId, url);
+    .then((info) => {
+      cache.set(contentId, info);
       inflight.delete(contentId);
-      return url;
+      return info;
     });
   // The chain must survive a rejection, or one bad lookup stalls every later
   // one behind it forever.
   chain = queued.then(() => undefined, () => undefined);
   inflight.set(contentId, queued);
   return queued;
+}
+
+/**
+ * @param {string} contentId
+ * @param {Function} [fetchImpl] injectable for tests
+ * @returns {Promise<string|null>} the shelf-sized cover url, or null when there isn't one
+ */
+export function bookCover(contentId, fetchImpl = globalThis.fetch) {
+  if (!contentId) return Promise.resolve(null);
+  return lookupOnce(contentId, fetchImpl)
+    .then((info) => sizedPlexImage(info?.image ?? null, ...ART_BOX.readingShelf) ?? null);
+}
+
+/**
+ * The cover AND Plex's title, for a surface that has only a sticker label to
+ * go on (a refusal's suggestions). Same lookup as `bookCover`, sized for `box`.
+ *
+ * @param {string} contentId
+ * @param {[number, number]} [box] CSS px the cover is drawn in
+ * @param {Function} [fetchImpl] injectable for tests
+ * @returns {Promise<{cover: string|null, title: string|null}>}
+ */
+export function bookInfo(contentId, box = ART_BOX.readingSuggestion, fetchImpl = globalThis.fetch) {
+  if (!contentId) return Promise.resolve({ cover: null, title: null });
+  return lookupOnce(contentId, fetchImpl).then((info) => ({
+    cover: sizedPlexImage(info?.image ?? null, ...box) ?? null,
+    title: info?.title ?? null,
+  }));
 }
 
 export default bookCover;

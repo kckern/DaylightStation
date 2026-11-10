@@ -2,8 +2,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { fileURLToPath } from 'node:url';
 import * as sass from 'sass';
-import AgendaStatusBoard from "./AgendaStatusBoard.jsx";
-import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
+import AgendaStatusBoard, { withServerVerdict } from "./AgendaStatusBoard.jsx";
+import { BOARD_CACHE_KEY } from "./boardCache.js";
+import { dayStatus, summarize, ringsByLearner, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 
 vi.mock("../schoolApi.js", () => ({
   schoolApi: { agendaPreview: vi.fn(), teacherDay: vi.fn(), stateGates: vi.fn(), earningsRoster: vi.fn(), wallet: vi.fn() },
@@ -58,6 +59,31 @@ describe('AgendaStatusBoard model', () => {
     expect(summary.total).toBe(2);
     expect(summary.done).toBe(1);
     expect(summary.segments.map((s) => s.subject)).toEqual(['civilization', 'civilization']);
+  });
+
+  // 2026-11-03: a capped remediation (planner moved on) plus the next unit passed
+  // read "6 of 7" here while the agenda, term grid and day-complete gate said done.
+  it('drops a settled retry the planner has moved past once the subject is served', () => {
+    const sections = [{ subject: 'civilization', obligation: { state: 'served' },
+      servedWork: [{ unitId: 'atlas.p120', assignmentUnitId: 'atlas.p120' }] }];
+    const sessions = [
+      { unitId: 'atlas.p084', subject: 'civilization', outcome: { result: 'needs_remediation' } },
+      { unitId: 'atlas.p120', subject: 'civilization', outcome: { result: 'passed' } },
+    ];
+    const summary = summarize(sections, sessions);
+    expect(summary).toMatchObject({ total: 1, done: 1 });
+    // Not served yet: the retry is still owed and still shows.
+    const owed = summarize([{ subject: 'civilization', obligation: { state: 'owed' } }], sessions);
+    expect(owed).toMatchObject({ total: 2, done: 1 });
+  });
+
+  it('lets the server day verdict decide done, in both directions, and ignores an unknown one', () => {
+    const partly = { total: 3, done: 2, segments: [] };
+    expect(withServerVerdict(partly, { state: 'complete' }).serverDone).toBe(true);
+    expect(withServerVerdict({ total: 2, done: 2, segments: [] }, { state: 'incomplete' }).serverDone).toBe(false);
+    expect(withServerVerdict(partly, { state: 'no_work_today' }).serverDone).toBe(true);
+    expect(withServerVerdict(partly, { state: 'indeterminate' })).toBe(partly);
+    expect(withServerVerdict(partly, null)).toBe(partly);
   });
 
   it('maps the outcome vocabulary onto three disc states', () => {
@@ -632,6 +658,50 @@ describe('a scan updates the board immediately', () => {
       await waitFor(() => expect(schoolApi.teacherDay.mock.calls.length).toBeGreaterThan(before));
     },
   );
+
+  it('a coins-changed burst re-reads the coins once, and not the plans', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: {
+      sections: [{ subject: 'math', next: { unitId: 'm.01' } }],
+      entries: [{ unitId: 'm.01', subject: 'math' }],
+    } });
+    schoolApi.earningsRoster.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+    await waitFor(() => expect(screen.getByLabelText('0 of 1 done')).toBeTruthy());
+    const school = wsHandlers.filter((h) => h.topic === 'school').at(-1);
+    const plans = schoolApi.teacherDay.mock.calls.length;
+    const coins = schoolApi.earningsRoster.mock.calls.length;
+
+    school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+    school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+    school.cb({ event: 'coins-changed', learnerId: 'learner1' });
+
+    await waitFor(() => expect(schoolApi.earningsRoster.mock.calls.length).toBe(coins + 1));
+    expect(schoolApi.teacherDay.mock.calls.length).toBe(plans);
+  });
+
+  it('a coins-changed stream that never pauses still re-reads the coins within 3 s', async () => {
+    schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [], entries: [] } });
+    schoolApi.earningsRoster.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
+    render(<AgendaStatusBoard kids={[{ id: 'learner1', name: 'Learner One' }]} day="2026-08-26" />);
+    await waitFor(() => expect(schoolApi.earningsRoster).toHaveBeenCalled());
+    vi.useFakeTimers();
+    try {
+      const school = wsHandlers.filter((h) => h.topic === 'school').at(-1);
+      const coins = schoolApi.earningsRoster.mock.calls.length;
+      for (let t = 0; t < 2_500; t += 500) {
+        act(() => { school.cb({ event: 'coins-changed', learnerId: 'learner1' }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      }
+      expect(schoolApi.earningsRoster.mock.calls.length).toBe(coins);
+      act(() => { school.cb({ event: 'coins-changed', learnerId: 'learner1' }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      expect(schoolApi.earningsRoster.mock.calls.length).toBe(coins + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('ignores story events outside the displayed roster, from another study day, and unrelated traffic', async () => {
     schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
@@ -1307,11 +1377,35 @@ const priced = (learnerId, silver, { gems = 0, pending = {}, lines = [{ status: 
 const roster = (...learners) => ({ ok: true, status: 200, data: { windows: { school: WEEK }, learners } });
 
 describe('earningsByLearner', () => {
-  it('maps the roster preview by learner, with the week it prices', () => {
-    expect(earningsByLearner(roster(priced('user_4', 21), priced('user_5', 23, { pending: { silver: 5, gems: 1 } })).data)).toEqual({
-      user_4: { silver: 21, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to },
-      user_5: { silver: 23, gems: 0, pendingSilver: 5, pendingGems: 1, from: WEEK.from, to: WEEK.to },
+  it('maps the roster preview by learner: earned silver, gems held (contest gem included)', () => {
+    // A ring-contest lead files 5 silver + 1 gem under `pending` until Saturday
+    // noon: the gem is held now, the silver is not shown.
+    expect(earningsByLearner(roster(priced('user_4', 21, { gems: 2 }), priced('user_5', 23, { pending: { silver: 5, gems: 1 } })).data)).toEqual({
+      user_4: { silver: 21, gems: 2, from: WEEK.from, to: WEEK.to, earned: [] },
+      user_5: { silver: 23, gems: 1, from: WEEK.from, to: WEEK.to, earned: [] },
     });
+  });
+
+  it('keeps the earned lines, with their labels, for the coin window', () => {
+    const learner = priced('user_4', 9, { lines: [
+      { status: 'earned', ruleId: 'korean-daily', label: 'Korean (each day done)', amount: { silver: 6, gems: 0 } },
+      { status: 'earned', ruleId: 'green-week', label: 'Green week', amount: { silver: 0, gems: 1 } },
+      { status: 'pending', ruleId: 'scripture-week', label: 'Scripture (whole week)', amount: { silver: 0, gems: 0 } },
+      { status: 'earned', ruleId: 'piano-daily', label: 'Piano (each day done)', amount: { silver: 0, gems: 0 } },
+    ] });
+    expect(earningsByLearner(roster(learner).data).user_4.earned).toEqual([
+      { ruleId: 'korean-daily', label: 'Korean (each day done)', silver: 6, gems: 0 },
+      { ruleId: 'green-week', label: 'Green week', silver: 0, gems: 1 },
+    ]);
+  });
+
+  it('figureInWeek: the figure only for the week it prices', () => {
+    const fig = { silver: 3, from: '2026-10-19', to: '2026-10-25' };
+    expect(figureInWeek(fig, '2026-10-21')).toBe(fig);
+    expect(figureInWeek(fig, '2026-10-26')).toBeNull();
+    expect(figureInWeek(fig, null)).toBe(fig);
+    expect(figureInWeek({ silver: undefined }, '2026-10-21')).toBeNull();
+    expect(figureInWeek(null, '2026-10-21')).toBeNull();
   });
 
   it("leaves out a learner it cannot price: every line 'can't tell', or no totals", () => {
@@ -1322,7 +1416,7 @@ describe('earningsByLearner', () => {
   });
 });
 
-describe('AgendaStatusBoard silver this week', () => {
+describe('AgendaStatusBoard silver earned this week', () => {
   const DAY = '2026-10-20';
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1332,7 +1426,7 @@ describe('AgendaStatusBoard silver this week', () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
       entries: [{ unitId: 'math.01', subject: 'math' }] } });
   });
-  const silverOf = (name) => screen.queryByLabelText(new RegExp(`^${name} silver this week$`));
+  const silverOf = (name) => screen.queryByLabelText(new RegExp(`^${name} silver earned this week$`));
 
   it('shows each learner\'s silver once the read lands, and nothing before it', async () => {
     let land;
@@ -1343,11 +1437,31 @@ describe('AgendaStatusBoard silver this week', () => {
     await act(async () => land(roster(priced('learner1', 21))));
     expect(silverOf('21')).toBeTruthy();
     // learner2 was not priced: no number is invented for them.
-    expect(screen.getAllByLabelText(/silver this week$/).length).toBe(1);
+    expect(screen.getAllByLabelText(/silver earned this week$/).length).toBe(1);
     expect(schoolApi.earningsRoster).toHaveBeenCalledWith(DAY);
   });
 
-  it('pending is a faded +N after the number, gems a third line only when earned or pending', async () => {
+  it('the coin cell is a real button that opens that kid\'s bank; stale week or no handler draws none', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    const onOpenBank = vi.fn();
+    const { rerender } = render(<AgendaStatusBoard kids={KIDS} day={DAY} onOpenBank={onOpenBank} />);
+    const door = await screen.findByRole('button', { name: "Learner One's bank, 21 silver this week" });
+    expect(screen.queryByRole('button', { name: /Learner Two's bank/ })).toBeNull();
+    fireEvent.click(door);
+    expect(onOpenBank).toHaveBeenCalledWith('learner1');
+    rerender(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    expect(screen.queryByRole('button', { name: /'s bank/ })).toBeNull();
+  });
+
+  it('a figure for another week draws no bank door', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    render(<AgendaStatusBoard kids={KIDS} day="2026-11-04" onOpenBank={vi.fn()} />);
+    await waitFor(() => expect(schoolApi.earningsRoster).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: /'s bank/ })).toBeNull();
+  });
+
+  it('one number per coin: no +N, and the contest gem shows as a held gem', async () => {
     schoolApi.earningsRoster.mockResolvedValue(roster(
       priced('learner1', 23, { pending: { silver: 5, gems: 1 } }),
       priced('learner2', 10, { gems: 2 }),
@@ -1355,33 +1469,27 @@ describe('AgendaStatusBoard silver this week', () => {
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     const [one, two] = await waitFor(() => {
       const cells = screen.getAllByTestId('board-coins');
-      expect(within(cells[0]).getByRole('img', { name: '23 silver this week, 5 more possible' })).toBeTruthy();
+      expect(within(cells[0]).getByRole('img', { name: '23 silver earned this week' })).toBeTruthy();
       return cells;
     });
-    // Pending is part of the figure's ONE spoken name; the visible "+5" is
-    // decoration, hidden from the accessibility tree.
-    const silver = within(one).getByRole('img', { name: '23 silver this week, 5 more possible' });
-    const plus = silver.querySelector('.school-status-board__more');
-    expect(plus.textContent).toBe('+5');
-    expect(plus).toHaveAttribute('aria-hidden', 'true');
-    const gems = within(one).getByRole('img', { name: '0 gems this week, 1 more possible' });
-    expect(gems.querySelector('.school-status-board__more').textContent).toBe('+1');
-    expect(within(two).getByRole('img', { name: '10 silver this week' })).toBeTruthy();
+    // Leading the ring contest: no "+5" silver, and the gem reads 1, not "0 +1".
+    expect(one.textContent).not.toMatch(/\+/);
+    expect(within(one).getByRole('img', { name: '1 gem this week' })).toBeTruthy();
+    expect(within(two).getByRole('img', { name: '10 silver earned this week' })).toBeTruthy();
     expect(within(two).getByRole('img', { name: '2 gems this week' })).toBeTruthy();
-    expect(within(two).queryByRole('img', { name: /more possible$/ })).toBeNull();
     // No visible captions anywhere in the cell.
     expect(one.textContent).not.toMatch(/silver|gold|gem/i);
   });
 
   it('the coins sit in one cell per card, silver then gold, as a two-column grid', async () => {
     schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
-    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0 } });
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0, balances: { silver: 0, gold: 0, gems: 0 } } });
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     await waitFor(() => expect(silverOf('21')).toBeTruthy());
     const cell = screen.getAllByTestId('board-coins')[0];
     const grid = cell.querySelector('.school-status-board__coin-grid');
     const names = [...grid.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label'));
-    expect(names.slice(0, 2)).toEqual(['21 silver this week', '0 gold']);
+    expect(names.slice(0, 2)).toEqual(['21 silver earned this week', '0 gold']);
     // Each figure is an icon cell followed by a number cell: the grid aligns them.
     expect(grid.children.length % 2).toBe(0);
   });
@@ -1407,9 +1515,9 @@ describe('AgendaStatusBoard silver this week', () => {
   it('a cached figure from another week is not painted', async () => {
     // The snapshot IS of this study day (so the seed is accepted), but its
     // silver prices LAST week: the Coins week check alone must hide it.
-    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+    localStorage.setItem(BOARD_CACHE_KEY, JSON.stringify({
       studyDay: DAY, learners: {}, rings: {},
-      earnings: { learner1: { silver: 99, gems: 0, pendingSilver: 0, pendingGems: 0, from: '2026-10-12', to: '2026-10-18' } },
+      earnings: { learner1: { silver: 99, gems: 0, from: '2026-10-12', to: '2026-10-18' } },
     }));
     schoolApi.earningsRoster.mockReturnValue(new Promise(() => {}));
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
@@ -1418,13 +1526,24 @@ describe('AgendaStatusBoard silver this week', () => {
   });
 
   it('a cached figure from this week paints before the read lands', async () => {
-    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+    localStorage.setItem(BOARD_CACHE_KEY, JSON.stringify({
       studyDay: DAY, learners: {}, rings: {},
-      earnings: { learner1: { silver: 17, gems: 0, pendingSilver: 0, pendingGems: 0, from: WEEK.from, to: WEEK.to } },
+      earnings: { learner1: { silver: 17, gems: 0, from: WEEK.from, to: WEEK.to } },
     }));
     schoolApi.earningsRoster.mockReturnValue(new Promise(() => {}));
     render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
     expect(silverOf('17')).toBeTruthy();
+  });
+
+  it('draws the standard coin: silver beside the week, gold beside the bank', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('learner1', 21)));
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 0, balances: { silver: 0, gold: 3, gems: 0 } } });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(silverOf('21')).toBeTruthy());
+    const cell = screen.getAllByTestId('board-coins')[0];
+    await waitFor(() => expect(cell.querySelectorAll('svg.coin-icon[data-metal="gold"]')).toHaveLength(1));
+    expect(cell.querySelectorAll('svg.coin-icon[data-metal="silver"]')).toHaveLength(1);
+    expect(cell.querySelector('svg.coin-icon').getAttribute('viewBox')).toBe('0 0 36 36');
   });
 });
 
@@ -1438,7 +1557,43 @@ describe('AgendaStatusBoard gold', () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }],
       entries: [{ unitId: 'math.01', subject: 'math' }] } });
   });
-  const wallet = (balance) => ({ ok: true, status: 200, data: { balance, session: null } });
+  // `balance` is the SILVER figure (EconomyService); gold is `balances.gold`.
+  // The silver here differs on purpose, so reading the wrong field fails.
+  const wallet = (gold, silver = 40) => ({ ok: true, status: 200, data: { balance: silver, balances: { silver, gold, gems: 0 }, session: null } });
+
+  it('a v1 board cache (gold that was really silver) never paints as gold', async () => {
+    localStorage.setItem('daylight.school.status-board.v1', JSON.stringify({
+      studyDay: DAY, learners: {}, rings: {}, earnings: {}, gold: { learner1: 40, learner2: 40 },
+    }));
+    schoolApi.wallet.mockResolvedValue({ ok: false, status: 503, data: null });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(schoolApi.wallet).toHaveBeenCalledTimes(2));
+    expect(screen.queryByLabelText('40 gold')).toBeNull();
+    expect(screen.queryByLabelText(/ gold$/)).toBeNull();
+  });
+
+  it('gold is the gold balance, never the silver `balance` figure', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(3, 12));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('3 gold')).toHaveLength(2));
+    expect(screen.queryByLabelText('12 gold')).toBeNull();
+  });
+
+  it('a fractional gold balance shows its floor: 5.6 reads 5', async () => {
+    schoolApi.wallet.mockResolvedValue(wallet(5.6, 0));
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(screen.getAllByLabelText('5 gold')).toHaveLength(2));
+    expect(screen.queryByLabelText('5.6 gold')).toBeNull();
+    expect(screen.queryByText('5.6')).toBeNull();
+  });
+
+  it('a wallet with no `balances` shows no gold rather than the silver figure', async () => {
+    schoolApi.wallet.mockResolvedValue({ ok: true, status: 200, data: { balance: 12, session: null } });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} />);
+    await waitFor(() => expect(schoolApi.wallet).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(screen.queryByLabelText(/ gold$/)).toBeNull();
+  });
 
   it('gold shows without silver, per learner, once its wallet read lands', async () => {
     schoolApi.wallet.mockImplementation((id) => Promise.resolve(id === 'learner1' ? wallet(7) : { ok: false, status: 500, data: null }));

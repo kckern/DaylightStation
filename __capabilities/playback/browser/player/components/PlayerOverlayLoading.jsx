@@ -38,6 +38,7 @@ export function PlayerOverlayLoading({
   // "Fixing this video… · 2:05" while the Player waits out a
   // file the server refuses to read (useSourceAvailability). Null otherwise.
   sourceNotice = null,
+  linkNotice = null,
   // Screens only: a way out of the wait (OK / tap). The keys live in
   // lib/Player/useSourceWaitSkipKeys; this is the visible half.
   onSkipSource = null
@@ -255,6 +256,7 @@ export function PlayerOverlayLoading({
   const statusLabel = (() => {
     if (isExhausted) return 'Tap to Retry';
     if (sourceNotice) return 'Source unavailable';
+    if (linkNotice) return 'Buffering…';
     if (isStartupPhase) return 'Starting…';
     if (status === 'seeking') return 'Seeking…';
     if (stalled) return 'Recovering…';
@@ -440,6 +442,9 @@ export function PlayerOverlayLoading({
           {sourceNotice ? (
             <div className="loading-notice" data-testid="player-source-notice">{sourceNotice}</div>
           ) : null}
+          {!sourceNotice && linkNotice ? (
+            <div className="loading-notice" data-testid="player-link-notice">{linkNotice}</div>
+          ) : null}
           {(sourceNotice || isExhausted) && typeof onSkipSource === 'function' ? (
             <div
               className="loading-skip"
@@ -491,7 +496,8 @@ PlayerOverlayLoading.propTypes = {
   showPauseIcon: PropTypes.bool,
   isExhausted: PropTypes.bool,
   onRetryFromExhausted: PropTypes.func,
-  sourceNotice: PropTypes.string
+  sourceNotice: PropTypes.string,
+  linkNotice: PropTypes.string
 };
 
 export default PlayerOverlayLoading;

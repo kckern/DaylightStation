@@ -8,6 +8,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createPositionChannel } from "../session/positionChannel.js";
 import { addResultFromSnapshot } from "../session/queueOps.js";
 import mediaLog from "../logging/mediaLog.js";
+import { normalizePlaybackQuality, normalizePlaybackQualityChange } from '@shared-contracts/media/playbackQuality.mjs';
 
 function uuid() {
   try { if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID(); } catch { /* ignore */ }
@@ -344,15 +345,15 @@ export function createRemoteSessionController({
 
     queue: {
       playNow: (input, opts = {}) =>
-        send('POST', `${base}/queue/play-now`, { contentId: input.contentId, clearRest: !!opts.clearRest }, 'queue.playNow'),
-      playNext: (input) => send('POST', `${base}/queue/play-next`, { contentId: input.contentId }, 'queue.playNext'),
-      addUpNext: (input) => send('POST', `${base}/queue/add-up-next`, { contentId: input.contentId }, 'queue.addUpNext'),
+        send('POST', `${base}/queue/play-now`, { contentId: input.contentId, ...normalizePlaybackQuality(input), clearRest: !!opts.clearRest }, 'queue.playNow'),
+      playNext: (input) => send('POST', `${base}/queue/play-next`, { contentId: input.contentId, ...normalizePlaybackQuality(input) }, 'queue.playNext'),
+      addUpNext: (input) => send('POST', `${base}/queue/add-up-next`, { contentId: input.contentId, ...normalizePlaybackQuality(input) }, 'queue.addUpNext'),
       add: (input) => {
         const observation = observeQueueAdd(input);
         const request = send(
           'POST',
           `${base}/queue/add`,
-          { contentId: input.contentId },
+          { contentId: input.contentId, ...normalizePlaybackQuality(input) },
           'queue.add',
           { onPositiveAck: observation.startDeadline },
         );
@@ -409,6 +410,10 @@ export function createRemoteSessionController({
       musicBehind: (op, { contentId, title } = {}) => send('POST', `${base}/music-behind`, {
         op, ...(contentId ? { contentId } : {}), ...(title ? { title } : {}),
       }, 'musicBehind'),
+    },
+
+    quality: {
+      setOverrides: request => send('POST', `${base}/quality`, normalizePlaybackQualityChange(request), 'setQuality'),
     },
 
     lifecycle: {

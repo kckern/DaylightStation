@@ -1,0 +1,22 @@
+import React from 'react';
+import { it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { ArcadeSelector } from './ArcadeSelector.jsx';
+afterEach(()=>{cleanup();delete window.__DAYLIGHT_DEVICE_ID;vi.unstubAllGlobals();});
+it('remote reaches Controllers, panel owns input, and Back restores game selection', async()=>{
+ const select=vi.fn(),close=vi.fn();
+ window.__DAYLIGHT_DEVICE_ID='test-tv';
+ vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({ok:true,adapter:{supported:true,enabled:true,discovering:false},devices:[],capabilities:{scan:true}})})));
+ render(<ArcadeSelector items={[{id:'sonic',label:'Sonic',play:{contentId:'arcade:genesis/sonic'}}]} selectedIndex={0} onSelectedIndexChange={()=>{}} onSelect={select} onClose={close}/>);
+ fireEvent.keyDown(window,{key:'ArrowUp'});
+ expect(document.activeElement).toBe(screen.getByRole('button',{name:'Controllers'}));
+ fireEvent.keyDown(window,{key:'Enter'});
+ expect(await screen.findByRole('dialog',{name:'Controllers'})).toBeTruthy();
+ fireEvent.keyDown(window,{key:'ArrowDown'});fireEvent.keyDown(window,{key:'ArrowUp'});
+ expect(select).not.toHaveBeenCalled();
+ fireEvent.keyDown(window,{key:'BrowserBack'});
+ expect(screen.queryByRole('dialog')).toBeNull();expect(close).not.toHaveBeenCalled();
+ await waitFor(()=>expect(document.activeElement).toBe(screen.getByRole('button',{name:'Controllers'})));
+ fireEvent.keyDown(window,{key:'ArrowDown'});fireEvent.keyDown(window,{key:'Enter'});
+ expect(select).toHaveBeenCalledWith(expect.objectContaining({id:'sonic'}));
+});

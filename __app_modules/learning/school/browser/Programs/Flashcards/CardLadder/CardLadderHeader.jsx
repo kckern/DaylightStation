@@ -36,10 +36,21 @@ export default function CardLadderHeader({
             </li>
           ))}
         </ol>
+        ) : trail.dictation ? (
+          <ol className="wl-trail wl-trail--dictation" aria-label="This week's words">
+            {Array.from({ length: trail.dictation.count }, (_, i) => (
+              <li
+                key={i}
+                className={`wl-dictation-dot${(trail.dictation.flags ? trail.dictation.flags[i] : i < trail.dictation.done) ? ' is-done' : ''}${i + 1 === trail.dictation.index ? ' is-current' : ''}`}
+                aria-hidden="true"
+              />
+            ))}
+          </ol>
         ) : <span className="wl-trail" />}
         <div className="wl-header__right">{right}</div>
         <p className="wl-header__round" aria-label="Progress">{trail.subLine}</p>
-        <div className="wl-header__time" aria-hidden="true"><div style={{ transform: `scaleX(${timePct / 100})` }} /></div>
+        {/* Dictation runs on separate time: no minutes bar (M8). */}
+        {!trail.dictation && <div className="wl-header__time" aria-hidden="true"><div style={{ transform: `scaleX(${timePct / 100})` }} /></div>}
       </header>
       <div className="wl-hint" aria-live="polite">
         {hint && <p key={hint.step} className={`wl-hint__text${hint.leaving ? ' is-leaving' : ''}`}>{hint.text}</p>}

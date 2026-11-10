@@ -1,4 +1,4 @@
-.skyline-glider { min-height: 100%; color: var(--text-primary, #fff); background: #17333f; display: grid; place-items: center; padding: 2rem; overflow: hidden; font-family: var(--font-family, sans-serif); }
+.skyline-glider { --skyline-hearts: #ff7d6e; --game-hud-banner-ink: #17333f; --game-hud-banner-bg: #fff1a8; min-height: 100%; color: var(--text-primary, #fff); background: #17333f; display: grid; place-items: center; padding: 2rem; overflow: hidden; font-family: var(--font-family, sans-serif); }
 .skyline-glider--lobby { grid-template-columns: minmax(0, 1.4fr) minmax(18rem, .6fr); gap: 3rem; background: linear-gradient(135deg, #143a4a, #795945); }
 .skyline-glider h1 { font-size: clamp(3rem, 8vw, 7rem); margin: .1em 0; line-height: .9; }
 .skyline-glider__eyebrow { text-transform: uppercase; letter-spacing: .18em; color: #f3c777; }
@@ -31,8 +31,58 @@
 .skyline-glider__collision-burst { animation: skyline-impact .42s ease-out 1 both; }
 .skyline-glider__collision-burst path { fill: none; stroke: #fff1a8; stroke-linecap: round; stroke-width: 7; }
 .skyline-glider__bell-pop { animation: skyline-bell-pop .55s ease-out 1 both; fill: none; stroke: #fff1a8; stroke-width: 5; }
-.skyline-glider__checkpoint-banner { position: absolute; z-index: 6; top: 22%; left: 50%; transform: translateX(-50%); padding: .8rem 1.5rem; border-radius: 999px; color: #17333f; background: #fff1a8; font-size: 1.5rem; font-weight: 900; animation: skyline-banner 1.5s ease-out 1 both; }
-.skyline-glider__hud { position: absolute; inset: 1.5rem 2rem auto 10rem; display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-radius: 999px; color: #fff; background: rgba(9, 31, 37, .72); font-size: 1.25rem; font-weight: 800; }
+// The banner and hearts are kit HUD pieces (.game-hud-moment / .game-hud-life);
+// these selectors out-specify the kit's on purpose so the look never depends on
+// stylesheet load order.
+.skyline-glider .skyline-glider__checkpoint-banner { display: block; position: absolute; z-index: 6; top: 22%; left: 50%; transform: translateX(-50%); padding: .8rem 1.5rem; border-radius: 999px; color: var(--game-hud-banner-ink); background: var(--game-hud-banner-bg); font-size: 2rem; max-width: 80vw; text-align: center; font-weight: 900; animation: skyline-banner 1.5s ease-out 1 both; }
+// This rule also out-specifies the kit's reduced-motion rule, so restate it.
+@media (prefers-reduced-motion: reduce) { .skyline-glider .skyline-glider__checkpoint-banner { animation: none; } }
+// One slim bar along the top: hearts · time · score on the left, the 2×2
+// bike-button legend on the right. It replaces the in-flight button panel so
+// the right side of the scene (where obstacles arrive) stays clear.
+.skyline-glider__hud {
+  position: absolute; z-index: 5; inset: 1rem 1.5rem auto 9rem; display: flex; align-items: center; gap: 1.75rem;
+  padding: .45rem .6rem .45rem 1.5rem; border-radius: 1.4rem; color: #fff; background: rgba(9, 31, 37, .72);
+  font-size: 1.75rem; font-weight: 800; line-height: 1;
+}
+.skyline-glider .skyline-glider__hud-hearts { color: var(--skyline-hearts); letter-spacing: .08em; }
+.skyline-glider__hud-time { font-variant-numeric: tabular-nums; }
+.skyline-glider__hud-power { color: #ffcf6e; }
+.skyline-glider__hud-pad { margin-left: auto; display: grid; grid-template-columns: repeat(2, 10rem); gap: .4rem; }
+.skyline-glider__hud-cell {
+  display: flex; align-items: center; gap: .5rem; padding: .3rem .65rem; border-radius: .6rem;
+  font-size: 1.3rem; background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 2px currentColor;
+  color: #83e0e9; position: relative; overflow: hidden;
+  &[data-action="bomb"] { color: #f3c777; } &[data-action="missile"] { color: #ffa797; } &[data-action="boost"] { color: #c7b4ff; }
+  b { font-size: 1.9rem; }
+  small { font-size: 1.6rem; font-weight: 800; color: #fff; white-space: nowrap; }
+  &[data-state="empty"] { opacity: .4; }
+  &[data-state="charging"] { background: linear-gradient(90deg, rgba(199, 180, 255, .35) var(--charge, 0%), rgba(255, 255, 255, .06) 0); }
+  &[data-state="active"] { background: rgba(199, 180, 255, .55); }
+  &[data-flash="ok"] { animation: skyline-cell-ok .35s ease-out 1; }
+  &[data-flash="deny"] { opacity: 1; color: #ff6a5a; animation: skyline-cell-deny .4s ease-out 1; small { color: #ffb4a8; } }
+}
+.skyline-glider__hud-menu { font-size: 1.4rem; font-weight: 700; opacity: .7; white-space: nowrap; }
+@keyframes skyline-cell-ok { from { background: rgba(140, 255, 170, .75); transform: scale(1.08); } }
+@keyframes skyline-cell-deny { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+// Entity roles: brackets + health pips mark what to shoot, a label marks what
+// to bomb, and a hit that does not kill flashes the thing white.
+.skyline-glider__target-brackets { fill: none; stroke: #8dfcff; stroke-width: 5; stroke-linecap: round; animation: skyline-target-pulse 1s ease-in-out infinite alternate; }
+.skyline-glider__target-pips rect { fill: rgba(9, 31, 37, .7); stroke: #8dfcff; stroke-width: 2; &[data-full="true"] { fill: #8dfcff; } }
+.skyline-glider__bomb-mark text { fill: #fff1a8; stroke: #5b2b1c; stroke-width: 5; paint-order: stroke; font-size: 30px; font-weight: 900; animation: skyline-target-pulse .8s ease-in-out infinite alternate; }
+.skyline-glider__missile-mark text { fill: #ffd27a; stroke: #5b2b1c; stroke-width: 5; paint-order: stroke; font-size: 30px; font-weight: 900; animation: skyline-target-pulse .8s ease-in-out infinite alternate; }
+.skyline-glider__shutter-warning { fill: none; stroke: #ff5a4a; stroke-width: 8; stroke-linecap: round; animation: skyline-target-pulse .25s steps(2) infinite alternate; }
+.skyline-glider__boost-mark { fill: #bff6ff; stroke: #123a4a; stroke-width: 5; paint-order: stroke; font-size: 26px; font-weight: 900; animation: skyline-target-pulse .5s ease-in-out infinite alternate; }
+.skyline-glider__entity-flash { fill: #fff; animation: skyline-entity-flash .3s ease-out 1 both; pointer-events: none; }
+.skyline-glider__impact { pointer-events: none; }
+.skyline-glider__impact--kill { animation: skyline-kill .35s ease-out 1 both; circle { fill: rgba(255, 241, 168, .55); } path { stroke: #fff1a8; stroke-width: 6; stroke-linecap: round; } text { fill: #8dfcff; stroke: #0b2a33; stroke-width: 5; paint-order: stroke; font-size: 34px; font-weight: 900; } }
+.skyline-glider__impact--damage { animation: skyline-spark .3s ease-out 1 both; path { fill: #fff; } }
+.skyline-glider__impact--absorbed { animation: skyline-spark .3s ease-out 1 both; circle { fill: rgba(200, 200, 200, .7); } }
+@keyframes skyline-target-pulse { from { opacity: .55; } to { opacity: 1; } }
+@keyframes skyline-entity-flash { from { opacity: .85; } to { opacity: 0; } }
+@keyframes skyline-kill { from { transform-box: fill-box; opacity: 1; } to { opacity: 0; } }
+@keyframes skyline-spark { from { opacity: 1; } to { opacity: 0; } }
 .skyline-glider__rpm-gauge { position: absolute; z-index: 4; inset: 5.5rem auto 3rem 1.25rem; width: 6.4rem; display: grid; grid-template-rows: auto 1fr auto auto; place-items: center; gap: .25rem; padding: .75rem .55rem; border: 3px solid rgba(255,255,255,.7); border-radius: 2rem; color: #fff; background: rgba(7, 28, 34, .82); box-shadow: 0 .8rem 2rem rgba(0,0,0,.28); font-weight: 900; }
 .skyline-glider__rpm-track { position: relative; width: 1rem; height: 100%; min-height: 16rem; border-radius: 999px; background: linear-gradient(to top, #e48a52, #f1cf68 48%, #62d4cf); box-shadow: inset 0 0 0 3px rgba(255,255,255,.4); }
 .skyline-glider__rpm-target { position: absolute; left: -.45rem; width: 1.9rem; height: .25rem; border-radius: 999px; background: #fff; opacity: .55; }
@@ -45,7 +95,94 @@
 .skyline-glider .skyline-glider__end { position: absolute; right: 2rem; bottom: 2rem; color: #fff; background: rgba(9, 31, 37, .72); }
 .skyline-glider .skyline-glider__mute { position: absolute; right: 2rem; bottom: 6rem; padding: .65rem 1rem; color: #fff; background: rgba(9, 31, 37, .72); }
 .skyline-glider--result { text-align: center; background: radial-gradient(circle at 50% 20%, #db8d60, #17333f 70%); }
+.skyline-glider__scene--pixel image { image-rendering: pixelated; }
+.skyline-glider__entity-leaf { fill: #2f6b4c; stroke: #173b2b; stroke-width: 3; }
+.skyline-glider__entity-trunk { fill: #6b4630; }
+.skyline-glider__entity-wall { fill: #e7c99a; stroke: #5b3d2f; stroke-width: 3; }
+.skyline-glider__entity-roof { fill: #b44d3b; stroke: #5b3d2f; stroke-width: 3; }
+.skyline-glider__entity-door { fill: #5b3d2f; }
+.skyline-glider__entity-rock { fill: #7b8584; stroke: #3c4545; stroke-width: 4; }
+.skyline-glider__entity-board { fill: #f3c777; stroke: #5b3d2f; stroke-width: 3; }
+.skyline-glider__entity-box { fill: #d06a5a; stroke: #5b3d2f; stroke-width: 4; }
+.skyline-glider__entity-leaf, .skyline-glider__entity-wall, .skyline-glider__entity-roof, .skyline-glider__entity-rock, .skyline-glider__entity-board, .skyline-glider__entity-box { vector-effect: non-scaling-stroke; }
+.skyline-glider__laser-glow { fill: rgba(255, 80, 80, .6); }
+.skyline-glider__laser-core { fill: #fff1a8; }
+.skyline-glider__bomb-body { fill: #2b2f36; stroke: #fff1a8; stroke-width: 2; }
+.skyline-glider__bomb-fin { fill: #5b6470; }
+.skyline-glider__blast-outer { fill: #ff9a3c; }
+.skyline-glider__blast-spark { stroke: #fff1a8; stroke-linecap: round; stroke-width: 5; }
+.skyline-glider__blast-inner { fill: #fff1a8; }
+.skyline-glider__world { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.skyline-glider__zone h3 { margin: 0 0 .5rem; font-size: 1rem; letter-spacing: .14em; text-transform: uppercase; color: #f3c777; }
+.skyline-glider__zone ol { display: flex; flex-wrap: wrap; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+.skyline-glider .skyline-glider__act { display: grid; gap: .15rem; min-width: 9rem; padding: .75rem 1rem; border-radius: 1rem; text-align: left; color: #fff; background: rgba(7, 24, 31, .6); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .18); }
+.skyline-glider .skyline-glider__act[aria-pressed="true"] { color: #17333f; background: #f3c777; box-shadow: none; }
+.skyline-glider .skyline-glider__act--locked { opacity: .55; }
+.skyline-glider__act-number { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; opacity: .8; }
+.skyline-glider__act-badge { font-size: .85rem; min-height: 1.1em; }
 @keyframes skyline-impact { to { opacity: .25; transform: scale(1.2); } }
 @keyframes skyline-bell-pop { from { opacity: 1; transform: scale(.25); } to { opacity: 0; transform: scale(1.4); } }
 @keyframes skyline-banner { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
-@media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: 1rem 1rem auto 7rem; font-size: .85rem; } .skyline-glider__rpm-gauge { left: .5rem; width: 5rem; } }
+@media (max-width: 760px) { .skyline-glider--lobby { grid-template-columns: 1fr; } .skyline-glider__hud { inset: .5rem .5rem auto 6rem; font-size: 1rem; gap: .75rem; } .skyline-glider__hud-pad { grid-template-columns: repeat(2, 4.6rem); } .skyline-glider__hud-menu { display: none; } .skyline-glider__rpm-gauge { left: .5rem; width: 5rem; } }
+.skyline-glider__slope-edge { fill: none; stroke: #b6df7c; stroke-width: 8; stroke-linejoin: round; }
+.skyline-glider__lava rect { fill: #ef4f19; }
+.skyline-glider__lava path { fill: none; stroke: #ffd156; stroke-width: 8; }
+.skyline-glider__scene[data-theme="meadow"] .skyline-glider__parallax--far path { fill: #88b9a5; }
+.skyline-glider__scene[data-theme="meadow"] .skyline-glider__parallax--middle path { fill: #65a77f; }
+.skyline-glider__scene[data-theme="meadow"] .skyline-glider__parallax--near path { fill: #3c8b69; }
+.skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--far path { fill: #695279; }
+.skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--middle path { fill: #4f3f60; }
+.skyline-glider__scene[data-theme="volcanic"] .skyline-glider__parallax--near path { fill: #352f48; }
+
+.skyline-glider--controls {
+  position: relative; min-height: 100vh; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 3rem;
+  background: linear-gradient(135deg, #143a4a, #795945);
+}
+.skyline-controls {
+  padding: 1.2rem; border-radius: 1.2rem; background: rgba(7, 24, 31, .9);
+  color: var(--text-primary, #fff); z-index: 8;
+  &__heading { font-size: .85rem; font-weight: 800; margin: 0 0 1rem; }
+  &__pad { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  &__position { position: absolute; top: .4rem; left: .6rem; font-size: .7rem; opacity: .65; }
+  &__icon { font-size: 2rem; line-height: 1; }
+  button {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 8rem; gap: .5rem; padding: 1rem .6rem; border-radius: .9rem;
+    border: 2px solid currentColor; border-bottom-width: 5px; background: rgba(255, 255, 255, .08); color: #83e0e9;
+    &:nth-child(2) { color: #f3c777; } &:nth-child(3) { color: #ffa797; } &:nth-child(4) { color: #c7b4ff; }
+    &:active { transform: translateY(2px); }
+    strong { font-size: 1rem; } small { font-size: .75rem; font-weight: 400; }
+  }
+  img { width: 3rem; height: 3rem; object-fit: cover; border-radius: 50%; }
+}
+.skyline-menus {
+  width: 100%; max-width: 62rem; text-align: center;
+  h1 { font-size: clamp(2.5rem, 5vw, 5rem); line-height: 1.05; margin: 1rem 0; }
+  p { line-height: 1.5; }
+  &__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 2rem auto; }
+  &__options button {
+    display: grid; justify-items: center; gap: .8rem; border-radius: 1rem; color: var(--text-primary, #fff);
+    background: rgba(7, 24, 31, .65); border: 2px solid transparent;
+    &[aria-pressed="true"] { border-color: #f3c777; }
+    small { font-size: .8rem; font-weight: 400; }
+  }
+  img { width: 5rem; height: 5rem; object-fit: cover; border-radius: 50%; }
+  &__person { display: grid; justify-items: center; gap: 1rem; margin: 2rem; img { width: 8rem; height: 8rem; } }
+  &__count { display: block; font-size: 5rem; color: #f3c777; }
+  &__cause { font-size: 1.6rem; font-weight: 800; color: #fff1a8; }
+  &__summary { display: flex; justify-content: center; gap: 2.5rem; margin: 1.5rem 0; div { display: grid; gap: .25rem; } dt { font-size: .85rem; letter-spacing: .12em; text-transform: uppercase; opacity: .75; } dd { margin: 0; font-size: 3rem; font-weight: 900; color: #f3c777; } }
+}
+@media (max-width: 760px) {
+  .skyline-glider--controls { grid-template-columns: minmax(0, 1fr) 16rem; gap: 1rem; padding: 1rem; }
+  .skyline-controls { padding: .75rem; button { min-height: 7rem; } }
+  .skyline-menus__options { grid-template-columns: 1fr; }
+}
+@media (max-width: 500px) {
+  .skyline-glider--controls { grid-template-columns: 1fr; gap: 1rem; align-content: start; }
+  .skyline-menus__options { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 1rem auto; }
+  .skyline-controls { width: 100%; }
+}
+.skyline-glider__shot[data-power="2"] { filter: drop-shadow(0 0 5px #ffdd66); }
+.skyline-glider__shot[data-power="3"] { filter: drop-shadow(0 0 8px #ff963c); }
+.skyline-glider__shot[data-power="4"] { filter: drop-shadow(0 0 12px #ff503c); }
+.skyline-glider__stop-warning { position: absolute; top: 7rem; left: 50%; transform: translateX(-50%); padding: .6rem 1.2rem; border-radius: 1rem; color: #fff5b8; background: #792e20; font-size: 1.4rem; font-weight: 800; }

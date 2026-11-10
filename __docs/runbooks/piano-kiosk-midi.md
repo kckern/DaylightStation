@@ -355,6 +355,170 @@ gap in `healthy` means the supervisor itself is not running.
 
 ---
 
+## 7b. Speaker self-healing (2026-10-23)
+
+**Symptom:** the piano plays, the screen works, but videos, karaoke and the synth are
+silent. The kiosk's audio goes out the piano's Bluetooth A2DP sink ("J2-USB
+Bluetooth" is the name the piano's **built-in** Bluetooth speaker module advertises;
+there is no separate dongle), and the audio guard mutes the tablet's own
+speaker by design. A dropped sink means silence. `bridge.heartbeat data.speaker:false`
+while `data.linkVerdict:VERIFIED` is the signature.
+
+**Why the bridge's own retry can't fix it.** In logcat the stack pages the piano's module, then
+`bt_sdp: SDP - Rcvd conn cnf with error: 0x4` → `A2DP service discovery failed`: the
+module refuses the L2CAP channel. `A2dpConnector`'s 20 s `connect()` returns `true` every
+time and never lands (29 attempts on 2026-10-23). A tablet Bluetooth off/on revived it
+once; a piano power-on always does.
+
+**The ladder** (DS backend, `PianoBridgeSupervisorService` + `PianoSpeakerRecoveryPolicy`).
+It opens when the speaker is down with the piano on for two 30 s checks, and runs
+silently whether or not anyone is at the piano:
+
+| Rung | Action | Checked after |
+|---|---|---|
+| 1 | A2DP disconnect → connect (`POST :8770/speaker/reconnect`) | 15 s |
+| 2 | tablet Bluetooth off → 5 s → on (`POST :8770/speaker/bt-cycle`) | 75 s |
+| 3 | the same with 15 s off | 90 s |
+| 4 | piano plug off 10 s → on (HA `switch.turn_off/turn_on`) | 60 s |
+| 5 | piano plug off 30 s → on | 90 s |
+
+The piano powers itself on when its plug comes back (14.9 W three seconds after
+`turn_on`), so a plug cycle is a full unattended reboot of the piano and its Bluetooth module — the only way to reset it. The BT
+windows are long because the one BT-cycle recovery on record took 55 s from Bluetooth-on
+to A2DP up; a shorter window judges a working cycle failed and the next rung tears it
+down. Before each plug rung the supervisor pins the tablet screen to its current state
+(`ScreenOverrideService`, for off-time + check window). That stops the power-sync
+authority from blanking the screen at 15 s of "piano off" or pulsing it at the power
+edge. A person's own screen override is never replaced. Limits:
+
+- At most 2 plug cycles per rolling hour.
+- No plug cycle while piano power reads `unknown`.
+- The counter only resets after 10 healthy minutes, so a flapping speaker keeps climbing.
+  Switching the piano off resets it too, since that reboots the module: the next power-on
+  starts at rung 1, never at a plug cycle.
+- If all five fail: one push ("Piano speaker won't reconnect"; the text says so when the
+  plug rungs were skipped, and why). The kiosk banner reads "Speaker needs help — a
+  grown-up has been told" only once HA actually accepted that push. Until then it reads
+  "— please tell a grown-up", and the push is retried every 30 s. The ladder retries from
+  rung 1 an hour later.
+- If the plug can't be turned back on: an immediate "Piano is unpowered" push.
+
+**Config** (`household/piano/config.yml`, top level):
+
+```yaml
+speaker_recovery:
+  enabled: true
+  plug_entity: switch.<piano plug>
+  max_plug_cycles_per_hour: 2
+  healthy_reset_ms: 600000
+  give_up_backoff_ms: 3600000
+```
+
+**Reading it:**
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query -d 'query="piano.speaker" AND _time:24h'   # dropped / attempt / recovered {rung} / gave-up
+curl -s {env.log_store_url}/select/logsql/query -d 'query="bridge.a2dp" OR "bridge.bt-cycle" AND _time:24h'
+curl -s http://{env.piano_tablet}:8770/speaker   # speaker.connected, reconnects, guard.clampsPerMin
+```
+
+`piano.speaker.recovered {rung}` says which rung worked.
+
+**Prevention (payload p33):**
+- **A2DP only.** The module also offers the Headset (HFP) profile and Android connected it.
+  A microphone open (voice feedback) reshuffles call audio onto an HFP link, and the
+  speaker dropped seconds after three recordings on 2026-10-23. `HeadsetGuard` turns the
+  speaker's HFP priority off and drops any HFP link. If Android refuses the priority write
+  three times, it falls back to dropping HFP whenever it reappears, at most 10 times an hour
+  (`bridge.a2dp.hfp-capped` when the cap is hit). The headset handle is re-requested every
+  sweep, because the ladder's own Bluetooth cycle kills it. `GET :8770/speaker` shows the
+  last observation: `hfpConnected` (want `false`), `hfpPriorityOff` (`null` = unreadable),
+  `hfpPriorityRefused`, `hfpDisconnects`, `hfpCapped`, `hfpProxyReady`. The log store gets
+  `bridge.a2dp.hfp-disabled` only when something actually changed.
+- **The Bluetooth panel's Connect leaves a working link alone.** It used to rebuild every
+  connector, A2DP and BLE-MIDI both, even for the device already connected (the 18:04
+  drop). `ConnectPlan` now makes the same device a no-op, or a nudge if it is down. Only a
+  different device reloads.
+
+**Readiness and the weekly summary (backend):**
+- Every 24 h, and hourly while anything is broken, the supervisor checks that the bridge
+  has the repair endpoints, that the HA plug is answering, and that a push target exists.
+  One sighting is only `not-ready-suspected`, because HA restarting reads as an unavailable
+  plug. A second sighting 10 minutes later is `piano.speaker.not-ready` (warn) and a push
+  ("self-repair is broken: …"). The once-a-day budget is checked against `alert-sent` in the
+  log store, so a redeploy does not re-alert. A quiet "working again" card follows the fix.
+  With no push target configured, the problem is logged once a day at warn instead.
+- Sunday from 18:00 household time, it reads the week back from the log store
+  (`context.module:piano-bridge-supervisor`) and pushes drops and what fixed them, only if
+  there were any. `piano.speaker.weekly-summary` is logged either way; finding it in the
+  store is also what stops a Sunday redeploy from sending it twice.
+- Re-pairing by hand: the module is discoverable only for a few seconds after the piano
+  boots. Switch the piano on, then pair from the kiosk's Bluetooth panel straight away.
+
+**Measured on a live wedge (2026-10-23, piano idle, 484 failed reconnects):**
+- An A2DP disconnect→connect (rung 1's action) changed nothing in 30 s.
+- A tablet Bluetooth off/on (rung 2's action) changed nothing in 45 s. The Bluetooth
+  process restarted (new PID) and the fresh stack still got `SDP conn cnf error 0x4`, so
+  the wedge lives in the piano's module.
+- A plug cycle (10 s off) brought the piano back to 17 W at +5 s and the speaker connected
+  at +10 s. BLE-MIDI never dropped, because the JamCorder has its own power.
+
+Expect most real recoveries to report rung 4.
+
+---
+
+## 7c. Lesson video stalls — is it the tablet's Wi-Fi? (2026-10-28)
+
+**Symptom:** a lesson video buffers over and over while the server, Plex and the LAN
+look healthy. On 2026-10-28, delivery to the tablet fell to 0.01–1.2 Mbps against a
+2.4 Mbps file for seven minutes. The tablet's link could not be checked because
+nothing recorded it.
+
+Since payload p34 the bridge samples the link every 10 s (bridge README, "Wi-Fi link
+telemetry"). Line up the stall window against it:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query -d 'query=context.app:piano-bridge
+  AND _msg:="bridge.wifi" AND _time:1h | sort by (_time desc) | limit 400'
+curl -s {env.log_store_url}/select/logsql/query -d 'query=context.app:piano-bridge
+  AND _msg:="bridge.wifi.roam" AND _time:24h'
+```
+
+How to read it:
+
+- **`data.rssi` and `data.linkSpeedMbps` stay healthy while `data.rxKbps` falls below
+  the video's bitrate:** the radio link is fine, so look upstream or at airtime
+  contention on the channel.
+- **`data.degraded:true` (level `warn`) during the stall:** a weak signal
+  (`rssi <= -75`) or a low PHY rate (`< 20` Mbps) on the tablet's side.
+- **A `bridge.wifi.roam` row, or a change of `data.band`, inside the window:** a roam.
+  A move from 5 GHz to 2.4 GHz also puts the video on the band that Bluetooth A2DP
+  (the piano speaker) shares.
+- **No `bridge.wifi` rows for the window:** check whether rows with a matching
+  `_time` arrived later. Samples taken while offline are queued and sent with their
+  original timestamps, so a late batch of `data.connected:false` rows means the
+  tablet really lost its association.
+
+Two blind spots:
+
+- **Where `data.bssid` comes from.** Android 10 redacts the BSSID unless Location
+  *services* are on; holding the permission is not enough. Location services stay off
+  on purpose, because their scans load the link being diagnosed. Since p35 the bridge
+  falls back to Fully Kiosk's `deviceInfo` BSSID, and `data.bssidSource` says which
+  source was used (`wifimanager` or `fkb`). The FKB value is refreshed at most every
+  30 s, so a roam can show up to about 30 s late. If `data.bssid` is null (FKB is
+  unreachable or refusing the password as well), roams cannot be seen and a missing
+  `bridge.wifi.roam` row proves nothing. `data.band` and `data.freqMhz` still change
+  on a roam between bands.
+- **Do not lean on `navigator.connection` in the WebView.** Its `downlink`/`rtt` are
+  coarse and capped, so they cannot show a collapse like this one. Use `rxKbps` here.
+
+On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=1`
+(CORS-open) and log the current sample together with the last 60. From a shell, run
+`pbctl wifi`.
+
+---
+
 ## 8. Still open
 
 - ~~**Nothing alerts.**~~ Closed 2026-09-30 by the backend bridge supervisor (§7a). It

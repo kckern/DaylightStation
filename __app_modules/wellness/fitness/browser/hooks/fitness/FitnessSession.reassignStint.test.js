@@ -46,6 +46,17 @@ function build({ start = true } = {}) {
 
 // Advance `ticks` timeline ticks (5s each); every listed strap sends 1 packet/s.
 function run(session, ticks, readings) {
+  // Each new wearer establishes a genuine accepted baseline before training.
+  for (const dev of Object.keys(readings)) {
+    const userId = session.userManager.resolveUserForDevice(dev)?.id;
+    if (session.getZoneProfile(userId)?.zoneTrusted !== true) {
+      // A strap changing chests is not a 150 -> 80 bpm drop inside a second;
+      // the slew gate would rightly hold that. Let the old reading age out.
+      vi.advanceTimersByTime(2500);
+      for (let i = 0; i < 4; i++) session.ingestData(hr(dev, 80));
+      vi.advanceTimersByTime(6000);
+    }
+  }
   for (let s = 0; s < ticks * 5; s += 1) {
     vi.advanceTimersByTime(1000);
     for (const [dev, bpm] of Object.entries(readings)) session.ingestData(hr(dev, bpm));

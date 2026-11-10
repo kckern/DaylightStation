@@ -33,7 +33,7 @@ import { agendaDocument, resultDocument, noticeDocument } from "../../../../__ap
 const RECEIPTS_SRC_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../../..',
-  '__backend/src/2_domains/school/documents/receipts.mjs',
+  '__app_modules/learning/school/server/domain/documents/receipts.mjs',
 );
 
 /** Strips comments so the structural count below only sees real code. */

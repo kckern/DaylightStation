@@ -11,7 +11,7 @@ by how often they run, and lets an operator create, edit, delete, and trigger th
 It is a thin management surface over two YAML files:
 
 - **Job definitions** — `data/system/config/jobs.yml` (a YAML array of jobs)
-- **Runtime state** — `data/system/state/cron-runtime.yml` (a map keyed by job id)
+- **Runtime state** — `data/system/scheduling/cron-runtime.yml` (a map keyed by job id)
 
 The admin API reads both, merges the runtime state onto each job under a `runtime`
 key, and serves the result. Writes go to `jobs.yml` only; runtime state is owned by
@@ -26,7 +26,7 @@ the scheduler that actually executes jobs.
 | Data hook | `frontend/src/hooks/admin/useAdminScheduler.js` |
 | API router | `__backend/src/4_api/v1/routers/admin/scheduler.mjs` |
 | Job definitions | `data/system/config/jobs.yml` |
-| Runtime state | `data/system/state/cron-runtime.yml` |
+| Runtime state | `data/system/scheduling/cron-runtime.yml` |
 
 ---
 
@@ -54,7 +54,9 @@ A job definition carries these fields (only `id`, `name`, and `schedule` are req
 
 When fetched through the API, each job also carries a `runtime` object (or `null` if
 the job has never run) holding `status`, `last_run`, `nextRun`, `duration_ms`, and
-`error`.
+`error`. `duration_ms` is the real run time, in whole seconds. A harvest that
+returns `status: 'error'` is recorded as `failed` with its reason
+(`__docs/reference/harvesters/health-and-reconnect.md`).
 
 ---
 

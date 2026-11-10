@@ -207,6 +207,51 @@ export class NfcResolver {
 
     return intent;
   }
+
+  /**
+   * Every tag that PLAYS one piece of content, as `{uid, contentId, note}`.
+   *
+   * The query a consumer asks instead of re-reading tag YAML: School's story
+   * time suggests books off this list, and the content id it needs is exactly
+   * the one a tap would dispatch — so it comes from the same `content` /
+   * shorthand rule `resolve` uses, not a second copy of it.
+   *
+   * Only the tag-global layer is read: a tag is one physical object, and its
+   * content does not change by reader. A tag is kept when its action is absent
+   * (the reader's own), `play` or `play-next`; a `queue` (a shuffled
+   * collection) is not one thing, and a learner card is a person. An ambiguous
+   * or unresolvable tag is skipped rather than thrown — a list of books must
+   * not fail because one sticker is mis-typed.
+   *
+   * @param {{registry: {tags?: object}|null, contentIdResolver: {resolve: Function}}} args
+   * @returns {Array<{uid: string, contentId: string, note: string|null}>}
+   */
+  static contentTags({ registry, contentIdResolver } = {}) {
+    const tags = registry?.tags;
+    if (!tags || typeof tags !== 'object') return [];
+    const out = [];
+    for (const [uid, tag] of Object.entries(tags)) {
+      const g = tag?.global;
+      if (!g || typeof g !== 'object') continue;
+      if (g.school_learner !== undefined && g.school_learner !== null) continue;
+      if (g.action !== undefined && !PLAYING_ACTIONS.has(g.action)) continue;
+      let contentId = typeof g.content === 'string' && g.content.trim() ? g.content.trim() : null;
+      if (!contentId) {
+        try {
+          contentId = expandShorthand(g, contentIdResolver)?.compound ?? null;
+        } catch {
+          contentId = null;
+        }
+      }
+      if (!contentId) continue;
+      const note = typeof g.note === 'string' && g.note.trim() ? g.note.trim() : null;
+      out.push({ uid, contentId, note });
+    }
+    return out;
+  }
 }
+
+/** Tag actions that play the tag's content (absent means the reader's own). */
+const PLAYING_ACTIONS = new Set(['play', 'play-next']);
 
 export default NfcResolver;

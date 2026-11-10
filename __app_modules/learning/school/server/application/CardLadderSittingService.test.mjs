@@ -3,49 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { emptyDay, emptyStatusV3, emptyWordV3 } from "../domain/cardLadder/index.mjs";
 import { CardLadderSittingService } from "./CardLadderSittingService.mjs";
 
-const DECK = 'language/korean/week-01';
-const DECK_OTHER = 'language/korean/week-00';
-const REF = 'media:language/korean-vocab/lexicon.yml';
-const TODAY = '2026-09-22';
-const SETTINGS = {
-  round: { size: 5, maxPasses: 3 }, batch: { newPerDay: 4, workingSet: 7, order: 'deck' }, review: { gapScale: 1 },
-  drill: { afterMisses: 2 }, session: { capMinutes: 15 }, typing: { passScore: 6 },
-};
-function memoryStore() {
-  const s = { status: emptyStatusV3(), days: {}, writes: 0 };
-  return {
-    s,
-    readStatus: () => structuredClone(s.status),
-    readDay: (_u, _p, d) => structuredClone(s.days[d] ?? emptyDay(d)),
-    transact(_u, _p, d, fn) { const n = fn({ status: structuredClone(s.status), dayFile: structuredClone(s.days[d] ?? emptyDay(d)) }); s.status = n.status; s.days[d] = n.dayFile; s.writes += 1; return n; },
-  };
-}
-const lexicon = {
-  package: 'korean-vocab', program: { title: 'Korean words' }, language: { code: 'ko', name: 'Korean' }, gloss: { code: 'en', name: 'English' },
-  entries: new Map([['gawi', { id: 'gawi', group: 'week-01', term: '가위', gloss: 'Scissors', kind: 'word', decoys: { term: ['a', 'b', 'c'], gloss: ['x', 'y', 'z'] } }],
-    ['pul', { id: 'pul', group: 'week-01', term: '풀', gloss: 'Glue', kind: 'word', decoys: { term: ['d', 'e', 'f'], gloss: ['u', 'v', 'w'] } }]]),
-};
-function make({ realtime = null, judgementCache = null, recordings = null, mode = 'live', attempts = null, attemptsReader = null, teacherGate = null, judge = null, store = memoryStore(), media = false, decks = null, bounds = null, peek = undefined, linkedUnitId = null, programs = null, lexiconData = lexicon } = {}) {
-  let t = Date.parse('2026-09-22T16:00:00-07:00');
-  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-  const judgeFn = judge ?? vi.fn(async ({ typed, entry }) => ({ score: typed === entry.term ? 10 : 2, judge: 'exact', reason: null, pass: typed === entry.term }));
-  const token = mode === 'test' ? 'abc123' : 'live';
-  const service = new CardLadderSittingService({
-    stores: { open: () => ({ store, token }), forToken: (tk) => { if (tk !== token) throw new Error('unknown sitting'); return store; }, ...(peek ? { peek } : {}) },
-    decks: decks ?? {
-      getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, title: 'Week 1: Classroom', words: ['gawi', 'pul'], lexicon: REF } : null),
-      listFlashcardDecks: async () => [{ id: DECK, words: ['gawi', 'pul'], lexicon: REF }, { id: DECK_OTHER, words: ['pul'], lexicon: REF }, { id: 'biology/cells', cards: [] }],
-    },
-    lexicons: { getLexicon: () => lexiconData },
-    assignments: { get: async (u) => (u === 'test-learner' ? { programs: programs ?? [{ programId: 'flashcards', deckId: DECK, ...(linkedUnitId ? { linkedUnitId } : {}), policy: { mode: 'card-ladder' } }] } : { programs: [] }) },
-    attempts: attemptsReader ? { readAttemptsInRange: attemptsReader } : attempts ? { readAttemptsInRange: vi.fn(() => attempts) } : null,
-    assets: { exists: typeof media === 'function' ? media : () => media },
-    judge: { judge: judgeFn },
-    teacherGate, recordings, judgementCache, realtime,
-    settings: () => SETTINGS, bounds, timezone: 'America/Los_Angeles', now: () => (t += 4000), logger, mode,
-  });
-  return { service, store, logger, judge: judgeFn, advance: (ms) => { t += ms; } };
-}
+import { DECK, DECK_OTHER, REF, TODAY, SETTINGS, memoryStore, lexicon, make } from "../../../../../tests/_lib/school/cardLadderSittingFixtures.mjs";
 
 /** A store whose only word is `gawi`, mastered and due today with `rechecks` prior rechecks. */
 function dueStore(rechecks) {
@@ -209,6 +167,16 @@ describe('CardLadderSittingService', () => {
     });
   });
 
+  it("a synonym Jev calls fully right passes, and its match reaches the result and the day's record", async () => {
+    const judge = vi.fn(async () => ({ score: 10, judge: 'model', reason: null, pass: true, match: 'synonym' }));
+    const { service, store } = make({ store: readyStore(1), judge });
+    const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
+    expect(item.type).toBe('typed');
+    const out = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response: { typed: '자르개' } });
+    expect(out.result).toMatchObject({ correct: true, answer: '가위', score: 10, judge: 'model', match: 'synonym' });
+    expect(store.s.days[TODAY].items[item.id].result).toMatchObject({ correct: true, match: 'synonym' });
+  });
+
   it('judges a typed answer before the engine sees it, once per item', async () => {
     const { service, judge } = make({ store: readyStore(1) });
     const { sittingId, item } = await service.open({ userId: 'test-learner', deckId: DECK });
@@ -216,7 +184,10 @@ describe('CardLadderSittingService', () => {
     const out = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
     expect(judge).toHaveBeenCalledTimes(1);
     expect(judge.mock.calls[0][0]).toMatchObject({ pkg: 'korean-vocab', typed: '가비', entry: { id: 'gawi' }, targetScript: 'hangul', targetLanguage: 'Korean' });
-    expect(judge.mock.calls[0][0].otherWords).toEqual(expect.arrayContaining(['풀', 'a', 'b', 'c']));
+    // With meanings, so Jev can tell a synonym from another word; decoys have none.
+    expect(judge.mock.calls[0][0].otherWords).toEqual(expect.arrayContaining([
+      { term: '풀', gloss: 'Glue' }, { term: 'a', gloss: null }, { term: 'b', gloss: null }, { term: 'c', gloss: null },
+    ]));
     expect(out.result).toMatchObject({ correct: false, answer: '가위', score: 2, judge: 'exact' });
     const repeat = await service.respond({ userId: 'test-learner', sittingId, itemId: item.id, response });
     expect(repeat.result).toEqual(out.result);
@@ -310,6 +281,23 @@ describe('CardLadderSittingService', () => {
     const { item } = await service.learnMore({ userId: 'test-learner', sittingId: opened.sittingId });
     expect(item).toMatchObject({ type: 'flashcard', mode: 'intro', wordId: 'pul' });
     expect(logger.info).toHaveBeenCalledWith('school.card-ladder.learn-more', expect.objectContaining({ mode: 'test' }));
+  });
+
+  it('a deck release calendar holds a word back until its opening day; a met word keeps reviewing', async () => {
+    const releasedDeck = (opensOn) => ({
+      getFlashcardDeck: async (id) => (id === DECK ? { id: DECK, title: 'Class', words: ['gawi', 'pul'], lexicon: REF, releases: [{ opensOn, words: ['pul'] }] } : null),
+      listFlashcardDecks: async () => [],
+    });
+    const store = memoryStore();
+    store.s.status.words.gawi = { ...emptyWordV3(), state: 'mastered', stage: 3, dueDay: '2026-10-30', introducedDay: '2026-09-01' };
+    store.s.status.decksSeen = [DECK];
+    const held = make({ store, decks: releasedDeck('2026-09-27') });
+    const opened = await held.service.open({ userId: 'test-learner', deckId: DECK });
+    expect(opened.item.type).toBe('summary');
+    await expect(held.service.learnMore({ userId: 'test-learner', sittingId: opened.sittingId })).rejects.toThrow(/no new words/);
+    const open = make({ store: memoryStore(), decks: releasedDeck(TODAY) });
+    const fresh = await open.service.open({ userId: 'test-learner', deckId: DECK });
+    expect(fresh.item).toMatchObject({ type: 'flashcard', mode: 'intro' });
   });
 
   it('a day with nothing to do is done for today as soon as it is opened', async () => {
@@ -642,6 +630,45 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     expect(item).toMatchObject({ type: 'say', mode: 'say-after', word: { term: '가위', media: { audio: expect.stringContaining(TERM_AUDIO) } } });
   });
 
+  it("a new word's intro copy is skipped by an empty answer, never held until it matches", async () => {
+    const { service } = make({ media: true });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
+    let { item } = opened;
+    ({ item } = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { seen: true } }));
+    expect(item.type).toBe('copy');
+    const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response: { typed: '' } });
+    expect(out.result).toMatchObject({ correct: false, answer: '가위', skipped: true });
+    expect(out.result.dontKnow).toBeUndefined();
+    expect(out.item).toMatchObject({ type: 'say', mode: 'say-after' });
+  });
+
+  it('an empty answer gives up a drill step at once: copy, tiles and dictation move on with the word', async () => {
+    // Not knowing is never a wall (owner, 2026-11-03): no retries, no junk typed to get past it.
+    const store = trickyStore();
+    store.s.status.words.gawi = { ...store.s.status.words.gawi, state: 'mastered', stage: 2, dueDay: '2026-10-30', recognizedCount: 2, matched: true };
+    const { service } = make({ store, media: true });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK, capabilities: MIC });
+    const GIVE_UP = { copy: { typed: '' }, dictation: { typed: '' }, tiles: { tiles: [] }, type: { typed: '  ' } };
+    const seen = [];
+    let { item } = opened;
+    for (let i = 0; i < 20 && item.type === 'drill'; i += 1) {
+      const response = GIVE_UP[item.step] ?? DRILL_RESPONSE[item.step] ?? { done: true };
+      const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: item.id, response });
+      if (GIVE_UP[item.step]) {
+        expect(out.item.id).not.toBe(item.id);
+        seen.push([item.step, out.result]);
+      }
+      ({ item } = out);
+    }
+    expect(seen).toMatchObject([
+      // Copy's give-up is a Skip (the word was on screen), the rest a Don't know.
+      ['copy', { correct: false, answer: '가위', skipped: true }],
+      ['tiles', { correct: false, answer: '가위', dontKnow: true }],
+      ['dictation', { correct: false, answer: '가위', dontKnow: true }],
+      ['type', { correct: false, answer: '가위', dontKnow: true }],
+    ]);
+  });
+
   it('without a microphone no say step is offered', async () => {
     const { service, store } = make({ media: true });
     await service.open({ userId: 'test-learner', deckId: DECK });
@@ -734,10 +761,22 @@ describe('CardLadderSittingService — drills, speaking, practice, My words', ()
     expect(recordings.save).not.toHaveBeenCalled();
   });
 
-  it("practice is refused before today's goal", async () => {
+  // Owner ruling 2026-11-06: review is open anytime (overrules "post-goal").
+  it("practice is no longer refused before today's goal", async () => {
     const { service } = make();
     const opened = await service.open({ userId: 'test-learner', deckId: DECK });
-    await expect(service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write' })).rejects.toThrow(/goal/);
+    const outcome = await service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write' }).catch((error) => error);
+    expect(String(outcome?.message ?? '')).not.toMatch(/goal/);
+  });
+
+  it('practice Write with help: an empty answer skips the copy instead of holding the child on it', async () => {
+    const { service } = make({ store: doneStore() });
+    const opened = await service.open({ userId: 'test-learner', deckId: DECK });
+    const started = await service.practice({ userId: 'test-learner', sittingId: opened.sittingId, mode: 'write', help: true });
+    expect(started.item.type).toBe('copy');
+    const out = await service.respond({ userId: 'test-learner', sittingId: opened.sittingId, itemId: started.item.id, response: { typed: '' } });
+    expect(out.result).toMatchObject({ correct: false, answer: expect.any(String), skipped: true });
+    expect(out.item.id).not.toBe(started.item.id);
   });
 
   it('practice after the goal: a type-from-cue item is judged but never grades', async () => {
@@ -931,6 +970,102 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     expect(words.find((w) => w.wordId === 'pul').recentTyped).toEqual([]);
   });
 
+  it('adminDays lists opened days newest first, each at a glance', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'), doneAt: '2026-09-20T16:05:00-07:00', activeMs: 120000,
+      sittings: { s1: { deckId: DECK, openedAt: '2026-09-20T15:59:00-07:00', closedAt: '2026-09-20T16:06:00-07:00', reason: 'goal' } },
+      items: {
+        'rc:gawi': { at: '2026-09-20T16:00:00-07:00', response: { typed: '가이' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck' },
+        'r1:q:0': { at: '2026-09-20T16:01:00-07:00', response: { choice: '풀' }, result: { correct: true, answer: '풀' }, wordId: 'pul', task: '3.1', source: 'verify' },
+        'r1:q:1': { at: '2026-09-20T16:02:00-07:00', response: { choice: 'Rock' }, result: { correct: false, answer: 'Scissors' }, wordId: 'gawi', task: '2.2', source: 'verify' },
+        'r1:s:0': { at: '2026-09-20T16:03:00-07:00', response: { sort: 'familiar' }, result: { ok: true }, wordId: 'pul' },
+        summary: { at: '2026-09-20T16:05:00-07:00', response: { done: true }, result: { ok: true } },
+      },
+    };
+    store.s.days['2026-09-21'] = emptyDay('2026-09-21');
+    store.listDays = () => Object.keys(store.s.days).sort();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const before = structuredClone(store.s);
+    const { days, more } = await service.adminDays(who);
+    expect(more).toBe(false);
+    expect(days.map((d) => d.day)).toEqual(['2026-09-21', '2026-09-20']);
+    expect(days[1]).toEqual({
+      day: '2026-09-20', doneAt: '2026-09-20T16:05:00-07:00', activeMs: 120000,
+      sittings: [{ id: 's1', deckId: DECK, openedAt: '2026-09-20T15:59:00-07:00', closedAt: '2026-09-20T16:06:00-07:00', reason: 'goal' }],
+      // The summary card is not an answer; the sort is an answer but not graded.
+      answered: 4, graded: 3, correct: 1, missedWords: ['gawi'],
+    });
+    expect(store.s).toEqual(before);
+  });
+
+  it('adminDay gives every answer in order with its word, and the takes kept that day', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      drills: [{ id: 'd1', wordId: 'gawi', steps: ['look', 'say-after', 'tiles'] }],
+      items: {
+        'd1:2': { at: '2026-09-20T16:02:00-07:00', response: { tiles: ['가', '위'] }, result: { correct: true, answer: '가위' }, wordId: 'gawi', source: null },
+        'r1:i:pul:say': { at: '2026-09-20T16:00:00-07:00', response: { done: true }, result: { ok: true }, wordId: 'pul', source: null },
+        'rc:gawi': { at: '2026-09-20T16:01:00-07:00', response: { typed: '가이' }, result: { correct: false, answer: '가위', score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', source: 'recheck', reason: 'one letter off' },
+      },
+    };
+    store.listDays = () => Object.keys(store.s.days).sort();
+    const recordings = { save: vi.fn(), list: vi.fn(() => [{ wordId: 'pul', take: 1, ext: 'webm' }]), open: vi.fn() };
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock(), recordings });
+    const out = await service.adminDay({ ...who, day: '2026-09-20' });
+    expect(out.answers.map((row) => [row.itemId, row.kind, row.step, row.correct])).toEqual([
+      ['r1:i:pul:say', 'intro', 'say', null],
+      ['rc:gawi', 'recheck', null, false],
+      ['d1:2', 'drill', 'tiles', true],
+    ]);
+    expect(out.answers[1]).toEqual(expect.objectContaining({
+      wordId: 'gawi', term: '가위', gloss: 'Scissors', task: '3.3', response: { typed: '가이' }, answer: '가위', score: 5, judge: 'model', reason: 'one letter off',
+    }));
+    expect(out.recordings).toEqual([{ wordId: 'pul', take: 1, ext: 'webm', term: '풀', gloss: 'Glue' }]);
+    expect(recordings.list).toHaveBeenCalledWith({ package: 'korean-vocab', learnerId: 'test-learner', day: '2026-09-20' });
+  });
+
+  it('adminDay reads a re-grade as the verdict, names practice steps by what was done, and drops menu taps', async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: {
+        'rc:gawi': { at: '2026-09-20T16:00:00-07:00', response: { typed: '가위요' }, result: { correct: false, score: 5, judge: 'model' }, wordId: 'gawi', task: '3.3', regraded: { at: 'x', actorId: 'parent', pass: true } },
+        'p1:0:1': { at: '2026-09-20T16:01:00-07:00', response: { typed: '풀' }, result: { correct: true }, wordId: 'pul', source: 'practice' },
+        'p1:0:2': { at: '2026-09-20T16:02:00-07:00', response: { tiles: ['가', '위'] }, result: { correct: true }, wordId: 'gawi', source: 'practice' },
+        'p2:21': { at: '2026-09-20T16:03:00-07:00', response: { menu: true }, result: { ok: true } },
+      },
+    };
+    store.listDays = () => Object.keys(store.s.days).sort();
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    const out = await service.adminDay({ ...who, day: '2026-09-20' });
+    expect(out.answers.map((row) => [row.itemId, row.step, row.correct, row.engineCorrect])).toEqual([
+      ['rc:gawi', null, true, false],
+      ['p1:0:1', 'type', true, true],
+      ['p1:0:2', 'tiles', true, true],
+    ]);
+    expect(out).toMatchObject({ answered: 3, graded: 3, correct: 3, missedWords: [] });
+  });
+
+  it('adminDay refuses a malformed day and a day never opened', async () => {
+    const store = adminStore();
+    store.listDays = () => [];
+    const { service } = make({ store, teacherGate: gate(), judgementCache: cacheMock() });
+    await expect(service.adminDay({ ...who, day: 'yesterday' })).rejects.toThrow(/YYYY-MM-DD/);
+    await expect(service.adminDay({ ...who, day: '2026-09-19' })).rejects.toThrow(/card-ladder day/);
+  });
+
+  it('adminDays / adminDay / adminRecording are teacher-gated', async () => {
+    const teacherGate = { assert: vi.fn(() => { throw new Error('Only a grown-up can do this.'); }) };
+    const store = adminStore();
+    store.listDays = () => [];
+    const { service } = make({ store, teacherGate, judgementCache: cacheMock(), recordings: { save: vi.fn(), list: vi.fn(), open: vi.fn() } });
+    await expect(service.adminDays(who)).rejects.toThrow(/grown-up/);
+    await expect(service.adminDay({ ...who, day: '2026-09-20' })).rejects.toThrow(/grown-up/);
+    await expect(service.adminRecording({ ...who, day: '2026-09-20', wordId: 'pul', take: 1 })).rejects.toThrow(/grown-up/);
+  });
+
   it('adminReset returns a word to new, clearing notYetCarry, and logs admin + transition', async () => {
     const store = adminStore();
     store.s.status.words.gawi.notYetCarry = true;
@@ -1036,6 +1171,19 @@ describe('CardLadderSittingService — grown-up word controls (plan 4 task 4, sp
     expect(judgementCache.set).toHaveBeenLastCalledWith('korean-vocab', 'gawi', '가이', { score: 1, judge: 'grown-up', reason: 'Re-graded by a grown-up' });
     await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'r1:q:1', pass: true })).rejects.toThrow(/typed/);
     await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:none', pass: true })).rejects.toThrow(/rc:none/);
+  });
+
+  it("adminRegrade refuses a Don't know answer: nothing was typed, so a re-grade could only flip the record", async () => {
+    const store = adminStore();
+    store.s.days['2026-09-20'] = {
+      ...emptyDay('2026-09-20'),
+      items: { 'rc:gawi': { at: 'a', response: { typed: '' }, result: { correct: false, score: 0, judge: 'dont-know' }, wordId: 'gawi', task: '3.3', source: 'recheck' } },
+    };
+    const judgementCache = cacheMock();
+    const { service } = make({ store, teacherGate: gate(), judgementCache });
+    await expect(service.adminRegrade({ ...who, day: '2026-09-20', itemId: 'rc:gawi', pass: true })).rejects.toThrow(/Don't know/);
+    expect(judgementCache.set).not.toHaveBeenCalled();
+    expect(store.s.days['2026-09-20'].items['rc:gawi'].regraded).toBeUndefined();
   });
 
   it('adminRegrade keys a Latin-target answer by the script normalize (lower-cased), as the judge looks it up', async () => {
@@ -1338,3 +1486,32 @@ describe('durable card-day completion facts', () => {
     expect(fact).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CardLadderSittingService.achievementRecord', () => {
+  const view = {
+    listPackages: () => ['korean-3-2', 'korean-vocab'],
+    listDays: (_u, pkg) => (pkg === 'korean-vocab' ? ['2026-09-20', '2026-09-21', '2026-09-22'] : ['2026-09-21']),
+    readDay: (_u, pkg, d) => ({ ...emptyDay(d), doneAt: pkg === 'korean-vocab' && d !== '2026-09-21' ? `${d}T15:00:00-07:00` : null }),
+    readStatus: (_u, pkg) => {
+      if (pkg === 'korean-3-2') throw new Error('boom');
+      return { ...emptyStatusV3(), words: {
+        gawi: { ...emptyWordV3(), state: 'mastered', typedSignedOff: '2026-09-20' },
+        pul: { ...emptyWordV3(), state: 'mastered', typedSignedOff: null },
+        cha: { ...emptyWordV3(), state: 'familiar', typedSignedOff: '2026-09-19' },
+        mul: { ...emptyWordV3(), state: 'mastered', typedSignedOff: '2026-09-21', excluded: true },
+      } };
+    },
+  };
+  it('reports done days in range and current sign-offs per package, skipping an unreadable one', async () => {
+    const { service, logger } = make({ peek: () => view });
+    const out = await service.achievementRecord({ userId: 'test-learner', from: '2026-09-21', to: '2026-09-27' });
+    expect(out).toEqual({ packages: [{ package: 'korean-vocab', doneDays: ['2026-09-22'], signOffs: [{ wordId: 'gawi', day: '2026-09-20' }] }] });
+    expect(logger.warn).toHaveBeenCalledWith('school.card-ladder.achievement-package-skipped', expect.objectContaining({ package: 'korean-3-2' }));
+  });
+  it('is live only and needs a listing store', async () => {
+    await expect(make({ mode: 'test', peek: () => view }).service.achievementRecord({ userId: 'test-learner' })).rejects.toThrow(/live/);
+    await expect(make().service.achievementRecord({ userId: 'test-learner' })).rejects.toThrow(/list packages/);
+  });
+});
+
+// ── Dictation (spec 2026-11-06 Revision 2): the list is the newest week tag on lexicon entries; one tap, its own run, strict spelling, no goal, no clock.

@@ -128,7 +128,7 @@ function paperNote(session, status) {
  * blocks — so listing them here would tell the teacher to act on nothing.
  *
  * A table, not a re-derivation: this reads the planner's own `{state, reason}`
- * verdict and asks "is this one of the four", it does not recompute what
+ * verdict and asks "is this one of these", it does not recompute what
  * `agenda.mjs` already decided.
  */
 const NEEDS_GROWN_UP = new Set([
@@ -136,6 +136,9 @@ const NEEDS_GROWN_UP = new Set([
   'faulted:blocked_unreachable',
   'excused:caught_up',
   'excused:awaiting_grown_up',
+  // A remediation hold (past the retry cap, or unretried for days): the
+  // unit is no longer owed, so only a grown-up can move it.
+  'excused:teacher_hold',
 ]);
 
 /**

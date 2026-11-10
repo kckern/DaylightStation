@@ -1,0 +1,25 @@
+@import "../shared/styles/variables";
+
+// D3 per-child start badge ("Reach Hot"). Small and legible on the kiosk.
+.governance-start-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--app-bg-elevated);
+  border: 1px solid var(--app-text-secondary);
+  color: var(--app-text-primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+
+  // Past the 120s window: the warning the baseline lock path is now counting.
+  &--overdue {
+    background: var(--app-action-warning);
+    border-color: var(--app-action-warning);
+    color: var(--app-bg-primary);
+  }
+}

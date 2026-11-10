@@ -51,15 +51,16 @@ it (`2_domains/school/notifications/schoolPush.mjs`) and sends it as the
 relays `notification` verbatim. See
 [`reference/notifications/push-standard.md`](../../reference/notifications/push-standard.md).
 
-## 2. Configuration — two independent hook instances
+## 2. Configuration — three independent hook instances
 
-Both live in `data/household/school/school.yml` and are wired by the same
+All live in `data/household/school/school.yml` and are wired by the same
 adapter class, `SchoolGradingHookAdapter`, with a different `configKey`:
 
 | Config key | Fires when | Variables |
 |---|---|---|
 | `grading_hook` | Every terminal OMR paper-scan outcome (see §3) | the §3 key set |
 | `piano_lesson_hook` | Once per learner per study day, the moment the assigned daily piano lesson (the `piano-course` program) crosses completion | `result: 'satisfied'`, `learner_id`, `student`, `subject: 'arts'`, `course`, `lesson`, `percent` (course completion, not a lesson score), `notification` |
+| `presence_hook` | Someone is working in the school room (§7): a study-reader card tap, an OMR sheet, or Portal use | `result: 'present'`, `source` (`card` \| `omr` \| `portal`), `location`, `device`, `event`, `learner_id`, `student`; the grading keys ride as `null` |
 
 ```yaml
 grading_hook:
@@ -67,6 +68,11 @@ grading_hook:
 
 piano_lesson_hook:
   script: script.school_worksheet_scan_notification   # same script, both hooks, in this household today
+
+presence_hook:
+  script: script.school_presence   # absent = off
+  cooldownMinutes: 5               # one HA call per window, shared by all sources; 0 = every event
+  devices: [portal]                # SCREEN ids (/screen/<id>) that mean "a person is in the study"; not hardware device ids
 ```
 
 **Presence of `script` is the entire enable switch.** There is no separate
@@ -206,12 +212,78 @@ backward through the OMR pipeline trace in
 
 | Layer | Path |
 |---|---|
-| Adapter (fires the HA service call, owns the circuit breaker) | `__backend/src/1_adapters/school/SchoolGradingHookAdapter.mjs` |
-| Wiring — `grading_hook` instance | `__backend/src/app.mjs` (search `gradingHook = new SchoolGradingHookAdapter`) |
-| Wiring — `piano_lesson_hook` instance | `__backend/src/app.mjs` (search `pianoLessonHook = new SchoolGradingHookAdapter`) |
-| Caller (OMR scan outcome → hook) | `__backend/src/5_composition/modules/schoolPrintScanConsumer.mjs` |
-| Caller (piano lesson completion → hook) | `__backend/src/3_applications/school/PianoLessonCeremonyBridge.mjs` |
+| Adapter (fires the HA service call, owns the circuit breaker, cooldown) | `__app_modules/learning/school/server/adapters/SchoolGradingHookAdapter.mjs` |
+| Wiring — the three hook instances (`grading_hook`, `piano_lesson_hook`, `presence_hook`) | `__app_modules/learning/school/server/composition/lifecycle-runtime.mjs` |
+| Caller (OMR scan outcome → hook; also the `omr` presence source) | `__app_modules/learning/school/server/application/workflows/SchoolPrintScanConsumer.mjs` |
+| Caller (piano lesson completion → hook) | `__app_modules/learning/school/server/application/PianoLessonCeremonyBridge.mjs` |
+| Presence source: `card` (print-agenda taps) | `__app_modules/learning/school/server/application/workflows/LearnerCardActions.mjs` |
+| Presence source: `portal` (Express middleware on the school router) | `__app_modules/learning/school/server/api/presenceMiddleware.mjs` |
+| Portal device id (set once, sent as `X-Daylight-Device`) | `__app_modules/learning/school/browser/schoolDevice.js` |
 | Generic HA CLI (state/list/resolve/toggle/call-service) | `cli/commands/ha.mjs`, invoked as `node cli/dscli.mjs ha ...` |
 | Config | `data/household/school/school.yml` → `grading_hook:` / `piano_lesson_hook:` |
 | Phone copy (title, body, tag, channel) | `__backend/src/2_domains/school/notifications/schoolPush.mjs`, composed by the two callers above |
 | The actual sound/scene/announcement logic | **Home Assistant's own configuration — not in this repository** (`_includes/scripts/school_worksheet_scan_notification.yaml`) |
+
+## 7. The presence hook (study room lights)
+
+When someone is working in the school room (HA area "Study"), the backend
+calls HA `script.school_presence`, which turns on the study and living-room
+main lights at any hour. The script lives in HA's config at
+`_includes/scripts/school_presence.yaml` on `{env.prod_host}` (not in this
+repo). It is the third `SchoolGradingHookAdapter` instance
+(`configKey: 'presence_hook'`) and obeys the same rules as §4: fire-and-forget,
+never on the print/grade/request path, same circuit breaker.
+
+**Sources** (`source` variable):
+
+- `card`: every print-agenda outcome at a reader whose `learner_action` is
+  `print-agenda` (the study reader, per the triggers `sources.yml`). The
+  living-room reader runs `reading-session` and never fires it.
+- `omr`: every sheet event, unreadable ones included. `device` is the
+  event-bus topic (e.g. `omr`, `omr-study`), not the reader id.
+- `portal`: Express middleware on the school router. Any POST whose
+  `X-Daylight-Device` header (or body `deviceId`; a `fleet:` prefix is
+  stripped) is listed in `devices`. That id is the SCREEN id
+  (`deviceIdFor` returns it; the Portal is `/screen/<id>`), not a hardware
+  device id. `devices` is read from the boot-cached config snapshot: restart
+  (or reload household config) after editing `school.yml`. GETs never fire. The browser sets the id
+  once (SchoolShell, `browser/schoolDevice.js`) and every school API client
+  sends the header.
+
+**Ignored on purpose** (a person is not acting): paths under
+`/card-ladder/test/` (grown-up test door), `/reading/` (automatic acks),
+paths ending `/heartbeat` (flashcard 30 s timer), and any body with
+`mode: 'test'`. **Counted on purpose:** remote-launch `POST /sessions` (a
+grown-up sending work implies a child is about to be there) and the
+media-lesson playhead `POST /lesson/:id/position` (someone is watching).
+
+**Cooldown.** `cooldownMinutes` allows one HA call per window, shared by all
+sources, so one child's tap covers a sibling's inside the window. It is armed
+*before* the HA call (concurrent fires dedupe) and released if the call
+fails. `0` fires on every event. The cooldown is per adapter instance and held
+in memory, so a restart clears it.
+
+| Event | Meaning |
+|---|---|
+| `school.presence_hook.fired` | HA call succeeded |
+| `school.presence_hook.skipped` (`not_configured` / `backoff` / `cooldown`) | No `script` set / breaker open / inside the window. `cooldown` skips are rate-limited (2/min + aggregate); `not_configured` is debug-only |
+| `school.presence_hook.failed`, `.circuit_open`, `.reset` | As §4 |
+
+**"The lights didn't come on" checklist:**
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query=_msg:school.presence_hook AND _time:1h'
+```
+
+1. No events at all: is the `presence_hook` key (with `script`) in
+   `school.yml`, and has the container restarted since it was added
+   (boot-cached)? For `portal`, does the request carry the device header?
+   A Portal running a stale bundle sends no header until it is reloaded.
+2. `skipped` with `cooldown`: a recent event already fired; expected. This
+   line is rate-limited (at most 2 a minute, then an aggregate line), so it
+   may be absent even when skips happened. The other tell is a `.fired`
+   within the last `cooldownMinutes`.
+3. `skipped` with `backoff`, or `failed` / `circuit_open`: HA is flaky; see §4.
+4. `fired` but the lights stayed off: the fault is inside the HA script;
+   test it with `node cli/dscli.mjs ha state script.school_presence`.

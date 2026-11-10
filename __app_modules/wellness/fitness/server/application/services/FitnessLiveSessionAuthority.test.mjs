@@ -14,4 +14,15 @@ describe('FitnessLiveSessionAuthority', () => {
     const authority = new FitnessLiveSessionAuthority({ createSessionId: () => 'fs_shared' });
     expect(authority.claim('home', 'chrome', { writerEligible: false }).role).toBe('waiting');
   });
+
+  it('reports the live session read-only and forgets it once the writer goes quiet', () => {
+    let now = 1000;
+    const authority = new FitnessLiveSessionAuthority({ ttlMs: 100, now: () => now, createSessionId: () => 'fs_shared' });
+    expect(authority.current('home')).toBeNull();
+    authority.claim('home', 'firefox', { writerEligible: true });
+    expect(authority.current('home')).toBe('fs_shared');
+    now = 1100;
+    expect(authority.current('home')).toBeNull();
+    expect(authority.claim('home', 'chrome', { writerEligible: false }).role).toBe('waiting');
+  });
 });

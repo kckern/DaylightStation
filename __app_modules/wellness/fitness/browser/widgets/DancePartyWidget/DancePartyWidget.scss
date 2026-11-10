@@ -67,3 +67,57 @@
 .dance-backdrop { position: absolute; inset: 0;
   background: radial-gradient(circle at 50% 35%, #ff2d95 0%, #7a1fff 38%, #0a0a2a 78%);
   animation: danceHue 8s linear infinite; }
+
+.dance-volume-modal__channel + .dance-volume-modal__channel { margin-top: 16px; }
+.dance-immersive-btn { display: flex; align-items: center; }
+// Immersive: the bar and ✕ are gone; Next stays, faint until touched.
+.dance-immersive-next { position: absolute; right: 20px; bottom: 16px; z-index: 5;
+  background: none; border: none; color: #fff; font-size: 28px; cursor: pointer;
+  opacity: .25; transition: opacity .2s ease;
+  &:active { opacity: .9; }
+}
+
+// ---- Ambience soundboard effects (AmbienceEffects.jsx) ----
+.amb-fx-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden; }
+@keyframes ambFxFlash { 0% { opacity: 0; } 4% { opacity: .9; } 10% { opacity: .1; } 16% { opacity: .75; } 30% { opacity: 0; } 100% { opacity: 0; } }
+.amb-fx-flash { position: absolute; inset: 0; background: #fff; opacity: 0; animation: ambFxFlash var(--amb-fx-dur) ease-out forwards; }
+.amb-fx-sprite { position: absolute; width: 34vh; height: 34vh; }
+@keyframes ambFxCenter { 0% { transform: translate(-50%,-50%) scale(.3); opacity: 0; } 15% { transform: translate(-50%,-50%) scale(1); opacity: 1; } 85% { opacity: 1; } 100% { transform: translate(-50%,-50%) scale(1.05); opacity: 0; } }
+.amb-fx-center { left: 50%; top: 50%; width: 46vh; height: 46vh; animation: ambFxCenter var(--amb-fx-dur) ease-out forwards; }
+@keyframes ambFxAcross { 0% { left: -40vh; top: 30%; } 25% { top: 22%; } 50% { top: 32%; } 75% { top: 20%; } 100% { left: 110%; top: 28%; } }
+.amb-fx-float-across { animation: ambFxAcross var(--amb-fx-dur) ease-in-out forwards; opacity: .92; }
+@keyframes ambFxWalk { 0% { left: -36vh; } 100% { left: 105%; } }
+.amb-fx-walk-bottom { bottom: 2%; animation: ambFxWalk var(--amb-fx-dur) linear forwards; }
+@keyframes ambFxFlock { 0% { left: 105%; transform: scale(var(--amb-fx-scale, 1)); } 100% { left: -40vh; transform: scale(var(--amb-fx-scale, 1)) translateY(-8vh); } }
+.amb-fx-flock { width: 32vh; height: 21vh; left: 105%; animation: ambFxFlock calc(var(--amb-fx-dur) * .8) linear forwards; }
+@keyframes ambFxConfetti { 0% { top: -4%; opacity: 1; } 100% { top: 104%; opacity: .8; } }
+.amb-fx-confetti span { position: absolute; top: -4%; width: 12px; height: 18px; border-radius: 2px; animation-name: ambFxConfetti; animation-timing-function: linear; animation-fill-mode: forwards; }
+
+.amb-fx-board { position: absolute; inset: 0; z-index: 8; }
+// Transparent: a tap off the panel closes it without dimming the show.
+.amb-fx-board__backdrop { position: absolute; inset: 0; background: transparent; }
+// Operator panel: slim, dim, right edge, small type — not part of the show.
+.amb-fx-board__col { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 4px; width: 128px; padding: 6px;
+  border-radius: 8px; background: rgba(0,0,0,.38); }
+.amb-fx-board__mode { display: flex; gap: 4px; margin-bottom: 2px;
+  button { flex: 1; height: 26px; border: none; border-radius: 5px; background: rgba(255,255,255,.06);
+    color: rgba(255,255,255,.45); font-size: 11px; cursor: pointer;
+    &.is-on { background: rgba(255,255,255,.16); color: rgba(255,255,255,.8); } }
+}
+.amb-fx-board__btn { height: 34px; border: none; border-radius: 5px; text-align: left; padding: 0 10px;
+  background: rgba(255,255,255,.07); color: rgba(255,255,255,.6); font-size: 12px; cursor: pointer;
+  &:disabled { opacity: .35; }
+  &.is-active { color: #fff; background: rgba(255,255,255,.18); }
+}
+// Armed: a faint countdown in the corner; tap cancels.
+@keyframes ambFxArmedPulse { 0%, 100% { opacity: .9; } 50% { opacity: .3; } }
+.amb-fx-armed { position: absolute; right: 14px; bottom: 74px; z-index: 6;
+  display: flex; align-items: center; gap: 6px; padding: 3px 8px; border: none; border-radius: 10px;
+  background: rgba(0,0,0,.3); color: rgba(255,255,255,.5); font-size: 11px; cursor: pointer; }
+.dance-party.is-immersive .amb-fx-armed { bottom: 60px; }
+.amb-fx-armed__dot { width: 6px; height: 6px; border-radius: 50%; background: #ff8a00; animation: ambFxArmedPulse 1.2s ease-in-out infinite; }
+.dance-effects-btn { display: flex; align-items: center; }
+// Contain the Player's own z-indexes (10–55) inside the video layer; without a
+// stacking context they outranked the effect layer (z 4) and hid every sprite.
+.dance-video { isolation: isolate; z-index: 0; }

@@ -34,3 +34,24 @@ describe('CompletionCountBlocks activeIndex', () => {
     expect(blocks[0].classList.contains('blk--active')).toBe(false);
   });
 });
+
+describe('CompletionCountBlocks holding riders', () => {
+  it('draws riders mid-hold as holding blocks after the completed ones', () => {
+    const { container } = render(
+      <CompletionCountBlocks
+        targetCount={3}
+        actualCount={1}
+        metUsers={['child-a']}
+        holdingUsers={['child-b']}
+        holdingBlockClassName="blk--holding"
+        {...base}
+      />
+    );
+    const blocks = container.querySelectorAll('.blk');
+    expect(blocks[0].classList.contains('blk--done')).toBe(true);
+    expect(blocks[1].classList.contains('blk--holding')).toBe(true);
+    expect(blocks[1].classList.contains('blk--done')).toBe(false);
+    expect(blocks[1].textContent).toBe('C');
+    expect(blocks[2].classList.contains('blk--holding')).toBe(false);
+  });
+});

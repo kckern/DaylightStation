@@ -10,9 +10,11 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { weekLabel, shiftWeek } from "./earningsModel.js";
 
-function greenDays(work) {
-  const school = (work?.days ?? []).filter((d) => d.state !== 'exempt');
-  return `${school.filter((d) => d.state === 'met').length} of ${school.length}`;
+// The same count Home shows: days that are over, plus today once it is green.
+function greenDays(work, today = null) {
+  const counted = (work?.days ?? []).filter((d) => d.state !== 'exempt'
+    && (!today || d.day < today || (d.day === today && d.state === 'met')));
+  return `${counted.filter((d) => d.state === 'met').length} of ${counted.length}`;
 }
 
 function pendingText(pending) {
@@ -41,6 +43,7 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
             <button type="button" aria-label="Next week" onClick={() => setWeek(shiftWeek(from, 1))}>›</button>
             {week && <button type="button" className="teacher-coins__today" onClick={() => setWeek(null)}>This week</button>}
           </div>
+          <div className="teacher-coins__scroll">
           <table className="teacher-coins__lines" aria-label="Everyone's week">
             <thead><tr><th scope="col">Learner</th><th scope="col">Silver</th><th scope="col">Gems</th><th scope="col">Pending</th><th scope="col">Green days</th><th scope="col">Rings</th><th scope="col"><span className="teacher-visually-hidden">Open</span></th></tr></thead>
             <tbody>
@@ -50,7 +53,7 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
                   <td className="teacher-coins__amount">{l.totals.silver}</td>
                   <td>{l.totals.gems || ''}</td>
                   <td className="teacher-coins__pending">{pendingText(l.pending)}</td>
-                  <td>{greenDays(l.work)}</td>
+                  <td>{greenDays(l.work, data.today ?? null)}</td>
                   <td>{Number.isFinite(l.work?.rings) ? l.work.rings : (l.evidence?.rings === 'unavailable' ? '?' : '')}</td>
                   <td>
                     <button type="button" aria-label={`Open ${l.learnerName ?? l.learnerId}’s coins`} onClick={() => onSelectLearner?.(l.learnerId)}>Details</button>
@@ -59,7 +62,9 @@ export default function CoinsRosterPanel({ onSelectLearner }) {
               ))}
             </tbody>
           </table>
-          <p className="teacher-coins__fine">Preview — nothing is paid yet · rules revision {data.rulesRevision}</p>
+          </div>
+          {/* The rules revision rides along as a tooltip, not as copy. */}
+          <p className="teacher-coins__fine" title={`Earning rules revision ${data.rulesRevision}`}>Preview — nothing is paid yet</p>
         </div>
       )}
     </PanelFrame>

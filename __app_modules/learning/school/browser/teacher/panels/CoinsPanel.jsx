@@ -21,7 +21,14 @@ const CELL_WORDS = {
   met: 'green', partial: 'partly done', none: 'nothing done', exempt: 'no school', unknown: 'can’t tell',
   served: 'done', obligated: 'not done', excused: 'not asked', faulted: 'can’t tell',
 };
-const CELL_MARKS = { served: '✓', obligated: '✗', excused: '–', faulted: '?', met: '●', partial: '◐', none: '○', exempt: '–', unknown: '?' };
+const CELL_MARKS = { served: '✓', obligated: '✗', excused: '–', faulted: '?', met: '●', partial: '◐', none: '○', exempt: '–', unknown: '?', open: '…' };
+CELL_WORDS.open = 'not done yet today';
+
+/** Today is not over: "not done" there is "not yet", never a ✗ (audit 2026-10-29). */
+function cellState(cell, today) {
+  if (today && cell.day === today && (cell.state === 'obligated' || cell.state === 'none')) return 'open';
+  return cell.state;
+}
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -32,9 +39,10 @@ function amountText({ silver = 0, gems = 0 } = {}) {
   return parts.length ? parts.join(' + ') : '—';
 }
 
-function WorkGrid({ work, from }) {
+function WorkGrid({ work, from, today = null }) {
   const grid = useMemo(() => workGrid(work, from), [work, from]);
   return (
+    <div className="teacher-coins__scroll">
     <table className="teacher-coins__grid" aria-label="The week's work">
       <thead>
         <tr><th scope="col">Subject</th>{grid.days.map((d) => <th key={d} scope="col">{dayLabel(d)}</th>)}</tr>
@@ -42,20 +50,26 @@ function WorkGrid({ work, from }) {
       <tbody>
         <tr className="teacher-coins__day-row">
           <th scope="row">Whole day</th>
-          {grid.dayRow.map((c) => (
-            <td key={c.day} data-state={c.state ?? 'empty'}>
-              {c.state && <><span aria-hidden="true">{CELL_MARKS[c.state] ?? ''}</span><span className="teacher-visually-hidden">{`Day ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}`}</span></>}
-            </td>
-          ))}
+          {grid.dayRow.map((cell) => {
+            const c = { ...cell, state: cellState(cell, today) };
+            return (
+              <td key={c.day} data-state={c.state ?? 'empty'}>
+                {c.state && <><span aria-hidden="true">{CELL_MARKS[c.state] ?? ''}</span><span className="teacher-visually-hidden">{`Day ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}`}</span></>}
+              </td>
+            );
+          })}
         </tr>
         {grid.subjects.map((row) => (
           <tr key={row.subject}>
             <th scope="row">{row.subject}</th>
-            {row.cells.map((c) => (
-              <td key={c.day} data-state={c.state ?? 'empty'} title={c.reason ?? undefined}>
-                {c.state && <><span aria-hidden="true">{CELL_MARKS[c.state] ?? ''}</span><span className="teacher-visually-hidden">{`${row.subject} ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}`}</span></>}
-              </td>
-            ))}
+            {row.cells.map((cell) => {
+              const c = { ...cell, state: cellState(cell, today) };
+              return (
+                <td key={c.day} data-state={c.state ?? 'empty'} title={c.reason ?? undefined}>
+                  {c.state && <><span aria-hidden="true">{CELL_MARKS[c.state] ?? ''}</span><span className="teacher-visually-hidden">{`${row.subject} ${dayLabel(c.day)}: ${CELL_WORDS[c.state] ?? c.state}`}</span></>}
+                </td>
+              );
+            })}
           </tr>
         ))}
       </tbody>
@@ -63,6 +77,7 @@ function WorkGrid({ work, from }) {
         <tfoot><tr><th scope="row">Rings</th><td colSpan={7}>{plural(work.rings, 'ring')} in the ring week (Mon 4am – Sat noon)</td></tr></tfoot>
       )}
     </table>
+    </div>
   );
 }
 
@@ -128,13 +143,16 @@ export default function CoinsPanel({ learnerId, learnerName }) {
             {(data.pending?.silver > 0 || data.pending?.gems > 0) && (
               <p className="teacher-coins__pending">+{amountText(data.pending).replace(' + ', ' and ')} pending</p>
             )}
-            <p className="teacher-coins__fine">Preview — nothing is paid yet · rules revision {data.rulesRevision}</p>
+            {/* The rules revision is for whoever reads the server log, not the
+                parent: it rides along as a tooltip, not as copy. */}
+            <p className="teacher-coins__fine" title={`Earning rules revision ${data.rulesRevision}`}>Preview — nothing is paid yet</p>
             {data.evidence?.school === 'unavailable' && <p className="teacher-panel__error">School records could not be read — school lines show “can’t tell”, not zero.</p>}
             {data.evidence?.rings === 'unavailable' && <p className="teacher-panel__error">Fitness rings could not be read — ring lines show “can’t tell”.</p>}
           </div>
 
-          <WorkGrid work={data.work} from={from} />
+          <WorkGrid work={data.work} from={from} today={data.today ?? null} />
 
+          <div className="teacher-coins__scroll">
           <table className="teacher-coins__lines" aria-label="What it earns">
             <thead><tr><th scope="col">Rule</th><th scope="col">This week</th><th scope="col">Rate for {name}</th><th scope="col">Earns</th></tr></thead>
             <tbody>
@@ -155,6 +173,7 @@ export default function CoinsPanel({ learnerId, learnerName }) {
               ))}
             </tbody>
           </table>
+          </div>
 
           <div className="teacher-coins__multiplier">
             <label htmlFor={`coins-multiplier-${learnerId}`}>Multiplier for {name}</label>

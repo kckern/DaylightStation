@@ -15,6 +15,17 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  * @typedef {import('../../../3_applications/home-automation/ports/IHomeAutomationGateway.mjs').WaitResult} WaitResult
  */
 
+// One round trip for every area and every entity's area. Jinja's namespace is
+// the only way to accumulate across a loop.
+const AREA_ASSIGNMENTS_TEMPLATE = [
+  '{%- set ns = namespace(areas={}, assignments={}) -%}',
+  '{%- for a in areas() -%}{%- set ns.areas = dict(ns.areas, **{a: area_name(a)}) -%}{%- endfor -%}',
+  '{%- for s in states -%}{%- set a = area_id(s.entity_id) -%}',
+  '{%- if a -%}{%- set ns.assignments = dict(ns.assignments, **{s.entity_id: a}) -%}{%- endif -%}',
+  '{%- endfor -%}',
+  '{{ {"areas": ns.areas, "assignments": ns.assignments} | tojson }}',
+].join('');
+
 export class HomeAssistantAdapter {
   #baseUrl;
   #token;
@@ -142,6 +153,25 @@ export class HomeAssistantAdapter {
     } catch (error) {
       this.#logger.error?.('ha.listAllStates.error', { error: error.message });
       return [];
+    }
+  }
+
+  /**
+   * Rooms (HA areas) and each entity's room. HA's REST API has no area
+   * registry, so this renders a template — area_id() resolves through the
+   * entity's device, which the registry alone would miss. Empty on failure:
+   * room data is decoration, never a reason to fail a read.
+   * @returns {Promise<{areas: Array<{id: string, name: string}>, assignments: Object.<string, string>}>}
+   */
+  async listAreaAssignments() {
+    try {
+      const raw = await this.#apiPost('/api/template', { template: AREA_ASSIGNMENTS_TEMPLATE });
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const areas = Object.entries(parsed?.areas || {}).map(([id, name]) => ({ id, name: name || id }));
+      return { areas, assignments: parsed?.assignments || {} };
+    } catch (error) {
+      this.#logger.warn?.('ha.listAreaAssignments.error', { error: error.message });
+      return { areas: [], assignments: {} };
     }
   }
 

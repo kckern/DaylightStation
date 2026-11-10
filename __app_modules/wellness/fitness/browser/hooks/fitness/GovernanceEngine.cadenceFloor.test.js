@@ -114,12 +114,13 @@ describe('GovernanceEngine — cadence_floor', () => {
     expect(tripped.type).toBe('cadence_floor');
   });
 
-  it('clears as soon as the rider starts pedaling again', () => {
+  it('clears once the rider is pedaling again — not on a single sample', () => {
     pedal(engine, requirement, 0, 31_000);
-    // First zero sample only starts the clock; the trip needs the full window.
     run(engine, requirement, { rpm: 0, connected: false, at: 45_000 });
     expect(run(engine, requirement, { rpm: 0, connected: false, at: 56_000 }).satisfied).toBe(false);
-    expect(run(engine, requirement, { rpm: 48, at: 57_000 }).satisfied).toBe(true);
+    // One reading is what a single push of the pedal looks like.
+    expect(run(engine, requirement, { rpm: 48, at: 57_000 }).satisfied).toBe(false);
+    expect(run(engine, requirement, { rpm: 48, at: 58_000 }).satisfied).toBe(true);
   });
 
   it('never arms without a live heart-rate strap on the rider', () => {

@@ -607,7 +607,7 @@ export class ListAdapter {
     for (const item of items) {
       const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
-      if (percent > 1 && !QueueService.isWatched({ duration: item.duration, percent })) {
+      if (percent > 1 && !QueueService.isWatched({ duration: item.duration, percent, skipped: state?.skipped })) {
         return item;
       }
     }
@@ -616,7 +616,7 @@ export class ListAdapter {
     for (const item of items) {
       const state = progressMap.get(item.id);
       const percent = state?.percent || 0;
-      if (!QueueService.isWatched({ duration: item.duration, percent })) {
+      if (!QueueService.isWatched({ duration: item.duration, percent, skipped: state?.skipped })) {
         return item;
       }
     }
@@ -697,6 +697,11 @@ export class ListAdapter {
     };
 
     const results = [];
+    if (typeof listMetadata?.resume === 'boolean' || Number.isFinite(listMetadata?.seconds)) {
+      this.logger?.debug?.('list.playback-start-policy', {
+        listName, listPrefix, resume: listMetadata.resume ?? null, seconds: listMetadata.seconds ?? null,
+      });
+    }
 
     // Bulk-load progress once per namespace/category instead of one disk read
     // per child. mediaProgressMemory.findProgress() → _readFile() does an uncached
@@ -797,6 +802,16 @@ export class ListAdapter {
       } else {
         // Default: play
         Object.assign(playAction, baseAction);
+      }
+
+      // Start policy belongs to this menu launch, never the saved media progress.
+      // Explicit action options win over item fields, then menu metadata defaults.
+      for (const action of [playAction, queueAction]) {
+        if (Object.keys(action).length === 0) continue;
+        const resume = item.resume ?? listMetadata?.resume;
+        const seconds = item.seconds ?? listMetadata?.seconds;
+        if (action.resume === undefined && typeof resume === 'boolean') action.resume = resume;
+        if (action.seconds === undefined && Number.isFinite(seconds) && seconds >= 0) action.seconds = seconds;
       }
 
       // Merge display hints into the resolved action object
@@ -1085,6 +1100,15 @@ export class ListAdapter {
         if (limit > 0 && playables.length >= limit) break;
       }
 
+      // A finished entry's next-up pick is a restart (see PlexAdapter
+      // loadPlayableItemFromKey). While any entry still has something new,
+      // finished ones are dropped so the list moves on instead of replaying.
+      if (playables.some(item => item?.restarted) && playables.some(item => !item?.restarted)) {
+        for (let i = playables.length - 1; i >= 0; i--) {
+          if (playables[i]?.restarted) playables.splice(i, 1);
+        }
+      }
+
       // Watchlist "never empty" fallback: if all items were filtered out
       // but the list has children, resolve the first child as fallback
       if (playables.length === 0 && list.children?.length > 0) {
@@ -1139,12 +1163,16 @@ export class ListAdapter {
           // Programs with play action: pick ONE "next up" item per slot
           const colonIdx = input.indexOf(':');
           const child = { id: input, source: colonIdx !== -1 ? input.substring(0, colonIdx) : 'files' };
-          if (item.strategy && resolved.adapter.resolvePlayables) {
+          // `shuffle: true` on a single-pick slot means rotation. It used to be
+          // read only by queue slots and was ignored here, so the slot served
+          // the same next-up item on every run.
+          const strategy = item.strategy || (item.shuffle ? 'rotation' : null);
+          if (strategy && resolved.adapter.resolvePlayables) {
             // Slot opted into an explicit selection strategy — bypass the
             // default in-progress / first-unwatched cascade and let
             // ItemSelectionService apply the named strategy. allowFallback
             // recycles the pool when fully watched so the slot never goes empty.
-            tasks.push(() => this._pickViaStrategy(item.strategy, resolved, child));
+            tasks.push(() => this._pickViaStrategy(strategy, resolved, child));
           } else {
             tasks.push(() => this._getNextPlayableFromChild(child, resolved).then(item => item ? [item] : []));
           }

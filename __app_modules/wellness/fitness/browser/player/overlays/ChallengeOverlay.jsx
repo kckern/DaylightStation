@@ -51,6 +51,7 @@ export const ChallengeOverlay = ({ overlay }) => {
 		requiredCount,
 		actualCount,
 		metUsers,
+		holdingUsers,
 		statusLabel,
 		timeLabel,
 		countdownPaused,
@@ -119,9 +120,11 @@ export const ChallengeOverlay = ({ overlay }) => {
 							targetCount={normalizedTarget}
 							actualCount={normalizedActual}
 							metUsers={Array.isArray(metUsers) ? metUsers : []}
+							holdingUsers={Array.isArray(holdingUsers) ? holdingUsers : []}
 							containerClassName="challenge-overlay__count-blocks"
 							blockClassName="challenge-overlay__count-block"
 							completeBlockClassName="challenge-overlay__count-block--complete"
+							holdingBlockClassName="challenge-overlay__count-block--holding"
 							ariaLabel={countAriaLabel}
 						/>
 					)}
@@ -153,6 +156,7 @@ ChallengeOverlay.propTypes = {
 		requiredCount: PropTypes.number,
 		actualCount: PropTypes.number,
 		metUsers: PropTypes.array,
+		holdingUsers: PropTypes.array,
 		progress: PropTypes.number,
 		statusLabel: PropTypes.string,
 		timeLabel: PropTypes.string,

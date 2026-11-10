@@ -1,13 +1,13 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   }),
   getLogger: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   })
 }));
 

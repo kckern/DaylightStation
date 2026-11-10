@@ -20,6 +20,10 @@
  */
 
 import { registerSurroundModule } from "../../../../../__capabilities/playback/browser/surround-registry.mjs";
+// The concert-hall look the classical modules are drawn for. The capability's
+// frame is neutral; definitions opt in with `theme: classical`. Loaded here,
+// first, so it reaches the page before the modules' own sheets.
+import "../surround-classical.mjs";
 import SegmentMap from "./modules/SegmentMap.jsx";
 import CueTicker from "./modules/CueTicker.jsx";
 import ComposerCard from "./modules/ComposerCard.jsx";
@@ -28,6 +32,8 @@ import PlaceCarousel from "./modules/PlaceCarousel.jsx";
 import PlayCard from "./modules/PlayCard.jsx";
 import WorkPlacard from "./modules/WorkPlacard.jsx";
 import ScriptRail from "./modules/ScriptRail.jsx";
+import FilterRail from "../content-filter/preview/FilterRail.jsx";
+import FilterTimeline from "../content-filter/preview/FilterTimeline.jsx";
 
 /**
  * Every built-in, as `[name, Component, meta]`. The single source the
@@ -62,6 +68,10 @@ const BUILTIN_MODULES = [
   // make every definition that already authors a right rail look like it
   // wanted both.
   ['script-rail', ScriptRail, { regions: ['lyric'] }],
+  // The content-filter preview sidebar (a grown-up reviewing what the filter did).
+  ['content-filter-rail', FilterRail, { regions: ['right'] }],
+  // The preview's bottom bar: filter marks, playhead, seek and cue stepping.
+  ['content-filter-timeline', FilterTimeline, { regions: ['bottom'] }],
 ];
 
 /**

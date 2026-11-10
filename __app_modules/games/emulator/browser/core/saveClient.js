@@ -1,3 +1,5 @@
+import { createCheckpointJournal } from './checkpointJournal.js';
+import { createCheckpointClient } from './checkpointClient.js';
 /**
  * saveClient — thin, injectable HTTP client for per-user emulator saves/states.
  *
@@ -60,7 +62,7 @@ export function createSaveClient({ fetchImpl, baseUrl = BASE, logger } = {}) {
   async function getBlob(url) {
     let res;
     try {
-      res = await doFetch(url);
+      res = await doFetch(url, { cache: 'no-store' });
     } catch (err) {
       log().warn('save.get-failed', { url, httpStatus: null, error: err && err.message });
       return errorResult(null, err && err.message);
@@ -111,6 +113,8 @@ export function createSaveClient({ fetchImpl, baseUrl = BASE, logger } = {}) {
   }
 
   return {
+    journal: createCheckpointJournal(),
+    ...createCheckpointClient({ fetchImpl: doFetch, baseUrl, logger: { warn: (...args) => log().warn(...args) } }),
     // --- low-level, explicit (all return discriminated results) ---
     getSave: (system, gameId, user) => getBlob(saveUrl(system, gameId, user)),
     putSave: (system, gameId, user, body) => putBlob(saveUrl(system, gameId, user), body),
@@ -133,9 +137,10 @@ export function createSaveClient({ fetchImpl, baseUrl = BASE, logger } = {}) {
       if (saveMode === 'battery') {
         const s = await getBlob(stateUrl(system, gameId, slot, user));
         if (s.status === 'ok') return { ...s, kind: 'state' };
+        if (s.status === 'error') return s;
         const b = await getBlob(saveUrl(system, gameId, user));
         if (b.status === 'ok') return { ...b, kind: 'battery' };
-        return s.status === 'error' ? s : b; // surface an error over a plain absent
+        return b;
       }
       return absent();
     },

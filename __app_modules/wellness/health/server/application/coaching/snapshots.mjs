@@ -1,3 +1,5 @@
+import { buildObservations } from './observations.mjs';
+
 /**
  * Build pre-computed data snapshots for LLM commentary.
  * Each builder takes raw data from datastores and returns a compact JSON object.
@@ -14,7 +16,7 @@
  * @param {number|null} opts.weightTrend7d
  * @param {Array<{type: string, hours_ago: number, text: string}>} opts.recentCoaching
  */
-export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories }) {
+export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, items, todayStatus = 'in_progress', recentPattern, weightTrend7d, recentCoaching, recentDays, minCalories, evidence, eventItems = [] }) {
   // Pick top 3 notable items by protein contribution, then calories
   const notable = (items || [])
     .filter(i => i.calories > 0)
@@ -28,21 +30,16 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
 
   return {
     type: 'post-report',
+    observations: buildObservations({ type: 'post-report', evidence, proteinGoal: protein.goal, recentObservations: recentCoaching, eventItems }),
+    ...evidenceContext(evidence),
     date,
     time_of_day: timeOfDay,
     today_status: todayStatus,
     logging: loggingContext(minCalories),
-    calories: {
-      consumed: calories.consumed, goal_min: calories.goal_min, goal_max: calories.goal_max,
-      // With the budget the percentage is NET of the plan's top, as the bar fills.
-      pct: calories.goal_max > 0 ? Math.round(((calories.net ?? calories.consumed) / calories.goal_max) * 100) : 0,
-      // From the budget contract when available: the zone the Today bar shows,
-      // whether the log is trustworthy yet, and the headline's number.
-      ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
-      ...(calories.fasted_meals ? { fasted_meals: calories.fasted_meals } : {}),
-    },
-    protein: { consumed: protein.consumed, goal: protein.goal, pct: protein.goal > 0 ? Math.round((protein.consumed / protein.goal) * 100) : 0 },
+    calories: calorieContext(calories, evidence),
+    protein: { consumed: evidence?.current?.assessment.proteinKnown ? evidence.current.protein : null, goal: protein.goal ?? null },
     notable_items: notable,
+    notable_items_scope: 'foods_logged_today',
     recent_pattern: recentPattern,
     weight_trend_7d: weightTrend7d,
     recent_days: (recentDays || []).map(pickDay),
@@ -66,13 +63,15 @@ export function buildPostReportSnapshot({ date, timeOfDay, calories, protein, it
  * @param {Array<{date, calories, protein, status}>} opts.recentDays
  * @param {number} opts.minCalories
  */
-export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoal, weight, recentPattern, recentCoaching, recentDays, minCalories }) {
+export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoal, weight, recentPattern, recentCoaching, recentDays, minCalories, evidence }) {
   return {
     type: 'morning-brief',
+    observations: buildObservations({ type: 'morning-brief', evidence, proteinGoal, recentObservations: recentCoaching }),
+    ...evidenceContext(evidence),
     date,
     time_of_day: 'morning',
     logging: loggingContext(minCalories),
-    yesterday,
+    yesterday: yesterday ? pickDay(yesterday) : null,
     week_avg: weekAvg,
     protein_goal: proteinGoal,
     weight: weight ? { current: weight.current, trend_7d: weight.trend7d } : null,
@@ -91,9 +90,13 @@ export function buildMorningBriefSnapshot({ date, yesterday, weekAvg, proteinGoa
  * @param {Array<{date, calories, protein, status}>} opts.weekDays
  * @param {number} opts.minCalories
  */
-export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories }) {
+export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recentCoaching, weekDays, minCalories, evidence, longTermPeriod }) {
   return {
     type: 'weekly-digest',
+    date: evidence?.date,
+    observations: buildObservations({ type: 'weekly-digest', evidence, recentObservations: recentCoaching }),
+    ...evidenceContext(evidence),
+    ...(longTermPeriod ? { long_term_period: longTermPeriod } : {}),
     logging: loggingContext(minCalories),
     this_week: thisWeek,
     long_term_avg: longTermAvg,
@@ -103,14 +106,40 @@ export function buildWeeklyDigestSnapshot({ thisWeek, longTermAvg, weight, recen
   };
 }
 
-function pickDay(d) {
-  return { date: d.date, calories: d.calories, protein: d.protein, status: d.status, ...(d.fastedMeals ? { fasted_meals: d.fastedMeals } : {}) };
+function pickDay(day) {
+  return {
+    date: day.date, calories: day.calories, protein: day.protein, status: day.status,
+    ...(day.declared ? { declared: day.declared } : {}),
+    ...(day.assessment ? { assessment: day.assessment, provenance: day.provenance } : {}),
+    ...(day.estimatedCalories != null ? { estimated_calories: day.estimatedCalories } : {}),
+    ...(day.fastedMeals ? { fasted_meals: day.fastedMeals } : {}),
+  };
+}
+
+function calorieContext(calories = {}, evidence) {
+  const a = evidence?.current?.assessment;
+  return { consumed: a?.food ?? calories.consumed ?? null, logging_floor: a?.floorFood ?? null,
+    plan_food: a?.planFood ?? null, exercise_credit: a?.exercise ?? null, net: a?.net ?? null,
+    ...(calories.zone ? { zone: calories.zone, complete: calories.complete, remaining: calories.remaining } : {}),
+    ...(calories.fasted_meals ? { fasted_meals: calories.fasted_meals } : {}),
+  };
+}
+
+function evidenceContext(evidence) {
+  if (!evidence) return {};
+  const { current } = evidence;
+  return { userId: evidence.userId, period: evidence.period, source_state: evidence.sourceState,
+    today: evidence.today, timezone: evidence.timezone, current_assessment: current.assessment,
+    current_budget: { maintenance: current.budget?.maintenance ?? current.maintenance ?? null,
+      exercise: current.assessment.exercise, net: current.assessment.net, planFood: current.assessment.planFood,
+      loggingFloor: current.assessment.floorFood },
+  };
 }
 
 function loggingContext(minCalories) {
   return {
     min_calories: minCalories,
-    note: 'status complete|done|fasting = trustworthy totals. reconstructed = an untracked day backfilled from weight: calories are an estimate, protein is UNKNOWN (ignore its protein figure) and there are no foods to mention. incomplete = under min_calories and not confirmed by the user: meals are missing, the total is NOT what was eaten. unlogged = no data. Averages cover trustworthy days only. fasted_meals = meals the user declared intentionally skipped: those meals are really empty (never ask about them), and a day with any skipped meal is trusted — its total is what was eaten.',
+    note: 'Status describes logging; assessment controls intake judgments. Only finished trustworthy assessments enter averages and patterns. Incomplete means missing meals, not low intake; use each assessment.floorFood for its date rather than one window-wide floor. Unlogged means no data; unavailable means the source could not be read. Reconstructed estimated_calories is a separate estimate; calories remains canonical measured food and supports no intake verdict for that row. Reconstructed protein is unknown. Protein is known only when assessment.proteinKnown is true. Missing budget assessments stay unavailable, never inferred from summary calories. goalBasis current means current configured goals apply to historical dates, not recovered historical goal versions. fasted_meals are intentionally skipped meals: never ask about those meals. A skipped meal can make logging complete but does not finish a live day',
   };
 }
 
@@ -121,14 +150,17 @@ function loggingContext(minCalories) {
  * @param {{consumed: number, goal_max: number}} opts.todayCalories
  * @param {Array} opts.recentCoaching
  */
-export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching, budgetImpactNote = null }) {
+export function buildExerciseReactionSnapshot({ activity, budgetImpact, todayCalories, todayStatus = 'in_progress', recentCoaching, budgetImpactNote = null, evidence }) {
   return {
     type: 'exercise-reaction',
+    date: evidence?.date,
+    ...evidenceContext(evidence),
+    observations: buildObservations({ type: 'exercise-reaction', evidence, recentObservations: recentCoaching, activity }),
     today_status: todayStatus,
     activity,
     budget_impact: budgetImpact,
     ...(budgetImpactNote ? { budget_impact_note: budgetImpactNote } : {}),
-    today_calories: todayCalories,
+    today_calories: calorieContext(todayCalories, evidence),
     recent_coaching: recentCoaching || [],
   };
 }
@@ -154,6 +186,9 @@ export function buildRecentCoaching(coachingData, windowDays = 4) {
         type: msg.type,
         hours_ago: Math.round((now - ts) / (60 * 60 * 1000)),
         text: (msg.text || '').slice(0, 200),
+        ...(msg.observationFingerprint ? { observationFingerprint: msg.observationFingerprint } : {}),
+        ...(msg.observationFingerprints ? { observationFingerprints: msg.observationFingerprints } : {}),
+        ...(msg.observationId ? { observationId: msg.observationId, observationKind: msg.observationKind } : {}),
       });
     }
   }

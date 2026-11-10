@@ -2,8 +2,12 @@
  * Load the three-part content-filter cascade for one title.
  *
  * The repository owns storage layout and serialization. A missing EDL means
- * there is no filter for the title, so optional policy is not loaded.
+ * there is no filter for the title, so optional policy is not loaded. When the
+ * title's VidAngel tag set has a refined EDL, that one is served instead.
  */
+import { mergeProfilePatch } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
+import { readiness } from '../readiness.mjs';
+
 export class GetContentFilter {
   /** @type {import('../ports/IContentFilterRepository.mjs').IContentFilterRepository} */
   #repository;
@@ -16,14 +20,23 @@ export class GetContentFilter {
   }
 
   async execute({ ratingKey, profileName }) {
-    const edl = await this.#repository.getEdl(ratingKey);
-    if (!edl) return { edl: null, profile: null, override: null };
+    const raw = await this.#repository.getEdl(ratingKey);
+    if (!raw) return { edl: null, profile: null, override: null };
+    // A refined EDL for the same VidAngel tag set replaces the raw one: every cue
+    // on VidAngel's clock, refined ones at ms/frame precision. The override's
+    // sync maps it onto this household's copy.
+    const ref = raw.sourceRef;
+    const refined = ref?.workId != null && ref?.tagSetId != null
+      ? await this.#repository.getRefinedEdl({ workId: ref.workId, tagSetId: ref.tagSetId })
+      : null;
+    const edl = refined || raw;
 
-    const [profile, override] = await Promise.all([
+    const [baseProfile, override] = await Promise.all([
       this.#repository.getProfile(profileName),
       this.#repository.getOverride(ratingKey),
     ]);
-    return { edl, profile, override };
+    const profile = mergeProfilePatch(baseProfile, override?.profilePatch);
+    return { edl, profile, override, certification: readiness(edl, profile, override) };
   }
 }
 

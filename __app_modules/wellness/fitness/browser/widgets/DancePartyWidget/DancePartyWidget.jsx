@@ -3,9 +3,11 @@ import PropTypes from 'prop-types';
 import { Player as Player } from "../../../../../media/media/browser/playback.mjs";
 import { ContentDisplayUrl } from '@/lib/api.mjs';
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
-import { resolveDancePlaylists } from "./resolveDancePlaylists.js";
+import { resolveDancePlaylists, resolveAmbience } from "./resolveDancePlaylists.js";
 import { muteVideosIn } from "./muteVideosIn.js";
 import { useDanceLighting } from "./useDanceLighting.js";
+import { useAmbienceLighting } from "./useAmbienceLighting.js";
+import { resolveEffects, useAmbienceEffects, EffectOverlay, EffectsBoard, ArmedIndicator } from "./AmbienceEffects.jsx";
 import { useDanceStrobe } from "./useDanceStrobe.js";
 import { useDanceBpm } from "./useDanceBpm.js";
 import { useBpmPublisher } from "./useBpmPublisher.js";
@@ -28,6 +30,11 @@ import "./DancePartyWidget.scss";
  * looped via `queue.continuous` and muted by forcing `<video>.muted = true`
  * directly (via muteVideosIn — `play={{ volume: 0 }}` is a no-op because
  * useQueueController resolves `play?.volume || ... || 1` and 0 is falsy).
+ *
+ * Ambience mode (`config.ambience`, from an `ambience` nav item such as the
+ * Halloween tab): the item's own single video loops and its playlist plays,
+ * its HA script runs the lights/heat (useAmbienceLighting), and the party
+ * extras (strobe, BPM, accents, video-advance-per-song) are off.
  */
 export default function DancePartyWidget({ onClose, config, onMount }) {
   const logger = useMemo(() => getLogger().child({ component: 'dance-party' }), []);
@@ -35,11 +42,17 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Single source of truth: the dance_party block from FitnessContext. The
   // host's `config` prop is only honored when it explicitly carries its own
   // dance_party block (e.g. unit tests) — never merged, never substituted.
-  const dancePartyConfig = config?.dance_party ?? fitnessContext?.dancePartyConfig ?? null;
-  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader, strobeBpm } =
-    useMemo(() => resolveDancePlaylists(dancePartyConfig), [dancePartyConfig]);
+  const ambience = config?.ambience ?? null;
+  const isAmbience = ambience != null;
+  const dancePartyConfig = isAmbience ? ambience : (config?.dance_party ?? fitnessContext?.dancePartyConfig ?? null);
+  const { configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, videoShader, strobeBpm, videoAudio = false } =
+    useMemo(() => (isAmbience ? resolveAmbience(ambience) : resolveDancePlaylists(dancePartyConfig)), [isAmbience, ambience, dancePartyConfig]);
 
-  const { accent, lightsOn, toggleLights } = useDanceLighting({ enabled: true });
+  const party = useDanceLighting({ enabled: !isAmbience });
+  const ambienceLights = useAmbienceLighting({ ambienceId: isAmbience ? (ambience.id ?? null) : null });
+  const { lightsOn, toggleLights } = isAmbience ? ambienceLights : party;
+  const noAccent = useCallback(() => {}, []);
+  const accent = isAmbience ? noAccent : party.accent;
 
   const audioRef = useRef(null);
   const videoRef = useRef(null);
@@ -51,12 +64,13 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Strobe clock: live-detected BPM from the music wins; the configured
   // strobe_bpm is the fallback until the analyzer locks (or if Web Audio is
   // unavailable). trackKey resets the analyzer's votes on song change.
-  const { detectedBpm } = useDanceBpm({ playerRef: audioRef, trackKey: track?.key ?? null });
-  const effectiveBpm = detectedBpm ?? strobeBpm;
-  const { strobeOn, toggleStrobe, strobeStyle } = useDanceStrobe({ bpm: effectiveBpm });
+  const { detectedBpm } = useDanceBpm({ playerRef: audioRef, trackKey: track?.key ?? null, enabled: !isAmbience });
+  const effectiveBpm = detectedBpm ?? strobeBpm ?? 60;
+  const strobe = useDanceStrobe({ bpm: effectiveBpm });
+  const strobeStyle = isAmbience ? null : strobe.strobeStyle;
   // Mirror the tempo to HA (input_number via backend) so the physical party
   // strobe follows the music; throttled here AND rate-capped server-side.
-  useBpmPublisher({ bpm: effectiveBpm });
+  useBpmPublisher({ bpm: effectiveBpm, enabled: !isAmbience });
 
   // Notify the host container we've mounted (parity with other widgets).
   useEffect(() => {
@@ -72,11 +86,11 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       });
       return;
     }
-    logger.info('fitness.dance.config_resolved', { audioPlaylistId, videoPlaylistId, shuffle, hasVideo });
+    logger.info('fitness.dance.config_resolved', { audioPlaylistId, videoPlaylistId, shuffle, hasVideo, ambienceId: ambience?.id ?? null });
     if (!audioPlaylistId) {
       logger.error('fitness.dance.audio_unconfigured', { dancePartyConfig });
     }
-  }, [configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, dancePartyConfig, logger]);
+  }, [configured, audioPlaylistId, videoPlaylistId, shuffle, hasVideo, dancePartyConfig, ambience, logger]);
 
   // Mirror FitnessMusicPlayer: the queue prop is a memoized object so the inner
   // Player's queue controller does not re-init every render.
@@ -98,11 +112,13 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // `play={{ volume: 0 }}` is a no-op (useQueueController: `play?.volume || 1`).
   // The MutationObserver in muteVideosIn keeps the <video> muted as the
   // `continuous` playlist swaps the source/element on each advance.
+  // An ambience with video_audio keeps the video's sound; its level comes
+  // from the video volume channel below instead.
   useEffect(() => {
-    if (!(hasVideo && videoQueue)) return undefined;
+    if (!(hasVideo && videoQueue) || videoAudio) return undefined;
     const cleanup = muteVideosIn(videoContainerRef.current);
     return cleanup;
-  }, [hasVideo, videoQueue]);
+  }, [hasVideo, videoQueue, videoAudio]);
 
   // Track changes arrive via Player's onProgress callback (progressData.media),
   // exactly as FitnessMusicPlayer derives its current track. Fire a lighting
@@ -124,12 +140,12 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
       logger.info('fitness.dance.track_change', { title: media.title || null });
       // New song → new visual: advance the video layer in step with the music.
       // Skip the initial track so the video doesn't jump right at mount.
-      if (!isFirstTrack && videoRef.current?.advance) {
+      if (!isFirstTrack && !isAmbience && videoRef.current?.advance) {
         videoRef.current.advance(1);
         logger.debug('fitness.dance.video_advance_on_track_change', {});
       }
     }
-  }, [accent, logger]);
+  }, [accent, isAmbience, logger]);
 
   const handleAudioError = useCallback((err) => {
     logger.warn('fitness.dance.audio_error', { kind: err?.kind ?? null, message: err?.message ?? null });
@@ -138,12 +154,14 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
   // Video-layer observability: log the first frame source and any errors so
   // a silent video layer is diagnosable from session logs.
   const videoKeyRef = useRef(null);
+  const [videoKey, setVideoKey] = useState(null);
   const handleVideoProgress = useCallback((progressData) => {
     const media = progressData?.media;
     if (!media) return;
     const key = media.contentId || media.key || media.plex || media.ratingKey || null;
     if (key && key !== videoKeyRef.current) {
       videoKeyRef.current = key;
+      setVideoKey(key);
       logger.info('fitness.dance.video_started', { title: media.title || null, contentId: key });
     }
   }, [logger]);
@@ -163,15 +181,17 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     audioRef.current?.advance?.(1);
   }, []);
 
-  // Persistent volume (VolumeProvider store): survives exits/reloads, scoped
-  // to the dance audio playlist. The current track key in the ids makes the
-  // hook re-apply the stored level whenever the audio element swaps on track
-  // change. Touch levels map through the shared log curve (level 50 ≈ 10%
-  // output) so the low buttons are meaningful loudness choices.
+  // Persistent volume (VolumeProvider store): survives exits/reloads, one
+  // level per dance audio playlist. The current track key is the reapplyKey,
+  // so the hook re-applies that level whenever the audio element swaps on
+  // track change without storing a level per track. Touch levels map through
+  // the shared log curve (level 50 ≈ 10% output) so the low buttons are
+  // meaningful loudness choices.
   const volumeState = usePersistentVolume({
     grandparentId: 'fitness-dance',
     parentId: audioPlaylistId != null ? String(audioPlaylistId) : 'global',
-    trackId: track?.key || 'dance',
+    trackId: 'playlist',
+    reapplyKey: track?.key,
     playerRef: audioRef
   });
   const volumeLevel = snapToTouchLevel(logLevelFromVolume(volumeState.muted ? 0 : volumeState.volume));
@@ -180,19 +200,64 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
     logger.info('fitness.dance.volume_select', { level, volume: logVolumeFromLevel(level) });
   }, [volumeState, logger]);
 
+  // Video soundtrack channel (ambience video_audio only): its own persisted
+  // level per video, applied to the video Player; re-applied when it loads.
+  const noPlayerRef = useRef(null);
+  // Its own grandparent: under 'fitness-dance' an unset video level resolved
+  // to the music entry (the store's sibling fallback) and every music change
+  // re-applied to the video — the two bars moved together (2026-10-31).
+  const videoVolumeState = usePersistentVolume({
+    grandparentId: 'fitness-ambience-video',
+    parentId: videoPlaylistId != null ? `video-${videoPlaylistId}` : 'video',
+    trackId: 'video',
+    reapplyKey: videoKey,
+    playerRef: videoAudio ? videoRef : noPlayerRef
+  });
+  const videoVolumeLevel = snapToTouchLevel(logLevelFromVolume(videoVolumeState.muted ? 0 : videoVolumeState.volume));
+  const handleVideoVolumeSelect = useCallback((level) => {
+    videoVolumeState.setVolume(logVolumeFromLevel(level));
+    logger.info('fitness.dance.video_volume_select', { level, volume: logVolumeFromLevel(level) });
+  }, [videoVolumeState, logger]);
+  const volumeChannels = useMemo(() => [
+    { id: 'music', label: 'Music', level: volumeLevel, onSelect: handleVolumeSelect },
+    ...(videoAudio ? [{ id: 'video', label: 'Video sound', level: videoVolumeLevel, onSelect: handleVideoVolumeSelect }] : [])
+  ], [volumeLevel, handleVolumeSelect, videoAudio, videoVolumeLevel, handleVideoVolumeSelect]);
+
   // Press the video → fullscreen party: the widget root escapes the app frame
   // (fixed overlay over the fitness sidebar/chrome); press again to restore.
   // The now-playing bar stays visible in both states.
+  // Soundboard (ambience `effects`): sound + overlay + a light burst.
+  const effects = useMemo(() => (isAmbience ? resolveEffects(ambience.effects) : []), [isAmbience, ambience]);
+  const effectDelayS = isAmbience && Number(ambience.effect_delay_seconds) > 0 ? Number(ambience.effect_delay_seconds) : 15;
+  const { active: activeEffect, trigger: fireEffect, armed, armedRemainingS, arm, cancelArm } = useAmbienceEffects({
+    ambienceId: isAmbience ? (ambience.id ?? null) : null, effects, musicRef: audioRef,
+  });
+  const [effectsOpen, setEffectsOpen] = useState(false);
+
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Immersive: fullscreen with the bar hidden except a faint Next; a tap on
+  // the video comes back out to the normal (windowed) view.
+  const [immersive, setImmersive] = useState(false);
   const toggleFullscreen = useCallback(() => {
+    if (immersive) {
+      setImmersive(false);
+      setIsFullscreen(false);
+      logger.info('fitness.dance.immersive_toggle', { immersive: false });
+      return;
+    }
     setIsFullscreen((prev) => {
       logger.info('fitness.dance.fullscreen_toggle', { fullscreen: !prev });
       return !prev;
     });
+  }, [immersive, logger]);
+  const enterImmersive = useCallback(() => {
+    setImmersive(true);
+    setIsFullscreen(true);
+    logger.info('fitness.dance.immersive_toggle', { immersive: true });
   }, [logger]);
 
   return (
-    <div className={`dance-party${isFullscreen ? ' is-fullscreen' : ''}`}>
+    <div className={`dance-party${isFullscreen ? ' is-fullscreen' : ''}${immersive ? ' is-immersive' : ''}`}>
       {/* strobeStyle flips opacity bright/dim and walks hue-rotate per beat;
           scoped to the video layer so the bar/controls never flash. */}
       <div className="dance-video" ref={videoContainerRef} style={strobeStyle || undefined}>
@@ -203,10 +268,13 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         )}
       </div>
 
+      <EffectOverlay effect={activeEffect} />
+      <ArmedIndicator armed={armed} remainingS={armedRemainingS} onCancel={cancelArm} />
+
       <button
         type="button"
         className="dance-tapzone"
-        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        aria-label={immersive ? 'Exit immersive mode' : isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
         onClick={toggleFullscreen}
       />
 
@@ -222,18 +290,25 @@ export default function DancePartyWidget({ onClose, config, onMount }) {
         </div>
       )}
 
+      {effectsOpen && !immersive && (
+        <EffectsBoard effects={effects} active={activeEffect} delaySeconds={effectDelayS}
+          onFire={fireEffect} onArm={(e) => arm(e, effectDelayS * 1000)} onClose={() => setEffectsOpen(false)} />
+      )}
+
       <DanceNowPlayingBar
         track={track}
         isPlaying={isPlaying}
         onPlayPause={togglePlay}
         onNext={next}
         onExit={onClose}
-        volumeLevel={volumeLevel}
-        onVolumeSelect={handleVolumeSelect}
+        volumeChannels={volumeChannels}
+        immersive={immersive}
+        onToggleImmersive={enterImmersive}
+        onOpenEffects={effects.length > 0 ? () => setEffectsOpen((v) => !v) : undefined}
         lightsOn={lightsOn}
         onToggleLights={toggleLights}
-        strobeOn={strobeOn}
-        onToggleStrobe={toggleStrobe}
+        strobeOn={isAmbience ? false : strobe.strobeOn}
+        onToggleStrobe={isAmbience ? undefined : strobe.toggleStrobe}
       />
     </div>
   );

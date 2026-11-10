@@ -5,7 +5,7 @@
  * Vocabulary: ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md §5.
  * Design: ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md.
  *
- * Seven kinds, one per earning trigger (scope × period):
+ * Thirteen kinds, one per earning trigger (scope × period):
  *   unit            each served unit matching the selector        School × Unit
  *   section-day     each day the matched section was served        School × Day, one subject
  *   section-week    every obligated day that week served           School × Week, one subject
@@ -13,13 +13,43 @@
  *   week-met        the week row `met`                             School × Week
  *   ring-threshold  `rate` silver per N rings + each threshold crossed (award week) Fitness × Week (absolute)
  *   ring-contest    most rings in the roster at award-week close   Fitness × Week (relative)
+ *   ring-days       at least `min` rings on at least `days` study days of the award week  Fitness × Week (absolute)
+ *   activity-days   the named activity done on at least `days` study days of the school week   Any × Week (absolute)
+ *   activity-contest the best score in the roster for the named activity that week   Any × Week (relative)
+ *   milestone       one per new achievement of the named activity that week, up to `cap`   Any × Milestone
+ *
+ * The three `activity-*` / `milestone` kinds read `match.activity` from the
+ * achievement evidence (ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md):
+ *   activity-days    piano-practice | card-goal | story-read
+ *   activity-contest race | ring-improved
+ *   milestone        race-pb | glider-act | glider-bells | board-game-level | piano-rung
+ *                    | perfect-sheet | cards-mastered | book-finished | rings-lifetime
+ *   debrief-day     each day's after-school debrief, by criterion  School × Day (completed | substantive | quiz-passed | teachable)
+ *   debrief-week    every owed debrief done (late counts) or excused  School × Week
  *
  * A rule that pays twice is two rules: there is no `bonus`.
+ *
+ * Any rule may carry `gem: {category?, label?, group?}` — how its gems read on
+ * the Gem Board (ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md).
+ * Rules that share a `category` share a board row; a gem's colour comes from its
+ * area (`GEM_AREAS`), never the rule; `group` is the board section the row sits under
+ * (`move`, `games`, `school`, or any slug). Display only: it never changes
+ * what a rule pays. The FIRST rule of a board row decides the row's label,
+ * group and area; on a later rule in the same row, `gem.label` / `gem.group`
+ * have no effect.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { CURRENCIES } from '../entities/Transaction.mjs';
 
-export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest']);
-export const CURRENCIES = Object.freeze(['silver', 'gems']);
+export { CURRENCIES };
+export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'ring-threshold', 'ring-contest', 'debrief-day', 'debrief-week', 'ring-days', 'activity-days', 'activity-contest', 'milestone']);
+/** What each achievement kind may name in `match.activity`. */
+export const ACTIVITIES = Object.freeze({
+  'activity-days': Object.freeze(['piano-practice', 'card-goal', 'story-read']),
+  'activity-contest': Object.freeze(['race', 'ring-improved']),
+  milestone: Object.freeze(['race-pb', 'glider-act', 'glider-bells', 'board-game-level', 'piano-rung', 'perfect-sheet', 'cards-mastered', 'book-finished', 'rings-lifetime']),
+});
+const DEBRIEF_CRITERIA = ['completed', 'substantive', 'quiz-passed', 'teachable'];
 const SECTION_KINDS = new Set(['section-day', 'section-week']);
 const TIES = new Set(['all', 'split', 'none']);
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -62,7 +92,11 @@ function nonNegativeInt(value, field) {
 export function normalizeReward(reward, field = 'reward') {
   if (typeof reward === 'number') return { silver: nonNegativeInt(reward, field), gems: 0 };
   if (!reward || typeof reward !== 'object' || Array.isArray(reward)) fail(`${field} must be a number or {silver, gems}`, field);
-  for (const key of Object.keys(reward)) if (!CURRENCIES.includes(key)) fail(`${field} has an unknown currency "${key}"`, field);
+  for (const key of Object.keys(reward)) {
+    if (!CURRENCIES.includes(key)) fail(`${field} has an unknown currency "${key}"`, field);
+    // Gold is minted only by the week close, never by a rule.
+    if (key === 'gold') fail(`${field} cannot pay gold: rules pay silver and gems`, field);
+  }
   return { silver: nonNegativeInt(reward.silver ?? 0, `${field}.silver`), gems: nonNegativeInt(reward.gems ?? 0, `${field}.gems`) };
 }
 
@@ -94,6 +128,14 @@ function normalizeMatch(match, field) {
     if (typeof match[key] !== 'string' || !match[key]) fail(`${field}.${key} must be a string`, field);
     out[key] = match[key];
   }
+  if (match.activity != null) {
+    if (typeof match.activity !== 'string' || !ID.test(match.activity)) fail(`${field}.activity must be a slug`, field);
+    out.activity = match.activity;
+  }
+  if (match.criterion != null) {
+    if (typeof match.criterion !== 'string' || !match.criterion) fail(`${field}.criterion must be a string`, field);
+    out.criterion = match.criterion;
+  }
   return out;
 }
 
@@ -108,6 +150,31 @@ function normalizeEffective(effective, field) {
   return Object.keys(out).length ? out : null;
 }
 
+/**
+ * `{category?, label?, group?}` — the rule's row on the Gem Board.
+ * `group` is the board section the row sits under (`move`, `games`, `school`,
+ * or any slug).
+ */
+function normalizeGem(gem, field, ruleId) {
+  if (gem == null) return null;
+  if (typeof gem !== 'object' || Array.isArray(gem)) fail(`${field} must be {category, label, group}`, field);
+  const out = {};
+  if (gem.category != null) {
+    if (typeof gem.category !== 'string' || !ID.test(gem.category)) fail(`${field}.category must be a lowercase slug`, `${field}.category`);
+    out.category = gem.category;
+  }
+  if (gem.group != null) {
+    if (typeof gem.group !== 'string' || !ID.test(gem.group)) fail(`${field}.group must be a lowercase slug`, `${field}.group`);
+    out.group = gem.group;
+  }
+  if (gem.label != null) {
+    if (typeof gem.label !== 'string' || !gem.label.trim()) fail(`${field}.label must be a string`, `${field}.label`);
+    out.label = gem.label.trim();
+  }
+  if (gem.color != null) fail(`rule "${ruleId}": ${field}.color is not allowed — a gem's colour comes from the area (move, school, games)`, `${field}.color`);
+  return Object.keys(out).length ? out : null;
+}
+
 function normalizeRule(rule, i) {
   const field = `rules[${i}]`;
   if (!rule || typeof rule !== 'object') fail(`${field} must be an object`, field);
@@ -115,6 +182,9 @@ function normalizeRule(rule, i) {
   if (!RULE_KINDS.includes(rule.kind)) fail(`${field}.kind must be one of ${RULE_KINDS.join(', ')}`, `${field}.kind`);
   const match = normalizeMatch(rule.match, `${field}.match`);
   if (SECTION_KINDS.has(rule.kind) && !match.subject) fail(`${field} (${rule.kind}) needs match.subject`, `${field}.match`);
+  if (rule.kind === 'debrief-day' && !DEBRIEF_CRITERIA.includes(match.criterion)) {
+    fail(`${field}.match.criterion must be one of ${DEBRIEF_CRITERIA.join(', ')}`, `${field}.match.criterion`);
+  }
   const out = {
     id: rule.id,
     label: typeof rule.label === 'string' && rule.label.trim() ? rule.label.trim() : rule.id,
@@ -124,6 +194,8 @@ function normalizeRule(rule, i) {
   };
   const effective = normalizeEffective(rule.effective, `${field}.effective`);
   if (effective) out.effective = effective;
+  const gem = normalizeGem(rule.gem, `${field}.gem`, rule.id);
+  if (gem) out.gem = gem;
   if (rule.kind === 'ring-threshold') {
     out.rate = normalizeRate(rule.rate, `${field}.rate`);
     out.thresholds = normalizeThresholds(rule.thresholds, `${field}.thresholds`);
@@ -132,6 +204,34 @@ function normalizeRule(rule, i) {
     const tie = rule.tie ?? 'all';
     if (!TIES.has(tie)) fail(`${field}.tie must be all, split or none`, `${field}.tie`);
     out.tie = tie;
+  }
+  if (ACTIVITIES[rule.kind]) {
+    if (!ACTIVITIES[rule.kind].includes(match.activity)) {
+      fail(`${field}.match.activity must be one of ${ACTIVITIES[rule.kind].join(', ')}`, `${field}.match.activity`);
+    }
+  }
+  if (rule.kind === 'activity-days') {
+    const days = rule.days ?? 4;
+    if (!Number.isInteger(days) || days < 1 || days > 7) fail(`${field}.days must be a whole number from 1 to 7`, `${field}.days`);
+    out.days = days;
+  }
+  if (rule.kind === 'activity-contest') {
+    const tie = rule.tie ?? 'all';
+    if (!TIES.has(tie)) fail(`${field}.tie must be all, split or none`, `${field}.tie`);
+    out.tie = tie;
+  }
+  if (rule.kind === 'milestone' && rule.cap != null) {
+    const count = rule.cap?.count;
+    if (!Number.isInteger(count) || count < 1 || count > 50) fail(`${field}.cap.count must be a whole number from 1 to 50`, `${field}.cap`);
+    out.cap = { per: 'week', count };
+  }
+  if (rule.kind === 'ring-days') {
+    const days = rule.days ?? 5;
+    if (!Number.isInteger(days) || days < 1 || days > 7) fail(`${field}.days must be a whole number from 1 to 7`, `${field}.days`);
+    const min = rule.min ?? 1;
+    if (!Number.isInteger(min) || min < 1 || min > 10000) fail(`${field}.min must be a whole number from 1 to 10000`, `${field}.min`);
+    out.days = days;
+    out.min = min;
   }
   return out;
 }

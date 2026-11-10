@@ -37,7 +37,7 @@ const teacherAuth = vi.hoisted(() => ({
 vi.mock("./TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -56,7 +56,7 @@ vi.mock("./panels/CurriculumCatalog.jsx", () => ({ default: () => null }));
 vi.mock("./panels/CurriculumBrowser.jsx", () => ({ default: () => null }));
 vi.mock("./panels/SchoolMatrix.jsx", () => ({ default: () => null }));
 vi.mock("./panels/EnrichmentPanel.jsx", () => ({ default: () => null }));
-vi.mock("./panels/AttestationPanel.jsx", () => ({ default: () => null }));
+vi.mock("./panels/AttestationPanel.jsx", () => ({ default: ({ learnerId }) => <div data-testid="attestation-panel">{learnerId}</div> }));
 vi.mock("./panels/ReassignPanel.jsx", () => ({ default: () => null }));
 import { teacherWorkspaceApi } from "./teacherWorkspaceApi.js";
 
@@ -103,6 +103,18 @@ describe('CurriculumExceptionPanel neutral defaults', () => {
     await waitFor(() => expect(teacherWorkspaceApi.retractCurriculumException).toHaveBeenCalled());
     expect(teacherWorkspaceApi.retractCurriculumException.mock.calls[0][1]).toMatchObject({ reason: 'authored fix landed' });
     expect(promptSpy).not.toHaveBeenCalled();
+  });
+
+  it('names the learner an exception applies to, and says Everyone for a global one', async () => {
+    teacherWorkspaceApi.curriculumExceptions.mockResolvedValueOnce({ ok: true, status: 200, data: { active: [
+      { exceptionId: 'ex1', kind: 'paused', learnerId: null, targetType: 'lesson', targetId: 'u1', reason: 'defective' },
+      { exceptionId: 'ex2', kind: 'skipped', learnerId: 'user_2', targetType: 'lesson', targetId: 'u1', reason: 'mastered' },
+    ] } });
+    render(<OperationsView kids={KIDS} />);
+    const list = (await screen.findByText(/· mastered/)).closest('ul');
+    expect(within(list).getByText(/· Everyone ·/)).toBeInTheDocument();
+    expect(within(list).getByText(/· User_2 ·/)).toBeInTheDocument();
+    expect(within(list).queryByText(/user_2/)).toBeNull();
   });
 });
 
@@ -185,6 +197,20 @@ describe('one home per repair panel (UX audit IA4)', () => {
   it('gives each workspace page the interventions index as its way in', async () => {
     render(<LearnerOperationsView learnerId="user_2" learnerName="User_2" kids={KIDS} />);
     expect(await screen.findByRole('link', { name: /Give credit for work you saw/ }))
-      .toHaveAttribute('href', '/school/teacher/students/user_2/operations');
+      .toHaveAttribute('href', '/school/teacher/operations?learner=user_2');
+  });
+});
+
+describe('Fix — one page, a child picker on top', () => {
+  it('opens a child\'s repairs on the Fix page when that child is picked, and keeps the school tools below', async () => {
+    window.history.pushState({}, '', '/school/teacher/operations');
+    render(<OperationsView kids={KIDS} />);
+    const picker = screen.getByRole('group', { name: 'For which child?' });
+    expect(within(picker).getByRole('button', { name: 'the whole school' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByTestId('attestation-panel')).toBeNull();
+    fireEvent.click(within(picker).getByRole('button', { name: 'User_2' }));
+    expect(window.location.search).toBe('?learner=user_2');
+    expect((await screen.findByTestId('attestation-panel')).textContent).toBe('user_2');
+    expect(screen.getByRole('link', { name: /Give credit for work you saw/ })).toHaveAttribute('href', '/school/teacher/operations?learner=user_2');
   });
 });

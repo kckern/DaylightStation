@@ -857,7 +857,22 @@ export class WakeAndLoadService {
               this.#logger.warn?.('wake-and-load.load.wsFallback-ack-missing', {
                 deviceId, dispatchId, error: ack?.error,
               });
-              if (briefOnly) {
+              // A device with no content control had no URL path at all, so
+              // the WS command was the only delivery: no ack means it reached
+              // no one (garage kiosk, 2026-10-31 — reported "delivered" then a
+              // 90 s playback timeout). An explicit receiver rejection (ok:false
+              // with a code) is a refusal, not a slow ack.
+              const noUrlPath = loadResult.error === 'No content control configured';
+              const rejected = ack && ack.ok === false && typeof ack.code === 'string';
+              if (rejected) {
+                const error = ack.error || 'The screen refused the request';
+                this.#emitProgress(topic, dispatchId, 'load', 'failed', { error, code: ack.code });
+                result.error = error;
+                result.failedStep = 'load';
+                result.totalElapsedMs = this.#clock.now() - startTime;
+                return result;
+              }
+              if (briefOnly || noUrlPath) {
                 // A brief goes out once; with no handler ack it reached no one.
                 this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Screen not connected' });
                 result.error = 'Screen not connected';

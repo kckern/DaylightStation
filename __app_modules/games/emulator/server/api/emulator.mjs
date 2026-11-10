@@ -1,3 +1,4 @@
+import { createEmulatorCheckpointRouter } from './emulatorCheckpoint.mjs';
 import { sendInternalError } from '#api/utils/internalError.mjs';
 import express from 'express';
 import { safeSegment } from '#system/utils/safePathSegment.mjs';
@@ -74,11 +75,13 @@ export function createEmulatorRouter({
   logger = NOOP_LOGGER,
   emulatorResources,
   emulatorLibrary,
+  checkpointService,
   publishBtPair = () => { logger.warn('emulator.bt_pair.no_publisher', {}); },
   makeRequestId = (() => { let n = 0; return () => `btpair-${++n}`; })(),
 }) {
   if (!emulatorLibrary?.getLibrary) throw new Error('createEmulatorRouter: library application service required');
   const router = express.Router();
+  if (checkpointService) router.use('/checkpoint', createEmulatorCheckpointRouter({ service: checkpointService, logger }));
   router.use(express.json());
 
   // ---- POST /bt/pair -------------------------------------------------------
@@ -231,6 +234,7 @@ export function createEmulatorRouter({
   const rawBody = express.raw({ type: '*/*', limit: '8mb' });
 
   function readUserBlob(req, res, getResource) {
+    res.set('Cache-Control', 'no-store');
     let system, gameId, slot, user;
     try {
       system = safeSegment(req.params.system);
@@ -251,6 +255,7 @@ export function createEmulatorRouter({
   }
 
   async function writeUserBlob(req, res, storeArtifact) {
+    res.set('Cache-Control', 'no-store');
     let system, gameId, slot, user;
     try {
       system = safeSegment(req.params.system);
@@ -272,6 +277,10 @@ export function createEmulatorRouter({
       await storeArtifact({ system, gameId, slot, user }, artifact);
       res.json({ ok: true, bytes: artifact.size });
     } catch (err) {
+      if (err.code === 'ECHECKPOINTREQUIRED') {
+        logger.warn('emulator.blob.protocol_refused', { system, gameId, user });
+        return res.status(409).json({ error: err.message, code: err.code });
+      }
       if (err.code === 'ESAVEOWNER') {
         logger.warn('emulator.blob.write_refused', { system, gameId, slot, user, reason: err.message });
         return res.status(403).json({ error: 'save belongs to another player' });
@@ -282,6 +291,7 @@ export function createEmulatorRouter({
   }
 
   async function deleteUserBlob(req, res, deleteResource) {
+    res.set('Cache-Control', 'no-store');
     let system, gameId, slot, user;
     try {
       system = safeSegment(req.params.system);
@@ -298,6 +308,10 @@ export function createEmulatorRouter({
       await deleteResource({ system, gameId, slot, user });
       res.json({ ok: true });
     } catch (err) {
+      if (err.code === 'ECHECKPOINTREQUIRED') {
+        logger.warn('emulator.blob.protocol_refused', { system, gameId, user });
+        return res.status(409).json({ error: err.message, code: err.code });
+      }
       if (err.code === 'ESAVEOWNER') {
         logger.warn('emulator.blob.delete_refused', { system, gameId, slot, user, reason: err.message });
         return res.status(403).json({ error: 'save belongs to another player' });

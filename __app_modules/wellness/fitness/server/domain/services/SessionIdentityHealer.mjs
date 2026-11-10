@@ -347,10 +347,16 @@ export function planHeal(sessionYamlObj, cfg = {}) {
   for (const m of merges) removed.add(m.from);
 
   // Names a correction relabelled away are not participants unless they own
-  // a surviving stint.
+  // a surviving stint. Only a name still LISTED (or still holding series) is
+  // something to remove — otherwise every relabelled session would report
+  // needsHeal forever and a heal would never be idempotent.
+  const listedIds = new Set(Object.keys(sessionYamlObj?.participants || {}));
+  const seriesIds = new Set(Object.keys(rawSeries).map((k) => k.split(':')[0]));
   for (const segments of perDevice.values()) {
     for (const seg of segments) {
-      for (const id of seg.relabeledFrom || []) if (!kept.has(id)) removed.add(id);
+      for (const id of seg.relabeledFrom || []) {
+        if (!kept.has(id) && (listedIds.has(id) || seriesIds.has(id))) removed.add(id);
+      }
     }
   }
 

@@ -386,7 +386,8 @@ export function createHealthRouter(config) {
   }));
 
   router.post('/nutrition/restore', asyncHandler(async (req, res) => {
-    return res.json(await healthOperations.restoreNutritionItems(getDefaultUsername(req), req.body?.entryIds));
+    const userId = getDefaultUsername(req);
+    return res.json(await runNutritionOperation(userId, req.body?.operationId, { operation: 'restore', entryIds: req.body?.entryIds }, () => healthOperations.restoreNutritionItems(userId, req.body?.entryIds)));
   }));
 
   /**
@@ -855,7 +856,7 @@ export function createHealthRouter(config) {
       const userId = getDefaultUsername(req);
 
       // Check if item exists
-      const result = await healthOperations.deleteNutritionItem(userId, uuid);
+      const result = await runNutritionOperation(userId, req.body?.operationId, { operation: 'delete', uuid }, () => healthOperations.deleteNutritionItem(userId, uuid));
       if (!result.found) {
         return res.status(404).json({ error: 'Nutrilist item not found' });
       }
@@ -1500,7 +1501,8 @@ export function createHealthRouter(config) {
      */
     router.post('/nutrition/input', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername(req);
-      const { type, content, bucket, date, audioRef, selectedIds, clarification } = req.body;
+      const { type, content, bucket, date, audioRef, selectedIds, clarification, expectedVersions } = req.body;
+      if (expectedVersions !== undefined && (!expectedVersions || typeof expectedVersions !== "object" || Array.isArray(expectedVersions) || Object.values(expectedVersions).some(value => !Number.isSafeInteger(value) || value < 1))) return res.status(400).json({ error: "Invalid expected versions" });
       if ((selectedIds !== undefined && (!Array.isArray(selectedIds) || selectedIds.some(id => typeof id !== 'string' || !ENTRY_UUID_PATTERN.test(id)))) || (clarification !== undefined && (typeof clarification !== 'string' || !ENTRY_UUID_PATTERN.test(clarification)))) return res.status(400).json({ error: 'Invalid meal selection or clarification' });
       if (!type) {
         return res.status(400).json({ error: 'type is required (text, voice, image, barcode)' });
@@ -1519,8 +1521,8 @@ export function createHealthRouter(config) {
         return res.status(400).json({ error: 'Invalid audioRef', code: 'AUDIO_REF_INVALID' });
       }
       try {
-        const result = await runNutritionOperation(userId, req.body.operationId, { type, content, bucket, date, audioRef, ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}) }, () => healthOperations.processNutritionInput({
-          type, content, userId, bucket, date, audioRef: audioRef ?? undefined, operationId: req.body.operationId, ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}),
+        const result = await runNutritionOperation(userId, req.body.operationId, { type, content, bucket, date, audioRef, ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}), ...(expectedVersions !== undefined ? { expectedVersions } : {}) }, () => healthOperations.processNutritionInput({
+          type, content, userId, bucket, date, audioRef: audioRef ?? undefined, operationId: req.body.operationId, ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}), ...(expectedVersions !== undefined ? { expectedVersions } : {}),
         }));
         const withUndo = healthOperations.attachNutritionCaptureUndo
           ? await healthOperations.attachNutritionCaptureUndo(userId, req.body.operationId, result) : result;

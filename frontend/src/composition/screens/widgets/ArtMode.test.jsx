@@ -4,6 +4,14 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 import { VIEW_MODES, nextMode } from './artModes.js';
 import ArtMode from './ArtMode.jsx';
 
+// The image renders a commit before ArtMode's keydown listener effect is
+// installed; a key pressed in that gap is lost (failed in 97ms on a slow
+// worker). Wait for the image, then flush effects before driving keys.
+const shown = async (getByTestId) => {
+  await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+  await act(async () => {});
+};
+
 const press = (key) =>
   act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
 const pressShift = (key) =>
@@ -42,7 +50,7 @@ describe('ArtMode', () => {
   it('single: one window, one placard, frame, matte vars', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId, queryByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(getByTestId('artmode-frame')).toBeTruthy();
     expect(getByTestId('artmode-placard')).toBeTruthy();
     expect(queryByTestId('artmode-image-1')).toBeNull();
@@ -52,7 +60,7 @@ describe('ArtMode', () => {
   it('diptych: two windows and two placards', async () => {
     DaylightAPI.mockResolvedValue(diptych());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(getByTestId('artmode-image-1')).toBeTruthy();
     expect(getByTestId('artmode-placard')).toBeTruthy();
     expect(getByTestId('artmode-placard-1')).toBeTruthy();
@@ -61,7 +69,7 @@ describe('ArtMode', () => {
   it('hides placards when placard=false', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId, queryByTestId } = render(<ArtMode placard={false} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(queryByTestId('artmode-placard')).toBeNull();
   });
 
@@ -77,7 +85,7 @@ describe('ArtMode', () => {
     DaylightAPI.mockResolvedValue(single());
     const onExit = vi.fn();
     const { getByTestId } = render(<ArtMode onExit={onExit} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(DaylightAPI).toHaveBeenCalledTimes(1);
     press('ArrowRight');
     await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(2));
@@ -103,7 +111,7 @@ describe('ArtMode', () => {
   it('curtain is down until the artwork loads, then parts', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(getByTestId('artmode-curtain').className).not.toContain('artmode__curtain--open');
     fireEvent.load(getByTestId('artmode-image'));
     await waitFor(() =>
@@ -113,7 +121,7 @@ describe('ArtMode', () => {
   it('holds the curtain down for the minimum even on a fast load', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode curtainMinMs={800} curtainMaxMs={5000} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     fireEvent.load(getByTestId('artmode-image'));
     // Image is loaded, but the curtain must NOT have parted yet (min dwell pending).
     expect(getByTestId('artmode-curtain').className).not.toContain('artmode__curtain--open');
@@ -126,7 +134,7 @@ describe('ArtMode', () => {
   it('parts the curtain by the maximum even if assets never load', async () => {
     DaylightAPI.mockResolvedValue(single());   // resolves, but the image load never fires
     const { getByTestId } = render(<ArtMode curtainMaxMs={300} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     // No fireEvent.load — only the safety rail can open it.
     await waitFor(
       () => expect(getByTestId('artmode-curtain').className).toContain('artmode__curtain--open'),
@@ -138,7 +146,7 @@ describe('ArtMode', () => {
     DaylightAPI.mockResolvedValue(single());
     const ambient = { defaultLux: 80, curve: [{ lux: 0, dim: 0.9 }, { lux: 100, dim: 0.2 }] };
     const { getByTestId } = render(<ArtMode ambient={ambient} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     act(() => ambientCb({ lux: 0 }));   // dark room → 0.9 clamped to 0.85 ceiling
     expect(getByTestId('artmode-dim').style.opacity).toBe('0.85');
     act(() => ambientCb({ lux: 100 })); // bright → 0.2
@@ -150,7 +158,7 @@ describe('ArtMode', () => {
     DaylightAPI.mockResolvedValue(single());
     const ambient = { defaultLux: 80, curve: [{ lux: 0, dim: 0.9 }, { lux: 100, dim: 0.2 }] };
     const { getByTestId } = render(<ArtMode ambient={ambient} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     act(() => ambientCb({ lux: 100 }));   // auto 0.2
     press('ArrowDown');                    // +0.1 bias → 0.3
     expect(getByTestId('artmode-dim').style.opacity).toBe('0.3');
@@ -162,7 +170,7 @@ describe('ArtMode', () => {
     DaylightAPI.mockResolvedValue(single());
     // fillSingles:false disables the matless override so the start is deterministically gallery.
     const { getByTestId } = render(<ArtMode fillSingles={false} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
     expect(modeOf()).toBe('gallery');
     press('Tab'); expect(modeOf()).toBe('framed-contain');
@@ -184,7 +192,7 @@ describe('ArtMode', () => {
   it('dedupes a phantom duplicate MediaRewind (one press = one cycle)', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
     const start = modeOf();
     // Shield remote Rewind delivers two MediaRewind keydowns ~180ms apart per
@@ -196,7 +204,7 @@ describe('ArtMode', () => {
   it('cycles again on a real MediaRewind press after the dedupe window', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode cycleDedupeMs={30} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
     const start = modeOf();
     press('MediaRewind');
@@ -209,7 +217,7 @@ describe('ArtMode', () => {
   it('does not dedupe Tab (keyboard fallback never phantom-echoes)', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     const modeOf = () => getByTestId('artmode').getAttribute('data-mode');
     const start = modeOf();
     press('Tab'); press('Tab');                     // two rapid Tabs both count
@@ -219,7 +227,7 @@ describe('ArtMode', () => {
   it('hides the frame in bare modes, shows it in framed modes', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId, queryByTestId } = render(<ArtMode fillSingles={false} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(getByTestId('artmode-frame')).toBeTruthy();          // gallery
     press('Tab'); press('Tab'); press('Tab');                   // bare-contain
     expect(queryByTestId('artmode-frame')).toBeNull();
@@ -228,7 +236,7 @@ describe('ArtMode', () => {
   it('hides placards in bare modes', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId, queryByTestId } = render(<ArtMode fillSingles={false} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(getByTestId('artmode-placard')).toBeTruthy();
     press('Tab'); press('Tab'); press('Tab'); press('Tab');     // bare-cover
     expect(queryByTestId('artmode-placard')).toBeNull();
@@ -237,7 +245,7 @@ describe('ArtMode', () => {
   it('applies object-fit per mode (contain then cover)', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     press('Tab');  // framed-contain
     expect(getByTestId('artmode-image').className).toContain('artmode__fitimage--contain');
     press('Tab');  // framed-cover
@@ -247,7 +255,7 @@ describe('ArtMode', () => {
   it('keeps diptych two-up in object-fit modes', async () => {
     DaylightAPI.mockResolvedValue(diptych());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     press('Tab');  // framed-contain
     expect(getByTestId('artmode-image')).toBeTruthy();
     expect(getByTestId('artmode-image-1')).toBeTruthy();
@@ -256,7 +264,7 @@ describe('ArtMode', () => {
   it('preserves the mode across a shuffle', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode fillSingles={false} />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     press('Tab'); press('Tab');  // framed-cover
     expect(getByTestId('artmode').getAttribute('data-mode')).toBe('framed-cover');
     press('ArrowRight');         // shuffle
@@ -267,7 +275,7 @@ describe('ArtMode', () => {
   it('Tab is preventDefaulted (kiosk focus never moves)', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     const ev = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
     act(() => { window.dispatchEvent(ev); });
     expect(ev.defaultPrevented).toBe(true);
@@ -287,7 +295,7 @@ describe('ArtMode', () => {
   it('parts the curtain after the artwork loads in an object-fit mode', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     press('Tab');  // framed-contain → object-fit render path
     expect(getByTestId('artmode-curtain').className).not.toContain('artmode__curtain--open');
     fireEvent.load(getByTestId('artmode-image'));
@@ -308,7 +316,7 @@ describe('ArtMode', () => {
   it('renders a background-audio element only when music config is present', async () => {
     DaylightAPI.mockResolvedValue(single());
     const { getByTestId, queryByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(queryByTestId('artmode-music')).toBeNull();
   });
 
@@ -342,7 +350,7 @@ describe('ArtMode', () => {
       panels: [{ image: '/a.jpg', meta: { title: 'A', artist: 'X', date: '1', width: 1600, height: 1000, crop_anchor: 'top' } }],
     }));
     const { getByTestId } = render(<ArtMode />);
-    await waitFor(() => expect(getByTestId('artmode-image')).toBeTruthy());
+    await shown(getByTestId);
     expect(getByTestId('artmode-image').style.objectPosition).toBe('top');
   });
 

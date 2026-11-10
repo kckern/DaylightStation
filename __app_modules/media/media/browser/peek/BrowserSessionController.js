@@ -1,5 +1,6 @@
 import { buildCommandEnvelope } from '@shared-contracts/media/envelopes.mjs';
 import { createPositionChannel } from "../session/positionChannel.js";
+import { normalizePlaybackQualityChange, normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
 
 function defaultUuid() {
   try { if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID(); } catch { /* noop */ }
@@ -43,10 +44,10 @@ export function createBrowserSessionController({
       restartCurrent: () => transport('seekAbs', 0),
     },
     queue: {
-      playNow: (input, opts = {}) => queue('play-now', { contentId: input.contentId, clearRest: !!opts.clearRest }),
-      playNext: input => queue('play-next', { contentId: input.contentId }),
-      addUpNext: input => queue('add-up-next', { contentId: input.contentId }),
-      add: input => queue('add', { contentId: input.contentId }),
+      playNow: (input, opts = {}) => queue('play-now', { contentId: input.contentId, ...normalizePlaybackQuality(input), clearRest: !!opts.clearRest }),
+      playNext: input => queue('play-next', { contentId: input.contentId, ...normalizePlaybackQuality(input) }),
+      addUpNext: input => queue('add-up-next', { contentId: input.contentId, ...normalizePlaybackQuality(input) }),
+      add: input => queue('add', { contentId: input.contentId, ...normalizePlaybackQuality(input) }),
       remove: queueItemId => queue('remove', { queueItemId }),
       jump: queueItemId => queue('jump', { queueItemId }),
       reorder: input => queue('reorder', input),
@@ -58,6 +59,7 @@ export function createBrowserSessionController({
       setShader: value => send('config', { setting: 'shader', value }),
       setVolume: value => send('config', { setting: 'volume', value }),
     },
+    quality: { setOverrides: request => send('session', { action: 'set-quality', ...normalizePlaybackQualityChange(request) }) },
     lifecycle: { reset() {}, adoptSnapshot() {} },
     portability: { snapshotForHandoff: () => null, receiveClaim() {} },
     get capabilities() {

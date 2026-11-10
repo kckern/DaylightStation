@@ -1,3 +1,5 @@
+import { budgetDayView } from '../../../../__app_modules/wellness/health/server/application/coaching/CoachingEvidenceService.mjs';
+import { localDate } from '../../../../__app_modules/wellness/health/server/application/agents/health-coach/assignments/budgetContext.mjs';
 import { describe, it, expect, vi } from 'vitest';
 
 import { WeeklyDigest } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/assignments/WeeklyDigest.mjs";
@@ -77,21 +79,14 @@ describe('WeeklyDigest', () => {
    * Used for asserting average-based detection over the weekly window.
    */
   function buildHistory(overrides = {}) {
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(Date.now() - (6 - i) * 86400000).toISOString().split('T')[0];
-      days.push({
-        date,
-        calories: overrides.calories?.[i] ?? 1700,
-        protein: overrides.protein?.[i] ?? 150,
-      });
-    }
-    return { days };
+    return { days: Array.from({ length: 7 }, (_, i) => {
+      const date = localDate(-(7 - i));
+      const food = overrides.calories?.[i] ?? 1700;
+      return budgetDayView({ date, food, exercise: 0, net: food, maintenance: 2300,
+        range: { floor: 1200, top: 1800 }, macros: { protein: overrides.protein?.[i] ?? 150 }, goalBasis: 'current' }, { today: localDate() });
+    }) };
   }
 
-  /**
-   * Build a 14-day weight history (matching the 14-day window WeeklyDigest pulls).
-   */
   function buildWeightHistory(values) {
     const history = [];
     for (let i = 0; i < values.length; i++) {
@@ -126,7 +121,7 @@ describe('WeeklyDigest', () => {
     ];
   }
 
-  it('gather: detects sustained 7-day calorie surplus and calls find_similar_period', async () => {
+  it('gather: detects sustained 7-day over-plan intake and calls find_similar_period', async () => {
     const digest = new WeeklyDigest();
     const fspCalls = [];
     const findSimilarPeriod = async (params) => {

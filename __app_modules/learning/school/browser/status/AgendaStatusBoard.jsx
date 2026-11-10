@@ -44,6 +44,25 @@
  * teacher console uses: the agenda dry-run preview (the plan) and the teacher
  * day digest (what's done). Exported for reuse by adult surfaces that may
  * mount a more interactive variant later.
+ *
+ * Two read-only doors are the exceptions: the two weeks open the term popup
+ * (TermModal) and the coin cell opens that kid's bank screen through
+ * `onOpenBank(learnerId)`, which the Portal wires to its economy-bank launch.
+ * Neither starts tracked work. Without `onOpenBank` the cell is plain.
+ * A third, beside the coins: the gem door opens the family's Gem Board
+ * (`onOpenGems(learnerId)`, focused on that kid; spec
+ * ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md). Given,
+ * the gems leave the coin grid for their own button — a gem inside the bank
+ * door would be a button inside a button — and it shows even at zero, so the
+ * board is always one tap away.
+ *
+ * THE COIN CEREMONY (2026-10-21; ledger ruling 2026-11-09). When a child's
+ * bank history gains MINTED EARNING entries (payouts and earn-rule mints, not
+ * deposits, corrections, refunds, conversions or spends) that an earlier
+ * network read did not hold, a short "+N" pop with their face and the new
+ * silver total appears over the board pane (never the keypad) and the coin
+ * cue plays (`useCoinCeremony`, `coinCeremonyModel.js`). It is the one moving
+ * thing, and it is transient. The cards themselves still do not move.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
@@ -55,21 +74,17 @@ import { schoolApi } from "../schoolApi.js";
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner } from "./agendaStatusModel.js";
+import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
+import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
 import { readBoardCache, writeBoardCache } from "./boardCache.js";
 import TermModal from "./TermModal.jsx";
+import CoinCeremony from "./CoinCeremony.jsx";
+import { useCoinCeremony } from "./useCoinCeremony.js";
+import { SCHOOL_REFRESH_EVENTS, COINS_CHANGED, coalescer } from "./schoolRefreshEvents.js";
 
 const REFRESH_MS = 5 * 60_000;
-const SCHOOL_REFRESH_EVENTS = new Set([
-  'session-issued',
-  'session-grade-changed',
-  'story-read',
-  'book-log-changed',
-  'piano-lesson-complete',
-  'program-day-bypass-changed',
-]);
 
 // The subject wall's own icon set, addressed by subject id (icons/MANIFEST.md:
 // "filenames are the subject ids"), so the board and the wall say the same
@@ -233,9 +248,24 @@ function TwoWeeks({ term, anchor }) {
  * finished, one big check mark. The number is the progress bar for a screen
  * reader ("2 of 7 done"); to the eye it is the across-the-room fact.
  */
+/**
+ * Lay the server's day verdict (GetLearnerDayCompletion, via the teacher day
+ * digest's `dayCompletion`) over the board's own count. Discs stay the board's;
+ * whether the day is DONE is the server's call, so this board can never say
+ * "1 left" while the gate has unlocked games, or a check while work is owed.
+ */
+export function withServerVerdict(summary, dayCompletion) {
+  const state = dayCompletion?.state;
+  if (!summary || !state || state === 'indeterminate') return summary;
+  return { ...summary, serverDone: state === 'complete' || state === 'no_work_today' };
+}
+
 function DayCount({ summary }) {
   if (!summary || summary.total <= 0) return null;
-  if (summary.done >= summary.total) {
+  // The server's verdict, when present, decides the check mark — the same
+  // answer the agenda, term grid and day-complete gate give (one source).
+  const finished = summary.serverDone ?? (summary.done >= summary.total);
+  if (finished) {
     return (
       <span className="school-status-board__check" data-testid="board-day-done" role="img" aria-label="Done for the day">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -252,7 +282,8 @@ function DayCount({ summary }) {
       aria-valuenow={summary.done}
       aria-label={`${summary.done} of ${summary.total} done`}
     >
-      {summary.total - summary.done}
+      {/* Server says work is owed though every disc reads green: never "0 left". */}
+      {summary.serverDone === false ? Math.max(1, summary.total - summary.done) : summary.total - summary.done}
     </span>
   );
 }
@@ -282,44 +313,44 @@ function RestDayStatus({ restDay, pinned }) {
  *   flag this component could be handed by mistake.
  */
 /**
- * THE COINS: silver (this week, big), gold (lasting, smaller) and gems (only
- * when earned or pending), as a two-column grid - icon cell, number cell - so
+ * THE COINS: silver (EARNED this week, from the earnings preview, big), gold
+ * (lasting, smaller) and gems (only while some are held). This silver is
+ * not the bank: the Portal's bank strip shows what is IN the bank (the ledger
+ * balance, less anything spent), so the two may differ and each is named for
+ * what it is. As a two-column grid — icon cell, number cell — so
  * the coins centre on one line and the numbers start at one edge, down every
- * card. A faded +N hangs after a number without moving it. No captions: the
- * icon is the label; the words are for a screen reader — each figure is ONE
- * image whose name carries its pending too ("27 silver this week, 5 more
- * possible"), and the visible +N is hidden from that tree. Nothing until a
- * read lands, and nothing for a cached silver figure from another week.
+ * card. ONE NUMBER PER COIN, no faded "+N" (2026-10-21): silver is what was
+ * earned; gems are what is HELD this week, the contest gem included while its
+ * holder leads (see `earningsByLearner`). No captions: the icon is the
+ * label; the words are for a screen reader. Nothing until a read lands, and
+ * nothing for a cached silver figure from another week.
  */
-function Coins({ figure, gold, studyDay }) {
-  const inWeek = Boolean(figure) && Number.isFinite(figure.silver)
-    && !(studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to));
+function Coins({ figure, gold, studyDay, hideGems = false }) {
+  const week = figureInWeek(figure, studyDay);
   const hasGold = Number.isFinite(gold);
-  if (!inWeek && !hasGold) return null;
-  const more = (n) => (n > 0 ? <span className="school-status-board__more" aria-hidden="true">+{n}</span> : null);
-  const named = (base, n) => (n > 0 ? `${base}, ${n} more possible` : base);
-  const showGems = inWeek && (figure.gems > 0 || figure.pendingGems > 0);
+  if (!week && !hasGold) return null;
+  const showGems = !hideGems && week && week.gems > 0;
   return (
     <div className="school-status-board__coin-grid">
-      {inWeek && (
+      {week && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" color="#c0c0c0" />
-          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={named(`${figure.silver} silver this week`, figure.pendingSilver)}>
-            {figure.silver}{more(figure.pendingSilver)}
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--silver" metal="silver" />
+          <span className="school-status-board__figure school-status-board__figure--silver" role="img" aria-label={`${week.silver} silver earned this week`}>
+            {week.silver}
           </span>
         </>
       )}
       {hasGold && (
         <>
-          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" />
-          <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${gold} gold`}>{gold}</span>
+          <CoinIcon className="school-status-board__coin-icon school-status-board__coin-icon--gold" metal="gold" />
+          <span className="school-status-board__figure school-status-board__figure--gold" role="img" aria-label={`${coinFigure(gold)} gold`}>{coinFigure(gold)}</span>
         </>
       )}
       {showGems && (
         <>
           <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
-          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={named(`${figure.gems} gem${figure.gems === 1 ? '' : 's'} this week`, figure.pendingGems)}>
-            {figure.gems}{more(figure.pendingGems)}
+          <span className="school-status-board__figure school-status-board__figure--gem" role="img" aria-label={`${week.gems} gem${week.gems === 1 ? '' : 's'} this week`}>
+            {week.gems}
           </span>
         </>
       )}
@@ -327,7 +358,27 @@ function Coins({ figure, gold, studyDay }) {
   );
 }
 
-export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null }) {
+/** The gem door: this week's gems (faint at zero) — opens the Gem Board. */
+function GemDoor({ name, figure, studyDay, onOpen }) {
+  const week = figureInWeek(figure, studyDay);
+  const gems = week?.gems ?? 0;
+  return (
+    <button
+      type="button"
+      className={`school-status-board__gems-door${gems > 0 ? '' : ' is-zero'}`}
+      data-testid="board-gems-door"
+      aria-label={`Gem board, ${name}: ${gems} gem${gems === 1 ? '' : 's'} this week`}
+      onClick={onOpen}
+    >
+      <GemIcon className="school-status-board__coin-icon school-status-board__coin-icon--gem" />
+      {gems > 0 && <span className="school-status-board__figure school-status-board__figure--gem">{gems}</span>}
+    </button>
+  );
+}
+
+const coinDoorLabel = (name, week) => (week ? `${name}'s bank, ${week.silver} silver this week` : `${name}'s bank`);
+
+export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null, onOpenBank = null, onOpenGems = null, coinCeremony = null }) {
   // Seeded ONCE from the last snapshot this browser painted (see boardCache.js):
   // a reload shows the board as it last stood, then each card is re-read and
   // replaced in place. A pinned `day` only trusts a snapshot of that same day.
@@ -345,6 +396,19 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
   const [gold, setGold] = useState(() => seed?.gold ?? {});
+  // THE COIN CEREMONY: fed by the EARNING entries in each learner's bank
+  // history (the ledger), read over the network in `refreshCoins` only, never
+  // by the cache seed, the week's projection or a bare balance, so a reload
+  // never replays a pop and a deposit never celebrates. Called through a ref
+  // so `refreshCoins` keeps its identity (its identity drives the first-read
+  // effect).
+  const ceremony = useCoinCeremony({ kids, config: coinCeremony });
+  const observeCoinsRef = useRef(ceremony.observe);
+  observeCoinsRef.current = ceremony.observe;
+  const openBank = useCallback((kidId) => {
+    schoolLog.selfService('status-board.bank-open', { learnerId: kidId });
+    onOpenBank?.(kidId);
+  }, [onOpenBank]);
   // Whose term popup is open (a learner id), or null.
   const [termFor, setTermFor] = useState(null);
   const openTerm = useCallback((kidId) => {
@@ -435,19 +499,57 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
       });
   }, []);
 
+  // Earnings reads overlap (scans, school events, gate events and the coins
+  // burst all fire one), so they can land out of order. Each is numbered and a
+  // response older than the last one APPLIED is dropped: otherwise a stale
+  // lower figure would flicker the card back and reset the ceremony's
+  // baseline, and the next read would pop the same rise twice.
+  const earningsSentRef = useRef(0);
+  const earningsAppliedRef = useRef(0);
+  const bankSentRef = useRef({});
+  const bankAppliedRef = useRef({});
   const refreshCoins = useCallback(() => {
     if (schoolApi.earningsRoster) {
       // One roster read prices everyone. Fired alongside the plans, never
       // awaited; a failed read keeps the figures already on the cards.
+      const seq = ++earningsSentRef.current;
       Promise.resolve(schoolApi.earningsRoster(day ?? null))
         .then((res) => {
           if (!aliveRef.current) return;
-          if (res?.ok) setEarnings(earningsByLearner(res.data));
-          else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
+          if (res?.ok && seq < earningsAppliedRef.current) {
+            schoolLog.selfService('status-board.earnings-stale-dropped', { seq, applied: earningsAppliedRef.current });
+            return;
+          }
+          if (res?.ok) {
+            earningsAppliedRef.current = seq;
+            // The projection feeds the figure on the card only. It never
+            // feeds the ceremony: a projected-but-unminted amount is no news.
+            setEarnings(earningsByLearner(res.data));
+          } else if (res) schoolLog.selfServiceError?.('status-board.earnings-failed', { status: res.status ?? null });
         })
         .catch((error) => {
           schoolLog.selfServiceError?.('status-board.earnings-failed', { error: error?.message });
         });
+    }
+    // The ceremony's feed: each learner's bank history, whose EARNING entries
+    // (`earnedSilver`) are what was minted. Reads can land out of order; one
+    // older than the last applied is dropped (it would reset the baseline and
+    // pop the same entries twice).
+    if (schoolApi.economyBank) {
+      for (const kid of kids) {
+        const bankSeq = (bankSentRef.current[kid.id] ?? 0) + 1;
+        bankSentRef.current[kid.id] = bankSeq;
+        Promise.resolve(schoolApi.economyBank(kid.id))
+          .then((res) => {
+            if (!aliveRef.current || !res?.ok || !Array.isArray(res.data?.history)) return;
+            if (bankSeq < (bankAppliedRef.current[kid.id] ?? 0)) return;
+            bankAppliedRef.current[kid.id] = bankSeq;
+            observeCoinsRef.current({ [kid.id]: { lines: res.data.history, silver: res.data.balances?.silver ?? null } });
+          })
+          .catch((error) => {
+            schoolLog.selfServiceError?.('status-board.bank-failed', { learnerId: kid.id, error: error?.message });
+          });
+      }
     }
     if (!schoolApi.wallet) return;
     // One wallet per learner; each lands (or fails) on its own and a failure
@@ -460,8 +562,11 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
             schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, status: res.status ?? null });
             return;
           }
-          if (!res?.ok || !Number.isFinite(res.data?.balance)) return;
-          setGold((current) => ({ ...current, [kid.id]: res.data.balance }));
+          // `balance` is the SILVER figure; gold is `balances.gold`. A wallet
+          // with no `balances` shows no gold rather than the silver number.
+          const goldBalance = res?.ok ? res.data?.balances?.gold : undefined;
+          if (!Number.isFinite(goldBalance)) return;
+          setGold((current) => ({ ...current, [kid.id]: goldBalance }));
         })
         .catch((error) => {
           schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, error: error?.message });
@@ -530,7 +635,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
           if (!plan?.ok) return settleWithoutPlan();
           settle(kid.id, generation, {
-            summary: summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity),
+            summary: withServerVerdict(
+              summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity),
+              learner?.dayCompletion),
           });
         } catch (error) {
           schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
@@ -632,11 +739,23 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   }, [studyDay, rosterIds, refresh, refreshCoins]);
   useWebSocketSubscription('omr', onScan, [onScan]);
 
+  // Coins moved on the ledger (gold after a convert): the coin figures only,
+  // once per burst (at most 3 s late), since a payout run mints entry by
+  // entry. The timer calls the LATEST refreshCoins through a ref, so a roster
+  // change mid-burst is not read stale.
+  const refreshCoinsRef = useRef(refreshCoins);
+  refreshCoinsRef.current = refreshCoins;
+  const coinsBurst = useMemo(() => coalescer(() => { if (aliveRef.current) refreshCoinsRef.current(); }), []);
+  useEffect(() => () => coinsBurst.cancel(), [coinsBurst]);
   const onSchool = useCallback((payload) => {
     const event = payload?.event;
     if (!SCHOOL_REFRESH_EVENTS.has(event)) return;
     const learnerId = payload?.learnerId ?? null;
     if (!learnerId || !rosterIds.has(learnerId)) return;
+    if (event === COINS_CHANGED) {
+      coinsBurst.poke();
+      return;
+    }
 
     const eventStudyDay = payload?.studyDay ?? payload?.studyDate ?? null;
     if (event === 'story-read' && eventStudyDay && eventStudyDay !== studyDay) return;
@@ -646,7 +765,7 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
     });
     refresh([learnerId]);
     refreshCoins();
-  }, [studyDay, rosterIds, refresh, refreshCoins]);
+  }, [studyDay, rosterIds, refresh, refreshCoins, coinsBurst]);
   useWebSocketSubscription('school', onSchool, [onSchool]);
 
   const onStateGates = useCallback((event) => {
@@ -741,7 +860,25 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
               )}
             </div>
             <div className="school-status-board__coins" data-testid="board-coins">
-              <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} />
+              {onOpenBank && (figureInWeek(earnings[kid.id], studyDay) || Number.isFinite(gold[kid.id])) ? (
+                // The coin cell is the door to this kid's bank screen: a real
+                // button, so keyboard/OK reach it. Opening the bank starts no
+                // tracked work; the bank screen's Back returns to the keypad.
+                <button
+                  type="button"
+                  className="school-status-board__coins-door"
+                  data-testid="board-coins-door"
+                  aria-label={coinDoorLabel(kid.name, figureInWeek(earnings[kid.id], studyDay))}
+                  onClick={() => openBank(kid.id)}
+                >
+                  <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} hideGems={Boolean(onOpenGems)} />
+                </button>
+              ) : (
+                <Coins figure={earnings[kid.id]} gold={gold[kid.id]} studyDay={studyDay} hideGems={Boolean(onOpenGems)} />
+              )}
+              {onOpenGems && (
+                <GemDoor name={kid.name} figure={earnings[kid.id]} studyDay={studyDay} onOpen={() => onOpenGems(kid.id)} />
+              )}
             </div>
             {/* LAST WEEK AND THIS WEEK, and the fitness rings under them.
                 Rings render only once the number has arrived — a placeholder
@@ -781,6 +918,9 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           term={terms[termFor]}
           onClose={closeTerm}
         />
+      )}
+      {ceremony.toast && (
+        <CoinCeremony key={ceremony.toast.id} toast={ceremony.toast} durationMs={ceremony.durationMs} onDone={ceremony.done} />
       )}
     </div>
   );

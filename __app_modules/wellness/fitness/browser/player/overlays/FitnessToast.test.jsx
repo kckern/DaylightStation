@@ -18,6 +18,15 @@ describe('FitnessToast', () => {
     expect(screen.getByText('is riding the NiceDay')).toBeTruthy();
   });
 
+  it.each([false, true])('gives contributors the full toast width (achievement %s)', (achievement) => {
+    const { container } = render(<FitnessToast toast={{id: 91, title: 'Challenge complete', variant: 'success', achievement,
+      contributors: [{id: 'rider-a', name: 'Long Participant Name'}]}} />);
+    const toast = container.querySelector('.fitness-toast');
+    const contributors = container.querySelector('.fitness-toast__faces, .fitness-toast__contributors');
+    expect(contributors.parentElement).toBe(toast);
+    expect(toast.classList.contains(achievement ? 'fitness-toast--achievement' : 'fitness-toast--challenge-success')).toBe(true);
+  });
+
   it('calls onDone with the toast id after durationMs + exit', () => {
     const onDone = vi.fn();
     render(<FitnessToast toast={{ id: 1, title: 'User_2', durationMs: 4000 }} onDone={onDone} />);

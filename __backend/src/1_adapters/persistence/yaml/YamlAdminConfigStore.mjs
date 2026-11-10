@@ -193,7 +193,7 @@ export class YamlAdminConfigStore extends IAdminConfigStore {
 
   readScheduledJobs() { return this.#readYaml('system/config/jobs.yml', []); }
   writeScheduledJobs(jobs) { return this.#writeYaml('system/config/jobs.yml', jobs); }
-  readSchedulerRuntime() { return this.#readYaml('system/state/cron-runtime.yml', {}); }
+  readSchedulerRuntime() { return this.#readYaml('system/scheduling/cron-runtime.yml', {}); }
 
   #normalizeDocumentId(documentId) {
     const absolutePath = this.#resolve(documentId);

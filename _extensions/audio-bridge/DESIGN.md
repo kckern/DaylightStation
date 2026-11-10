@@ -64,6 +64,20 @@ TCP keepalive handles dead connection detection. The format header on connect is
 - Single external dependency: `org.java-websocket:Java-WebSocket`
 - Target: sideload via `adb install`
 
+### Microphone on Android 11: overlay anchor (required)
+
+A foreground service started from the background (boot, or while FKB's kiosk owns the screen) is denied the mic on Android 11 (`allowWhileInUsePermissionInFgs=false`, `AudioRecord init failed`). The system decides this when the start is *requested*, so `OverlayAnchor` shows a 1x1 transparent overlay window in the caller (`BootReceiver`, `MainActivity`) and the start follows 400 ms later. Verified on the Shield: boot start and launcher start both stream.
+
+One-time grant after installing (survives reboots and `adb install -r`):
+
+```bash
+adb shell appops set net.kckern.audiobridge SYSTEM_ALERT_WINDOW allow
+adb shell pm grant net.kckern.audiobridge android.permission.RECORD_AUDIO
+adb shell pm grant net.kckern.audiobridge android.permission.ACCESS_FINE_LOCATION
+```
+
+Build: `JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew assembleDebug` in `app/`. The APK is debug-signed; reinstalling over the live app needs the original debug keystore (cert SHA-256 starting `3663E947`), otherwise Android refuses the update.
+
 ---
 
 ## Device Configuration
@@ -448,3 +462,51 @@ Set `aec.enabled: false` to disable AEC and rely on volume ducking only.
 | `frontend/src/modules/Input/hooks/useAudioProbe.js` | Unchanged | Provides `status: 'no-mic'` trigger for fallback mode |
 | `frontend/src/modules/Input/hooks/useWebRTCPeer.js` | Unchanged | Consumes merged stream (source-agnostic) |
 | `frontend/src/modules/Input/hooks/useMediaDevices.js` | Unchanged | Now receives device-specific camera/mic preferences from VideoCall |
+
+## Gamepad recovery control API
+
+The bridge exposes an independent JSON HTTP control plane on port 8766. Reading
+Bluetooth state never starts microphone capture; the PCM WebSocket remains on 8765.
+Configure the device's `bluetooth_bridge.url` to the bridge's HTTP origin for the
+arcade server adapter. Keep that control port on the trusted device network.
+
+`GET /bluetooth` returns adapter state, observed bonds/HID connections, controller
+eligibility, pending pairing, capabilities and the last failure. JSON `POST` actions:
+`/bluetooth/scan` (`durationMs`, 1000–30000, default 12000), `/bluetooth/scan/stop`,
+`/bluetooth/pair`, `/bluetooth/unpair` (`address`), `/bluetooth/connect`,
+`/bluetooth/disconnect` (`address`, `profile: input`), `/bluetooth/pairing`
+(`address`, `accept`, optional `pin`). Mutations are asynchronous: HTTP 202 means
+accepted, not connected. Poll state to observe completion. Invalid requests return
+400, rejected operations 409, and GET mutations 405. Maximum body size is 8192 bytes.
+
+Management is restricted to discovered/bonded devices with a joystick/gamepad
+Bluetooth class; remotes and keyboards are read-only. Pairing replies require a
+matching explicit request within 60 seconds. PINs are never logged. Android may
+restrict confirmation/HID actions: the API reports those failures and never opens
+Settings or invokes ADB as a runtime fallback.
+
+**Discovery needs the service's `location` type (Android 11).** `startDiscovery()`
+checks the fine-location app-op, whose UID mode is `foreground` for a while-in-use
+grant; the bridge is never a foreground *app*, so it only passes when the running
+foreground service declares `FOREGROUND_SERVICE_TYPE_LOCATION`
+(`microphone|location`, manifest and `startForeground`). A microphone-only build
+logs `BluetoothUtils: Permission denial: Need ACCESS_FINE_LOCATION permission to
+get scan results` and every scan is refused. `appops set --uid … COARSE_LOCATION
+allow` does not stick — the permission policy resets it. The fix is the
+`microphone|location` service type, installed on the living-room Shield 2026-11-08
+(19:32; verified: `bluetooth.scan.started`, nearby devices discovered, microphone PCM
+still streaming). Reinstalling needs the original signing key. Independently of
+discovery, the Controllers screen re-pairs a forgotten pad BY ADDRESS (`createBond`
+pages a known Classic device without discovery), and a refused scan no longer
+clears the unpaired list (it did before the same change, which would have dropped
+that forgotten pad).
+
+Initial installation must grant location permission on Android 11, or nearby-device
+permissions on Android 12+, as well as the existing microphone permission. Android
+11 discovery also requires Location services enabled. Service teardown stops scans,
+cancels pending pairing and closes receivers/profile proxies. A running game or
+microphone call must not be interrupted for bridge installation/restart.
+
+Connection state is `null` while HID observation or permission is unavailable; it is
+never inferred to be disconnected from a missing observer. Answering a pairing
+prompt retains ownership and the 60-second deadline until a terminal bond event.

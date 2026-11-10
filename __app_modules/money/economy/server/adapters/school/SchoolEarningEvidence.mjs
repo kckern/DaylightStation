@@ -21,21 +21,24 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
   #termVerdicts;
   #sessions;
   #unitInfo;
+  #debriefs;
   #logger;
 
   /**
    * @param {object} deps
    * @param {{read: (learnerId: string, opts: object) => Promise<object>}} deps.termVerdicts - TermVerdictService
    * @param {{execute: (args: {learnerId: string}) => Promise<object[]>}} deps.sessions - ListLearnerSessions
+   * @param {{week: (args: {learnerId: string, week: {from, to}}) => Promise<object[]|null>}} [deps.debriefs] - after-school debrief facts (null = not enrolled)
    * @param {(unitId: string) => Promise<{subject?: string, courseId?: string}|null>} [deps.unitInfo]
    */
-  constructor({ termVerdicts, sessions, unitInfo = null, logger = console }) {
+  constructor({ termVerdicts, sessions, unitInfo = null, debriefs = null, logger = console }) {
     super();
     if (!termVerdicts?.read) throw new Error('SchoolEarningEvidence requires termVerdicts');
     if (!sessions?.execute) throw new Error('SchoolEarningEvidence requires sessions');
     this.#termVerdicts = termVerdicts;
     this.#sessions = sessions;
     this.#unitInfo = unitInfo;
+    this.#debriefs = debriefs;
     this.#logger = logger;
   }
 
@@ -47,7 +50,7 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
     // economy would read as "not on the plan".
     const bounds = term?.term ?? null;
     if (!bounds || (bounds.from && week.to < bounds.from) || (bounds.to && week.from > bounds.to)) {
-      return { sectionDays: [], days: [], week: null, units: [], coverage: 'outside-term' };
+      return { sectionDays: [], days: [], week: null, units: [], debriefs: [], coverage: 'outside-term' };
     }
     const rows = (term?.days ?? []).filter((d) => inWeek(d.studyDay));
     const days = rows.map((d) => ({ day: d.studyDay, state: d.state, reason: d.reason ?? null, timeliness: ON_TIME }));
@@ -56,12 +59,25 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
     })));
     const row = (term?.weeks ?? []).find((w) => w.weekId === week.from) ?? null;
     const weekFact = row ? { weekId: row.weekId, state: row.state, reason: row.reason ?? null, open: row.open === true } : null;
-    return { sectionDays, days, week: weekFact, units: await this.#units(learnerId, inWeek), coverage: 'ok' };
+    return { sectionDays, days, week: weekFact, units: await this.#units(learnerId, inWeek), debriefs: await this.#debriefRows(learnerId, week), coverage: 'ok' };
+  }
+
+  async #debriefRows(learnerId, week) {
+    if (!this.#debriefs?.week) return [];
+    try { return (await this.#debriefs.week({ learnerId, week })) ?? []; }
+    catch (error) {
+      this.#logger.warn?.('school.earning-evidence.debriefs-failed', { learnerId, error: error?.message });
+      return [{ day: week.from, state: 'unknown', timeliness: ON_TIME, substantive: false, teachable: false, quiz: { right: 0, graded: 0 }, quizPassed: false }];
+    }
   }
 
   async #units(learnerId, inWeek) {
     const rows = await this.#sessions.execute({ learnerId });
-    const graded = (rows ?? []).filter((s) => inWeek(s.studyDay ?? s.day) && s.unitId && (s.outcome?.result || s.state === 'graded'));
+    // Curriculum work only. A program's own session (`sentence-ladder:<corpus>`,
+    // any `<program>:<instance>` id) is credited by that program's section-day
+    // rule; counting it here paid Korean twice, once as a "worksheet".
+    const graded = (rows ?? []).filter((s) => inWeek(s.studyDay ?? s.day) && s.unitId && !String(s.unitId).includes(':')
+      && (s.outcome?.result || s.state === 'graded'));
     // One lookup per unit, in parallel — a retried unit shares its answer.
     const infos = new Map();
     await Promise.all([...new Set(graded.map((s) => s.unitId))].map(async (unitId) => {

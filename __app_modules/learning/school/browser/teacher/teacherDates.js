@@ -27,10 +27,16 @@ export function shiftDay(day, delta = 1) {
   return localDay(date);
 }
 
-/** "Monday, Aug 24" — weekday-led day label. Null on garbage, so callers can ?? a fallback. */
-export function humanDate(value) {
+/**
+ * "Monday, Aug 24" — weekday-led day label. Null on garbage, so callers can ??
+ * a fallback. `short` gives "Mon 24", for a column header seven to a row
+ * (the week grid); the long form stays the accessible name beside it.
+ */
+export function humanDate(value, { short = false } = {}) {
   const date = dateFor(value);
-  return date ? new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(date) : null;
+  if (!date) return null;
+  if (short) return `${new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date)} ${date.getDate()}`;
+  return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(date);
 }
 
 /** "Aug 24, 2026, 3:20 PM" — timestamp label. Null on garbage. */

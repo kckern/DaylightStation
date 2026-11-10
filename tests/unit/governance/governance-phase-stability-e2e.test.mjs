@@ -1,13 +1,14 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
+import { canonicalState } from './_canonicalState.mjs';
 
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   }),
   getLogger: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   })
 }));
 
@@ -21,6 +22,13 @@ const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitne
  * @param {number} options.grace - Grace period in seconds
  * @param {Object} options.zoneData - Map of participantId -> zoneId for ZoneProfileStore
  */
+/**
+ * Canonical participant state, as ParticipantRoster.getActiveParticipantState()
+ * returns it. Since 15afc57498 a no-args evaluate() (the _triggerPulse path)
+ * reads ONLY this method — never session.roster or ZoneProfileStore. The
+ * roster already carries ZoneProfileStore zones (ParticipantRoster
+ * _buildZoneLookup), so the zoneData below reaches the engine through here.
+ */
 function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
   const zoneConfig = [
     { id: 'cool', name: 'Cool', color: '#3399ff' },
@@ -28,8 +36,10 @@ function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
     { id: 'warm', name: 'Warm', color: '#ffaa00' },
     { id: 'hot', name: 'Hot', color: '#ff0000' },
   ];
+  const roster = participants.map(id => ({ id, isActive: true, zoneId: zoneData[id] ?? null }));
   const mockSession = {
-    roster: participants.map(id => ({ id, isActive: true })),
+    roster,
+    getActiveParticipantState: () => canonicalState(roster),
     zoneProfileStore: Object.keys(zoneData).length > 0 ? {
       getProfile: (userId) => {
         const zoneId = zoneData[userId];
@@ -119,7 +129,7 @@ describe('GovernanceEngine — end-to-end phase stability', () => {
     });
 
     // Call evaluate() with NO args (simulates _triggerPulse path)
-    // Engine should read from session.roster + ZoneProfileStore
+    // Engine reads session.getActiveParticipantState() (canonical roster state)
     engine.evaluate();
     expect(engine.phase).toBe('unlocked');
 

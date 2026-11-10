@@ -10,7 +10,7 @@ import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import { durationFromSeconds } from "../../../../../../__capabilities/playback/browser/contracts.mjs";
 import { guid } from "../../../../../../__capabilities/playback/browser/contracts.mjs";
 import getLogger from '@/lib/logging/Logger.js';
-import { musicShouldPause } from "./musicVideoSync.js";
+import { musicPlaysThroughHold, musicShouldPause } from "./musicVideoSync.js";
 import { marqueeScrollDistance } from "./marqueeDistance.js";
 import { useMusicRecovery } from "./useMusicRecovery.js";
 import { formatMusicErrorMessage, isRecoverableMusicError } from "./musicPlayerErrorFormat.js";
@@ -131,6 +131,8 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   const shouldPauseForVideo = musicShouldPause({
     videoPlayerPaused, videoLoading, voiceMemoOpen, emergencyHold: Boolean(emergencyPlaybackHold),
   });
+  const shouldPauseRef = useRef(shouldPauseForVideo);
+  shouldPauseRef.current = shouldPauseForVideo;
   useEffect(() => {
     if (!audioPlayerRef.current) return;
 
@@ -202,10 +204,15 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
       || null;
   }, [currentTrack]);
 
+  // One level per playlist. Keying by track let any song adjusted weeks ago
+  // come back at its old level when shuffle reached it (2026-10-20: a 0.0631
+  // track from Oct 5 played at 4x the session's 0.0158). The track only
+  // re-applies the playlist level to each new audio element.
   const musicVolumeState = usePersistentVolume({
     grandparentId: 'fitness-music',
     parentId: selectedPlaylistId || 'global',
-    trackId: currentTrackIdentity || 'music',
+    trackId: 'playlist',
+    reapplyKey: currentTrackIdentity,
     playerRef: audioPlayerRef
   });
 
@@ -286,6 +293,16 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
   }, [selectedPlaylistId]);
 
   const handleProgress = (progressData) => {
+    // The sync effect above only acts on a CHANGE of the hold. Audio that
+    // started while the video was already paused (this player just mounted,
+    // or a new track autoplayed) is caught here, on its first tick, and
+    // resumes with the video.
+    if (musicPlaysThroughHold({ shouldPause: shouldPauseRef.current, musicPaused: progressData?.paused })) {
+      getLogger().debug('fitness.music.hold_enforced', { reason: 'video-paused' });
+      wasPlayingBeforePauseRef.current = true;
+      audioPlayerRef.current?.pause?.();
+      setIsPlaying(false);
+    }
     // Update current track from progress data (Player handles queue internally)
     if (progressData?.media) {
       const mediaData = progressData.media;
@@ -435,6 +452,9 @@ const FitnessMusicPlayer = forwardRef(({ selectedPlaylistId, videoPlayerRef, vid
 
   const handleMusicLevelSelect = (level) => {
     musicVolumeState.setVolume(logVolumeFromLevel(level));
+    getLogger().info('fitness.music.volume_select', {
+      level, volume: logVolumeFromLevel(level), playlistId: selectedPlaylistId || null,
+    });
   };
 
   const toggleControls = (e = null) => {

@@ -11,6 +11,7 @@ import usePauseMediaOnUnmount from '../Videos/usePauseMediaOnUnmount.js';
 import usePianoWatchLog from '../Videos/usePianoWatchLog.js';
 import { lectureContentId } from '../Videos/lectureMeta.js';
 import { videoTapAction, TAP_SKIP_SECONDS } from '../Videos/videoTapAction.js';
+import { createSkipGovernor, skipTarget } from '../Videos/skipGovernor.js';
 import { useKeepScreenAwake } from '../../usePianoScreensaverHooks.js';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
@@ -164,10 +165,14 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
   useEffect(() => { if (mediaEl) mediaEl.volume = mediaLevel; }, [mediaEl, mediaLevel]);
 
   const handleRestart = useCallback(() => ctrl.seek(0), [ctrl]);
+  // A held/mashed skip can't fly through the song (see Videos/skipGovernor.js).
+  const skipGovernorRef = useRef(null);
+  if (!skipGovernorRef.current) skipGovernorRef.current = createSkipGovernor();
   const handleSkip = useCallback((delta) => {
+    const admitted = skipGovernorRef.current.admit(delta);
+    if (admitted === 0) return;
     const cur = ctrl.getCurrentTime() || 0;
-    const max = duration > 0 ? duration : cur + Math.abs(delta);
-    ctrl.seek(Math.max(0, Math.min(max, cur + delta)));
+    ctrl.seek(skipTarget({ current: cur, delta: admitted, duration, isSequential: false }));
   }, [ctrl, duration]);
 
   // Karaoke keyboard vocabulary (capture-phase overrides of the shared

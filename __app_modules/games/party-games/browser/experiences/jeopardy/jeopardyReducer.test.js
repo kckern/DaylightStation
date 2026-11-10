@@ -174,3 +174,112 @@ describe('round + final progression', () => {
   });
 
 });
+
+it('lets the host reveal a hidden answer after a hosted buzz',()=>{
+ let s=toBoard(); s=jeopardyReducer(s,{type:'SELECT_TILE'}); s=jeopardyReducer(s,{type:'BUZZ',teamId:'team_1'});
+ s=jeopardyReducer(s,{type:'REVEAL'}); expect(s.phase).toBe('judging'); expect(s.revealed).toBe(true);
+});
+
+it.each(['correct','wrong','timeout'])('rotates three anonymous teams after %s',outcome=>{
+ let s=jeopardyReducer(initJeopardy(makeSet({mode:'turns'}),['blue','gold','green']),{type:'START_ROUND'});
+ for(const [index,pick] of [{cat:0,row:0},{cat:0,row:1},{cat:1,row:0}].entries()) {
+  expect(s.turnTeamId).toBe(['blue','gold','green'][index]);
+  s=jeopardyReducer(s,{type:'SELECT_AT',...pick});
+  if(s.phase==='wager')s=jeopardyReducer(s,{type:'SET_WAGER',amount:100});
+  if(outcome==='timeout') { s=jeopardyReducer(s,{type:'TIMEOUT'}); s=jeopardyReducer(s,{type:'RETURN_TO_BOARD'}); }
+  else {s=jeopardyReducer(s,{type:'REVEAL'});expect(scoreDelta(s,outcome==='correct').teamId).toBe(['blue','gold','green'][index]);s=jeopardyReducer(s,{type:'JUDGE',correct:outcome==='correct'});}
+ }
+ expect(s.turnTeamId).toBe('blue'); expect(s.phase).toBe('final-category');
+});
+
+it('advances the cursor to an unused question after closing a clue',()=>{
+ let s=toBoard(makeSet({mode:'turns'}));s=jeopardyReducer(s,{type:'SELECT_TILE'});
+ s=jeopardyReducer(s,{type:'TIMEOUT'});s=jeopardyReducer(s,{type:'RETURN_TO_BOARD'});
+ expect(s.cursor).toEqual({cat:1,row:0});
+ s=jeopardyReducer(s,{type:'SELECT_TILE'});expect(s.active.clue.clue).toBe('b1');
+});
+it('selects a playable question when resuming a legacy cursor on a used tile',()=>{
+ const s={...toBoard(),used:{'0:0:0':true}};
+ const next=jeopardyReducer(s,{type:'SELECT_TILE'});expect(next.phase).toBe('clue');expect(next.active.clue.clue).toBe('b1');
+});
+it('skips used and missing cells without trapping the cursor on sparse boards',()=>{
+ let s={...toBoard(),cursor:{cat:1,row:0},used:{'0:0:0':true}};
+ s=jeopardyReducer(s,{type:'MOVE_CURSOR',dir:'left'});expect(s.cursor).toEqual({cat:0,row:1});
+ s=jeopardyReducer(s,{type:'MOVE_CURSOR',dir:'right'});expect(s.cursor).toEqual({cat:1,row:0});
+});
+
+it('can reach every remaining question on every nonempty 3-by-3 board',()=>{
+ const set={id:'sparse',title:'Sparse',rounds:[{name:'Round',mode:'turns',categories:Array.from({length:3},(_,cat)=>({name:`C${cat}`,clues:Array.from({length:3},()=>({value:100,clue:'Question',answer:'Answer'}))}))}]};
+ const cells=Array.from({length:9},(_,index)=>({cat:index%3,row:Math.floor(index/3)}));
+ for(let mask=1;mask<512;mask++){
+  const remaining=cells.filter((_,index)=>mask&(1<<index));
+  const used=Object.fromEntries(cells.filter((_,index)=>!(mask&(1<<index))).map(c=>[`0:${c.cat}:${c.row}`,true]));
+  const state={...initJeopardy(set,TEAM_IDS),phase:'board',used,cursor:remaining[0]};
+  const seen=new Set(),queue=[remaining[0]];
+  while(queue.length){
+   const cell=queue.shift(),key=`${cell.cat}:${cell.row}`;if(seen.has(key))continue;seen.add(key);
+   for(const dir of ['left','right','up','down']){
+    const next=jeopardyReducer({...state,cursor:cell},{type:'MOVE_CURSOR',dir});
+    if(!seen.has(`${next.cursor.cat}:${next.cursor.row}`))queue.push(next.cursor);
+   }
+  }
+  expect([...seen].sort(),`remaining board mask ${mask}`).toEqual(remaining.map(c=>`${c.cat}:${c.row}`).sort());
+ }
+});
+
+describe('learn notes', () => {
+  const LEARN = { ref: 'Jer 1:5', text: 'Before I formed you…' };
+  function learnSet() {
+    const set = makeSet();
+    set.rounds[0].categories[0].clues[0].learn = LEARN;
+    set.final.learn = LEARN;
+    return set;
+  }
+  const v2Board = () => {
+    let s = initJeopardy(learnSet(), TEAM_IDS);
+    s = jeopardyReducer(s, { type: 'ENABLE_EXPERIENCE_V2' });
+    expect(s.jeopardyFlowVersion).toBe(2);
+    return jeopardyReducer(s, { type: 'START_ROUND' });
+  };
+
+  it('v2: opens in answer review once judged, never while a judgment is owed', () => {
+    let s = jeopardyReducer(v2Board(), { type: 'SELECT_TILE' });
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'BUZZ', teamId: 'team_2' });
+    s = jeopardyReducer(s, { type: 'REVEAL' });
+    expect(s.answerReview.judgmentPending).toBe(true);
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'JUDGE', correct: true });
+    expect(s.phase).toBe('answer-review');
+    s = jeopardyReducer(s, { type: 'SHOW_LEARN' });
+    expect(s.learning).toBe(true);
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'RETURN_TO_BOARD' });
+    expect(s).toMatchObject({ phase: 'board', learning: false });
+  });
+
+  it('v1: opens once the answer is shown; HIDE_LEARN closes it', () => {
+    let s = jeopardyReducer(toBoard(learnSet()), { type: 'SELECT_TILE' });
+    s = jeopardyReducer(s, { type: 'TIMEOUT' });
+    s = jeopardyReducer(s, { type: 'SHOW_LEARN' });
+    expect(s.learning).toBe(true);
+    expect(jeopardyReducer(s, { type: 'HIDE_LEARN' }).learning).toBe(false);
+  });
+
+  it('a clue without a learn note ignores SHOW_LEARN', () => {
+    let s = jeopardyReducer(v2Board(), { type: 'MOVE_CURSOR', dir: 'right' }); // CatB has no learn note
+    s = jeopardyReducer(s, { type: 'SELECT_TILE' });
+    s = jeopardyReducer(s, { type: 'TIMEOUT' });
+    expect(s.phase).toBe('answer-review');
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+  });
+
+  it('the final learn note opens during final judging', () => {
+    let s = { ...toBoard(learnSet()), phase: 'final-clue' };
+    expect(jeopardyReducer(s, { type: 'SHOW_LEARN' })).toBe(s);
+    s = jeopardyReducer(s, { type: 'REVEAL' });
+    s = jeopardyReducer(s, { type: 'SHOW_LEARN' });
+    expect(s).toMatchObject({ phase: 'final-judging', learning: true });
+    expect(jeopardyReducer(s, { type: 'HIDE_LEARN' }).learning).toBe(false);
+  });
+});

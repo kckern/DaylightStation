@@ -293,6 +293,8 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       if (sourceObj.seconds !== undefined) itemOverrides.seconds = sourceObj.seconds;
       if (sourceObj.maxVideoBitrate !== undefined) itemOverrides.maxVideoBitrate = sourceObj.maxVideoBitrate;
       if (sourceObj.maxResolution !== undefined) itemOverrides.maxResolution = sourceObj.maxResolution;
+      if (sourceObj.transcode !== undefined) itemOverrides.transcode = sourceObj.transcode;
+      if (sourceObj.adaptive !== undefined) itemOverrides.adaptive = sourceObj.adaptive;
 
       const prewarmToken = sourceObj.prewarmToken || null;
       const prewarmContentId = sourceObj.prewarmContentId || null;

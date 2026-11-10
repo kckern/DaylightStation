@@ -50,12 +50,17 @@ largeText:
   - __app_modules/learning/piano/browser/PianoKiosk/modes/SheetMusic/ScorePlayer.test.jsx
   - __app_modules/learning/school/browser/Programs/SentenceLadder/SentenceLadderProgram.test.jsx
   - __app_modules/learning/school/browser/School.scss
+  # Authored reference doc (card ladder: decks, per-card ladder, review run, quiz fold); prose, not a data blob.
+  - __docs/reference/school/card-ladder.md
+  # Authored teacher-console styles; source is retained, not a generated/data blob.
+  - __app_modules/learning/school/browser/teacher/Teacher.scss
   - __app_modules/learning/school/server/adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs
   - __app_modules/media/media/browser/surround/modules/SegmentMap.jsx
   - __app_modules/media/media/browser/surround/modules/SegmentMap.test.jsx
   - __app_modules/wellness/fitness/browser/context/FitnessContext.jsx
   - __app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js
   - __app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js
+  - __app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx
   - __backend/src/app.mjs
   - __capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs
   - __capabilities/gaming/cli/gaming-assets/lib.mjs

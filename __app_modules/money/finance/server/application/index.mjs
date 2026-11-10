@@ -8,6 +8,7 @@
 export { BudgetCompilationService } from "./BudgetCompilationService.mjs";
 export { TransactionCategorizationService } from "./TransactionCategorizationService.mjs";
 export { FinanceHarvestService } from "./FinanceHarvestService.mjs";
+export { DayToDayRebalanceService } from "./DayToDayRebalanceService.mjs";
 export { PayrollSyncService } from "./PayrollSyncService.mjs";
 
 // Ports

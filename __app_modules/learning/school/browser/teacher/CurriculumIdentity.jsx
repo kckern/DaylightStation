@@ -3,14 +3,21 @@ import Icon from "../home/icons/Icon.jsx";
 import { SUBJECTS, subjectLabel } from "../home/subjects.js";
 import { labelize } from "./labelize.js";
 
-export function SubjectIdentity({ subject, className = '', iconOnly = false }) {
-  // `subject` is a stable shelf id.  It is never presentation copy: the
-  // canonical shelf label owns punctuation and capitalization (e.g.
-  // "English & Literature").  Keep the fallback for third-party catalogues
-  // whose subject has not yet been promoted to a school shelf.
-  const title = subject
+/**
+ * A subject id in words. `subject` is a stable shelf id, never presentation
+ * copy: the canonical shelf label owns punctuation and capitalization (e.g.
+ * "English & Literature"). Keep the fallback for third-party catalogues whose
+ * subject has not yet been promoted to a school shelf. Exported for places
+ * that need the words without the mark (an accessible name, a tooltip).
+ */
+export function subjectTitle(subject) {
+  return subject
     ? (SUBJECTS.some((s) => s.id === subject) ? subjectLabel(subject) : labelize(subject))
     : 'School';
+}
+
+export function SubjectIdentity({ subject, className = '', iconOnly = false }) {
+  const title = subjectTitle(subject);
   // `iconOnly` is for places where the shelf is carried by the mark alone and
   // the name would not fit — the roster's day dots.  The label is still in the
   // tree, visually hidden, so the icon is never a shape with no name for a

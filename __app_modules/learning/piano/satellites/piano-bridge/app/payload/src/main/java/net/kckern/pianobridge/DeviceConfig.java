@@ -232,6 +232,15 @@ public class DeviceConfig {
     }
     /** Optional second sink. Empty = off (the default; see note above). */
     public String heartbeatBackendUrl() { return values.getOrDefault("heartbeatBackendUrl", ""); }
+
+    // --- Wi-Fi link telemetry (WifiLink.java, p34) — bridge.wifi to the same log store ---
+    public boolean wifiTelemetryEnabled() { return boolOr("wifiTelemetryEnabled", true); }
+    /** Sample period; clamped to >= 2000 ms at use. */
+    public long wifiSampleIntervalMs() { return intOr("wifiSampleIntervalMs", 10_000); }
+    /** degraded when rssi <= this (dBm). See WifiLinkPolicy for why -75. */
+    public int wifiDegradedRssiDbm() { return intOr("wifiDegradedRssiDbm", WifiLinkPolicy.DEFAULT_DEGRADED_RSSI_DBM); }
+    /** degraded when the negotiated link rate is below this (Mbps). */
+    public int wifiDegradedLinkMbps() { return intOr("wifiDegradedLinkMbps", WifiLinkPolicy.DEFAULT_DEGRADED_LINK_MBPS); }
     public int watchdogSustainSec() { return intOr("watchdogSustainSec", 5); }
     public int watchdogBeatTimeoutMs() { return intOr("watchdogBeatTimeoutMs", 12000); }
     public int watchdogGraceMs() { return intOr("watchdogGraceMs", 15000); }

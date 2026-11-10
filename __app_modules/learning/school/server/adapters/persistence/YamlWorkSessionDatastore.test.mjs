@@ -23,4 +23,28 @@ describe('YamlWorkSessionDatastore', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it('carries remediationOf on every listed row, so a lineage walk needs no event reads', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'school-session-lineage-'));
+    try {
+      const store = new YamlWorkSessionDatastore({
+        configService: { getHouseholdPath: (suffix) => path.join(root, suffix) },
+      });
+      await store.appendEvent('ses-original', {
+        type: 'created', at: '2026-09-26T16:00:00.000Z', learnerId: 'learner4', unitId: 'math.01',
+      });
+      await store.appendEvent('ses-retry', {
+        type: 'created', at: '2026-09-29T16:00:00.000Z', learnerId: 'learner4', unitId: 'math.01',
+        remediationOf: 'ses-original', variant: 1,
+      });
+      const rows = await store.listForLearner('learner4');
+      const byId = Object.fromEntries(rows.map((row) => [row.sessionId, row]));
+      expect(byId['ses-retry'].remediationOf).toBe('ses-original');
+      // null — not absent — on an original: "no parent" is a known answer,
+      // which is what lets a reader tell it from a row that never said.
+      expect(byId['ses-original']).toHaveProperty('remediationOf', null);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

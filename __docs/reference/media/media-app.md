@@ -38,6 +38,20 @@ does not confirm playback: progress still requires authoritative owner state.
 The ordinary-input queue journey covers the minimum Undo path; exact-build runtime
 verification remains required before claiming acceptance.
 
+## Per-item playback quality
+
+For Plex video, Quality… in an item's More menu or Details sets optional
+resolution, bitrate, forced conversion and Plex automatic-quality overrides for
+that selected item in this tab. Saving does not start playback. Subsequent local
+or remote play/queue actions carry those overrides; Use defaults clears them.
+
+Quality… alongside the local or peeked playback controls applies to that current
+queue visit. The owner captures position and pause state before replacing the
+stream, preserving tracks, queue and device settings. The sheet refuses stale
+targets and reports unconfirmed remote changes. These controls show requested
+limits, not measured stream dimensions. See [Playback quality overrides](../player/playback-quality.md)
+for the parameter contract and remediation ladder.
+
 ## One voice for outcomes
 
 Every play, add, send, queue edit and playback problem reports through one
@@ -155,6 +169,22 @@ wraps at phone width, so nothing is lost to a narrow screen.
   started is the original stopped (it shows "Moved by …"). If the
   destination can't confirm, the original keeps playing and the outcome says
   so. Moving to this device opens Now Playing.
+- **Play on a screen** (fling). While something plays (or is paused) on this
+  device, the handle and Now Playing's transport carry one cast icon: **Play
+  on a screen**. It opens a short list of screens (the Move to… list: content
+  screens, never browsers); one tap on a screen starts the same item there —
+  no search, no menus. The screen starts **from the beginning**. Once this
+  device is past 10% of the item, the panel also offers **Start where I am
+  (m:ss)**; the beginning stays first and selected. Live items never ask. It
+  is the same hand-off as Now Playing's "Send to another device": the screen
+  adopts first (waking it if it is idle), and only then does this device
+  stop, so there are never two copies. If the screen does not confirm, this
+  device keeps playing and the panel says so ("Office TV did not confirm.
+  Still playing here."), with the screens still there to try again; the tray
+  records the outcome either way. It starts **playing** there even if it was
+  paused here. Like Move to…, the whole local queue goes with it: the screen
+  starts this item and carries on with what follows. On a phone the handle
+  hides Next when there is nothing next, so the title keeps its width.
 - **Several screens.** The screen picker's **Choose several screens** aims at
   more than one; the aim then reads "Kitchen + Living Room". Screens chosen
   in the same room, or in rooms marked as neighbours in screen admin, warn
@@ -306,6 +336,11 @@ carries a card.
 
 The Devices view is the house at a glance; each row adds, beyond state, item
 and progress:
+
+- **Who is using it**, when the device says (`snapshot.audience`): up to four
+  small faces and "Rider A" or "Rider A & 2 others" — the riders in a workout,
+  the child at the living-room reader, the player at the piano. Guests show the
+  generic face as "Guest". Nothing when nobody is declared.
 
 - **Start progress or last failure, to everyone** (RQ-HOUSE-04): "Starting:
   Turning on TV…", "Started", "Added to its queue", or
@@ -683,7 +718,9 @@ adopts its item, position, queue, and config, and resumes seamlessly.
 
 ### J7. Hand off local to a remote
 Push the local session to a device, Transfer or Fork. The device adopts the
-full session state and resumes within seconds of where local was.
+full session state and resumes within seconds of where local was. The fast
+path is **Play on a screen** on the handle: one tap on a screen moves what plays
+here, starting from the beginning unless "Start where I am" is chosen.
 
 ### J8. Resume after disruption
 Refresh, crash, or network blip → the session restores from persisted state.
@@ -717,7 +754,8 @@ and a **canvas** that shows exactly one view at a time:
 │ Devs │                                                     │
 ├──────┴─────────────────────────────────────────────────────┤
 │ outcome rows (overlay: one per attempt, never in the page)  │
-│ handle: art · title + state · Resume/Pause · next · stop · ⋯ │
+│ handle: art · title + state · Resume/Pause · next · stop ·  │
+│         Play on a screen (while playing here) · ⋯            │
 │ phone only: tab bar  Home · Browse · Devices · Search       │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -760,7 +798,8 @@ Below the canvas, at every width, the shell stacks:
   casts, with each failure row retrying only its original target, content,
   options, and hand-off snapshot,
 - the **mini player** — current local item, live progress strip, queue
-  position counter, play/pause/next/stop (a small live picture for video);
+  position counter, play/pause/next/stop, **Play on a screen** while
+  something plays here (a small live picture for video);
   tapping the title opens Now Playing. Stop retains a ready handle while the
   queue has items so the queue can be opened or restarted; clear/reset removes
   the handle once both the current item and queue are empty.
@@ -785,7 +824,13 @@ hand-off when the screen has a playback owner to capture, else (an idle
 screen, which answers `INVALID_CAPTURE`) the ordinary adopt load, counted as
 adopted only once the screen itself reports the same item playing
 (`cast/screenMove.js` `createScreenMoveDestination`, shared by `useHandOff`).
-The screen's copy starts at this device's spot, not at 0:00 (PLACE.8a/AC2).
+The screen's copy starts at this device's spot, not at 0:00 (PLACE.8a/AC2),
+unless the hand-off names a start: **Play on a screen** (`shell/FlingButton.jsx`)
+calls `useHandOff(id, { mode: 'transfer', startAt })` with `startAt: 0` (from
+the beginning, the default) or the hot-tier position read at the tap ("Start
+where I am", offered at ≥ 10% of a known duration, `cast/flingStart.js`). The
+start rides the snapshot `position`, which both destinations already honour —
+no new wire field.
 
 Aim labels always read the one persisted global aim, including while a person
 is steering a different screen in Peek. A busy origin is shown only when a

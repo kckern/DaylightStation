@@ -25,6 +25,28 @@ function typedWith(result, typed = '가비') {
 afterEach(() => playClip.mockClear());
 
 describe('TypedItem result panel', () => {
+  it('a synonym Jev calls fully right is never "Close!": Same meaning, and the card\'s own wording', () => {
+    typedWith({ correct: true, answer: '가위', score: 10, judge: 'model', match: 'synonym', audio: 'aud-gawi' }, '자르개');
+    expect(within(panel()).getByText('Same meaning! This card says:')).toBeInTheDocument();
+    expect(within(panel()).queryByText(/close/i)).toBeNull();
+    expect(within(panel()).getByText('가위')).toBeInTheDocument();
+  });
+
+  it('a misspelling that passes is still "Close! It\'s spelled:"; another ending reads "Right word!"', () => {
+    const { unmount } = typedWith({ correct: true, answer: '가위', score: 8, judge: 'model', match: 'misspelled' }, '가이');
+    expect(within(panel()).getByText("Close! It's spelled:")).toBeInTheDocument();
+    unmount();
+    typedWith({ correct: true, answer: '가위', score: 6, judge: 'model', match: 'other-form' }, '가위를');
+    expect(within(panel()).getByText('Right word! This card has:')).toBeInTheDocument();
+  });
+
+  it('a "Don\'t know" reads "Here\'s the answer": never "Not quite", never what was half-typed', () => {
+    typedWith({ correct: false, answer: '가위', score: 0, judge: 'dont-know', audio: 'aud-gawi' }, '가');
+    expect(within(panel()).getByRole('heading')).toHaveTextContent("Here's the answer");
+    expect(within(panel()).queryByText(/not quite|you typed|^the answer$/i)).toBeNull();
+    expect(within(panel()).getByText('가위')).toBeInTheDocument();
+  });
+
   it('wrong: "Not quite", You typed (muted) and The answer (large, Korean lang), announced', () => {
     typedWith({ correct: false, answer: '가위', score: 2, audio: 'aud-gawi' });
     expect(panel()).toHaveAttribute('role', 'status');

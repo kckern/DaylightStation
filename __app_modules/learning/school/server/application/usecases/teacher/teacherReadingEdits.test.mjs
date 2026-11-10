@@ -258,6 +258,71 @@ describe('AddReadingEntry', () => {
     expect(notes).not.toHaveBeenCalled();
     expect(result.revision).toMatchObject({ verb: 'reading.entry.add', toldChild: false });
     expect(reading.revisions).toHaveLength(1);
+    expect(result.revisionCount).toBe(1);
+  });
+
+  it('a replay of the same key returns the first entry, with no second revision, even on a stale base', async () => {
+    const add = (baseRevisionCount) => new AddReadingEntry(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER,
+      on: '2026-09-05', page: 120, baseRevisionCount, idempotencyKey: 'log-1:entry',
+    });
+    const first = await add(0);
+    // The first response was lost; the retry carries the count it had before.
+    const replay = await add(0);
+    const reading = await only();
+    expect(replay.replayed).toBe(true);
+    expect(replay.result.id).toBe(first.result.id);
+    expect(replay.revision).toBeNull();
+    expect(replay.revisionCount).toBe(1);
+    expect(reading.entries.filter((row) => row.idempotencyKey === 'log-1:entry')).toHaveLength(1);
+    expect(reading.revisions.filter((row) => row.verb === 'reading.entry.add')).toHaveLength(1);
+  });
+
+  it('a replay serves the count as it stood right after the ORIGINAL write, so a later edit still refuses the finish', async () => {
+    const entry = { learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page: 120, idempotencyKey: 'log-2:entry' };
+    await new AddReadingEntry(deps()).execute({ ...entry, baseRevisionCount: 0 });
+    // Someone else edits the reading in between (revision 2).
+    await new UpdateReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, patch: { pageCount: 200 }, baseRevisionCount: 1,
+    });
+    const replay = await new AddReadingEntry(deps()).execute({ ...entry, baseRevisionCount: 0 });
+    expect(replay).toMatchObject({ replayed: true, revisionCount: 1 });
+    await expect(new UpdateReading(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER,
+      patch: { status: 'finished', finishedOn: '2026-09-05' }, baseRevisionCount: replay.revisionCount,
+    })).rejects.toThrow(/changed since you loaded it/);
+  });
+
+  it('a replay that says something different from the save that landed is refused, not merged', async () => {
+    const entry = { learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', idempotencyKey: 'log-3:entry' };
+    await new AddReadingEntry(deps()).execute({ ...entry, page: 40, baseRevisionCount: 0 });
+    await expect(new AddReadingEntry(deps()).execute({ ...entry, page: 60, baseRevisionCount: 0 }))
+      .rejects.toThrow(/already landed with page 40/);
+    await expect(new AddReadingEntry(deps()).execute({ ...entry, on: '2026-09-04', page: 40, baseRevisionCount: 0 }))
+      .rejects.toThrow(/already landed/);
+    expect((await only()).revisions).toHaveLength(1);
+  });
+
+  it('a replay with an edited note is a different save: refused as a reused key, not dropped', async () => {
+    const entry = { learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page: 40, idempotencyKey: 'log-4:entry' };
+    await new AddReadingEntry(deps()).execute({ ...entry, note: 'read aloud', baseRevisionCount: 0 });
+    const same = await new AddReadingEntry(deps()).execute({ ...entry, note: 'read aloud', baseRevisionCount: 0 });
+    expect(same.replayed).toBe(true);
+    const refusal = await new AddReadingEntry(deps()).execute({ ...entry, note: 'read alone', baseRevisionCount: 0 }).catch((error) => error);
+    expect(refusal).toBeInstanceOf(Error);
+    expect(refusal.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(refusal.message).toMatch(/already landed with the note/);
+    const missing = await new AddReadingEntry(deps()).execute({ ...entry, baseRevisionCount: 0 }).catch((error) => error);
+    expect(missing.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect((await only()).revisions).toHaveLength(1);
+  });
+
+  it('a new key on a stale base is still refused', async () => {
+    const add = (idempotencyKey, page) => new AddReadingEntry(deps()).execute({
+      learnerId: LEARNER, readingId: 'rdg_a', by: TEACHER, on: '2026-09-05', page, baseRevisionCount: 0, idempotencyKey,
+    });
+    await add('a', 120);
+    await expect(add('b', 130)).rejects.toThrow();
   });
 
   it('refuses a day that is not a real calendar day', async () => {
@@ -413,6 +478,37 @@ describe('AddReadingForLearner', () => {
     expect(notes).not.toHaveBeenCalled();
   });
 
+  // "Finished today" is the common case, and "today" is the HOUSEHOLD's study
+  // day (the 4am rule), which a phone's calendar does not know. So the
+  // console sends no day and the server supplies it.
+  it('the finished door with no day finishes on the household study day', async () => {
+    const { reading } = await new AddReadingForLearner(deps({ bookLogLauncher: fakeLauncher({ studyDay: '2026-09-05' }) })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'finished',
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-09-05' });
+    expect(reading.entries).toHaveLength(1);
+    expect(reading.entries[0]).toMatchObject({ on: '2026-09-05', source: 'teacher' });
+    expect(reading.revisions[0].after).toMatchObject({ status: 'finished', finishedOn: '2026-09-05' });
+  });
+
+  it('falls back to the clock\u2019s day where no launcher is wired', async () => {
+    const { reading } = await new AddReadingForLearner(deps({ bookLogLauncher: null })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'finished',
+      by: TEACHER, idempotencyKey: 'teacher-add-1',
+    });
+    expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-09-06' });
+  });
+
+  it('with no study day, a finish with no day lands on the day the store opened it, not the UTC date', async () => {
+    const { reading } = await new AddReadingForLearner(deps({ bookLogLauncher: null })).execute({
+      learnerId: LEARNER, isbn: '9780000000009', where: 'finished', openedOn: '2026-09-05',
+      by: TEACHER, idempotencyKey: 'teacher-add-2',
+    });
+    expect(reading).toMatchObject({ status: 'finished', finishedOn: '2026-09-05' });
+    expect(reading.entries[0]).toMatchObject({ on: '2026-09-05' });
+  });
+
   it('a retried open does not log the day twice', async () => {
     const use = new AddReadingForLearner(deps());
     const args = {
@@ -428,7 +524,7 @@ describe('AddReadingForLearner', () => {
     expect(shelf[1].revisions).toHaveLength(1);
   });
 
-  it('refuses a door it does not have, a page without one, and a finish with no day', async () => {
+  it('refuses a door it does not have, a page without one, and a finish on no real day', async () => {
     const add = (args) => new AddReadingForLearner(deps()).execute({
       learnerId: LEARNER, isbn: '9780000000009', by: TEACHER, idempotencyKey: 'teacher-add-1', ...args,
     });
@@ -436,7 +532,6 @@ describe('AddReadingForLearner', () => {
     await expect(add({ where: 'starting', page: 84 })).rejects.toThrow(/page/i);
     await expect(add({ where: 'partway' })).rejects.toThrow(/page/i);
     await expect(add({ where: 'partway', page: 84, progressMode: 'minutes' })).rejects.toThrow(/page/i);
-    await expect(add({ where: 'finished' })).rejects.toThrow(/day/i);
     await expect(add({ where: 'finished', finishedOn: 'August' })).rejects.toThrow(/day/i);
     // Nothing half-opened along the way.
     expect(await bookLog.listForLearner(LEARNER)).toHaveLength(1);

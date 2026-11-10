@@ -61,17 +61,17 @@ describe('typedAnswers (a day file\'s judged typed answers)', () => {
       'rc:pul': { at: 'a1', response: { typed: '풀' }, result: { correct: true, score: 10, judge: 'exact' } },
       'r1:q:0': { at: 'a2', response: { typed: '가위' }, result: { correct: true, score: 10, judge: 'exact' } },
       'r1:q:1': { at: 'a3', response: { choice: 'Scissors' }, result: { correct: true } },
-      'p1:0': { at: 'a4', response: { typed: '책' }, result: { correct: false, score: 4, judge: 'model' }, wordId: 'chaek', task: '3.3', source: 'practice', reason: 'partly', regraded: { at: 'z', actorId: 'parent', pass: true } },
+      'p1:0': { at: 'a4', response: { typed: '책' }, result: { correct: false, score: 4, judge: 'model', match: 'misspelled' }, wordId: 'chaek', task: '3.3', source: 'practice', reason: 'partly', regraded: { at: 'z', actorId: 'parent', pass: true } },
       'r1:i:gawi:copy': { at: 'a0', response: { typed: '가위' }, result: { correct: true } },
       'rc:mul': { at: 'a5', response: { typed: '무' }, result: { correct: true, score: 6, judge: 'distance' }, wordId: 'mul', task: '1.4', source: 'recheck' },
     };
     const rows = typedAnswers(day);
     expect(rows).toEqual([
-      { day: D, itemId: 'rc:pul', at: 'a1', wordId: 'pul', task: '3.3', source: 'recheck', typed: '풀', correct: true, score: 10, judge: 'exact', reason: null, regraded: null },
-      { day: D, itemId: 'r1:q:0', at: 'a2', wordId: 'gawi', task: '3.3', source: 'verify', typed: '가위', correct: true, score: 10, judge: 'exact', reason: null, regraded: null },
-      { day: D, itemId: 'p1:0', at: 'a4', wordId: 'chaek', task: '3.3', source: 'practice', typed: '책', correct: false, score: 4, judge: 'model', reason: 'partly', regraded: { at: 'z', actorId: 'parent', pass: true } },
+      { day: D, itemId: 'rc:pul', at: 'a1', wordId: 'pul', task: '3.3', source: 'recheck', typed: '풀', correct: true, score: 10, judge: 'exact', match: null, reason: null, regraded: null },
+      { day: D, itemId: 'r1:q:0', at: 'a2', wordId: 'gawi', task: '3.3', source: 'verify', typed: '가위', correct: true, score: 10, judge: 'exact', match: null, reason: null, regraded: null },
+      { day: D, itemId: 'p1:0', at: 'a4', wordId: 'chaek', task: '3.3', source: 'practice', typed: '책', correct: false, score: 4, judge: 'model', match: 'misspelled', reason: 'partly', regraded: { at: 'z', actorId: 'parent', pass: true } },
       // A graded dictation (1.4) sign-off is judged like 3.3, so a grown-up sees and can re-grade it.
-      { day: D, itemId: 'rc:mul', at: 'a5', wordId: 'mul', task: '1.4', source: 'recheck', typed: '무', correct: true, score: 6, judge: 'distance', reason: null, regraded: null },
+      { day: D, itemId: 'rc:mul', at: 'a5', wordId: 'mul', task: '1.4', source: 'recheck', typed: '무', correct: true, score: 6, judge: 'distance', match: null, reason: null, regraded: null },
     ]);
   });
 });

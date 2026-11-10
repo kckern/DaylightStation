@@ -1432,7 +1432,12 @@ export class YamlSurroundStore extends ISurroundStore {
         definition: {
           regions: definition.regions,
           collapse: definition.collapse,
-          band: definition.band
+          band: definition.band,
+          // THE LOOK, authored in the definition file (`theme: classical` on
+          // the concert-hall and playhouse definitions). Passed through only
+          // when authored: the frame's default is the neutral theme, and the
+          // store knows nothing about any particular look.
+          ...(typeof definition.theme === 'string' && definition.theme ? { theme: definition.theme } : {})
         },
         piece,
         pieceSegments: resolvedPieceSegments,

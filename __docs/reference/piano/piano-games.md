@@ -486,6 +486,44 @@ absent means low and high evenly. The shoot staff exists only on a level whose
 mix can spawn a block. On single-note levels the staff that clears the next
 obstacle stays bright and the other staves dim.
 
+### Clock and stepping
+
+The loop runs on the gaming real-time kit (`__capabilities/gaming`): a
+`createFrameDriver` rAF loop (frames capped at 0.1 s) feeds `planSteps` in
+carry mode, so the world advances in whole 1/60 s steps and the remainder
+carries into the next frame. Every engine timestamp — duck start and its
+auto-release, damage invincibility, the shooting pose, obstacle spawn spacing —
+is in **simulated** milliseconds that advance only with those steps, and the
+clock runs only while `PLAYING`. Played actions (jump, duck, shoot) still apply
+the moment their chord matches, stamped with the current simulated time; duck
+stays level-held. The first frame after play starts runs no step. A fail stops
+the frame's remaining steps and pins the clock to the failing step; outcomes
+(fail, level advance) are applied right after `setWorld` or, when React defers
+the updater to its render, at that render's commit — never a frame late. A frame that throws is logged once per run as
+`side-scroller.frame.error` (reset in `startGame`) and not re-thrown, so a
+loop that fails every frame does not flood the log at 60 Hz.
+`useSideScrollerGame.clock.test.jsx` pins the frame cap, the carry and the fail
+stop. The
+renderer compares `invincibleUntil` / `shootUntil` against the hook's `simMs`
+and shows neither pose outside `PLAYING`, so nothing freezes mid-blink on the
+Game Over card. The `hit` and `dodge` sounds go through the kit's effect
+dispatcher, which adds no log lines.
+
+### HUD and LEVEL UP
+
+The countdown, the health meter and the LEVEL UP banner are the shared game HUD
+(`__capabilities/gaming/browser/platform/ui/hud`): `CountdownOverlay`,
+`LifeMeter` (one notch per health point, `role="meter"` labelled "Health") and
+`MomentBanner`. The scene keeps its own look — the meter sits in the dark well
+at the far left with notches stacking bottom-up, amber (`--piano-warn`) and
+felt-red at a quarter health, fed through `--game-hud-live` /
+`--game-hud-danger`. A real level advance sets the hook's `moment`
+(`{ key: 'level-<n>', title: 'LEVEL UP!', subtitle: <next level name> }`) in
+the same place the advance is applied, so it fires once per advance, and clears
+it after 1500 ms; the banner shows in the play canvas between the top staves
+and the duck staff while the run continues underneath.
+`levelUpMoment.test.jsx` pins it.
+
 ### Death, sound and sprites
 
 Running out of health freezes the world and bursts the player into a ring of
@@ -714,6 +752,16 @@ The live match is a checkpointed session in **that browser's** localStorage, ind
 `gaming:piano-chess:active:<user>` — not on the server. A reload hands the board back;
 another screen never sees it. A game left on the office display and a game left on the
 tablet are two different games, and choosing chess on either resumes that screen's own.
+
+**Only indexed sessions survive.** Every board game (chess, checkers, Connect Four) writes a
+snapshot and a journal per session. When a game starts, `reclaimCheckpoints`
+(`__capabilities/gaming/browser/platform/authority/BrowserCheckpointPorts.js`) deletes every
+session in that game's namespace that no `<ns>:active:<user>` key names. Every user's index
+counts, since one screen serves the household. A write that still hits the browser's quota
+sweeps the same way and retries once. Logged as
+`gaming.checkpoints.reclaimed {namespace, cause: startup|quota, removed, kept}`. Before
+2026-10-23 nothing was ever removed: the office screen filled up and every chess move died
+`authority-move-failed … exceeded the quota`.
 
 **Resume window: 6 hours since the last move** (`RESUME_MAX_IDLE_MS` in
 `useChessAuthority.js`). Past it the session is discarded and a fresh board starts,

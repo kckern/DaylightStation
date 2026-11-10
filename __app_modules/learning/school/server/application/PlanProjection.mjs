@@ -61,6 +61,7 @@ import { reduceSession } from "../domain/sessions/sessionEvents.mjs";
 import { pausedExceptionFor, withCurriculumExceptions } from "./curriculumExceptionProjection.mjs";
 import { appendAssignedProgramEntries, projectProgramEntry } from "./assignedProgramPlan.mjs";
 import { studyDayForInstant } from "../domain/studyDay.mjs";
+import { withRemediationLineage } from "./remediationDepth.mjs";
 
 /**
  * Attestation gate-unlock (spec D2): an attested unit enters the planner's
@@ -104,7 +105,10 @@ export class PlanProjection {
   #practiceAssessments;
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
-  #declaredEntryActions; #householdSchedule; #dayBypasses;
+  #declaredEntryActions; #householdSchedule; #dayBypasses; #remediationMaxRounds;
+  #remediationHoldAfterStudyDays; #logHolds;
+  /** `${studyDay}|${sessionId}` of every stale hold already logged today. */
+  #loggedHolds = { day: null, keys: new Set() };
   #inflight = new Map();
 
   /**
@@ -124,6 +128,15 @@ export class PlanProjection {
    *   errors. Injectable so a migrating call site keeps the event name its
    *   dashboards and runbooks already know instead of gaining a second line.
    * @param {string} [deps.launcherFailedEvent] - same, for a launcher that threw.
+   * @param {number|null} [deps.remediationMaxRounds] - retries before a failed
+   *   unit becomes a teacher hold (`school.yml → lifecycle.remediation.maxRounds`;
+   *   null takes the planner's default of two).
+   * @param {number|null} [deps.remediationHoldAfterStudyDays] - school days an
+   *   open failure may sit unretried before it becomes a teacher hold
+   *   (`lifecycle.remediation.holdAfterStudyDays`; null takes the default of three).
+   * @param {boolean} [deps.logHolds=true] - log `school.remediation.held` when a
+   *   stale hold is first seen. Off for the dry-run preview projection, so one
+   *   hold is not reported twice by two instances.
    * @param {object} [deps.logger]
    */
   constructor({
@@ -146,6 +159,7 @@ export class PlanProjection {
     // bypass on file settles that program's study day for EVERY launcher, not
     // only piano's. Null: bypasses are not consulted here.
     dayBypasses = null, practiceAssessments = null,
+    remediationMaxRounds = null, remediationHoldAfterStudyDays = null, logHolds = true,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions) {
@@ -165,7 +179,35 @@ export class PlanProjection {
     this.#planErrorEvent = planErrorEvent;
     this.#launcherFailedEvent = launcherFailedEvent;
     this.#declaredEntryActions = declaredEntryActions;
+    this.#remediationMaxRounds = remediationMaxRounds;
+    this.#remediationHoldAfterStudyDays = remediationHoldAfterStudyDays;
+    this.#logHolds = logHolds;
     this.#logger = logger;
+  }
+
+  /**
+   * A STALE hold has no moment of its own: it forms when a day passes with the
+   * failure still unretried, which nothing in the system observes. The first
+   * projection to see it is the first anyone knows, so it is logged here —
+   * once per session per study day, however many surfaces project in between.
+   * The memory is per process: a restart may log a hold again that day, which
+   * is the honest cost of not persisting a log de-dupe. A cap hold is logged
+   * where it really forms, at settle (`CloseSessionOutcome`).
+   */
+  #logStaleHolds(plan, learnerId, studyDay) {
+    if (!this.#logHolds) return;
+    if (this.#loggedHolds.day !== studyDay) this.#loggedHolds = { day: studyDay, keys: new Set() };
+    for (const entry of plan.entries) {
+      const hold = entry.remediation;
+      if (!hold?.held || hold.reason !== 'stale') continue;
+      const key = `${studyDay}|${entry.sessionId}`;
+      if (this.#loggedHolds.keys.has(key)) continue;
+      this.#loggedHolds.keys.add(key);
+      this.#logger.info?.('school.remediation.held', {
+        learnerId, unitId: entry.unitId, sessionId: entry.sessionId, depth: hold.depth,
+        reason: 'stale', idleStudyDays: hold.idleStudyDays,
+      });
+    }
   }
 
   /**
@@ -292,12 +334,16 @@ export class PlanProjection {
     // BuildAgenda's read set, in BuildAgenda's shape: one parallel fan-out, and
     // `listWorks` tolerated as absent because a catalog adapter predating work
     // configs simply has none.
-    const [assignment, units, works, fullHistory] = await Promise.all([
+    const [assignment, units, works, listedHistory] = await Promise.all([
       this.#assignments.get(learnerId),
       this.#curriculum.listUnits(),
       this.#curriculum.listWorks?.() ?? [],
       this.#sessions.listForLearner(learnerId),
     ]);
+    // The remediation cap counts rounds over these rows' `remediationOf`; a
+    // row that left it out is read from events here rather than counted as an
+    // original (see `remediationDepth.mjs`). A no-op for the YAML store.
+    const fullHistory = await withRemediationLineage(listedHistory, this.#sessions);
     const practiceIds = new Set(units.filter((u) => u.practice).map((u) => u.unitId));
     const scopedHistory = await Promise.all(fullHistory.map(async (row) => {
       if (!practiceIds.has(row.unitId) || !this.#sessions.readEvents) return row;
@@ -331,13 +377,18 @@ export class PlanProjection {
       catch (error) { this.#logger.warn?.('school.practice-assessment.projection-failed', { learnerId, unitId: enrollment.linkedUnitId, error: error.message }); }
     }
     const effectiveHistory = history.map((s) => !s.attested && !s.curriculumException && assessmentByUnit.has(s.unitId) && assessmentByUnit.get(s.unitId).stage !== 'completed' && s.outcome?.result === 'passed'
-      ? { ...s, outcome: { ...s.outcome, result: 'needs_remediation' } } : s);
+      // Marked, so the remediation hold rules can tell this from a real
+      // failure (`isOpenFailure`): it gates the plan, it is not a retry owed.
+      ? { ...s, outcome: { ...s.outcome, result: 'needs_remediation' }, practiceRewrittenPass: true } : s);
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, p]) => p));
     const plan = planLearnerWork({
       learnerId, assignment, units, sessions: effectiveHistory, now: nowIso,
-      timezone: this.#timezone, coursePolicies,
+      timezone: this.#timezone, coursePolicies, remediationMaxRounds: this.#remediationMaxRounds,
+      remediationHoldAfterStudyDays: this.#remediationHoldAfterStudyDays,
+      householdSchedule: this.#householdSchedule,
     });
+    if (untilMs == null) this.#logStaleHolds(plan, learnerId, studyDayForInstant(at.getTime(), { timezone: this.#timezone }));
     for (const [unitId, assessment] of assessmentByUnit) {
       const entry = plan.entries.find((e) => e.unitId === unitId);
       const paused = pausedExceptionFor(activeExceptions, unitId);

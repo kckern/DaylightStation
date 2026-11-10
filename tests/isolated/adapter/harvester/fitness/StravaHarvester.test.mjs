@@ -114,6 +114,58 @@ describe('StravaHarvester', () => {
     });
   });
 
+  describe('token writer policy', () => {
+    it('skips without refreshing when this process may not rotate tokens', async () => {
+      const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
+      const gated = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        authStore: mockAuthStore,
+        getUserAuth: mockConfigService.getUserAuth,
+        getUserDir: mockConfigService.getUserDir,
+        logger: mockLogger,
+        canRefreshTokens: () => false,
+      });
+
+      await expect(gated.harvest('alice')).resolves.toEqual({
+        count: 0, status: 'skipped', reason: 'token_refresh_disabled',
+      });
+      expect(mockStravaClient.refreshToken).not.toHaveBeenCalled();
+      expect(mockStravaClient.getActivities).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('token persistence', () => {
+    it('logs token_persist_failed (without token values) when the rotated token cannot be saved', async () => {
+      const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
+      const authStore = {
+        load: vi.fn().mockResolvedValue({ refresh: 'stored-refresh' }),
+        save: vi.fn().mockRejectedValue(new Error('disk full')),
+      };
+      mockStravaClient.refreshToken.mockResolvedValue({ access_token: 'new-access', refresh_token: 'new-refresh', expires_at: 1 });
+      const h = new StravaHarvester({
+        stravaClient: mockStravaClient,
+        lifelogStore: mockLifelogStore,
+        authStore,
+        logger: mockLogger,
+      });
+
+      const result = await h.harvest('alice');
+
+      expect(result).toMatchObject({ status: 'error', reason: 'auth_failed' });
+      const call = mockLogger.error.mock.calls.find(([event]) => event === 'strava.auth.token_persist_failed');
+      expect(call).toBeTruthy();
+      expect(call[1]).toMatchObject({ username: 'alice', error: 'disk full' });
+      expect(JSON.stringify(call[1])).not.toContain('new-refresh');
+      expect(JSON.stringify(call[1])).not.toContain('new-access');
+    });
+
+    it('no longer exposes a public refreshAccessToken wrapper', async () => {
+      const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');
+      expect(StravaHarvester.prototype.refreshAccessToken).toBeUndefined();
+    });
+  });
+
   describe('reauthSequence', () => {
     it('should generate reauthorization URL', async () => {
       const { StravaHarvester } = await import('#adapters/harvester/fitness/StravaHarvester.mjs');

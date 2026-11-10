@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../../components/CircularUserAvatar.jsx";
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
-import { tickFraction } from "../../../lib/cycleGame/tickFraction.js";
+import { tickFraction } from "../../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import { povWorld, povBadges, resolveBadgeStack } from "../../../lib/cycleGame/povWorld.js";
 import { povFollowCam, horizonChipState } from "../../../lib/cycleGame/povFollowCam.js";
 import getLogger from '@/lib/logging/Logger.js';

@@ -1,107 +1,108 @@
+import SkylineControlPanel from './SkylineControlPanel.jsx';
+import { announceGameAchievement } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
+import SkylineMenus, { crashReason } from './SkylineMenus.jsx';
+import { useSkylineController } from './useSkylineController.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { validateCourse, resolveCalibration } from "../../lib/skylineGlider/courseModel.js";
-import { createFlightState, stepFlight } from "../../lib/skylineGlider/flightEngine.js";
-import { projectCourseWindow } from "../../lib/skylineGlider/courseProjection.js";
+import { createFlightState, stepFlight, retryFlightCheckpoint } from "../../lib/skylineGlider/flightEngine.js";
+import { weaponPower } from "../../lib/skylineGlider/weaponPower.js";
+import { cameraTime } from "../../lib/skylineGlider/liftBoost.js";
+import { scoresAsTarget, weaponRefusal, weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { collectFlightTelemetry } from "../../lib/skylineGlider/flightTelemetry.js";
-import { altitudeToTrackPercent, SKYLINE_CRAFT_GEOMETRY } from "../../lib/skylineGlider/flightGeometry.js";
+import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
+import { EMPTY_ZONE_ASSETS, loadZoneAssets } from "../../lib/skylineGlider/zoneAssets.js";
 import { createSkylineAudio } from "../../lib/skylineGlider/skylineAudio.js";
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from "../../lib/skylineGlider/checkpointRepository.js";
-import { buildSkylineGliderRun } from "../../lib/skylineGlider/runResult.js";
+import { buildSkylineGliderRun, countTargets } from "../../lib/skylineGlider/runResult.js";
 import { listUsableSkylineBikes, selectSkylineBike } from "../../lib/skylineGlider/bikeSelection.js";
 import { useIdentity } from "../../identity/useIdentity.js";
 import UnlockPrompt from "../../player/overlays/UnlockPrompt.jsx";
 import { isLocalDevHost } from '@/lib/kioskEnv.js';
+import { DaylightMediaPath } from '@/lib/api.mjs';
+import { FlightScene, entityRole } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
+import useSkylineWeapons from "./useSkylineWeapons.js";
+import SkylineFlightHud from "./SkylineFlightHud.jsx";
+import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
+import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
 
-function formatTime(seconds) {
-  const value = Math.max(0, Math.ceil(seconds));
-  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
+const SKYLINE_LOG_NAMES = {
+  event: (e) => `skyline_glider.flight.${e.type}`,
+  executed: 'skyline_glider.effect.executed',
+  skipped: 'skyline_glider.effect.skipped',
+  failed: 'skyline_glider.effect.failed',
+};
+
+// Event type -> ordered effects. Rebuilt per frame so it reads current values.
+function buildEffectTable({ setEffects, effectTimersRef, course }) {
+  const later = (fn, ms) => { effectTimersRef.current.add(setTimeout(fn, ms)); };
+  return {
+    collision: (event) => [
+      { id: 'collision-burst', visual: () => {
+        setEffects((current) => ({ ...current, collisionKey: current.collisionKey + 1 }));
+        later(() => setEffects((current) => ({ ...current, collisionKey: 0 })), 450);
+      } },
+      // Losing a heart has its own cue, never the sound of a target breaking.
+      { id: 'collision-cue', cue: event.data.kind === 'crash' ? 'crash' : 'hurt' },
+    ],
+    collectible: (event, extra) => [
+      { id: 'bell-pop', visual: () => {
+        const key = `${event.data.collectibleId}-${extra.courseTime}`;
+        setEffects((current) => ({ ...current, pops: [...current.pops, { key }] }));
+        later(() => setEffects((current) => ({ ...current, pops: current.pops.filter((pop) => pop.key !== key) })), 600);
+      } },
+      { id: 'bell-cue', cue: 'bell' },
+    ],
+    'weapon.fired': (event) => [{ id: `${event.data.weapon}-cue`, cue: event.data.weapon }],
+    'bomb.detonated': () => [{ id: 'explosion-cue', cue: 'explosion' }],
+    'entity.destroyed': (event) => {
+      if (!['laser', 'missile'].includes(event.data.by)) return null;
+      // Bomb kills are covered by the explosion cue, crash kills by the collision cue.
+      // Only a scored target gets the reward sound; breaking scenery just shatters.
+      const scored = scoresAsTarget(course.entities?.find((entity) => entity.id === event.data.entityId));
+      return [{ id: scored ? 'target-cue' : 'shatter-cue', cue: scored ? 'target' : 'breakable' }];
+    },
+    'weapon.hit': (event) => (event.data.effect !== 'kill' && event.data.weapon !== 'bomb'
+      ? [{ id: 'hit-cue', cue: event.data.effect === 'damage' ? 'hit' : 'deny' }]
+      : null),
+    'boost.activated': () => [{ id: 'boost-cue', cue: 'boost' }],
+    checkpoint: (event) => [
+      { id: 'checkpoint-banner', visual: () => {
+        const label = `Checkpoint ${event.data.checkpointId}`;
+        setEffects((current) => ({ ...current, banner: label }));
+        later(() => setEffects((current) => ({ ...current, banner: current.banner === label ? null : current.banner })), 1500);
+      } },
+      { id: 'checkpoint-cue', cue: 'checkpoint' },
+    ],
+    restarted: () => [{ id: 'restart-ceremony' }, { id: 'restart-cue', cue: 'restart' }],
+    completed: () => [{ id: 'finish-ceremony' }, { id: 'finish-cue', cue: 'finish' }],
+  };
 }
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 });
 
-function TerrainSegment({ segment }) {
-  const width = Math.max(4, segment.width);
-  if (segment.type === 'lower-terrain') {
-    const y = segment.top * 600;
-    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
-      <rect x={segment.x} y={y} width={width} height={600 - y} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
-      <path d={`M${segment.x} ${y} l22 24 28 -24 32 34 34 -34 H${segment.x + width}`} className="skyline-glider__snowline"/>
-    </g>;
-  }
-  if (segment.type === 'upper-terrain') {
-    const y = segment.bottom * 600;
-    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
-      <rect x={segment.x} y="0" width={width} height={y} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
-      <path d={`M${segment.x} ${y} l24 -20 28 20 30 -28 34 28 H${segment.x + width}`} className="skyline-glider__cave-edge"/>
-    </g>;
-  }
-  if (segment.type === 'corridor') {
-    const ceiling = segment.ceiling * 600;
-    const floor = segment.floor * 600;
-    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type}>
-      <rect x={segment.x} y="0" width={width} height={ceiling} className="skyline-glider__terrain skyline-glider__terrain--upper"/>
-      <rect x={segment.x} y={floor} width={width} height={600 - floor} className="skyline-glider__terrain skyline-glider__terrain--lower"/>
-      <path d={`M${segment.x} ${ceiling} H${segment.x + width} M${segment.x} ${floor} H${segment.x + width}`} className="skyline-glider__corridor-edge"/>
-    </g>;
-  }
-  if (segment.type === 'checkpoint') {
-    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type} transform={`translate(${segment.x} 0)`} className="skyline-glider__checkpoint">
-      <line x1="0" y1="90" x2="0" y2="530"/><path d="M0 100 h72 l-20 25 20 25 H0Z"/>
-    </g>;
-  }
-  if (segment.type === 'finish') {
-    return <g data-testid={`course-segment-${segment.id}`} data-type={segment.type} transform={`translate(${segment.x} 0)`} className="skyline-glider__finish">
-      <path d="M-45 510 V170 Q0 80 45 170 V510"/>
-    </g>;
-  }
-  return null;
-}
+export { FlightScene };
 
-export function FlightScene({ state, course, effects = {} }) {
-  const projected = projectCourseWindow(course, state.courseTime);
-  const craftX = projected.playerX;
-  const craftY = state.altitude * projected.height;
-  const pitch = clamp((state.verticalRate || 0) * 50, -12, 12);
-  const craftFront = SKYLINE_CRAFT_GEOMETRY.frontSeconds * projected.unitsPerSecond;
-  const craftRear = SKYLINE_CRAFT_GEOMETRY.rearSeconds * projected.unitsPerSecond;
-  const farOffset = -((state.courseTime * 10) % 1000);
-  const middleOffset = -((state.courseTime * 22) % 1000);
-  const nearOffset = -((state.courseTime * 38) % 1000);
-  return <svg className="skyline-glider__scene" viewBox="0 0 1000 600" role="img" aria-label="Alpine flight course">
-    <defs>
-      <linearGradient id="glider-sky" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#78bce8"/><stop offset="1" stopColor="#f8d69a"/></linearGradient>
-      <linearGradient id="glider-rock" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#42685e"/><stop offset="1" stopColor="#193d38"/></linearGradient>
-    </defs>
-    <rect width="1000" height="600" fill="url(#glider-sky)"/>
-    <g className="skyline-glider__parallax skyline-glider__parallax--far" transform={`translate(${farOffset} 0)`}>
-      <path d="M0 420 L130 250 260 420 420 210 590 420 760 260 1000 420 1130 250 1260 420 1420 210 1590 420 1760 260 2000 420 V600 H0Z"/>
-    </g>
-    <g className="skyline-glider__parallax skyline-glider__parallax--middle" transform={`translate(${middleOffset} 0)`}>
-      <path d="M0 490 L170 360 330 480 520 330 690 490 860 350 1000 470 1170 360 1330 480 1520 330 1690 490 1860 350 2000 470 V600 H0Z"/>
-    </g>
-    <g className="skyline-glider__parallax skyline-glider__parallax--near" transform={`translate(${nearOffset} 0)`}>
-      <path d="M0 535 Q180 465 350 530 T700 510 T1000 530 Q1180 465 1350 530 T1700 510 T2000 530 V600 H0Z"/>
-    </g>
-    <g className="skyline-glider__course-geometry">
-      {projected.segments.map((segment) => <TerrainSegment key={segment.id} segment={segment}/>)}
-      {projected.collectibles.filter((item) => !(state.collectedIds || []).includes(item.id)).map((item) => <g key={item.id} transform={`translate(${item.x} ${item.y})`} className="skyline-glider__bell" data-testid={`course-collectible-${item.id}`}>
-        <path d="M-12 9 Q-9 1 -7 -10 Q0 -18 7 -10 Q9 1 12 9Z"/><circle cy="12" r="3"/>
-      </g>)}
-    </g>
-    <g className="skyline-glider__wind" transform={`translate(${craftX - 72} ${craftY})`}><path d="M0 -14 h42 M-18 0 h55 M5 14 h32"/></g>
-    <g data-testid="skyline-glider-craft" data-facing="right" data-front-seconds={SKYLINE_CRAFT_GEOMETRY.frontSeconds} data-rear-seconds={SKYLINE_CRAFT_GEOMETRY.rearSeconds} data-radius={SKYLINE_CRAFT_GEOMETRY.radius} transform={`translate(${craftX} ${craftY}) rotate(${pitch})`} className="skyline-glider__craft">
-      <path d={`M-${craftRear} -6 L4 -8 ${craftFront} 0 L6 7 L-${craftRear - 6} 6 L-${craftRear} 1Z`} className="skyline-glider__wing"/>
-      <path d={`M-${craftRear - 18} 1 Q4 -3 ${craftFront - 14} 0 Q6 6 -${craftRear - 16} 5Z`} className="skyline-glider__body"/>
-      <path d={`M-${craftRear - 24} 3 L-${craftRear - 10} 7 M-${craftRear - 10} 7 L-${craftRear - 2} 9`} className="skyline-glider__frame"/>
-      <circle cx={-(craftRear - 12)} cy="5" r="3" className="skyline-glider__pilot"/>
-      {(effects.collisionKey || state.invincibleRemaining > 0) && <g key={effects.collisionKey || 'protected'} data-testid="skyline-glider-collision-effect" className="skyline-glider__collision-burst"><path d="M-62 -34 l-16 -18 M-67 0 h-28 M-55 31 l-20 16 M43 -28 l18 -16 M57 15 l25 8"/></g>}
-      {(effects.pops || []).map((pop) => <g key={pop.key} className="skyline-glider__bell-pop"><circle r="28"/><path d="M-30 0 H30 M0 -30 V30"/></g>)}
-    </g>
-  </svg>;
+const mediaUrl = (path) => DaylightMediaPath(`/media/${path}`);
+// Text cues are timed to what is on screen, so they follow the camera, not a
+// craft that has dashed ahead of it.
+const activeCue = (course, flight) => {
+  const camera = cameraTime(flight);
+  return (course.control_cues || []).find((c) => camera >= c.at_s && camera < c.at_s + 7)?.text;
+};
+
+// World-map rows when no rider progress is available: every act open.
+function zonesFromCourses(courses) {
+  const zones = new Map();
+  for (const item of courses) {
+    const id = item.zone?.id || 'alpine';
+    if (!zones.has(id)) zones.set(id, { id, name: item.zone?.name || 'Alpine', acts: [] });
+    zones.get(id).acts.push({ id: item.id, name: item.name, act: item.act ?? null, status: 'open' });
+  }
+  return [...zones.values()];
 }
 
 export function RpmGauge({ state }) {
@@ -132,20 +133,27 @@ export default function SkylineGlider() {
   const log = useMemo(() => getLogger().child({ component: 'skyline-glider' }), []);
   const [courses, setCourses] = useState([]);
   const [error, setError] = useState('');
+  const [controllerSelection,setControllerSelection]=useState(null);
+  const [storageWarning,setStorageWarning]=useState(null);
   const [phase, setPhase] = useState('loading');
-  const [countdown, setCountdown] = useState(3);
   const [flight, setFlight] = useState(null);
   const [saveState, setSaveState] = useState({ status: 'idle', record: null });
   const [muted, setMuted] = useState(false);
   const [preferredEquipmentId, setPreferredEquipmentId] = useState(null);
-  const [, setSelectionTick] = useState(0);
   const [effects, setEffects] = useState({ collisionKey: 0, pops: [], banner: null });
+  const [pressFlash, setPressFlash] = useState(null);
   const [pendingStart, setPendingStart] = useState(null);
   const [accessOverride, setAccessOverride] = useState(null);
   const [adminPromptOpen, setAdminPromptOpen] = useState(false);
+  const [world, setWorld] = useState(null);
+  const [chosenActId, setChosenActId] = useState(null);
+  const [actUnlock, setActUnlock] = useState(null);
+  const [assets, setAssets] = useState(EMPTY_ZONE_ASSETS);
   const flightRef = useRef(null);
   const runRef = useRef(null);
   const finalizingRef = useRef(false);
+  const settledRunIdsRef=useRef(new Set());
+  const unlockGenerationRef=useRef(0);
   const lastSampleSecondRef = useRef(-1);
   const previousInputRef = useRef(null);
   const effectTimersRef = useRef(new Set());
@@ -153,29 +161,90 @@ export default function SkylineGlider() {
   const renderHealthRef = useRef({ startedAt: 0, frames: 0, longFrames: 0 });
   const audioRef = useRef(null);
   const lockedSelectionRef = useRef(null);
+  const lockedCourseRef = useRef(null);
   const phaseRef = useRef(phase);
   const suspensionContextRef = useRef(null);
   const suspensionLoggedRef = useRef(false);
   if (!audioRef.current) audioRef.current = createSkylineAudio();
+  const persistCheckpoint=useCallback((...args)=>{
+    try{writeFlightCheckpoint(...args);return true}catch(error){setStorageWarning('Local save unavailable. Keep this page open until the flight is saved.');log.warn('skyline_glider.checkpoint.storage_error',{error:error.message});return false}
+  },[log]);
+  const removeCheckpoint=useCallback((...args)=>{
+    try{clearFlightCheckpoint(...args);return true}catch(error){setStorageWarning('Local saves unavailable. Keep this page open until the server confirms saving.');log.warn('skyline_glider.checkpoint.remove_error',{error:error.message});return false}
+  },[log]);
   const fitnessSessionInstance = ctx?.fitnessSessionInstance;
   const setGovernanceSuspended = ctx?.setGovernanceSuspended;
   const usableBikes = listUsableSkylineBikes(ctx?.equipment, fitnessSessionInstance);
   const selectedBike = selectSkylineBike(ctx?.equipment, fitnessSessionInstance, preferredEquipmentId);
-  const activeBike = lockedSelectionRef.current || selectedBike;
+  const activeBike = lockedSelectionRef.current || controllerSelection || selectedBike;
   const equipment = activeBike?.equipment || null;
   const riderId = activeBike?.riderId || null;
   const localDev = isLocalDevHost();
   const schoolLearner = riderId ? ctx?.getUserByName?.(riderId)?.schoolLearner : undefined;
   const access = useSkylineAccess(riderId, { schoolLearner });
   const accessGranted = access.unlocked || accessOverride?.riderId === riderId;
-  const course = courses[0] || null;
-  const checkpointIdentity = useMemo(() => course && equipment && riderId ? {
+  const riderIdentity = useMemo(() => equipment && riderId ? {
     fitnessSessionId: fitnessSessionInstance?.sessionId || null,
     riderId,
     equipmentId: equipment.id,
-    calibration: resolveCalibration(equipment),
-  } : null, [course, equipment, fitnessSessionInstance?.sessionId, riderId]);
-  const saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
+  } : null, [equipment, fitnessSessionInstance?.sessionId, riderId]);
+  // Which act the lobby offers: a tapped tile, else an unfinished flight to
+  // retry or resume, else the rider's next act on the world map. Once a flight
+  // begins the act is locked with the bike until the rider returns to the lobby.
+  const riderWorld = world?.riderId === riderId ? world : null;
+  const actStatus = useMemo(() => new Map((riderWorld?.zones || [])
+    .flatMap((zone) => zone.acts.map((act) => [act.id, act.status]))), [riderWorld]);
+  const playable = (id) => actStatus.get(id) !== 'locked';
+  const checkpointCourse = (status) => (riderIdentity
+    ? courses.find((item) => playable(item.id) && readFlightCheckpoint(riderId, item, { ...riderIdentity, calibration: resolveCalibration(equipment, item) }).status === status)
+    : null);
+  const lobbyCourse = courses.find((item) => item.id === chosenActId && playable(item.id))
+    || checkpointCourse('pending_terminal') || checkpointCourse('compatible')
+    || courses.find((item) => item.id === riderWorld?.next)
+    || courses.find((item) => playable(item.id)) || courses[0] || null;
+  const course = lockedCourseRef.current || lobbyCourse;
+  const armory = weaponRules(course);
+  // Every press lights its HUD cell: green when it will fire, red with the
+  // reason when it will not, plus a soft deny tone, so no press is silent.
+  const flashPress = useCallback((action, refusal) => {
+    const position = ACTION_POSITION[action];
+    if (!position) return;
+    const key = `${action}-${performance.now()}`;
+    setPressFlash({ position, ok: !refusal, reason: refusal, key });
+    const timer = setTimeout(() => setPressFlash((current) => current?.key === key ? null : current), refusal ? 700 : 350);
+    effectTimersRef.current.add(timer);
+    // A boost already running is not a refusal worth a buzz: the cell says "Boosting".
+    if (refusal && refusal !== 'active') {
+      audioRef.current.playCue('deny');
+      log.info('skyline_glider.input.refused', { action, reason: refusal, courseTime: flightRef.current?.courseTime ?? null });
+    }
+  }, [log]);
+  const drainWeapons = useSkylineWeapons({
+    enabled: phase === 'flight' && !!armory.enabled,
+    onGamepad: (pad) => log.info('skyline_glider.input.gamepad', { padId: pad.id, mapping: pad.mapping || null }),
+    onFire: (press) => {
+      log.info('skyline_glider.input.fire', press);
+      // Bike-button presses are flashed where they are accepted or refused.
+      if (press.source !== 'rider-button') flashPress(press.action, weaponRefusal(flightRef.current, press.action, course));
+    },
+  });
+  // A partner on the step mat is the bombardier: every classified stomp drops
+  // a bomb from the same rack the rider's button uses. Only stomps count — an
+  // ordinary step is someone walking past, not a request to fire.
+  const subscribeToAppEvent = ctx?.subscribeToAppEvent;
+  const stompArmed = phase === 'flight' && !!armory.enabled;
+  useEffect(() => {
+    if (!stompArmed || !subscribeToAppEvent) return undefined;
+    log.info('skyline_glider.stomp_mat.armed', { riderId });
+    const stop = subscribeToAppEvent('pressure-mat:stomp', (event) => {
+      drainWeapons.enqueue(['bomb'], 'stomp-mat');
+      log.info('skyline_glider.stomp_mat.bomb', { matId: event?.source ?? null, courseTime: flightRef.current?.courseTime ?? null });
+    });
+    return () => { stop?.(); log.debug('skyline_glider.stomp_mat.disarmed', { riderId }); };
+  }, [stompArmed, subscribeToAppEvent, drainWeapons, log, riderId]);
+  const checkpointIdentity = useMemo(() => course && riderIdentity ? { ...riderIdentity, calibration: resolveCalibration(equipment, course) } : null, [course, riderIdentity, equipment]);
+  let saved = course && checkpointIdentity ? readFlightCheckpoint(riderId, course, checkpointIdentity) : { status: 'missing' };
+  if(saved.status==='pending_terminal'&&settledRunIdsRef.current.has(saved.identity?.runId))saved={status:'missing'};
   phaseRef.current = phase;
   suspensionContextRef.current = { course, equipmentId: equipment?.id, riderId };
 
@@ -198,7 +267,48 @@ export default function SkylineGlider() {
   useEffect(() => {
     setAccessOverride((current) => current?.riderId === riderId ? current : null);
     setPendingStart((current) => current?.userId === riderId ? current : null);
+    setChosenActId(null);
   }, [riderId]);
+
+  const refreshWorld = useCallback(async (forRider) => {
+    if (!forRider) return;
+    try {
+      const response = await fetch(`/api/v1/fitness/skyline-glider/world?rider=${encodeURIComponent(forRider)}`);
+      if (!response.ok) throw new Error(`world request failed (${response.status})`);
+      const body = await response.json();
+      if (!Array.isArray(body?.zones)) throw new Error('world response has no zones');
+      setWorld({ riderId: forRider, zones: body.zones, next: body.next || null });
+      log.debug('skyline_glider.world.loaded', { riderId: forRider, next: body.next || null });
+    } catch (requestError) {
+      // Progression is not a gate: without a world map every act stays playable.
+      log.warn('skyline_glider.world.error', { riderId: forRider, error: requestError.message });
+    }
+  }, [log]);
+
+  useEffect(() => { void refreshWorld(riderId); }, [refreshWorld, riderId]);
+
+  const zone = course?.zone || null;
+  useEffect(() => {
+    if (!zone) { setAssets(EMPTY_ZONE_ASSETS); return undefined; }
+    let active = true;
+    const sounds = Object.fromEntries(Object.entries(zone.sounds || {}).map(([slot, path]) => [slot, mediaUrl(path)]));
+    Promise.all([loadZoneAssets(zone, { mediaUrl }), audioRef.current.loadSounds(sounds)]).then(([loaded, soundReport]) => {
+      if (!active) return;
+      setAssets(loaded);
+      const missing = [
+        ...loaded.missing,
+        ...soundReport.missing.map(({ slot, url, reason }) => ({ src: zone.sounds[slot] || url, slot, reason })),
+      ];
+      // An empty placeholder file is expected until it is populated.
+      const failures = missing.filter((item) => !['empty', 'audio-unavailable'].includes(item.reason));
+      log[failures.length ? 'warn' : 'info']('skyline_glider.assets.loaded', {
+        zoneId: zone.id, courseId: course?.id, images: loaded.images.size,
+        spriteFrames: loaded.frames ? Object.keys(loaded.frames).length : 0,
+        sounds: soundReport.loaded, missing,
+      });
+    });
+    return () => { active = false; };
+  }, [zone, course?.id, log]);
 
   useEffect(() => () => {
     effectTimersRef.current.forEach((timer) => clearTimeout(timer));
@@ -248,7 +358,11 @@ export default function SkylineGlider() {
     fetch('/api/v1/fitness/skyline-glider/courses').then(async (response) => {
       if (!response.ok) throw new Error(`course request failed (${response.status})`);
       const body = await response.json();
-      const valid = (body.courses || []).map(validateCourse).filter((entry) => entry.valid).map((entry) => entry.course);
+      const checked = (body.courses || []).map((raw) => ({ raw, ...validateCourse(raw) }));
+      for (const entry of checked.filter((item) => !item.valid)) {
+        log.warn('skyline_glider.course.invalid', { courseId: entry.raw?.id || null, errors: entry.errors });
+      }
+      const valid = checked.filter((entry) => entry.valid).map((entry) => entry.course);
       if (!valid.length) throw new Error('No playable courses');
       if (active) { setCourses(valid); setPhase('lobby'); }
     }).catch((requestError) => {
@@ -257,21 +371,6 @@ export default function SkylineGlider() {
     });
     return () => { active = false; };
   }, [log]);
-
-  useEffect(() => {
-    if (phase !== 'countdown') return undefined;
-    const timer = setInterval(() => setCountdown((value) => {
-      if (value <= 1) { clearInterval(timer); setPhase('flight'); return 0; }
-      return value - 1;
-    }), 1000);
-    return () => clearInterval(timer);
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== 'lobby') return undefined;
-    const timer = setInterval(() => setSelectionTick((value) => value + 1), 500);
-    return () => clearInterval(timer);
-  }, [phase]);
 
   const finalize = useCallback(async (status, terminalState = flightRef.current, retryRecord = null) => {
     if (!runRef.current || finalizingRef.current) return false;
@@ -292,7 +391,7 @@ export default function SkylineGlider() {
       runId: record.run.id,
       startedAt: record.run.started_at,
     } : { ...runRef.current, ...checkpointIdentity };
-    writeFlightCheckpoint(riderId, course, {
+    persistCheckpoint(riderId, course, {
       identity: terminalIdentity, state: terminalState,
       lifecycle: 'pending_terminal', terminalRecord: record,
     });
@@ -314,13 +413,16 @@ export default function SkylineGlider() {
           reason: 'terminal-identity-changed',
         });
       }
-      clearFlightCheckpoint(riderId, course);
+      settledRunIdsRef.current.add(record.run.id);
+      removeCheckpoint(riderId, course);
+      if (status === 'completed') { setChosenActId(null); await refreshWorld(record.rider.user_id); }
       setSaveState({ status: 'saved', record });
       setPhase('result');
       log.info('skyline_glider.flight.saved', {
         runId: record.run.id, status, riderId, equipmentId: equipment?.id,
         courseId: course.id, courseVersion: course.version,
       });
+      announceGameAchievement('skyline-glider', { runId: record.run.id }); // the gem ceremony looks now
       return true;
     } catch (saveError) {
       finalizingRef.current = false;
@@ -332,18 +434,15 @@ export default function SkylineGlider() {
       });
       return false;
     }
-  }, [checkpointIdentity, course, equipment?.id, fitnessSessionInstance, log, riderId]);
+  }, [checkpointIdentity, course, equipment?.id, fitnessSessionInstance, log, refreshWorld, riderId]);
 
   useEffect(() => {
     if (phase !== 'flight' || !flightRef.current) return undefined;
-    let prior = performance.now();
-    let frameId = 0;
-    renderHealthRef.current = { startedAt: prior, frames: 0, longFrames: 0 };
-    const frame = (now) => {
-      const frameMs = Math.max(0, now - prior);
+    renderHealthRef.current = { startedAt: performance.now(), frames: 0, longFrames: 0 };
+    const frame = ({ nowMs: now, rawElapsedS, elapsedS }) => {
       const health = renderHealthRef.current;
       health.frames += 1;
-      if (frameMs > 50) health.longFrames += 1;
+      if (rawElapsedS * 1000 > 50) health.longFrames += 1;
       const healthElapsedMs = now - health.startedAt;
       if (healthElapsedMs >= 10000) {
         log.info('skyline_glider.render.health', {
@@ -360,8 +459,10 @@ export default function SkylineGlider() {
       const cadence = fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id) || { rpm: 0, connected: false };
       const previous = flightRef.current;
       const previousCheckpointId = previous.checkpoint.id;
-      const next = stepFlight(previous, cadence, Math.min(.1, Math.max(0, (now - prior) / 1000)), course);
-      prior = now;
+      // A zero-length frame runs no engine sub-step, so presses wait for the next frame.
+      const actions = elapsedS > 0 ? drainWeapons() : [];
+      const power = weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId));
+      const next = stepFlight(previous, { ...cadence, actions, weaponPower: power }, elapsedS, course);
       flightRef.current = next;
       setFlight(next);
       const telemetry = collectFlightTelemetry({
@@ -373,79 +474,44 @@ export default function SkylineGlider() {
         courseId: course.id, courseVersion: course.version,
       };
       if (telemetry.sample) log.info('skyline_glider.flight.sample', { ...correlation, ...telemetry.sample });
-      for (const event of telemetry.events) {
-        log.info(`skyline_glider.flight.${event.type}`, { ...correlation, courseTime: next.courseTime, ...event.data });
-        const executeVisual = (effectId, update) => {
-          try {
-            update?.();
-            log.info('skyline_glider.effect.executed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId });
-          } catch (effectError) {
-            log.error('skyline_glider.effect.failed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, error: effectError.message });
-          }
-        };
-        const executeCue = (effectId, cue) => {
-          try {
-            if (audioRef.current.playCue(cue)) log.info('skyline_glider.effect.executed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId });
-            else log.info('skyline_glider.effect.skipped', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, reason: muted ? 'muted' : 'audio-unavailable' });
-          } catch (effectError) {
-            log.error('skyline_glider.effect.failed', { ...correlation, courseTime: next.courseTime, eventType: event.type, effectId, error: effectError.message });
-          }
-        };
-        if (event.type === 'collision') {
-          executeVisual('collision-burst', () => {
-            setEffects((current) => ({ ...current, collisionKey: current.collisionKey + 1 }));
-            const timer = setTimeout(() => setEffects((current) => ({ ...current, collisionKey: 0 })), 450);
-            effectTimersRef.current.add(timer);
-          });
-          executeCue('collision-cue', 'collision');
-        } else if (event.type === 'collectible') {
-          executeVisual('bell-pop', () => {
-            const key = `${event.data.collectibleId}-${next.courseTime}`;
-            setEffects((current) => ({ ...current, pops: [...current.pops, { key }] }));
-            const timer = setTimeout(() => setEffects((current) => ({ ...current, pops: current.pops.filter((pop) => pop.key !== key) })), 600);
-            effectTimersRef.current.add(timer);
-          });
-          executeCue('bell-cue', 'bell');
-        } else if (event.type === 'checkpoint') {
-          executeVisual('checkpoint-banner', () => {
-            const label = `Checkpoint ${event.data.checkpointId}`;
-            setEffects((current) => ({ ...current, banner: label }));
-            const timer = setTimeout(() => setEffects((current) => ({ ...current, banner: current.banner === label ? null : current.banner })), 1500);
-            effectTimersRef.current.add(timer);
-          });
-          executeCue('checkpoint-cue', 'checkpoint');
-        } else if (event.type === 'restarted') {
-          executeVisual('restart-ceremony');
-          executeCue('restart-cue', 'restart');
-        } else if (event.type === 'completed') {
-          executeVisual('finish-ceremony');
-          executeCue('finish-cue', 'finish');
-        }
-      }
+      createEffectDispatcher({
+        table: buildEffectTable({ setEffects, effectTimersRef, course }),
+        playCue: (cue) => audioRef.current.playCue(cue),
+        log,
+        logNames: SKYLINE_LOG_NAMES,
+        correlation: () => correlation,
+        skippedReason: () => (muted ? 'muted' : 'audio-unavailable'),
+      }).dispatch(telemetry.events, { courseTime: next.courseTime });
       lastSampleSecondRef.current = telemetry.nextSampleSecond;
       previousInputRef.current = { ...cadence };
-      if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) writeFlightCheckpoint(riderId, course, {
+      if (next.checkpoint.id !== previousCheckpointId || next.courseTime % 2 < .12) persistCheckpoint(riderId, course, {
         identity: { ...runRef.current, ...checkpointIdentity }, state: next,
       });
       if (next.phase === 'completed') finalize('completed', next);
-      frameId = requestAnimationFrame(frame);
     };
+    const driver = createFrameDriver({
+      maxFrameS: 0.1,
+      onFrame: frame,
+      onError: (err) => log.sampled('skyline_glider.frame.error', {
+        runId: runRef.current?.runId, riderId, courseId: course.id, error: err?.message,
+      }, { maxPerMinute: 5, aggregate: true, level: 'error' }),
+    });
     audioRef.current.startWind();
-    frameId = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(frameId); audioRef.current.stop(); };
-  }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted]);
+    driver.start();
+    return () => { driver.stop(); audioRef.current.stop(); };
+  }, [phase, checkpointIdentity, course, equipment?.id, riderId, finalize, fitnessSessionInstance, log, muted, drainWeapons]);
 
   const begin = useCallback((resume = false) => {
     if (!equipment || !riderId || !course) return;
     const armedAtMs = Date.now();
-    const initial = createFlightState(course, { calibration: resolveCalibration(equipment), armedAtMs });
+    const initial = createFlightState(course, { calibration: resolveCalibration(equipment, course), armedAtMs });
     const canResume = resume && saved.status === 'compatible';
     const next = canResume ? {
       ...initial, ...saved.state,
       phase: 'playing', pausedForSensor: false, collisionProtected: false,
       armedAtMs, inputReady: false, lastInputTs: null,
     } : initial;
-    if (!resume) clearFlightCheckpoint(riderId, course);
+    if (!resume) removeCheckpoint(riderId, course);
     suspensionLoggedRef.current = false;
     flightRef.current = next;
     const run = canResume ? { runId: saved.identity.runId, startedAt: saved.identity.startedAt } : {
@@ -453,14 +519,14 @@ export default function SkylineGlider() {
       startedAt: new Date().toISOString(),
     };
     runRef.current = run;
-    lockedSelectionRef.current = selectedBike;
+    lockedSelectionRef.current = activeBike;
+    lockedCourseRef.current = course;
     finalizingRef.current = false;
     lastSampleSecondRef.current = -1;
     previousInputRef.current = null;
     setSaveState({ status: 'idle', record: null });
     setFlight(next);
-    setCountdown(3);
-    setPhase('countdown');
+    setPhase('flight');
     void audioRef.current.prime();
     log.info('skyline_glider.flight.started', {
       runId: run.runId, courseId: course.id, courseVersion: course.version,
@@ -468,98 +534,15 @@ export default function SkylineGlider() {
     });
   }, [course, equipment, log, riderId, saved.identity, saved.state, saved.status, selectedBike]);
 
-  const retryPendingTerminalAndBegin = useCallback(async () => {
-    if (saved.status !== 'pending_terminal' || !selectedBike) return;
-    lockedSelectionRef.current = selectedBike;
-    runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
-    flightRef.current = saved.state;
-    setFlight(saved.state);
-    finalizingRef.current = false;
-    const persisted = await finalize(saved.terminalRecord.run.status, saved.state, saved.terminalRecord);
-    if (!persisted) return;
-    lockedSelectionRef.current = null;
-    begin(false);
-  }, [begin, finalize, saved, selectedBike]);
-
-  const exitFlight = () => {
-    log.info('skyline_glider.flight.exited', {
-      runId: runRef.current?.runId, riderId, equipmentId: equipment?.id,
-      courseId: course?.id, courseVersion: course?.version,
-      courseTime: flightRef.current?.courseTime,
-    });
-    finalize('abandoned');
-  };
-
-  const startOver = async () => {
-    if (saved.status !== 'compatible' || !selectedBike) return;
-    lockedSelectionRef.current = selectedBike;
-    runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
-    flightRef.current = saved.state;
-    setFlight(saved.state);
-    finalizingRef.current = false;
-    const persisted = await finalize('abandoned', saved.state);
-    if (!persisted) return;
-    lockedSelectionRef.current = null;
-    begin(false);
-  };
-
-  useEffect(() => ctx?.subscribeToAppEvent?.('rider-select', (event) => {
-    const selection = event?.payload || {};
-    if (!['lobby', 'result'].includes(phase) || saveState.status === 'saving') return;
-    if (!selection.equipmentId || !selection.userId) return;
-    if (!ctx?.equipment?.some((item) => item?.id === selection.equipmentId && item?.cadence != null)) return;
-    if (phase === 'result') {
-      lockedSelectionRef.current = null;
-      setPhase('lobby');
-    }
-    setPreferredEquipmentId(selection.equipmentId);
-    setPendingStart({ equipmentId: selection.equipmentId, userId: selection.userId, timestamp: event.timestamp });
-    log.info('skyline_glider.access.start_requested', {
-      riderId: selection.userId, equipmentId: selection.equipmentId,
-    });
-  }), [ctx, log, phase, saveState.status]);
-
-  useEffect(() => {
-    if (phase !== 'lobby' || !pendingStart || !equipment || !riderId) return;
-    if (pendingStart.equipmentId !== equipment.id || pendingStart.userId !== riderId) return;
-    if (!accessGranted) return;
-    setPendingStart(null);
-    if (saved.status === 'pending_terminal') {
-      void retryPendingTerminalAndBegin();
-      return;
-    }
-    begin(saved.status === 'compatible');
-  }, [accessGranted, begin, equipment, pendingStart, phase, retryPendingTerminalAndBegin, riderId, saved.status]);
-
-  useEffect(() => {
-    if (!['countdown', 'flight'].includes(phase) || accessGranted || access.status === 'loading') return;
-    const current = flightRef.current;
-    if (current && course && riderId && checkpointIdentity) {
-      writeFlightCheckpoint(riderId, course, {
-        identity: { ...runRef.current, ...checkpointIdentity },
-        state: current,
-      });
-    }
-    log.info('skyline_glider.access.suspended', {
-      runId: runRef.current?.runId || null,
-      riderId,
-      equipmentId: equipment?.id || null,
-      courseId: course?.id || null,
-      phase,
-      accessState: access.state,
-    });
-    lockedSelectionRef.current = null;
-    setPendingStart(null);
-    setPhase('lobby');
-  }, [access.status, access.state, accessGranted, checkpointIdentity, course, equipment?.id, log, phase, riderId]);
-
   const requestAdminOverride = async () => {
-    if (!pendingStart || pendingStart.userId === 'guest') return;
+    if (!riderId || riderId === 'guest') return;
+    const generation=++unlockGenerationRef.current;
     setAdminPromptOpen(true);
     log.info('skyline_glider.access.override_requested', {
       riderId, equipmentId: equipment?.id,
     });
     const result = await registerAdmin('skyline_glider');
+    if(generation!==unlockGenerationRef.current)return;
     if (!result?.matched || !result.userId) {
       log.info('skyline_glider.access.override_denied', {
         riderId, equipmentId: equipment?.id, reason: result?.reason || 'denied',
@@ -574,38 +557,145 @@ export default function SkylineGlider() {
     });
   };
 
-  if (phase === 'loading') return <main className="skyline-glider" data-testid="skyline-glider-loading">Charting the course…</main>;
-  if (phase === 'error') return <main className="skyline-glider"><h1>Skyline Glider</h1><p role="alert">{error}</p></main>;
-  if (phase === 'lobby' && !localDev && !accessGranted) return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-school-lock">
-    <div><p className="skyline-glider__eyebrow">Skyline Glider</p><h1>{access.status === 'error' ? 'School status unavailable' : 'Finish school to fly'}</h1><p>{access.state === 'incomplete' ? 'Today’s schoolwork still needs to be completed.' : 'Waiting for today’s school completion.'}</p></div>
-    <div className="skyline-glider__launch"><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Press your rider button'}</span><p>{pendingStart ? 'Admin approval can start this flight.' : 'Press your bike rider button to request a flight.'}</p><button disabled={!pendingStart} onClick={() => void requestAdminOverride()}>Admin unlock</button></div>
-    <UnlockPrompt open={adminPromptOpen} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={() => { setAdminPromptOpen(false); clearUnlock(); }}/>
-  </main>;
-  if (phase === 'lobby') return <main className="skyline-glider skyline-glider--lobby" data-testid="skyline-glider-lobby">
-    <div><p className="skyline-glider__eyebrow">Alpine cadence adventure</p><h1>Skyline Glider</h1><h2>{course.name}</h2><p>{course.description}</p><p>Pedal faster to climb. Ease off to descend.</p></div>
-    <div className="skyline-glider__launch"><span>{equipment ? equipment.name : 'Connect and assign a cadence bike'}</span><span>{riderId ? ctx?.getDisplayName?.(riderId)?.displayName || riderId : 'Waiting for a live rider'}</span>
-      {usableBikes.length > 1 && <label>Bike <select aria-label="Bike" value={equipment?.id || ''} onChange={(event) => setPreferredEquipmentId(event.target.value)}>{usableBikes.map((item) => <option key={item.equipment.id} value={item.equipment.id}>{item.equipment.name}</option>)}</select></label>}
-      {!localDev ? <p>Press your bike rider button to {saved.status === 'compatible' ? 'resume' : 'start'}.</p> : saved.status === 'compatible' ? <><button onClick={() => begin(true)}>Resume flight</button><button className="secondary" onClick={() => void startOver()}>Start over</button></> : saved.status === 'pending_terminal' ? <button onClick={() => {
-        lockedSelectionRef.current = selectedBike;
-        runRef.current = { runId: saved.identity.runId, startedAt: saved.identity.startedAt };
-        flightRef.current = saved.state;
-        setFlight(saved.state);
-        setSaveState({ status: 'error', record: saved.terminalRecord });
-        setPhase('result');
-      }}>Retry saving previous flight</button> : <button disabled={!equipment || !riderId} onClick={() => begin(false)}>Start flight</button>}
+  const requestActUnlock = async (act) => {
+    if (!riderId || riderId === 'guest') return;
+    const generation=++unlockGenerationRef.current;
+    setActUnlock({ actId: act.id, name: act.name });
+    log.info('skyline_glider.progress.unlock_requested', { riderId, actId: act.id });
+    const result = await registerAdmin('skyline_glider');
+    if (!result?.matched || !result.userId) {
+      log.info('skyline_glider.progress.unlock_denied', { riderId, actId: act.id, reason: result?.reason || 'denied' });
+      return;
+    }
+    try {
+      const response = await fetch(`/api/v1/fitness/skyline-glider/progress/${encodeURIComponent(riderId)}/unlock`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actId: act.id, unlockedBy: result.userId }),
+      });
+      if (!response.ok) throw new Error(`unlock failed (${response.status})`);
+      await refreshWorld(riderId);
+      setChosenActId(act.id);
+      log.info('skyline_glider.progress.unlock_granted', { riderId, actId: act.id, adminUserId: result.userId });
+    } catch (unlockError) {
+      log.error('skyline_glider.progress.unlock_error', { riderId, actId: act.id, error: unlockError.message });
+    }
+    setActUnlock(null);
+    clearUnlock();
+  };
+
+  const controller = useSkylineController({
+    ctx,courses,world:riderWorld,modalOpen:adminPromptOpen||!!actUnlock,access:{...access,unlocked:accessGranted},saved,saveState,flight,
+    onEffect:effect=>{
+      log.info('skyline_glider.control.action',{action:effect.type,riderId:effect.riderId,equipmentId:effect.equipmentId,actId:effect.actId});
+      if(effect.type==='assign-rider'){
+        const chosen=ctx?.equipment?.find(e=>e.id===effect.equipmentId)||equipment;
+        if(!chosen)return;
+        fitnessSessionInstance?.setEquipmentRider?.(chosen.id,effect.riderId);
+        setPreferredEquipmentId(chosen.id);
+        setControllerSelection({equipment:chosen,riderId:effect.riderId});
+        setPendingStart({equipmentId:chosen.id,userId:effect.riderId});
+        lockedSelectionRef.current=null;lockedCourseRef.current=null;
+        setChosenActId(effect.actId);
+      }else if(effect.type==='choose-act'){
+        if(saveState.status==='saved'){lockedCourseRef.current=null;finalizingRef.current=false}
+        setChosenActId(effect.actId);
+      }
+      else if(effect.type==='recover-terminal'){
+        if(saved.status!=='pending_terminal')return;
+        lockedSelectionRef.current=activeBike;lockedCourseRef.current=course;
+        runRef.current={runId:saved.identity.runId,startedAt:saved.identity.startedAt};
+        flightRef.current=saved.state;setFlight(saved.state);finalizingRef.current=false;
+        void finalize(saved.terminalRecord.run.status,saved.state,saved.terminalRecord);
+      }
+      else if(effect.type==='launch'){
+        if(saved.status==='pending_terminal'){
+          lockedSelectionRef.current=activeBike;lockedCourseRef.current=course;
+          runRef.current={runId:saved.identity.runId,startedAt:saved.identity.startedAt};
+          flightRef.current=saved.state;setFlight(saved.state);
+          setSaveState({status:'error',record:saved.terminalRecord});
+        }else begin(effect.resume);
+        try{localStorage.setItem('fitness:skyline-glider:last-act:'+riderId,effect.actId)}catch{ /* memory selection remains available */ }
+      }else if(effect.type==='retry-checkpoint'||effect.type==='resume-flight'){
+        const current=flightRef.current;if(!current)return;
+        const next=effect.type==='retry-checkpoint'?retryFlightCheckpoint(current,course):current;
+        flightRef.current={...next,armedAtMs:Date.now(),inputReady:false,lastInputTs:null};
+        setFlight(flightRef.current);setPhase('flight');
+      }else if(effect.type==='combat'){
+        const current=flightRef.current;
+        const cadence=fitnessSessionInstance?.getEquipmentCadence?.(equipment?.id);
+        const refusal=cadence?.connected&&cadence.rpm===0?'paused':weaponRefusal(current,effect.action,course);
+        flashPress(effect.action,refusal);
+        if(!refusal)drainWeapons.enqueue([effect.action]);
+      }else if(effect.type==='clear-input')drainWeapons.clear?.();
+      else if(effect.type==='commit-stall'){
+        const current=flightRef.current;
+        if(current){const next=stepFlight(current,{...effect.cadence,actions:[]},1/60,course);flightRef.current=next;setFlight(next);setPhase('flight')}
+      }
+      else if(effect.type==='pause'||effect.type==='suspend'){
+        if(runRef.current&&flightRef.current)persistCheckpoint(riderId,course,{identity:{...runRef.current,...checkpointIdentity},state:flightRef.current});
+        drainWeapons.clear?.();setPhase('paused')
+      }
+      else if(effect.type==='toggle-sound')setMuted(value=>{audioRef.current.setMuted(!value);return !value});
+      else if(effect.type==='finalize')void finalize('abandoned');
+      else if(effect.type==='retry-save'){
+        if(saveState.record){void finalize(saveState.record.run.status,flightRef.current,saveState.record)}
+      }else if(effect.type==='cancel-unlock'){
+        unlockGenerationRef.current++;setAdminPromptOpen(false);setActUnlock(null);clearUnlock();
+      }else if(effect.type==='release-selector'){
+        if(['saving','error'].includes(saveState.status))return;
+        unlockGenerationRef.current++;if(adminPromptOpen||actUnlock)clearUnlock();setAdminPromptOpen(false);setActUnlock(null);
+        if(runRef.current&&flightRef.current&&saveState.status!=='saved')persistCheckpoint(riderId,course,{identity:{...runRef.current,...checkpointIdentity},state:flightRef.current});
+        lockedSelectionRef.current=null;lockedCourseRef.current=null;setControllerSelection(null);setFlight(null);flightRef.current=null;runRef.current=null;setChosenActId(null);setSaveState({status:'idle',record:null});setPhase('lobby');
+      }else if(effect.type==='request-admin')void requestAdminOverride();
+      else if(effect.type==='request-act-unlock'){const chosen=courses.find(c=>c.id===effect.actId);if(chosen)void requestActUnlock(chosen)}
+    },
+  });
+  useEffect(()=>{
+    if(['flight','stall'].includes(controller.state.phase)){if(flightRef.current)setPhase('flight')}
+    else if(!['loading','error','result'].includes(phase))setPhase('paused');
+  },[controller.state.phase]);
+  const panelControls=controller.controls.map(c=>{
+    if(adminPromptOpen||actUnlock)return {...c,label:c.position===3?'Cancel':'Present admin badge',hint:c.position===3?'Return to the game':'Waiting for approval',disabled:c.position!==3,avatarSrc:null,icon:c.position===3?'×':'—'};
+    if(c.position!==4||controller.state.phase!=='flights')return c;
+    if(saved.status==='pending_terminal')return {...c,label:'Retry previous save',hint:'Finish saving before a new flight'};
+    if(c.label==='Start'&&saved.status==='compatible')return {...c,label:'Resume',hint:'Continue this flight'};
+    return c;
+  });
+  const pressPanel=(position,gesture='single')=>controller.dispatch({type:'PRESS',position,gesture,source:'touch'});
+  const chooseAct = (act) => {
+    if (act.status === 'locked') { void requestActUnlock(act); return; }
+    setChosenActId(act.id);
+    log.info('skyline_glider.act.chosen', { riderId, actId: act.id, status: act.status });
+  };
+
+  if(phase==='loading')return <main className="skyline-glider skyline-glider--controls" data-testid="skyline-glider-loading"><p>Charting the course…</p><SkylineControlPanel controls={panelControls.map(c=>({...c,disabled:true}))} onPress={pressPanel}/></main>;
+  if(phase==='error')return <main className="skyline-glider skyline-glider--controls"><p role="alert">{error}</p><SkylineControlPanel controls={panelControls} onPress={pressPanel}/></main>;
+  if(!['flight','stall'].includes(controller.state.phase))return <main className="skyline-glider skyline-glider--controls"
+    data-testid={controller.state.phase==='denied'?'skyline-glider-school-lock':controller.state.phase==='result'||controller.state.phase==='saving'?'skyline-glider-result':controller.state.phase==='countdown'?'skyline-glider-countdown':'skyline-glider-lobby'} data-control-phase={controller.state.phase}>
+    <div><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch}
+      crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
+      summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
+        return [['Bells',bells],...(armory.enabled?[['Targets',targets]]:[]),['Score',bells+targets],['Bumps',saveState.record.run.collisions||0]]})()}/>
+    {saveState.status==='saved'&&<p>Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
+    {storageWarning&&<p role="status">{storageWarning}</p>}
+    {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
+    {(adminPromptOpen||actUnlock)&&<p>Present an admin badge to unlock. Bottom-left cancels.</p>}
     </div>
+    <SkylineControlPanel controls={panelControls} onPress={pressPanel}/>
+    <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>pressPanel(3)}/>
   </main>;
-  if (phase === 'countdown') return <main className="skyline-glider skyline-glider--countdown" data-testid="skyline-glider-countdown"><p>Ready your wings</p><strong>{countdown}</strong></main>;
-  if (phase === 'result') return <main className="skyline-glider skyline-glider--result" data-testid="skyline-glider-result"><p>{saveState.record?.run.status === 'completed' ? 'Mountain Pass complete' : 'Flight ended'}</p><h1>{saveState.record?.run.status === 'completed' ? 'Touchdown!' : 'Back at base'}</h1><p>{flight?.collectedIds?.length || 0} bells found · {flight?.collisions || 0} bumps</p>{saveState.status === 'saving' && <p>Saving flight…</p>}{saveState.status === 'error' && <button onClick={() => finalize(saveState.record.run.status, flight, saveState.record)}>Retry save</button>}{saveState.status === 'saved' && <p>{saveState.record.run.reward_rings ? `+${saveState.record.run.reward_rings} rings` : 'Flight saved'}</p>}<button onClick={() => { lockedSelectionRef.current = null; setPhase('lobby'); setFlight(null); }}>Fly again</button></main>;
-  return <main className="skyline-glider skyline-glider--flight" data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
-    <FlightScene state={flight} course={course} effects={effects}/>
+  // One value for both the text and the key, so a banner replays exactly when its words change.
+  const bannerText = effects.banner || activeCue(course, flight);
+  return <main className="skyline-glider skyline-glider--flight" data-control-phase={controller.state.phase} data-rider-id={riderId} data-course-id={course.id} data-testid="skyline-glider-flight" data-course-time={flight.courseTime}>
+    <FlightScene state={flight} course={course} effects={effects} assets={assets}/>
     <RpmGauge state={flight}/>
-    <header className="skyline-glider__hud"><span>♥ {flight.lives}</span><span>{Math.round(flight.rawRpm)} RPM</span><span>{formatTime(course.duration_s - flight.courseTime)}</span><span>🔔 {flight.collectedIds.length}</span></header>
-    {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>Wing down!</h2><p>Returning to the last windsock…</p></div>}
+    <SkylineFlightHud flight={flight} course={course} armed={!!armory.enabled} press={pressFlash}
+      targetsHit={countTargets(flight, course)}
+      power={weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}/>
+    {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>{flight.crashCause === 'stall' ? 'Stall!' : 'Wing down!'}</h2><p>Returning to the last windsock…</p></div>}
     {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
     {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
-    {effects.banner && <div className="skyline-glider__checkpoint-banner">{effects.banner}</div>}
-    <button className="skyline-glider__end" onClick={exitFlight}>End flight</button>
-    <button className="skyline-glider__mute" aria-pressed={muted} onClick={() => setMuted((value) => { const next = !value; audioRef.current.setMuted(next); return next; })}>{muted ? 'Sound on' : 'Mute'}</button>
+    <MomentBanner text={bannerText} momentKey={bannerText} className="skyline-glider__checkpoint-banner"/>
+    {flight.stalled && flight.phase === 'playing' && <div className="skyline-glider__stop-warning" role="status">Stalled! Returning to the checkpoint…</div>}
   </main>;
 }

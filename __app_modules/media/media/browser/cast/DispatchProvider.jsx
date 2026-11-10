@@ -1,3 +1,4 @@
+import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
 // frontend/src/modules/Media/cast/DispatchProvider.jsx
 // The one outcome system for /media (PR-6, RELY.1a–RELY.6a). It owns:
 //  - dispatch orchestration: client-side fan-out (one /load per target,
@@ -67,6 +68,7 @@ function buildDedupKey({ targetIds, play, queue, mode, shader, volume, shuffle, 
 }
 
 export function DispatchProvider({ children }) {
+  const getQualityOverrides = usePlaybackQuality()?.getOverrides;
   const [state, dispatch] = useReducer(reduceDispatch, initialDispatchState);
   const peek = useContext(PeekContext);
   const fleet = useContext(FleetContext);
@@ -152,6 +154,14 @@ export function DispatchProvider({ children }) {
 
   const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title, itemAction, startOver = false, resumedFrom = null, brief = false, onConfirmed = null }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
+    // Standalone Cast / one-shot pickers bypass useContentDispatch. Capture
+    // selected intent here too; Retry must replay its original frozen command.
+    if (!bypassDedupe && !snapshot && itemAction?.item) {
+      const overrides = getQualityOverrides?.(itemAction.item.contentId);
+      if (overrides && Object.keys(overrides).length) {
+        itemAction = { ...itemAction, item: { ...itemAction.item, ...overrides } };
+      }
+    }
     if (itemAction && !itemAction.operationId) {
       itemAction = { ...itemAction, operationId: uuid(), tappedAt: Date.now() };
     }
@@ -269,7 +279,7 @@ export function DispatchProvider({ children }) {
 
     dedupCacheRef.current.set(key, { ts: Date.now(), dispatchIds });
     return dispatchIds;
-  }, [peek]);
+  }, [peek, getQualityOverrides]);
 
   const retry = useCallback((attemptId) => {
     const record = recordsRef.current.get(attemptId);

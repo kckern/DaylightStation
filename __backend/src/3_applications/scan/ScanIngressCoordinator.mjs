@@ -677,7 +677,7 @@ export function createScanDispatch(deps = {}) {
     return { status: 'logged', effect: { upc: body, conversationId } };
   };
 
-  const buildHandlers = (ts, eventId = null) => {
+  const buildHandlers = (ts, eventId = null, timing = null) => {
     const trigger = makeTriggerHandler(ts);
     return [
       { namespace: 'content', handle: trigger },
@@ -688,7 +688,9 @@ export function createScanDispatch(deps = {}) {
       { namespace: 'book', handle: async ({ raw, device }) => {
         try {
           if (!book) throw new Error('School book scanning is not wired. Ask a grown-up, then rescan.');
-          return await book.receive({ code: raw, device, eventId });
+          // The reader's capture time and hold, when the relay carried them:
+          // logged on `school.book-scan.received` so a held scan is visible.
+          return await book.receive({ code: raw, device, eventId, ...(timing ?? {}) });
         } catch (error) {
           emit(barcodeLogger, 'warn', 'school.book-scan.refused', { device, error: errText(error) });
           return { status: 'refused', ok: false, message: errText(error) };
@@ -708,13 +710,20 @@ export function createScanDispatch(deps = {}) {
    *   the payload `createBarcodeRelay` publishes, verbatim
    * @returns {Promise<object>} always resolves — see the dispatcher's invariant
    */
+  function timingOf(relay) {
+    const timing = {};
+    if (typeof relay.capturedAt === 'string') timing.capturedAt = relay.capturedAt;
+    if (Number.isFinite(relay.delayedMs)) timing.delayedMs = relay.delayedMs;
+    return Object.keys(timing).length ? timing : null;
+  }
+
   function handleScan(relay = {}) {
     // Lifted verbatim: the relay always sets a route, but the reader's own config
     // and then `content` remain the fallbacks, and this value is what lands in
     // `meta.route` as well as what the step-5 lookup reads.
     const route = relay.route || relayCfgFor(relay.device).route || 'content';
     const dispatcher = new ScanDispatcher({
-      handlers: buildHandlers(relay.ts, relay.eventId), routeFallback, logger,
+      handlers: buildHandlers(relay.ts, relay.eventId, timingOf(relay)), routeFallback, logger,
     });
     return dispatcher.dispatch({ code: relay.code, device: relay.device, route });
   }

@@ -30,6 +30,7 @@ export class FitnessSyncerHarvester extends IHarvester {
   #configService;
   #timezone;
   #logger;
+  #canRefreshTokens;
 
   /**
    * @param {Object} config
@@ -39,6 +40,7 @@ export class FitnessSyncerHarvester extends IHarvester {
    * @param {Object} config.configService - ConfigService for credentials
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
+   * @param {() => boolean} [config.canRefreshTokens] - Whether this process may rotate the OAuth refresh token (default: yes)
    */
   /**
    * @param {object} [deps.adapter] pre-built FitnessSyncerAdapter. Optional and
@@ -55,6 +57,7 @@ export class FitnessSyncerHarvester extends IHarvester {
     timezone = 'America/New_York',
     logger = console,
     adapter = null,
+    canRefreshTokens = () => true,
   }) {
     super();
 
@@ -76,6 +79,7 @@ export class FitnessSyncerHarvester extends IHarvester {
     this.#configService = configService;
     this.#timezone = timezone;
     this.#logger = logger;
+    this.#canRefreshTokens = canRefreshTokens;
   }
 
   get serviceId() {
@@ -118,6 +122,12 @@ export class FitnessSyncerHarvester extends IHarvester {
         reason: 'cooldown',
         remainingMins: cooldown?.remainingMins,
       };
+    }
+
+    // Refresh tokens rotate. Only the copy that keeps the result may refresh.
+    if (!this.#canRefreshTokens()) {
+      this.#logger.info?.('fitsync.harvest.token_writer_disabled', { username });
+      return { count: 0, status: 'skipped', reason: 'token_refresh_disabled' };
     }
 
     try {

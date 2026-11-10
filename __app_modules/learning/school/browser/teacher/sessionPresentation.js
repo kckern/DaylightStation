@@ -24,7 +24,7 @@ export function presentSessionState(sessionState = {}) {
     description: 'The work was marked and another attempt is recommended.',
   };
   if (outcome === 'passed' || ['rewarded', 'closed', 'completed'].includes(state)) return {
-    label: 'Completed', tone: 'success', dayStatus: 'done', complete: true,
+    label: 'Done', tone: 'success', dayStatus: 'done', complete: true,
     description: 'The lesson is complete.',
   };
   if (state === 'created') return {
@@ -52,7 +52,7 @@ export function presentSessionState(sessionState = {}) {
     description: 'The work was marked; final lesson processing may still be pending.',
   };
   if (['media_completed', 'external_activity_assessed', 'outcome_recorded'].includes(state)) return {
-    label: 'Activity completed', tone: 'success', dayStatus: 'done', complete: false,
+    label: 'Done', tone: 'success', dayStatus: 'done', complete: false,
     description: 'The activity finished; final lesson processing may still be pending.',
   };
   if (state === 'abandoned') return {

@@ -36,7 +36,7 @@
  * @param {object} [deps.logger]
  * @returns {(args: {learnerId: string, location?: string}) => Promise<object>}
  */
-export function makePrintAgendaHandler({ resolvePersonalCard, realtime, clock = () => new Date(), logger = console } = {}) {
+export function makePrintAgendaHandler({ resolvePersonalCard, realtime, presenceHook = null, clock = () => new Date(), logger = console } = {}) {
   return async ({ learnerId, location } = {}) => {
     const result = await resolvePersonalCard.execute({ learnerId });
 
@@ -45,6 +45,15 @@ export function makePrintAgendaHandler({ resolvePersonalCard, realtime, clock = 
         location, learnerId, status: result?.status ?? null, printed: result?.printed ?? null,
       });
     } catch { /* the tap outranks the log line */ }
+
+    // Presence for the room lights: every outcome counts (a tap is someone at
+    // the desk, printed or not). Detached — never awaited, never throws into
+    // the tap; Home Assistant being slow or down must not delay an agenda.
+    if (presenceHook) {
+      Promise.resolve()
+        .then(() => presenceHook.fire({ source: 'card', location, learnerId, event: result?.status ?? null, result: 'present' }))
+        .catch(() => {});
+    }
 
     if (result?.status === 'agenda_suppressed') {
       try {
@@ -314,15 +323,20 @@ export function makeReadingSessionHandler({
           && departed?.session?.learnerId === learnerId
           && RECLAIMABLE_CLOSE_REASONS.has(departed.reason);
         if (!ownRoom && repeat) {
+          const contentId = sessions.unclaimedPlay?.(location)?.contentId ?? null;
+          // Same courtesy as the interceptor's refusal: what to grab instead.
+          const suggestions = Array.isArray(repeat.suggestions) ? repeat.suggestions : [];
           tell(location, {
-            event: 'book-refused', reason: 'read-recently', learnerId, location, target,
-            contentId: sessions.unclaimedPlay?.(location)?.contentId ?? null,
+            event: 'book-refused', reason: 'read-recently', learnerId, location, target, contentId,
             lastReadOn: repeat.lastReadOn, today: repeat.today, noRepeatDays: repeat.noRepeatDays,
-            at: clock().toISOString(),
+            suggestions, at: clock().toISOString(),
           });
           log('info', 'school.reading.book-refused', {
             location, learnerId, reason: 'read-recently', lastReadOn: repeat.lastReadOn,
             noRepeatDays: repeat.noRepeatDays, path: 'adoption',
+          });
+          log('info', 'school.story-time.refused', {
+            learnerId, bookId: contentId, suggestions: suggestions.length, location, path: 'adoption',
           });
           return { status: 'reading_session_refused', reason: 'read-recently', learnerId, location };
         }

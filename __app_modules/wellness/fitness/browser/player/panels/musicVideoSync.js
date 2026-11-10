@@ -11,3 +11,14 @@ export function musicShouldPause({ videoPlayerPaused, videoLoading, voiceMemoOpe
   if (voiceMemoOpen || emergencyHold) return true;
   return Boolean(videoPlayerPaused) && !videoLoading;
 }
+
+/**
+ * Music must not play while the video is paused, even when the audio started
+ * on its own after the pause began: a music player mounting (the Music toggle
+ * turned back on, a playlist or recovery remount) or a new track autoplaying
+ * while the video sits paused or locked. Checked on each music progress tick.
+ * Returns true when the music is playing although it should be held.
+ */
+export function musicPlaysThroughHold({ shouldPause, musicPaused }) {
+  return Boolean(shouldPause) && musicPaused === false;
+}

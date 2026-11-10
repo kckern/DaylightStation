@@ -42,6 +42,14 @@ describe('AdjustSessionGrade', () => {
     await adjust.execute({ ...args, apply: true });
     expect(realtime.sessionGradeChanged).toHaveBeenCalledWith({ learnerId: 'kid', sessionId: 'ses_1', unitId: 'math' });
   });
+  it('names the session\'s study day on the grade-changed fact when it has one', async () => {
+    const f = fixture();
+    f.events[0].studyDay = '2026-07-31';
+    const realtime = { sessionGradeChanged: vi.fn(async () => {}) };
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate, realtime });
+    await adjust.execute({ sessionId: 'ses_1', percent: 100, reason: 'scan fault', adjustedBy: 'parent', apply: true });
+    expect(realtime.sessionGradeChanged).toHaveBeenCalledWith({ learnerId: 'kid', sessionId: 'ses_1', unitId: 'math', studyDay: '2026-07-31' });
+  });
   it('stamps the course passing rule when correcting an older grade without a threshold', async () => {
     const f = fixture();
     delete f.events.find(e => e.type === 'graded').passingPercent;
@@ -59,6 +67,47 @@ describe('AdjustSessionGrade', () => {
       reason: 'test retraction', retractedBy: 'parent', apply: true });
     expect(reduceSession(f.events).outcome.result).toBe('needs_remediation');
     expect(reduceSession(f.events).gradedPassingPercent).toBeNull();
+  });
+  it('pins the learner\'s enrollment bar on an unstamped grade, in grading\'s order (Task 16)', async () => {
+    // A card scan stamps no bar, so its correction resolves one: override →
+    // the enrollment for the unit's course → the unit's own percent.
+    // Not yet settled: once a close has run, the bar it used is on
+    // `outcome_recorded` (next two tests).
+    const f = fixture();
+    delete f.events.find(e => e.type === 'graded').passingPercent;
+    f.events.splice(4);
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate,
+      passOverrides: { percentFor: () => null },
+      assignments: { get: async () => ({ courses: [{ courseId: 'course-a', passing: 60 }] }) },
+      curriculum: { getUnit: async () => ({ unitId: 'math', courseId: 'course-a', passing: { percent: 80 } }) } });
+    await adjust.execute({ sessionId: 'ses_1', percent: 70,
+      reason: 'corrected marks', adjustedBy: 'parent', apply: true });
+    expect(f.events.at(-1)).toMatchObject({ type: 'grade_adjusted', passingPercent: 60 });
+  });
+  it('a settled card scan keeps the bar its close stamped, though the enrollment bar was raised since (Task 16, A4)', async () => {
+    const f = fixture();
+    delete f.events.find(e => e.type === 'graded').passingPercent;
+    f.events.find(e => e.type === 'outcome_recorded').passingPercent = 60;
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate,
+      passOverrides: { percentFor: () => null },
+      assignments: { get: async () => ({ courses: [{ courseId: 'course-a', passing: 90 }] }) },
+      curriculum: { getUnit: async () => ({ unitId: 'math', courseId: 'course-a', passing: { percent: 80 } }) } });
+    const receipt = await adjust.execute({ sessionId: 'ses_1', percent: 70,
+      reason: 'corrected marks', adjustedBy: 'parent', apply: true });
+    expect(receipt.outcome.result).toBe('passed');
+    expect(f.events.at(-1)).toMatchObject({ type: 'grade_adjusted', passingPercent: 60 });
+  });
+  it('a session settled before the stamp existed pins override ?? the unit bar, never the enrollment (Task 16)', async () => {
+    const f = fixture();
+    delete f.events.find(e => e.type === 'graded').passingPercent;
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate,
+      passOverrides: { percentFor: () => null },
+      assignments: { get: async () => ({ courses: [{ courseId: 'course-a', passing: 60 }] }) },
+      curriculum: { getUnit: async () => ({ unitId: 'math', courseId: 'course-a', passing: { percent: 80 } }) } });
+    const receipt = await adjust.execute({ sessionId: 'ses_1', percent: 70,
+      reason: 'corrected marks', adjustedBy: 'parent', apply: true });
+    expect(receipt.outcome.result).toBe('needs_remediation');
+    expect(f.events.at(-1)).toMatchObject({ type: 'grade_adjusted', passingPercent: 80 });
   });
   it('preserves the machine threshold over current course rules and overrides', async () => {
     const f = fixture();

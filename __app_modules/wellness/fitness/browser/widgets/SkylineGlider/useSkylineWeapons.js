@@ -1,0 +1,108 @@
+import { useCallback, useEffect, useRef } from 'react';
+
+// Fire buttons for flight. Presses are edge-detected and queued; the flight
+// loop drains the queue once per animation frame and hands it to stepFlight.
+// A button already held when polling starts counts as held, not pressed, so
+// the press that started the flight does not also fire. onFire hears each
+// queued press with where it came from, so field logs show which physical
+// button a rider reaches for.
+
+const TRIGGER_THRESHOLD = 0.5;
+// Standard mapping: A / RT fire the laser; B / X / LT drop a bomb.
+export const WEAPON_BUTTONS = Object.freeze({ laser: [0, 7], bomb: [1, 2, 6], missile: [4], boost: [3] });
+export const WEAPON_KEYS = Object.freeze({ ' ': 'laser', f: 'laser', F: 'laser', b: 'bomb', B: 'bomb', m:'missile', M:'missile', v:'boost', V:'boost' });
+
+const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+
+// The fire action for a key event, or null when the key is not ours: browser
+// shortcuts (Ctrl/Cmd+F, Ctrl+B) and typing into a field are left alone.
+function fireKeyAction(event) {
+  const action = WEAPON_KEYS[event.key];
+  if (!action || event.ctrlKey || event.metaKey || event.altKey) return null;
+  const target = event.target;
+  if (target && (TYPING_TAGS.has(target.tagName) || target.isContentEditable)) return null;
+  return action;
+}
+
+export function useSkylineWeapons({ enabled = true, getGamepads, onGamepad, onFire } = {}) {
+  const queue = useRef([]);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const onGamepadRef = useRef(onGamepad);
+  onGamepadRef.current = onGamepad;
+  const onFireRef = useRef(onFire);
+  onFireRef.current = onFire;
+
+  useEffect(() => {
+    queue.current = [];
+    if (!enabled) return undefined;
+    const onKeyDown = (event) => {
+      const action = fireKeyAction(event);
+      if (!action) return;
+      event.preventDefault();
+      // A tapped End flight / Mute button keeps focus, and Space would press it
+      // on keyup in Firefox. Drop the focus so fire keys only ever fire.
+      const target = event.target;
+      if (target && target !== document.body && typeof target.blur === 'function') target.blur();
+      if (event.repeat) return;
+      queue.current.push(action);
+      onFireRef.current?.({ action, source: 'keyboard', key: event.key });
+    };
+    const onKeyUp = (event) => { if (fireKeyAction(event)) event.preventDefault(); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const read = getGamepads
+      || (() => (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : []));
+    const held = new Map();
+    const seen = new Set();
+    let frame = 0;
+    const poll = () => {
+      for (const pad of Array.from(read() || [])) {
+        if (!pad) continue;
+        const primed = seen.has(pad.index);
+        if (!primed) { seen.add(pad.index); onGamepadRef.current?.(pad); }
+        for (const [action, indexes] of Object.entries(WEAPON_BUTTONS)) {
+          const button = indexes.find((index) => {
+            const state = pad.buttons?.[index];
+            return !!state && (state.pressed || state.value > TRIGGER_THRESHOLD);
+          });
+          const down = button !== undefined;
+          const key = `${pad.index}:${action}`;
+          if (primed && down && !held.get(key)) {
+            queue.current.push(action);
+            onFireRef.current?.({ action, source: 'gamepad', button, padId: pad.id });
+          }
+          held.set(key, down);
+        }
+      }
+      frame = requestAnimationFrame(poll);
+    };
+    frame = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(frame);
+  }, [enabled, getGamepads]);
+
+  const drain = useCallback(() => {
+    const actions = queue.current;
+    queue.current = [];
+    return actions;
+  }, []);
+  drain.enqueue = (actions, source = 'rider-button') => {
+    if (!enabledRef.current) return;
+    for (const action of actions) {
+      queue.current.push(action);
+      onFireRef.current?.({ action, source });
+    }
+  };
+  drain.clear = () => { queue.current = []; };
+  return drain;
+}
+
+export default useSkylineWeapons;

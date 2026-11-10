@@ -77,6 +77,75 @@ describe('useHandOff failure-safe transfer', () => {
     expect(stopIfCurrent).not.toHaveBeenCalled();
   });
 
+  it('starts the destination at an explicit start time when one is given (fling)', async () => {
+    capture.mockReturnValueOnce({
+      snapshot: { position: 612.4, meta: { playbackOwner: { ownerInstanceId: 'source-owner', playbackRevision: 3 } } },
+      identity: { ownerInstanceId: 'source-owner', playbackRevision: 3 },
+    });
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('office-tv', { startAt: 0 }); });
+    expect(adopt.mock.calls[0][0].snapshot.position).toBe(0);
+  });
+
+  it('keeps the captured live position when no start time is given', async () => {
+    capture.mockReturnValueOnce({
+      snapshot: { position: 612.4, meta: { playbackOwner: { ownerInstanceId: 'source-owner', playbackRevision: 3 } } },
+      identity: { ownerInstanceId: 'source-owner', playbackRevision: 3 },
+    });
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('office-tv', { startAt: Number.NaN }); });
+    expect(adopt.mock.calls[0][0].snapshot.position).toBe(612.4);
+  });
+
+  const pausedCapture = () => ({
+    snapshot: {
+      state: 'paused', position: 1234,
+      currentItem: { contentId: 'plex:42', title: 'A Long Film' },
+      queue: { items: [{ queueItemId: 'q1', contentId: 'plex:42' }, { queueItemId: 'q2', contentId: 'plex:43' }], currentIndex: 0 },
+      meta: { playbackOwner: { ownerInstanceId: 'source-owner', playbackRevision: 3 } },
+    },
+    identity: { ownerInstanceId: 'source-owner', playbackRevision: 3 },
+  });
+
+  it('a fling (play: true) of a paused item sends a playing snapshot', async () => {
+    capture.mockReturnValueOnce(pausedCapture());
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('office-tv', { startAt: 0, play: true }); });
+    expect(adopt.mock.calls[0][0].snapshot.state).toBe('playing');
+  });
+
+  it('a plain move keeps a paused item paused (Move to... / Send to another device)', async () => {
+    capture.mockReturnValueOnce(pausedCapture());
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('office-tv'); });
+    const sent = adopt.mock.calls[0][0].snapshot;
+    expect(sent.state).toBe('paused');
+    expect(sent.position).toBe(1234);
+    expect(sent.queue.items[0].resume).toBeUndefined();
+  });
+
+  it('an explicit start time is authoritative: the started item never takes the saved resume spot', async () => {
+    capture.mockReturnValueOnce(pausedCapture());
+    adopt.mockResolvedValue({ status: 'adopted', destinationRevision: 7 });
+    stopIfCurrent.mockReturnValue({ ok: true });
+    const { result } = renderHook(() => useHandOff(), { wrapper });
+    await act(async () => { await result.current('office-tv', { startAt: 0, play: true }); });
+    const sent = adopt.mock.calls[0][0].snapshot;
+    expect(sent.position).toBe(0);
+    expect(sent.queue.items[0]).toMatchObject({ contentId: 'plex:42', resume: false });
+    expect(sent.currentItem.resume).toBe(false);
+    // Only the started item: what follows in the queue keeps its normal resume.
+    expect(sent.queue.items[1].resume).toBeUndefined();
+  });
+
   it('keeps an explicitly non-destructive fork available', async () => {
     dispatchToTarget.mockResolvedValue(['dispatch-1']);
     const { result } = renderHook(() => useHandOff(), { wrapper });

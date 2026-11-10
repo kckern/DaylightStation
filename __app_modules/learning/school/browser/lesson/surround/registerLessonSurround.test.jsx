@@ -12,7 +12,8 @@ import CheckpointMap from "./CheckpointMap.jsx";
 import LessonScore from "./LessonScore.jsx";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const surroundDir = path.resolve(__dirname, '../../../Surround');
+// The Surround tree lives in the playback capability since the module reorg.
+const surroundDir = path.resolve(__dirname, '../../../../../../__capabilities/playback/browser/surround');
 
 it('registers both modules under the names a definition authors', () => {
   const registry = getSurroundRegistry();
@@ -56,7 +57,8 @@ describe('the dependency only points one way', () => {
       // the surround host pulls in its registrations, so it is exactly the shape
       // a wrong-way dependency would take — and a `from`-only pattern missed it
       // (found by mutation testing: a planted `import '../School/…'` survived).
-      .filter((f) => /(?:from|@use|^\s*import)\s+["'][^"']*School/m.test(fs.readFileSync(f, 'utf8')))
+      // Case-insensitive: the module tree is `learning/school/` since the reorg.
+      .filter((f) => /(?:from|@use|^\s*import)\s+["'][^"']*school/im.test(fs.readFileSync(f, 'utf8')))
       // Name the files, not the count — a directory walk that reports a number
       // hides which file moved (`reference_piano_glyph_guard_governed_trees`).
       .map((f) => path.relative(surroundDir, f));

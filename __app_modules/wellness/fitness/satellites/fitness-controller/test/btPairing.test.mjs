@@ -1,11 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import {
   isLikelyGamepad,
   parseDiscovered,
+  sanitizeTargets,
+  parseHelperLine,
   runPairingWindow,
   handleBtPairRequest,
   handleBtRemoveRequest,
+  isPairingWindowOpen,
 } from "../src/btPairing.mjs";
 
 // ── isLikelyGamepad ───────────────────────────────────────────────────────
@@ -80,6 +84,24 @@ test('parseDiscovered: empty/nullish → []', () => {
   assert.deepEqual(parseDiscovered(null), []);
 });
 
+// ── targets + helper output ───────────────────────────────────────────────
+
+test('sanitizeTargets: keeps name/macPrefix/pin, drops bad regex, bad prefix and empty targets', () => {
+  assert.deepEqual(sanitizeTargets([
+    { id: 'sfc30', label: '8BitDo SF30', name: '8bitdo|sfc30', macPrefix: 'e4:17:d8', pin: '0000' },
+    { id: 'bad', name: '(' , macPrefix: 'zz' },
+    { id: 'pinonly', pin: '1234' },
+    null,
+  ]), [{ id: 'sfc30', label: '8BitDo SF30', name: '8bitdo|sfc30', macPrefix: 'E4:17:D8', pin: '0000' }]);
+  assert.deepEqual(sanitizeTargets([{ id: 'x', name: 'Xbox', pin: '00;rm -rf' }]), [{ id: 'x', label: null, name: 'Xbox' }]);
+});
+
+test('parseHelperLine: JSON phase lines only', () => {
+  assert.deepEqual(parseHelperLine('{"phase":"seen","device":{"address":"A"}}'), { phase: 'seen', device: { address: 'A' } });
+  assert.equal(parseHelperLine('Traceback (most recent call last):'), null);
+  assert.equal(parseHelperLine('{"nophase":1}'), null);
+});
+
 // ── runPairingWindow ──────────────────────────────────────────────────────
 
 function makeSendSpy() {
@@ -90,132 +112,123 @@ function makeSendSpy() {
 
 const SILENT_LOGGER = { log() {}, info() {}, warn() {}, error() {} };
 
-test('runPairingWindow: happy path — one gamepad → scanning→paired→done with pair/trust/connect in order', async () => {
-  const execCalls = [];
-  const exec = async (cmd) => {
-    execCalls.push(cmd);
-    if (cmd.includes('scan on')) return { stdout: '', stderr: '' };
-    if (cmd === 'bluetoothctl devices') {
-      return { stdout: 'Device AA:BB:CC:DD:EE:FF 8BitDo SN30 Pro', stderr: '' };
-    }
-    if (cmd === 'bluetoothctl info AA:BB:CC:DD:EE:FF') {
-      return { stdout: '\tName: 8BitDo SN30 Pro\n\tIcon: input-gaming', stderr: '' };
-    }
-    return { stdout: '', stderr: '' };
+/** A fake helper child that prints `lines` (split across chunks) then exits with `code`. */
+function fakeHelper(lines, { code = 0, error = null } = {}) {
+  const args = [];
+  const spawnHelper = (argJson) => {
+    args.push(JSON.parse(argJson));
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    setImmediate(() => {
+      if (error) { child.emit('error', error); return; }
+      const text = lines.map((l) => (typeof l === 'string' ? l : JSON.stringify(l))).join('\n') + '\n';
+      // Split mid-line to prove the reader buffers partial lines.
+      const mid = Math.floor(text.length / 2);
+      child.stdout.emit('data', Buffer.from(text.slice(0, mid)));
+      child.stdout.emit('data', Buffer.from(text.slice(mid)));
+      child.emit('close', code);
+    });
+    return child;
   };
-  const { send, calls } = makeSendSpy();
+  return { spawnHelper, args };
+}
 
-  const paired = await runPairingWindow({ exec, durationMs: 4000, send, logger: SILENT_LOGGER });
+const SFC30 = { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad' };
+const TARGETS = [{ id: '8bitdo_sfc30', label: '8BitDo SF30', name: '8bitdo|sfc30', macPrefix: 'E4:17:D8', pin: '0000' }];
 
-  const phases = calls.map((c) => c.payload.phase);
-  assert.deepEqual(phases, ['scanning', 'paired', 'done']);
-  assert.deepEqual(calls[1].payload.device, {
-    address: 'AA:BB:CC:DD:EE:FF',
-    name: '8BitDo SN30 Pro',
-  });
-  assert.deepEqual(calls[2].payload.paired, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro' },
+test('runPairingWindow: the full lifecycle is relayed in order with the requestId, ending in one done', async () => {
+  const { spawnHelper, args } = fakeHelper([
+    { phase: 'scanning', durationMs: 60000 },
+    { phase: 'seen', device: SFC30 },
+    { phase: 'found', device: SFC30, controllerId: '8bitdo_sfc30' },
+    { phase: 'pairing', device: SFC30, controllerId: '8bitdo_sfc30', attempt: 1, pinConfigured: true },
+    { phase: 'agent', request: 'pin' },
+    { phase: 'bonded', device: SFC30, trusted: true },
+    { phase: 'connecting', device: SFC30, attempt: 1 },
+    { phase: 'hid-wait', device: SFC30, seconds: 15 },
+    { phase: 'hid-retry', device: SFC30 },
+    { phase: 'connecting', device: SFC30, attempt: 2 },
+    { phase: 'hid-wait', device: SFC30, seconds: 15 },
+    { phase: 'paired', device: SFC30, connected: true, input: true },
+    { phase: 'done', paired: [SFC30] },
   ]);
-  assert.deepEqual(paired, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro' },
+  const { send, calls } = makeSendSpy();
+  const paired = await runPairingWindow({ spawnHelper, durationMs: 60000, targets: TARGETS, send, logger: SILENT_LOGGER, requestId: 'pair-9' });
+
+  assert.deepEqual(paired, [SFC30]);
+  assert.deepEqual(calls.map((c) => c.payload.phase), [
+    'scanning', 'seen', 'found', 'pairing', 'agent', 'bonded', 'connecting', 'hid-wait',
+    'hid-retry', 'connecting', 'hid-wait', 'paired', 'done',
   ]);
-
-  // pair/trust/connect happened in order for the device.
-  const pairIdx = execCalls.indexOf('bluetoothctl pair AA:BB:CC:DD:EE:FF');
-  const trustIdx = execCalls.indexOf('bluetoothctl trust AA:BB:CC:DD:EE:FF');
-  const connectIdx = execCalls.indexOf('bluetoothctl connect AA:BB:CC:DD:EE:FF');
-  assert.ok(pairIdx >= 0 && trustIdx > pairIdx && connectIdx > trustIdx);
-
-  // scan was one-shot with --timeout in seconds (4000ms → 4s).
-  assert.ok(execCalls.some((c) => /bluetoothctl --timeout 4 scan on/.test(c)));
+  assert.ok(calls.every((c) => c.topic === 'bt.pair.progress' && c.payload.requestId === 'pair-9'));
+  assert.equal(calls.filter((c) => c.payload.phase === 'done').length, 1);
+  // The helper got the sanitized targets (PIN included) and the window length.
+  assert.deepEqual(args[0], { targets: TARGETS, durationMs: 60000 });
 });
 
-test('runPairingWindow: non-gamepad discovered is skipped (no pair attempt)', async () => {
-  const execCalls = [];
-  const exec = async (cmd) => {
-    execCalls.push(cmd);
-    if (cmd.includes('scan on')) return { stdout: '', stderr: '' };
-    if (cmd === 'bluetoothctl devices') {
-      return { stdout: 'Device 11:22:33:44:55:66 Polar H10', stderr: '' };
-    }
-    if (cmd === 'bluetoothctl info 11:22:33:44:55:66') {
-      return { stdout: '\tName: Polar H10\n\tIcon: heart-rate', stderr: '' };
-    }
-    return { stdout: '', stderr: '' };
-  };
+test('runPairingWindow: nothing seen → done reason none-found is passed through', async () => {
+  const { spawnHelper } = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [], reason: 'none-found' }], { code: 1 });
   const { send, calls } = makeSendSpy();
-
-  const paired = await runPairingWindow({ exec, durationMs: 5000, send, logger: SILENT_LOGGER });
-
+  const paired = await runPairingWindow({ spawnHelper, send, logger: SILENT_LOGGER });
   assert.deepEqual(paired, []);
-  assert.deepEqual(calls.map((c) => c.payload.phase), ['scanning', 'done']);
-  assert.ok(!execCalls.some((c) => c.startsWith('bluetoothctl pair')));
+  assert.equal(calls.at(-1).payload.reason, 'none-found');
 });
 
-test('runPairingWindow: a pair failure emits error phase but still reaches done', async () => {
-  const exec = async (cmd) => {
-    if (cmd.includes('scan on')) return { stdout: '', stderr: '' };
-    if (cmd === 'bluetoothctl devices') {
-      return { stdout: 'Device AA:BB:CC:DD:EE:FF 8BitDo SN30 Pro', stderr: '' };
-    }
-    if (cmd === 'bluetoothctl info AA:BB:CC:DD:EE:FF') {
-      return { stdout: '\tIcon: input-gaming', stderr: '' };
-    }
-    if (cmd === 'bluetoothctl pair AA:BB:CC:DD:EE:FF') {
-      throw new Error('Failed to pair: org.bluez.Error.AuthenticationFailed');
-    }
-    return { stdout: '', stderr: '' };
-  };
+test('runPairingWindow: retry after an auth failure, then a final error, is relayed', async () => {
+  const { spawnHelper } = fakeHelper([
+    { phase: 'scanning' },
+    { phase: 'pairing', device: SFC30, attempt: 1 },
+    { phase: 'retry', device: SFC30, message: 'org.bluez.Error.AuthenticationFailed', attempt: 1 },
+    { phase: 'pairing', device: SFC30, attempt: 2 },
+    { phase: 'error', device: SFC30, message: 'org.bluez.Error.AuthenticationFailed' },
+    { phase: 'done', paired: [], reason: 'pair-failed' },
+  ], { code: 1 });
   const { send, calls } = makeSendSpy();
+  await runPairingWindow({ spawnHelper, send, logger: SILENT_LOGGER });
+  assert.deepEqual(calls.map((c) => c.payload.phase), ['scanning', 'pairing', 'retry', 'pairing', 'error', 'done']);
+  assert.equal(calls.at(-1).payload.reason, 'pair-failed');
+});
 
-  const paired = await runPairingWindow({ exec, durationMs: 3000, send, logger: SILENT_LOGGER });
-
-  const phases = calls.map((c) => c.payload.phase);
-  assert.deepEqual(phases, ['scanning', 'error', 'done']);
-  assert.equal(calls[1].payload.device.address, 'AA:BB:CC:DD:EE:FF');
-  assert.match(calls[1].payload.message, /AuthenticationFailed/);
+test('runPairingWindow: helper exits without a done → error + done helper-crashed (UI never hangs)', async () => {
+  const { spawnHelper } = fakeHelper([{ phase: 'scanning' }, 'Traceback (most recent call last):'], { code: 1 });
+  const { send, calls } = makeSendSpy();
+  const paired = await runPairingWindow({ spawnHelper, send, logger: SILENT_LOGGER });
   assert.deepEqual(paired, []);
+  assert.deepEqual(calls.map((c) => c.payload.phase), ['scanning', 'error', 'done']);
+  assert.equal(calls.at(-1).payload.reason, 'helper-crashed');
 });
 
-test('runPairingWindow: exec throwing entirely → single error progress + done, no throw', async () => {
-  const exec = async () => { throw new Error('command not found: bluetoothctl'); };
+test('runPairingWindow: helper fails to spawn → scanning, error, done', async () => {
+  const { spawnHelper } = fakeHelper([], { error: new Error('spawn python3 ENOENT') });
   const { send, calls } = makeSendSpy();
-
-  const paired = await runPairingWindow({ exec, durationMs: 3000, send, logger: SILENT_LOGGER });
-
-  const phases = calls.map((c) => c.payload.phase);
-  // scanning emitted first, then the scan/devices exec blows up → error, then done.
-  assert.deepEqual(phases, ['scanning', 'error', 'done']);
-  assert.deepEqual(paired, []);
-});
-
-test('runPairingWindow: passes requestId through to progress events', async () => {
-  const exec = async (cmd) => {
-    if (cmd.includes('scan on')) return { stdout: '', stderr: '' };
-    if (cmd === 'bluetoothctl devices') return { stdout: '', stderr: '' };
-    return { stdout: '', stderr: '' };
-  };
-  const { send, calls } = makeSendSpy();
-  await runPairingWindow({ exec, durationMs: 2000, send, logger: SILENT_LOGGER, requestId: 'req-7' });
-  assert.ok(calls.every((c) => c.payload.requestId === 'req-7'));
+  await runPairingWindow({ spawnHelper, send, logger: SILENT_LOGGER });
+  assert.deepEqual(calls.map((c) => c.payload.phase), ['scanning', 'error', 'done']);
+  assert.equal(calls.at(-1).payload.reason, 'helper-failed');
 });
 
 // ── handleBtPairRequest ───────────────────────────────────────────────────
 
-test('handleBtPairRequest: runs a pairing window from the message durationMs', async () => {
-  const exec = async (cmd) => {
-    if (cmd === 'bluetoothctl devices') return { stdout: '', stderr: '' };
-    return { stdout: '', stderr: '' };
-  };
+test('handleBtPairRequest: pauses the inventory for the window; a second request while open is ignored', async () => {
+  const { spawnHelper, args } = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
   const { send, calls } = makeSendSpy();
-  await handleBtPairRequest(
-    { topic: 'bt.pair.request', requestId: 'r1', durationMs: 8000 },
-    { exec, send, logger: SILENT_LOGGER }
-  );
-  assert.equal(calls[0].payload.phase, 'scanning');
-  assert.equal(calls[0].payload.durationMs, 8000);
-  assert.equal(calls[0].payload.requestId, 'r1');
-  assert.equal(calls.at(-1).payload.phase, 'done');
+  const windows = [];
+  const deps = { spawnHelper, send, logger: SILENT_LOGGER, onWindow: (open) => windows.push(open) };
+  const first = handleBtPairRequest({ topic: 'bt.pair.request', requestId: 'r1', durationMs: 60000, targets: TARGETS }, deps);
+  assert.equal(isPairingWindowOpen(), true);
+  const second = await handleBtPairRequest({ topic: 'bt.pair.request', requestId: 'r2' }, deps);
+  await first;
+  assert.deepEqual(second, []);
+  assert.equal(args.length, 1);
+  assert.deepEqual(windows, [true, false]);
+  assert.equal(isPairingWindowOpen(), false);
+  assert.ok(calls.every((c) => c.payload.requestId === 'r1'));
+});
+
+test('handleBtPairRequest: clamps durationMs to 5s–180s', async () => {
+  const { spawnHelper, args } = fakeHelper([{ phase: 'done', paired: [] }]);
+  await handleBtPairRequest({ requestId: 'r3', durationMs: 999999 }, { spawnHelper, send: () => {}, logger: SILENT_LOGGER });
+  assert.equal(args[0].durationMs, 180000);
 });
 
 // ── handleBtRemoveRequest ─────────────────────────────────────────────────
@@ -228,7 +241,7 @@ test('handleBtRemoveRequest: removes a device and emits bt.remove.result success
     { requestId: 'r1', address: 'AA:BB:CC:DD:EE:FF' },
     { exec, send: (t, p) => sent.push([t, p]), logger: SILENT_LOGGER }
   );
-  assert.ok(calls.includes('bluetoothctl remove AA:BB:CC:DD:EE:FF'));
+  assert.ok(calls.includes('bluetoothctl --agent off remove AA:BB:CC:DD:EE:FF'));
   assert.deepEqual(sent, [
     ['bt.remove.result', { requestId: 'r1', address: 'AA:BB:CC:DD:EE:FF', success: true }],
   ]);

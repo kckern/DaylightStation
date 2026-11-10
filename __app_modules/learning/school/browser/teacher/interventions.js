@@ -9,7 +9,9 @@
  */
 import { TEACHER_BASE } from "./teacherUrl.js";
 
-const learnerOps = (learnerId) => `${TEACHER_BASE}/students/${encodeURIComponent(learnerId)}/operations`;
+// One Fix page (owner ruling 2026-10-29): a child's repairs open on it with
+// that child picked; the child's own page carries the same forms in its Fix fold.
+const learnerOps = (learnerId) => `${TEACHER_BASE}/operations?${new URLSearchParams({ learner: learnerId })}`;
 const schoolOps = () => `${TEACHER_BASE}/operations`;
 
 export const INTERVENTIONS = [
@@ -28,43 +30,43 @@ export const INTERVENTIONS = [
   {
     id: 'completion-credit', scope: 'learner', label: 'Give credit for work you saw',
     useWhen: 'They did the work but the tech lost it — no scan, no session, a dead printer.',
-    where: 'Student → Operations.',
+    where: 'Fix, with the child picked (or the child’s page → Fix something).',
     href: learnerOps,
   },
   {
     id: 'program-day-bypass', scope: 'learner', label: 'Excuse today’s piano lesson',
     useWhen: 'Today’s piano lesson shouldn’t be required — recital, illness, travel.',
-    where: 'Student → Operations.',
+    where: 'Fix, with the child picked (or the child’s page → Fix something).',
     href: learnerOps,
   },
   {
     id: 'reassign', scope: 'learner', label: 'Move work to the right child',
     useWhen: 'The wrong child’s name ended up on a lesson.',
-    where: 'Student → Operations.',
+    where: 'Fix, with the child picked (or the child’s page → Fix something).',
     href: learnerOps,
   },
   {
     id: 'curriculum-change', scope: 'school', label: 'Excuse, postpone, swap, or stop a lesson',
     useWhen: 'The lesson itself is the problem — broken, missing, garbled, or not right for now.',
-    where: 'School → Operations.',
+    where: 'Fix, below the child picker.',
     href: schoolOps,
   },
   {
     id: 'stuck-session', scope: 'school', label: 'Clear a lesson that never finished',
     useWhen: 'A lesson is stuck open and blocking new work.',
-    where: 'School → Operations.',
+    where: 'Fix, below the child picker.',
     href: schoolOps,
   },
   {
     id: 'active-changes', scope: 'school', label: 'See what is already changed',
     useWhen: 'You want to know which rules are currently overridden, and by whom.',
-    where: 'School → Operations.',
+    where: 'Fix, below the child picker.',
     href: schoolOps,
   },
   {
     id: 'bulk-regrade', scope: 'school', label: 'Re-mark a whole batch',
     useWhen: 'A grading rule was wrong for many attempts at once.',
-    where: 'School → Operations.',
+    where: 'Fix, below the child picker.',
     href: schoolOps,
   },
 ];

@@ -21,6 +21,7 @@
  * what they were doing and SCAN THE BOOK AGAIN. That is the friction this
  * component now exists to remove.
  */
+import { useEffect, useRef } from 'react';
 import useArmedAction from "../../../../../frontend/src/lib/identity/useArmedAction.js";
 import BookCover from "./BookCover.jsx";
 import LearnerChoice from "./LearnerChoice.jsx";
@@ -61,13 +62,31 @@ function ScanOffer({ book, confirmExit, onOpen, onDismiss }) {
   );
 }
 
-export default function BookScanEntry({ screenId, safe, roster, onLaunch, onOpen = null, confirmExit = false, scopeLearnerId = null }) {
-  const { intent, claiming, error, claim, dismiss, enabled } = useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId });
+export default function BookScanEntry({ screenId, safe, roster, onLaunch, onOpen = null, confirmExit = false, scopeLearnerId = null, shelfLearnerId, pile = false, onShelfScan = null }) {
+  const { intent, claiming, error, claim, dismiss, enabled, shelfScan } = useBookScanEntry({ screenId, safe, onLaunch, scopeLearnerId, shelfLearnerId });
+  // Tell the open shelf, once per change, which scan it is about to take.
+  const shelfScanId = shelfScan?.id ?? null;
+  const shelfScanRef = useRef(shelfScan);
+  shelfScanRef.current = shelfScan;
+  const reportRef = useRef(onShelfScan);
+  reportRef.current = onShelfScan;
+  const reported = useRef(undefined);
+  useEffect(() => {
+    if (reported.current === shelfScanId) return;
+    // Nothing to clear before the first scan: no call until there is news.
+    if (reported.current === undefined && shelfScanId === null) { reported.current = null; return; }
+    reported.current = shelfScanId;
+    const scan = shelfScanRef.current;
+    reportRef.current?.(scan ? { intentId: scan.id, receivedAt: scan.receivedAt ?? null, screenId } : null);
+  }, [shelfScanId, screenId]);
   if (!enabled) return null;
   // A child's shelf is open: the scan is theirs and is claimed for them (see
   // `useBookScanEntry`). Nothing to offer and nobody to ask — only a failure
   // is worth drawing.
   if (scopeLearnerId) return error ? <p className="school-book-scan__notice" role="status">{error}</p> : null;
+  // With the pile (`BookPile`) mounted beside this, an unscoped scan is a card
+  // there; this keeps only the open-shelf claim above.
+  if (pile) return null;
   if (!intent) return error ? <p className="school-book-scan__notice" role="status">{error}</p> : null;
   const book = presentBook(intent.book ?? { isbn13: intent.isbn13 });
   if (!safe) {

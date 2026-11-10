@@ -81,6 +81,23 @@ locally is what stops a cover host being down from blanking a shelf a child is
 standing in front of. A book nobody
 has art for is recorded as a miss and left alone for two weeks.
 
+**The ladder is probed concurrently, but the order still decides.** Walking the
+rungs one at a time cost a round trip per miss (the winning catalogue was often
+rung three, 2-4 s). `ResolveBookCover` now asks every catalogue rung at once
+through `pickByPriority` (`__capabilities/book-catalog/server/domain/`): the
+answer is the lowest-index rung that has a usable cover, once every better rung
+has missed or timed out. A faster, worse cover never beats a slower, better one
+still in flight. A rung still pending is given up on after 2500 ms
+(`CANDIDATE_TIMEOUT_MS`) but only matters once a worse rung has succeeded; with
+no success at all the wait ends at the 6000 ms deadline (`DEADLINE_MS`) and the
+ladder falls through to the web image search and then the drawn cover.
+`books.cover.found` carries `elapsedMs` (probe start to pick) beside `source`
+and `attempts`. `attempts` is the number of rungs whose probe had SETTLED when
+the pick was made, not the number asked (all of them are) — rungs still in
+flight are abandoned uncounted. `tried` still lists the better rungs that
+missed, with the reason (`timeout` for one that never answered or failed
+outright).
+
 **The ladder always ends in a cover.** When every rung misses, the endpoint
 draws one — a coloured board with a spine, a foil frame, the title in a serif
 and the author under a rule, from
@@ -138,8 +155,103 @@ Freshness is separate from operation errors: a failed Undo retains its own
 feedback and correction ID while stale tile/add/history actions stay blocked
 and Retry shelf remains available. The first-book tile follows the same guard.
 
-Done, idle close, unmount, and learner/grant changes invalidate late responses.
+Done, idle close, unmount, and learner changes invalidate late responses. A new
+grant for the same learner (each scan claimed while the shelf is open brings
+one) is used by later requests but does not reload the shelf.
 Pointer, input, and keyboard/scanner activity rearm idle closure.
+
+## Scanning a pile at the Portal
+
+A grown-up can scan a whole stack of books at the Portal without waiting on
+the screen. Every scan becomes a card on a **Books to file** screen
+(`BookPile`, fed by `useBookPile`); nothing is superseded or expires before
+the household study day ends. One session belongs to one child:
+
+- **One tap files the pile.** Tapping a face files every unfiled card to that
+  child as finished on today's study day (no page numbers), including cards
+  left from an earlier session that timed out unfiled.
+- **Filing says so.** The file response carries `filed {learnerId, count,
+  alreadyToday, failed}` — what THAT tap did, in the server's numbers — and the
+  screen shows it as a big **Filed 2 books to Ada** where the faces were. The
+  faces go once nothing is left that a tap could file (a card still being
+  looked up keeps them). On 2026-11-05 a filed pile looked exactly like an
+  unfiled one and a child tapped his face three more times. The confirmation
+  belongs to that filing: a newer scan (server `lastScanAt` past the filing's)
+  or the session ending clears it, so the next child's pile never opens under
+  someone else's banner.
+- **A tap with nothing to file is a no-op.** No reader change, no session
+  bump, and it does not restart the quiet gap (each of those three extra taps
+  used to keep the pile up longer); the server logs
+  `school.book-pile.file-empty` at debug, the panel `book-pile.file-empty`.
+- **The reader sticks.** After a face is tapped, later scans in the session
+  file to that child by themselves, even while the panel is busy.
+- **A quiet gap ends the session.** `PILE_QUIET_GAP_MS` (2 minutes) with no
+  scan or tap clears the reader; unfiled cards stay. One wake per session.
+- **The screen never holds the keypad hostage.** It is full screen only while
+  the session is live (and not set aside with **Later**). After that, unfiled
+  books wait in a corner card (*N books scanned — open when ready*); a pile of
+  nothing but unreadable barcodes raises no card.
+- **Splitting is tucked away.** A card's Change button offers *Give to someone
+  else* and *Remove*. On a filed card both first take back exactly what the
+  pile wrote (no PIN): a reading the pile created is deleted while it holds
+  only the pile's entries; a reading it finished gets the shelf's Undo finish;
+  an *already has it today* card wrote nothing, so the child's own finish is
+  never touched.
+- **Nothing is logged twice.** The same book scanned twice in a session is one
+  card (*Scanned twice*). Filing goes through `FileBookPile`, which looks at
+  the shelf first: an open reading of the book is finished rather than
+  duplicated, and a book that child already finished today is not written
+  again (*… already has it today*). Retries reuse the card's entry keys; a
+  re-file after Undo uses a new attempt.
+- **An open shelf wins.** While a child's shelf is open the pile stands aside
+  (even mid-step, when the shelf is not asking for a barcode), and a scan is
+  claimed for that child through the scoped path as soon as the shelf is
+  scan-ready. A shelf claims only scans made while it is open; a filed or
+  removed card is never offered to it. **Scans that land during one step wait
+  their turn**: on a pile screen (`PrepareBookScan` `pile: true`, which the
+  composition sets — the scan target is always a School panel surface, and
+  every one mounts the pile) nothing is superseded, `pending()` offers the
+  OLDEST live intent, and `GET …/pending` returns the whole `queue`, so the
+  shelf drains them first in, first out. (Until 2026-11-05 the server kept the
+  corner-offer rules here too — the oldest live intent plus only the newest
+  deferred one, with a claim retiring every older one — and with three scans
+  in one step the chip counted books the server had already dropped. A screen
+  without a pile still keeps those rules and logs
+  `school.book-scan.superseded {isbn13, intentId, supersededBy}` (info).) The
+  store stays bounded (32 intents, 5-minute TTL). A card whose intent is gone —
+  dismissed, expired (the server notifies the screen when one expires) or
+  evicted — stays an unfiled card in the pile, and the pile view gives each
+  card its `intentId` (the live one, if a rescan revived it) and `superseded`,
+  so an open shelf lists such a book under its scan chip with `scan it again
+  to open it` (see reading-log.md, "The shelf says at once…").
+
+Filings are the child's own entries (`source: 'panel'`), the same as logging
+from the shelf. The pile lives in memory in `PrepareBookScan`: a backend
+restart loses unfiled cards (the barcodes are still in the relay's day log).
+Routes: `GET /school/book-scans/pile`, `POST …/pile/file`,
+`POST …/pile/:cardId/move`, `POST …/pile/:cardId/remove`. Logs:
+`school.book-pile.*` (backend), `book-shelf` events with `book-pile.*`
+details (panel):
+
+| Event | Where | Fields |
+|-------|-------|--------|
+| `school.book-scan.received` | backend, info | `screenId`, `status`, `isbn13`, `receivedAt`, `capturedAt`, `delayedMs` (the reader's capture time and hold, from the relay gateway — a held or batched scan shows a non-null `delayedMs`) |
+| `school.book-scan.rejected` | backend, warn | `code`, `reason` (`parseBookIdentifier`'s), `device` — a code that names no book, e.g. run-together digits that are not two valid ISBN-13s (two valid ones are split, see `book-scan.split`) |
+| `school.book-pile.card-added` | backend, info | `isbn13`, `duplicate`, `status` |
+| `school.book-scan.superseded` | backend, info | `isbn13`, `intentId`, `supersededBy` — on a screen WITHOUT a pile only: an older pending scan stopped being claimable (a newer scan, or a shelf claim, retired it); its card stays in the pile. Never logged on the Portal, whose scans queue |
+| `school.book-shelf.scan.acknowledged` | panel, info | `screenId`, `msSinceReceived` — the open shelf first showed `Got it — looking it up` for a scan (panel clock minus the server's `receivedAt`) |
+| `school.book-shelf.scan.visible` | panel, info | `screenId`, `msSinceReceived`, `queued` — a scanned book is on the shelf's screen; `queued: true` when it waited first (mid-step on the server, or behind a step in the shelf), so the figure is a wait, not a latency |
+| `school.book-scan.split` | backend, info | `screenId`, `codes` — a 26-digit code whose two 13-digit halves are both valid ISBN-13s, taken as two scans (any other 26-digit code is still one `rejected`) |
+| `school.book-scan.burst-duplicate` | backend, debug | `screenId`, `isbn13`, `msSinceFirst` — the same book scanned again within the 10 s burst window while its earlier card is still live; absorbed into that card. Debug: not in the store at the production info level — count `school.book-pile.card-added` with `duplicate: true` instead |
+| `school.book-shelf.scan.dropped` | panel, warn | `isbn13`, `reason` (`done`, `idle`, `unmount`) — a claimed scan still queued when the shelf closed |
+| `school.book-pile.filed` | backend, info | `learnerId`, `count` (filed), `alreadyToday`, `failed` |
+| `school.book-pile.file-empty` | backend, debug | a tap with nothing to file |
+| `book-pile.filed` | panel, info | `count` (the server's), `pile` (cards on the pile), `alreadyToday`, `failed` |
+| `book-pile.file-empty` | panel, debug | the server filed nothing on this tap |
+| `book-pile.shown` | panel, info | `mode: full \| corner \| hidden`, once per change, with `cards`, `waiting`, `live`, `reader` |
+
+Until 2026-11-05 the panel's `book-pile.filed` logged the pile size as
+`count` (4 for a filing of 2, because claimed cards stay on the pile).
 
 ## Dates and historical data
 

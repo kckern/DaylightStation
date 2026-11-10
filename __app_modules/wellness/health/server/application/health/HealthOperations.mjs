@@ -561,8 +561,8 @@ export class HealthOperations {
   reviseNutritionEntry(input) { return this.nutritionInput.reviseEntry(input); }
   reviseNutritionDish(input) { return this.nutritionInput.reviseDish(input); }
 
-  processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId, selectedIds, clarification }) {
-    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}), ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}) });
+  processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId, selectedIds, clarification, expectedVersions }) {
+    return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}), ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}), ...(expectedVersions !== undefined ? { expectedVersions } : {}) });
   }
 
   runNutritionOperation(userId, operationId, payload, action) {

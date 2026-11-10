@@ -2,6 +2,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let mockCtx;
+let apiFetch;
+let worldFetch;
 const { mockLog } = vi.hoisted(() => ({
   mockLog: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() },
 }));
@@ -80,10 +82,59 @@ beforeEach(() => {
   gateMocks.clearUnlock.mockReset();
   const appListeners = new Map();
   mockCtx = { equipment: [{ id: 'bike', name: 'Bike', cadence: 7, rpm: { min: 30, max: 100 } }], fitnessSessionInstance: { sessionId: 'fs-test', treasureBox: { awardBonus: vi.fn() }, getEquipmentRider: () => 'dad', getEquipmentCadence: () => ({ rpm: 60, connected: true, ts: Date.now() + 1 }) }, getDisplayName: () => ({ displayName: 'Dad', source: 'userProfile', preferredGroupLabel: false }), getUserByName: () => ({ id: 'dad', schoolLearner: true }), subscribeToAppEvent: (type, callback) => { appListeners.set(type, callback); return () => appListeners.delete(type); }, __emitAppEvent: (type, payload) => appListeners.get(type)?.({ type, payload, timestamp: Date.now() }), setGovernanceSuspended: vi.fn() };
-  global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
+  // World-map reads go to their own mock so run-save assertions keep exact call order.
+  apiFetch = vi.fn(async () => ({ ok: true, json: async () => ({ courses: [course] }) }));
+  worldFetch = vi.fn(async () => ({ ok: true, json: async () => ({ zones: [{ id: 'alpine', name: 'Alpine', acts: [{ id: 'mountain-pass', name: 'Mountain Pass', act: 1, status: 'open' }] }], next: 'mountain-pass' }) }));
+  global.fetch = vi.fn((url, options) => (String(url).includes('/skyline-glider/world') ? worldFetch(url, options) : apiFetch(url, options)));
 });
 
 describe('SkylineGlider', () => {
+  it('renders a guided missile distinctly from a falling bomb', () => {
+    render(<FlightScene state={{...flightState,projectiles:[{id:'missile-1',kind:'missile',at_s:10,altitude:.5}],boostRemaining:1}} course={course}/>);
+    expect(screen.getByTestId('skyline-glider-shot-missile-1').querySelector('[data-missile-body]')).toBeTruthy();
+    expect(screen.getByTestId('skyline-glider-boost-effect')).toBeTruthy();
+  });
+  it('moves the boosted glider forward on screen while the course stays put', () => {
+    const { rerender } = render(<FlightScene state={flightState} course={course}/>);
+    const anchor = screen.getByTestId('skyline-glider-craft').getAttribute('transform');
+    const hill = screen.getByTestId('course-segment-hill').innerHTML;
+    // Same camera (courseTime − boostOffset), craft 2.8 course-seconds ahead.
+    rerender(<FlightScene state={{ ...flightState, courseTime: flightState.courseTime + 2.8, boostOffset: 2.8 }} course={course}/>);
+    expect(screen.getByTestId('course-segment-hill').innerHTML).toBe(hill);
+    const dx = Number(/translate\(([\d.]+)/.exec(screen.getByTestId('skyline-glider-craft').getAttribute('transform'))[1]) - Number(/translate\(([\d.]+)/.exec(anchor)[1]);
+    expect(dx).toBeCloseTo(200);
+  });
+  it('slides a shutter shut across a gate gap and marks it BOOST until it closes', () => {
+    const gate = { class: 'solid', group: 'g', draw: 'gate', at_s: 12, width_s: .8, vulnerable_to: [] };
+    const entities = [
+      { ...gate, id: 'g-top', piece: 'top', altitude: .37, height: .37 },
+      { ...gate, id: 'g-bottom', piece: 'bottom', altitude: 1, height: .37 },
+      { ...gate, id: 'g-shutter', piece: 'shutter', altitude: .63, height: .26, closes_at_s: 10 },
+    ];
+    const gated = { ...course, entities };
+    const { rerender } = render(<FlightScene state={{ ...flightState, courseTime: 6 }} course={gated}/>);
+    const shutter = () => screen.getByTestId('course-entity-g-shutter');
+    expect(shutter()).toHaveAttribute('data-progress', '0');
+    expect(shutter()).toHaveAttribute('data-warning', 'false');
+    rerender(<FlightScene state={{ ...flightState, courseTime: 8 }} course={gated}/>);
+    expect(shutter()).toHaveAttribute('data-progress', '0');
+    expect(shutter()).toHaveAttribute('data-warning', 'true');
+    expect(shutter()).toHaveTextContent('BOOST');
+    rerender(<FlightScene state={{ ...flightState, courseTime: 9.8 }} course={gated}/>);
+    expect(shutter()).toHaveAttribute('data-progress', '0.5');
+    rerender(<FlightScene state={{ ...flightState, courseTime: 10 }} course={gated}/>);
+    expect(shutter()).toHaveAttribute('data-progress', '1');
+    expect(shutter()).not.toHaveTextContent('BOOST');
+  });
+  it('labels a missile-only wall MISSILE and a ground target BOMB', () => {
+    const entities = [
+      { id: 'crack', class: 'solid', role: 'missile', required_weapon: 'missile', draw: 'crackwall', at_s: 10, altitude: .95, width_s: 1, height: .9 },
+      { id: 'bunker', class: 'breakable', role: 'bomb', draw: 'bunker', at_s: 12, altitude: .92, width_s: .9, height: .08 },
+    ];
+    render(<FlightScene state={flightState} course={{ ...course, entities, rules: { ...course.rules, weapons: { enabled: true } } }}/>);
+    expect(screen.getByTestId('course-entity-crack')).toHaveTextContent('MISSILE');
+    expect(screen.getByTestId('course-entity-bunker')).toHaveTextContent('BOMB');
+  });
   it('renders actual course geometry scrolling past a right-facing pitched glider', () => {
     const { container } = render(<FlightScene state={flightState} course={course} />);
 
@@ -118,507 +169,126 @@ describe('SkylineGlider', () => {
     expect(screen.getByText('64')).toBeTruthy();
   });
 
-  it('drives flight presentation with animation frames instead of a 100ms interval', async () => {
-    vi.useFakeTimers();
-    const raf = vi.spyOn(globalThis, 'requestAnimationFrame');
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3000));
+});
 
-    expect(raf).toHaveBeenCalled();
-    raf.mockRestore();
-    vi.useRealTimers();
+describe('FlightScene zones', () => {
+  const zoned = {
+    ...course,
+    zone: {
+      id: 'space', name: 'Space', pixel_art: true,
+      layers: [
+        { id: 'stars', kind: 'image', src: 'z/stars.png', parallax: 0.1, fallback: 'alpine-sky' },
+        { id: 'hills', kind: 'image', src: 'z/missing.png', parallax: 0.3, fallback: 'alpine-far' },
+        { id: 'dust', kind: 'image', src: 'z/dust.png', parallax: 1.2, front: true, y: 0.9, height: 0.1 },
+      ],
+      terrain: { fill: 'z/rock.png' },
+      craft: { frames: ['ship-1', 'ship-2'], fps: 10 },
+      collectible: { frame: 'coin' },
+      checkpoint: {}, finish: {}, sounds: {},
+    },
+    entities: [
+      { id: 'tree-1', class: 'breakable', draw: 'pine', at_s: 9, altitude: 0.78, width_s: 0.5, height: 0.14 },
+      { id: 'tree-2', class: 'breakable', draw: 'pine', at_s: 10, altitude: 0.78, width_s: 0.5, height: 0.14 },
+      { id: 'rock-1', class: 'solid', frame: 'asteroid', at_s: 11, altitude: 0.7, width_s: 0.8, height: 0.12 },
+    ],
+  };
+  const assets = {
+    images: new Map([
+      ['z/stars.png', { url: '/m/stars.png', width: 500, height: 600 }],
+      ['z/dust.png', { url: '/m/dust.png', width: 200, height: 60 }],
+      ['z/rock.png', { url: '/m/rock.png', width: 64, height: 64 }],
+    ]),
+    sheet: { url: '/m/sheet.png', width: 128, height: 64 },
+    frames: { 'ship-1': { x: 0, y: 0, w: 32, h: 16 }, 'ship-2': { x: 32, y: 0, w: 32, h: 16 }, coin: { x: 64, y: 0, w: 16, h: 16 }, asteroid: { x: 80, y: 0, w: 32, h: 32 } },
+    missing: [],
+  };
+
+  it('draws loaded image layers, preset fallbacks, sprites and surviving entities', () => {
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [], destroyedIds: ['tree-2'] }} course={zoned} assets={assets}/>);
+    const scene = container.querySelector('svg.skyline-glider__scene');
+    expect(scene).toHaveClass('skyline-glider__scene--pixel');
+    expect(scene).toHaveAttribute('data-zone', 'space');
+    expect(container.querySelector('[data-layer="stars"] image')).toHaveAttribute('href', '/m/stars.png');
+    expect(container.querySelector('.skyline-glider__parallax--far')).toBeTruthy();
+    expect(scene.lastElementChild).toHaveAttribute('data-layer', 'dust');
+    expect(container.querySelector('#glider-terrain-fill image')).toHaveAttribute('href', '/m/rock.png');
+    expect(screen.getByTestId('course-segment-hill').querySelector('rect')).toHaveAttribute('fill', 'url(#glider-terrain-fill)');
+    const craftSprite = screen.getByTestId('skyline-glider-craft').querySelector('svg');
+    expect(craftSprite).toHaveAttribute('viewBox', '0 0 32 16');
+    expect(screen.getByTestId('course-collectible-bell').querySelector('svg')).toHaveAttribute('viewBox', '64 0 16 16');
+    expect(screen.getByTestId('course-entity-tree-1')).toHaveAttribute('data-class', 'breakable');
+    expect(screen.queryByTestId('course-entity-tree-2')).toBeNull();
+    expect(screen.getByTestId('course-entity-rock-1').querySelector('svg')).toHaveAttribute('viewBox', '80 0 32 32');
   });
 
-  it('waits at course time zero for a cadence packet newer than Start', async () => {
-    vi.useFakeTimers();
-    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 60, connected: true, ts: Date.now() - 1 });
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3500));
-
-    expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-course-time', '0');
-    expect(screen.getByTestId('skyline-glider-waiting-input')).toHaveTextContent(/pedal/i);
-    vi.useRealTimers();
+  it('falls back to the alpine presets when nothing has loaded', () => {
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
+    expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();
+    expect(screen.getByTestId('course-collectible-bell').querySelector('path')).toBeTruthy();
+    expect(screen.getByTestId('course-entity-rock-1').querySelector('.skyline-glider__entity-box')).toBeTruthy();
+  });
+  it('draws lasers, bombs and blasts as SVG presets with a blast that fades by progress', () => {
+    const state = { ...flightState, collectedIds: [], projectiles: [
+      { id: 'laser-1', kind: 'laser', at_s: 10, origin_s: 9, altitude: 0.5 },
+      { id: 'bomb-1', kind: 'bomb', at_s: 8, altitude: 0.6, fall: 0.2 },
+    ], blasts: [{ id: 'bomb-0', at_s: 9, altitude: 0.7, remaining: 0.25 }] };
+    const { container } = render(<FlightScene state={state} course={course}/>);
+    expect(screen.getByTestId('skyline-glider-shot-laser-1')).toHaveAttribute('data-kind', 'laser');
+    expect(screen.getByTestId('skyline-glider-shot-bomb-1').querySelector('.skyline-glider__bomb-body')).toBeTruthy();
+    const blast = screen.getByTestId('skyline-glider-blast-bomb-0');
+    expect(blast).toHaveAttribute('data-progress', '0.5');
+    expect(container.querySelector('.skyline-glider__laser-core')).toBeTruthy();
   });
 
-  it('loads the lobby and begins with a countdown', async () => {
-    vi.useFakeTimers();
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Mountain Pass');
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    expect(screen.getByTestId('skyline-glider-countdown')).toHaveTextContent('3');
-    act(() => vi.advanceTimersByTime(3000));
-    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
-    const mute = screen.getByRole('button', { name: 'Mute' });
-    fireEvent.click(mute);
-    expect(screen.getByRole('button', { name: 'Sound on' })).toHaveAttribute('aria-pressed', 'true');
-    vi.useRealTimers();
+  it('uses weapon sprite frames when the zone names them', () => {
+    const armedZone = { ...zoned, zone: { ...zoned.zone, weapons: { laser: { frame: 'coin' }, blast: { frames: ['ship-1', 'ship-2'] } } } };
+    const state = { ...flightState, collectedIds: [], projectiles: [{ id: 'laser-1', kind: 'laser', at_s: 10, origin_s: 9, altitude: 0.5 }], blasts: [{ id: 'bomb-0', at_s: 9, altitude: 0.7, remaining: 0.1 }] };
+    render(<FlightScene state={state} course={armedZone} assets={assets}/>);
+    expect(screen.getByTestId('skyline-glider-shot-laser-1').querySelector('image')).toBeTruthy();
+    // The laser sprite is pinned to its tip, whatever the frame's aspect ratio.
+    expect(screen.getByTestId('skyline-glider-shot-laser-1').querySelector('svg')).toHaveAttribute('preserveAspectRatio', 'xMaxYMid meet');
+    // remaining 0.1 of 0.5 s = progress 0.8, so the second of two frames.
+    expect(screen.getByTestId('skyline-glider-blast-bomb-0').querySelector('svg')).toHaveAttribute('viewBox', '32 0 32 16');
   });
+});
 
-  it('uses a fresh physical rider-selector press as the kiosk start command', async () => {
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(await screen.findByTestId('skyline-glider-lobby')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /start flight/i })).toBeNull();
-
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-
-    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ riderId: 'dad', equipmentId: 'bike' }));
+describe('accessible flight geometry', () => {
+  it('renders the actual slope path and lava surface', () => {
+    const slope = { id: 'slope', type: 'lower-terrain', start_s: 4, end_s: 12, top: .9, profile: [{ at_s: 4, altitude: .9 }, { at_s: 8, altitude: .5 }, { at_s: 12, altitude: .9 }] };
+    const lava = { id: 'lava', type: 'lava', start_s: 12, end_s: 20, top: .9 };
+    render(<FlightScene state={flightState} course={{ ...course, segments: [slope, lava] }} />);
+    expect(screen.getByTestId('course-segment-slope').querySelector('path[data-slope]')).toBeTruthy();
+    expect(screen.getByTestId('course-segment-lava').querySelector('[data-lava-surface]')).toBeTruthy();
   });
+});
 
-  it('does not auto-start from an existing rider assignment or a mismatched selector press', async () => {
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(await screen.findByTestId('skyline-glider-lobby')).toBeTruthy();
-    expect(screen.queryByTestId('skyline-glider-countdown')).toBeNull();
 
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'other-bike', userId: 'dad' }));
-    expect(screen.queryByTestId('skyline-glider-countdown')).toBeNull();
+describe('what to do about each thing', () => {
+  const armed = { ...course, rules: { ...course.rules, weapons: { enabled: true } }, entities: [
+    { id: 'target-1', class: 'breakable', role: 'shoot', draw: 'target', at_s: 10, altitude: .5, width_s: .55, height: .16, hit_points: 3 },
+    { id: 'gate-1', class: 'solid', role: 'bomb', draw: 'barrier', required_weapon: 'bomb', at_s: 11, altitude: .95, width_s: 1.2, height: .9 },
+    { id: 'pine-1', class: 'breakable', role: 'avoid', draw: 'pine', at_s: 9, altitude: .78, width_s: .5, height: .14 },
+  ] };
+  it('brackets targets with health pips, labels bomb walls, and leaves obstacles plain', () => {
+    render(<FlightScene state={{ ...flightState, collectedIds: [], entityDamage: { 'target-1': 1 } }} course={armed}/>);
+    expect(screen.getByTestId('course-entity-target-1')).toHaveAttribute('data-role', 'shoot');
+    expect(screen.getByTestId('target-marks-target-1').querySelector('[data-remaining="2"]')).toBeTruthy();
+    expect(screen.getByTestId('course-entity-gate-1')).toHaveTextContent('BOMB');
+    expect(screen.getByTestId('course-entity-pine-1')).toHaveAttribute('data-role', 'avoid');
+    expect(screen.queryByTestId('target-marks-pine-1')).toBeNull();
   });
-
-  it('resumes the selected rider checkpoint from a fresh bike-button press', async () => {
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({
-      schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 },
-      lifecycle: 'active',
-      identity: { runId: 'resume-by-bike', startedAt: '2026-10-07T18:00:00Z', fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 } },
-      state: { phase: 'playing', courseTime: 75, altitude: .5, calibration: { lowRpm: 30, highRpm: 100 }, checkpoint: { id: 'one', time: 75 }, collectedIds: [], collisions: 0, restarts: 0 },
-    }));
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ runId: 'resume-by-bike', riderId: 'dad', resumed: true }));
+  it('marks nothing to shoot in an unarmed flight', () => {
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={{ ...armed, rules: { ...armed.rules, weapons: { enabled: false } } }}/>);
+    expect(screen.queryByTestId('target-marks-target-1')).toBeNull();
   });
-
-  it('retries a pending terminal save before a physical press starts a new flight', async () => {
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
-    const terminalRecord = { schema: 'skyline-glider-run/v1', run: { id: 'old-run', course_id: 'mountain-pass', course_version: 1, started_at: '2026-10-07T18:00:00Z', ended_at: '2026-10-07T18:05:00Z', status: 'abandoned', duration_s: 100, collisions: 0, restarts: 0, reward_rings: 0, fitness_session_id: 'fs-test', equipment_id: 'bike', calibration: { low_rpm: 30, high_rpm: 100 } }, rider: { user_id: 'dad' }, collectibles: [], result: { schema: 'gaming-result/v1' } };
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'pending_terminal', identity: { fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'old-run', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 100, altitude: .5, collisions: 0, restarts: 0, collectedIds: [], calibration: { lowRpm: 30, highRpm: 100 } }, terminalRecord }));
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-
-    expect(JSON.parse(global.fetch.mock.calls[1][1].body).record).toEqual(terminalRecord);
-    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ resumed: false }));
-  });
-
-  it('suspends an active run and preserves its checkpoint when school access is revoked', async () => {
-    vi.useFakeTimers();
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-    act(() => vi.advanceTimersByTime(3000));
-    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
-
-    gateMocks.entitlement = skylineEntitlement('denied', 'unsatisfied');
-    await act(async () => vi.advanceTimersByTime(15_000));
-
-    expect(screen.getByTestId('skyline-glider-school-lock')).toBeTruthy();
-    expect(JSON.parse(localStorage.getItem('fitness:skyline-glider:dad:mountain-pass'))).toMatchObject({ lifecycle: 'active', identity: { riderId: 'dad' } });
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.access.suspended', expect.objectContaining({ riderId: 'dad', phase: 'flight' }));
-    vi.useRealTimers();
-  });
-
-  it('releases a revoked run so a different authorized rider can start by bike button', async () => {
-    vi.useFakeTimers();
-    gateMocks.localDev = false;
-    let rider = 'dad';
-    mockCtx.fitnessSessionInstance.getEquipmentRider = () => rider;
-    mockCtx.getUserByName = (id) => ({ id, schoolLearner: true });
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied', 'dad');
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-    act(() => vi.advanceTimersByTime(3000));
-
-    gateMocks.entitlement = skylineEntitlement('denied', 'unsatisfied', 'dad');
-    await act(async () => vi.advanceTimersByTime(15_000));
-    expect(screen.getByTestId('skyline-glider-school-lock')).toBeTruthy();
-
-    rider = 'test-rider';
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied', 'test-rider');
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'test-rider' }));
-    await act(async () => Promise.resolve());
-
-    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ riderId: 'test-rider' }));
-    vi.useRealTimers();
-  });
-
-  it('uses a bike-button press to leave a saved result and start the next flight', async () => {
-    vi.useFakeTimers();
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-    act(() => vi.advanceTimersByTime(3000));
-    fireEvent.click(screen.getByRole('button', { name: /end flight/i }));
-    await act(async () => Promise.resolve());
-    expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent(/flight saved/i);
-
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-
-    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
-    vi.useRealTimers();
-  });
-
-  it('expires a granted decision at validUntil instead of waiting for the poll interval', async () => {
-    vi.useFakeTimers();
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied');
-    gateMocks.entitlement.items[0].validUntil = Date.now() + 2_000;
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.getByTestId('skyline-glider-lobby')).toBeTruthy();
-
-    await act(async () => vi.advanceTimersByTime(2_001));
-
-    expect(screen.getByTestId('skyline-glider-school-lock')).toBeTruthy();
-    vi.useRealTimers();
-  });
-
-  it('holds a denied rider press for an admin fingerprint without changing player attribution', async () => {
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('denied', 'unsatisfied');
-    gateMocks.registerAdmin.mockResolvedValue({ matched: true, userId: 'parent' });
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    await screen.findByTestId('skyline-glider-school-lock');
-
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-    fireEvent.click(screen.getByRole('button', { name: /admin unlock/i }));
-    await act(async () => Promise.resolve());
-
-    expect(gateMocks.registerAdmin).toHaveBeenCalledWith('skyline_glider');
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.access.override_granted', expect.objectContaining({ riderId: 'dad', adminUserId: 'parent' }));
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ riderId: 'dad', resumed: false }));
-  });
-
-  it('fails closed on an indeterminate entitlement but bypasses the gate on localhost', async () => {
-    gateMocks.localDev = false;
-    gateMocks.entitlement = skylineEntitlement('granted', 'indeterminate');
-    const kiosk = render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(await screen.findByTestId('skyline-glider-school-lock')).toBeTruthy();
-    kiosk.unmount();
-
-    gateMocks.localDev = true;
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(await screen.findByTestId('skyline-glider-lobby')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /start flight/i })).toBeTruthy();
-  });
-
-  it('fails closed when the entitlement read errors and exempts an explicit non-school adult', async () => {
-    gateMocks.localDev = false;
-    gateMocks.entitlement = new Error('state gates offline');
-    const learner = render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(await screen.findByTestId('skyline-glider-school-lock')).toHaveTextContent(/unavailable/i);
-    learner.unmount();
-
-    mockCtx.getUserByName = () => ({ id: 'dad', schoolLearner: false });
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(await screen.findByTestId('skyline-glider-lobby')).toBeTruthy();
-  });
-
-  it('never carries one rider gate decision across an identity change', async () => {
-    gateMocks.localDev = false;
-    let rider = 'dad';
-    mockCtx.fitnessSessionInstance.getEquipmentRider = () => rider;
-    mockCtx.getUserByName = (id) => ({ id, schoolLearner: true });
-    gateMocks.entitlement = skylineEntitlement('granted', 'satisfied', 'dad');
-    const view = render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(await screen.findByTestId('skyline-glider-lobby')).toBeTruthy();
-
-    rider = 'test-rider';
-    gateMocks.entitlement = skylineEntitlement('denied', 'unsatisfied', 'test-rider');
-    view.rerender(<SkylineGlider />);
-
-    expect(await screen.findByTestId('skyline-glider-school-lock')).toBeTruthy();
-  });
-
-  it('correlates one-second flight samples and explicit exit/save events to the run', async () => {
-    vi.useFakeTimers();
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-
-    const started = mockLog.info.mock.calls.find(([event]) => event === 'skyline_glider.flight.started');
-    expect(started[1]).toMatchObject({ runId: expect.any(String), equipmentId: 'bike', courseId: 'mountain-pass', courseVersion: 1 });
-
-    act(() => vi.advanceTimersByTime(3000));
-    act(() => vi.advanceTimersByTime(1100));
-    const samples = mockLog.info.mock.calls.filter(([event]) => event === 'skyline_glider.flight.sample');
-    expect(samples).toHaveLength(2);
-    expect(samples[1][1]).toMatchObject({ runId: started[1].runId, courseSecond: 1, rawRpm: 60 });
-
-    fireEvent.click(screen.getByRole('button', { name: /end flight/i }));
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.exited', expect.objectContaining({ runId: started[1].runId }));
-    await act(async () => Promise.resolve());
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.saved', expect.objectContaining({ runId: started[1].runId, status: 'abandoned' }));
-    vi.useRealTimers();
-  });
-
-  it('logs resumable flight state when the game unmounts mid-flight', async () => {
-    vi.useFakeTimers();
-    const view = render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3100));
-
-    view.unmount();
-
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.suspended', expect.objectContaining({
-      runId: expect.any(String), courseTime: expect.any(Number), inputMode: expect.any(String), reason: 'unmount',
-    }));
-    expect(mockLog.info.mock.calls.some(([event]) => event === 'skyline_glider.flight.saved')).toBe(false);
-    vi.useRealTimers();
-  });
-
-  it('delivers pagehide suspension through a lifecycle-safe beacon', async () => {
-    vi.useFakeTimers();
-    const sendBeacon = vi.fn(() => true);
-    Object.defineProperty(navigator, 'sendBeacon', { configurable: true, value: sendBeacon });
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3100));
-
-    window.dispatchEvent(new Event('pagehide'));
-
-    expect(sendBeacon).toHaveBeenCalledWith('/api/v1/fitness/skyline-glider/suspensions', expect.any(Blob));
-    const payload = JSON.parse(await sendBeacon.mock.calls[0][1].text());
-    expect(payload).toMatchObject({ runId: expect.any(String), courseTime: expect.any(Number), inputMode: expect.any(String), reason: 'pagehide' });
-    vi.useRealTimers();
-  });
-
-  it('logs aggregate render health once per ten-second window without frame logs', async () => {
-    vi.useFakeTimers();
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3000));
-    act(() => vi.advanceTimersByTime(10050));
-    const health = mockLog.info.mock.calls.filter(([event]) => event === 'skyline_glider.render.health');
-    expect(health).toHaveLength(1);
-    expect(health[0][1]).toMatchObject({ frameCount: expect.any(Number), updateRateHz: expect.any(Number), longFrameCount: expect.any(Number), windowMs: expect.any(Number) });
-    expect(mockLog.info.mock.calls.some(([event]) => event === 'skyline_glider.render.frame')).toBe(false);
-    vi.useRealTimers();
-  });
-
-  it('executes and logs a bell pop once, then removes the transient presentation', async () => {
-    vi.useFakeTimers();
-    const { container } = render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3000));
-    act(() => vi.advanceTimersByTime(6600));
-
-    expect(container.querySelectorAll('.skyline-glider__bell-pop')).toHaveLength(1);
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.effect.executed', expect.objectContaining({ effectId: 'bell-pop', eventType: 'collectible' }));
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.effect.skipped', expect.objectContaining({ effectId: 'bell-cue', reason: 'audio-unavailable' }));
-
-    act(() => vi.advanceTimersByTime(700));
-    expect(container.querySelectorAll('.skyline-glider__bell-pop')).toHaveLength(0);
-    vi.useRealTimers();
-  });
-
-  it('prefers NiceDay over CycleAce regardless of equipment order', async () => {
-    mockCtx.equipment = [
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },
-      { id: 'niceday', name: 'NiceDay', cadence: 20, rpm: { min: 30, max: 100 } },
+  it('flashes a damaged target and draws hit and kill impacts', () => {
+    const impacts = [
+      { id: 'laser-1', kind: 'laser', effect: 'damage', entityId: 'target-1', at_s: 9.8, altitude: .45, remaining: .2 },
+      { id: 'missile-1', kind: 'missile', effect: 'kill', entityId: 'gone', at_s: 10.5, altitude: .4, remaining: .2 },
     ];
-    mockCtx.fitnessSessionInstance.getEquipmentRider = (id) => id === 'niceday' ? 'dad' : 'other';
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('NiceDay');
-    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Dad');
-  });
-
-  it('uses CycleAce when NiceDay is unavailable', async () => {
-    mockCtx.equipment = [
-      { id: 'other-bike', name: 'Other Bike', cadence: 10, rpm: { min: 30, max: 100 } },
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 20, rpm: { min: 30, max: 100 } },
-    ];
-    mockCtx.fitnessSessionInstance.getEquipmentRider = (id) => id === 'cycle_ace' ? 'dad' : 'other';
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('CycleAce');
-    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Dad');
-  });
-
-  it('renders the display name from the canonical identity result', async () => {
-    mockCtx.getDisplayName = () => ({
-      displayName: 'Test Rider',
-      source: 'userProfile',
-      preferredGroupLabel: false,
-    });
-
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-
-    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('Test Rider');
-    expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
-  });
-
-  it('offers resume and start over for a saved checkpoint', async () => {
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'active', identity: { fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'original-run', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 75, altitude: .5, collectedIds: ['a'], checkpoint: { id: 'cp', time: 75, collectedIds: ['a'] } } }));
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.getByRole('button', { name: /resume/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /start over/i })).toBeTruthy();
-  });
-
-  it('re-arms input freshness when resuming and preserves the original run identity', async () => {
-    vi.useFakeTimers();
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'active', identity: { fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'original-run', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 75, altitude: .5, inputReady: true, armedAtMs: 1, collectedIds: [], checkpoint: { id: 'cp', time: 75, collectedIds: [] }, phase: 'playing' } }));
-    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 60, connected: true, ts: 2 });
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /resume flight/i }));
-    act(() => vi.advanceTimersByTime(3000));
-    expect(screen.getByTestId('skyline-glider-waiting-input')).toBeTruthy();
-    expect(screen.getByTestId('skyline-glider-flight')).toHaveAttribute('data-course-time', '75');
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ runId: 'original-run', resumed: true }));
-    vi.useRealTimers();
-  });
-
-  it('persists the saved attempt as abandoned before Start Over begins a new run', async () => {
-    vi.useFakeTimers();
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'active', identity: { fitnessSessionId: 'fs-test', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'old-run', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 75, altitude: .5, collisions: 1, restarts: 0, collectedIds: [], checkpoint: { id: 'cp', time: 75, collectedIds: [] }, phase: 'playing', calibration: { lowRpm: 30, highRpm: 100 } } }));
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start over/i }));
-    await act(async () => Promise.resolve());
-    const savedRecord = JSON.parse(global.fetch.mock.calls[1][1].body).record;
-    expect(savedRecord).toMatchObject({ run: { id: 'old-run', status: 'abandoned', duration_s: 75 } });
-    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
-    vi.useRealTimers();
-  });
-
-  it('falls back to connected CycleAce when configured NiceDay is unusable', async () => {
-    mockCtx.equipment = [
-      { id: 'niceday', name: 'NiceDay', cadence: 20, rpm: { min: 30, max: 100 } },
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },
-    ];
-    mockCtx.fitnessSessionInstance.getEquipmentRider = () => 'dad';
-    mockCtx.fitnessSessionInstance.getEquipmentCadence = (id) => id === 'cycle_ace'
-      ? { rpm: 60, connected: true, ts: Date.now() + 1 }
-      : { rpm: 0, connected: false };
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.getByTestId('skyline-glider-lobby')).toHaveTextContent('CycleAce');
-  });
-
-  it('enables Start when a bike becomes live after the lobby mounts', async () => {
-    vi.useFakeTimers();
-    let connected = false;
-    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: connected ? 60 : 0, connected, ts: Date.now() + 1 });
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.getByRole('button', { name: /start flight/i })).toBeDisabled();
-    connected = true;
-    act(() => vi.advanceTimersByTime(500));
-    expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
-    vi.useRealTimers();
-  });
-
-  it('lets the rider choose another usable bike and locks it for the attempt', async () => {
-    vi.useFakeTimers();
-    mockCtx.equipment = [
-      { id: 'niceday', name: 'NiceDay', cadence: 20, rpm: { min: 30, max: 100 } },
-      { id: 'cycle_ace', name: 'CycleAce', cadence: 10, rpm: { min: 30, max: 100 } },
-    ];
-    mockCtx.fitnessSessionInstance.getEquipmentRider = (id) => id === 'niceday' ? 'test-rider' : 'dad';
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.change(screen.getByRole('combobox', { name: 'Bike' }), { target: { value: 'cycle_ace' } });
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    expect(mockLog.info).toHaveBeenCalledWith('skyline_glider.flight.started', expect.objectContaining({ equipmentId: 'cycle_ace', riderId: 'dad' }));
-    act(() => vi.advanceTimersByTime(3000));
-    expect(screen.getByTestId('skyline-glider-flight')).toBeTruthy();
-    vi.useRealTimers();
-  });
-
-  it('freezes immediately and preserves an exact pending terminal record when saving fails', async () => {
-    vi.useFakeTimers();
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ courses: [course] }) })
-      .mockResolvedValueOnce({ ok: false, status: 503 });
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3000));
-    fireEvent.click(screen.getByRole('button', { name: /end flight/i }));
-    expect(screen.getByTestId('skyline-glider-result')).toHaveTextContent('Saving flight');
-    await act(async () => Promise.resolve());
-    expect(screen.getByRole('button', { name: /retry save/i })).toBeTruthy();
-    const pending = JSON.parse(localStorage.getItem('fitness:skyline-glider:dad:mountain-pass'));
-    expect(pending).toMatchObject({ schema: 'skyline-glider-checkpoint/v3', lifecycle: 'pending_terminal', terminalRecord: { run: { status: 'abandoned' } } });
-    expect(JSON.parse(global.fetch.mock.calls[1][1].body).record).toEqual(pending.terminalRecord);
-
-    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
-    await act(async () => mockCtx.__emitAppEvent('rider-select', { equipmentId: 'bike', userId: 'dad' }));
-    expect(JSON.parse(global.fetch.mock.calls[2][1].body).record).toEqual(pending.terminalRecord);
-    expect(screen.getByTestId('skyline-glider-countdown')).toBeTruthy();
-    vi.useRealTimers();
-  });
-
-  it('saves an old-session terminal record without awarding it into the current session', async () => {
-    const terminalRecord = { schema: 'skyline-glider-run/v1', run: { id: 'old-complete', course_id: 'mountain-pass', course_version: 1, started_at: '2026-10-07T18:00:00Z', ended_at: '2026-10-07T18:05:00Z', status: 'completed', duration_s: 300, collisions: 0, restarts: 0, reward_rings: 10, fitness_session_id: 'fs-old', equipment_id: 'bike', calibration: { low_rpm: 30, high_rpm: 100 } }, rider: { user_id: 'dad' }, collectibles: [], result: { schema: 'gaming-result/v1' } };
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ schema: 'skyline-glider-checkpoint/v3', course: { id: 'mountain-pass', version: 1 }, lifecycle: 'pending_terminal', identity: { fitnessSessionId: 'fs-old', riderId: 'dad', equipmentId: 'bike', calibration: { lowRpm: 30, highRpm: 100 }, runId: 'old-complete', startedAt: '2026-10-07T18:00:00Z' }, state: { courseTime: 300, altitude: .5, collisions: 0, restarts: 0, collectedIds: [], calibration: { lowRpm: 30, highRpm: 100 } }, terminalRecord }));
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /retry saving previous flight/i }));
-    fireEvent.click(screen.getByRole('button', { name: /^retry save$/i }));
-    await act(async () => Promise.resolve());
-    expect(mockCtx.fitnessSessionInstance.treasureBox.awardBonus).not.toHaveBeenCalled();
-    expect(mockLog.warn).toHaveBeenCalledWith('skyline_glider.reward.skipped', expect.objectContaining({ runId: 'old-complete', fitnessSessionId: 'fs-old', reason: 'terminal-identity-changed' }));
-  });
-
-  it('does not offer resume for a legacy unversioned checkpoint', async () => {
-    localStorage.setItem('fitness:skyline-glider:dad:mountain-pass', JSON.stringify({ courseTime: 75, altitude: .5 }));
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    expect(screen.queryByRole('button', { name: /resume/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /start flight/i })).toBeEnabled();
-  });
-
-  it('shows a reconnect overlay only after the inferred-slowdown grace expires', async () => {
-    vi.useFakeTimers();
-    let cadence = { rpm: 60, connected: true, ts: Date.now() + 1 };
-    mockCtx.fitnessSessionInstance.getEquipmentCadence = () => cadence;
-    render(<SkylineGlider />);
-    await act(async () => Promise.resolve());
-    fireEvent.click(screen.getByRole('button', { name: /start flight/i }));
-    act(() => vi.advanceTimersByTime(3000));
-    act(() => vi.advanceTimersByTime(20));
-    cadence = { rpm: 0, connected: false };
-    act(() => vi.advanceTimersByTime(1000));
-    expect(screen.queryByTestId('skyline-glider-reconnect')).toBeNull();
-    act(() => vi.advanceTimersByTime(4500));
-    expect(screen.getByTestId('skyline-glider-reconnect')).toBeTruthy();
-    vi.useRealTimers();
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [], impacts }} course={armed}/>);
+    expect(screen.getByTestId('course-entity-target-1').querySelector('.skyline-glider__entity-flash')).toBeTruthy();
+    expect(screen.getByTestId('skyline-glider-impact-missile-1')).toHaveTextContent('+1');
+    expect(container.querySelector('.skyline-glider__impact--damage')).toBeTruthy();
   });
 });

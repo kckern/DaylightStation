@@ -1,0 +1,445 @@
+/**
+ * GemBoard — every child against every gem, for one week
+ * (`GET /api/v1/earnings/gems`). One shared overlay for the fitness ring
+ * chart and the school agenda. Design:
+ * ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md §5.
+ *
+ * One line per child, in roster order — never ranked. The columns are the gem
+ * rows the response names in `categories`, gathered under its `groups`
+ * (Move, School, Games), each with its name leaning over it; the child's gem
+ * count for the week closes the line. A cell is one glyph (GemGlyph.jsx) and carries no
+ * numerals but a ×n badge. No failure marks: a gem not earned is a blank
+ * cell, a gem still in reach is a full gem inside a ring of done days,
+ * an unreadable source a blank cell too.
+ *
+ * A cell with something behind it opens a detail box (GemDetail.jsx): which
+ * days counted, which milestones were paid, how a contest stands.
+ *
+ * Input: tap (a cell opens its detail), Escape (closes the detail, then the
+ * board), ↑/↓ (move the highlighted child), ←/→ (move a cursor along that
+ * child's gems; past either end it is put away again), Enter (open the cell
+ * under the cursor; with no cursor, or nothing to open there, toggle this
+ * week / last week). A surface with a gamepad hands its button
+ * presses in through `keyRef` (the fitness screen does) — this file reads no
+ * gamepad itself. Closes on its own after `idleMs` without input.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import GemIcon from '@/lib/icons/GemIcon.jsx';
+import GemGlyph, { glyphLook, glyphWords } from './GemGlyph.jsx';
+import AreaIcon, { AREAS } from './AreaIcon.jsx';
+import GemDetail, { detailParts } from './GemDetail.jsx';
+import getLogger from '@/lib/logging/Logger.js';
+import './GemBoard.scss';
+
+let _logger;
+const logger = () => (_logger ||= getLogger().child({ component: 'gem-board' }));
+
+const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Read the board. `fresh` (the default for the overlay: someone just opened
+ * it) re-reads the achievements instead of the server's minute-shared copy;
+ * a background poll passes `fresh: false`.
+ */
+export async function fetchGemBoard(week = null, { fresh = true } = {}) {
+  const params = { ...(week ? { week } : {}), ...(fresh ? { fresh: '1' } : {}) };
+  const qs = Object.keys(params).length ? `?${new URLSearchParams(params)}` : '';
+  const res = await fetch(`/api/v1/earnings/gems${qs}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`gems ${res.status}`);
+  return res.json();
+}
+
+/** The board's size in em (width, height), so the panel can pick the font size that fills the screen. */
+const COL_EM = 4.4;
+export function boardUnits(board) {
+  const sections = boardSections(board);
+  const cols = sections.reduce((n, g) => n + g.rows.length, 0);
+  const kids = board?.learners?.length ?? 0;
+  if (!cols || !kids) return { w: 58, h: 34 };
+  return { w: 15 + cols * COL_EM + sections.length * 0.8, h: 9.4 + kids * 4.6 };
+}
+
+const SHAPE_KEY = 'daylight.gemBoard.shape.v1';
+
+/**
+ * The board's outline (who is on it and which gem columns, in which sections)
+ * with nothing in it. It is kept from one opening to the next so the board can
+ * be drawn at its full size while the read is still out, and the panel does
+ * not jump when the answer lands.
+ */
+export function boardShape(board) {
+  if (!board || board.mode === 'off' || !board.learners?.length || !board.categories?.length) return null;
+  return {
+    learners: board.learners.map(({ learnerId, name }) => ({ learnerId, name })),
+    groups: (board.groups ?? []).map(({ id, label }) => ({ id, label })),
+    categories: board.categories.map(({ id, label, group, area, color }) => ({ id, label, group, area, color })),
+  };
+}
+
+/** The outline kept from the last board read on this screen, or null (first run, storage off, bad entry). */
+export function readBoardShape() {
+  try {
+    const shape = JSON.parse(localStorage.getItem(SHAPE_KEY) ?? 'null');
+    return Array.isArray(shape?.learners) && Array.isArray(shape?.groups) && Array.isArray(shape?.categories)
+      && shape.learners.length && shape.categories.length ? shape : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveBoardShape(board) {
+  const shape = boardShape(board);
+  if (!shape) return;
+  try { localStorage.setItem(SHAPE_KEY, JSON.stringify(shape)); } catch { /* storage off or full: the next opening starts unsized */ }
+}
+
+function Avatar({ id, name }) {
+  const [failed, setFailed] = useState(false);
+  const initials = (name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  if (failed || !id) return <span className="gem-board__avatar gem-board__avatar--fallback">{initials}</span>;
+  return <img className="gem-board__avatar" src={`/api/v1/static/img/users/${id}`} alt="" onError={() => setFailed(true)} />;
+}
+
+/** A cell opens when its detail box would have something to say, however blank the cell looks. */
+const cellOpenable = (cell) => detailParts(cell).length > 0;
+
+/** One child's cell in one gem row. Exported for tests. */
+export function GemCell({ cell, color, area = null, name, rowLabel, onOpen = null, cursor = false }) {
+  const look = glyphLook(cell);
+  const label = `${name}, ${rowLabel}: ${glyphWords(cell)}`;
+  const glyph = <GemGlyph cell={cell} color={color} area={area} />;
+  const openable = onOpen && cellOpenable(cell);
+  return (
+    <div className={`gem-board__cell${cursor ? ' is-cursor' : ''}`} role="cell" data-look={look} data-state={cell?.state ?? 'none'}>
+      {openable
+        ? <button type="button" className="gem-board__open" aria-label={label} onClick={onOpen}>{glyph}</button>
+        : <span className="gem-board__still" role="img" aria-label={label}>{glyph}</span>}
+    </div>
+  );
+}
+
+/**
+ * The board's sections in display order — Move, School, Games, then any other
+ * section a rule names — each with its rows; empty sections dropped.
+ */
+const areaRank = (id) => { const at = AREAS.indexOf(id); return at < 0 ? AREAS.length : at; };
+const boardSections = (board) => (board?.groups ?? [])
+  .map((g, i) => ({ g, i }))
+  .sort((x, y) => areaRank(x.g.id) - areaRank(y.g.id) || x.i - y.i)
+  .map(({ g }) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.group === g.id) }))
+  .filter((g) => g.rows.length);
+
+/** Gem row ids in the order their columns are drawn (for the overlay's left / right keys). */
+export const boardRowIds = (board) => boardSections(board).flatMap((g) => g.rows.map((c) => c.id));
+
+/**
+ * The board itself, from a `/earnings/gems` response. Pure display: no fetch.
+ * One line per child, one column per gem row, columns gathered into their
+ * sections; the column names lean over the columns so thirteen of them fit.
+ * @param {object} props
+ * @param {object} props.board
+ * @param {string|null} [props.focusLearnerId] - the highlighted child (a line)
+ * @param {string|null} [props.cursorRowId] - with the focused child, the one cell under the cursor
+ * @param {((rowId: string, learnerId: string) => void)|null} [props.onOpen] - makes cells with detail into buttons
+ * @param {boolean} [props.pending] - `board` is only an outline (`boardShape`): the names and columns
+ *   are drawn at full size, every cell is a placeholder and the totals are empty
+ */
+export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null, pending = false }) {
+  const learners = board?.learners ?? [];
+  const sections = useMemo(() => boardSections(board), [board]);
+  // Tracks: names | gap, a section's columns | … | gap, totals. Lines: column names, section names, one per child.
+  const layout = useMemo(() => {
+    const tracks = ['max-content'];
+    let col = 2;
+    const placed = sections.map((g) => {
+      tracks.push('var(--gem-gap)', `repeat(${g.rows.length}, var(--gem-col))`);
+      const start = col + 1;
+      col = start + g.rows.length;
+      return { ...g, start, end: col };
+    });
+    tracks.push('var(--gem-gap)', 'max-content');
+    return { placed, totalCol: col + 1, columns: tracks.join(' ') };
+  }, [sections]);
+  const FIRST = 3; // the first child's grid line
+  const at = (row, col, colEnd = null) => ({ gridRow: row, gridColumn: colEnd ? `${col} / ${colEnd}` : col });
+
+  if (!learners.length || !sections.length) {
+    return <div className="gem-board__empty">No gems to show yet.</div>;
+  }
+  const focusAt = learners.findIndex((l) => l.learnerId === focusLearnerId);
+  return (
+    <div className={`gem-board__grid${pending ? ' is-pending' : ''}`} role="table" aria-label="Gems by child" aria-busy={pending ? 'true' : undefined} style={{ gridTemplateColumns: layout.columns }}>
+      {layout.placed.map((g) => (
+        <div key={g.id} className="gem-board__band" data-group={g.id} aria-hidden="true" style={{ gridRow: `2 / ${FIRST + learners.length}`, gridColumn: `${g.start} / ${g.end}` }} />
+      ))}
+      {focusAt >= 0 && <div className="gem-board__lane" aria-hidden="true" style={at(FIRST + focusAt, 1, -1)} />}
+
+      <div className="gem-board__row" role="row">
+        <div className="gem-board__corner" role="columnheader" style={at(1, 1)} />
+        {layout.placed.map((g) => g.rows.map((row, i) => (
+          <div key={row.id} className="gem-board__cat" role="columnheader" data-group={g.id} style={at(1, g.start + i)}><span>{row.label}</span></div>
+        )))}
+      </div>
+      <div className="gem-board__row" role="row">
+        {layout.placed.map((g) => (
+          <div key={g.id} className="gem-board__group-label" role="columnheader" aria-colspan={g.rows.length} data-group={g.id} style={at(2, g.start, g.end)}><AreaIcon area={g.id} />{g.label}</div>
+        ))}
+        <div className="gem-board__total-label" role="columnheader" style={at(2, layout.totalCol)}>This week</div>
+      </div>
+
+      {learners.map((l, li) => {
+        const focus = l.learnerId === focusLearnerId ? ' is-focus' : '';
+        const week = board.totals?.[l.learnerId]?.earned ?? 0;
+        return (
+          <div key={l.learnerId} className="gem-board__row" role="row">
+            <div className={`gem-board__head${focus}`} role="rowheader" style={at(FIRST + li, 1)}>
+              <Avatar id={l.learnerId} name={l.name} />
+              <span className="gem-board__name">{l.name}</span>
+            </div>
+            {layout.placed.map((g) => g.rows.map((row, i) => (
+              <div key={row.id} className={`gem-board__col${focus}`} data-row={row.id} data-learner={l.learnerId} style={at(FIRST + li, g.start + i)}>
+                {pending ? <div className="gem-board__cell" role="cell" /> : <GemCell
+                  cell={board.cells?.[row.id]?.[l.learnerId]}
+                  color={row.color}
+                  area={row.area ?? row.group}
+                  name={l.name}
+                  rowLabel={row.label}
+                  onOpen={onOpen ? () => onOpen(row.id, l.learnerId) : null}
+                  cursor={row.id === cursorRowId && l.learnerId === focusLearnerId}
+                />}
+              </div>
+            )))}
+            {pending
+              ? <div className="gem-board__total" role="cell" style={at(FIRST + li, layout.totalCol)} />
+              : <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} this week`} style={at(FIRST + li, layout.totalCol)}>{week}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The overlay: fetches the board, steps between this week and last, closes on
+ * Escape / backdrop / the close button / idle.
+ * @param {object} props
+ * @param {boolean} props.open
+ * @param {(reason: string) => void} props.onClose
+ * @param {string} props.surface - 'fitness' | 'school' (for logs and styling)
+ * @param {string|null} [props.focusLearnerId]
+ * @param {{current: ((key: string) => void)|null}} [props.keyRef] - a surface's extra input (gamepad)
+ * @param {(week: string|null) => Promise<object>} [props.load] - injectable fetch (tests)
+ * @param {number} [props.idleMs]
+ */
+export default function GemBoardOverlay({
+  open, onClose, surface, focusLearnerId = null, keyRef = null, load = fetchGemBoard, idleMs = 90_000,
+}) {
+  const [weekOffset, setWeekOffset] = useState(0); // 0 this week, -1 last week
+  const [state, setState] = useState({ board: null, error: null, loading: false });
+  const [focus, setFocus] = useState(focusLearnerId);
+  const [rowCursor, setRowCursor] = useState(null); // the gem row under ←/→; with `focus`, one cell
+  const [picked, setPicked] = useState(null); // {rowId, learnerId} of the open detail
+  const openedAt = useRef(0);
+  const thisWeek = useRef(null); // the current week's Monday, once the first read lands
+  const idle = useRef(null);
+  const panelRef = useRef(null);
+  const wasPicked = useRef(null);
+  // The last board's outline, read as the overlay opens: what to draw until this opening's read lands.
+  const shape = useMemo(() => (open ? readBoardShape() : null), [open]);
+
+  const close = useCallback((reason) => {
+    logger().info('gem-board.close', { surface, reason, dwellMs: Date.now() - openedAt.current });
+    onClose?.(reason);
+  }, [onClose, surface]);
+
+  const poke = useCallback(() => {
+    if (idle.current) clearTimeout(idle.current);
+    if (idleMs > 0) idle.current = setTimeout(() => close('timeout'), idleMs);
+  }, [close, idleMs]);
+
+  // Opening: reset to this week, log, arm the idle timer. Closing: drop the
+  // board, the detail and the cursor, so a reopen starts from nothing.
+  useEffect(() => {
+    if (!open) {
+      setPicked(null);
+      setRowCursor(null);
+      setWeekOffset(0);
+      setState({ board: null, error: null, loading: false });
+      thisWeek.current = null;
+      wasPicked.current = null;
+      return undefined;
+    }
+    openedAt.current = Date.now();
+    setWeekOffset(0);
+    setFocus(focusLearnerId);
+    setRowCursor(null);
+    setPicked(null);
+    logger().info('gem-board.open', { surface, focusLearnerId });
+    poke();
+    return () => { if (idle.current) clearTimeout(idle.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Load the wanted week. Last week is asked for by a study day inside it.
+  useEffect(() => {
+    if (!open) return undefined;
+    let live = true;
+    const week = weekOffset === 0 || !thisWeek.current ? null : addDays(thisWeek.current, 7 * weekOffset);
+    setState((s) => ({ ...s, loading: true, error: null }));
+    load(week)
+      .then((board) => {
+        if (!live) return;
+        if (weekOffset === 0 && board?.week) thisWeek.current = board.week;
+        if (weekOffset === 0) saveBoardShape(board);
+        setState({ board, error: null, loading: false });
+      })
+      .catch((err) => {
+        if (!live) return;
+        logger().warn('gem-board.load-failed', { surface, week, error: err?.message ?? String(err) });
+        setState((s) => ({ ...s, error: err, loading: false }));
+      });
+    return () => { live = false; };
+  }, [open, weekOffset, load, surface]);
+
+  // The open detail, when its row, child and cell are all on the board in hand.
+  const detail = useMemo(() => {
+    const board = state.board;
+    if (!picked || !board || board.mode === 'off') return null;
+    const row = (board.categories ?? []).find((c) => c.id === picked.rowId);
+    const learner = (board.learners ?? []).find((l) => l.learnerId === picked.learnerId);
+    const cell = board.cells?.[picked.rowId]?.[picked.learnerId];
+    return row && learner && cell ? { row, learner, cell } : null;
+  }, [picked, state.board]);
+
+  const openDetail = useCallback((rowId, learnerId, via) => {
+    poke();
+    setPicked({ rowId, learnerId });
+    logger().info('gem-board.detail-open', { surface, rowId, learnerId, via });
+  }, [poke, surface]);
+
+  const closeDetail = useCallback((reason) => {
+    poke();
+    if (picked) logger().debug('gem-board.detail-close', { surface, rowId: picked.rowId, learnerId: picked.learnerId, reason });
+    setPicked(null);
+  }, [picked, poke, surface]);
+
+  // Focus goes back to the cell a detail was opened from, once the grid can take it again.
+  useEffect(() => {
+    const from = wasPicked.current;
+    wasPicked.current = picked;
+    if (picked || !from) return;
+    const col = [...(panelRef.current?.querySelectorAll('.gem-board__col') ?? [])]
+      .find((el) => el.dataset.row === from.rowId && el.dataset.learner === from.learnerId);
+    col?.querySelector('.gem-board__open')?.focus();
+  }, [picked]);
+
+  const step = useCallback((offset) => {
+    poke();
+    // Last week is asked for by this week's Monday: not before the first read has landed.
+    if (offset !== 0 && !thisWeek.current) return;
+    if (picked) closeDetail('week');
+    setRowCursor(null);
+    setWeekOffset(offset);
+    logger().debug('gem-board.week-step', { surface, offset });
+  }, [closeDetail, picked, poke, surface]);
+
+  const handleKey = useCallback((key) => {
+    poke();
+    const board = state.board;
+    const ids = (board?.learners ?? []).map((l) => l.learnerId);
+    if (detail) {
+      // The detail is on top: Escape and Enter close it, arrows are swallowed.
+      if (key === 'Escape') { closeDetail('back'); return true; }
+      if (key === 'Enter') { closeDetail('key'); return true; }
+      return key.startsWith('Arrow');
+    }
+    if (key === 'Escape') { close('back'); return true; }
+    if (key === 'Enter') {
+      if (rowCursor && focus && cellOpenable(board?.cells?.[rowCursor]?.[focus])) openDetail(rowCursor, focus, 'key');
+      else step(weekOffset === 0 ? -1 : 0);
+      return true;
+    }
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+      const rows = board && board.mode !== 'off' ? boardRowIds(board) : [];
+      if (!rows.length) return false;
+      setRowCursor((cur) => {
+        const at = rows.indexOf(cur);
+        if (at < 0) return key === 'ArrowLeft' ? rows[rows.length - 1] : rows[0];
+        // Past either end the cursor is put away, so Enter is the week switch again.
+        return rows[key === 'ArrowLeft' ? at - 1 : at + 1] ?? null;
+      });
+      // A cursor needs a child: with none highlighted yet, take the first.
+      if (ids.length) setFocus((cur) => (ids.includes(cur) ? cur : ids[0]));
+      return true;
+    }
+    if ((key === 'ArrowUp' || key === 'ArrowDown') && ids.length) {
+      setFocus((cur) => {
+        const at = ids.indexOf(cur);
+        const next = key === 'ArrowUp' ? (at <= 0 ? ids.length - 1 : at - 1) : (at < 0 || at >= ids.length - 1 ? 0 : at + 1);
+        return ids[next];
+      });
+      return true;
+    }
+    return false;
+  }, [close, closeDetail, detail, focus, openDetail, poke, rowCursor, state.board, step, weekOffset]);
+
+  // Keys go through the latest handler, read at press time. Registering handleKey
+  // itself in an effect leaves a gap between a render (the board landing) and the
+  // effect that swaps the listener: a press in that gap met the previous closure,
+  // which saw no board and dropped the key.
+  const handleKeyRef = useRef(handleKey);
+  handleKeyRef.current = handleKey;
+  const pressKey = useCallback((key) => handleKeyRef.current(key), []);
+
+  useEffect(() => {
+    if (!keyRef) return undefined;
+    keyRef.current = open ? pressKey : null;
+    return () => { keyRef.current = null; };
+  }, [keyRef, open, pressKey]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    // Capture phase, and swallowed: the board is on top, so its keys are its own.
+    const onKey = (e) => { if (pressKey(e.key)) { e.preventDefault(); e.stopPropagation(); } };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, pressKey]);
+
+  if (!open) return null;
+  const { board, error, loading } = state;
+  const units = boardUnits(board && board.mode !== 'off' ? board : shape);
+  const body = (
+    <div className={`gem-board gem-board--${surface}`} role="dialog" aria-modal="true" aria-label="Gem board" onPointerDown={poke}>
+      <div className="gem-board__backdrop" onClick={() => close('tap')} />
+      <div className="gem-board__panel" ref={panelRef} style={{ '--gem-w': units.w, '--gem-h': units.h }}>
+        <div className="gem-board__header">
+          <GemIcon size="1.4em" />
+          <span className="gem-board__title">Gems</span>
+          <div className="gem-board__weeks" role="group" aria-label="Week">
+            <button type="button" className={`gem-board__week${weekOffset === -1 ? ' is-on' : ''}`} disabled={!thisWeek.current} onClick={() => step(-1)}>Last week</button>
+            <button type="button" className={`gem-board__week${weekOffset === 0 ? ' is-on' : ''}`} onClick={() => step(0)}>This week</button>
+          </div>
+          <button type="button" className="gem-board__close" aria-label="Close" onClick={() => close('tap')}>×</button>
+        </div>
+        {error && !board && <div className="gem-board__empty">Can’t load the gems right now.</div>}
+        {!board && !error && !shape && <div className="gem-board__empty">Loading…</div>}
+        {!board && !error && shape && (
+          <div className="gem-board__body" inert="">
+            <GemBoardGrid board={shape} focusLearnerId={focus} pending />
+          </div>
+        )}
+        {board && board.mode === 'off' && <div className="gem-board__empty">Gems are switched off.</div>}
+        {board && board.mode !== 'off' && (
+          <div className={`gem-board__body${loading ? ' is-loading' : ''}`} inert={detail ? '' : undefined}>
+            <GemBoardGrid board={board} focusLearnerId={focus} cursorRowId={rowCursor} onOpen={(rowId, learnerId) => openDetail(rowId, learnerId, 'tap')} />
+          </div>
+        )}
+        {detail && (
+          <GemDetail row={detail.row} learner={detail.learner} cell={detail.cell} windows={board?.windows} today={board?.today} onClose={closeDetail} />
+        )}
+      </div>
+    </div>
+  );
+  return typeof document === 'undefined' ? body : createPortal(body, document.body);
+}

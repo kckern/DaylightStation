@@ -29,6 +29,13 @@ describe('Sheet', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
+  it('placement="side" marks the root; the default has no modifier', () => {
+    const { container, rerender } = wrap(<Sheet open onClose={() => {}} title="T" placement="side">x</Sheet>);
+    expect(container.querySelector('.ds-sheet').classList.contains('ds-sheet--side')).toBe(true);
+    rerender(<MantineProvider><DismissStackProvider><Sheet open onClose={() => {}} title="T">x</Sheet></DismissStackProvider></MantineProvider>);
+    expect(container.querySelector('.ds-sheet').className).toBe('ds-sheet');
+  });
+
   it('locks body scroll while open and restores on unmount', () => {
     const { unmount } = wrap(<Sheet open onClose={() => {}} title="T">x</Sheet>);
     expect(document.body.style.overflow).toBe('hidden');

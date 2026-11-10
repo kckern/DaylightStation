@@ -204,6 +204,30 @@ export function inferProgressMode(book) {
 }
 
 /**
+ * Below this many pages a book is tracked by check-in, not by page.
+ *
+ * A 32-page picture book is read in one sitting; asking which page a child
+ * is on is a question with no useful answer, and a page bar on it reads as
+ * homework. Sixty-four is the conventional upper bound of a picture book.
+ */
+export const PAGE_MODE_MIN_PAGES = 64;
+
+/**
+ * The mode a grown-up's quick log offers first for a book of this length.
+ *
+ * Deliberately not `inferProgressMode`: that one answers the child's own add
+ * flow ("is there a total to draw a bar against?"); this one answers "would a
+ * grown-up logging this book want pages at all?". An unknown length is check
+ * mode, because a page you are "on" needs a total and a guess is not one.
+ *
+ * @param {number|null|undefined} pageCount
+ * @returns {'page'|'check'}
+ */
+export function defaultProgressMode(pageCount) {
+  return Number.isInteger(pageCount) && pageCount >= PAGE_MODE_MIN_PAGES ? 'page' : 'check';
+}
+
+/**
  * Everything the shelf card needs for one book.
  *
  * @param {{progressMode: string, pageCount: number|null, events: object[]}} item

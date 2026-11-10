@@ -3,13 +3,38 @@
  * must distinguish 403 (guest/assigned), 410 (session gone), and 500 (attempt
  * unrecorded — spec §8), and DaylightAPI hides status codes. Never throws.
  */
+import { schoolDeviceHeaders, getSchoolDeviceId } from "./schoolDevice.js";
+
 const BASE = '/api/v1/school';
 
-async function req(path, body, method, headers = {}) {
+// Identical GETs already on the wire, by path. Panels mount side by side and
+// several ask for the same read at once (the report card twice on Reports,
+// curriculum units on most pages, today's Day pair from both the record and
+// the week): one request answers them all. Only while in flight — nothing is
+// cached once it settles, so a later read is always fresh.
+const inFlight = new Map();
+
+function req(path, body, method, headers = {}) {
+  const plainGet = body === undefined && (!method || method === 'GET') && Object.keys(headers).length === 0;
+  if (!plainGet) return send(path, body, method, headers);
+  const pending = inFlight.get(path);
+  // Each caller gets its own copy: a panel that edits its data must not
+  // reach into another's.
+  if (pending) return pending.then((result) => ({ ...result, data: structuredCloneSafe(result.data) }));
+  const started = send(path, body, method, headers).finally(() => inFlight.delete(path));
+  inFlight.set(path, started);
+  return started;
+}
+
+function structuredCloneSafe(value) {
+  try { return value == null ? value : structuredClone(value); } catch { return value; }
+}
+
+async function send(path, body, method, headers = {}) {
   try {
     const opts = body === undefined
-      ? { method: method || 'GET', credentials: 'same-origin', headers }
-      : { method: method || 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) };
+      ? { method: method || 'GET', credentials: 'same-origin', headers: schoolDeviceHeaders(headers) }
+      : { method: method || 'POST', credentials: 'same-origin', headers: schoolDeviceHeaders({ 'Content-Type': 'application/json', ...headers }), body: JSON.stringify(body) };
     const r = await fetch(BASE + path, opts);
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
@@ -28,7 +53,7 @@ async function reqAbsolute(path, { timeoutMs = null } = {}) {
   const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     const r = await fetch(path, {
-      method: 'GET', credentials: 'same-origin', ...(controller ? { signal: controller.signal } : {}),
+      method: 'GET', credentials: 'same-origin', ...(getSchoolDeviceId() ? { headers: schoolDeviceHeaders() } : {}), ...(controller ? { signal: controller.signal } : {}),
     });
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
@@ -50,6 +75,11 @@ export const schoolApi = {
     // The panel's second door: no scan, no printed code. `{screenId, learnerId}`
     // in, a short-lived shelf launch target out (see `OpenBookShelfAtPanel`).
     open: (body) => req('/book-scans/open', body),
+    // The Portal pile: every scan as a card; one learner files them all.
+    pile: screenId => req(`/book-scans/pile?${new URLSearchParams({ screenId })}`),
+    filePile: (body) => req('/book-scans/pile/file', body),
+    moveCard: (cardId, body) => req(`/book-scans/pile/${encodeURIComponent(cardId)}/move`, body),
+    removeCard: (cardId, body) => req(`/book-scans/pile/${encodeURIComponent(cardId)}/remove`, body),
   },
   /**
    * Roster-wide State Gates query. The filters keep this one request for the
@@ -73,10 +103,12 @@ export const schoolApi = {
   earningsRoster: (week = null) => reqAbsolute(
     `/api/v1/earnings/preview${week ? `?${new URLSearchParams({ week })}` : ''}`,
   ),
-  // A learner's lasting coin balance (gold) on the economy ledger.
+  // A learner's wallet: `balances.gold` is the lasting coin; `balance` is the silver figure.
   wallet: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/wallet`),
   earnRules: () => reqAbsolute('/api/v1/earnings/rules'),
   putEarnRates: (learnerId, body) => req(`/teacher/economy/earn-rates/${encodeURIComponent(learnerId)}`, body, 'PUT'),
+  teacherDebriefs: (learnerId, by) => req(`/debrief/teacher/${encodeURIComponent(learnerId)}/history?by=${encodeURIComponent(by)}`),
+  teacherDebriefAction: (learnerId, day, action, body) => req(`/debrief/teacher/${encodeURIComponent(learnerId)}/day/${encodeURIComponent(day)}/${action}`, body, 'POST'),
   putEarnRules: (body) => req('/teacher/economy/earn-rules', body, 'PUT'),
 
   rubiksCubePreview: () => req('/rubiks-cube/preview'),
@@ -209,7 +241,12 @@ export const schoolApi = {
   teacherToday: () => req('/teacher/today'),
   // An omitted day means "today" to the server. Never serialize it as the
   // literal string `undefined`, which is rightly rejected as a malformed date.
-  teacherDay: (studyDay = null) => req(`/teacher/day${studyDay ? `?${new URLSearchParams({ studyDay })}` : ''}`),
+  // `learnerId` scopes the digest to one child (the per-learner Day and week);
+  // without it the server builds the whole household.
+  teacherDay: (studyDay = null, { learnerId = null } = {}) => {
+    const query = new URLSearchParams({ ...(studyDay ? { studyDay } : {}), ...(learnerId ? { learnerId } : {}) });
+    return req(`/teacher/day${query.size ? `?${query}` : ''}`);
+  },
   // Teacher console reads (teacher-console spec §4.3). `teachers` answers
   // `{configured, teachers: [{id, name}]}` — configured:false means the
   // school.yml `teachers:` key is absent entirely.
@@ -245,7 +282,8 @@ export const schoolApi = {
   ),
   assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
   allAssignments: () => req('/lifecycle/assignments'),
-  staleSessions: () => req('/lifecycle/sessions/stale'),
+  // `olderThanDays` omitted → the server's default (7).
+  staleSessions: (olderThanDays = null) => req(`/lifecycle/sessions/stale${olderThanDays ? `?${new URLSearchParams({ olderThanDays: String(olderThanDays) })}` : ''}`),
   abandonSession: (sessionId, body) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/abandon`, body),
   // Settling stuck work by hand (session inspector). Two calls because they
   // are two events — `submitted → graded → outcome_recorded` is the whole
@@ -339,7 +377,9 @@ export const schoolApi = {
   periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
   offerRetake: (sessionId, body) => req(`/teacher/sessions/${encodeURIComponent(sessionId)}/remediation`, body),
-  requestRetake: (body) => req('/retake-requests', body),
+  // No `requestRetake`: on-screen quizzes retake until passed (2026-10-21), so
+  // no browser surface files a retake ask. The server route stays for the
+  // legacy rows still on the backlog (`teacher.md` §12).
   flagConcern: (body) => req('/flags', body),
   // --- Self-service access codes (design §4) -------------------------------
   // `/resolve` NEVER answers with an error status for a bad code: an unknown,
@@ -378,6 +418,26 @@ export const schoolApi = {
   // question, never a precondition for it, and a broken status check must
   // leave a child exactly where they were.
   selfServicePrinterStatus: () => req('/self-service/printer-status'),
+
+  // The Portal's bank strip (school economy slice 1). `economyBank` because
+  // `bank` above is a QUESTION bank: one kid's coins in one read, from the
+  // economy (`{ balances, history, pass, offers, weekEndsAt, weekEndsOn, studyDay }`).
+  economyBank: (learnerId) => reqAbsolute(`/api/v1/economy/users/${encodeURIComponent(learnerId)}/bank`),
+  // The bank screen's panel door (C3): `{screenId, learnerId}` in, an
+  // `economy-bank` launch target out, no grant (see
+  // `OpenBankAtPanel`). A refusal carries `{ error: '<sentence>' }`.
+  bankOpen: (body) => req('/bank/open', body),
+  // The dry run behind the strip's Print label: `{ subject, unit, printable,
+  // reward }`. Opens nothing.
+  nextItem: (learnerId, subject = null) => req(
+    `/self-service/learners/${encodeURIComponent(learnerId)}/next${subject ? `?${new URLSearchParams({ subject })}` : ''}`,
+  ),
+  // "Print my next sheet", no code. Always a kid-facing `sentence` on a 200;
+  // a 404 is an unknown learner or self-service off, a 400 a bad subject.
+  printNext: (learnerId, subject = null, deviceId = null) => req(
+    `/self-service/learners/${encodeURIComponent(learnerId)}/print-next`,
+    { ...(subject ? { subject } : {}), ...(deviceId ? { deviceId } : {}) },
+  ),
   // The mounted screen's own config (`/api/v1/screens/<id>`), which is where
   // lock mode lives (D6: per-screen, so a parent's browser stays browsable).
   // Different base to BASE, hence the raw fetch — same never-throws contract.

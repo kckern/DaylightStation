@@ -62,3 +62,62 @@ it('content-only Fully Kiosk Portal wakes through the broadcast preparation with
   expect(result.ok).toBe(true); expect(device.powerOn).not.toHaveBeenCalled();
   expect(device.prepareForContent).toHaveBeenCalledWith({ skipCameraCheck: true, profile: 'broadcast' });
 });
+
+describe('book pile routes', () => {
+  const app = () => {
+    const bookScans = {
+      pending: vi.fn(() => null),
+      pile: vi.fn(() => ({ screenId: 'portal', cards: [], reader: null, live: false })),
+      filePile: vi.fn(async (args) => ({ screenId: args.screenId, cards: [], reader: args.learnerId })),
+      moveCard: vi.fn(async (args) => ({ moved: args })),
+      removeCard: vi.fn(async (args) => ({ removed: args })),
+      claim: vi.fn(), dismiss: vi.fn(),
+    };
+    const server = express(); server.use(createSchoolBookScansRouter({ bookScans }));
+    server.use((error, _req, res, _next) => res.status(error.status || 500).json({ error: { message: error.message } }));
+    return { server, bookScans };
+  };
+  it('reads the pile for a screen', async () => {
+    const { server, bookScans } = app();
+    const response = await request(server).get('/pile?screenId=portal');
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body.pile).toMatchObject({ cards: [] });
+    expect(bookScans.pile).toHaveBeenCalledWith('portal');
+  });
+  it('files the pile, moves and removes a card', async () => {
+    const { server, bookScans } = app();
+    expect((await request(server).post('/pile/file').send({ screenId: 'portal', learnerId: 'child' })).body.pile.reader).toBe('child');
+    expect(bookScans.filePile).toHaveBeenCalledWith({ screenId: 'portal', learnerId: 'child', cardIds: null });
+    await request(server).post('/pile/file').send({ screenId: 'portal', learnerId: 'child', cardIds: ['c1'] });
+    expect(bookScans.filePile).toHaveBeenLastCalledWith({ screenId: 'portal', learnerId: 'child', cardIds: ['c1'] });
+    await request(server).post('/pile/c1/move').send({ screenId: 'portal', learnerId: 'sibling' });
+    expect(bookScans.moveCard).toHaveBeenCalledWith({ screenId: 'portal', cardId: 'c1', learnerId: 'sibling' });
+    await request(server).post('/pile/c1/remove').send({ screenId: 'portal' });
+    expect(bookScans.removeCard).toHaveBeenCalledWith({ screenId: 'portal', cardId: 'c1' });
+    expect(bookScans.claim).not.toHaveBeenCalled();
+  });
+});
+
+// Final review I1: a pile screen's waiting scans are a queue the panel drains
+// in order; `/pending` carries it beside the head intent.
+describe('pending scans on a pile screen', () => {
+  it('returns the oldest intent and the whole queue, oldest first; a screen without a pile sends no queue', async () => {
+    const make = (pile) => {
+      const service = new PrepareBookScan({ pile, mintId: () => randomBytes(32).toString('base64url'),
+        resolveBook: { execute: async () => ({ status: 'not-found' }) }, roster: () => [{ id: 'child' }], issueLaunchTarget: vi.fn(),
+        target: { deviceId: 'tablet', screenId: 'portal' }, wake: async () => ({ ok: true }), notifications: { bookScanAvailable: vi.fn() } });
+      const server = express(); server.use(createSchoolBookScansRouter({ bookScans: service }));
+      return { service, server };
+    };
+    const portal = make(true);
+    await portal.service.receive({ code: '9780064400558', device: 'reader', eventId: 'a' });
+    await portal.service.receive({ code: '9780064401517', device: 'reader', eventId: 'b' });
+    const body = (await request(portal.server).get('/pending?screenId=portal')).body;
+    expect(body.intent.isbn13).toBe('9780064400558');
+    expect(body.queue.map((i) => i.isbn13)).toEqual(['9780064400558', '9780064401517']);
+    const other = make(false);
+    await other.service.receive({ code: '9780064400558', device: 'reader', eventId: 'a' });
+    expect((await request(other.server).get('/pending?screenId=portal')).body).not.toHaveProperty('queue');
+  });
+});

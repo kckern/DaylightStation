@@ -226,20 +226,32 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Station sequences (playlist pinned head + station IDs between songs; radio-station playlists) | `__docs/reference/player/surround/sequences.md` |
 | Media source healing (Plex refuses a file: proxy 503, Player waits, backend repair ladder) | `__docs/reference/player/media-source-healing.md` |
 | Home Line video calling (state, signaling, recovery, observability) | `__docs/reference/call/README.md` |
+| Real-time game kit (step runner, frame driver, effect dispatcher, tick lerp, run roles, simulated piano clock, gem-ceremony ordering) | `__docs/reference/gaming/realtime-kit.md` |
 | Piano Producer (jam/song builder) | `__docs/reference/piano/producer.md` |
 | Piano tablet screen control (screensaver, manual off holds, power authority) | `__docs/reference/piano/screen-control.md` |
 | Piano grid addressing (keys→squares: permutations, config, difficulty ladder) | `__docs/reference/piano/grid-addressing.md` |
 | Piano game time budget + match gate (daily minutes, played challenge, day files) | `__docs/reference/piano/games-budget-gate.md` |
 | Exercise library (shared corpus: Fitness workouts + School anatomy) | `__docs/reference/fitness/exercise-library.md` |
+| Skyline Glider (cadence flight game: zone/act YAML, sprite + tile assets, sounds, entities, laser/bomb/missile weapons + `vulnerable_to`, gates + boost-dash shutters, step-mat bombardier, world-map progression) | `__docs/reference/fitness/skyline-glider.md` |
+| Garage speaker recovery (HA plug power-cycle on dropout, cap, fitness.garage_speaker.* events) | `__docs/reference/fitness/garage-speaker-recovery.md` |
+| Fitness presence gate (admin fingerprint to open a show / start a video while the supervising adult is away; `presence_gate` config, HA presence read) | `__docs/reference/fitness/presence-gate.md` |
+| Fitness ambience tabs (date-gated `ambience` nav items: looping video + playlist + HA script, e.g. Halloween; `days`/`dates` gating) | `__docs/reference/fitness/ambience.md` |
+| Rider card HR trend (whole-session sparkline: collecting state, log time axis, tick glide, threshold-exact colour) | `__docs/reference/fitness/rider-hr-trend.md` |
 | Fitness suggestions grid (snapshot: built at boot/midnight/after a workout; strategies) | `__docs/reference/fitness/suggestions.md` |
 | Arcade emulator (EmulatorJS boot contract, picture shaders, gamepad routing, fault handling) | `__docs/reference/gaming/emulator-resilience.md` |
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
 | Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |
-| Household economy (coins) | `__docs/reference/economy/economy.md` |
+| Arcade save progress (battery vs state resume, launch card, autosave, Restart vs Erase, recovery, manual restore) | `__docs/reference/gaming/emulator-progress.md` |
+| Controller pairing (garage BT pads: guided steps from input.yml, D-Bus pair helper, bond/HID checks, reconnect, status badges) | `__docs/reference/gaming/controller-pairing.md` |
+| Living-room Controllers screen (home-menu Bluetooth gamepad manager on the Shield: status, Fix, Re-pair from scratch, PIN, audio-bridge `/bluetooth` API) | `__docs/reference/integrations/retroarch.md` (Controllers screen) |
+| Shield RetroArch savestate auto-load (off by default; per-game `resume` in catalog overrides; launch-time override files) | `__docs/reference/gaming/retroarch-game-overrides.md` |
+| Household economy (coins, payouts, early pass; the CoinIcon standard) | `__docs/reference/economy/economy.md` |
 | State Gates (assertions, gate policy, entitlements, replay) | `__docs/reference/state-gates/README.md` |
 | DoNow (household "start this, there, now" dispatch) | `__docs/reference/donow/README.md` |
+| Home dashboard (`/home`: Today timeline lanes, device mosaic, history drawer, doorbell clips, rooms, cameras; `household/home/dashboard.yml` entities/timeline/mosaic policy) | `__docs/reference/home/README.md` |
 | Nutrition (scan-enriched food logging) | `__docs/reference/nutrition/README.md` |
 | Finance transaction categorization (rules, LLM naming, Jev category shadow/promote) | `__docs/reference/finance/categorization.md` |
+| Finance day-to-day burn-down + rebalance (chart, fungible Shopping↔Housewares retags in the hourly sync, `dayToDay.rebalance` rule) | `__docs/reference/finance/day-to-day-rebalance.md` |
 | Health app (log-first food logging, budget, medical) | `__docs/reference/health/README.md` |
 | Nutrition auditor (AI cleanup agent: triggers, gates, permissions, journal, cost) | `__docs/reference/health/nutrition-auditor.md` |
 | AI spend attribution (ledger app/feature/origin, scoped gateways, openai-usage CLI) | `__docs/reference/core/configuration.md` (AI usage ledger) |
@@ -252,11 +264,15 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `__docs/reference/school/reading-log.md` |
 | Living-room reading sessions (card → launch card → book → credit; cold-wake delivery, mid-story adoption) | `__docs/reference/school/reading-sessions.md` |
 | School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `__docs/reference/school/term-grid.md` |
+| School status board coins (coin cell → bank screen, coin ceremony, coin.mp3) | `__docs/reference/school/agenda-and-completion.md` |
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `__docs/reference/school/media-lessons.md` |
-| School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold; formerly "word ladder") | `__docs/reference/school/card-ladder.md` |
-| School day-to-day operations (troubleshooting, logs, hardware, HA grading hook) | `__docs/runbooks/school/README.md` |
+| School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold, weekly dictation from `dictation:` week tags; formerly "word ladder") | `__docs/reference/school/card-ladder.md` |
+| School after-school debrief (outside-school learner: voice/typed day account, AI follow-ups, preview silver) | `__docs/reference/school/school-debrief.md` |
+| School day-to-day operations (troubleshooting, logs, hardware, HA grading hook, presence → lights hook) | `__docs/runbooks/school/README.md` (presence → lights: `__docs/runbooks/school/home-assistant-grading-hook.md` §7) |
 | Push notifications (text standard, school push copy, HA relay contract) | `__docs/reference/notifications/push-standard.md` |
+| Harvester health (failed harvests, failing/stale pushes, token rotation, Withings reconnect) | `__docs/reference/harvesters/health-and-reconnect.md` |
 | NewsReporter framework (scheduled reports) | `__docs/reference/newsreporter/newsreporter-framework.md` |
+| Content filter Admin workshop (library, Make filter runs + filter worker, review list, nudges, review marks, parent sign-off) | `__docs/reference/core/content-filter.md` (Admin workshop) |
 | Webapp design system (tokens, primitives, packs) | `__docs/reference/frontend/design-system.md` |
 
 ---
@@ -459,6 +475,7 @@ If the hostname is unreachable (off-network), go in over SSH instead:
 | `context.source` | `backend` \| `frontend` \| `cron` \| `webhook` |
 | `context.app` | Subsystem — `piano`, `fitness`, `api`, … |
 | `context.module` / `context.component` | Finer unit within the app |
+| `context.deviceId` | Frontend only: which screen (`?device=` on the kiosk URL) |
 | `level` | `debug` \| `info` \| `warn` \| `error` |
 | `_msg` | The dotted event name |
 | `data.*` | Event payload fields, individually queryable |

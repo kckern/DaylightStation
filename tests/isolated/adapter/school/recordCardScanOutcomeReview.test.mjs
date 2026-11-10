@@ -130,3 +130,75 @@ describe('RecordCardScanOutcome — awaiting-review return shape', () => {
     expect(result.items).toHaveLength(2);
   });
 });
+
+describe('RecordCardScanOutcome — ambiguousFallback-scored rows', () => {
+  it('a row scored incorrect with ambiguous:true is never enqueued for review', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-2'));
+    const reviewQueue = fakeReviewQueue();
+    const useCase = new RecordCardScanOutcome({
+      datastore, sessions, reviewQueue, logger: quietLogger,
+    });
+    const card = {
+      cardId: '1234568',
+      recordId: 'arts/quiz-1@abcdef123:v0:1-2',
+      documentId: 'arts/quiz-1',
+      rev: 'abcdef123',
+      variant: 0,
+      learnerId: 'learner4',
+      sessionId: 'ws-2',
+      revisionSuperseded: false,
+      renderedAt: '2026-08-04T00:00:00.000Z',
+      results: [
+        {
+          row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: 'P1', status: 'correct', given: ['A'], points: 1, earned: 1, concepts: [],
+        },
+        {
+          row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'P2', status: 'incorrect', ambiguous: true, given: ['A', 'B'], points: 1, earned: 0, concepts: [],
+        },
+      ],
+      totalPoints: 2,
+      earnedPoints: 1,
+      unscannedItems: [],
+    };
+    const outcome = await useCase.execute({ testId: '1234568', card });
+    expect(reviewQueue.items.some((i) => i.reason === 'ambiguous')).toBe(false);
+    expect(reviewQueue.items.find((i) => i.itemId === 'q2')).toMatchObject({ verdict: 'incorrect', gradedBy: 'engine' });
+    expect(outcome.session.reason).not.toBe('awaiting-review');
+    // The audit trail survives: the verdict sheet row carries the fallback marker.
+    expect(reviewQueue.items.find((i) => i.itemId === 'q2')).toMatchObject({ ambiguous: true });
+    expect(reviewQueue.items.find((i) => i.itemId === 'q2').internalNote).toMatch(/Ambiguous fallback/);
+    const attempt = datastore.readAllAttempts('learner4').find((a) => a.itemId === 'q2');
+    expect(attempt.provenance).toMatchObject({ rowStatus: 'incorrect', ambiguous: true });
+  });
+
+  it('a bleed-resolved row carries bleed + resolvedLetter on its machine mark', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-3'));
+    const reviewQueue = fakeReviewQueue();
+    const useCase = new RecordCardScanOutcome({
+      datastore, sessions, reviewQueue, logger: quietLogger,
+    });
+    const card = {
+      cardId: '1234569', recordId: 'arts/quiz-1@abcdef123:v0:1-2', documentId: 'arts/quiz-1', rev: 'abcdef123', variant: 0,
+      learnerId: 'learner4', sessionId: 'ws-3', revisionSuperseded: false, renderedAt: '2026-08-04T00:00:00.000Z',
+      results: [
+        {
+          row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: 'P1', status: 'correct', given: ['A', 'C'], resolvedLetter: 'A', bleed: 'neighbour', points: 1, earned: 1, concepts: [],
+        },
+        {
+          row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'P2', status: 'correct', given: ['A'], points: 1, earned: 1, concepts: [],
+        },
+      ],
+      totalPoints: 2, earnedPoints: 2, unscannedItems: [],
+    };
+    await useCase.execute({ testId: '1234569', card });
+    const mark = reviewQueue.items.find((i) => i.itemId === 'q1');
+    expect(mark).toMatchObject({ verdict: 'correct', bleed: 'neighbour', resolvedLetter: 'A', given: ['A', 'C'] });
+    expect(mark.internalNote).toMatch(/Neighbour bleed/);
+    expect(reviewQueue.items.find((i) => i.itemId === 'q2').bleed).toBeUndefined();
+    const attempt = datastore.readAllAttempts('learner4').find((a) => a.itemId === 'q1');
+    expect(attempt.provenance).toMatchObject({ bleed: 'neighbour', resolvedLetter: 'A' });
+    expect(attempt.given).toEqual(['A', 'C']);
+  });
+});

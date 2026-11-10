@@ -30,10 +30,10 @@
  */
 
 /* The band's shared literals - the bond's ground and the band's one radius.
-   See `_tokens.scss`: the frame publishes both as custom properties on the
+   See `../themes/_classical-tokens.scss`: the frame publishes both as custom properties on the
    band's region, and these are the fallbacks that keep this module honest when
    it is rendered outside the frame. One literal, one file. */
-@use "../../../../../../__capabilities/playback/browser/surround/tokens" as *;
+@use "../themes/classical-tokens" as *;
 
 .surround-segment-map {
   /* NOT `height: 100%`. The band region is content-sized now, so a percentage

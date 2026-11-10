@@ -15,7 +15,7 @@ export const CARD_LADDER_ROUTE_ROOTS = Object.freeze(['/card-ladder', '/word-lad
 
 export function mountCardLadderRoutes({
   router, wrap, notConfigured, cardLadderStudy = null, cardLadderTest = null, stageScreen = null, capabilityProof = () => null,
-  teacherCapabilitySessions = null, cardLadderTuning = null,
+  teacherCapabilitySessions = null, cardLadderTuning = null, sendFileResource = null,
 }) {
   const noStore = (res) => res.set('Cache-Control', 'private, no-store');
   // Every route answers under `/card-ladder` and, as an alias kept for
@@ -52,6 +52,17 @@ export function mountCardLadderRoutes({
         noStore(res).json(await service().practice({
           userId, sittingId: req.params.sittingId, mode, help, filter, chosen, frontSide,
         }));
+      }));
+      // This week's dictation (spec 2026-11-06): a focused run in the sitting,
+      // before or after the daily goal.
+      router.post(`${base}/sittings/:sittingId/dictation`, wrap(async (req, res) => {
+        const { userId, review = false } = req.body || {};
+        noStore(res).json(await service().startDictation({ userId, sittingId: req.params.sittingId, ...(review === true ? { review: true } : {}) }));
+      }));
+      // The practice menu on request — review is open anytime (owner, 2026-11-06).
+      router.post(`${base}/sittings/:sittingId/menu`, wrap(async (req, res) => {
+        const { userId } = req.body || {};
+        noStore(res).json(await service().menu({ userId, sittingId: req.params.sittingId }));
       }));
       // Learn more words (ruling 2026-09-23): one more guided round over the next new words.
       router.post(`${base}/sittings/:sittingId/learn-more`, wrap(async (req, res) => {
@@ -109,6 +120,27 @@ export function mountCardLadderRoutes({
       const pin = req.query.pin ?? capabilityProof(req) ?? null;
       const actorId = sessionActorId(req) ?? req.query.actorId ?? null;
       noStore(res).json(await live().adminWords({ learnerId, deckId, actorId, pin }));
+    }));
+    // Day by day: every answer the learner gave, and the spoken takes kept.
+    // Reads only, gated like `admin/words` (cookie's teacher, else actorId).
+    const adminRead = (req) => ({
+      learnerId: req.query.learnerId, deckId: req.query.deckId,
+      pin: req.query.pin ?? capabilityProof(req) ?? null,
+      actorId: sessionActorId(req) ?? req.query.actorId ?? null,
+    });
+    router.get(`${root}/admin/days`, wrap(async (req, res) => {
+      noStore(res).json(await live().adminDays(adminRead(req)));
+    }));
+    router.get(`${root}/admin/day`, wrap(async (req, res) => {
+      noStore(res).json(await live().adminDay({ ...adminRead(req), day: req.query.day }));
+    }));
+    router.get(`${root}/admin/recording`, wrap(async (req, res) => {
+      const found = await live().adminRecording({
+        ...adminRead(req), day: req.query.day, wordId: req.query.wordId, take: req.query.take,
+      });
+      if (!found || !sendFileResource) return res.status(404).json({ error: 'recording not found' });
+      noStore(res).type(found.contentType);
+      return sendFileResource(req, res, found.resource);
     }));
     const adminPost = (path, method, fields) => router.post(`${root}/admin/${path}`, wrap(async (req, res) => {
       const body = req.body || {};

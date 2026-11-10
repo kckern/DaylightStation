@@ -238,6 +238,17 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
     });
   }
 
+  // The SERVER decides whether a subject is done today (GetLearnerDayCompletion
+  // via the plan's `obligation`). A settled needs-retry the planner has moved
+  // past — remediation capped, the next unit served and passed — is history,
+  // not owed work. Counting it here made this board say "6 of 7" while the
+  // agenda, term grid and day-complete gate all said done (2026-11-03).
+  const servedSubjects = new Set(planned.filter((section) => section.obligation?.state === 'served').map((section) => section.subject));
+  const servedUnits = new Set(planned.flatMap((section) => (section.servedWork ?? []).map((work) => work.assignmentUnitId ?? work.unitId)));
+  for (const [unitId, segment] of byUnit) {
+    if (segment.state === 'needs-retry' && servedSubjects.has(segment.subject) && !servedUnits.has(unitId)) byUnit.delete(unitId);
+  }
+
   const segments = [...byUnit.values()].map((segment) => {
     const programId = fromEntries.get(segment.unitId)?.program;
     if (programId === 'book-log' || programId === 'story-time') {
@@ -328,14 +339,39 @@ export function earningsByLearner(payload) {
     const week = learner.windows?.school ?? payload?.windows?.school ?? {};
     out[learner.learnerId] = {
       silver: totals.silver,
-      gems: Number.isFinite(totals.gems) ? totals.gems : 0,
-      pendingSilver: Number.isFinite(learner.pending?.silver) ? learner.pending.silver : 0,
-      pendingGems: Number.isFinite(learner.pending?.gems) ? learner.pending.gems : 0,
+      // GEMS ARE THE PROVISIONAL CURRENCY: the gems a child HOLDS this week,
+      // including the ring contest's gem while they lead it (the preview files
+      // that one under `pending` until Saturday noon). One number — it used to
+      // read "0 +1", the held gem drawn as a faded afterthought to a zero.
+      // Pending SILVER is not shown: silver is what was earned (2026-10-21).
+      gems: (Number.isFinite(totals.gems) ? totals.gems : 0)
+        + (Number.isFinite(learner.pending?.gems) ? learner.pending.gems : 0),
       from: week.from ?? null,
       to: week.to ?? null,
+      // What the week has earned so far, line by line, for the bank screen's unpaid-week list.
+      earned: lines
+        .filter((line) => line?.status === 'earned'
+          && ((line.amount?.silver ?? 0) > 0 || (line.amount?.gems ?? 0) > 0))
+        .map((line) => ({
+          ruleId: line.ruleId ?? null,
+          label: line.label ?? line.ruleId ?? 'schoolwork',
+          silver: Number.isFinite(line.amount?.silver) ? line.amount.silver : 0,
+          gems: Number.isFinite(line.amount?.gems) ? line.amount.gems : 0,
+        })),
     };
   }
   return out;
+}
+
+/**
+ * A week's figure, or null when it has no silver or prices another week than
+ * `studyDay` (a cached figure from last week). The coin cell, its door and
+ * the bank screen all ask this one question.
+ */
+export function figureInWeek(figure, studyDay) {
+  if (!figure || !Number.isFinite(figure.silver)) return null;
+  if (studyDay && figure.from && figure.to && (studyDay < figure.from || studyDay > figure.to)) return null;
+  return figure;
 }
 
 /** The most rows a triangle may take: a fourth row shrinks the disc below the

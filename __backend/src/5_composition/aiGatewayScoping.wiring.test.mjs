@@ -19,6 +19,12 @@
  * assigned from a provider adapter constructor, and the adapter-registry
  * lookups for 'ai' / 'decision' plus the hardware TTS adapter.
  * Offenders are listed as file:line.
+ *
+ * Since app modules own their composition (`__app_modules/<cat>/<app>/server/
+ * composition…`), app.mjs may also hand a root to one of their composition
+ * functions (`create…Runtime(…)`, `create…Services(…)`, `install…(…)`). Those
+ * files are scanned too, with the root's own parameter name treated as the
+ * root rather than as a shadowing binding — so the scope has to happen there.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -27,12 +33,22 @@ import path from 'node:path';
 const compositionRoot = path.resolve(import.meta.dirname);
 const srcRoot = path.resolve(compositionRoot, '..');
 
+const repoRoot = path.resolve(srcRoot, '../..');
 const sources = [
   ...fs.readdirSync(compositionRoot, { recursive: true })
     .filter(f => f.endsWith('.mjs') && !f.includes('.test.'))
     .map(f => path.join(compositionRoot, f)),
   path.join(srcRoot, 'app.mjs'),
 ];
+
+/** App-module and capability composition files (the callees app.mjs hands roots to). */
+const moduleCompositionSources = ['__app_modules', '__capabilities'].flatMap((top) => {
+  const base = path.join(repoRoot, top);
+  return fs.readdirSync(base, { recursive: true })
+    .filter(f => f.endsWith('.mjs') && !f.includes('.test.') && !f.includes('node_modules')
+      && /(^|[\\/])server[\\/]composition([\\/]|\.mjs$)/.test(f))
+    .map(f => path.join(base, f));
+});
 
 const NAMED_ROOTS = ['sharedAiGateway', 'decisionGateway', 'aiAnthropicAdapter', 'voiceTranscriptionService'];
 const PROVIDER_CTOR = /\b([A-Za-z_$][\w$]*)\s*=\s*new\s+(?:OpenAIAdapter|AnthropicAdapter|JevAdapter|OpenAITTSAdapter|TelegramVoiceTranscriptionService)\s*\(/g;
@@ -160,20 +176,67 @@ function allowed(text, start, end) {
   if (new RegExp(String.raw`^\s*\??\.\s*scoped\s*(?:\?\.)?\s*\(\s*${TAGS_WITH_APP}`).test(after)) return true;
   // a producer's return
   if (/\breturn\s*(\{[^;]*)?$/.test(before.slice(before.lastIndexOf(';') + 1))) return true;
+  // handed to an app module's composition function, which must scope it (scanned below)
+  const handoff = compositionHandoff(text, start, end);
+  if (handoff) { HANDOFFS.push(handoff); return true; }
   return false;
+}
+
+// Every root app.mjs hands to a module composition: { callee, key }. The callee's
+// file is then scanned with `key` as the root.
+let HANDOFFS = [];
+
+const COMPOSITION_CALL = /\b(create[\w$]*Runtime|create[\w$]*Services|install[A-Z][\w$]*)\s*\(\s*\{/g;
+/** The root at [start, end) as a named property of a composition call's options, or null. */
+function compositionHandoff(text, start, end) {
+  const from = Math.max(0, start - 4000);
+  let callee = null;
+  for (const m of text.slice(from, start).matchAll(COMPOSITION_CALL)) {
+    const open = from + m.index + m[0].length - 1; // the options object's `{`
+    if (matchBracket(text, open) > start) callee = m[1];
+  }
+  if (!callee) return null;
+  const before = text.slice(Math.max(0, start - 200), start);
+  const after = text.slice(end, end + 50);
+  // `get key() { return root; }` — a lazy handoff under the getter's name.
+  if (/\bget\s+$/.test(before) && /^\s*\(\s*\)/.test(after)) return { callee, key: text.slice(start, end) };
+  const keyed = /([\w$]+)\s*:\s*$/.exec(before);
+  if (keyed) return { callee, key: keyed[1] };
+  if (/[{,]\s*$/.test(before) && /^\s*[,}]/.test(after)) return { callee, key: text.slice(start, end) }; // shorthand
+  return null; // positional or computed: cannot be traced, so not allowed
+}
+
+/** [start, end) of function parameter lists and `const { … } =` patterns: declarations of a param. */
+function declarationRanges(text) {
+  const ranges = [];
+  for (const m of text.matchAll(/\(/g)) {
+    const close = matchBracket(text, m.index);
+    const after = text.slice(close + 1, close + 8);
+    const before = text.slice(Math.max(0, m.index - 40), m.index);
+    const isFn = /^\s*=>/.test(after) || (/^\s*\{/.test(after) && /(function\s*[\w$]*\s*|[\w$]+\s*)$/.test(before) && !/\b(if|for|while|switch|catch)\s*$/.test(before));
+    if (isFn) ranges.push([m.index, close]);
+  }
+  for (const m of text.matchAll(/\b(?:const|let)\s*\{/g)) {
+    const open = m.index + m[0].length - 1;
+    const close = matchBracket(text, open);
+    if (/^\s*=/.test(text.slice(close + 1))) ranges.push([open, close]);
+  }
+  return ranges;
 }
 
 let NAMED_OR_BOUND = /$^/;
 
-export function offendersIn(raw, label, { named = [] } = {}) {
+export function offendersIn(raw, label, { named = [], paramsAreRoots = false } = {}) {
   const text = stripNoise(raw);
   const bound = [...text.matchAll(PROVIDER_CTOR)].map(m => m[1]);
   const names = [...new Set([...named, ...bound])];
   NAMED_OR_BOUND = names.length ? new RegExp(`\\b(${names.join('|')})\\b`) : /$^/;
   const found = [];
   const lineOf = (i) => text.slice(0, i).split('\n').length;
+  const declarations = paramsAreRoots ? declarationRanges(text) : [];
   for (const name of names) {
-    const shadows = shadowRanges(text, name);
+    // In a module's composition the parameter IS the root handed in by app.mjs.
+    const shadows = paramsAreRoots ? declarations : shadowRanges(text, name);
     for (const m of text.matchAll(new RegExp(`(^|[^\\w$.])(${name})(?![\\w$])`, 'g'))) {
       const start = m.index + m[1].length;
       const end = start + name.length;
@@ -191,8 +254,18 @@ export function offendersIn(raw, label, { named = [] } = {}) {
 }
 
 function offenders() {
-  return sources.flatMap(file => offendersIn(fs.readFileSync(file, 'utf8'), path.relative(srcRoot, file),
+  HANDOFFS = [];
+  const own = sources.flatMap(file => offendersIn(fs.readFileSync(file, 'utf8'), path.relative(srcRoot, file),
     { named: file.endsWith('app.mjs') ? NAMED_ROOTS : [] }));
+  const handedOff = [];
+  const unresolved = [];
+  for (const { callee, key } of HANDOFFS) {
+    const defines = new RegExp(String.raw`\b(?:function\s+${callee}\s*\(|(?:const|let)\s+${callee}\s*=)`);
+    const files = moduleCompositionSources.filter(file => defines.test(fs.readFileSync(file, 'utf8')));
+    if (!files.length) { unresolved.push(`app.mjs hands ${key} to ${callee}, defined outside a module composition`); continue; }
+    for (const file of files) handedOff.push(...offendersIn(fs.readFileSync(file, 'utf8'), path.relative(repoRoot, file), { named: [key], paramsAreRoots: true }));
+  }
+  return [...own, ...unresolved, ...new Set(handedOff)];
 }
 
 describe('every reference to an unscoped AI gateway is a declaration, a check, or a scope with an app', () => {

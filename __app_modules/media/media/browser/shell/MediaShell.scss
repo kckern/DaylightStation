@@ -508,7 +508,7 @@ $amber-ink: #1a1300;
   }
 }
 
-// Phone: four 44 px controls leave a 390 px handle no room for its own title
+// Phone: four (now five, with Play on a screen) 44 px controls leave a 390 px handle no room for its own title
 // (it measured 40 px wide). A narrower video dock and tighter gaps give the
 // title back about 100 px without hiding or shrinking any control.
 @media (max-width: 480px) {
@@ -519,6 +519,10 @@ $amber-ink: #1a1300;
     padding-right: var(--mantine-spacing-xs);
 
     .mini-player-controls { gap: 2px; }
+
+    // A disabled Next (no next item, e.g. one film) is dead width on a phone:
+    // hidden there so the title stays readable beside Play on a screen.
+    .mini-player-controls .mini-next--none { display: none; }
   }
 }
 
@@ -1395,4 +1399,21 @@ $amber-ink: #1a1300;
 html:has(.media-app) .mantine-Input-input:not(:focus):not([data-expanded="true"]):not([data-error]),
 .media-app .mantine-Input-input:not(:focus):not([data-expanded="true"]):not([data-error]) {
   --input-bd: var(--media-control-line);
+}
+
+// Who is using the device (snapshot.audience), under the card's item.
+.fleet-card-audience {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  &__faces { display: inline-flex; align-items: center; }
+  &__faces img {
+    width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+    // The card's own colour, so the overlap reads as a cutout, not a halo.
+    border: 2px solid var(--mantine-color-dark-5);
+    & + img { margin-left: -6px; }
+  }
+  &__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

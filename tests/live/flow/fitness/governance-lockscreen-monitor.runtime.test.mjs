@@ -103,9 +103,10 @@ test.describe('Governance Lock Screen Monitor', () => {
           const currentZoneClass = [...(currentPill?.classList || [])].find(c => c.startsWith('zone-'))?.replace('zone-', '') || 'none';
           const targetZoneClass = [...(targetPill?.classList || [])].find(c => c.startsWith('zone-'))?.replace('zone-', '') || 'none';
 
-          const progressIndicator = row.querySelector('.governance-lock__progress-indicator span');
-          const progressText = progressIndicator?.textContent?.trim() || null;
-          const progressPercent = progressText ? parseInt(progressText.replace('%', ''), 10) : null;
+          // The bar carries no % label; its fill is scaleX(progress).
+          const progressFill = row.querySelector('.governance-lock__progress-fill');
+          const scaleMatch = progressFill?.style?.transform?.match(/scaleX\(([\d.]+)\)/);
+          const progressPercent = scaleMatch ? Math.round(parseFloat(scaleMatch[1]) * 100) : null;
 
           rows.push({
             name,

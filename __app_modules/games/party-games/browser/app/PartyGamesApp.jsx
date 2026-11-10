@@ -2,9 +2,10 @@
 // playing → results). Mounts the selected game from the registry
 // during 'playing'. Game-agnostic — knows nothing about clues or boards.
 import React, { useReducer, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useWebSocketStatus } from '@/hooks/useWebSocket.js';
+import { useWebSocketStatus, useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { flowReducer, initialFlowState } from "./flowReducer.js";
-import { fetchBoot, createSession } from "./sessionClient.js";
+import { fetchSession } from "../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
+import { fetchBoot, createSession, canResumeSavedSession } from "./sessionClient.js";
 import TeamSetup from "../setup/TeamSetup.jsx";
 import { useBuzzers } from "../interaction/useBuzzers.js";
 import TitleCard from "../../../../../__capabilities/gaming/browser/platform/ui/TitleCard.jsx";
@@ -14,10 +15,12 @@ import "./PartyGamesApp.scss";
 import { useScopedRemoteControls } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import getLogger from '@/lib/logging/Logger.js';
 import "../../../../../__capabilities/gaming/browser/platform/ui/fonts.js";
-import { acquireGamepadInputHost, bindNextGamepadPress } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { acquireGamepadInputHost, bindNextGamepadPress, cancelPendingGamepadBind, clearGamepadRoleBindings } from "../../../../../__capabilities/screen-host/browser/input.mjs";
+import { saveBuzzerBindings, loadBuzzerBindings, forgetBuzzerBindings } from "./buzzerBindingStore.js";
 import { getActionBus } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 import EffectOverlay from "../effects/EffectOverlay.jsx";
 import PartyGamesExperience from "./PartyGamesExperience.jsx";
+import { AudioCueEngine } from "../effects/AudioCueEngine.js";
 import PartyStage from "../../../../../__capabilities/gaming/browser/platform/ui/PartyStage.jsx";
 import GameButton from "../../../../../__capabilities/gaming/browser/platform/ui/GameButton.jsx";
 import CompanionPanel from "../../../../../__capabilities/gaming/browser/platform/ui/CompanionPanel.jsx";
@@ -37,6 +40,10 @@ function BuzzerBind({ seats, onDone, onBack }) {
     const boundByGamepad = (event) => { if (event.detail?.phase === 'press' && event.detail.role_binding) setBound((value) => ({ ...value, [event.detail.role_binding]: true })); };
     window.addEventListener('gaming:interaction', boundByGamepad); return () => window.removeEventListener('gaming:interaction', boundByGamepad);
   }, []);
+  // A pending gamepad bind swallows the next controller press. Drop it once the
+  // team is bound by any source (key, WS, gamepad) and when this screen leaves.
+  useEffect(() => { if (!bindingTeamId) cancelPendingGamepadBind(); }, [bindingTeamId]);
+  useEffect(() => () => cancelPendingGamepadBind(), []);
   // Bindings live in THIS phase's arbiter; onDone hands them to the flow so
   // the game's own arbiter can restore them (they'd be lost otherwise).
   return (
@@ -50,7 +57,7 @@ function BuzzerBind({ seats, onDone, onBack }) {
           {team.name}: {bindingTeamId === team.id ? 'Press your buzzer…' : (bound[team.id] ? 'Bound ✓' : `Buzzer ${team.slot?.replace('slot_', '') || '?'}`)}
         </button>
       ))}</div>
-      <div className="party-games__bind-actions"><GameButton tone="quiet" onClick={onBack}>Back</GameButton><GameButton tone="primary" autoFocus onClick={() => onDone(arbiter.bindings())}>Start game</GameButton></div>
+      <div className="party-games__bind-actions"><GameButton tone="quiet" onClick={() => { clearGamepadRoleBindings(); onBack(); }}>Back</GameButton><GameButton tone="primary" autoFocus onClick={() => onDone(arbiter.bindings())}>Start game</GameButton></div>
     </div>
   );
 }
@@ -60,6 +67,9 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const shellExit = dismiss || clear;
   const rootRef = useRef(null);
   const creation = useRef(null);
+  const audioRef = useRef(null);
+  const completedSession = useRef(null);
+  const currentSession = useRef(null);
   const [launch] = useState(() => {
     const raw = definitionId || param || appPath || '';
     const queryIndex = raw.indexOf('?');
@@ -97,6 +107,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     window.history.replaceState({}, '', returnTo);
   }, [returnTo]);
   const exit = useCallback(() => {
+    audioRef.current?.stopAll('app-exit');
     if (needsDocumentReturn) {
       window.location.replace(returnTo);
       return;
@@ -105,8 +116,11 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   }, [needsDocumentReturn, returnTo, restoreLocation, shellExit]);
   const [attachment, setAttachment] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    const diagnosticSessionId = params.get('diagnostic_session');
-    const explicitSessionId = params.get('session');
+    // Embedded previews must not inherit a previous game's ambient URL attachment.
+    const directRoute = /^\/screens?\/[^/]+\/(?:party-games(?:\/|$)|fhe\/charades(?:\/test)?$)/.test(window.location.pathname)
+      || /^\/app\/party-games(?:\/|$)/.test(window.location.pathname);
+    const diagnosticSessionId = directRoute ? params.get('diagnostic_session') : null;
+    const explicitSessionId = directRoute ? params.get('session') : null;
     let savedSessionId = null;
     if (!diagnosticSessionId && !explicitSessionId && requestedDefinition) {
       try { savedSessionId = window.localStorage.getItem(activeSessionKey(requestedDefinition)); }
@@ -115,6 +129,10 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     return { diagnosticSessionId, sessionId: explicitSessionId || savedSessionId, savedSession: Boolean(savedSessionId) };
   });
   const [flow, dispatchFlow] = useReducer(flowReducer, initialFlowState);
+  currentSession.current = flow.sessionId;
+  const audio = useMemo(() => new AudioCueEngine({ pack: flow.config?.sounds?.pack, mute: flow.config?.defaults?.mute }), [flow.config?.sounds?.pack, flow.config?.defaults?.mute]);
+  audioRef.current = audio;
+  useEffect(() => () => audio.stopAll('owner-unmount'), [audio]);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [confirmExit, setConfirmExit] = useState(false);
   const logger = useMemo(() => getLogger().child({ component: 'party-games' }), []);
@@ -128,6 +146,12 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     forwardActionRef.current = handler;
     return () => { if (forwardActionRef.current === handler) forwardActionRef.current = null; };
   }, []);
+  // Experiences can claim remote actions before shell focus/back handling.
+  const remoteActionRef = useRef(null);
+  const registerRemoteAction = useCallback((handler) => {
+    remoteActionRef.current = handler;
+    return () => { if (remoteActionRef.current === handler) remoteActionRef.current = null; };
+  }, []);
   const requestExit = useCallback(() => {
     if (confirmExit) { logger.info('party-games.exit-cancelled', { sessionId: flow.sessionId }); setConfirmExit(false); return; }
     if (backActionRef.current?.()) return;
@@ -138,15 +162,19 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     exit();
   }, [confirmExit, exit, flow.phase, flow.sessionId, logger]);
   const requestDirectionalBack = useCallback(() => {
-    if (flow.phase !== 'playing') return false;
-    requestExit(); return true;
-  }, [flow.phase, requestExit]);
+    if (flow.phase !== 'playing' || confirmExit) return false;
+    return backActionRef.current?.() === true;
+  }, [flow.phase, confirmExit]);
   const requestAdvance = useCallback(() => {
     if (flow.phase !== 'playing' || confirmExit) return false;
     return forwardActionRef.current?.() ?? false;
   }, [confirmExit, flow.phase]);
-  useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance });
-  // Spec §9: WS disconnect badge — buzzer modes degrade to keyboard/inject.
+  const offerRemoteAction = useCallback((remote) => {
+    if (flow.phase !== 'playing' || confirmExit) return false;
+    return remoteActionRef.current?.(remote) === true;
+  }, [confirmExit, flow.phase]);
+  useScopedRemoteControls(rootRef, { onEscape: requestExit, onLeft: requestDirectionalBack, onRight: requestAdvance, onAction: offerRemoteAction });
+  // Keep disconnect guidance specific to the mounted controller model.
   const { connected } = useWebSocketStatus();
 
   useEffect(() => {
@@ -154,11 +182,57 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     return () => lease.release();
   }, []);
 
+  const restarting = useRef(null);
+  const followReplacement = useCallback((sourceId, replacement, source = null) => {
+    const activeId = flow.sessionId || attachment.diagnosticSessionId || attachment.sessionId;
+    if (!replacement || sourceId !== activeId || restarting.current === sourceId) return;
+    restarting.current = sourceId;
+    audioRef.current?.stopAll('session-restart');
+    logger.info('party-games.session-restarting', {sessionId: flow.sessionId, replacementSessionId: replacement});
+    // Team IDs survive restart; carry hardware roles into the newly keyed arbiter.
+    const bindings = flow.buzzerBindings ?? loadBuzzerBindings(sourceId);
+    const teamIds = new Set((source?.header?.seats || flow.seats).map(team => team.id));
+    if (bindings) saveBuzzerBindings(replacement, Object.fromEntries(Object.entries(bindings).filter(([, teamId]) => teamIds.has(teamId))));
+    forgetBuzzerBindings(sourceId);
+    creation.current = null;
+    backActionRef.current = null; forwardActionRef.current = null; remoteActionRef.current = null;
+    setConfirmExit(false);
+    dispatchFlow({type: 'SESSION_RESTARTING'});
+    setAttachment({diagnosticSessionId: replacement.startsWith('diagnostic:') ? replacement : null, sessionId: replacement.startsWith('diagnostic:') ? null : replacement, savedSession: false});
+  }, [flow.sessionId, flow.buzzerBindings, flow.seats, attachment, logger]);
+  useWebSocketSubscription('gaming', (message) => {
+    if (message?.kind === 'session-restarted') followReplacement(message.sessionId, message.replacementSessionId);
+  }, [followReplacement]);
+  const wasConnected = useRef(connected);
+  useEffect(() => {
+    const reconnected = connected && !wasConnected.current;
+    wasConnected.current = connected;
+    if (!reconnected || !flow.sessionId) return;
+    let cancelled = false;
+    fetchSession(flow.sessionId).then(session => {
+      if (!cancelled) followReplacement(flow.sessionId, session.replacementSessionId, session);
+    }).catch(error => {
+      if (cancelled) return;
+      logger.warn('party-games.restart-reconcile-failed', { sessionId: flow.sessionId, message: error.message });
+      dispatchFlow({ type: 'BOOT_FAILED', error: error.message });
+    });
+    return () => { cancelled = true; };
+  }, [connected, flow.sessionId, followReplacement, logger]);
+
   useEffect(() => {
     let cancelled = false;
     fetchBoot({ diagnosticSessionId: attachment.diagnosticSessionId, sessionId: attachment.sessionId })
       .then(({ config, sets, attachedSession }) => {
         if (!cancelled) {
+          const attachedDefinition = attachedSession?.diagnostic?.definition_id || attachedSession?.header?.artifacts?.rules_definition?.id;
+          if (requestedDefinition && attachedDefinition && attachedDefinition !== requestedDefinition) throw new Error('Attached session belongs to a different game definition');
+          if (attachedSession?.replacementSessionId) {
+            followReplacement(attachedSession.header.session_id, attachedSession.replacementSessionId, attachedSession);
+            return;
+          }
+          if (attachedSession && attachment.savedSession && !canResumeSavedSession(attachedSession, sets.find(set => set.definitionId === requestedDefinition))) {
+            throw new Error('Saved session uses an older team setup');
+          }
           if (attachedSession) {
             const expectedPolicy = launch.historyPolicy === 'disabled' ? 'disabled' : 'recorded';
             const actualPolicy = attachedSession.state?.charades_history_policy;
@@ -197,6 +271,13 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     } catch { /* URL attachment still preserves refresh recovery when storage is unavailable. */ }
   }, [flow.definitionId, flow.phase, flow.sessionId, launch.historyPolicy]);
 
+  useEffect(() => {
+    if (flow.phase === 'playing' && flow.sessionId && flow.buzzerBindings) saveBuzzerBindings(flow.sessionId, flow.buzzerBindings);
+    // Keep roles available for a host restart from completed results.
+  }, [flow.phase, flow.sessionId, flow.buzzerBindings]);
+  // A refreshed page has no flow bindings; the saved ones keep controllers bound.
+  const buzzerBindings = useMemo(() => flow.buzzerBindings ?? loadBuzzerBindings(flow.sessionId), [flow.buzzerBindings, flow.sessionId]);
+
   // Reuse the pending creation during StrictMode effect replay; obsolete flows
   // cancel their attachment even if the HTTP response arrives later.
   useEffect(() => {
@@ -218,6 +299,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   useLayoutEffect(() => {
     if (!flow.definitionId || !['team-setup', 'buzzer-bind', 'playing', 'results'].includes(flow.phase)) return;
     const screenBase = window.location.pathname.match(/^(\/screens?\/[^/]+)/)?.[1];
+    if (!screenBase && !/^\/app\/party-games(?:\/|$)/.test(window.location.pathname)) return;
     const location = new URL(window.location.href);
     if (screenBase) location.pathname = friendlyPath || `${screenBase}/party-games/${flow.definitionId}`;
     location.searchParams.set('return_to', returnTo);
@@ -228,19 +310,31 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     window.history.replaceState({}, '', `${location.pathname}${location.search}`);
   }, [flow.definitionId, flow.phase, flow.sessionId, returnTo, launch, friendlyPath]);
   const playAgain = () => {
+    audio.stopAll('game-restart');
     creation.current = null;
     try { if (flow.definitionId) window.localStorage.removeItem(activeSessionKey(flow.definitionId)); } catch { /* continue */ }
     restoreLocation(); dispatchFlow({ type:'PLAY_AGAIN' });
   };
 
-  const onComplete = useCallback((result) => { dispatchFlow({ type: 'GAME_FINISHED', result }); }, []);
+  const onComplete = useCallback((result) => {
+    const sessionId = flow.sessionId;
+    if (!sessionId || currentSession.current !== sessionId || completedSession.current === sessionId) return;
+    completedSession.current = sessionId;
+    dispatchFlow({ type: 'GAME_FINISHED', result });
+  }, [flow.sessionId]);
 
+  const isJeopardy = flow.presenterId === 'jeopardy-board';
   const Game = EXPERIENCE_REGISTRY[flow.presenterId]?.component;
 
   return (
-    <div ref={rootRef} className="party-games-container"><PartyStage className="party-games" theme={flow.theme?.id} phase={flow.phase}>
-      {flow.error && <div className="party-games__error" role="alert"><strong>Party Games needs attention</strong><span>{flow.error}</span><div><GameButton onClick={() => setBootAttempt((value) => value + 1)}>Retry</GameButton><GameButton tone="quiet" onClick={exit}>Exit</GameButton></div></div>}
-      {!connected && <div className="party-games__ws-warn" role="status"><strong>Controllers offline</strong><span>Keyboard and on-screen controls still work.</span></div>}
+    <div ref={rootRef} className="party-games-container"><PartyStage className={`party-games${isJeopardy ? ' party-games--jeopardy' : ''}`} theme={flow.theme?.id} phase={flow.phase}>
+      {flow.error && <div className="party-games__error" role="alert"><strong>Party Games needs attention</strong><span>{flow.error}</span><div><GameButton onClick={() => {
+        // A session created after boot has no initial URL attachment. Recover the
+        // current authority after a reconnect read fails, including its successor.
+        if (flow.sessionId) setAttachment({ diagnosticSessionId: flow.sessionId.startsWith('diagnostic:') ? flow.sessionId : null, sessionId: flow.sessionId.startsWith('diagnostic:') ? null : flow.sessionId, savedSession: false });
+        setBootAttempt((value) => value + 1);
+      }}>Retry</GameButton><GameButton tone="quiet" onClick={exit}>Exit</GameButton></div></div>}
+      {!connected && <div className="party-games__ws-warn" role="status"><strong>Controllers offline</strong><span>{isJeopardy ? 'Host controls are unavailable. Reconnecting…' : 'Keyboard and on-screen controls still work.'}</span></div>}
 
       {flow.phase === 'loading' && <TitleCard title="Party Games" subtitle="Loading…" />}
 
@@ -260,29 +354,32 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       {flow.phase === 'team-setup' && (
         <div className="party-games__team-and-host">
           {(flow.setupProfile.host_modes || []).length > 0 && <fieldset className="party-games__host-mode"><legend>Host</legend>{flow.setupProfile.host_modes.map((mode) => <button key={mode} type="button" aria-pressed={flow.hostMode === mode} onClick={() => dispatchFlow({ type: 'SET_HOST_MODE', hostMode: mode })}>{mode.replace('-', ' ')}</button>)}</fieldset>}
-          <TeamSetup selectAll={flow.competition === false} config={flow.config} setupKind={flow.setupProfile.kind} onConfirm={(seats) => dispatchFlow({ type: 'PLAYERS_CONFIRMED', seats })} />
+          <TeamSetup selectAll={flow.competition === false} config={flow.config} anonymousTeams={flow.setupProfile.anonymous_teams} setupKind={flow.setupProfile.kind} onConfirm={(seats) => { logger.info('party-games.teams-confirmed', { count: seats.length, anonymous: Boolean(flow.setupProfile.anonymous_teams) }); dispatchFlow({ type: 'PLAYERS_CONFIRMED', seats }); }} />
         </div>
       )}
 
       {flow.phase === 'buzzer-bind' && (
-        <BuzzerBind seats={flow.seats} onBack={playAgain} onDone={(bindings) => dispatchFlow({ type: 'BIND_DONE', bindings })} />
+        <BuzzerBind seats={flow.seats} onBack={playAgain} onDone={(bindings) => { logger.info('party-games.buzzers.bound', { count: Object.keys(bindings).length }); dispatchFlow({ type: 'BIND_DONE', bindings }); }} />
       )}
 
       {flow.phase === 'playing' && Game && flow.sessionId && (
         <>
           <div className="party-games__play" aria-hidden={confirmExit || undefined}>
             <div className="party-games__play-stage"><PartyGamesExperience
+              key={flow.sessionId}
               component={Game}
               setId={flow.setId}
               seats={flow.seats}
               sessionId={flow.sessionId}
-              buzzerBindings={flow.buzzerBindings}
+              buzzerBindings={buzzerBindings}
               config={flow.config}
+              audio={audio}
               registerBackAction={registerBackAction}
               registerForwardAction={registerForwardAction}
+              registerRemoteAction={registerRemoteAction}
               onComplete={onComplete}
             /></div>
-            {flow.competition !== false && <div className="party-games__companion-rail"><HostQr sessionId={flow.sessionId} /></div>}
+            {flow.competition !== false && !isJeopardy && <div className="party-games__companion-rail"><HostQr sessionId={flow.sessionId} /></div>}
           </div>
           {flow.competition !== false && <EffectOverlay sessionId={flow.sessionId} />}
         </>
@@ -305,7 +402,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
       )}
 
       {flow.phase === 'results' && (
-        <PartyGamesResults competition={flow.competition} seats={flow.seats} result={flow.result}
+        <PartyGamesResults allowPlayAgain={!isJeopardy} competition={flow.competition} seats={flow.seats} result={flow.result}
           onPlayAgain={playAgain}
           onExit={exit} />
       )}

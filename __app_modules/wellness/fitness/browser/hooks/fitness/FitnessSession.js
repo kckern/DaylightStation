@@ -7,7 +7,7 @@ import { VoiceMemoManager } from "./VoiceMemoManager.js";
 import { FitnessTimeline } from "./FitnessTimeline.js";
 import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
 import { getClientId } from "../../../../../../frontend/src/lib/clientId.js";
-import { ZoneProfileStore } from "./ZoneProfileStore.js";
+import { ZoneProfileStore, ZONE_TRUST_RESUME_WINDOW_MS } from "./ZoneProfileStore.js";
 import { EventJournal } from "./EventJournal.js";
 import { ActivityMonitor } from "../../domain/ActivityMonitor.js";
 import { SessionEntityRegistry } from "./SessionEntity.js";
@@ -28,15 +28,28 @@ import { MetricsRecorder } from "./MetricsRecorder.js";
 import { ParticipantRoster } from "./ParticipantRoster.js";
 import { TimelineRecorder } from "./TimelineRecorder.js";
 import { PersistenceManager } from "./PersistenceManager.js";
+import { isDeviceLive, releaseStaleAssignment } from "./staleAssignment.js";
 
 // Pre-timeline events older than this at session start are stale (see flush in ensureStarted).
 const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
+// A kiosk reload this short keeps the riders' zone trust — the same window a
+// mid-session reading loss resumes within (ZoneProfileStore), so both paths
+// apply one rule. A declared handover still wipes trust at once.
+export const ZONE_TRUST_RESUME_GRACE_MS = ZONE_TRUST_RESUME_WINDOW_MS;
+// Packet sources that are not real hardware. The backend rebroadcasts
+// simulator traffic to every client, so the garage kiosk ingests it too.
+const SIMULATED_SOURCES = new Set(['fitness-simulator']);
+// A device that carried simulated traffic stays "simulated" this long after
+// the last such packet: the simulator drives the configured strap ids, and a
+// strap that was just simulated must not celebrate the moment it goes quiet.
+export const SIMULATED_DEVICE_HOLD_MS = 10 * 60 * 1000;
 
 // -------------------- Timeout Configuration --------------------
 const FITNESS_TIMEOUTS = {
   inactive: 60000,
   remove: 1800000, // 30 minutes — keeps session alive during breaks
   rpmZero: 1200,  // zero RPM ~1.2s after the last cadence broadcast (silence case)
+  hrStaleMs: 5000, // an HR strap with no real reading for this long reads null, even while its packets keep arriving
   transportStallMs: 1200, // MUST equal rpmZero: the stall check and the zero gate have to cross on the same prune tick, or a tick landing between them zeroes the meter and the hold then preserves that zero for the whole stall
   emptySession: 60000, // 6A: Time (ms) with empty roster before auto-ending session
   emptySessionTransportHold: 180000, // Max sensor-pipeline silence during which an empty roster is NOT counted as an empty room (link outage, not departure)
@@ -118,11 +131,12 @@ const roundValue = (key, value) => {
   return value;
 };
 
-export const setFitnessTimeouts = ({ inactive, remove, rpmZero, transportStallMs, emptySession, sessionEndCooldown } = {}) => {
+export const setFitnessTimeouts = ({ inactive, remove, rpmZero, transportStallMs, hrStaleMs, emptySession, sessionEndCooldown } = {}) => {
   if (typeof inactive === 'number' && !Number.isNaN(inactive)) FITNESS_TIMEOUTS.inactive = inactive;
   if (typeof remove === 'number' && !Number.isNaN(remove)) FITNESS_TIMEOUTS.remove = remove;
   if (typeof rpmZero === 'number' && !Number.isNaN(rpmZero)) FITNESS_TIMEOUTS.rpmZero = rpmZero;
   if (typeof transportStallMs === 'number' && !Number.isNaN(transportStallMs)) FITNESS_TIMEOUTS.transportStallMs = transportStallMs;
+  if (typeof hrStaleMs === 'number' && !Number.isNaN(hrStaleMs)) FITNESS_TIMEOUTS.hrStaleMs = hrStaleMs;
   if (typeof emptySession === 'number' && !Number.isNaN(emptySession)) FITNESS_TIMEOUTS.emptySession = emptySession;
   if (typeof sessionEndCooldown === 'number' && !Number.isNaN(sessionEndCooldown)) FITNESS_TIMEOUTS.sessionEndCooldown = sessionEndCooldown;
 };
@@ -191,6 +205,7 @@ export class FitnessSession {
     // Sub-managers
     this.deviceManager = new DeviceManager();
     this.userManager = new UserManager();
+    this._installLivenessProbe();
     this.governanceEngine = new GovernanceEngine(this);  // Pass session reference
     this.voiceMemoManager = new VoiceMemoManager(this);
     this.zoneProfileStore = new ZoneProfileStore();
@@ -202,7 +217,10 @@ export class FitnessSession {
     this._sessionMetadata = {};
     this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
-    this._deviceHrSampleCount = new Map(); // deviceId -> count for startup discard
+    this._zoneReadingEligible = new Map(); // userId -> current accepted real sample
+    this._deviceHrSampleCount = new Map(); // deviceId -> real readings since (re)connect, for startup discard
+    this._hrReadingState = new Map(); // deviceId -> true (reading) | false (no reading); edges drive _onHrReadingLost
+    this._simulatedDeviceAt = new Map(); // deviceId -> last simulated packet (ms); such a strap never earns a Fire ceremony
 
     // Session Entity Registry - tracks participation segments per device assignment
     // Each device assignment creates a new entity with fresh metrics (rings, start time)
@@ -314,6 +332,7 @@ export class FitnessSession {
     this._isEndingSession = false; // Re-entrancy guard for endSession()
     this._sessionEndedCallbacks = [];
     this._sessionEndingCallbacks = new Set();
+    this._playbackClosingCallbacks = new Set();
 
     this.snapshot = {
       participantRoster: [],
@@ -350,10 +369,149 @@ export class FitnessSession {
    * @param {Array<any>} allUsers
    * @returns {boolean} True if sync produced changes
    */
+  /**
+   * Sync the zone store from the users present on the roster, and tell
+   * governance when anything changed.
+   * @param {string|null} changedUserId
+   * @returns {boolean} whether the store changed
+   */
+  _syncPresentZoneProfiles(changedUserId = null) {
+    if (!this.zoneProfileStore) return false;
+    const allUsers = this.userManager.getAllUsers();
+    // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
+    const presentIds = this._participantRoster?.getPresentParticipantIds();
+    const usersForZones = presentIds
+      ? allUsers.filter(u => presentIds.has(u.id))
+      : allUsers;
+    const changed = this._syncZoneProfiles(usersForZones);
+    if (changed && this.governanceEngine) {
+      this.governanceEngine.notifyZoneChange(changedUserId, {});
+    }
+    return changed;
+  }
+
+  /**
+   * Track one HR device's reading ↔ no-reading edges. Logs once per edge (never
+   * per packet) and, on loss, restarts the device's warm-up window and clears
+   * everything downstream that could outlive the real data.
+   * @param {string} deviceId
+   * @param {boolean} hasReading
+   * @param {{ reason?: string }} [opts]
+   */
+  _observeHrReading(deviceId, hasReading, { reason = null } = {}) {
+    const key = String(deviceId);
+    const prev = this._hrReadingState.get(key);
+    if (prev === hasReading) return;
+    this._hrReadingState.set(key, hasReading);
+    if (!hasReading) {
+      this._deviceHrSampleCount.delete(key);
+      const userId = this._hrOccupantId(key);
+      if (userId) this._zoneReadingEligible.set(userId, false);
+    }
+    // First sighting is not an edge: nothing was held, nothing to clear.
+    if (prev === undefined) return;
+    const userId = this._hrOccupantId(key);
+    if (hasReading) {
+      getLogger().info('fitness.device.hr_reading_restored', { deviceId: key, userId });
+      return;
+    }
+    getLogger().info('fitness.device.hr_reading_lost', { deviceId: key, userId, reason });
+    this._onHrReadingLost(key, userId);
+  }
+
+  /** Whether this device carried simulator traffic recently (SIMULATED_DEVICE_HOLD_MS). */
+  isSimulatedDevice(deviceId) {
+    if (deviceId == null) return false;
+    const at = this._simulatedDeviceAt.get(String(deviceId));
+    return Number.isFinite(at) && Date.now() - at <= SIMULATED_DEVICE_HOLD_MS;
+  }
+
+  _hrOccupantId(deviceId) {
+    const ledgerEntry = this.userManager?.assignmentLedger?.get(deviceId);
+    const user = this.userManager?.resolveUserForDevice(deviceId);
+    return ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId || user?.id || null;
+  }
+
+  /**
+   * A strap stopped reading (null packets, stale reading, inactive, removed).
+   * Accrual stops at once: TreasureBox takes its dropout path. The user's
+   * governance-facing state (HR, hrInactive, committed zone) follows only once
+   * the loss outlasts HR_LOSS_GRACE_MS — see _maybeConfirmHrLoss.
+   */
+  _onHrReadingLost(deviceId, userId) {
+    if (!userId) return;
+    this.treasureBox?.recordHeartRateForDevice(deviceId, null, { profileId: userId, fallbackUserId: userId });
+  }
+
+  /**
+   * Push "no reading" into the device's user and, if that is the moment the
+   * user goes hrInactive (grace elapsed), drop the committed zone so hysteresis
+   * cannot hold a zone no real reading supports. Idempotent; called on every
+   * null packet and every prune tick while a device has no reading.
+   */
+  _maybeConfirmHrLoss(deviceId, user = null, wasHrInactive = null) {
+    const key = String(deviceId);
+    const owner = user || this.userManager?.resolveUserForDevice(key);
+    if (!owner) return;
+    const before = wasHrInactive ?? !!owner.currentData?.hrInactive;
+    if (wasHrInactive == null) {
+      owner.updateFromDevice?.({ type: 'heart_rate', deviceId: key, heartRate: null });
+    }
+    if (before || !owner.currentData?.hrInactive) return;
+    const userId = this._hrOccupantId(key) || owner.id;
+    getLogger().info('fitness.device.hr_loss_confirmed', { deviceId: key, userId });
+    this.zoneProfileStore?.resetZoneState?.(userId, 'confirmed-loss');
+    this._syncPresentZoneProfiles(userId);
+  }
+
+  /**
+   * After a prune: an HR device whose reading went stale, that went inactive,
+   * or that was removed has lost its reading even though no packet said so.
+   */
+  _observeHrReadingsAfterPrune() {
+    const present = new Set();
+    for (const device of this.deviceManager.getAllDevices()) {
+      if (device.type !== 'heart_rate') continue;
+      const key = String(device.id);
+      present.add(key);
+      if (device.inactiveSince) {
+        this._observeHrReading(key, false, { reason: 'inactive' });
+        this._deviceHrSampleCount.delete(key);
+        this._maybeConfirmHrLoss(key);
+        continue;
+      }
+      if (!(Number.isFinite(device.heartRate) && device.heartRate > 0)) {
+        this._observeHrReading(key, false, { reason: 'stale-reading' });
+        // No packet may arrive to end the grace: re-check it on the prune tick.
+        this._maybeConfirmHrLoss(key);
+      }
+    }
+    for (const key of [...this._hrReadingState.keys()]) {
+      if (present.has(key)) continue;
+      this._observeHrReading(key, false, { reason: 'removed' });
+      this._hrReadingState.delete(key);
+      this._deviceHrSampleCount.delete(key);
+    }
+  }
+
   _syncZoneProfiles(allUsers) {
     if (!this.zoneProfileStore) return false;
     try {
-      const changed = this.zoneProfileStore.syncFromUsers(allUsers);
+      const changed = this.zoneProfileStore.syncFromUsers(allUsers.map(user => ({
+        ...user,
+        // Every shared sync carries each rider's OWN acceptance state. A rider
+        // cannot acquire startup trust through somebody else's accepted packet.
+        zoneReadingEligible: this._zoneReadingEligible.get(user.id) === true,
+        // Which strap and which sample this reading is. The store resumes a
+        // rider only on the strap its evidence came from, and counts a
+        // re-sync of the same sample (another rider's packet) as no new
+        // sample when confirming an upward zone change.
+        zoneReadingDeviceId: user.currentData?.heartRateDeviceId ?? null,
+        zoneReadingAt: Number.isFinite(user._lastRealHrAt) ? user._lastRealHrAt : null,
+        // Simulated HR still drives zones and governance (tests depend on
+        // it); it only marks the reading so no Fire ceremony comes of it.
+        zoneReadingSimulated: this.isSimulatedDevice(user.currentData?.heartRateDeviceId)
+      })));
       return changed;
     } catch (err) {
       getLogger().error('fitness.zone_profile_store.sync_failed', {
@@ -395,6 +553,13 @@ export class FitnessSession {
     // cannot recreate devices, participants, or a replacement session.
     const deviceId = payload.deviceId ?? payload.id;
     const now = Date.now();
+    if (deviceId != null && (SIMULATED_SOURCES.has(payload.source) || payload.simulated === true)) {
+      const key = String(deviceId);
+      if (!this._simulatedDeviceAt.has(key)) {
+        getLogger().info('fitness.device.simulated_source', { deviceId: key, source: payload.source ?? null });
+      }
+      this._simulatedDeviceAt.set(key, now);
+    }
     this._endedDeviceHold.observeAbsence([], this._getTimeouts().remove, now);
     if (!this._endedDeviceHold.filter(deviceId, now)) return;
 
@@ -447,32 +612,50 @@ export class FitnessSession {
       // Clear the flag after processing
       device._isNew = false;
       
+      // A reading the slew gate is holding (DeviceManager) is not a reading:
+      // it must not reach the rider, the zone store or TreasureBox until the
+      // next packet confirms it. Nothing else about this packet matters.
+      const hrHeld = device._hrHeld === true;
+      device._hrHeld = false;
+
       // Resolve user and update their stats
       const user = this.userManager.resolveUserForDevice(device.id);
       const resolvedSlug = user?.id || null;
-      if (user) {
+      if (user && !hrHeld) {
         // 5A: Check for device reassignment - clear cumulative state if occupant changed
         const currentOccupant = resolvedSlug;
         if (device.lastOccupantSlug && device.lastOccupantSlug !== currentOccupant) {
-          this._cumulativeBeats.delete(device.id);
-          this._cumulativeRotations.delete(device.id);
-          this._log('device_reassigned', { 
-            deviceId: device.id, 
-            from: device.lastOccupantSlug, 
-            to: currentOccupant 
-          });
+          this._resetWearerZoneState(device.id, device.lastOccupantSlug, currentOccupant);
         }
         device.lastOccupantSlug = currentOccupant;
         
-        user.updateFromDevice(deviceData);
+        const wasHrInactive = !!user.currentData?.hrInactive;
+        // Bind acceptance to the packet BEFORE UserManager chooses a canonical
+        // reading across this rider's straps. Device getters need an explicit
+        // deviceId when forwarding a Device instance as a plain packet.
+        const STARTUP_DISCARD_COUNT = 3;
+        const packetEligible = deviceData.type === 'heart_rate'
+          && Number.isFinite(deviceData.heartRate) && deviceData.heartRate > 0
+          && (this._deviceHrSampleCount.get(String(device.id)) || 0) >= STARTUP_DISCARD_COUNT;
+        user.updateFromDevice({ ...deviceData, deviceId: deviceData.deviceId, zoneReadingEligible: packetEligible });
+
+        // No reading is a real state: the strap is present but not reading.
+        // Nothing accrues or counts while it lasts (see _onHrReadingLost).
+        const isHrPacket = deviceData.type === 'heart_rate';
+        const hasHrReading = isHrPacket && Number.isFinite(deviceData.heartRate) && deviceData.heartRate > 0;
+        if (isHrPacket) {
+          this._observeHrReading(device.id, hasHrReading, { reason: 'no-reading-packet' });
+          if (!hasHrReading) this._maybeConfirmHrLoss(device.id, user, wasHrInactive);
+        }
 
         // Device startup discard: first 3 HR readings may be stale/cached from prior session
         // NOTE: Sets a flag instead of returning early — the pre-session buffer check (below)
         // must still run so the session can start. Only TreasureBox/ZoneProfileStore/governance
-        // are skipped during the discard window.
+        // are skipped during the discard window. Only real readings count, and the count
+        // restarts whenever the reading is lost or the device goes away, so the window
+        // applies on every reconnect — not once per page load.
         let startupDiscarded = false;
-        if (deviceData.type === 'heart_rate') {
-          const STARTUP_DISCARD_COUNT = 3;
+        if (hasHrReading) {
           const deviceKey = String(device.id);
           const count = this._deviceHrSampleCount.get(deviceKey) || 0;
           this._deviceHrSampleCount.set(deviceKey, count + 1);
@@ -487,6 +670,14 @@ export class FitnessSession {
           }
         }
 
+        if (isHrPacket) {
+          const selectedDeviceId = user.currentData?.heartRateDeviceId;
+          this._zoneReadingEligible.set(resolvedSlug,
+            user.currentData?.zoneReadingEligible === true
+              && user.ownsHrDevice(selectedDeviceId)
+              && this._hrReadingState.get(String(selectedDeviceId)) === true);
+        }
+
         // ORDER MATTERS — sync the zone store BEFORE feeding TreasureBox.
         // Both blocks open on the same packet (the first one past the startup
         // discard window), so whichever runs first defines which zone table
@@ -498,29 +689,23 @@ export class FitnessSession {
         // DeviceManager/UserManager (no TreasureBox), user.updateFromDevice()
         // has already run above, and notifyZoneChange only arms a 100ms
         // debounce — so nothing here depends on the box having run.
-        if (!startupDiscarded && this.zoneProfileStore && deviceData.type === 'heart_rate') {
-          const allUsers = this.userManager.getAllUsers();
-          // Cheap presence query — avoids a full getRoster() rebuild per HR packet.
-          const presentIds = this._participantRoster?.getPresentParticipantIds();
-          const usersForZones = presentIds
-            ? allUsers.filter(u => presentIds.has(u.id))
-            : allUsers;
-          const changed = this._syncZoneProfiles(usersForZones);
+        if (!startupDiscarded && hasHrReading && this.zoneProfileStore) {
           // No cache invalidation to push here: TreasureBox polls the store's
           // zone-config revision on read (ZoneProfileStore.getZoneConfigRevision).
-          if (changed && this.governanceEngine) {
-            this.governanceEngine.notifyZoneChange(resolvedSlug, {});
-          }
+          this._syncPresentZoneProfiles(resolvedSlug);
         }
 
         // Feed TreasureBox if HR - Phase 2: Use entity-based routing
-        if (!startupDiscarded && this.treasureBox && deviceData.type === 'heart_rate') {
+        if (this.treasureBox && isHrPacket && (hasHrReading ? !startupDiscarded : true)) {
           // Check ledger for current occupant (guest may have taken over)
           const ledgerEntry = this.userManager?.assignmentLedger?.get(device.id);
           const currentOccupantId = ledgerEntry?.metadata?.profileId || ledgerEntry?.occupantId || user.id;
           
-          // Try to route via entity first (Phase 2), fall back to current occupant
-          this.treasureBox.recordHeartRateForDevice(device.id, deviceData.heartRate, {
+          // Try to route via entity first (Phase 2), fall back to current occupant.
+          // No reading → null: TreasureBox's dropout path resets the interval
+          // without an award. It is never handed a held value.
+          this.treasureBox.recordHeartRateForDevice(device.id,
+            hasHrReading && this._zoneReadingEligible.get(resolvedSlug) === true ? user.currentData.heartRate : null, {
             profileId: currentOccupantId,
             fallbackUserId: currentOccupantId
           });
@@ -532,7 +717,24 @@ export class FitnessSession {
         const userId = user?.id || null;
         
         // Auto-assign device to user if not already assigned (for simulator/auto-mapping)
-        if (!ledgerEntry && user && userId) {
+        const heldOwner = !ledgerEntry && !user ? this.userManager.findHeldConfiguredOwner?.(device.id) : null;
+        if (heldOwner) {
+          // One member, one SENDING strap: his own strap came back while he
+          // rides a borrowed one that is still live. Leave it unmapped — the
+          // family can pick it — rather than put him on two straps.
+          getLogger().sampled('fitness.auto_assign_skip', {
+            deviceId: device.id, userId: heldOwner.user.id, reason: 'user-on-other-live-strap', heldDeviceId: heldOwner.heldDeviceId
+          }, { maxPerMinute: 6, aggregate: true });
+        } else if (!ledgerEntry && user && userId) {
+          // The member's other ledger entries on silent, non-config straps are
+          // stale: close their stints and drop them before he takes this one.
+          for (const [otherId, entry] of [...ledger.entries.entries()]) {
+            if (otherId === String(device.id)) continue;
+            if ((entry?.metadata?.profileId || entry?.occupantId) !== userId) continue;
+            if (user.configuredHrDeviceIds?.has(String(otherId))) continue;
+            if (isDeviceLive(this.deviceManager, otherId) !== false) continue;
+            releaseStaleAssignment(this, otherId, entry, { toDeviceId: String(device.id) });
+          }
           getLogger().warn('fitness.auto_assign', { deviceId: device.id, userName: user.name, userId });
           const stint = this.openStint({ deviceId: device.id, profileId: user.id, name: user.name });
           this.userManager.assignGuest(device.id, user.name, {
@@ -669,6 +871,7 @@ export class FitnessSession {
     const open = this.entityRegistry.getByDevice(deviceId);
     if (open && open.status === 'active') {
       if (open.profileId === profileId) return open;
+      this._resetWearerZoneState(deviceId, open.profileId, profileId);
       this.entityRegistry.endEntity(open.entityId, { status: 'superseded', reason: 'handover' });
     }
     return this.createSessionEntity({ profileId, name: name || profileId, deviceId: String(deviceId) });
@@ -697,6 +900,7 @@ export class FitnessSession {
 
     if (mode === 'correction') {
       const moved = this._moveStintData(fromUserId, toUserId, stint.startTick);
+      this._resetWearerZoneState(key, fromUserId, toUserId);
       this.entityRegistry.relabel(stint.entityId, { profileId: toUserId, name });
       // The new occupant owns a live stint again — back on the chart.
       this._transferredUsers?.delete(toUserId);
@@ -710,10 +914,36 @@ export class FitnessSession {
       return { ok: true, mode, stint, ...moved };
     }
 
+    this._resetWearerZoneState(key, fromUserId, toUserId);
     this.entityRegistry.endEntity(stint.entityId, { status: 'superseded', reason: 'handover' });
     const next = this.createSessionEntity({ profileId: toUserId, name: name || toUserId, deviceId: key });
     getLogger().info('fitness.stint.handover', { deviceId: key, fromUserId, toUserId });
     return { ok: true, mode: 'handover', stint: next };
+  }
+
+  // The one-sending-strap rule reads strap liveness from the CURRENT device
+  // manager (it is replaced on reset), so the probe looks it up per call.
+  _installLivenessProbe() {
+    this.userManager?.setDeviceLivenessProbe?.((deviceId) => isDeviceLive(this.deviceManager, deviceId));
+  }
+
+  // Invalidate both identities synchronously, before another packet or sync can
+  // expose a returning wearer's previous baseline, cache or unfinished interval.
+  _resetWearerZoneState(deviceId, fromUserId, toUserId) {
+    const key = String(deviceId);
+    this._deviceHrSampleCount.delete(key);
+    this._cumulativeBeats.delete(key);
+    this._cumulativeRotations.delete(key);
+    this._log('device_reassigned', { deviceId: key, from: fromUserId, to: toUserId });
+    for (const userId of new Set([fromUserId, toUserId].filter(Boolean))) {
+      this._zoneReadingEligible.set(userId, false);
+      this.userManager.getUserById(userId)?.resetHrReadings?.();
+      this.zoneProfileStore?.resetZoneState?.(userId, 'wearer-change');
+      this.treasureBox?.recordUserHeartRate(userId, null);
+    }
+    this._userZoneProfilesCache = null;
+    const device = this.deviceManager.getDevice(key);
+    if (device) device.lastOccupantSlug = toUserId;
   }
 
   /**
@@ -734,7 +964,6 @@ export class FitnessSession {
     const ringsMoved = this.treasureBox?.moveStint(fromUserId, toUserId, { baseRings: bases.rings_total }) ?? 0;
     const beatsMoved = this._timelineRecorder?.moveStintBeats(fromUserId, toUserId, bases.heart_beats) ?? 0;
     this.activityMonitor?.moveStintActivity(fromUserId, toUserId, start);
-    this.zoneProfileStore?.resetZoneState?.(toUserId);
     return { ringsMoved, beatsMoved };
   }
 
@@ -1231,13 +1460,21 @@ export class FitnessSession {
     // A live sensor on any wheel wins. Otherwise, if the pipeline is stalled,
     // surface that (with the held rpm) rather than a bare "disconnected" — the
     // two are different states and only one means the rider stopped.
-    return best || stalled || disconnected;
+    const reading = best || stalled || disconnected;
+    // The crank counter comes from ONE sensor — the first configured that has
+    // one — whichever wheel won on rpm and whether or not it is "connected":
+    // cadence_floor counts turns between calls, and a counter that switches
+    // sensors (or vanishes on a quiet second) loses them.
+    const revSourceId = deviceIds.find((id) => Number.isFinite(this.deviceManager?.getDevice(id)?.revolutionCount));
+    if (revSourceId == null) return reading;
+    const { revolutions: _r, deviceId: _d, ...rest } = reading;
+    return { ...rest, revolutions: this.deviceManager.getDevice(revSourceId).revolutionCount, deviceId: revSourceId };
   }
 
   /**
    * Live cadence for every configured equipment, keyed by equipment id. The
    * governance engine reads this on timer pulses, which carry no sensor data.
-   * @returns {Object<string, { rpm: number, connected: boolean, ts?: number }>}
+   * @returns {Object<string, { rpm: number, connected: boolean, ts?: number, revolutions?: number, deviceId?: string }>}
    */
   getEquipmentCadenceMap() {
     const map = {};
@@ -1672,6 +1909,7 @@ export class FitnessSession {
     // Restore the stints, so a correction after the reload still moves the
     // whole stint and the saved participant list keeps everyone who rode.
     this.entityRegistry.restore(sessionData.entities);
+    this._restoreZoneTrust(sessionData.metadata?.zone_trust, gapMs);
 
     getLogger().info('fitness.session.resumed', {
       sessionId: this.sessionId,
@@ -1690,6 +1928,56 @@ export class FitnessSession {
    * value of each restored per-person cumulative series.
    * @private
    */
+  _restoreZoneTrust(saved, gapMs) {
+    const riders = Array.isArray(saved?.riders) ? saved.riders : [];
+    const now = Date.now();
+    for (const rider of riders) {
+      const userId = rider?.userId;
+      if (!userId) continue;
+      // Same wearer: one of the rider's saved straps still has the rider's
+      // restored open stint.
+      const sameWearer = (rider.deviceIds || []).some((deviceId) =>
+        this.entityRegistry.getByDevice(deviceId)?.profileId === userId);
+      // v2 carries the rider's last confirmed reading; its age, not the
+      // reload gap, is what the hour is measured against.
+      const evidence = rider.evidence && Number.isFinite(rider.evidence.at) ? rider.evidence : null;
+      const ageMs = evidence ? now - evidence.at : gapMs;
+      const reason = ageMs > ZONE_TRUST_RESUME_GRACE_MS ? (evidence ? 'evidence-too-old' : 'gap-too-long')
+        : !sameWearer ? 'wearer-changed' : null;
+      if (reason) {
+        getLogger().info('fitness.zone_trust.not_restored', { userId, reason, gapMs, ageMs });
+        continue;
+      }
+      if (evidence) {
+        // Same rule as a water break: the next eligible reading from that
+        // strap resumes the zone once it is plausible against the evidence.
+        this.zoneProfileStore?.seedTrustEvidence?.(userId, evidence);
+        getLogger().info('fitness.zone_trust.restored', { userId, gapMs, ageMs, via: 'evidence' });
+        continue;
+      }
+      this.zoneProfileStore?.restoreTrust?.(userId);
+      getLogger().info('fitness.zone_trust.restored', { userId, gapMs, ageMs, via: 'v1-trust' });
+    }
+  }
+
+  _zoneTrustSnapshot() {
+    const store = this.zoneProfileStore;
+    const userIds = [...new Set([
+      ...(store?.getTrustedUserIds?.() || []),
+      ...(store?.getEvidenceUserIds?.() || []),
+    ])];
+    return {
+      version: 2,
+      riders: userIds.map((userId) => ({
+        userId,
+        deviceIds: (this.entityRegistry?.getByProfile?.(userId) || [])
+          .filter((entity) => entity.status === 'active' && entity.deviceId)
+          .map((entity) => String(entity.deviceId)),
+        evidence: store?.getTrustEvidence?.(userId) || null,
+      })),
+    };
+  }
+
   _restoreRunningTotals(liveSeries) {
     const lastFinite = (arr) => {
       for (let i = arr.length - 1; i >= 0; i -= 1) if (Number.isFinite(arr[i])) return arr[i];
@@ -2493,6 +2781,7 @@ export class FitnessSession {
     
     // Prune DeviceManager
     this.deviceManager.pruneStaleDevices(timeouts);
+    this._observeHrReadingsAfterPrune();
     
     // Re-check active set
     const allDevices = this.deviceManager.getAllDevices();
@@ -2696,6 +2985,42 @@ export class FitnessSession {
     return () => this._sessionEndingCallbacks.delete(callback);
   }
 
+  /**
+   * Register a playback observer to close when the player closes. That happens
+   * while the session keeps running, so onSessionEnding does not cover it.
+   * @param {function} callback
+   * @returns {function} - Unsubscribe function
+   */
+  onPlaybackClosing(callback) {
+    if (typeof callback !== 'function') return () => {};
+    this._playbackClosingCallbacks.add(callback);
+    return () => this._playbackClosingCallbacks.delete(callback);
+  }
+
+  /**
+   * The player closed: record the end of playback now and save it with the
+   * memos, instead of leaving both to the next autosave. Waits out a save in
+   * flight rather than racing it, and respects the session lock (no force), so
+   * a non-leader client still doesn't write.
+   * @returns {Promise<void>} settles when the save has landed
+   */
+  flushForLanding() {
+    for (const callback of this._playbackClosingCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        getLogger().warn('fitness.session.playback_closing_failed', { error: error?.message });
+      }
+    }
+    return this.whenFinalPersistSettled().then(() => {
+      if (!this.sessionId) return undefined;
+      this._maybeTickTimeline();
+      const snapshot = this.summary;
+      if (snapshot) this._persistSession(snapshot, { force: false });
+      return this.whenFinalPersistSettled();
+    });
+  }
+
   onSessionEnded(callback) {
     if (typeof callback !== 'function') return () => {};
     this._sessionEndedCallbacks.push(callback);
@@ -2788,6 +3113,7 @@ export class FitnessSession {
     if (this._participantRoster) this._participantRoster.reset();
     this.userManager = new UserManager(); // Reset users? Or keep them? Usually reset for new session context.
     this.deviceManager = new DeviceManager(); // Reset devices?
+    this._installLivenessProbe();
     this.entityRegistry.reset(); // Clear session entities for new session
     this._stopAutosaveTimer();
     this._stopTickTimer(); // 6A: Also stop tick timer on reset
@@ -2797,10 +3123,26 @@ export class FitnessSession {
     this._isEndingSession = false; // Clear re-entrancy guard
     // Note: Don't clear _sessionEndedCallbacks - they persist across sessions
     this.governanceEngine.reset();
+    // Session end (not engine.reset(), which also runs mid-session): the
+    // inert-requirement alarm may fire once more in the next session.
+    this.governanceEngine.resetSessionAlarms?.();
+    // The device manager is replaced above; per-device HR bookkeeping must go
+    // with it, or the next prune logs every old strap as "removed" and the
+    // next session skips its warm-up discard.
+    this._hrReadingState.clear();
+    this._deviceHrSampleCount.clear();
+    this._zoneReadingEligible.clear();
+    this._simulatedDeviceAt.clear();
+    this.zoneProfileStore?.clear();
+    this._userZoneProfilesCache = null;
     this._vibrationTrackers.forEach(t => t.reset());
     this._pressureMatTrackers.forEach(t => t.reset());
     this._sessionMetadata = {};
     this._equipmentRider?.clear();
+    // Configured riders are per-session defaults. Seeding used to run only on
+    // page load, so after the first session ended the tricycle had no rider and
+    // its cadence floor stood down for every later workout (2026-10-20).
+    this.seedConfiguredRiders(this.getEquipmentCatalog());
     if (this.timeline) {
       this.timeline.reset(Date.now(), this.timeline.timebase?.intervalMs || 5000);
     }
@@ -2834,6 +3176,7 @@ export class FitnessSession {
     this._sessionEndedCallbacks = [];
     
     this._sessionEndingCallbacks.clear();
+    this._playbackClosingCallbacks.clear();
 
     // Nullify manager references
     this._deviceRouter = null;
@@ -3470,6 +3813,7 @@ export class FitnessSession {
             pressure_mats: { version: 1, mats: [...this._pressureMatTrackers.values()]
               .filter(tracker => tracker.seenThisSession)
               .map(tracker => ({ ...tracker.checkpoint(), assignedUserId: this.getEquipmentRider(tracker.equipmentId) })) },
+            zone_trust: this._zoneTrustSnapshot(),
           },
           voiceMemos: this.voiceMemoManager.summary,
           treasureBox: this.treasureBox ? this.treasureBox.summary : null,
@@ -3679,6 +4023,6 @@ export class FitnessSession {
     this._deviceOwnershipCache = null;
     this._guestCandidatesCache = null;
     this._userZoneProfilesCache = null;
-    this.zoneProfileStore?.clear();
+    this.zoneProfileStore?.clear({ preserveTrust: true });
   }
 }

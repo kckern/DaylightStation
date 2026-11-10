@@ -1,13 +1,14 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
+import { canonicalState } from './_canonicalState.mjs';
 
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   }),
   getLogger: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   })
 }));
 
@@ -26,6 +27,13 @@ const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitne
  * @param {number} options.grace - Grace period in seconds
  * @param {Object} options.zoneData - Map of participantId -> zoneId for ZoneProfileStore
  */
+/**
+ * Canonical participant state, as ParticipantRoster.getActiveParticipantState()
+ * returns it. Since 15afc57498 a no-args evaluate() (the _triggerPulse path)
+ * reads ONLY this method — never session.roster or ZoneProfileStore. The
+ * roster already carries ZoneProfileStore zones (ParticipantRoster
+ * _buildZoneLookup), so the zoneData below reaches the engine through here.
+ */
 function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
   const zoneConfig = [
     { id: 'cool', name: 'Cool', color: '#3399ff' },
@@ -33,15 +41,17 @@ function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
     { id: 'warm', name: 'Warm', color: '#ffaa00' },
     { id: 'hot', name: 'Hot', color: '#ff0000' },
   ];
+  const roster = participants.map(id => ({ id, isActive: true, zoneId: zoneData[id] ?? null }));
   const mockSession = {
-    roster: participants.map(id => ({ id, isActive: true })),
+    roster,
     zoneProfileStore: {
       getProfile: (userId) => {
         const zoneId = zoneData[userId];
         return zoneId ? { currentZoneId: zoneId } : null;
       }
     },
-    snapshot: { zoneConfig }
+    snapshot: { zoneConfig },
+    getActiveParticipantState: () => canonicalState(roster)
   };
   const engine = new GovernanceEngine(mockSession);
   engine.configure({
@@ -69,8 +79,7 @@ function createEngine({ participants = [], grace = 30, zoneData = {} } = {}) {
 describe('GovernanceEngine - ghost participant oscillation regression', () => {
   /**
    * BUG: When evaluate() is called without explicit userZoneMap (as _triggerPulse
-   * does), the ghost participant filter at lines 1241-1253 runs BEFORE
-   * ZoneProfileStore population at lines 1266-1280. Since userZoneMap is {},
+   * did), the ghost participant filter ran BEFORE ZoneProfileStore population. Since userZoneMap is {},
    * ALL participants are filtered out as "ghosts", even though ZoneProfileStore
    * has valid zone data for them.
    *
@@ -78,6 +87,10 @@ describe('GovernanceEngine - ghost participant oscillation regression', () => {
    * 'pending', triggering a React re-render. The re-render calls evaluate()
    * with full data -> unlocked -> _triggerPulse fires -> evaluate with no
    * args -> all participants removed -> pending -> re-render -> oscillation.
+   *
+   * Since 15afc57498 the ghost filter is gone and the no-args path reads
+   * session.getActiveParticipantState() (zones included). These tests guard
+   * that a pulse with no explicit args still sees every participant.
    */
 
   it('evaluate() without explicit zone data should NOT drop participants to 0 when ZoneProfileStore has data', () => {

@@ -1,18 +1,25 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
+import { canonicalState } from './_canonicalState.mjs';
 
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   }),
   getLogger: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   })
 }));
 
 const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
+/**
+ * Canonical participant state, derived from roster entries the way
+ * ParticipantRoster.getActiveParticipantState() does. Since 15afc57498 a
+ * no-args evaluate() (the _triggerPulse path) reads ONLY this method — never
+ * session.roster or ZoneProfileStore — so "Path A" means this method.
+ */
 function createEngine({ roster = [], grace = 30 } = {}) {
   const zoneConfig = [
     { id: 'cool', name: 'Cool', color: '#3399ff' },
@@ -23,7 +30,8 @@ function createEngine({ roster = [], grace = 30 } = {}) {
   const mockSession = {
     roster,
     zoneProfileStore: null, // Deliberately null — simulates ZoneProfileStore unavailable
-    snapshot: { zoneConfig }
+    snapshot: { zoneConfig },
+    getActiveParticipantState: () => canonicalState(roster)
   };
   const engine = new GovernanceEngine(mockSession);
   engine.configure({
@@ -101,7 +109,10 @@ describe('GovernanceEngine — evaluate path unification (P1)', () => {
     expect(activeCountPathA).toBe(activeCountPathB);
   });
 
-  it('Path A should handle roster entries with null zoneId (no HR data yet)', () => {
+  it('Path A should keep roster entries with null zoneId (no HR data yet) as participants', () => {
+    // Contract since 15afc57498: there is no ghost filter. isActive from
+    // ParticipantRoster is the authority, so a participant whose zone has not
+    // arrived yet still counts — and, having no zone, does not meet 'all active'.
     const roster = [
       { id: 'alice', isActive: true, zoneId: null },
       { id: 'bob', isActive: true, zoneId: 'active' },
@@ -110,12 +121,13 @@ describe('GovernanceEngine — evaluate path unification (P1)', () => {
 
     engine.evaluate();
 
-    // alice has null zone → correctly ghost-filtered (no zone data = disconnected)
-    // bob has 'active' zone → kept, meets requirement
-    // With 1 participant meeting 'all active', phase should be 'unlocked'
     const activeCount = engine.requirementSummary?.activeCount ?? 0;
-    expect(activeCount).toBe(1);
-    expect(engine.phase).toBe('unlocked');
+    expect(activeCount).toBe(2);
+    const missing = (engine.requirementSummary?.requirements || []).flatMap(r => r.missingUsers || []);
+    expect(missing).toContain('alice');
+    expect(missing).not.toContain('bob');
+    // Never satisfied yet -> pending (not unlocked on bob alone)
+    expect(engine.phase).toBe('pending');
   });
 
   it('no oscillation when alternating between Path A and Path B (no ZoneProfileStore)', () => {

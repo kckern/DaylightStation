@@ -17,6 +17,7 @@ import mediaLog from "../logging/mediaLog.js";
 import { seekToLiveEdge } from "../../../../../__capabilities/playback/browser/media/liveEdge.js";
 import { createItemActionOwner } from "../actions/itemActionOwner.js";
 import { createLocalSessionControls } from "./localSessionControls.js";
+import { normalizePlaybackQuality, playbackQualityChange } from '@shared-contracts/media/playbackQuality.mjs';
 
 function defaultUuid() {
   try {
@@ -27,6 +28,7 @@ function defaultUuid() {
 
 function itemFromQueueEntry(entry) {
   return {
+    ...normalizePlaybackQuality(entry),
     contentId: entry.contentId,
     format: entry.format,
     title: entry.title,
@@ -622,15 +624,18 @@ export function createLocalSessionController({
     store.dispatch({ type: 'SET_CONFIG', patch });
   };
 
-  const adopt = (incoming, { autoplay = true } = {}) => {
+  const adopt = (incoming, { autoplay = true, preserveQueuePolicy = false } = {}) => {
     const prepared = preparePlaybackOwnerAdoption(incoming);
     if (!prepared.valid) return { ok: false, code: 'INVALID_SNAPSHOT', errors: prepared.errors };
     const adopted = prepared.snapshot;
+    // A quality change replaces one decoder, not the owner's advancement plan.
+    // Handoff adoption materializes executionOrder; local shuffle must remain dynamic.
+    if (preserveQueuePolicy) adopted.queue = JSON.parse(JSON.stringify(incoming.queue));
     const ownerId = snap().meta?.ownerId ?? clientId;
     const { playbackOwner: _sourceOwner, ...sourceMeta } = adopted.meta ?? {};
     adopted.meta = { ...sourceMeta, ownerId };
     adopted.state = adopted.queue.currentIndex >= 0 && adopted.currentItem
-      ? 'loading'
+      ? (autoplay ? 'loading' : 'paused')
       : (adopted.queue.items.length > 0 ? 'ready' : 'idle');
     store.dispatch({ type: 'ADOPT_SNAPSHOT', snapshot: adopted, autoplay });
     position.set(adopted.position);
@@ -983,6 +988,18 @@ export function createLocalSessionController({
       setPlaybackRate: (rate) => {
         if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return;
         setConfig({ playbackRate: rate });
+      },
+    },
+
+    quality: {
+      setOverrides: (request) => {
+        const current = { ...snap(), position: capture().snapshot.position };
+        const result = playbackQualityChange(current, request);
+        if (!result.ok) return result;
+        beginAction();
+        mediaLog.qualityChanged?.({ target: 'local', contentId: current.currentItem.contentId,
+          quality: normalizePlaybackQuality(request.quality), position: current.position, paused: current.state === 'paused' });
+        return adopt(result.snapshot, { autoplay: current.state !== 'paused', preserveQueuePolicy: true });
       },
     },
 

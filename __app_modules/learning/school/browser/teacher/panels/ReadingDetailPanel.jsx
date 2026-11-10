@@ -41,6 +41,7 @@
  * remembering to check a flag beside every band.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherWorkspaceApi } from "../teacherWorkspaceApi.js";
 import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
@@ -118,8 +119,10 @@ export default function ReadingDetailPanel({
   // here so the error can name what happened rather than only that it did.
   const faultRef = useRef(null);
 
+  // The picked teacher names the read (see teacherWorkspaceApi `byQuery`).
+  const actorId = useTeacherProfileOptional()?.currentTeacher?.id ?? null;
   const fetcher = useMemo(() => async () => {
-    const response = await teacherWorkspaceApi.readingDetail(learnerId, readingId);
+    const response = await teacherWorkspaceApi.readingDetail(learnerId, readingId, actorId);
     if (!response.ok) {
       faultRef.current = typeof response.data?.error === 'string' ? response.data.error : null;
       return response;
@@ -131,10 +134,10 @@ export default function ReadingDetailPanel({
     }
     faultRef.current = null;
     return response;
-  }, [learnerId, readingId]);
+  }, [learnerId, readingId, actorId]);
 
   const detail = usePanelFetch(fetcher, {
-    deps: [learnerId, readingId],
+    deps: [learnerId, readingId, actorId],
     isEmpty: () => false,
     panel: PANEL,
   });

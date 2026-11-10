@@ -29,6 +29,7 @@ vi.mock('./components/SinglePlayer.jsx', () => ({
 }));
 
 import Player from './Player.jsx';
+import { playbackQualityChange } from '@shared-contracts/media/playbackQuality.mjs';
 import { createPlayerSessionBridge } from '../sessions/playerSessionBridge.js';
 import { createPlayerSessionRegistry } from '../sessions/playerSessionRegistry.js';
 import { createRegistrySessionSource } from '../sessions/registrySessionSource.js';
@@ -990,4 +991,45 @@ describe('Player session port', () => {
     expect(later.playbackRevision).toBeGreaterThan(initial.playbackRevision);
     bridge.stop();
   });
+});
+
+
+it.each([{}, { maxResolution: '480' }])('replaces screen quality authoritatively despite launch defaults: %j', async quality => {
+  const ref = createRef();
+  const launch = { contentId: 'plex:42', format: 'video', maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false };
+  render(<Player ref={ref} play={launch} />);
+  await waitFor(() => expect(latestSinglePlayerProps?.contentId).toBe('plex:42'));
+  const registry = createPlayerSessionRegistry();
+  const bridge = createPlayerSessionBridge({ getPlayerHandle: () => ref.current, registry, getItemHint: () => launch,
+    setIntervalFn: () => 1, clearIntervalFn: () => {} });
+  bridge.start();
+  const source = createRegistrySessionSource({ registry, ownerId: 'screen', sessionId: 'quality-screen' });
+  try {
+    const current = source.capture().snapshot;
+    const changed = playbackQualityChange(current, { contentId: 'plex:42', quality });
+    expect(changed.ok).toBe(true);
+    await act(async () => { expect(source.adopt(changed.snapshot, { autoplay: false })).toMatchObject({ ok: true }); });
+    await waitFor(() => expect(latestSinglePlayerProps.maxResolution).toBe(quality.maxResolution));
+    for (const key of ['maxVideoBitrate', 'transcode', 'adaptive']) expect(latestSinglePlayerProps).not.toHaveProperty(key);
+    act(() => latestSinglePlayerProps.onResolvedMeta({ id: 'plex:42', format: 'video', mediaUrl: '/video.mp4' }));
+    const published = source.getSnapshot().currentItem;
+    expect(published.maxResolution).toBe(quality.maxResolution);
+    for (const key of ['maxVideoBitrate', 'transcode', 'adaptive']) expect(published).not.toHaveProperty(key);
+  } finally { bridge.stop(); }
+});
+
+it.each([true, false])('keeps quality from raw screen queue commands (clearRest=%s)', async clearRest => {
+  const ref = createRef();
+  DaylightAPI.mockImplementation(async path => {
+    const id = decodeURIComponent(String(path).split(/queue\/|play\//)[1]?.split('?')[0] ?? 'plex:1');
+    return String(path).includes('/queue/') ? { items: [{ contentId: id, format: 'video' }] }
+      : { id, contentId: id, format: 'video', mediaUrl: '/video.mp4' };
+  });
+  render(<Player ref={ref} play={{ contentId: 'plex:1', format: 'video' }} />);
+  await waitFor(() => expect(ref.current?.getQueueSnapshot().items[0]?.contentId).toBe('plex:1'));
+  await act(async () => {
+    await getPlayerQueueOpRegistry().dispatch({ op: 'play-now', contentId: 'plex:42', clearRest,
+      maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false });
+  });
+  await waitFor(() => expect(latestSinglePlayerProps).toMatchObject({ contentId: 'plex:42', maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false }));
 });

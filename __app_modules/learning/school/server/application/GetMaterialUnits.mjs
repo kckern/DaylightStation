@@ -225,7 +225,7 @@ export class GetMaterialUnits {
           bankId: nextBank.bankId,
           // The gate's own bar, told to the child (advocacy M7 fix): the
           // SAME threshold quizSessionPassed applies above — the runner's
-          // pass line and retake ask key off it.
+          // pass line and its Try again key off it.
           passingPercent: passPercent ?? 80,
           banksTotal: gateBanks.length,
           banksPassed: passedFlags.filter(Boolean).length,

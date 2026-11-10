@@ -1,5 +1,5 @@
 const key = (userId, courseId) => `fitness:skyline-glider:${userId}:${courseId}`;
-const SCHEMA = 'skyline-glider-checkpoint/v3';
+const SCHEMA = 'skyline-glider-checkpoint/v4';
 const courseId = (course) => typeof course === 'string' ? course : course?.id;
 
 export function writeFlightCheckpoint(userId, course, checkpoint) {
@@ -22,7 +22,8 @@ export function readFlightCheckpoint(userId, course, expectedIdentity = {}) {
     const raw = localStorage.getItem(key(userId, id));
     if (!raw) return { status: 'missing' };
     const saved = JSON.parse(raw);
-    if (saved?.schema !== SCHEMA) return { status: 'incompatible', reason: 'legacy-schema' };
+    const pendingLegacy = saved?.schema === 'skyline-glider-checkpoint/v3' && saved.lifecycle === 'pending_terminal' && saved.terminalRecord;
+    if (saved?.schema !== SCHEMA && !pendingLegacy) return { status: 'incompatible', reason: 'legacy-schema' };
     if (!saved.identity || !saved.state) return { status: 'invalid', reason: 'missing-payload' };
     if (saved.lifecycle === 'pending_terminal') return { status: 'pending_terminal', identity: saved.identity, state: saved.state, terminalRecord: saved.terminalRecord };
     if (saved.course?.id !== id || saved.course?.version !== course?.version) return { status: 'incompatible', reason: 'course-identity' };

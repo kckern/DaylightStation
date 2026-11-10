@@ -37,6 +37,16 @@ export default function RecordsTab({ learnerId }) {
         && !(d?.curriculumHistory?.unscoped?.evidenceCount ?? 0),
     },
   );
+  // Which periods are frozen, so the live card can say when its period is
+  // closed instead of always reading DRAFT. Same read and refreshKey as
+  // FrozenHistory: closing a period updates both.
+  const frozen = usePanelFetch(() => (learnerId
+    ? schoolApi.reportCardFrozen({ learnerId })
+    : Promise.resolve({ ok: true, status: 200, data: [] })), {
+    deps: [learnerId, frozenRefresh],
+    panel: 'records-frozen',
+  });
+  const closed = Array.isArray(frozen.data) && frozen.data.some((rec) => rec?.periodId === periodId);
   const insights = usePanelFetch(
     () => schoolApi.instructionalInsights({ scopeType: 'learner', scopeId: learnerId }),
     {
@@ -87,12 +97,42 @@ export default function RecordsTab({ learnerId }) {
         <p className="teacher-panel__empty">No academic periods configured — records are period-scoped.</p>
       )}
       <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />
-      {periodId && <ReportCardView learnerId={learnerId} periodId={periodId} />}
+      {periodId && <ReportCardView learnerId={learnerId} periodId={periodId} closed={closed} />}
       {periodId && <PacingPanel learnerId={learnerId} periodId={periodId} />}
-      {/* Freezing a period lives WITH the closed periods, below the live
-          card — the most destructive verb on the page must not sit above
-          the fold on the default view (UX audit E20). */}
-      <section className="teacher-period-admin">
+      {/* Every course, unit and lesson with recorded work — 100+ nodes for one
+          child, so it folds (audit 2026-10-29: Reports ran to ~15,000px). */}
+      <details className="teacher-records-history">
+        <summary>Curriculum history — every course, unit and lesson with recorded work</summary>
+        <PanelFrame
+          title="Curriculum history"
+          state={history.state}
+          retry={history.retry}
+          emptyCopy="No recorded evidence yet."
+        >
+          {history.data?.curriculumHistory && <CurriculumHistoryOverview history={history.data.curriculumHistory} resolveTitle={resolveNodeTitle} />}
+        </PanelFrame>
+      </details>
+      <PanelFrame
+        title="Tutor insights"
+        state={insights.state}
+        retry={insights.retry}
+        emptyCopy="No tutor insights yet."
+      >
+        {insights.data && <InstructionalInsightsOverview insights={insights.data} />}
+      </PanelFrame>
+      {/* Where the child is weak comes first; the permanent record and
+          freezing a period fold below it. The most destructive verb on the
+          page stays out of the default view (UX audit E20). */}
+      <details className="teacher-panel teacher-fold teacher-period-admin">
+        <summary><h3 className="teacher-panel__title">Records and closing the period</h3><span>Transcript, closed periods, freeze this period</span></summary>
+        <a
+          className="teacher-pdf-pill"
+          href={`/api/v1/school/transcript?learnerId=${encodeURIComponent(learnerId)}&format=pdf`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          PDF · Transcript
+        </a>
         <FrozenHistory learnerId={learnerId} refreshKey={frozenRefresh} />
         {periodId && (
           <ClosePeriodPanel
@@ -103,31 +143,7 @@ export default function RecordsTab({ learnerId }) {
             onClosed={() => setFrozenRefresh((n) => n + 1)}
           />
         )}
-      </section>
-      <a
-        className="teacher-pdf-pill"
-        href={`/api/v1/school/transcript?learnerId=${encodeURIComponent(learnerId)}&format=pdf`}
-        target="_blank"
-        rel="noreferrer"
-      >
-        PDF · Transcript
-      </a>
-      <PanelFrame
-        title="Curriculum history"
-        state={history.state}
-        retry={history.retry}
-        emptyCopy="No recorded evidence yet."
-      >
-        {history.data?.curriculumHistory && <CurriculumHistoryOverview history={history.data.curriculumHistory} resolveTitle={resolveNodeTitle} />}
-      </PanelFrame>
-      <PanelFrame
-        title="Tutor insights"
-        state={insights.state}
-        retry={insights.retry}
-        emptyCopy="No tutor insights yet."
-      >
-        {insights.data && <InstructionalInsightsOverview insights={insights.data} />}
-      </PanelFrame>
+      </details>
     </div>
   );
 }

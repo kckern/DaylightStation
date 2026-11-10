@@ -32,9 +32,9 @@
  * await gap between the read and the write is otherwise a lost-update race
  * (two concurrent `putPending` upserts, or two concurrent `appendDispatch`
  * calls into the same day shard, would silently drop all but the last).
- * Unlike the economy-ledger precedent this mirrors in file layout, that
- * precedent's `appendTransaction` is fully SYNCHRONOUS (no interleaving
- * window), so it doesn't need a queue — this store's fs/promises calls do.
+ * The economy ledger this mirrors in file layout queues its appends the same
+ * way (per user, shared across instances, with a `withUserLock` for its
+ * read-check-write); this store's queue is per instance.
  */
 import path from 'path';
 import yaml from 'js-yaml';

@@ -1,0 +1,50 @@
+// Admin content-filter workshop. Admin tokens only (frontend/src/modules/Admin/Admin.variables.scss).
+.cf-library__search { min-width: 220px; }
+
+// Library poster cards: fixed height so run text never reflows the grid.
+.cf-card { display: flex; flex-direction: column; gap: var(--ds-space-1); height: 300px; padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); min-width: 0; }
+.cf-card.is-unlinked { opacity: 0.5; }
+.cf-card__link { display: flex; flex-direction: column; gap: 2px; color: var(--ds-text-primary); text-decoration: none; min-width: 0; }
+.cf-card__poster { position: relative; aspect-ratio: 2 / 3; width: 100%; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.cf-card__poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cf-card__fallback { padding: var(--ds-space-2); text-align: center; font-size: 12px; color: var(--ds-text-secondary); }
+.cf-card__gone { position: absolute; top: 2px; right: 4px; font-size: 18px; color: var(--ds-text-primary); }
+.cf-card__title { font-size: 13px; font-weight: 600; line-height: 1.2; height: 1.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-card__year { font-size: 11px; color: var(--ds-text-secondary); height: 1.2em; }
+.cf-card__meta { display: flex; gap: var(--ds-space-2); align-items: center; font-size: 11px; color: var(--ds-text-secondary); height: 18px; }
+.cf-card__run { font-size: 11px; line-height: 1.2; height: 2.4em; overflow: hidden; color: var(--ds-text-secondary); }
+.cf-card__run.is-failed { color: var(--ds-danger); }
+
+// Review page: player (and row tools) beside the list; stacked below 900 px.
+.cf-review { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--ds-space-4); align-items: start; }
+@media (max-width: 900px) { .cf-review { grid-template-columns: minmax(0, 1fr); } }
+.cf-review__side { position: sticky; top: var(--ds-space-2); min-width: 0; }
+.cf-review__player { aspect-ratio: 16 / 9; width: 100%; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
+.cf-review__list { max-height: calc(100vh - 220px); overflow-y: auto; min-width: 0; }
+.cf-review__row { padding: var(--ds-space-2); border-top: 1px solid var(--ds-border); }
+.cf-review__row.is-selected { background: var(--ds-accent-subtle); }
+.cf-review__row-main { min-width: 0; }
+.cf-review__pick { text-align: left; }
+.cf-review__time { font-variant-numeric: tabular-nums; }
+.cf-review__tick { color: var(--ds-success); }
+
+// Review station: timeline lanes and the key bar.
+.cf-timeline { display: flex; flex-direction: column; gap: var(--ds-space-1); }
+.cf-timeline__lane { display: flex; align-items: center; gap: var(--ds-space-2); }
+.cf-timeline__label { flex: 0 0 96px; font-size: 11px; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
+.cf-timeline__track { position: relative; flex: 1; height: 22px; background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); overflow: hidden; }
+.cf-timeline__mark { position: absolute; top: 3px; bottom: 3px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; background: var(--ds-text-muted); opacity: 0.75; }
+.cf-timeline__mark.is-mute { background: var(--ds-info); }
+.cf-timeline__mark.is-bleep { background: var(--ds-warning); }
+.cf-timeline__mark.is-blur { background: var(--ds-accent); }
+.cf-timeline__mark.is-skip { background: var(--ds-danger); }
+.cf-timeline__mark.has-verdict { opacity: 0.35; }
+.cf-timeline__mark.is-redo { opacity: 1; outline: 1px solid var(--ds-danger); }
+.cf-timeline__mark.is-cursor { opacity: 1; top: 0; bottom: 0; outline: 2px solid var(--ds-text-primary); z-index: 1; }
+.cf-keybar { display: flex; flex-direction: column; gap: var(--ds-space-1); position: relative; padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); }
+.cf-keybar__tally { font-variant-numeric: tabular-nums; }
+.cf-keybar__item { font-size: 12px; color: var(--ds-text-secondary); }
+.cf-keybar__key { display: inline-block; min-width: 20px; padding: 0 var(--ds-space-1); text-align: center; font-family: var(--ds-font-mono); font-size: 11px; color: var(--ds-text-primary); background: var(--ds-bg-elevated); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); }
+.cf-keybar__help { position: absolute; top: 100%; left: 0; z-index: var(--ds-z-dropdown); margin-top: var(--ds-space-1); padding: var(--ds-space-3); display: flex; flex-direction: column; gap: var(--ds-space-1); background: var(--ds-bg-overlay); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); box-shadow: var(--ds-shadow-elevated); max-width: 480px; }
+.cf-keybar__help-row { display: flex; gap: var(--ds-space-2); align-items: baseline; font-size: 12px; }
+.cf-keybar__help-row .cf-keybar__key { flex: 0 0 auto; min-width: 88px; }

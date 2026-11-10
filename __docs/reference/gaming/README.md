@@ -23,6 +23,8 @@ The v2 cutover has no runtime compatibility aliases. `ops:retired/scripts/migrat
 
 The dependency direction is `environment → experience → platform`. Experiences may consume environment capabilities (such as buzzers and audio cues) only through injected `gamingServices`; they never import an environment. `architecture.test.js` enforces these boundaries.
 
+Real-time games (Skyline Glider, the Cycle Race, the Piano Side Scroller) share a step runner, frame driver and effect dispatcher; see [real-time kit](realtime-kit.md).
+
 See [taxonomy](taxonomy.md), [kernel and runtime](kernel-and-runtime.md), [authored artifacts](authored-artifacts.md), and [Party Games](party-games.md).
 
 **Emulated arcade play is a separate concern from the Party Games platform
@@ -30,4 +32,7 @@ above.** For how the house observes that a game is being played, meters the time
 and ends a session when it runs out, see [arcade game sessions](arcade-game-sessions.md); for
 the emulator's boot contract, picture shaders and fault handling, see
 [emulator resilience](emulator-resilience.md); for what a console is made of and
-how to add one, see [arcade consoles](arcade-consoles.md).
+how to add one, see [arcade consoles](arcade-consoles.md); for pairing and keeping
+a Bluetooth controller connected in the garage, see [controller pairing](controller-pairing.md). For whether a
+Shield RetroArch game resumes its last savestate (off by default, opted in per
+game), see [RetroArch per-game overrides](retroarch-game-overrides.md).

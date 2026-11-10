@@ -73,3 +73,10 @@ describe('resolveDayCompletion', () => {
     expect(result.state).toBe('no_work_today');
   });
 });
+
+describe('teacher hold (remediation cap)', () => {
+  it('is an excuse, never a fault: the day completes around it', () => {
+    expect(resolveDayCompletion({ sections: [served('language'), excused('math', 'teacher_hold')] }))
+      .toEqual({ state: 'complete', excused: [{ subject: 'math', reason: 'teacher_hold' }], faults: [] });
+  });
+});

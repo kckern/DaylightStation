@@ -1,0 +1,31 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { GamingSessionRestarts } from './GamingSessionRestarts.mjs';
+import { YamlGamingSessionRestarts } from '../../adapters/persistence/YamlGamingSessionRestarts.mjs';
+const roots = [];
+afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })));
+it('recovers ordinary handoff after service reconstruction and deduplicates concurrent retries', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'gaming-restarts-')); roots.push(root);
+  const old = { header: { ruleset: { id: 'jeopardy' }, artifacts: { rules_definition: { id: 'jeopardy:pack' } }, seats: [{ id: 'red' }] }, state: { scores: { red: 900 } } };
+  const fresh = { header: { session_id: 'game:new' }, state: { scores: { red: 0 } } };
+  const preserved = structuredClone(old);
+  const application = { resumeSession: vi.fn(async id => id === 'game:new' ? fresh : old), createSession: vi.fn(async () => fresh) };
+  const service = new GamingSessionRestarts({ repository: new YamlGamingSessionRestarts({ restartsDir: root }) });
+  const [first, second] = await Promise.all([service.restart('game:old', application, {}), service.restart('game:old', application, {})]);
+  expect(first).toEqual(fresh); expect(second).toEqual(fresh); expect(application.createSession).toHaveBeenCalledTimes(1);
+  const recovered = new GamingSessionRestarts({ repository: new YamlGamingSessionRestarts({ restartsDir: root }) });
+  expect(await recovered.replacementFor('game:old')).toBe('game:new');
+  expect(await recovered.restart('game:old', application, {})).toEqual(fresh);
+  expect(application.createSession).toHaveBeenCalledTimes(1); expect(old).toEqual(preserved);
+});
+it('keeps diagnostic handoffs exclusively in memory', async () => {
+  const repository = { get: vi.fn(), put: vi.fn() };
+  const application = { resumeSession: async () => ({ header: { ruleset: { id: 'jeopardy' } }, diagnostic: { definition_id: 'jeopardy:pack' } }), createSession: async () => ({ header: { session_id: 'diagnostic:new' } }) };
+  const service = new GamingSessionRestarts({ repository });
+  await service.restart('diagnostic:old', application, {});
+  expect(await service.replacementFor('diagnostic:old')).toBe('diagnostic:new');
+  expect(repository.get).not.toHaveBeenCalled(); expect(repository.put).not.toHaveBeenCalled();
+  expect(await new GamingSessionRestarts({ repository }).replacementFor('diagnostic:old')).toBeNull();
+});

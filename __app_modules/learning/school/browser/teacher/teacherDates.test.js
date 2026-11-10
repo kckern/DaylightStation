@@ -7,6 +7,11 @@ describe('teacherDates — the module-wide formatters', () => {
     expect(humanDate('garbage')).toBeNull();
   });
 
+  it('humanDate has a short form for narrow column headers', () => {
+    expect(humanDate('2026-08-25', { short: true })).toBe('Tue 25');
+    expect(humanDate('garbage', { short: true })).toBeNull();
+  });
+
   it('humanDateTime formats timestamps', () => {
     expect(humanDateTime('2026-08-24T15:20:00')).toMatch(/Aug 24, 2026/);
     expect(humanDateTime(null)).toBeNull();

@@ -10,16 +10,17 @@ export function fetchExperienceContent(experienceId, contentId) {
   return DaylightAPI(`api/v1/gaming/experiences/${experienceId}/content/${contentId}`);
 }
 
+export function ruleCommandEnvelope(sessionId, command, { actorId = 'host', expectedRevision, commandId: id = commandId(), logicalTime = performance.timeOrigin + performance.now() } = {}) {
+  return { command_id: id, actor_id: actorId, expected_revision: expectedRevision,
+    logical_time: logicalTime, correlation_id: `session:${sessionId}`, command };
+}
+export function postRuleEnvelope(sessionId, envelope, { signal } = {}) {
+  const path = `api/v1/gaming/sessions/${sessionId}/commands`;
+  return signal ? DaylightAPI(path, envelope, 'POST', { signal }) : DaylightAPI(path, envelope, 'POST');
+}
 export async function sendRuleCommand(sessionId, command, { actorId = 'host' } = {}) {
   const current = await fetchSession(sessionId);
-  return DaylightAPI(`api/v1/gaming/sessions/${sessionId}/commands`, {
-    command_id: commandId(),
-    actor_id: actorId,
-    expected_revision: current.header.revision,
-    logical_time: performance.timeOrigin + performance.now(),
-    correlation_id: `session:${sessionId}`,
-    command,
-  }, 'POST');
+  return postRuleEnvelope(sessionId, ruleCommandEnvelope(sessionId, command, {actorId, expectedRevision: current.header.revision}));
 }
 
 export function finishSession(id) {

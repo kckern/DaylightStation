@@ -25,6 +25,8 @@ import { useTeacherProfileOptional } from "../TeacherProfileContext.jsx";
 import { teacherLog } from "../teacherLog.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { cardLadderAdminApi } from "../cardLadderAdminApi.js";
+import { humanDate } from "../teacherDates.js";
+import { labelize } from "../labelize.js";
 import { isCardLadderPolicy } from "../../Programs/Flashcards/CardLadder/cardLadderMode.js";
 
 const PANEL = 'card-ladder-words';
@@ -55,6 +57,8 @@ function StateChip({ level, state }) {
  */
 function TypedAnswer({ term, answer, onRegrade, busy, error }) {
   const [open, setOpen] = useState(false);
+  // An empty answer is the child's Don't know: nothing to re-grade.
+  const dontKnow = answer.judge === 'dont-know' || !String(answer.typed ?? '').trim();
   return (
     <li className="teacher-card-ladder__typed">
       <button
@@ -64,7 +68,7 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
         onClick={() => setOpen((value) => !value)}
         title={`${answer.score != null ? `score ${answer.score}` : 'unscored'} · ${answer.reason ?? ''}`}
       >
-        {answer.day} · “{answer.typed}”{answer.regraded ? ' (re-graded)' : ''}
+        {answer.day} · {dontKnow ? 'Don\u2019t know' : `“${answer.typed}”`}{answer.regraded ? ' (re-graded)' : ''}
       </button>
       {open && (
         <div className="teacher-card-ladder__typed-detail">
@@ -72,14 +76,46 @@ function TypedAnswer({ term, answer, onRegrade, busy, error }) {
             Score {answer.score ?? '—'} · judged by {answer.judge ?? 'unknown'}
             {answer.reason ? ` — ${answer.reason}` : ''}
           </p>
-          <div className="teacher-action-row">
+          {!dontKnow && <div className="teacher-action-row">
             <button type="button" aria-label={`Pass ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, true)}>Pass</button>
             <button type="button" aria-label={`Fail ${term} answer ${answer.typed}`} disabled={busy} onClick={() => onRegrade(answer, false)}>Fail</button>
-          </div>
+          </div>}
           {error && <p className="teacher-panel__error">{error}</p>}
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * This week's dictation (spec 2026-11-06): the tagged week, a warning when
+ * it is not exactly ten words, the words waiting on a grown-up (a recording,
+ * or a place in the deck), and each list word's step and blind passes.
+ */
+export function dictationLine(d) {
+  if (!d) return null;
+  return d.done ? 'ready ✓' : `${d.step} · ${d.blindPasses}/2 blind`;
+}
+
+function DictationSummary({ dictation, words }) {
+  if (!dictation) return null;
+  const listed = words.filter((word) => word.dictation);
+  return (
+    <section className="teacher-card-ladder__dictation" aria-label="Dictation">
+      <h3 className="teacher-card-ladder__pool-title">Dictation · {dictation.week}</h3>
+      {dictation.unavailable && <p className="teacher-panel__error">The progress file for this week is unreadable.</p>}
+      {dictation.countWarning && <p className="teacher-panel__error">{dictation.count} words tagged — a week should have 10.</p>}
+      {(dictation.needsRecording ?? []).length > 0 && <p className="teacher-panel__error">Needs its recording: {dictation.needsRecording.join(', ')}</p>}
+      {(dictation.unknown ?? []).length > 0 && <p className="teacher-panel__error">Not in this deck: {dictation.unknown.join(', ')}</p>}
+      {!dictation.unavailable && <p className="teacher-muted">{dictation.ready ? 'Ready — every word written blind twice.' : `${dictation.remaining} of ${dictation.total} words left.`}</p>}
+      {listed.length > 0 && (
+        <ul className="teacher-card-ladder__dictation-words">
+          {listed.map((word) => (
+            <li key={word.wordId}><span lang="ko">{word.term}</span> — <span>{dictationLine(word.dictation)}</span></li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -96,9 +132,15 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
   const excludeKey = `exclude:${word.wordId}`;
   const regradeKey = (answer) => `regrade:${word.wordId}:${answer.day}:${answer.itemId}`;
 
-  const reset = () => run(resetKey, ({ actorId }) => cardLadderAdminApi.reset({
-    learnerId, deckId, wordId: word.wordId, actorId, pin: null,
-  }));
+  // Reset wipes the word's ladder history, so it arms first and writes only
+  // on the second tap (ReviewQueueView's `voiding` arm).
+  const [resetArmed, setResetArmed] = useState(false);
+  const reset = async () => {
+    const saved = await run(resetKey, ({ actorId }) => cardLadderAdminApi.reset({
+      learnerId, deckId, wordId: word.wordId, actorId, pin: null,
+    }));
+    if (saved) setResetArmed(false);
+  };
 
   const markMastered = () => run(masteredKey, ({ actorId }) => cardLadderAdminApi.markMastered({
     learnerId, deckId, wordId: word.wordId, stage: Number(stagePick), actorId, pin: null,
@@ -132,7 +174,7 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
       <td>{word.gloss}</td>
       <td><StateChip level={word.level} state={word.state} /></td>
       <td>{word.stage ?? '—'}</td>
-      <td>{word.dueDay ?? '—'}</td>
+      <td>{humanDate(word.dueDay) ?? '—'}</td>
       <td>{word.missStreak ?? 0}</td>
       <td>{word.tricky ? 'Yes' : '—'}</td>
       <td>{word.excluded ? 'Yes' : '—'}</td>
@@ -154,7 +196,14 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
       </td>
       <td className="teacher-card-ladder__actions">
         <div className="teacher-action-row">
-          <button type="button" aria-label={`Reset ${term}`} disabled={busy === resetKey} onClick={reset}>Reset</button>
+          {resetArmed ? (
+            <>
+              <button type="button" aria-label={`Confirm reset ${term}`} disabled={busy === resetKey} onClick={reset}>Confirm reset</button>
+              <button type="button" aria-label={`Cancel reset ${term}`} onClick={() => setResetArmed(false)}>Cancel</button>
+            </>
+          ) : (
+            <button type="button" aria-label={`Reset ${term}`} disabled={busy === resetKey} onClick={() => setResetArmed(true)}>Reset</button>
+          )}
           <label className="teacher-card-ladder__stage-pick">
             Mastered stage
             <select
@@ -184,7 +233,7 @@ function WordRow({ word, learnerId, deckId, run, busy, errors }) {
  * be a control that lies about what it can do. The rest are named with why
  * they can't be dropped, not silently hidden.
  */
-function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, run, busy, errors }) {
+function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, deckLabel, run, busy, errors }) {
   if (!decksSeen?.length) return null;
   const droppable = new Set(droppableDecks ?? []);
   const key = (id) => `drop-deck:${id}`;
@@ -197,9 +246,9 @@ function DeckPool({ decksSeen, droppableDecks, learnerId, deckId, run, busy, err
       <ul className="teacher-card-ladder__pool-list">
         {decksSeen.map((id) => (
           <li key={id}>
-            <span>{id}</span>
+            <span>{deckLabel(id)}</span>
             {droppable.has(id) ? (
-              <button type="button" aria-label={`Drop ${id} from pool`} disabled={busy === key(id)} onClick={() => drop(id)}>Drop from pool</button>
+              <button type="button" aria-label={`Drop ${deckLabel(id)} from pool`} disabled={busy === key(id)} onClick={() => drop(id)}>Drop from pool</button>
             ) : (
               <span className="teacher-muted">{id === deckId ? 'current' : 'assigned'}</span>
             )}
@@ -225,9 +274,9 @@ function AppliedChange({ change, day, onUndo, busy, error, nameOf }) {
       <span>{what}</span>
       {change.reason ? <span className="teacher-muted"> — {change.reason}</span> : null}
       {change.undone ? (
-        <span className="teacher-muted"> · undone {change.undone.day} by {nameOf(change.undone.actorId)}</span>
+        <span className="teacher-muted"> · undone {humanDate(change.undone.day) ?? change.undone.day} by {nameOf(change.undone.actorId)}</span>
       ) : change.undoable ? (
-        <button type="button" aria-label={`Undo ${what} on ${day}`} disabled={busy} onClick={() => onUndo(change)}>Undo</button>
+        <button type="button" aria-label={`Undo ${what} on ${humanDate(day) ?? day}`} disabled={busy} onClick={() => onUndo(change)}>Undo</button>
       ) : null}
       {error && <p className="teacher-panel__error">{error}</p>}
     </li>
@@ -262,7 +311,7 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameO
       <>
         <p className="teacher-card-ladder__tuning-last">
           {last ? (
-            <>Last tuned {last.day}: <strong>{last.status ?? (last.error ? 'failed' : '—')}</strong></>
+            <>Last tuned {humanDate(last.day) ?? last.day}: <strong>{last.status ?? (last.error ? 'failed' : '—')}</strong></>
           ) : 'Not tuned yet.'}
         </p>
         {last?.notes?.length ? (
@@ -285,7 +334,7 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameO
           <ol className="teacher-card-ladder__tuning-history">
             {data.history.map((entry, index) => (
               <li key={`${entry.day}:${index}`}>
-                <span>{entry.day} · {entry.undo ? `grown-up undo by ${nameOf(entry.actorId)}` : (entry.status ?? (entry.error ? 'failed' : '—'))}</span>
+                <span>{humanDate(entry.day) ?? entry.day} · {entry.undo ? `grown-up undo by ${nameOf(entry.actorId)}` : (entry.status ?? (entry.error ? 'failed' : '—'))}</span>
                 {entry.error ? <span className="teacher-muted"> — {entry.error}</span> : null}
                 {entry.applied?.length ? (
                   <ul>
@@ -329,9 +378,11 @@ function TuningSection({ learnerId, deckId, actorId, rawRun, busy, errors, nameO
  *   every deck the learner has ever seen, not only this one, but every write
  *   is scoped through this deck so the teacher gate can attribute it.
  * @param {string} [props.title] - the enrollment's own `title`, falling back
- *   to the deck id when the plan never named one.
+ *   to words made from the deck id when the plan never named one.
+ * @param {Object<string,string>} [props.deckTitles] - deck id → title for the
+ *   learner's other card-ladder enrollments, so the new-word pool names them.
  */
-export default function CardLadderWordsPanel({ learnerId, deckId, title = null }) {
+export default function CardLadderWordsPanel({ learnerId, deckId, title = null, deckTitles = {} }) {
   // The GET is teacher-gated: TeacherGate.assert checks isAdult(userId)
   // BEFORE it ever looks at the capability/pin, so an actorId-less read is
   // refused with a 403 regardless of the cookie. `useTeacherProfileOptional`
@@ -361,16 +412,26 @@ export default function CardLadderWordsPanel({ learnerId, deckId, title = null }
   const words = record.data?.words ?? [];
   const decksSeen = record.data?.decksSeen ?? [];
   const droppableDecks = record.data?.droppableDecks ?? [];
+  // A pool deck by its enrollment title. A deck the learner has left has no
+  // enrollment to name it, so its id's last segment reads as words instead
+  // ("language/korean/week-02-food" → "Week 02 Food").
+  const deckLabel = (id) => deckTitles[id]
+    ?? (id === deckId ? title : null)
+    ?? labelize(String(id).split('/').pop());
 
   return (
     <PanelFrame
-      title={title ?? deckId}
+      title={deckLabel(deckId)}
       state={record.state}
       retry={record.retry}
       emptyCopy="No words recorded yet for this deck."
       unavailableCopy="Card ladder is not available on this install."
     >
       <div className="teacher-card-ladder">
+        <DictationSummary dictation={record.data?.dictation ?? null} words={words} />
+        {/* Scrolls inside the panel: ten columns never fit a phone, and the
+            page itself must not scroll sideways (audit 2026-10-29). */}
+        <div className="teacher-card-ladder__scroll">
         <table className="teacher-card-ladder__table">
           <thead>
             <tr>
@@ -384,7 +445,8 @@ export default function CardLadderWordsPanel({ learnerId, deckId, title = null }
             ))}
           </tbody>
         </table>
-        <DeckPool decksSeen={decksSeen} droppableDecks={droppableDecks} learnerId={learnerId} deckId={deckId} run={run} busy={busy} errors={errors} />
+        </div>
+        <DeckPool decksSeen={decksSeen} droppableDecks={droppableDecks} learnerId={learnerId} deckId={deckId} deckLabel={deckLabel} run={run} busy={busy} errors={errors} />
         <TuningSection learnerId={learnerId} deckId={deckId} actorId={actorId} rawRun={rawRun} busy={busy} errors={errors} nameOf={nameOf} />
       </div>
     </PanelFrame>

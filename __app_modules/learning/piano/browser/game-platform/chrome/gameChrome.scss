@@ -521,58 +521,23 @@
   margin-inline: auto;
 }
 
-/* ── HUD (countdown / life / progress) ─────────────────────────────────────
-   GameChrome.jsx has rendered these three since it was written and nothing has
-   ever styled them — `.piano-game-life__notch` was an unstyled empty span, so
-   a life meter drew nothing at all. */
-.piano-game-countdown {
-  display: grid;
-  place-items: center;
-  font-size: var(--t-display, 2.2rem);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--pg-ivory);
-  text-shadow: 0 2px 12px rgb(0 0 0 / 70%);
-}
-
-.piano-game-life {
-  display: flex;
-  gap: 0.25rem;
-  align-items: center;
-}
-
-.piano-game-life__notch {
-  width: 0.55rem;
-  height: 1.1rem;
-  border: 1px solid var(--pg-hairline);
-  border-radius: 2px;
-  background: transparent;
-}
-
-.piano-game-life__notch.is-active {
-  border-color: var(--pg-brass-fill);
-  background: var(--pg-brass-fill);
-}
-
-.piano-game-life__notch.is-danger {
-  border-color: var(--pg-felt);
-  background: var(--pg-felt);
-}
-
-.piano-game-progress {
-  width: 100%;
-  height: 0.4rem;
-  border-radius: var(--r-pill, 999px);
-  background: var(--pg-shelf-lift);
-  overflow: hidden;
-}
-
-.piano-game-progress > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--pg-brass-fill);
-  transition: width 200ms ease-out;
+/* ── HUD (countdown / life / progress / banner) ───────────────────────────
+   Rendered by the shared kit (`__capabilities/gaming/.../ui/hud`); chrome/index.js
+   re-exports all four — CountdownOverlay, LifeMeter, ProgressMeter and
+   MomentBanner — so piano games import them from chrome only. The kit has no
+   colours of its own: it reads --game-hud-*, and this maps them onto the
+   cabinet. MomentBanner's role="status" is a persistent wrapper; a game's
+   className styles the visible child inside it. */
+.piano-game-host,
+.piano-game-fullscreen {
+  --game-hud-ink: var(--pg-ivory);
+  --game-hud-edge: var(--pg-hairline);
+  --game-hud-live: var(--pg-brass-fill);
+  --game-hud-danger: var(--pg-felt);
+  --game-hud-track: var(--pg-shelf-lift);
+  --game-hud-banner-ink: var(--pg-ivory);
+  --game-hud-banner-bg: color-mix(in srgb, var(--pg-case) 80%, transparent);
+  --game-hud-shadow: 0 2px 12px rgb(0 0 0 / 70%);
 }
 
 /* ── SHEET ─────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ This taxonomy is mutually exclusive at the ownership level and collectively cove
 | Party Games | Shared-display launch flow, team setup, buzzers, injected surface capabilities, host/verifier companions, party effects | Experience-specific presentation, Piano pedagogy, School course sequencing |
 | Piano | MIDI interaction, kiosk lifecycle, piano-specific challenges and progression | Party host policy or generic score storage |
 | School | Course sequencing, assignment/evidence policy, embedded mini-game lifecycle | Game authority internals or party equipment |
+| Real-time kit | Fixed-step runner, frame driver, tick lerp, effect dispatcher, run roles, game-achievement announcement (Tier 1; scroller geometry is Tier 2, planned). See [realtime kit](realtime-kit.md) | Game rules, state shapes, phases, checkpoints, flight/jump dynamics |
 | Presentation | Sprite/tile catalogs, scene compilation, animation, rendering, semantic presentation actions | Game state mutation, scoring, authorization |
 | Deployment data | Mounted definitions, manifests, media, environment configuration, durable sessions | Source-code behavior |
 

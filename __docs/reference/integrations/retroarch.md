@@ -112,3 +112,99 @@ The Games menu entry in `data/household/config/lists/menus/tvapp.yml`:
 **Launch fails with "device not found":** Check ADB connectivity to the target device. Verify `devices.yml` has the device configured with ADB host/port.
 
 **Launch fails with "device constraint mismatch":** The `device_constraint: android` in config means only android-type devices can launch RetroArch content.
+
+## Controllers screen (Bluetooth gamepads in kiosk mode)
+
+One screen manages the TV's Bluetooth gamepads end to end from the remote, without
+Android Settings (which Fully Kiosk will not let you reach). It opens two ways:
+
+- **Home menu → Controllers** — a menu item with `input: app:controllers`,
+  `action: Open` in `content/lists/menus/tvapp.yml` (app id `controllers` in
+  `frontend/src/lib/appRegistry.js`).
+- **Games → Controllers** — move Up from the top row of games, then Select. Back
+  returns to the same game selection.
+
+Code: `__app_modules/games/emulator/browser/controllers/` (`ControllerManager.jsx`
+view, `useBluetoothManager.js` poller, `controllerFlows.js` lifecycle,
+`controllerModel.js` pure reads). It never overlays RetroArch.
+
+**What it shows.** Every game controller with its OBSERVED state — Connected,
+Paired · not connected, Pairing…, Found · not paired, or Paired · link status unknown
+(the bridge cannot see the HID link right now; never guessed). Remotes and
+keyboards are listed view-only and can never be forgotten from here.
+
+**Live input.** A right-hand panel shows every controller the browser sees
+(`navigator.getGamepads()`, the TV remote excluded) as *Player N* with a pad
+diagram whose buttons and sticks light while held, plus "I'm here!" and what was
+pressed (named by position — "right face button" — since 8BitDo and Xbox pads
+print A in different places). A connected row's lamp lights too, but only when
+exactly one connected row carries that pad's name: the browser exposes no
+Bluetooth address, so two identical pads are told apart by the panel, not the
+rows. "Ready to play" ends with "press any button to check". Controllers only
+light up here; the remote drives the screen. The screen host's `GamepadAdapter`
+turns pad buttons into ActionBus actions *before* any key exists (L1/R2/Select →
+`escape`, which dismisses the overlay or reloads the page), so the screen claims
+`navigate`/`select`/`escape` on the bus while it is up; its synthetic keys
+(`__gamepadSynthetic`) and Android's own A → OK / B → Back fallbacks (a key within
+250 ms of a pad button going down) are swallowed. The guard is edge-based, never
+"a button is held", so a pad lying on a button cannot lock out the remote. Mice,
+keyboards and other HID receivers Chromium lists as gamepads (the Shield shows a
+"wireless 2.4G Mouse" at slot 0) are skipped, and a phantom twin (one pad
+enumerated at two indices, pressing in lockstep) is hidden after its first
+mirrored press — a same-name pad ever pressed on its own stays. Code:
+`liveInput.js`, `useGamepadActivity.js`, `PadDiagram.jsx`.
+
+**What it does.** Each action is a checklist that only ticks on observed state,
+never on an accepted request:
+
+| Action | Steps |
+|---|---|
+| **Fix** (paired pad) | Reconnect → if no answer in 12 s: Forget → pairing mode + search → Pair → Connect |
+| **Re-pair** | Forget → pairing mode + search → Pair → Connect (from scratch) |
+| **Connect** / **Disconnect** | the one link change |
+| **Forget** | asks first ("Keep it" is focused) |
+| **Find new controllers** → **Pair** | Pair → Connect |
+
+Re-pairing does NOT depend on discovery: after Forget, the bridge still lists the
+pad, and Android pairs a known Classic pad by address as soon as it is in pairing
+mode, so the flow pages it every few seconds for up to 2 minutes while showing the
+pairing-mode steps. Discovery is only the fallback for a pad the bridge no longer
+lists (keeping it running across Android's ~12 s inquiry; a pad is matched by
+address, or by name when exactly one unpaired pad of that name appears — an 8BitDo
+in another mode comes back under a new address). On the Shield, discovery needs the
+audio-bridge build whose service has the `location` type (installed 2026-11-08; see
+its DESIGN.md). An older build has every scan refused; **Find new controllers** then
+says so, and only pads the TV already knows can be (re)paired. Unpaired
+non-controllers a search turns up (neighbours' TVs, nameless beacons) are not
+listed.
+A legacy **PIN** prompt is answered on screen (with a "Use 0000" shortcut). A
+**confirm-code** prompt cannot be answered by a sideloaded app (`capabilities.confirm`
+is false without `BLUETOOTH_PRIVILEGED`), so the flow declines it and says so
+immediately rather than waiting out the 60 s window; a pad that pairs "Just Works"
+when the TV starts the pairing (8BitDo in Android mode) never asks.
+
+**Configuration** on the fleet device in `household/hardware/devices.yml`:
+
+```yaml
+bluetooth_bridge:
+  url: http://<device-host>:8766
+  pairing:                 # optional; words shown during the search step
+    mode: Android mode
+    steps:
+      - "..."
+    troubleshoot: "..."    # shown when a flow fails
+```
+
+The browser uses its `fleet:` identity (set by the screen from
+`websocket.guardrails.device`) to call `GET /api/v1/arcade-bluetooth/:deviceId`;
+JSON POST actions below that path are `scan`, `scan/stop`, `pair`, `unpair`,
+`connect`, `disconnect`, and `pairing`. The status response carries `guide` when
+`pairing` is configured. Only the server's registered bridge origin is used; a
+device without `bluetooth_bridge` returns an explicit 503. The route must be listed
+in the v1 `routeMap` (`__backend/src/4_api/v1/routers/api.mjs`) — registering it in
+`v1Routers` alone 404s. Existing garage BlueZ pairing stays separate.
+
+Installation needs the original APK signing key and Bluetooth discovery permissions.
+Do not uninstall a working audio-bridge to work around a signing mismatch. Do not
+replace/restart it during a game or microphone call. See the audio-bridge module's
+`DESIGN.md` for the native API and setup requirements.

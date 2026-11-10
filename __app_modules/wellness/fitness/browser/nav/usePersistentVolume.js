@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVolumeStore } from "./useVolumeStore.js";
 
 const defaultState = { level: 0.6, muted: false, source: 'global' };
@@ -17,7 +17,10 @@ const normalizePart = (value, fallback) => {
   return normalized;
 };
 
-export function usePersistentVolume({ grandparentId, parentId, trackId, playerRef } = {}) {
+// `reapplyKey` re-applies the stored level without changing where it is
+// stored: a music player keyed per playlist passes the current track here so
+// each new track's audio element gets the playlist level.
+export function usePersistentVolume({ grandparentId, parentId, trackId, playerRef, reapplyKey } = {}) {
   const { getVolume, setVolume, applyToPlayer, version } = useVolumeStore();
   const ids = useMemo(
     () => ({
@@ -59,7 +62,17 @@ export function usePersistentVolume({ grandparentId, parentId, trackId, playerRe
     if (playerRef?.current) {
       applyDucked(resolved);
     }
-  }, [ids, playerRef, getVolume, applyDucked, version]);
+  }, [ids, playerRef, getVolume, applyDucked, version, reapplyKey]);
+
+  // The Player is a child of this hook's owner and re-writes element.volume from
+  // its (un-ducked) `volume` prop in a passive effect whenever that prop changes.
+  // Child effects run before the parent's, so re-assert the ducked level here
+  // after every level change while a duck is held; otherwise a volume tap during
+  // an SFX would lift the duck until the cue ended. No-op when not ducked.
+  useEffect(() => {
+    if (duckRef.current >= 1 || !playerRef?.current) return;
+    applyDucked({ level: volumeRef.current });
+  }, [volume, applyDucked, playerRef]);
 
   const persistVolume = useCallback(
     (nextLevel) => {

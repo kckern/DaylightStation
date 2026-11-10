@@ -35,4 +35,11 @@ describe('leniencyCap', () => {
   it('is strict for a quiz', () => {
     expect(leniencyCap({ archetype: 'quiz', rowCount: 20 })).toBe(0);
   });
+
+  it('honours rowsPerCredit (school.yml scan.leniencyRowsPerCredit); quiz stays 0', () => {
+    expect(leniencyCap({ archetype: 'worksheet', rowCount: 9, rowsPerCredit: 1 })).toBe(9);
+    expect(leniencyCap({ archetype: 'worksheet', rowCount: 9, rowsPerCredit: 2 })).toBe(4);
+    expect(leniencyCap({ archetype: 'worksheet', rowCount: 3, rowsPerCredit: 5 })).toBe(1);
+    expect(leniencyCap({ archetype: 'quiz', rowCount: 9, rowsPerCredit: 1 })).toBe(0);
+  });
 });

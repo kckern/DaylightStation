@@ -62,7 +62,8 @@ public final class KioskSettings {
      * The kiosk-critical set. Insertion-ordered so repair logs read consistently.
      *
      * <p>Sourced from {@code cli/fkb.cli.mjs} — {@code keepawake} (:214-219) and
-     * {@code recovery} (:245-257) — plus {@code kioskMode}.
+     * {@code recovery} (:245-257) — plus {@code kioskMode}, plus {@code volumeLevels} for the
+     * audio guard.
      */
     public static final Map<String, Desired> DESIRED;
     static {
@@ -91,6 +92,13 @@ public final class KioskSettings {
         m.put("reloadOnIdle", str("0"));
         m.put("reloadEachSeconds", str("0"));
 
+
+        // Audio guard (2026-10-23): volumeLevels=3:100 made FKB re-assert STREAM_MUSIC
+        // to 15 every time the guard clamped the built-in speaker to 0 — ~25 writes/s
+        // while A2DP was down, and a few ms of unmuted tablet speaker each round.
+        // Guard-only (not in fkb.cli.mjs). EMPTY is the only safe value: any level
+        // (e.g. 3:0) writes the ACTIVE device's index, which is the piano.
+        m.put("volumeLevels", str(""));
         DESIRED = Collections.unmodifiableMap(m);
     }
 

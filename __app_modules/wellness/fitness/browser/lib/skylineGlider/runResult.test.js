@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSkylineGliderRun, skylineGliderBonus } from "./runResult.js";
+import { buildSkylineGliderRun, countTargets, skylineGliderBonus } from "./runResult.js";
 
 describe('Skyline Glider terminal result', () => {
   it('awards ten completion rings plus unique collectibles, capped at thirty', () => {
@@ -20,4 +20,17 @@ describe('Skyline Glider terminal result', () => {
     const record = buildSkylineGliderRun({ runId: 'abc', course: { id: 'mountain-pass', version: 2 }, riderId: 'test-rider', fitnessSessionId: 'fs-1', equipmentId: 'niceday', calibration: { lowRpm: 30, highRpm: 100 }, startedAt: '2026-10-07T18:00:00Z', endedAt: '2026-10-07T18:05:00Z', state: { courseTime: 300, collisions: 0, restarts: 0, collectedIds: [] }, status: 'completed' });
     expect(record).toMatchObject({ schema: 'skyline-glider-run/v1', run: { fitness_session_id: 'fs-1', equipment_id: 'niceday', calibration: { low_rpm: 30, high_rpm: 100 } } });
   });
+
+  it('records targets destroyed by weapons and shots used', () => {
+    const record = buildSkylineGliderRun({ runId: 'abc', course: { id: 'cloud-ridge', version: 1 }, riderId: 'dad', startedAt: '2026-10-23T17:00:00Z', endedAt: '2026-10-23T17:04:00Z', state: { courseTime: 240, collisions: 0, restarts: 0, collectedIds: [], shotsFired: 9, bombsDropped: 2, destroyedBy: { a: 'laser', b: 'bomb', c: 'crash' } }, status: 'completed' });
+    expect(record.result.outcome.score).toBe(2);
+    expect(record.run).toMatchObject({ targets: 2, shots_fired: 9, bombs_dropped: 2 });
+    expect(record.result.metrics).toMatchObject({ targets: 2, shots_fired: 9, bombs_dropped: 2 });
+    expect(record.result.metrics).toMatchObject({missiles_fired:0,boosts_used:0});
+  });
+});
+
+it('counts weapon kills of scored targets only, never crashes or avoid-role scenery', () => {
+  const course = { entities: [{ id: 't', role: 'shoot' }, { id: 'pine', role: 'avoid', class: 'breakable' }, { id: 'w', role: 'bomb' }] };
+  expect(countTargets({ destroyedBy: { t: 'laser', pine: 'missile', w: 'bomb', x: 'crash' } }, course)).toBe(2);
 });

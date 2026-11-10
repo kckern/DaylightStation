@@ -55,6 +55,19 @@ lifecycle validates once and hands to every surface that asks whether anyone was
 asked to work that day — the agenda, the term grid, and the reading streak
 wall — so none of them can judge Christmas differently.
 
+**Teacher hold.** A unit whose open failure is past the retry cap, or has sat
+unretried for three school days (see the
+[failure policy](./failure-policy.md#a-childs-failed-work-two-retries-or-three-idle-days-then-a-grown-up)),
+is never owed. It is still the work in hand, so it keeps blocking its successors,
+but it is offered only when nothing else in its subject is, and then only as a
+named line ("a grown-up will help with this one") with nothing printable behind
+it. A section whose only open item is a hold is `excused · teacher_hold`. That
+reason is checked ahead of the lock reasons, because the successors are locked
+*because of* the hold. Other open or available work in the same subject is
+still offered first and still obligates. Completion and the term grid read the
+excuse like any other, so a held subject cannot keep the day, or Piano Games,
+shut.
+
 `not_a_school_day` is applied as an override after the ladder, so it never
 downgrades a section that was already `served`, and the diagnostics below it
 keep firing on a day that is off. The section still offers a `next`: the
@@ -192,15 +205,35 @@ subject pins. A finished day shows one green check mark in its place. There is
 no segmented bar; the number is the progressbar for screen readers ("N of M
 done"). A rest day keeps "No school today".
 
+**Whether the day is done is the server's call, not the board's.** The teacher
+day digest (`GET /api/v1/school/teacher/day`, v2) carries each learner's
+`dayCompletion: { state, studyDate, excused }` from `GetLearnerDayCompletion`,
+the same verdict the day-complete gate, term grid and agenda use. The card shows
+the check mark when that state is `complete` or `no_work_today`, and never shows
+"0 left" while it says `incomplete`. The discs stay the board's own reading of
+sessions; a settled retry the planner has moved past (remediation capped, next
+unit served) is not a disc. When `dayCompletion` is null or `indeterminate` the
+card falls back to its own count. Before 2026-11-03 the board recounted alone and
+read "6 of 7" for a learner every other surface showed done.
+
 **Coins.** A fixed-width column so the figures line up down every card. Silver
 is the big figure: the learner's earnings so far this week from the roster
 earnings preview (`GET /api/v1/earnings/preview`; see
-`__docs/reference/economy/economy.md`). It is a preview; nothing is paid until
-payday. Gold is smaller beneath it: the economy wallet balance
-(`GET /api/v1/economy/users/:id/wallet`), which reads 0 until payouts exist.
-Gems are a third line only once earned or pending. A faded `+N` hangs after a
-number for what is still possible; it is decoration only, and the figure's one
-spoken name carries it ("27 silver this week, 5 more possible"). There are no
+`__docs/reference/economy/economy.md`). It is a preview: PayoutService mints
+its earned lines into the ledger only while the economy catalog is `live`.
+Gold is smaller beneath it: the wallet's `balances.gold`
+(`GET /api/v1/economy/users/:id/wallet`), which grows when the Sunday week
+close converts unspent silver.
+On the Portal (where `SchoolApp` passes `onOpenGems`) the gems leave the coin
+grid for their own **gem door** under it: this week's count, a faint gem at
+zero, and a tap opens the family's Gem Board focused on that child (see the
+economy reference, "Gem Board"). The board header carries a **Gems** door to
+the same board. Without `onOpenGems`, gems stay in the coin grid as below.
+Gems are a third line only while some are held. One number per coin, no faded
+`+N`: silver is what was earned; gems are what the child holds this week,
+including the ring contest's gem while they lead it (the preview files that one
+under `pending` until Saturday noon, beside a silver prize the board does not
+show). It used to read `0 +1`. There are no
 captions; icons carry the meaning and each figure is an image whose name says
 it. A wallet or roster read that comes back not-ok is logged
 (`status-board.wallet-failed` / `status-board.earnings-failed`).
@@ -221,6 +254,105 @@ failed re-read keeps what is shown, and a learner the preview cannot price
 (every line "can't tell") shows no silver figure. The snapshot cache keeps the
 figures with the week they price, so last week's total is never painted as
 this week's. Cards stay in roster order; the economy never ranks.
+
+## The coin window
+
+The coin cell on a card is a native button (so keyboard and OK reach it). It
+opens that learner's bank screen directly; there is no popup between. Opening it
+starts no tracked work (it logs `status-board.bank-open`), and the Portal wires it
+to the panel's bank door (`bank/BankDoor.jsx`, `POST /school/bank/open`), with
+the learner already known so no face picker is shown. The coin cell is the only
+way into the bank on the Portal; there is no bank strip. A refused open shows
+the "Whose bank?" sheet with the refusal under the faces. The door logs
+`economy.bank.door-opened` and `economy.bank.door-open-failed`. The cell is a plain figure, not a button, when
+the board has no `onOpenBank` or the learner has no coin figure yet. Its spoken
+name carries the week: "<name>'s bank, N silver this week".
+
+The bank screen (`bank/BankScreen.jsx`) has three tabs, History (the default),
+How to earn and How to spend; Back returns to the board. History shows:
+
+1. The balances: silver (with when it becomes gold), gold and gems.
+2. The ledger as a table grouped by day, newest first, with the columns time,
+   icon, amount, description and the balance after (`bank/BankLedger.jsx`,
+   `LedgerTable`). The description is the label, then what the line was for:
+   "Korean · Tuesday", "Green day · Monday", "Rings · Sonic & Sega All Stars Racing ·
+   7:19 pm · 588 rings" (one ring row per finished workout). There is
+   no "Earned"/"Spent" word (the sign says it) and no "not yet paid" panel:
+   payouts land in the bank as soon as they are earned (rings once the workout
+   has finished), so the ledger is the
+   whole week. Wording and grouping are `bank/bankScreenModel.js`
+   (`historyByDay`, `ledgerEntry`), read from the bank's structured fields; see
+   "The bank" in `__docs/reference/economy/economy.md`.
+
+Data: `GET /api/v1/economy/users/:id/bank`, refreshed on this learner's
+`school` events. A failed bank read shows "The bank
+is napping" and no numbers; before coins are live the screen says "Coins start
+soon". The screen has its own idle exit. Log events are `economy.bank.*`
+(`opened`, `tab-changed`, `unavailable`, `idle-exit`).
+
+## The coin ceremony
+
+When a child is paid (a minted earning lands in their bank), a short "+N" pop appears over the board.
+
+**What is celebrated.** Silver actually minted, read from the learner's bank
+history (the ledger), not the week's projection and not a bare balance (owner
+ruling 2026-11-09, superseding 2026-10-21). The pop reads `+N` large,
+`<total> silver` smaller, the child's face and name, and the standard silver
+`CoinIcon`. The coin column's projected figure still moves with the week, but
+never triggers a pop.
+
+**What counts as a rise.** Earning entries in `GET /api/v1/economy/users/:id/bank`
+`history` that no earlier network read held (`coinCeremonyModel.observeMinted`;
+the one predicate is `earnedSilver`: a silver gain whose line `source` is
+`payout`, `earn` or `prize`). `+N` is the sum of those entries. A deposit, a
+correction (adjust), a pass refund, a conversion, a spend or a gold entry moves
+the balance but is never news, and a spend landing between two reads does not
+hide a mint. A mint arrives as `coins-changed`, so one mint is one pop. Not
+celebrated: a projected-but-unminted amount; the first network read per learner
+since the page loaded (a baseline, so a reload never replays an old pop); a
+learner off the roster. A learner missing from one read keeps their
+baseline. The baseline advances even while the ceremony is disabled. It lives
+for the life of the page, not the board: the board unmounts while a code, runner,
+section or bank screen is open, and coins earned there pop when the board comes
+back.
+
+**Bursts.** A rise waits `coalesceWindowMs` before it shows, and further rises
+for that learner merge into it (the gains add). A rise for the child already on
+screen updates that pop in place and restarts its clock. Different children
+queue and show one at a time.
+
+**Where and how long.** Over the board pane only, never the keypad, so a child
+typing a code is never blocked; below the narrow breakpoint the board pane is
+hidden and so is the ceremony. It auto-dismisses after `durationMs`; a tap, or
+OK once tabbed to, dismisses it early. It never takes focus. Motion is one enter
+and one exit, with none under `prefers-reduced-motion`; the cards themselves
+still do not move.
+
+**Sound.** The coin cue plays once per pop (not per merge): `coin.mp3` on the
+media mount at `school/_ux/coin.mp3` by default, resolved through
+`DaylightMediaPath`. It rides the screen's master volume (volume times
+`getEffectiveMaster()`), a muted master plays nothing, and the audio element is
+primed muted from the first touch or key on the page, because a kiosk browser
+refuses sound before a gesture. See the School runbook, "Coin ceremony sound".
+
+**Config.** The screen YAML's optional `school.coinCeremony` block, read by
+the Portal with the rest of the screen config:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | `false` turns the pop and its sound off |
+| `sound` | `school/_ux/coin.mp3` | media-relative path; `''` or `none` is silent |
+| `volume` | `0.8` | 0 to 1, before the master volume |
+| `durationMs` | `3500` | 1000 to 15000 |
+| `coalesceWindowMs` | `1500` | 0 to 10000 |
+
+**Logs.** `status-board.coin-rise`, `status-board.coin-ceremony.shown`,
+`.dismissed` (reason `tap` or `timeout`), `.dropped` (learner left the roster),
+and the sound's `school.coin_cue.play` / `.rejected` / `.muted` / `.threw`
+(setting up the element failed) / `.unlock_rejected` (the first-gesture prime
+was refused; only `NotAllowedError` re-arms it for the next tap) /
+`.unlock_threw`. The bank door logs `economy.bank.door-opened` and
+`economy.bank.door-open-failed`.
 
 ## Physical education on the status board
 
@@ -287,7 +419,8 @@ Refreshes are scoped to what changed:
 | `school` event (`session-issued`, `story-read`, …) | That learner |
 | `fitness.weekly-rings` State Gate event | Rings + that learner |
 
-A failed re-read keeps what the card already shows; only a card with nothing on
+The coin read (`refreshCoins`) also feeds the coin ceremony; the cache seed never
+does. A failed re-read keeps what the card already shows; only a card with nothing on
 it falls back to the plan-less summary or no day squares. A per-learner
 generation counter drops a slow read that a newer one has overtaken.
 
@@ -310,3 +443,28 @@ remain locked. Earned-reward consumers may require `complete` specifically.
 The completion bridge publishes an initial observation after startup and later
 state transitions. Event consumers must be idempotent by learner and study
 date. See [completion and rewards](./completion-and-rewards.md).
+
+## School achievements for gems
+
+School supplies five activities to the economy's achievement gems through
+`createSchoolAchievementProvider` (`server/application/SchoolAchievementProvider.mjs`,
+rules in `server/domain/achievements.mjs`), one provider in the economy's
+`CompositeAchievementEvidence`. It reads School's own stores and use cases, never
+files:
+
+| Activity | Kind | Source | Fact |
+| --- | --- | --- | --- |
+| `card-goal` | activity days | `CardLadderSittingService.achievementRecord` | a card-ladder day file with `doneAt`, any package |
+| `story-read` | activity days | reading log `listForDay` | a credited story-time read on that study day |
+| `perfect-sheet` | milestone | `listLearnerSessions` | a graded curriculum sheet with every point (`gradedCorrectCount === gradedTotalCount`, else `gradedPercent >= 100`); key = session id; dated by the study day it was **graded**. Program sessions (`<program>:<id>` units), external assessments (no `graded` event) and invalidated evidence never count. Rule retired 2026-11-10; provider kept (evidence still recorded) |
+| `book-finished` | milestone | book log `listForLearner` | the FIRST finish of a book; key = ISBN, so a reread never earns twice |
+| `cards-mastered` | milestone | `achievementRecord` | every 10th word signed off (`state: mastered` + `typedSignedOff`, not excluded) across every package on disk, enrolled or not; key = the count (`"10"`, `"20"`, …) |
+
+`cards-mastered` is computed from the present status, not a history: a demotion
+clears a word's `typedSignedOff` and a later re-sign-off re-dates it, so a
+threshold's day can move. Its key does not, which is what keeps it paid once.
+
+Each source fails alone (`school.achievements.source-failed`, warn): its
+activities are listed in `unavailable` for the week, for every learner, because
+the port has no per-learner "indeterminate" and a partial read is not "nothing
+happened". An unwired dependency is unavailable the same way, never empty.

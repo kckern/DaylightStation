@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { getFileStats, readBinaryFromPath } from '#system/utils/FileIO.mjs';
 import { IEmulatorAssetRepository } from "../application/ports/IEmulatorAssetRepository.mjs";
@@ -54,6 +55,12 @@ export class FilesystemEmulatorAssetRepository extends IEmulatorAssetRepository 
     this.#emulationDir = emulationDir;
     this.#engineDir = engineDir;
     this.#loadCatalog = loadCatalog;
+  }
+
+  async getResourceDigest(resource) {
+    const hash = createHash('sha256');
+    for await (const chunk of resource.open()) hash.update(chunk);
+    return hash.digest('hex');
   }
 
   getEngineResource(assetId) {

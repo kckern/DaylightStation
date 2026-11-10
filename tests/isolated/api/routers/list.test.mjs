@@ -79,6 +79,26 @@ describe('List API Router', () => {
     }));
   });
 
+  it('preserves explicit zero-start intent through the HTTP menu response', async () => {
+    mockWatchlistAdapter.getList.mockResolvedValue({
+      id: 'watchlist:family', title: 'Family', children: [{
+        id: 'plex:123', title: 'Lesson', itemType: 'leaf',
+        actions: { play: { contentId: 'plex:123', resume: false, seconds: 0 }, queue: { contentId: 'plex:123', resume: false, seconds: 0 } },
+      }],
+    });
+    const res = await request(app).get('/api/list/watchlist/family');
+    expect(res.status).toBe(200);
+    expect(res.body.items[0].play).toMatchObject({ resume: false, seconds: 0 });
+    expect(res.body.items[0].queue).toMatchObject({ resume: false, seconds: 0 });
+  });
+
+  it('does not turn a default top-level resume flag into a playback override', () => {
+    const item = toListItem({ id: 'plex:123', title: 'Movie', itemType: 'leaf', resume: false, resumePosition: 42, actions: { play: { contentId: 'plex:123' } } });
+    expect(item).not.toHaveProperty('resume');
+    expect(item.play).not.toHaveProperty('resume');
+    expect(item.resumePosition).toBe(42);
+  });
+
   describe('GET /api/list/:source/*', () => {
     it('returns watchlist contents', async () => {
       const res = await request(app).get('/api/list/watchlist/Morning%20Program');

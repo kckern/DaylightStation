@@ -194,3 +194,14 @@ describe('expandContainerInput — episode marker', () => {
     expect(out[0].type).toBe('episode');
   });
 });
+
+it('passes video-container overrides to video children without adding them to audio', async () => {
+  const result = await expandContainerInput({ contentId: 'plex:1', type: 'playlist', maxResolution: '720', maxVideoBitrate: 4000, adaptive: false }, {
+    fetchImpl: async () => ok({ items: [
+      { id: 'plex:2', type: 'movie', itemType: 'leaf' },
+      { id: 'plex:3', type: 'track', itemType: 'leaf' },
+    ] }),
+  });
+  expect(result[0]).toMatchObject({ contentId: 'plex:2', maxResolution: '720', maxVideoBitrate: 4000, adaptive: false });
+  expect(result[1]).not.toHaveProperty('maxResolution');
+});

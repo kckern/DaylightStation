@@ -188,6 +188,7 @@ export function createSchoolLifecycleRouter({
   enrollLearner = null,
   unenrollLearner = null,
   markSessionAbandoned = null,
+  sweepAnswerSheets = null,
   recoverMisattributedWorksheet = null,
   replaceLostAnswerSheet = null,
   createLostAnswerSheetTicket = null,
@@ -323,6 +324,8 @@ export function createSchoolLifecycleRouter({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
         studyDay: req.query.studyDay ?? null,
+        // The JSON answer carries no document, so it skips the bank line.
+        economy: req.query.format !== 'json',
       });
       // The teacher console's morning drill-in (advocacy A3): the same
       // dry-run plan as DATA — subject sections with next/served — instead
@@ -731,6 +734,18 @@ export function createSchoolLifecycleRouter({
       const { learnerId, reason, decidedBy = null, pin = null } = req.body || {};
       res.json(await markSessionAbandoned.execute({
         sessionId: req.params.sessionId, learnerId, reason, decidedBy, pin,
+      }));
+    }));
+  }
+
+  // OMR card hygiene on demand (`school ops sweep`): the nightly pass, run now.
+  // A dry run (the default) only reports; `dryRun: false` is a grown-up's write.
+  if (sweepAnswerSheets) {
+    router.post('/maintenance/answer-sheets/sweep', guarded(async (req, res) => {
+      const { dryRun = true, leakAfterHours, decidedBy = null, pin = null } = req.body || {};
+      const hours = Number(leakAfterHours);
+      res.json(await sweepAnswerSheets.runForGrownUp({
+        dryRun: dryRun !== false, ...(hours > 0 ? { leakAfterHours: hours } : {}), decidedBy, pin,
       }));
     }));
   }

@@ -139,6 +139,9 @@ export const mediaLog = {
   // Player features (P2): tracks, Show briefly, music behind.
   playerFeature:          info('player-feature.command'),
   playerFeatureFailed:    warn('player-feature.failed'),
+  qualityChanged:         info('quality.changed'),
+  qualityChangeFailed:    warn('quality.change-failed'),
+  qualityOpened:         debug('quality.opened'),
   playerFeatureState:     debug('player-feature.state'),
   // Household media memory on the start page and item menus (batch A:
   // FIND.7a/9a/10a/11a/12a/13a, PLAY.4a).
@@ -179,6 +182,13 @@ export const mediaLog = {
   screenHandleCommand:    info('screen-handle.command'),
   screenHandleFailed:     warn('screen-handle.failed'),
   shownHere:              info('find.shown-here'),
+  // Fling: send what plays here to a screen from the handle (shell/FlingButton.jsx)
+  flingOpened:            info('fling.opened'),
+  flingStartModeChanged:  info('fling.start-mode-changed'),
+  flingTargetChosen:      info('fling.target-chosen'),
+  flingDispatched:        info('fling.dispatched'),
+  flingFailed:            warn('fling.failed'),
+  flingLocalStopped:      info('fling.local-stopped'),
 };
 
 export default mediaLog;

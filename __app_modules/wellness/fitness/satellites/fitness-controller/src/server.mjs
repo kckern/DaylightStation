@@ -181,8 +181,23 @@ function broadcastFitnessData(message) {
   }
 }
 
+// Ship a structured event to the app's log store via the backend's log
+// ingestion (topic 'logging', no `source`, so it is not relayed as sensor
+// data). This container's stdout never reaches the store. Dropped, not
+// queued, while the socket is down.
+function logToStore(level, event, data) {
+  if (!websocketClient || websocketClient.readyState !== WebSocket.OPEN) return;
+  websocketClient.send(JSON.stringify({
+    topic: 'logging',
+    events: [{
+      ts: new Date().toISOString(), level, event, data,
+      context: { source: 'satellite', app: 'fitness', module: 'fitness-controller' }
+    }]
+  }));
+}
+
 // Initialize managers with broadcast callback
-const antManager = new ANTPlusManager(broadcastFitnessData);
+const antManager = new ANTPlusManager(broadcastFitnessData, { logEvent: logToStore });
 const bleManager = new BLEManager(broadcastFitnessData);
 
 async function handleWebSocketMessage(data) {
@@ -199,9 +214,11 @@ async function handleWebSocketMessage(data) {
       // Progress streams back as `bt.pair.progress`. Best-effort — never throws.
       if (message.topic === 'bt.pair.request') {
         await handleBtPairRequest(message, {
-          exec: execAsync,
           send: (topic, payload) => sendBus(topic, payload),
           logger: console,
+          // Nothing else talks to BlueZ while a pairing window is open: the
+          // inventory poll + reconnect loop pause, then resume and re-send.
+          onWindow: (open) => (open ? btInventoryBroadcast?.pause() : btInventoryBroadcast?.resume()),
         });
         return;
       }

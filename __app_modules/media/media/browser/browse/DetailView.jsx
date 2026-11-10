@@ -1,3 +1,4 @@
+import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // frontend/src/modules/Media/browse/DetailView.jsx
 // One item, all its actions: artwork, description, Play Now / Play Next /
 // Up Next / Add / Cast.
@@ -85,6 +86,7 @@ export function DetailView({ contentId }) {
       {startingOn && <Text size="sm" data-testid="detail-starting" role="status">{startingOn}</Text>}
       <DestinationLine surface="detail" />
       <Group className="detail-actions" gap="sm">
+        <ItemQualityButton item={detailItem} />
         <Button
           data-testid="detail-play-now"
           leftSection={<IconPlayerPlayFilled size={18} />}

@@ -1,4 +1,14 @@
 .arcade-selector {
+  position: relative;
+  &__controllers {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 5;
+    font: inherit;
+    padding: 0.65rem 1rem;
+    &:focus-visible { outline: 4px solid #7abaff; outline-offset: 3px; }
+  }
   display: flex;
   height: 100%;
   width: 100%;

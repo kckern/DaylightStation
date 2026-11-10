@@ -50,8 +50,12 @@ export const RELOAD_GUARD_TTL_MS = 90000;
 
 // Cross-browser set of messages browsers use when a dynamically imported module
 // fails to load (Chrome/Edge, Firefox, Safari, and the legacy webpack phrasing).
+// "Unable to preload CSS" is Vite's preload error for a chunk's stylesheet. It
+// is the one a stale tablet hits first after a deploy renames the hashed CSS;
+// missing it here let the piano lesson player crash on 2026-10-20 instead of
+// reloading.
 const CHUNK_ERROR_RE =
-  /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|dynamically imported module|ChunkLoadError|Loading chunk [\w-]+ failed/i;
+  /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|dynamically imported module|ChunkLoadError|Loading chunk [\w-]+ failed|Unable to preload CSS/i;
 
 let _logger;
 function logger() {

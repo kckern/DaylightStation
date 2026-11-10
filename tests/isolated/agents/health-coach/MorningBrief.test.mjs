@@ -1,3 +1,5 @@
+import { budgetDayView } from '../../../../__app_modules/wellness/health/server/application/coaching/CoachingEvidenceService.mjs';
+import { localDate } from '../../../../__app_modules/wellness/health/server/application/agents/health-coach/assignments/budgetContext.mjs';
 import { describe, it, expect, vi } from 'vitest';
 
 import { MorningBrief } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/assignments/MorningBrief.mjs";
@@ -99,23 +101,23 @@ describe('MorningBrief', () => {
     const raw = { output: JSON.stringify({ should_send: true, text: 'Hello' }) };
     const result = await brief.validate(raw, {}, { warn: () => {} });
     expect(result.should_send).toBe(true);
-    expect(result.text).toBe('Hello');
+    expect(result.text).toBe('Calorie-budget evidence is unavailable.');
   });
 
-  it('validate throws on invalid JSON', async () => {
+  it('validate falls back on invalid JSON', async () => {
     const brief = new MorningBrief();
     const raw = { output: 'not json at all' };
     await expect(
       brief.validate(raw, {}, { warn: () => {} }),
-    ).rejects.toThrow(/JSON/i);
+    ).resolves.toMatchObject({ should_send: true, text: 'Calorie-budget evidence is unavailable.' });
   });
 
-  it('validate throws when should_send is missing', async () => {
+  it('validate falls back when should_send is missing', async () => {
     const brief = new MorningBrief();
     const raw = { output: JSON.stringify({ text: 'Hello' }) };
     await expect(
       brief.validate(raw, {}, { warn: () => {} }),
-    ).rejects.toThrow();
+    ).resolves.toMatchObject({ should_send: true, text: 'Calorie-budget evidence is unavailable.' });
   });
 
   // ---------- find_similar_period integration (Task 16, F-105.1) ----------
@@ -125,16 +127,12 @@ describe('MorningBrief', () => {
    * Day 0 is 6 days ago; day 6 is "today" (the trailing edge for streak detection).
    */
   function buildHistory(overrides = {}) {
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(Date.now() - (6 - i) * 86400000).toISOString().split('T')[0];
-      days.push({
-        date,
-        calories: overrides.calories?.[i] ?? 1800,
-        protein: overrides.protein?.[i] ?? 150,
-      });
-    }
-    return { days };
+    return { days: Array.from({ length: 7 }, (_, i) => {
+      const date = localDate(-(7 - i));
+      const food = overrides.calories?.[i] ?? 1800;
+      return budgetDayView({ date, food, exercise: 0, net: food, maintenance: 2300,
+        range: { floor: 1200, top: 1800 }, macros: { protein: overrides.protein?.[i] ?? 150 }, goalBasis: 'current' }, { today: localDate() });
+    }) };
   }
 
   function makeStandardTools(extras = {}) {
@@ -164,7 +162,7 @@ describe('MorningBrief', () => {
     ];
   }
 
-  it('gather: detects 3-day calorie-surplus streak and calls find_similar_period', async () => {
+  it('gather: detects 3-day over-plan streak and calls find_similar_period', async () => {
     const brief = new MorningBrief();
     const fspCalls = [];
     const findSimilarPeriod = async (params) => {
@@ -603,10 +601,10 @@ describe('MorningBrief', () => {
   it('gather: budget-range streaks skip today\'s partial row and under-logged days', async () => {
     const brief = new MorningBrief();
     const fsp = vi.fn(async () => ({ matches: [] }));
-    const day = (offset, over) => ({
-      date: new Date(Date.now() - offset * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }),
-      calories: 1500, protein: 150, net: 1500, range: { floor: 1200, top: 1791 }, complete: true, ...over,
-    });
+    const day = (offset, over) => {
+      const row = { date: localDate(-offset), calories: 1500, protein: 150, range: { floor: 1200, top: 1791 }, ...over };
+      return budgetDayView({ ...row, food: row.calories, exercise: 0, maintenance: 2291, macros: { protein: row.protein } }, { today: localDate() });
+    };
     // Two real low-protein days + this morning's partial row (protein 10) must NOT make a 3-day streak.
     const history = { days: [day(3), day(2, { protein: 90 }), day(1, { protein: 90 }), day(0, { protein: 10, calories: 200, net: 200, complete: false })] };
     await brief.gather({ tools: makeStandardTools({ history, findSimilarPeriod: fsp }), userId: 'u', memory: { serialize: () => '', get: () => null, set: () => {} }, logger: { warn() {}, info() {} } });
@@ -616,14 +614,14 @@ describe('MorningBrief', () => {
   it('buildPrompt: the budget\'s `complete` decides whether yesterday was under-logged, against its floor', () => {
     const brief = new MorningBrief();
     const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
-    const entry = (over) => ({ date: yesterday, calories: 1250, protein: 80, range: { floor: 1300, top: 1791 }, net: 1250, ...over });
+    const entry = over => budgetDayView({ date: yesterday, food: 1250, exercise: 0, macros: { protein: 80 }, range: { floor: 1300, top: 1791 }, declared: over.complete ? 'done' : null }, { today: localDate() });
     const prompt = (e) => brief.buildPrompt({
       reconciliation: {}, weight: {}, goals: { goals: { nutrition: { calories_min: 1600, calories_max: 2000 } } },
       todayNutrition: {}, nutritionHistory: { days: [e] }, yesterdayClosed: false, similarPeriod: null,
     }, { serialize: () => '' });
     const underLogged = prompt(entry({ complete: false }));
     expect(underLogged).toContain('INCOMPLETE LOGGING DETECTED');
-    expect(underLogged).toContain('below the logging floor (1300)');
+    expect(underLogged).toContain('"floorFood": 1300');
     // Same calories, but the budget calls it complete (e.g. declared done): no override.
     expect(prompt(entry({ complete: true }))).not.toContain('INCOMPLETE LOGGING DETECTED');
   });

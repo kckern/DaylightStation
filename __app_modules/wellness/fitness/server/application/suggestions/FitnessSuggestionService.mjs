@@ -123,17 +123,17 @@ export class FitnessSuggestionService {
     // within a single request so each show is fetched at most once. Results are
     // used read-only by strategies, so sharing the object is safe. We cache the
     // promise so an in-flight resolution is shared too.
-    const playableMemo = new Map(); // 'showId::hid' -> Promise
+    const playableMemo = new Map(); // showId -> Promise
     const playableStats = { calls: 0, misses: 0 };
     const memoizedPlayableService = {
-      getPlayableEpisodes: (showId, hhid = hid) => {
+      getPlayableEpisodes: (showId) => {
         playableStats.calls++;
-        const memoKey = `${showId}::${hhid ?? ''}`;
+        const memoKey = String(showId);
         if (!playableMemo.has(memoKey)) {
           playableStats.misses++;
           // Season-0 extras and short filler are never suggestible, so no
           // strategy sees them — NextUp skips past them, Resume never offers them.
-          playableMemo.set(memoKey, this.#fitnessPlayableService.getPlayableEpisodes(showId, hhid)
+          playableMemo.set(memoKey, this.#fitnessPlayableService.getPlayableEpisodes(showId)
             .then(data => ({
               ...data,
               items: (data?.items || []).filter(ep => isSuggestiblePlayable(ep, suggestionPolicy)),

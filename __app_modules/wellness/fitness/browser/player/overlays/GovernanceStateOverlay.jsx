@@ -1,28 +1,196 @@
-import React, { useMemo, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getLogger } from '@/lib/logging/Logger.js';
-import { useDeadlineCountdown } from "../../shared/index.js";
+// Direct import: the shared/ barrel drags every widget (recharts, flip-move…)
+// into this overlay and its tests.
+import useDeadlineCountdown from "../../shared/hooks/useDeadlineCountdown.js";
 import GovernanceAudioPlayer from "./GovernanceAudioPlayer.jsx";
 import CompletionAvatars from "./CompletionAvatars.jsx";
 import LockIcon from "./LockIcon.jsx";
+import HoldProgress from "./HoldProgress.jsx";
 import "./GovernanceStateOverlay.scss";
+import { checkOverlayPaint, describeCompositing } from "./overlayPaintCheck.js";
+import { warningScrimStep } from "./warningScrimStep.js";
+import { createFrameTimingProbe } from "./frameTimingProbe.js";
 
 const TOTAL_NOTCHES = 56;
-const ROW_GROW_ANIMATION_MS = 220;
 
-const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders }) {
+// The crank icon keeps the pedal OR zone instruction in the existing row.
+function PedalFeedback({ pedal }) {
+  const instruction = pedal?.orZoneLabel ? `Pedal or reach ${pedal.orZoneLabel}` : 'Start pedaling';
+  const rpm = Number.isFinite(pedal?.rpm) ? Math.max(0, Math.round(pedal.rpm)) : null;
+  return <span className="governance-pedal-feedback">
+    <span className="governance-pedal-icon" role="img" aria-label={instruction}>
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" /><path d="m10 14-5 5m9-9 5-5M2 19h6M16 5h6" strokeLinecap="round" />
+      </svg>
+    </span>
+    {rpm != null ? <span aria-label={`${rpm} of ${pedal.targetRpm ?? 0} rotations per minute`}>{rpm}{Number.isFinite(pedal.targetRpm) ? ` / ${Math.round(pedal.targetRpm)}` : ''}</span> : null}
+  </span>;
+}
+
+
+let _warningLogger;
+const warningLogger = () => {
+  if (!_warningLogger) _warningLogger = getLogger().child({ component: 'governance-warning-overlay' });
+  return _warningLogger;
+};
+const PAINT_CHECK_MS = 2000;
+const FRAME_STATS_MS = 5000;
+const SCRIM_STEP_SETTLE_MS = 700;
+
+/**
+ * Observability for the warning UI as the household SEES it — the engine's
+ * phase log cannot tell you the chips emptied while the phase held, or that
+ * the scrim's darken landed on the meter instead of under it.
+ * - `shown` / `hidden` (with visibleMs): a run of short pairs IS the flicker.
+ * - `rows_changed`: who the chips name, as it changes.
+ * - `paint_check` once per showing, then `dimmed` (warn) / `undimmed` on change:
+ *   whether the scrim paints above the meter/chips or a filter/opacity applies.
+ *   It carries the compositing picture computed styles cannot otherwise show
+ *   in the log: scrim step + darkness, the video's live filter, device scale,
+ *   chip/meter rects in device px, and EVERY element on the page with a filter
+ *   or backdrop-filter (and whether it overlaps the chips).
+ * - `scrim_step`: each of the (at most four) ramp steps, with the same picture.
+ * - `frame_stats` every 5s while shown (sampled) and once at hide: rAF frame
+ *   intervals + event-loop lag. Long frames with low loop lag = the compositor
+ *   or GPU is struggling, not our JS — the signature of a paint-path thrash
+ *   that no DOM listener can see (ops:docs/_wip/bugs/2026-10-23-fitness-governance-chip-layer-blur-thrash.md).
+ */
+function useWarningOverlayObservability(containerRef, rowKeys, scrimStep, quiet = false) {
+  const rowKeysRef = useRef(rowKeys);
+  rowKeysRef.current = rowKeys;
+
+  const compositing = () => {
+    const root = containerRef.current;
+    if (!root) return null;
+    const host = root.closest('.fitness-player-content') || root.parentElement || root;
+    return describeCompositing({
+      root,
+      targets: {
+        meter: root.querySelector('.governance-life-meter__frame'),
+        chip: root.querySelector('.governance-progress-overlay__chip'),
+      },
+      scrim: host.querySelector('.governance-warning-scrim'),
+      video: host.querySelector('video, dash-video'),
+    });
+  };
+
+  useEffect(() => {
+    const shownAt = Date.now();
+    warningLogger().info('governance.warning_overlay.shown', { rows: rowKeysRef.current, quiet });
+    let lastDimmed = null;
+    const check = () => {
+      const root = containerRef.current;
+      if (!root) return;
+      const host = root.closest('.fitness-player-content') || root.ownerDocument;
+      const result = checkOverlayPaint({
+        meter: root.querySelector('.governance-life-meter__frame'),
+        chip: root.querySelector('.governance-progress-overlay__chip'),
+      }, host.querySelector('.governance-warning-scrim'));
+      const payload = { ...result, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt, quiet };
+      if (lastDimmed === null) {
+        warningLogger().info('governance.warning_overlay.paint_check', { ...payload, compositing: compositing() });
+      }
+      if (result.dimmed && lastDimmed !== true) {
+        warningLogger().warn('governance.warning_overlay.dimmed', { ...payload, compositing: compositing() });
+      } else if (!result.dimmed && lastDimmed === true) {
+        warningLogger().info('governance.warning_overlay.undimmed', payload);
+      }
+      lastDimmed = result.dimmed;
+    };
+    // After the first paint, then on a slow clock while the warning stands.
+    const frame = requestAnimationFrame(check);
+    const timer = setInterval(check, PAINT_CHECK_MS);
+
+    const probe = createFrameTimingProbe();
+    probe.start();
+    const statsTimer = setInterval(() => {
+      const stats = probe.read();
+      if (stats) {
+        warningLogger().sampled('governance.warning_overlay.frame_stats',
+          { ...stats, rows: rowKeysRef.current, shownForMs: Date.now() - shownAt, quiet },
+          { maxPerMinute: 12 });
+      }
+    }, FRAME_STATS_MS);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearInterval(timer);
+      clearInterval(statsTimer);
+      const finalStats = probe.read();
+      probe.stop();
+      if (finalStats) {
+        warningLogger().info('governance.warning_overlay.frame_stats', { ...finalStats, final: true, rows: rowKeysRef.current, quiet });
+      }
+      warningLogger().info('governance.warning_overlay.hidden', {
+        rows: rowKeysRef.current, visibleMs: Date.now() - shownAt, quiet,
+      });
+    };
+  // `quiet` is fixed for an instance's lifetime: the dispatch below remounts
+  // the overlay on a mode change (quiet <-> warning), so the mount-only effect
+  // never sees it change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerRef]);
+
+  const previousKeys = useRef(rowKeys);
+  useEffect(() => {
+    if (previousKeys.current === rowKeys) return;
+    warningLogger().info('governance.warning_overlay.rows_changed', { rows: rowKeys, previous: previousKeys.current });
+    previousKeys.current = rowKeys;
+  }, [rowKeys]);
+
+  const previousStep = useRef(null);
+  useEffect(() => {
+    if (quiet || previousStep.current === scrimStep) return;
+    const from = previousStep.current;
+    previousStep.current = scrimStep;
+    if (from === null) return; // the first step rides on paint_check
+    // Once the darkness transition (600ms) has settled, so the logged styles
+    // are the step's real values rather than a frame mid-ease.
+    const timer = setTimeout(() => {
+      warningLogger().info('governance.warning_overlay.scrim_step', {
+        step: scrimStep, from, rows: rowKeysRef.current, compositing: compositing(),
+      });
+    }, SCRIM_STEP_SETTLE_MS);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrimStep]);
+}
+
+const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ countdown, countdownTotal, notches, rows, offenders, quiet = false }) {
   // Use notches directly from the per-notch interval timer when available,
   // fall back to deriving from countdown for backward compatibility
+  // No countdown yet = the warning began this frame (the hook learns the
+  // deadline in an effect), so the meter is full — not an empty-bar flash.
   const visibleNotches = Number.isFinite(notches)
     ? Math.max(0, Math.min(TOTAL_NOTCHES, notches))
-    : Math.round(Math.max(0, Math.min(1, (Number.isFinite(countdown) ? Math.max(countdown, 0) : 0) / Math.max(countdownTotal || 1, 1))) * TOTAL_NOTCHES);
+    : (Number.isFinite(countdown)
+      ? Math.round(Math.max(0, Math.min(1, Math.max(countdown, 0) / Math.max(countdownTotal || 1, 1))) * TOTAL_NOTCHES)
+      : TOTAL_NOTCHES);
 
   // Support both new (rows) and legacy (offenders) format
   const items = Array.isArray(rows) && rows.length > 0 ? rows : (Array.isArray(offenders) ? offenders : []);
 
+  // Fixed ramp steps (warningScrimStep.js) — the scrim's DOM changes four
+  // times per warning, not every notch.
+  const total = Number.isFinite(countdownTotal) && countdownTotal > 0 ? countdownTotal : 30;
+  const remainingSeconds = Number.isFinite(notches) ? (notches / TOTAL_NOTCHES) * total : countdown;
+  const scrimStep = warningScrimStep(remainingSeconds, total);
+
+  const containerRef = useRef(null);
+  const rowKeys = items.map((item) => item.key).join(',');
+  useWarningOverlayObservability(containerRef, rowKeys, quiet ? null : scrimStep, quiet);
+
+  // The overlay owns its scrim, so the darkening and the chips mount and
+  // unmount in the same commit (they used to come from two owners, 40-270ms
+  // apart). The scrim is a sibling, not a child: at z 5 it stays below the
+  // challenge deck and player layers, and the CSS desaturates the video
+  // through `.governance-warning-scrim ~ .fitness-video-mirror-wrap`.
   return (
-    <div className="governance-progress-overlay" aria-hidden="true">
+    <>
+    {quiet ? null : <div className="governance-warning-scrim" data-step={scrimStep} aria-hidden="true" />}
+    <div className={`governance-progress-overlay${quiet ? ' governance-progress-overlay--quiet' : ''}`} ref={containerRef}>
       {items.length > 0 ? (
         <div className="governance-progress-overlay__offenders">
           {items.map((item) => {
@@ -36,9 +204,10 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             const borderColor = item.currentZone?.color || item.zoneColor || null;
             const borderStyle = borderColor ? { borderColor } : undefined;
             const progressColor = item.currentZone?.color || item.zoneColor || borderColor || 'rgba(56, 189, 248, 0.95)';
+            const pedal = item.pedal;
             return (
               <div
-                className="governance-progress-overlay__chip"
+                className={`governance-progress-overlay__chip${item.status === 'holding' ? ' governance-progress-overlay__chip--holding' : ''}`}
                 key={item.key}
                 style={borderStyle}
               >
@@ -60,9 +229,9 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                       {item.displayName || item.displayLabel || item.name}
                     </span>
                     <span className="governance-progress-overlay__chip-meta">
-                      {Number.isFinite(item.heartRate)
-                        ? item.heartRate
-                        : 'No HR data'}
+                      {pedal
+                        ? <PedalFeedback pedal={pedal} />
+                        : (Number.isFinite(item.heartRate) ? item.heartRate : 'No HR data')}
                     </span>
                   </div>
                 </div>
@@ -77,12 +246,13 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
                     />
                   </div>
                 ) : null}
+                <HoldProgress row={item} />
               </div>
             );
           })}
         </div>
       ) : null}
-      <div className="governance-life-meter" aria-hidden="true">
+      {quiet ? null : <div className="governance-life-meter" aria-hidden="true">
         <div className="governance-life-meter__frame">
           {Array.from({ length: TOTAL_NOTCHES }, (_, i) => (
             <div
@@ -91,13 +261,18 @@ const GovernanceWarningOverlay = React.memo(function GovernanceWarningOverlay({ 
             />
           ))}
         </div>
-      </div>
+      </div>}
     </div>
+    </>
   );
 }, (prevProps, nextProps) => {
   // Skip re-render if countdown delta < 0.3s and rows/offenders reference unchanged
   const countdownDelta = Math.abs((prevProps.countdown || 0) - (nextProps.countdown || 0));
-  if (countdownDelta < 0.3 && prevProps.rows === nextProps.rows && prevProps.offenders === nextProps.offenders) {
+  // `notches` steps every ~0.5s while `countdown` (whole seconds) steps every
+  // 1s — ignoring it dropped every other notch, so the meter fell two at a time.
+  if (countdownDelta < 0.3 && prevProps.notches === nextProps.notches
+    && prevProps.rows === nextProps.rows && prevProps.offenders === nextProps.offenders
+    && prevProps.quiet === nextProps.quiet) {
     return true; // props are equal, skip re-render
   }
   return false;
@@ -107,7 +282,8 @@ GovernanceWarningOverlay.propTypes = {
   countdown: PropTypes.number,
   countdownTotal: PropTypes.number,
   rows: PropTypes.array,
-  offenders: PropTypes.array
+  offenders: PropTypes.array,
+  quiet: PropTypes.bool
 };
 
 function normalizeRequiredCountFromRule(rule, totalCount) {
@@ -130,7 +306,12 @@ function normalizeRequiredCountFromRule(rule, totalCount) {
   return null;
 }
 
-const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [], onUnlock = null }) {
+// A stable default: a fresh `[]` per render changed the `rows` memo every
+// render, and with two or more rows the sorted copy re-fired the row-animation
+// effect, which re-rendered, forever — a render loop on every multi-rider lock.
+const NO_LOCK_ROWS = [];
+
+const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = NO_LOCK_ROWS, onUnlock = null, embedded = false }) {
   // Support both new (display) and legacy (overlay + lockRows) format
   const status = display?.status || overlay?.status || 'unknown';
   const requirements = useMemo(() => (
@@ -138,7 +319,8 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       ? display.requirements
       : (Array.isArray(overlay?.requirements) ? overlay.requirements : [])
   ), [display?.requirements, overlay?.requirements]);
-  const challenge = display?.challenge || null;
+  const foreground = display?.obligations?.[0] || null;
+  const challenge = foreground ? foreground.challenge : (display?.challenge || null);
   const activeUserCount = Number.isFinite(display?.activeUserCount)
     ? Math.max(0, Math.round(display.activeUserCount))
     : null;
@@ -154,55 +336,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   }, [display, lockRows]);
   const hasRows = rows.length > 0;
 
-  const [animatedRows, setAnimatedRows] = useState(() =>
-    rows.map((row) => ({ row, phase: 'stable' }))
-  );
-
-  // Keep removed rows around briefly so they can animate out.
-  useEffect(() => {
-    setAnimatedRows((prev) => {
-      const prevByKey = new Map(prev.map((entry) => [entry.row.key, entry]));
-      const nextKeys = new Set(rows.map((row) => row.key));
-
-      const nextEntries = rows.map((row) => {
-        const previous = prevByKey.get(row.key);
-        if (!previous || previous.phase === 'exit') {
-          return { row, phase: 'enter' };
-        }
-        return { row, phase: previous.phase === 'enter' ? 'enter' : 'stable' };
-      });
-
-      const existingExitEntries = prev.filter(
-        (entry) => entry.phase === 'exit' && !nextKeys.has(entry.row.key)
-      );
-
-      const newExitEntries = prev
-        .filter((entry) => !nextKeys.has(entry.row.key) && entry.phase !== 'exit')
-        .map((entry) => ({ row: entry.row, phase: 'exit' }));
-
-      return [...nextEntries, ...existingExitEntries, ...newExitEntries];
-    });
-  }, [rows]);
-
-  useEffect(() => {
-    if (!animatedRows.some((entry) => entry.phase === 'enter')) return undefined;
-    const timer = setTimeout(() => {
-      setAnimatedRows((prev) =>
-        prev.map((entry) => (entry.phase === 'enter' ? { ...entry, phase: 'stable' } : entry))
-      );
-    }, ROW_GROW_ANIMATION_MS);
-    return () => clearTimeout(timer);
-  }, [animatedRows]);
-
-  useEffect(() => {
-    if (!animatedRows.some((entry) => entry.phase === 'exit')) return undefined;
-    const timer = setTimeout(() => {
-      setAnimatedRows((prev) => prev.filter((entry) => entry.phase !== 'exit'));
-    }, ROW_GROW_ANIMATION_MS);
-    return () => clearTimeout(timer);
-  }, [animatedRows]);
-
-  const hasAnimatedRows = animatedRows.length > 0;
   const isInitPoolEmpty = !hasRows && (!Number.isFinite(activeUserCount) || activeUserCount <= 0);
 
   const activeRequirement = useMemo(() => {
@@ -229,13 +362,15 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   );
   const stepChallengeUnit = challenge?.metric === 'stomps' ? 'stomps' : 'steps';
 
-  const targetZoneName = challenge?.zoneLabel
+  const targetZoneName = foreground?.zoneLabel
+    || challenge?.zoneLabel
     || challenge?.zone
     || activeRequirement?.zoneLabel
     || activeRequirement?.zone
     || 'target';
 
   const targetCount = useMemo(() => {
+    if (Number.isFinite(foreground?.requiredCount)) return foreground.requiredCount;
     if (Number.isFinite(challenge?.requiredCount)) {
       return Math.max(0, Math.round(challenge.requiredCount));
     }
@@ -246,7 +381,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       return normalizeRequiredCountFromRule(activeRequirement?.rule, activeUserCount);
     }
     return null;
-  }, [challenge, activeRequirement, activeUserCount]);
+  }, [foreground, challenge, activeRequirement, activeUserCount]);
 
   const actualCount = useMemo(() => {
     const challengeActual = Number.isFinite(challenge?.actualCount)
@@ -255,12 +390,12 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     const requirementActual = Number.isFinite(activeRequirement?.actualCount)
       ? Math.max(0, Math.round(activeRequirement.actualCount))
       : null;
-    const resolved = challengeActual ?? requirementActual ?? 0;
+    const resolved = foreground?.actualCount ?? challengeActual ?? requirementActual ?? 0;
     if (Number.isFinite(targetCount)) {
       return Math.min(targetCount, resolved);
     }
     return resolved;
-  }, [challenge, activeRequirement, targetCount]);
+  }, [foreground, challenge, activeRequirement, targetCount]);
 
   // Participants who have already satisfied, joined to their avatar/zone by
   // resolveGovernanceDisplay. `rows` is missing-only, so these riders exist
@@ -313,32 +448,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     }
   }, [hasRows, status, display, lockRows, requirements]);
 
-  const frozenCurrentByRowRef = useRef(new Map());
-  const frozenSnapshotKeyRef = useRef(null);
-  const freezeSnapshotKey = `${status}|${challenge?.id || display?.deadline || overlay?.deadline || 'none'}`;
-
-  useEffect(() => {
-    const freezeActive = status === 'pending' || status === 'locked';
-    if (!freezeActive) {
-      frozenCurrentByRowRef.current.clear();
-      frozenSnapshotKeyRef.current = null;
-      return;
-    }
-
-    if (frozenSnapshotKeyRef.current !== freezeSnapshotKey) {
-      frozenCurrentByRowRef.current.clear();
-      frozenSnapshotKeyRef.current = freezeSnapshotKey;
-    }
-
-    rows.forEach((row) => {
-      if (!row?.key || frozenCurrentByRowRef.current.has(row.key)) return;
-      frozenCurrentByRowRef.current.set(row.key, {
-        zoneId: row.currentZone?.id || null,
-        label: row.currentZone?.name || row.currentLabel || 'No signal'
-      });
-    });
-  }, [status, freezeSnapshotKey, rows]);
-
   const renderProgressBlock = (row) => {
     // Support both formats: progress (new) and progressPercent (legacy)
     const rawProgress = row.progress ?? row.progressPercent ?? null;
@@ -346,7 +455,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     const clamped = Math.max(0, Math.min(1, rawProgress));
     const percentValue = Math.round(clamped * 100);
     const widthPercent = Number.isFinite(percentValue) ? Math.max(0, percentValue) : 0;
-    const showIndicator = widthPercent > 0;
     const progressClass = 'governance-lock__progress governance-lock__progress--inline';
     const intermediateZones = Array.isArray(row.intermediateZones) ? row.intermediateZones : [];
     const currentColor = row.currentZone?.color || 'rgba(148, 163, 184, 0.6)';
@@ -363,14 +471,14 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
       fillBackground = row.progressGradient || `linear-gradient(90deg, ${currentColor}, ${targetColor})`;
     }
     return (
-      <div className={progressClass} aria-hidden="true">
-        <div className="governance-lock__progress-track">
+      <div className={progressClass}>
+        {/* One input, `--p`, drives both the fill (scaleX) and the knob's
+            wrapper (translateX) with the same transition, so the percentage
+            rides the bar tip instead of snapping ahead of it. */}
+        <div className="governance-lock__progress-track" aria-hidden="true" style={{ '--p': clamped }}>
           <div
             className="governance-lock__progress-fill"
-            style={{
-              transform: `scaleX(${clamped})`,
-              background: fillBackground
-            }}
+            style={{ background: fillBackground }}
           />
           {intermediateZones.map((zone) => {
             const markerPosition = Math.round((zone.position || 0) * 100);
@@ -387,36 +495,37 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
               />
             );
           })}
-          <div
-            className="governance-lock__progress-indicator"
-            style={{
-              left: `${widthPercent}%`,
-              opacity: showIndicator ? 1 : 0,
-              visibility: showIndicator ? 'visible' : 'hidden'
-            }}
-          >
-            {showIndicator ? <span>{percentValue}%</span> : null}
+          <div className="governance-lock__progress-tip">
+            <span className="governance-lock__progress-indicator"
+              style={{ '--tip-color': currentColor /* data-color */ }}>{percentValue}%</span>
           </div>
         </div>
+        <HoldProgress row={row} />
       </div>
     );
   };
 
   const renderChipMeta = (row) => {
-    const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
-    const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
-    if (currentHr != null) {
-      if (targetHr != null) {
-        return `${currentHr} / ${targetHr}`;
+    const base = (() => {
+      if (row.pedal) {
+        return <PedalFeedback pedal={row.pedal} />;
       }
-      return String(currentHr);
-    }
-    return row.groupLabel || 'No HR data';
+      const currentHr = Number.isFinite(row.heartRate) ? Math.max(0, Math.round(row.heartRate)) : null;
+      const targetHr = Number.isFinite(row.targetHeartRate) ? Math.max(0, Math.round(row.targetHeartRate)) : null;
+      if (currentHr != null) {
+        if (targetHr != null) {
+          return `${currentHr} / ${targetHr}`;
+        }
+        return String(currentHr);
+      }
+      return row.groupLabel || 'No HR data';
+    })();
+    return base;
   };
 
   return (
-    <div className={`governance-overlay governance-overlay--${status}`}>
-      <div className="governance-overlay__panel governance-lock governance-lock--wide">
+    <div className={embedded ? 'governance-lock__section' : `governance-overlay governance-overlay--${status}`}>
+      <div className={`${embedded ? '' : 'governance-overlay__panel '}governance-lock governance-lock--wide`}>
         {/* One chrome line owns all the standing state: who has earned it, the
             count, and the unlock affordance. The former stacked title
             ("Video Locked") and instruction line were static copy the paused
@@ -490,12 +599,9 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                   </div>
                 ) : null}
               </div>
-            ) : hasAnimatedRows ? animatedRows.map((entry) => {
-            const row = entry.row;
-            const frozenCurrent = frozenCurrentByRowRef.current.get(row.key) || null;
-            const frozenCurrentZoneId = frozenCurrent?.zoneId || row.currentZone?.id || null;
-            const frozenCurrentLabel = frozenCurrent?.label || row.currentZone?.name || row.currentLabel || 'No signal';
-            const currentClass = frozenCurrentZoneId ? `zone-${frozenCurrentZoneId}` : 'zone-none';
+            ) : hasRows ? rows.map((row) => {
+            const currentLabel = row.currentZone?.name || row.currentLabel || 'No signal';
+            const currentClass = row.currentZone?.id ? `zone-${row.currentZone.id}` : 'zone-none';
             const targetClass = row.targetZone?.id ? `zone-${row.targetZone.id}` : 'zone-none';
             const chip = (
               <div className="governance-lock__chip">
@@ -511,7 +617,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                     }}
                   />
                 </div>
-                <div className="governance-lock__chip-text governance-lock__chip-text--inline">
+                <div className="governance-lock__chip-text">
                   <span className="governance-lock__chip-name">{row.displayName || row.displayLabel || row.name}</span>
                   <span className="governance-lock__chip-meta">{renderChipMeta(row)}</span>
                 </div>
@@ -520,7 +626,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
 
               return (
               <div
-                className={`governance-lock__row${entry.phase === 'enter' ? ' governance-lock__row--grow-in' : ''}${entry.phase === 'exit' ? ' governance-lock__row--grow-out' : ''}`}
+                className="governance-lock__row"
                 role="row"
                 key={row.key}
               >
@@ -529,7 +635,7 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
                 </div>
                 <div className="governance-lock__metric" role="cell">
                   <span className={`governance-lock__pill ${currentClass}`}>
-                    {frozenCurrentLabel}
+                    {currentLabel}
                   </span>
                 </div>
                 <div className="governance-lock__metric governance-lock__metric--progress" role="cell">
@@ -580,6 +686,20 @@ GovernancePanelOverlay.propTypes = {
   lockRows: PropTypes.array,
   onUnlock: PropTypes.func
 };
+
+function GovernancePanels({ display, onUnlock }) {
+  if ((display?.obligations?.length || 0) <= 1) return <GovernancePanelOverlay display={display} onUnlock={onUnlock} />;
+  return <div className={`governance-overlay governance-overlay--${display.status}`}>
+    <div className="governance-overlay__panel governance-overlay__panel--sections">
+      {display.obligations.map((obligation, index) => <GovernancePanelOverlay key={obligation.key} embedded
+        onUnlock={index === 0 ? onUnlock : null}
+        display={{ ...display, ...obligation, obligations: [obligation],
+          requirements: obligation.requirement ? [obligation.requirement] : [],
+          activityRequirements: obligation.requirement?.type === 'activity_rate' ? [obligation.requirement] : [],
+        }} />)}
+    </div>
+  </div>;
+}
 
 const GenericOverlay = React.memo(function GenericOverlay({ overlay }) {
   return (
@@ -654,6 +774,14 @@ const GovernanceStateOverlay = ({
 
   // New path: dispatch on status
   if (useNewPath) {
+    const warningRows = display.obligations?.length > 1 ? display.obligations.flatMap((obligation) => obligation.rows.map((row) => ({ ...row, key: `${obligation.key}:${row.key}` }))) : display.rows;
+
+    // Cooldown: the engine is unlocked but a floor is unmet. Chips only; no
+    // scrim, no meter, no panel, no audio over the playing video.
+    if (display.quiet) {
+      return warningRows.length ? <GovernanceWarningOverlay quiet rows={warningRows} /> : null;
+    }
+
     if (normalizedStatus === 'warning') {
       return (
         <>
@@ -662,17 +790,17 @@ const GovernanceStateOverlay = ({
             countdown={countdown}
             countdownTotal={display.gracePeriodTotal}
             notches={countdownNotches}
-            rows={display.rows}
+            rows={warningRows}
           />
         </>
       );
     }
 
-    // pending, locked, challenge-failed
+    // pending, locked, challenge-failed, cycle locks
     return (
       <>
         <GovernanceAudioPlayer trackKey={audioTrackKey} paused={voiceMemoOpen} />
-        <GovernancePanelOverlay display={display} onUnlock={onUnlock} />
+        <GovernancePanels display={display} onUnlock={onUnlock} />
       </>
     );
   }

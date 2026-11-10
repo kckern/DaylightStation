@@ -4,7 +4,7 @@ const DEFAULT_TIMEOUT_MS = 5000;
 
 /**
  * HTTP probe of the piano-bridge APK control plane (`:8770`): `GET /status` for
- * liveness and BLE state, `GET /loopback` for the piano's echo verdict.
+ * liveness, BLE state and the A2DP speaker, `GET /loopback` for the piano's echo verdict.
  * See __docs/runbooks/piano-kiosk-midi.md §0 for why the echo is the only proof
  * that MIDI OUT works.
  */
@@ -31,7 +31,7 @@ export class PianoBridgeHealthProbeAdapter extends IPianoBridgeHealthProbe {
     try {
       status = await this.#getJson('/status');
     } catch (err) {
-      return { reachable: false, ble: null, outVerified: null, error: String(err?.message ?? err) };
+      return { reachable: false, ble: null, outVerified: null, speaker: null, error: String(err?.message ?? err) };
     }
     // Payloads since p19 put the echo verdict on /status; older ones only on /loopback.
     let outVerified = typeof status?.outVerified === 'boolean' ? status.outVerified : null;
@@ -42,7 +42,14 @@ export class PianoBridgeHealthProbeAdapter extends IPianoBridgeHealthProbe {
       } catch { /* status answered; an unreadable loopback is "unknown", not "down" */ }
     }
     const ble = status?.ble?.state ?? null;
-    return { reachable: true, ble: typeof ble === 'string' ? ble : null, outVerified, error: null };
+    const connected = status?.speaker?.connected;
+    return {
+      reachable: true,
+      ble: typeof ble === 'string' ? ble : null,
+      outVerified,
+      speaker: typeof connected === 'boolean' ? connected : null,
+      error: null,
+    };
   }
 
   async #getJson(path) {

@@ -69,11 +69,23 @@ describe('SessionIdentityHealer — 2001-01-02 split (session 20010102100000, sc
         { entityId: 'e1', profileId: 'kid-a', deviceId: 'D2', startTime: 1000, endTime: 2000, status: 'superseded', relabeledFrom: ['kid-b'] },
         { entityId: 'e2', profileId: 'kid-z', deviceId: 'D2', startTime: 2000, endTime: null, status: 'active' },
       ],
+      participants: { 'kid-a': {}, 'kid-b': {}, 'kid-z': {} },
     };
     const plan = planHeal(obj);
     expect(plan.transfers.find((t) => t.from === 'kid-a')).toBeUndefined();
     expect(plan.removedOccupants).not.toContain('kid-a');
     expect(plan.removedOccupants).toContain('kid-b');
+  });
+
+  it('a relabelled-away name that is no longer listed and holds no series is not "to remove" (heal stays idempotent)', () => {
+    const obj = {
+      timeline: { interval_seconds: 5, series: { 'kid-a:hr': '[null,95,120,130]', 'kid-a:rings': '[0,1,2,4]' } },
+      entities: [{ entityId: 'e1', profileId: 'kid-a', deviceId: 'D2', startTime: 1000, endTime: null, status: 'active', relabeledFrom: ['kid-b'] }],
+      participants: { 'kid-a': {} },
+    };
+    const plan = planHeal(obj);
+    expect(plan.removedOccupants).not.toContain('kid-b');
+    expect(plan.needsHeal).toBe(false);
   });
 });
 

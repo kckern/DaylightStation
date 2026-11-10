@@ -256,6 +256,20 @@ A few components appear across many modes because they are the kiosk's visual vo
   built from the same buttons as Sheet Music's transport bar, down to shared
   arming/active states for the loop buttons — no mode reimplements its own
   transport controls.
+- **Skip presses are governed** (`modes/Videos/skipGovernor.js`, used by
+  Courses and Singalong). Presses less than 700 ms apart form one burst, and a
+  burst may move forward by at most 60 s in total. A deliberate double tap still
+  gives +60, but a held or mashed button cannot fly through a lesson. Back skips
+  are never limited. On a sequential lecture a forward skip also stops at the
+  furthest point watched; the scrubber already worked that way. Dropped presses
+  log `piano.video.skip-dropped` (sampled). In the 2026-10-28 incident a child
+  pressed +30 every 200–300 ms while the video was stalled, and the saved
+  lesson position jumped by minutes.
+- **Stall telemetry.** The kiosk registers the bridge's `GET :8770/wifi` as the
+  Player's link probe (`PianoKiosk/bridgeWifiProbe.js`), so every video stall
+  also logs `playback.stalled.link` with the tablet's RSSI, link speed, band,
+  BSSID and recent throughput. See `__docs/reference/player/README.md`
+  ("Slow links") and runbook §7c.
 
 ---
 

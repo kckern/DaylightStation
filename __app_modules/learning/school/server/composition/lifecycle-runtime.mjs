@@ -1,9 +1,13 @@
 /** Existing school lifecycle runtime assembly; preserves construction order. */
 import { declaredEntryActions as declaredEntryActions } from "../domain/reachability.mjs";
 import { resolveBookScanTarget as resolveBookScanTarget } from "./schoolBookScans.mjs";
+import { storyBooksFromContentTags } from "./storyBookCorpus.mjs";
 import { PrepareBookScan as PrepareBookScan } from "../application/usecases/PrepareBookScan.mjs";
+import { FileBookPile } from "../application/usecases/FileBookPile.mjs";
+import { ReplaceUnreadableCard } from "../application/usecases/ReplaceUnreadableCard.mjs";
 import crypto from "node:crypto";
 import { OpenBookShelfAtPanel as OpenBookShelfAtPanel } from "../application/usecases/OpenBookShelfAtPanel.mjs";
+import { OpenBankAtPanel as OpenBankAtPanel } from "../application/usecases/OpenBankAtPanel.mjs";
 import { TeacherCapabilitySessions as TeacherCapabilitySessions } from "../application/TeacherCapabilitySessions.mjs";
 import { renderSessionResultPng as renderSessionResultPng } from "../rendering/documents/SessionResultRenderer.mjs";
 import { studyDayForInstant as studyDayForInstant } from "../domain/studyDay.mjs";
@@ -32,9 +36,16 @@ import { RUBIKS_CUBE_REVISION as RUBIKS_CUBE_REVISION } from "../application/rub
 import { createSchoolBookScansRouter as createSchoolBookScansRouter } from "../api/schoolBookScans.mjs";
 import { createSchoolBooksRouter as createSchoolBooksRouter } from "../api/schoolBooks.mjs";
 import { BookEntryPolicy as BookEntryPolicy } from "../application/BookEntryPolicy.mjs";
+import { SchoolDebriefService } from "../application/debrief/SchoolDebriefService.mjs";
+import { composeSchoolPush } from "../domain/notifications/schoolPush.mjs";
+import { DebriefQuestioner } from "../application/debrief/DebriefQuestioner.mjs";
+import { DebriefAnswerJudge } from "../application/debrief/DebriefAnswerJudge.mjs";
+import { debriefConfigOf } from "../domain/schoolDebrief.mjs";
+import { createSchoolDebriefRouter } from "../api/schoolDebrief.mjs";
+import { FilesystemDebriefAudio } from "../adapters/debrief/FilesystemDebriefAudio.mjs";
 
 export async function createSchoolLifecycleRuntime(dependencies) {
-  const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
+  const { nfcLocationsForReachability, configService, householdId, schoolService, schoolAcademicPeriods, schoolDatastore, economyApi, userService, eventBus, printerRegistry, wakeScreenForBroadcast, languageStudyService, languageReelService, pianoContainer, schoolPianoChallengeCompletionService, fitnessPlayableService, v1Routers, schoolLearningEvidence, flashcardStudy, cardLadderStudy, rubiksCubeService, books, kioskFrictionTracker, schoolLifecycleLogger, getSchoolScreenConfig, schoolLearnerDirectory, stateGatesModule, schoolStateGatesPrincipal, stateGatesProducerScheduler, rootLogger, schoolTeacherGate, schoolSessionResultArtifacts, homeAutomationAdapters, learnerDisplayName, notificationService, omrReadersConfig, NodeAsyncScheduler, dataDir, getLearningProgress, fitnessServices, schoolFullConfig, LaserPrinterAdapter, schoolSurfaces, schoolEnrichmentLog, schoolMilestoneStore, cardLadderTest, cardLadderConfig, flashcardAssets, schoolMaterialProgressStore, getInstructionalInsights, schoolCatalog, openCatalogLearningSession, recordLearningReflection, schoolLearningLoop, offerCatalogQuizRemediation, schoolTeacherConfig, mediaBasePath, languageTranscription, createBooksApiRouter } = dependencies;
   const { SetAcademicPeriods: SetAcademicPeriods } = await import("../application/usecases/SetAcademicPeriods.mjs");
   const { SetPassOverride: SetPassOverride } = await import("../application/usecases/SetPassOverride.mjs");
   const { SetMilestones: SetMilestones } = await import("../application/usecases/SetMilestones.mjs");
@@ -56,6 +67,14 @@ try {
       academicPeriods: schoolAcademicPeriods,
       attemptDatastore: schoolDatastore,
       economyService: economyApi.economyService,
+      // The agenda's economy line prints only while coins are live.
+      economyMode: () => economyApi.configProjection?.catalog?.().mode ?? 'off',
+      // What "print my next sheet" is worth (`GET .../next`). A late-bound
+      // thunk: the earnings runtime that answers it is built after School.
+      rewardFor: economyApi.rewardFor ?? null,
+      // The printed papers' pricing (the worksheet's day bonus, the result
+      // receipt's coin lines). Late-bound the same way.
+      getEarningsPreview: () => economyApi.earningsQuote?.() ?? null,
       userService,
       eventBus,
       thermalPrinterRegistry: printerRegistry,
@@ -70,12 +89,15 @@ try {
       // a screen that a mounted widget is about to be told something on.
       wakeScreen: wakeScreenForBroadcast,
       startReadingSession: (args) => dependencies.startReadingSession?.(args) ?? { status: 'reading_session_failed', message: 'Story time is still starting up.' },
+      // The NFC book stickers, asked of the trigger owner on every refusal so
+      // a sticker added after boot is suggested without a restart. Null until
+      // the trigger API exists.
+      storyCorpus: () => storyBooksFromContentTags(dependencies.contentTagsForStoryTime?.() ?? null),
       languageStudyService,
       studyGrants: dependencies.schoolStudyGrants,
       languageReelService,
       languageReelGrants: dependencies.schoolReelGrants,
       launchPreviewTokens: dependencies.schoolLaunchPreviewTokens,
-      getEarningsPreview: () => dependencies.getEarningsPreview?.() ?? null,
       // Piano's own use case, so School's piano-course program reads exactly
       // what the kiosk reads (progress, sequential gating, co-progress lock)
       // instead of a second implementation that could disagree with it.
@@ -84,6 +106,10 @@ try {
       fitnessPlayableService,
       fitnessSchoolCourseService: v1Routers.fitness?.fitnessSchoolCourseService ?? null,
       learningEvidenceRepository: schoolLearningEvidence,
+      // The stale sweep's roster. Without it `MarkSessionAbandoned.listStale`
+      // sees no learners, and the nightly `school-stale-sweep` job reports
+      // `swept: 0` while issued-and-never-graded work reprints forever.
+      learnerDirectory: schoolLearnerDirectory,
       // Same adapter class the grading hook uses, pointed at its own
       // `school.yml` block. Guarded on the HA gateway exactly as the grading
       // hook is: no Home Assistant means the Portal banner still fires and
@@ -96,6 +122,7 @@ try {
       // The reading shelf (book-log program): grants for the panel's /act
       // target, the Books domain's resolver and repository for the shelf.
       bookGrants: dependencies.schoolBookGrants,
+      debriefGrants: dependencies.schoolDebriefGrants,
       resolveBook: books.resolveBook,
       bookRepository: books.bookRepository,
       // Shelf and teacher views render covers from OUR address, never the
@@ -120,7 +147,30 @@ try {
   }
   let schoolStateGatesProducer = null;
   const bookScanTarget = resolveBookScanTarget({ configService, householdId, getScreenConfig: getSchoolScreenConfig });
+  // The pile files a scanned book straight onto a shelf, through the shelf's
+  // own write use cases. Absent those, scans still work; filing refuses (503).
+  const pileUseCases = dependencies.schoolLifecycle.useCases ?? {};
+  const bookPileFiler = dependencies.schoolLifecycle.bookLogLauncher && dependencies.schoolLifecycle.stores?.bookLog
+    && pileUseCases.openBookShelfItem && pileUseCases.recordBookProgress
+    ? new FileBookPile({
+      bookLog: dependencies.schoolLifecycle.stores.bookLog,
+      openBookShelfItem: pileUseCases.openBookShelfItem,
+      recordBookProgress: pileUseCases.recordBookProgress,
+      dayOf: (iso) => dependencies.schoolLifecycle.bookLogLauncher.dayOf(iso),
+      logger: schoolLifecycleLogger,
+    })
+    : null;
+  if (!bookPileFiler) schoolLifecycleLogger.warn('school.book-pile.unwired', {});
   const bookScans = dependencies.schoolLifecycle.bookLogLauncher && dependencies.schoolLifecycle.realtime ? new PrepareBookScan({
+    // The scan target is always a School panel surface, and every panel
+    // surface mounts the pile (`SchoolApp` passes `pile` to BookScanEntry):
+    // its waiting scans drain first in, first out (final review I1).
+    pile: true,
+    // The timer for an intent's expiry notice; unref'd so a pending notice
+    // never holds the process open.
+    schedule: (fn, ms) => { const timer = setTimeout(fn, ms); timer.unref?.(); return timer; },
+    filer: bookPileFiler,
+    dayOf: bookPileFiler ? (iso) => dependencies.schoolLifecycle.bookLogLauncher.dayOf(iso) : null,
     mintId: () => crypto.randomBytes(32).toString('base64url'),
     resolveBook: books.resolveBook,
     roster: () => schoolLearnerDirectory.listLearners(),
@@ -153,6 +203,20 @@ try {
       grants: Boolean(dependencies.schoolBookPanelGrants),
       target: Boolean(bookScanTarget),
     });
+  }
+
+  // The coin bank's door on the same panel (economy slice 1, C3): the shelf
+  // door's two checks (roster, a configured panel) and nothing minted. The
+  // bank is a screen, not a program run, so it needs no lifecycle launcher.
+  const openBankAtPanel = bookScanTarget
+    ? new OpenBankAtPanel({
+      roster: () => schoolLearnerDirectory.listLearners(),
+      target: bookScanTarget,
+      logger: schoolLifecycleLogger,
+    })
+    : null;
+  if (!openBankAtPanel) {
+    schoolLifecycleLogger.warn('school.bank.panel-door-unavailable', { target: false });
   }
 
   if (dependencies.schoolLifecycle.wired && dependencies.schoolLifecycle.realtime && dependencies.schoolLifecycle.getLearnerDayCompletion) {
@@ -189,6 +253,25 @@ try {
     dependencies.schoolLifecycle.teacherGate.bindCapabilitySessions(teacherCapabilitySessions);
   }
 
+  // Presence hook: same adapter, `presence_hook` block of school.yml. Same
+  // guard and its own try/catch for the same reason as above.
+  // Exposed from the runtime so the card-tap handler and the HTTP sources share it.
+  let presenceHook = null;
+  if (homeAutomationAdapters.haGateway) {
+    try {
+      const { SchoolGradingHookAdapter } = await import("../adapters/SchoolGradingHookAdapter.mjs");
+      presenceHook = new SchoolGradingHookAdapter({
+        gateway: homeAutomationAdapters.haGateway,
+        loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+        resolveStudent: learnerDisplayName,
+        configKey: 'presence_hook',
+        logger: rootLogger.child({ module: 'school-presence-hook' }),
+      });
+    } catch (err) {
+      presenceHook = null;
+      schoolLifecycleLogger.warn('school.presence_hook.wiring-failed', { error: err.message });
+    }
+  }
   // Print-document scan-back (Task 7, spec §9): ResolveCardScan joins the
   // SAME decoded-scan stream createQuizScanRecorder (wired much earlier,
   // above) already persists — see schoolPrintScanConsumer.mjs's own header.
@@ -215,6 +298,7 @@ try {
         reviewQueue: dependencies.schoolLifecycle.stores.reviewQueue ?? null,
         resultArtifacts: schoolSessionResultArtifacts,
         renderMachineResult: renderSessionResultPng,
+        openRemediation: dependencies.schoolLifecycle.useCases?.openRemediation ?? null,
         logger: rootLogger.child({ module: 'school-print-scan-record' }),
       });
       dependencies.schoolLifecycle.useCases?.reviewHeldCardScan?.bindOutcomeRecorder(recordCardScanOutcome);
@@ -258,7 +342,20 @@ try {
         resolveCardScan,
         recordCardScanOutcome,
         closeSessionOutcome: dependencies.schoolLifecycle.useCases?.closeSessionOutcome ?? null,
+        // An answer card the reader cannot read the same way twice is replaced
+        // like a lost one, then retired (failure policy, 2026-11-04).
+        replaceUnreadableCard: (() => {
+          const { useCases = {}, stores = {} } = dependencies.schoolLifecycle;
+          return useCases.replaceLostAnswerSheet && stores.allocationStore?.retireCard
+            ? new ReplaceUnreadableCard({
+              replaceLostAnswerSheet: useCases.replaceLostAnswerSheet,
+              allocationStore: stores.allocationStore,
+              logger: schoolLifecycleLogger,
+            })
+            : null;
+        })(),
         gradingHook,
+        presenceHook,
         // Every non-graded feed prints a notice slip through the same
         // thermal printer the result receipts use (2026-09-15).
         receipts: dependencies.schoolLifecycle.receipts ?? null,
@@ -355,7 +452,11 @@ try {
           listSessionsInRange: (from, to) => fitnessServices.sessionService
             .listSessionsInRange(from, to, householdId),
         },
+        // The piano beside the plan (Home rows): exercises and game minutes.
+        pianoDayActivity: dependencies.pianoDayActivity ?? null,
         timezone: configService.getTimezone?.() || null,
+        planProjection: dependencies.schoolLifecycle.planProjection ?? null,
+        getLearnerDayCompletion: dependencies.schoolLifecycle.getLearnerDayCompletion ?? null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
     } catch (err) {
@@ -468,7 +569,7 @@ try {
       const [
         { GetLearnerReadings }, { UpdateReading }, { AddReadingEntry }, { UpdateReadingEntry },
         { DeleteReadingEntry }, { AddReadingForLearner }, { MoveReading }, { DeleteReading },
-        { UndoReadingRevision },
+        { UndoReadingRevision }, { GetBookReaders },
       ] = await Promise.all([
         import("../application/usecases/teacher/GetLearnerReadings.mjs"),
         import("../application/usecases/teacher/UpdateReading.mjs"),
@@ -479,6 +580,7 @@ try {
         import("../application/usecases/teacher/MoveReading.mjs"),
         import("../application/usecases/teacher/DeleteReading.mjs"),
         import("../application/usecases/teacher/UndoReadingRevision.mjs"),
+        import("../application/usecases/teacher/GetBookReaders.mjs"),
       ]);
       const shared = {
         bookLog: dependencies.schoolLifecycle.stores.bookLog,
@@ -501,6 +603,8 @@ try {
         moveReading: new MoveReading(shared),
         deleteReading: new DeleteReading(shared),
         undoReadingRevision: new UndoReadingRevision(shared),
+        // The quick-log sheet's read: one book against every enrolled learner.
+        getBookReaders: new GetBookReaders({ ...shared, roster: () => schoolLearnerDirectory.listLearners() }),
       };
     })()
     : {};
@@ -581,8 +685,19 @@ try {
   const { createProgressReportPdfRenderer } = await import("../rendering/reports/ProgressReportRenderer.mjs");
   const { createCertificatePdfRenderer } = await import("../rendering/reports/CertificateRenderer.mjs");
 
+  // Presence: mounted first on the school router. Null without HA.
+  const { createPresenceMiddleware } = await import("../api/presenceMiddleware.mjs");
+  const presenceMiddleware = presenceHook
+    ? createPresenceMiddleware({
+      presenceHook,
+      loadConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+      logger: rootLogger.child({ module: 'school-presence' }),
+    })
+    : null;
   v1Routers.school = createSchoolRouter(createSchoolApiServices({
+    presenceMiddleware,
     schoolErrors,
+    openBankAtPanel,
     schoolService,
     flashcardStudy,
     cardLadderStudy,
@@ -624,6 +739,7 @@ try {
         sessions: dependencies.schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
         passOverrides: dependencies.schoolLifecycle.passOverrides ?? null,
+        assignments: dependencies.schoolLifecycle.stores.assignments ?? null,
         worksheetInstances: dependencies.schoolLifecycle.stores.worksheetInstances ?? null,
         reviewQueue: dependencies.schoolLifecycle.stores.reviewQueue ?? null,
         curriculum: dependencies.schoolLifecycle.stores.curriculum ?? null,
@@ -644,6 +760,9 @@ try {
         worksheetInstances: dependencies.schoolLifecycle.stores.worksheetInstances ?? null,
         curriculumExceptions: dependencies.schoolLifecycle.stores.curriculumExceptionStore ?? null,
         printDocuments: dependencies.schoolLifecycle.stores.printDocuments ?? null,
+        // Built only where a receipt printer is wired; without it a receipt
+        // reprint is a dead button (reprint_unconfigured).
+        receiptReprints: Boolean(dependencies.schoolLifecycle.useCases?.reprintResultReceiptArtifact),
       }) : null,
     launchPreviewTokens: dependencies.schoolLaunchPreviewTokens,
     // Built inside the lifecycle module, where the companion code store and the
@@ -673,6 +792,7 @@ try {
         sessions: dependencies.schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
         passOverrides: dependencies.schoolLifecycle.passOverrides ?? null,
+        assignments: dependencies.schoolLifecycle.stores.assignments ?? null,
         worksheetInstances: dependencies.schoolLifecycle.stores.worksheetInstances ?? null,
         reviewQueue: dependencies.schoolLifecycle.stores.reviewQueue ?? null,
         curriculum: dependencies.schoolLifecycle.stores.curriculum ?? null,
@@ -806,6 +926,9 @@ try {
     // The same instance the study service was given above — see there.
     languageTranscription,
     studyGrants: dependencies.schoolStudyGrants,
+    // The console's grown-up read of a child's history (`/teacher/*`).
+    teacherGate: schoolTeacherGate,
+    teacherCapabilitySessions,
     logger: rootLogger.child({ module: 'school-language-api' })
   });
   v1Routers.school.use('/sentence-ladder', sentenceLadderRouter);
@@ -848,6 +971,49 @@ try {
     }));
   }
 
+  // After-school debrief (spec 2026-10-21-school-debrief-design).
+  const debriefLauncher = dependencies.schoolLifecycle.debriefLauncher ?? null;
+  if (dependencies.schoolLifecycle.wired && debriefLauncher && dependencies.schoolDebriefGrants) {
+    const debriefConfig = dependencies.schoolLifecycle.debriefConfig ?? debriefConfigOf(configService.getHouseholdAppConfig(null, 'school') || {});
+    const debriefAi = dependencies.scopedGateway?.(dependencies.sharedAiGateway, { app: 'school', feature: 'debrief' }) ?? null;
+    if (!debriefAi?.chatStructured) rootLogger.warn('school.debrief.ai-unavailable', {});
+    const debriefLogger = rootLogger.child({ module: 'school-debrief' });
+    const debriefAudio = new FilesystemDebriefAudio({ rootDir: path.join(configService.getMediaDir(), 'school/debriefs') });
+    // Low-priority conversation starter for each teacher when a child finishes.
+    // Throws when nobody is configured or delivery fails; the service logs it.
+    const notifyDebriefHook = notificationService?.send ? async ({ learnerId, day, hook }) => {
+      let child = null;
+      try { child = (await learnerDisplayName(learnerId)) || null; } catch { child = null; }
+      const push = composeSchoolPush({ kind: 'debrief-hook', learnerId, child, studyDay: day, hook });
+      if (!push) { debriefLogger.info('school.debrief.hook-skipped', { learnerId, day }); return; }
+      const usernames = (configService.getHouseholdAppConfig(null, 'school') || {}).teachers ?? [];
+      if (!usernames.length) throw new Error('no teachers configured');
+      for (const username of usernames) {
+        // eslint-disable-next-line no-await-in-loop
+        await notificationService.send({
+          title: push.title,
+          body: push.message,
+          category: 'school',
+          urgency: 'low',
+          actions: [{ label: 'Open the console', action: 'open', data: { url: '/school/teacher' } }],
+          metadata: { username, pushData: push.data },
+          dedupeKey: `debrief-hook:${username}:${learnerId}:${day}`,
+        });
+      }
+    } : null;
+    const debriefService = new SchoolDebriefService({
+      notify: notifyDebriefHook,
+      debriefs: dependencies.schoolLifecycle.debriefStore,
+      launcher: debriefLauncher,
+      questioner: new DebriefQuestioner({ aiGateway: debriefAi, model: debriefConfig.questioner.model, timeoutMs: debriefConfig.questioner.timeoutMs, logger: debriefLogger }),
+      judge: new DebriefAnswerJudge({ aiGateway: debriefAi, decisionGateway: dependencies.scopedGateway?.(dependencies.decisionGateway, { app: 'school', feature: 'debrief' }) ?? null, model: debriefConfig.judge.model, timeoutMs: debriefConfig.judge.timeoutMs, logger: debriefLogger }),
+      transcribe: debriefAi?.transcribe ? (buffer, opts) => debriefAi.transcribe(buffer, opts) : null,
+      saveAudio: (args) => debriefAudio.save(args), // served by GET /debrief/teacher/:learnerId/audio/:file
+      config: debriefConfig, logger: debriefLogger,
+    });
+    v1Routers.school.use('/debrief', createSchoolDebriefRouter({ service: debriefService, grants: dependencies.schoolDebriefGrants, teacherGate: dependencies.schoolTeacherGate, audioStore: debriefAudio, logger: debriefLogger }));
+  }
+
   if (dependencies.schoolLifecycle.router) {
     v1Routers.school.use('/lifecycle', dependencies.schoolLifecycle.router);
   }
@@ -864,5 +1030,5 @@ try {
   if (dependencies.schoolLifecycle.selfServiceRouter) {
     v1Routers.school.use('/self-service', dependencies.schoolLifecycle.selfServiceRouter);
   }
-  return { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes };
+  return { schoolStateGatesProducer, bookScans, schoolPrintService, schoolTeacherNotes, presenceHook };
 }

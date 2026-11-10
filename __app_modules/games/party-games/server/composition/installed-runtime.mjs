@@ -55,6 +55,7 @@ export function createPartyGamesSessionRuntime({ gamingDefinitionStore, gamingMa
     journalsDir: configService.getHouseholdPath('gaming/journals'),
     effectsDir: configService.getHouseholdPath('gaming/effects'),
     drawingCheckpointsDir: configService.getHouseholdPath('gaming/drawing-checkpoints'),
+    restartsDir: configService.getHouseholdPath('gaming/restarts'),
     historyDir: configService.getHouseholdPath('gaming/history'),
     partyGamesCatalog,
     aiGateway: partyGamesProfile.ai.commentary || partyGamesProfile.ai.advisory_judgment ? scopedGateway(sharedAiGateway, { app: 'gaming' }) : null,
@@ -75,6 +76,7 @@ export function createPartyGamesHttpRuntime({ gamingModule, gamingAssetCatalog, 
   const gamingRouter = createGamingRouter({
     gamingApplication: gamingModule.gamingApplication,
     gamingDiagnostics: gamingModule.gamingDiagnostics,
+    gamingSessionRestarts: gamingModule.gamingSessionRestarts,
     gamingMediaService: new GamingMediaService({ repository: new FilesystemGamingMediaRepository({
       assetCatalog: gamingAssetCatalog,
       partyMediaRoot: join(mediaBasePath, 'games', 'party-games'),

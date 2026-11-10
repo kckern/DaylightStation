@@ -38,10 +38,11 @@ import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/
 import { sha256Text } from '#system/utils/CanonicalFingerprint.mjs';
 import { planRows, resolveAmbiguousCardId } from "../../domain/documents/allocation.mjs";
 import { gradeAnswer } from "../../domain/grading.mjs";
-import { omrAlignmentError } from "../../domain/omrAlignment.mjs";
+import { OMR_REFEED_CONFIRM_MS, UNSALVABLE_REFUSALS, omrAlignmentError, sameOmrRead } from "../../domain/omrAlignment.mjs";
 import { omrKeyAlignmentSuspect } from "../../domain/omrKeyAlignment.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { creditsAsEraser, leniencyCap } from "../../domain/documents/ambiguityLeniency.mjs";
+import { resolveNeighbourBleed } from "../../domain/documents/neighbourBleed.mjs";
 import {
   CODE_LETTERS, GATE_SATISFIED, GATE_BLANK, GATE_WRONG, GATE_EXHAUSTED,
 } from "../../domain/companionCode.mjs";
@@ -306,9 +307,9 @@ function correctLetterFor(item) {
  * never has its shape perturbed by this pass at all.
  */
 function applyLeniency({
-  results, archetype, rowContext, logger,
+  results, archetype, rowContext, logger, rowsPerCredit,
 }) {
-  let budget = leniencyCap({ archetype, rowCount: results.length });
+  let budget = leniencyCap({ archetype, rowCount: results.length, rowsPerCredit });
   if (budget <= 0) return results;
 
   const promotedRows = new Set();
@@ -479,6 +480,7 @@ function gradeRow(item, given, points) {
 
 export class ResolveCardScan {
   #allocationStore; #repository; #banks; #logger; #heldScanStore; #protectionMode; #baselineStore; #sessions;
+  #ambiguousFallback; #leniencyRowsPerCredit;
 
   /**
    * @param {object} deps
@@ -503,6 +505,7 @@ export class ResolveCardScan {
   constructor({
     allocationStore, repository, banks = null, heldScanStore = null,
     protectionMode = 'off', logger = console, baselineStore = null, sessions = null,
+    ambiguousFallback = 'review', leniencyRowsPerCredit = 5,
   } = {}) {
     if (!allocationStore) throw new Error('ResolveCardScan requires allocationStore');
     if (!repository) throw new Error('ResolveCardScan requires repository');
@@ -517,6 +520,20 @@ export class ResolveCardScan {
     this.#heldScanStore = heldScanStore;
     this.#protectionMode = protectionMode;
     this.#logger = logger;
+    // school.yml scan.ambiguousFallback: 'review' (hold the row for a grown-up,
+    // today's behaviour) | 'incorrect' (score a still-ambiguous row incorrect,
+    // no review). Anything else falls back to 'review' with a warning.
+    if (ambiguousFallback !== 'review' && ambiguousFallback !== 'incorrect') {
+      logger?.warn?.('school.print.scan-config-invalid', { key: 'ambiguousFallback', value: ambiguousFallback, using: 'review' });
+      ambiguousFallback = 'review';
+    }
+    this.#ambiguousFallback = ambiguousFallback;
+    // school.yml scan.leniencyRowsPerCredit: integer >= 1, else 5 with a warning.
+    if (!Number.isInteger(leniencyRowsPerCredit) || leniencyRowsPerCredit < 1) {
+      logger?.warn?.('school.print.scan-config-invalid', { key: 'leniencyRowsPerCredit', value: leniencyRowsPerCredit, using: 5 });
+      leniencyRowsPerCredit = 5;
+    }
+    this.#leniencyRowsPerCredit = leniencyRowsPerCredit;
   }
 
   /**
@@ -666,18 +683,9 @@ export class ResolveCardScan {
     // have a different owner and must not be compared to their former worksheet.
     const allOwners = resolveRowOwners(records.filter((record) => isLiveOrSatisfied(record.status)));
     const owners = Object.fromEntries([...allOwners].map(([row, record]) => [row, record.recordId]));
-    let previous = {};
-    if (this.#baselineStore && records.length) {
-      const baseline = await this.#baselineStore.get(cardId);
-      previous = Object.fromEntries(Object.entries(baseline?.answers ?? {})
-        .filter(([row]) => owners[row] && owners[row] === baseline.owners?.[row]));
-      const error = omrAlignmentError(previous, answers);
-      if (error) {
-        this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error });
-        return { error, results: [], decode };
-      }
-    }
     const answeredRows = new Set(Object.keys(answers).map(Number));
+    // Ahead of the alignment check: a retired card's old baseline must not
+    // refuse it — its marks need the "this card was replaced" answer.
     if (records.some((record) => record.cardRetiredAt) && answeredRows.size > 0) {
       return {
         results: [], deadCard: true, retiredCard: true,
@@ -686,6 +694,47 @@ export class ResolveCardScan {
         ...(cardIdInferred ? { cardIdInferred } : {}),
         decode,
       };
+    }
+    let previous = {};
+    if (this.#baselineStore && records.length) {
+      const baseline = await this.#baselineStore.get(cardId);
+      previous = Object.fromEntries(Object.entries(baseline?.answers ?? {})
+        .filter(([row]) => owners[row] && owners[row] === baseline.owners?.[row]));
+      const error = omrAlignmentError(previous, answers);
+      if (error) {
+        // A refusal must never be a dead end. A reader slip does not reproduce
+        // on a fresh feed; a child's real marks do. The first refused read is
+        // remembered, and the same card fed again with the identical read is
+        // accepted as the child's actual card (e.g. a run re-bubbled one row
+        // lower after a mis-bubble — 2026-11-03, see omrAlignment.sameOmrRead).
+        // Every refused read inside the window is kept, so a read that repeats
+        // after a slip in between still confirms (A, B, A is the child's A).
+        // `{answers, at}` is the pre-list shape of one remembered read.
+        const nowMs = Date.now();
+        const remembered = baseline?.refused
+          ? (Array.isArray(baseline.refused.reads) ? baseline.refused.reads
+            : [{ answers: baseline.refused.answers, at: baseline.refused.at }])
+          : [];
+        const recent = remembered.filter((read) => nowMs - Date.parse(read.at) < OMR_REFEED_CONFIRM_MS);
+        const match = recent.find((read) => sameOmrRead(read.answers, answers));
+        if (!match) {
+          // A teacher's replay re-runs evidence already counted; it is never a
+          // new feed, so it neither joins the list nor moves the card closer to
+          // retirement.
+          if (identityReview) return { error, results: [], decode };
+          // Distinct reads only: a matching read confirmed above instead.
+          const reads = [...recent, { answers, at: new Date(nowMs).toISOString() }];
+          const count = reads.length;
+          await this.#baselineStore.save(cardId, { ...baseline, refused: { reads, count } });
+          this.#logger.warn?.('school.scan.alignment-refused', { cardId, ...error, confirmBy: 'refeed', refusals: count });
+          if (count >= UNSALVABLE_REFUSALS) {
+            this.#logger.warn?.('school.scan.card-unsalvable', { cardId, refusals: count });
+            return { error, results: [], decode, unsalvable: { cardId, refusals: count } };
+          }
+          return { error, results: [], decode };
+        }
+        this.#logger.info?.('school.scan.alignment-confirmed-by-refeed', { cardId, ...error, refusedAt: match.at });
+      }
     }
     const preflight = identityReview ? null : await this.#identityPreflight({ cardId, answers, records });
     if (preflight) return { ...preflight, ...(cardIdInferred ? { cardIdInferred } : {}), decode };
@@ -699,7 +748,12 @@ export class ResolveCardScan {
         const sessionIds = [record.sessionId, ...(record.sections ?? []).map(s => s.sessionId)].filter(Boolean);
         for (const sessionId of sessionIds) {
           const state = reduceSession(await this.#sessions.readEvents(sessionId));
-          if (['issued', 'reprinted', 'submitted'].includes(state.state)) {
+          // A failed sheet with no retry opened yet is unfinished too: the
+          // child may fix its marks and feed it again as the retake
+          // (`RecordCardScanOutcome#openCorrectedRetake`).
+          const correctable = state.state === 'outcome_recorded'
+            && state.outcome?.result === 'needs_remediation' && !state.remediation;
+          if (['issued', 'reprinted', 'submitted'].includes(state.state) || correctable) {
             unfinished.push(record); break;
           }
         }
@@ -1181,9 +1235,43 @@ export class ResolveCardScan {
     // accident would leave the budget wrong, and rule 3 (marks covering every
     // choice never earn credit) would misread a legitimate all-five `ABCDE`
     // finish code besides. Keeping it out of the pass entirely settles both.
-    const rowResults = applyLeniency({
+    const leniencyResults = applyLeniency({
       results: questionRows, archetype: prepared.archetype, rowContext, logger: this.#logger,
+      rowsPerCredit: this.#leniencyRowsPerCredit,
     });
+    // Neighbour bleed runs AFTER eraser leniency and only on rows still
+    // `ambiguous`: it is strictly additive and never consumes the eraser
+    // budget, so a two-mark row containing the key is credited by the eraser
+    // rule exactly as before even when its key letter also sits in a neighbour.
+    const bleedResults = leniencyResults.map((row) => {
+      const context = rowContext.get(row.row);
+      if (row.status !== 'ambiguous' || !context || !Array.isArray(answers[row.row])) return row;
+      if (context.item.type !== 'multiple_choice' && context.item.type !== 'true_false') return row;
+      const bleed = resolveNeighbourBleed({ row: row.row, answers });
+      if (!bleed) return row;
+      this.#logger?.info?.('school.print.scan-bleed-resolved', {
+        itemId: row.itemId, row: row.row, given: answers[row.row], resolvedLetter: bleed.letter,
+        neighbours: { above: bleed.above, below: bleed.below },
+      });
+      return {
+        ...row,
+        ...gradeRow(context.item, bleed.letter, row.points),
+        given: answers[row.row], resolvedLetter: bleed.letter, bleed: 'neighbour',
+      };
+    });
+    // Configured fallback for rows STILL ambiguous after leniency + bleed:
+    // 'incorrect' scores them (ambiguous: true marks the audit trail) so they
+    // reach neither the review queue nor the "needs a grown-up" slip, both of
+    // which are driven by status === 'ambiguous'.
+    const rowResults = this.#ambiguousFallback === 'incorrect'
+      ? bleedResults.map((row) => {
+        if (row.status !== 'ambiguous') return row;
+        this.#logger?.info?.('school.print.scan-ambiguous-scored', {
+          itemId: row.itemId, row: row.row, given: row.given, fallback: 'incorrect',
+        });
+        return { ...row, status: 'incorrect', earned: 0, ambiguous: true };
+      })
+      : bleedResults;
 
     // Content-aware row-shift check (never a prior scan — that is
     // omrAlignmentError's job). Runs over fully-marked, multiple_choice rows

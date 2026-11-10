@@ -139,6 +139,7 @@ export function createEmulatorSession({
       pathtodata: engineConfig.pathtodata,
       core: engineConfig.core || system,
       controls: engineConfig.controls,
+      checkpointProvenance: engineConfig.checkpointProvenance,
       // Hand EJS the user's persisted volume so the value it re-asserts during
       // its own start chain is already correct (see loadEmulatorJS EJS_volume).
       volume: engineConfig.volume,
@@ -148,6 +149,8 @@ export function createEmulatorSession({
       shaders,
     });
 
+    await engineConfig.afterBoot?.(engine);
+
     // Calibrate WRAM via a harmless cheat ping — but ONLY for a game that
     // declares a semantic state map, since the base address exists to read that
     // map and nothing else. Calibrating regardless cost a cheat-ping round trip
@@ -155,7 +158,12 @@ export function createEmulatorSession({
     // level for every title without states (Sonic, and five of the seven Game
     // Boy titles) — a permanent false alarm that would bury a real failure.
     let cal = null;
-    if (game.states) {
+    if (game.states && engineConfig.checkpointProvenance) {
+      // Restored SRAM/WRAM must never be probed with writes or calibration frames.
+      // Missing optional state instrumentation cannot justify a destructive fallback.
+      const nativeBase = engine.getWramBase?.();
+      if (nativeBase != null) cal = { wramBase: nativeBase };
+    } else if (game.states) {
       const calibrator = createWramCalibrator({
         setCheat: engine.setCheat,
         resetCheat: engine.resetCheat,

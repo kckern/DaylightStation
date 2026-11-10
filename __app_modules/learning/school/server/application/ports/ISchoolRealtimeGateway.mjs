@@ -16,6 +16,8 @@ export class ISchoolRealtimeGateway {
   onSessionOutcomeRecorded(_handler) { throw new Error('onSessionOutcomeRecorded must be implemented'); }
   onCompletionInputChanged(_handler) { throw new Error('onCompletionInputChanged must be implemented'); }
   onCompletionStateObserved(_handler) { throw new Error('onCompletionStateObserved must be implemented'); }
+  /** A learner's coins changed (the economy's fact). Optional. */
+  onCoinsChanged(_handler) { return () => {}; }
   onPrintSheet(_readerConfig, _handler) { throw new Error('onPrintSheet must be implemented'); }
   languageDayCompleted(_fact) { throw new Error('languageDayCompleted must be implemented'); }
   cardPracticeDayCompleted(_fact) { /* optional */ }
@@ -27,6 +29,10 @@ export class ISchoolRealtimeGateway {
   completionStateObserved(_fact) { throw new Error('completionStateObserved must be implemented'); }
   schoolCeremony(_announcement) { throw new Error('schoolCeremony must be implemented'); }
   programDayBypassChanged(_announcement) { throw new Error('programDayBypassChanged must be implemented'); }
+  /** Tell the Portal a learner's coins changed. Optional. */
+  coinsChanged(_announcement) { /* optional */ }
+  /** Forward `onCoinsChanged` to `coinsChanged`. Optional; returns the unsubscribe. */
+  relayCoinsChanged() { return () => {}; }
   storyReadRecorded(_announcement) { throw new Error('storyReadRecorded must be implemented'); }
   readingRoomChanged(_location, _announcement) { throw new Error('readingRoomChanged must be implemented'); }
   printAgendaReady(_announcement) { throw new Error('printAgendaReady must be implemented'); }

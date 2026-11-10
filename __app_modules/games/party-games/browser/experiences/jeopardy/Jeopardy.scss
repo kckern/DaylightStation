@@ -106,6 +106,13 @@
     color: var(--gp-paper-dim);
     font-style: italic;
   }
+  // A picture clue shares the column with its prompt: shrink both so the text
+  // stays below the picture instead of overflowing onto it at 960×540.
+  &--media {
+    .gp-media--image { max-height: 34%; }
+    .gp-reveal { flex: 1 0 auto; gap: 0.75rem; }
+    .gp-reveal__prompt { font-size: 1.5rem; }
+  }
 }
 .jp-final {
   flex: 1 1 auto;
@@ -141,8 +148,11 @@
   height: auto;
 }
 
-.jeopardy[data-phase='judging'] .gp-reveal {
+.jeopardy[data-phase='judging'] .gp-reveal,
+.jp-clue--revealed .gp-reveal {
   gap: 0.5rem;
+
+  &__prompt { font-size: 1.5rem; }
 
   &__answer {
     padding-top: 0.5rem;
@@ -175,3 +185,135 @@
     button { @include gs.gp-button-primary; }
   }
 }
+
+.jp-board__tile { flex-direction: column; gap: 0.2rem; }
+.jp-board__kids, .jp-clue__kids { color: var(--jp-kids-color, #89cff0); flex-shrink: 0; }
+.jp-board__kids { width: clamp(16px, 4cqh, 26px); height: clamp(16px, 4cqh, 26px); }
+.jp-clue__kids { width: 30px; height: 30px; }
+
+// TV composition: one bounded content slot between compact chrome and scores.
+.jeopardy {
+  container-type: size;
+  overflow: hidden;
+  .gp-show-header {
+    height: 48px;
+    min-height: 48px;
+    padding: 4px 20px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 12px;
+    h1 { font-size: 24px; }
+    &__eyebrow, &__status { font-size: 12px; letter-spacing: 0.03em; }
+  }
+  .gp-scoreboard {
+    height: 64px;
+    flex: 0 0 64px;
+    padding: 6px 16px;
+    gap: 12px;
+    &__team { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 12px; border-top-width: 3px; }
+    &__name { font-size: 14px; }
+    &__members { display: flex; margin: 0; }
+    &__score { font-size: 28px; margin-left: auto; }
+  }
+  .jp-host-lobby {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    .gp-titlecard { padding: 0; gap: 8px; h1 { font-size: 36px; } p { font-size: 20px; } }
+    > p { margin: 0; font-size: 18px; }
+    .gp-companion { font-size: 14px; padding: 8px; }
+  }
+  .jp-clue, .jp-final { padding: 10px 24px; gap: 10px; overflow: hidden; }
+  .jp-clue__banner { font-size: 26px; min-height: 30px; gap: 18px; }
+  .jp-clue__locked { font-size: 18px; padding: 4px 18px; }
+  .gp-media--image, .gp-media--video { max-height: 26%; max-width: 60%; flex: 0 1 26%; object-fit: contain; }
+  .gp-reveal {
+    padding: 0 12px;
+    justify-content: center;
+    gap: 10px;
+    flex: 1 1 0;
+    min-height: 0;
+    &__prompt { font-size: clamp(24px, 4.5cqh, 40px); line-height: 1.22; }
+    &__prompt--sm { font-size: clamp(20px, 3.8cqh, 32px); }
+    &__reference { color: var(--gp-brass-bright); font: 500 clamp(16px, 3.3cqh, 26px)/1.2 var(--gp-font-ui); }
+    // The answer uses the same reserved space before and after reveal.
+    &::after { content: ''; min-height: 38px; }
+    &:has(.gp-reveal__answer)::after { display: none; }
+    &__answer { font-size: clamp(22px, 4cqh, 34px); line-height: 1.2; padding-top: 8px; }
+  }
+  .jp-clue--media .gp-reveal__prompt { font-size: clamp(19px, 3.6cqh, 30px); }
+  .jp-final {
+    .gp-titlecard h1 { font-size: 40px; }
+    .gp-titlecard p { font-size: 24px; }
+    > p { margin: 0; }
+    &__judging { gap: 6px; }
+    &__team { font-size: 18px; }
+  }
+}
+
+.jp-choose {
+  padding: 0.6rem 1rem;
+  border-left: 0.75rem solid var(--team-color, var(--gp-brass));
+  background: var(--gp-well);
+  color: var(--gp-paper);
+  font-size: clamp(1.2rem, 2.6vw, 2rem);
+  font-weight: 800;
+  text-align: center;
+}
+.jp-board__tile { position: relative; }
+.jp-board__tile.is-selected {
+  outline: 0.4rem solid var(--gp-brass-bright);
+  outline-offset: -0.4rem;
+  background: var(--gp-paper);
+  color: var(--gp-well);
+  text-shadow: none;
+  z-index: 1;
+}
+.jp-board__owner {
+  position: absolute;
+  bottom: 0.25rem;
+  right: 0.4rem;
+  padding: 0.1rem 0.35rem;
+  border-left: 0.3rem solid var(--team-color, var(--gp-brass));
+  background: var(--gp-well);
+  color: var(--gp-paper);
+  font-size: 0.8rem;
+  text-shadow: none;
+}
+.jp-buzzer-setup { text-align: center; }
+.jp-buzzer-setup [data-active] {
+  border: 0.2rem solid currentColor;
+  padding: 0.4rem;
+  font-size: 1.2em;
+}
+
+// Keep the Ready screen and four-team footer within the fixed TV stage.
+.jeopardy {
+  .jp-host-lobby { padding: 20px 28px; gap: 18px; justify-content: center; }
+  .jp-host-lobby__columns { display: grid; grid-template-columns: 230px minmax(0, 1fr); align-items: center; gap: 28px; width: 100%; min-height: 0; }
+  .jp-buzzer-setup { text-align: left; min-width: 0; }
+  .jp-buzzer-setup h2 { margin: 0 0 8px; font-size: 22px; }
+  .jp-buzzer-setup p { margin: 0 0 12px; font-size: 22px; line-height: 1.25; }
+  .jp-buzzer-setup [role='status'] { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 4px 0; padding: 8px 10px; background: var(--gp-well); border-radius: 8px; font-size: 18px; border: 2px solid transparent; }
+  .jp-buzzer-setup [data-active] { border-color: currentColor; font-size: 18px; }
+  .gp-scoreboard { height: 76px; flex-basis: 76px; gap: 10px; }
+  .gp-scoreboard__team { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; background: var(--gp-well); border-radius: 10px; border: 2px solid var(--team-color); padding: 6px 10px; }
+  .gp-scoreboard__team::before, .gp-scoreboard__team::after { display: none; }
+  .gp-scoreboard__name { font-size: 22px; line-height: 1.05; overflow-wrap: anywhere; }
+  .gp-scoreboard__members { display: none; }
+  .gp-scoreboard__score { font-size: 28px; }
+  .jp-clue__locked { font-size: 22px; }
+  .gp-reveal { overflow-y: auto; width: 100%; }
+  .gp-reveal__prompt, .gp-reveal__prompt--sm, .jp-clue--media .gp-reveal__prompt { font-size: clamp(28px, 4.5cqh, 40px); }
+  .gp-reveal__answer { font-size: clamp(26px, 4cqh, 34px); }
+  .jp-clue__review { margin: 0; font-size: 22px; text-align: center; }
+  button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
+}
+@media (prefers-reduced-motion: reduce) { .jp-clue__locked, .jp-clue__dd { animation: none; } }
+
+.jeopardy .jp-choose { border-left: 0; background: transparent; padding: 8px 16px 0; font-size: 22px; }
+
+.jp-clue__pending { margin: 0; flex: 0 0 auto; font-size: 22px; line-height: 1.2; text-align: center; }

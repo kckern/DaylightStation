@@ -20,9 +20,9 @@
  * reaching for the next digit. The refusal now happens IN the slots: the row
  * shakes, then the six digits turn over one by one into REJECT_WORD, hold, and
  * wipe back to empty. Nothing moves, the whole thing is over in under two
- * seconds, and the status band sits under the keys, so the one message that
- * still uses words (a backend outage, plus its retry button) does not
- * shift the pad either.
+ * seconds, and the status band sits under the keys, so the messages that
+ * still use words (a backend outage plus its retry button, or a refusal that
+ * tells the child what to do instead) do not shift the pad either.
  *
  * THE INTERACTION OUTLASTS THE ENTRY. Auto-submit made the sixth DIGIT the
  * child's finishing gesture, and `submit` empties the pad before the round
@@ -117,9 +117,10 @@ const ABANDONED_ENTRY_MS = 60_000;
  *     refusal. Anything falsy back (a caller that reports nothing) simply
  *     skips the animation rather than guessing.
  * @param {boolean} [props.busy] - a resolve is in flight.
- * @param {string|null} [props.message] - the degraded sentence. A wrong code no
- *   longer arrives here (see the header); if one does, it is shown in the
- *   status band under the keys and displaces nothing above it.
+ * @param {string|null} [props.message] - the degraded sentence, or the words a
+ *   child-fixable refusal carries (an old sheet, a spent code, a burst). A
+ *   plain wrong code arrives with none (see the header). Either way it is shown
+ *   in the status band under the keys and displaces nothing above it.
  * @param {boolean} [props.degraded] - the message is a backend fault, so offer
  *   a retry rather than making the child re-type a code that was never wrong.
  * @param {() => void} [props.onRetry]
@@ -143,6 +144,9 @@ const ABANDONED_ENTRY_MS = 60_000;
  *   left standing keeps `engaged` true, which is the very thing that defers a
  *   book scan. Without this, "Open it" on the deferred card could never lift
  *   the gate that put it there.
+ * @param {() => void} [props.onEntryStart] - a digit landed on an empty pad:
+ *   the next code has begun, so whatever was said about the last one is done.
+ *   The hook clears a refusal's sentence here.
  * @param {(engaged: boolean) => void} [props.onEngagedChange] - the pad is
  *   mid-interaction in a way a CLOCK cannot see: a code partly typed, or a
  *   refusal still playing. Recency alone would call both of those idle.
@@ -160,6 +164,7 @@ export default function Keypad({
   screenOffSuppressed = false,
   onActivity = null,
   onEngagedChange = null,
+  onEntryStart = null,
   clearToken = 0,
 }) {
   const [entry, setEntry] = useState('');
@@ -297,15 +302,21 @@ export default function Keypad({
   // activation that arrives before anyone could have read the answer is the
   // previous gesture finishing, not a new one starting, and it is dropped
   // outright rather than allowed to cancel the refusal it caused.
+  // Read through a ref so a caller's callback identity stays out of `press`'s
+  // deps; `press` still changes per digit, because it reads `entry.length`.
+  const onEntryStartRef = useRef(onEntryStart);
+  onEntryStartRef.current = onEntryStart;
+
   const press = useCallback((digit) => {
     if (isStray()) {
       schoolLog.selfService('keypad.stray-press', { key: 'digit' });
       return;
     }
     stopReject();
+    if (entry.length === 0) onEntryStartRef.current?.();
     setEntry((current) => (current.length >= length ? current : current + digit));
     schoolLog.selfService('keypad.digit-pressed', {});
-  }, [isStray, length, stopReject]);
+  }, [entry.length, isStray, length, stopReject]);
 
   /**
    * Clear wipes the entry; Clear on an ALREADY-EMPTY entry refreshes the panel.
@@ -454,6 +465,11 @@ export default function Keypad({
     return () => clearTimeout(timer);
   }, [activityEpoch, entry]);
 
+  // A child-fixable refusal's sentence. The first digit of the next code is a
+  // new attempt: `onEntryStart` has the hook drop the words for good, and the
+  // empty-pad check covers a caller that does not wire it.
+  const refusalWords = !degraded && message && entry.length === 0 ? message : null;
+
   const cells = reject
     ? Array.from({ length }, (_, i) => (i < reject.shown ? letters[i] : null))
     : Array.from({ length }, (_, i) => entry[i] ?? null);
@@ -491,7 +507,7 @@ export default function Keypad({
           see it. Announced once, rather than letting the live region above read
           out six letters one at a time as they turn over. */}
       <p className="school-selfservice__sr" role="status">
-        {reject ? 'That code did not work. Type it again.' : ''}
+        {reject ? (refusalWords || 'That code did not work. Type it again.') : ''}
       </p>
 
       <div className="school-selfservice__pad">
@@ -543,17 +559,22 @@ export default function Keypad({
           re-centre and lift the pad by half of whatever grew below it. So an
           outage grows the column downward and moves only "Turn off screen".
 
-          WORDS ONLY FOR AN OUTAGE. A wrong code says what it has to say in the
-          slots above; printing "Try again." underneath as well would be the
-          same refusal twice, and the sentence a bad code carries is the one
-          thing here a child cannot act on differently. `degraded` is the whole
-          gate — the hook still sets `message` for a refusal, and the day it
-          starts sending something a child CAN act on, this is the line to
-          revisit. */}
+          WORDS FOR AN OUTAGE, AND FOR A REFUSAL A CHILD CAN ACT ON. A wrong
+          code says what it has to say in the slots above, so the hook leaves
+          `message` empty for it — "Try again." underneath would be the same
+          refusal twice. An old sheet, a spent code or a burst DOES carry
+          something to do (get today's card, ask a grown-up, wait), so its
+          sentence sits here, and goes away as soon as the next code is
+          started so it never captions the wrong attempt. */}
       <div className="school-selfservice__status">
         {message && degraded && (
           <p className="school-selfservice__message is-degraded">
             {message}
+          </p>
+        )}
+        {refusalWords && (
+          <p className="school-selfservice__message is-refusal">
+            {refusalWords}
           </p>
         )}
         {degraded && onRetry && (

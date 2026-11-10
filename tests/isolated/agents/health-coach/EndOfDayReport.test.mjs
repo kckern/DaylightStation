@@ -1,3 +1,4 @@
+import { budgetDayView } from '../../../../__app_modules/wellness/health/server/application/coaching/CoachingEvidenceService.mjs';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { EndOfDayReport } from "../../../../__app_modules/wellness/health/server/application/agents/health-coach/assignments/EndOfDayReport.mjs";
@@ -57,8 +58,12 @@ describe('EndOfDayReport', () => {
   });
 
   describe('completeness comes from the budget, never the clock', () => {
-    const day = (over = {}) => ({ date: '2026-09-24', calories: 700, protein: 40, range: { floor: 1200, top: 1791 },
-      zone: 'incomplete', complete: false, declared: null, remaining: 500, items: [{ name: 'Chili', calories: 319 }], ...over });
+    const day = (over = {}) => {
+      const row = { date: '2026-09-24', calories: 700, protein: 40, range: { floor: 1200, top: 1791 },
+        zone: 'incomplete', complete: false, declared: null, remaining: 500, items: [{ name: 'Chili', calories: 319 }], ...over };
+      return { ...budgetDayView({ ...row, food: row.calories, exercise: 0, net: row.calories, maintenance: 2291,
+        macros: { protein: row.protein } }, { today: '2026-09-24' }), items: row.items };
+    };
     afterEach(() => vi.useRealTimers());
 
     it('gathers today by the user\'s LOCAL date (not UTC, which is tomorrow after 5pm Pacific)', async () => {
@@ -91,8 +96,8 @@ describe('EndOfDayReport', () => {
       const prompt = new EndOfDayReport().buildPrompt({
         todayNutrition: day(), goals: { goals: { nutrition: { calories_min: 1600, calories_max: 2000, protein: 120 } } },
       }, { serialize: () => '' });
-      expect(prompt).toContain('"calories_min": 1200');
-      expect(prompt).toContain('"calories_max": 1791');
+      expect(prompt).toContain('"logging_floor": 1200');
+      expect(prompt).toContain('"plan_food": 1791');
       expect(prompt).not.toContain('"calories_max": 2000');
     });
   });

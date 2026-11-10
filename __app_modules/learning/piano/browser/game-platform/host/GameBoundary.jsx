@@ -25,6 +25,11 @@ import './GameBoundary.scss';
  * (`data.game:"tetris"`), so it has to stay the plain game id no matter what
  * the caller composes into the reset token. Folding the two together silently
  * broke every such query the moment the token gained a match counter.
+ *
+ * `onCrash({ gameId, error })` tells the host a game died, after the crash is
+ * logged. The kiosk host uses it to settle an early pass (refund under a
+ * minute of play, consume otherwise). A throwing handler is swallowed: the
+ * boundary's one job is to keep the screen alive.
  */
 export default class GameBoundary extends Component {
   constructor(props) {
@@ -49,6 +54,9 @@ export default class GameBoundary extends Component {
       // ships these over a WebSocket.
       at: info?.componentStack?.trim().split('\n')[0] ?? null,
     });
+    try {
+      this.props.onCrash?.({ gameId: this.props.gameId ?? null, error });
+    } catch { /* the crash card still renders */ }
   }
 
   render() {

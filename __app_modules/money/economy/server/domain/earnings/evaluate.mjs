@@ -18,7 +18,7 @@
 import { resolveRules } from "./ruleset.mjs";
 
 const ZERO = Object.freeze({ silver: 0, gems: 0 });
-const SCHOOL_KINDS = new Set(['unit', 'section-day', 'section-week', 'day-met', 'week-met']);
+const SCHOOL_KINDS = new Set(['unit', 'section-day', 'section-week', 'day-met', 'week-met', 'debrief-day', 'debrief-week']);
 
 /** The payout idempotency key. `timeliness` is reserved for makeup work (D14). */
 export function earningRef({ learnerId, ruleId, period, timeliness = 'on-time' }) {
@@ -102,7 +102,8 @@ function dayMet(rule, facts, ctx) {
  * satisfied (taxonomy §5). The week row alone covers weekly-cadence work only
  * — it reads `exempt / no_weekly_work` for a learner with none, however the
  * days went — so the days are folded here. Pays once the facts reach Friday
- * (Saturday is payday, D1), never earlier in the week.
+ * (Saturday is payday, D1), never earlier in the week; but a settled (past)
+ * non-green day ends it at once.
  */
 function weekMet(rule, facts, ctx) {
   const week = facts.week;
@@ -115,9 +116,15 @@ function weekMet(rule, facts, ctx) {
   if (week.state === 'unknown' || schoolDays.some((d) => d.state === 'unknown')) {
     return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Week not worked out yet' };
   }
-  if (!ctx.weekdaysCovered) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
   const notGreen = schoolDays.filter((d) => d.state !== 'met');
-  const closedNotGreen = notGreen.filter((d) => !ctx.isOpen(d.day));
+  const settled = (d) => (ctx.today == null ? ctx.weekdaysCovered : !ctx.isOpen(d.day));
+  const closedNotGreen = notGreen.filter(settled);
+  // A past day is SETTLED: the term grid replays it seeing only evidence
+  // stamped before its window closed (term-grid.md "How a past day is
+  // judged"), so late work cannot turn it green. A missed settled day ends
+  // the week now, not on Saturday. Today and later stay open; `unknown`
+  // days returned indeterminate above.
+  if (!ctx.weekdaysCovered && !closedNotGreen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
   if (closedNotGreen.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not green: ${closedNotGreen.map((d) => d.day).join(', ')}` };
   if (notGreen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to finish today' };
   if (!schoolDays.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'No school days this week' };
@@ -129,27 +136,51 @@ function weekMet(rule, facts, ctx) {
   return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
 }
 
+// A unit is DONE when its work passed, or was graded with no pass bar at all
+// (`result` null). "Needs another try", failed, partial, voided and the rest
+// are not done — a failed worksheet paid a silver on 2026-10-28.
+const UNIT_DONE = new Set(['passed', 'satisfied']);
+const unitDone = (u) => u.result == null || UNIT_DONE.has(u.result);
+
 function unit(rule, facts, ctx) {
-  const matched = facts.units.filter((u) => matchesUnit(rule.match, u) && inEffect(rule.effective, u.day)).sort(byDay);
+  // ONE per unit per week, at its first passing day: a retake that passes is
+  // the same worksheet, not a second one (it paid twice on 2026-10-28).
+  const firstDone = new Map();
+  for (const u of [...facts.units].sort(byDay)) {
+    if (!unitDone(u) || !matchesUnit(rule.match, u) || !inEffect(rule.effective, u.day)) continue;
+    if (!firstDone.has(u.unitId)) firstDone.set(u.unitId, u);
+  }
+  const matched = [...firstDone.values()].sort(byDay);
   const evidence = matched.map((u) => ({ day: u.day, unitId: u.unitId, subject: u.subject ?? null, ref: ctx.ref(u.unitId) }));
   if (!matched.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'None this week' };
   return { status: 'earned', count: matched.length, amount: price(rule, matched.length), evidence, note: null };
 }
 
+/**
+ * What `rings` in a week are worth under a ring-threshold rule (`rate` per
+ * whole N rings, plus every threshold crossed, times the multiplier). Takes
+ * the rule or a line's `priced` block. The payout prices each finished
+ * workout's running total with it, so a row and the board agree.
+ */
+export function ringAmount({ rate, thresholds = [], multiplier = 1 }, rings) {
+  const crossed = thresholds.filter((t) => rings >= t.at);
+  return {
+    silver: Math.round((Math.floor(rings / rate.rings) * rate.silver + crossed.reduce((s, t) => s + t.reward.silver, 0)) * multiplier),
+    gems: crossed.reduce((s, t) => s + t.reward.gems, 0),
+  };
+}
+
 function ringThreshold(rule, facts) {
   const rings = facts.rings;
   if (!Number.isFinite(rings)) return { status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note: 'Rings unavailable' };
-  const crossed = rule.thresholds.filter((t) => rings >= t.at);
   const next = rule.thresholds.find((t) => rings < t.at);
-  const amount = {
-    silver: Math.round((Math.floor(rings / rule.rate.rings) * rule.rate.silver + crossed.reduce((s, t) => s + t.reward.silver, 0)) * rule.multiplier),
-    gems: crossed.reduce((s, t) => s + t.reward.gems, 0),
-  };
+  const amount = ringAmount(rule, rings);
   const evidence = rule.thresholds.map((t) => ({ threshold: t.at, reached: rings >= t.at }));
   const unpriced = rule.rate.silver === 0 && !rule.thresholds.length;
   const note = unpriced ? 'No ring rate set'
     : next ? `${next.at - rings} more to ${next.at}` : (rule.thresholds.length ? 'Every threshold reached' : null);
-  return { status: paid(amount) ? 'earned' : 'none', count: rings, amount, evidence, note };
+  // The week's workouts (live count above; the payout pays only the final ones, one entry each).
+  return { status: paid(amount) ? 'earned' : 'none', count: rings, amount, evidence, note, sessions: facts.ringSessions ?? [] };
 }
 
 function ringContest(rule, facts, ctx) {
@@ -170,7 +201,139 @@ function ringContest(rule, facts, ctx) {
   return { status: paid(amount) ? 'earned' : 'none', count: mine, amount, evidence: [], note: leaders.length > 1 ? 'Tied for the most rings' : null, leader: true };
 }
 
+/**
+ * Rings on enough days: at least `min` rings on at least `days` study days of
+ * the award week. `facts.ringDays` is the learner's FINISHED workouts summed
+ * per study day (the preview groups them; this stays clock-free). Earned the
+ * moment the count is reached — a day moved cannot be un-moved — and settled
+ * as `none` once the award week has closed short.
+ */
+function ringDays(rule, facts, ctx) {
+  if (!Number.isFinite(facts.rings) || !Array.isArray(facts.ringDays)) {
+    return { status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note: 'Rings unavailable', progress: null };
+  }
+  const days = facts.ringDays.filter((d) => inEffect(rule.effective, d.day)).sort(byDay);
+  const evidence = days.map((d) => ({ day: d.day, rings: d.rings, state: d.rings >= rule.min ? 'moved' : 'short' }));
+  const have = evidence.filter((e) => e.state === 'moved').length;
+  const progress = { have: Math.min(have, rule.days), need: rule.days };
+  const note = `${progress.have} of ${rule.days} days`;
+  if (have >= rule.days) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note, progress };
+  return { status: ctx.contestClosed ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note, progress };
+}
+
+/**
+ * The achievement evidence for one activity, or null when it could not be
+ * read (the whole source failed, or that activity's provider did).
+ * `facts.achievements`: `{days: {activity: [day]}, milestones: {activity:
+ * [{key, day, label}]}, unavailable: [activity]}`.
+ */
+function achievement(facts, activity, part) {
+  const a = facts.achievements;
+  if (!a || (a.unavailable ?? []).includes(activity)) return null;
+  return a[part]?.[activity] ?? [];
+}
+
+const UNREADABLE = (note) => ({ status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note, progress: null });
+
+/**
+ * The activity done on at least `days` study days of the school week. Earned
+ * the moment the count is reached; `none` once the week is over short.
+ */
+function activityDays(rule, facts, ctx) {
+  const list = achievement(facts, rule.match.activity, 'days');
+  if (list == null) return UNREADABLE('Could not check this activity');
+  const days = [...new Set(list)].filter((d) => inEffect(rule.effective, d)).sort();
+  const evidence = days.map((day) => ({ day, state: 'done' }));
+  const progress = { have: Math.min(days.length, rule.days), need: rule.days };
+  const note = `${progress.have} of ${rule.days} days`;
+  if (days.length >= rule.days) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note, progress };
+  return { status: ctx.weekOver ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note, progress };
+}
+
+/**
+ * One gem per new achievement this week (a first win at a level, an act
+ * completed, a personal best…), oldest first, up to `cap`. A milestone is
+ * dated by its source, so it lands in exactly one week and the week's ref
+ * stays its idempotency key; one dated before `effective.from` never pays.
+ */
+function milestone(rule, facts) {
+  const list = achievement(facts, rule.match.activity, 'milestones');
+  if (list == null) return UNREADABLE('Could not check this activity');
+  const seen = new Set();
+  const hits = list
+    .filter((m) => m && typeof m.day === 'string' && inEffect(rule.effective, m.day))
+    .filter((m) => { const k = String(m.key); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : String(a.key) < String(b.key) ? -1 : 1));
+  const paid = rule.cap ? hits.slice(0, rule.cap.count) : hits;
+  const evidence = hits.map((m, i) => ({ day: m.day, key: String(m.key), label: m.label ?? null, state: i < paid.length ? 'paid' : 'over-cap' }));
+  if (!paid.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'None this week' };
+  const note = hits.length > paid.length ? `Weekly limit reached (${hits.length - paid.length} more)` : null;
+  return { status: 'earned', count: paid.length, amount: price(rule, paid.length), evidence, note };
+}
+
+/**
+ * The best score in the roster for the activity that week (higher is better).
+ * `ctx.contests[activity]`: `{standings: [{learnerId, score}], closed}` —
+ * leading until `closed`, then won. A score of 0 or less never leads.
+ */
+function activityContest(rule, facts, ctx) {
+  const contest = ctx.contests?.[rule.match.activity];
+  if (!contest || !Array.isArray(contest.standings)) return { ...UNREADABLE('Could not check this contest'), leader: false };
+  const scores = contest.standings.filter((s) => Number.isFinite(s.score) && s.score > 0);
+  const best = scores.length ? Math.max(...scores.map((s) => s.score)) : null;
+  const leaders = best == null ? [] : scores.filter((s) => s.score === best).map((s) => s.learnerId);
+  const mine = contest.standings.find((s) => s.learnerId === ctx.learnerId)?.score ?? null;
+  const leader = leaders.includes(ctx.learnerId);
+  const evidence = mine == null ? [] : [{ score: mine, best }];
+  if (!leader) return { status: contest.closed ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note: null, leader: false };
+  if (leaders.length > 1 && rule.tie === 'none') return { status: contest.closed ? 'none' : 'pending', count: 0, amount: ZERO, evidence, note: 'Tied — this contest pays no tie', leader: true };
+  const share = leaders.length > 1 && rule.tie === 'split' ? leaders.length : 1;
+  const amount = { silver: Math.round(Math.floor(rule.reward.silver / share) * rule.multiplier), gems: Math.floor(rule.reward.gems / share) };
+  if (!contest.closed) return { status: 'pending', count: 1, amount, evidence, note: 'Leading', leader: true };
+  return { status: paid(amount) ? 'earned' : 'none', count: 1, amount, evidence, note: leaders.length > 1 ? 'Tied for the best' : null, leader: true };
+}
+
+const DEBRIEF_PASS = {
+  completed: (f) => f.state === 'completed',
+  substantive: (f) => f.state === 'completed' && f.timeliness === 'on-time' && f.substantive === true,
+  'quiz-passed': (f) => f.state === 'completed' && f.quizPassed === true,
+  teachable: (f) => f.state === 'completed' && f.teachable === true,
+};
+
+function debriefDay(rule, facts, ctx) {
+  const matched = facts.debriefs.filter((f) => inEffect(rule.effective, f.day)).sort(byDay);
+  const pays = DEBRIEF_PASS[rule.match.criterion];
+  const hits = matched.filter(pays);
+  const unknown = matched.filter((f) => f.state === 'unknown');
+  const evidence = matched.map((f) => ({ day: f.day, state: f.state, timeliness: f.timeliness, ref: earningRef({ learnerId: ctx.learnerId, ruleId: rule.id, period: f.day, timeliness: f.timeliness }) }));
+  if (hits.length) return { status: 'earned', count: hits.length, amount: price(rule, hits.length), evidence, note: unknown.length ? `${unknown.length} day(s) could not be read` : null };
+  if (unknown.length) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Debrief record could not be read' };
+  if (matched.some((f) => f.state === 'open')) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to do' };
+  return { status: 'none', count: 0, amount: ZERO, evidence, note: matched.length ? 'Not earned this week' : 'No debriefs this week' };
+}
+
+/**
+ * Every owed debrief day completed (late counts) or excused, with at least one completed:
+ * excused only means "does not block" — an all-excused week pays nothing (R9).
+ * Friday's grace is Saturday, so it settles after Saturday.
+ */
+function debriefWeek(rule, facts, ctx) {
+  const owed = facts.debriefs.filter((f) => inEffect(rule.effective, f.day)).sort(byDay);
+  const evidence = owed.map((f) => ({ day: f.day, state: f.state, timeliness: f.timeliness }));
+  if (!owed.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'No debriefs this week' };
+  if (owed.some((f) => f.state === 'unknown')) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Debrief record could not be read' };
+  const failed = owed.filter((f) => f.state === 'rejected' || f.state === 'missed');
+  if (failed.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not done: ${failed.map((f) => f.day).join(', ')}` };
+  if (!owed.some((f) => f.state === 'completed' || f.state === 'open')) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'No debriefs done this week' };
+  const lastDay = owed[owed.length - 1].day;
+  const graceClosed = ctx.today != null && addDays(lastDay, 1) < ctx.today;
+  if (owed.some((f) => f.state === 'open') || !graceClosed) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
+  return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
+}
+
 const EVALUATORS = {
+  'debrief-day': debriefDay,
+  'debrief-week': debriefWeek,
   'section-day': sectionDay,
   'section-week': sectionWeek,
   'day-met': dayMet,
@@ -178,6 +341,10 @@ const EVALUATORS = {
   unit,
   'ring-threshold': ringThreshold,
   'ring-contest': ringContest,
+  'ring-days': ringDays,
+  'activity-days': activityDays,
+  'activity-contest': activityContest,
+  milestone,
 };
 
 function windowDates(window) {
@@ -189,9 +356,14 @@ function windowDates(window) {
  * @param {object} args
  * @param {object} args.ruleset - validated (`validateRuleset`)
  * @param {string} args.learnerId
- * @param {{sectionDays: object[], days: object[], week: object|null, units: object[], rings: number|null}} args.facts
+ * @param {{sectionDays: object[], days: object[], week: object|null, units: object[], rings: number|null, ringSessions?: object[]}} args.facts
+ *   `ringSessions`: the learner's award-week workouts (`fitnessRingsProvider.standings`)
+ *   `ringDays`: those workouts that are final, summed per study day: `[{day, rings}]` (ring-days)
  * @param {Array<{learnerId: string, rings: number}>|null} args.standings - the roster's award-week rings (contest)
  * @param {boolean} args.contestClosed - the award week has closed
+ * @param {Record<string, {standings: Array<{learnerId, score}>, closed: boolean}>|null} [args.contests]
+ *   the roster's activity contests (activity-contest), null when unreadable
+ *   `facts.achievements`: this learner's achievement evidence (activity-days, milestone), null when unreadable
  * @param {{school: {from, to}, rings: {from, to}}} args.windows
  * @param {{school?: boolean|'outside-term'}} [args.unavailable] - a whole evidence source
  *   failed (or the week lies outside the school term): its lines are
@@ -201,8 +373,8 @@ function windowDates(window) {
  *   are OPEN: their unfinished work is "still to do", never missed. A week
  *   settles once its Friday has passed (Saturday is payday, D1).
  */
-export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, windows, unavailable = {}, today = null }) {
-  const f = { sectionDays: [], days: [], week: null, units: [], rings: null, ...(facts ?? {}) };
+export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, contestClosed = false, contests = null, windows, unavailable = {}, today = null }) {
+  const f = { sectionDays: [], days: [], week: null, units: [], debriefs: [], rings: null, ringSessions: [], ringDays: null, achievements: null, ...(facts ?? {}) };
   const schoolDates = windowDates(windows?.school);
   const isOpen = (day) => today != null && day >= today;
   // A week's verdict is final only once its Friday has passed (or the week
@@ -221,12 +393,13 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
     // date would be the Sunday before.
     if (!overlaps(rule.effective, schoolDates)) continue;
     const period = schoolDates?.from ?? 'unknown';
-    const ref = earningRef({ learnerId, ruleId: rule.id, period });
+    const timeliness = 'on-time'; // makeup work (D14) will vary this
+    const ref = earningRef({ learnerId, ruleId: rule.id, period, timeliness });
     const priced = {
       revision: ruleset.revision, reward: rule.reward, multiplier: rule.multiplier,
       ...(rule.kind === 'ring-threshold' ? { rate: rule.rate, thresholds: rule.thresholds } : {}),
     };
-    const base = { ruleId: rule.id, label: rule.label, kind: rule.kind, match: rule.match, overridden: rule.overridden, priced, ref };
+    const base = { ruleId: rule.id, label: rule.label, kind: rule.kind, match: rule.match, effective: rule.effective ?? null, overridden: rule.overridden, priced, ref, timeliness };
     if (rule.disabled) {
       lines.push({ ...base, status: 'disabled', count: 0, amount: ZERO, evidence: [], note: 'Off for this learner' });
       continue;
@@ -241,7 +414,8 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
       continue;
     }
     const ctx = {
-      learnerId, standings, contestClosed, weekdaysCovered, isOpen, unknownDays,
+      learnerId, today, standings, contestClosed, contests, weekdaysCovered, isOpen, unknownDays,
+      weekOver: today != null && schoolDates != null && schoolDates.to < today,
       ref: (occurrence) => earningRef({ learnerId, ruleId: rule.id, period: occurrence }),
     };
     lines.push({ ...base, ...EVALUATORS[rule.kind](rule, f, ctx) });

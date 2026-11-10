@@ -24,6 +24,7 @@ import { SurfaceProgramLauncher } from "./SurfaceProgramLauncher.mjs";
 import { SentenceLadderProgramLauncher } from "./SentenceLadderProgramLauncher.mjs";
 import { FlashcardProgramLauncher } from "./FlashcardProgramLauncher.mjs";
 import { StoryTimeProgramLauncher } from "./StoryTimeProgramLauncher.mjs";
+import { SchoolDebriefProgramLauncher } from "./SchoolDebriefProgramLauncher.mjs";
 import { BookLogProgramLauncher } from "./BookLogProgramLauncher.mjs";
 import { PianoCourseProgramLauncher } from "./PianoCourseProgramLauncher.mjs";
 
@@ -218,6 +219,20 @@ const COVERED = {
       assignments: { get: async () => ({ programs: [{ programId: 'book-log', subject: 'english', obligation: { metric: 'pages', quantity: 20, per: 'day', scope: null } }] }) },
       bookLog: { listForLearner: async () => [] },
       timezone: 'UTC', clock, logger: silent,
+    }),
+    args: { userId: 'test-learner' },
+  },
+
+  SchoolDebriefProgramLauncher: {
+    done: () => new SchoolDebriefProgramLauncher({
+      debriefs: { read: async () => ({ status: 'ok', events: [{ type: 'questions', substance: 7, questions: [], questioner: 'model' }, { type: 'completed' }] }) },
+      assignments: { get: async () => ({ programs: [{ programId: 'school-debrief', corpusId: null, title: 'After-school debrief' }] }) },
+      clock, timezone: 'UTC', logger: silent,
+    }),
+    open: () => new SchoolDebriefProgramLauncher({
+      debriefs: { read: async () => ({ status: 'missing', events: [] }) },
+      assignments: { get: async () => ({ programs: [{ programId: 'school-debrief', corpusId: null }] }) },
+      clock, timezone: 'UTC', logger: silent,
     }),
     args: { userId: 'test-learner' },
   },

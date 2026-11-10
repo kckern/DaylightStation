@@ -21,9 +21,13 @@ import { guardedReload } from "../../../../frontend/src/lib/reloadGuard.js";
 import { readHeap, heapFields, heapSnapshotFields, reportMemoryMonitoringAvailability } from "../../../../frontend/src/lib/perf/memoryProbe.js";
 import { sortNavItems, filterNavItemsByDay, isNavItemActive, shouldPlayMenuMusic } from "./lib/navigationUtils.js";
 import useDayOfWeek from "../../../../frontend/src/hooks/useDayOfWeek.js";
+import useLocalDate from "../../../../frontend/src/hooks/useLocalDate.js";
+import { useFitnessCastReceiver } from "./hooks/fitness/useFitnessCastReceiver.js";
 import VoiceMemoOverlay from "./player/overlays/VoiceMemoOverlay.jsx";
 import FitnessToast from "./player/overlays/FitnessToast.jsx";
 import { DeviceStatePublisher } from "../../../../__capabilities/screen-host/browser/publishers.mjs";
+import { useDeviceAudience } from "../../../../__capabilities/playback/browser/sessions.mjs";
+import { rosterAudience } from "./fitnessAudience.js";
 import EmergencyLockdownOverlay from "./player/overlays/EmergencyLockdownOverlay.jsx";
 import { IdentityProvider } from "./identity/IdentityProvider.jsx";
 import { useFitnessContext } from "./context/FitnessContext.jsx";
@@ -47,7 +51,12 @@ import {
 import MenuMusicController from "./nav/MenuMusicController.jsx";
 import EmergencyPlaybackController from "./player/EmergencyPlaybackController.jsx";
 import { FitnessFeedback, FeedbackCornerButton } from "./feedback/index.js";
-import { installRingCelebrationAudioUnlock } from "./player/overlays/ringCelebrationAudio.js";
+import { installRingCelebrationAudioUnlock, playRingCelebrationCue } from "./player/overlays/ringCelebrationAudio.js";
+import WorkoutCoinCeremony from "./player/overlays/WorkoutCoinCeremony.jsx";
+import GemCeremony from '@/lib/economy/GemBoard/GemCeremony.jsx';
+import { useGemCeremony } from '@/lib/economy/GemBoard/useGemCeremony.js';
+import { GAME_ACHIEVEMENT_RECORDED_EVENT } from "../../../../__capabilities/gaming/browser/platform/realtime/index.js";
+import { useWorkoutCoinCeremony, isRunOnScreen, WORKOUT_FINISHED_EVENT } from "./player/overlays/useWorkoutCoinCeremony.js";
 
 registerBuiltinWidgets();
 
@@ -56,10 +65,12 @@ registerBuiltinWidgets();
 // momentum chart, the sessions list and the calendar — all of which otherwise
 // showed skeletons on every return from the player. Deliberately NOT
 // `suggestions`: a stale "up next" flashing then changing is worse than a wait.
-const SCREEN_PERSISTED_SOURCES = ['sessions'];
+const SCREEN_PERSISTED_SOURCES = ['sessions', 'standings'];
 // Widgets that read the injected `dashboard` screen-data source.
 const DASHBOARD_WIDGETS = new Set(['fitness:coach', 'fitness:upnext']);
 const FITNESS_CHART_WIDGETS = new Set(['fitness:chart']);
+// The momentum cards' bank silver + week's gem (economy standings).
+const MOMENTUM_WIDGETS = new Set(['fitness:momentum']);
 
 function layoutUsesWidget(node, widgets) {
   if (!node || typeof node !== 'object') return false;
@@ -810,6 +821,7 @@ const FitnessApp = () => {
   // Reactive day-of-week — updates itself at local midnight WITHOUT a reload, so
   // day-gated nav items re-evaluate live on a long-running kiosk session.
   const dayOfWeek = useDayOfWeek();
+  const localDate = useLocalDate();
 
   // Derive navItems from the API response (source-agnostic: uses contentConfig section)
   // Items may carry a `days` array (0=Sun..6=Sat) to gate them to certain days
@@ -822,8 +834,8 @@ const FitnessApp = () => {
     const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
     const contentConfig = root?.content || root?.plex || root?.[contentSource] || {};
     const src = contentConfig?.nav_items || [];
-    return filterNavItemsByDay(Array.isArray(src) ? src : [], dayOfWeek);
-  }, [fitnessConfiguration, contentSource, dayOfWeek]);
+    return filterNavItemsByDay(Array.isArray(src) ? src : [], dayOfWeek, localDate);
+  }, [fitnessConfiguration, contentSource, dayOfWeek, localDate]);
 
   // Derive screens config map from fitness configuration
   const screensConfig = useMemo(() => {
@@ -844,6 +856,9 @@ const FitnessApp = () => {
     if (primaryUser && layoutUsesWidget(screenCfg.layout, DASHBOARD_WIDGETS)) {
       const userId = primaryUser.id || primaryUser.profileId;
       sources.dashboard = { source: `/api/v1/health-dashboard/${userId}`, refresh: 300 };
+    }
+    if (layoutUsesWidget(screenCfg.layout, MOMENTUM_WIDGETS)) {
+      sources.standings = { source: '/api/v1/earnings/standings', refresh: 300 };
     }
     return sources;
   }, [activeScreen, screensConfig, fitnessConfiguration]);
@@ -941,6 +956,28 @@ const FitnessApp = () => {
   };
 
   // DoNow reachability (spec §5, surface `garage-fitness`): a parent-dispatched
+  // Media app "Play on <this kiosk>": the receiver acks the homeline command
+  // and hands over a Plex id. Close any open module first (an ambience keeps
+  // its own music playing underneath otherwise), then take the same path as
+  // /fitness/play/:id so governance, presence gate and unlock still apply.
+  const handlePlayFromUrlRef = useRef(null);
+  const playQueueLengthRef = useRef(0);
+  playQueueLengthRef.current = fitnessPlayQueue.length;
+  handlePlayFromUrlRef.current = handlePlayFromUrl;
+  const handleCastPlay = useCallback((plexId, { commandId } = {}) => {
+    logger.info('fitness-cast-play', { plexId, commandId });
+    setActiveModule(null);
+    setActiveCollection(null);
+    setSelectedShow(null);
+    setCurrentView('menu');
+    navigate(`/fitness/play/${plexId}`, { replace: true });
+    // With an empty queue the /fitness/play effect starts it; calling here as
+    // well fetched and queued it twice (2026-10-31). Something already playing
+    // keeps that effect quiet, so replace it directly.
+    if (playQueueLengthRef.current > 0) handlePlayFromUrlRef.current?.(plexId);
+  }, [logger, navigate]);
+  useFitnessCastReceiver({ deviceId: FLEET_DEVICE_ID, onPlay: handleCastPlay });
+
   // `fitness.launch` arrives on the shared WS bus with just an episodeId — no
   // pre-fetched metadata — so it plays exactly like a manually-typed
   // /fitness/play/:id URL: navigate there and let handlePlayFromUrl fetch the
@@ -1142,6 +1179,16 @@ const FitnessApp = () => {
         navigate(`/fitness/module/${target.id}`, { replace: true });
         break;
 
+      case 'ambience':
+        // An ambience is the Dance Party screen run from the nav item's own
+        // video / playlist / HA script (no strobe, no workout).
+        setActiveModule({ id: 'dance_party', config: { ambience: { ...target, name: _item?.name ?? target.id } } });
+        setActiveCollection(null);
+        setCurrentView('module');
+        setSelectedShow(null);
+        navigate(`/fitness/ambience/${target.id}`, { replace: true });
+        break;
+
       case 'screen':
         setActiveScreen(target.screen_id);
         setActiveCollection(null);
@@ -1264,7 +1311,7 @@ const FitnessApp = () => {
         // be listed here, or FitnessContext (which roots at response.fitness)
         // will never see it — that's how dance_party silently went missing.
         // Both spellings: `coin_time_unit_ms` is what the config still says.
-        const unifyKeys = ['ant_devices','equipment','users','ring_time_unit_ms','coin_time_unit_ms','ring_celebrations','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','playback_unlock','emergency','household_label','momentum'];
+        const unifyKeys = ['ant_devices','equipment','selectors','users','ring_time_unit_ms','coin_time_unit_ms','ring_celebrations','zones','plex','governance','ambient_led','device_colors','devices','home_screen','screens','cycle_game','dance_party','sessions','voice_memo_eligibility','content','content_source','guest_profiles','locks','playback_unlock','presence_gate','emergency','household_label','momentum'];
         unifyKeys.forEach(k => {
           if (response[k] !== undefined && response.fitness[k] === undefined) {
             response.fitness[k] = response[k];
@@ -1442,6 +1489,16 @@ const FitnessApp = () => {
     } else if (view === 'module' && id) {
       setActiveModule({ id });
       setCurrentView('module');
+    } else if (view === 'ambience' && id) {
+      // Reload on /fitness/ambience/:id — only while its tab is visible today.
+      const item = navItems.find((n) => n?.type === 'ambience' && String(n?.target?.id) === String(id));
+      if (item) {
+        setActiveModule({ id: 'dance_party', config: { ambience: { ...item.target, name: item.name ?? id } } });
+        setCurrentView('module');
+      } else {
+        logger.warn('fitness-ambience-url-unavailable', { id });
+        navigate('/fitness', { replace: true });
+      }
     } else if (view === 'games' && id) {
       // /fitness/games/:system/:game — testing deep link into the arcade; the
       // emulator widget launches the game past its admin gate (and logs it).
@@ -1462,7 +1519,7 @@ const FitnessApp = () => {
     // handlePlayFromUrl intentionally excluded: it's redefined every render and
     // including it would re-fire this effect on every render too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlState, loading, urlInitialized, navigate, location, screensConfig, logger, nogovern]);
+  }, [urlState, loading, urlInitialized, navigate, location, screensConfig, logger, nogovern, navItems]);
 
   // Initialize to the first nav item once navItems arrive
   useEffect(() => {
@@ -1570,9 +1627,10 @@ const FitnessApp = () => {
           kioskMode={kioskUI}
         >
           <IdentityProvider>
-          <GlobalOverlays />
+          <GlobalOverlays moduleLive={currentView === 'module' && Boolean(activeModule)} />
           <PressureMatEventBridge logger={logger} />
           <FitnessFleetPublisher />
+          <FitnessAudienceDeclarer />
           {urlInitialized && <GarageHumanActivityPublisher
             deviceId={FLEET_DEVICE_ID}
             emulationOpen={currentView === 'module' && activeModule?.id === 'emulator'}
@@ -1844,6 +1902,14 @@ const FLEET_DEVICE_ID = (() => {
   }
 })();
 
+// Who is in the garage: the workout's riders, on the fleet heartbeat
+// (snapshot.audience). Nothing while no session is running.
+const FitnessAudienceDeclarer = () => {
+  const ctx = useFitnessContext();
+  useDeviceAudience(rosterAudience(ctx?.participantRoster));
+  return null;
+};
+
 const FitnessFleetPublisher = () => {
   return <DeviceStatePublisher deviceId={FLEET_DEVICE_ID} />;
 };
@@ -1874,9 +1940,23 @@ const PressureMatEventBridge = ({ logger }) => {
   return null;
 };
 
-const GlobalOverlays = () => {
+const GEM_EVENTS = [GAME_ACHIEVEMENT_RECORDED_EVENT, WORKOUT_FINISHED_EVENT];
+const GEM_SOUND = { sound: 'school/_ux/coin.mp3', volume: 0.8 };
+
+const GlobalOverlays = ({ moduleLive = false }) => {
   const fitnessCtx = useFitnessContext();
   useEffect(() => installRingCelebrationAudioUnlock(), []);
+  // Silver the bank actually minted for a workout (ledger entries, not a projection).
+  // It waits (parked, unstamped) while a video or a game is on screen, so it
+  // never pops over another rider's live run; it plays when they are done.
+  const location = useLocation();
+  const runOnScreen = isRunOnScreen({ moduleLive, queueLength: fitnessCtx?.fitnessPlayQueue?.length || 0, pathname: location?.pathname });
+  const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony({ hold: runOnScreen });
+  // A gem that just landed (a race of the week taken, an act completed, a ring
+  // mark): looked for right after a race/flight saves or a workout ends, and
+  // shown after any coin ceremony. The garage celebrates what happens in front
+  // of it, so it learns the board silently on load.
+  const gems = useGemCeremony({ surface: 'fitness', events: GEM_EVENTS, learnOnMount: true });
   if (!fitnessCtx) return null;
 
   return (
@@ -1896,6 +1976,24 @@ const GlobalOverlays = () => {
         preferredMicrophoneId={fitnessCtx.preferredMicrophoneId}
       />
       <FitnessToast toast={fitnessCtx.fitnessToast} onDone={fitnessCtx.dismissFitnessToast} />
+      {ceremony && (
+        <WorkoutCoinCeremony
+          key={ceremony.txnIds.join(',')}
+          sessionId={ceremony.sessionId}
+          learners={ceremony.learners}
+          txnIds={ceremony.txnIds}
+          onDone={dismissCeremony}
+        />
+      )}
+      {!ceremony && gems.ceremony && (
+        <GemCeremony
+          key={gems.ceremony.id}
+          surface="fitness"
+          awards={gems.ceremony.awards}
+          onShow={() => playRingCelebrationCue(GEM_SOUND)}
+          onDone={gems.done}
+        />
+      )}
     </>
   );
 };

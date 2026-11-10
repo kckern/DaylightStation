@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, waitFor, act } from '@testing-library/react';
 import { FilterOverlay } from "./FilterOverlay.jsx";
 
 const rect = { x: 0.4, y: 0.5, w: 0.2, h: 0.1 };
@@ -32,6 +32,16 @@ describe('FilterOverlay', () => {
     expect(el.style.backdropFilter || el.style['backdrop-filter']).toContain('blur');
   });
 
+  it('a regional blur resolved from full-blur (heavy) uses the full-blur radius inside its rect', async () => {
+    const { container } = render(
+      <FilterOverlay activeOverlays={[{ effect: 'blur', cue: { id: 'h', rect, heavy: true } }, { effect: 'blur', cue: { id: 'l', rect } }]} />
+    );
+    const [heavy, light] = container.querySelectorAll('[data-filter-effect="blur"]');
+    expect(heavy.style.left).toBe('40%');
+    await waitFor(() => expect(heavy.style.backdropFilter || heavy.style['backdrop-filter']).toContain('blur(40px)'));
+    expect(light.style.backdropFilter || light.style['backdrop-filter']).toContain('blur(22px)');
+  });
+
   it('covers the whole frame for full-blur (no rect)', () => {
     const { container } = render(
       <FilterOverlay activeOverlays={[{ effect: 'full-blur', cue: { id: 'f' } }]} />
@@ -58,6 +68,26 @@ describe('FilterOverlay', () => {
     expect(getByText('Biff forces Lorraine into his car.')).toBeTruthy();
   });
 
+  it('treats a logo narrower than 300 px as missing (poster layout)', () => {
+    const { container } = render(
+      <FilterOverlay activeCard={{ text: 'Biff.' }} art={{ background: '/p/art', logo: '/p/logo', poster: '/p/poster' }} />
+    );
+    const img = container.querySelector('img');
+    Object.defineProperty(img, 'naturalWidth', { value: 54, configurable: true });
+    act(() => { img.dispatchEvent(new Event('load')); });
+    expect(container.querySelector('[data-card-layout="poster-left"]')).toBeTruthy();
+  });
+
+  it('keeps a logo that is 300 px or wider', () => {
+    const { container } = render(
+      <FilterOverlay activeCard={{ text: 'Biff.' }} art={{ background: '/p/art', logo: '/p/logo', poster: '/p/poster' }} />
+    );
+    const img = container.querySelector('img');
+    Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true });
+    act(() => { img.dispatchEvent(new Event('load')); });
+    expect(container.querySelector('[data-card-layout="logo-center"]')).toBeTruthy();
+  });
+
   it('falls back to poster-left layout when no logo is available', () => {
     const { container, getByText } = render(
       <FilterOverlay activeCard={{ text: 'Biff forces Lorraine into his car.' }} art={{ background: '/p/art', poster: '/p/poster' }} />
@@ -74,5 +104,49 @@ describe('FilterOverlay', () => {
     const card = getByText('Skipped a fight scene.');
     expect(card).toBeTruthy();
     expect(container.querySelector('.filter-card').style.fontFamily).toContain('Roboto Condensed');
+  });
+  it('renders the badge layer even when no effect is active', () => {
+    const { container } = render(<FilterOverlay activeOverlays={[]} badge={{ state: 'certified', active: false }} />);
+    expect(container.querySelector('.filter-overlay')).toBeTruthy();
+    expect(container.querySelector('[data-filter-badge="certified"]')).toBeTruthy();
+  });
+
+  it('renders the bumper when given one', () => {
+    const { getByText } = render(<FilterOverlay bumper={{ summary: '1 word muted' }} />);
+    expect(getByText('Edited for content')).toBeTruthy();
+  });
+
+  it('the bumper yields to a skip-card; the badge stays', () => {
+    const { container, queryByText } = render(
+      <FilterOverlay activeCard={{ text: 'Skipping ahead' }} bumper={{ summary: '' }} badge={{ state: 'provisional', active: false }} />
+    );
+    expect(queryByText('Edited for content')).toBeNull();
+    expect(queryByText('Skipping ahead')).toBeTruthy();
+    expect(container.querySelector('[data-filter-badge="provisional"]')).toBeTruthy();
+  });
+});
+
+describe('FilterOverlay blackout', () => {
+  it('covers the frame in opaque black with the card text, then fades the text', async () => {
+    const { vi } = await import('vitest');
+    const { act } = await import('@testing-library/react');
+    vi.useFakeTimers();
+    try {
+      const cue = { id: 'sc-va1#0', text: 'He gets away.', cardSec: 4.5, firstPiece: true };
+      const { container } = render(<FilterOverlay activeOverlays={[{ effect: 'blackout', cue }]} />);
+      const el = container.querySelector('[data-filter-effect="blackout"]');
+      expect(el.style.backgroundColor).toMatch(/^(#000|rgb\(0, 0, 0\))$/);
+      const text = container.querySelector('[data-blackout-text]');
+      expect(text.textContent).toBe('He gets away.');
+      expect(text.style.opacity).toBe('0.9');
+      act(() => { vi.advanceTimersByTime(4600); });
+      expect(container.querySelector('[data-blackout-text]').style.opacity).toBe('0');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('shows no text on a later piece of the same scene', () => {
+    const cue = { id: 'sc-va1#1', text: 'Scene hidden.', firstPiece: false };
+    const { container } = render(<FilterOverlay activeOverlays={[{ effect: 'blackout', cue }]} />);
+    expect(container.querySelector('[data-blackout-text]')).toBeNull();
   });
 });

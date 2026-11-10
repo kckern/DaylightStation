@@ -29,6 +29,7 @@ describe('agenda preview study-day contract', () => {
     expect(response.headers['x-school-preview']).toBe('agenda-non-recording');
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(response.body).toMatchObject({ learnerId: 'learner3', studyDay: '2026-08-25' });
-    expect(previewAgenda.execute).toHaveBeenCalledWith({ learnerId: 'learner3', learnerName: null, studyDay: '2026-08-25' });
+    // The JSON answer drops the document, so it skips the bank line's re-plan.
+    expect(previewAgenda.execute).toHaveBeenCalledWith({ learnerId: 'learner3', learnerName: null, studyDay: '2026-08-25', economy: false });
   });
 });

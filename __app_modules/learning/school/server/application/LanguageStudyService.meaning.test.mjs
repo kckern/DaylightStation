@@ -63,7 +63,7 @@ describe('submitAttempt — meaning on the interpretation row', () => {
     const { svc, judge, ds } = setup();
     const event = await svc.submitAttempt({ ...ARGS, rung: 'interpretation', given: ' today the weather is nice ', method: 'typed' });
     expect(judge).toHaveBeenCalledWith({
-      given: 'today the weather is nice', expected: "The weather's nice today.", language: 'EN', accuracy: 0.4,
+      given: 'today the weather is nice', expected: "The weather's nice today.", language: 'EN', accuracy: 0.4, kind: 'meaning',
       attempt: { learnerId: 'kckern', corpus: CORPUS.id, seq: 1 },
     });
     expect(event.accuracy).toBe(0.4);
@@ -97,12 +97,36 @@ describe('submitAttempt — meaning on the interpretation row', () => {
     expect(event.accuracy).toBe(0.4);
   });
 
-  it('never judges dictation, a reveal, or a blank answer', async () => {
-    const dictation = setup({ rung: 'dictation' });
-    const row = await dictation.svc.submitAttempt({ ...ARGS, rung: 'dictation', given: '오늘 날씨가 좋아요' });
+  // Owner, 2026-11-03: correctness, not letters — dictation is judged too.
+  it('judges dictation as `heard` against the target-language sentence, beside accuracy, never as meaning', async () => {
+    const heard = { score: 1, level: 4, confidence: 0.9, judge: 'model', model: 'jev-1.14.0', ms: 180, match: 'reordered' };
+    const { svc, judge, logger } = setup({ rung: 'dictation', judge: vi.fn(async () => heard) });
+    const row = await svc.submitAttempt({ ...ARGS, rung: 'dictation', given: '날씨가 오늘 좋아요', method: 'typed' });
+    expect(judge).toHaveBeenCalledWith(expect.objectContaining({
+      given: '날씨가 오늘 좋아요', expected: '오늘 날씨가 좋아요.', language: 'KR', kind: 'heard',
+    }));
+    expect(row.heard).toEqual({ score: 1, level: 4, confidence: 0.9, judge: 'model', model: 'jev-1.14.0', match: 'reordered' });
     expect(row).not.toHaveProperty('meaning');
-    expect(dictation.judge).not.toHaveBeenCalled();
+    expect(typeof row.accuracy).toBe('number');
+    const logged = logger.info.mock.calls.map(([event, data]) => [event, data]);
+    expect(logged).toContainEqual(['school.language.heard', expect.objectContaining({ heard: 1, match: 'reordered', accuracy: row.accuracy })]);
+    expect(logged.map(([event]) => event)).not.toContain('school.language.meaning');
+  });
 
+  it('copy-mode dictation (the sentence on screen) is not judged as heard', async () => {
+    const ds = new FakeDatastore();
+    makeDue(ds, 'dictation');
+    const judge = vi.fn(async () => ({ score: 1, level: 4, confidence: 1, judge: 'model' }));
+    const svc = new LanguageStudyService({
+      datastore: ds, now: () => AT, timezone: 'UTC', logger: { warn() {}, info() {}, debug() {}, error() {} },
+      meaningJudge: { judge }, readProgramEnrollment: () => ({ programId: 'sentence-ladder', corpusId: CORPUS.id, lessonSize: 5, dictationMode: 'copy' }),
+    });
+    const row = await svc.submitAttempt({ ...ARGS, rung: 'dictation', given: '오늘 날씨가 좋아요' });
+    expect(judge).not.toHaveBeenCalled();
+    expect(row).not.toHaveProperty('heard');
+  });
+
+  it('never judges a reveal or a blank answer', async () => {
     const reveal = setup();
     const shown = await reveal.svc.submitAttempt({ ...ARGS, rung: 'interpretation', revealed: true });
     expect(shown).not.toHaveProperty('meaning');

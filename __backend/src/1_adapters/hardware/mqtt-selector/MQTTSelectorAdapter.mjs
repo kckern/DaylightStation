@@ -29,6 +29,7 @@ export class MQTTSelectorAdapter {
   #reconnectTimeout;
   #isShuttingDown;
   #onSelect;
+  #connect;
   #logger;
 
   #reconnectIntervalMs;
@@ -69,6 +70,7 @@ export class MQTTSelectorAdapter {
     this.#reconnectTimeout = null;
     this.#isShuttingDown = false;
     this.#onSelect = options.onSelect || null;
+    this.#connect = options.connect || mqtt.connect;
     this.#logger = options.logger || console;
 
     this.#reconnectIntervalMs = config.reconnectIntervalMs || DEFAULTS.RECONNECT_INTERVAL_MS;
@@ -122,13 +124,22 @@ export class MQTTSelectorAdapter {
     if (!entry) return null;
     const action = data && typeof data.action === 'string' ? data.action : '';
     if (!action) return null;
-    const userId = entry.buttons[action];
+    const alternate = action.endsWith('_hold') ? action.replace(/_hold$/, '_long') : action.replace(/_long$/, '_hold');
+    const userId = entry.buttons[action] ?? entry.buttons[alternate];
     if (userId == null) return null;
     return { selectorId: entry.selectorId, equipmentId: entry.equipmentId, userId, action };
   }
 
   setSelectCallback(callback) {
     this.#onSelect = callback;
+  }
+
+  resolveInput(topic, data) {
+    const mapped = this.resolveSelection(topic, data);
+    if (mapped) return mapped;
+    const entry = this.#topicMap.get(topic);
+    if (!entry || entry.equipmentId === 'party-games' || !/^[1-4]_(single|long|hold|double)$/.test(data?.action || '')) return null;
+    return { selectorId: entry.selectorId, equipmentId: entry.equipmentId, action: data.action };
   }
 
   init() {
@@ -174,7 +185,7 @@ export class MQTTSelectorAdapter {
       this.#client = null;
     }
 
-    this.#client = mqtt.connect(brokerUrl, { reconnectPeriod: 0, connectTimeout: 10000 });
+    this.#client = this.#connect(brokerUrl, { reconnectPeriod: 0, connectTimeout: 10000 });
 
     this.#client.on('connect', () => {
       this.#logger.info?.('selector.mqtt.connected', { broker: brokerUrl });
@@ -190,7 +201,9 @@ export class MQTTSelectorAdapter {
       });
     });
 
-    this.#client.on('message', (topic, message) => {
+    this.#client.on('message', (topic, message, packet) => {
+      // Retained state is not a new human press after subscribing/reconnecting.
+      if (packet?.retain) return;
       let data;
       try {
         data = JSON.parse(message.toString());
@@ -198,7 +211,7 @@ export class MQTTSelectorAdapter {
         this.#logger.warn?.('selector.mqtt.parseFailed', { topic, error: parseErr.message });
         return;
       }
-      const selection = this.resolveSelection(topic, data);
+      const selection = this.resolveInput(topic, data);
       if (!selection) return;
       this.#logger.info?.('selector.mqtt.select', selection);
       if (this.#onSelect) this.#onSelect(selection);

@@ -45,3 +45,13 @@ describe('resolveUserZone', () => {
     expect(zone).toEqual({ id: null, color: null });
   });
 });
+
+describe('resolveUserZone — zone trust', () => {
+  it('does not derive a zone from raw HR for a known rider without trust', () => {
+    const zone = resolveUserZone('User_1', { heartRate: 187 }, {
+      userCurrentZones: { User_1: { id: null, color: null, trusted: false } },
+      zones: ZONES, usersConfigRaw: {}
+    });
+    expect(zone).toEqual({ id: null, color: null });
+  });
+});

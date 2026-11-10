@@ -12,6 +12,7 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { packLayout } from "./arcadePacker.js";
 import { RetryImg } from "./RetryImg.jsx";
 import "./ArcadeSelector.scss";
+import { ControllerManager, currentBluetoothDeviceId } from '../../../../games/emulator/browser/bluetooth.mjs';
 
 /**
  * ArcadeSelector: Hero-style game selector with large boxart on the left
@@ -165,12 +166,21 @@ export function ArcadeSelector({
     return best;
   }, [layout, tilePos]);
 
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [controllerEntryFocused, setControllerEntryFocused] = useState(false);
+  const controllerEntry = useRef(null);
+  const closeRecovery = useCallback(() => {
+    setRecoveryOpen(false);
+    setControllerEntryFocused(true);
+    requestAnimationFrame(() => controllerEntry.current?.focus());
+  }, []);
+
   // --- Keyboard navigation (spatial nearest-neighbor) ---
   const selectCooldownRef = useRef(false);
 
   const handleKeyDown = useCallback(
     (e) => {
-      if (!items.length) return;
+      if (!items.length || recoveryOpen) return;
 
       const navigate = (next) => {
         if (next >= 0) setSelectedIndex(next, findKeyForItem(items[next]));
@@ -197,11 +207,17 @@ export function ArcadeSelector({
         }, { maxPerMinute: 30 });
       }
 
+      if (controllerEntryFocused) {
+        if (isSelect) { e.preventDefault(); if (!e.repeat) setRecoveryOpen(true); return; }
+        if (isArrow) { e.preventDefault(); if (key === 'ArrowDown') { setControllerEntryFocused(false); controllerEntry.current?.blur(); } return; }
+      }
       if (isArrow) {
           e.preventDefault();
           const dir = key === "ArrowUp" ? 'up' : key === "ArrowDown" ? 'down'
             : key === "ArrowLeft" ? 'left' : 'right';
-          navigate(findNearest(selectedIndex, dir));
+          const next = findNearest(selectedIndex, dir);
+          if (dir === 'up' && next < 0) { setControllerEntryFocused(true); controllerEntry.current?.focus(); }
+          else navigate(next);
       } else if (isBack) {
           e.preventDefault();
           logger.info('arcade.back', { key, code: e.code, keyCode: e.keyCode, currentIndex: selectedIndex });
@@ -223,7 +239,7 @@ export function ArcadeSelector({
       }
       // else: silently ignore — including key === "Unidentified" ghost events.
     },
-    [items, selectedIndex, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger]
+    [items, selectedIndex, findNearest, onSelect, handleClose, setSelectedIndex, findKeyForItem, logger, recoveryOpen, controllerEntryFocused]
   );
 
   useEffect(() => {
@@ -325,6 +341,10 @@ export function ArcadeSelector({
 
   return (
     <div className="arcade-selector" ref={rootRef}>
+      <button type="button" ref={controllerEntry} className="arcade-selector__controllers"
+        aria-expanded={recoveryOpen} onFocus={() => setControllerEntryFocused(true)}
+        onClick={() => setRecoveryOpen(true)}>Controllers</button>
+      {recoveryOpen && <ControllerManager deviceId={currentBluetoothDeviceId()} onClose={closeRecovery} />}
       {/* LEFT: Hero panel */}
       <div className="arcade-selector__hero">
         <div className="arcade-selector__hero-art" ref={heroArtRef} key={selectedIndex}>

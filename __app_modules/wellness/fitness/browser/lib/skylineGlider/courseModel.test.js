@@ -101,3 +101,66 @@ describe('resolveCalibration', () => {
     expect(() => resolveCalibration({ rpm: { min: 50, max: 50 } })).toThrow(/calibration/i);
   });
 });
+
+describe('course entities', () => {
+  const entity = (over = {}) => ({ id: 'rock', class: 'solid', at_s: 120, altitude: 0.78, width_s: 0.8, height: 0.2, ...over });
+
+  it('accepts placed entities and returns them numeric', () => {
+    const result = validateCourse(course({ entities: [entity({ at_s: '120' }), entity({ id: 'tree', class: 'breakable' })] }));
+    expect(result.valid).toBe(true);
+    expect(result.course.entities[0].at_s).toBe(120);
+  });
+
+  it('rejects unknown classes, duplicate ids and sizeless entities', () => {
+    expect(validateCourse(course({ entities: [entity({ class: 'lava' })] })).errors).toContain('entity rock has unsupported class');
+    expect(validateCourse(course({ entities: [entity(), entity()] })).errors).toContain('duplicate or missing entity id at index 1');
+    expect(validateCourse(course({ entities: [entity({ height: 0 })] })).errors).toContain('entity rock has no size');
+  });
+
+  it('accepts vulnerable_to naming known weapons and rejects anything else', () => {
+    const rock = { id: 'rock', class: 'solid', at_s: 10, altitude: 0.78, width_s: 0.5, height: 0.1 };
+    expect(validateCourse(course({ entities: [{ ...rock, vulnerable_to: ['laser', 'bomb'] }] })).valid).toBe(true);
+    expect(validateCourse(course({ entities: [{ ...rock, vulnerable_to: ['flamethrower'] }] })).errors)
+      .toContain('entity rock has unsupported vulnerable_to');
+  });
+
+  it('validates act weapon rules', () => {
+    const rules = course().rules;
+    expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: 3, enabled: false } } })).valid).toBe(true);
+    expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: -1 } } })).errors)
+      .toContain('rules weapons bombs must be a non-negative number');
+    expect(validateCourse(course({ rules: { ...rules, weapons: { bombs: true, laser_cooldown_s: '' } } })).errors)
+      .toEqual(expect.arrayContaining(['rules weapons bombs must be a non-negative number', 'rules weapons laser_cooldown_s must be a non-negative number']));
+  });
+
+  it('rejects a solid entity that leaves no reachable gap', () => {
+    const wall = entity({ altitude: 0.9, height: 0.85 });
+    expect(validateCourse(course({ entities: [wall] })).errors.join()).toMatch(/rock is unreachable/);
+  });
+
+  it('requires missiles for a missile-only wall, and does not treat it as an unflyable gap', () => {
+    const wall = entity({ id: 'crack', altitude: 0.95, height: 0.9, required_weapon: 'missile', vulnerable_to: ['missile'] });
+    expect(validateCourse(course({ entities: [wall] })).valid).toBe(true);
+    expect(validateCourse(course({ entities: [wall], rules: { ...course().rules, weapons: { missiles: 0 } } })).errors)
+      .toContain('entity crack requires unavailable missiles');
+  });
+
+  it('accepts a gate gap and a shutter a full boost can beat, and rejects one that shuts too early', () => {
+    const piece = (id, altitude, height, over = {}) => entity({ id, altitude, height, width_s: 0.8, vulnerable_to: [], ...over });
+    const gate = (closes) => [piece('g-top', 0.37, 0.37), piece('g-bottom', 1, 0.37), piece('g-shutter', 0.63, 0.26, { closes_at_s: closes })];
+    const rules = { ...course().rules, weapons: { enabled: true } };
+    expect(validateCourse(course({ rules, entities: gate(118.9) })).errors).toEqual([]);
+    expect(validateCourse(course({ rules, entities: gate(116) })).errors).toContain('entity g-shutter closes too early to boost through');
+    expect(validateCourse(course({ rules: { ...rules, boost: { enabled: false } }, entities: gate(118.9) })).errors)
+      .toContain('entity g-shutter closes but boost is off');
+  });
+
+  it('rejects a checkpoint that restarts the rider inside terrain', () => {
+    const result = validateCourse(course({ segments: [
+      { id: 'ground', type: 'lower-terrain', start_s: 70, end_s: 80, top: 0.45 },
+      { id: 'cp-1', type: 'checkpoint', start_s: 75, restart_altitude: 0.5 },
+      { id: 'finish', type: 'finish', start_s: 300 },
+    ] }));
+    expect(result.errors).toContain('checkpoint cp-1 restarts inside terrain');
+  });
+});

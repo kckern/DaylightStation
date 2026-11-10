@@ -6,6 +6,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * parses query shapes. Follows school.mjs exactly.
  */
 import express from 'express';
+import { capabilityProof, teacherActorId } from "./teacherCapabilityProof.mjs";
 
 const AUDIO_CACHE = 'public, max-age=31536000, immutable';
 const RUN_HEADER = 'X-School-Run-Id';
@@ -108,6 +109,10 @@ export function createLanguageRouter({
   // and typing is still the way through. See the transcribe route below.
   languageTranscription = null,
   studyGrants = null,
+  // Optional: absent, the grown-up reads below answer 503. The learner's
+  // routes never consult it — a child's launch grant is their only door.
+  teacherGate = null,
+  teacherCapabilitySessions = null,
   schoolErrors = {},
   coreErrors = {},
   logger = console,
@@ -172,6 +177,55 @@ export function createLanguageRouter({
   };
 
   router.get('/courses', wrap((req, res) => res.json(languageStudyService.listCourses())));
+
+  // -- grown-up reads (teacher console) -------------------------------------
+  //
+  // The same history the child's Review tab folds, behind the teacher gate
+  // instead of a launch grant. Strictly reads: nothing here opens a day,
+  // rolls a ladder or appends to the log. `no-store` because a child's voice
+  // and answers must not sit in a shared household browser cache.
+  const teacherRead = (req, res) => {
+    if (!teacherGate) {
+      res.status(503).json({ error: 'Teacher authorization is unavailable' });
+      return false;
+    }
+    try {
+      teacherGate.assert({
+        userId: teacherActorId(req, teacherCapabilitySessions, req.query.by ?? null),
+        pin: capabilityProof(req),
+        action: 'school.sentence-ladder.read',
+        context: { learnerId: req.params.learnerId },
+      });
+    } catch (err) {
+      res.status(403).json({ error: err?.message || 'Only a listed teacher can do this.' });
+      return false;
+    }
+    res.set('Cache-Control', 'no-store');
+    return true;
+  };
+
+  /** Every course, with where this learner stands in it (`state: not-started` included). */
+  router.get('/teacher/:learnerId/courses', wrap((req, res) => {
+    if (!teacherRead(req, res)) return;
+    const courses = languageStudyService.summarize({ userId: req.params.learnerId }).map((report) => ({
+      id: report.instanceId, label: report.label, state: report.state,
+      lastActivity: report.lastActivity ?? null, headline: report.headline ?? null,
+    }));
+    res.json({ learnerId: req.params.learnerId, courses });
+  }));
+
+  router.get('/teacher/:learnerId/history', wrap((req, res) => {
+    if (!teacherRead(req, res)) return;
+    res.json(languageStudyService.getHistory({ userId: req.params.learnerId, corpusId: req.query.corpus }));
+  }));
+
+  router.get('/teacher/:learnerId/recordings/:corpusId/:seq', wrap(async (req, res) => {
+    if (!teacherRead(req, res)) return;
+    const { learnerId, corpusId, seq } = req.params;
+    const result = await languageAudioResource.getRecordingAudio({ corpusId, userId: learnerId, seq });
+    if (result.kind !== 'found') return res.status(404).json({ error: 'recording not found' });
+    return sendAudioResource(res, result.resource, { cache: 'no-store' });
+  }));
 
   // The day carries which UI cues exist so a rung builds its sound sequence
   // once, from facts, rather than probing `/cue/*` per sentence. This is

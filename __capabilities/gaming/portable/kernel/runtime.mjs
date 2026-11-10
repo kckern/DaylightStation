@@ -44,6 +44,7 @@ export class GameRuntime {
       actorId: envelope.actor_id,
       commandId: envelope.command_id,
       logicalTime: envelope.logical_time,
+      recordedAt,
       seed: session.header.seed,
       revision: session.header.revision,
       });

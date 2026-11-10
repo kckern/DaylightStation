@@ -531,9 +531,9 @@ export class SentenceLadderService {
     // check (a queue rebuild from the log) stays after the judge, as accepted.
     this.#precheckAttempt(args);
     const judged = await this.#judgeMeaning(args);
-    const event = this.#logAttempt(args, judged?.meaning ?? null);
+    const event = this.#logAttempt(args, judged?.field === 'meaning' ? judged.value : null, judged?.field === 'heard' ? judged.value : null);
     if (judged) {
-      this.#log('info', 'school.language.meaning', {
+      this.#log('info', judged.field === 'heard' ? 'school.language.heard' : 'school.language.meaning', {
         ...judged.facts, practice: event.practice === true, ms: judged.ms,
       }, args.runId ?? null);
     }
@@ -565,19 +565,28 @@ export class SentenceLadderService {
   async #judgeMeaning({ userId, corpusId, seq, rung, given = null, revealed = false, method = null }) {
     if (!this.#meaningJudge || revealed === true || typeof given !== 'string' || given.trim() === '') return null;
     const rungDef = rungById(rung);
-    // Only where the learner writes in their OWN language: there, different
-    // words can still be right. Dictation transcribes; its diff is the point.
-    if (rungDef?.response?.modality !== 'text' || rungDef.response.role !== ROLES.SOURCE) return null;
+    // Interpretation (the learner's OWN language) is judged for meaning.
+    // Dictation (the language being learned) is judged too, for how right the
+    // sentence is (owner, 2026-11-03: correctness, not letters — a valid other
+    // spelling or word order is not a mistake); its diff stays the learner's.
+    if (rungDef?.response?.modality !== 'text') return null;
+    const kind = rungDef.response.role === ROLES.SOURCE ? 'meaning' : 'heard';
     const corpus = this.#loadCorpus(corpusId);
     const sentence = corpus?.index.get(Number(seq));
     if (!sentence) return null; // #recordAttempt raises the real error
+    // Copy-mode dictation shows the sentence: tracing it is mechanical, not hearing.
+    if (kind === 'heard') {
+      let mode = null;
+      try { mode = this.#enrollment(userId, corpus)?.dictationMode ?? null; } catch { mode = null; }
+      if (mode === 'copy') return null;
+    }
     const language = resolveRole(rungDef.response.role, corpus.languages);
     const expected = sentence.text[language] ?? '';
     const typedAccuracy = accuracy(given, expected);
     let result;
     try {
       result = await this.#meaningJudge.judge({
-        given: given.trim(), expected, language, accuracy: typedAccuracy,
+        given: given.trim(), expected, language, accuracy: typedAccuracy, kind,
         attempt: { learnerId: userId, corpus: corpusId, seq: Number(seq) },
       });
     } catch (error) {
@@ -594,14 +603,16 @@ export class SentenceLadderService {
       confidence: result.confidence ?? null,
       judge: result.judge ?? null,
       ...(result.judge === 'model' ? { model: result.model ?? null } : {}),
+      ...(result.match ? { match: result.match } : {}),
     };
     return {
-      meaning,
+      field: kind,
+      value: meaning,
       ms: result.ms ?? null,
       facts: {
         learnerId: userId, corpus: corpusId, seq: Number(seq), accuracy: typedAccuracy,
-        meaning: meaning.score, level: meaning.level, confidence: meaning.confidence,
-        judge: meaning.judge, model: meaning.model ?? null, method,
+        [kind]: meaning.score, level: meaning.level, confidence: meaning.confidence,
+        judge: meaning.judge, model: meaning.model ?? null, method, ...(result.match ? { match: result.match } : {}),
       },
     };
   }
@@ -609,18 +620,18 @@ export class SentenceLadderService {
   #logAttempt({
     userId, corpusId, seq, rung, given = null, revealed = false,
     source = null, capabilities = {}, runId = null, method = null,
-  }, meaning) {
+  }, meaning, heard = null) {
     if (rung === 'recording') {
       throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
     }
     return this.#recordAttempt({
-      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId, method, meaning,
+      userId, corpusId, seq, rung, given, revealed, source, capabilities, runId, method, meaning, heard,
     });
   }
 
   #recordAttempt({
     userId, corpusId, seq, rung, given = null, revealed = false, source = null, capabilities = {},
-    allowRecording = false, skipDueCheck = false, practice = false, runId = null, method = null, meaning = null,
+    allowRecording = false, skipDueCheck = false, practice = false, runId = null, method = null, meaning = null, heard = null,
   }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
@@ -726,6 +737,8 @@ export class SentenceLadderService {
         // Beside accuracy, never instead of it, and gating nothing. Present
         // only when a meaning judge answered (see submitAttempt).
         if (meaning) event.meaning = meaning;
+        // Dictation's twin: how right the typed sentence is (see #judgeMeaning).
+        if (heard) event.heard = heard;
       }
     }
 
@@ -1378,6 +1391,15 @@ export class SentenceLadderService {
       metrics.push({
         id: 'meaning', kind: 'score', label: 'Meaning understood',
         value: meant.reduce((a, e) => a + e.meaning.score, 0) / meant.length,
+      });
+    }
+    // Dictation's correctness from the same judge — a valid other spelling or
+    // word order counts, which character accuracy cannot see. Grown-up only.
+    const heardRows = log.filter((e) => typeof e.heard?.score === 'number');
+    if (heardRows.length) {
+      metrics.push({
+        id: 'heard', kind: 'score', label: 'Heard correctly',
+        value: heardRows.reduce((a, e) => a + e.heard.score, 0) / heardRows.length,
       });
     }
 

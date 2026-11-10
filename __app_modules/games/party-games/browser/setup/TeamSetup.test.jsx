@@ -1,3 +1,5 @@
+import {useRef} from 'react';
+import {useScopedRemoteControls} from '../../../../../__capabilities/screen-host/browser/input.mjs';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import TeamSetup from "./TeamSetup.jsx";
@@ -32,4 +34,38 @@ it('preselects household members for casual individual setup', () => {
  expect(screen.getByRole('button', {name:'Start with 2 players'})).toBeEnabled();
  fireEvent.click(screen.getByRole('button',{name:'A'}));
  expect(screen.getByRole('button',{name:'Start with 1 players'})).toBeEnabled();
+});
+
+
+it('offers anonymous teams without household roster and starts with focus on Start', () => {
+ const onConfirm=vi.fn();
+ render(<TeamSetup config={config} anonymousTeams={[{name:'Blue Team',color:'#3273dc'},{name:'Gold Team',color:'#e6b325'}]} onConfirm={onConfirm} />);
+ expect(screen.queryAllByRole('button',{name:/Guest|\+ A|\+ B/})).toHaveLength(0);
+ expect(screen.getByRole('button',{name:'Start with 2 teams'})).toHaveFocus();
+ fireEvent.click(screen.getByRole('button',{name:'+ Team'}));
+ fireEvent.click(screen.getByRole('button',{name:'Start with 3 teams'}));
+ expect(onConfirm).toHaveBeenCalledWith([
+  expect.objectContaining({name:'Blue Team',members:[],slot:'slot_1'}),
+  expect.objectContaining({name:'Gold Team',members:[],slot:'slot_2'}),
+  expect.objectContaining({name:'Team 3',members:[],slot:'slot_3'}),
+ ]);
+ fireEvent.click(screen.getAllByRole('button',{name:'Remove team'})[2]);
+ expect(screen.queryByRole('button',{name:'Remove team'})).not.toBeInTheDocument();
+});
+
+function RemoteTeamSetup({onConfirm}) {
+ const ref=useRef(null);useScopedRemoteControls(ref);
+ return <div ref={ref}><TeamSetup config={config} anonymousTeams={[{name:'Blue Team',color:'#3273dc'},{name:'Gold Team',color:'#e6b325'}]} onConfirm={onConfirm}/></div>;
+}
+it('Enter starts anonymous play after focus is lost without changing the team count',()=>{
+ const onConfirm=vi.fn();render(<RemoteTeamSetup onConfirm={onConfirm}/>);
+ document.activeElement.blur();fireEvent.keyDown(window,{key:'Enter'});
+ expect(onConfirm).toHaveBeenCalledWith([expect.objectContaining({name:'Blue Team'}),expect.objectContaining({name:'Gold Team'})]);
+});
+it('returns to Start after a deliberate team edit so repeated Enter cannot keep adding teams',()=>{
+ const onConfirm=vi.fn();render(<RemoteTeamSetup onConfirm={onConfirm}/>);
+ screen.getByRole('button',{name:'+ Team'}).focus();fireEvent.keyDown(window,{key:'Enter'});
+ const start=screen.getByRole('button',{name:'Start with 3 teams'});expect(start).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Enter',repeat:true});expect(onConfirm).not.toHaveBeenCalled();
+ fireEvent.keyDown(window,{key:'Enter'});expect(onConfirm.mock.calls[0][0]).toHaveLength(3);
 });

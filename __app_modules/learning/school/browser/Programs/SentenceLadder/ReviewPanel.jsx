@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { bindMediaToMaster } from "../../../../../../frontend/src/lib/volume/bindMediaToMaster.js";
 import { languageApi } from "./languageApi.js";
 import { languageLog } from "./languageLog.js";
@@ -27,13 +27,13 @@ function DiffLine({ expected, given }) {
   );
 }
 
-function RecordingPlayback({ userId, corpusId, seq, studyGrant }) {
+function RecordingPlayback({ seq, loadRecording }) {
   const [src, setSrc] = useState(null);
   const [status, setStatus] = useState('loading');
   useEffect(() => {
     let alive = true;
     let objectUrl = null;
-    languageApi.recordingBlob(userId, corpusId, seq, studyGrant).then(({ ok, data }) => {
+    loadRecording(seq).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok || !data) {
         setStatus('error');
@@ -44,7 +44,7 @@ function RecordingPlayback({ userId, corpusId, seq, studyGrant }) {
       setStatus('ready');
     });
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [userId, corpusId, seq, studyGrant]);
+  }, [seq, loadRecording]);
   // The review player obeys the panel's master volume like every other
   // sound on this surface; bound for as long as the element is on screen.
   const audioRef = useRef(null);
@@ -53,7 +53,7 @@ function RecordingPlayback({ userId, corpusId, seq, studyGrant }) {
   return src ? <audio ref={audioRef} controls preload="none" src={src} /> : <span className="lang-review__missing">audio unavailable</span>;
 }
 
-function Item({ item, userId, corpusId, languages, studyGrant }) {
+function Item({ item, languages, loadRecording }) {
   /**
    * THE HEADLINE IS THE PROMPT, and which language that is depends on the rung.
    *
@@ -78,7 +78,7 @@ function Item({ item, userId, corpusId, languages, studyGrant }) {
         <span className="lang-review__rung">Recording</span>
         <span className="lang-review__sentence">{item.text?.[languages?.target]}</span>
         {item.hasAudio
-          ? <RecordingPlayback userId={userId} corpusId={corpusId} seq={item.seq} studyGrant={studyGrant} />
+          ? <RecordingPlayback seq={item.seq} loadRecording={loadRecording} />
           : <span className="lang-review__missing">audio unavailable</span>}
       </li>
     );
@@ -130,18 +130,40 @@ function Item({ item, userId, corpusId, languages, studyGrant }) {
   );
 }
 
-export default function ReviewPanel({ userId, corpusId, studyGrant }) {
+/**
+ * Where the history and the recordings come from. The child's Review tab
+ * reads through their launch grant; the teacher console passes its own
+ * `source` (the same history behind the teacher gate), so both read one
+ * rendering of the record rather than two that can disagree.
+ */
+function learnerSource(userId, corpusId, studyGrant) {
+  return {
+    history: () => languageApi.history(userId, corpusId, studyGrant),
+    recording: (seq) => languageApi.recordingBlob(userId, corpusId, seq, studyGrant),
+  };
+}
+
+/** When a ladder day was worked, from its items' own stamps — the calendar
+ *  date a grown-up reads by, beside the ladder's own day number. */
+function workedOn(items) {
+  const stamps = items.map((item) => Date.parse(item?.at)).filter(Number.isFinite);
+  if (!stamps.length) return null;
+  return new Date(Math.min(...stamps)).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+export default function ReviewPanel({ userId, corpusId, studyGrant, source = null, showDates = false }) {
   const [history, setHistory] = useState(null);
   const [status, setStatus] = useState('loading');
   const [reloadKey, setReloadKey] = useState(0);
+  const read = useMemo(() => source ?? learnerSource(userId, corpusId, studyGrant), [source, userId, corpusId, studyGrant]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setStatus('loading');
-      const { ok, data } = await languageApi.history(userId, corpusId, studyGrant);
+      const { ok, data } = await read.history();
       if (!alive) return;
-      if (!ok) {
+      if (!ok || !Array.isArray(data?.days)) {
         languageLog.programError('history-failed', { corpus: corpusId });
         setStatus('error');
         return;
@@ -150,7 +172,7 @@ export default function ReviewPanel({ userId, corpusId, studyGrant }) {
       setStatus(data.days.length ? 'ready' : 'empty');
     })();
     return () => { alive = false; };
-  }, [userId, corpusId, studyGrant, reloadKey]);
+  }, [read, corpusId, reloadKey]);
 
   if (status === 'loading') return <p className="lang-review__status">Loading history…</p>;
   if (status === 'error') {
@@ -171,16 +193,16 @@ export default function ReviewPanel({ userId, corpusId, studyGrant }) {
     <div className="lang-review">
       {history.days.map(({ day, items }) => (
         <section key={day} className="lang-review__day">
-          <h3 className="lang-review__day-title">Day {day}</h3>
+          <h3 className="lang-review__day-title">
+            Day {day}{showDates && workedOn(items) ? ` · ${workedOn(items)}` : ''}
+          </h3>
           <ul className="lang-review__list">
             {items.map((item, i) => (
               <Item
                 key={`${item.seq}-${item.rung}-${i}`}
                 item={item}
-                userId={userId}
-                corpusId={corpusId}
                 languages={languages}
-                studyGrant={studyGrant}
+                loadRecording={read.recording}
               />
             ))}
           </ul>

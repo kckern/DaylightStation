@@ -73,11 +73,26 @@ export class IWorkSessionRepository {
    * A reader replaying a past day filters on this. Null only for a row written
    * before the stamp existed.
    *
+   * `remediationOf` names the session this one retries — null on an original.
+   * It lets the remediation cap count rounds from these rows alone. An
+   * implementation that cannot supply it should OMIT the key rather than
+   * answer null: absent means "unknown", and `PlanProjection` then reads that
+   * session's events instead of treating it as an original and under-counting.
+   *
+   * `gradedAt` / `gradedCorrectCount` / `gradedTotalCount` are the effective
+   * grade's own facts (null on a session never marked through a `graded`
+   * event — an external assessment sets `gradedPercent` with no `gradedAt`),
+   * and `evidenceInvalidated` is true once a grown-up voided the evidence.
+   * Optional: an implementation that cannot supply them omits them.
+   *
    * @param {string} learnerId
    * @returns {Promise<Array<{ sessionId: string, learnerId: string, unitId: string|null,
    *                          state: string|null, terminal: boolean,
    *                          outcome: {result: string, at: string|null}|null, gradedPercent: number|null,
-   *                          day: string, studyDay: string|null, updatedAt: string|null }>>}
+   *                          day: string, studyDay: string|null, updatedAt: string|null,
+   *                          remediationOf?: string|null, gradedAt?: string|null,
+   *                          gradedCorrectCount?: number|null, gradedTotalCount?: number|null,
+   *                          evidenceInvalidated?: boolean }>>}
    */
   async listForLearner(learnerId) {
     throw new Error('IWorkSessionRepository.listForLearner must be implemented');

@@ -19,7 +19,9 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const INSTRUCTIONS = 'Which budget category does this bank transaction belong to? '
   + '`description` is the raw bank or card description; it may carry payment-processor noise such as "Pwp", "Sq *", '
   + '"Privacycom" or reference numbers. `type` is how the bank classed it (expense, income, transfer, refund, '
-  + 'dividend, investment sale), `amount` is the absolute amount, and `account` is the account it posted to.';
+  + 'dividend, investment sale); it is not a budget category, so choose by what the money was for. '
+  + '`amount` is the absolute amount, and `account` is the account it posted to. Where a category has a '
+  + 'description, it says how this household uses that category.';
 
 // Hangul, CJK ideographs and fullwidth forms: the provider's weaker scripts
 const CJK = /[\u1100-\u11FF\u3000-\u303F\u3130-\u318F\u4E00-\u9FFF\uAC00-\uD7AF\uFF00-\uFFEF]/;
@@ -56,17 +58,22 @@ export class TransactionCategoryJudge {
   /**
    * @param {Object} txn - Transaction (provider shape)
    * @param {string[]} validTags
+   * @param {Object<string,string>} [tagDescriptions] - tag → how this household uses it (gpt.yml `tagDescriptions`)
    * @returns {Promise<null|{category: string|null, confidence: number|null, model: string|null, ms: number, cjk: boolean}>}
    */
-  async judge(txn, validTags) {
+  async judge(txn, validTags, tagDescriptions = null) {
     if (!this.#decisionGateway) return null;
     const tags = [...new Set(validTags || [])].filter(Boolean);
     if (tags.length < 2) return null;
+    const options = Object.fromEntries(tags.map((tag) => {
+      const description = tagDescriptions?.[tag];
+      return [tag, typeof description === 'string' && description.trim() ? description.trim() : null];
+    }));
 
     const state = TransactionCategoryJudge.stateFor(txn);
     const startedAt = Date.now();
     try {
-      const result = await this.#decisionGateway.evaluate(state, { category: choice(INSTRUCTIONS, tags) },
+      const result = await this.#decisionGateway.evaluate(state, { category: choice(INSTRUCTIONS, options) },
         { timeout: this.#timeoutMs });
       const answer = result?.answers?.category;
       return {

@@ -1,7 +1,7 @@
+import { automatedAssignmentDeps, canonicalCoachingResult, assignmentEvidence, localDate, goalsWithRange } from './budgetContext.mjs';
 // __backend/src/3_applications/agents/health-coach/assignments/ExerciseReaction.mjs
 
 import { Assignment } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/Assignment.mjs";
-import { OutputValidator } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/OutputValidator.mjs";
 import { coachingMessageSchema } from "../schemas/coachingMessage.mjs";
 
 /**
@@ -17,7 +17,7 @@ import { coachingMessageSchema } from "../schemas/coachingMessage.mjs";
  * 6. ACT — if should_send, record exercise_today in working memory with 24h TTL
  *
  * Note: Message delivery (send_channel_message) is NOT done here.
- * It is handled by HealthCoachAgent.runAssignment() post-execute.
+ * This legacy assignment returns a validated payload to its caller; scheduled notifications use CoachingOrchestrator.
  */
 export class ExerciseReaction extends Assignment {
   static id = 'exercise-reaction';
@@ -31,10 +31,11 @@ export class ExerciseReaction extends Assignment {
    */
   async execute(deps) {
     const activity = deps.context?.activity;
-    if (!activity || activity.calories < 200) {
+    const burn = activity?.calories ?? activity?.caloriesBurned;
+    if (!Number.isFinite(burn) || burn < 200) {
       return { should_send: false };
     }
-    return super.execute(deps);
+    return super.execute(automatedAssignmentDeps(deps));
   }
 
   /**
@@ -57,7 +58,7 @@ export class ExerciseReaction extends Assignment {
     const activity = context?.activity || {};
 
     const [todayNutrition, goals] = await Promise.all([
-      call('get_today_nutrition', { userId }),
+      call('get_day_budget', { userId, date: context?.date || localDate(0, context?.timezone) }),
       call('get_user_goals', { userId }),
     ]);
 
@@ -68,44 +69,20 @@ export class ExerciseReaction extends Assignment {
       hasGoals: !!goals,
     });
 
-    return { activity, todayNutrition, goals };
+    return { userId, activity, todayNutrition, goals };
   }
 
   /**
    * Build a focused prompt with activity details, today's nutrition, and net calories.
    */
   buildPrompt(gathered, memory) {
-    const today = new Date().toISOString().split('T')[0];
-    const sections = [`## Date: ${today}`];
-
-    const activity = gathered.activity || {};
-    const loggedCalories = gathered.todayNutrition?.calories ?? 0;
-    const exerciseCalories = activity.calories ?? 0;
-    const netCalories = loggedCalories - exerciseCalories;
-
-    sections.push(`\n## Activity\n${JSON.stringify(activity, null, 2)}`);
-    sections.push(`\n## Today's Nutrition\n${JSON.stringify(gathered.todayNutrition || {}, null, 2)}`);
-    sections.push(`\n## User Goals\n${JSON.stringify(gathered.goals || {}, null, 2)}`);
-    sections.push(`\n## Net Calorie Summary
-- Logged calories today: ${loggedCalories}
-- Exercise calories burned: ${exerciseCalories}
-- Net calories (logged - exercise): ${netCalories}`);
-
-    sections.push(`\n## Working Memory\n${memory.serialize()}`);
-
-    sections.push(`\n## Instructions
-Produce a JSON object matching the coachingMessageSchema:
-- Activity details: type (${activity.type || 'unknown'}), calories burned (${exerciseCalories}), duration (${activity.duration ?? 'unknown'} min), avg HR (${activity.avgHr ?? 'unknown'})
-- Today's logged calories so far: ${loggedCalories}
-- Net calories (logged - exercise): ${netCalories}
-- Remaining calorie need relative to goal
-- Keep text under 100 words
-- Factual only — no cheerleading, no "great job", no "keep it up"
-- Return raw JSON matching coachingMessageSchema
-- text: the message body (HTML formatted, under 100 words) — only set if should_send is true
-- parse_mode: "HTML"
-
-Return raw JSON only, no markdown code fences.`);
+    const sections = [
+      `## Activity\n${JSON.stringify(gathered.activity || {}, null, 2)}`,
+      `## Canonical Daily Budget\n${JSON.stringify(assignmentEvidence(gathered), null, 2)}`,
+      `## User Goals\n${JSON.stringify(goalsWithRange(gathered.goals, gathered.todayNutrition), null, 2)}`,
+      `## Working Memory\n${memory.serialize()}`,
+      `## Instructions\nSelect whether to send a factual activity reaction. Activity burn and synchronized daily exercise credit are distinct. Never add the activity burn to canonical credit. Return raw JSON matching coachingMessageSchema. Delivered facts are rendered from eligible shared observations.`,
+    ];
 
     return sections.join('\n');
   }
@@ -121,25 +98,12 @@ Return raw JSON only, no markdown code fences.`);
    * Validate LLM output against the coachingMessageSchema.
    */
   async validate(raw, gathered, logger) {
-    let parsed;
-    try {
-      parsed = typeof raw.output === 'string' ? JSON.parse(raw.output) : raw.output;
-    } catch {
-      throw new Error('ExerciseReaction output is not valid JSON');
-    }
-
-    const result = OutputValidator.validate(parsed, coachingMessageSchema);
-    if (!result.valid) {
-      logger?.warn?.('validate.schema_failure', { errors: result.errors });
-      throw new Error(`ExerciseReaction validation failed: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data;
+    return canonicalCoachingResult(raw, gathered, 'exercise-reaction', logger);
   }
 
   /**
    * Act phase — if message is being sent, record exercise today in working memory.
-   * Message delivery is handled by HealthCoachAgent after execute() returns.
+   * This assignment returns the validated payload without sending a message.
    */
   async act(validated, { memory, userId, logger }) {
     if (validated.should_send) {

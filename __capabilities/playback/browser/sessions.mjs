@@ -7,3 +7,5 @@ export { useSessionSourceContext } from "./sessions/useSessionSourceContext.js";
 export { createSessionSource } from "./sessions/SessionSource.js";
 export { createPlaybackStallWatch } from "./sessions/playbackStallWatch.js";
 export { useRegistryPlaybackState } from "./sessions/useRegistryPlaybackState.js";
+export { useDeviceAudience, getDeviceAudienceStore, createAudienceStore, audienceKey } from "./sessions/deviceAudience.js";
+

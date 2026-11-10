@@ -10,6 +10,7 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { teacherDate } from "../teacherDates.js";
+import { useActorName } from "../useActorName.js";
 
 // Consecutive verdicts from the same session collapse into one expandable
 // summary row; notes always stand alone. "engine" is a machine id, not a
@@ -31,12 +32,14 @@ function summaryLine(group) {
   return `${correct} of ${group.items.length} correct · ${title}`;
 }
 
-function attribution(item) {
-  const by = item.gradedBy && item.gradedBy !== 'engine' ? ` — ${item.gradedBy}` : '';
+/** When, and who marked it — by name; the machine (`engine`) goes unsigned. */
+function attribution(item, actorName) {
+  const by = item.gradedBy && item.gradedBy !== 'engine' ? ` — ${actorName(item.gradedBy)}` : '';
   return `${teacherDate(item.gradedAt)}${by}`;
 }
 
 export default function FeedbackNotes({ learnerId, learnerName }) {
+  const actorName = useActorName();
   const [limit, setLimit] = useState(20);
   const feedback = usePanelFetch(() => schoolApi.reviewLearner(learnerId, { limit }), {
     deps: [learnerId, limit],
@@ -59,7 +62,7 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
             <li key={`${item.sessionId ?? 'note'}:${item.itemId}`} className="teacher-feedback__row" data-verdict={item.verdict ?? 'note'}>
               <span className="teacher-feedback__verdict">{item.kind === 'note' ? 'note' : item.verdict}</span>
               <span className="teacher-feedback__unit">{item.unitTitle ?? item.title ?? (item.kind === 'note' ? '' : 'Lesson feedback')}</span>
-              <span className="teacher-feedback__meta">{attribution(item)}</span>
+              <span className="teacher-feedback__meta">{attribution(item, actorName)}</span>
               {item.note && <blockquote className="teacher-feedback__note">{item.note}</blockquote>}
               {item.kind === 'note' && (
                 <button type="button" className="teacher-feedback__retract" disabled={busy === item.itemId} onClick={() => retract(item)}>Retract</button>
@@ -78,7 +81,7 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
                     <li key={`${item.sessionId}:${item.itemId}`} className="teacher-feedback__row" data-verdict={item.verdict}>
                       <span className="teacher-feedback__verdict">{item.verdict}</span>
                       <span className="teacher-feedback__unit">{item.prompt ?? item.unitTitle ?? ''}</span>
-                      <span className="teacher-feedback__meta">{attribution(item)}</span>
+                      <span className="teacher-feedback__meta">{attribution(item, actorName)}</span>
                       {item.note && <blockquote className="teacher-feedback__note">{item.note}</blockquote>}
                     </li>
                   ))}

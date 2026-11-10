@@ -45,19 +45,20 @@ function savedPayload(now) {
       { entityId: 'e-a', profileId: 'kid-a', deviceId: 'D2', startTime: T0, endTime: null, status: 'active', startTick: 0, relabeledFrom: ['kid-b'] },
     ],
     treasureBox: { totalRings: 8, buckets: { yellow: 8 } },
+    metadata: { zone_trust: { version: 1, riders: [{ userId: 'kid-a', deviceIds: ['D2'] }] } },
   };
 }
 
 const hr = (deviceId, bpm) => ({ topic: 'fitness', type: 'ant', deviceId, profile: 'HR', data: { ComputedHeartRate: bpm, timestamp: Date.now() } });
 
-function resumed() {
+function resumed(edit = (payload) => payload) {
   const session = new FitnessSession();
   session.userManager.setAssignmentLedger(new DeviceAssignmentLedger());
   session.userManager.configure({ primary: [{ id: 'kid-a', name: 'Kid A', hr_device_id: 'D2' }] }, ZONES);
   session.ensureStarted({ force: true, reason: 'resumed' });
   session.zoneProfileStore.setBaseZoneConfig(ZONES);
   session.treasureBox.configure({ zones: ZONES });
-  session._hydrateFromSession(savedPayload(Date.now()));
+  session._hydrateFromSession(edit(savedPayload(Date.now())));
   return session;
 }
 
@@ -82,11 +83,58 @@ describe('FitnessSession resume — stints, counters and live keys', () => {
     const session = resumed();
     expect(session.treasureBox.perUser.get('kid-a')?.totalRings).toBe(6);
     expect(session._timelineRecorder._cumulativeBeats.get('kid-a')).toBeCloseTo(47.1);
+    // Trust earned before the reload carries over: no fresh Cool is needed.
     for (let i = 0; i < 30; i += 1) { vi.advanceTimersByTime(1000); session.ingestData(hr('D2', 140)); }
     const rings = session.timeline.series['user:kid-a:rings_total'].filter(Number.isFinite);
     expect(rings.every((v, i) => i === 0 || v >= rings[i - 1])).toBe(true);
     expect(rings[rings.length - 1]).toBeGreaterThan(6);
     session.reset();
+  });
+
+  it('restores zone trust only for a reload of the same wearer within the hour', () => {
+    expect(resumed().zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    // One rule with the mid-session dropout resume: 60 minutes (bug #5).
+    const gap = (min) => resumed((p) => ({ ...p, endTime: Date.now() - min * 60 * 1000 }));
+    const tenMin = gap(10); const fiftyNine = gap(59); const sixtyOne = gap(61);
+    expect(tenMin.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    expect(fiftyNine.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    expect(sixtyOne.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    const moved = resumed((p) => ({ ...p, metadata: { zone_trust: { version: 1, riders: [{ userId: 'kid-a', deviceIds: ['D9'] }] } } }));
+    expect(moved.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    [tenMin, fiftyNine, sixtyOne, moved].forEach((s) => s.reset());
+  });
+
+  it('v1 trust (no evidence) commits the first reading flagged resumed, so it can never be a Fire ceremony', () => {
+    const session = resumed();
+    expect(session.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    for (let i = 0; i < 4; i += 1) { vi.advanceTimersByTime(1000); session.ingestData(hr('D2', 141)); }
+    expect(session.getZoneProfile('kid-a')).toMatchObject({
+      zoneTrusted: true, currentZoneId: 'warm', zoneEntry: { resumed: true, restored: 'no-evidence' }
+    });
+    session.reset();
+  });
+
+  it('saves v2 evidence and resumes through it: plausible same-strap reading in, stale evidence out', () => {
+    const v2 = (evidenceAgeMs) => (p) => ({ ...p, metadata: { zone_trust: { version: 2, riders: [{
+      userId: 'kid-a', deviceIds: ['D2'],
+      evidence: { deviceId: 'D2', zoneId: 'warm', heartRate: 143, at: Date.now() - evidenceAgeMs }
+    }] } } });
+    const fresh = resumed(v2(20 * 60 * 1000));
+    // Evidence, not blanket trust: the next live reading decides.
+    expect(fresh.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    expect(fresh.zoneProfileStore.getTrustEvidence('kid-a')).toMatchObject({ deviceId: 'D2', heartRate: 143 });
+    for (let i = 0; i < 4; i += 1) { vi.advanceTimersByTime(1000); fresh.ingestData(hr('D2', 141)); }
+    expect(fresh.getZoneProfile('kid-a')).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm', zoneEntry: { resumed: true } });
+    const snapshot = fresh.summary.metadata.zone_trust;
+    expect(snapshot.version).toBe(2);
+    expect(snapshot.riders).toEqual([{ userId: 'kid-a', deviceIds: ['D2'],
+      evidence: { deviceId: 'D2', zoneId: 'warm', heartRate: 141, at: Date.now() } }]);
+
+    const stale = resumed(v2(61 * 60 * 1000));
+    expect(stale.zoneProfileStore.getTrustEvidence('kid-a')).toBeNull();
+    for (let i = 0; i < 4; i += 1) { vi.advanceTimersByTime(1000); stale.ingestData(hr('D2', 141)); }
+    expect(stale.getZoneProfile('kid-a')).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+    [fresh, stale].forEach((s) => s.reset());
   });
 
   it('restores the stints, so a correction after the reload still moves the whole stint', () => {

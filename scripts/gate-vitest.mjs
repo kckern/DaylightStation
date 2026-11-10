@@ -232,7 +232,22 @@ function runVitest(files) {
       break;
     }
     const part = JSON.parse(readFileSync(chunkOut, 'utf8'));
-    merged.testResults.push(...(part.testResults || []));
+    // ONE RESULT PER FILE. Vitest CLI paths are filters, not exact paths, so
+    // `foo.test.js` also matches a sibling `foo.test.jsx`; when the two land in
+    // different chunks the .jsx runs twice and the reconcile below reported a
+    // population/run MISMATCH (4654 vs 4655, 2026-11-09) and never gave a verdict.
+    // The first run of a file stands; the duplicate's counts are not added.
+    const seen = new Set(merged.testResults.map((t) => t.name));
+    const fresh = (part.testResults || []).filter((t) => !seen.has(t.name));
+    const dupes = (part.testResults || []).filter((t) => seen.has(t.name));
+    merged.testResults.push(...fresh);
+    for (const t of dupes) {
+      const n = (s) => (t.assertionResults || []).filter((a) => a.status === s).length;
+      part.numTotalTests -= (t.assertionResults || []).length;
+      part.numPassedTests -= n('passed');
+      part.numFailedTests -= n('failed');
+      part.numPendingTests -= n('pending') + n('skipped') + n('todo');
+    }
     merged.numTotalTests += part.numTotalTests || 0;
     merged.numPassedTests += part.numPassedTests || 0;
     merged.numFailedTests += part.numFailedTests || 0;

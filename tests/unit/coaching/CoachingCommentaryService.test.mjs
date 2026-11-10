@@ -1,59 +1,69 @@
 import { describe, it, expect, vi } from 'vitest';
-import { CoachingCommentaryService } from "../../../__app_modules/wellness/health/server/application/coaching/CoachingCommentaryService.mjs";
+import { CoachingCommentaryService } from '../../../__app_modules/wellness/health/server/application/coaching/CoachingCommentaryService.mjs';
+import { renderObservation } from '../../../__app_modules/wellness/health/server/application/coaching/observationText.mjs';
 
-describe('CoachingCommentaryService', () => {
-  function makeMockAgent(response) {
-    return {
-      generate: vi.fn().mockResolvedValue({ text: response }),
-    };
-  }
+const candidate = (id, priority) => ({ id, kind: 'protein_gap', date: '2026-10-24', evidenceDates: ['2026-10-24'], priority, fingerprint: id, facts: { protein: 105, proteinGoal: 150, proteinGap: 45 } });
+const high = candidate('protein_gap:day:2026-10-24', 90);
+const low = candidate('protein_gap:other:2026-10-24', 20);
+const snapshot = (extra = {}) => ({ userId: 'user-1', type: 'morning-brief', date: '2026-10-25', observations: [low, high], recent_coaching: [], ...extra });
+const setup = response => {
+  const runtime = { execute: vi.fn().mockResolvedValue({ output: response }) };
+  const logger = { debug: vi.fn(), warn: vi.fn() };
+  const service = new CoachingCommentaryService({ runtime, logger });
+  return { service, runtime, logger };
+};
 
-  function makeMockAgentFactory(agent) {
-    return () => agent;
-  }
-
-  it('returns commentary from LLM', async () => {
-    const agent = makeMockAgent('That chicken hit hard.');
-    const service = new CoachingCommentaryService({ agentFactory: makeMockAgentFactory(agent), logger: console });
-
-    const result = await service.generate({ type: 'post-report', calories: { consumed: 850 } });
-    expect(result).toBe('That chicken hit hard.');
-    expect(agent.generate).toHaveBeenCalledOnce();
+describe('supported commentary selection', () => {
+  it('returns only the offered selected observation, including authoritative facts', async () => {
+    const { service, runtime } = setup(JSON.stringify({ observationId: low.id }));
+    expect(await service.generate(snapshot())).toEqual(low);
+    expect(runtime.execute.mock.calls[0][0].context.userId).toBe('user-1');
   });
-
-  it('passes snapshot as JSON string to agent', async () => {
-    const agent = makeMockAgent('Nice.');
-    const service = new CoachingCommentaryService({ agentFactory: makeMockAgentFactory(agent), logger: console });
-
-    const snapshot = { type: 'post-report', calories: { consumed: 850 } };
-    await service.generate(snapshot);
-
-    const input = agent.generate.mock.calls[0][0];
-    expect(JSON.parse(input)).toEqual(snapshot);
+  it.each(['not json', '{"observationId":"unknown"}', '{"observationId":123}', '{"observationId":"protein_gap:other:2026-10-24","text":"999g protein target met"}', '999g protein target met', '[]', '{}'])('falls back from malformed or unsupported selection: %s', async output => {
+    const { service } = setup(output);
+    const selected = await service.generate(snapshot());
+    expect(selected).toEqual(high);
+    expect(renderObservation(selected)).toContain('45g below your 150g target');
+    expect(renderObservation(selected)).not.toMatch(/999|target met/);
   });
-
-  it('returns empty string when LLM returns empty', async () => {
-    const agent = makeMockAgent('');
-    const service = new CoachingCommentaryService({ agentFactory: makeMockAgentFactory(agent), logger: console });
-
-    const result = await service.generate({ type: 'post-report' });
-    expect(result).toBe('');
+  it('allows explicit null to choose silence', async () => {
+    const { service } = setup('{"observationId":null}');
+    expect(await service.generate(snapshot())).toBeNull();
   });
-
-  it('returns empty string when LLM throws', async () => {
-    const agent = { generate: vi.fn().mockRejectedValue(new Error('timeout')) };
-    const service = new CoachingCommentaryService({ agentFactory: makeMockAgentFactory(agent), logger: console });
-
-    const result = await service.generate({ type: 'post-report' });
-    expect(result).toBe('');
+  it('uses unseen eligible fallback when a provider times out', async () => {
+    const { service, runtime } = setup('');
+    runtime.execute.mockRejectedValue(new Error('timeout'));
+    expect(await service.generate(snapshot())).toEqual(high);
   });
-
-  it('strips HTML tags from LLM output', async () => {
-    const agent = makeMockAgent('<b>Bold</b> commentary <blockquote>no</blockquote>');
-    const service = new CoachingCommentaryService({ agentFactory: makeMockAgentFactory(agent), logger: console });
-
-    const result = await service.generate({ type: 'post-report' });
-    expect(result).not.toContain('<b>');
-    expect(result).not.toContain('<blockquote>');
+  it('rejects repeated valid IDs even if passed again among candidates', async () => {
+    const { service } = setup(JSON.stringify({ observationId: high.id }));
+    const recent_coaching = [{ observationFingerprint: high.fingerprint, text: 'old'.repeat(200) }];
+    expect(await service.generate(snapshot({ recent_coaching }))).toEqual(low);
+    expect(await service.generate(snapshot({ recent_coaching: [...recent_coaching, { observationFingerprint: low.fingerprint }] }))).toBeNull();
+  });
+  it('does not call the provider or deliver prose when no eligible candidate exists', async () => {
+    const { service, runtime } = setup('stale text with 999 calories');
+    expect(await service.generate(snapshot({ observations: [] }))).toBeNull();
+    expect(runtime.execute).not.toHaveBeenCalled();
+  });
+  it('separates offered evidence from historical prose and omits raw stale snapshot totals', async () => {
+    const { service, runtime } = setup('{"observationId":null}');
+    await service.generate(snapshot({ calories: { consumed: 9999 }, recent_coaching: [{ text: 'old 999 calories' }] }));
+    const input = JSON.parse(runtime.execute.mock.calls[0][0].input);
+    expect(input.current_evidence.observations).toEqual([high, low]);
+    expect(input.historical_context.recent_coaching[0].text).toBe('old 999 calories');
+    expect(runtime.execute.mock.calls[0][0].input).not.toContain('9999');
+  });
+  it('keeps provider and parse-error details out of selection-failure diagnostics', async () => {
+    const { service, runtime, logger } = setup('');
+    // Engines/providers can include input excerpts in exception messages.
+    runtime.execute.mockRejectedValue(new SyntaxError('PRIVATE_FOOD_HISTORY rice 700 cal is not valid JSON'));
+    expect(await service.generate(snapshot())).toEqual(high);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toMatch(/PRIVATE_FOOD_HISTORY|rice|700/);
+  });
+  it('supports the legacy provider seam with the same strict selection', async () => {
+    const service = new CoachingCommentaryService({ agentFactory: () => ({ generate: async () => ({ text: JSON.stringify({ observationId: low.id }) }) }), logger: {} });
+    expect(await service.generate(snapshot())).toEqual(low);
   });
 });

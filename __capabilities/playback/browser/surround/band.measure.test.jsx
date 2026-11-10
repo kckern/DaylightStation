@@ -89,6 +89,8 @@ const FLEET = Object.freeze([
 const NAPOLEON = 'Beethoven meant to dedicate this symphony to Napoleon. When his secretary brought word that Napoleon had declared himself Emperor, Beethoven tore the title page in half and threw it on the floor. The page had to be recopied.';
 
 const DEFINITION = Object.freeze({
+  // The concert hall is an opt-in theme; the frame's own sheet is neutral.
+  theme: 'classical',
   regions: {
     top: { module: 'work-placard' },
     right: [
@@ -604,7 +606,7 @@ const POSITION = 1200;
  */
 async function compileSheet() {
   const sass = await import('sass-embedded');
-  const sheets = ['SurroundFrame.scss', '../../../../__app_modules/media/media/browser/surround/modules/SegmentMap.scss', '../../../../__app_modules/media/media/browser/surround/modules/CueTicker.scss',
+  const sheets = ['SurroundFrame.scss', '../../../../__app_modules/media/media/browser/surround/themes/classical.scss', '../../../../__app_modules/media/media/browser/surround/modules/SegmentMap.scss', '../../../../__app_modules/media/media/browser/surround/modules/CueTicker.scss',
     '../../../../__app_modules/media/media/browser/surround/modules/WorkPlacard.scss', '../../../../__app_modules/media/media/browser/surround/modules/ComposerCard.scss', '../../../../__app_modules/media/media/browser/surround/modules/PlaceCarousel.scss',
     '../../../../__app_modules/media/media/browser/surround/map/CountryMap.scss', '../../../../__app_modules/media/media/browser/surround/map/EraTimeline.scss'];
   const compiled = [];
@@ -3261,6 +3263,7 @@ describe('the rail-carried layout, measured', () => {
   afterAll(async () => { await browser?.close(); });
 
   const RAIL_DEFINITION = Object.freeze({
+    theme: 'classical',
     regions: {
       top: { module: 'work-placard' },
       // HEIGHTS ARE AUTHORED, and they have to be. Both the identity card and

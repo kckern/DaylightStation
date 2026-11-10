@@ -6,44 +6,46 @@
  * on a phone. Business actions remain in the existing panels and all writes
  * continue through useTeacherWrite/TeacherGate.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ProfilePicker from "../../../../../frontend/src/lib/identity/ProfilePicker.jsx";
 import ProfileAvatar from "../../../../../frontend/src/lib/identity/ProfileAvatar.jsx";
 import PinPrompt from "./panels/PinPrompt.jsx";
+import LogBookSheet from "./panels/LogBookSheet.jsx";
 import { TeacherProfileProvider, useTeacherProfile } from "./TeacherProfileContext.jsx";
 import { schoolApi } from "../schoolApi.js";
 import { teacherLog } from "./teacherLog.js";
+import { useBacklog } from "./useBacklog.js";
 import {
-  parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
+  consoleLinkTarget, parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
 } from "./teacherUrl.js";
 import { humanDate, localDay } from "./teacherDates.js";
 import TabErrorBoundary from "./TabErrorBoundary.jsx";
 import {
-  CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
-  OperationsView, QueueView, ReadingView, ReportsView, SessionInspector, WordsView, CoinsView, CoinsRosterView,
+  CurriculumView, DashboardView, OperationsView, QueueView, SessionInspector, CoinsRosterView,
 } from "./WorkspaceViews.jsx";
+import LearnerPage, { LEARNER_FOLDS } from "./LearnerPage.jsx";
+
+/** Old learner tab sections that are folds now; their path becomes the day. */
+const FOLD_SECTIONS = new Set(LEARNER_FOLDS.map((fold) => fold.id));
 import "./Teacher.scss";
 
 // `short` is the phone tab label — a truthful abbreviation of the SAME word,
 // never a different one ('Courses' for Curriculum collided with the student
 // Courses tab; UX audit F26).
+// Three sections (owner ruling 2026-10-29): Home carries the action queue's
+// counts ("Needs you") and each child's coins; Manage is curriculum and
+// enrollment; Fix is every repair. The queue and coins-roster pages keep their
+// URLs — Home links into them — but are no longer places to navigate to.
+// Ids are the URL segments, kept so bookmarks still land.
 const GLOBAL_NAV = [
-  { id: 'dashboard', label: 'Dashboard', short: 'Home' },
-  { id: 'queue', label: 'Action queue', short: 'Queue' },
-  { id: 'curriculum', label: 'Curriculum', short: 'Curric.' },
-  { id: 'coins', label: 'Coins', short: 'Coins' },
-  { id: 'operations', label: 'Operations', short: 'Ops' },
+  { id: 'dashboard', label: 'Home', short: 'Home' },
+  { id: 'curriculum', label: 'Manage', short: 'Manage' },
+  { id: 'operations', label: 'Fix', short: 'Fix' },
 ];
-const LEARNER_NAV = [
-  { id: 'day', label: 'Day' },
-  { id: 'courses', label: 'Courses' },
-  { id: 'history', label: 'History' },
-  { id: 'reading', label: 'Reading' },
-  { id: 'words', label: 'Cards' }, // id kept: console links name the tab `words`
-  { id: 'coins', label: 'Coins' },
-  { id: 'reports', label: 'Reports' },
-  { id: 'operations', label: 'Operations' },
-];
+/** The top bar's name for every section page, the off-menu ones included. */
+const SECTION_LABEL = { ...Object.fromEntries(GLOBAL_NAV.map((item) => [item.id, item.label])), queue: 'Action queue', coins: 'Coins' };
+/** The phone layout's breakpoint (`Teacher.scss`): the rail becomes a drawer. */
+const PHONE_QUERY = '(max-width: 760px)';
 
 function TeacherShell({ PianoProgramsPanel }) {
   const {
@@ -53,17 +55,53 @@ function TeacherShell({ PianoProgramsPanel }) {
   const initial = useMemo(() => parseTeacherPath(window.location.pathname), []);
   const [route, setRoute] = useState(initial);
   const [kids, setKids] = useState([]);
-  const [backlog, setBacklog] = useState(0);
-  const [shellWarnings, setShellWarnings] = useState({ roster: false, backlog: false });
+  // One count for the rail badge, the phone tab bar and the dashboard strip;
+  // the queue's panels call `backlog.refresh` when the teacher acts.
+  const backlog = useBacklog();
+  const [shellWarnings, setShellWarnings] = useState({ roster: false });
   const [railOpen, setRailOpen] = useState(false);
+  const [logBookOpen, setLogBookOpen] = useState(false);
+  // Where focus goes when "Log a book" closes: the control that opened it,
+  // or, from the phone rail (closed off-screen by then), the menu button.
+  const logBookOpenerRef = useRef(null);
+  const menuRef = useRef(null);
+  // An action, not a section: it opens over whatever page is showing. The
+  // phone rail (and its scrim) sit above the sheet, so it closes first.
+  const openLogBook = (event) => {
+    const fromRail = event.currentTarget.dataset.from === 'rail';
+    const phone = typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches;
+    logBookOpenerRef.current = fromRail && phone && menuRef.current ? menuRef.current : event.currentTarget;
+    setRailOpen(false);
+    setLogBookOpen(true);
+    teacherLog.nav('log-book', { from: event.currentTarget.dataset.from });
+  };
 
   const navigate = useCallback((path, replace = false) => {
-    if (`${window.location.pathname}${window.location.search}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
-    const next = parseTeacherPath(new URL(path, window.location.origin).pathname);
+    const before = { pathname: window.location.pathname, search: window.location.search };
+    if (`${before.pathname}${before.search}${window.location.hash}` !== path) window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
+    const target = new URL(path, window.location.origin);
+    // Same page, different query (`?reading=`, `?open=`): the route below does
+    // not change, so nothing re-renders. Views that keep query state already
+    // resync on popstate, so tell them. The shell's own popstate listener
+    // re-parses the same pathname and sets an equivalent route — harmless.
+    if (target.pathname === before.pathname && target.search !== before.search) {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+    const next = parseTeacherPath(target.pathname);
     setRoute(next);
     setRailOpen(false);
+    // A new page starts at its top; a replace (a canonicalized URL) does not move.
+    if (!replace) { try { window.scrollTo(0, 0); } catch { /* jsdom */ } }
     teacherLog.nav('workspace', { kind: next.kind, section: next.section, learnerId: next.learnerId, sessionId: next.sessionId });
   }, []);
+
+  // One delegated handler for every console link (see `consoleLinkTarget`).
+  const onLinkClick = useCallback((event) => {
+    const path = consoleLinkTarget(event);
+    if (!path) return;
+    event.preventDefault();
+    navigate(path);
+  }, [navigate]);
 
   useEffect(() => {
     teacherLog.nav('mounted', { kind: initial.kind, section: initial.section, learnerId: initial.learnerId });
@@ -80,25 +118,6 @@ function TeacherShell({ PianoProgramsPanel }) {
     });
     return () => { alive = false; };
   }, [initial]);
-
-  useEffect(() => {
-    let alive = true;
-    const poll = async () => {
-      // A hidden tab polls nothing; visibilitychange below catches up on return.
-      if (document.visibilityState === 'hidden') return;
-      const [review, prints] = await Promise.all([schoolApi.lifecycleReview(), schoolApi.printPending()]);
-      if (!alive) return;
-      setBacklog((review.ok ? (review.data?.items ?? []).length : 0) + (prints.ok && Array.isArray(prints.data) ? prints.data.length : 0));
-      const failed = !review.ok || !prints.ok;
-      setShellWarnings((value) => ({ ...value, backlog: failed }));
-      if (failed) teacherLog.fetch('backlog-failed', { reviewStatus: review.status, printStatus: prints.status });
-    };
-    poll();
-    const timer = setInterval(poll, 60_000);
-    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, []);
 
   useEffect(() => {
     const onPop = () => setRoute(parseTeacherPath(window.location.pathname));
@@ -120,7 +139,16 @@ function TeacherShell({ PianoProgramsPanel }) {
   const goLearner = (learnerId, section = 'day', detail = null) => navigate(teacherLearnerPath(learnerId, section, detail, route.base));
   const goSession = (sessionId, origin = {}) => navigate(teacherSessionPath(route.learnerId, sessionId, route.base, origin));
   const studyDay = route.studyDay ?? localDay();
-  const goDay = (nextDay) => navigate(teacherDayPath(route.learnerId, nextDay, route.base));
+  // Stepping the day keeps the child's page as it was: the open fold and a
+  // Fix fold's repair context ride along on the new day's path.
+  const PAGE_PARAMS = ['fold', 'reason', 'subject', 'unit', 'day'];
+  const goDay = (nextDay) => {
+    const kept = new URLSearchParams();
+    const current = new URLSearchParams(window.location.search);
+    PAGE_PARAMS.forEach((key) => { if (current.get(key)) kept.set(key, current.get(key)); });
+    const search = kept.toString();
+    navigate(`${teacherDayPath(route.learnerId, nextDay, route.base)}${search ? `?${search}` : ''}`);
+  };
 
   if (status !== 'ready') return <div className="teacher-console-page"><div className="teacher-console teacher-console--loading">Loading teacher workspace…</div></div>;
 
@@ -130,50 +158,65 @@ function TeacherShell({ PianoProgramsPanel }) {
     view = <section className="teacher-panel"><h2 className="teacher-panel__title">Page not found</h2><p className="teacher-panel__empty">This teacher-workspace address is not a valid route.</p><button type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</button></section>;
   } else if (route.kind === 'session') {
     // Back returns to the view that opened the session (?from=today → the
-    // dashboard digest), not always History.
+    // dashboard digest), not always History. The dashboard return carries the
+    // learner as `?open=`, so the roster card the lesson came from is open again.
     const origin = new URLSearchParams(window.location.search);
     const from = origin.get('from');
     const originDay = origin.get('studyDay');
-    const backToDay = from === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '');
-    const backLabel = backToDay ? `Back to ${humanDate(originDay)}`
-      : from === 'today' || !route.learnerId ? 'Back to dashboard' : 'Back to history';
-    view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids}
-      backLabel={backLabel}
-      onBack={() => (backToDay ? goDay(originDay)
-        : (from === 'today' || !route.learnerId ? goGlobal('dashboard') : goLearner(route.learnerId, 'history')))} />;
-  } else if (route.kind === 'learner' && learner) {
-    const views = {
-      day: <LearnerDayScreen learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
-        onChangeStudyDay={goDay} onOpenSession={(sessionId) => goSession(sessionId, { from: 'day', studyDay })} />,
-      courses: <CoursesView learnerId={learner.id} learnerName={learner.name} courseId={route.courseId} kids={kids} PianoProgramsPanel={PianoProgramsPanel} />,
-      history: <HistoryView learnerId={learner.id} learnerName={learner.name}
-        onOpenSession={(sessionId) => goSession(sessionId, { from: 'history' })} />,
-      reading: <ReadingView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
-      words: <WordsView learnerId={learner.id} learnerName={learner.name} />,
-      coins: <CoinsView learnerId={learner.id} learnerName={learner.name} />,
-      reports: <ReportsView learnerId={learner.id} kids={kids} />,
-      operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
+    const dashboardBack = () => navigate(`${teacherSectionPath('dashboard', route.base)}${route.learnerId ? `?open=${encodeURIComponent(route.learnerId)}` : ''}`);
+    // Where Back goes, by the view that opened the session (`?from=`).
+    const ORIGINS = {
+      day: /^\d{4}-\d{2}-\d{2}$/.test(originDay ?? '') ? [`Back to ${humanDate(originDay)}`, () => goDay(originDay)] : null,
+      today: ['Back to dashboard', dashboardBack],
+      queue: ['Back to action queue', () => goGlobal('queue')],
+      operations: ['Back to Fix', () => goGlobal('operations')],
     };
-    view = views[route.section] ?? views.day;
+    // Own keys only: `?from=constructor` must not reach Object.prototype.
+    const [backLabel, onBack] = (Object.hasOwn(ORIGINS, from ?? '') ? ORIGINS[from] : null)
+      ?? (route.learnerId ? ['Back to history', () => goLearner(route.learnerId, 'history')] : ['Back to dashboard', dashboardBack]);
+    view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids}
+      backLabel={backLabel} onBack={onBack} />;
+  } else if (route.kind === 'learner' && learner) {
+    // One page per child (owner ruling 2026-10-29): the day, then folds. A
+    // section in the URL opens that fold; opening one writes it back.
+    // Keyed by child: another child's page starts with every fold closed.
+    // The fold rides in `?fold=` on the day's own path (see LearnerPage).
+    view = <LearnerPage key={learner.id} learner={learner} route={route} kids={kids} studyDay={studyDay}
+      onChangeStudyDay={goDay}
+      onOpenSession={(sessionId) => goSession(sessionId, { from: 'day', studyDay })}
+      onOpenSessionFrom={(sessionId, from) => goSession(sessionId, { from })}
+      onReplaceUrl={(params) => {
+        // A course drill-in (`/courses/:courseId`) keeps its path: rewriting
+        // it to the day would drop the course the Courses fold is showing.
+        const path = FOLD_SECTIONS.has(route.section) && !route.courseId
+          ? teacherDayPath(learner.id, route.studyDay, route.base)
+          : window.location.pathname;
+        const search = params.toString();
+        navigate(`${path}${search ? `?${search}` : ''}`, true);
+      }}
+      PianoProgramsPanel={PianoProgramsPanel} />;
   } else {
     const views = {
-      dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} onOpenQueue={() => goGlobal('queue')} />,
-      queue: <QueueView kids={kids} />,
+      dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} backlog={backlog} onOpenQueue={() => goGlobal('queue')} />,
+      queue: <QueueView kids={kids} onChanged={backlog.refresh} />,
       curriculum: <CurriculumView kids={kids} courseId={route.courseId} lessonId={route.lessonId} />,
       coins: <CoinsRosterView onSelectLearner={(id) => goLearner(id, 'coins')} />,
-      operations: <OperationsView kids={kids} />,
+      // Keyed by the preselected lesson only: a link with a different `?unit=`
+      // is a fresh repair, but picking a child (`?learner=`) must not remount
+      // the page and drop a half-filled form.
+      operations: <OperationsView key={new URLSearchParams(window.location.search).get('unit') ?? ''} kids={kids} />,
     };
     view = views[route.section] ?? views.dashboard;
   }
 
   return (
     /* Grown-up admin: dates, bank ids, reasons. Never Hangul. */
-    <div className="teacher-console-page" data-ime="off">
+    <div className="teacher-console-page" data-ime="off" onClick={onLinkClick}>
       <div className="teacher-console teacher-workspace">
         <header className="teacher-console__header teacher-workspace__topbar">
-          <button type="button" className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
+          <button type="button" ref={menuRef} className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
           <button type="button" className="teacher-workspace__brand" onClick={() => goGlobal('dashboard')}><span>School</span><strong>Teacher</strong></button>
-          <div className="teacher-workspace__context" title={learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}>{learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}</div>
+          <div className="teacher-workspace__context" title={learner ? learner.name : SECTION_LABEL[route.section] ?? 'Session'}>{learner ? learner.name : SECTION_LABEL[route.section] ?? 'Session'}</div>
           {noTeachers ? (
             <div className="teacher-console__no-teachers">{configured ? 'Configured teachers do not resolve to the roster.' : 'No teachers configured in school.yml.'}</div>
           ) : (
@@ -191,9 +234,12 @@ function TeacherShell({ PianoProgramsPanel }) {
             <nav className="teacher-workspace__global" aria-label="Workspace">
               {GLOBAL_NAV.map((item) => (
                 <button key={item.id} type="button" aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>
-                  <span>{item.label}</span>{item.id === 'queue' && backlog > 0 && <b aria-label={`${backlog} items waiting`}>{backlog}</b>}
+                  <span>{item.label}</span>{item.id === 'dashboard' && backlog.total > 0 && <b aria-label={`${backlog.total} items waiting`}>{backlog.total}</b>}
                 </button>
               ))}
+              <button type="button" className="teacher-workspace__log-book" data-from="rail" onClick={openLogBook}>
+                <span>Log a book</span>
+              </button>
             </nav>
             <div className="teacher-workspace__rail-label">Students</div>
             <nav className="teacher-workspace__students" aria-label="Students">
@@ -207,16 +253,11 @@ function TeacherShell({ PianoProgramsPanel }) {
           {railOpen && <button type="button" className="teacher-workspace__scrim" aria-label="Close navigation" onClick={() => setRailOpen(false)} />}
 
           <div className="teacher-workspace__main">
-            {(shellWarnings.roster || shellWarnings.backlog) && (
+            {(shellWarnings.roster || backlog.failed) && (
               <div className="teacher-workspace__alerts" role="status">
                 {shellWarnings.roster && <span>Student roster unavailable. Navigation may be incomplete.</span>}
-                {shellWarnings.backlog && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
+                {backlog.failed && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
               </div>
-            )}
-            {learner && route.kind !== 'session' && (
-              <nav className="teacher-workspace__learner-nav" aria-label={`${learner.name} workspace`}>
-                {LEARNER_NAV.map((item) => <button key={item.id} type="button" aria-current={route.section === item.id ? 'page' : undefined} onClick={() => goLearner(learner.id, item.id)}>{item.label}</button>)}
-              </nav>
             )}
             <main className="teacher-console__body" id="teacher-main">
               {!learner && route.kind === 'learner' ? (
@@ -229,8 +270,10 @@ function TeacherShell({ PianoProgramsPanel }) {
         </div>
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
-          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog > 0 && <b>{backlog}</b>}</button>)}
+          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'dashboard' && backlog.total > 0 && <b>{backlog.total}</b>}</button>)}
+          <button type="button" data-from="tab-bar" onClick={openLogBook}>Log book</button>
         </nav>
+        <LogBookSheet open={logBookOpen} onClose={() => setLogBookOpen(false)} returnFocusRef={logBookOpenerRef} />
         <PinPrompt />
         <ProfilePicker open={pickerOpen} users={teachers} activeId={currentTeacher?.id} onPick={claim} onDismiss={closePicker} timeoutMs={600000} title="Who’s teaching?" />
       </div>

@@ -143,6 +143,8 @@ function sendFingerprintOutcome(res, outcome) {
  * @param {Object} config.fitnessContentService - Semantic content/config facade
  * @param {Object} config.fitnessHardwareService - Semantic room-hardware facade
  * @param {Object} [config.garageHumanActivity] - Garage TV automatic shutdown guard
+ * @param {Object} [config.presenceGate] - PresenceGateService (is the supervising adult home?)
+ * @param {Object} [config.garageSpeakerHealth] - Records HA's garage speaker recovery steps (record())
  * @param {Object} config.fitnessWebhookService - Semantic provider-event facade
  * @param {Object} [config.stravaSyncHealth] - Strava sync-health monitor (report())
  * @param {Object} [config.fitnessConfigService] - FitnessConfigService for config + playlist enrichment
@@ -159,6 +161,7 @@ function sendFingerprintOutcome(res, outcome) {
  * @param {Object} [config.sessionLockService] - SessionLockService (constructed at composition root)
  * @param {Object} [config.simulationService] - FitnessSimulationService (constructed at composition root)
  * @param {Object} [config.querySessions] - QuerySessions use case (defaults to one wired from sessionService)
+ * @param {Object} [config.queryEpisodeHistory] - QueryEpisodeHistory use case (per-episode rider history)
  * @param {Object} [config.workoutCatalog] - Semantic workout catalog service
  * @param {Object} [config.saveWorkout] - SaveWorkout use case (validates slugs before persisting)
  * @param {Object} [config.logStrengthRun] - LogStrengthRun use case (writes the session's strength block)
@@ -175,6 +178,8 @@ export function createFitnessRouter(config) {
     fitnessContentService,
     fitnessHardwareService,
     garageHumanActivity = null,
+    garageSpeakerHealth = null,
+    presenceGate = null,
     fitnessWebhookService,
     stravaSyncHealth = null,
     fitnessConfigService,
@@ -188,6 +193,7 @@ export function createFitnessRouter(config) {
     cycleRaceApi = null,
     skylineGliderCourses = null,
     skylineGliderRuns = null,
+    skylineGliderProgress = null,
     // Session lock + simulation supervision are constructed at the composition
     // root and injected here — they must NOT be module-scope in this router
     // (shared-state-across-requests bug).
@@ -195,6 +201,7 @@ export function createFitnessRouter(config) {
     liveSessionAuthority = null,
     simulationService = null,
     querySessions = null,
+    queryEpisodeHistory = null,
     manageAccess = null,
     isScreenshotValidationError = (error) => error?.name === 'ScreenshotValidationError',
     emergencyOperations = null,
@@ -224,6 +231,36 @@ export function createFitnessRouter(config) {
   router.get('/skyline-glider/courses', asyncHandler(async (req, res) => {
     if (!skylineGliderCourses) return res.status(503).json({ error: 'Skyline Glider courses unavailable' });
     return res.json({ courses: skylineGliderCourses.list(req.query.household || defaultHouseholdId) });
+  }));
+
+  // World map for one rider: zones -> acts with locked/open/completed status.
+  // With no rider the map shows the progression a new rider would start from.
+  router.get('/skyline-glider/world', asyncHandler(async (req, res) => {
+    if (!skylineGliderCourses || !skylineGliderProgress) return res.status(503).json({ error: 'Skyline Glider world unavailable' });
+    const householdId = req.query.household || defaultHouseholdId;
+    const world = skylineGliderCourses.world(householdId);
+    const riderId = typeof req.query.rider === 'string' && req.query.rider ? req.query.rider : null;
+    try {
+      return res.json({ riderId, ...await skylineGliderProgress.worldFor(world, riderId, householdId) });
+    } catch (error) {
+      if (error?.code === 'INVALID_RIDER') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  // Admin skip-ahead. The browser collects the admin fingerprint before calling.
+  router.post('/skyline-glider/progress/:riderId/unlock', asyncHandler(async (req, res) => {
+    if (!skylineGliderCourses || !skylineGliderProgress) return res.status(503).json({ error: 'Skyline Glider world unavailable' });
+    const householdId = req.body?.household || defaultHouseholdId;
+    const actId = req.body?.actId;
+    if (!skylineGliderCourses.list(householdId).some((act) => act.id === actId)) return res.status(404).json({ error: 'act not found' });
+    try {
+      const progress = await skylineGliderProgress.unlock(req.params.riderId, actId, req.body?.unlockedBy || null, householdId);
+      return res.json({ progress });
+    } catch (error) {
+      if (error?.code === 'INVALID_RIDER') return res.status(400).json({ error: error.message });
+      throw error;
+    }
   }));
 
   router.post('/skyline-glider/runs', asyncHandler(async (req, res) => {
@@ -267,6 +304,14 @@ export function createFitnessRouter(config) {
     return res.status(202).json({ accepted: true });
   });
 
+  // Presence gate: is the supervising adult home? Off (no HA read) unless the
+  // household fitness config enables `presence_gate`. The service fails closed.
+  router.get('/presence', asyncHandler(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!presenceGate) return res.json({ enabled: false });
+    return res.json(await presenceGate.status());
+  }));
+
   router.post('/garage-human-activity', asyncHandler(async (req, res) => {
     const { deviceId, emulationOpen, hrSessionActive } = req.body ?? {};
     if (deviceId !== 'garage-tv' || typeof emulationOpen !== 'boolean' || typeof hrSessionActive !== 'boolean') {
@@ -277,6 +322,15 @@ export function createFitnessRouter(config) {
     if (!result.ok) return res.status(503).json({ error: result.reason });
     return res.json(result);
   }));
+
+  // Home Assistant reports each step of its garage speaker recovery
+  // (dropout / power_cycle / recovered / gave_up) so it reaches the log store.
+  router.post('/garage-speaker/events', (req, res) => {
+    if (!garageSpeakerHealth) return res.status(503).json({ error: 'garage speaker health unavailable' });
+    const result = garageSpeakerHealth.record(req.body, req.query.household || defaultHouseholdId);
+    if (!result.ok) return res.status(400).json({ error: result.reason });
+    return res.status(202).json({ accepted: true, event: result.event, sessionId: result.sessionId });
+  });
 
   // Resolve the default household id ONCE — handlers read `req.query.household ||
   // defaultHouseholdId` rather than reloading configuration in the API layer.
@@ -329,9 +383,8 @@ export function createFitnessRouter(config) {
     }
 
     const { id } = req.params;
-    const householdId = req.query.household || defaultHouseholdId;
 
-    const result = await fitnessPlayableService.getPlayableEpisodes(id, householdId);
+    const result = await fitnessPlayableService.getPlayableEpisodes(id);
 
     res.json(presentPublicResources({
       id: result.compoundId,
@@ -432,6 +485,18 @@ export function createFitnessRouter(config) {
       return res.status(400).json({ error: 'Either date or since query param required (YYYY-MM-DD)' });
     }
     return res.json(body);
+  }));
+
+  /**
+   * GET /api/fitness/sessions/episode-history?episodes=plex:1,plex:2
+   * Sessions that played each episode, newest first, with each rider's minutes,
+   * rings and guest flag. Episodes with no sessions are omitted.
+   */
+  router.get('/sessions/episode-history', asyncHandler(async (req, res) => {
+    if (!queryEpisodeHistory) return res.status(503).json({ error: 'episode history unavailable' });
+    const episodeIds = String(req.query.episodes || '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (episodeIds.length === 0) return res.status(400).json({ error: 'episodes query param required' });
+    return res.json(await queryEpisodeHistory.execute({ episodeIds, household: req.query.household }));
   }));
 
   /**
@@ -1110,6 +1175,24 @@ export function createFitnessRouter(config) {
     const householdId = req.query.householdId || req.body?.householdId;
     const result = await fitnessHardwareService.dance('bpm', householdId, req.body?.bpm);
     return res.json(result);
+  }));
+
+  /**
+   * Ambience — POST /ambience/:id/{start,stop}. Runs the HA script named by the
+   * `ambience` nav item with that target.id (never a client-chosen entity).
+   */
+  const ambienceAction = (action) => asyncHandler(async (req, res) => {
+    const householdId = req.query.householdId || req.body?.householdId;
+    const result = await fitnessHardwareService.ambience(action, householdId, req.params.id);
+    return res.status(result?.reason === 'unknown_ambience' ? 404 : 200).json(result);
+  });
+  router.post('/ambience/:id/start', ambienceAction('start'));
+  router.post('/ambience/:id/stop', ambienceAction('stop'));
+  router.post('/ambience/:id/effect/:effectId', asyncHandler(async (req, res) => {
+    const householdId = req.query.householdId || req.body?.householdId;
+    const result = await fitnessHardwareService.ambienceEffect(householdId, req.params.id, req.params.effectId);
+    const notFound = result?.reason === 'unknown_ambience' || result?.reason === 'unknown_effect';
+    return res.status(notFound ? 404 : 200).json(result);
   }));
 
   // =============================================================================

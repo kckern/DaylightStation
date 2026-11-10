@@ -128,15 +128,136 @@ reading. A scan that lands then is claimed for that child at once — no corner
 card, no trip home, no second "who's reading?" — and the shelf reopens on that
 book. On 2026-09-30 a learner did exactly what the add screen asked; the scan
 became a corner card, "Open it" sent him home, and he had to pick himself again.
-`SchoolApp` passes the open shelf's learner to `BookScanEntry` as
-`scopeLearnerId`; `useBookScanEntry` claims once per scan when its lookup
-settles (logging `scan.scoped-claim`), and only a failed claim is drawn. The
-shelf is keyed on the scan's `intentId`, because it seeds a scanned entry once
-per mount. Only while the shelf is ASKING for a barcode — its shelf view, the
-add flow's barcode step, a finished book's "scan its barcode" — does it report
-`onScanReadyChange(true)`. Mid-entry (cover, where, page, when, an update, a
-save in flight) a scan gets the ordinary corner offer instead, because the
-remount it causes would throw the child's half-entered book away.
+`SchoolApp` passes two things to `BookScanEntry`: `shelfLearnerId`, whose
+shelf is OPEN, and `scopeLearnerId`, set only while that shelf is ASKING for a
+barcode — its shelf view, the add flow's barcode step, a finished book's "scan
+its barcode" (`onScanReadyChange(true)`). `useBookScanEntry` claims once per
+scan when its lookup settles and the scope is set (logging `scan.scoped-claim`
+with the `isbn13`), and only a failed claim is drawn. Mid-entry (cover, where,
+page, when, an update, a save in flight) the scope drops; a scan that lands
+then simply waits, and is claimed the moment the shelf is scan-ready again.
+The pile stands aside for the whole time the shelf is open (`BookPile` is
+handed `shelfLearnerId`), so it can never file that scan to someone else.
+
+**Only a scan waiting when the shelf FIRST opened is left to the pile** — it is
+most likely another child's stack. That is keyed on `shelfLearnerId` changing,
+never on the scope: on 2026-11-05 a child scanned four books in seven seconds
+and two of them vanished, because the scope went null → learner every time the
+shelf left and re-entered its scan-ready view, and each return marked whatever
+had arrived meanwhile as "already waiting". A skip by this guard logs
+`scan.scoped-claim-skipped {reason: waiting-before-shelf-opened, isbn13}`
+(debug). A claim that the server granted after the shelf stopped being
+scan-ready is still delivered while that shelf is open: once claimed, the scan
+is no longer pending anywhere, so dropping the answer lost the book outright.
+
+**A claimed scan is handed to the open shelf, not delivered by remounting it.**
+The shelf is mounted once per child (`key={learnerId}`); each claimed scan
+reaches it as `initialBookEntry` carrying its `intentId`, and the fresh grant
+that comes with it is read by later requests without reloading the shelf.
+`useBookShelf` queues each scan once and opens the next one only where a scan
+is an answer: the shelf itself, the barcode pad (empty, or holding only the
+last scanned number after a Back from its cover), or a finished book (the
+"scan its barcode" case). Anywhere else — a pad with hand-typed digits, the cover,
+an update, a save in flight — the book waits (`scan.queued`, debug, with the
+`isbn13`) and opens when that step finishes. Queuing a scan re-arms the 90s idle
+close, like a tap. A fresh save receipt makes the shelf NOT scan-ready for
+`RECEIPT_HOLD_MS` (4s, `receiptHeld`), so the child sees their save land and a
+scan made then stays pending on the server — claimed when the hold lifts, or
+left in the pile if the shelf closes first. (A claimed scan is no longer pending
+or offered by the pile, so a scan claimed and then dropped by a close is lost;
+the receipt window was the easy way to hit that.) A close or unmount with a
+scan still queued logs `school.book-shelf.scan.dropped {isbn13, reason}` at warn. Until 2026-11-05
+the shelf was keyed on the scan's `intentId`: every scan remounted it, showed
+"Getting your shelf…" again, and threw away an Add the child had started 24ms
+before. `scan.seeded` now carries the `isbn13`.
+
+**The shelf says at once that a scan landed** (`ScanStatusChip`, in the
+`ScreenHeader` `status` slot beside Done, so it moves nothing on the shelf). A
+scan the open shelf is about to take — landed after it opened, while it asks
+for a barcode or its claim is in flight — reads `Got it — looking it up` until
+the claim lands (`useBookScanEntry` `shelfScan`, reported up through
+`BookScanEntry` `onShelfScan`). Books still behind the one on screen read
+`1 more book waiting` / `{n} more books waiting`: the pile's unfiled cards
+scanned since the shelf opened (`BookPile` `onShelfCards`; the pile itself is
+hidden while a shelf is open), minus the one being acknowledged and any already
+handed to the shelf, plus claimed scans queued in `entryQueue` (`queuedScans`).
+On the Portal the waiting scans are a queue the shelf drains **first in, first
+out**: after each step (and a receipt's hold) the shelf claims the oldest one,
+so four scans during one step open one by one and the chip counts down
+`3 → 2 → 1 → 0`. Nothing is superseded by a later scan or by a claim there
+(`PrepareBookScan` `pile: true`; see reading-shelf.md, "An open shelf wins").
+`GET /school/book-scans/pending` carries the whole `queue` beside the head
+`intent`, and the panel walks it past what it must not take — a scan already
+waiting when the shelf opened, an unreadable barcode or failed lookup, a scoped
+claim that already failed — so none of them holds up the books behind it.
+A card with no live intent left (dismissed, expired — the server says so when
+an intent expires — or evicted from the bounded store; the pile view carries
+`intentId` and `superseded` per card) is listed under the chip by title or ISBN
+with `scan it again to open it`. A rescan gives the card a live intent at once: the 10 s
+burst window absorbs a repeat only while its twin card's intent is still live.
+A scan the chip already showed as waiting — counted while the shelf was NOT
+asking for a barcode (mid-step or inside a receipt's hold) — logs no
+`scan.acknowledged` when the shelf later claims it. On a scan-ready shelf the
+pile read can beat the pending read by a round trip; that card is the scan
+about to be acknowledged, not a waiting one, and is still acknowledged. The
+book opening on a hand-off is never counted as waiting. A receipt is not replaced by the queue during its hold; the count sits
+beside it. Logs: `school.book-shelf.scan.acknowledged {screenId,
+msSinceReceived}` once per scan on the first "Got it", and
+`school.book-shelf.scan.visible {screenId, msSinceReceived, queued}` when the
+book is on screen. Both measure the panel clock against the server's
+`receivedAt`, so `msSinceReceived` includes any client/server clock skew.
+`queued: true` marks a scan that WAITED before it opened — on the server while
+the chip counted it (it landed mid-step), or in the shelf's own `entryQueue`
+behind a step — so its `msSinceReceived` holds the whole step and receipt hold
+(5 s and more), not the scan's latency. Those are exactly the scans that log no
+`scan.acknowledged`. The latency query below leaves them out. (The Portal never
+opens a shelf from a face scan, so no face-choosing time is in the figure.)
+
+**Scan intake rules** (`PrepareBookScan.receive`, before a scan becomes a card):
+
+- *Run-together codes are split.* A 26-digit code whose first and last 13 digits
+  are both valid ISBN-13s is two scans: each half goes through intake on its
+  own and `school.book-scan.split {screenId, codes}` is logged (info). Any other
+  malformed code is still one `school.book-scan.rejected`.
+- *Bursts are absorbed, but only while there is something to absorb into.* A
+  reader that double-fires at a book is counted as one for 10 s per screen
+  (`BURST_WINDOW_MS`, keyed on screen and ISBN); the repeat logs
+  `school.book-scan.burst-duplicate {screenId, isbn13, msSinceFirst}` (debug)
+  and coalesces into the live intent. The window applies only while the earlier
+  scan's card still has a live intent. Once it is dismissed, expired or evicted
+  (or, on a screen without a pile, superseded), a rescan is the child following the chip's "scan it again to open
+  it" and makes a new intent at once.
+
+**Timing queries** (log store; stats syntax is `| stats by (...)` /
+`| stats <fn>() as name`, see CLAUDE.md "Reading Logs"):
+
+Debug events — `school.book-scan.burst-duplicate`, `school.book-shelf.scan.queued`,
+`school.book-shelf.scan.scoped-claim-skipped` — never reach the store while the
+backend and panels log at info (the production default); raise the log level
+to see them. The queries below use info events only.
+
+```
+# Scan to book on screen (p50 / p95, ms) — scans that waited mid-step excluded
+_msg:"school.book-shelf.scan.visible" AND _time:7d AND NOT data.queued:true
+  | stats quantile(0.5, "data.msSinceReceived") as p50, quantile(0.95, "data.msSinceReceived") as p95, count() as n
+
+# Scan to "Got it" (the acknowledgement)
+_msg:"school.book-shelf.scan.acknowledged" AND _time:7d
+  | stats quantile(0.5, "data.msSinceReceived") as p50, quantile(0.95, "data.msSinceReceived") as p95
+
+# Cover lookup time, by winning source
+_msg:"books.cover.found" AND _time:7d
+  | stats by ("data.source") quantile(0.5, "data.elapsedMs") as p50, quantile(0.95, "data.elapsedMs") as p95, count() as n
+
+# Split scans
+_msg:"school.book-scan.split" AND _time:7d
+  | stats count() as n
+
+# Absorbed repeats (a double-fire or a repeat scan of a book already in the
+# session; burst-duplicate itself is debug and not in the store)
+_msg:"school.book-pile.card-added" AND data.duplicate:true AND _time:7d
+  | stats count() as n
+```
 
 **The panel door is the mirror of a scan.** A reading icon beside the day board
 asks who is reading, takes one tap on a face, and opens that child's shelf at
@@ -152,6 +273,11 @@ type a number and save a page, short enough that a grant left behind on a
 hallway screen is worth nothing by the time anyone finds it. The other bound is
 the roster: the server, not the client, decides that the learner named is one
 of today's.
+
+The coin bank has a door of the same kind (the coin cell on the board,
+`BankDoor`, `OpenBankAtPanel`): the same roster and panel checks, but no grant.
+The bank read is unauthenticated in slice 1, so that door is the roster check
+plus the face tap and nothing more. See the bank screen in the School README.
 
 The door stands wherever the School panel does, the browser mount included —
 the same place the printed-code keypad already opens a shelf. It briefly also
@@ -238,6 +364,20 @@ What it changes:
 The shelf read carries `entry: {manual}` so the panel and the server read the
 same flag. The flag is read per request from the in-memory config, so flipping
 it needs a config reload or restart, not a rebuild.
+
+**Waking the Portal for a scan.** Every scan asks the Portal to wake
+(`wakeScreenForBroadcast`: power on, then Fully Kiosk to the foreground).
+`PrepareBookScan` runs one wake per screen at a time: scans that arrive while a
+wake is in flight share it. After a failed wake, scans for that screen within
+10 seconds do not wake again; the panel tells the child "The screen is waking
+up — wait a moment, then scan again." (distinct from the "could not wake"
+message the failed scan itself shows) and the scan logs `school.book-scan.wake-skipped {screenId, reason: cooldown}`.
+The failure itself is logged once per wake as `school.book-scan.wake-failed`
+with `step` (`screenOn`/`toForeground` from the kiosk adapter, or `power`,
+`foreground`, `wake-threw`), `power` and `foreground` (each `{ok, step?,
+error?}`), and `error`, credential-shaped text redacted. Before 2026-10-19 the
+line carried only `screenId`, and on 10/18 seven scans in about five seconds
+fired seven wakes that all failed with no recorded cause.
 
 ### What the shelf looks like
 
@@ -374,13 +514,68 @@ one of the detail's bands — it makes a reading that does not exist yet, so it
 carries no `baseRevisionCount` and no reason, and the child is told nothing: a
 book appearing on their shelf is their record getting bigger. It asks exactly
 what the child's own add flow asks — the number off the back, and where they
-are with it (starting, partway with a page, finished on a day) — and answers it
-in ONE call, so a book cannot land on the shelf with half the answer applied.
+are with it (starting, partway with a page, finished on a day — the household's
+study day when none is sent) — and answers it in ONE call, so a book cannot
+land on the shelf with half the answer applied. The form looks the number up as
+soon as it is a book number (a ten-digit one once the grown-up stops typing),
+defaults its tracking mode from the server, offers partway in page mode only,
+and warns, never blocks, when that child already logged the book today or has
+it open. Its request body comes from the same `logBookPlan.js#newReadingBody`
+the "Log a book" sheet uses for a new reading, so the two cannot drift.
 Three things differ from the child's door, all deliberately: the day is stamped
 `source: teacher`, the book's length is resolved server-side rather than typed,
 and the child's backdate floor does not apply, because repairing a record from
 months ago is what this surface is for. The empty shelf offers it, since that is
 when the first book gets added.
+
+**Log a book: one book, several children, today.** The console's global
+navigation (rail and phone bar) opens a sheet over whatever page is showing. It
+scans the barcode first, with the rear camera through the shared
+`frontend/src/lib/camera/useBarcodeScanner.js`; a typed number is always
+offered, and is the only path when the camera is denied. It shows the book (an
+ISBN-only card when the lookup misses: a lookup never blocks a log), then every
+enrolled learner's face, nobody preselected.
+
+`GET /school/teacher/books/:isbn/readers` (`GetBookReaders`, teacher-gated,
+read-only) is the server's view of each learner against that ISBN, read after
+the lookup so the book's length is in the cache:
+
+- `today`: opened, finished or logged on the study day. The face says "Logged
+  today"; choosing it is warned, never blocked.
+- `openReading`, `{id, progressMode, pageCount, revisionCount}`: the face says
+  "Reading now", and a check-in or finish goes ON that reading, never into a
+  second one. A set-aside reading is not open; the sheet starts a new one beside
+  it.
+- `finishedTodayIds`: lets a retry recognise a finish that landed but whose
+  answer was lost.
+- `suggestedMode`, from `bookShelf.mjs#defaultProgressMode`: page from 64 pages,
+  otherwise check, including an unknown length.
+- `unreadable`: that child's shelf could not be read, and their face is
+  disabled.
+
+What happened is one of **Finished today** (the default), **Started today**, or
+**Partway, page N** (page mode only), with a tracking toggle defaulted from
+`suggestedMode` that applies to new readings only. Saving is one existing
+per-child verb per child, never a bulk endpoint, all inside one teacher write:
+`POST …/reading` for a new reading (a finish sends no day and lands on the
+study day), or `POST …/:readingId/entries` then `PATCH …/:readingId` for an
+open one. Each child gets a ✓ or ✗ and a Retry that resends only them:
+
+- Every child has its own idempotency key. A new choice after a clear refusal
+  mints a new one; after an unknown outcome (no answer, a timeout, a 5xx) the
+  child is held to the first request and key, because it may have landed.
+- **An entry key replays, it does not repeat.** The same key with the same day
+  and amount appends no second revision and serves the revision count as it
+  stood right after the original write, so the finish that follows carries the
+  right base. The same key with different details is refused,
+  `409 IDEMPOTENCY_KEY_REUSED`.
+- A retry of an open reading re-reads the readers first. A finish that already
+  landed shows ✓ and sends nothing; a reading that changed underneath is said
+  on that face and nothing is sent.
+
+What the existing verbs cannot record without inventing a number ("started" on
+an open page-mode reading, anything but a finish on a minutes-mode one) is
+refused on that face by name.
 
 **An unreadable shelf shows a named error and no edit controls.** A damaged
 year of a child's evidence presented as "no books yet" invites a grown-up to
@@ -426,17 +621,20 @@ different job, and it is [`reading-shelf.md`](reading-shelf.md).
 
 | Piece | Path |
 |---|---|
-| Domain: projection, obligation, selection | `__backend/src/2_domains/school/bookShelf.mjs`, `bookLog.mjs` |
-| Store (v1 read, v2 write) | `__backend/src/1_adapters/persistence/yaml/YamlBookLogStore.mjs` |
-| Child use cases | `3_applications/school/usecases/{GetBookShelf,OpenBookShelfItem,RecordBookProgress}.mjs` |
-| Teacher use cases | `3_applications/school/usecases/teacher/` |
-| Agenda card | `2_domains/school/documents/receipts.mjs`, `usecases/BuildAgenda.mjs` |
-| Book resolution | `3_applications/books/ResolveBook.mjs`, `1_adapters/books/` |
-| Child panel | `frontend/src/modules/School/books/` |
-| Teacher workspace | `frontend/src/modules/School/teacher/panels/ReadingShelfPanel.jsx` |
-| HTTP | `4_api/v1/routers/{books,schoolBooks,school.teacherReading}.mjs` |
-| Scan-only gate | `3_applications/school/BookEntryPolicy.mjs`, pass in `usecases/PrepareBookScan.mjs` |
-| CLI | `cli/school/booklog.cli.mjs` |
+| Domain: projection, obligation, selection, default mode | `__app_modules/learning/school/server/domain/bookShelf.mjs`, `bookLog.mjs` |
+| Store (v1 read, v2 write) | `__app_modules/learning/school/server/adapters/persistence/YamlBookLogStore.mjs` |
+| Child use cases | `__app_modules/learning/school/server/application/usecases/{GetBookShelf,OpenBookShelfItem,RecordBookProgress}.mjs` |
+| Teacher use cases | `__app_modules/learning/school/server/application/usecases/teacher/` |
+| Readers of one book | `__app_modules/learning/school/server/application/usecases/teacher/GetBookReaders.mjs` |
+| Agenda card | `__app_modules/learning/school/server/domain/documents/receipts.mjs`, `application/usecases/BuildAgenda.mjs` |
+| Book resolution | `__capabilities/book-catalog/server/application/ResolveBook.mjs`, `server/adapters/` |
+| Child panel | `__app_modules/learning/school/browser/books/` |
+| Teacher workspace | `__app_modules/learning/school/browser/teacher/panels/ReadingShelfPanel.jsx` |
+| Quick log | `__app_modules/learning/school/browser/teacher/panels/LogBookSheet.jsx`, `logBookPlan.js`; `__app_modules/learning/school/browser/teacher/useBookFacts.js` |
+| Barcode camera | `frontend/src/lib/camera/useBarcodeScanner.js` |
+| HTTP | `__capabilities/book-catalog/server/api/books.mjs`; `__app_modules/learning/school/server/api/{schoolBooks,school.teacherReading}.mjs` |
+| Scan-only gate | `__app_modules/learning/school/server/application/BookEntryPolicy.mjs`, pass in `application/usecases/PrepareBookScan.mjs` |
+| CLI | `cli/school/booklog.cli.mjs` (entry), `__app_modules/learning/school/cli/booklog.cli.mjs` |
 
 ## Related
 

@@ -30,7 +30,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 import { decodeStoredSeries, encodeStoredSeries } from "./seriesWire.mjs";
-import { planHeal } from "../../server/domain/services/SessionIdentityHealer.mjs";
+import { planHeal, isKnownUserId } from "../../server/domain/services/SessionIdentityHealer.mjs";
 import { repairCumulativeSplits } from "../../server/domain/services/CumulativeSplitRepair.mjs";
 import { isCumulativeSeriesKey, getLastNonNull, computeHrStats } from "./fitnessSessionSummary.mjs";
 import { parseArgs, bool, str } from "./argv.mjs";
@@ -119,9 +119,13 @@ function addCumulativeCells(fromArr, toArr, len) {
  *       is a REAL person whose recording continues under "to" after a device
  *       swap — the two partial totals must be SUMMED, not maxed, or real
  *       coins earned after the swap are lost (see `addCumulativeCells`).
+ *     - 'append' (manual `--reassign`): like 'add', but in TIME order — the
+ *       side whose series starts first is the one carried forward.
  *   Non-cumulative keys (`:hr`/`:zone`) always use the non-null-union /
  *   prefer-"to" rule (`mergeCell`) regardless of strategy.
  */
+const firstNonNullIndex = (arr) => arr.findIndex((v) => v != null);
+
 export function foldOccupantSeries(decoded, fromId, toId, { cumulativeStrategy = 'max' } = {}) {
   const prefix = `${fromId}:`;
   const fromKeys = Object.keys(decoded).filter((k) => k.startsWith(prefix));
@@ -135,6 +139,13 @@ export function foldOccupantSeries(decoded, fromId, toId, { cumulativeStrategy =
     let merged;
     if (cumulativeStrategy === 'add' && isCumulativeSeriesKey(toKey)) {
       merged = addCumulativeCells(fromArr, toArr, len);
+    } else if (cumulativeStrategy === 'append' && isCumulativeSeriesKey(toKey)) {
+      // Manual reassignment: the same person's two stretches, in TIME order —
+      // whichever side started first carries its total into the later one.
+      const fromFirst = firstNonNullIndex(fromArr);
+      const toFirst = firstNonNullIndex(toArr);
+      const fromIsEarlier = toFirst < 0 || (fromFirst >= 0 && fromFirst <= toFirst);
+      merged = fromIsEarlier ? addCumulativeCells(fromArr, toArr, len) : addCumulativeCells(toArr, fromArr, len);
     } else {
       merged = new Array(len);
       for (let i = 0; i < len; i++) {
@@ -460,7 +471,55 @@ export async function invalidateIndexDay(date, baseDir) {
  *   out: (Object|null)
  * }>}
  */
-export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
+/**
+ * Parse `--reassign=FROM:TO[,FROM:TO...]` into [{ from, to }].
+ * @param {string|undefined} value
+ * @returns {Array<{from:string,to:string}>}
+ */
+export function parseReassignArg(value) {
+  if (value == null || value === '') return [];
+  if (typeof value !== 'string') throw new Error('--reassign needs FROM:TO (e.g. --reassign=guest_10266:<userId>)');
+  return value.split(',').map((pair) => {
+    const [from, to, extra] = pair.split(':').map((t) => t?.trim());
+    if (!from || !to || extra !== undefined || from === to) {
+      throw new Error(`--reassign: "${pair}" must be FROM:TO with two different ids`);
+    }
+    return { from, to };
+  });
+}
+
+/**
+ * Fold an operator's explicit reassignments into a heal plan: a rider who rode
+ * a spare strap as a generic Guest (no picker option for them at the time)
+ * gets the ride back. Each one is a merge FROM -> TO (time-ordered additive
+ * fold), FROM leaves the participants, TO is kept. Mutates and returns `plan`.
+ */
+export function addReassignmentsToPlan(plan, obj, reassign = []) {
+  if (!reassign.length) return plan;
+  const listed = obj?.participants || {};
+  const seriesIds = new Set(Object.keys(obj?.timeline?.series || {}).map((k) => k.split(':')[0]));
+  const removed = new Set(plan.removedOccupants);
+  plan.reassigns = [];
+  for (const { from, to } of reassign) {
+    if (!listed[from] && !seriesIds.has(from)) {
+      throw new Error(`--reassign: "${from}" is not a participant of this session`);
+    }
+    if (!isKnownUserId(to)) {
+      throw new Error(`--reassign: "${to}" is not a household user id`);
+    }
+    plan.merges = plan.merges.filter((m) => m.from !== from);
+    plan.transfers = plan.transfers.filter((t) => t.from !== from);
+    plan.merges.push({ from, to, reason: 'manual-reassign' });
+    plan.reassigns.push({ from, to });
+    removed.add(from);
+    removed.delete(to);
+  }
+  plan.removedOccupants = [...removed].sort();
+  plan.needsHeal = true;
+  return plan;
+}
+
+export async function heal(date, sessionId, { apply = false, baseDir, reassign = [] } = {}) {
   if (!isValidDate(date)) {
     throw new Error(`<date> must be YYYY-MM-DD, got: ${date}`);
   }
@@ -481,7 +540,8 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
     throw new Error(`Cannot parse YAML at ${file}`);
   }
 
-  const plan = planHeal(obj);
+  const plan = addReassignmentsToPlan(planHeal(obj), obj, reassign);
+  const reassigned = new Map((plan.reassigns || []).map(({ from, to }) => [from, to]));
 
   if (!plan.needsHeal || !apply) {
     return { file, plan, changed: false, out: null };
@@ -511,8 +571,8 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
   for (const { from, to } of plan.transfers) {
     foldOccupantSeries(decoded, from, to, { cumulativeStrategy: 'max' });
   }
-  for (const { from, to } of plan.merges) {
-    foldOccupantSeries(decoded, from, to, { cumulativeStrategy: 'add' });
+  for (const { from, to, reason } of plan.merges) {
+    foldOccupantSeries(decoded, from, to, { cumulativeStrategy: reason === 'manual-reassign' ? 'append' : 'add' });
   }
 
   // Defensive: drop any stray removed-occupant series keys the fold loop
@@ -526,6 +586,12 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
   }
 
   let participants = { ...(obj.participants || {}) };
+  // A reassigned guest's entry becomes the household rider's (their strap
+  // stays recorded); guest-only fields go — the directory re-flags them.
+  for (const [from, to] of reassigned) {
+    const { is_guest: _g, guest_profile: _p, base_user: _b, display_name: _n, ...carried } = participants[from] || {};
+    participants[to] = { ...carried, ...(participants[to] || {}) };
+  }
   for (const id of plan.removedOccupants) delete participants[id];
   participants = applyParticipantDirectory(participants, await loadParticipantDirectory(baseDir));
 
@@ -536,7 +602,11 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
   // the session even though its participants/summary are already clean).
   const removedSet = new Set(plan.removedOccupants);
   const entities = Array.isArray(obj.entities)
-    ? obj.entities.filter((e) => !removedSet.has(e?.profileId))
+    ? obj.entities
+      .map((e) => (reassigned.has(e?.profileId)
+        ? { ...e, profileId: reassigned.get(e.profileId), relabeledFrom: [...(e.relabeledFrom || []), e.profileId] }
+        : e))
+      .filter((e) => !removedSet.has(e?.profileId))
     : obj.entities;
 
   const previousSummary = obj.summary || {};
@@ -578,9 +648,13 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
 export const spec = {
   name: 'heal',
   summary: 'fold ghost occupants into the participant who did the work',
-  usage: 'fitness session heal <date> <sessionId> [--apply]\n         fitness session heal --sweep [--since=Nd] [--apply]',
+  usage: 'fitness session heal <date> <sessionId> [--reassign=FROM:TO] [--apply]\n         fitness session heal --sweep [--since=Nd] [--apply]',
   details: `  --sweep        Scan every stored session instead of one
   --since=Nd     With --sweep: only date dirs within the last N days
+  --reassign=FROM:TO[,FROM:TO]
+                 Single session only: give FROM's ride (series, strap,
+                 entity) to household user TO — e.g. a rider who rode a
+                 spare strap as a generic guest_<deviceId>
   --apply        Write the healed YAML (default: dry run)
 
   Env: HEAL_SWEEP_NOW pins the reference "now" for --since.`,
@@ -597,6 +671,7 @@ export async function run(argv, ctx) {
   const baseDir = ctx.baseDir;
 
   if (bool(flags, 'sweep')) {
+    if (flags.reassign !== undefined) throw new CliError('--reassign works on one session, not with --sweep');
     let sinceDays;
     const since = str(flags, 'since');
     if (since !== undefined) {
@@ -641,9 +716,16 @@ export async function run(argv, ctx) {
   if (!isValidDate(date)) throw new CliError(`<date> must be YYYY-MM-DD, got: ${date}`);
   if (!isValidSessionId(sessionId)) throw new CliError(`<sessionId> must be 14 digits, got: ${sessionId}`);
 
+  let reassign;
+  try {
+    reassign = parseReassignArg(flags.reassign === true ? true : str(flags, 'reassign'));
+  } catch (e) {
+    throw new CliError(e.message);
+  }
+
   let result;
   try {
-    result = await heal(date, sessionId, { apply, baseDir });
+    result = await heal(date, sessionId, { apply, baseDir, reassign });
   } catch (e) {
     throw new CliError(e.message);
   }

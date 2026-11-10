@@ -2125,7 +2125,7 @@ You now have three options for a logging auditor agent:
 
 **Related code:** `__backend/src/4_api/v1/routers/scheduling.mjs`, `__backend/src/0_system/scheduling/TaskRegistry.mjs`, `data/system/jobs.yml`
 
-The backend scheduler runs individual jobs defined in `data/system/jobs.yml`. Runtime state is stored in `data/system/state/cron-runtime.yml` with per-job keys (`last_run`, `nextRun`, `status`, `duration_ms`).
+The backend scheduler runs individual jobs defined in `data/system/jobs.yml`. Runtime state is stored in `data/system/scheduling/cron-runtime.yml` with per-job keys (`last_run`, `nextRun`, `status`, `duration_ms`).
 
 **API Endpoints:**
 - `GET /cron/status` - View all jobs and their schedules

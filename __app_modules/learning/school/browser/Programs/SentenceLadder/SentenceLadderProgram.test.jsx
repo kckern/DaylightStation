@@ -281,7 +281,7 @@ describe('identity', () => {
 describe('the day', () => {
   it('shows the day number and pacing', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], day: 7, dailyLimit: 10 }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     expect(await screen.findByText(/Day 7/)).toBeTruthy();
     expect(screen.getByText(/10 \/ day/)).toBeTruthy();
   });
@@ -290,7 +290,7 @@ describe('the day', () => {
     dayMock.mockResolvedValue(dayPayload({
       queue: [entry(1, 'repetition', true), entry(2, 'repetition')],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     // ONE statement of progress: the "1 left" and the bar are gone; the
     // ladder's rung carries the same fact as pips.
     expect(await screen.findByText('1 of 2 steps')).toBeTruthy();
@@ -304,7 +304,7 @@ describe('the day', () => {
     dayMock.mockResolvedValue(dayPayload({
       queue: [entry(1, 'repetition', true), entry(2, 'repetition')], day: 7,
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     await waitFor(() => expect(programLogMock).toHaveBeenCalledWith('progress', {
       corpus: 'glossika-korean', day: 7, done: 1, total: 2,
@@ -318,7 +318,7 @@ describe('the day', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition', true), entry(2, 'dictation'), entry(3, 'dictation')],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText('Dictation')).toBeTruthy();
     const rungs = screen.getByRole('navigation', { name: 'Session modes' }).querySelectorAll('.lang-ladder__step');
@@ -415,7 +415,7 @@ describe('the day', () => {
       missingCreditRungs: ['recording'],
       missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText(/Needs a microphone/)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
@@ -433,7 +433,7 @@ describe('the day', () => {
       missingCreditRungs: ['dictation'],
       missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] } },
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText(/Needs a Korean keyboard/)).toBeTruthy();
     expect(screen.queryByText(/microphone/i)).toBeNull();
@@ -446,7 +446,7 @@ describe('the day', () => {
       missingCreditRungs: ['recording'],
       missingCreditNeeds: { recording: { anyOf: [{ kind: 'microphone' }] } },
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText(/Needs a microphone/)).toBeTruthy();
     expect(screen.queryByText(/keyboard/i)).toBeNull();
@@ -461,7 +461,7 @@ describe('the day', () => {
       // the rung's role, and the requirement object around it is still truthy.
       missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: null }] } },
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText('Not available on this device')).toBeTruthy();
     expect(screen.queryByText(/null/i)).toBeNull();
@@ -525,7 +525,7 @@ describe('the day', () => {
       queue: [entry(1, 'repetition'), entry(2, 'dictation')],
       missingCreditRungs: ['recording'],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     const labels = [...document.querySelectorAll('.lang-ladder__label')].map((el) => el.textContent);
     expect(labels).toEqual(['Repetition', 'Dictation', 'Recording']);
@@ -540,7 +540,7 @@ describe('the day', () => {
         entry(3, 'recording'), entry(4, 'interpretation'),
       ],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     expect(await screen.findByText('English 1')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Dictation/ }));
@@ -556,7 +556,7 @@ describe('the day', () => {
       chain: ['dictation'],
       queue: [entry(1, 'dictation', false, { copyPrompt: true })],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     const input = await screen.findByLabelText('Copy the sentence');
     // One column per syllable of 한국어 1, the live one plus exactly one
@@ -584,7 +584,7 @@ describe('the day', () => {
       chain: ['repetition', 'interpretation'],
       queue: [entry(1, 'repetition'), entry(2, 'recording')],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.queryByText('Recording')).toBeNull();
   });
@@ -594,14 +594,14 @@ describe('the day', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition', true), entry(2, 'dictation')],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     // Dictation's input, not repetition's Play button.
     expect(await screen.findByLabelText(/Type what you hear/i)).toBeTruthy();
   });
 
   it('surfaces a load failure with a retry instead of an empty screen', async () => {
     dayMock.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     expect(await screen.findByText(/Could not load/i)).toBeTruthy();
     expect(screen.getByText('Try again')).toBeTruthy();
   });
@@ -611,7 +611,7 @@ describe('the day', () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [] }));
     render(
       <SentenceLadderProgram
-        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean"
         locked onExit={onExit}
       />,
     );
@@ -633,7 +633,7 @@ describe('the day', () => {
     dayMock.mockResolvedValue(payload);
     render(
       <SentenceLadderProgram
-        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean"
         locked onExit={onExit}
       />,
     );
@@ -654,7 +654,7 @@ describe('the day', () => {
 describe('repetition', () => {
   it('shows both languages and plays on demand', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     expect(await screen.findByText('English 1')).toBeTruthy();
     expect(screen.getByText('한국어 1')).toBeTruthy();
     fireEvent.click(screen.getByText('Play'));
@@ -664,7 +664,7 @@ describe('repetition', () => {
   it('returns to Play when the browser blocks audio', async () => {
     window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.reject(new Error('blocked')));
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     expect(await screen.findByText(/Audio was blocked/i)).toBeTruthy();
@@ -727,7 +727,7 @@ describe('recording', () => {
     dayPayload({ chain: ['recording'], queue: [entry(1, 'recording')], cues }),
   );
   const renderRung = () => render(
-    <SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />,
+    <SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />,
   );
   const pressKey = (key) => fireEvent.keyDown(document.body, { key });
 
@@ -884,7 +884,7 @@ describe('repetition, one sentence at a time', () => {
 
   it('holds the sentence it just played and offers repeat or move on', async () => {
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     const playing = [];
     window.HTMLMediaElement.prototype.play = vi.fn(function play() {
@@ -927,7 +927,7 @@ describe('repetition, one sentence at a time', () => {
   it('moves on only when the child says so — and Next means what it says', async () => {
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     const before = window.HTMLMediaElement.prototype.play.mock.calls.length;
@@ -946,7 +946,7 @@ describe('repetition, one sentence at a time', () => {
     // sound on arrival at a rung — that is the auto-advance this replaced.
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     expect(await screen.findByRole('button', { name: 'Play' })).toBeTruthy();
     await waitFor(() => expect(programLogMock).toHaveBeenCalledWith('day-loaded', expect.anything()));
@@ -957,7 +957,7 @@ describe('repetition, one sentence at a time', () => {
   it('starts an arrived-at sentence once, and logs it once', async () => {
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition'), entry(3, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }, SEQUENCE));
@@ -972,7 +972,7 @@ describe('repetition, one sentence at a time', () => {
     // takes the stage — which is also why the replay control goes with it.
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }, SEQUENCE));
@@ -984,7 +984,7 @@ describe('repetition, one sentence at a time', () => {
   it('replays without climbing the rung twice', async () => {
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Play again' }, SEQUENCE));
@@ -1003,7 +1003,7 @@ describe('repetition, one sentence at a time', () => {
       [entry(1, 'repetition'), entry(2, 'repetition'), entry(3, 'dictation')],
       ['repetition', 'dictation'],
     );
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
@@ -1022,7 +1022,7 @@ describe('repetition, one sentence at a time', () => {
   it('records holding, replaying and moving on as three different things', async () => {
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
     await screen.findByRole('button', { name: 'Play again' }, SEQUENCE);
@@ -1042,7 +1042,7 @@ describe('repetition, one sentence at a time', () => {
     const restoreAudio = holdAudioOpen();
     try {
       dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-      render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+      render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Play' }, SEQUENCE));
       fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
       expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
@@ -1058,7 +1058,7 @@ describe('repetition, one sentence at a time', () => {
 describe('what the store can answer afterwards', () => {
   it('records that a day was ASKED for, not only that one arrived', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], day: 4 }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText(/Day 4/);
 
     // A request that never comes back leaves "Loading…" on the wall and, until
@@ -1075,7 +1075,7 @@ describe('what the store can answer afterwards', () => {
 
   it('records a move to the Review shelf, and says nothing about a tab already open', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
     expect(programStepMock).toHaveBeenCalledWith('tab', {
@@ -1091,7 +1091,7 @@ describe('what the store can answer afterwards', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition', true), entry(2, 'dictation')],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
 
     // At INFO, unlike everything else this rung logs: debug is dropped at
@@ -1109,7 +1109,7 @@ describe('what the store can answer afterwards', () => {
       missingCreditNeeds: { dictation: { anyOf: [{ kind: 'textInput', language: 'KR' }] } },
     }));
     const { rerender } = render(
-      <SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />,
+      <SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />,
     );
     await screen.findByText(/Korean keyboard/);
 
@@ -1118,7 +1118,7 @@ describe('what the store can answer afterwards', () => {
       needs: { dictation: 'textInput:KR' },
     });
     // A rendered STATE, not an event: re-rendering it must not say it again.
-    rerender(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    rerender(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     expect(capabilityLogMock.mock.calls.filter(([d]) => d === 'rung-blocked')).toHaveLength(1);
   });
 
@@ -1150,7 +1150,7 @@ describe('what the store can answer afterwards', () => {
     dayMock.mockResolvedValue(dayPayload({
       queue: [entry(1, 'repetition', false, { practice: true })],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText(/Extra practice/);
     expect(rungLogMock).toHaveBeenCalledWith('practice', { rung: 'repetition', seq: 1 });
   });
@@ -1158,7 +1158,7 @@ describe('what the store can answer afterwards', () => {
   it('records a refused roll — a decline reads exactly like a dead button', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
     rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, reason: 'nothing-left' } });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('Start the next day'));
     await waitFor(() => expect(pacingWarnMock).toHaveBeenCalledWith('roll-refused', {
@@ -1169,7 +1169,7 @@ describe('what the store can answer afterwards', () => {
   it('records a pacing change as from → to, and a failed one as a failure', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], dailyLimit: 5 }));
     pacingMock.mockResolvedValue({ ok: true, status: 200, data: { dailyLimit: 20 } });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('5 / day'));
     fireEvent.click(screen.getByRole('menuitemradio', { name: '20' }));
@@ -1189,7 +1189,7 @@ describe('what the store can answer afterwards', () => {
 
   it('records a capability override with what it changed FROM', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'What this device can do' }));
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Microphone/ }));
@@ -1206,14 +1206,14 @@ describe('what the store can answer afterwards', () => {
 describe('typed rungs', () => {
   it('hides the sentence during dictation — recalling it IS the task', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     expect(screen.queryByText('한국어 1')).toBeNull();
   });
 
   it('SHOWS the sentence during interpretation — rendering meaning is the task', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['interpretation'], queue: [entry(1, 'interpretation')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what it means/i);
     expect(screen.getByText('한국어 1')).toBeTruthy();
   });
@@ -1221,7 +1221,7 @@ describe('typed rungs', () => {
   it('submits the typed answer and re-fetches the day', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
     logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     const input = await screen.findByLabelText(/Type what you hear/i);
     fireEvent.change(input, { target: { value: '한국어 1' } });
@@ -1230,7 +1230,7 @@ describe('typed rungs', () => {
     // `method` rides with every answer now, including this one: a row that
     // says nothing about how it was produced is a row from before the question
     // was asked, and going forward the log says which.
-    await waitFor(() => expect(logMock).toHaveBeenCalledWith('kckern', {
+    await waitFor(() => expect(logMock).toHaveBeenCalledWith('teacher_1', {
       corpus: 'glossika-korean', seq: 1, rung: 'dictation', given: '한국어 1', method: 'typed',
     }, expect.anything(), 'test-grant'));
     // Re-fetched rather than mutating a local copy of the queue.
@@ -1239,7 +1239,7 @@ describe('typed rungs', () => {
 
   it('will not submit an empty answer', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     fireEvent.click(screen.getByText('Submit'));
     expect(logMock).not.toHaveBeenCalled();
@@ -1249,7 +1249,7 @@ describe('typed rungs', () => {
     // Silence here is how a learner loses a session without knowing.
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
     logMock.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     const input = await screen.findByLabelText(/Type what you hear/i);
     fireEvent.change(input, { target: { value: 'x' } });
@@ -1754,13 +1754,13 @@ describe('the reveal', () => {
       chain: ['interpretation'], queue: [entry(1, 'interpretation')],
     }));
     logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     await screen.findByLabelText(/Type what it means/i);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Show answer' })); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
 
-    await waitFor(() => expect(logMock).toHaveBeenCalledWith('kckern', {
+    await waitFor(() => expect(logMock).toHaveBeenCalledWith('teacher_1', {
       corpus: 'glossika-korean', seq: 1, rung: 'interpretation', revealed: true,
     }, expect.anything(), 'test-grant'));
   });
@@ -1839,7 +1839,7 @@ describe('glyph-paced audio', () => {
 describe('day rollover', () => {
   it('offers the next day once everything is done', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     expect(await screen.findByRole('status')).toHaveTextContent(/Day 1 complete.*1 steps are saved.*School progress/i);
   });
 
@@ -1848,7 +1848,7 @@ describe('day rollover', () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
     const view = render(
       <SentenceLadderProgram
-        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean"
         locked onExit={onExit}
       />,
     );
@@ -1861,7 +1861,7 @@ describe('day rollover', () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
     render(
       <SentenceLadderProgram
-        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean"
         locked onExit={onExit}
       />,
     );
@@ -1880,7 +1880,7 @@ describe('day rollover', () => {
   it('says why when there is nothing to move on to, rather than silently doing nothing', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
     rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, day: 1, reason: 'nothing-left' } });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('Start the next day'));
     expect(await screen.findByText(/Every sentence in this course is finished/i)).toBeTruthy();
@@ -1897,7 +1897,7 @@ describe('day rollover', () => {
     rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: true, day: 2, reason: 'early' } });
     render(
       <SentenceLadderProgram
-        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean"
         locked onExit={onExit}
       />,
     );
@@ -1908,7 +1908,7 @@ describe('day rollover', () => {
 
   it('does not offer the next day before a single step — it would be this day again', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText(/0 of 1 steps/);
     expect(screen.queryByRole('button', { name: 'Start the next day' })).toBeNull();
   });
@@ -1917,7 +1917,7 @@ describe('day rollover', () => {
     dayMock.mockResolvedValue(dayPayload({
       queue: [entry(1, 'repetition', true)], missingCreditRungs: ['dictation'],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     expect(await screen.findByRole('button', { name: 'Start the next day' })).toBeTruthy();
   });
 });
@@ -1925,7 +1925,7 @@ describe('day rollover', () => {
 describe('dismissal and dead ends', () => {
   it('closes the pacing menu when tapped away — the only escape on a touch panel', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     fireEvent.click(await screen.findByText('5 / day'));
     expect(screen.getByRole('menuitemradio', { name: '20' })).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Close menu'));
@@ -1941,7 +1941,7 @@ describe('dismissal and dead ends', () => {
 
   it('does not render its own back control — the School shell already has one', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('English 1');
     expect(screen.queryByLabelText('Back')).toBeNull();
   });
@@ -1953,14 +1953,14 @@ describe('dismissal and dead ends', () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
 
     keyboard.present = false;
-    const touch = render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    const touch = render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     expect(screen.queryByText(/Tab plays/)).toBeNull();
     touch.unmount();
 
     keyboard.present = true;
     window.localStorage.clear();
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     // On the control it triggers, and out of that control's accessible name.
     // Asserted through the hint's own node rather than by asking for the
@@ -1977,7 +1977,7 @@ describe('dismissal and dead ends', () => {
     // They used to sit as 34px chips on the bottom edge — inside the Portal's
     // swipe-up zone. They now live behind a deliberate affordance.
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByText('English 1');
     expect(screen.queryByText('This device can type:')).toBeNull();
     fireEvent.click(screen.getByText('Device'));
@@ -2012,7 +2012,7 @@ describe('dismissal and dead ends', () => {
         }],
       },
     });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
     // Read off the shelf's own row, not the page: the ladder rail beside it
@@ -2051,7 +2051,7 @@ describe('dismissal and dead ends', () => {
         }],
       },
     });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
     await screen.findByText('한국어 1');
@@ -2069,7 +2069,7 @@ describe('dismissal and dead ends', () => {
       .mockResolvedValueOnce({
         ok: true, status: 200, data: { corpus: { languages: LANGUAGES }, days: [] },
       });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
     expect(await screen.findByText('Could not load history.')).toBeTruthy();
@@ -2083,11 +2083,11 @@ describe('pacing', () => {
   it('changes the daily intake', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], dailyLimit: 5 }));
     pacingMock.mockResolvedValue({ ok: true, status: 200, data: { dailyLimit: 20 } });
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('5 / day'));
     fireEvent.click(screen.getByRole('menuitemradio', { name: '20' }));
-    await waitFor(() => expect(pacingMock).toHaveBeenCalledWith('kckern', 'glossika-korean', 20, 'test-grant'));
+    await waitFor(() => expect(pacingMock).toHaveBeenCalledWith('teacher_1', 'glossika-korean', 20, 'test-grant'));
   });
 });
 
@@ -2115,7 +2115,7 @@ describe('hands-free', () => {
   it('Space plays, Space moves on, Backspace plays again — on the repetition rung', async () => {
     playsToEnd();
     liveDay([entry(1, 'repetition'), entry(2, 'repetition')]);
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
     await screen.findByRole('button', { name: 'Play' });
     pressKey(' ');
@@ -2134,7 +2134,7 @@ describe('hands-free', () => {
     const restoreAudio = holdAudioOpen();
     try {
       dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-      render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+      render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
       await screen.findByRole('button', { name: 'Play' });
       pressKey(' ');
       screen.getByRole('button', { name: 'Stop' });
@@ -2147,7 +2147,7 @@ describe('hands-free', () => {
 
   it('a typed rung is focused on arrival, and the sentence sounds without a key being touched', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     const input = await screen.findByLabelText(/Type what you hear/i);
     await waitFor(() => expect(document.activeElement).toBe(input));
     await waitFor(() => expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled());
@@ -2159,7 +2159,7 @@ describe('hands-free', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition'), entry(1, 'dictation')],
     }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     await screen.findByRole('button', { name: 'Play' });
 
     pressKey('ArrowDown');
@@ -2177,7 +2177,7 @@ describe('hands-free', () => {
 
   it('Enter on the complete panel starts the next day', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
-    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
     rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: true } });
     await screen.findByRole('button', { name: 'Start the next day' });
     pressKey('Enter');
@@ -2576,7 +2576,7 @@ describe('hearing it again, from any rung, by key or by tap', () => {
     window.URL.revokeObjectURL = vi.fn();
     window.HTMLCanvasElement.prototype.getContext = vi.fn(() => null);
   };
-  const program = () => render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+  const program = () => render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
 
   describe('recording', () => {
     const recordingDay = () => dayMock.mockResolvedValue(
@@ -2956,7 +2956,7 @@ describe('recording in pieces', () => {
   const recordingDay = () => dayMock.mockResolvedValue(
     dayPayload({ chain: ['recording'], queue: [entry(1, 'recording')], cues: ['record'] }),
   );
-  const program = () => render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+  const program = () => render(<SentenceLadderProgram studyGrant="test-grant" userId="teacher_1" corpusId="glossika-korean" />);
   /** Say one piece: the mic is open, `ms` pass, Space stops. */
   const sayPiece = async (ms) => {
     await screen.findByRole('button', { name: 'Stop' });

@@ -25,11 +25,14 @@ export class FilesystemCardLadderRecordings {
     this.#root = path.resolve(rootDir);
     this.#legacyRoot = typeof legacyRootDir === 'string' && legacyRootDir.trim() ? path.resolve(legacyRootDir) : null;
   }
-  #dir(pkg, learnerId, day, wordId) {
-    if (typeof pkg !== 'string' || !ID.test(pkg) || !ID.test(String(learnerId)) || !DAY.test(String(day)) || !ID.test(String(wordId))) return null;
+  #dayDir(pkg, learnerId, day) {
+    if (typeof pkg !== 'string' || !ID.test(pkg) || !ID.test(String(learnerId)) || !DAY.test(String(day))) return null;
     const learnerDir = path.join(this.#root, pkg, learnerId);
     if (this.#legacyRoot && !dirExists(learnerDir)) copyDirectoryOnce(path.join(this.#legacyRoot, pkg, learnerId), learnerDir);
     return path.join(learnerDir, day);
+  }
+  #dir(pkg, learnerId, day, wordId) {
+    return ID.test(String(wordId)) ? this.#dayDir(pkg, learnerId, day) : null;
   }
   #takes(dir, wordId) {
     if (!dirExists(dir)) return [];
@@ -48,6 +51,25 @@ export class FilesystemCardLadderRecordings {
     const file = path.join(dir, `${wordId}-${take}.${ext}`);
     writeBinary(file, buffer);
     return { take, file };
+  }
+  /** Every take kept on `day`, by word then take number: `[{wordId, take, ext}]`. */
+  list({ package: pkg, learnerId, day }) {
+    const dir = this.#dayDir(pkg, learnerId, day);
+    if (!dir || !dirExists(dir)) return [];
+    return listEntries(dir)
+      .map((name) => /^([a-z0-9][a-z0-9_-]{0,63})-(\d+)\.([a-z0-9]+)$/i.exec(name))
+      .filter((match) => match && MIME[match[3]])
+      .map((match) => ({ wordId: match[1], take: Number(match[2]), ext: match[3] }))
+      .sort((a, b) => a.wordId.localeCompare(b.wordId) || a.take - b.take);
+  }
+  /** One take's audio by its number, or null. */
+  open({ package: pkg, learnerId, day, wordId, take }) {
+    if (!Number.isInteger(take) || take < 1) return null;
+    const dir = this.#dir(pkg, learnerId, day, wordId);
+    if (!dir) return null;
+    const found = this.#takes(dir, wordId).find((entry) => entry.n === take);
+    if (!found || !MIME[found.ext]) return null;
+    return { resource: createLocalFileResource(path.join(dir, found.name), { mimeType: MIME[found.ext] }), contentType: MIME[found.ext] };
   }
   latest({ package: pkg, learnerId, day, wordId }) {
     const dir = this.#dir(pkg, learnerId, day, wordId);

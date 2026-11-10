@@ -1,6 +1,6 @@
 /**
- * Shade derivation for the parameterised economy icons (TicketIcon, CoinIcon,
- * GemIcon). Each of those illustrations was drawn in one hue with several
+ * Shade derivation for the parameterised economy icons (TicketIcon, GemIcon, and
+ * CoinIcon's `color` override). Each of those illustrations was drawn in one hue with several
  * fixed tints and shades; a caller passes ONE colour and the icon rebuilds its
  * tint ladder around it, so a ruby, a sapphire and an emerald are the same
  * component with a different `color`.

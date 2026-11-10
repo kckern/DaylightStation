@@ -102,7 +102,7 @@ function attemptPolicyErrors(userId, body) {
  *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
  *   POST   /users/:userId/game-budget/credits                   → idempotently mint earned time for a passed assessment
  */
-export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = null, pianoAttemptStore = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, logger = console }) {
+export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = null, pianoAttemptStore = null, pianoLearnCoachService = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   if (typeof idFactory !== 'function') throw new Error('createPianoRouter: idFactory required');
   if (!producerRecords) throw new Error('createPianoRouter: producerRecords required');
@@ -916,6 +916,16 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
   // scoreKey is a dot-free slug (FileIO appends .yml by sniffing the extension,
   // so a dot would corrupt the filename — same rule as PRODUCER_ID_RE).
   const PRACTICE_KEY_RE = /^[a-z0-9-]{1,120}$/;
+  router.get('/users/:userId/practice/:scoreKey/coach', asyncHandler(async (req, res) => {
+    if (!pianoLearnCoachService) return res.status(501).json({ error: 'Coaching unavailable' });
+    res.json(await pianoLearnCoachService.get(req.params.userId, req.params.scoreKey, {
+      scoreId: req.query.scoreId, fingerprint: req.query.fingerprint,
+    }));
+  }));
+  router.post('/users/:userId/practice/:scoreKey/coach', asyncHandler(async (req, res) => {
+    if (!pianoLearnCoachService) return res.status(501).json({ error: 'Coaching unavailable' });
+    res.json(await pianoLearnCoachService.record(req.params.userId, req.params.scoreKey, req.body));
+  }));
   // Bracket-assignment (out[b] = …) invokes inherited setters, so a JSON body
   // carrying an own key literally named "__proto__" (JSON.parse permits this)
   // would swap out's [[Prototype]] instead of storing a bucket — silently
@@ -972,7 +982,9 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     if (!PRACTICE_KEY_RE.test(scoreKey)) return res.status(400).json({ error: 'Invalid score key' });
     const current = ds.getPractice(userId, scoreKey);
     if (current === null) return res.status(400).json({ error: 'Invalid user' });
-    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const incoming = req.body && typeof req.body === 'object' ? req.body : {};
+    const { learnCoach: ignoredCoach, learnCoachArchive: ignoredArchive, ...body } = incoming;
+    void ignoredCoach; void ignoredArchive;
     // A different fingerprint means the score file changed shape — the old
     // per-measure record describes measures that no longer exist. Replace.
     const fpChanged = body.fingerprint && current.fingerprint
@@ -981,7 +993,8 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
         : body.fingerprint.measureCount !== current.fingerprint.measureCount
           || body.fingerprint.xmlBytes !== current.fingerprint.xmlBytes);
     const merged = fpChanged
-      ? { ...body, updatedAt: new Date().toISOString() }
+      ? { ...body, ...(current.learnCoach ? { learnCoach: current.learnCoach } : {}),
+        ...(current.learnCoachArchive ? { learnCoachArchive: current.learnCoachArchive } : {}), updatedAt: new Date().toISOString() }
       : {
         ...current,
         ...body,

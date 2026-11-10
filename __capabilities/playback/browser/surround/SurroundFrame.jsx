@@ -1,7 +1,10 @@
 // frontend/src/modules/Surround/SurroundFrame.jsx
 //
-// The concert programme frame: a darkened auditorium (--hall-ink) with the video
-// locked to 16:9 on the left and printed programme panels around it.
+// The surround frame: the video locked to its aspect ratio, with module regions
+// (a rail beside it, a band under it, a plate on its top edge) laid out around
+// it. Layout only — the look is a theme the definition opts into (see
+// `surroundTheme` below); the concert-hall programme is the media module's
+// `classical` theme.
 //
 // Layout geometry is a deliberate COPY of FitnessPlayerFrame's shell (main column
 // + rail + footer) in a `surround-frame__*` namespace. It is not
@@ -99,6 +102,20 @@ function regionStyle(region) {
 
 /** Lazy module-level child. Used only when no host logger was threaded down. */
 
+/**
+ * The frame's LOOK. A definition may name a theme (`definition.theme`); one that
+ * names none is `neutral` — the frame's own plain dark room. Every other look is
+ * OPT-IN and lives with the host that owns it: `classical` (the concert hall,
+ * `media/.../surround/themes/classical.scss`, named by the `_surrounds/*.yml`
+ * definitions and the school's frames), `content-filter` (the preview). Anything
+ * but `[a-z0-9-]` falls back to neutral rather than reaching a class name.
+ */
+export const DEFAULT_SURROUND_THEME = 'neutral';
+export function surroundTheme(definition) {
+  const t = definition?.theme;
+  return typeof t === 'string' && /^[a-z0-9-]+$/.test(t) ? t : DEFAULT_SURROUND_THEME;
+}
+
 /** A region slot in the definition may be a single object or a list of them. */
 function normalizeRegions(value, slot) {
   if (!value) return [];
@@ -170,6 +187,7 @@ export default function SurroundFrame({
   };
 
   const definition = data?.definition ?? null;
+  const theme = surroundTheme(definition);
   // `right` is authored as either a single object or a list of modules (e.g.
   // composer-card + country-map). Width and side both belong to the rail as a
   // whole, so when it's a list the first entry carries them.
@@ -543,6 +561,7 @@ export default function SurroundFrame({
 
   const rootClass = [
     'surround-frame',
+    `surround-frame--theme-${theme}`,
     sideSide === 'left' && 'surround-frame--rail-left',
     lyricUp && 'surround-frame--lyric',
     slides && 'surround-frame--slides',
@@ -594,6 +613,7 @@ export default function SurroundFrame({
     <div
       className={enabled ? rootClass : undefined}
       data-testid={enabled ? 'surround-frame' : undefined}
+      data-surround-theme={enabled ? theme : undefined}
       ref={rootRef}
       style={rootStyle}
     >

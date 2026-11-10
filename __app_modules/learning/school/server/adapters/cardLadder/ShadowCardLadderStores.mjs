@@ -27,7 +27,7 @@ export class ShadowCardLadderStores {
     const token = crypto.randomBytes(6).toString('hex');
     let snapshot = { status: this.#real.readStatus(userId, pkg), dayFile: this.#real.readDay(userId, pkg, day) };
     if (typeof seed === 'function') snapshot = seed(structuredClone(snapshot));
-    this.#shadows.set(token, { createdAt: this.#now(), status: snapshot.status, days: { [day]: snapshot.dayFile } });
+    this.#shadows.set(token, { createdAt: this.#now(), status: snapshot.status, days: { [day]: snapshot.dayFile }, dictationProgress: snapshot.dictationProgress ?? undefined });
     return token;
   }
   /**
@@ -42,6 +42,13 @@ export class ShadowCardLadderStores {
       readStatus: () => structuredClone(snapshot.status),
       readDay: (_u, _p, d) => structuredClone(d === day ? snapshot.dayFile : this.#real.readDay(_u, _p, d)),
       readTuning: (u, p) => this.#real.readTuning?.(u, p) ?? null,
+      // The start card's dictation line: a seeded progress (the 'dictation'
+      // scenario) wins, else the learner's real progress, read only.
+      dictationFileState: (u, p) => {
+        const real = this.#real.dictationFileState?.(u, p) ?? { progress: 'missing' };
+        return snapshot.dictationProgress ? { ...real, progress: 'ok' } : real;
+      },
+      readDictationProgress: (u, p) => structuredClone(snapshot.dictationProgress ?? this.#real.readDictationProgress?.(u, p) ?? { week: null, words: {} }),
     };
   }
   forToken(token) {
@@ -59,6 +66,13 @@ export class ShadowCardLadderStores {
         return structuredClone(next);
       },
       readTuning: (u, p) => this.#real.readTuning?.(u, p) ?? null,
+      // Dictation progress is the sitting's own copy, in memory (the list comes from the lexicon).
+      dictationFileState: (u, p) => {
+        const real = this.#real.dictationFileState?.(u, p) ?? { progress: 'missing' };
+        return shadow.dictationProgress ? { ...real, progress: 'ok' } : real;
+      },
+      readDictationProgress: (u, p) => structuredClone(shadow.dictationProgress ?? this.#real.readDictationProgress?.(u, p) ?? { week: null, words: {} }),
+      writeDictationProgress: (_u, _p, progress) => { shadow.dictationProgress = structuredClone(progress); return structuredClone(progress); },
     };
   }
 }

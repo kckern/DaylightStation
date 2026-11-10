@@ -18,6 +18,8 @@
 export const GATE_ID = Object.freeze({
   GOVERNANCE: 'governance',
   PLAYBACK_BUDGET: 'playback_budget',
+  /** Fitness presence gate: the supervising adult is away and no admin unlock is in force. */
+  PRESENCE: 'presence',
   CHECKPOINT: 'checkpoint',
   /**
    * A REQUIRED lesson companion (`ReadalongPlaylistPlayer`). Unlike the two

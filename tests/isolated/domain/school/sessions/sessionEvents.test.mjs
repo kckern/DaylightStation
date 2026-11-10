@@ -7,6 +7,7 @@ import {
   createEvent,
   validateEvent,
   reduceSession,
+  APPLIED_EVENT_TYPES,
 } from "../../../../../__app_modules/learning/school/server/domain/sessions/sessionEvents.mjs";
 
 const AT = '2026-07-27T10:00:00.000Z';
@@ -96,6 +97,28 @@ describe('EVENT_TYPES', () => {
   });
 });
 
+describe('the pass bar on outcome_recorded (Task 16)', () => {
+  it('fills gradedPassingPercent when the graded event stamped none', () => {
+    const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      outcome_recorded: { passingPercent: 40 },
+    }));
+    expect(state.errors).toEqual([]);
+    expect(state.gradedPassingPercent).toBe(40);
+  });
+
+  it('never overwrites the bar the graded event stamped', () => {
+    const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { passingPercent: 70 }, outcome_recorded: { passingPercent: 40 },
+    }));
+    expect(state.gradedPassingPercent).toBe(70);
+  });
+
+  it('refuses a bar outside 1-100', () => {
+    const { errors } = createEvent({ type: 'outcome_recorded', at: AT, sessionId: SID, outcomeId: 'out:x', result: 'passed', passingPercent: 0 });
+    expect(errors.join(' ')).toMatch(/passingPercent/);
+  });
+});
+
 describe('append-only teacher grade corrections', () => {
   it('records a retained result receipt without advancing the learning state', () => {
     const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'result_receipt_captured'], {
@@ -107,6 +130,22 @@ describe('append-only teacher grade corrections', () => {
     expect(state.resultReceiptArtifacts).toEqual([expect.objectContaining({
       artifactId: 'receipt/ses_abc123/out:ses_abc123', kind: 'result-receipt', printed: true,
     })]);
+  });
+
+  // 2026-11-03: result_receipt_reprinted had a schema and transitions but no
+  // applier, so the first real reprint threw in reduceSession and broke the
+  // agenda, teacher day, state gates and earnings for the whole household.
+  it('folds a result-receipt reprint onto its receipt, after an unprinted capture', () => {
+    const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'result_receipt_captured', 'result_receipt_reprinted'], {
+      result_receipt_captured: { artifactId: 'receipt/ses_abc123/out:ses_abc123', kind: 'result-receipt', printed: false, printReason: 'printer_refused' },
+    }));
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('outcome_recorded');
+    expect(state.resultReceiptArtifacts).toEqual([expect.objectContaining({ artifactId: 'receipt/ses_abc123/out:ses_abc123', printed: true })]);
+  });
+
+  it('has an applier for every event type, so no event can throw inside the reducer', () => {
+    expect(EVENT_TYPES.filter((type) => !APPLIED_EVENT_TYPES.includes(type))).toEqual([]);
   });
 
   it('preserves machine evidence while projecting the latest active correction through pass state', () => {

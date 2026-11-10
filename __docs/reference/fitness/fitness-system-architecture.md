@@ -119,10 +119,11 @@ Episode cards report wall-clock elapsed time (`elapsedMs`) and each participant'
 | **AmbientLedAdapter** | `__backend/src/1_adapters/fitness/AmbientLedAdapter.mjs` | Controls ambient LED strips via Home Assistant scenes (rate-limited, circuit-breaker protected) |
 | **VoiceMemoTranscription** | `__backend/src/1_adapters/fitness/VoiceMemoTranscriptionService.mjs` | Two-stage transcription: Whisper (with fitness context hints) → GPT-4o cleanup |
 | **ScreenshotService** | `__backend/src/3_applications/fitness/services/ScreenshotService.mjs` | Saves session screenshots (base64 decode → file storage) |
-| **FitnessProgressClassifier** | `__backend/src/2_domains/fitness/services/FitnessProgressClassifier.mjs` | Classifies workout viewing progress (50% for short, 95% for long workouts) |
-
-> **Shared watch state.** Workout progress is the household media memory (`media/memory/**`), which the Media app can also write: **marking an item unwatched there sets its playhead to 0 and clears `completedAt`**, which fitness reads (episode `completedAt` and watched state in show views). Marking watched sets 100% and keeps or stamps `completedAt`. See [content-progress.md](../content/content-progress.md#watched--unwatched-marks).
 | **FitnessAPI** | `__backend/src/4_api/v1/routers/fitness.mjs` | REST endpoints (see API Reference below) |
+
+> **Shared watch state.** Workout progress is the household media memory (`media/memory/**`), which the Media app can also write: **marking an item unwatched there sets its playhead to 0 and clears `completedAt`**, which fitness reads (episode `completedAt` and watched state in show views). Marking watched sets 100% and keeps or stamps `completedAt`. See [content-progress.md](../content/content-progress.md#watched--unwatched-marks). Once an episode has a `completedAt` or a Plex `viewCount` ≥ 1, show views treat it as watched for good (the sequential lock never re-closes on a replay), overriding the library rule. Both marks are written only by the library's completion rule (or a natural end), so a long video stopped with real content left keeps its resume point.
+
+> **When a workout counts as watched.** Show checkmarks and `completedAt` use the per-library `watch_completion` rule in the household media config (`household/media/config.yml`), under `watch_completion.libraries.plex/14_fitness`: up to 45 min, 50% played; longer, 95% played **and** at most 5 min left; never with under 30 s of recorded watch time. Each item is judged by its own library, so Piano and School courses served by `FitnessPlayableService` (Lectures library) use the default 90%. Without the block, Fitness falls back to the default. The Fitness player does not judge completion; it reports `completed` only on a natural end. See [content-progress.md](../content/content-progress.md#per-library-rule-watch_completion).
 
 ### Frontend — Session Layer (`frontend/src/hooks/fitness/`)
 
@@ -156,7 +157,7 @@ Episode cards report wall-clock elapsed time (`elapsedMs`) and each participant'
 | **FitnessPlayer** | `FitnessPlayer.jsx` | Video player. Manages play queue, video element, playback controls. Enforces governance lock (pause/mute when locked) |
 | **FitnessPlayerOverlay** | `FitnessPlayerOverlay.jsx` | Overlay UI shown during governance lock. Displays participant zones, target requirements, countdown timers |
 | **FitnessSidebar** | `FitnessSidebar.jsx` | Side panel showing user avatars, HR readings, zone colors, coin counts |
-| **FitnessChart** | `FitnessSidebar/FitnessChart.jsx` | Real-time race chart (SVG) showing cumulative coin progress per participant |
+| **FitnessChart** | `widgets/FitnessChart/FitnessChart.jsx` | Real-time race chart (SVG) showing cumulative coin progress per participant. A thin context reader feeds a memoised `FitnessChartView`; `chartLiveInputs.js` hands the view new inputs only on a new timeline tick or a drawn roster change (identity, zone colour, activity), and throttles the legend's live HR to 1 Hz — the context re-renders on every heart-rate sample, which used to re-render the chart 15–17×/s |
 | **FitnessPluginContainer** | `FitnessPlugins/FitnessPluginContainer.jsx` | Plugin system for fitness mini-apps (chart, session browser, vibration monitor, pose detection) |
 | **FitnessNavbar** | `FitnessNavbar.jsx` | Navigation bar with content categories |
 | **FitnessPlayerFooter** | `FitnessPlayerFooter.jsx` | Seek bar, playback controls, timestamp display |
@@ -175,6 +176,61 @@ Season decisions emit structured `fitness.show.season_selected`,
 `fitness.show.season_auto_selected`, and defensive
 `fitness.show.season_explicit_restored` events with the source and destination
 season IDs so selection changes can be reconstructed from production logs.
+
+#### Who did an episode (per-rider history)
+
+The household watched state above is one shared mark: it can say an episode was
+done, not by whom. The session log can. `FitnessShow` asks
+`GET /api/fitness/sessions/episode-history?episodes=<ids>` once per show (all
+its episode ids, comma-separated) and gets, per episode, every session that
+**played** it — newest first, with `playedMs` (how long that video ran in the
+session) and each rider's `minutes`, `rings`, `isGuest` and `hrAvg`. It reads
+the per-month session index (`QueryEpisodeHistory`). Since `INDEX_VERSION` 9
+the index lists each video a session played as `media.items
+[{contentId, playedMs, rings}]` (audio skipped); older entries only name the
+primary, and match on that.
+
+A rider's `minutes` are their zone minutes for the whole session, **capped at
+`playedMs`** — nobody rode a 15-minute episode for 139 minutes. The cap fixes
+the absurd figures; it cannot split one rider's minutes between two episodes
+of the same session.
+
+**Credit rule** (`browser/lib/episodeHistory.js`): a rider did the episode when
+they rode at least **half** of it. A rider with no recorded zone minutes, or an
+episode with no duration, is credited — the session is the only evidence.
+
+- **Grid chip.** The green watched chip shows up to three overlapping avatars of
+  credited *household* riders (never guests), newest first, `+N` past three, in
+  place of the check mark, dated by the newest of them. With no credited
+  household rider — or if the history call fails — the chip is the plain
+  media-server one, unchanged. An in-progress episode keeps its % badge.
+- **Episode panel** (`player/EpisodePanel.jsx`). The show screen's left column
+  always describes the focused episode — the next-up one on load, then whatever
+  is tapped (title strip or mosaic) or reached with the pad. Top to bottom:
+  show and season (with the governed lock and voice-memo button); a **mosaic**
+  of the season's episodes (`?w=160&h=90` thumbnails; done = full colour, not
+  done = dimmed by opacity, in progress = amber underline, focused = white
+  outline; one row up to six, then 5 or 6 wide); **coverage** chips
+  (`seasonCoverage`: each household rider's done/total for the season); the
+  hero with E#, duration and a resume bar; **Resume m:ss + Start over** on a
+  resumable show with a saved position, else **Play**; **who's done it**
+  (`riderSummary`): one row per rider with count, latest date, minutes and
+  rings — riders on the bike now first, household members who never did it
+  dimmed as "Not yet"; then the description, three lines. Household = the
+  `primary` users in the fitness config. Text is 16px+, rider names 18px.
+- **Gamepad / arrow keys.** The D-pad walks the grid (columns read from the
+  grid), focus selects and puts a solid ring on the card; A / Enter plays the
+  focused episode (Resume when it resumes). Focus never launches, and a locked
+  episode is left to its tap-to-unlock path. Keys belong to the sidebar menu
+  while it is open and to the player while something plays. Episodes are
+  compared by `episodeKey` (`plex`, else `id`) — playable items may carry only
+  `id`.
+
+Logs: `fitness.episode_history.query` (backend: requested, matched, scanned,
+totalMs), `fitness.show.episode_history_loaded` /
+`fitness.show.episode_history_failed`, `fitness.show.episode_focus` (debug),
+`fitness.show.panel_play` (mode: play / resume / start-over),
+`fitness.show.pad_play_locked`.
 
 ---
 
@@ -402,6 +458,7 @@ PersistenceManager._persistSession()
      │       • Duration >= 60s?
      │       • Has participants?
      │       • Has timeline data?
+     │       • First save only: any real activity? (junk rule, below)
      │       [FAIL → skip save, log reason]
      │
      ├──▶ 2. Build session payload
@@ -572,6 +629,42 @@ The complete path for a single heart rate reading, naming every component it tou
     ├── FitnessPlayerOverlay: zone progress bar updates
     └── FitnessPlayer: governance lock/unlock decision
 ```
+
+### No reading: null everywhere
+
+A strap that is present but not reading is a real state, not "keep the last
+value". The garage bridge sends `ComputedHeartRate: null` when the strap has no
+real reading (and, after a wake-up, until real beats are confirmed). The browser
+treats that as follows:
+
+- **The device reads null at once.** An HR packet with a null or missing
+  reading sets `device.heartRate = null`. Liveness follows the *reading*, not the
+  packet: `device.lastHeartRateAt` moves only on a real reading, and a device
+  with none for `hrStaleMs` (5 s) reads null on the next prune even while its
+  packets keep arriving. An inactive device never holds a reading. During a
+  whole-pipeline transport stall the reading is held, as cadence is — then no
+  device's silence says anything about its strap.
+- **Nothing accrues at once.** TreasureBox is handed `null`, never a held value,
+  so it takes its dropout path (interval restarts, no award), and the per-packet
+  zone-store sync is skipped.
+- **The user follows after a grace.** The user keeps their last reading for
+  `HR_LOSS_GRACE_MS` (5 s, `UserManager.js`) since their last real one, so a strap
+  blip (a beat freeze, a short radio gap) does not drop a solo child out of
+  governance and freeze the video. Past the grace — checked on every null packet
+  and every prune tick — `currentData.heartRate` goes null with
+  `hrInactive: true`: the chart/timeline records a gap and governance excludes
+  the user, so a stale reading can satisfy no zone requirement.
+- **The committed zone resets when the loss is confirmed.** At that same moment
+  `ZoneProfileStore.resetZoneState(userId)` drops the hysteresis state, so the
+  5 bpm exit margin cannot hold a zone that no real reading supports.
+- **Warm-up on every reconnect.** The first 3 real readings after a device is
+  first seen, loses its reading, goes inactive or is removed — and at the start
+  of every session — are discarded (straps can replay a cached value on
+  connect). Null packets do not count toward the 3.
+- **Observability.** One `info` line per edge, never per packet:
+  `fitness.device.hr_reading_lost` (`deviceId`, `userId`, `reason`),
+  `fitness.device.hr_loss_confirmed` (`deviceId`, `userId`; grace elapsed) and
+  `fitness.device.hr_reading_restored` (`deviceId`, `userId`).
 
 ---
 
@@ -819,6 +912,27 @@ cumulative series therefore never decrease; `cumulativeGuard.js` flattens and
 logs (`fitness.persistence.cumulative_regressed`) any that do at save time. See
 `assign-guest.md` → Correction vs Handover.
 
+### Junk sessions
+
+A strap that flashes a few seconds of heart rate and then goes quiet (a stray
+guest strap advertising nearby) is not a workout. `shared/junkSession.mjs` holds
+the one rule, used by the browser and the server: a session is **junk** when it
+has under a minute of HR readings (12 ticks) **and** no timeline events, voice
+memos, rings, strength runs, outside record (Strava link or `session.source`),
+or equipment series that took two or more distinct values. Any single sign of
+activity clears it.
+
+- **Save gate:** `PersistenceManager.validateSessionPayload` holds the *first*
+  save of a junk session (`no-activity`, logged as a sampled
+  `fitness.persistence.validation_skipped`). Once a session has saved, a quiet
+  stretch never stops later saves.
+- **History list:** `YamlSessionDatastore.findByDate` leaves junk records out of
+  the list and everything built on it (index shards, weekly totals,
+  suggestions). The file stays on disk and its detail URL still opens.
+
+The `provisional` flag (sub-5-min, not finalized) only marks a session as
+resumable; it does not hide or clean anything up.
+
 ### Ring celebrations
 
 The UI calls these earned units **rings** (older config and saved sessions may
@@ -876,12 +990,17 @@ the frame. Under `prefers-reduced-motion` the gif is hidden and the avatar keeps
 a static heat glow.
 
 Detection reads the **stabilized** `currentZoneId` from `ZoneProfileStore`, the
-same value `GovernanceEngine` agrees with, so its hysteresis (5s cooldown, 3s
-stability, 5bpm exit margin) is what prevents chatter at the 160bpm line. On top
+same value `GovernanceEngine` agrees with, so its hysteresis (upward
+confirmation on a second sample 1s later, 5s cooldown, 3s stability, 5bpm exit
+margin) is what prevents chatter at the 160bpm line — and what keeps a single
+corrupt packet (two 204 bpm spikes on 2026-10-23) from ever reaching Fire. On top
 of that, `fireZoneTracker` seeds silently on a person's first observation — a
 reload mid-workout never congratulates someone for a zone they were already in —
-and enforces a five-minute per-person quiet period, because interval work
+treats a `resumed` zone entry (a rider back from a break) the same way, and
+enforces a five-minute per-person quiet period, because interval work
 legitimately re-crosses that line many times in a session.
+`fitness.fire_toast.shown` carries `zoneEntryId` and `previousZoneId`, the join
+keys to the `fitness.zone_state.transition` row that justified it.
 
 Fire waits its turn. If a challenge or ring card holds the slot, the crossing is
 queued and shown the moment it clears (`fireToastQueue`), so no moment is
@@ -899,17 +1018,49 @@ Monday 04:00 local through the next Monday 04:00, matching
 `weeklyWindow.mjs` and the State Gates producer. Monday therefore resets the
 current bar even though Sunday is less than seven days old.
 
-Bar height and the number above it are rings. Green, yellow, orange, and red
+Bar height is rings (the bars carry no numbers or dates: at four to a column
+they cannot be read from the room). Green, yellow, orange, and red
 remain as the composition bands: session zone minutes are weighted by the
 configured per-zone ring rates and normalized back to the exact stored ring
 total. The top-right household total uses the canonical `RingIcon`. The sampled
 `momentum.render` event includes `householdRings` and `weekStartMs` so a stale or
 mis-bucketed home screen can be reconstructed from production logs.
 
+Each card's rail (bank silver + the gems earned this week) is a button that opens
+the shared Gem Board focused on that person, and the headline carries a **Gems**
+chip that opens it with no focus (shown whenever the economy is not `off`).
+While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→
+moves the column and ↑/↓ a row cursor, A opens the cell under the cursor or,
+with no row picked, toggles the week, B closes the detail box, then the board). See the economy reference, "Gem Board".
+
 The widget computes from the home screen's `sessions` source, which FitnessApp
 persists in localStorage (see Screen Framework → Data Coordination), so the bars
 render from the last payload on mount and update when the fetch lands rather
 than showing skeletons on every return from the player.
+
+A card reads top to bottom, with no slack between rows: the avatar with the
+name as a tag over its lower edge; **this week's rings** (ring icon + number,
+the largest figure on the card); the four week bars, which take all remaining
+height; then the **rail** at the foot. The home layout puts this panel under the
+suggestions, so the rail is the lowest thing on the touch screen and a child can
+reach it. The rail holds **bank silver** (the coin over the count) and one chip
+per area the person has EARNED gems in this week: the board's own gem
+(`GemGlyph`: solid area colour, area icon) over `×N` when N > 1, in Move ·
+School · Games order. Nothing in progress, leading or zero is ever drawn; a
+child with nothing earned shows the coin alone. The data is the `standings`
+screen source, `GET /api/v1/earnings/standings` (`silver`, and `gems` rolled up
+by area from the Gem Board itself), injected by FitnessApp when the layout uses
+`fitness:momentum`, persisted like `sessions` and refetched after a workout.
+People without a wallet get an empty rail; with the economy off, or the call
+failing, every rail is empty and the ring bars stand alone.
+
+The cards share four grid rows (`subgrid`), so every card's hero, bars and foot
+line up across the panel and the tallest foot sets the row. Sizes follow one
+person's column (`--col`: the cards row is the size container, divided by the
+head count the widget passes as `--cols`) with floors — hero 26px, coin and gem
+26px, counts 20–28px CSS — and when five columns cannot fit everything, the bars
+give up height first. The widget pads its own panel 10–12px
+(`.screen-widget:has(> .fitness-momentum)`), not the theme's 16px.
 
 ### Leaving the player → the session just finished
 
@@ -930,6 +1081,27 @@ no active session, browser Back from a session URL, or starting a video from hom
 (`/fitness/play/{id}`) — the widget closes the pane and clears the selection.
 Opening stays selection-driven, so the guarantee is one-way: a closed pane never
 survives in a session-less URL.
+
+**The coin ceremony.** It celebrates silver that is in the bank, never a
+projection. `useWorkoutCoinCeremony` (mounted in `GlobalOverlays`) reads the
+ring-payout entries the economy minted (`GET /api/v1/earnings/workout/:sessionId/paid`)
+on screen load (recent sessions, so a payout minted while the screen was off
+plays), when a close lands on the finished session (`announceWorkoutFinished`
+fires `fitness-workout-finished {sessionId}` after the last save settles; not a
+short browse-out back to the show), and on the `fitness` topic's
+`coins-changed {userId}` (that learner's recent sessions). A workout that minted
+nothing shows no "+N"; the payout's own `coins-changed` brings the ceremony
+later. `WorkoutCoinCeremony` (z-index 1900, above the navbar) shows one card per
+kid from that kid's own unseen entries: "+N" silver and the wallet total
+("-> 27 silver"). One coin sound plays through fitness's own cue element
+(`ringCelebrationAudio.js`) with School's `school/_ux/coin.mp3`. A click,
+Enter/Space/Escape (consumed in the capture phase) or the clock (4 s + 1.5 s per
+extra card, max 10 s) dismisses it. localStorage `fitness.coinCeremony.seen.v2` (grouped rides are looked up by segment id)
+keeps each shown entry's txnId; entries older than 7 days are ignored, a first
+load is not silent, and a reload never replays (with unusable storage, an
+in-memory set covers the page's life). Logs:
+`fitness.coin_ceremony.shown {sessionId, txnIds, learners, totalSilver}`,
+`.dismissed {reason}`, `.skipped {reason: fetch-failed}`, `.none-minted` (debug).
 
 ---
 
@@ -985,6 +1157,7 @@ All endpoints are under `GET/POST /api/fitness/...` (router: `__backend/src/4_ap
 | `POST` | `/api/fitness/kiosk_screenshot` | Store a whole-screen kiosk capture (garage keypad key 6) under `media/logs/fitness/screenshots/<date>/`; logs `fitness.kiosk_screenshot.saved` |
 | `GET` | `/api/fitness/sessions/dates` | List all dates with saved sessions |
 | `GET` | `/api/fitness/sessions` | Query sessions by date or date range |
+| `GET` | `/api/fitness/sessions/episode-history?episodes=` | Per-episode sessions and riders (minutes, rings, guest flag), newest first |
 | `GET` | `/api/fitness/sessions/:sessionId` | Session detail with decoded timeline |
 | `POST` | `/api/fitness/voice_memo` | Transcribe voice memo (Whisper → GPT-4o cleanup) |
 | `POST` | `/api/fitness/zone_led` | Sync ambient LED with current zone state |
@@ -1096,18 +1269,23 @@ ambient_led:
     fire: scene.fitness_fire
     fire_all: scene.fitness_breathing   # All participants in fire zone
   throttle_ms: 2000                      # Minimum time between HA API calls
+  dark_mode:                             # Optional. Fire scenes put HA into "dark mode"
+    sensor: binary_sensor.room_dark_mode #   (white overhead kept off). On the transition
+    manual_override: input_boolean.room_overhead_manual_override  # INTO fire (not while
+    overhead_lights: [light.room_overhead]  # already dark), a manual override that is on
+                                         #   is stale (taken outside dark mode): it is
+                                         #   cleared BEFORE the scene call, then the
+                                         #   overhead is turned off after it. Logs
+                                         #   fitness.zone_led.stale_override_cleared.
 
 equipment:
   - id: bike_001
     name: Exercise Bike
     type: bike
     cadence_device: "54321"
-
-progressClassification:
-  shortThresholdPercent: 50              # Short workouts (<45 min): 50% = watched
-  longThresholdPercent: 95               # Long workouts (>45 min): 95% = watched
-  longDurationSeconds: 2700              # 45 minutes
 ```
+
+When a workout counts as watched is not Fitness config: see `watch_completion` in the household media config.
 
 ---
 
@@ -1135,9 +1313,8 @@ progressClassification:
 | `__backend/src/2_domains/fitness/services/ZoneService.mjs` | Domain | Zone resolution, group zone, threshold defaults |
 | `__backend/src/2_domains/fitness/services/SessionStatsService.mjs` | Domain | Participant stats (peak/avg HR, coins, zone durations) |
 | `__backend/src/2_domains/fitness/services/TimelineService.mjs` | Domain | Delta encoding/decoding for timeline series |
-| `__backend/src/2_domains/fitness/services/FitnessProgressClassifier.mjs` | Domain | Media progress classification (50%/95% thresholds) |
 | `__backend/src/3_applications/fitness/FitnessConfigService.mjs` | Application | Config loading, playlist enrichment, member names |
-| `__backend/src/3_applications/fitness/FitnessPlayableService.mjs` | Application | Content resolution with watch state |
+| `__backend/src/3_applications/fitness/FitnessPlayableService.mjs` | Application | Content resolution with watch state; watched judged by the item's library rule |
 | `__backend/src/3_applications/fitness/services/ScreenshotService.mjs` | Application | Screenshot persistence (base64 → file) |
 | `__backend/src/3_applications/fitness/ports/ISessionDatastore.mjs` | Port | Session persistence contract |
 | `__backend/src/3_applications/fitness/ports/IZoneLedController.mjs` | Port | Ambient LED control contract |
@@ -1179,7 +1356,7 @@ progressClassification:
 | `frontend/src/modules/Fitness/FitnessPlayer.jsx` | Video player + governance lock |
 | `frontend/src/modules/Fitness/FitnessPlayerOverlay.jsx` | Lock screen overlay |
 | `frontend/src/modules/Fitness/FitnessSidebar.jsx` | Users, zones, coins sidebar |
-| `frontend/src/modules/Fitness/FitnessSidebar/FitnessChart.jsx` | Real-time race chart |
+| `__app_modules/wellness/fitness/browser/widgets/FitnessChart/FitnessChart.jsx` | Real-time race chart |
 | `frontend/src/modules/Fitness/FitnessPlayerFooter.jsx` | Seek bar and controls |
 | `frontend/src/modules/Fitness/FitnessPlugins/FitnessPluginContainer.jsx` | Plugin host |
 | `frontend/src/modules/Fitness/VolumeProvider.jsx` | Volume coordination |

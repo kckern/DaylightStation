@@ -58,6 +58,26 @@ export function validateQueueSnapshot(obj) {
   return result(e);
 }
 
+export const AUDIENCE_ACTIVITIES = Object.freeze(['workout', 'story', 'lesson', 'game', 'video', 'music']);
+export const AUDIENCE_ROLES = Object.freeze(['rider', 'learner', 'player', 'viewer']);
+
+/** `snapshot.audience` — who is using the device (tech doc §9.2). */
+export function validateAudience(obj) {
+  const e = [];
+  if (!obj || typeof obj !== 'object') return result(['audience: not an object']);
+  if (!AUDIENCE_ACTIVITIES.includes(obj.activity)) e.push('audience.activity: invalid');
+  if (!Array.isArray(obj.people)) e.push('audience.people: required array');
+  else obj.people.forEach((p, i) => {
+    if (!p || typeof p !== 'object' || !isStr(p.id)) e.push(`audience.people[${i}].id: required`);
+    else {
+      if (p.name != null && typeof p.name !== 'string') e.push(`audience.people[${i}].name: string`);
+      if (!AUDIENCE_ROLES.includes(p.role)) e.push(`audience.people[${i}].role: invalid`);
+      if (p.guest != null && typeof p.guest !== 'boolean') e.push(`audience.people[${i}].guest: boolean`);
+    }
+  });
+  return result(e);
+}
+
 export function validateSessionSnapshot(obj) {
   const e = [];
   if (!obj || typeof obj !== 'object') return result(['SessionSnapshot: not an object']);
@@ -87,6 +107,11 @@ export function validateSessionSnapshot(obj) {
   if (obj.controls !== undefined) {
     const cr = validateSessionControls(obj.controls);
     if (!cr.valid) e.push(...cr.errors.map((error) => `SessionSnapshot.${error}`));
+  }
+  // Optional audience — who is using the device. Validated only when present.
+  if (obj.audience != null) {
+    const ar = validateAudience(obj.audience);
+    if (!ar.valid) e.push(...ar.errors.map((error) => `SessionSnapshot.${error}`));
   }
   const ownerResult = validatePlaybackOwnerSessionSnapshot(obj);
   if (!ownerResult.valid) e.push(...ownerResult.errors.map((error) => `SessionSnapshot.${error}`));

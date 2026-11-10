@@ -18,6 +18,8 @@ export const CANONICAL_FIELDS = Object.freeze([
   'lastPlayed',
   'watchTime',
   'completedAt',
+  'skipped',
+  'skippedAt',
   'bookmark',
   'spots',
   'lastDevice'

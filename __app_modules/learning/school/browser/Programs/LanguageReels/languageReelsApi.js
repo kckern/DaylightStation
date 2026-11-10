@@ -1,5 +1,7 @@
+import { schoolDeviceHeaders } from "../../schoolDevice.js";
+
 const BASE = '/api/v1/school/language-reels';
-const header = (grant) => ({ 'X-School-Reel-Grant': grant });
+const header = (grant) => schoolDeviceHeaders({ 'X-School-Reel-Grant': grant });
 async function request(path, grant, body = undefined) {
   try {
     const response = await fetch(BASE + path, {

@@ -662,7 +662,7 @@ class MemorySessions {
     return [...this.logs.entries()].map(([sessionId, events]) => {
       const state = reduceSession(events);
       return {
-        sessionId, learnerId: state.learnerId, unitId: state.unitId, state: state.state, terminal: state.terminal, outcome: state.outcome, updatedAt: events.at(-1)?.at ?? null,
+        sessionId, learnerId: state.learnerId, unitId: state.unitId, state: state.state, terminal: state.terminal, outcome: state.outcome, remediationOf: state.remediationOf ?? null, updatedAt: events.at(-1)?.at ?? null,
       };
     }).filter((row) => row.learnerId === learnerId);
   }

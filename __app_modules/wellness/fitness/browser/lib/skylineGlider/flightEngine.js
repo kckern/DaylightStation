@@ -2,17 +2,20 @@ import {
   HIGH_ALTITUDE,
   LOW_ALTITUDE,
   SKYLINE_CRAFT_GEOMETRY,
+  entitiesTouchingCraft,
+  entityPresent,
+  SHUTTER_WARN_S,
   pointOverlapsCraft,
-  terrainBounds,
-  terrainOverlappingCraft,
+  safeBandAt,
+  terrainContact,
 } from "./flightGeometry.js";
+import { advance } from "../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
+import { advanceWeapons, fireWeapons, initialWeaponState, weaponRules } from "./weapons.js";
+import { initialBoostState, activateBoost, advanceBoost, cameraTime, courseSpeed } from './liftBoost.js';
 
 const STEP = 1 / 60;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const moveToward = (value, target, amount) => value < target
-  ? Math.min(target, value + amount)
-  : Math.max(target, value - amount);
 
 function targetForRpm(rpm, calibration) {
   const normalized = clamp((rpm - calibration.lowRpm) / (calibration.highRpm - calibration.lowRpm), 0, 1);
@@ -23,16 +26,30 @@ function crossingSegments(course, from, to, type) {
   return course.segments.filter((segment) => segment.type === type && segment.start_s > from && segment.start_s <= to);
 }
 
-function applyCourseEvents(state, previousTime, course) {
+function applyCourseEvents(state, previousTime, course, previousCamera = previousTime) {
   let next = state;
+  // A shutter starting its warning recharges boost, so a rider who pressed
+  // too early (or used it on the last gate) can still dash through this one.
+  const camera = cameraTime(next);
+  if ((course.entities || []).some((e) => e.closes_at_s != null && previousCamera < e.closes_at_s - SHUTTER_WARN_S && camera >= e.closes_at_s - SHUTTER_WARN_S)) {
+    next = { ...next, boostRechargeRemaining: 0 };
+  }
   for (const checkpoint of crossingSegments(course, previousTime, next.courseTime, 'checkpoint')) {
     next = {
       ...next,
+      bombsLeft: weaponRules(course).bombs,
+      missilesLeft: weaponRules(course).missiles,
+      // A checkpoint recharges boost; one already running eases out on its own
+      // rather than snapping the scroll back to 1×.
+      boostRechargeRemaining: 0,
       checkpoint: {
         id: checkpoint.id,
         time: checkpoint.start_s,
         restartAltitude: checkpoint.restart_altitude ?? 0.5,
         collectedIds: [...next.collectedIds],
+        destroyedIds: [...(next.destroyedIds || [])],
+        destroyedBy: { ...(next.destroyedBy || {}) },
+        entityDamage: { ...(next.entityDamage || {}) },
       },
     };
   }
@@ -50,36 +67,74 @@ function applyCourseEvents(state, previousTime, course) {
   return next;
 }
 
-function collide(state, course) {
-  if (state.phase !== 'playing') return state;
-  const terrain = terrainOverlappingCraft(course, state.courseTime).find((segment) => {
-    const bounds = terrainBounds(segment);
-    return state.altitude - SKYLINE_CRAFT_GEOMETRY.radius < bounds.top
-      || state.altitude + SKYLINE_CRAFT_GEOMETRY.radius > bounds.bottom;
-  });
-  if (!terrain) return state.contactSegmentId == null ? state : { ...state, contactSegmentId: null };
-  if (terrain.id === state.contactSegmentId) return state;
-  if (state.collisionProtected || state.invincibleRemaining > 0) {
-    return { ...state, contactSegmentId: terrain.id };
-  }
-  const lives = state.lives - 1;
-  if (lives <= 0) {
-    return { ...state, lives: 0, phase: 'crashed', crashRemaining: course.rules.restart_delay_s, collisions: state.collisions + 1, lastCollisionSegmentId: terrain.id, contactSegmentId: terrain.id };
-  }
-  const bounds = terrainBounds(terrain);
-  const centre = clamp((bounds.top + bounds.bottom) / 2, HIGH_ALTITUDE, LOW_ALTITUDE);
+function crash(state, course, { cause, segmentId = null, entityId = null, counted = false }) {
   return {
     ...state,
-    lives,
-    collisions: state.collisions + 1,
-    lastCollisionSegmentId: terrain.id,
-    contactSegmentId: terrain.id,
-    altitude: moveToward(state.altitude, centre, 0.08),
-    invincibleRemaining: course.rules.invincibility_s,
+    lives: 0,
+    phase: 'crashed',
+    crashRemaining: course.rules.restart_delay_s,
+    crashCause: cause,
+    projectiles: [],
+    blasts: [],
+    impacts: [],
+    collisions: counted ? state.collisions : state.collisions + 1,
+    lastCollisionSegmentId: segmentId,
+    lastCollisionEntityId: entityId,
   };
 }
 
-function restartAtCheckpoint(state, course) {
+// Terrain and solid entities are walls: touching one crashes, invincible or
+// not. Only a sensor pause protects the rider, and then the craft is held
+// inside the open band so it can never drift through the ground.
+function holdInsideTerrain(state, course) {
+  const band = safeBandAt(course, state.courseTime);
+  const top = band.top + SKYLINE_CRAFT_GEOMETRY.radius;
+  const bottom = band.bottom - SKYLINE_CRAFT_GEOMETRY.radius;
+  if (top > bottom) return state;
+  const altitude = clamp(state.altitude, top, bottom);
+  return altitude === state.altitude ? state : { ...state, altitude };
+}
+
+function collide(state, course) {
+  if (state.phase !== 'playing') return state;
+  if (state.collisionProtected) return holdInsideTerrain(state, course);
+  const terrain = terrainContact(course, state.courseTime, state.altitude);
+  if (terrain) {
+    if (course.rules.assist_terrain && terrain.type === 'lower-terrain') {
+      state = { ...holdInsideTerrain(state, course), verticalRate: Math.min(0, state.verticalRate) };
+    } else return crash(state, course, { cause: terrain.type === 'lava' ? 'lava' : 'terrain', segmentId: terrain.id });
+  }
+  // Anything already destroyed (by a crash, laser or bomb) is gone for
+  // collision, and a shutter that has not closed yet is not there at all.
+  const destroyed = new Set(state.destroyedIds || []);
+  const camera = cameraTime(state);
+  const touching = entitiesTouchingCraft(course, state.courseTime, state.altitude)
+    .filter((entity) => !destroyed.has(entity.id) && entityPresent(entity, camera));
+  const solid = touching.find((entity) => entity.class === 'solid');
+  if (solid) return crash(state, course, { cause: 'entity', entityId: solid.id });
+
+  // Breakables shatter on contact and cost one life, except while blinking.
+  const broken = touching.filter((entity) => entity.class === 'breakable');
+  if (!broken.length) return state;
+  const next = {
+    ...state,
+    destroyedIds: [...destroyed, ...broken.map((entity) => entity.id)],
+    destroyedBy: { ...(state.destroyedBy || {}), ...Object.fromEntries(broken.map((entity) => [entity.id, 'crash'])) },
+  };
+  if (state.invincibleRemaining > 0) return next;
+  const hit = {
+    ...next,
+    lives: state.lives - 1,
+    collisions: state.collisions + 1,
+    lastCollisionSegmentId: null,
+    lastCollisionEntityId: broken[0].id,
+    invincibleRemaining: course.rules.invincibility_s,
+  };
+  return hit.lives > 0 ? hit : crash(hit, course, { cause: 'lives', entityId: broken[0].id, counted: true });
+}
+
+export function retryFlightCheckpoint(state, course) {
+  if (state.phase !== 'crashed') return state;
   return {
     ...state,
     phase: 'playing',
@@ -89,19 +144,51 @@ function restartAtCheckpoint(state, course) {
     altitude: state.checkpoint.restartAltitude ?? 0.5,
     verticalRate: 0,
     zeroElapsed: 0,
+    stalled: false,
     invincibleRemaining: 0,
-    contactSegmentId: null,
+    crashCause: null,
     collectedIds: [...state.checkpoint.collectedIds],
+    destroyedIds: [...(state.checkpoint.destroyedIds || [])],
+    destroyedBy: { ...(state.checkpoint.destroyedBy || {}) },
+    entityDamage: { ...(state.checkpoint.entityDamage || {}) },
+    projectiles: [],
+    blasts: [],
+    impacts: [],
+    bombsLeft: weaponRules(course).bombs,
+    missilesLeft: weaponRules(course).missiles,
+    missileCooldown: 0,
+    ...initialBoostState(),
+    boostsUsed: state.boostsUsed || 0,
+    laserCooldown: 0,
+    bombCooldown: 0,
     restarts: state.restarts + 1,
   };
+}
+
+// A confirmed zero commits this attempt to a fall. Once latched, neither
+// renewed cadence, terrain assistance nor transport loss can recover it.
+function advanceStall(state, input, dt, course) {
+  const verticalRate = course.motion.max_descent_rate;
+  const altitude = Math.min(1, state.altitude + verticalRate * dt);
+  const next = {
+    ...state, stalled: true, altitude, targetAltitude: 1, verticalRate,
+    rawRpm: Math.max(0, Number(input?.rpm) || 0),
+    zeroElapsed: state.zeroElapsed + dt,
+    pausedForSensor: false, collisionProtected: false, inputMode: 'stalled',
+    projectiles: [], blasts: [], impacts: [],
+  };
+  const terrain = terrainContact(course, state.courseTime, altitude);
+  return terrain || altitude + SKYLINE_CRAFT_GEOMETRY.radius >= 1
+    ? crash(next, course, { cause: 'stall', segmentId: terrain?.id }) : next;
 }
 
 function singleStep(state, input, dt, course) {
   if (state.phase === 'completed') return state;
   if (state.phase === 'crashed') {
-    const crashRemaining = Math.max(0, state.crashRemaining - dt);
-    return crashRemaining === 0 ? restartAtCheckpoint({ ...state, crashRemaining }, course) : { ...state, crashRemaining };
+    return state;
   }
+
+  if (state.stalled) return advanceStall(state, input, dt, course);
 
   const transportStalled = !!input?.transportStalled;
   const disconnected = !input?.connected && !transportStalled;
@@ -136,6 +223,17 @@ function singleStep(state, input, dt, course) {
   }
 
   const previousTime = state.courseTime;
+  const previousCamera = cameraTime(state);
+  if (!missing && input?.rpm === 0) return advanceStall(state, input, dt, course);
+  if (!missing) {
+    state = advanceBoost(state, dt, course);
+    if (input?.actions?.includes('boost')) state = activateBoost(state, course);
+  }
+  // The camera always scrolls at 1×; a boost dashes the craft ahead of it, so
+  // the craft's own course speed is the scroll plus the dash (see liftBoost).
+  // A sensor dropout freezes the boost (above), so the craft holds its place
+  // on screen and moves with the scroll.
+  const speed = missing ? 1 : courseSpeed(state);
   const measuredRpm = Math.max(0, Number(input?.rpm) || 0);
   const inferredFor = disconnected ? state.sensorMissingFor + dt : 0;
   const slowdownSeconds = Math.max(STEP, Number(course.motion.inferred_slowdown_s ?? 0.5));
@@ -151,7 +249,10 @@ function singleStep(state, input, dt, course) {
   }
 
   let targetAltitude = state.targetAltitude;
-  if (!missing) targetAltitude = targetForRpm(rawRpm === 0 ? 0 : filteredRpm, state.calibration);
+  if (!missing) {
+    const endpointRpm = rawRpm <= state.calibration.lowRpm || rawRpm >= state.calibration.highRpm;
+    targetAltitude = targetForRpm(endpointRpm ? rawRpm : filteredRpm, state.calibration);
+  }
   if (disconnected) targetAltitude = targetForRpm(rawRpm, state.calibration);
 
   const desiredRate = (targetAltitude - state.altitude) / course.motion.response_s;
@@ -171,9 +272,11 @@ function singleStep(state, input, dt, course) {
     collisionProtected: missing,
     inputMode: disconnected ? 'inferred-slowdown' : 'measured',
     invincibleRemaining: Math.max(0, state.invincibleRemaining - dt),
-    courseTime: state.courseTime + dt,
+    courseTime: state.courseTime + dt * speed,
   };
-  next = applyCourseEvents(next, previousTime, course);
+  if (!missing) next = fireWeapons(next, input?.actions, course, input?.weaponPower);
+  next = advanceWeapons(next, dt, course);
+  next = applyCourseEvents(next, previousTime, course, previousCamera);
   return collide(next, course);
 }
 
@@ -193,11 +296,13 @@ export function createFlightState(course, {
     lives: course.rules.lives,
     collisions: 0,
     lastCollisionSegmentId: null,
-    contactSegmentId: null,
+    lastCollisionEntityId: null,
+    crashCause: null,
     restarts: 0,
     invincibleRemaining: 0,
     crashRemaining: 0,
     zeroElapsed: 0,
+    stalled: false,
     sensorMissingFor: 0,
     pausedForSensor: false,
     collisionProtected: false,
@@ -206,17 +311,21 @@ export function createFlightState(course, {
     inputReady: armedAtMs == null,
     lastInputTs: null,
     collectedIds: [],
-    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [] },
+    destroyedIds: [],
+    ...initialWeaponState(course),
+    ...initialBoostState(),
+    checkpoint: { id: 'start', time: 0, restartAltitude: 0.5, collectedIds: [], destroyedIds: [], destroyedBy: {}, entityDamage: {} },
   };
 }
 
 export function stepFlight(state, input, elapsedSeconds, course) {
-  let remaining = Math.max(0, Number(elapsedSeconds) || 0);
-  let next = state;
-  while (remaining > 1e-9) {
-    const dt = Math.min(STEP, remaining);
-    next = singleStep(next, input, dt, course);
-    remaining -= dt;
-  }
-  return next;
+  const elapsed = Math.max(0, Number(elapsedSeconds) || 0);
+  // Checkpoints saved before weapons existed lack these fields.
+  const next = Array.isArray(state.projectiles) ? state : { ...initialWeaponState(course), ...state };
+  // Presses fire once per frame, not once per 1/60 s sub-step (advance clears `actions`).
+  return advance(next, input, elapsed, {
+    step: (st, inp, dt) => singleStep(st, inp, dt, course),
+    stepS: STEP,
+    remainder: 'partial',
+  }).state;
 }

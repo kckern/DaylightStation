@@ -82,3 +82,10 @@ describe('ambiance matching', () => {
   });
   it('returns neutral when no safe artwork exists', () => expect(select({ artworks: {} })).toBeNull());
 });
+
+describe('ambiance random source', () => {
+  it('requires an injected random function', () => {
+    expect(() => select({ random: undefined })).toThrow(TypeError);
+    expect(() => select({ random: 0.5 })).toThrow(TypeError);
+  });
+});

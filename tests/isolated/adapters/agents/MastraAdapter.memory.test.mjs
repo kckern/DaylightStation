@@ -113,3 +113,43 @@ describe('MastraAdapter — memory wiring', () => {
     expect(recorded[0].memOpts).toMatchObject({ memory: { resource: 'kc', thread: 'T-2' } });
   });
 });
+
+// Clearing supplied tools alone cannot suppress SDK-added working-memory tools.
+// An explicit per-request opt-out must omit both SDK memory attachment and scope.
+it.each(['execute', 'streamExecute'])('%s memory:false disables configured memory for only that request', async method => {
+  const { MASTRA_RESOURCE_ID_KEY, MASTRA_THREAD_ID_KEY } = await import('@mastra/core/request-context');
+  const fakeMemory = { __isFakeMemory: true };
+  const { FakeAgent, recorded } = makeFakeAgentClass();
+  const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: fakeMemory });
+  const request = { agentId: 'stub', input: 'automated task', tools: [], systemPrompt: 'sys',
+    context: { userId: 'kc', threadId: 'T-1' } };
+  if (method === 'streamExecute') {
+    for await (const _ of adapter.streamExecute({ ...request, memory: false })) { /* consume */ }
+  } else {
+    await adapter.execute({ ...request, memory: false });
+  }
+  expect(recorded[0].ctorOpts).not.toHaveProperty('memory');
+  expect(recorded[0].memOpts).not.toHaveProperty('memory');
+  expect(recorded[0].memOpts.requestContext.get(MASTRA_RESOURCE_ID_KEY)).toBeUndefined();
+  expect(recorded[0].memOpts.requestContext.get(MASTRA_THREAD_ID_KEY)).toBeUndefined();
+  // Context remains available for identity and tracing; memory is an independent capability.
+  expect(recorded[0].memOpts.requestContext.get('threadId')).toBe('T-1');
+
+  await adapter.execute(request);
+  expect(recorded[1].ctorOpts.memory).toBe(fakeMemory);
+  expect(recorded[1].memOpts.memory).toEqual({ resource: 'kc', thread: 'T-1' });
+});
+
+it('threaded automated assignment opts out at the real runtime adapter boundary', async () => {
+  const { EndOfDayReport } = await import('../../../../__app_modules/wellness/health/server/application/agents/health-coach/assignments/EndOfDayReport.mjs');
+  const { FakeAgent, recorded } = makeFakeAgentClass();
+  const adapter = createAdapter({ logger: silentLogger, agentClass: FakeAgent, memory: { __isFakeMemory: true } });
+  const result = await new EndOfDayReport().execute({ agentRuntime: adapter, tools: [], userId: 'kc', agentId: 'health-coach',
+    context: { threadId: 'assignment-thread' }, logger: silentLogger,
+    workingMemory: { load: async () => ({ pruneExpired() {}, serialize: () => '', set() {} }), save: async () => {} },
+  });
+  expect(recorded[0].ctorOpts).not.toHaveProperty('memory');
+  expect(recorded[0].ctorOpts.tools).toEqual({});
+  expect(recorded[0].memOpts).not.toHaveProperty('memory');
+  expect(result.text).toContain('Calorie-budget evidence is unavailable');
+});

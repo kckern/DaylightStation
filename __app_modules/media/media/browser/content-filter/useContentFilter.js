@@ -17,6 +17,8 @@ import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleto
 import { resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
 import { getEffectHandler, EFFECT_KINDS, SKIP_EPSILON } from "./filterEffects.js";
 import { setSkipCardPaused } from "./skipCardState.js";
+import { createBleepTone } from "./bleepTone.js";
+import { resolveBleepLevel } from "../../../../../shared/contracts/content-filter/filterSettings.mjs";
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
@@ -26,16 +28,44 @@ const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }
 // mounted this long with `visible:false` so it can ramp to 0 before unmount.
 const FILTER_FADE_MS = 300;
 
-/** Default SFX player for bleep sounds; maps a sound name -> URL via profile.sounds. */
-function createSfxPlayer(sounds) {
+// Cue entries that do not bump fireCount in the generic enter path.
+const NOT_A_FIRE = new Set(['title-card', 'skip-card']);
+
+const logBleepDegraded = (reason) =>
+  logger().sampled?.('content-filter.bleep.degraded', { reason }, { maxPerMinute: 5 });
+
+/**
+ * Default SFX player: named sounds from profile.sounds, else the synthesized 1 kHz
+ * bleep. A named sound that cannot play falls back to the tone and is logged.
+ * `tone` is injectable for tests.
+ */
+export function createSfxPlayer(sounds, { level, tone = createBleepTone({ onDegraded: logBleepDegraded, ...(level !== undefined ? { level } : {}) }) } = {}) {
   let audio = null;
+  const stopAudio = () => { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; };
+  const fallBack = (reason, opts) => { logBleepDegraded(reason); tone.start(opts); };
   return {
-    play(name) {
+    play(name, opts = {}) {
+      stopAudio(); // never orphan a looping sound
       const url = sounds?.[name];
-      if (!url || typeof Audio === 'undefined') return;
-      try { audio = new Audio(url); audio.loop = true; audio.play?.().catch(() => {}); } catch (_) { /* ignore */ }
+      if (!url) { fallBack('unknown-sound', opts); return; }
+      if (typeof Audio === 'undefined') { fallBack('no-audio-element', opts); return; }
+      let a;
+      try {
+        a = new Audio(url);
+        a.loop = true;
+        if (Number.isFinite(opts.volume)) a.volume = Math.min(1, Math.max(0, opts.volume));
+      } catch (_) { fallBack('audio-error', opts); return; }
+      audio = a;
+      try {
+        a.play?.()?.catch?.(() => {
+          if (audio !== a) return; // stopped or replaced before the rejection landed
+          audio = null;
+          fallBack('play-rejected', opts);
+        });
+      } catch (_) { audio = null; fallBack('play-error', opts); }
     },
-    stop() { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; },
+    tone(opts) { tone.start(opts); },
+    stop() { stopAudio(); tone.stop(); },
   };
 }
 
@@ -46,20 +76,48 @@ function createSfxPlayer(sounds) {
  * @param {{cues: Array}} args.edl        L1 base EDL
  * @param {object} args.profile           L2 profile/theme
  * @param {object} [args.override]        L3 per-title override
- * @param {{play:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests)
+ * @param {string|null} [args.part]       media part being played (refined cue times bind to a part)
+ * @param {{play:Function, tone:Function, stop:Function}} [args.sfx]  SFX player (injectable for tests).
+ *   Must be memoized: it is a dependency of the main effect, so a new object each
+ *   render tears the filter down (exitAll) and re-attaches on every render.
  * @param {boolean} [args.enabled=true]
- * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array}}
+ * @param {Set<string>} [args.bypass]  Unfiltered peek: cue ids, base cue ids (before
+ *   `#`/`@`) or scene ids whose cues are not applied. The caller adds an id; the hook
+ *   removes it once the playhead passes the last matching cue's `out` (or no cue
+ *   matches any more), so filtering returns on the next pass. Read live each tick.
+ * @returns {{activeOverlays: Array<{effect:string,cue:object}>, activeCard: {text:string}|null, effectiveCues: Array, fireCount: number, filterActive: boolean, lastFired: object|null}}
  */
-export function useContentFilter({ getMediaEl, transport, edl, profile, override, sfx, enabled = true } = {}) {
+export function useContentFilter({ getMediaEl, transport, edl, profile, override, part = null, sfx, enabled = true, bypass = null } = {}) {
   const effectiveCues = useMemo(
-    () => (edl && profile ? resolveEffectiveCues({ edl, profile, override }) : []),
-    [edl, profile, override]
+    () => (edl && profile ? resolveEffectiveCues({ edl, profile, override, part }) : []),
+    [edl, profile, override, part]
   );
-  const defaultSfx = useMemo(() => createSfxPlayer(profile?.sounds), [profile?.sounds]);
+  // The household/film bleep level is read live, so a change applies to the next bleep without
+  // rebuilding the player (which would tear the filter down).
+  const bleepLevelRef = useRef(resolveBleepLevel(profile));
+  bleepLevelRef.current = resolveBleepLevel(profile);
+  const defaultSfx = useMemo(() => createSfxPlayer(profile?.sounds, { level: () => bleepLevelRef.current }), [profile?.sounds]);
   const sfxPlayer = sfx || defaultSfx;
+
+  // Latest-value refs: callers may pass a fresh getMediaEl/transport each render.
+  // Re-running the main effect on identity alone would detach and re-attach every
+  // listener for nothing, so the effect reads these refs.
+  const getMediaElRef = useRef(getMediaEl);
+  getMediaElRef.current = getMediaEl;
+  const transportRef = useRef(transport);
+  transportRef.current = transport;
+  const bypassRef = useRef(bypass);
+  bypassRef.current = bypass;
 
   const [activeOverlays, setActiveOverlays] = useState([]);
   const [activeCard, setActiveCard] = useState(null);
+  // Bumped once per cue entry so the filter-active badge can pulse on each fire.
+  const [fireCount, setFireCount] = useState(0);
+  // True while any cue is entered (mute/bleep/skip alike, not just overlays).
+  const [hasEntered, setHasEntered] = useState(false);
+  // The most recent cue whose effect was entered (skip-cards count, title-cards do
+  // not): the preview surround's "Last" and "Replay last".
+  const [lastFired, setLastFired] = useState(null);
 
   // Cues currently "entered" (id -> cue), so we can fire onExit exactly once.
   const enteredRef = useRef(new Map());
@@ -80,8 +138,20 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     setSkipCardPaused(false);
   }, []);
 
+  // The element the main effect is attached to, and a generation bumped when the
+  // host swaps it out from under a stable getMediaEl (see the rebind check below).
+  const boundElRef = useRef(null);
+  // Effects still entered when the main effect last tore down: { el, sfx, transport }.
+  // The next run either keeps them (same element, cues re-resolved: a preview
+  // refresh must not unmute a word mid-way) or releases them; true unmount releases.
+  const pendingReleaseRef = useRef(null);
+  const [elGen, setElGen] = useState(0);
+  const elGenRef = useRef(0);
+
   useEffect(() => {
-    const el = getMediaEl?.();
+    const el = getMediaElRef.current?.();
+    boundElRef.current = enabled ? (el || null) : null;
+    const transport = { seek: (s) => transportRef.current?.seek?.(s) };
 
     const exitAll = () => {
       const prev = enteredRef.current;
@@ -90,7 +160,17 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (h?.onExit) { try { h.onExit({ el, transport, cue, sfx: sfxPlayer, mem: memRef.current }); } catch (_) { /* ignore */ } }
       });
       prev.clear();
+      setHasEntered(false);
     };
+
+    // The previous run left effects entered. Release them on its own element and
+    // SFX player unless this run continues on the same ones (reconciled below).
+    const pending = pendingReleaseRef.current;
+    pendingReleaseRef.current = null;
+    if (pending && (!enabled || !el || pending.el !== el || pending.sfx !== sfxPlayer)) {
+      releaseEntered(enteredRef.current, pending, memRef.current);
+      setHasEntered(false);
+    }
 
     // Tear down the overlay fade lifecycle (timers + tracked entries).
     const clearOverlayLife = () => {
@@ -131,9 +211,30 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       effects: byEffect, ms: msCount, approx: approxCount,
       syncOffset: override?.sync?.offsetSec ?? 0,
     });
+    const scenes = effectiveCues.sceneSummary;
+    if (scenes?.scenes) {
+      logger().info?.('content-filter.scene.resolved', { scenes: scenes.scenes, effects: scenes.byEffect, untrusted: scenes.untrusted });
+      if (scenes.untrusted.length) logger().warn?.('content-filter.scene.fallback', { untrusted: scenes.untrusted, scenes: scenes.scenes });
+    }
+
+    // Re-resolved cues on the same element: keep each entered effect whose cue is
+    // still active (same id, effect and sound) without re-entering or re-counting
+    // it; release the rest (their cue was ruled off or removed).
+    if (pending && enteredRef.current.size) {
+      const t = el.currentTime;
+      const now = Number.isFinite(t) ? withoutBypassed(cuesActiveAt(effectiveCues, t), effectiveCues, t, bypassRef.current) : [];
+      const byId = new Map(now.map((c) => [c.id, c]));
+      const entered = enteredRef.current;
+      entered.forEach((cue, id) => {
+        const next = byId.get(id);
+        if (next && next.effect === cue.effect && next.sound === cue.sound) { entered.set(id, next); return; }
+        releaseEntered(new Map([[id, cue]]), pending, memRef.current);
+        entered.delete(id);
+      });
+    }
 
     // Per-session apply tally (emitted at teardown).
-    const session = { applied: {}, blurAudioSec: 0 };
+    const session = { applied: {}, blurAudioSec: 0, blackoutSec: 0 };
 
     const tick = () => {
       // While a skip-card is showing, the element is PAUSED (rVFC won't fire) and a
@@ -141,14 +242,27 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
       if (skipCardRef.current.timer) return;
       const t = el.currentTime;
       if (!Number.isFinite(t)) return;
-      const active = cuesActiveAt(effectiveCues, t);
+      const active = withoutBypassed(cuesActiveAt(effectiveCues, t), effectiveCues, t, bypassRef.current);
+
+      // A skip is "done" only while its seek is in flight. Once the playhead is
+      // outside the skipped span it is forgotten, so rewinding into it skips it
+      // again (a scene skip has already removed its own blurs: playing it would
+      // show the scene unfiltered).
+      const done = skipCardRef.current.doneIds;
+      if (done.size) {
+        const activeSkips = new Set(active.filter((c) => c.effect === 'skip-card').map((c) => c.id));
+        for (const id of [...done]) if (!activeSkips.has(id)) done.delete(id);
+      }
 
       // skip-card: seek to the resume point and PAUSE so the seek buffers behind the
       // card; show the card; resume (play) after holdSec so playback is instant.
       const sc = active.find((c) => c.effect === 'skip-card' && !skipCardRef.current.doneIds.has(c.id));
       if (sc) {
         skipCardRef.current.doneIds.add(sc.id);
+        setFireCount((n) => n + 1);
+        setLastFired(sc);
         transport?.seek?.(sc.out + SKIP_EPSILON);
+        const wasPlaying = !el.paused; // a film the viewer paused stays paused after the card
         try { el.pause?.(); } catch (_) { /* ignore */ }
         setSkipCardPaused(true); // suppress the buffering spinner during the deliberate pause
         setActiveCard({ text: sc.text || 'Scene skipped.' });
@@ -156,7 +270,12 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (skipCardRef.current.timer) clearTimeout(skipCardRef.current.timer);
         skipCardRef.current.timer = setTimeout(() => {
           skipCardRef.current.timer = null;
-          try { el.play?.(); } catch (_) { /* ignore */ }
+          // The seek did not land (still inside the span): seek again before resuming.
+          if (el.currentTime >= sc.in && el.currentTime < sc.out) {
+            logger().warn?.('content-filter.skip-card.reseek', { cue: sc.id, at: +el.currentTime.toFixed(2) });
+            transport?.seek?.(sc.out + SKIP_EPSILON);
+          }
+          if (wasPlaying) { try { el.play?.(); } catch (_) { /* ignore */ } }
           setSkipCardPaused(false);
           setActiveCard(null);
         }, holdMs);
@@ -194,8 +313,16 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (!entered.has(cue.id)) {
           entered.set(cue.id, cue);
           if (h.onEnter) { try { h.onEnter(ctxFor(cue)); } catch (e) { logger().warn?.('content-filter.enter-error', { effect: cue.effect, error: e?.message }); } }
+          // A title-card only informs; skip-cards are counted in their own branch above.
+          // A scene split across sync segments counts once.
+          if (!NOT_A_FIRE.has(cue.effect) && cue.firstPiece !== false) setFireCount((n) => n + 1);
+          if (cue.effect !== 'title-card') setLastFired(cue);
+          if (cue.scene) logger().debug?.('content-filter.scene.enter', { scene: cue.scene, effect: cue.effect });
+          if (cue.effect === 'blackout' && cue.firstPiece) logger().info?.('content-filter.blackout.shown', { scene: cue.scene, cue: cue.id, cues: cue.cues, sec: +(cue.out - cue.in).toFixed(1) });
           session.applied[cue.effect] = (session.applied[cue.effect] || 0) + 1;
-          if (cue.effect === 'full-blur') session.blurAudioSec += Math.max(0, cue.out - cue.in);
+          // Picture hidden while the sound plays: full-blur and blackout both leak audio.
+          if (cue.effect === 'full-blur' || cue.effect === 'blackout') session.blurAudioSec += Math.max(0, cue.out - cue.in);
+          if (cue.effect === 'blackout') session.blackoutSec += Math.max(0, cue.out - cue.in);
           // Rate-limited so it's visible in prod without spamming per-cue (mute is
           // the leak-prone effect — this is how we confirm a mute actually fired).
           logger().sampled?.('content-filter.applied',
@@ -214,6 +341,8 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
         if (h.kind === EFFECT_KINDS.TRANSPORT && h.onActive) h.onActive(ctxFor(cue));
         if (h.kind === EFFECT_KINDS.OVERLAY) overlays.push({ effect: cue.effect, cue });
       }
+
+      setHasEntered(entered.size > 0);
 
       // Overlay fade lifecycle: mark active overlays visible (cancel any pending
       // removal); mark exited ones visible:false and schedule removal after the
@@ -260,6 +389,23 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     const onSeeking = () => { exitAll(); };
     el.addEventListener('seeking', onSeeking);
 
+    // A bleep must not keep sounding over a paused or stalled picture. On
+    // pause/waiting stop the sound (the video stays muted); on playing, after
+    // tick() has run (registered later, so it fires later), restart it for the
+    // first bleep cue still entered.
+    const enteredBleep = () => [...enteredRef.current.values()].find((c) => c.effect === 'bleep');
+    const onHalt = () => { if (enteredBleep()) sfxPlayer.stop?.(); };
+    const onResume = () => {
+      const cue = enteredBleep();
+      if (!cue) return;
+      const opts = { volume: el.volume };
+      if (cue.sound) sfxPlayer.play?.(cue.sound, opts);
+      else sfxPlayer.tone?.(opts);
+    };
+    const haltEvents = ['pause', 'waiting'];
+    haltEvents.forEach((ev) => el.addEventListener(ev, onHalt));
+    el.addEventListener('playing', onResume);
+
     let stopped = false;
     let rvfcHandle = null;
     const hasRvfc = typeof el.requestVideoFrameCallback === 'function';
@@ -273,30 +419,101 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     }
 
     logger().debug?.('content-filter.mounted', { cues: effectiveCues.length, driver: hasRvfc ? 'rvfc' : 'timeupdate' });
+    // Apply now, in this commit: a re-run (a preview refresh re-resolved the cues)
+    // released every effect in the cleanup, and waiting for the next timeupdate
+    // would let up to ~250 ms of a muted word or a blurred frame through.
+    tick();
     return () => {
       stopped = true;
       // NOTE: do NOT clear the skip-card timer here — this cleanup also runs on
-      // benign effect re-runs (e.g. an unstable getMediaEl identity), which would
-      // cancel an in-flight resume. It's cleared only on true unmount (below).
+      // effect re-runs that are not unmounts (enabled toggled, cues or sfx player
+      // changed), which would cancel an in-flight resume. It's cleared only on
+      // true unmount (the effect above).
       if (hasRvfc && rvfcHandle != null && typeof el.cancelVideoFrameCallback === 'function') {
         try { el.cancelVideoFrameCallback(rvfcHandle); } catch (_) { /* ignore */ }
       }
       reactEvents.forEach((ev) => el.removeEventListener(ev, tick));
       el.removeEventListener('seeking', onSeeking);
-      exitAll();
+      haltEvents.forEach((ev) => el.removeEventListener(ev, onHalt));
+      el.removeEventListener('playing', onResume);
+      // Do not release here: a re-run (re-resolved cues) reconciles, so a word
+      // that is still muted stays muted. The next run or the unmount releases.
+      if (enteredRef.current.size) pendingReleaseRef.current = { el, sfx: sfxPlayer, transport };
       clearOverlayLife();
       // Session summary (info): what actually fired this segment + blur-with-audio
       // exposure (seconds where video was hidden but audio kept — leak surface).
       logger().info?.('content-filter.session', {
-        applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1),
+        applied: session.applied, blurAudioSec: +session.blurAudioSec.toFixed(1), blackoutSec: +session.blackoutSec.toFixed(1),
       });
     };
   // override?.sync?.offsetSec is read only for the 'content-filter.resolved' log
   // payload above; the real dependency is effectiveCues, which already
   // incorporates override — adding override directly would re-run this
   // timer/listener-setup effect on unrelated override field changes.
+  // getMediaEl/transport are read through latest-value refs (see above), so a new
+  // identity alone does not tear the filter down.
+  // elGen: the element was replaced (see below), so release the old one and attach anew.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, getMediaEl, transport, effectiveCues, sfxPlayer]);
+  }, [enabled, effectiveCues, sfxPlayer, elGen]);
 
-  return { activeOverlays, activeCard, effectiveCues };
+  // True unmount: release whatever the main effect left entered. Declared after
+  // the main effect so its cleanup (which records the pending release) runs first.
+  useEffect(() => () => {
+    const pending = pendingReleaseRef.current;
+    pendingReleaseRef.current = null;
+    if (pending) releaseEntered(enteredRef.current, pending, memRef.current);
+  }, []);
+
+  // Rebind check, after every commit. VideoPlayer re-keys the media element (a
+  // resilience re-mint, a bitrate-cap move, a soft reinit) while getMediaEl keeps
+  // its identity, and a <dash-video>'s inner <video> can appear after commit.
+  // Without this the listeners stay on the detached element and every later cue
+  // goes unfiltered. The host re-renders about once a second, which bounds the gap.
+  useEffect(() => {
+    if (!enabled) return;
+    const current = getMediaElRef.current?.() || null;
+    if (current === boundElRef.current) return;
+    const from = boundElRef.current ? 'detached' : 'none';
+    boundElRef.current = current; // don't bump again before the main effect re-attaches
+    elGenRef.current += 1;
+    logger().info?.('content-filter.element.rebound', { from, gen: elGenRef.current });
+    setElGen(elGenRef.current);
+  });
+
+  const filterActive = hasEntered || activeOverlays.length > 0 || !!activeCard;
+  return { activeOverlays, activeCard, effectiveCues, fireCount, filterActive, lastFired };
+}
+
+/** Fire onExit for each entered cue on the given element/SFX player, then clear the map. */
+function releaseEntered(entered, { el, sfx, transport }, mem) {
+  entered.forEach((cue) => {
+    const h = getEffectHandler(cue.effect);
+    if (h?.onExit) { try { h.onExit({ el, transport, cue, sfx, mem }); } catch (_) { /* ignore */ } }
+  });
+  entered.clear();
+}
+
+export { baseId } from './contentFilter.js';
+import { baseId } from './contentFilter.js';
+
+/** Does bypass `id` cover `cue` (its id, its base id, or its scene)? */
+const coveredBy = (cue, id) => cue.id === id || cue.scene === id || cue.subject === id || baseId(cue.id) === id;
+
+/**
+ * Drop bypassed cues from `active`, and expire bypass ids whose cues the playhead
+ * has passed (t > the last matching cue's out) or that match no cue any more.
+ * Mutates `set` (the caller's peek set).
+ */
+function withoutBypassed(active, cues, t, set) {
+  if (!set || !set.size) return active;
+  for (const id of [...set]) {
+    let end = -Infinity;
+    for (const c of cues) if (coveredBy(c, id)) end = Math.max(end, c.out);
+    if (t > end) {
+      set.delete(id);
+      logger().info?.('content-filter.peek.ended', { id, at: +t.toFixed(2), matched: end > -Infinity });
+    }
+  }
+  if (!set.size) return active;
+  return active.filter((c) => ![...set].some((id) => coveredBy(c, id)));
 }

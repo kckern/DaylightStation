@@ -23,6 +23,21 @@ describe('FilesystemCardLadderRecordings', () => {
     expect(recordings.save({ package: 'spanish-vocab', learnerId: 'kid', day: '2026-09-22', wordId: 'hola', buffer: Buffer.from('es') })).toMatchObject({ take: 1 });
     expect(await readFile(path.join(root, 'spanish-vocab/kid/2026-09-22/hola-1.webm'), 'utf8')).toBe('es');
   });
+  it('lists a day\'s takes by word and number, and opens one by its number', () => {
+    const recordings = new FilesystemCardLadderRecordings({ rootDir: root });
+    const at = { package: 'korean-vocab', learnerId: 'kid', day: '2026-09-22' };
+    recordings.save({ ...at, wordId: 'pul', buffer: Buffer.from('p1') });
+    recordings.save({ ...at, wordId: 'gawi', buffer: Buffer.from('g1') });
+    recordings.save({ ...at, wordId: 'gawi', buffer: Buffer.from('g2'), ext: 'ogg' });
+    expect(recordings.list(at)).toEqual([
+      { wordId: 'gawi', take: 1, ext: 'webm' }, { wordId: 'gawi', take: 2, ext: 'ogg' }, { wordId: 'pul', take: 1, ext: 'webm' },
+    ]);
+    expect(recordings.open({ ...at, wordId: 'gawi', take: 2 })).toMatchObject({ contentType: 'audio/ogg' });
+    expect(recordings.open({ ...at, wordId: 'gawi', take: 3 })).toBeNull();
+    expect(recordings.open({ ...at, wordId: 'gawi', take: 0 })).toBeNull();
+    expect(recordings.list({ ...at, day: '2026-09-23' })).toEqual([]);
+    expect(recordings.list({ ...at, learnerId: '../x' })).toEqual([]);
+  });
   it('refuses unsafe ids, days and extensions', () => {
     const recordings = new FilesystemCardLadderRecordings({ rootDir: root });
     expect(() => recordings.save({ package: 'korean-vocab', learnerId: '../x', day: '2026-09-22', wordId: 'gawi', buffer: Buffer.from('x') })).toThrow(/invalid recording address/);

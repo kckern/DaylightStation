@@ -1,3 +1,7 @@
+import { dispatchRiderSelection } from '../lib/riderSelection.js';
+import { createSelectorInputRouter } from '../lib/selectorInputRouter.js';
+import { committedZoneId, earnedZoneFields } from '../lib/committedZone.js';
+import { publishLiveMemos } from '../lib/liveSessionStore.js';
 import { usePlaybackBudget } from '../player/usePlaybackBudget.js';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -16,11 +20,12 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { getModuleManifest } from "../index.js";
 import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
-import { applyEquipmentCatalogFromConfig } from "./fitnessConfigBridge.js";
-import { buildPairRequest, buildRemoveRequest } from "./fitnessBtActions.js";
+import { applyEquipmentCatalogFromConfig, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
+import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
 import { buildRiderToast } from "../player/overlays/buildRiderToast.js";
+import { buildAssignFailureToast } from "../player/overlays/buildAssignFailureToast.js";
 import { lookupUserName } from "../player/overlays/lookupUserName.js";
 import { createChallengeToastTracker, nextChallengeToast } from "../player/overlays/challengeToastTracker.js";
 import { buildChallengeToast } from "../player/overlays/buildChallengeToast.js";
@@ -28,6 +33,7 @@ import { mergeRingCelebrationToast } from "../player/overlays/buildRingCelebrati
 import { createFireZoneTracker, nextFireToasts } from "../player/overlays/fireZoneTracker.js";
 import { buildFireToast } from "../player/overlays/buildFireToast.js";
 import { planFireToasts } from "../player/overlays/fireToastQueue.js";
+import { evaluateFireCeremony } from "../player/overlays/fireCeremonyEligibility.js";
 import { createRingCelebrationTracker, normalizeRingCelebrationsConfig, ringCelebrationsForAward, seedRingCelebrationTracker } from "../player/overlays/ringCelebrations.js";
 import { DaylightMediaPath } from "../../../../../frontend/src/lib/api.mjs";
 import { playRingCelebrationCue } from "../player/overlays/ringCelebrationAudio.js";
@@ -172,10 +178,16 @@ export const useFitness = useFitnessContext;
 
 // Provider component
 export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQueue: propPlayQueue, setFitnessPlayQueue: propSetPlayQueue, kioskMode = false, deviceId = null }) => {
+  const selectorInputRouterRef = useRef(null);
+  if (!selectorInputRouterRef.current) selectorInputRouterRef.current = createSelectorInputRouter();
   // UI State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
   const [, setMusicAutoEnabledState] = useState(false);
   const [musicOverride, setMusicOverride] = useState(null);
+  // contentId of the video a rider forced music on for (settings toggle on an
+  // untagged video). Scoped to that one video: the next video falls back to
+  // its labels.
+  const [musicForceOnId, setMusicForceOnId] = useState(null);
   const [lastPlaylistId, setLastPlaylistId] = useState(null);
   const [videoPlayerPaused, setVideoPlayerPaused] = useState(false);
   // True while the workout video is loading, recovering, or waiting on a file
@@ -205,6 +217,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const fitnessToastRef = useRef(null);
   const fireZoneTrackerRef = useRef(createFireZoneTracker());
   const pendingFireEntriesRef = useRef([]);
+  // The session the tracker and queue belong to. A new session object or id
+  // (end, reset, new session) clears both: an entry must never leak across.
+  const fireSessionKeyRef = useRef({ session: null, sessionId: null });
   const ringCelebrationTrackerRef = useRef(createRingCelebrationTracker());
   const pendingRingEntriesRef = useRef([]);
   const ringFlushTimerRef = useRef(null);
@@ -226,6 +241,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Bluetooth game-controller management (Task 3.3)
   const [btInventory, setBtInventory] = useState(null);
   const [controllerPairing, setControllerPairing] = useState(null);
+  const [controllerForget, setControllerForget] = useState(null);
   const btReqRef = useRef(0);
   const vibrationTimeoutRefs = useRef({});
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
@@ -285,8 +301,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const emitAppEvent = React.useCallback((eventType, payload, sourceAppId, options = {}) => {
     const event = { type: eventType, payload, source: sourceAppId, timestamp: Date.now() };
     const listeners = appEventListeners.current.get(eventType) || [];
-    listeners.forEach(cb => { try { cb(event); } catch (e) { console.error(e); } });
+    let consumed = false;
+    listeners.forEach(cb => { try { if (cb(event) === true) consumed = true; } catch (e) { getLogger().error('fitness.app_event.listener_failed', { eventType, error: e.message }); } });
     if (options.persist !== false) fitnessSessionRef.current?.logEvent?.('app_event', event);
+    return consumed;
   }, []);
 
   const subscribeToAppEvent = React.useCallback((eventType, callback) => {
@@ -614,6 +632,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         : []
     };
   }, [fitnessConfiguration]);
+  const riderSelectors = riderSelectorsFromConfig(fitnessConfiguration);
+  // Consumers release/rebind their own claims when selector configuration
+  // changes. Clearing here would erase a child's newly rebound claim.
+  useEffect(() => () => selectorInputRouterRef.current.clear(), []);
 
   // Pass selection config to persistence manager for primary media selection
   useEffect(() => {
@@ -907,8 +929,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const assignGuestToDevice = React.useCallback((deviceId, assignment) => {
     if (!guestAssignmentServiceRef.current) return;
     const result = guestAssignmentServiceRef.current.assignGuest(deviceId, assignment);
-    if (!result?.ok && FITNESS_DEBUG) {
-      logFitnessContext('assign-guest-failed', { deviceId, message: result?.message }, { level: 'warn' });
+    if (!result?.ok) {
+      // Never silent: always logged (the service also logs
+      // guest_assignment.rejected) and shown on the overlay toast slot.
+      logFitnessContext('assign-guest-failed', {
+        code: result?.code || null,
+        deviceId: deviceId != null ? String(deviceId) : null,
+        userId: assignment?.profileId || null,
+        message: result?.message
+      }, { level: 'warn' });
+      toastIdRef.current += 1;
+      const toast = normalizeToast(buildAssignFailureToast(result, assignment), toastIdRef.current);
+      fitnessToastRef.current = toast;
+      setFitnessToast(toast);
     }
     // Trigger re-render for transferred users (grace period substitution)
     setTransferVersion(v => v + 1);
@@ -967,6 +1000,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return raw.map((memo) => ({ ...memo }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceMemoVersion, version]);
+
+  useEffect(() => {
+    publishLiveMemos(fitnessSessionRef.current?.sessionId, voiceMemos);
+  }, [voiceMemos]);
 
   const getVoiceMemoById = React.useCallback((memoId) => {
     if (!memoId) return null;
@@ -1226,10 +1263,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const mediaMusicAutoEnabled = hasVideo
     && queuedMusicLabels.some(label => normalizeLabelList(nomusicLabels).includes(label));
   const musicAutoEnabled = mediaMusicAutoEnabled;
-  // Music is an overlay for a video that explicitly asks for an external
-  // soundtrack. It is never a standalone chart feature, and a manual request
-  // cannot manufacture permission to start it without that video.
-  const musicEnabled = hasVideo && musicAutoEnabled && musicOverride !== false;
+  const queuedMusicContentId = hasVideo ? getItemIdentifier(fitnessPlayQueue[0]) : null;
+  const musicForcedOn = hasVideo && musicForceOnId != null && musicForceOnId === queuedMusicContentId;
+  // true = forced on for this video, false = silenced, null = follow labels.
+  const effectiveMusicOverride = musicForcedOn ? true : musicOverride;
+  // Music is an overlay on a queued video: automatic for a video carrying a
+  // nomusic label, or forced on by the rider for the current video only. It is
+  // never a standalone chart feature (no video = no music).
+  const musicEnabled = hasVideo && (musicForcedOn || (musicAutoEnabled && musicOverride !== false));
 
   React.useEffect(() => {
     if (musicEnabled) {
@@ -1249,14 +1290,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, []);
 
   const setMusicOverrideState = React.useCallback((nextEnabled) => {
-    if (nextEnabled === null || nextEnabled === undefined) {
+    // false silences music (the settings Music toggle, a player failure/close);
+    // true forces it on for the queued video even without a nomusic label
+    // (2026-11-04); null clears both and follows the labels again. Music
+    // still needs a video in the player: never standalone (apps such as
+    // dance party run their own music).
+    if (nextEnabled === true) {
+      setMusicForceOnId(queuedMusicContentId);
       setMusicOverride(null);
       return;
     }
-    // Callers may silence an allowed overlay (player failure/close), but may
-    // not force music on. The settings UI intentionally exposes no toggle.
+    setMusicForceOnId(null);
     setMusicOverride(nextEnabled === false ? false : null);
-  }, []);
+  }, [queuedMusicContentId]);
 
   // Music player control helpers for voice memo coordination
   const pauseMusicPlayer = useCallback(() => {
@@ -1277,16 +1323,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const decision = {
       contentId: item ? getItemIdentifier(item) : null,
       labels: normalizeLabelList(item?.labels),
-      source: musicOverride === false ? 'manual-off' : 'media-label',
+      source: musicForcedOn ? 'manual-on' : musicOverride === false ? 'manual-off' : 'media-label',
       autoEnabled: musicAutoEnabled,
-      manualOverride: musicOverride,
+      manualOverride: effectiveMusicOverride,
       enabled: musicEnabled,
     };
     const previous = previousMusicDecisionRef.current;
     if (JSON.stringify(previous) === JSON.stringify(decision)) return;
     previousMusicDecisionRef.current = decision;
     getLogger().info('fitness.music.decision', { previous, current: decision });
-  }, [fitnessPlayQueue, musicAutoEnabled, musicOverride, musicEnabled]);
+  }, [fitnessPlayQueue, musicAutoEnabled, musicOverride, musicForcedOn, effectiveMusicOverride, musicEnabled]);
 
   // Governance Media Update
   const setGovernanceMedia = React.useCallback((input) => {
@@ -1476,12 +1522,21 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             return;
           }
           if (data?.topic === 'bt.pair.progress') {
+            getLogger().info('fitness.bt.pair-progress', {
+              requestId: data.requestId,
+              phase: data.phase,
+              address: data.device?.address,
+              controllerId: data.controllerId,
+              attempt: data.attempt,
+              reason: data.reason,
+              message: data.message,
+            });
             setControllerPairing(data);
             return;
           }
           if (data?.topic === 'bt.remove.result') {
-            // Forget completed (success/failure surfaced by inventory refresh); log only.
             getLogger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
+            setControllerForget({ address: data.address, success: !!data.success, error: data.error || null });
             return;
           }
 
@@ -1503,16 +1558,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             return;
           }
 
-          // Cosmetic rider-assignment toast (additive — must NOT return; the
-          // claim is still set by ingestData below).
           if (data?.topic === 'rider_select') {
-            riderToastRef.current?.(data);
-          }
-
-          session.ingestData(data);
-          if (data?.topic === 'rider_select') {
-            emitAppEvent('rider-select', data, data.equipmentId || 'rider-selector', { persist: false });
-          }
+            dispatchRiderSelection(data, {
+              route: selectorInputRouterRef.current.route,
+              ingest: (selection) => session.ingestData(selection),
+              emit: (selection) => emitAppEvent('rider-select', selection, selection.equipmentId || 'rider-selector', { persist: false }),
+              toast: (selection) => riderToastRef.current?.(selection),
+            });
+          } else session.ingestData(data);
           batchedForceUpdate(); // Batched: multiple messages in same frame = 1 render
         }
       );
@@ -1578,17 +1631,29 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, []);
 
   // Bluetooth game-controller management actions (Task 3.3)
-  const pairController = useCallback((durationMs = 30000) => {
-    const requestId = `pair-${++btReqRef.current}`;
-    setControllerPairing({ phase: 'scanning', durationMs });
+  // `targets` (from input.yml controllers) tell the garage box what to look
+  // for and which legacy PIN to answer with.
+  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS } = {}) => {
+    const requestId = `pair-${Date.now().toString(36)}-${++btReqRef.current}`;
+    setControllerPairing({ phase: 'scanning', durationMs, requestId, optimistic: true });
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
-      wsService.send(buildPairRequest({ requestId, durationMs }));
+      wsService.send(buildPairRequest({ requestId, durationMs, targets }));
     });
-    getLogger().info('fitness.bt.pair-request', { requestId, durationMs });
+    getLogger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, targets: targets.length });
+    // The garage box answers within a second with its own `scanning`. Silence
+    // means it is offline — say so instead of spinning forever.
+    setTimeout(() => {
+      setControllerPairing((cur) => {
+        if (!cur || cur.requestId !== requestId || !cur.optimistic) return cur;
+        getLogger().warn('fitness.bt.pair-no-response', { requestId });
+        return { phase: 'done', paired: [], reason: 'no-response', requestId };
+      });
+    }, 15000);
     return requestId;
   }, []);
 
   const forgetController = useCallback((address) => {
+    setControllerForget(null);
     const requestId = `forget-${++btReqRef.current}`;
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
       wsService.send(buildRemoveRequest({ requestId, address }));
@@ -1885,7 +1950,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const zoneLedPayload = React.useMemo(() => {
     if (!ambientLedEnabled) return [];
     return participantRoster.map(p => ({
-      zoneId: p.rawZoneId || p.zoneId || null,
+      zoneId: committedZoneId(p),
       isActive: p.isActive !== false
     }));
   }, [participantRoster, ambientLedEnabled]);
@@ -1911,7 +1976,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // otherwise the backend computes maxZoneRank=-1 and the fan never fires.
   const fanRoster = React.useMemo(
     () => participantRoster.map(p => ({
-      zoneId: p.rawZoneId || p.zoneId || null,
+      zoneId: committedZoneId(p),
       isActive: p.isActive !== false
     })),
     [participantRoster]
@@ -2019,13 +2084,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       const isGuest = Boolean(ledgerEntry);
       const source = isGuest ? 'Guest' : 'Primary';
       const displayLabel = getDisplayLabel(user.name, { userId: user.id });
-
+      // The earned zone comes from ZoneProfileStore (trusted + hysteresis), the
+      // same source as governance and the roster. User.currentData is raw HR.
       map.set(key, {
         name: user.name,
         heartRate: data.heartRate,
-        zoneId: data.zone,
-        zoneName: data.zoneName,
-        zoneColor: data.color,
+        ...earnedZoneFields(session?.zoneProfileStore?.getZoneState?.(user.id)),
         targetHeartRate: data.targetHeartRate,
         rangeMin: data.rangeMin,
         rangeMax: data.rangeMax,
@@ -2046,7 +2110,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return map;
   // Note: preferGroupLabels is included to ensure displayLabel updates when device count changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels]);
+  }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels, session]);
 
   // Zone-progress lookup index. Keyed by profile ID, device IDs, given name,
   // AND display label so a caller holding any of them resolves the same entry.
@@ -2315,41 +2379,89 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [zoneProfileLookup]);
 
   // Reaching Fire is called out by name. Driven off the STABILIZED zone, so
-  // ZoneProfileStore's hysteresis (5s cooldown / 3s stability / 5bpm exit
-  // margin) is what keeps this from chattering at the 160bpm line; the tracker
-  // adds a per-person quiet period on top, because interval work legitimately
-  // re-crosses that line many times in a session.
+  // ZoneProfileStore's hysteresis (2-sample upward confirm / 5s cooldown / 3s
+  // stability / 5bpm exit margin) is what keeps this from chattering at the
+  // line; the tracker then requires Fire HELD (FIRE_CEREMONY_SUSTAIN_MS, 3+
+  // readings all at or above the line) and adds a per-person quiet period,
+  // because interval work legitimately re-crosses that line many times.
+  // The flush re-checks the rider's live state before showing anything.
   //
   // Must live BELOW `zoneProfiles` — a dep array referencing it from an earlier
   // effect would read the const before initialization.
   const flushFireToasts = useCallback(() => {
-    const { show, queue } = planFireToasts({
-      currentToast: fitnessToastRef.current,
-      queue: pendingFireEntriesRef.current,
-    });
-    pendingFireEntriesRef.current = queue;
-    if (!show) return;
-    pushFitnessToast(buildFireToast(
-      {
+    // Owner rule: a Fire ceremony never happens if the rider is not actually
+    // in Fire. An entry may have waited a long time behind another toast, so
+    // it is judged again against the rider's LIVE state at the moment it would
+    // appear; one that no longer holds is dropped and the next one tried.
+    for (;;) {
+      const { show, queue } = planFireToasts({
+        currentToast: fitnessToastRef.current,
+        queue: pendingFireEntriesRef.current,
+      });
+      pendingFireEntriesRef.current = queue;
+      if (!show) return;
+      const live = fitnessSessionRef.current;
+      const now = Date.now();
+      const queuedForMs = Number.isFinite(show.queuedAt) ? now - show.queuedAt : null;
+      const verdict = evaluateFireCeremony(show, live?.zoneProfileStore?.getProfile?.(show.userId) || null, {
+        now, sessionId: live?.sessionId ?? null
+      });
+      if (!verdict.show) {
+        getLogger().info('fitness.fire_ceremony.dropped', {
+          reason: verdict.reason, userId: show.userId, entryId: show.entryId ?? null, queuedForMs,
+          hr: verdict.heartRate, entryHr: show.heartRate ?? null, fireThreshold: verdict.fireThreshold
+        });
+        continue;
+      }
+      pushFitnessToast(buildFireToast(
+        {
+          userId: show.userId,
+          name: lookupUserName(configuredUsers, show.userId, { preferGroupLabels }) || show.name,
+        },
+        { fireballUrl: DaylightMediaPath('/media/fitness/ux/fireball.gif') }
+      ));
+      getLogger().info('fitness.fire_toast.shown', {
         userId: show.userId,
-        name: lookupUserName(configuredUsers, show.userId, { preferGroupLabels }) || show.name,
-      },
-      { fireballUrl: DaylightMediaPath('/media/fitness/ux/fireball.gif') }
-    ));
-    getLogger().info('fitness.fire_toast.shown', {
-      userId: show.userId,
-      hr: show.heartRate ?? null,
-      fireThreshold: show.fireThreshold ?? null
-    });
+        // The HR at the moment of the ceremony, and the HR that crossed.
+        hr: verdict.heartRate,
+        entryHr: show.heartRate ?? null,
+        fireThreshold: verdict.fireThreshold,
+        zoneEntryId: show.entryId ?? null,
+        previousZoneId: show.previousZoneId ?? null,
+        deviceId: show.deviceId ?? null,
+        sustainedMs: show.sustainedMs ?? null,
+        samples: show.samples ?? null,
+        queuedForMs
+      });
+      return;
+    }
   }, [configuredUsers, preferGroupLabels, pushFitnessToast]);
 
   useEffect(() => {
     // The mirror screen shadows the real one; it must not double-celebrate.
     if (session?._liveSessionRole === 'mirror') return;
-    const { entries, tracker } = nextFireToasts(fireZoneTrackerRef.current, zoneProfiles, { now: Date.now() });
+    const sessionId = session?.sessionId ?? null;
+    const key = fireSessionKeyRef.current;
+    if (key.session !== session || key.sessionId !== sessionId) {
+      if (pendingFireEntriesRef.current.length) {
+        getLogger().info('fitness.fire_ceremony.queue_cleared', {
+          reason: 'session-changed', count: pendingFireEntriesRef.current.length,
+          fromSessionId: key.sessionId, toSessionId: sessionId
+        });
+      }
+      fireSessionKeyRef.current = { session, sessionId };
+      fireZoneTrackerRef.current = createFireZoneTracker();
+      pendingFireEntriesRef.current = [];
+    }
+    const now = Date.now();
+    const { entries, tracker, dropped } = nextFireToasts(fireZoneTrackerRef.current, zoneProfiles, { now });
     fireZoneTrackerRef.current = tracker;
+    (dropped || []).forEach((d) => getLogger().info('fitness.fire_ceremony.dropped', {
+      reason: d.reason, userId: d.userId, entryId: d.entryId ?? null, queuedForMs: null,
+      stage: 'stint', samples: d.samples ?? null, heldMs: d.heldMs ?? null
+    }));
     if (!entries.length) return;
-    pendingFireEntriesRef.current.push(...entries);
+    pendingFireEntriesRef.current.push(...entries.map((entry) => ({ ...entry, sessionId, queuedAt: now })));
     flushFireToasts();
   }, [zoneProfiles, session, flushFireToasts]);
 
@@ -2389,15 +2501,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // SSoT: Prefer ZoneProfileStore for stabilized zone (matches GovernanceEngine)
     const mergedProfileId = existing?.profileId || participant?.profileId || participant?.id || nameOrId;
     const zoneProfile = zoneProfileLookup.get(mergedProfileId);
-    const stabilizedZoneId = zoneProfile?.currentZoneId
-      ? String(zoneProfile.currentZoneId).toLowerCase()
-      : null;
     const stabilizedZoneColor = zoneProfile?.currentZoneColor || null;
-    const mergedZoneId = stabilizedZoneId
-      || existing?.zoneId
-      || (participant?.zoneId ? String(participant.zoneId).toLowerCase() : null);
-    const mergedZoneColor = stabilizedZoneColor
-      || existing?.zoneColor || participant?.zoneColor || null;
+    // An untrusted profile is authoritative: never revive a raw zone under it.
+    const mergedZoneId = committedZoneId(zoneProfile, existing, participant);
+    const mergedZoneColor = zoneProfile
+      ? (zoneProfile.zoneTrusted === false ? null : stabilizedZoneColor)
+      : (existing?.zoneColor || participant?.zoneColor || null);
     const mergedDeviceId = existing?.deviceId || participant?.hrDeviceId || null;
     const mergedSource = existing?.source || (participant?.isGuest ? 'Guest' : null);
     const mergedDisplayLabel = existing?.displayLabel
@@ -2508,11 +2617,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const userCurrentZones = React.useMemo(() => {
     const map = {};
     userVitalsMap.forEach((vitals) => {
-      if (vitals.name && vitals.zoneId) {
-        map[vitals.name] = {
-          id: vitals.zoneId,
-          color: vitals.zoneColor
-        };
+      if (!vitals.name) return;
+      if (vitals.zoneId) {
+        map[vitals.name] = { id: vitals.zoneId, color: vitals.zoneColor, trusted: true };
+      } else if (vitals.zoneTrusted === false) {
+        // Consumers must not derive a zone from raw HR for this rider.
+        map[vitals.name] = { id: null, color: null, trusted: false };
       }
     });
     return map;
@@ -2806,7 +2916,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const playbackBudget = usePlaybackBudget({
     deviceId, policies: governanceConfig?.playback_budgets,
-    supervisorIds: governanceConfig?.superusers, participantRoster,
+    supervisorIds: governanceConfig?.superusers, exemptIds: governanceConfig?.exemptions, participantRoster,
     currentMedia, governanceState, mediaRef: videoPlayerRef,
     externalHold: Boolean(voiceMemoOverlayState?.open),
   });
@@ -2832,6 +2942,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // Bluetooth game-controller management (Task 3.3)
     btInventory,
     controllerPairing,
+    controllerForget,
     pairController,
     forgetController,
     fitnessDevices,
@@ -2847,6 +2958,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     // DEPRECATED: Use participantDisplayMap.get(name).zoneId/zoneName/zoneColor instead
     getZoneProfile,
     userCollections,
+    selectorInputRouter: selectorInputRouterRef.current,
+    riderSelectors,
     deviceOwnership,
     guestCandidates: guestCandidateList,
     
@@ -3007,6 +3120,11 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     plexConfig,
     nomusicLabels,
     musicEnabled,
+    // The queued video plays background music by default (nomusic label).
+    // The settings Music toggle is offered for every video; this only decides
+    // what "on" means (follow the label vs force for this video).
+    musicAllowed: musicAutoEnabled,
+    musicOverride: effectiveMusicOverride,
     setMusicAutoEnabled,
     setMusicOverride: setMusicOverrideState,
     selectedPlaylistId,

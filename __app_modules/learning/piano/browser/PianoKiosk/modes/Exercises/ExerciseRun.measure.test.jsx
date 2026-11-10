@@ -279,7 +279,7 @@ import ExerciseRun from './ExerciseRun.jsx';
 import LearnLab from '../SheetMusic/LearnLab.jsx';
 import ScorePassage from './ScorePassage.jsx';
 import ExerciseNotation from './ExerciseNotation.jsx';
-import { MusicXmlRenderer } from '../../../../../../../frontend/src/modules/MusicNotation/renderers/MusicXmlRenderer.jsx';
+import { MusicXmlRenderer } from '../../../../../../../__capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx';
 import { loadAskSources } from '../../../ask/askResolution.js';
 import { __setNotes, __getNotes } from '../../PianoMidiContext.jsx';
 
@@ -491,10 +491,16 @@ async function buildBundle() {
         for (const [pattern, contents] of STUBS) if (pattern.test(args.path)) return { contents, loader: 'jsx' };
         // TransportSheet's real Icon uses Vite's eager raw-SVG glob. Expand
         // that build-time macro from the shipped assets; do not stub the icon.
-        if (args.path.endsWith('/Piano/ui/icons/Icon.jsx')) {
-          const directory = path.join(path.dirname(args.path), 'svg');
-          const assets = Object.fromEntries(fs.readdirSync(directory).filter((file) => file.endsWith('.svg'))
-            .map((file) => [`./svg/${file}`, fs.readFileSync(path.join(directory, file), 'utf8')]));
+        // The glob covers `svg/` and `svg/generated/`; both feed the icon map.
+        if (args.path.endsWith('/ui/icons/Icon.jsx')) {
+          const assets = {};
+          for (const sub of ['svg', 'svg/generated']) {
+            const directory = path.join(path.dirname(args.path), sub);
+            if (!fs.existsSync(directory)) continue;
+            for (const file of fs.readdirSync(directory).filter((name) => name.endsWith('.svg'))) {
+              assets[`./${sub}/${file}`] = fs.readFileSync(path.join(directory, file), 'utf8');
+            }
+          }
           return { contents: fs.readFileSync(args.path, 'utf8').replace(
             /import\.meta\.glob\([^\n]+\)/, JSON.stringify(assets)), loader: 'jsx' };
         }
@@ -1472,6 +1478,9 @@ describe('the score stage, engraved by the real OSMD in Chromium', () => {
       },
     }, 'Set 1');
 
+    // The keyboard mounts a beat after the set label paints; measure it once it
+    // exists (on a slow worker the probe ran first and found nothing, 2.7s).
+    await page.waitForSelector('.piano-exercise-run__keys', { timeout: 8000 });
     const root = await probe.one('.piano-exercise-run');
     const rail = await probe.one('.piano-exercise-run__rail');
     const keyboard = await probe.one('.piano-exercise-run__keys');
@@ -1500,8 +1509,11 @@ describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
     }
     await page.getByRole('button', { name: /^Choose tempo:/ }).click();
     await page.getByRole('button', { name: 'Full speed', exact: true }).click();
+    // A tempo change re-arms the run; a key pressed before it is armed again is
+    // dropped, and the run then never starts (passed alone, hung in the gate).
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-armed="true"]', { timeout: 20000 });
     await probe.press(84);
-    await page.waitForSelector('.piano-exercise-run.is-running', { timeout: 8000 });
+    await page.waitForSelector('.piano-exercise-run.is-running', { timeout: 20000 });
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     expect(await page.locator('.piano-exercise-run').getAttribute('data-phase')).toBe('paused');
     await page.getByRole('button', { name: 'Resume', exact: true }).click();

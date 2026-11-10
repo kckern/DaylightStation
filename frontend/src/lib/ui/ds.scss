@@ -80,6 +80,27 @@
   }
   &__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
   &__title { margin: 0; font-size: 1rem; color: var(--ds-text-high); }
+
+  // placement="side": on tablet-up, a full-height panel on the right edge that
+  // slides in, so a drill-in sits beside the page it came from. Mobile keeps
+  // the bottom sheet.
+  &--side &__panel {
+    @include bp.tablet-up {
+      left: auto; right: 0; top: 0; bottom: 0;
+      transform: none; width: min(440px, 100vw);
+      max-height: none; height: 100%;
+      box-sizing: border-box;
+      border: 0; border-left: 1px solid var(--ds-border);
+      border-radius: 0;
+      padding: 1rem 1.25rem calc(1rem + env(safe-area-inset-bottom));
+      animation: ds-sheet-in-side var(--ds-motion-base) var(--ds-motion-easing);
+    }
+  }
+}
+
+@keyframes ds-sheet-in-side {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 // Post-action feedback (Toast.jsx). Fixed and out of flow, so a toast
@@ -147,7 +168,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ds-sheet__panel { animation: none; }
+  .ds-sheet__panel, .ds-sheet--side .ds-sheet__panel { animation: none; }
 }
 
 .ds-chrome {

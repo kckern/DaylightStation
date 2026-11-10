@@ -65,7 +65,7 @@ function attachSession(state, sets, session, requestedDefinition) {
 }
 
 function needsBuzzerBinding(state) {
-  return state.inputProfile?.gamepad === 'host-and-buzzer';
+  return state.game !== 'jeopardy' && state.inputProfile?.gamepad === 'host-and-buzzer';
 }
 
 function selectConfiguredSet(state, set, overrides = {}) {
@@ -101,6 +101,8 @@ export function flowReducer(state, action) {
       if (requestedSet || action.launch?.autostart) return selectConfiguredSet(next, requestedSet, action.launch);
       return { ...next, phase: 'set-picker' };
     }
+    case 'SESSION_RESTARTING':
+      return { ...state, phase: 'loading', sessionId: null, result: null, buzzerBindings: null, error: null };
     case 'BOOT_FAILED':
       return { ...state, error: action.error };
     case 'PICK_SET':

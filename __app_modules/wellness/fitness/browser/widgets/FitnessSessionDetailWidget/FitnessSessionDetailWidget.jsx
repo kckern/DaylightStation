@@ -1,4 +1,5 @@
 import PlaybackStrip from './PlaybackStrip.jsx';
+import { mergeVoiceMemos, SESSION_SAVED_EVENT, useLiveSession, withLivePlayback } from '../../lib/liveSessionStore.js';
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { Text } from '@mantine/core';
 import { getWidgetRegistry } from "../../../../../../__capabilities/screen-host/browser/public.mjs";
@@ -244,6 +245,16 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     fetchSession();
   }, [fetchSession]);
 
+  // The landing save carries playback's end, which may not change the list row
+  // this pane otherwise watches, so re-read when that save lands.
+  useEffect(() => {
+    const onSaved = (event) => {
+      if (event.detail?.sessionId === sessionId) fetchSession({ background: true });
+    };
+    window.addEventListener(SESSION_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(SESSION_SAVED_EVENT, onSaved);
+  }, [sessionId, fetchSession]);
+
   // This session's row in the home sessions list. When the row changes (the
   // final save landed, a memo was transcribed, Strava matched) the detail is
   // refreshed in the background. A list refresh that leaves the row untouched
@@ -281,8 +292,20 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const pending = !current && previewHeader != null;
   // No row for it either (a deep link): keep the outgoing session up, dimmed.
   const stale = !current && !pending && sessionData != null;
-  const header = current ? mergeHeaders(detailHeader, previewHeader) : (previewHeader || detailHeader);
-  const detail = (current || stale) ? sessionData : null;
+  const savedHeader = current ? mergeHeaders(detailHeader, previewHeader) : (previewHeader || detailHeader);
+  const savedDetail = (current || stale) ? sessionData : null;
+  // What this client recorded but the API may not have yet: a live session's
+  // memo and the end of its playback. Unknown only means unknown once we've looked.
+  const liveSession = useLiveSession();
+  const header = useMemo(() => {
+    if (!savedHeader || liveSession.sessionId !== sessionId) return savedHeader;
+    const voiceMemos = mergeVoiceMemos(savedHeader.voiceMemos, liveSession.memos);
+    return voiceMemos === savedHeader.voiceMemos ? savedHeader : { ...savedHeader, voiceMemos };
+  }, [savedHeader, liveSession, sessionId]);
+  const detail = useMemo(
+    () => withLivePlayback(savedDetail, sessionId, liveSession),
+    [savedDetail, sessionId, liveSession]
+  );
 
   // The recap shows the episode in picture-in-picture, so a session that played
   // protected replay content (fitness.yml → playback_unlock, session_recaps)

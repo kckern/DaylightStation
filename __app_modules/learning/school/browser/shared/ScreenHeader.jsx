@@ -22,6 +22,7 @@ import "./screenHeader.scss";
 export default function ScreenHeader({
   title, identity = null, onBack = null, backLabel = 'Back', backDisabled = false,
   onDone = null, doneLabel = 'Done', doneDisabled = false, className = '', testId = 'screen-header',
+  status = null,
 }) {
   return (
     <header className={`school-screen-header ${className}`.trim()} data-testid={testId}>
@@ -41,6 +42,9 @@ export default function ScreenHeader({
         {title ? <h2 className="school-screen-header__title">{title}</h2> : null}
         {identity ? <div className="school-screen-header__identity">{identity}</div> : null}
       </div>
+      {/* A transient status (the shelf's scan chip) in the free middle, beside
+          Done: inside the header row, so it moves nothing below it. */}
+      {status}
       {onDone ? (
         <button
           type="button"
@@ -58,6 +62,7 @@ export default function ScreenHeader({
 
 ScreenHeader.propTypes = {
   title: PropTypes.node,
+  status: PropTypes.node,
   /** The learner chip, or anything naming whose screen this is. */
   identity: PropTypes.node,
   /** A step WITHIN the screen. Absent on a screen's root view. */

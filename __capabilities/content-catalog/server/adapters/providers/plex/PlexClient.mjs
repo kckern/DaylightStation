@@ -173,6 +173,50 @@ export class PlexClient {
   }
 
   /**
+   * Alternative clear logos Plex knows for an item (the choices behind its "select art" picker).
+   * @returns {Promise<Object>} MediaContainer.Metadata[] entries: { key, ratingKey, provider, selected, thumb }
+   */
+  async getClearLogos(ratingKey) {
+    return this.request(`/library/metadata/${encodeURIComponent(String(ratingKey))}/clearLogos`);
+  }
+
+  /**
+   * Make Plex use one of the alternatives as the item's clear logo.
+   * @param {string} choice - the alternative's ratingKey (or key) from getClearLogos
+   * @returns {Promise<number|null>} HTTP status
+   */
+  async selectClearLogo(ratingKey, choice) {
+    const params = new URLSearchParams({ url: String(choice) });
+    if (this.#token) params.set('X-Plex-Token', this.#token);
+    const url = `${this.#host}/library/metadata/${encodeURIComponent(String(ratingKey))}/clearLogo?${params.toString()}`;
+    const response = await this.#httpClient.put(url, null, {
+      headers: { Accept: 'application/json', ...(this.#token ? { 'X-Plex-Token': this.#token } : {}) },
+    });
+    return response?.status ?? null;
+  }
+
+  /**
+   * First bytes of an image (enough for a PNG IHDR / JPEG SOF), without downloading the file.
+   * Relative keys go to Plex with the token; absolute URLs (metadata-static.plex.tv) go as they are.
+   * @returns {Promise<Buffer|null>}
+   */
+  async imageHead(keyOrUrl, { bytes = 65535, timeout = 10_000 } = {}) {
+    const absolute = /^https?:\/\//i.test(keyOrUrl);
+    let url = absolute ? keyOrUrl : `${this.#host}${keyOrUrl}`;
+    const headers = { Range: `bytes=0-${bytes}` };
+    if (!absolute && this.#token) {
+      url = `${url}${url.includes('?') ? '&' : '?'}X-Plex-Token=${this.#token}`;
+      headers['X-Plex-Token'] = this.#token;
+    }
+    // Production wires axios (no requestRaw); the app's HttpClient has requestRaw. Support both.
+    const response = typeof this.#httpClient.requestRaw === 'function'
+      ? await this.#httpClient.requestRaw('GET', url, { headers, timeout, responseType: 'buffer' })
+      : await this.#httpClient.get(url, { headers, timeout, responseType: 'arraybuffer' });
+    const body = response?.data ?? response?.body ?? null;
+    return body ? Buffer.from(body) : null;
+  }
+
+  /**
    * HTTP status Plex answers for the first byte of a media part — whether it
    * will actually SERVE the file, which checkFiles (a stat) cannot tell.
    * @param {string} partKey - e.g. /library/parts/494586/1599193403/file.mp4

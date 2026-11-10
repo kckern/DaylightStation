@@ -33,7 +33,6 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
             <div class="health-budget__goal-rail"><span class="health-budget__goal-bracket" style="left:35%;width:27%"></span>
               <span class="health-budget__goal-range-label health-budget__goal-range-label--end" style="left:62%">Goal 12,000–22,345</span></div>
             <div class="health-budget__track health-budget__track--ruler health-budget__track--in-range">
-              <span class="health-budget__goal-band" style="left:35%;width:27%"></span>
               <span class="health-budget__consumed health-budget__consumed--base" style="left:0%;width:44%"></span>
               <span class="health-budget__available health-budget__available--base" style="left:44%;width:11%"></span>
               <span class="health-budget__bonus health-budget__bonus--spent" style="left:55%;width:4%"></span>
@@ -56,7 +55,7 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
         const math = document.querySelector('.health-equation__math').getBoundingClientRect();
         const inside = el => { const r = el.getBoundingClientRect(); return r.left >= math.left - 0.5 && r.right <= math.right + 0.5; };
         const bar = document.querySelector('.health-budget__track').getBoundingClientRect();
-        const goalBandZ = Number(getComputedStyle(document.querySelector('.health-budget__goal-band')).zIndex);
+        const goalColor = getComputedStyle(document.querySelector('.health-budget__goal-bracket')).borderTopColor;
         const consumedZ = Number(getComputedStyle(document.querySelector('.health-budget__consumed')).zIndex);
         const bonusZ = Number(getComputedStyle(document.querySelector('.health-budget__bonus')).zIndex);
         const baselineCursorZ = Number(getComputedStyle(document.querySelector('.health-budget__cursor--baseline')).zIndex);
@@ -68,14 +67,14 @@ for (const { width, mainWidth } of [{ width: 390, mainWidth: 358 }, { width: 800
           // measure its children, the headline and sub-line, instead.
           contained: [...document.querySelectorAll('.health-budget__head > :not(.health-budget__lead), .health-budget__lead > *, .health-budget__goal-range-label, .health-budget__key-item, .health-macro-meter__value')].every(inside),
           barWidth: bar.width, mathWidth: math.width, barBottom: bar.bottom,
-          goalBandAboveConsumed: goalBandZ > consumedZ,
+          goalColor,
           baselineCursorAboveBonus: baselineCursorZ > bonusZ,
           macroTops: macros.map(r => r.top), macroLefts: macros.map(r => r.left),
         };
       });
       expect(geometry.overflow).toBe(false);
       expect(geometry.contained).toBe(true);
-      expect(geometry.goalBandAboveConsumed).toBe(true);
+      expect(geometry.goalColor).toBe('rgb(0, 128, 0)');
       expect(geometry.baselineCursorAboveBonus).toBe(true);
       // The bar is the summary's widest element — at least half the row.
       expect(geometry.barWidth).toBeGreaterThan(geometry.mathWidth * 0.5);

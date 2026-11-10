@@ -55,3 +55,21 @@ describe('BuzzerArbiter', () => {
     expect(b.bindings()).toEqual({ slot_5: 'team_1', slot_2: 'team_2' });
   });
 });
+
+it('rejects a slot already owned by another team instead of stealing it', () => {
+  const arbiter = new BuzzerArbiter([{ id: 'red', slot: 'gamepad:0:Pad' }, { id: 'blue' }]);
+  arbiter.startBind('blue');
+  expect(arbiter.handleBindPress('gamepad:0:Pad')).toBe(false);
+  expect(arbiter.bindings()).toEqual({ 'gamepad:0:Pad': 'red' });
+  expect(arbiter.bindingTeamId).toBe('blue');
+});
+it('keeps a keyed first selection until a different question attempt opens',()=>{
+ const a=new BuzzerArbiter(TEAMS);a.arm(['team_1','team_2'],{windowKey:'q1:attempt0'});a.handleBuzz('slot_2');
+ for(let i=0;i<100;i++)a.arm(['team_1','team_2'],{windowKey:'q1:attempt0'});
+ expect(a.lockedTeamId).toBe('team_2');
+ expect(a.tryBuzz('slot_1')).toMatchObject({accepted:false,reason:'already-selected'});
+ a.arm(['team_1'],{windowKey:'q1:attempt1'});expect(a.lockedTeamId).toBeNull();
+ expect(a.tryBuzz('slot_2')).toMatchObject({accepted:false,reason:'ineligible'});
+ expect(a.tryBuzz('slot_1')).toMatchObject({accepted:true,reason:'candidate'});
+ a.disarm();expect(a.tryBuzz('slot_1')).toMatchObject({accepted:false,reason:'closed'});
+});

@@ -4,20 +4,26 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import PartyGamesApp from "./PartyGamesApp.jsx";
 import AppContainer from '@/modules/AppContainer/AppContainer.jsx';
 import { ScreenAutoplay } from "../../../../../frontend/src/composition/screens/ScreenRenderer.jsx";
+const socket=vi.hoisted(()=>({handler:null,connected:true}));
 const navigation = vi.hoisted(() => ({ push: null }));
 vi.mock("../../../../../__capabilities/screen-host/browser/menu-navigation.mjs",()=>({useMenuNavigationContext:()=>({push:navigation.push})}));
 vi.mock("../../../../../frontend/src/composition/screens/widgets/builtins.js",()=>({registerBuiltinWidgets:()=>{}}));
 vi.mock('@/lib/fkb.js',async importOriginal=>({...await importOriginal(),bindBackButton:()=>{},enableGlobalKeyCapture:()=>{}}));
+import { fetchSession } from "../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
+vi.mock("../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js", () => ({ fetchSession: vi.fn() }));
 import {fetchBoot,createSession} from "./sessionClient.js";
-vi.mock("./sessionClient.js",()=>({fetchBoot:vi.fn(),createSession:vi.fn()}));
-vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:true})}));
-vi.mock("../../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js",()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{}}));
+vi.mock("./sessionClient.js",async original=>({...await original(),fetchBoot:vi.fn(),createSession:vi.fn()}));
+vi.mock('@/hooks/useWebSocket.js',()=>({useWebSocketStatus:()=>({connected:socket.connected}),useWebSocketSubscription:(_,fn)=>{socket.handler=fn;}}));
+vi.mock("../../../../../__capabilities/screen-host/browser/input/adapters/GamepadAdapter.js",()=>({acquireGamepadInputHost:()=>({release:()=>{}}),bindNextGamepadPress:()=>{},cancelPendingGamepadBind:()=>{},clearGamepadRoleBindings:()=>{},restoreGamepadRoleBindings:()=>{}}));
 vi.mock("../effects/EffectOverlay.jsx",()=>({default:()=> <div>Effect rail</div>}));
-vi.mock("./PartyGamesExperience.jsx",()=>({default:({onComplete,sessionId})=><button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>}));
+vi.mock("./PartyGamesExperience.jsx",()=>({default:function Experience({onComplete,sessionId,setId,registerRemoteAction}) {
+ React.useEffect(()=>setId==='remote-navigation'?registerRemoteAction(()=>false):undefined,[setId,registerRemoteAction]);
+ return setId==='remote-navigation'?<><button>Decrease wager</button><button>Increase wager</button><button>Lock wager</button></>:<button onClick={()=>onComplete({outcome:{kind:'completed'},scores:[]})}>Complete {sessionId}</button>;
+}}));
 const config={household_members:[{id:'a',name:'Alice'},{id:'b',name:'Bob'}],team_presets:[]};
 const sets=[{id:'charades:family',definitionId:'charades:family',game:'charades',setId:'family',presenter_id:'charades-stage',setup:'individuals',setupProfile:{kind:'individuals'},competition:false,valid:true}];
 afterEach(()=>vi.restoreAllMocks());
-beforeEach(()=>{window.localStorage.clear();window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
+beforeEach(()=>{socket.connected=true;window.localStorage.clear();window.history.replaceState({},'','/screens/living-room/fhe'); fetchBoot.mockReset().mockResolvedValue({config,sets});createSession.mockReset().mockResolvedValue({header:{session_id:'session-one'}});});
 it('propagates AppContainer definition into casual setup and creates only one session in StrictMode', async()=>{
  render(<React.StrictMode><AppContainer open={{app:'party-games/charades:family'}} clear={()=>{}}/></React.StrictMode>);
  const start=await screen.findByRole('button',{name:'Start with 2 players'});
@@ -199,4 +205,127 @@ it('uses the same named preset defaults when selected from the game picker',asyn
  await screen.findByRole('button',{name:'Complete session-one'});
  expect(screen.queryByTestId('team-setup')).toBeNull();
  expect(createSession.mock.calls[0][0].seats.map(s=>s.id)).toEqual(['a','b']);
+});
+
+it('discards only automatic sessions with obsolete setup metadata',async()=>{
+ window.localStorage.setItem('party-games:jeopardy:night:active-session','old-session');
+ const jeopardy={...sets[0],id:'jeopardy:night',definitionId:'jeopardy:night',game:'jeopardy',presenter_id:'jeopardy-board',competition:true,setup:'teams',setupProfile:{kind:'teams',setup_revision:'new',anonymous_teams:[{name:'Blue Team',color:'#3273dc'},{name:'Gold Team',color:'#e6b325'}]}};
+ fetchBoot.mockResolvedValueOnce({config,sets:[jeopardy],attachedSession:{header:{session_id:'old-session'},state:{set:{}}}}).mockResolvedValueOnce({config,sets:[jeopardy]});
+ render(<PartyGamesApp definitionId="jeopardy:night"/>);
+ expect(await screen.findByRole('button',{name:'Start with 2 teams'})).toHaveFocus();
+ expect(window.localStorage.getItem('party-games:jeopardy:night:active-session')).toBeNull();
+ expect(createSession).not.toHaveBeenCalled();
+});
+
+it('lets an experience that owns its remote matrix use Left for button focus instead of exit',async()=>{
+ const mounted={id:'jeopardy:remote-navigation',definitionId:'jeopardy:remote-navigation',game:'jeopardy',setId:'remote-navigation',presenter_id:'jeopardy-board',setup:'none',setupProfile:{kind:'none'},valid:true};
+ fetchBoot.mockResolvedValue({config,sets:[mounted]});
+ render(<PartyGamesApp definitionId="jeopardy:remote-navigation"/>);
+ await screen.findByRole('button',{name:'Increase wager'});
+ fireEvent.keyDown(window,{key:'ArrowRight'});
+ expect(screen.getByRole('button',{name:'Increase wager'})).toHaveFocus();
+ fireEvent.keyDown(window,{key:'ArrowLeft'});
+ expect(screen.queryByRole('dialog',{name:'Leave game?'})).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Decrease wager'})).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Escape'});
+ expect(screen.getByRole('dialog',{name:'Leave game?'})).toBeVisible();
+});
+
+const jeopardySet={id:'jeopardy:night',definitionId:'jeopardy:night',game:'jeopardy',setId:'night',presenter_id:'jeopardy-board',setup:'none',setupProfile:{kind:'none'},competition:true,valid:true};
+const attached=(id,status='active')=>({header:{session_id:id,experience:{id:'jeopardy'},seats:[],status},state:{competition:true},...(status==='complete'?{result:{outcome:{kind:'completed'},scores:[]}}:{})});
+it.each(['active','complete'])('follows host restart from %s and completes replacement',async status=>{
+ window.history.replaceState({},'','/screens/living-room/party-games/jeopardy:night?session=old');
+ fetchBoot.mockResolvedValueOnce({config,sets:[jeopardySet],attachedSession:attached('old',status)}).mockResolvedValueOnce({config,sets:[jeopardySet],attachedSession:attached('diagnostic:new')});
+ render(<PartyGamesApp definitionId="jeopardy:night"/>);
+ if(status==='active') {await screen.findByRole('button',{name:'Complete old'});fireEvent.keyDown(window,{key:'Escape'});await screen.findByRole('dialog');}else await screen.findByTestId('results');
+ act(()=>socket.handler({kind:'session-restarted',sessionId:'unrelated',replacementSessionId:'ignored'}));expect(fetchBoot).toHaveBeenCalledTimes(1);
+ act(()=>socket.handler({kind:'session-restarted',sessionId:'old',replacementSessionId:'diagnostic:new'}));
+ const completeNew=await screen.findByRole('button',{name:'Complete diagnostic:new'});
+ // The active session is persisted by an effect after the new session renders.
+ await waitFor(()=>expect(window.localStorage.getItem('party-games:jeopardy:night:active-session')).toBe('diagnostic:new'));
+ fireEvent.click(completeNew);await screen.findByTestId('results');
+ expect(screen.queryByRole('dialog')).toBeNull();expect(fetchBoot).toHaveBeenLastCalledWith({diagnosticSessionId:'diagnostic:new',sessionId:null});
+ expect(new URLSearchParams(window.location.search).get('diagnostic_session')).toBe('diagnostic:new');
+});
+it('keeps other game QR while Jeopardy owns its lobby QR and disconnect copy',async()=>{
+ socket.connected=false;fetchBoot.mockResolvedValue({config,sets:[jeopardySet],attachedSession:attached('old')});
+ const view=render(<PartyGamesApp definitionId="jeopardy:night"/>);await screen.findByRole('button',{name:'Complete old'});
+ expect(screen.queryByRole('img',{name:/Scan/})).toBeNull();expect(screen.getByText('Host controls are unavailable. Reconnecting…')).toBeVisible();view.unmount();
+ const other={...jeopardySet,id:'charades:family',definitionId:'charades:family',game:'charades',presenter_id:'charades-stage'};
+ fetchBoot.mockResolvedValue({config,sets:[other],attachedSession:{...attached('other'),header:{session_id:'other',experience:{id:'charades'},seats:[]}}});
+ render(<PartyGamesApp definitionId="charades:family"/>);await screen.findByRole('button',{name:'Complete other'});expect(screen.getByRole('img',{name:/Scan/})).toBeVisible();
+});
+
+it.each(['active','complete'])('transfers same-team physical buzzer bindings from %s before restart remount', async status => {
+  window.history.replaceState({}, '', '/screens/living-room/party-games/jeopardy:night?session=old');
+  const seats = [{id:'red',name:'Red'}];
+  const bindings = { 'gamepad:0:button:0': 'red' };
+  window.localStorage.setItem('party-games:buzzers:old', JSON.stringify(bindings));
+  fetchBoot.mockResolvedValueOnce({config, sets:[jeopardySet], attachedSession:{...attached('old',status),header:{...attached('old',status).header,seats}}})
+    .mockResolvedValueOnce({config, sets:[jeopardySet], attachedSession:{...attached('new'),header:{...attached('new').header,seats}}});
+  render(<PartyGamesApp definitionId="jeopardy:night" />);
+  if (status === 'active') await screen.findByRole('button', {name:'Complete old'});
+  else await screen.findByTestId('results');
+  act(() => socket.handler({kind:'session-restarted',sessionId:'old',replacementSessionId:'new'}));
+  await screen.findByRole('button', {name:'Complete new'});
+  expect(JSON.parse(window.localStorage.getItem('party-games:buzzers:new'))).toEqual(bindings);
+  expect(window.localStorage.getItem('party-games:buzzers:old')).toBeNull();
+});
+it('completed Jeopardy leaves game restart with the phone host', async () => {
+  fetchBoot.mockResolvedValue({config,sets:[jeopardySet],attachedSession:attached('old','complete')});
+  render(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByTestId('results');
+  expect(screen.queryByRole('button',{name:'Play another game'})).toBeNull();
+  expect(screen.getByRole('button',{name:'Exit Party Games'})).toBeVisible();
+});
+
+it('recovers an old bookmarked TV session at boot and transfers its saved hardware roles', async () => {
+  window.history.replaceState({}, '', '/screens/living-room/party-games/jeopardy:night?session=old');
+  const seats = [{ id: 'red', name: 'Red' }];
+  window.localStorage.setItem('party-games:buzzers:old', JSON.stringify({ 'key:1': 'red' }));
+  const old = { ...attached('old'), header: { ...attached('old').header, seats }, replacementSessionId: 'new' };
+  fetchBoot.mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: old })
+    .mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: { ...attached('new'), header: { ...attached('new').header, seats } } });
+  render(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByRole('button', { name: 'Complete new' });
+  expect(JSON.parse(window.localStorage.getItem('party-games:buzzers:new'))).toEqual({ 'key:1': 'red' });
+  expect(new URLSearchParams(window.location.search).get('session')).toBe('new');
+});
+it('reconciles a missed restart on WebSocket reconnect', async () => {
+  window.history.replaceState({}, '', '/screens/living-room/party-games/jeopardy:night?session=old');
+  fetchBoot.mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: attached('old') })
+    .mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: attached('new') });
+  fetchSession.mockResolvedValue({ ...attached('old'), replacementSessionId: 'new' });
+  const view = render(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByRole('button', { name: 'Complete old' });
+  socket.connected = false; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  socket.connected = true; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByRole('button', { name: 'Complete new' });
+  expect(fetchSession).toHaveBeenCalledWith('old');
+});
+
+it('rejects an explicit URL attachment for a different requested pack', async () => {
+  window.history.replaceState({}, '', '/screens/living-room/party-games/jeopardy:night?session=other');
+  fetchBoot.mockResolvedValue({ config, sets: [jeopardySet], attachedSession: { ...attached('other'), diagnostic: { definition_id: 'jeopardy:another' } } });
+  render(<PartyGamesApp definitionId="jeopardy:night" />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('different game definition');
+  expect(createSession).not.toHaveBeenCalled();
+});
+
+it('Retry after a failed reconnect read attaches the newly created current session and its replacement', async () => {
+  fetchBoot.mockResolvedValueOnce({ config, sets: [jeopardySet] });
+  fetchSession.mockRejectedValueOnce(new Error('reconnect read failed'));
+  const view = render(<PartyGamesApp definitionId="jeopardy:night" />);
+  await screen.findByRole('button', { name: 'Complete session-one' });
+  expect(fetchBoot).toHaveBeenNthCalledWith(1, { diagnosticSessionId: null, sessionId: null });
+  socket.connected = false; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  socket.connected = true; view.rerender(<PartyGamesApp definitionId="jeopardy:night" />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('reconnect read failed');
+  fetchBoot.mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: { ...attached('session-one'), replacementSessionId: 'new' } })
+    .mockResolvedValueOnce({ config, sets: [jeopardySet], attachedSession: attached('new') });
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await screen.findByRole('button', { name: 'Complete new' });
+  expect(fetchBoot).toHaveBeenNthCalledWith(2, { diagnosticSessionId: null, sessionId: 'session-one' });
+  expect(fetchBoot).toHaveBeenNthCalledWith(3, { diagnosticSessionId: null, sessionId: 'new' });
+  expect(createSession).toHaveBeenCalledTimes(1);
 });

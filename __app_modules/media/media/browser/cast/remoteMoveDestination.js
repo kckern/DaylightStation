@@ -33,8 +33,11 @@ export function createRemoteMoveDestination({ deviceId, http = DaylightAPI } = {
       let captureResponse;
       try {
         captureResponse = await postHandoff(http, deviceId, captureCommand);
-      } catch (error) {
-        return { status: 'uncertain', reason: error?.message ?? 'capture-not-confirmed' };
+      } catch {
+        // Capture only observes the receiver; no START has been sent. Keep
+        // this phase explicit so the screen's ordinary load fallback works
+        // when its media owner cannot answer (e.g. RetroArch is foreground).
+        return { status: 'uncertain', reason: 'capture-not-confirmed' };
       }
       const captureFailure = explicitFailure(captureResponse, request.operationId);
       if (captureFailure) return captureFailure;

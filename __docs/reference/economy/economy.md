@@ -1,51 +1,207 @@
-# Household Coin Economy — Reference
+# Household Economy — Reference
 
-**Status:** Phase 1 implemented on `feature/household-economy` (2026-07-17).
-**Design & plan:** `ops:docs/_wip/plans/2026-07-17-household-economy-design.md`, `…-implementation.md`.
+**Status.** Wallet, ledger and arcade metered spend: Phase 1 (2026-07-17).
+Weekly earnings preview: 2026-09-26. School economy slice 1 (2026-10): three
+currencies, payouts, the Sunday week close, the early pass, the bank, and the
+School and piano surfaces that read them.
+**Design & plans (private docs):**
+`ops:docs/_wip/plans/2026-07-17-household-economy-design.md` and `…-implementation.md`;
+`ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md`;
+`ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md`;
+`ops:docs/superpowers/specs/2026-10-19-school-economy-slice-1-design.md` and
+`ops:docs/superpowers/plans/2026-10-19-school-economy-slice-1.md`.
 
-Kids earn a household currency — **coins** — by completing piano lessons (or via
-parent deposits) and spend it as a metered drain playing the Fitness arcade
-(EmulatorGame). Coins are convertible to real money (cash-out, Phase 2), so the
-ledger is append-only and auditable.
+## Overview
 
-> **"coins" vs "rings":** the household currency is `coins`. The Fitness
-> HR-zone effort measure is **rings** (renamed from "fitness coins", see
+Kids earn household coins for schoolwork, piano lessons and fitness rings, and
+spend them on privileges: one early piano game before school is done (the early
+pass), and metered arcade play. The pieces:
+
+1. **Earn rules** price a week of evidence (graded school work, green days, piano
+   lessons, rings). The **earnings preview** evaluates them and writes nothing.
+2. **PayoutService** mints what the preview says was earned into an
+   append-only **ledger**, on school and piano events, `fitness.session.ended`
+   (a workout ending) and an hourly failsafe reconcile.
+3. **WeekCloseService** converts each earner's unspent silver to gold on Sunday
+   night. Gold and gems are kept for good.
+4. **Passes** spend silver or gold on one unit of a privilege. Economy owns the
+   purchase, cap, price and refund; the privilege (the piano kiosk) owns
+   consumption.
+5. **BankService** answers one read for every surface: balances, history in
+   plain words, today's pass, offers, and when the week closes.
+
+Every amount comes from the household **catalog** (`economy/config.yml`) and
+the earn rules. A catalog `mode` of `off`, `dry-run` or `live` decides whether
+any of it writes. Coins are meant to become convertible to real money (cash-out,
+a later phase), so the ledger is append-only and auditable.
+
+> **"coins" vs "rings":** the household currency is coins (silver, gold, gems).
+> The Fitness HR-zone effort measure is **rings** (renamed from "fitness coins", see
 > `ops:docs/superpowers/specs/2026-08-26-rings-and-weekly-measures-design.md`). Rings
 > are a measure, not money. They are never exchanged or debited; reaching ring
-> thresholds and winning the weekly ring contest earn coin *awards* (not yet wired).
+> thresholds and winning the weekly ring contest earn coin awards, minted by
+> PayoutService.
 
-## Currency model & source of truth
+## Currencies
 
-The backend is the single source of truth. Balance is **derived by folding an
-append-only transaction ledger** — never stored as a mutable number. `wallet.yml`
+| Currency | Earned by | Spent on | Lifetime |
+|---|---|---|---|
+| `silver` | payouts (every earn rule), parent deposits, legacy earns, pass refunds | early passes, arcade metered spend | the week: unspent silver of a payout earner becomes gold at the Sunday close |
+| `gold` | the week close (`silver → gold` at the catalog's rate, 10:1) | early passes | kept for good; **fractional** (see below) |
+| `gems` | earn rules that pay gems (for example ring thresholds or the contest) | nothing | kept for good, never converted, never buy a pass |
+
+An entry written before currencies existed has no `currency` and is silver.
+Each currency is folded on its own (`foldBalances`) and floored at 0 for display.
+
+### Fractional gold
+
+The week close converts silver to gold at **10 silver : 1 gold**
+(`rate: 0.1`, which multiplies). Gold keeps the fraction: 56 silver closes to
+exactly **5.6 gold**, and fractions accumulate across weeks (5.6 + 4.7 = 10.3).
+Silver and gems stay whole coins; only gold may be fractional
+(`FRACTIONAL_CURRENCIES` in `domain/coins.mjs`).
+
+- **Precision.** A gold amount is a whole number of micro-gold
+  (1 gold = 10⁶ µg), carried as a number rounded to 6 decimals.
+  `createTransaction` snaps a gold `delta` to that grid (56 × 0.1 =
+  5.6000000000000005 is stored as 5.6) and refuses one that rounds to 0;
+  `foldBalances` and the history's `balanceAfter` sum gold in integer
+  micro-gold, so a balance never reads 10.299999999999999. Six places is far
+  finer than any rate (silver is whole, so silver × 0.1 has one decimal place)
+  and integer sums stay exact up to ~9 billion gold.
+- **Display.** Every screen shows `Math.floor` of a gold figure — 5.6 reads
+  **5**, 10.3 reads **10**. A child never sees a decimal. The API
+  (`balances.gold`, history `legs` and `balanceAfter`, a refusal's
+  `details.balance`/`shortfall`) carries the exact stored figure; the server's
+  history sentences (`text`) are already floored ("56 silver → 5 gold ·
+  Sunday", "+5 gold · …"). Browser surfaces floor through
+  `frontend/src/lib/coins/coinFigure.js` (`coinFigure`, `coinMagnitude`; it
+  mirrors `displayCoins`): the bank's balance cards, its ledger amounts and
+  balances, the status board's gold figure. A coin shortfall reads in whole
+  coins rounded **up** (`coinsShort`; the piano lock's "N more gold"): short
+  by 0.4 reads "1 more gold", matching the floored 5 shown against a price of 6.
+- **Under one coin.** A real amount below one gold never reads "0": the
+  history sentence says "6 silver → less than 1 gold · Sunday", a signed
+  amount "+<1 gold", and the bank ledger's leg and balance "+<1" / "<1 gold"
+  (`displayCoinsText` on the server, `coinMagnitudeText` in the browser).
+  Otherwise the floor: 56 silver reads "→ 5 gold". The big balance cards and
+  the status board stay plain floored figures.
+- **Negatives.** `displayCoins`/`coinFigure` round toward zero, never past a
+  figure's size: −0.4 reads 0 (not −1), −5.6 reads −5, never "−0".
+- **Corrections.** `POST /api/v1/economy/users/:id/adjust` takes
+  `currency` (default `silver`; one of silver, gold, gems). Silver and gems
+  take whole deltas; gold any figure non-zero on the 6-place grid. A
+  `reverse:<ref>` adjust un-pays that ref in its own currency only. A ref is
+  used once across currencies: the same ref, delta and currency is a
+  duplicate; any other currency or delta under it is refused.
+- **Spending.** Prices stay whole. Affordability compares the **exact**
+  balance: `balance >= price`. 5.6 gold buys a 5-gold pass (leaving 0.6) and
+  cannot buy a 6-gold one (`PASS_UNAFFORDABLE`, `shortfall: 0.4`). What a
+  floor-displayed balance of N can buy is therefore exactly what N whole gold
+  can buy — the fraction never lets a child buy more than the screen shows.
+- **Old ledgers.** Every gold row written before this is a whole number and
+  folds unchanged.
+
+### How a coin looks (`CoinIcon`)
+
+Every coin drawn on a screen is `frontend/src/lib/icons/CoinIcon.jsx`: the
+Twemoji coin (CC-BY 4.0, attribution in the file header). Printed receipts are
+text and draw no coin.
+
+- `metal: 'gold' | 'silver'` picks a palette in `COIN_PALETTES`. Each palette
+  fills five named roles of the art: rim, inner, face, light, highlight. Gold is
+  the default.
+- `color` (a hex) is the escape hatch shared with `TicketIcon` and `GemIcon`. It
+  rebuilds the five roles as a tint ladder around that one colour and wins over
+  `metal`.
+- Gems are `GemIcon`, a separate component with the same conventions.
+- The coin FIGURES' text colours are not part of the icon: they stay the School
+  tokens `--school-coin-silver` and `--school-coin-gold`.
+- Add a coin only through this component. Never draw one as an emoji, a unicode
+  glyph or a CSS circle (kiosk icons are SVG components).
+
+## Ledger
+
+The backend is the single source of truth. A balance is **derived by folding an
+append-only transaction ledger**, never stored as a mutable number. `wallet.yml`
 is a rebuildable cache re-derived on every mutation.
 
 ### Data layout (under `data/users/{userId}/apps/economy/`)
 
 ```
-ledger/{YYYY-MM-DD}.yml   # append-only transactions, sharded by txn date
-wallet.yml               # { balance, as_of, session } — cache, reconcilable from ledger
+ledger/{YYYY-MM-DD}.yml   # append-only transactions, sharded by txn date (UTC)
+wallet.yml               # { balance, balances, as_of, session } — cache, reconcilable from ledger
 ```
 
-Household policy lives at `data/household/config/economy.yml` (auto-loaded as the
-`economy` household app config).
+`balances` is `{ silver, gold, gems }`. `balance` is the silver figure, kept for
+callers that predate currencies; it is never gold.
+
+### Writes, the user lock and strict reads
+
+Writes to a user's ledger are serialized through one per-user queue and land
+atomically (staged file, then rename), so concurrent appends never lose an entry
+or leave a half-written day file. `withUserLock(userId, fn)` holds that queue for
+a read-check-write (a purchase that checks a balance before it debits). The lock
+is reentrant: an append made inside the lock, or a nested lock, writes straight
+through rather than waiting on itself, but only while the lock's body is
+running; a timer it left behind queues normally. `earn`, `adjust`, `deposit`,
+`mint`, `convert`, `buyPass`, `consumePass`, `refundPass`, `settleSession` and
+`closeSession` each run their whole check-and-append inside the lock, so a
+retried write with the same ref cannot pay twice.
+
+A day file that exists but does not parse is never appended to: the append fails
+(`CORRUPT_LEDGER`) and the file stays as it was. Reads come in two strengths
+(`readAllTransactions(userId, { strict })`):
+
+- **Lenient** (the default, for display): a shard that does not parse reads as
+  empty.
+- **Strict**, for every read-check-append (`mint`, `adjust`, `convert`, passes)
+  and the bank's pass state: a shard that does not parse or is not a list
+  throws `CORRUPT_LEDGER` and nothing is written, so a lost day is never read
+  as "never paid" or "pass unused".
 
 ### Transaction shape
 
 ```yaml
 - id: txn_ab12cd34ef
   at: "2026-07-17T20:15:00.000Z"
-  kind: earn            # deposit | earn | spend | withdraw | adjust
-  delta: 5              # signed integer; sign must match kind
-  action: piano-lesson-complete
-  source: piano
-  ref: "plex:12345"     # traceability handle (dedup key for earns)
+  kind: earn            # deposit | earn | prize | spend | withdraw | adjust | convert | pass
+  currency: silver      # silver | gold | gems; an entry with no currency is silver
+  delta: 5              # signed; sign must match kind. Whole for silver/gems; gold may be fractional (6 places)
+  action: payout:math-daily
+  source: payout
+  ref: "earn:learner_a:math-daily:2026-W42:on-time"   # traceability and idempotency key
+  # optional, written only when set:
+  ruleId: math-daily    # the earn rule that paid it
+  price: { silver: 3 }  # what a pass cost
+  timeliness: on-time
+  evidenceRef: "earn:learner_a:math-daily:2026-W42:on-time"
+  meta: { … }
 ```
 
-## Transaction types
+### Transaction kinds
 
-- **Discrete** — one atomic entry: parent deposit, piano lesson reward.
-- **Metered** — arcade play. Uses **hold-and-settle**: `openSession` places a
+| Kind | Delta | Use |
+|---|---|---|
+| `deposit` | > 0 | parent deposit |
+| `earn` | > 0 | a payout line (`source: payout`), a legacy keyed earn, a pass refund |
+| `prize` | > 0 | a contest win (the weekly ring contest), minted by PayoutService |
+| `spend` | < 0 | a pass price; arcade drain |
+| `withdraw` | < 0 | cash-out (not built) |
+| `adjust` | ≠ 0, either sign | auditable reconciliation (may push the ledger below zero) |
+| `convert` | ≠ 0, either sign | one half of a conversion: a −silver entry paired with a +gold entry. The ledger does not enforce the pairing; the week close writes both halves under the user lock |
+| `pass` | exactly 0 | voucher marker; the coin it cost is a separate `spend`. A state change is a new marker entry (see [Early passes](#early-passes)) |
+
+`PAID_KINDS` (`earn`, `prize`) are the kinds a payout mints. `isPayoutEntry(t)`
+is true only for a paid kind with `source: payout` **and** an `action` in the
+`payout:` namespace, which only `mint` stamps; `source` alone is not proof,
+because older entry points let a caller name it. The week close and the parent
+digest both use this test.
+
+### Discrete vs metered entries
+
+- **Discrete:** one atomic entry: a deposit, a payout line, a pass purchase.
+- **Metered:** arcade play. Uses **hold-and-settle**: `openSession` places a
   hold (one open session per user = the double-spend guard); the client meters
   locally and `settleSession` charges consumed coins periodically; `closeSession`
   settles the tail and clears the session. A ~25-min run is a handful of ledger
@@ -53,162 +209,1129 @@ Household policy lives at `data/household/config/economy.yml` (auto-loaded as th
   - **Settle is a cumulative high-water-mark:** the client sends the *total* coins
     consumed since the session opened (monotonic), and the server charges only
     newly-crossed whole coins. This makes settles idempotent (safe to retry) and
-    immune to sub-coin flushing.
-- **Award** — ring thresholds and the weekly ring contest → coins (not built). Rings are evidence, never exchanged.
+    immune to sub-coin flushing. A settle never charges more than the silver
+    balance.
 
-## Policy catalog (`economy.yml`)
+## Catalog and modes (`economy/config.yml`)
 
-Every earnable/spendable is an entry with parent rules; `users:` holds per-kid
-overrides (most-specific-wins). See the committed example
-`data/household/config/economy.yml` for the full annotated schema. Key fields:
+Household policy lives at `data/household/economy/config.yml`, registered as the
+`economy` household app config in `shared/contracts/householdConfig.mjs`. One
+file holds the payout mode, the Sunday week close, the pass definitions, the
+parent digest schedule, and the legacy keyed `earn`/`spend` maps. The earn rules
+sit beside it in `economy/earn-rules.yml` (see [Earn rules](#earn-rules)).
+
+An example catalog, with placeholder prices:
+
+```yaml
+schema: household.economy/v1
+mode: dry-run              # off | dry-run | live
+rules_source: earn-rules   # economy/earn-rules.yml
+week_close:
+  cron: "30 23 * * 0"      # Sunday 23:30 local
+  convert:
+    - { from: silver, to: gold, rate: 0.1 }   # rate multiplies: 10 silver → 1 gold
+passes:
+  early-pass:
+    privileges: [piano.games]
+    price: { silver: 0, gold: 0 }   # 0 means "not sold in this coin"
+    cap: { per: study-day, count: 1, across: all-passes }
+    authorization: trust
+    refund_within_ms: 60000         # default when omitted
+    max_active_ms: 1800000          # default when omitted (30 minutes)
+digest:
+  cron: "0 18 * * *"
+  zero_days_alert: 2
+earn: {}
+spend: {}
+```
+
+`EconomyConfigProjection` (`adapters/config/EconomyConfigProjection.mjs`) reads
+it two ways:
+
+- `policy()` is the raw doc (`{}` when there is no file). `EconomyService.earn` and
+  `openSession` read its `earn`/`spend` maps.
+- `catalog()` is the doc with every section filled, so payouts, the week close,
+  passes and the digest read it without null checks. Defaults: `mode: off`,
+  `rules_source: earn-rules`, `week_close: { cron: null, convert: [] }`,
+  `passes: {}`, `digest: { cron: null, zero_days_alert: null }`. A section of the
+  wrong type reads as its default. Each pass that leaves them out gets
+  `refund_within_ms: 60000` and `max_active_ms: 1800000`; a value that is set
+  (0 included) is kept as written.
+
+**Modes.** `off`: nothing runs (no preview, no ledger, no per-line logs).
+`dry-run`: payouts log `economy.payout.would-mint` and the week close logs
+`economy.week-close.would-convert`; no balance changes and no wallet snapshot
+is written. `live`: payouts and the close write the ledger. A `mode` other than
+`off`, `dry-run` or `live` reads as `off` and logs `economy.catalog.unknown-mode`
+(once per distinct bad value), so a typo never pays out. A bare `mode:` (null)
+counts as unknown and warns; only a missing key reads as `off` without a
+warning. Passes are sold only in `live`: in `off` and `dry-run`, `buyPass`
+refuses with `PASS_NOT_SOLD` ("the economy is not live") and the bank offers
+nothing (`offers: {}`). Consume and refund do not read the mode, so a pass
+bought while live still settles after a switch away from it.
+
+Each section's reader:
+
+| Section | Read by | See |
+|---|---|---|
+| `mode` | PayoutService (every settle), WeekCloseService (every close), `rewardFor`, the parent digest (every run), `buyPass` and the bank's `offers`/`mode`, School's agenda line | [Payouts](#payouts), [Week close](#week-close) |
+| `week_close` | WeekCloseService; BankService for `weekEndsAt` | [Week close](#week-close) |
+| `passes` | `EconomyService` pass methods, BankService offers | [Early passes](#early-passes) |
+| `digest` | School's parent digest | [Integration points](#integration-points) |
+| `earn` / `spend` | `EconomyService.earn`, `openSession` | below |
+
+**Legacy `earn`/`spend` maps.** Every earnable/spendable is a keyed entry with
+parent rules; `users:` holds per-kid overrides (most-specific-wins). Key fields:
 
 - earn: `reward`, `per`, `daily_cap` (per UTC day)
 - spend: `cost` + `per` (→ drain rate), `self_serve`, `auth`, `blackout` (local-time windows)
 
-**Config is cached at backend startup** — edits require a dev-server restart
-before they take effect.
+`earn` skips (returns `skipped: true`, no ledger entry) when there is no `earn`
+map (`reason: 'no-catalog'`) and when the map is empty (`reason: 'not-priced'`),
+so the always-on piano lesson hook writes and logs nothing. An unknown action in
+a non-empty map is a `ValidationError`.
 
-Card Game's daily-research award uses this configurable catalog entry:
+## Earn rules and the weekly preview
 
-```yaml
-earn:
-  piano-card-game-daily:
-    reward: 2
-    per: completion
-    daily_cap: 2
-```
-
-The Gaming service calls it once when a non-guest user's daily research first becomes
-complete. Its `daily:{local-date}` reference makes retries idempotent; a missing economy
-catalog leaves the campaign reward visible but skips the wallet mutation.
-
-## API (`/api/v1/economy`)
-
-| Method / Path | Body | Returns |
-|---|---|---|
-| GET `/users/:userId/wallet` | — | `{ userId, balance, session }` |
-| POST `/users/:userId/deposit` | `{ amount, note? }` | `{ userId, balance }` |
-| POST `/users/:userId/earn` | `{ action, source, ref? }` | `{ userId, earned, capped, duplicate, balance }` |
-| POST `/users/:userId/sessions` | `{ action, source }` | `{ userId, sessionId, balance, drainPerSecond }` |
-| POST `/users/:userId/sessions/:sessionId/settle` | `{ coins }` (cumulative) | `{ userId, balance, depleted }` |
-| POST `/users/:userId/sessions/:sessionId/close` | `{ coins? }` (cumulative) | `{ userId, balance }` |
-
-Domain errors map to HTTP: `ValidationError` → 400 (bad amount, blackout, no
-balance, existing session), `EntityNotFoundError` → 404 (unknown user).
-
-## Integration points
-
-- **Grade reconciliation (School):** `EconomyService.adjust(userId,
-  { delta, source, ref, note })` applies an exact signed correction outside
-  earn caps. The reference is derived from the append-only grade adjustment or
-  retraction id, making retries idempotent. The ledger may go negative; the
-  displayed wallet remains floored at zero and later earnings repay the debt.
-  School appends a reconciliation success or failure event so a partial
-  failure can be retried safely without replacing the original machine grade.
-
-- **Earn (piano):** `POST /api/play/log` fires `economyService.earn(...,
-  { action: 'piano-lesson-complete', ref: 'plex:{id}' })` fire-and-forget the
-  first time `UserVideoProgressStore` stamps `completedAt`. An economy failure
-  never breaks progress recording. (Assumes `/log` `userId` is piano-kiosk-only —
-  see the design doc's "Known assumptions".)
-- **Earn (Card Game):** the Gaming session service fires `piano-card-game-daily`
-  after the first qualifying battle/featured-skill completion of the local day. Guest
-  play and repeated session commands never pay durable coins.
-- **Spend (arcade):** `frontend/.../EmulatorGame/coinMeteredGate.js` opens a spend
-  session and drains coins as the timer runs, surfacing the balance in the
-  EmulatorConsole overlay (`session.coins`) and its `depleted` state
-  ("Out of coins — earn more!"). Off by default — enabled per-widget via
-  `config.economy.enabled`.
-
-## Weekly earnings preview (school → economy)
-
-**Status:** preview only (2026-09-26). It prices a week of evidence in
-**silver** (the weekly currency of the taxonomy,
-`ops:docs/_wip/plans/2026-09-14-household-economy-taxonomy.md`) and writes nothing to
-any ledger. Design: `ops:docs/_wip/plans/2026-09-26-school-economy-earnings-preview.md`.
+The preview prices a week of evidence in silver (and gems) and writes nothing to
+any ledger. PayoutService mints what it prices, so the School board's "this
+week's silver" and the ledger read one evaluator.
 
 ### Earn rules
 
-`<household>/economy/earn-rules.yml` (read fresh per request, so a rate edit takes
-effect at once; missing = the built-in defaults at revision 0; corrupt = an error,
-never a silent fallback). Every write archives the replaced revision under
+`<household>/economy/earn-rules.yml` is read fresh per request, so a rate edit
+takes effect at once. A missing file means the built-in defaults at revision 0; a
+corrupt file is an error (`economy.earn-rules.corrupt`), never a fallback to the
+defaults. Every write archives the replaced revision under
 `economy/earn-rules.history/NNNN.yml` and stamps `revision`, `revisedAt`,
-`revisedBy`.
+`revisedBy` (`economy.earn-rules.revised`).
 
 | kind | pays for |
 |---|---|
 | `unit` | each graded work session matching `match: {subject, courseId, unitId (prefix)}` |
-| `section-day` | each day the subject was served ("Korean pays every day it's done") |
+| `section-day` | each day the subject was served ("a subject pays every day it's done") |
 | `section-week` | the week, once every day the subject was obligated reads served (or `excused: weekly_satisfied`) |
 | `day-met` | each green day (term grid `met`) |
-| `week-met` | a green week: every study day green AND the weekly row satisfied |
+| `week-met` | a green week: every study day green AND the weekly row satisfied. Pays from Friday on; a settled (past) day that is not green ends it at once (`none`, "Not green: <day>"), because a past day is judged only on evidence stamped before its window closed, so late work cannot turn it green. Today and later days stay open (`pending`); a past day not yet worked out is `indeterminate` |
 | `ring-threshold` | `rate: {rings, silver}` (silver per whole N rings) plus each threshold crossed |
 | `ring-contest` | most rings in the roster at award-week close; `tie: all\|split\|none` |
+| `ring-days` | once per award week, as soon as at least `min` rings (default 1) land on at least `days` study days (default 5). Counts **final** workouts only, summed per study day by start (4 am boundary); `pending` with `progress: {have, need}` while the award week runs, `none` once it closes short |
+| `activity-days` | once per school week, as soon as `match.activity` was done on at least `days` study days (default 4). Activities: `piano-practice` (a passed piano challenge), `card-goal` (the flashcard day goal reached), `story-read` (story time credited). `pending` with progress until the week is over |
+| `activity-contest` | the best score in the roster for `match.activity` that week; `tie` as `ring-contest`. Activities: `race` (the week's featured cycle course, from the race ladder) and `ring-improved` (this award week's rings minus the learner's average over the previous four). Leading until the activity's own close, then won; a score of 0 never leads. Paid as `prize` |
+| `milestone` | one per NEW achievement of `match.activity` dated inside the week, oldest first, up to `cap: {count}` per week. Activities: `race-pb`, `glider-act`, `glider-bells`, `board-game-level` (first win at an opponent level), `piano-rung`, `perfect-sheet` (rule retired 2026-11-10; provider kept, evidence still recorded), `cards-mastered` (every 10 words), `book-finished`, `rings-lifetime`. A milestone dated before the rule's `effective.from` never pays, so history is not back-paid |
+| `debrief-day` | each day whose school debrief meets `match.criterion`: `completed`, `substantive` (on time, rubric level at or above `rich_level`, not a day the AI never scored (`questioner: fallback`); a legacy day uses its old 1-10 score), `teachable` (level at or above `teachable_level`, not a `questioner: fallback` day; late counts) or `quiz-passed` (not a day whose questions fell back, `questionSource: fallback`; an AI-scored day with fallback questions keeps `substantive` and `teachable`) |
+| `debrief-week` | the week, once every owed debrief day is completed (late counts) or excused **and at least one is completed**: excused only keeps a day from blocking, so an all-excused week pays nothing ("No debriefs done this week"). Pending until Friday's grace closes. See [School debrief](../school/school-debrief.md) |
+
+The achievement kinds read the **achievement evidence** port
+(`IAchievementEvidence`): each module hands `createEconomyEarningsRuntime` a
+provider `{name, activities, week(args)}` and `CompositeAchievementEvidence`
+merges them; a provider that throws makes only its activities
+`indeterminate` (`economy.gems.evidence-unavailable`). The preview reads it once
+per week per minute and only when a rule of those kinds exists.
+
+Any rule may also carry `gem: {category, label, group}` — how its gems
+read on the [Gem Board](#gem-board): `category` is the board row (a lowercase
+slug; rules that share one share a row), `label` the row's name, `group` the
+section the row sits under (`move`, `games`, `school`, or any slug). All three
+are optional. The first rule of a row decides the row's label and group; on a
+later rule in the same row `label` / `group` have no effect. A `gem.color` is
+rejected: a gem's colour comes from its area (below). Display only; it
+never changes what a rule pays.
 
 Rewards are a currency map (`{silver, gems}`; a bare number is silver). A rule that
 pays twice is two rules. Per-learner overrides live under `users.<id>`:
 `multiplier` (scales silver, not gems) and per-rule `reward` / `rate` /
 `thresholds` / `disabled`. Optional `effective: {from, to}` scopes a rule to dates.
+A line's silver is `round(count × silver × multiplier)` for the whole line.
 
 ### Windows and statuses
 
 - **School week** Monday → Sunday; **ring award week** Monday 04:00 → Saturday 12:00
   (D10). The contest line is `pending` (leader mark only) until Saturday noon.
+- **Study day.** The 4 am boundary in the household timezone
+  (`studyDayForInstant`). `createEconomyApi({ timezone })` builds one
+  `studyCalendar` and hands it to the preview, the passes, the bank and the
+  parent digest, so they all agree on "today".
 - The evaluator is given `today`. Today (and later) is **open**: its unfinished work
-  is "still to do" (`pending`), never missed — today's term-grid row is live, so a
+  is "still to do" (`pending`), never missed; today's term-grid row is live, so a
   row dated Friday is not a Friday that is over. Week kinds settle once Friday has
   passed (Saturday is payday, D1); all-green-so-far on a Wednesday is `pending`.
 - A day the grid has not worked out yet (`unknown`, e.g. right after a cache wipe)
   never counts as "not done": `section-day` notes it, `section-week` and
   `week-met` are `indeterminate` on it.
 - A week outside the school term reads "Outside the school term"; a week that has
-  not started reads "Not started yet" — never "Not on the plan this week".
+  not started reads "Not started yet", never "Not on the plan this week".
 - A failed evidence source makes its lines `indeterminate` ("can't tell"), never
-  `none`. Other statuses: `earned`, `none` (with a note saying why), `disabled`.
-- Every line carries `ref` = `earn:<learner>:<rule>:<period>:<timeliness>` — the
-  future payout's idempotency key. The rules revision is recorded on the line
-  (`priced`), never in the ref, so a rate edit cannot pay a week twice.
+  `none` (`economy.earnings.school-unavailable`,
+  `economy.earnings.rings-unavailable`). Other statuses: `earned`, `none` (with a
+  note saying why), `disabled`.
+- Every line carries `ref` = `earn:<learner>:<rule>:<period>:<timeliness>`, the
+  payout's idempotency key. The rules revision is recorded on the line
+  (`priced`), never in the ref, so a rate edit cannot pay a week twice. A
+  settle prices with the current ruleset, so a past week is re-priced under
+  today's rates only when it is settled again (see [Grace](#late-evidence-and-grace)).
+  A raise then pays the difference; a cut is never clawed back.
 
-### API
+### Preview and rules API
 
 | Method / Path | Returns |
 |---|---|
 | GET `/api/v1/earnings/preview?week=` | the roster's week: `{windows, contestClosed, rulesRevision, learners[]}` |
 | GET `/api/v1/earnings/preview/:learnerId?week=` | one learner: `{totals, pending, lines[], work, evidence, multiplier, rulesRevision}` |
 | GET `/api/v1/earnings/rules` | `{ruleset, kinds}` |
+| GET `/api/v1/earnings/gems?week=` | the [Gem Board](#gem-board): `{mode, week, windows, today, contestClosed, rulesRevision, learners[], groups[], categories[], cells, totals}` |
 | PUT `/api/v1/school/teacher/economy/earn-rates/:learnerId` | `{actorId, pin, patch}` → the new ruleset (TeacherGate) |
 | PUT `/api/v1/school/teacher/economy/earn-rules` | `{actorId, pin, doc}` → the new ruleset (TeacherGate) |
 
 `week` is any study day in the wanted week (default: today's). The read routes
 are reusable by any surface; writes live with each surface's own gate (the
-teacher capability cookie is scoped to `/api/v1/school`).
+teacher capability cookie is scoped to `/api/v1/school`). The teacher console
+edits rules in the **Coins** tab (`CoinsPanel`) and section (`CoinsRosterPanel`).
 
-### Code
+### Gem Board
 
-- `2_domains/economy/earnings/` — `validateRuleset`, `resolveRules`,
-  `withUserOverride`, `evaluateEarnings` (pure).
-- `3_applications/economy/EarningsPreviewService.mjs` (windows, contest close,
-  per-source failure handling), `EarnRulesService.mjs` (revisions), ports
-  `IEarnRulesStore`, `IEarningEvidenceSource`.
-- Evidence: `3_applications/school/SchoolEarningEvidence.mjs` (term verdicts
-  read with `detail: true` for per-subject rows; graded sessions + curriculum
-  subject/course) and `fitnessRingsProvider.standings` (rings by session start
-  instant).
-- `1_adapters/persistence/yaml/YamlEarnRulesStore.mjs`,
-  `4_api/v1/routers/earnings.mjs`, `3_applications/school/usecases/ManageEarnRules.mjs`.
-- Teacher console: the **Coins** tab (`CoinsPanel`) and section (`CoinsRosterPanel`).
+One view of every learner against every gem, for one week: one table, rows
+under section headings, a column per learner. Design:
+`ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md`.
 
-## Backend architecture (DDD)
+**Response** (`GET /api/v1/earnings/gems`):
 
-- `2_domains/economy/` — `Transaction` (factory + `foldBalance`), `policy`
-  (`resolvePolicy`/`inBlackout`/`drainPerSecond`). Pure, no I/O.
-- `3_applications/economy/EconomyService.mjs` — all balance math + policy
-  enforcement (deposit/earn/openSession/settleSession/closeSession/getBalance).
-- `1_adapters/persistence/yaml/YamlEconomyDatastore.mjs` — dumb ledger/wallet
-  storage.
-- `4_api/v1/routers/economy.mjs` + `5_composition/modules/economyApi.mjs` —
-  thin HTTP shell; registered in `app.mjs` (`v1Routers.economy`) and the
-  `api.mjs` routeMap (`'/economy': 'economy'`).
+| Field | Holds |
+|---|---|
+| `mode` | the catalog mode; `off` → an empty board |
+| `week` | the school week's Monday |
+| `windows` | the week's windows, as the preview gives them (`windows.school.{from, to}`) |
+| `today` | the current study day |
+| `contestClosed` | whether the ring award week has closed |
+| `rulesRevision` | the ruleset revision the week was priced with |
+| `learners[]` | `{learnerId, name}`, in roster order, never ranked |
+| `groups[]` | `{id, label}`: the sections that have rows, in display order |
+| `categories[]` | the rows, in rule order |
+| `cells` | `cells[categoryId][learnerId]` |
+| `totals` | `totals[learnerId]` = `{week, earned, lifetime}` |
+
+**Sections.** `groups` lists Move (`move`), Games (`games`) and School
+(`school`), in that order, leaving out any with no rows. A rule's `gem.group`
+may name another slug; it follows those three, labelled by the slug with its
+first letter capitalised and hyphens as spaces.
+
+**Rows.** Every rule that pays gems, or carries a `gem` block, is on the board.
+Its row is `gem.category`, else the default row for its activity or kind, else
+the rule's own id. Rows keep the rules' order.
+
+| Default row | Label | Section | Rules folded in |
+|---|---|---|---|
+| `ring-contests` | Ring contests | move | kind `ring-contest`; activity `ring-improved` |
+| `racing` | Racing | games | `race`, `race-pb` |
+| `skyline-glider` | Skyline Glider | games | `glider-act`, `glider-bells` |
+| `piano` | Piano | school | `piano-practice`, `piano-rung` |
+| `flashcards` | Flashcards | school | `card-goal`, `cards-mastered` |
+| `reading` | Reading | school | `story-read`, `book-finished` |
+
+Some rules keep a row of their own and take only a default section:
+
+| Rule | Section |
+|---|---|
+| kind `ring-days` | move |
+| activity `rings-lifetime` | move |
+| activity `board-game-level` | games |
+| anything else | school |
+
+The first rule of a row decides the row's label, section, cadence and area.
+The label is `gem.label`, else the default row's label (not when the rule named
+its own `gem.category`), else the rule's label. The section is `gem.group`,
+else the default above.
+
+**Area and colour.** A row's `area` is its section when that is `move`,
+`school` or `games` (a custom section slug falls to `school`). A gem's colour
+comes ONLY from its area, `GEM_AREAS` in `earnings/gemBoard.mjs` (order
+`AREA_ORDER`: Move, School, Games): `move` amethyst `#8e5bd0`, `school`
+emerald `#2e9e5b`, `games` fire opal `#ff7a2f`, each with an `icon` key of the
+same name. Every row and every part carries that area and colour, so the look
+of a gem always means the same thing on an unlabeled overview.
+
+A rule whose own id equals a default row id (a rule called `reading` that sits
+in no default row) keeps that id for its own row, and the default merged row
+takes `<id>-all` (`reading-all`), wherever the two sit in the rules. An
+explicit `gem.category` is a literal row id and joins whichever row has it.
+
+| Category field | Holds |
+|---|---|
+| `id` | the row id |
+| `label` | the row's name |
+| `cadence` | `contest` (`ring-contest`, `activity-contest`), `milestone`, else `weekly`; the first rule's |
+| `group` | the section id |
+| `area` | `move`, `school` or `games` |
+| `color` | the area's gem colour |
+| `parts[]` | one per rule in the row: `{ruleId, label, cadence, area, color}`, the row's area and colour |
+
+**A cell** is one learner in one row:
+
+| Cell field | Holds |
+|---|---|
+| `state` | the best of the row's lines: `won`, `earned`, `leading`, `pending`, `unknown`, `none`, `disabled` |
+| `progress` | `{have, need}` of the row's first pending line that has one, else null |
+| `week` | gems earned in the row this week |
+| `held` | `week`, plus a contest gem while they lead it |
+| `lifetime` | payout gem entries for the row's rules, less grown-up reversals (`lifetimeGemsByRule`); never under `week` |
+| `note` | the note of the line that set `state` |
+| `streak` | `{have, need, left, reach, ruleId}`: the pending day-count nearest done (highest `have / need`), else null |
+| `parts[]` | one per rule in the row, below |
+
+A cell can be `earned` and still carry a `streak` when its row folds two rules
+(a book finished, the reading days still running).
+
+| Part field | Holds |
+|---|---|
+| `ruleId`, `label`, `cadence`, `color` | the rule, as in the category's `parts` |
+| `state` | this rule's own state |
+| `week`, `lifetime` | this rule's gems this week and in all |
+| `progress` | `{have, need}` or null |
+| `left`, `reach` | set only while the part is `pending` with a `progress`; see below |
+| `lastDay` | the last day a day-count rule can be worked on (the end `left` is counted to); null for other kinds and for a rule with no line this week |
+| `days[]` | `{day, state}` with `done` or `short` (did some, under the mark); `ring-days` and `activity-days` only |
+| `items[]` | `{day, label}`: the milestone achievements paid this week |
+| `score` | `{mine, best}` for a contest: the learner's score against the roster's best (rings for `ring-contest`), else null |
+| `note` | the line's note |
+
+**Reach.** `left` is the study days the rule can still be worked on. The count
+starts at today or the week's first day, whichever is later, and runs through
+the rule's last day: Saturday (Monday + 5, when the ring award week closes) for
+`ring-days`, the school week's last day for `activity-days`. Both ends are
+clamped to the rule's `effective` dates; the clamped end is the part's
+`lastDay`. Today is included unless it already counted. With `short = need − have`:
+
+| `reach` | When |
+|---|---|
+| `on-track` | `short < left` |
+| `tight` | `short = left`: every day left is needed |
+| `out` | `short > left` |
+
+**Totals** per learner: `week` is the gems they hold this week — earned, plus
+the contest gem while they lead it, the same figure as the agenda card's gem
+count — `earned` only the earned ones, and `lifetime` the wallet's gem balance.
+
+**Building it.** `GemBoardService` (`application/GemBoardService.mjs`) reads the
+same preview the payouts use, plus the ledger per learner; the pure fold is
+`domain/earnings/gemBoard.mjs`. Logged `economy.gems.board.read` (debug),
+`economy.gems.lifetime-unavailable` (warn). Catalog `off` → an empty board with
+`mode: 'off'`. The preview shares one achievement read a minute across polled
+surfaces; `?fresh=1` (the overlay always passes it) reads now and replaces the
+shared copy, so a race that just landed shows at once.
+
+**The overlay** is `frontend/src/lib/economy/GemBoard/GemBoard.jsx`, shared by
+the fitness ring chart (`FitnessMomentum`: each card's purse, and the
+headline's **Gems** chip; the garage pads drive it through `useGamepadKeys`)
+and the school agenda (the board header's **Gems** door and each card's gem
+door), with a This week / Last week switch in the header. It draws one line
+per child in roster order and one column per gem row. The columns are gathered
+into their sections, each a tinted block under its name, and every column's
+name leans over it so all of them fit. The child's gem count for the week
+closes the line. Everything on the board is about the week shown: the
+response's lifetime counts are not drawn anywhere.
+
+Everything inside the panel is sized in `em` from one font size that follows
+the screen (derived by `boardUnits` from `95vw / --gem-w` and `95vh / --gem-h`), so the same board fills the garage
+TV and fits a 1280×800 tablet with no separate layout.
+
+Each cell is one glyph (`GemGlyph.jsx`) and is exactly one of four things:
+a blank cell, a full gem, a full gem inside a ring of done days, or the word
+"leading". The first matching look wins:
+
+| Look | When | Draws |
+|---|---|---|
+| `lit` | `week > 0`, or `earned` / `won` | the full gem in the row's area colour with the area's icon on its face, filling the cell; a `×n` badge when `week > 1`; inside the ring too if a day-count is still in reach |
+| `streak` | a day-count with at least one day done whose `reach` is not `out` | the same full gem inside a ring of `need` segments: done days filled in the area colour, days to go a plain neutral outline. A day-count carries no words and no hue for status |
+| `holding` | `leading` | the word "leading": a contest lead draws no gem; it sits with whoever leads and moves when the lead does |
+| `unknown` | the evidence could not be read | a blank cell (the `aria-label` and the detail box still say `can’t tell yet`) |
+| `off` | `disabled` | a muted `–` |
+| `none` | anything else, including a day-count not begun, one out of reach, and a gem still open | a blank cell |
+
+A gem with a ring around it is drawn smaller, inside it; a gem without one
+fills the cell. Nothing on the board is partly transparent, animated or amber:
+a gem is never dimmed and status is never a hue. A cell carries no numerals but
+the `×n` badge; day counts and scores live in the detail box. Nothing marks
+failure: a gem not earned is a blank cell, never a cross. Each cell's `aria-label` says
+the same in words ("3 of 5 days, on track"; a lead held in a row that also
+counts days reads "leading, and 2 of 4 days, on track").
+
+**Opening without a jump.** Each read of this week's board leaves its outline
+in the browser (`localStorage` `daylight.gemBoard.shape.v1`: the learners, the
+sections and the gem columns, no cells or totals; `boardShape`). The next
+opening on that screen draws the outline at once, at the board's full size,
+with a blank cell in every position and empty totals (`aria-busy`, nothing to
+press), and the gems fill in when the read lands, so the panel does not change
+size. A screen's first opening has no outline and says "Loading…". If the read
+brings more children or columns than the outline had, the board grows to fit
+and the new outline is kept. An outline that cannot be read is ignored.
+
+The ring takes the colour of the rule whose days it counts: the part named by
+`streak.ruleId`, else the row's colour. The detail box's day strip uses the
+same part colour, so the two always match.
+
+**The detail box** (`GemDetail.jsx`). A cell is a button when its detail would
+have something to say, however it looks at a glance: at least one part that is
+not `disabled` and is either in a state other than `none` or has days, items
+or a score (`detailParts`, the one rule the board and the box share). So a
+blank-looking cell still opens for a contest score that is not the lead or a
+day-count that fell short; a cell whose rules are all off, or with nothing
+this week, does not. The card sits over the board. Its head is tinted in the
+row's colour and carries the cell's own glyph, the row's name and the child's
+name; below it is one band per such part, the rule's label on the left and how
+it stands on the right. The label is left out when the card shows a single
+part named like the row.
+
+| Part | Shows |
+|---|---|
+| day-count | the week Monday → Sunday as seven lettered days: counted days filled in the part's colour, short days outlined, today ringed, days ahead dimmed, days after the part's `lastDay` closed (fainter, no outline: Sunday for a `ring-days` rule), an empty past day plain. Then one line: `Earned`, `2 of 4 days · 3 days left`, `· needs every day left` (tight), `· out of reach this week` (out) |
+| milestone | this week's items, each with its weekday, or `None this week` |
+| contest | `Won`, `Leading so far` or `Not leading`; with a score, the child's number, `best 320` beside it when a best is known, and a bar showing the one against the other |
+| `unknown` | `Can’t tell yet` |
+
+| Input | Does |
+|---|---|
+| tap a cell | opens its detail |
+| ↑/↓ | moves the highlighted child |
+| ←/→ | moves a cursor along that child's gems in the order drawn; unset until first pressed (right lands on the first gem, left on the last). Left from the first or right from the last puts it away again, which gives Enter back to the week switch |
+| Enter | with the cursor on an openable cell, opens the detail; otherwise toggles this week / last week. Closes an open detail |
+| Escape | closes an open detail, else the board |
+| tap outside, × | closes the detail when open, else the board |
+
+Arrows do nothing while the detail is open. Switching week closes the detail
+and clears the cursor. Last week is asked for by this week's Monday, so
+its button is disabled, and Enter does nothing, until the first read lands.
+Closing the board drops the loaded board, the detail and the cursor.
+
+While the detail is open, focus sits on its close button and the grid behind
+it is `inert`; closing it returns focus to the cell it was opened from. The
+board is the one `aria-modal` dialog; the detail is a named dialog inside it. A gamepad surface hands its presses in as the same
+keys (D-pad, A = Enter, B = Escape). The board closes itself when idle.
+Browser events: `gem-board.open`, `gem-board.close` (`reason`, `dwellMs`),
+`gem-board.week-step`, `gem-board.load-failed`, `gem-board.detail-open`
+(`rowId`, `learnerId`, `via`: `tap` | `key`), `gem-board.detail-close`
+(`reason`: `tap` | `back` | `key` | `week`).
+
+**The gem ceremony** (`GemCeremony.jsx`, `useGemCeremony.js`,
+`gemCeremonyModel.js` beside the board) follows rules, not rows: it reads each
+cell's `parts`, so two rules folded into one row celebrate separately. A
+surface keeps a snapshot in localStorage under
+`daylight.gemCeremony.v2.<surface>`, per week:
+`{week, v: 2, parts: {learnerId: {ruleId: [state, week]}}}`. Each write also
+removes the earlier key `daylight.gemCeremony.<surface>`. It celebrates each
+part that now holds a gem it did not — `earned`, `won`, or a contest lead just
+taken (`leading`); a lead that becomes a win celebrates again, a lost lead
+never does. An award is
+`{learnerId, name, categoryId, ruleId, label, color, cadence, kind, count}`,
+with the rule's own label, cadence and colour. A surface with no snapshot for
+this week learns the board without celebrating, and a reload never replays an
+award. A part the board cannot read on one look (`unknown`) keeps the entry
+the snapshot already had for it, so a gem that reads again on the next look is
+not celebrated a second time.
+
+- Ordering rule for every surface (never during a live run; the piano is stricter): see [the ceremony ordering rule](../gaming/realtime-kit.md#the-ceremony-ordering-rule).
+- **Fitness** (`FitnessApp` global overlays): learns on load, then looks
+  (fresh) 1.5 s after `game-achievement-recorded` (a cycle race or a Skyline
+  Glider flight saved, `announceGameAchievement` in the [gaming real-time kit](../gaming/realtime-kit.md)) and after a workout ends;
+  shown after any coin ceremony, with the coin sound.
+- **Piano kiosk** (Games mode): the ceremony queue lives above the routes
+  and looks with a fresh read (`?fresh=1`) each time the picker is shown, so
+  arriving back from a game counts as "a game just ended". Its
+  `game-achievement-recorded` listener is attached only while the picker is
+  showing, and no piano game fires that event today.
+  The card renders only on the picker, never over a live game, and a ceremony
+  interrupted by opening a game shows again on return. Coin cue from
+  `frontend/src/lib/economy/coinCeremonyAudio.js`, primed on the first gesture.
+- **School Portal** (`SchoolApp`): while the panel rests at the keypad, a
+  minute poll and each return to the keypad; drawn over the board pane only,
+  never the keypad, with the coin cue.
+- Events: `gem-ceremony.found`, `.none` (debug: a look that found nothing
+  new), `.shown`, `.dismissed` (`reason`), `.look-failed`.
+
+## Payouts
+
+`PayoutService` (`application/PayoutService.mjs`) reads `catalog().mode` on every
+settle, then previews the learner's week (`week` = any study day in it; `null`
+is the preview's current study day, `currentStudyDay()`).
+
+### Minting
+
+- Only `earned` lines pay. `indeterminate` and `pending` lines are held (H9) and
+  logged `economy.payout.held`; `none` and `disabled` pay nothing. Evidence
+  missing is not evidence of work, and an open period is not over.
+- A line that pays both currencies writes one entry per currency: silver under the
+  line's `ref`, gems under `<ref>:gems`. Each entry carries `ruleId`,
+  `timeliness` (the line's), `evidenceRef` (the line's `ref`), `source: payout`,
+  `meta` (`payoutMeta`: what the line looked like when it paid, so the bank can
+  say what the entry was for) and `action: payout:<ruleId>`, a namespace `earn()`'s per-action daily cap never
+  counts. The ring contest is kind `prize`; every other rule is `earn`.
+- **Top-up.** `EconomyService.mint(userId, { currency, amount, kind, ref, ... })`
+  treats `amount` as what the ref is worth in total and pays only the shortfall,
+  read strictly from the whole ledger under the user lock. A second settle
+  writes nothing; two racing settles (an event and the reconcile) pay once; a
+  line that grew (Tuesday's green day on top of Monday's, more rings) pays the
+  difference. A ref already paid more than the line now says (a rate cut, a
+  retracted grade) is not clawed back. "Paid" counts only `PAID_KINDS` entries:
+  a clawback is an `adjust` under its own ref (e.g. `<ref>:clawback`), and even
+  an adjust that reuses the line's ref does not count, so a correction never
+  makes the payout mint again.
+- **Rings pay per finished workout.** A `ring-threshold` line's `count` and
+  `amount` stay live (the board and its pop count rings as they happen), but the
+  payout mints only for its FINISHED workouts: the line's `sessions`
+  (`fitnessRingsProvider.standings`), kept when `final` (finalized, or ended
+  longer ago than the 30-minute resume window, `evaluateRecapReadiness`), taken
+  in end order and each priced at the week's running ring total with
+  `ringAmount` (`ringSteps`). Each step mints under the line's one ref, so it
+  pays only what is still short: one entry per workout, with
+  `meta.session = { id, title, startMs, rings }`; a workout that crosses no
+  new silver step writes nothing and its rings roll into the next entry; a
+  week already paid at live rates is not paid twice. A running workout waits
+  until it is final, which is immediate on an explicit End (or an emergency
+  lockdown) and otherwise 30 minutes and 5 seconds after its last activity
+  (the `fitness.session.ended` trigger, below); the hourly reconcile is the
+  failsafe if that event is missed.
+- **What a workout paid, and what it would be worth.** `WorkoutEarningsService`
+  (`application/WorkoutEarningsService.mjs`) has two reads, kept apart:
+  - `GET /api/v1/earnings/workout/:sessionId/paid` is what ceremonies celebrate.
+    For each learner who rode, it returns the ring-payout entries the economy
+    actually minted for that session (ledger entries with `source: 'payout'`,
+    `meta.kind: 'ring-threshold'` and this `meta.session.id`) as
+    `entries: [{ txnId, silver, gems, at, rings }]`, oldest first, plus the
+    learner's `wallet.silver`. A step's silver and the gems the same step minted
+    (its `:gems` payout, same ring count) arrive as one entry; a step that paid
+    only gems is an entry with `silver: 0`. Who rode comes from the saved session
+    record (`participants`), falling back to pricing the whole roster. A ride that
+    minted nothing yet returns an empty `entries`: **ceremonies correspond to
+    payouts, not promises**, so nothing shows until the payout lands and its
+    `coins-changed` arrives. Logged `economy.workout-paid.query`; a failing
+    wallet omits that learner (`economy.workout-paid.learner-failed`).
+  - `GET /api/v1/earnings/workout/:sessionId` is the **projection**: the ride
+    priced with the same steps as the payout, this one counted even before it is
+    final, with a `total` of wallet plus ring silver still owed. It is for
+    previews and is not read by any ceremony (learners in that session only; one
+    failing wallet omits that learner, `economy.workout-earnings.learner-failed`).
+    Logged `economy.workout-earnings.query`.
+  - `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
+    `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `gems`:
+    the gems that learner has EARNED this week, rolled up by area from every
+    Gem Board row as `[{area, earned, color}]` — `earned` is the sum of the
+    area's cells' `week` (paid or owed this week), `color` the area's own
+    (`GEM_AREAS`), in Move · School · Games order, only areas with
+    `earned > 0`; a lead, a running day-count or a zero is never in it. Empty,
+    with `economy.standings.gems-unavailable` logged, when the board cannot be
+    read).
+  All read-only, `no-store`; with the catalog `off` they return no learners.
+- **The fitness coin ceremony** (`useWorkoutCoinCeremony`) reads only `/paid`.
+  It looks when the screen loads (last 2 days, 5 sessions), when a workout closes,
+  and on `coins-changed`; each minted `txnId` plays once per browser. The first
+  load in a browser baselines (stamps what is already minted, shows nothing,
+  `fitness.coin_ceremony.baselined`). A ceremony is stamped seen when it goes on
+  display, and waits (unstamped) while a video or a game is on screen.
+- A corrupt shard throws `CORRUPT_LEDGER` inside `mint` and nothing is written;
+  the payout logs it at `error`.
+- A learner on the roster who is not a household user (no wallet) logs
+  `economy.payout.not-a-user` at info once per process, then is skipped. A
+  player who is not on the school roster logs `economy.payout.unknown-learner`
+  at debug.
+
+### Triggers
+
+`startEconomyPayouts` (`composition/earnings.mjs`) wires its triggers onto one
+path:
+
+- **Events.** `school.session.outcome-recorded` (`{learnerId, studyDay?}`) and
+  `piano.lesson.completed` (`{userId}`), debounced per learner and week (30 s)
+  so a burst of grades settles once. A fact that names a study day settles that
+  day's week, so a late grade re-prices the week the work belongs to. Only a
+  first settle or a grade correction names it, never a resettle such as a
+  retried close or a late sign-off. A study day in the current week shares the
+  current week's debounce.
+- **Workout ended.** `fitness.session.ended` (`{sessionId, learnerIds, endMs,
+  startMs, finalized}`, published by the fitness session end/save paths and the
+  emergency lockdown): a finalized workout settles its learners now (past the
+  achievement cache); an unfinalized one settles once at `endMs` + 30 minutes
+  + 5 s, when the resume window has passed. A second `ended` for the session
+  replaces the timer. Logged `economy.payout.fitness-trigger { sessionId,
+  learners, reason: 'finalized' | 'window' }`.
+- **Hourly reconcile.** `economy:payout-reconcile` (`0 * * * *`) settles every
+  learner for the current week. It catches what no event announces: day-met and
+  week-met lines turn true as days close, and the ring contest at Saturday noon.
+  The agents scheduler runs a task at most once per clock hour (it dedupes on
+  `<task>:<YYYY-MM-DDTHH>`), so a finer cron would still run hourly.
+
+Both triggers are gated like the other scheduled jobs (production, or
+`ENABLE_CRON=true`); a backend without cron logs `economy.payout.disabled` and
+subscribes to nothing. Enabled, they always subscribe and register, so a reload
+from `off` to `dry-run` or `live` needs no restart; while the catalog reads `off`
+both return before any preview (`economy.payout.off`, debug). A settle failure
+is logged `economy.payout.failed` (error for `CORRUPT_LEDGER`, warn otherwise)
+and never thrown into the event bus or the scheduler.
+
+### Late evidence and grace
+
+While today's study day is Monday, Tuesday or Wednesday, the hourly reconcile
+also settles the **previous** week, each week in its own try so one failing does
+not skip the other. "Today" is the preview's own `currentStudyDay()`, the same
+clock, timezone and boundary hour `week: null` resolves with. A grade event
+names its session's study day at any time. Later than Wednesday, with no event, a
+past week is not paid automatically. Silver minted after Sunday's week close
+sits in the wallet and converts at the next close.
+
+### Dry-run and logging
+
+- `dry-run` logs `economy.payout.would-mint { learnerId, ref, currency, amount,
+  ruleId }` per entry and writes nothing (no wallet snapshot either). These
+  lines are what the owner prices the catalog against before going live (see
+  [Rollout](#rollout)).
+- `live` logs `economy.mint` at info for each entry that minted.
+- Settles repeat, so `would-mint`, `held` and `bad-amount` (a non-integer amount,
+  never minted) log only when that line's status or amount changed since the
+  process last logged it. The per-settle summary `economy.payout.settled` is
+  `debug` unless something minted or a count changed.
+
+## Week close
+
+`WeekCloseService` (`application/WeekCloseService.mjs`) turns unspent silver into
+gold, which is kept for good. `startWeekClose` (`composition/earnings.mjs`)
+registers `economy:week-close` on `week_close.cron` (for example
+`"30 23 * * 0"`, Sunday 23:30 local), behind the same scheduler gate as the
+payouts (`economy.week-close.disabled` when off). The cron is read once at boot,
+so a change needs a restart; a null or blank cron registers nothing and logs
+`economy.week-close.no-cron` once. The task is registered in every mode, so a
+reload from `off` needs no restart.
+
+Per close, `catalog()` is read once (mode and rules):
+
+- **Which week.** The week whose Sunday is today's study day or has most
+  recently passed (`closingWeekFor`, from the preview's `currentStudyDay()`).
+  At Sunday 23:30 that is the current week. The only other entry point is a
+  direct `WeekCloseService.close()` call from code (no route or CLI runs it,
+  and `scheduler.trigger` runs agent assignments, not tasks); with no week, a
+  call on Monday to Saturday closes the previous week. A week whose Sunday is
+  still ahead is refused: `economy.week-close.refused { weekId, today,
+  reason: week-not-ended }` and a `ValidationError` with code `WEEK_NOT_ENDED`.
+  The scheduler has no catch-up: a close missed while the backend was down
+  waits for next Sunday, which converts the whole balance anyway.
+- **Settle first.** `PayoutService.settleAll({ week })` once more, for the
+  last-minute contest and day-met lines. One learner's failed settle is logged
+  by the payout and does not block that learner's close. A week-wide failure
+  (the roster read) logs `economy.week-close.settle-failed` (warn; error for
+  `CORRUPT_LEDGER`) and the close goes on without the roster.
+- **Whose wallets.** Every roster learner from that settle (a roster learner
+  the payout reports `not-a-user` has no wallet and is skipped), plus every
+  other household user (`EconomyConfigProjection.users()`) who has at least
+  one payout entry: a kid who left the roster, a piano-only earner. A payout
+  entry is one `isPayoutEntry` accepts, so a deposit that names
+  `source: payout` does not count. That check runs inside the convert lock
+  (`convert({ requireEntry: isPayoutEntry })`, status `not-an-earner`). Parents'
+  and legacy-deposit silver never converts: arcade metered spend runs on
+  silver, and a wallet that never had a payout keeps it. Without a roster only
+  the payout earners close.
+- **What converts.** The wallet's whole silver balance at close time (the fold of
+  the whole ledger), not the week's earnings. Gold = silver × rate, exact
+  (`convertedAmount(amount, rate, 'gold')`, quantized to 6 places): 56 silver
+  at 0.1 is 5.6 gold, 3 silver is 0.3. A rule into a whole-coin currency
+  (gems) still floors, and a balance too small for one coin there converts
+  nothing and logs `economy.week-close.below-rate`: silver is never spent for
+  zero. Zero silver writes nothing.
+- **Rules.** Each `week_close.convert` entry needs `from` and `to` in
+  silver/gold/gems and different, and `rate` a positive finite number; a
+  currency may appear in only one rule. A bad entry logs
+  `economy.week-close.bad-rule { rule, reason }` and is skipped. Only listed
+  rules run (the household's is `silver → gold` at 0.1).
+- **The pair.** `EconomyService.convert` reads the ledger strictly, checks
+  idempotency and appends both halves inside one user-lock body, so a payout or
+  spend cannot land between the balance read and the pair. Both halves share one
+  `at`, `action: week-close`, `source: week-close`,
+  `evidenceRef: close:<learner>:<week>` and
+  `meta: { weekId, from, to, rate, spent, got }` (enough for the history line
+  "56 silver → 5 gold · Sunday", figures floored):
+
+  | Half | `ref` | `currency` | `delta` |
+  |---|---|---|---|
+  | out | `close:<learner>:<week>` | silver | −balance |
+  | in | `close:<learner>:<week>:gold` | gold | +balance × rate (exact, 6 places) |
+
+- **Idempotent.** The out half's ref means the week is closed: a second close
+  writes nothing (`already-converted`). The out half is written first, so a
+  crash between the appends leaves gold owed, never gold from nothing, and
+  `wallet.yml` is rewritten from the ledger even when the in half throws (a
+  snapshot failure then logs `economy.convert.snapshot-failed` at error and
+  the append's own error still reaches the caller). The
+  next close of that week writes the missing in half from the out half's own
+  `meta` (`economy.week-close.repaired`, warn) without re-reading the balance:
+  its `to`, `rate` and `got`, even if the rule has changed since (a different
+  target logs `economy.convert.repair-original-target`). An out half whose
+  figures do not add up (delta not negative, `meta.from` not the rule's
+  `from`, a bad `meta.to` or `meta.rate`, or `meta.got` not a valid positive
+  amount in `meta.to` — whole for silver/gems, fractional allowed for gold —
+  or above `convertedAmount(spent, rate, to)`) is refused (`BAD_CONVERT_HALF`), as is an in
+  half without its out half (`ORPHAN_CONVERT_HALF`). A corrupt shard throws
+  `CORRUPT_LEDGER` and nothing is written. Those three need a person and log
+  `economy.week-close.failed` at error; any other failure logs it at warn.
+- **Modes.** `off`: nothing (no settle, no read; `economy.week-close.off` at
+  debug). `dry-run`: logs
+  `economy.week-close.would-convert { learnerId, weekId, silver, gold, rate }`
+  and writes nothing. `live`: writes and logs `economy.week-close.converted` per
+  learner at info (the one info line per conversion; `EconomyService` logs
+  `economy.convert` at debug). A wallet with nothing to do logs
+  `economy.week-close.skipped { status }` at debug. Every run ends with
+  `economy.week-close.closed` (counts).
+- A metered session open at close time spends 0 for the rest of its run: the
+  silver it was drawing on has become gold, and a settle never charges more
+  than the silver balance.
+
+## Early passes
+
+One pass a day lets a learner open one unit of a privilege (one piano game)
+before the day's schoolwork is done, paid in silver or gold. Economy owns the
+purchase, the cap and the price; the privilege owns consumption (the piano
+kiosk consumes the pass when the game ends). Authorization is `trust`: no PIN,
+a kid buys their own. The pure helpers are `domain/passes.mjs`; `EconomyService`
+does the locking and the writes.
+
+**Price.** `passes.<key>.price.{silver,gold}`; a price of 0 (or unset, or not a
+whole number) means not sold in that coin, so a catalog priced
+`{ silver: 0, gold: 0 }` sells nothing until the owner prices it. Gems never buy
+a pass (`PASS_SELLABLE_COINS` is silver and gold). Buying while the catalog
+mode is not `live`, in a coin it is not sold in, or an unknown coin, or for a
+privilege no pass lists, is `PASS_NOT_SOLD`.
+
+**Cap.** `cap: { per: study-day, count, across }`. `count` passes per learner
+per study day, in any state: a refunded pass still uses up the day.
+`across: all-passes` counts every pass that day, whatever privilege; any other
+value counts only this pass. A `per` other than `study-day` (or `day`) sells
+nothing. No `cap` reads as one a day across all passes.
+
+**Study day.** The 4 am boundary in the household timezone, from the same
+`studyCalendar` as the earnings preview. A pass expires when the study day
+rolls over: `activePass` returns null after 4 am.
+
+**Active limit.** An active pass also ends `max_active_ms` after its purchase
+(recorded on the marker as `maxActiveMs`; an older marker without it reads the
+30-minute default, `DEFAULT_MAX_ACTIVE_MS`). Past the limit `passState` reads
+it `consumed` with `reason: 'expired'` and `endedAt` at the limit. Nothing is
+written and nothing is refunded. `activePass`, `passesToday`, the bank and the
+kiosk's access read the same state, so a kiosk reload or a consume that never
+landed cannot open a second game after the limit. A real transition in the
+ledger always wins. A late consume of an expired pass is a no-op
+(`duplicate: true`); a refund is `PASS_NOT_ACTIVE`, because the limit is
+checked before the refund window. The window (60 s) is far shorter than the
+limit, so this only matters for a catalog that sets them the other way round.
+
+**Ledger entries.** The pass id is `pass:{learnerId}:{studyDay}` (a second
+pass the same day, only when `count` allows it, is `….2`). Every entry carries
+`evidenceRef` = the pass id and `source: pass`; the action is the catalog key.
+
+| Entry | `ref` | Written by |
+|---|---|---|
+| `pass` marker, `meta.state: active` (`privilege, coin, price, boughtAt, refundWithinMs, maxActiveMs`) | pass id | buy |
+| `spend`, −price in the coin | pass id | buy |
+| `pass` marker, `meta.state: consumed` (`playedMs`) | `{id}:consumed` | consume |
+| `earn`, +what was paid, action `{key}-refund` | `{id}:refund` | refund |
+| `pass` marker, `meta.state: refunded` (`playedMs, reason`) | `{id}:refunded` | refund |
+
+The ledger is append-only, so a state change is a new marker. `passState`
+reads the first transition (a consumed marker, or the refund's first write),
+as the writes enforce. Every buy and transition runs in the user lock over a
+strict ledger read, and affordability is the folded ledger balance, never the
+wallet snapshot. A refusal writes nothing.
+
+**Transitions.** The first transition wins: consuming a refunded pass, or
+refunding a consumed one, is `PASS_NOT_ACTIVE`. Consuming twice, or refunding
+twice, is a no-op (`duplicate: true`) and refunds once.
+
+**Write order fails safe for the kid.** A purchase writes the marker, then the
+spend: a crash between leaves a pass nobody paid for (`paid: 0`), never coins
+gone with no pass; it is not charged later. The buy still fails: the error
+carries `passId`, and `economy.pass.unpaid { learnerId, passId, error }` is logged
+at error. A marker that fails writes nothing. A refund writes the earn, then the
+marker: the earn is the refund's commit point, so with it present the pass reads
+refunded and a retried refund writes only the missing marker. The refund hands
+back what was paid (0 for an unpaid pass). The wallet snapshot is refreshed
+after either, even when an append fails; the append's error is what the caller
+sees (`economy.pass.snapshot-failed` logs a snapshot failure).
+
+**Refund window.** Allowed only while the pass is active, on its own study day,
+when the client's `playedMs` is under `refund_within_ms` (recorded on the
+purchase marker) **and** the server's time since purchase is under that window
+plus `REFUND_SETUP_MS` (5 minutes for picking and loading a game, exported from
+`EconomyService.mjs`). The second bound stops a client claiming `playedMs: 0` an
+hour later. A catalog pass that omits `refund_within_ms` gets 60000; one set to
+0 has no refund window. Otherwise `PASS_REFUND_CLOSED`.
+
+The pass state carries `refundWithinMs` (as recorded on the purchase, null on
+an older marker that lacks it) and `maxActiveMs`, so the bank's
+`pass[privilege]` and the kiosk's `access.pass` say the window. The kiosk
+refunds only when `playedMs` is under that window minus a 5 s network margin;
+with no window (null or 0) it consumes.
+
+**Gating fails closed.** `activePass`, used for gating, reads strictly: on
+`CORRUPT_LEDGER` it logs `economy.pass.ledger-unreadable` (warn) and returns
+null, so games stay locked. It never falls back to a lenient read: a study day
+spans two UTC shards, so a purchase can sit in one shard and its `:consumed`
+marker in the next, and skipping the unreadable one would make a used pass
+read active again.
+
+**Logs** (info, one line each): `economy.pass.bought`, `economy.pass.consumed`,
+`economy.pass.refunded`, `economy.pass.refused` with `{ learnerId, privilege,
+coin, price, reason }` (the refusal code as `reason`).
+
+## Bank and HTTP API (`/api/v1/economy`)
+
+| Method / Path | Body | Returns |
+|---|---|---|
+| GET `/users/:userId/wallet` | — | `{ userId, balance, balances, session }` |
+| GET `/users/:userId/bank` | — | `{ userId, mode, studyDay, balances, history, pass: { [privilege]: … }, offers, weekEndsAt, weekEndsOn }` |
+| POST `/users/:userId/deposit` | `{ amount, note? }` | `{ userId, balance }` |
+| POST `/users/:userId/earn` | `{ action, ref?, amount? }` | `{ userId, earned, capped, duplicate, balance }` |
+| POST `/users/:userId/sessions` | `{ action, source }` | `{ userId, sessionId, balance, drainPerSecond }` |
+| POST `/users/:userId/sessions/:sessionId/settle` | `{ coins }` (cumulative) | `{ userId, balance, depleted }` |
+| POST `/users/:userId/sessions/:sessionId/close` | `{ coins? }` (cumulative) | `{ userId, balance }` |
+| POST `/users/:userId/passes` | `{ privilege, coin }` | `{ userId, pass, balances }` |
+| POST `/users/:userId/passes/:passId/consume` | `{ playedMs? }` | `{ userId, pass, duplicate }` |
+| POST `/users/:userId/passes/:passId/refund` | `{ playedMs, reason? }` | `{ userId, pass, refunded, duplicate, balances }` |
+
+The routes are unauthenticated in slice 1 (decided). The ledger `source` of a
+deposit (`admin`) or an earn (`api`) is set by the router; a body's `source` is
+ignored, so no request can write an entry that passes for a payout or a week
+close. The pass routes read only the fields above from the body.
+
+**Errors.** Domain errors map to HTTP: `ValidationError` → 400 (bad amount,
+blackout, no balance, existing session), `EntityNotFoundError` → 404 (unknown
+user). Pass errors carry a `code`. `PASS_CAP`, `PASS_NOT_SOLD`, `PASS_NOT_ACTIVE`
+and `PASS_REFUND_CLOSED` → 409: the request is well-formed, and the day, the
+catalog or the pass's state refuses it (a price the owner sets later can make
+the same request succeed). `PASS_UNAFFORDABLE` → 402 with `{ coin, price,
+balance, shortfall }`. An unknown pass, or one of another learner → 404; a
+missing privilege or coin, or a `playedMs` that is not a non-negative number →
+400.
+
+### The bank (`BankService`)
+
+`GET …/bank` (`application/BankService.mjs`, `Cache-Control: no-store`) is the
+one read the Portal bank screen (opened from the board's coin cell), the piano
+kiosk and its lock screen share.
+
+**History** is the last 50 ledger lines in plain words, newest first
+(`{ text, at, kind, ids, source, label, detail, legs, balanceAfter }`, from
+`domain/historyText.mjs`). `text` is the sentence; the rest is the same line
+broken into parts so a client can lay it out as a table. `source` is
+`entrySource`: `payout`, `earn`, `prize`, `refund`, `spend`, `deposit`,
+`correction`, `withdraw`, `conversion` (or `other`). `label` is the words after
+the amount, `detail` what a payout was for (below, or null), `legs` the signed amounts per currency (a conversion has two), and
+`balanceAfter` the `{ silver, gold, gems }` balances once the line landed. It is
+folded oldest first over the whole ledger read, before the 50-line cut, each
+currency floored at 0, so line 50 still knows what older lines left behind. An
+older client reads `text` only. Figures in `text` are floored (gold is
+fractional; `legs` and `balanceAfter` are exact). The sentences: "+2 silver · Green
+day", "−3 silver · early pass", "+3 silver · early pass refunded", "56 silver →
+5 gold · Sunday", "+2 silver · Korean · Tuesday", "+6 silver · Rings · Sonic &
+Sega All Stars Racing · 7:19 pm · 588 rings". A payout's `detail` comes from the
+`meta` the payout keeps on the entry (`payoutMeta`: the line's `kind`, `count`
+and, for `section-day` and `day-met`, the study `days` that paid so far; for a
+ring entry, `ringSteps`' `session`). A ring entry names its workout: the media
+title (or "Workout" when nothing played), its start time in the household
+timezone and the kid's rings in it. A ring entry from before per-workout pay
+reads "N this week". A week line pays its growth in
+several entries under one ref, so a per-day entry's detail is the weekday(s) in
+its `days` that no older entry of the same ref and currency had; a ring entry's
+is the week's ring count when it paid. With a day detail the rule's trailing
+bracket ("(each day done)") is dropped from `label`. An entry minted before
+`meta` existed has no detail and reads as its label. A payout is named by the current week's preview line it paid
+for (its `evidenceRef`), then by the ruleset's label for its `ruleId`, then
+"schoolwork" (`economy.bank.labels-unavailable` when a label source fails). The
+preview labels are cached per learner and week for 60 s (`cachedWeekPreview`,
+shared with `rewardFor`), so a polled bank runs one preview a minute. Pass
+spends and refunds are matched on `source: pass`. The two halves of a conversion
+(same `evidenceRef`, opposite signs; `at` is not compared, so a repaired pair
+still pairs) read as one line, named by the local weekday. Zero-delta `pass`
+markers are left out.
+
+**Balances and offers.** `balances` and each offer's `affordable` are folded
+from the same ledger read as the history, never the wallet snapshot, so an offer
+says what `buyPass` will decide. `offers` maps each privilege a pass opens to
+its quote: `[{ coin, price, affordable }]`, one row per coin the pass is sold
+in, so `[]` means not for sale. Unless the catalog mode is `live`, `offers`
+is `{}`. `mode` is the catalog mode, so the Portal shows a neutral bank
+("Coins start soon", no balance number) until coins are live.
+
+**Pass, keyed by privilege.** `pass['piano.games']` is that privilege's latest
+pass today, or the "none" shape (`passId: null, state: 'none'`, the same keys a
+real pass has), plus `capUsed`: whether today's passes already use up its cap
+(across all passes, a pass for another privilege counts). Today's shards are
+read strictly here: one that does not parse gives `state: 'unknown',
+capUsed: null` and logs `economy.bank.pass-unreadable`, rather than claiming the
+day's pass is unused.
+
+**When the week ends.** `weekEndsAt` is the next fire of `week_close.cron` in
+the household timezone, by cron-parser (the scheduler's parser), so any cron the
+scheduler accepts works. No cron, or one that does not parse (logged
+`economy.bank.cron-unreadable`), gives the end of the week's Sunday study day
+(Monday at 4 am). `weekEndsOn` is the study day that close belongs to
+(`weekCloseStudyDay`: the instant read a millisecond early, in the household
+timezone with its boundary hour, so a Monday 4 am close is Sunday's). A client
+counts days to the close as `weekEndsOn − studyDay`, by date alone, with no
+timezone of its own. Two caveats:
+
+- The scheduler (`AgentAssignmentScheduler.registerTask`) parses the cron with
+  no timezone, so the job fires in the **process** TZ. In the container that is
+  `TZ`, set by `docker/entrypoint.sh` from `system.yml` `.timezone` (the
+  Dockerfile defaults it to `America/Los_Angeles`). The bank and the passes read
+  the household timezone (`getHouseholdTimezone`), a separate setting. The two
+  must match, or `weekEndsAt` and the real close disagree. `createEconomyApi`
+  logs `economy.timezone-mismatch` at warn on boot when `TZ` is set and differs.
+  School's configured zone must match both too: the process TZ, the household
+  TZ and School's zone are one setting in practice.
+- The job's cron is read once at boot, while the bank reads the live catalog. After
+  a cron edit and a reload, `weekEndsAt` shows the new schedule but the job keeps
+  the old one until a restart.
+
+**For the kiosk and Portal.**
+
+- Check `pass['piano.games']` (`state === 'active'`) for the game unlock, and
+  `capUsed` for "sneak used today".
+- `state: 'unknown'` means the ledger could not be read: treat games as locked
+  and offer no sale.
+- After **any** `POST /passes` failure, re-read the bank (refresh in a
+  `finally`). A storage failure after the marker leaves an unpaid pass that is
+  real and active. The error then carries `passId`, and the server logs
+  `economy.pass.unpaid` at error.
+- Pass ids hold colons and may end in `.2`; `encodeURIComponent` them in the
+  consume and refund paths.
+
+## Integration points
+
+School and piano import no economy code. Composition hands them duck-typed ports
+built from `economyApi` (`composition/economyApi.mjs`).
+
+- **School: what a sheet is worth (`rewardFor`).** School's "print my next sheet"
+  dry run (`GET /api/v1/school/self-service/learners/:id/next`, behind the
+  Portal bank screen's ways to earn, the agenda tape's `Next: Math +2`
+  and the piano lock's button) asks `rewardFor({learnerId, unit})` for
+  `{silver, gems}` or null. `createEconomyApi` hands School a late-bound thunk
+  (`economyApi.rewardFor`, passed by `lifecycle-runtime.mjs`); the earnings
+  runtime binds it with `useSheetRewards(cachedSheetRewards(...))` once the
+  preview exists. Until then, and whenever the answer is unclear, it is null and
+  no surface shows an amount. The answer is `sheetReward`
+  (`domain/earnings/sheetReward.mjs`) over the learner's current-week preview,
+  from the same 60 s cache as the bank's labels. Reward labels on every surface
+  read `+N silver` / `+N gem(s)` from it.
+  - An amount only when the catalog is `live` (off and dry-run are null, without
+    running a preview: dry-run coins are not real, and the digest says so), the
+    school evidence is `ok`, and exactly one sheet-kind rule matches the unit.
+  - The amount assumes the sheet is required work and is passed; a unit marked
+    `elective` is null (School's `unitView` sets it when today's section is
+    `excused`).
+  - **Total-gain pricing.** It is what one more occurrence adds to the line's
+    rounded total, `round((n+1)·s·m) − round(n·s·m)` at the learner's (possibly
+    overridden) reward `s` and multiplier `m`, because a payout mints
+    `round(total) − paid`: at ×1.5 a 1-silver day with one day served adds 1,
+    not 2. A learner override is priced, not refused.
+  - `section-day` (matched on subject only, as the evaluator does): one more
+    day while today's section is `obligated`; null once it is `served`
+    (another sheet adds nothing), and for an elective, a faulted day or no row
+    today.
+  - `section-week` (subject only): the week's price only when this sheet
+    finishes the week: Friday or later, the line `pending`, every earlier day
+    served or excused, today obligated, nothing obligated after today, no day
+    unworked.
+  - `unit` (subject, unit-id prefix, course, as `matchesUnit`): the per-unit
+    price while the rule's `effective` dates include today. A unit rule keyed
+    by `courseId` is null: the sheet does not carry its course.
+  - `day-met`, `week-met`, `ring-threshold`, `ring-contest`: never credited to a
+    sheet, and they do not count as a match.
+  - Two matching rules, a unit with no subject, or one more occurrence that adds
+    no silver and no gems are null too. A failure (preview or catalog) is null
+    and warns `economy.sheet-reward.failed` once per learner until a read for
+    that learner works again; a learner off the roster is null, unwarned. The
+    cache means a section finished a moment ago can still show its `+N` for up
+    to a minute.
+- **School: the agenda tape's economy line.** The morning agenda opens with
+  `In the bank: 7 silver · Next: Math`, only while the catalog mode is `live`
+  (an `economyMode` reader, `() => configProjection.catalog().mode`, is handed
+  to `createSchoolLifecycle`). School's composition (`agendaEconomy.mjs`)
+  builds a `bankSummary(learnerId)` port over `economyService.peekBalance(id).silver`:
+  the *unspent* silver in the bank (the figure the Portal bank screen shows and
+  the week close converts), not the week's mints. `peekBalance` is the pure
+  read: `#assertUser`, then `foldBalances` over the ledger, with no wallet
+  write and no session reap (unlike `getBalance`). The port checks `hasUser`
+  first, so a learner without a wallet gets no line and one info log, not a
+  warn on every print. Read at print time with a 2 s bound; a failure, a timeout
+  or an unknown figure prints no line and never delays or breaks the tape. See
+  the [School reference](../school/README.md), "The first line under the name
+  is the week's silver".
+- **School: the parent digest port.** The 6 pm parent digest and the zero-days
+  alert are School's (`SchoolParentDigest`, composed in
+  `composition/parentDigest.mjs`; see
+  [push-standard.md](../notifications/push-standard.md#the-parent-digest-and-the-zero-days-alert)).
+  The economy supplies the catalog's `digest` block, `mode`, the
+  `studyCalendar`, and `economyService.getHistory` / `hasUser`, from which
+  `createDigestEconomyPort` reads the day's silver (positive silver deltas on
+  payout entries, the `isPayoutEntry` test, inside the study day) and passes
+  used (the day's purchase markers less refunds). `digest.cron` is read once at
+  boot (`school:parent-digest`, plus an hourly `school:parent-digest-retry`);
+  `zero_days_alert` and `mode` are read on every run, and null turns the alert
+  off. In `dry-run` the digest shows no silver figure and ends `Coins not live
+  yet`; with `off` coins are not mentioned.
+- **School: Portal coin cell, bank door and bank screen.** The board's coin
+  cell opens the bank door, and the bank screen reads `GET …/bank`; there is no
+  bank strip. See the School README ("The coin cell is the bank's door", "The
+  bank screen").
+  School forwards `economy.coins-changed` to the Portal's `school` topic
+  (`EventBusSchoolRealtimeAdapter.relayCoinsChanged`, see
+  [Events](#events-and-logging)).
+- **School: no per-unit coins.** School's own per-unit reward in
+  `CloseSessionOutcome` (`lifecycle.economy.enabled` in `school.yml`) stays off
+  (`false`): school work is paid by PayoutService only, and turning both on
+  would pay a unit twice.
+- **School: grade reconciliation.** `EconomyService.adjust(userId,
+  { delta, source, ref, note })` applies an exact signed correction outside
+  earn caps. The reference is derived from the append-only grade adjustment or
+  retraction id, making retries idempotent. The ledger may go negative; the
+  displayed wallet remains floored at zero and later earnings repay the debt.
+  School appends a reconciliation success or failure event so a partial
+  failure can be retried safely without replacing the original machine grade.
+- **Piano: the early pass.** The kiosk reads `GET …/bank` only after School's
+  entitlement says a real `incomplete`, unlocks Games for an active
+  `pass['piano.games']`, buys from `SchoolLock`, and consumes or refunds when the
+  game ends. The Games tile stays enabled under the school lock whenever today's
+  cap is unused (`capUsed === false`, `state` not `unknown`), whether or not an
+  offer is affordable, so a child with no silver still reaches the lock's Print
+  button; with School's self-service off (`…/next` answers 404) the lock shows
+  progress only. The kiosk side is in
+  [games-budget-gate.md](../piano/games-budget-gate.md#the-early-pass-on-the-tablet).
+- **Piano: lesson completions.** `piano.lesson.completed` (`{userId}`) is a
+  payout trigger. Separately, the playback progress use case
+  (`__capabilities/playback/server/application/usecases/RecordPlaybackProgress.mjs`)
+  fires `economyService.earn(..., { action: 'piano-lesson-complete', source:
+  'piano', ref })` fire-and-forget the first time a lesson is newly completed.
+  That legacy earn pays only if the catalog's `earn` map prices the action;
+  with an empty map it skips. An economy failure never breaks progress
+  recording. (Assumes the `/log` `userId` is piano-kiosk-only; see the design
+  doc's "Known assumptions".)
+- **Fitness: rings.** `fitnessRingsProvider.standings` (rings by session start
+  instant) is the ring evidence the preview prices.
+- **Arcade: metered spend.**
+  `__app_modules/wellness/fitness/browser/widgets/EmulatorGame/coinMeteredGate.js`
+  opens a spend session and drains coins as the timer runs, surfacing the balance
+  in the EmulatorConsole overlay (`session.coins`) and its `depleted` state
+  ("Out of coins — earn more!"). Off by default; enabled per widget via
+  `config.economy.enabled`.
+
+## Events and logging
+
+**`economy.coins-changed`.** With an `eventBus` (from `createEconomyApi`), every
+write that moves a balance or a pass publishes `economy.coins-changed {userId,
+reason}` on the internal bus through the `IEconomyEvents` port
+(`adapters/eventbus/EventBusEconomyEvents.mjs`). It uses `publish` only, never
+`broadcast`, so the topic never reaches WebSocket clients; a bus with no
+`publish` gets nothing (`economy.coins-changed.no-publish`, logged once). It
+fires after the write's per-user lock is released: a subscriber that writes the
+same user's ledger in reply would otherwise wait on the lock its caller holds.
+`reason` is `deposit`, `adjust`, `earn`, `mint`, `convert`, `pass-bought`,
+`pass-consumed` or `pass-refunded`. A dry run (no `would-mint` publishes), a
+duplicate, a zero grant or a refusal publishes nothing. Metered sessions do not
+publish. A listener that throws is logged
+(`economy.coins-changed.publish-failed`) and never fails the write. A payout run
+mints entry by entry, so the events come in bursts. School forwards it to the
+Portal's `school` topic as `{event: 'coins-changed', learnerId}`.
+
+**Topics the economy subscribes to:** `school.session.outcome-recorded` and
+`piano.lesson.completed` (payout triggers).
+
+**Log events,** by area (info unless noted):
+
+| Area | Events |
+|---|---|
+| Catalog and boot | `economy.catalog.unknown-mode` (warn), `economy.timezone-mismatch` (warn), `economy.earnings.unavailable` (error: the earnings runtime, the payouts or the week close failed to start; School boots without them) |
+| Earn rules and preview | `economy.earn-rules.revised`, `economy.earn-rules.corrupt` (error), `economy.earnings.school-unavailable` / `rings-unavailable` (warn) |
+| Payouts | `economy.payout.would-mint`, `held`, `bad-amount`, `settled` (debug unless something changed), `off` (debug), `not-a-user`, `unknown-learner` (debug), `failed` (warn; error for `CORRUPT_LEDGER`), `disabled`; `economy.mint` |
+| Week close | `economy.week-close.would-convert`, `converted`, `skipped` (debug), `closed`, `below-rate`, `bad-rule`, `refused`, `repaired` (warn), `settle-failed`, `failed`, `off` (debug), `no-cron`, `disabled`; `economy.convert` (debug), `economy.convert.repaired` (debug), `economy.convert.repair-original-target`, `economy.convert.snapshot-failed` (error) |
+| Passes | `economy.pass.bought`, `consumed`, `refunded`, `refused`, `unpaid` (error), `snapshot-failed`, `ledger-unreadable` (warn) |
+| Bank | `economy.bank.pass-unreadable`, `economy.bank.cron-unreadable` (warn), `economy.bank.labels-unavailable` (warn), `economy.history.unreadable-at` (warn) |
+| School reward port | `economy.sheet-reward.failed` (warn, once per learner) |
+| Events | `economy.coins-changed.no-publish`, `economy.coins-changed.publish-failed` |
+
+Client-side events (`economy.bank.door-opened`, `economy.bank.door-open-failed`,
+`economy.bank.opened`,
+`piano.early-pass.*`) are listed with their surfaces in the School README and
+games-budget-gate.md.
+
+## Config reload and restarts
+
+`policy()` and `catalog()` read the served snapshot through
+`getHouseholdAppConfig`, so `dscli system reload --allow-write` (or `--app
+economy`) picks up these edits without a restart:
+
+- `mode` (payouts, week close, `rewardFor` and the digest read it per run);
+- `passes` (prices, caps, refund window);
+- `week_close.convert` rules (read per close);
+- `digest.zero_days_alert`;
+- the legacy `earn`/`spend` maps.
+
+`earn-rules.yml` is read fresh per request and needs no reload at all.
+
+**Needs a restart:** every cron, because the scheduler registers tasks at boot
+and has no unregister.
+
+| Job | Cron | Source |
+|---|---|---|
+| `economy:payout-reconcile` | `0 * * * *` | fixed in code |
+| `economy:week-close` | `week_close.cron` | catalog, read at boot |
+| `school:parent-digest` | `digest.cron` | catalog, read at boot |
+| `school:parent-digest-retry` | `0 * * * *` | fixed in code |
+
+All four register only where the scheduler runs (production, or
+`ENABLE_CRON=true`). A null cron registers nothing, and setting one later needs a
+restart. The payout triggers and the week-close task register in every mode, so
+moving `mode` off → dry-run → live needs only a reload.
+
+To stop payouts, set `mode: off`; do not delete the file, because a reload keeps
+the old snapshot when the file is missing.
+
+## Rollout
+
+1. Ship the catalog in `mode: dry-run` with passes priced 0 (not for sale). Payouts
+   log `economy.payout.would-mint`, the week close logs
+   `economy.week-close.would-convert`, `rewardFor` answers null (no `+N` on any
+   surface), and the digest ends `Coins not live yet`. No balance moves. No pass
+   can be bought before live (`PASS_NOT_SOLD`) and the bank offers nothing.
+   The kid surfaces show no silver figure: the agenda prints no economy line,
+   and the Portal bank screen says "Coins start soon".
+   With `passes` in the catalog, a school-locked kid's piano Games tile is
+   enabled and opens SchoolLock (today's progress and the Print button). That
+   is intended, not the gate failing open: SchoolLock sells nothing until live.
+2. Run one week in dry-run. The owner reads the would-mint volumes per learner
+   and rule and prices the earn rules, the conversion rate and the pass.
+3. Set `mode: live` and reload. Payouts mint from the next settle (event or the
+   hourly reconcile); minting tops up to what each line is worth, so the
+   current week's earned lines are paid in full at the first live settle.
+4. Keep `lifecycle.economy.enabled: false` in `school.yml`, so school work is
+   paid by PayoutService only.
+
+The household's own prices and schedule are private configuration, not part of
+this reference.
+
+## Architecture
+
+All economy code lives in `__app_modules/money/economy/server/`:
+
+| Layer | Files |
+|---|---|
+| Domain (pure, no I/O) | `domain/entities/Transaction.mjs` (`createTransaction`, `CURRENCIES`, `PAID_KINDS`, `isPayoutEntry`, `foldBalances`, `foldBalance`); `domain/services/policy.mjs` (`resolvePolicy`, `inBlackout`, `drainPerSecond`); `domain/passes.mjs`; `domain/historyText.mjs`; `domain/earnings/` (`validateRuleset`, `resolveRules`, `withUserOverride`, `evaluateEarnings`, `earningRef`, `sheetReward`); barrel `domain/index.mjs` |
+| Application | `application/EconomyService.mjs` (balance math, policy, `mint`, `convert`, passes, `peekBalance`, `getHistory`, `REFUND_SETUP_MS`); `EarningsPreviewService.mjs` (windows, contest close, per-source failures); `PayoutService.mjs`; `WeekCloseService.mjs`; `BankService.mjs`; `EarnRulesService.mjs` (revisions); ports `ports/IEarnRulesStore.mjs`, `ports/IEarningEvidenceSource.mjs`, `ports/IEconomyEvents.mjs` |
+| Adapters | `adapters/persistence/YamlEconomyDatastore.mjs` (ledger and wallet storage, `withUserLock`, strict reads); `adapters/persistence/YamlEarnRulesStore.mjs`; `adapters/config/EconomyConfigProjection.mjs`; `adapters/eventbus/EventBusEconomyEvents.mjs`; `adapters/school/SchoolEarningEvidence.mjs` (term verdicts read with `detail: true` for per-subject rows; graded sessions plus curriculum subject/course) |
+| API | `api/economy.mjs` (`/api/v1/economy`), `api/earnings.mjs` (`/api/v1/earnings`) |
+| Composition | `composition/economyApi.mjs` (`createEconomyApi`: services, `studyCalendar`, `rewardFor`, router); `composition/earnings.mjs` (`createEconomyEarningsRuntime`, `cachedWeekPreview`, `cachedEvidenceLabels`, `cachedSheetRewards`, `startEconomyPayouts`, `startWeekClose`) |
+
+Wiring outside the module: `__backend/src/app.mjs` creates `economyApi`, the
+earnings runtime and both start functions, and mounts `v1Routers.economy` and
+`v1Routers.earnings`; `__backend/src/4_api/v1/routers/api.mjs` maps `'/economy'`
+and `'/earnings'`. School's side is
+`__app_modules/learning/school/server/composition/agendaEconomy.mjs`,
+`composition/parentDigest.mjs`, `application/usecases/ManageEarnRules.mjs` and
+`application/usecases/IssueSubjectNext.mjs`; ring evidence is
+`__app_modules/wellness/fitness/server/application/measures/fitnessRingsProvider.mjs`.
 
 ## Roadmap: reinforcement programs
 
@@ -281,8 +1404,8 @@ the price of ordinary responsibility.
   every worthwhile behavior into a simultaneous behavior-management project.
 - Declare the accepted evidence source for an award (`parent-confirmed`,
   `self-report`, `trusted-device-event`, or `assessment-result`) and its
-  policy. This makes trust explicit rather than silently treating every child
-  action as suspicious.
+  policy. This makes trust explicit rather than treating every child action
+  as suspicious by default.
 - A repeated miss is a **help-not-fail** signal: notify the parent privately to
   lower the current rung, offer a start-together option, change the support, or
   pause the program. Never create automatic penalties, debt, or public failure
@@ -317,6 +1440,6 @@ the price of ordinary responsibility.
 
 ## Not yet built (later phases)
 
-Weekly earnings PAYOUT (the preview above prices; nothing mints yet), week close + silver→gold conversion, tickets and the play clock, TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
-biometric auth, parent dashboard, deposit admin UI
-(Phase 1 deposits are API-only).
+Tickets and the play clock, TV/screen-framework metered spend, cash-out + parent-mobile approval, PIN/NFC/
+biometric auth (passes are `trust` only), bank route authentication, parent
+dashboard, deposit admin UI (deposits are API-only).

@@ -1,0 +1,203 @@
+schema: skyline-glider-course/v1
+id: cloud-ridge
+version: 6
+zone: alpine
+act: 2
+name: Cloud Ridge
+description: Use your four bike buttons for laser, bomb, missile and boost.
+  Shoot the bracketed targets, bomb the bunkers below, break the cracked wall
+  with a missile and boost through the gate before it shuts.
+duration_s: 240
+control_cues:
+  - at_s: 14
+    text: Top left fires the laser. Shoot the bracketed targets — don't fly into them!
+  - at_s: 64
+    text: Top right drops a bomb. Bomb the bunkers on the ground — a partner can stomp the mat to drop one too!
+  - at_s: 99
+    text: Bottom left fires a missile. Only a missile breaks the cracked wall!
+  - at_s: 155
+    text: Fly through the gap in the gate. Bottom right boosts you ahead.
+  - at_s: 196
+    text: That gate is closing — boost now to dash through!
+rpm:
+  min: 30
+  max: 130
+motion:
+  filter_s: 0.25
+  deadband_rpm: 2
+  response_s: 0.6
+  max_climb_rate: 0.3
+  max_descent_rate: 0.3
+  coast_s: 1
+  disconnect_grace_s: 0.75
+  slow_signal_grace_s: 5
+  inferred_slowdown_s: 0.5
+rules:
+  boost:
+    enabled: true
+    offset_s: 2.8
+    duration_s: 1.6
+    recharge_s: 8
+  lives: 3
+  invincibility_s: 1.25
+  restart_delay_s: 2
+  weapons:
+    enabled: true
+    bombs: 6
+    missiles: 3
+    blast_width_s: 2.4
+    blast_height: 0.16
+overrides:
+  palette:
+    theme: volcanic
+    sky: '#332c57'
+    horizon: '#cf786b'
+    rock: '#66505a'
+    rock_low: '#2c2c40'
+segments:
+- id: ridge-sky
+  type: open
+  start_s: 0
+  end_s: 240
+- id: practice-ground
+  type: lower-terrain
+  start_s: 0
+  end_s: 100
+  top: 0.92
+- id: ridge-bells
+  type: collectible-path
+  start_s: 10
+  end_s: 235
+  collectibles:
+  - id: cr-bell-01
+    at_s: 12
+    altitude: 0.74
+  - id: cr-bell-02
+    at_s: 30
+    altitude: 0.6
+  - id: cr-bell-03
+    at_s: 48
+    altitude: 0.7
+  - id: cr-bell-04
+    at_s: 75
+    altitude: 0.76
+  - id: cr-bell-05
+    at_s: 118
+    altitude: 0.72
+  - id: cr-bell-06
+    at_s: 130
+    altitude: 0.6
+  - id: cr-bell-07
+    at_s: 159
+    altitude: 0.7
+  - id: cr-bell-08
+    at_s: 185
+    altitude: 0.62
+  - id: cr-bell-09
+    at_s: 228
+    altitude: 0.72
+  - id: cr-boost-bell
+    at_s: 165
+    altitude: 0.6
+- id: checkpoint-one
+  type: checkpoint
+  start_s: 60
+  restart_altitude: 0.5
+- id: first-lava
+  type: lava
+  start_s: 110
+  end_s: 140
+  top: 0.9
+- id: checkpoint-two
+  type: checkpoint
+  start_s: 150
+  restart_altitude: 0.5
+- id: barrier-ground
+  type: lower-terrain
+  start_s: 155
+  end_s: 215
+  top: 0.92
+- id: checkpoint-shutter
+  type: checkpoint
+  start_s: 188
+  restart_altitude: 0.5
+- id: last-lava
+  type: lava
+  start_s: 215
+  end_s: 240
+  top: 0.9
+- id: checkpoint-three
+  type: checkpoint
+  start_s: 225
+  restart_altitude: 0.5
+- id: finish
+  type: finish
+  start_s: 240
+entities:
+- id: target-01
+  entity: target
+  at_s: 25
+  altitude: 0.6
+  hit_points: 2
+- id: target-02
+  entity: target
+  at_s: 42
+  altitude: 0.55
+  hit_points: 2
+- id: bunker-01
+  entity: bunker
+  at_s: 70
+  altitude: 0.92
+- id: bunker-02
+  entity: bunker
+  at_s: 76
+  altitude: 0.92
+- id: bunker-03
+  entity: bunker
+  at_s: 82
+  altitude: 0.92
+- id: tower-01
+  entity: tower
+  at_s: 92
+  altitude: 0.92
+- id: crack-wall-01
+  entity: crackwall
+  at_s: 107
+  altitude: 0.95
+  required_weapon: missile
+- id: missile-practice-01
+  entity: target
+  at_s: 128
+  altitude: 0.35
+  hit_points: 2
+  vulnerable_to: [laser, bomb, missile]
+- id: gap-gate-01
+  entity: gate
+  at_s: 165
+  gap_altitude: 0.6
+  gap: 0.28
+- id: target-03
+  entity: target
+  at_s: 175
+  altitude: 0.6
+  hit_points: 3
+- id: missile-practice-02
+  entity: target
+  at_s: 180
+  altitude: 0.28
+  hit_points: 2
+  vulnerable_to: [laser, bomb, missile]
+- id: bunker-04
+  entity: bunker
+  at_s: 184
+  altitude: 0.92
+- id: shutter-gate-01
+  entity: gate
+  at_s: 200
+  gap_altitude: 0.6
+  gap: 0.28
+  closes_at_s: 198.9
+- id: bunker-05
+  entity: bunker
+  at_s: 208
+  altitude: 0.92

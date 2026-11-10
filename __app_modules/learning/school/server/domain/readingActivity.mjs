@@ -65,4 +65,22 @@ export function projectReadingActivity(items, { studyDay, dayOf } = {}) {
   };
 }
 
+/**
+ * Minutes the child logged against `studyDay` (a check-in's `minutes`), over
+ * every v2 shelf item. A page-mode entry carries none, so this can read 0 on
+ * a busy reading day — the caller shows the book count then. Pure.
+ */
+export function readingMinutes(items, { studyDay } = {}) {
+  let minutes = 0;
+  for (const item of (Array.isArray(items) ? items : [])) {
+    if (!Array.isArray(item?.entries)) continue;
+    for (const entry of uniqueEvents(item.entries)) {
+      if (entry?.on !== studyDay) continue;
+      const value = Number(entry.minutes);
+      if (Number.isFinite(value) && value > 0) minutes += value;
+    }
+  }
+  return minutes;
+}
+
 export default projectReadingActivity;

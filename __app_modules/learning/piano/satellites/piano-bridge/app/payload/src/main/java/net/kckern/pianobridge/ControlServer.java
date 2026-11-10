@@ -56,6 +56,7 @@ public class ControlServer extends NanoWSD {
     public static final int PORT = 8770;
 
     private final BridgeCore service;
+    private final AdapterCycler adapterCycler = AdapterCycler.forDevice();
     private final Set<ControlSocket> clients =
             Collections.newSetFromMap(new ConcurrentHashMap<ControlSocket, Boolean>());
     private final Timer heartbeatTimer = new Timer("PianoBridge-WS-heartbeat", true);
@@ -120,7 +121,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p31-system-consent";
+    public static final String BUILT_BY = "p35-wifi-bssid";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -180,6 +181,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /                      (HTML status page for a browser; JSON here for curl)")
                             .put("GET /log").put("POST /panic")
                             .put("GET|POST /beat               (outbound heartbeat state / send one now)")
+                            .put("GET /wifi[?fresh=1]          (Wi-Fi link: current sample + last 60; fresh=1 samples now)")
                             .put("GET|POST /loopback           (OUT assertion via piano ECHO: probe+wait / rolling state)")
                             .put("POST /reset                 (FORCE-RESET the BLE link, escalate to radio bounce, verify by echo)")
                             .put("GET /midi/tap               (raw bytes the read port delivered; running-status count)")
@@ -198,6 +200,7 @@ public class ControlServer extends NanoWSD {
                             .put("POST /payload?url=<jar-url>&sha256=<hex>  (fetch+verify+activate a new payload; zero-tap)")
                             .put("POST /payload/rollback      (revert to the previous payload)")
                             .put("GET /speaker · POST /speaker  (A2DP speaker status+guard / force reconnect)")
+                            .put("POST /speaker/reconnect · POST /speaker/bt-cycle?settleMs=  (speaker ladder rungs)")
                             .put("POST /audio-guard/bootstrap   (spend the one-time clamp window: drop→clamp→reconnect)")
                             .put("POST /audio-guard/override?ms=60000  (reopen SYNTH gate only, time-boxed; never unclamps)")
                             // ADB-replacement diagnostics (untrusted_app sandbox; no other-process CPU):
@@ -364,6 +367,15 @@ public class ControlServer extends NanoWSD {
                     o.put("audibility", "delivery is proven by the echo; SOUND still depends on the piano's own volume/headphones");
                     return json(o);
                 }
+                case "/wifi": {
+                    // Wi-Fi link telemetry (p34). The kiosk Player calls this from an
+                    // https page on a stall; json() carries the same CORS headers as
+                    // every other route, and a preflight gets an empty ok.
+                    if (method == NanoHTTPD.Method.OPTIONS) return json(ok());
+                    WifiLink wl = service.getWifiLink();
+                    if (wl == null) return json(err("wifi telemetry not started"));
+                    return json(wl.snapshot("1".equals(strParam(session, "fresh", "0"))));
+                }
                 case "/beat": {
                     // Outbound heartbeat: GET = its state, POST = send one NOW and return
                     // the body that went out (so you can see exactly what the store sees).
@@ -410,6 +422,34 @@ public class ControlServer extends NanoWSD {
                 }
                 case "/crashlog":
                     return json(CrashLog.read());
+                case "/speaker/reconnect": {
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    A2dpConnector spk = service.getA2dpConnector();
+                    if (spk == null) return json(err("no_a2dp"));
+                    Diag.log(TAG, "/speaker/reconnect from " + session.getRemoteIpAddress());
+                    spk.reconnectNow();
+                    return json(ok().put("action", "speaker_reconnect"));
+                }
+                case "/speaker/bt-cycle": {
+                    // Rungs 2-3 of the backend speaker ladder. Answers at once; the cycle runs
+                    // on its own thread so the HTTP client (whose link we are about to drop
+                    // along with BLE) can't strand Bluetooth off by disconnecting.
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    if (adapterCycler == null) return json(err("no_bluetooth"));
+                    final int settleMs = Math.max(0, Math.min(30000, parseIntParam(session, "settleMs", 5000)));
+                    if (adapterCycler.isRunning()) return json(err("busy")); // run() itself refuses a racing second call
+                    final DeviceConfig cfg = service.getConfig();
+                    Diag.log(TAG, "/speaker/bt-cycle settleMs=" + settleMs + " from " + session.getRemoteIpAddress());
+                    new Thread(() -> {
+                        LogEvents.emit(cfg, "bridge.bt-cycle.start", "info", new JSONObject());
+                        AdapterCycler.Result r = adapterCycler.run(settleMs);
+                        JSONObject d = new JSONObject();
+                        try { d.put("ok", r.ok).put("error", r.error == null ? JSONObject.NULL : r.error).put("tookMs", r.tookMs); }
+                        catch (JSONException ignored) { }
+                        LogEvents.emit(cfg, "bridge.bt-cycle.done", r.ok ? "info" : "error", d);
+                    }, "PianoBridge-bt-cycle").start();
+                    return json(ok().put("action", "bt_cycle").put("settleMs", settleMs));
+                }
                 case "/speaker": {
                     A2dpConnector spk = service.getA2dpConnector();
                     if (spk == null) return json(err("no_a2dp"));

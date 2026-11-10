@@ -24,6 +24,7 @@ import path from 'path';
 import {
   loadYaml,
   saveYaml,
+  saveYamlToPathAtomic,
   listYamlFiles,
   deleteYaml,
   ensureDir,
@@ -195,9 +196,13 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
   }
 
   savePractice(userId, scoreKey, record) {
+    return this.savePracticeAtomic(userId, scoreKey, record);
+  }
+
+  savePracticeAtomic(userId, scoreKey, record) {
     const dir = this.#userPianoDir(userId, 'practice');
-    if (!dir) return false;
-    saveYaml(path.join(dir, scoreKey), record);
+    if (!dir || !/^[a-z0-9-]{1,120}$/.test(String(scoreKey))) return false;
+    saveYamlToPathAtomic(path.join(dir, `${scoreKey}.yml`), record, { durable: true });
     return true;
   }
 

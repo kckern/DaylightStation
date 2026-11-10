@@ -1,0 +1,369 @@
+// GemBoard.scss — one dark panel over a dimmed screen. Everything inside the
+// panel is sized in em from one font size that follows the screen's width, so
+// the same board fills a TV (garage, 1920×1080) and fits a tablet (1280×800).
+.gem-board {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Roboto Condensed", sans-serif;
+  color: #ececf0;
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 8, 14, 0.72);
+  }
+
+  &__panel {
+    --gem-col: 4.4em;  // one gem column
+    --gem-gap: 0.8em;  // between sections
+    --gem-line: 4.6em; // one child's line
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+    // The font size that makes the board fill the screen: set from the board's own size in em.
+    font-size: clamp(12px, min(calc(95vw / var(--gem-w, 58)), calc(95vh / var(--gem-h, 34))), 40px);
+    max-width: 97vw;
+    max-height: 97vh;
+    padding: 0.8em 1em 1em;
+    box-sizing: border-box;
+    border-radius: 1em;
+    background: #171a24;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+  }
+  &__title { font-size: 1.6em; font-weight: 700; letter-spacing: 0.01em; }
+
+  &__weeks {
+    margin-left: auto;
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+  }
+  &__week {
+    border: 0;
+    border-radius: 999px;
+    padding: 0.4em 1em;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    color: var(--ds-text-mid, #94a3b8);
+    cursor: pointer;
+    &.is-on { background: rgba(255, 255, 255, 0.16); color: var(--ds-text-high, #e8eef3); font-weight: 700; }
+    &:disabled { color: #3a4452; cursor: default; }
+  }
+  &__close {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 1.9em;
+    line-height: 1;
+    width: 1.4em;
+    height: 1.4em;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--ds-text-mid, #94a3b8);
+    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.1); color: var(--ds-text-high, #e8eef3); }
+  }
+
+  // Sized to fit unscrolled; scrolling is the fallback for more children or gems than planned for.
+  &__body { min-height: 0; overflow: auto; }
+  &__empty { padding: 3em 4em; text-align: center; font-size: 1.25em; color: var(--ds-text-mid, #94a3b8); }
+
+  // Lines: the leaning column names, the section names, then one per child.
+  &__grid {
+    display: grid;
+    grid-template-rows: 2.7em 2em;
+    grid-auto-rows: var(--gem-line);
+    padding-right: 0;
+  }
+  &__row { display: contents; }
+
+  // A section: one tinted block behind its columns, from its name down.
+  &__band {
+    border-radius: 0.7em;
+    background: rgba(255, 255, 255, 0.045);
+    &[data-group="move"] { background: rgba(142, 91, 208, 0.16); }
+    &[data-group="school"] { background: rgba(46, 158, 91, 0.14); }
+    &[data-group="games"] { background: rgba(255, 122, 47, 0.13); }
+  }
+  &__group-label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 0 0.6em;
+    font-size: 1.3em;
+    font-weight: 700;
+    color: var(--ds-text-high, #e8eef3);
+    .area-icon { flex: none; width: 1.4em; height: 1.4em; }
+    &[data-group="move"] .area-icon { color: #a97ae6; }
+    &[data-group="school"] .area-icon { color: #3fc27a; }
+    &[data-group="games"] .area-icon { color: #ff9a5c; }
+  }
+
+  // A column's name: level, centred over its column, wrapping to two lines.
+  &__cat {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 0.1em 0.3em;
+    text-align: center;
+    font-size: 1em;
+    font-weight: 700;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+    color: var(--ds-text-high, #e8eef3);
+  }
+
+  // The highlighted child: one bar across the whole line.
+  &__lane {
+    margin: 0 -0.5em;
+    border-radius: 0.7em;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+
+  &__head {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding-right: 0.6em;
+    min-width: 0;
+  }
+  &__avatar {
+    flex: none;
+    width: 3.6em;
+    height: 3.6em;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.1);
+    &--fallback {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+  }
+  &__name { font-size: 1.6em; font-weight: 700; white-space: nowrap; }
+
+  &__col { position: relative; }
+  // A hairline between one child's line and the next, inside the sections only.
+  &__row + &__row + &__row + &__row > &__col { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+
+  &__cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+  }
+  // The glyph's wrapper: a button when the cell has detail to open, a plain span when not.
+  &__open, &__still { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+  &__open {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.1); outline: none; }
+  }
+  &__cell.is-cursor &__open, &__cell.is-cursor &__still { box-shadow: 0 0 0 0.16em var(--ds-text-high, #e8eef3); }
+
+  &__total-label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1em;
+    font-weight: 700;
+    color: var(--ds-text-mid, #94a3b8);
+    white-space: nowrap;
+  }
+  &__total {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.6em;
+    font-size: 2.5em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// One cell's glyph: a full gem that fills the box, or a slightly smaller one
+// inside a day ring. Nothing here is ever partly transparent and nothing is a
+// status hue: a day is done (area colour) or still to go (plain outline).
+.gem-glyph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.8em;
+  height: 3.8em;
+
+  &__ring { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; }
+  &__seg { stroke: var(--ds-text-low, #6b7785); stroke-width: 2.4; stroke-linecap: round; }
+  &__seg.is-done { stroke-width: 3.8; }
+
+  // The gem with its area's icon on the face of the stone.
+  &__stone { position: relative; display: inline-flex; }
+  &__area {
+    position: absolute;
+    left: 23%;
+    top: 13%;
+    width: 54%;
+    height: 54%;
+    color: #1a1226;
+    // A pale halo so the dark figure reads on every facet, light or deep.
+    filter: drop-shadow(0 0 0.06em rgba(255, 255, 255, 0.9));
+  }
+
+  // A contest lead: no gem, the word at the size of the row labels.
+  &__word { font-size: 1.05em; font-weight: 700; color: var(--ds-text-high, #e8eef3); white-space: nowrap; }
+  &__muted { color: var(--ds-text-low, #6b7785); font-size: 1.5em; }
+  &__times {
+    position: absolute;
+    right: -0.2em;
+    bottom: 0;
+    padding: 0 0.35em;
+    border-radius: 999px;
+    background: #171a24;
+    font-size: 0.85em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// The box a cell opens, over the board: the cell's own glyph large, then one
+// band per rule in the row.
+.gem-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__backdrop { position: absolute; inset: 0; background: rgba(10, 12, 18, 0.55); }
+
+  &__card {
+    --gem: #8a8fa3;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 25em;
+    max-width: 92%;
+    max-height: 92%;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 1em;
+    background: #222634;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 1.2em 3em rgba(0, 0, 0, 0.6);
+  }
+
+  // The head takes the gem's own colour, so the box reads as that gem opened up.
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 0.9em;
+    padding: 1em 0.8em 1em 1.2em;
+    background: #2b3042;
+    background: color-mix(in srgb, var(--gem) 24%, #222634);
+    border-bottom: 0.2em solid var(--gem);
+  }
+  &__glyph { flex: none; display: inline-flex; font-size: 1.25em; }
+  &__glyph .gem-glyph__times { background: transparent; }
+  &__title { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+  &__row { font-size: 1.6em; font-weight: 700; }
+  &__who { font-size: 1.1em; color: var(--ds-text-mid, #94a3b8); }
+  &__close {
+    margin-left: auto;
+    align-self: flex-start;
+    flex: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 1.8em;
+    line-height: 1;
+    width: 1.4em;
+    height: 1.4em;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--ds-text-mid, #94a3b8);
+    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.14); color: var(--ds-text-high, #e8eef3); }
+  }
+
+  &__part {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    padding: 0.9em 1.2em 1em;
+    & + & { border-top: 1px solid rgba(255, 255, 255, 0.09); }
+  }
+  &__part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
+  &__part-label { font-size: 1.1em; font-weight: 700; }
+  &__line { font-size: 1em; color: var(--ds-text-mid, #94a3b8); text-align: right; }
+  &__part[data-state="earned"] &__line, &__part[data-state="won"] &__line, &__part[data-state="leading"] &__line { color: var(--ds-text-high, #e8eef3); font-weight: 700; }
+
+  &__items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    li { display: flex; justify-content: space-between; gap: 1em; font-size: 1.05em; }
+  }
+  &__when { color: var(--ds-text-low, #6b7785); }
+
+  &__score { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 0.6em; row-gap: 0.4em; }
+  &__score-mine { font-size: 1.9em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  &__score-best { color: var(--ds-text-mid, #94a3b8); font-variant-numeric: tabular-nums; }
+  &__score-bar {
+    grid-column: 1 / -1;
+    height: 0.45em;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    > span { display: block; height: 100%; border-radius: inherit; }
+  }
+
+  // Monday to Sunday, one slot a day across the box.
+  &__strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.35em; }
+  &__day {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.3em;
+    box-sizing: border-box;
+    border-radius: 0.55em;
+    border: 2px solid var(--ds-text-low, #6b7785);
+    font-size: 0.95em;
+    color: var(--ds-text-mid, #94a3b8);
+    // Solid shades, never see-through: a day to come is a step darker than a day gone by,
+    // and a day after the rule's last is darker still and has no outline.
+    &.is-done { color: #171a24; font-weight: 700; }
+    &.is-short { color: var(--ds-text-high, #e8eef3); }
+    &.is-ahead { color: var(--ds-text-low, #6b7785); border-color: #3a4452; }
+    &.is-closed { color: #3a4452; border-color: transparent; }
+    &.is-today { box-shadow: 0 0 0 2px var(--ds-text-high, #e8eef3); color: var(--ds-text-high, #e8eef3); }
+    &.is-done.is-today { color: #171a24; }
+  }
+}

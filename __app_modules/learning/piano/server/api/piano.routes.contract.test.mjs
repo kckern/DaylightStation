@@ -27,6 +27,8 @@ const routeInventory = [
   ]),
   ['get', '/users/:userId/preferences'], ['put', '/users/:userId/preferences'],
   ['get', '/users/:userId/preset'], ['put', '/users/:userId/preset'],
+  // Coaching outcomes (b2f71d8b04), registered before the general practice route.
+  ['get', '/users/:userId/practice/:scoreKey/coach'], ['post', '/users/:userId/practice/:scoreKey/coach'],
   ['get', '/users/:userId/practice/:scoreKey'], ['put', '/users/:userId/practice/:scoreKey'],
   ['get', '/users/:userId/progress'], ['put', '/users/:userId/progress/:collection/:drillId'],
   ['get', '/bank'], ['get', '/bank/catalog'], ['get', '/bank/search'], ['get', '/bank/*splat'],

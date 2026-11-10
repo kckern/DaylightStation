@@ -15,7 +15,7 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -91,7 +91,7 @@ describe('EnrollmentDrawer — unenrolled cell', () => {
     expect(schoolApi.enroll).toHaveBeenCalledWith('user_4', {
       syllabusId: 'atlas-upper',
       rematerialize: false,
-      enrolledBy: 'kckern',
+      enrolledBy: 'teacher_1',
       pin: null,
       baseUpdatedAt: '2026-08-01T00:00:00Z',
     });

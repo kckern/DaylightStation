@@ -64,8 +64,10 @@ half of it away.
 ## Saves: shared games and one person's games
 
 A game keeps progress only when its manifest entry sets `save_mode: battery`
-(the cartridge's `.srm`) or `save_mode: state`. Saves are per person, at
-`{system}/saves/{user}/{game}.srm` (states under `{system}/states/{user}/{game}/`).
+(the cartridge's `.srm`) or `save_mode: state`. Progress is per person and game.
+Legacy battery files at `{system}/saves/{user}/{game}.srm` and states under
+`{system}/states/{user}/{game}/` remain as baseline recovery sources; current
+progress uses the protected checkpoint store described below.
 
 **Shared (the default).** The game boots fresh and anonymous. At the garage
 kiosk the ⋯ **game menu** opens by itself at launch, with the game held paused
@@ -91,7 +93,7 @@ open at launch and its Player section reads "Saving works at the garage".
 one child's (a long RPG one child is playing through):
 
 ```yaml
-  - id: pokemon-crystal
+  - id: long-rpg-quest
     save_mode: battery
     save_owner: <user>
 ```
@@ -102,6 +104,91 @@ a notice and nothing loaded or written. The menu shows "<Name>'s game · saving"
 and offers no claim. The save API is the backstop: `PUT`/`DELETE` of an owned
 game's save or state from any other user is refused with **403**
 (`emulator.blob.write_refused` / `delete_refused`).
+
+## Protected progress checkpoints
+
+Protected saving publishes a snapshot and its battery data together as one revision.
+Every write names the revision that was loaded. A delayed write or another browser
+with an older revision receives a conflict instead of overwriting newer progress.
+The server retains immutable artifacts and revision history under
+`_checkpoints/{system}/{user}/{game}/`; a durable current pointer selects the resume
+point. Reads verify hashes and report damaged data instead of silently selecting
+an older version. Reset, import and recovery create new revisions and retain the
+previous progress.
+
+On first use, existing per-user files are preserved and imported as a baseline.
+After protection begins, unconditional legacy writes and deletes are refused;
+reload an idle client to use the protected protocol. Legacy battery/default-state
+export URLs return the current verified artifacts, while the original files stay
+on disk for recovery. Progress responses use `Cache-Control: no-store`.
+
+The client stores pending captures in a dedicated IndexedDB recovery journal
+before uploading. A failed local transaction is reported rather than treated as
+a successful save. Uploads follow capture order; only the matching acknowledged
+capture is retired. On reopening, a unique pending successor chain can finish
+against its recorded parent. Conflicting branches require an explicit recovery
+choice and are never selected by timestamp. In-page reopen also waits for the
+previous console's outstanding write. Unverified guest-game claims require native
+verification before upload, including after a reload. Saving remains disabled until the engine
+confirms restoration of the exact expected artifact and compatible core identity.
+
+Use the game menu's **Recover progress** to inspect saved and local copies.
+Choosing a copy verifies it in the running native core before publishing it as
+current. Competing local copies move to a retained recovery archive; selecting
+one never deletes the others. A changed server revision requires a new choice,
+not a silent retry over the newer game. **Start a fresh game** requires explicit
+confirmation and preserves earlier copies. A failed reset leaves the current
+native game in place.
+
+All normal exits (bezel, menu, hotspot and host close) pause, capture and await
+acknowledgment. A failure keeps the game available with **Retry saving** and
+recovery controls. Autosave captures every 15 seconds by default. Unexpected
+browser/host termination can lose active play since the last durable capture;
+reopening examines the journal before resuming the server point. A local storage
+failure pauses play so an entire session cannot quietly remain unsaved.
+
+The native restore contract returns the actual paused deserialize result and a
+request identity, with no gameplay frame during restoration. Semantic game-state
+tracking reads the native RAM pointer; protected sessions never probe restored
+memory with calibration cheats. Battery restoration
+checks native SRAM against the supplied bytes. The browser hashes the actual ROM
+and core archive before boot and checks the processed emulator configuration;
+old asset databases cannot substitute another game. Each protected boot uses a
+unique native save filename and detaches EmulatorJS’s internal persistent save
+mount before accepting a resume. Native file writes then stay in memory, so a
+fresh game cannot inherit an old browser SRAM file; the checkpoint journal owns
+persistence. Graphics capability selects
+the normal or legacy core before reading progress metadata. A ROM/core mismatch
+requires explicit compatible recovery. Unmanaged native load, undo, reset,
+rewind and battery refresh cannot bypass the protected lifecycle. Source pins,
+license files and build instructions are in the
+[protected core integration](../../../_extensions/emulator-checkpoint/README.md).
+
+Independent revision seals support recovery even when the current pointer or
+protection marker is damaged. Inspection reports the damage; only an explicit
+selection with the inspected pointer token can repair it. Damaged metadata and
+replaced corrupt blob bytes remain as evidence. An explicitly imported correct
+copy can repair a damaged blob without discarding historical references.
+
+The checkpoint API is rooted at `/api/v1/emulator/checkpoint/{system}/{game}?user={user}`.
+`GET` describes the current checkpoint and ROM/core identity; `PUT` commits owned
+base64 snapshot/battery bytes with an explicit `expectedRevision`, `captureId`,
+`sessionId`, and increasing `sequence`. `POST /reset`, `/import`, and `/recover`
+are explicit revisioned operations. `GET /history` lists metadata and
+`GET /revision/{revision}` reads a committed recovery point. Conflicts return
+409, damaged checkpoint data 422, and each artifact is limited to 8 MiB.
+`GET /recovery` inspects independently sealed copies and returns `requiresRepair`
+and a `headToken`; `GET /recovery/revision/{revision}` verifies the selected copy.
+`POST /repair` compares `expectedHeadToken` and accepts a `sourceRevision`, or an
+explicit `intent: import/reset` when repairing from local bytes or starting fresh.
+Each accepted repair is a new revision; it never silently picks an orphan record.
+
+For external battery imports, read the checkpoint description first and submit
+`POST /import` with its `expectedRevision` and current `provenance`, a new
+`captureId`/`sessionId`, an increasing `sequence`, and base64 `battery` bytes
+(`snapshot` may be null for a battery import). Do not replace the old raw files:
+protected readers use the checkpoint head. Browser startup verifies the imported
+bytes natively before allowing gameplay or another save.
 
 ## Sizing the picture inside the cutout
 

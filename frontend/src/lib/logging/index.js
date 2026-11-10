@@ -322,7 +322,7 @@ function createLogger({ name = 'frontend', context = {}, level = 'info', transpo
 
   // Rate-limited emit with optional aggregation of skipped events (mirrors Logger.js)
   const sampled = (eventName, data = {}, options = {}) => {
-    const { maxPerMinute = 20, aggregate = true } = options;
+    const { maxPerMinute = 20, aggregate = true, level: sampledLevel = 'info' } = options;
     const now = Date.now();
     let state = samplingState.get(eventName);
 
@@ -343,7 +343,7 @@ function createLogger({ name = 'frontend', context = {}, level = 'info', transpo
     // Within budget: log normally
     if (state.count < maxPerMinute) {
       state.count += 1;
-      emit('info', eventName, data);
+      emit(sampledLevel, eventName, data);
       return;
     }
 

@@ -45,6 +45,10 @@
   // non-interactive board look tappable. Naming the pair also means "done" and
   // "not yet" are one edit each instead of four literals scattered downfile.
   --school-board-ink: #efe9dc;
+  // The two coins' FIGURE colours (the numbers beside the icons). The coin
+  // icon itself carries its own palette: lib/icons/CoinIcon.jsx COIN_PALETTES.
+  --school-coin-silver: #c0c0c0;
+  --school-coin-gold: #e2c15a;
   --school-board-done: #7fb069;
   // Ink INSIDE a filled done-disc: near-black, because a cream glyph on sage
   // is the one pairing on this board with no contrast to spare.
@@ -255,8 +259,7 @@
   &__cheer { font-size: 1.15rem; font-weight: 800; margin: 0; }
   &__passbar { margin: 0; font-weight: 700; }
   &__skipped, &__flag { color: var(--school-muted); margin: 0; }
-  &__retake { color: var(--school-accent); font-weight: 700; margin: 0; }
-  &__retake-btn, &__flag-btn {
+  &__flag-btn {
     min-height: 52px; padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 10px;
     background: var(--school-surface); color: var(--school-fg); font-weight: 700; cursor: pointer;
   }
@@ -1071,120 +1074,11 @@
   &__pause-note { margin: 0; color: var(--school-muted); font-size: 0.82rem; }
 }
 
-// Dense overview + movable focus + stable inspector. This interaction grammar
-// is shared by curriculum history and future long-set School tools; it carries
-// no subject-specific knowledge.
-.school-overview-detail {
-  display: flex; flex-direction: column; gap: 0.55rem;
-
-  &__inspector {
-    min-height: 7.25rem; padding: 0.75rem;
-    border: 1px solid var(--school-border); border-radius: 10px;
-    background: var(--school-surface);
-  }
-  &__overview {
-    display: grid; grid-template-columns: repeat(var(--school-overview-columns), minmax(0, 1fr));
-    gap: 0.38rem;
-  }
-  &__item {
-    position: relative; min-width: 0; min-height: 64px; padding: 0.5rem;
-    display: grid; grid-template-columns: auto 1fr; align-content: center;
-    gap: 0.12rem 0.4rem; text-align: left;
-    border: 1px solid var(--school-border); border-radius: 8px;
-    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
-    overflow: hidden;
-    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 1px; }
-    &.is-selected {
-      border-color: var(--school-accent);
-      box-shadow: inset 0 0 0 1px var(--school-accent);
-      background: var(--school-surface-2);
-    }
-  }
-  &.is-list &__item { padding-left: calc(0.65rem + var(--school-overview-depth) * 1.1rem); }
-}
-
-.school-progress-history {
-  display: flex; flex-direction: column; gap: 0.55rem;
-
-  &__head { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
-  &__head h3 { margin: 0; font-size: 1rem; }
-  &__head p { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.82rem; }
-  &__head button {
-    flex: 0 0 auto; min-height: 44px; padding: 0 0.75rem;
-    border: 1px solid var(--school-border); border-radius: 8px;
-    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
-  }
-  &__trail {
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    color: var(--school-muted); font-size: 0.8rem;
-  }
-  &__inspect-main {
-    display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(18rem, 2fr);
-    align-items: end; gap: 0.75rem; margin-top: 0.45rem;
-  }
-  &__inspect-main > div { display: flex; flex-direction: column; gap: 0.12rem; }
-  &__inspect-main > div span, &__node-kind { color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  &__inspect-main > div strong { font-size: 1.15rem; }
-  &__inspect-main dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
-  &__inspect-main dl div { min-width: 0; }
-  &__inspect-main dt { color: var(--school-muted); font-size: 0.72rem; }
-  &__inspect-main dd { margin: 0.1rem 0 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
-  &__marker {
-    grid-row: 1 / span 3; align-self: center;
-    width: 0.62rem; height: 0.62rem; border-radius: 50%;
-    border: 2px solid var(--school-accent); background: transparent;
-  }
-  .is-selected &__marker { background: var(--school-accent); }
-  &__node-kind, &__node-stat, .school-overview-detail__item strong {
-    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  &__node-stat { color: var(--school-muted); font-size: 0.78rem; }
-  &__unscoped { margin: 0; color: var(--school-muted); font-size: 0.8rem; }
-}
-
-.school-insights {
-  display: flex; flex-direction: column; gap: 0.55rem;
-  padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
-  background: var(--school-surface-2);
-
-  &__head h3 { margin: 0; font-size: 1rem; }
-  &__head p { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.82rem; }
-  &__marker {
-    grid-row: 1 / span 3; align-self: center;
-    width: 0.62rem; height: 0.62rem; border-radius: 50%;
-    border: 2px solid var(--school-muted); background: transparent;
-    &.is-review_instruction, &.is-review_pacing { border-color: var(--school-warn); background: var(--school-warn); }
-    &.is-monitor, &.is-met { border-color: var(--school-accent); background: var(--school-accent); }
-  }
-  &__kind, &__signal {
-    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .school-overview-detail__item strong { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  &__signal { font-size: 0.76rem; text-transform: none; letter-spacing: normal; }
-  &__inspector { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(18rem, 2fr); gap: 0.75rem; align-items: end; }
-  &__inspector > div { display: flex; flex-direction: column; gap: 0.12rem; }
-  &__inspector > div span { color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; }
-  &__inspector > div strong { font-size: 1.15rem; }
-  &__inspector > div small { color: var(--school-muted); }
-  &__inspector dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
-  &__inspector dt { color: var(--school-muted); font-size: 0.72rem; }
-  &__inspector dd { margin: 0.1rem 0 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
-  &__basis {
-    grid-column: 1 / -1; display: grid; gap: 0.15rem; padding-top: 0.55rem;
-    border-top: 1px solid var(--school-border);
-  }
-  &__basis > strong { font-size: 0.78rem; }
-  &__basis > span, &__basis > small { color: var(--school-muted); font-size: 0.76rem; }
-}
+// The overview / history / insights rules live in progress/ProgressOverview.scss,
+// imported by the components themselves so the teacher console gets them too.
 
 @media (max-width: 700px) {
   .school-progress__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .school-overview-detail__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .school-progress-history__inspect-main { grid-template-columns: 1fr; }
-  .school-progress-history__inspect-main dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .school-insights__inspector { grid-template-columns: 1fr; }
-  .school-insights__inspector dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .school-tutor__header, .school-tutor__pending { align-items: stretch; flex-direction: column; }
   .school-tutor__mastery { grid-template-columns: auto 1fr auto; }
   .school-tutor__mastery progress { grid-column: 1 / -1; }
@@ -1870,6 +1764,9 @@
   color: var(--school-warn); text-align: center;
   line-height: 1.2; white-space: nowrap;
   &.is-degraded { color: var(--school-danger); }
+  // An old sheet or a spent code is a whole sentence with an instruction in
+  // it, and never shares the band with a retry button — two lines fit.
+  &.is-refusal { white-space: normal; }
 }
 .school-selfservice__retry {
   flex: 0 0 52px; min-height: 52px; padding: 0 1.6rem; border: 1px solid var(--school-border);
@@ -3008,6 +2905,9 @@
 // landed on the last learner's card AND on the fixed "Turn off screen" button
 // underneath — neither of which jsdom can see. In flow, the board takes the
 // space that is left and the door keeps its own.
+// A gem ceremony is drawn over this pane only (never the keypad): the pane
+// positions it while one is showing.
+.school-lock-split__board:has(> .gem-ceremony) { position: relative; }
 .school-lock-split__board {
   pointer-events: none;
   user-select: none;
@@ -3041,6 +2941,8 @@
   cursor: pointer; touch-action: manipulation; white-space: nowrap;
 }
 .school-book-door__icon { font-size: 1.75rem; line-height: 1; }
+// The header's doors side by side: the coin bank, then the book shelf.
+.school-board-header__doors { flex: 0 0 auto; display: flex; align-items: center; gap: .6rem; }
 .school-book-door__label { font-size: 1rem; }
 .school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
 // No reserved lane any more: "Turn off screen" used to be pinned to the
@@ -3051,6 +2953,8 @@
 // the available height between them, whatever each card has to say. A card
 // with no plan keeps the same footprint — four matching cards are the point.
 .school-status-board {
+  // The coin ceremony is absolutely placed over the board pane (never the keypad).
+  position: relative;
   color: var(--school-board-ink);
   display: flex; flex-direction: column;
   width: 100%; height: 100%; min-height: 0;
@@ -3337,6 +3241,15 @@
     pointer-events: auto;
   }
 
+  // The coin cell as a door to the kid's bank screen: no button chrome, the coins
+  // ARE the control. The board pane is `pointer-events: none`; this takes taps back.
+  &__coins-door {
+    padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: inherit;
+    cursor: pointer; border-radius: 6px;
+    pointer-events: auto;
+    &:focus-visible { outline: 3px solid var(--school-coin-silver); outline-offset: 3px; }
+  }
+
   // LAST WEEK AND THIS WEEK, two rows of seven under weekday letters.
   &__two-weeks {
     flex: none; display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -3369,6 +3282,23 @@
     min-width: 0; border-left: 1px solid var(--school-border);
     padding: 0 clamp(0.4rem, 0.9vw, 0.8rem);
     display: flex; align-items: center; justify-content: flex-start;
+    // With a gem door the gems stack under the coins as their own row.
+    &:has(.school-status-board__gems-door) {
+      flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.3em;
+    }
+  }
+  // The gem door (opens the family Gem Board): laid on the coin grid's own
+  // columns so the gem lines up under the gold. Faint at zero — the door is
+  // always there, the gem is not claimed.
+  &__gems-door {
+    padding: 0; border: 0; background: none; color: var(--school-text); font: inherit;
+    font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums;
+    display: grid; grid-template-columns: clamp(1.6rem, 4.6vh, 2.4rem) auto;
+    align-items: center; column-gap: 0.45em; min-height: clamp(1.6rem, 4.6vh, 2.4rem);
+    cursor: pointer; border-radius: 6px;
+    pointer-events: auto;
+    &.is-zero .school-status-board__coin-icon { opacity: 0.35; }
+    &:focus-visible { outline: 3px solid #7cc0ff; outline-offset: 3px; }
   }
   &__coin-grid {
     display: grid; grid-template-columns: clamp(1.6rem, 4.6vh, 2.4rem) auto;
@@ -3386,14 +3316,11 @@
   }
   &__coin-icon { justify-self: center; width: 100%; height: auto; }
   &__coin-icon--gold, &__coin-icon--gem { width: 58%; }
-  // `start`, so each number cell is only as wide as its number and the +N
-  // hangs after THAT number rather than at the end of the column.
-  &__figure { position: relative; justify-self: start; }
+  // `start`, so each number cell is only as wide as its number.
+  &__figure { justify-self: start; }
   &__figure--silver { font-size: var(--silver); }
-  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #e2c15a; }
+  &__figure--gold { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: var(--school-coin-gold); }
   &__figure--gem { font-size: clamp(0.95rem, 2.6vh, 1.3rem); color: #7cc0ff; }
-  // Hangs off the end of its number, so it never moves the column.
-  &__more { position: absolute; left: 100%; bottom: 0.1em; margin-left: 0.15em; font-size: 0.5em; opacity: 0.45; }
 
   &__grid {
     // The day grid declares its own defaults on its root; the plot's values
@@ -3430,6 +3357,45 @@
     .school-status-board__status { color: var(--school-board-done); opacity: 1; }
   }
 }
+// THE COIN CEREMONY: a short pop-up over the BOARD PANE only (CoinCeremony.jsx).
+// The backdrop passes taps through; only the card takes them.
+.school-coin-ceremony {
+  position: absolute; inset: 0; z-index: 140;
+  display: grid; place-items: center;
+  pointer-events: none;
+  &__live {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  &__card {
+    pointer-events: auto;
+    display: grid; justify-items: center; gap: clamp(0.25rem, 1vh, 0.6rem);
+    padding: clamp(1rem, 3vh, 1.8rem) clamp(1.6rem, 4vw, 3rem);
+    border: 1px solid var(--school-border); border-radius: 24px;
+    background: var(--school-surface); color: var(--school-text);
+    font: inherit; cursor: pointer;
+    box-shadow: 0 1.2rem 3rem color-mix(in srgb, #000 45%, transparent);
+    animation: school-coin-ceremony-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+    &.is-exiting { animation: school-coin-ceremony-out 320ms ease-in both; }
+    &:focus-visible { outline: 3px solid var(--school-coin-silver); outline-offset: 4px; }
+  }
+  &__coin { width: clamp(4rem, 14vh, 7rem); height: auto; }
+  &__gained {
+    font-size: clamp(3rem, 12vh, 6rem); font-weight: 900; line-height: 1;
+    font-variant-numeric: tabular-nums; color: var(--school-coin-silver);
+  }
+  &__total { font-size: clamp(1.1rem, 3.2vh, 1.6rem); font-weight: 700; color: var(--school-muted); font-variant-numeric: tabular-nums; }
+  &__who {
+    display: flex; align-items: center; gap: 0.6rem;
+    font-size: clamp(1.1rem, 3vh, 1.5rem); font-weight: 800;
+    .piano-avatar { width: clamp(2.6rem, 7vh, 3.6rem); height: clamp(2.6rem, 7vh, 3.6rem); }
+  }
+}
+@keyframes school-coin-ceremony-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: none; } }
+@keyframes school-coin-ceremony-out { to { opacity: 0; transform: scale(0.92); } }
+@media (prefers-reduced-motion: reduce) {
+  .school-coin-ceremony__card, .school-coin-ceremony__card.is-exiting { animation: none; }
+}
 
 @keyframes school-board-shimmer {
   0% { background-position: 130% 0; }
@@ -3446,6 +3412,8 @@
 @media (max-width: 820px) {
   .school-lock-split { grid-template-columns: 1fr; }
   .school-lock-split__board { display: none; }
+  // The ceremony belongs to the board pane: no pane, no pop.
+  .school-coin-ceremony { display: none; }
 }
 
 // Bulk variant — one code covers every subject with a print left today, so
@@ -3613,6 +3581,64 @@
     width: clamp(7rem, 30vh, 14rem); height: clamp(7rem, 30vh, 14rem); flex: 0 0 auto;
   }
   .school-book-scan__error { margin: 0; text-align: center; color: var(--school-danger); font-weight: 700; }
+}
+// The Portal pile: a scanned stack as cards over one row of faces. One tap on
+// a face files them all, so the faces are the big target and the cards are
+// small; a card's Change button is deliberately quiet (splitting is rare).
+.school-book-pile {
+  display: block; padding: var(--shelf-pad, 1rem) 0;
+  .school-book-scan__screen {
+    display: flex; flex-direction: column; gap: clamp(0.5rem, 1.6vh, 1rem);
+    width: 100%; height: 100%; box-sizing: border-box;
+    padding-inline: max(1rem, calc(50% - 36rem + 1rem));
+  }
+  .school-book-pile__hint { margin: 0; color: var(--school-muted); font-size: clamp(1rem, 2.2vh, 1.25rem); }
+  .school-book-pile__cards {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.75rem; align-content: start;
+  }
+  .school-book-pile__card {
+    display: flex; flex-direction: column; gap: 0.35rem; min-width: 0;
+    padding: 0.5rem; border: 1px solid var(--school-border); border-radius: 10px; background: var(--school-surface);
+  }
+  .school-book-pile__card--filed { border-color: var(--school-accent); }
+  .school-book-pile__cover { width: 100%; aspect-ratio: 2 / 3; max-height: 22vh; object-fit: cover; border-radius: 6px; }
+  .school-book-pile__title {
+    font-weight: 700; font-size: 0.95rem; line-height: 1.25; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .school-book-pile__chip { align-self: flex-start; border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.8rem; font-weight: 700; background: var(--school-surface-2); color: var(--school-muted); }
+  .school-book-pile__chip--done { background: var(--school-accent); color: var(--school-accent-ink); }
+  .school-book-pile__chip--note { color: var(--school-warn); }
+  .school-book-pile__chip--danger { color: var(--school-danger); }
+  .school-book-pile__change {
+    align-self: flex-start; margin-top: auto; padding: 0.2rem 0.5rem; border: 0; background: none;
+    color: var(--school-muted); font: inherit; font-size: 0.85rem; text-decoration: underline; cursor: pointer;
+  }
+  // The filing confirmation stands where the faces were: as big as a promise
+  // to a child that the tap worked, not a footnote under the cards.
+  .school-book-pile__filed {
+    display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin: 0;
+    min-height: clamp(7rem, 22vh, 11rem); padding: 1rem; box-sizing: border-box;
+    border-radius: 14px; background: var(--school-accent); color: var(--school-accent-ink);
+    font-size: clamp(1.5rem, 4.5vh, 2.4rem); font-weight: 800; text-align: center;
+  }
+  .school-book-pile__filed-mark { width: clamp(2.5rem, 7vh, 3.5rem); height: clamp(2.5rem, 7vh, 3.5rem); flex: 0 0 auto; }
+  .school-book-pile__faces .school-book-scan__learners {
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; gap: clamp(0.5rem, 1.4vw, 1rem);
+  }
+  .school-book-pile__faces .school-book-scan__learners button { flex-direction: column; justify-content: center; min-height: clamp(7rem, 22vh, 11rem); }
+  .school-book-pile__faces .school-book-scan__learners .piano-avatar { width: clamp(4rem, 13vh, 7rem); height: clamp(4rem, 13vh, 7rem); flex: 0 0 auto; }
+  .school-book-pile__sheet {
+    position: fixed; inset: 0; z-index: 160; display: grid; place-items: center;
+    background: rgb(0 0 0 / 55%); padding: 1rem; box-sizing: border-box;
+  }
+  .school-book-pile__sheet-body {
+    display: flex; flex-direction: column; gap: 0.9rem; width: min(40rem, 100%);
+    padding: 1.25rem; border-radius: 14px; background: var(--school-bg); border: 1px solid var(--school-border);
+    h3, p { margin: 0; }
+  }
+  .school-book-pile__sheet-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 }
 .school-book-scan__actions > p { font-size: 1.2rem; }
 .school-book-scan__actions > .school-books__back { align-self: center; }

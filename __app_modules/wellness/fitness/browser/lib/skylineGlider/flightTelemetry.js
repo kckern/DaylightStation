@@ -1,3 +1,6 @@
+import { SKYLINE_CRAFT_GEOMETRY, entityBounds } from "./flightGeometry.js";
+import { cameraTime } from "./liftBoost.js";
+
 function activeTerrainId(course, courseTime) {
   return (course?.segments || []).find((segment) => segment.safeBand
     && courseTime >= segment.start_s
@@ -24,8 +27,13 @@ function buildSample(next, input, course, courseSecond) {
     verticalRate: next.verticalRate,
     inputMode: next.inputMode,
     lives: next.lives,
+    bombsLeft: next.bombsLeft ?? null,
+    missilesLeft: next.missilesLeft ?? null,
+    boostRechargeRemaining: next.boostRechargeRemaining ?? null,
+    boostOffset: next.boostOffset ?? 0,
     phase: next.phase,
-    visibleSegmentIds: visibleSegmentIds(course, next.courseTime),
+    stalled: !!next.stalled,
+    visibleSegmentIds: visibleSegmentIds(course, cameraTime(next)),
     sensor: {
       connected: !!input?.connected,
       stalled: !!input?.transportStalled,
@@ -67,6 +75,8 @@ export function collectFlightTelemetry({
     }
   }
 
+  if (next.stalled && !previous.stalled) events.push({ type: 'stalled', data: { altitude: next.altitude, rawRpm: next.rawRpm } });
+
   const coastSeconds = Number(course?.motion?.coast_s) || 0;
   const wasCoasting = previous.zeroElapsed > coastSeconds;
   const isCoasting = next.zeroElapsed > coastSeconds;
@@ -83,9 +93,43 @@ export function collectFlightTelemetry({
       data: {
         count: next.collisions,
         lives: next.lives,
-        segmentId: next.lastCollisionSegmentId || activeTerrainId(course, next.courseTime),
+        kind: next.phase === 'crashed' ? 'crash' : 'breakable',
+        segmentId: next.lastCollisionSegmentId || (next.lastCollisionEntityId ? null : activeTerrainId(course, next.courseTime)),
+        entityId: next.lastCollisionEntityId || null,
       },
     });
+  }
+
+  if ((next.shotsFired || 0) > (previous.shotsFired || 0)) {
+    events.push({ type: 'weapon.fired', data: { weapon: 'laser', count: next.shotsFired } });
+  }
+  if ((next.bombsDropped || 0) > (previous.bombsDropped || 0)) {
+    events.push({ type: 'weapon.fired', data: { weapon: 'bomb', count: next.bombsDropped, bombsLeft: next.bombsLeft } });
+  }
+  const priorBlasts = new Set((previous.blasts || []).map((blast) => blast.id));
+  if((next.missilesFired||0)>(previous.missilesFired||0))events.push({type:'weapon.fired',data:{weapon:'missile',count:next.missilesFired,missilesLeft:next.missilesLeft}});
+  if((next.boostsUsed||0)>(previous.boostsUsed||0))events.push({type:'boost.activated',data:{count:next.boostsUsed,cameraTime:cameraTime(next)}});
+  // A gate counts as cleared once the craft's tail is past it; `shutter` says
+  // whether that was the closing kind, so field logs show boosts that worked.
+  if (next.phase === 'playing') {
+    for (const post of (course?.entities || []).filter((entity) => entity.piece === 'top')) {
+      const end = entityBounds(post).end + SKYLINE_CRAFT_GEOMETRY.rearSeconds;
+      if (previous.courseTime <= end && next.courseTime > end) {
+        const shutter = (course.entities || []).find((entity) => entity.group === post.group && entity.piece === 'shutter');
+        events.push({ type: 'gate.cleared', data: { gateId: post.group, shutter: !!shutter, boostOffset: Math.round((next.boostOffset || 0) * 100) / 100 } });
+      }
+    }
+  }
+  for (const blast of next.blasts || []) {
+    if (!priorBlasts.has(blast.id)) events.push({ type: 'bomb.detonated', data: { shotId: blast.id, atSeconds: blast.at_s, altitude: blast.altitude } });
+  }
+  const priorImpacts = new Set((previous.impacts || []).map((impact) => impact.id));
+  for (const impact of next.impacts || []) {
+    if (!priorImpacts.has(impact.id)) events.push({ type: 'weapon.hit', data: { shotId: impact.id, weapon: impact.kind, effect: impact.effect, entityId: impact.entityId, damage: impact.damage ?? null, hitPoints: impact.hitPoints ?? null } });
+  }
+  const priorDestroyed = previous.destroyedBy || {};
+  for (const [entityId, by] of Object.entries(next.destroyedBy || {})) {
+    if (!(entityId in priorDestroyed)) events.push({ type: 'entity.destroyed', data: { entityId, by } });
   }
 
   const priorCollectibles = new Set(previous.collectedIds || []);
@@ -105,7 +149,20 @@ export function collectFlightTelemetry({
     });
   }
   if (next.phase === 'crashed' && previous.phase !== 'crashed') {
-    events.push({ type: 'crashed', data: {} });
+    events.push({
+      type: 'crashed',
+      data: {
+        cause: next.crashCause || null,
+        segmentId: next.lastCollisionSegmentId || null,
+        entityId: next.lastCollisionEntityId || null,
+        // Where and how the rider was flying, so a crash reads on its own
+        // without lining it up against the per-second samples.
+        courseTime: next.courseTime,
+        altitude: next.altitude,
+        filteredRpm: next.filteredRpm,
+        rawRpm: Math.max(0, Number(input?.rpm) || 0),
+      },
+    });
   }
   if (next.restarts > previous.restarts) {
     events.push({
@@ -122,7 +179,7 @@ export function collectFlightTelemetry({
 
   const courseSecond = Math.floor(next.courseTime);
   const rewound = next.courseTime < previous.courseTime || next.restarts > previous.restarts;
-  const shouldSample = rewound || courseSecond > lastSampleSecond;
+  const shouldSample = rewound || courseSecond > lastSampleSecond || !!next.stalled !== !!previous.stalled;
   return {
     sample: shouldSample ? buildSample(next, input, course, courseSecond) : null,
     events,

@@ -82,14 +82,19 @@ The component does **not** maintain its own queue — that's the inner `<Player>
 
 ### Pause coordination
 
-A single effect (FitnessMusicPlayer.jsx:123) watches two flags from `FitnessContext`:
+Music is background for a **playing** video. `musicShouldPause` (`musicVideoSync.js`) decides the hold from `FitnessContext`:
 
-| Flag                 | Source                             | Effect on music |
-|----------------------|------------------------------------|-----------------|
-| `videoPlayerPaused`  | Set by video player                | Pause music    |
-| `voiceMemoOpen`      | `voiceMemoOverlayState.open`       | Pause music    |
+| Flag                    | Source                                                   | Effect on music |
+|-------------------------|----------------------------------------------------------|-----------------|
+| `videoPlayerPaused`     | Video element paused, or a governance/budget lock (the progress enforcer writes `paused || locked`) | Pause music |
+| `videoLoading`          | Video loading, recovering, or source unavailable         | Music plays through (nobody chose that pause) |
+| `voiceMemoOpen`         | `voiceMemoOverlayState.open`                             | Pause music    |
+| `emergencyPlaybackHold` | Emergency shutdown / lockdown                            | Pause music    |
 
-`shouldPause = videoPlayerPaused || voiceMemoOpen`. Music resumes only if `wasPlayingBeforePauseRef` is true AND both signals are clear.
+Two places enforce it:
+
+1. **On a change of the hold** (an effect on `shouldPauseForVideo`): pause and remember `wasPlayingBeforePauseRef`; when the hold clears, resume only if the music was playing before.
+2. **On every music progress tick** (`musicPlaysThroughHold`): audio that started while the video was *already* paused — the music player just mounted (the Music toggle turned back on, a playlist change, a recovery remount) or a new track autoplayed — is paused on its first tick and marked to resume with the video. The change-only effect cannot see these, because the hold never changed. Logged as `fitness.music.hold_enforced` (debug).
 
 ### Two volume curves
 
@@ -104,15 +109,23 @@ The log curve is calibrated so level 50 (midpoint) ≈ 10% output volume — mat
 
 ### Persistent volume
 
-Music volume is keyed by playlist and track via `usePersistentVolume`:
+Music volume is one level per playlist, via `usePersistentVolume`:
 
 ```
 grandparentId: 'fitness-music'
 parentId:      <selectedPlaylistId> || 'global'
-trackId:       <contentId|key|plex|assetId|ratingKey|id> || 'music'
+trackId:       'playlist'
+reapplyKey:    <contentId|key|plex|assetId|ratingKey|id>
 ```
 
-Volume choices persist across sessions and resolve per-track first, falling back up the hierarchy.
+The current track is the `reapplyKey`, not part of the storage key: it only
+re-applies the playlist level to each new track's audio element. Volume used to
+be stored per track, and a track's own level beat a newer playlist level, so a
+song adjusted weeks earlier came back at its old level when shuffle reached it.
+A playlist with no level yet inherits the most recent level saved anywhere in
+that playlist (which includes the old per-track entries), then the global
+default. Dance Party (`fitness-dance`) uses the same shape. Taps log
+`fitness.music.volume_select` / `fitness.dance.volume_select`.
 
 ### Error surfacing (primary)
 
@@ -178,14 +191,23 @@ The playlist picker is rendered **outside** the collapsible panel. Opening it ca
 
 If the user lands on the fitness session with `selectedPlaylistId === null`, the component picks the first available playlist from `plexConfig.music_playlists`. The `hasAutoSelectedRef` guard ensures this fires exactly once per mount. Selecting this default never creates a manual music override.
 
-The standalone chart and any screen layout containing `fitness:chart` are always silent. There is no chart music toggle, and a manual request cannot enable music. Chart screens are excluded from the separate ambient menu-music controller as well as from the in-session music policy. Music is allowed only as an overlay for a queued video carrying the configured `NoMusic` label; changing to an untagged video or clearing the video queue stops it immediately. Internal callers may still force an allowed overlay off after a player error. The `fitness.music.decision` event records previous/current content IDs, labels, automatic state, effective enablement, and whether an internal manual-off is active.
+The standalone chart and any screen layout containing `fitness:chart` are always silent. There is no chart music toggle. Chart screens are excluded from the separate ambient menu-music controller as well as from the in-session music policy. Music only ever plays as an overlay on a video in the player, never standalone (apps such as dance party run their own music). Clearing the video queue stops it immediately.
+
+A queued video carrying the configured `NoMusic` label (`plex.nomusic_labels`, set at the show level in Plex) gets music automatically (`musicAllowed` in the context). Any other video is silent by default, but a rider can force music on for it. The settings menu's **Music** toggle is shown for every video in the player:
+
+| Video | Toggle on | Toggle off |
+|-------|-----------|------------|
+| Tagged `NoMusic` | `setMusicOverride(null)`: clears the silence | `setMusicOverride(false)` |
+| Untagged | `setMusicOverride(true)`: forces music for **this video only** | `setMusicOverride(false)` |
+
+A forced-on is pinned to the queued video's content ID (`musicForceOnId`). The next untagged video falls back to its labels and is silent. Internal callers may also force music off after a player error, and the toggle turns it back on. The `fitness.music.decision` event records the previous and current content IDs, the labels, the automatic state, effective enablement, `manualOverride` (`true`/`false`/`null`) and `source` (`media-label`, `manual-on` or `manual-off`).
 
 ## Data Sources
 
 | Source                              | Used for                                          |
 |-------------------------------------|---------------------------------------------------|
 | `useFitnessContext()`               | Pause flags, playlist list, music-enabled state, session instance for telemetry |
-| `usePersistentVolume`               | Per-track music volume hierarchy                  |
+| `usePersistentVolume`               | Per-playlist music volume                         |
 | `videoVolume` prop                  | Linear video volume control (passed through)      |
 | `<Player>` via `audioPlayerRef`     | Queue ownership, playback, `advance(1)`, `toggle()` |
 | `ContentDisplayUrl(trackKey)`       | Album artwork URL                                 |

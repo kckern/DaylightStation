@@ -53,6 +53,12 @@ describe('EarningsPreviewService.preview', () => {
     expect(out.evidence).toEqual({ school: 'ok', rings: 'ok' });
   });
 
+  it('currentStudyDay is the study day week: null resolves to (4 am boundary)', () => {
+    // 2026-09-28 03:30 PDT is still Sunday's study day under the 4 am boundary.
+    expect(build({ now: '2026-09-28T10:30:00.000Z' }).service.currentStudyDay()).toBe('2026-09-27');
+    expect(build({ now: '2026-09-28T11:30:00.000Z' }).service.currentStudyDay()).toBe('2026-09-28');
+  });
+
   it('defaults to the current study day\'s week', async () => {
     const { service, calls } = build({ now: '2026-09-26T17:00:00.000Z' });
     await service.preview({ learnerId: 'learner-a' });
@@ -186,5 +192,26 @@ describe('EarningsPreviewService.ifDone / quote', () => {
     const out = await buildDay({ sectionState: 'served' }).quote({ learnerId: 'learner-a' });
     expect(out.totals).toEqual({ silver: 2, gems: 0 });
     expect(out.lines.find((l) => l.ruleId === 'korean').amount).toEqual({ silver: 2, gems: 0 });
+  });
+});
+
+describe('EarningsPreviewService.preview fresh', () => {
+  it('reuses the minute-old achievement read unless fresh', async () => {
+    let reads = 0;
+    const service = new EarningsPreviewService({
+      rules: { get: async () => validateRuleset({ revision: 1, rules: [{ id: 'ad', kind: 'activity-days', match: { activity: 'piano-practice' }, reward: 1 }] }) },
+      schoolEvidence: { async schoolWeek() { return { sectionDays: [], days: [], week: { weekId: '2026-09-21', state: 'open', open: true }, units: [] }; } },
+      ringEvidence: { async standings({ learnerIds }) { return learnerIds.map((learnerId) => ({ learnerId, rings: 0 })); } },
+      achievementEvidence: { async week() { reads += 1; return {}; } },
+      learners: async () => [{ id: 'learner-a', name: 'Learner A' }],
+      clock: () => new Date('2026-09-26T17:00:00.000Z'),
+      timezone: TZ,
+      logger: silent,
+    });
+    await service.preview({ learnerId: 'learner-a' });
+    await service.preview({ learnerId: 'learner-a' });
+    expect(reads).toBe(1);
+    await service.preview({ learnerId: 'learner-a', fresh: true });
+    expect(reads).toBe(2);
   });
 });

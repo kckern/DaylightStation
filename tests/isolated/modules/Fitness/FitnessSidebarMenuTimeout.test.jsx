@@ -59,8 +59,8 @@ describe('FitnessSidebarMenu — idle close timer', () => {
   }
 
   it('closes after 5 seconds of idle following a selection', () => {
-    const { getByText, onClose } = renderMenu();
-    fireEvent.pointerDown(getByText('📹 Sidebar Webcam').closest('.menu-item'));
+    const { getByLabelText, onClose } = renderMenu();
+    fireEvent.pointerDown(getByLabelText('Sidebar Webcam').closest('.menu-item'));
     vi.advanceTimersByTime(400);
     expect(onClose).not.toHaveBeenCalled();
     vi.advanceTimersByTime(4600);
@@ -68,8 +68,8 @@ describe('FitnessSidebarMenu — idle close timer', () => {
   });
 
   it('resets the 5s timer on subsequent pointer interactions', () => {
-    const { getByText, container, onClose } = renderMenu();
-    fireEvent.pointerDown(getByText('📹 Sidebar Webcam').closest('.menu-item'));
+    const { getByLabelText, container, onClose } = renderMenu();
+    fireEvent.pointerDown(getByLabelText('Sidebar Webcam').closest('.menu-item'));
     vi.advanceTimersByTime(4000);
     const root = container.querySelector('.fitness-sidebar-menu');
     fireEvent.pointerDown(root);
@@ -82,8 +82,8 @@ describe('FitnessSidebarMenu — idle close timer', () => {
   });
 
   it('resets the timer on keydown inside the menu', () => {
-    const { getByText, container, onClose } = renderMenu();
-    fireEvent.pointerDown(getByText('📹 Sidebar Webcam').closest('.menu-item'));
+    const { getByLabelText, container, onClose } = renderMenu();
+    fireEvent.pointerDown(getByLabelText('Sidebar Webcam').closest('.menu-item'));
     vi.advanceTimersByTime(4000);
     const root = container.querySelector('.fitness-sidebar-menu');
     fireEvent.keyDown(root, { key: 'ArrowDown' });

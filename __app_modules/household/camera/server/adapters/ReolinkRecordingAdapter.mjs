@@ -256,6 +256,11 @@ export function toReolinkTime(date) {
   };
 }
 
+/** The entries of `obj` whose value is defined. */
+function definedOnly(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+}
+
 /**
  * A source profile: knows how to turn a time range into local bytes.
  *
@@ -276,7 +281,9 @@ export function makeSource({
       hasTriggerNames: true,
       search: (day) => client.search({ channel, day, streamType }),
       coverage: (year, mon) => client.coverage({ channel, year, mon, streamType }),
-      fetch: ({ clip, destPath }) => client.download({ source: clip.name, destPath }),
+      // A caller may name its own download policy (the clip library's is
+      // short and interactive); left out, the client's archive defaults hold.
+      fetch: ({ clip, destPath, ...policy }) => client.download({ source: clip.name, destPath, ...definedOnly(policy) }),
     };
   }
   if (kind === 'nvr') {

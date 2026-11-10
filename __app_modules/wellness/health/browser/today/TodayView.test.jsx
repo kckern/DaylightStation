@@ -754,3 +754,29 @@ describe('TodayView — a failed refresh never buries the day', () => {
     expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 });
+
+import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
+it('keeps multiple sentence operations in the live Today provider independent',async()=>{
+ resetApiResourceCache();apiMock.mockReset();
+ const tasks=[];
+ const saved=[];
+ apiMock.mockImplementation((path,body,method)=>{
+  if(path.includes('health/day?'))return Promise.resolve({items:saved.map(row=>({...row})),budget:BUDGET});
+  if(path.endsWith('nutrition/input')&&method==='POST')return new Promise((resolve,reject)=>tasks.push({body,resolve,reject}));
+  return baseApi()(path);
+ });
+ r(<HealthOperationsProvider userId="fixture"><TodayView onSetupGoals={()=>{}} onCoachTap={()=>{}}/></HealthOperationsProvider>);
+ const input=await screen.findByRole('combobox',{name:'Add to Breakfast'});
+ input.focus();
+ fireEvent.change(input,{target:{value:'eggs'}});fireEvent.keyDown(input,{key:'Enter'});
+ fireEvent.change(input,{target:{value:'toast'}});fireEvent.keyDown(input,{key:'Enter'});
+ expect(tasks).toHaveLength(2);expect(input.readOnly).toBe(false);
+ const date=tasks[0].body.date;
+ saved.push({uuid:'toast-op',name:'Toast',date,mealTime:'morning',version:1,calories:100});
+ await act(async()=>tasks[1].resolve({committed:true,items:[saved[0]]}));
+ expect(await screen.findByRole('button',{name:'Edit Toast'})).toBeTruthy();
+ expect(screen.getByText(/Adding.*eggs/i)).toBeTruthy();
+ await act(async()=>tasks[0].reject(new Error('eggs offline')));
+ expect(screen.getByRole('button',{name:'Retry'})).toBeTruthy();
+ expect(screen.getByRole('button',{name:'Edit Toast'}).disabled).toBe(false);
+});

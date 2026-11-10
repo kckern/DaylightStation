@@ -24,6 +24,7 @@
  * existing deck consumer works on it.
  */
 import { scriptFor } from "./targetScript.mjs";
+import { normalizeDictationWeek } from "./dictation.mjs";
 
 export const LEXICON_SCHEMA = 'school.word-lexicon/v2';
 /** Same content as v2 with side-neutral header names (`target:` / `anchor:` language blocks). */
@@ -145,6 +146,27 @@ function withSideNames(entry, at, errors) {
   return out;
 }
 
+/**
+ * Weekly dictation tags (spec 2026-11-06, Revision 2): `dictation: ['2026-W46']`
+ * and an optional `dictationOrder: { '2026-W46': 3 }`. Lenient on purpose — a
+ * malformed tag is dropped, never an error, so an authoring slip can never
+ * take the whole ladder down.
+ */
+function dictationTags(entry) {
+  const out = {};
+  const weeks = Array.isArray(entry.dictation) ? [...new Set(entry.dictation.map(normalizeDictationWeek).filter(Boolean))] : [];
+  if (weeks.length) out.dictation = weeks;
+  if (isMap(entry.dictationOrder)) {
+    const order = {};
+    for (const [key, value] of Object.entries(entry.dictationOrder)) {
+      const week = normalizeDictationWeek(key);
+      if (week && Number.isFinite(value)) order[week] = value;
+    }
+    if (Object.keys(order).length) out.dictationOrder = order;
+  }
+  return out;
+}
+
 /** Raw YAML → `{ errors, lexicon: { package, language, gloss, program, quiz, entries: Map } }`. */
 export function validateLexicon(raw) {
   const errors = [];
@@ -196,6 +218,7 @@ export function validateLexicon(raw) {
       gloss: String(entry.gloss ?? '').trim(),
       pronunciation: text(entry.pronunciation) ? entry.pronunciation.trim() : null,
       decoys,
+      ...dictationTags(entry),
     });
   });
   // "Phrase decoys only from phrases": a decoy that IS another in-set entry
@@ -219,6 +242,38 @@ export function validateLexicon(raw) {
   return { errors: [], lexicon: { ...header, entries } };
 }
 
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Optional `releases: [{opensOn, words}]` — a calendar for introductions. A
+ * word named in a release may be introduced only from its `opensOn` study day;
+ * a word in no release is always eligible. `words` stays the whole deck.
+ */
+function validateReleases(raw, deckWords, errors) {
+  if (raw.releases === undefined) return;
+  if (!Array.isArray(raw.releases)) { errors.push('releases must be a list'); return; }
+  const released = new Set();
+  raw.releases.forEach((release, index) => {
+    const at = `releases[${index}]`;
+    if (typeof release?.opensOn !== 'string' || !DAY_KEY.test(release.opensOn)) errors.push(`${at}.opensOn must be a YYYY-MM-DD day`);
+    if (!Array.isArray(release?.words) || release.words.length === 0) { errors.push(`${at}.words must be a non-empty list`); return; }
+    for (const wordId of release.words) {
+      if (!deckWords.has(wordId)) errors.push(`${at}: '${wordId}' is not in the deck's words`);
+      if (released.has(wordId)) errors.push(`${at}: '${wordId}' is already in an earlier release`);
+      released.add(wordId);
+    }
+  });
+}
+
+/** Deck word ids not yet open for introduction on `day` (a study-day key). */
+export function unreleasedWords(deck, day) {
+  const closed = new Set();
+  for (const release of Array.isArray(deck?.releases) ? deck.releases : []) {
+    if (!(release?.opensOn <= day)) for (const wordId of release?.words ?? []) closed.add(wordId);
+  }
+  return closed;
+}
+
 export function isLexiconDeck(raw) {
   return Boolean(raw) && typeof raw === 'object' && Array.isArray(raw.words) && typeof raw.lexicon === 'string';
 }
@@ -237,6 +292,7 @@ export function expandLexiconDeck(raw, lexicon) {
     seen.add(wordId);
     if (!entries?.has?.(wordId)) errors.push(`words[${index}]: '${wordId}' is not in the lexicon`);
   });
+  validateReleases(raw, seen, errors);
   if (errors.length) return { errors };
   const cards = raw.words.map((wordId) => {
     const entry = entries.get(wordId);

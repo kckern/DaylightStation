@@ -14,6 +14,8 @@ import { YamlExerciseBank } from "./adapters/YamlExerciseBank.mjs";
 import { PianoScaleChallengePolicy } from "./application/PianoScaleChallengePolicy.mjs";
 import { BankChallengePolicy } from "./application/BankChallengePolicy.mjs";
 import { PianoLearningService } from "./application/PianoLearningService.mjs";
+import { PianoLearnCoachService } from './application/PianoLearnCoachService.mjs';
+import { YamlPianoLearnCoachStore } from './adapters/persistence/YamlPianoLearnCoachStore.mjs';
 
 /** Installed Piano assembly; callers supply cross-product contracts explicitly. */
 export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection}) {
@@ -73,6 +75,12 @@ export async function createPianoModule({configService, userService, rootLogger,
   });
   const pianoAttemptStore = new YamlPianoAttemptStore({
     usersDir: join(configService.getDataDir(), 'users'),
+  });
+  const pianoLearnCoachService = new PianoLearnCoachService({
+    datastore: pianoStudioDatastore,
+    receiptStore: new YamlPianoLearnCoachStore({ usersDir: join(configService.getDataDir(), 'users') }),
+    attemptStore: pianoAttemptStore, clock: () => new Date(), timezone: configService.getTimezone?.() ?? null,
+    logger: rootLogger.child({ module: 'piano-learn-coach' }),
   });
   // Exercise bank: seeds at data/content/music/, instances computed on demand.
   const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
@@ -138,6 +146,26 @@ export async function createPianoModule({configService, userService, rootLogger,
     timezone: configService.getTimezone?.() || null,
     logger: rootLogger.child({ component: 'piano-game-budget' }),
   });
+  // One learner's piano study day, for School's teacher digest (Home rows):
+  // exercises attempted / passed in the study window, and game seconds from
+  // the budget's own day file. Read only.
+  const pianoDayActivity = {
+    forLearnerDay({ learnerId, studyDay, fromMs, toMs }) {
+      const attempts = pianoAttemptStore.listRecent(learnerId, { limit: 400 })
+        .filter((attempt) => {
+          const at = Date.parse(attempt?.created_at ?? attempt?.createdAt ?? '');
+          return Number.isFinite(at) && at >= fromMs && at < toMs
+            && (attempt.status === 'completed' || attempt.status === 'timeout');
+        });
+      let gameSeconds = null;
+      try { gameSeconds = pianoGameBudgetStore.loadDay(studyDay)?.learners?.[learnerId]?.totalSeconds ?? 0; } catch { gameSeconds = null; }
+      return {
+        exercises: attempts.length,
+        passed: attempts.filter((attempt) => attempt?.verdict?.passed === true).length,
+        gameSeconds,
+      };
+    },
+  };
   const pianoChallengeProfileService = new PianoChallengeProfileService({
     datastore: pianoStudioDatastore,
   });
@@ -155,6 +183,7 @@ export async function createPianoModule({configService, userService, rootLogger,
     // reshuffling the composition root around one field.
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
     pianoAttemptStore,
+    pianoLearnCoachService,
     pianoLearningService,
     pianoGameBudgetService,
     pianoBoardGameDayService,
@@ -170,5 +199,5 @@ export async function createPianoModule({configService, userService, rootLogger,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
-  return {router, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate};
+  return {router, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherConfig, schoolTeacherGate};
 }

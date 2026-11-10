@@ -1,12 +1,13 @@
+import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 const logger = createAppLogger('health').child('meal-food-controls');
 const idOf = row => row.uuid || row.id;
 const nameOf = row => row.name || row.label || row.item;
 
 export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, onSelectionMode, onChanged, extraActions }) {
+  const foodAPI = useFoodMutation(rows);
   const [panel, setPanel] = useState(null);
   const [name, setName] = useState('');
   const [groups, setGroups] = useState([]);
@@ -32,11 +33,11 @@ export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, o
     const body = { date,bucket,selectedIds,expectedVersions:allVersions(),...payload };
     const fingerprint = JSON.stringify(body);
     if (request.current?.fingerprint !== fingerprint) request.current = { fingerprint,operationId:crypto.randomUUID() };
-    const result = await DaylightAPI('api/v1/health/nutrition/meal-command',{...body,operationId:request.current.operationId},'POST');
+    const result = await foodAPI('api/v1/health/nutrition/meal-command',{...body,operationId:request.current.operationId},'POST');
     request.current = null; setPanel(null); onChanged(result);
   };
   const suggest = () => run(async () => {
-    const result = await DaylightAPI('api/v1/health/nutrition/meal-suggestions',{date,bucket,selectedIds},'POST');
+    const result = await foodAPI('api/v1/health/nutrition/meal-suggestions',{date,bucket,selectedIds},'POST');
     setGroups(result.groups || []); setVersions(result.expectedVersions || allVersions()); setPanel('smart');
   });
   const editGroup = id => {
@@ -58,7 +59,7 @@ export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, o
           <input type="text" aria-label={`Suggested dish ${index+1}`} value={group.name} disabled={busy} onChange={e=>setGroups(prev=>prev.map((g,i)=>i===index?{...g,name:e.target.value}:g))}/>
           {foods.filter(row=>!selectedIds.length || selectedIds.includes(idOf(row))).map(row=><label key={idOf(row)}><input type="checkbox" disabled={busy} checked={group.selectedIds.includes(idOf(row))} onChange={e=>setGroups(prev=>prev.map((g,i)=>i===index?{...g,selectedIds:e.target.checked?[...g.selectedIds,idOf(row)]:g.selectedIds.filter(id=>id!==idOf(row))}:g))}/>{nameOf(row)}</label>)}
         </div>) : <span>No groups suggested for these foods.</span>}
-        {groups.length ? <Button size="compact-xs" disabled={busy || groups.some(g=>!g.name.trim() || g.selectedIds.length<2)} onClick={()=>run(()=>command({action:'groups',groups,selectedIds:selectedIds.length?selectedIds:foods.map(idOf),expectedVersions:versions}))}>Apply suggested groups</Button> : null}
+        {groups.length ? <Button size="compact-xs" disabled={busy || groups.some(g=>!g.name.trim() || g.selectedIds.length<2)} onClick={()=>run(()=>command({action:'groups',groups,selectedIds:[...new Set(groups.flatMap(group=>group.selectedIds))],expectedVersions:versions}))}>Apply suggested groups</Button> : null}
       </> : null}
       {panel === 'membership' ? <>
         <label>Dish<NativeSelect aria-label="Dish to edit" value={groupId} disabled={busy} onChange={e=>editGroup(e.target.value)} data={parents.map(row=>({value:idOf(row),label:nameOf(row)}))}/></label>

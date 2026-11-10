@@ -1,8 +1,9 @@
 /** Semantic control facade for Fitness-owned room hardware. */
 export class FitnessHardwareService {
-  constructor({ zoneLedController = null, danceLightingController = null, equipmentFanController = null }) {
+  constructor({ zoneLedController = null, danceLightingController = null, ambienceController = null, equipmentFanController = null }) {
     this.zoneLedController = zoneLedController;
     this.danceLightingController = danceLightingController;
+    this.ambienceController = ambienceController;
     this.equipmentFanController = equipmentFanController;
   }
 
@@ -22,6 +23,18 @@ export class FitnessHardwareService {
     return action === 'bpm'
       ? this.danceLightingController.setBpm(householdId, bpm)
       : this.danceLightingController[action](householdId);
+  }
+
+  async ambience(action, householdId, ambienceId) {
+    if (!this.ambienceController || (action !== 'start' && action !== 'stop')) {
+      return { ok: true, skipped: true, reason: 'ambience_unavailable' };
+    }
+    return this.ambienceController[action](householdId, ambienceId);
+  }
+
+  async ambienceEffect(householdId, ambienceId, effectId) {
+    if (!this.ambienceController) return { ok: true, skipped: true, reason: 'ambience_unavailable' };
+    return this.ambienceController.effect(householdId, ambienceId, effectId);
   }
 
   async evaluateFan(input) {

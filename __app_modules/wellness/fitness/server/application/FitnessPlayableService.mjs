@@ -1,5 +1,6 @@
 // __backend/src/3_applications/fitness/FitnessPlayableService.mjs
 import { contentImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
+import { isWatchComplete, DEFAULT_RULE } from '#shared/contracts/media/watchCompletion.mjs';
 
 /**
  * FitnessPlayableService - Orchestrates playable episode resolution for fitness shows.
@@ -7,16 +8,14 @@ import { contentImageRef } from '#apps/common/resources/publicResourceRefs.mjs';
  * Combines:
  * - Playable resolution from content adapter
  * - Watch state enrichment via ContentQueryService
- * - Progress classification using FitnessProgressClassifier
+ * - Watched state from the household's per-library completion rule
  * - Field mapping to API contract (watchProgress, watchSeconds, isWatched, etc.)
  *
- * This keeps the router free of business logic while preserving the
- * fitness-specific classification pipeline.
+ * This keeps the router free of business logic.
  */
 export class FitnessPlayableService {
-  #fitnessConfigService;
   #contentCatalog;
-  #createProgressClassifier;
+  #completionRules;
   #logger;
   /**
    * PLEX STRUCTURE CACHE — the course's shape, never the child's progress.
@@ -46,18 +45,17 @@ export class FitnessPlayableService {
 
   /**
    * @param {Object} deps
-   * @param {import('./FitnessConfigService.mjs').FitnessConfigService} deps.fitnessConfigService
    * @param {Object} deps.contentCatalog - Provider-neutral fitness content capability
-   * @param {Function} deps.createProgressClassifier - Factory: (config) => classifier with classify()
+   * @param {{ruleFor:(namespace:string|null, duration?:number)=>object}} [deps.completionRules]
+   *   The household's per-library completion rule (watch_completion); absent = movie mode.
    * @param {Object} [deps.logger]
    */
   constructor({
-    fitnessConfigService, contentCatalog, createProgressClassifier,
+    contentCatalog, completionRules = null,
     logger = console, structureTtlMs = null, structureSnapshot = null, now = () => Date.now(),
   }) {
-    this.#fitnessConfigService = fitnessConfigService;
     this.#contentCatalog = contentCatalog;
-    this.#createProgressClassifier = createProgressClassifier;
+    this.#completionRules = completionRules;
     this.#logger = logger;
     // Five minutes: a course gains an episode when someone adds one to Plex,
     // which is a human-scale event, and the cost of being a few minutes late
@@ -149,15 +147,14 @@ export class FitnessPlayableService {
 
   /**
    * Resolve playable episodes for a fitness show, enriched with watch state
-   * and fitness-specific progress classification.
+   * and judged watched by each item's library rule.
    *
    * @param {string} showId - Plex show ID, bare ("12345") or already scoped
    *   ("plex:12345"). Both are accepted and normalised to one compound id.
-   * @param {string} [householdId] - Household ID for config lookup
    * @returns {Promise<{items: Array, parents: Object|null, container: Object|null}>}
    * @throws {Error} If adapter is missing or doesn't support resolvePlayables
    */
-  async getPlayableEpisodes(showId, householdId) {
+  async getPlayableEpisodes(showId) {
     if (!this.#contentCatalog) {
       throw new Error('Fitness content adapter not configured');
     }
@@ -178,12 +175,6 @@ export class FitnessPlayableService {
     // caller keep passing the id shape that is natural to it.
     const { localId, contentId: compoundId } = this.#contentCatalog.canonicalize(showId);
 
-    // Load config for progress classification thresholds
-    const classifierConfig = this.#fitnessConfigService.getProgressClassification(householdId);
-    const classifier = this.#createProgressClassifier
-      ? this.#createProgressClassifier(classifierConfig)
-      : { classify: () => 'unknown' };
-
     // Resolve playable items from content adapter
     // Structure only — watch state is enriched fresh below, every call.
     let items = await this.#cachedStructure(
@@ -193,8 +184,8 @@ export class FitnessPlayableService {
     // Enrich with watch state via ContentQueryService (DDD-compliant)
     items = await this.#contentCatalog.enrichWatchState(items, compoundId);
 
-    // Apply fitness-specific classification and map to API contract
-    items = items.map(item => this.#classifyItem(item, classifier));
+    // Judge watched state and map to API contract
+    items = items.map(item => this.#classifyItem(item));
 
     // Build parents map from items' hierarchy metadata
     const parents = this.#buildParentsMap(items);
@@ -283,17 +274,16 @@ export class FitnessPlayableService {
   }
 
   /**
-   * Classify a single item's watch progress using fitness-specific thresholds.
+   * Judge a single item's watched state by its library's completion rule.
    *
    * Maps domain fields (playhead, percent, duration) to API contract fields
    * (watchProgress, watchSeconds, watchedDate, isWatched).
    *
    * @param {Object} item - Playable item with watch state
-   * @param {Object} classifier - Progress classifier with classify() method
    * @returns {Object} Item with API-contract watch fields
    * @private
    */
-  #classifyItem(item, classifier) {
+  #classifyItem(item) {
     const playhead = item.playhead ?? 0;
     const percent = item.percent ?? 0;
     const duration = item.duration ?? 0;
@@ -305,15 +295,18 @@ export class FitnessPlayableService {
     const everCompleted = (item.metadata?.completedPlayCount ?? 0) >= 1
       || !!item.completedAt;
 
+    // The item's own library rule (watch_completion), so a show served here from
+    // another library — Piano/School courses in Lectures — is judged by that
+    // library's rule, not Fitness's.
+    const rule = this.#completionRules?.ruleFor?.(item.progressNamespace ?? null, duration) ?? DEFAULT_RULE;
+
     return {
       ...item,
       watchProgress: percent,
       watchSeconds: playhead,
       watchedDate: item.lastPlayed ?? null,
-      isWatched: everCompleted || classifier.classify(
-          { playhead, percent, watchTime: item.watchTime },
-          { duration }
-        ) === 'watched'
+      isWatched: everCompleted
+        || (playhead > 0 && isWatchComplete({ percent, playhead, duration, watchTime: item.watchTime }, rule))
     };
   }
 

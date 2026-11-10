@@ -30,6 +30,25 @@ describe('/api/v1/school/card-ladder (through the School router)', () => {
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(res.body.sittingId).toBe('korean-vocab.live.1');
   });
+  it('starts a dictation run in a sitting and never caches it (Task 3)', async () => {
+    const service = { startDictation: vi.fn(async () => ({ item: { id: 'dc1:0' }, dictation: { week: '2026-W46' } })) };
+    const res = await request(app(service)).post('/api/v1/school/card-ladder/sittings/korean-vocab.live.1/dictation')
+      .send({ userId: 'kid' }).expect(200);
+    expect(service.startDictation).toHaveBeenCalledWith({ userId: 'kid', sittingId: 'korean-vocab.live.1' });
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.body.item.id).toBe('dc1:0');
+  });
+  it('passes review: true through to a review run (final review I2)', async () => {
+    const service = { startDictation: vi.fn(async () => ({ item: { id: 'dc1:0' } })) };
+    await request(app(service)).post('/api/v1/school/card-ladder/sittings/korean-vocab.live.1/dictation').send({ userId: 'kid', review: true }).expect(200);
+    expect(service.startDictation).toHaveBeenCalledWith({ userId: 'kid', sittingId: 'korean-vocab.live.1', review: true });
+  });
+  it('serves the practice menu on request (owner 2026-11-06)', async () => {
+    const service = { menu: vi.fn(async () => ({ item: { id: 'menu', type: 'menu' } })) };
+    const res = await request(app(service)).post('/api/v1/school/card-ladder/sittings/korean-vocab.live.1/menu').send({ userId: 'kid' }).expect(200);
+    expect(service.menu).toHaveBeenCalledWith({ userId: 'kid', sittingId: 'korean-vocab.live.1' });
+    expect(res.body.item.type).toBe('menu');
+  });
   it('maps a missing assignment to 403 and a bad response to 400', async () => {
     const refusing = { open: vi.fn(async () => { throw new GuestForbiddenError('no assignment'); }) };
     await request(app(refusing)).post('/api/v1/school/card-ladder/open').send({ userId: 'kid', deckId: 'd' }).expect(403);
@@ -78,5 +97,31 @@ describe('/api/v1/school/word-ladder — the pre-rename alias', () => {
     expect(live.adminReset).toHaveBeenCalledWith(expect.objectContaining({ wordId: 'gawi' }));
     await request(server).get('/api/v1/school/word-ladder/admin/tuning?learnerId=kid&deckId=d&actorId=parent').expect(200);
     expect(tuning.adminTuning).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('/api/v1/school/card-ladder/admin day by day', () => {
+  it('serves the day list and one day, uncached, gated through the service', async () => {
+    const live = {
+      adminDays: vi.fn(async () => ({ days: [{ day: '2026-10-28' }] })),
+      adminDay: vi.fn(async () => ({ day: '2026-10-28', answers: [], recordings: [] })),
+    };
+    const server = app(live);
+    const list = await request(server).get('/api/v1/school/card-ladder/admin/days?learnerId=kid&deckId=d&actorId=parent').expect(200);
+    expect(list.headers['cache-control']).toBe('private, no-store');
+    expect(live.adminDays).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent', pin: null });
+    await request(server).get('/api/v1/school/card-ladder/admin/day?learnerId=kid&deckId=d&actorId=parent&day=2026-10-28').expect(200);
+    expect(live.adminDay).toHaveBeenCalledWith({ learnerId: 'kid', deckId: 'd', actorId: 'parent', pin: null, day: '2026-10-28' });
+  });
+  it('streams a kept take, and 404s one that is not on file', async () => {
+    const resource = { opaque: true };
+    const sendFileResource = vi.fn((_req, res) => res.send('voice'));
+    const live = { adminRecording: vi.fn(async ({ take }) => (take === '1' ? { resource, contentType: 'audio/webm' } : null)) };
+    const server = app(live, { sendFileResource });
+    const res = await request(server).get('/api/v1/school/card-ladder/admin/recording?learnerId=kid&deckId=d&actorId=parent&day=2026-10-28&wordId=pul&take=1').expect(200);
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.headers['content-type']).toMatch(/audio\/webm/);
+    expect(sendFileResource).toHaveBeenCalledWith(expect.anything(), expect.anything(), resource);
+    await request(server).get('/api/v1/school/card-ladder/admin/recording?learnerId=kid&deckId=d&actorId=parent&day=2026-10-28&wordId=pul&take=2').expect(404);
   });
 });

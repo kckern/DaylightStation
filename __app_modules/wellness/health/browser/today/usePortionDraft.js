@@ -1,43 +1,62 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useMemo, useRef, useState } from 'react';
 import { foodPortion } from "../../portable/contracts/health/foodQuantity.mjs";
 import { numericFoodPatches, numericFoodValue } from "../../portable/contracts/health/foodNumericEdit.mjs";
+import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
+import { foodOperationScope } from "../operations/foodOperationScope.js";
 import { BUCKETS } from "./mealBuckets.js";
 import { entryId, entryError, isEntryConflict, updateEntry } from "./entryCommands.js";
-import { projectPortion } from "./portionPreview.js";
+import { projectPortions } from "./portionPreview.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 
 const logger = createAppLogger('health').child('portion');
 export const PortionContext = createContext(null);
-export const usePortionControl = () => useContext(PortionContext);
+export const usePortionControl = row => {
+  const control = useContext(PortionContext);
+  return row && control?.forRow ? control.forRow(row) : control;
+};
 
 export function usePortionDraft(day, date) {
-  const [draft, setDraft] = useState(null);
-  const current = useRef(null);
-  const write = value => { current.current = value; setDraft(value); };
-  useEffect(() => {
-    if (current.current?.date !== date) write(null);
-  }, [date]);
-  // Retire a successful overlay only once the read model contains the command.
-  const caughtUp = draft?.status === 'saved' && draft.versions
-    && Object.entries(draft.versions).every(([id, version]) => day.items.some(row => entryId(row) === id && (row.version ?? 1) >= version));
-  const visible = draft?.date === date && !caughtUp ? draft : null;
-  const projected = useMemo(() => projectPortion(day.items, day.budget, visible), [day.items, day.budget, visible]);
+  const session = useHealthOperations();
+  const [drafts, setDrafts] = useState(new Map());
+  const states = useRef(new Map());
+  const focused = useRef(null);
+  const caught = state => state?.status === 'saved' && state.versions && Object.entries(state.versions)
+    .every(([id, version]) => day.items.some(row => String(entryId(row)) === String(id) && (row.version ?? 1) >= version));
+  const visibleDrafts = [...drafts.values()].filter(state => state.date === date && !caught(state));
+  const projected = useMemo(() => projectPortions(day.items, day.budget, visibleDrafts), [day.items, day.budget, drafts, date]);
   const byBucket = useMemo(() => {
     const map = new Map([...BUCKETS.map(bucket => [bucket.id, []]), [null, []]]);
     for (const row of projected.items) map.get(map.has(row.mealTime) ? row.mealTime : null).push(row);
     return map;
   }, [projected.items]);
+  const forRow = (selectedRow, selectedField = 'portion') => {
+    const key = String(entryId(selectedRow));
+    const current = { get current() { return states.current.get(key); } };
+    const draft = current.current;
+    const caughtUp = caught(draft);
+    const visible = draft?.date === date && !caughtUp ? draft : null;
+    const scope = foodOperationScope({ action: 'edit', rows: day.items, selectedIds: [key] });
+    const otherDraft = [...states.current.entries()].some(([id, state]) => id !== key && !caught(state)
+      && foodOperationScope({ action: 'edit', rows: [state.row], selectedIds: [entryId(state.row)] }).some(id => scope.includes(id)));
+    const write = value => {
+      if (value) states.current.set(key, value); else states.current.delete(key);
+      setDrafts(new Map(states.current));
+    };
   const control = {
     draft: visible,
-    locked: Boolean(visible && ['saving', 'saved', 'reloading'].includes(visible.status)),
-    begin(row, field = 'portion') {
-      if (current.current && !caughtUp) return false;
+    saving: visible?.status === 'saving' || [...(session?.snapshot.operations.values() || [])].some(op => ['pending', 'reconciling'].includes(op.phase) && op.targetIds.some(id => scope.includes(id))),
+    locked: key.startsWith('pending-') || otherDraft || Boolean(session?.store.isReserved(scope, visible?.operationId)) || Boolean(visible && ['saving', 'saved', 'reloading'].includes(visible.status)),
+    begin(row = selectedRow, field = selectedField) {
+      if (key.startsWith('pending-') || (current.current && !caughtUp) || otherDraft || session?.store.isReserved(scope)) return false;
+      focused.current = key;
       const portion = foodPortion(row);
       const numericEdit = field === 'portion' ? null : { field, value: numericFoodValue(row, field) };
       if (numericEdit) {
         try { numericFoodPatches(row, numericEdit); } catch { return false; }
       } else if (!portion.value) return false;
-      write({ row, portion, ...(numericEdit ? { numericEdit } : {}), date, operationId: crypto.randomUUID(), status: 'editing' });
+      const operationId = crypto.randomUUID();
+      if (session && !session.store.begin({ id: operationId, kind: 'numeric', phase: 'editing', date, targetIds: scope }).ok) return false;
+      write({ row, portion, ...(numericEdit ? { numericEdit } : {}), date, operationId, status: 'editing' });
       logger.debug('begin', { id: entryId(row), field, unit: portion.unit });
       return true;
     },
@@ -51,7 +70,7 @@ export function usePortionDraft(day, date) {
         write({ ...state, numericEdit, validationError: null });
       } else if (value > 0) write({ ...state, portion: { ...state.portion, value } });
     },
-    cancel() { if (!['saving', 'saved', 'reloading'].includes(current.current?.status)) write(null); },
+    cancel() { if (!['saving', 'saved', 'reloading'].includes(current.current?.status)) { session?.store.discard(current.current?.operationId); write(null); } },
     async retry() {
       const state = current.current;
       if (state?.status !== 'error') return;
@@ -73,7 +92,10 @@ export function usePortionDraft(day, date) {
           if (state.numericEdit) numericFoodPatches({ ...row, children }, state.numericEdit);
           else if (!freshPortion.value || freshPortion.unit !== state.portion.unit) throw new Error('The portion unit changed or is unknown. Discard this draft and review the entry.');
           if (current.current?.operationId !== state.operationId) return;
-          write({ ...state, row: { ...row, children }, operationId: crypto.randomUUID(), conflict: false });
+          const operationId = crypto.randomUUID();
+          session?.store.discard(state.operationId);
+          session?.store.begin({ id: operationId, kind: 'numeric', phase: 'editing', date: state.date, targetIds: scope });
+          write({ ...state, row: { ...row, children }, operationId, conflict: false });
         } catch (error) {
           if (current.current?.operationId === state.operationId) write({ ...state, error: error.message });
           return;
@@ -85,15 +107,21 @@ export function usePortionDraft(day, date) {
       const state = current.current;
       if (!state || !['editing', 'error'].includes(state.status) || state.validationError) return;
       if (state.numericEdit ? state.numericEdit.value === numericFoodValue(state.row, state.numericEdit.field)
-        : state.portion.value === foodPortion(state.row).value) { write(null); return; }
+        : state.portion.value === foodPortion(state.row).value) { session?.store.discard(state.operationId); write(null); return; }
       write({ ...state, status: 'saving' });
       try {
-        const result = await updateEntry(state.row, state.numericEdit ? { numericEdit: state.numericEdit } : { portion: state.portion }, state.operationId);
-        // One group command increments each changed member once. The root may
-        // stay unchanged when its mass is unknown; trust the response version.
-        const versions = result.versions || Object.fromEntries([state.row, ...(state.row.children || [])].map(row =>
-          [entryId(row), entryId(row) === entryId(state.row) ? result.data.version : (row.version ?? 1) + 1]));
-        if (current.current?.operationId === state.operationId) write({ ...state, status: 'saved', versions });
+        const changes = state.numericEdit ? { numericEdit: state.numericEdit } : { portion: state.portion };
+        let result;
+        if (session) {
+          session.store.transition(state.operationId, { request: { path: `api/v1/health/nutrilist/${entryId(state.row)}`, method: 'PUT', body: { ...changes, operationId: state.operationId, expectedVersion: state.row.version ?? 1, expectedVersions: Object.fromEntries([state.row, ...(state.row.children || [])].map(row => [entryId(row), row.version ?? 1])) } } });
+          result = await session.execute(state.operationId);
+          if (!session.isActive()) return;
+        } else result = await updateEntry(state.row, changes, state.operationId);
+        const versions = result.versions || (result.data?.version != null ? { [entryId(state.row)]: result.data.version } : {});
+        if (current.current?.operationId === state.operationId) {
+          if (session) write(null); // authoritative values now live in the reconciliation overlay
+          else write({ ...state, status: 'saved', versions });
+        }
         day.reload();
         logger.info('saved', { id: entryId(state.row), ...(state.numericEdit ? { numericEdit: state.numericEdit } : { portion: state.portion }) });
       } catch (error) {
@@ -102,6 +130,17 @@ export function usePortionDraft(day, date) {
         logger.warn('failed', { id: entryId(state.row), field: state.numericEdit?.field || 'portion', error: error.message });
       }
     },
+  };
+  return control;
+  };
+  const selected = states.current.get(focused.current);
+  const legacy = selected ? forRow(selected.row, selected.numericEdit?.field || 'portion') : null;
+  const control = { ...legacy, draft: legacy?.draft || null, drafts: visibleDrafts, forRow,
+    begin: (row, field) => forRow(row, field).begin(row, field),
+    ...Object.fromEntries(['preview', 'commit', 'retry', 'cancel'].map(method => [method, (...args) => {
+      const state = states.current.get(focused.current);
+      return state ? forRow(state.row, state.numericEdit?.field || 'portion')[method](...args) : undefined;
+    }])),
   };
   return { ...projected, byBucket, control };
 }

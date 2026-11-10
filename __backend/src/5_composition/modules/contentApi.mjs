@@ -27,6 +27,7 @@ import { YamlUserVideoProgressStore as UserVideoProgressStore } from "../../../.
 import { validateSearchQuery } from "../../../../__app_modules/media/media/server/domain/validateMediaSearchQuery.mjs";
 
 import { ContentAccessPolicyService } from "../../../../__app_modules/games/arcade/server/application/ContentAccessPolicyService.mjs";
+import { createWatchCompletionRules } from "#shared/contracts/media/watchCompletion.mjs";
 
 
 
@@ -75,7 +76,13 @@ export function createApiRouters(config) {
     loadSourceConfig: (name) => configService?.reloadHouseholdAppConfig?.(null, name) || {},
     checkSchedule,
   });
-  const { updateContentProgress, recordPlaybackProgress, markContentWatched } = createPlaybackProgressOperations({ contentCatalog, mediaProgressMemory, progressSyncSources, progressSyncService, reportPlaybackSession, playLedger, isKnownSpotDevice, eventBus, userVideoProgressStore, economyService, logger });
+  // One completion rule per library (household media config `watch_completion`);
+  // re-read on every judgement so a config reload takes effect.
+  const completionRules = createWatchCompletionRules({
+    readConfig: () => configService?.getHouseholdAppConfig?.(null, 'media')?.watch_completion,
+    logger,
+  });
+  const { updateContentProgress, recordPlaybackProgress, markContentWatched } = createPlaybackProgressOperations({ contentCatalog, mediaProgressMemory, progressSyncSources, progressSyncService, reportPlaybackSession, playLedger, isKnownSpotDevice, completionRules, eventBus, userVideoProgressStore, economyService, logger });
 
   const { contentDiscovery, listBrowse, itemService } = createContentBrowseOperations({ contentCatalog, logger, contentIdResolver, contentQueryService, menuMemory });
 

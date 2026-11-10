@@ -1,8 +1,10 @@
+import { endedPayloadFor } from './sessionEndedPayload.mjs';
+
 /** Cohesive session queries/workflows used by the HTTP surface. */
 export class FitnessSessionOperations {
   constructor({
     sessions, grouping = null, timelapse = null, renderReceipt = null,
-    config = null, onSessionsChanged = null, logger = console,
+    config = null, onSessionsChanged = null, publications = null, logger = console,
   }) {
     this.sessions = sessions;
     this.grouping = grouping;
@@ -10,6 +12,7 @@ export class FitnessSessionOperations {
     this.renderReceipt = renderReceipt;
     this.config = config;
     this.onSessionsChanged = onSessionsChanged;
+    this.publications = publications;
     this.logger = logger;
   }
 
@@ -21,6 +24,21 @@ export class FitnessSessionOperations {
       });
     } catch (error) {
       this.logger.warn?.('fitness.sessions.state-gates-refresh-failed', { error: error?.message });
+    }
+  }
+
+  /**
+   * Tell the bus a workout has ended, so ring payouts need not wait for the
+   * hourly reconcile. Never fails the write that already committed.
+   */
+  publishEnded(session, fallbackId) {
+    if (!this.publications?.ended) return;
+    try {
+      const payload = endedPayloadFor(session, fallbackId);
+      if (!payload) return;
+      this.publications.ended(payload);
+    } catch (error) {
+      this.logger.warn?.('fitness.sessions.ended-publish-failed', { sessionId: fallbackId, error: error?.message });
     }
   }
 
@@ -54,6 +72,7 @@ export class FitnessSessionOperations {
   async end(sessionId, householdId, endTime) {
     const session = await this.sessions.endSession(sessionId, householdId, endTime);
     this.notifySessionsChanged({ operation: 'ended', sessionId, householdId });
+    this.publishEnded(session, sessionId);
     this.logger.info?.('fitness.sessions.finalized', { sessionId, endTime, durationMs: session.durationMs });
     if (this.timelapse) Promise.resolve(this.timelapse.execute({
       sessionId: session.sessionId?.toString() || sessionId, householdId,
@@ -76,8 +95,20 @@ export class FitnessSessionOperations {
       });
       return { kind: 'forbidden' };
     }
+    // What was stored before: a re-save of a session already ended (and as final)
+    // is not news and must not re-settle anyone.
+    let before = null;
+    try {
+      if (sessionData?.sessionId && typeof this.sessions.getSession === 'function') {
+        before = await this.sessions.getSession(String(sessionData.sessionId), householdId, { decodeTimeline: false });
+      }
+    } catch { before = null; }
     const value = await this.sessions.saveSessionWithReceipt(sessionData, householdId);
     this.notifySessionsChanged({ operation: 'saved', sessionId: sessionData?.sessionId ?? null, householdId });
+    const after = value?.session;
+    const was = (before && before.endTime) ? { endTime: before.endTime, finalized: before.finalized === true } : null;
+    const news = !was || String(was.endTime) !== String(after?.endTime) || (after?.finalized === true && !was.finalized);
+    if (news) this.publishEnded(after, sessionData?.sessionId);
     return { kind: 'saved', ...value };
   }
 }

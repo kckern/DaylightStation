@@ -355,5 +355,7 @@ describe('the widget registry', () => {
     const { registerBuiltinWidgets } = await import("../../../../../frontend/src/composition/screens/widgets/builtins.js");
     const { default: MediaLessonScreenDefault } = await import("./MediaLessonScreen.jsx");
     expect(registerBuiltinWidgets().get('school-lesson')).toBe(MediaLessonScreenDefault);
-  });
+    // Imports every built-in widget in the app; that cold import, not the
+    // lookup, ran past 20s on a loaded host.
+  }, 120000);
 });

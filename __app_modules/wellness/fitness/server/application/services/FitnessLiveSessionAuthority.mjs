@@ -34,6 +34,13 @@ export class FitnessLiveSessionAuthority {
     return { role: 'writer', sessionId: record.sessionId, startTime: record.startTime };
   }
 
+  /** Read-only: the household's live session ID, or null when none is live. Never creates or refreshes one. */
+  current(householdId) {
+    const record = this.sessions.get(householdId || 'default');
+    if (!record || this.now() - record.lastSeenAt >= this.ttlMs) return null;
+    return record.sessionId;
+  }
+
   release(householdId, clientId) {
     const record = this.sessions.get(householdId || 'default');
     if (!record || record.clientId !== clientId) return false;

@@ -3,6 +3,7 @@ import { Button } from '@mantine/core';
 import { DateStepper } from '@/lib/ui';
 import { budgetGeometry } from "./budgetGeometry.js";
 import { budgetStory } from "./budgetStory.js";
+import { budgetPresentation } from './budgetPresentation.js';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 
 const logger = createAppLogger('health').child('budget-card');
@@ -18,9 +19,9 @@ const MACROS = [
 ];
 
 /**
- * The day's calories. A budget with a range and zone is told as the job at
- * hand (budgetStory.js) over a ruler of what is left, priced by tier
- * (RulerScale). A budget from an older server keeps the two-mark bar of NET
+ * A ranged budget shows goal position and estimated energy balance separately,
+ * above a food-scale ruler with a single endpoint-colored consumed fill.
+ * A budget from an older server keeps the two-mark bar of NET
  * calories: green to the goal, amber to break even, red past it, with the
  * terms line stating net and the deficit.
  * Nothing here is shown as a negative except the legacy net term.
@@ -38,12 +39,13 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
   const realNet = food - exercise;
   const over = budget.status === 'over';
   const story = budget.range && budget.zone ? budgetStory(budget, { date, today, baseline }) : null;
+  const presentation = story ? budgetPresentation(budget, { finished: story.finished }) : null;
   const job = story?.job ?? null;
   useEffect(() => {
     if (job) logger.debug('budget-card.job', { job, date, spend: story.ladder.spend, finished: story.finished });
     // Once per job change, not per render or per drag frame.
   }, [job, date]); // eslint-disable-line react-hooks/exhaustive-deps
-  const headline = story || { value: Math.abs(budget.remaining), text: over ? 'over goal' : 'left', sub: null };
+  const headline = presentation?.position || { value: Math.abs(budget.remaining), text: over ? 'over goal' : 'left', sub: null };
   const spoken = headline.value == null ? headline.text : `${n(headline.value)} kcal ${headline.text}`;
   const scale = Math.max(goal, breakEven, food) * HEADROOM;
   const band = (from, to) => ({ left: pct(from, scale), width: pct(Math.max(0, to - from), scale) });
@@ -53,7 +55,7 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
   const sameMark = breakEven > 0 && Math.round(breakEven) === Math.round(goal);
   const balance = breakEven > 0 ? breakEven - realNet : null;
   const headlineClass = ['health-budget__headline',
-    budget.zone && `health-budget__headline--${budget.zone}`,
+    presentation && `health-budget__headline--${presentation.tone}`,
     job && `health-budget__headline--job-${job}`].filter(Boolean).join(' ');
   return (
     <div className="health-budget">
@@ -62,13 +64,13 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
           <span className={headlineClass} data-testid="budget-headline">
             {headline.value == null ? headline.text : <><strong>{n(headline.value)}</strong> kcal {headline.text}</>}
           </span>
-          {story?.sub ? <span className="health-budget__sub" data-testid="budget-sub">{story.sub}</span> : null}
+          {presentation ? <span className="health-budget__sub" data-testid="budget-sub"><span data-testid="budget-balance">{presentation.balance}</span></span> : null}
         </span>
         <span className="health-budget__terms" data-testid="budget-terms">
           <span>{n(food)} eaten</span>
           {exercise > 0 ? <><span className="health-budget__sep" aria-hidden="true">·</span>
             <span className="health-budget__exercise-term">{n(exercise)} burned</span></> : null}
-          {/* Net and the deficit are the ruler's tiers now; only the legacy bar states them. */}
+          {/* The ranged card states energy balance separately above the ruler. */}
           {!story && exercise > 0 ? <><span className="health-budget__sep" aria-hidden="true">·</span>
             <span>{realNet < 0 ? `−${n(-realNet)}` : n(realNet)} net</span></> : null}
           {!story && balance != null ? <><span className="health-budget__sep" aria-hidden="true">·</span>
@@ -77,7 +79,7 @@ function BudgetBar({ budget, baseline = null, date = null, today = null, dayClos
         </span>
         {dayClose}
       </div>
-      {story ? <RulerScale budget={budget} baseline={baseline} spoken={spoken} finished={story.finished} tentative={story.tentative} /> : (
+      {story ? <RulerScale budget={budget} baseline={baseline} spoken={`${spoken}; ${presentation.balance}`} tone={presentation.tone} finished={story.finished} tentative={story.tentative} /> : (
       <div className="health-budget__scale">
         <div className="health-budget__track" role="img"
           aria-label={`${n(net)} net kcal of ${n(goal)} goal${breakEven ? `, break even ${n(breakEven)}` : ''}, ${spoken}`}>
@@ -114,19 +116,16 @@ function useWidth(ref, fallback = 360) {
 const at = (p) => `${p.toFixed(2)}%`;
 const endAnchored = (p) => (p > 50 ? ' health-budget__goal-range-label--end' : '');
 /** A single food-scale bar: past intake is solid, future room is quiet. */
-function RulerScale({ budget, baseline, spoken, finished, tentative }) {
+function RulerScale({ budget, baseline, spoken, tone, finished, tentative }) {
   const ref = useRef(null);
   const widthPx = useWidth(ref);
   const previewing = baseline && Number(baseline.food) !== Number(budget.food);
   const baselineRight = previewing ? budgetGeometry(baseline, { widthPx }).right : null;
   const g = budgetGeometry(budget, { widthPx, finished,
     baselineFood: previewing ? baseline.food : null, rightOverride: baselineRight });
-  const priced = g.tiers.filter(t => t.left > 0).map(t => `${n(t.left)} ${finished
-    ? { free: 'unused', workout: 'banked', deficit: 'deficit' }[t.key] : t.key}`).join(', ') || 'nothing left on plan';
   const rulerClass = ['health-budget__ruler', tentative && 'health-budget__ruler--tentative', finished && 'health-budget__ruler--finished']
     .filter(Boolean).join(' ');
   const segment = (part) => ({ left: at(part.fromPct), width: at(part.widthPct) });
-  const postTone = (group) => ['even', 'plan', 'base', 'floor'].find(key => group.posts.some(p => p.key === key));
   const goalLabel = g.goalRange ? `Goal ${n(g.goalRange.from)}–${n(g.goalRange.to)}` : null;
   return (
     <div className={rulerClass} ref={ref}>
@@ -135,20 +134,14 @@ function RulerScale({ budget, baseline, spoken, finished, tentative }) {
         <span className={`health-budget__goal-range-label${endAnchored(g.goalRange.toPct)}`}
           style={{ left: at(g.goalRange.toPct) }}>{goalLabel}</span>
       </div> : null}
-      <div className={`health-budget__track health-budget__track--ruler health-budget__track--${budget.zone || 'unknown'}`} role="img" data-testid="budget-ruler"
-        aria-label={`${n(g.cursor.value)} kcal eaten${g.baselineCursor ? `, before preview ${n(g.baselineCursor.value)} kcal eaten` : ''}; ${g.posts.map(p => `${p.label.toLowerCase()} ${n(p.value)}`).join(', ')}; ${priced}; ${spoken}`}>
-        {g.goalRange ? <span className="health-budget__goal-band" data-budget-goal-band style={segment(g.goalRange)} /> : null}
-        {g.available.map(p => <span key={p.key} className={`health-budget__available health-budget__available--${p.key}`}
-          data-budget-available={p.key} style={segment(p)} />)}
-        {g.consumed.map(p => <span key={p.key} className={`health-budget__consumed health-budget__consumed--${p.key}`}
-          data-budget-consumed={p.key} style={segment(p)} />)}
+      <div className={`health-budget__track health-budget__track--ruler health-budget__track--${tone}`} role="img" data-testid="budget-ruler" data-budget-tone={tone}
+        aria-label={`${n(g.cursor.value)} kcal eaten${g.baselineCursor ? `, before preview ${n(g.baselineCursor.value)} kcal eaten` : ''}; ${g.posts.map(p => `${p.label.toLowerCase()} ${n(p.value)}`).join(', ')}; ${spoken}`}>
+        <span className="health-budget__consumed" data-budget-consumed="eaten" style={{ left: '0%', width: at(g.cursor.pct) }} />
         {g.goalRange?.bonus?.spentWidthPct > 0 ? <span className="health-budget__bonus health-budget__bonus--spent"
           data-budget-bonus="spent" style={{ left: at(g.goalRange.bonus.fromPct), width: at(g.goalRange.bonus.spentWidthPct) }} /> : null}
-        {g.goalRange?.bonus?.availableWidthPct > 0 ? <span className="health-budget__bonus health-budget__bonus--available"
-          data-budget-bonus="available" style={{ left: at(g.goalRange.bonus.availableFromPct), width: at(g.goalRange.bonus.availableWidthPct) }} /> : null}
-        {g.postGroups.map((group, index) => <span key={index}
-          className={`health-budget__post health-budget__post--${postTone(group)}`}
-          style={{ left: at(group.pct) }} aria-hidden="true" />)}
+        {g.posts.map(post => <span key={post.key}
+          className={`health-budget__post health-budget__post--${post.key}`}
+          style={{ left: at(post.pct) }} aria-hidden="true" />)}
         {g.baselineCursor ? <span className="health-budget__cursor health-budget__cursor--baseline"
           data-testid="budget-baseline-cursor" aria-label={`Before preview: ${n(g.baselineCursor.value)} kcal eaten`}
           style={{ left: at(g.baselineCursor.pct) }} /> : null}

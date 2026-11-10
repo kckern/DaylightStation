@@ -21,6 +21,30 @@ and they age out.
 Full postmortems live in `ops:docs/_wip/bugs/` — these are condensed for the
 failure *patterns* they reveal, which recur in other subsystems too.
 
+### 2026-10-19 — forty-nine old sheets refused as typos
+
+**What happened.** Over one week the panel refused 49 codes with a bare "Try
+again." Many were children typing the previous day's agenda: a panel code dies
+at the 4am study-day rollover by design, and the refusal for that was identical
+to the refusal for a mistype. Retyping the same digits cannot help, so the
+children gave up. Nothing in the log said who had typed what, or how old it was —
+the rejection event carried only `reason: 'no-live-record'`.
+
+**Why.** `getByAccessCode` folded "never existed", "revoked" and "expired" into
+one `null`. The registry still knew the expired record (its index entry lives
+until the token is pruned a week on), but the use case had no way to ask.
+
+**What changed.** The code's lifetime did not. `lookupAccessCode` returns the
+expired record beside a `live: false` verdict, and the panel now answers
+*"That sheet is from Sunday. Tap your card for today's."* with no throttle
+strike. The rejection log carries `reason: 'expired'`, `learnerId`, `issuedAt`
+and `ageHours`. To see how often it happens:
+`_msg:"school.selfservice.code.rejected" AND data.reason:expired AND _time:7d`.
+
+**Pattern.** A refusal that collapses several causes into one answer hides
+the cause from the person refused *and* from the log. If two failures want
+different next steps from the user, they need different reasons on the wire.
+
 ### 2026-09-06 — one reading code, thirty-six opens, and a finish dated into a closed week
 
 Reported as "abuse of the reading code by an unauthorized learner". The logs

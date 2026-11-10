@@ -9,7 +9,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
  * @param {Object} obj - Object to compact
  * @returns {Object} Compacted object
  */
-function compactItem(obj) {
+function compactItem(obj, playbackAction = false) {
   if (typeof obj !== 'object' || obj === null) return obj;
 
   const result = {};
@@ -20,10 +20,13 @@ function compactItem(obj) {
     // Fields where 0 is a meaningful value (episode 0, 0% progress, 0 seconds, etc.)
     const zeroIsValid = ['itemIndex', 'parentIndex', 'watchProgress', 'watchSeconds', 'resumePosition', 'resumeSeconds', 'playCount', 'index'].includes(key);
 
-    // Skip falsy values (null, undefined, false, "") but preserve 0 for valid fields
-    if (!value && value !== 0) continue;
+    // Explicit playback options must survive compaction, including start-at-zero.
+    const explicitPlaybackIntent = playbackAction &&
+      ((key === 'resume' && value === false) || (key === 'seconds' && value === 0));
+    // Skip falsy defaults while preserving authored playback intent.
+    if (!value && value !== 0 && !explicitPlaybackIntent) continue;
     // Skip 0 for fields where it's not meaningful (but allow for fields like itemIndex)
-    if (value === 0 && !zeroIsValid) continue;
+    if (value === 0 && !zeroIsValid && !explicitPlaybackIntent) continue;
 
     // Preserve arrays as-is (do not recurse into them)
     if (Array.isArray(value)) {
@@ -33,7 +36,7 @@ function compactItem(obj) {
 
     // Recurse into objects (including action objects like play, queue, list)
     if (typeof value === 'object' && value !== null) {
-      const compacted = compactItem(value);
+      const compacted = compactItem(value, key === 'play' || key === 'queue');
       // Only include non-empty objects
       if (Object.keys(compacted).length > 0) {
         result[key] = compacted;

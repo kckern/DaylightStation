@@ -25,6 +25,7 @@ import { AgentsIndex, AgentDetail } from "../../../__capabilities/agent-runtime/
 import AgentDashboard from "../../../__app_modules/wellness/health/browser/agent-dashboard.mjs";
 import GamesIndex from "../../../__app_modules/games/party-games/browser/admin-games.mjs";
 import ConsoleDetail from "../../../__app_modules/games/party-games/browser/admin-console.mjs";
+import { ContentFilterLibrary, ContentFilterReview } from "../modules/Admin/ContentFilter/ContentFilterAdmin.jsx";
 import PlaybackHubPage from "../../../__app_modules/media/media/browser/admin/playback-hub/PlaybackHubPage.jsx";
 import SchoolVirtualConsole from "../../../__app_modules/learning/school/browser/admin-console.mjs";
 import SchoolReviewQueue from "../../../__app_modules/learning/school/browser/admin-review.mjs";
@@ -151,6 +152,8 @@ function AdminApp() {
               <Route path="content/games" element={<GamesIndex />} />
               <Route path="content/games/:consoleId" element={<ConsoleDetail />} />
               <Route path="content/art" element={<ArtLibrary />} />
+              <Route path="content/filter" element={<ContentFilterLibrary />} />
+              <Route path="content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} />
               {/* Apps */}
               <Route path="apps/:appId" element={<AppConfigEditor />} />
 

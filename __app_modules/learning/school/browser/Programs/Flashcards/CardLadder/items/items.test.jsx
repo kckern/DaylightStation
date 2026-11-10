@@ -68,6 +68,10 @@ describe('ChoiceItem', () => {
     expect(onRespond).toHaveBeenCalledWith({ choice: 'Scissors' });
     fireEvent.keyDown(window, { key: '0' });
     expect(onRespond).toHaveBeenCalledWith({ dontKnow: true });
+    // Backslash too: the give-up key on every other screen.
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash' });
+    expect(onRespond).toHaveBeenCalledTimes(3);
+    expect(onRespond).toHaveBeenLastCalledWith({ dontKnow: true });
   });
 
   it('never renders the hear-channel prompt (the term) until a result exists', () => {
@@ -357,13 +361,37 @@ describe('TypedItem — busy keeps the keypad, Show me', () => {
     spy.mockRestore();
   });
 
-  it('Write without help (an unjudged typed item) offers Show me; a judged one and copy do not', () => {
-    const { rerender } = render(<TypedItem item={{ ...cueItem, graded: false }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
+  it('Write without help (an unjudged typed item) offers Show me', () => {
+    render(<TypedItem item={{ ...cueItem, graded: false }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
     expect(screen.getByRole('button', { name: 'Show me' })).toBeInTheDocument();
-    rerender(<TypedItem item={{ ...cueItem, id: 'b2' }} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
-    expect(screen.queryByRole('button', { name: 'Show me' })).toBeNull();
-    rerender(<TypedItem item={{ id: 'b3', type: 'copy', word, assets: {} }} mode="copy" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} />);
-    expect(screen.queryByRole('button', { name: 'Show me' })).toBeNull();
+  });
+
+  // Owner, 2026-11-03: not knowing is never a wall. A learner typed "." to get past a graded 3.3.
+  it.each([
+    ['a graded 3.3', { ...cueItem, id: 'b2' }, 'graded', "Don't know"],
+    ['the 1.4 dictation sign-off', { ...cueItem, id: 'b4', task: '1.4', assets: { audio: 'a.mp3' } }, 'graded', "Don't know"],
+    ['drill dictation', { id: 'b5', type: 'drill', step: 'dictation', assets: { audio: 'a.mp3' } }, 'dictation', "Don't know"],
+    ['copy', { id: 'b3', type: 'copy', word, assets: {} }, 'copy', 'Skip'],
+  ])('%s has a way out that sends an empty answer, from the button or Backslash', (_label, item, mode, name) => {
+    const onRespond = vi.fn();
+    render(<TypedItem item={item} mode={mode} langs={langs} resolveAssetUrl={(x) => x} onRespond={onRespond} />);
+    const button = screen.getByRole('button', { name });
+    expect(button.querySelector('.ds-touch__key')).toHaveTextContent('\\');
+    fireEvent.click(button);
+    expect(onRespond).toHaveBeenLastCalledWith({ typed: '' });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: /your answer/i }), { key: '\\', code: 'Backslash' });
+    expect(onRespond).toHaveBeenCalledTimes(2);
+  });
+
+  it('dictation reads Skip once its second miss has put the word on screen (it is a copy now)', () => {
+    render(<TypedItem item={{ id: 'b6', type: 'drill', step: 'dictation', assets: { audio: 'a.mp3' } }} mode="dictation" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} result={{ correct: false, answer: '가위' }} />);
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Don't know" })).toBeNull();
+  });
+
+  it('the way out is gone once a verdict is on screen', () => {
+    render(<TypedItem item={cueItem} mode="graded" langs={langs} resolveAssetUrl={(x) => x} onRespond={() => {}} onContinue={() => {}} result={{ correct: false, score: 0, judge: 'dont-know', answer: '가위' }} />);
+    expect(screen.queryByRole('button', { name: "Don't know" })).toBeNull();
   });
 });
 

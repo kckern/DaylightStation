@@ -174,6 +174,33 @@ export function score(instructions, levels) {
   return { type: 'score', instructions, levels };
 }
 
+/**
+ * @typedef {Object} DecisionImage
+ * @property {'image'} kind
+ * @property {Buffer|Uint8Array} data - Encoded image bytes
+ * @property {string} mediaType - e.g. 'image/png'
+ * @property {number} [width]
+ * @property {number} [height]
+ */
+
+/**
+ * Wrap image bytes as a state value. Put it at the top level of an object
+ * state and refer to it by its key in backticks, like any other field.
+ * Adapters that cannot take images throw.
+ * @param {Buffer|Uint8Array} data
+ * @param {{ mediaType?: string, width?: number, height?: number }} [meta]
+ * @returns {DecisionImage}
+ */
+export function image(data, { mediaType = 'image/png', width, height } = {}) {
+  if (!data || !data.length) throw new Error('image() requires non-empty bytes');
+  return Object.freeze({ kind: 'image', data, mediaType, width, height });
+}
+
+/** @returns {boolean} */
+export function isImage(value) {
+  return !!value && typeof value === 'object' && value.kind === 'image' && !!value.data;
+}
+
 function requireInstructions(instructions) {
   if (instructions == null || instructions === '') {
     throw new Error('Decision question requires instructions');

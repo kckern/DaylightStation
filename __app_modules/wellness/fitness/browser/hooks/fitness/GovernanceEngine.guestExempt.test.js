@@ -71,7 +71,7 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
 
   it('challenge: a guest in-zone counts toward achievement (group tally)', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: [] };
+    eng.config = { exemptions: [], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, warm: 1, hot: 2 };
     const zoneInfoMap = { hot: { id: 'hot', name: 'Hot' } };
     eng._captureLatestInputs({
@@ -94,7 +94,7 @@ describe('GovernanceEngine — subject filter (guests + exempt)', () => {
 
   it('challenge: a slacking guest is never blamed', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: [] };
+    eng.config = { exemptions: [], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, hot: 2 };
     eng._captureLatestInputs({ activeParticipants: ['user_2', 'g1'], guestIds: ['g1'], zoneRankMap });
     eng._latestInputs.zoneRankMap = zoneRankMap;
@@ -171,7 +171,7 @@ describe('GovernanceEngine — exemptions remain non-subjects without a baseline
 
   it('a guest-only challenge needs their in-zone contribution instead of auto-winning', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: [] };
+    eng.config = { exemptions: [], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, hot: 2 };
     eng._captureLatestInputs({ activeParticipants: ['g1'], guestIds: ['g1'], zoneRankMap });
     const missed = eng.evaluateChallengeZone({ zone: 'hot', rule: 1 }, ['g1'], { g1: 'cold' }, 1);
@@ -214,9 +214,9 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
     });
   });
 
-  it('does not let an exempt participant be the sole challenge satisfier', () => {
+  it('lets an exempt participant satisfy a challenge alone (never punished, counts toward winning)', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['user_5'] };
+    eng.config = { exemptions: ['user_5'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, active: 1 };
     eng._captureLatestInputs({
       activeParticipants: ['user_2', 'user_5'], guestIds: [], zoneRankMap,
@@ -230,17 +230,17 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
     );
 
     expect(result).toMatchObject({
-      satisfied: false,
+      satisfied: true,
       requiredCount: 1,
       actualCount: 1,
       missingUsers: ['user_2'],
-      reason: 'non_exempt_contributor_required',
     });
+    expect(result.reason).toBeUndefined();
   });
 
   it('credits an exempt participant once a non-exempt participant also contributes', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['user_5'] };
+    eng.config = { exemptions: ['user_5'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, active: 1 };
     eng._captureLatestInputs({
       activeParticipants: ['user_2', 'user_5'], guestIds: [], zoneRankMap,
@@ -261,9 +261,9 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
     });
   });
 
-  it('does not let a guest unlock a challenge for an exempt-plus-guest roster', () => {
+  it('lets a guest win a challenge for an exempt-plus-guest roster', () => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['user_5'] };
+    eng.config = { exemptions: ['user_5'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const zoneRankMap = { cold: 0, active: 1 };
     eng._captureLatestInputs({
       activeParticipants: ['user_5', 'visitor'], guestIds: ['visitor'], zoneRankMap,
@@ -277,20 +277,19 @@ describe('GovernanceEngine — exempt users require a non-exempt anchor', () => 
     );
 
     expect(result).toMatchObject({
-      satisfied: false,
+      satisfied: true,
       requiredCount: 1,
       actualCount: 1,
       missingUsers: [],
-      reason: 'non_exempt_contributor_required',
     });
   });
 });
 
 
 describe('challenge targets never grow because a visitor joined', () => {
-  it.each(['all', 'most', 'some', 6])('uses subjects for %s and requires a subject contributor', (rule) => {
+  it.each(['all', 'most', 'some', 6])('uses subjects for %s and lets a guest contribution count', (rule) => {
     const eng = new GovernanceEngine();
-    eng.config = { exemptions: ['exempt'] };
+    eng.config = { exemptions: ['exempt'], challenge_hold_seconds: 0 }; // instant: these test who counts, not the D5 hold
     const people = ['rider', 'guest', 'exempt'];
     eng._captureLatestInputs({ activeParticipants: people, guestIds: ['guest'], zoneRankMap: { cold: 0, hot: 2 } });
     const result = eng.evaluateChallengeZone({ zone: 'hot', rule }, people, { rider: 'hot', guest: 'cold', exempt: 'cold' }, 3);
@@ -298,9 +297,8 @@ describe('challenge targets never grow because a visitor joined', () => {
     const guestCredit = eng.evaluateChallengeZone({ zone: 'hot', rule }, people, { rider: 'cold', guest: 'hot', exempt: 'cold' }, 3);
     expect(guestCredit).toMatchObject({
       requiredCount: 1,
-      satisfied: false,
+      satisfied: true,
       missingUsers: ['rider'],
-      reason: 'non_exempt_contributor_required',
     });
   });
 });
@@ -387,5 +385,109 @@ it('retains household enforcement when an exempt resident is present with a gues
     subjects: [],
     guests: ['visitor'],
     exempt: ['resident'],
+  });
+});
+
+
+// Audit 2026-10-29 (fs_20261029193815): a household member rode as a guest and
+// met the challenge zone alone; the anchor rule held the challenge unsatisfied
+// and the video locked three times. Owner ruling: guests are never punished but
+// DO count toward winning.
+describe('a guest meeting the zone satisfies the challenge (audit 2026-10-29)', () => {
+  const zoneRankMap = { cool: 0, active: 1, warm: 2, hot: 3, fire: 4 };
+  const setup = (people, guestIds) => {
+    const eng = new GovernanceEngine();
+    eng.config = { exemptions: [], challenge_hold_seconds: 0 };
+    eng._captureLatestInputs({ activeParticipants: people, guestIds, zoneRankMap });
+    return eng;
+  };
+
+  it('"1 hot": the guest is the one rider in hot — satisfied, nobody missing blamed beyond subjects', () => {
+    const people = ['rider_f', 'rider_a', 'rider_s', 'guest_1'];
+    const eng = setup(people, ['guest_1']);
+    const res = eng.evaluateChallengeZone(
+      { zone: 'hot', rule: 1 }, people,
+      { rider_f: 'active', rider_a: 'warm', rider_s: 'active', guest_1: 'hot' }, 4
+    );
+    expect(res.satisfied).toBe(true);
+    expect(res.metUsers).toEqual(['guest_1']);
+    expect(res.reason).toBeUndefined();
+    expect(res.missingUsers).not.toContain('guest_1');
+  });
+
+  it('"some warm": the guest supplies the one warm rider "some" needs — satisfied', () => {
+    const people = ['rider_f', 'rider_a', 'rider_s', 'guest_1'];
+    const eng = setup(people, ['guest_1']);
+    // 'some' over 3 subjects = ceil(0.9) = 1.
+    const res = eng.evaluateChallengeZone(
+      { zone: 'warm', rule: 'some' }, people,
+      { rider_f: 'active', rider_a: 'active', rider_s: 'cool', guest_1: 'warm' }, 4
+    );
+    expect(res.requiredCount).toBe(1);
+    expect(res.satisfied).toBe(true);
+    expect(res.actualCount).toBe(1);
+  });
+
+  it('"some warm" with two required: guest + one subject together satisfy it', () => {
+    const people = ['r1', 'r2', 'r3', 'r4', 'r5', 'guest_1'];
+    const eng = setup(people, ['guest_1']);
+    // 'some' over 5 subjects = ceil(1.5) = 2.
+    const res = eng.evaluateChallengeZone(
+      { zone: 'warm', rule: 'some' }, people,
+      { r1: 'warm', r2: 'active', r3: 'active', r4: 'cool', r5: 'cool', guest_1: 'hot' }, 6
+    );
+    expect(res.requiredCount).toBe(2);
+    expect(res.satisfied).toBe(true);
+  });
+
+  it('a cold guest still never raises the target or gets blamed', () => {
+    const people = ['rider_f', 'guest_1'];
+    const eng = setup(people, ['guest_1']);
+    const res = eng.evaluateChallengeZone(
+      { zone: 'hot', rule: 'all' }, people, { rider_f: 'cool', guest_1: 'cool' }, 2
+    );
+    expect(res.requiredCount).toBe(1);
+    expect(res.satisfied).toBe(false);
+    expect(res.missingUsers).toEqual(['rider_f']);
+  });
+
+  it('steady-state anti-cheat is unchanged: a guest alone in zone does not clear the base requirement', () => {
+    const people = ['rider_f', 'guest_1'];
+    const eng = setup(people, ['guest_1']);
+    const res = eng._evaluateZoneRequirement('active', 'all', people,
+      { rider_f: 'cool', guest_1: 'hot' }, zoneRankMap, {}, 2);
+    expect(res.satisfied).toBe(false);
+    expect(res.missingUsers).toEqual(['rider_f']);
+  });
+});
+
+describe('zone lookup misses are quiet for guests (audit 2026-10-29)', () => {
+  it('a guest with no zone never warns; a subject warns at most 6 times a minute', async () => {
+    const logging = await import('../../../../../../frontend/src/lib/logging/Logger.js');
+    logging.resetSamplingState?.();
+    const root = logging.getLogger();
+    const warns = [];
+    const origSampled = root.sampled;
+    root.sampled = (name, data, opts) => { warns.push({ name, level: opts?.level }); };
+    try {
+      const eng = new GovernanceEngine();
+      eng.config = { exemptions: [] };
+      const zoneRankMap = { cool: 0, active: 1 };
+      eng._captureLatestInputs({ activeParticipants: ['rider', 'guest_1'], guestIds: ['guest_1'], zoneRankMap });
+      for (let i = 0; i < 20; i++) {
+        eng._evaluateZoneRequirement('active', 'all', ['rider', 'guest_1'], { rider: 'active' }, zoneRankMap, {}, 2);
+      }
+      const guestWarns = warns.filter((w) => w.name === 'participant.zone.lookup_failed');
+      expect(guestWarns).toHaveLength(0);
+      const nonSubject = warns.filter((w) => w.name === 'participant.zone.lookup_failed_nonsubject');
+      expect(nonSubject).toHaveLength(20);
+      expect(nonSubject.every((w) => w.level === 'debug')).toBe(true);
+      // A subject's miss is still a warn.
+      warns.length = 0;
+      eng._evaluateZoneRequirement('active', 'all', ['rider', 'guest_1'], { guest_1: 'active' }, zoneRankMap, {}, 2);
+      expect(warns.find((w) => w.name === 'participant.zone.lookup_failed')?.level).toBe('warn');
+    } finally {
+      root.sampled = origSampled;
+    }
   });
 });

@@ -293,6 +293,55 @@ describe('authored learning Catalog', () => {
     expect(await screen.findByText('Adaptive tutor')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /start tutoring/i })).toBeInTheDocument();
   });
+
+  // 2026-10-21: on-screen quizzes retake until passed. The drill mount
+  // (`problems` modules) used to have no onRestart at all, so a failed drill
+  // was a dead end; Try again must reopen the session fresh, like the quiz mount.
+  it('a failed catalog drill offers Try again, which reopens the session fresh', async () => {
+    learningCatalogsMock.mockResolvedValue({ ok: true, status: 200, data: {
+      schema: 'school.catalog-index/v1', catalogs: [{
+        schema: 'school.catalog/v1', catalogId: 'core', title: 'Core', subjects: [{
+          subjectId: 'quant', title: 'Quantitative', courses: [{ courseId: 'rates', title: 'Rates', units: [{
+            unitId: 'intro', title: 'Introduction', lessons: [{ lessonId: 'unit-rate', title: 'Unit rates', modules: [{ moduleId: 'drill', type: 'problems' }] }],
+          }] }],
+        }],
+      }],
+    } });
+    learningLessonMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.learning-lesson/v1',
+      context: { catalog: { catalogId: 'core' }, subject: { subjectId: 'quant' }, course: { courseId: 'rates' }, unit: { unitId: 'intro' } },
+      lesson: { lessonId: 'unit-rate', title: 'Unit rates', modules: [{
+        moduleId: 'drill', type: 'problems', title: 'Rate drill', passingPercent: 80,
+        bank: { id: 'rate-drill', title: 'Rate drill', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'A unit rate?', choices: ['Yes', 'No'], answer: 'Yes' }] },
+      }] },
+    } });
+    surfaceProfileMock.mockResolvedValueOnce({ ok: true, status: 200, data: { surfaceId: 'screen-test', family: 'screen', title: 'Test Screen', liveness: 'live', capabilities: {}, limits: {} } });
+    certificationMock.mockResolvedValueOnce({ ok: true, status: 200, data: [{
+      address: 'core/quant/rates/intro/unit-rate', surfaceId: 'screen-test', verdict: 'full', reasons: [], warnings: [],
+      moduleVerdicts: [{ moduleId: 'drill', verdict: 'render', reasons: [], warnings: [] }],
+    }] });
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
+    for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
+    }
+    fireEvent.click(await screen.findByRole('button', { name: /Rate drill/ }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Alpha'));
+    schoolApi.answer.mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Yes', attemptId: 'a1' } });
+    const wrongChoice = await screen.findByRole('button', { name: 'No' });
+    fireEvent.click(wrongChoice);
+    fireEvent.click(wrongChoice);
+    fireEvent.click(await screen.findByRole('button', { name: /next/i }));
+    expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/passing is 80%/);
+    const opens = schoolApi.openSession.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(schoolApi.openSession.mock.calls.length).toBe(opens + 1));
+    expect(schoolApi.openSession.mock.calls.at(-1)[0]).toEqual(expect.objectContaining({
+      bankId: 'rate-drill', mode: 'drill', fresh: true,
+    }));
+    expect(await screen.findByText('A unit rate?')).toBeInTheDocument();
+  });
 });
 
 // Untagged banks shelve into the Library's Practice group — every bank-flow

@@ -10,6 +10,7 @@
  */
 import { reduceSession, createEvent } from "../../domain/sessions/sessionEvents.mjs";
 import { studyDayForInstant } from "../../domain/studyDay.mjs";
+import { DEFAULT_REMEDIATION_MAX_ROUNDS } from "../../domain/sessions/remediationLineage.mjs";
 
 /**
  * Make sure this unit has a session: reuse an open one, or open a fresh one.
@@ -59,9 +60,18 @@ export async function ensureSession({ entry, learnerId, nowIso, sessions, newSes
  *
  * @param {object} unit - the unit's composition (`media`/`document`/`bank`)
  * @param {object} state - a `reduceSession` result
+ * @param {object} [remediation]
+ * @param {number} [remediation.remediationDepth] - how many retries this
+ *   session already sits behind (`remediationLineage.mjs`); 0 for an original
+ * @param {number} [remediation.maxRounds] - the configured cap
+ * @param {boolean} [remediation.teacherHold] - the planner already judged this
+ *   failure a teacher hold (`entry.remediation.held`), for either reason — the
+ *   idle-days rule needs a calendar this function never sees
  * @returns {{kind: string, tokenClass: string|null, label: string}}
  */
-export function nextMove(unit, state) {
+export function nextMove(unit, state, {
+  remediationDepth = 0, maxRounds = DEFAULT_REMEDIATION_MAX_ROUNDS, teacherHold = false,
+} = {}) {
   const nextAction = state.nextAction;
   const reducerTokenClass = nextAction?.tokenClass ?? null;
   const reducerLabel = nextAction?.label;
@@ -164,7 +174,19 @@ export function nextMove(unit, state) {
       // would loop the child through already-done slips until 4am. The retry
       // is a NEW session with a fresh variant (`OpenRemediation`, dispatched
       // via `ResolveScanAction.#retry`), not a reprint of this one.
+      //
+      // TWO ROUNDS, THEN A GROWN-UP. Past the cap this is a teacher hold, not
+      // a third sheet: `teacher` carries no token class, so nothing printable
+      // is minted for it, and the agenda excuses the section it sits in
+      // (`agenda.mjs`, `teacher_hold`). `OpenRemediation` refuses the same
+      // depth, so a retry ticket already in a child's hand cannot get round it.
+      // A STALE hold (unretried for days, judged by the planner) reads the
+      // same here but is softer downstream: `OpenRemediation` still honours a
+      // retry ticket the child comes back with.
       if (state.outcome?.result === 'needs_remediation') {
+        if (teacherHold || remediationDepth >= maxRounds) {
+          return { kind: 'teacher', tokenClass: null, label: 'a grown-up will help with this one' };
+        }
         return { kind: 'retry', tokenClass: 'remediation', label: 'try again with a fresh sheet' };
       }
       return { kind: 'wait', tokenClass: reducerTokenClass, label: reducerLabel || 'carry on' };
@@ -183,6 +205,21 @@ export function nextMove(unit, state) {
  * @param {object} state - a `reduceSession` result
  * @param {string} [fallback]
  */
-export function agendaLabel(unit, state, fallback) {
-  return nextMove(unit, state).label ?? fallback;
+export function agendaLabel(unit, state, fallback, remediation) {
+  return nextMove(unit, state, remediation).label ?? fallback;
+}
+
+/**
+ * The remediation options `nextMove` needs, read off a plan entry. The planner
+ * already walked the lineage (`planner.mjs` → `entry.remediation`), so every
+ * caller holding an entry asks with the SAME depth and cap the agenda used to
+ * excuse the section — the scan, the panel and the paper cannot disagree.
+ *
+ * @param {object|null} entry - a `planLearnerWork` entry
+ */
+export function remediationOptionsFor(entry) {
+  const remediation = entry?.remediation ?? null;
+  return remediation
+    ? { remediationDepth: remediation.depth, maxRounds: remediation.maxRounds, teacherHold: remediation.held === true }
+    : {};
 }

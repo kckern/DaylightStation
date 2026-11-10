@@ -82,6 +82,13 @@ const CELEBRATE_MS = 9000;
 const WIND_DOWN_MS = 20_000;
 /** How long a refusal or a fault stays on screen. */
 const NOTICE_MS = 7000;
+/**
+ * A refusal that offers other books stays up longer: the child has to walk to
+ * the shelf and find one of the covers, and seven seconds is gone by then.
+ */
+const SUGGESTION_NOTICE_MS = 20000;
+/** The most covers a refusal shows — the backend's own limit, held here too. */
+const MAX_SUGGESTIONS = 3;
 /** A cold kiosk can mount while the backend is still inside the wake call. */
 const STARTING_HYDRATE_RETRY_MS = 1000;
 /** Stop polling eventually; websocket replay remains available after this. */
@@ -233,7 +240,7 @@ export function useReadingSession({
     if (!next) return;
     noticeTimer.current = setTimeout(() => {
       if (mounted.current) setNotice(null);
-    }, NOTICE_MS);
+    }, next.suggestions?.length ? SUGGESTION_NOTICE_MS : NOTICE_MS);
   }, []);
 
   const rememberPresentation = useCallback((payload) => {
@@ -869,15 +876,26 @@ export function useReadingSession({
       }
       case 'book-refused': {
         // D5, assignment mode: one story at a time.
+        // Books the child could read instead (read-recently only). Shown as
+        // covers under the refusal, so a child who cannot read knows which
+        // physical books to go and get.
+        const suggestions = (Array.isArray(payload.suggestions) ? payload.suggestions : [])
+          .filter((b) => typeof b?.contentId === 'string' && b.contentId)
+          .slice(0, MAX_SUGGESTIONS)
+          .map((b) => ({ contentId: b.contentId, title: b.title ?? null }));
         readingLog.pick('book-refused', {
           contentId: payload.contentId ?? null, reason: payload.reason ?? null,
           lastReadOn: payload.lastReadOn ?? null, noRepeatDays: payload.noRepeatDays ?? null,
+          suggestions: suggestions.length,
         });
         cue('warn');
         if (payload.reason === 'read-recently') {
           // Assignment mode, a book finished within `noRepeatDays`. The session
           // is untouched; the child just picks another.
-          say({ tone: 'warn', title: readRecentlyTitle(payload.lastReadOn, payload.today), detail: 'Pick a different book!' });
+          say({
+            tone: 'warn', title: readRecentlyTitle(payload.lastReadOn, payload.today), detail: 'Pick a different book!',
+            ...(suggestions.length ? { suggestions } : {}),
+          });
           return;
         }
         say({ tone: 'warn', title: 'Finish this one first', detail: "We'll pick the next book when this story ends." });

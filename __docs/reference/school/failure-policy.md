@@ -69,3 +69,172 @@ content lazily — on first use, in a constructor, behind a function call — or
 inject it from a caller that already did the same. Either shape keeps the
 failure inside whatever error boundary the composition root actually builds
 for that subsystem, instead of skipping it entirely.
+
+## A child's failed work: two retries or three idle days, then a grown-up
+
+The sections above are about the system failing. A child failing a sheet is a
+different thing, and it has its own rule. An open failed result (settled
+`needs_remediation`, no retry opened yet) becomes a **teacher hold** when
+either of these is true:
+
+- **`cap`** — it is already `lifecycle.remediation.maxRounds` retries deep
+  (default 2), counted back to the original attempt.
+- **`stale`** — it has sat unretried for `lifecycle.remediation.holdAfterStudyDays`
+  school days (default 3).
+
+Both values live in `school.yml`. The cap wins when both apply.
+
+**Counting retries.** Every remediation session carries `remediationOf` on its
+`created` event, naming the session it retries; the original carries none.
+Depth is the number of links back to the original: 0 for the first sheet, 1
+for the first retry, 2 for the second. Session rows
+(`IWorkSessionRepository.listForLearner`) carry `remediationOf`, so the planner
+counts without reading events. A store whose rows omit the field is read from
+events by `PlanProjection` before planning (`application/remediationDepth.mjs`).
+An absent link means "unknown", never "original", because treating it as an
+original would under-count. A lineage that loops back on itself ends the walk
+at the first repeat. Use cases that walk by reading events stop three rounds
+past the cap: enough to decide it and still print the real number of retries
+when a grown-up has opened rounds beyond it.
+
+**Counting idle days.** Idle days are *school* days by the learner's own
+calendar: the course enrollment's `schedule` and the household calendar. They
+are counted from the study day (4am boundary) the failure was recorded, with
+that day and today both excluded, so a child always has today. A failure
+recorded on a Saturday is not stale on Monday morning because a weekend went
+by; with weekday enrollment it is held from Thursday. A standalone unit has no
+enrollment schedule, so only the household calendar thins its days.
+
+**Why.** On 2026-09-26 a learner scored 16.67% on a mastery quiz. The failure
+sat at depth 0 and was never retried. The agenda printed TRY AGAIN at the top
+of the subject every school day from 9/29 to 10/02, and he never took it. While
+it was owed the day could not complete, so his games stayed locked behind work
+he was plainly not going to do alone. The idle-days rule is what would have
+caught that. The cap catches the other way the same loop runs forever: retries
+taken and failed, one after another.
+
+What a hold does:
+
+| Surface | Not held | `cap` | `stale` |
+| --- | --- | --- | --- |
+| Planner entry `remediation` | `held: false` | `held: true, reason: 'cap'` | `held: true, reason: 'stale'` |
+| `nextMove` (scan, paper) | `retry` | `teacher` — "a grown-up will help with this one", no token class, not printable | same as `cap` |
+| Self-service panel | Retry button | No button; "Waiting for a grown-up." | same |
+| Agenda obligation | `obligated` | `excused · teacher_hold` when it is the only open item in the subject | same |
+| Result receipt (at settle) | Retry ticket, TRY AGAIN | No ticket; headed A GROWN-UP WILL HELP, "After N retries…" | n/a — a fresh failure is never stale |
+| A retry ticket already in hand | Opens the next round | `OpenRemediation` refuses a child (`reason: remediation_capped`, `school.remediation.capped`) | Still opens: the child came back |
+| The failed sheet fed again with fixed marks | Opens the next round on the same paper | Opens ONE more round (`lane: 'corrected_sheet'`, `school.remediation.corrected-past-cap`); a correction that also fails is a hold | Opens the next round |
+| Phone push (at settle) | 🔁 "retake is on the receipt" | 🙋 "retries used up, needs you for this one" (School needs you) | n/a |
+| Teacher dashboard | — | `attention` item `remediation-cap` (depth, last score) | `attention` item `remediation-stale` (idle school days, last score) |
+| Log | — | `school.remediation.held {reason: 'cap'}` when the result settles | `school.remediation.held {reason: 'stale'}` the first time a live projection sees it each study day |
+
+A pass is never a hold. `PlanProjection` rewrites a passed session to
+`needs_remediation` while the unit's linked card practice is unfinished, so the
+plan keeps gating on it; that rewritten row is marked `practiceRewrittenPass`
+and the hold rules ignore it, even when the session is still at
+`outcome_recorded` (coins awaiting sign-off).
+
+`held` requires the unit's plan status to be `in_progress`. A unit passed on
+another session is `completed` and never held, whatever an older failure says,
+and only the newest open session on a unit is judged.
+
+A stale hold does not refuse the child. It only stops the work from being
+owed, so it can no longer keep the day shut. A child who returns with the
+retry ticket still gets the fresh sheet, and the new session starts the count
+again. A cap hold does refuse.
+
+The stale log has no moment of its own to fire on. A hold forms when a day
+passes with nothing done, and nothing observes that. So `PlanProjection` logs
+it the first time it projects the hold, de-duplicated per session per study
+day in memory. A restart may log the same hold once more that day. The dry-run
+preview projection does not log, so the same hold is not reported twice.
+
+The teacher dashboard reads holds off the plan. For a named past study day
+(`/teacher/day?studyDay=`) it projects as of that day, with evidence up to the
+day's window close and idle days counted to its midpoint, so a past board
+never shows a hold that only formed later.
+
+Holds are derived, never stored, so a rebuilt term grid can re-colour past
+days: a day that used to read obligated (TRY AGAIN owed and not done) may come
+back `excused · teacher_hold` once the rule applies to it. That is the school
+convention for derived history (editing the rules re-colours the past), not a
+data change.
+
+A grown-up is never capped. "Offer another try" on the session page opens the
+next round through the teacher gate (`openedBy`). If that round fails too, the
+unit goes straight back to a hold, so the grown-up stays in the loop until the
+work is passed or settled another way.
+
+### Corrected sheet past the cap
+
+The cap counts fresh sheets. A child who fixes the marks on the paper they
+already hold, using the receipt that told them which rows were wrong, is not
+asking for a fresh sheet, so that correction is graded even when the cap has
+been reached: `RecordCardScanOutcome`'s corrected-sheet lane calls
+`OpenRemediation` with `lane: 'corrected_sheet'`, which allows one round past
+`maxRounds` and stamps `lane` on the new session's `created` event. Only one:
+a correction that fails again forms the hold as usual. The lane's own guards
+still apply past the cap. An identical re-feed is a duplicate, and a row only
+the eraser rule would credit goes to a grown-up's review instead of scoring.
+
+Before this (2026-11-03) a final-round 1/2 corrected to 2/2 was refused
+`remediation_capped`, the 50% stood, and the child sat on a hold.
+
+### Hold push
+
+`CloseSessionOutcome` returns `teacherHold: {retries}` when a result forms a
+cap hold. The scan consumer passes it on the graded push as `held`, and
+`composeSchoolPush` then sends 🙋 `{score} — retries used up, needs you for this
+one` on the School needs you channel, never the 🔁 retake copy: there is no
+retake to point at. The receipt already said a grown-up would help; until this
+change the phone contradicted it.
+
+The hold push and the corrected-sheet lane can both happen to one sheet. A
+final-round failure pushes 🙋, and the child may still fix the marks on that
+paper and pass through the lane. `CloseSessionOutcome` returns
+`lineageSessionId`, the original sheet of the retake chain, and a graded push
+is tagged with it, so the ✅ that follows replaces the 🙋 card, just as any
+retake's result replaces its sheet's earlier 🔁.
+
+### Unreadable card replacement
+
+`ResolveCardScan` refuses a read whose already-graded rows sit shifted against
+the card's last accepted read (`OMR_ALIGNMENT`). A refused read fed again
+unchanged is accepted as the child's real marks. The baseline keeps
+`refused: {reads: [{answers, at}], count}`: every refused read inside
+`OMR_REFEED_CONFIRM_MS`, so a read that repeats after a slip in between still
+confirms (reads A, B, A are the child's A), and `count` is the number of
+distinct reads. A clean scan's fresh baseline clears the list. A teacher's
+held-scan replay never joins it. At `UNSALVABLE_REFUSALS` (3) distinct reads
+the result carries `unsalvable: {cardId, refusals}` and
+`school.scan.card-unsalvable` is logged.
+
+The scan consumer then runs `ReplaceUnreadableCard`. It replaces the card like
+a lost one (`ReplaceLostAnswerSheet`, system-authorized as
+`system:unreadable-card`): live sheets are reprinted on a fresh card, printing
+before the old allocation is superseded, and graded work stays as evidence.
+Then it retires the card. The room hears `scan-card-replaced`, a slip headed
+HERE IS A FRESH SHEET prints, the phone gets ⚠️ "Card couldn't be read —
+unfinished work reprinted on a new card", and
+`school.answer-sheet.unreadable-replaced` is logged.
+
+If nothing live is left to reprint, the card is NOT retired. Retiring it would
+only close its other paths, such as a failed sheet the child could still
+correct. The room hears `scan-card-unreadable`, a slip headed THIS CARD CAN'T BE
+READ asks for a grown-up, and the phone says "Card can't be read any more —
+needs you" (`school.answer-sheet.unreadable-kept`). If the replacement fails
+(a printer fault, or a card holding more than one child's work), the card stays
+in service and the child gets the same ask-a-grown-up slip and push, never the
+"scan again" refusal copy (`school.print.card-replace-failed`). The next feed
+tries the replacement again.
+
+A retired card fed again is answered as retired before any alignment check, so
+its old baseline can never refuse it: `scan-card-retired`, a slip headed THIS
+CARD WAS REPLACED, "Use your new answer card instead."
+
+The hold is excused rather than faulted on purpose. Nothing about the system
+is broken, and a fault would leave the day `indeterminate` and the games
+locked, which is exactly what the hold exists to end. The subject does not
+vanish: the paper still names the held lesson, the teacher dashboard lists it
+and counts it among the subjects that need a grown-up, and it stays listed
+until someone acts.

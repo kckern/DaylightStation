@@ -1,0 +1,157 @@
+// Fling (shell/FlingButton.jsx): "Play on a screen" from the handle and the
+// local transport. Theme tokens only (--media-* / Mantine ramp), 44 px
+// targets, and the panel fits a 390 px phone with its 16 px gutters.
+
+.fling-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--media-text, var(--mantine-color-dark-0));
+  background: transparent;
+  transition: background 120ms ease;
+
+  &:hover { background: var(--mantine-color-dark-5); }
+  &--open { background: var(--mantine-color-dark-5); }
+
+  // On the local transport it sits beside Stop, so it takes that round shape.
+  &--outline {
+    background: var(--mantine-color-dark-5);
+    border: 1px solid var(--media-control-line, var(--mantine-color-dark-2));
+    &:hover, &.fling-button--open { background: var(--mantine-color-dark-4); }
+  }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+}
+
+.fling-panel {
+  width: min(320px, calc(100vw - 32px));
+  padding: var(--mantine-spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+}
+
+.fling-heading {
+  padding: 2px var(--mantine-spacing-xs) 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--media-muted, var(--mantine-color-dark-1));
+}
+
+// Where it starts: two stacked choices, the beginning first and selected.
+.fling-start {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: var(--mantine-spacing-xs);
+  border-bottom: 1px solid var(--media-line, var(--mantine-color-dark-4));
+}
+
+.fling-start-option {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-height: 44px;
+  padding: 0 var(--mantine-spacing-sm);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+  color: var(--media-text, var(--mantine-color-dark-0));
+  background: transparent;
+  border: 1px solid var(--media-control-line, var(--mantine-color-dark-2));
+  border-radius: var(--mantine-radius-md);
+  cursor: pointer;
+
+  // A radio dot, drawn — never a glyph.
+  &::before {
+    content: '';
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--media-control-line, var(--mantine-color-dark-2));
+    box-sizing: border-box;
+  }
+
+  &--on {
+    border-color: var(--mantine-color-amber-5);
+    &::before {
+      border-color: var(--mantine-color-amber-5);
+      background: radial-gradient(circle, var(--mantine-color-amber-5) 0 3.5px, transparent 4px);
+    }
+  }
+
+  &:hover:not([aria-disabled='true']) { background: var(--mantine-color-dark-5); }
+  &[aria-disabled='true'] { cursor: default; opacity: 0.6; }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+}
+
+.fling-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fling-target {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  min-height: 48px;
+  padding: 4px var(--mantine-spacing-sm);
+  font: inherit;
+  text-align: left;
+  color: var(--media-text, var(--mantine-color-dark-0));
+  background: transparent;
+  border: none;
+  border-radius: var(--mantine-radius-md);
+  cursor: pointer;
+
+  &:hover:not([aria-disabled='true']) { background: var(--mantine-color-dark-5); }
+  &[aria-disabled='true'] { cursor: default; }
+  &[aria-disabled='true']:not(.fling-target--pending) { opacity: 0.5; }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: -2px;
+  }
+}
+
+.fling-target-icon {
+  flex-shrink: 0;
+  color: var(--media-muted, var(--mantine-color-dark-1));
+}
+
+.fling-target-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fling-target-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fling-target-sub {
+  font-size: 0.8125rem;
+  color: var(--media-muted, var(--mantine-color-dark-1));
+}
+
+.fling-target--pending .fling-target-sub { color: var(--mantine-color-amber-5); }
+
+.fling-error {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  font-size: 0.875rem;
+  color: var(--mantine-color-red-3);
+  border: 1px solid var(--mantine-color-red-8);
+  border-radius: var(--mantine-radius-md);
+}

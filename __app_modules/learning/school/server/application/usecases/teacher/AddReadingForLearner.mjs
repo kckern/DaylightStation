@@ -8,8 +8,9 @@
  *
  * **The child's three doors, in one call** (`OpenBookShelfItem`'s `where`):
  * `starting` needs nothing, `partway` needs the page they are on, `finished`
- * needs the day they finished. A grown-up adding a book is answering the same
- * question about the same child, so it is answered in the same vocabulary —
+ * takes the day they finished, and the household's study day when none is
+ * sent. A grown-up adding a book is answering the same question about the
+ * same child, so it is answered in the same vocabulary —
  * and in ONE call, because a book that landed on the shelf with its day
  * half-applied would be a record nobody asked for.
  *
@@ -56,7 +57,7 @@ export class AddReadingForLearner {
       // two: a `minutes` reading counts minutes and a `check` one counts days.
       if (progressMode !== 'page') throw new ValidationError('a page belongs to a page-mode reading');
     }
-    if (where === 'finished' && !isDayKey(finishedOn)) {
+    if (where === 'finished' && finishedOn !== null && !isDayKey(finishedOn)) {
       throw new ValidationError(`the finished door needs the day they finished it: ${finishedOn}`);
     }
 
@@ -77,13 +78,19 @@ export class AddReadingForLearner {
 
     const at = this.#context.now();
     const today = this.#context.studyDay() ?? opened.openedOn ?? at.slice(0, 10);
+    // "Finished today" is the common case, and today is the HOUSEHOLD's
+    // study day — a 4am rule a phone's calendar does not know. So a caller
+    // may send no day, and the server supplies it: the study day, else the
+    // day the store opened the reading on (its own household day), and the
+    // UTC date only as the last resort.
+    const finishDay = where === 'finished' && finishedOn === null ? today : finishedOn;
     // THE EVIDENCE FIRST, THEN THE DECISION, exactly as the child's own
     // finished door does it. Interrupted between the two, the shelf
     // under-reports a finished book as still being read — which is fixable;
     // the other order claims a finish with nothing behind it.
     const entry = where === 'starting' ? null : await this.#context.bookLog.appendEntry({
       learnerId, readingId: opened.id, at, source: 'teacher',
-      on: where === 'finished' ? finishedOn : today,
+      on: where === 'finished' ? finishDay : today,
       page: where === 'partway' ? page : null,
       minutes: null,
       // Derived from the opening's key so a retry that got past `openReading`
@@ -98,7 +105,7 @@ export class AddReadingForLearner {
         id: opened.id, isbn, progressMode, pageCount: length, openedOn: opened.openedOn,
         ...(entry ? { on: entry.on } : {}),
         ...(where === 'partway' ? { page } : {}),
-        ...(where === 'finished' ? { status: 'finished', finishedOn } : {}),
+        ...(where === 'finished' ? { status: 'finished', finishedOn: finishDay } : {}),
       },
       reason, toldChild: false,
     });
@@ -107,10 +114,12 @@ export class AddReadingForLearner {
     const reading = await this.#context.bookLog.updateReading({
       learnerId,
       readingId: opened.id,
-      patch: where === 'finished' ? { status: 'finished', finishedOn } : { status: opened.status },
+      patch: where === 'finished' ? { status: 'finished', finishedOn: finishDay } : { status: opened.status },
       revision,
     });
-    this.#context.logger.info?.('school.teacher-reading.opened', { learnerId, readingId: opened.id, isbn, where, by });
+    this.#context.logger.info?.('school.teacher-reading.opened', {
+      learnerId, readingId: opened.id, isbn, where, finishedOn: finishDay, by,
+    });
     return { reading, revision, created: true };
   }
 

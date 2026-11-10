@@ -363,6 +363,67 @@ describe('getByAccessCode', () => {
     expect((await reg.get(record.token)).revokedAt).toBe(DURING);
   });
 
+  /**
+   * `lookupAccessCode` — the same lookup, with the liveness verdict handed back
+   * instead of applied. A child typing yesterday's sheet and a child mistyping
+   * deserve different words (49 refusals in one week, every one "Try again.").
+   */
+  describe('lookupAccessCode', () => {
+    it('hands back an expired code WITH its record, marked not live', async () => {
+      const record = coded('481920');
+      await at(DURING).put(record);
+      expect(await at(AFTER_ROLLOVER).lookupAccessCode('481920')).toEqual({ record, live: false });
+    });
+
+    it('marks a code live while its study day lasts', async () => {
+      const reg = at(DURING);
+      const record = coded('481920');
+      await reg.put(record);
+      expect(await reg.lookupAccessCode('481920')).toEqual({ record, live: true });
+    });
+
+    it('takes an explicit now over its own clock', async () => {
+      const reg = at(DURING);
+      const record = coded('481920');
+      await reg.put(record);
+      expect(await reg.lookupAccessCode('481920', { now: AFTER_ROLLOVER })).toEqual({ record, live: false });
+    });
+
+    it('forgets a revoked code entirely — a cancelled ticket is not an old sheet', async () => {
+      const reg = at(DURING);
+      const record = coded('481920');
+      await reg.put(record);
+      await reg.revoke(record.token, { at: DURING });
+      expect(await at(AFTER_ROLLOVER).lookupAccessCode('481920')).toEqual({ record: null, live: false });
+    });
+
+    it('answers no record for an unknown or malformed code', async () => {
+      const reg = at(DURING);
+      await reg.put(coded('481920'));
+      expect(await reg.lookupAccessCode('000000')).toEqual({ record: null, live: false });
+      expect(await reg.lookupAccessCode('48192a')).toEqual({ record: null, live: false });
+    });
+
+    it('leaves getByAccessCode exactly as it was', async () => {
+      const record = coded('481920');
+      await at(DURING).put(record);
+      expect(await at(AFTER_ROLLOVER).getByAccessCode('481920')).toBe(null);
+    });
+
+    it('the in-memory double answers the same three ways', async () => {
+      const fake = new FakeTokenRegistry({ now: () => AFTER_ROLLOVER });
+      const expired = coded('481920');
+      const revoked = coded('100001', { subject: { learnerId: 'kid2', subject: 'reading' } });
+      await fake.put(expired);
+      await fake.put(revoked);
+      await fake.revoke(revoked.token, { at: DURING });
+      expect(await fake.lookupAccessCode('481920')).toEqual({ record: expired, live: false });
+      expect(await fake.lookupAccessCode('100001')).toEqual({ record: null, live: false });
+      expect(await fake.lookupAccessCode('000000')).toEqual({ record: null, live: false });
+      expect((await fake.lookupAccessCode('481920', { now: DURING })).live).toBe(true);
+    });
+  });
+
   it('leaves no index entry pointing at a revoked record', async () => {
     const reg = at(DURING);
     const record = coded('481920');

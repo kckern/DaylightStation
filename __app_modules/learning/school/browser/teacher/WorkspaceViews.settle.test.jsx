@@ -33,7 +33,7 @@ vi.mock("./teacherWorkspaceApi.js", () => ({
 vi.mock("./TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -126,10 +126,10 @@ describe('SessionInspector — settle this by hand', () => {
 
     await waitFor(() => expect(schoolApi.closeSession).toHaveBeenCalled());
     expect(schoolApi.postTeacherNote).toHaveBeenCalledWith({
-      learnerId: 'user_2', note: 'Marked on paper at the table.', from: 'kckern', pin: null,
+      learnerId: 'user_2', note: 'Marked on paper at the table.', from: 'teacher_1', pin: null,
     });
     expect(schoolApi.gradeSession).toHaveBeenCalledWith('ses_1', {
-      gradedBy: 'kckern', pin: null, settle: true, settledBy: 'kckern',
+      gradedBy: 'teacher_1', pin: null, settle: true, settledBy: 'teacher_1',
     }, 'grant-1');
     expect(schoolApi.closeSession).toHaveBeenCalledWith('ses_1', { pin: null });
     // The inspector re-reads the session, so the state it shows is the one on

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  copyDirectoryOnce, dirExists, listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic,
+  copyDirectoryOnce, dirExists, listDirs, listYamlFiles, loadYaml, resolveYamlPath, saveYamlToPathAtomic,
 } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
@@ -71,6 +71,9 @@ export class YamlCardLadderStore {
       readTuning: (userId, pkg) => view.readTuning(userId, pkg),
       tuningState: (userId, pkg) => view.tuningState(userId, pkg),
       listDays: (userId, pkg) => view.listDays(userId, pkg),
+      listPackages: (userId) => view.listPackages(userId),
+      dictationFileState: (userId, pkg) => view.dictationFileState(userId, pkg),
+      readDictationProgress: (userId, pkg) => view.readDictationProgress(userId, pkg),
     };
   }
   #load(base, parse, empty, context) {
@@ -120,6 +123,32 @@ export class YamlCardLadderStore {
     }, emptyTuning, { learnerId: userId, package: pkg, file: 'tuning', kind: 'tuning' });
     return { ...loaded, file: path.join(dir, 'tuning.yml') };
   }
+  #dictationProgress(userId, pkg) {
+    const dir = this.#dir(userId, pkg);
+    const empty = () => ({ week: null, words: {} });
+    if (!dir) return { state: 'missing', value: empty(), file: null };
+    const loaded = this.#load(path.join(dir, 'dictation-progress'), (raw) => {
+      if (!isMap(raw)) throw new Error('invalid dictation progress shape');
+      return { week: raw.week == null ? null : String(raw.week), words: isMap(raw.words) ? raw.words : {} };
+    }, empty, { learnerId: userId, package: pkg, file: 'dictation-progress', kind: 'dictation-progress' });
+    return { ...loaded, file: path.join(dir, 'dictation-progress.yml') };
+  }
+  // The dictation LIST is not stored per learner: it comes from week tags on
+  // lexicon entries (spec 2026-11-06, Revision 2; `currentDictation`). Only
+  // the learner's progress through it lives here.
+  readDictationProgress(userId, pkg) { return structuredClone(this.#dictationProgress(userId, pkg).value); }
+  /** `{ progress: missing | ok | corrupt }` — a corrupt file reads as empty, so callers must ask before a drill. */
+  dictationFileState(userId, pkg) {
+    return { progress: this.#dictationProgress(userId, pkg).state };
+  }
+  writeDictationProgress(userId, pkg, progress) {
+    const current = this.#dictationProgress(userId, pkg);
+    if (!current.file) throw new InfrastructureError(`cannot resolve card-ladder files for ${userId}`, { code: 'UNKNOWN_USER' });
+    if (current.state === 'corrupt') throw new DomainInvariantError(`card-ladder dictation progress for '${userId}' is corrupt — refusing to overwrite it`, { code: 'CARD_LADDER_DICTATION_CORRUPT' });
+    const next = { week: progress?.week ?? null, words: isMap(progress?.words) ? progress.words : {} };
+    saveYamlToPathAtomic(current.file, next, { noRefs: true });
+    return structuredClone(next);
+  }
   readTuning(userId, pkg) { return structuredClone(this.#tuning(userId, pkg).value); }
   /** `missing | ok | corrupt` — a corrupt tuning.yml reads as empty, so callers that write must ask. */
   tuningState(userId, pkg) { return this.#tuning(userId, pkg).state; }
@@ -139,6 +168,17 @@ export class YamlCardLadderStore {
     };
     saveYamlToPathAtomic(current.file, next, { noRefs: true });
     return structuredClone(next);
+  }
+  /**
+   * Every package this learner has a record for, under either directory name
+   * (a package not yet moved off `word-ladder/` still counts), sorted. Read
+   * only: listing never triggers the one-time move.
+   */
+  listPackages(userId) {
+    if (!this.#configService.getUserProfile?.(userId)) return [];
+    const root = path.join(this.#configService.getUserDir(userId), 'apps', 'school');
+    const names = new Set([...listDirs(path.join(root, STORE_DIR)), ...listDirs(path.join(root, LEGACY_STORE_DIR))]);
+    return [...names].filter((name) => SLUG.test(name)).sort();
   }
   /** The study days that have a day file (days the learner actually opened), oldest first. */
   listDays(userId, pkg) {

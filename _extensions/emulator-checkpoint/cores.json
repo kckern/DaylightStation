@@ -1,0 +1,65 @@
+{
+  "gambatte": {
+    "name": "gambatte",
+    "extensions": [
+      "gb",
+      "gbc",
+      "dmg"
+    ],
+    "makeoptions": {
+      "buildpath": "./",
+      "makescript": "Makefile.libretro",
+      "arguments": []
+    },
+    "options": {},
+    "save": "srm",
+    "license": "COPYING",
+    "repo": "https://github.com/EmulatorJS/gambatte-libretro"
+  },
+  "mgba": {
+    "name": "mgba",
+    "extensions": [
+      "gb",
+      "gbc",
+      "gba"
+    ],
+    "makeoptions": {
+      "buildpath": "./",
+      "makescript": "Makefile.libretro",
+      "arguments": []
+    },
+    "options": {},
+    "save": "srm",
+    "license": "LICENSE",
+    "repo": "https://github.com/EmulatorJS/mgba"
+  },
+  "genesis_plus_gx": {
+    "name": "genesis_plus_gx",
+    "extensions": [
+      "m3u",
+      "mdx",
+      "md",
+      "smd",
+      "gen",
+      "bin",
+      "cue",
+      "iso",
+      "chd",
+      "bms",
+      "sms",
+      "gg",
+      "sg",
+      "68k",
+      "sgd"
+    ],
+    "makeoptions": {
+      "arguments": [],
+      "buildpath": "./",
+      "makescript": "Makefile.libretro"
+    },
+    "options": {},
+    "save": "srm",
+    "license": "LICENSE.txt",
+    "repo": "https://github.com/EmulatorJS/Genesis-Plus-GX"
+  }
+}

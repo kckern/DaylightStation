@@ -10,6 +10,7 @@
 // away (overlay or nav stack). Everything is wrapped defensively: a broken
 // registration degrades to the idle snapshot, never a crash.
 import { createSessionSource } from './SessionSource.js';
+import { getDeviceAudienceStore } from './deviceAudience.js';
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
 
 let _logger;
@@ -39,8 +40,11 @@ function randomSessionId() {
  * @param {object} [opts.controls] — screen session controls (session/screenSessionControls.js).
  *   When given, every snapshot carries `controls` (tech doc §9.14) and the
  *   latest command origin as `meta.origin`, and control changes re-publish.
+ * @param {object} [opts.audience] — who-is-using-it store (deviceAudience.js); defaults
+ *   to the window's shared store. Every snapshot carries the latest declaration as
+ *   `audience` (idle ones too), and a declaration change re-publishes.
  */
-export function createRegistrySessionSource({ registry, ownerId, sessionId, controls = null } = {}) {
+export function createRegistrySessionSource({ registry, ownerId, sessionId, controls = null, audience = getDeviceAudienceStore() } = {}) {
   if (!registry || typeof registry.getCurrent !== 'function') {
     throw new TypeError('createRegistrySessionSource: registry is required');
   }
@@ -84,18 +88,24 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId, cont
   };
 
   const decorate = (snapshot) => {
-    if (!snapshot || !controls) return snapshot;
-    try {
-      const origin = controls.getOrigin?.();
-      return {
-        ...snapshot,
-        controls: controls.toPublished(),
-        meta: { ...snapshot.meta, ...(origin ? { origin } : {}) },
-      };
-    } catch (err) {
-      logger().warn('controls-decorate-failed', { error: String(err?.message ?? err) });
-      return snapshot;
+    if (!snapshot) return snapshot;
+    let out = snapshot;
+    if (controls) {
+      try {
+        const origin = controls.getOrigin?.();
+        out = { ...out, controls: controls.toPublished(), meta: { ...out.meta, ...(origin ? { origin } : {}) } };
+      } catch (err) {
+        logger().warn('controls-decorate-failed', { error: String(err?.message ?? err) });
+      }
     }
+    // Who is using the device (snapshot.audience) — declared by the surface.
+    try {
+      const who = audience?.get?.();
+      if (who) out = { ...out, audience: who };
+    } catch (err) {
+      logger().warn('audience-decorate-failed', { error: String(err?.message ?? err) });
+    }
+    return out;
   };
 
   function getSnapshot() {
@@ -199,9 +209,17 @@ export function createRegistrySessionSource({ registry, ownerId, sessionId, cont
       });
     }
 
+    let audienceUnsub = () => {};
+    if (audience?.subscribe && typeof onChange === 'function') {
+      audienceUnsub = audience.subscribe(() => {
+        try { onChange(); } catch (err) { logger().warn('onChange-threw', { error: String(err?.message ?? err) }); }
+      });
+    }
+
     return () => {
       try { registryUnsub(); } catch { /* ignore */ }
       try { controlsUnsub(); } catch { /* ignore */ }
+      try { audienceUnsub(); } catch { /* ignore */ }
       if (typeof innerUnsub === 'function') {
         try { innerUnsub(); } catch { /* ignore */ }
       }

@@ -33,7 +33,7 @@ describe('Infrastructure Ownership', () => {
       // Reset module cache to get fresh singleton
       vi.resetModules();
       bootstrap = await import('#composition/bootstrap.mjs');
-    }, 30000);
+    }, 120000); // a cold import of the whole bootstrap graph, per test; 30s ran out at load ~20-80 (2026-11-03)
 
     afterEach(() => {
       vi.resetModules();
@@ -105,7 +105,7 @@ describe('Infrastructure Ownership', () => {
     beforeEach(async () => {
       vi.resetModules();
       bootstrap = await import('#composition/bootstrap.mjs');
-    });
+    }, 120000);
 
     afterEach(() => {
       vi.resetModules();

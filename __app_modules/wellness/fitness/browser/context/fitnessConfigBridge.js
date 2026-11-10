@@ -8,6 +8,11 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 const appliedCatalogs = new WeakMap();
 
+export function riderSelectorsFromConfig(config) {
+  if (Array.isArray(config?.fitness?.selectors)) return config.fitness.selectors;
+  return Array.isArray(config?.selectors) ? config.selectors : [];
+}
+
 export function equipmentCatalogIdentity(list = []) {
   const encoded = JSON.stringify(list.map(item => ({
     id: item?.id, type: item?.type,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, waitFor, fireEvent } from "@testing-library/react";
 
 // Stub Mantine components so tests run without MantineProvider
 vi.mock('@mantine/core', () => ({
@@ -32,11 +32,13 @@ vi.mock("../../../../../../__capabilities/screen-host/browser/widgets/registry.j
 }));
 
 import FitnessSessionDetailWidget from "./FitnessSessionDetailWidget.jsx";
+import { publishLiveMemos, resetLiveSessionStore, SESSION_SAVED_EVENT } from "../../lib/liveSessionStore.js";
 
 const ID = '20260528194117';
 let resolveFetch = null;
 
 beforeEach(() => {
+  resetLiveSessionStore();
   sessionsValue = null;
   resolveFetch = null;
   global.fetch = vi.fn().mockResolvedValue({
@@ -93,6 +95,39 @@ describe('FitnessSessionDetailWidget — refresh when its list row changes', () 
     // The rendered detail stays up while it refreshes — no skeleton swap.
     expect(container.querySelector('.session-detail__header')).not.toBeNull();
     resolveFetch({ ok: true, json: async () => ({ sessionId: ID, summary: { voiceMemos: [] }, timeline: {} }) });
+  });
+
+  it('re-fetches when the landing save lands, even though the list row did not change', async () => {
+    sessionsValue = list({ sessionId: ID, voiceMemos: [] });
+    render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new CustomEvent(SESSION_SAVED_EVENT, { detail: { sessionId: 'another' } }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new CustomEvent(SESSION_SAVED_EVENT, { detail: { sessionId: ID } }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows a memo from the live session before the API has it, and only once after', async () => {
+    sessionsValue = list({ sessionId: ID, voiceMemos: [] });
+    const { container } = render(<FitnessSessionDetailWidget sessionId={ID} />);
+    await waitFor(() => expect(container.querySelector('.session-detail__header')).not.toBeNull());
+    expect(container.textContent).not.toContain('Legs were shaking');
+
+    act(() => publishLiveMemos(ID, [{ memoId: 'm1', transcriptClean: 'Legs were shaking' }]));
+    await waitFor(() => expect(container.textContent).toContain('Legs were shaking'));
+
+    // The save arrives with the same words and no memo id, as buildSessionSummary writes it.
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ sessionId: ID, summary: { voiceMemos: [{ transcript: 'Legs were shaking' }] }, timeline: {} })
+    });
+    act(() => { window.dispatchEvent(new CustomEvent(SESSION_SAVED_EVENT, { detail: { sessionId: ID } })); });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(container.textContent.match(/Legs were shaking/g)).toHaveLength(1);
   });
 
   it('re-fetches when the session first appears in a refreshed list (post-session landing)', async () => {
@@ -219,10 +254,12 @@ it('shows saved playback and resets selected evidence when loading another sessi
   try {
     await waitFor(() => expect(container.querySelector('.playback-strip')).not.toBeNull());
     fireEvent.click(container.querySelector('button[aria-label^="Video started"]'));
-    expect(container.querySelector('.playback-strip__detail').textContent).toContain('165 BPM');
+    // The explanation opens in a modal (portalled to the body), not in the chart.
+    const details = () => document.querySelector('[role="dialog"][aria-label="Playback details"]');
+    expect(details().querySelector('[role="status"]').textContent).toContain('165 BPM');
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => detail('20270115080500', false) });
     rerender(<FitnessSessionDetailWidget sessionId="20270115080500" />);
     await waitFor(() => expect(container.querySelector('button[aria-label^="Playback not recorded"]')).not.toBeNull());
-    expect(container.querySelector('.playback-strip__detail').textContent).not.toContain('165 BPM');
+    expect(details()).toBeNull();
   } finally { unmount(); size.mockRestore(); }
 });

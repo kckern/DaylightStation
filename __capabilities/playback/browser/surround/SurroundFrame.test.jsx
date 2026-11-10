@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
-import SurroundFrame from "./SurroundFrame.jsx";
+import SurroundFrame, { surroundTheme } from "./SurroundFrame.jsx";
 import {
   ENTER_MS, ENTER_MEDIA_MS, ENTER_DELAY, ENTER_TOTAL_MS, ENTER_UNCLIP_MS, shrinkFrom,
 } from "./entrance.js";
@@ -23,6 +23,10 @@ const compileSheetOnce = (file) => {
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// The concert-hall look is the media module's opt-in `classical` theme, not the
+// frame's base. Specs that assert the shipped classical composition compile it
+// beside the frame's own (neutral) sheet, in the order the page loads them.
+const CLASSICAL_SCSS = path.join(__dirname, '../../../../__app_modules/media/media/browser/surround/themes/classical.scss');
 
 /**
  * Controllable ResizeObserver. happy-dom ships one, but it never fires, so the
@@ -54,6 +58,7 @@ const CardStub = ({ data }) => <div data-testid="card-stub">{data?.composer?.nam
 
 const DEFINITION = {
   id: 'concert-hall',
+  theme: 'classical',
   regions: {
     right: { width: '20%', module: 'composer-card' },
     bottom: [
@@ -489,11 +494,12 @@ describe('SurroundFrame', () => {
 describe('SurroundFrame — the shipped composition', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = compileSheetOnce(path.join(__dirname, 'SurroundFrame.scss'));
+    const css = compileSheetOnce(path.join(__dirname, 'SurroundFrame.scss')).css
+      + '\n' + compileSheetOnce(CLASSICAL_SCSS).css;
     injected = document.createElement('style');
-    injected.textContent = compiled.css;
+    injected.textContent = css;
     document.head.appendChild(injected);
-    return compiled.css;
+    return css;
   };
 
   beforeEach(() => {
@@ -567,7 +573,8 @@ describe('SurroundFrame — the shipped composition', () => {
   // measure the distortion; this pins the declaration that prevents it.
   it('anchors the video to the top and leaves the slack to the band', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    const stage = css.match(/\.surround-frame__stage \{[^}]*\}/)[0];
+    // The frame's own (unthemed) stage rule — layout, not look.
+    const stage = css.match(/(?<!\) )\.surround-frame__stage \{[^}]*\}/)[0];
     expect(stage).toContain('align-items: flex-start');
     expect(stage).toMatch(/flex: 0 0 auto/);
     expect(stage).toMatch(/padding-top: var\(--placard-inset/);
@@ -631,10 +638,10 @@ describe('SurroundFrame — the shipped composition', () => {
     // The rail rule is shared with the lyric region (one column, two
     // contents), so the selector is a LIST. Matching the whole list is
     // the assertion that survives the next region joining it.
-    const rail = css.match(/\.surround-frame__region--right[^{]*\{[^}]*\}/)[0];
+    const rail = css.match(/:where\(\.surround-frame--theme-classical\) \.surround-frame__region--right[^{]*\{[^}]*\}/)[0];
     expect(rail).toContain('--ink:');
     expect(rail).not.toMatch(/--programme:\s/);
-    expect(css).toMatch(/\.surround-frame \{[^}]*--programme: #efe6d2/);
+    expect(css).toMatch(/\.surround-frame:where\(\.surround-frame--theme-classical\) \{[^}]*--programme: #efe6d2/);
   });
 
   /**
@@ -646,7 +653,8 @@ describe('SurroundFrame — the shipped composition', () => {
    */
   it('publishes one dark mat for every picture in the frame', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    const root = css.match(/\.surround-frame \{[^}]*\}/)[0];
+    // The palette is the classical THEME's (the frame's base is neutral layout).
+    const root = css.match(/\.surround-frame:where\(\.surround-frame--theme-classical\) \{[^}]*\}/)[0];
     const mat = root.match(/--mat: (#[0-9a-f]{6})/i);
     expect(mat, 'the frame declares no --mat').not.toBeNull();
     expect(root).toMatch(/--mat-edge: /);
@@ -662,7 +670,7 @@ describe('SurroundFrame — the shipped composition', () => {
     // The rail rule is shared with the lyric region (one column, two
     // contents), so the selector is a LIST. Matching the whole list is
     // the assertion that survives the next region joining it.
-    const rail = css.match(/\.surround-frame__region--right[^{]*\{[^}]*\}/)[0];
+    const rail = css.match(/:where\(\.surround-frame--theme-classical\) \.surround-frame__region--right[^{]*\{[^}]*\}/)[0];
     expect(rail).toContain('var(--programme-fibre)');
     expect(rail).toContain('multiply');
   });
@@ -753,7 +761,7 @@ describe('SurroundFrame — the shipped composition', () => {
    */
   it('drapes the stage in velvet without touching any other ground', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    const stage = css.match(/\.surround-frame__stage \{[^}]*\}/);
+    const stage = css.match(/:where\(\.surround-frame--theme-classical\) \.surround-frame__stage \{[^}]*\}/);
     expect(stage, 'no stage rule').not.toBeNull();
     expect(stage[0], 'the stage has no fold stripes — it is a flat panel, not a drape')
       .toContain('repeating-linear-gradient');
@@ -877,9 +885,7 @@ describe('SurroundFrame — the shipped composition', () => {
  * of a drape rather than as something the drape hangs in front of.
  */
 describe('SurroundFrame — the curtain’s bleed', () => {
-  const sheet = () => compileSheetOnce(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), 'SurroundFrame.scss'),
-  ).css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+  const sheet = () => compileSheetOnce(CLASSICAL_SCSS).css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
 
   it('lays a veil on the video’s top edge, at a depth derived from the placard’s straddle', () => {
     const css = sheet();
@@ -894,7 +900,7 @@ describe('SurroundFrame — the curtain’s bleed', () => {
     // height (`--placard-straddle`, settled in wave 5 and not this wave's to
     // move), and the veil reaches half to 60% of that overlap. The placard
     // measures 80.3px at every screen in the fleet.
-    const root = css.match(/\.surround-frame \{[^}]*\}/)[0];
+    const root = css.match(/\.surround-frame:where\(\.surround-frame--theme-classical\) \{[^}]*\}/)[0];
     const bleed = Number(root.match(/--curtain-bleed: ([\d.]+)px/)[1]);
     const overlap = 80.3 / 3;
     expect(bleed, 'the veil is shallower than half the placard’s overlap')
@@ -905,7 +911,7 @@ describe('SurroundFrame — the curtain’s bleed', () => {
 
   it('is the SAME cloth as the drape above it, faded out — not a black bar', () => {
     const veil = sheet().match(/\.surround-frame__stage::after \{[^}]*\}/)[0];
-    const stage = sheet().match(/\.surround-frame__stage \{[^}]*\}/)[0];
+    const stage = sheet().match(/:where\(\.surround-frame--theme-classical\) \.surround-frame__stage \{[^}]*\}/)[0];
     // The two horizontal layers are the stage's own, VERBATIM: same fold stripes
     // at the same `vw` phase, same ramp across the same width. That is what
     // makes the join invisible rather than merely soft.
@@ -952,7 +958,8 @@ describe('SurroundFrame — the curtain’s bleed', () => {
     // The aspect-ratio lock is untouched: the media box's own rule still
     // carries it, and the veil is a positioned pseudo-element with no
     // bearing on layout.
-    const media = css.match(/\.surround-frame__media \{[^}]*\}/)[0];
+    const frameCss = compileSheetOnce(path.join(__dirname, 'SurroundFrame.scss')).css.replace(/\s+/g, ' ');
+    const media = frameCss.match(/\.surround-frame__media \{[^}]*\}/)[0];
     expect(media).toContain('aspect-ratio: var(--surround-aspect-ratio, 16/9)');
     expect(veil).toContain('position: absolute');
     // It exists only when the frame is active — the inactive shell has no
@@ -1015,5 +1022,61 @@ describe('SurroundFrame — a module in a slot it was not cut for', () => {
     const logger = makeLogger();
     frameWith({ regions: { bottom: [{ module: 'anywhere' }] } }, logger);
     expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.misplaced')).toHaveLength(0);
+  });
+});
+
+/**
+ * THEMES. The frame's stylesheet is neutral layout; its look is a theme named by
+ * the definition. No theme means `neutral` — the concert hall is the media
+ * module's opt-in `classical` theme, which every classical, station and school
+ * surround names explicitly.
+ *
+ * TO GO RED: drop the theme class from the root, default back to classical, or
+ * let the classical palette, faces or curtain back into the capability's sheet.
+ */
+describe('SurroundFrame — themes', () => {
+  const frame = (definition) => render(
+    <SurroundFrame data={{ ...DATA, definition }} contentId="plex:663134" position={0} duration={3223} playing seeking={false}>
+      <video />
+    </SurroundFrame>,
+  ).container.querySelector('[data-testid="surround-frame"]');
+
+  it('wears neutral when the definition names no theme', () => {
+    const root = frame({ regions: {} });
+    expect(root.className).toContain('surround-frame--theme-neutral');
+    expect(root.className).not.toContain('theme-classical');
+    expect(root.getAttribute('data-surround-theme')).toBe('neutral');
+  });
+
+  it('wears the theme a definition names', () => {
+    const root = frame({ theme: 'content-filter', regions: {} });
+    expect(root.className).toContain('surround-frame--theme-content-filter');
+    expect(root.className).not.toContain('theme-classical');
+    expect(root.getAttribute('data-surround-theme')).toBe('content-filter');
+    expect(frame({ theme: 'classical', regions: {} }).className).toContain('surround-frame--theme-classical');
+  });
+
+  it('never turns an odd value into a class name', () => {
+    expect(surroundTheme({ theme: 'x y"><b' })).toBe('neutral');
+    expect(surroundTheme({ theme: 42 })).toBe('neutral');
+    expect(surroundTheme(null)).toBe('neutral');
+  });
+
+  it('keeps the concert hall out of the capability entirely', () => {
+    const css = compileSheetOnce(path.join(__dirname, 'SurroundFrame.scss'))
+      .css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    expect(css).not.toMatch(/Garamond|Cormorant|--hall-ink|--velvet|var\(--programme|--programme:|--mat:|theme-classical|@font-face/);
+    // The neutral ground is at zero specificity, so a theme's root rule wins
+    // over it whatever order the bundler emits the two sheets in.
+    expect(css).toMatch(/:where\(\.surround-frame\) \{[^}]*background: #000/);
+    const stage = css.match(/\.surround-frame__stage \{[^}]*\}/)[0];
+    expect(stage).not.toMatch(/gradient|background/);
+  });
+
+  it('the classical theme keeps every rule at its old specificity', () => {
+    const css = compileSheetOnce(CLASSICAL_SCSS).css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    expect(css).toMatch(/:where\(\.surround-frame--theme-classical\) \.surround-frame__stage::after \{/);
+    expect(css).toMatch(/\.surround-frame:where\(\.surround-frame--theme-classical\) \{[^}]*font-family: var\(--surround-body\)/);
+    expect(css).toMatch(/@font-face \{ font-family: "EB Garamond"/);
   });
 });

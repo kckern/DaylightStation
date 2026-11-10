@@ -21,6 +21,7 @@ Read-only:
   school ops review [session]
   school ops term <learner> [--term ID] [--grid]
   school ops audit [--since ISO]
+  school ops sweep [--leak-after-hours 2]   (answer-sheet card hygiene, dry run)
   school ops artifact <artifact> --teacher ID [--pin-env NAME] [--view manifest|original|postview] [--output FILE]
   school ops agenda-preview <learner> [--name NAME] [--output agenda.png]
   school ops launch-preview <learner> --subject ID [--continue] [--resolve]
@@ -46,6 +47,13 @@ Dry-run/preview by default; add --apply to write:
   school ops review-resolve <session> --item ID --verdict correct|incorrect|void --teacher ID [--note TEXT] [--apply]
   school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID [--pin-env NAME] [--apply]
   school ops term-rebuild <learner|--all> --teacher ID [--pin-env NAME] [--term ID] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--force] [--apply]
+  school ops sweep --teacher ID [--pin-env NAME] [--leak-after-hours 2] --apply
+
+sweep runs the nightly answer-sheet pass now: card windows a failed print left
+behind are vacated (held for that unit's regeneration, so the card keeps no
+gaps), windows whose unit was passed are written off for a same-size sheet, and
+windows stranded below later sheets on a card the child moved off are reported
+as accepted gaps. Without --apply the server reports and writes nothing.
 
 term prints one verdict per study day since the term began (the status
 board's grid); --grid draws it as weeks. term-rebuild recomputes the cached
@@ -83,7 +91,7 @@ const VALUE_OPTIONS = new Set([
   '--learner', '--reason', '--limit', '--before', '--unit', '--since', '--view',
   '--output', '--name', '--idempotency-key', '--percent', '--correct', '--total',
   '--missed', '--verdicts', '--base-revision', '--base-seq', '--adjustment',
-  '--from-day', '--to-day', '--from', '--to', '--day',
+  '--from-day', '--to-day', '--from', '--to', '--day', '--leak-after-hours',
   '--subject', '--origin', '--path', '--title', '--content', '--location', '--pick', '--at',
   '--item', '--verdict', '--note',
 ]);
@@ -449,6 +457,18 @@ export async function runOps({
       ...captured[0],
       status: { count: after.count, target: after.target, doneToday: after.doneToday, progressLabel: after.progressLabel },
     }, stdout);
+    return 0;
+  }
+  if (command === 'sweep') {
+    const leakAfterHours = optionalNumber(rest, '--leak-after-hours');
+    const body = { dryRun: !apply, ...(leakAfterHours ? { leakAfterHours } : {}) };
+    if (apply) {
+      body.decidedBy = requiredOption(rest, '--teacher', 'sweep --apply requires --teacher');
+      body.pin = pinFrom(rest, env);
+    }
+    print(await requestJson(fetchImpl, base.lifecycle, '/maintenance/answer-sheets/sweep', {
+      method: 'POST', body: JSON.stringify(body),
+    }), stdout);
     return 0;
   }
   if (command === 'audit') {

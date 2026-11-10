@@ -1,4 +1,17 @@
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
+import { createHrSlewGate } from "./hrPlausibility.js";
+
+// Raw ANT+ fields worth keeping on a spike line: they tell a corrupt packet
+// (BeatCount advancing normally) from a beat misdetection.
+const rawHrFields = (rawData) => {
+  if (!rawData || typeof rawData !== 'object') return null;
+  const out = {};
+  for (const [key, value] of Object.entries(rawData)) {
+    if (key === 'ComputedHeartRate' || key === 'BeatCount' || key === 'BeatTime'
+        || key === 'PreviousBeat' || /page/i.test(key)) out[key] = value;
+  }
+  return out;
+};
 
 /**
  * Authoritative ANT+ profile → fitness device type. The strap's broadcast
@@ -14,6 +27,14 @@ const PROFILE_TYPE_MAP = {
   CAD: 'cadence',
   PWR: 'power',
 };
+
+/**
+ * An HR device with no real reading for longer than this reads heartRate null,
+ * even while its packets keep arriving. Straps beat ~4 Hz; a few seconds of no
+ * reading is a strap that is not reading, not a gap between beats.
+ * See __docs/reference/fitness/fitness-system-architecture.md ("No reading: null everywhere")
+ */
+export const DEFAULT_HR_STALE_MS = 5000;
 
 export class Device {
   constructor(data = {}) {
@@ -45,6 +66,12 @@ export class Device {
 
     // Sensor Data
     this.heartRate = Number.isFinite(data.heartRate) ? data.heartRate : null;
+    // Wall-clock of the last REAL heart-rate reading. lastSeen moves on every
+    // packet, including the strap's "no reading" packets, so it cannot say
+    // whether the strap is reading — this can.
+    this.lastHeartRateAt = Number.isFinite(data.lastHeartRateAt)
+      ? data.lastHeartRateAt
+      : (this.heartRate != null ? this.lastSeen : null);
     this.cadence = Number.isFinite(data.cadence) ? data.cadence : null;
     this.power = Number.isFinite(data.power) ? data.power : null;
     this.speed = Number.isFinite(data.speed) ? data.speed : null;
@@ -78,7 +105,15 @@ export class Device {
     if (data.lastSeen) this.lastSeen = data.lastSeen;
     if (data.connectionState) this.connectionState = data.connectionState;
     
-    if (Number.isFinite(data.heartRate)) this.heartRate = data.heartRate;
+    if (Number.isFinite(data.heartRate)) {
+      this.heartRate = data.heartRate;
+      this.lastHeartRateAt = Number.isFinite(data.lastHeartRateAt) ? data.lastHeartRateAt : Date.now();
+    } else if (data.heartRate === null) {
+      // An HR packet without a reading is a real state ("the strap is not
+      // reading"), not "keep the last value". Holding it let a strap that sent
+      // nulls for seven minutes keep earning rings at 144 bpm (2026-10-20).
+      this.heartRate = null;
+    }
     if (Number.isFinite(data.cadence)) this.cadence = data.cadence;
     if (Number.isFinite(data.power)) this.power = data.power;
     if (Number.isFinite(data.speed)) this.speed = data.speed;
@@ -121,6 +156,7 @@ export class Device {
       removalCountdown: this.removalCountdown,
       lastSignificantActivity: this.lastSignificantActivity,
       heartRate: this.heartRate,
+      lastHeartRateAt: this.lastHeartRateAt,
       cadence: this.cadence,
       power: this.power,
       speed: this.speed,
@@ -160,6 +196,10 @@ export class DeviceManager {
     // See ops:docs/_wip/bugs/2026-09-02-fitness-rpm-false-zeros-pause-video-during-cycle-challenge.md
     this.lastPacketAt = 0;
     this._transportStalledSince = null;
+    // A reading that jumps >= 25 bpm inside 2s is held until the next one
+    // decides it (hrPlausibility.createHrSlewGate). Ops: 2026-10-23 single
+    // 204 bpm packets became Fire ceremonies.
+    this._hrSlewGate = createHrSlewGate();
   }
 
   updateDevice(deviceId, profile, rawData) {
@@ -190,6 +230,42 @@ export class DeviceManager {
         normalized.heartRate = rawData.ComputedHeartRate;
         normalized.type = normalized.type || 'heart_rate';
       }
+    }
+    // Slew gate: a held reading reaches nothing — not the device, the user,
+    // the zone store or TreasureBox. The packet is not a "no reading" either;
+    // the device keeps its last accepted value. Logged unthrottled with the
+    // raw packet fields, because a spike between once-a-second log lines is
+    // what made the 2026-10-22 ceremony unprovable.
+    let hrHeld = false;
+    if (Number.isFinite(normalized.heartRate) && normalized.heartRate > 0) {
+      const slew = this._hrSlewGate.evaluate(id, normalized.heartRate, Date.now());
+      const detail = {
+        deviceId: id, hr: slew.hr, heldHr: slew.heldHr, heldAgeMs: slew.heldAgeMs,
+        previousHr: slew.previousHr, previousAgeMs: slew.previousAgeMs,
+        raw: rawHrFields(rawData)
+      };
+      if (slew.verdict === 'suspect') {
+        hrHeld = true;
+        delete normalized.heartRate;
+        getLogger().warn('fitness.hr.spike_held', { ...detail, replacedHr: slew.replacedHr ?? null });
+      } else if (slew.verdict === 'confirmed') {
+        getLogger().info('fitness.hr.spike_confirmed', detail);
+      } else if (slew.verdict === 'rejected') {
+        getLogger().warn('fitness.hr.spike_rejected', detail);
+      }
+    }
+    // A heart-rate packet with no reading (null, missing, out of range) says
+    // the strap has nothing — carry that as an explicit null so the device's
+    // last value is cleared rather than held.
+    const isHrPacket = normalized.type === 'heart_rate'
+      || (!normalized.type && this.devices.get(id)?.type === 'heart_rate');
+    if (isHrPacket && !hrHeld && !Number.isFinite(normalized.heartRate)) {
+      normalized.heartRate = null;
+      // No reading: the strap's last value is no longer a baseline to judge
+      // the next one against (a reconnect is never held for being different).
+      this._hrSlewGate.reset(id);
+    }
+    if (rawData) {
       if (Number.isFinite(rawData.CalculatedCadence)) {
         normalized.cadence = rawData.CalculatedCadence;
         normalized.type = normalized.type || 'cadence';
@@ -207,7 +283,11 @@ export class DeviceManager {
       // Add other mappings as needed
     }
 
-    return this.registerDevice(normalized);
+    const device = this.registerDevice(normalized);
+    // Read (and cleared) by FitnessSession: a held packet carries no reading
+    // for the rider, so it must not be processed as one.
+    if (device) device._hrHeld = hrHeld;
+    return device;
   }
 
   registerDevice(data) {
@@ -237,6 +317,7 @@ export class DeviceManager {
     // Use device ID directly
     const id = deviceId ? String(deviceId) : null;
     if (!id) return false;
+    this._hrSlewGate.reset(id);
     const deleted = this.devices.delete(id);
     if (deleted) this.mutationVersion++;
     return deleted;
@@ -292,7 +373,7 @@ export class DeviceManager {
 
     // Handle legacy signature (timeoutMs) or new config object
     const timeouts = typeof config === 'number' 
-      ? { inactive: config, remove: config * 3, rpmZero: 1200, transportStallMs: 1200 }
+      ? { inactive: config, remove: config * 3, rpmZero: 1200, transportStallMs: 1200, hrStaleMs: DEFAULT_HR_STALE_MS }
       : {
           inactive: config.inactive || 60000,
           remove: config.remove || 180000,
@@ -300,7 +381,8 @@ export class DeviceManager {
           // MUST match rpmZero above: if the stall gate lags the zero gate, a
           // prune tick landing between them zeroes the meter and the hold branch
           // then preserves that zero for the rest of the stall.
-          transportStallMs: config.transportStallMs || 1200
+          transportStallMs: config.transportStallMs || 1200,
+          hrStaleMs: config.hrStaleMs || DEFAULT_HR_STALE_MS
         };
 
     // Pipeline liveness gate. If NO device has delivered recently the link is
@@ -341,8 +423,29 @@ export class DeviceManager {
         }
       }
 
+      // 0b. HR liveness: a strap that keeps sending packets but no reading
+      // must not keep its last reading. Held while the whole pipeline is
+      // stalled — then nobody's silence says anything about their strap.
+      if (device.type === 'heart_rate' && device.heartRate != null && !transportStalled) {
+        const lastReadingAt = Number.isFinite(device.lastHeartRateAt) ? device.lastHeartRateAt : device.lastSeen;
+        if (now - lastReadingAt > timeouts.hrStaleMs) {
+          device.heartRate = null;
+          mutated = true;
+        }
+      }
+
       // 1. Check for Inactivity (Connection Loss OR Stopped Pedaling)
+      // Deliberately NOT gated on transportStalled (unlike rpmZero/hrStale):
+      // a lone rider's strap dying IS a pipeline stall — "no packets from any
+      // device" cannot tell a link blip from the last strap going silent — and
+      // that strap must go inactive at the timeout with no held reading
+      // (DeviceManager.hrLiveness / FitnessSession.hrReadingLoss tests).
       if (timeSinceActivity > timeouts.inactive) {
+        if (device.heartRate != null) {
+          // An inactive device has no reading — never a held one.
+          device.heartRate = null;
+          mutated = true;
+        }
         if (!device.inactiveSince) {
           device.inactiveSince = now;
           device.removalAt = now + (timeouts.remove - timeouts.inactive);

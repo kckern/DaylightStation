@@ -49,6 +49,7 @@ import PanelFrame from "./PanelFrame.jsx";
 import PeriodSelect from "./PeriodSelect.jsx";
 import { currentPeriodId } from "./currentPeriodId.js";
 import { teacherDate, humanDateTime } from "../teacherDates.js";
+import { useActorName } from "../useActorName.js";
 
 const IconCheck = () => (
   <svg viewBox="0 0 16 16" className="teacher-health__check" aria-hidden="true" focusable="false">
@@ -57,6 +58,7 @@ const IconCheck = () => (
 );
 
 export default function SystemHealthPanel({ kids = [] }) {
+  const actorName = useActorName();
   // --- Section 1: quiz bank health --------------------------------------
   const banks = usePanelFetch(() => schoolApi.bankHealth(), { panel: 'system-health-banks' });
   const failedBanks = banks.data?.failed ?? [];
@@ -160,7 +162,7 @@ export default function SystemHealthPanel({ kids = [] }) {
                   <li key={version}>
                     <span>{record?.period?.label ?? periodLabel} · v{version}</span>
                     <span>
-                      Closed by {record?.closedBy ?? 'unknown'}
+                      Closed by {actorName(record?.closedBy)}
                       {record?.closedAt ? ` · ${teacherDate(record.closedAt)}` : ''}
                     </span>
                   </li>

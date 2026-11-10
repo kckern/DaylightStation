@@ -1,10 +1,12 @@
 import React from 'react';
 import "./components.scss";
 
-export function GameButton({ tone = 'default', className = '', busy = false, children, disabled, ...props }) {
+export function GameButton({ tone = 'default', className = '', busy = false, children, disabled, autoFocus, ...props }) {
   return (
     <button
       type="button"
+      autoFocus={autoFocus}
+      data-remote-autofocus={autoFocus || undefined}
       className={`gp-button gp-button--${tone}${className ? ` ${className}` : ''}`}
       aria-busy={busy || undefined}
       disabled={disabled || busy}

@@ -20,6 +20,8 @@ import { TemporaryImagePrintGateway } from "../../../../personal/gratitude/serve
 import { YamlRecapSnapshotStore } from "../adapters/persistence/YamlRecapSnapshotStore.mjs";
 import { YamlFitnessSchoolAttemptStore } from "../adapters/persistence/YamlFitnessSchoolAttemptStore.mjs";
 import { FitnessSchoolPublications } from "../adapters/eventbus/FitnessSchoolPublications.mjs";
+import { FitnessCoinsRelay } from "../adapters/eventbus/FitnessCoinsRelay.mjs";
+import { FitnessSessionPublications } from "../adapters/eventbus/FitnessSessionPublications.mjs";
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
 import { createFitnessRouter } from "../api/fitness.mjs";
 import { ContentQueryService } from "../../../../../__capabilities/content-catalog/server/application/ContentQueryService.mjs";
@@ -44,6 +46,7 @@ import { GenerateSessionTimelapse } from "../application/usecases/GenerateSessio
 import { LogStrengthRun } from "../application/usecases/LogStrengthRun.mjs";
 import { PrepareWorkoutRun } from "../application/usecases/PrepareWorkoutRun.mjs";
 import { QuerySessions } from "../application/usecases/QuerySessions.mjs";
+import { QueryEpisodeHistory } from "../application/usecases/QueryEpisodeHistory.mjs";
 import { WorkoutCatalogService } from "../application/services/WorkoutCatalogService.mjs";
 import { FitnessContentService } from "../application/services/FitnessContentService.mjs";
 import { FitnessUserHydrator } from "../application/services/FitnessUserHydrator.mjs";
@@ -55,6 +58,8 @@ import { FitnessVoiceMemoService } from "../application/services/FitnessVoiceMem
 import { VoiceMemoRetryWorker } from "../application/services/VoiceMemoRetryWorker.mjs";
 import { FitnessSessionOperations } from "../application/services/FitnessSessionOperations.mjs";
 import { GarageHumanActivityService } from "../application/services/GarageHumanActivityService.mjs";
+import { PresenceGateService } from "../application/services/PresenceGateService.mjs";
+import { GarageSpeakerHealthService } from "../application/services/GarageSpeakerHealthService.mjs";
 import { CycleRaceApiService } from "../application/services/CycleRaceApiService.mjs";
 import { GetFitnessMenuMusic } from "../application/usecases/GetFitnessMenuMusic.mjs";
 import { PrintFitnessReceipt } from "../application/usecases/PrintFitnessReceipt.mjs";
@@ -62,7 +67,7 @@ import { SaveDebugVoiceMemo } from "../application/usecases/SaveDebugVoiceMemo.m
 import { ManageAccess } from "../application/usecases/ManageAccess.mjs";
 import { RecapSweep } from "../application/usecases/RecapSweep.mjs";
 import { TrashRetentionSweep } from "../application/usecases/TrashRetentionSweep.mjs";
-import { FitnessProgressClassifier } from "../domain/index.mjs";
+import { createWatchCompletionRules } from "#shared/contracts/media/watchCompletion.mjs";
 import { TimelapseFrameMapper } from "../domain/services/TimelapseFrameMapper.mjs";
 import { makeDeviceColorResolver } from "../domain/strapColors.mjs";
 import { createTimelapseFrameRenderer } from "../rendering/TimelapseFrameRenderer.mjs";
@@ -207,7 +212,10 @@ export function createFitnessApiRouter(config) {
     frameRenderer: createTimelapseFrameRenderer(timelapseConfig || {}),
     artifactStore: new FilesystemTimelapseArtifactStore({
       mediaDir: configService.getMediaDir(),
-      videoEncoder: new FfmpegVideoAdapter({ logger }),
+      // A 3000-frame recap encodes in ~100s on a quiet host; the adapter's 120s
+      // default timed out under load and each hourly retry re-rendered every
+      // frame on the main thread (10 attempts / 7.5h for one 10-16 session).
+      videoEncoder: new FfmpegVideoAdapter({ logger, timeoutMs: 15 * 60_000 }),
       logger,
     }),
     posterProvider: plexPosterProvider.getPoster.bind(plexPosterProvider),
@@ -257,6 +265,10 @@ export function createFitnessApiRouter(config) {
   const querySessions = new QuerySessions({
     sessionService: fitnessServices.sessionService,
     sessionGroupingService: fitnessServices.sessionGroupingService,
+    logger
+  });
+  const queryEpisodeHistory = new QueryEpisodeHistory({
+    sessionService: fitnessServices.sessionService,
     logger
   });
   const manageAccess = new ManageAccess({
@@ -328,6 +340,7 @@ export function createFitnessApiRouter(config) {
   const fitnessHardwareService = new FitnessHardwareService({
     zoneLedController: fitnessServices.ambientLedController,
     danceLightingController: fitnessServices.danceLightingController,
+    ambienceController: fitnessServices.ambienceController,
     equipmentFanController: fitnessServices.equipmentFanController,
   });
   const fitnessWebhookService = new FitnessWebhookService({
@@ -378,6 +391,7 @@ export function createFitnessApiRouter(config) {
     memos: voiceMemoOperations,
     logger,
   });
+  const fitnessSessionPublications = new FitnessSessionPublications({ eventBus });
   const emergencyOperations = new EmergencyLockdownService({
     access: emergencyAccessService,
     trigger: triggerEmergencyLockdown,
@@ -385,14 +399,17 @@ export function createFitnessApiRouter(config) {
     state: getLockdownState,
     sessions: fitnessServices.sessionService,
     timelapse: generateSessionTimelapse,
+    publications: fitnessSessionPublications,
     logger,
   });
+  new FitnessCoinsRelay({ eventBus, logger }).start();
   const fitnessSessionOperations = new FitnessSessionOperations({
     sessions: fitnessServices.sessionService,
     grouping: fitnessServices.sessionGroupingService,
     timelapse: generateSessionTimelapse,
     renderReceipt: createReceiptCanvas,
     config: fitnessConfigService,
+    publications: fitnessSessionPublications,
     onSessionsChanged: (change) => {
       suggestionsSnapshot.invalidate(`session-${change?.operation ?? 'changed'}`);
       return onSessionsChanged?.(change);
@@ -401,6 +418,7 @@ export function createFitnessApiRouter(config) {
   });
   const cycleRaceApi = new CycleRaceApiService({ races: fitnessServices.cycleRaceService, config: fitnessConfigService });
 
+  const garageSpeakerLogger = logger?.child?.({ app: 'fitness', module: 'garage-speaker' }) ?? logger;
   const fitnessRouter = createFitnessRouter({
     sessionService: fitnessServices.sessionService,
     fitnessSessionOperations,
@@ -408,16 +426,34 @@ export function createFitnessApiRouter(config) {
     cycleRaceApi,
     skylineGliderCourses: fitnessServices.skylineGliderCourseCatalog,
     skylineGliderRuns: fitnessServices.skylineGliderRunService,
+    skylineGliderProgress: fitnessServices.skylineGliderProgressService,
     generateSessionTimelapse,
     sessionGroupingService: fitnessServices.sessionGroupingService,
     sessionLockService,
     liveSessionAuthority,
     simulationService,
     querySessions,
+    queryEpisodeHistory,
     manageAccess,
     isScreenshotValidationError: (error) => error?.name === 'ScreenshotValidationError',
     fitnessHardwareService,
     garageHumanActivity: new GarageHumanActivityService({ gateway: garageHumanActivityGateway, logger }),
+    presenceGate: new PresenceGateService({ gateway: garageHumanActivityGateway, loadConfig: () => fitnessConfig || {}, logger }),
+    garageSpeakerHealth: new GarageSpeakerHealthService({
+      logger: garageSpeakerLogger,
+      liveSessionAuthority,
+      // Same recipient rule as the Strava sync-health push: head of household's
+      // HA notify service, through the HA gateway the garage already uses.
+      sendPush: async ({ title, message, data }) => {
+        const recipient = configService?.getHeadOfHousehold?.();
+        const notifyService = recipient ? userService?.getProfile?.(recipient)?.identities?.homeassistant?.notify_service : null;
+        if (!garageHumanActivityGateway?.callService || !notifyService) {
+          garageSpeakerLogger?.warn?.('fitness.garage_speaker.no_push_target', { recipient: recipient || null });
+          return;
+        }
+        await garageHumanActivityGateway.callService('notify', notifyService, { title, message, data });
+      },
+    }),
     voiceMemoOperations,
     screenshotService,
     fitnessConfigService,
@@ -476,7 +512,7 @@ export function createFitnessPlayableModule({
   logger = console,
 } = {}) {
   const fitnessConfigService = new FitnessConfigService({
-    configProjection: new FitnessConfigProjection({ configService }),
+    configProjection: new FitnessConfigProjection({ configService, logger }),
     logger,
   });
   const fitnessContentSource = fitnessConfig?.content_source || 'plex';
@@ -491,9 +527,13 @@ export function createFitnessPlayableModule({
     })
     : null;
   const fitnessPlayableService = new FitnessPlayableService({
-    fitnessConfigService,
     contentCatalog: fitnessContentCatalog,
-    createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
+    // Show checkmarks use the same per-library rule as play/log's completedAt
+    // (household media config `watch_completion`), re-read per judgement.
+    completionRules: createWatchCompletionRules({
+      readConfig: () => configService?.getHouseholdAppConfig?.(null, 'media')?.watch_completion,
+      logger,
+    }),
     logger,
   });
 

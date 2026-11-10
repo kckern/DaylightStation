@@ -317,6 +317,98 @@ scan rows themselves are on record in
 `records/assessments/omr/<reader>/<date>.yml`; a row missing there is a
 bubble missing on paper, not a grading fault.
 
+## A slip says a grown-up is needed for a double-marked row
+
+A row with several marks that neither the neighbour-bleed rule nor the eraser
+rule can settle is held as `ambiguous`: a review entry plus a notice slip.
+Check what the scan already did before reaching for the paper:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.print.scan-bleed-resolved" AND _time:2h'
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.print.scan-ambiguous-scored" AND _time:2h'
+```
+
+- `school.print.scan-bleed-resolved`: a row was settled because the rows beside
+  it explained the extra marks. Nothing to do; if the child says the graded
+  letter is wrong, the raw marks are in `given`, and `bleed`/`resolvedLetter` (or `ambiguous: true` for fallback-scored rows) are stored on the verdict-sheet entry and the attempt's `provenance` (known failure: a true answer
+  equal to a neighbour's letter plus a stray mark resolves to the stray).
+- `school.print.scan-ambiguous-scored`: `scan.ambiguousFallback` is
+  `incorrect`, so the row was scored wrong with `ambiguous: true` and no slip
+  or review entry exists. To get slips and review back set it to `review`
+  (restart; config is boot-cached).
+- Neither event and a slip printed: the row is genuinely undecidable and waits
+  in Admin review. Settle it there, or have the child erase and scan again.
+
+Related knobs (`scan.leniencyRowsPerCredit`, `scan.ambiguousFallback`) are in
+`__docs/reference/school/print-documents.md` §5.
+
+## Maintenance: the nightly stale sweep
+
+The `school-stale-sweep` job (`data/system/config/jobs.yml`, 02:20,
+`olderThanDays: 14`) runs `SchoolMaintenanceExecutor` →
+`MarkSessionAbandoned.sweepUntouched`. It abandons work that was issued and
+never came back (pre-submission states, no attempt ids) and leaves anything
+a child handed in for a person. Events it writes say
+`decidedBy: system:stale-sweep`.
+
+"Untouched" means **no event of any kind for 14 days**, measured from the
+session's `updatedAt`. Every reprint appends an event and resets that clock,
+so a sheet that keeps reprinting is never swept. A stuck item like that needs
+a grown-up to retire it: `school ops abandon <session> --learner ID --reason
+TEXT --teacher ID --apply` to close it, or `school ops completion-credit
+<learner> --unit ID --reason TEXT --teacher ID --apply` when the work was in
+fact done.
+
+The sweep walks the **School learner directory** — the same roster the panel
+and book scans use. `createSchoolLifecycleRuntime` passes it to
+`createSchoolLifecycle` as `learnerDirectory`; without it, `listStale` sees
+no learners and the job closes nothing while an untouched sheet keeps
+reprinting. That happened from the DDD remediation until 2026-10-19.
+
+To check it, read the nightly summary in the log store:
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.session.sweep-complete" AND _time:7d' -d 'limit=10'
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="school.session.swept" AND _time:7d' -d 'limit=50'
+```
+
+`swept` and `skipped` both at 0 every night while a known-stale session
+exists means the roster is empty: check that `school.yml` lists the learner
+(or that their profile's birthyear makes them a child) before suspecting the
+sweep itself.
+
+## Coin ceremony sound
+
+The pop-up on the Portal board when a child's coins rise plays a short cue. The
+file lives on the media mount, never in the repo: `school/_ux/coin.mp3` under the
+media root, beside the other School UI cues.
+
+- **Replace it:** overwrite that one file with another mp3. The browser fetches
+  it on the next play, but a Portal that already played it may serve its cached
+  copy until reloaded.
+- **Use a different file:** set `school.coinCeremony.sound` in the Portal's
+  screen YAML to a media-relative path.
+- **Silence it:** `school.coinCeremony.sound: none` (or `''`). The pop-up still
+  shows. `enabled: false` removes the pop-up too. `volume` (0 to 1) scales it
+  under the screen's master volume.
+- **No sound at all?** The panel must have been touched or keyed once since the
+  page loaded (kiosk browsers refuse sound before a gesture), the master volume
+  must not be muted, and the file must exist. Check the log store for
+  `school.coin_cue.play` (it played), `.rejected` (the browser refused),
+  `.muted` (master volume was 0), `.threw` (setting up the audio element
+  failed), `.unlock_rejected` (the first-touch prime was refused; a
+  `NotAllowedError` waits for the next touch, anything else, such as a missing
+  file, does not retry until reload).
+- **Coin cell does not open the bank?** Look for `economy.bank.door-opened`
+  (the open was accepted) or `economy.bank.door-open-failed` (refused, with the
+  status; the panel shows the refusal under "Whose bank?").
+- Screen YAML is read when the Portal loads, so reload the Portal after editing.
+  Details: `__docs/reference/school/agenda-and-completion.md`, "The coin ceremony".
+
 ## The single most common "it's broken" false alarm
 
 `school.yml` (`data/household/school/school.yml`) is **boot-cached**. Editing

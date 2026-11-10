@@ -11,7 +11,9 @@
 // §4.11 and §6.7. This module must not import shapes.mjs or sessionControls.mjs
 // (sessionControls imports it).
 
-export const PLAYER_FEATURE_ACTIONS = Object.freeze(['set-tracks', 'close-brief', 'music-behind']);
+import { normalizePlaybackQualityChange } from './playbackQuality.mjs';
+
+export const PLAYER_FEATURE_ACTIONS = Object.freeze(['set-tracks', 'set-quality', 'close-brief', 'music-behind']);
 export const MUSIC_BEHIND_OPS = Object.freeze(['start', 'play', 'pause', 'next', 'prev', 'stop']);
 export const MUSIC_BEHIND_STATES = Object.freeze(['loading', 'playing', 'paused']);
 export const BRIEF_KINDS = Object.freeze(['camera', 'clip']);
@@ -42,6 +44,9 @@ export function validatePlayerFeatureParams(params) {
   const p = params ?? {};
   if (!isPlayerFeatureAction(p.action)) return null;
   const errors = [];
+  if (p.action === 'set-quality') {
+    try { normalizePlaybackQualityChange(p); } catch (error) { errors.push(error.message); }
+  }
   if (p.action === 'set-tracks') {
     const hasAudio = p.audio !== undefined;
     const hasSubtitle = p.subtitle !== undefined;

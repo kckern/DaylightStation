@@ -211,6 +211,8 @@ public final class FkbRest {
                 o.put("appVersion", info.opt("appVersionName"));
                 o.put("batteryLevel", info.opt("batteryLevel"));
                 o.put("wifiSignal", info.opt("wifiSignalLevel"));
+                // FKB still reports the BSSID when Android redacts it from us (WifiLink, p35).
+                o.put("bssid", info.opt("BSSID"));
             } catch (Exception parse) {
                 // Non-JSON (e.g. a login page) means the password is wrong/missing.
                 o.put("authOk", false);

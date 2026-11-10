@@ -2,7 +2,7 @@ import express from 'express';
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { sendLocalFileResource } from '#system/http/streamFile.mjs';
 
-const STATUS = { definition_not_found: 404, experience_not_found: 404, session_not_found: 404, revision_conflict: 409, idempotency_conflict: 409, session_terminal: 409, authorization_denied: 403, journal_corrupt: 500, invalid_contract: 400, invalid_definition: 422, invalid_session_setup: 422, experience_manifest_invalid: 422, surface_required: 422, surface_incompatible: 422, authority_incompatible: 422, rule_rejected: 422, illegal_command: 422, invalid_wager: 422, invalid_dice_notation: 422, no_selection_candidates: 422, verifier_required: 422 };
+const STATUS = { definition_not_found: 404, experience_not_found: 404, session_not_found: 404, revision_conflict: 409, idempotency_conflict: 409, session_terminal: 409, authorization_denied: 403, journal_corrupt: 500, invalid_contract: 400, invalid_definition: 422, invalid_session_setup: 422, experience_manifest_invalid: 422, surface_required: 422, surface_incompatible: 422, authority_incompatible: 422, rule_rejected: 422, illegal_command: 422, invalid_wager: 422, buzzers_not_ready: 422, invalid_buzzer_report: 422, invalid_dice_notation: 422, no_selection_candidates: 422, verifier_required: 422 };
 
 const HOST_ROLES = new Set(['sysadmin', 'parent', 'gaming-host']);
 
@@ -27,7 +27,7 @@ function requireHost(req) {
   return viewer;
 }
 
-export function createGamingRouter({ gamingApplication, gamingDiagnostics = null, gamingMediaService = null, broadcastEvent = null, logger = null, sendFileResource = sendLocalFileResource }) {
+export function createGamingRouter({ gamingApplication, gamingDiagnostics = null, gamingSessionRestarts = null, gamingMediaService = null, broadcastEvent = null, logger = null, sendFileResource = sendLocalFileResource }) {
   if (!gamingApplication) throw new Error('createGamingRouter: gamingApplication required');
   const router = express.Router();
   const applicationFor = (sessionId) => {
@@ -48,7 +48,7 @@ export function createGamingRouter({ gamingApplication, gamingDiagnostics = null
     try { await operation(req, res); }
     catch (error) {
       const status = Number(error.status) || STATUS[error.code] || 500;
-      logger?.[status >= 500 ? 'error' : 'warn']?.('gaming.api.error', { code: error.code || 'internal_error', status, message: error.message });
+      logger?.[status >= 500 ? 'error' : 'warn']?.(error.code === 'buzzers_not_ready' ? 'jeopardy.start-refused' : 'gaming.api.error', { code: error.code || 'internal_error', status, message: error.message });
       res.status(status).json({ error: error.code || 'internal_error', message: status >= 500 ? 'Gaming request failed' : error.message, ...(error.details ? { details: error.details } : {}) });
     }
   };
@@ -106,12 +106,26 @@ export function createGamingRouter({ gamingApplication, gamingDiagnostics = null
   }));
   router.delete('/diagnostics/sessions/:sessionId', handle((req, res) => res.json(diagnostics().deleteSession(req.params.sessionId, requireHost(req)))));
 
-  router.get('/sessions/:sessionId', handle(async (req, res) => res.json(await applicationFor(req.params.sessionId).resumeSession(req.params.sessionId, requireViewer(req)))));
+  router.get('/sessions/:sessionId', handle(async (req, res) => {
+    const sessionId = req.params.sessionId;
+    const session = await applicationFor(sessionId).resumeSession(sessionId, requireViewer(req));
+    const replacementSessionId = await gamingSessionRestarts?.replacementFor(sessionId);
+    return res.json({ ...session, ...(replacementSessionId ? { replacementSessionId } : {}) });
+  }));
   router.post('/sessions/:sessionId/commands', handle(async (req, res) => {
     if (!req.body?.command_id) return res.status(400).json({ error: 'command_envelope_required' });
     const result = await applicationFor(req.params.sessionId).dispatch(req.params.sessionId, req.body, requireViewer(req));
     broadcastSessionUpdate(result);
     res.json(result);
+  }));
+  router.post('/sessions/:sessionId/restart', handle(async (req, res) => {
+    const viewer = requireHost(req);
+    const sessionId = req.params.sessionId;
+    const application = applicationFor(sessionId);
+    if (!gamingSessionRestarts) throw new Error('Gaming session restart service is required');
+    const result = await gamingSessionRestarts.restart(sessionId, application, viewer);
+    broadcastEvent?.({ topic: 'gaming', kind: 'session-restarted', sessionId, replacementSessionId: result.header.session_id });
+    return res.status(201).json(result);
   }));
   router.post('/sessions/:sessionId/close', handle(async (req, res) => { const viewer = requireHost(req); return res.json(await applicationFor(req.params.sessionId).closeSession(req.params.sessionId, req.body || {}, viewer)); }));
   router.get('/sessions/:sessionId/effects', handle(async (req, res) => { requireHost(req); return res.json({ effects: await applicationFor(req.params.sessionId).listEffects(req.params.sessionId) }); }));

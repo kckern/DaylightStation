@@ -641,3 +641,50 @@ describe('AddCombobox — an inline pick is optimistic', () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 });
+
+// The live app supplies a session so in-flight work survives input remounts.
+import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
+import { FoodOperationStatus } from '../operations/FoodOperationStatus.jsx';
+import { useHealthOperations } from '../operations/HealthOperationsProvider.jsx';
+function PendingSentences() {
+ const context=useHealthOperations();
+ return [...context.snapshot.operations.values()].map(operation=><FoodOperationStatus key={operation.id} operation={operation}/>);
+}
+it('submits successive sentences independently without clearing newer input on failure', async()=>{
+ const tasks=[];
+ apiMock.mockImplementation((path,body)=>path.endsWith('nutrition/input') ? new Promise((resolve,reject)=>tasks.push({body,resolve,reject})) : Promise.resolve({items:[]}));
+ r(<HealthOperationsProvider userId="u"><AddCombobox inline bucketId="morning" date="2026-10-25" label="Breakfast" onDone={()=>{}}/><PendingSentences/></HealthOperationsProvider>);
+ const input=screen.getByRole('combobox'); input.focus();
+ fireEvent.change(input,{target:{value:'two eggs'}}); fireEvent.keyDown(input,{key:'Enter'});
+ expect(input.value).toBe(''); expect(input.readOnly).toBe(false);
+ fireEvent.change(input,{target:{value:'toast'}}); fireEvent.keyDown(input,{key:'Enter'});
+ expect(tasks).toHaveLength(2);
+ expect(tasks[0].body.operationId).not.toBe(tasks[1].body.operationId);
+ fireEvent.change(input,{target:{value:'coffee'}});
+ await act(async()=>tasks[0].reject(new Error('offline')));
+ expect(input.value).toBe('coffee'); expect(screen.getByText(/offline/)).toBeTruthy();
+ await act(async()=>tasks[1].resolve({committed:true,items:[{uuid:'toast',version:1,date:'2026-10-25'}]}));
+ expect(input.value).toBe('coffee');
+ fireEvent.click(screen.getByRole('button',{name:'Retry'}));
+ expect(tasks[2].body).toEqual(tasks[0].body);
+ await act(async()=>tasks[2].resolve({committed:true,items:[{uuid:'egg',version:1,date:'2026-10-25'}]}));
+});
+
+it('does not restore failed quick-add text over the next submitted sentence',async()=>{
+ let rejectPick;
+ apiMock.mockImplementation((path)=>{
+  if(path.includes('suggest'))return Promise.resolve(SUGGEST);
+  if(path.endsWith('quickadd'))return new Promise((_resolve,reject)=>{rejectPick=reject;});
+  if(path.endsWith('nutrition/input'))return new Promise(()=>{});
+  return Promise.resolve({items:[]});
+ });
+ r(<HealthOperationsProvider userId="u"><AddCombobox inline bucketId="morning" date="2026-10-25" label="Breakfast" onDone={()=>{}}/><PendingSentences/></HealthOperationsProvider>);
+ const input=screen.getByRole('combobox');input.focus();
+ await waitFor(()=>screen.getByText('Chicken breast'));
+ fireEvent.change(input,{target:{value:'chick'}});
+ fireEvent.click(screen.getByText('Chicken breast'));
+ fireEvent.change(input,{target:{value:'toast'}});fireEvent.keyDown(input,{key:'Enter'});
+ expect(input.value).toBe('');
+ await act(async()=>rejectPick(new Error('pick offline')));
+ expect(input.value).toBe('');
+});

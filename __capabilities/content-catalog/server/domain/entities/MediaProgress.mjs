@@ -1,6 +1,7 @@
 // __backend/src/domains/content/entities/MediaProgress.mjs
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
+import { isWatchComplete } from '#shared/contracts/media/watchCompletion.mjs';
 
 /**
  * @typedef {Object} MediaProgressProps
@@ -38,6 +39,10 @@ export class MediaProgress {
     this.lastPlayed = props.lastPlayed ?? null;
     this.watchTime = props.watchTime ?? 0;
     this.completedAt = props.completedAt ?? null;
+    // A deliberate skip: the viewer moved past this item unfinished. Counts as
+    // done for next-up choices until the item is played again.
+    this.skipped = props.skipped === true;
+    this.skippedAt = props.skippedAt ?? null;
     this._storedPercent = props.percent ?? null;
     // Undefined (not {}) means "this writer did not touch spots".
     this.spots = props.spots === undefined ? undefined : { ...(props.spots || {}) };
@@ -67,11 +72,13 @@ export class MediaProgress {
   }
 
   /**
-   * Check if item is considered fully watched (>= 90%)
+   * Check if item is considered fully watched — the default (movie-mode) rule in
+   * shared/contracts/media/watchCompletion.mjs. Library overrides apply where the
+   * namespace is known (RecordPlaybackProgress, Fitness show views).
    * @returns {boolean}
    */
   isWatched() {
-    return this.percent >= 90;
+    return isWatchComplete({ percent: this.percent, playhead: this.playhead, duration: this.duration });
   }
 
   /**

@@ -1,7 +1,7 @@
+import { automatedAssignmentDeps, canonicalCoachingResult, assignmentEvidence } from './budgetContext.mjs';
 // __backend/src/3_applications/agents/health-coach/assignments/WeeklyDigest.mjs
 
 import { Assignment } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/Assignment.mjs";
-import { OutputValidator } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/OutputValidator.mjs";
 import { coachingMessageSchema } from "../schemas/coachingMessage.mjs";
 import { goalsWithRange, localDate } from "./budgetContext.mjs";
 
@@ -18,12 +18,16 @@ import { goalsWithRange, localDate } from "./budgetContext.mjs";
  * 5. ACT - set last_weekly_digest in working memory (7-day TTL)
  *
  * Note: Message delivery (send_channel_message) is NOT done here.
- * It is handled by HealthCoachAgent.runAssignment() post-execute.
+ * This legacy assignment returns a validated payload to its caller; scheduled notifications use CoachingOrchestrator.
  */
 export class WeeklyDigest extends Assignment {
   static id = 'weekly-digest';
   static description = 'Weekly nutrition and health trend summary';
   static schedule = '0 19 * * 0';
+
+  async execute(deps) {
+    return super.execute(automatedAssignmentDeps(deps));
+  }
 
   /**
    * Gather phase — programmatic tool calls (no LLM).
@@ -61,7 +65,7 @@ export class WeeklyDigest extends Assignment {
     });
 
     // Pattern signal detection (F-105.2) — when the 7-day window shows a
-    // sustained calorie surplus or protein shortfall against goals, query
+    // sustained over-plan intake or protein shortfall against goals, query
     // find_similar_period for a historical analog. Mirrors MorningBrief's
     // approach but uses 7-day averages (the weekly cadence) rather than
     // trailing streaks.
@@ -74,11 +78,11 @@ export class WeeklyDigest extends Assignment {
       logger,
     });
 
-    return { reconciliation, weight, weightLongTerm, nutritionHistory, goals, similarPeriod };
+    return { userId, reconciliation, weight, weightLongTerm, nutritionHistory, goals, similarPeriod };
   }
 
   /**
-   * Inspect the 7-day nutrition window for a sustained calorie surplus
+   * Inspect the 7-day nutrition window for a sustained over-plan intake
    * (avg > calories_max) or protein shortfall (avg < protein_min). When
    * detected, build a pattern signature from the same window plus the
    * 14-day weight history and query find_similar_period.
@@ -93,32 +97,18 @@ export class WeeklyDigest extends Assignment {
         : [];
     if (days.length === 0) return null;
 
+    const evidence = assignmentEvidence({ nutritionHistory: { days } });
+    const trusted = evidence.days.filter(day => day.assessment.availability === 'available' && day.assessment.finished && day.assessment.trustworthy);
     const proteinMin = goals?.goals?.nutrition?.protein_min;
-    const avg = (arr) => (arr.length === 0 ? null : arr.reduce((a, b) => a + b, 0) / arr.length);
-
-    // Budget days (they carry a range) are averaged over COMPLETE days only —
-    // an under-logged day is missing data, not a light day — and judged as the
-    // Today bar judges them: net against each day's own top. Plain history rows
-    // keep the configured calories_max.
-    const budgetRows = days.some(d => d?.range);
-    const trusted = budgetRows ? days.filter(d => d?.range && d.complete) : days;
-    const calMax = budgetRows ? avg(trusted.map(d => d.range.top)) : goals?.goals?.nutrition?.calories_max;
-    // Surplus is judged on NET (as the bar judges it); the similar-period
-    // signature keeps FOOD calories, the dimension SimilarPeriodFinder and the
-    // morning brief use.
-    const judgedCalories = trusted.map(d => (budgetRows ? d?.net : d?.calories)).filter(v => typeof v === 'number');
-    const numericCalories = trusted.map(d => d?.calories).filter(v => typeof v === 'number');
-    const numericProtein = trusted.map(d => d?.protein).filter(v => typeof v === 'number');
-    const trackedDays = trusted.filter(d => typeof d?.calories === 'number' && d.calories > 0).length;
-
-    const judgedAvg = avg(judgedCalories);
-    const calorieAvg = avg(numericCalories);
+    const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    const calorieAvg = evidence.period.averages.food;
+    const numericProtein = trusted.filter(day => day.assessment.proteinKnown && typeof day.protein === 'number').map(day => day.protein);
     const proteinAvg = avg(numericProtein);
-
-    const calorieSurplus = typeof calMax === 'number' && judgedAvg !== null && judgedAvg > calMax;
+    const trackedDays = trusted.length;
+    // Each food value is matched to its own exercise-adjusted boundary.
+    const overPlan = evidence.period.averages.planDelta != null && evidence.period.averages.planDelta > 0;
     const proteinShortfall = typeof proteinMin === 'number' && proteinAvg !== null && proteinAvg < proteinMin;
-
-    if (!calorieSurplus && !proteinShortfall) return null;
+    if (!overPlan && !proteinShortfall) return null;
 
     const tool = tools.find(t => t.name === 'find_similar_period');
     if (!tool) {
@@ -144,7 +134,7 @@ export class WeeklyDigest extends Assignment {
 
     logger?.info?.('weekly_digest.similar_period.queried', {
       userId,
-      calorieSurplus,
+      overPlan,
       proteinShortfall,
       signatureDimensions: Object.keys(signature),
     });
@@ -205,22 +195,13 @@ export class WeeklyDigest extends Assignment {
       );
     }
 
+    sections.push(`\n## Assessed Budget Evidence\n${JSON.stringify(assignmentEvidence(gathered), null, 2)}`);
     sections.push(`\n## Instructions
-Produce a JSON object matching the coachingMessageSchema:
-- should_send: true (weekly digest always sends unless there is genuinely no data)
-- text: the message body (HTML formatted, under 300 words)
-- parse_mode: "HTML"
-
-Writing rules:
-- Frame this week in context of the 6-12 week trend. Did this week contribute to or detract from goals?
-- This week's data: avg tracked calories, protein avg vs target, missed tracking days (0 tracked calories), weight change over 7 days
-- Long-term context (from mature days 14+ days old): tracking accuracy trend over months, implied intake averages, weight trajectory over 6-12 weeks
-- Show how this week compares: "This week you averaged X tracked calories vs Y/week over the past 2 months"
-- Do NOT reference implied intake or tracking accuracy for any day less than 14 days old
-- Keep text under 300 words
-- Never use cheerleading language ("great job", "awesome", "well done") — just data and trend observations
-- Reference specific numbers from the gathered data
-- Return raw JSON only, no markdown code fences`);
+Produce raw JSON matching coachingMessageSchema, including should_send and text.
+Use matched trustworthy finished dates for weekly calorie comparisons and disclose coverage and current configured goals.
+Plan comparisons use exercise-adjusted food boundaries; surplus means above estimated maintenance. Unknown protein is not zero.
+Keep recent and long-term weight and reconciliation context separate. Do NOT reference implied intake or tracking accuracy for any day less than 14 days old.
+Delivered budget facts are rendered deterministically from shared observations.`);
 
     return sections.join('\n');
   }
@@ -241,25 +222,12 @@ Writing rules:
    * @throws {Error} If output is not valid JSON or fails schema validation
    */
   async validate(raw, gathered, logger) {
-    let parsed;
-    try {
-      parsed = typeof raw.output === 'string' ? JSON.parse(raw.output) : raw.output;
-    } catch {
-      throw new Error('WeeklyDigest output is not valid JSON');
-    }
-
-    const result = OutputValidator.validate(parsed, coachingMessageSchema);
-    if (!result.valid) {
-      logger?.warn?.('validate.schema_failure', { errors: result.errors });
-      throw new Error(`WeeklyDigest validation failed: ${JSON.stringify(result.errors)}`);
-    }
-
-    return result.data;
+    return canonicalCoachingResult(raw, gathered, 'weekly-digest', logger);
   }
 
   /**
    * Act phase — record that the weekly digest ran in working memory with a 7-day TTL.
-   * Message delivery is handled by HealthCoachAgent after execute() returns.
+   * This assignment returns the validated payload without sending a message.
    */
   async act(validated, { memory, userId, logger }) {
     memory.set('last_weekly_digest', new Date().toISOString(), { ttl: 7 * 24 * 60 * 60 * 1000 });

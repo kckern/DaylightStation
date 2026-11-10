@@ -1,4 +1,7 @@
+import path from 'node:path';
 import { deepMerge } from "#system/utils/deepMerge.mjs";
+import yaml from 'js-yaml';
+import { fileSignature, listSubdirectories, listYamlFiles, readTextFromPathAsync } from "#system/utils/FileIO.mjs";
 import { IPianoGameRepository } from "../../application/game-platform/ports/IPianoGameRepository.mjs";
 
 const DEFAULT_CONNECT_FOUR_CONFIG = Object.freeze({
@@ -16,11 +19,53 @@ const DEFAULT_CHECKERS_CONFIG = Object.freeze({
   default_level: 1,
 });
 
+/**
+ * Where a game's finished record can live. Per-user files under
+ * `users/{id}/apps/{game}/games/`, and the household archive under
+ * `household/gaming/log/{dir}/{YYYY-MM-DD}/`. Chess writes only the archive
+ * now; `pianochess` is the archive's name before the chess move.
+ */
+const ARCHIVE_DIRS = Object.freeze({
+  chess: ['gaming/log/chess', 'gaming/log/pianochess'],
+  checkers: ['gaming/log/checkers'],
+  'connect-four': ['gaming/log/connect-four'],
+});
+const DAY_DIR = /^\d{4}-\d{2}-\d{2}$/;
+
+function msOf(value) {
+  const ms = Date.parse(value ?? '');
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * The few fields a finished-game reader needs. Kept instead of the record so
+ * the parse cache does not hold every move of ~2000 games in memory.
+ */
+function summarizeGame(gameId, record, fallbackUser) {
+  if (!record || typeof record !== 'object') return null;
+  const rawLevel = record.opponent?.level ?? record.level;
+  const level = Number.isFinite(Number(rawLevel)) && rawLevel !== null && rawLevel !== '' ? Number(rawLevel) : null;
+  return {
+    gameId,
+    userId: record.user_id ?? fallbackUser ?? null,
+    result: record.result ?? null,
+    completed: record.completed === true,
+    endedBy: record.ended_by ?? null,
+    level,
+    atMs: msOf(record.ended_at) ?? msOf(record.created_at) ?? msOf(record.archived_at),
+    playedOn: DAY_DIR.test(record.played_on || '') ? record.played_on : null,
+  };
+}
+
 function stamp(record, field) {
   return { ...record, [field]: new Date().toISOString() };
 }
 
 export class DataServicePianoGameRepository extends IPianoGameRepository {
+  // file -> { signature, summary }. Game files are written once, so after the
+  // first full read a listing costs one stat per file.
+  #summaries = new Map();
+
   constructor({ dataService, configService }) {
     super();
     this.dataService = dataService;
@@ -112,6 +157,55 @@ export class DataServicePianoGameRepository extends IPianoGameRepository {
     return this.dataService.household.write(
       `gaming/log/${gameId}/${day}/${userSegment}-${Date.now()}.yml`, stamp(record, 'archived_at'),
     );
+  }
+
+  // Async on purpose: a cold read is ~2000 files with full move lists (about
+  // 2s of parsing). Awaiting each read hands the event loop back between
+  // files instead of holding it for the whole sweep.
+  async #summaryOf(gameId, file, fallbackUser) {
+    const signature = fileSignature(file);
+    const cached = this.#summaries.get(file);
+    if (signature && cached?.signature === signature) return cached.summary;
+    let summary = null;
+    try {
+      summary = summarizeGame(gameId, yaml.load(await readTextFromPathAsync(file)), fallbackUser);
+    } catch {
+      summary = null; // a torn or hand-mangled file is not a game
+    }
+    if (signature) this.#summaries.set(file, { signature, summary });
+    return summary;
+  }
+
+  /**
+   * Every game these players have on file — per-user records plus the
+   * household archive — as `{gameId, userId, result, completed, endedBy,
+   * level, atMs, playedOn}`. The same game can appear twice (per-user file and
+   * archive); a caller that asks "first time" does not care, one that counts
+   * games must. `level` is the opponent level as the game stores it (chess
+   * zero-based, the others one-based).
+   */
+  async listGameSummaries(gameId, userIds = []) {
+    const wanted = new Set(userIds.map(String));
+    const out = [];
+    for (const userId of wanted) {
+      const dir = this.dataService.user.resolveDir(`apps/${gameId}/games`, userId);
+      for (const name of listYamlFiles(dir, { stripExtension: false })) {
+        const summary = await this.#summaryOf(gameId, path.join(dir, name), userId);
+        if (summary) out.push({ ...summary, userId: summary.userId ?? userId });
+      }
+    }
+    for (const archive of ARCHIVE_DIRS[gameId] || []) {
+      let root;
+      try { root = this.dataService.household.resolveDir(archive); } catch { continue; }
+      for (const day of listSubdirectories(root).filter((d) => DAY_DIR.test(d))) {
+        const dir = path.join(root, day);
+        for (const name of listYamlFiles(dir, { stripExtension: false })) {
+          const summary = await this.#summaryOf(gameId, path.join(dir, name), null);
+          if (summary && wanted.has(String(summary.userId))) out.push({ ...summary, playedOn: summary.playedOn ?? day });
+        }
+      }
+    }
+    return out;
   }
 
   readRivalry(gameId, userId) {

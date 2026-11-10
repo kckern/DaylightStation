@@ -129,7 +129,7 @@ beforeEach(() => {
     users: [], currentUser: null, pickerOpen: false,
     openPicker: vi.fn(), closePicker: vi.fn(), pickUser: vi.fn(),
   };
-  Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true });
+  Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true, via: undefined });
   launcherArgs = null;
   inactivityArgs = null;
   gameProps = null;
@@ -234,6 +234,24 @@ describe('PianoVisualizer game launcher', () => {
 
     expect(queryByTestId('game-stub')).toBeNull();
     expect(container.querySelector('.waterfall-container')).toBeTruthy();
+    expect(launcherState.exitGame).toHaveBeenCalledWith('school-locked');
+  });
+
+  // The early pass (school economy slice 1) opens ONE game on the tablet. The
+  // office screen has no relock and no consume, so a pass read here would be
+  // an unmetered back door: a pass-only unlock is still a school lock.
+  it('ignores an early pass: no game keys, and a running game is exited', () => {
+    launcherUserState = {
+      ...launcherUserState,
+      users: [{ id: 'kid1', name: 'Kid One' }], currentUser: 'kid1', identityStale: false,
+    };
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: true, via: 'pass' });
+    launcherState = { ...launcherState, isOpen: true, activeGameId: 'tetris' };
+    const { queryByTestId, container } = render(<PianoVisualizer />);
+
+    expect(queryByTestId('game-stub')).toBeNull();
+    expect(container.querySelectorAll('.nl-key')).toHaveLength(0);
+    expect(launcherArgs.selectionPaused).toBe(true);
     expect(launcherState.exitGame).toHaveBeenCalledWith('school-locked');
   });
 

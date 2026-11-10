@@ -11,6 +11,7 @@ let files = {};
 vi.mock('../../../../../__backend/src/0_system/utils/FileIO.mjs', () => ({
   loadYaml: (p) => (Object.prototype.hasOwnProperty.call(files, p) ? files[p] : null),
   saveYaml: (p, data) => { files[p] = data; },
+  saveYamlToPathAtomic: (p, data) => { files[p.replace(/\.yml$/, '')] = data; },
   listYamlFiles: () => [],
   deleteYaml: () => false,
   ensureDir: vi.fn(),

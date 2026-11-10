@@ -98,12 +98,12 @@ describe('FitnessUsers pressure-mat composition', () => {
     } };
     rerender(<FitnessUsersList />);
     await waitFor(() => expect(screen.getByRole('button', { name: /step mat:/i })).toBeTruthy());
-    expect(container.querySelector('.step-mat-list-item')).toBeTruthy();
+    expect(container.querySelector('.fitness-devices-pinned .step-mat-list-item')).toBeTruthy();
+    expect(container.querySelector('.fitness-devices .step-mat-list-item')).toBeNull();
     testState.context = { ...testState.context, pressureMatActivities: {} };
     rerender(<FitnessUsersList />);
-    // Finish the leave transition in jsdom, which has no browser animation clock.
-    await waitFor(() => expect(container.querySelector('.step-mat-list-item')?.style.opacity).toBe('0'));
-    fireEvent.transitionEnd(container.querySelector('.step-mat-list-item'));
+    // Step mats are pinned below the scrolling rider list (outside FlipMove),
+    // so they leave at once rather than through a FLIP transition.
     await waitFor(() => expect(screen.queryByRole('button', { name: /step mat:/i })).toBeNull());
     expect(errors.mock.calls.flat().join(' ')).not.toMatch(/stateless|cannot be given refs/i);
   });

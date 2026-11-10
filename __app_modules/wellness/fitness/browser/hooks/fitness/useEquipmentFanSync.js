@@ -1,3 +1,4 @@
+import { committedZoneId } from '../../lib/committedZone.js';
 /**
  * useEquipmentFanSync - pushes live RPM + HR-zone state to the backend so the
  * GarageFanAdapter can decide whether to fire equipment fans. Fire-and-forget;
@@ -22,7 +23,7 @@ function rpmMap(rpmDevices) {
 
 function zonesPayload(roster) {
   return (Array.isArray(roster) ? roster : []).map((z) => ({
-    zoneId: z.rawZoneId || z.zoneId || null,
+    zoneId: committedZoneId(z),
     isActive: z.isActive !== false
   }));
 }

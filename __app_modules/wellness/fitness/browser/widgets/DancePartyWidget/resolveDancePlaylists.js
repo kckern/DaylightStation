@@ -35,3 +35,30 @@ export function resolveDancePlaylists(dancePartyConfig) {
 }
 
 export default resolveDancePlaylists;
+
+/**
+ * Resolve an `ambience` nav item target ({ id, video, playlist, ha_script })
+ * into the same shape the widget plays from. `video` is a single item that
+ * loops (not a playlist); ids may be 'plex:123' or bare numbers.
+ */
+export function resolveAmbience(ambience) {
+  const toId = (raw) => {
+    const n = Number(String(raw ?? '').replace(/^[a-z]+:/i, ''));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const audioPlaylistId = toId(ambience?.playlist);
+  const videoId = toId(ambience?.video);
+  return {
+    configured: ambience != null,
+    audioPlaylistId,
+    videoPlaylistId: videoId,
+    shuffle: ambience?.shuffle !== false,
+    hasVideo: videoId != null,
+    // video_audio: true keeps the video's own soundtrack (e.g. a crackling
+    // fire) under the music, with its own volume bar. Dance Party videos are
+    // visual only and stay muted.
+    videoAudio: ambience?.video_audio === true,
+    videoShader: typeof ambience?.video_shader === 'string' && ambience.video_shader ? ambience.video_shader : 'focused',
+    strobeBpm: null
+  };
+}

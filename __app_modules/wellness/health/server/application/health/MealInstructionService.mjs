@@ -67,7 +67,7 @@ Instruction: ${JSON.stringify(input.text || 'Suggest a grouping')}`;
       if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== 'string' || !scopeIds.has(id))) throw fail('Proposed food is outside the allowed meal scope');
       return [...new Set(ids)];
     };
-    const expectedVersions = Object.fromEntries(meal.map(row => [idOf(row), row.version ?? 1]));
+    const expectedVersions = input.expectedVersions || Object.fromEntries(meal.map(row => [idOf(row), row.version ?? 1]));
     const validateGroup = group => {
       if (!group || typeof group.name !== 'string' || !group.name.trim() || group.name.length > 250) throw fail('A group needs a name');
       const selectedIds = validateIds(group.targetIds);

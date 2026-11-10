@@ -1,6 +1,10 @@
 import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from "../../domain/services/mediaSpots.mjs";
+import { isWatchComplete, DEFAULT_RULE } from "#shared/contracts/media/watchCompletion.mjs";
+import { observeHeartbeat } from "../../domain/services/skipInference.mjs";
 
 const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
+// Screens tracked for skip inference; unknown ids can arrive, so the map is capped.
+const MAX_SKIP_TRACKED_SCREENS = 200;
 
 /**
  * Record a playback heartbeat and coordinate its application-level side effects.
@@ -9,6 +13,9 @@ const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
  * this use case never interprets them as filesystem paths.
  */
 export class RecordPlaybackProgress {
+  // spotDevice -> skipInference reducer state (last heartbeat + pending skips).
+  #skipStateByScreen = new Map();
+
   constructor({
     contentCatalog,
     mediaProgressMemory = null,
@@ -26,6 +33,9 @@ export class RecordPlaybackProgress {
     // (deviceId) => boolean. Composition answers from devices.yml for fleet
     // ids; absent = every well-formed id is accepted.
     isKnownSpotDevice = null,
+    // { ruleFor(namespace, duration) } from household media config (watch_completion).
+    // Absent = the default movie-mode rule for every library.
+    completionRules = null,
     createMediaProgress = (props) => props,
     nowTimestamp,
     nowEpoch = () => Date.now(),
@@ -42,11 +52,42 @@ export class RecordPlaybackProgress {
     this.reportPlaybackSession = reportPlaybackSession;
     this.playLedger = playLedger;
     this.isKnownSpotDevice = isKnownSpotDevice;
+    this.completionRules = completionRules;
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
     this.nowEpoch = nowEpoch;
     this.nowIso = nowIso;
     this.logger = logger;
+  }
+
+  /**
+   * Feed this screen's heartbeat to the skip reducer and record any skip it
+   * confirms on the skipped item. Advisory: a failure never reaches play/log.
+   */
+  async #inferSkips(screenId, beat) {
+    const { state, skips } = observeHeartbeat(this.#skipStateByScreen.get(screenId) ?? null, beat);
+    this.#skipStateByScreen.delete(screenId);
+    this.#skipStateByScreen.set(screenId, state);
+    if (this.#skipStateByScreen.size > MAX_SKIP_TRACKED_SCREENS) {
+      this.#skipStateByScreen.delete(this.#skipStateByScreen.keys().next().value);
+    }
+    for (const skip of skips) {
+      try {
+        const previous = await this.mediaProgressMemory.findProgress(skip.assetId, skip.storagePath);
+        if (!previous || previous.skipped || previous.completedAt) continue;
+        await this.mediaProgressMemory.saveProgress(this.createMediaProgress({
+          ...previous,
+          percent: previous.percent,
+          skipped: true,
+          skippedAt: this.nowIso(),
+        }), skip.storagePath);
+        this.logger.info?.('play.skip.inferred', {
+          assetId: skip.assetId, deviceId: screenId, percent: previous.percent, namespace: skip.storagePath,
+        });
+      } catch (error) {
+        this.logger.warn?.('play.skip.record_failed', { assetId: skip.assetId, error: error.message });
+      }
+    }
   }
 
   async execute({
@@ -110,8 +151,29 @@ export class RecordPlaybackProgress {
     const statePercent = estimatedDuration > 0
       ? Math.round((normalizedSeconds / estimatedDuration) * 100)
       : 0;
+    // The library's completion rule (watch_completion in household media config)
+    // decides both the completedAt stamp and the media-server report below.
+    const rule = this.completionRules?.ruleFor?.(progressNamespace, estimatedDuration) ?? DEFAULT_RULE;
+    const watchComplete = naturalEnd === true || isWatchComplete({
+      percent: statePercent, playhead: normalizedSeconds, duration: estimatedDuration, watchTime: newWatchTime,
+    }, rule);
+    const remainingSec = estimatedDuration > 0 ? estimatedDuration - normalizedSeconds : null;
+    // Heartbeats on an already-finished item decide nothing; skip their line.
+    const stillOpen = !existingState?.completedAt || status === 'completed' || naturalEnd === true;
+    if (stillOpen && statePercent >= rule.minPercent) {
+      this.logger.debug?.('play.log.completion_judged', {
+        assetId: compoundId, namespace: progressNamespace, rule: rule.source ?? 'default', tier: rule.tier ?? 0,
+        percent: statePercent, remainingSec, complete: watchComplete,
+      });
+    }
+    if (status === 'completed' && !watchComplete) {
+      this.logger.info?.('play.log.completed_claim_rejected', {
+        assetId: compoundId, namespace: progressNamespace, rule: rule.source ?? 'default',
+        percent: statePercent, remainingSec,
+      });
+    }
     const completedAt = existingState?.completedAt
-      || (statePercent >= 90 ? this.nowTimestamp() : null);
+      || (watchComplete ? this.nowTimestamp() : null);
     const lastPlayed = this.nowTimestamp();
     const spotFields = spotDevice
       ? {
@@ -138,6 +200,15 @@ export class RecordPlaybackProgress {
 
     if (this.mediaProgressMemory) {
       await this.mediaProgressMemory.saveProgress(newState, progressNamespace);
+      // Writing a fresh state drops a stored skip: the viewer came back to it.
+      if (existingState?.skipped) {
+        this.logger.info?.('play.skip.cleared', { assetId: compoundId, deviceId: spotDevice });
+      }
+      if (spotDevice) {
+        await this.#inferSkips(spotDevice, {
+          assetId: compoundId, storagePath: progressNamespace, complete: watchComplete, atEpoch: this.nowEpoch(),
+        });
+      }
     }
 
     if (this.progressSyncSources?.has(type) && this.progressSyncService) {
@@ -162,7 +233,10 @@ export class RecordPlaybackProgress {
           contentId: compoundId,
           positionMs: Math.round(normalizedSeconds * 1000),
           durationMs: Math.round(estimatedDuration * 1000),
-          completed: naturalEnd === true || status === 'completed',
+          // A client's `completed` status is a claim, not a verdict: it marks
+          // the item watched on the media server and clears its resume point,
+          // so it must pass the library's rule, as completedAt does.
+          completed: naturalEnd === true || (status === 'completed' && watchComplete),
           at: this.nowEpoch(),
         });
       } catch (error) {

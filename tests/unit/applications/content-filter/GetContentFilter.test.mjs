@@ -19,6 +19,7 @@ describe('GetContentFilter', () => {
         edl: { cues: [{ id: 'c1' }] },
         profile: { name: 'family' },
         override: { source: 'manual' },
+        certification: { level: 'none', requires: 'machine', ready: false },
       });
     expect(contentFilterRepository.getEdl).toHaveBeenCalledWith('349222');
     expect(contentFilterRepository.getProfile).toHaveBeenCalledWith('family');
@@ -37,5 +38,45 @@ describe('GetContentFilter', () => {
       .resolves.toEqual({ edl: null, profile: null, override: null });
     expect(contentFilterRepository.getProfile).not.toHaveBeenCalled();
     expect(contentFilterRepository.getOverride).not.toHaveBeenCalled();
+  });
+
+  it('serves the tag set\'s refined EDL in place of the raw one when it exists', async () => {
+    const raw = { sourceRef: { workId: 12, tagSetId: 345 }, cues: [{ id: 'c1', in: 100 }] };
+    const refined = { timebase: { clock: 'vidangel' }, cues: [{ id: 'c1', in: 100.123, precision: 'ms' }] };
+    const contentFilterRepository = {
+      getEdl: vi.fn().mockResolvedValue(raw),
+      getRefinedEdl: vi.fn().mockResolvedValue(refined),
+      getProfile: vi.fn().mockResolvedValue({ name: 'family' }),
+      getOverride: vi.fn().mockResolvedValue(null),
+    };
+    const out = await new GetContentFilter({ contentFilterRepository }).execute({ ratingKey: '40417', profileName: 'family' });
+    expect(out.edl).toBe(refined);
+    expect(contentFilterRepository.getRefinedEdl).toHaveBeenCalledWith({ workId: 12, tagSetId: 345 });
+  });
+
+  it('falls back to the raw EDL when the tag set has no refined EDL', async () => {
+    const raw = { sourceRef: { workId: 12, tagSetId: 345 }, cues: [] };
+    const contentFilterRepository = {
+      getEdl: vi.fn().mockResolvedValue(raw),
+      getRefinedEdl: vi.fn().mockResolvedValue(null),
+      getProfile: vi.fn().mockResolvedValue(null),
+      getOverride: vi.fn().mockResolvedValue(null),
+    };
+    const out = await new GetContentFilter({ contentFilterRepository }).execute({ ratingKey: '40417', profileName: 'family' });
+    expect(out.edl).toBe(raw);
+  });
+
+  it('reports readiness against the profile requirement', async () => {
+    const refined = { certification: { level: 'machine' }, cues: [] };
+    const repo = (profile) => ({
+      getEdl: vi.fn().mockResolvedValue({ sourceRef: { workId: 1, tagSetId: 2 }, cues: [] }),
+      getRefinedEdl: vi.fn().mockResolvedValue(refined),
+      getProfile: vi.fn().mockResolvedValue(profile),
+      getOverride: vi.fn().mockResolvedValue(null),
+    });
+    const run = (profile) => new GetContentFilter({ contentFilterRepository: repo(profile) }).execute({ ratingKey: '1', profileName: 'x' });
+    expect((await run({})).certification).toEqual({ level: 'machine', requires: 'machine', ready: true });
+    expect((await run({ requiresCertification: 'parent' })).certification.ready).toBe(false);
+    expect((await run({ requiresCertification: 'none' })).certification.ready).toBe(true);
   });
 });

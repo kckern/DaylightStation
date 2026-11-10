@@ -1,59 +1,29 @@
 /**
- * SurroundFrame — the darkened auditorium with a lit programme beside the stage.
+ * SurroundFrame — the frame's LAYOUT, and nothing else.
  *
- * Palette and type come from __docs/reference/player/surround/design.md; the tokens
- * are declared here, on the frame root, so every module can read them with
- * `var(--hall-ink)` and still carry a literal fallback when rendered standalone.
+ * This sheet is neutral on purpose. It lays out [ main (stage + footer) | rail ],
+ * locks the media box to its aspect ratio, sizes the footer to the measured
+ * video, and runs the entrance and the lyric slide. It owns geometry, z-order,
+ * motion and the structural tokens (`_tokens.scss`: the band's radius, the label
+ * floor). It owns no look.
  *
- * Layout: [ main (stage + footer) | rail ].
- * The stage letterboxes the 16:9 media box on ink; the footer is JS-sized to the
- * media box's measured width so it reads as that video's timeline.
+ * THE LOOK IS A THEME, and every theme is opt-in. A definition names one
+ * (`definition.theme`); the frame carries it on the root as
+ * `surround-frame--theme-<name>` + `data-surround-theme`. A definition that names
+ * none gets `neutral` — the plain dark room below. Themes live with the hosts
+ * that own them, never here:
+ *   - `classical` (the concert hall: velvet curtain, programme stock, mahogany,
+ *     the Garamonds) — `__app_modules/media/media/browser/surround/themes/`,
+ *     loaded by the media module's `surround-classical.mjs` entry.
+ *   - `content-filter` — `__app_modules/media/media/browser/content-filter/preview/contentFilterTheme.scss`.
+ *
+ * No rule here shares a selector-and-property with a theme rule at equal
+ * specificity, and the neutral ground is wrapped in `:where()` (zero
+ * specificity), so a theme wins over it whatever order the bundler emits the
+ * two sheets in. See __docs/reference/player/surround/design.md.
  */
 
-/* Cormorant Garamond (display) + EB Garamond (body), SERVED BY THIS FLEET. The
-   kiosk has no Garamond installed, so without these the programme falls back to
-   a default serif — and to different metrics, which move every clamp and tier
-   threshold in the band. See `_fonts.scss` for the licence and the subsetting. */
-@use "./fonts";
-/* The band's shared literals - the bond's ground and the band's one radius.
-   Published as custom properties on the band's region below, so the two modules
-   that draw the bond read one value and neither can drift from the other. */
-@use "./tokens" as *;
-
 .surround-frame {
-  --hall-ink: #{$hall-ink};
-  --programme: #efe6d2;
-  --programme-edge: #ddd0b4;
-  --velvet: #{$velvet};
-  --brass: #c79a3e;
-  --brass-lit: #f6e3a0;
-  --ink: #2a1d07;
-  --ink-soft: #6b6152;
-
-  /* THE MAT. Every picture in the frame is mounted on this, and it is dark on
-     purpose (design wave 4): cream mats around a portrait and a city view read
-     as white borders on a dark wall — the brightest, most distracting marks on
-     a screen whose subject is the video. Near-black warm brown sits quietly on
-     the maroon rail and still separates a lit picture from the ground, which is
-     the only job a mat has here. `--mat-edge` is the 1px definition line, dark
-     as well, so an image never bleeds into the panel behind it.
-     `--programme` survives untouched — it is the programme STOCK (the panels
-     themselves), not the mats. */
-  --mat: #{$mat};
-  --mat-edge: rgba(8, 5, 5, 0.9);
-
-  --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
-  --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
-  /* THE ANNOTATION VOICE (design wave 6). A deliberate BREAK from the two
-     Garamonds: a translation under a segment heading, or under the listening
-     band's now-header, is the editor speaking, not the programme. In an all-
-     serif frame the only way to say "this line is a gloss, not more programme"
-     is to change the face — a smaller, greyer Garamond just reads as quieter
-     Garamond. Condensed first because a gloss lives in a narrow column (a
-     segment on the rail is a few hundred pixels wide at most); the system
-     sans is the fallback everywhere it is not installed, and the kiosk has one. */
-  --surround-annotation: "Roboto Condensed", "Helvetica Neue Condensed", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
-
   /* How far the video's top edge sits below the top of the main column — i.e.
      the strip of hall the plate hangs on.
      Wave 5 raised it 3.4rem -> 4.2rem for a straddle that put the plate a
@@ -74,36 +44,11 @@
   /* How far the dark band rides up over the video's last pixels. Visual only —
      a negative margin on the footer, never a change to the media box. */
   --band-overlap: 10px;
-  /* HOW FAR THE CURTAIN BLEEDS DOWN INTO THE PICTURE (design wave 7).
-     The band already dissolves upward into the video's bottom edge
-     (`__footer::before`, 22px); the velvet at the top met it on a hard line,
-     so the picture read as a rectangle cut out of a drape rather than as
-     something the drape hangs in front of.
-     THE DEPTH WAS DERIVED FROM THE PLACARD'S OVERLAP, not chosen outright —
-     but that overlap has since moved. This 15px was picked against
-     `--placard-straddle` at -66.67% (one third of the plate's own height
-     overlapping the video: ~26.77px of a measured 80.3px plate), landing in
-     the brief's "half to 60% of that overlap" window (13.4..16.1px).
-     `--placard-straddle` is now -50% (Task 7, half and half), which puts the
-     overlap at ~40.15px and the same window at ~20.1..24.1px — 15px no
-     longer falls inside it. THE VALUE IS RETAINED, NOT RE-DERIVED: nobody has
-     re-judged what the veil should look like against the new overlap, so
-     this number is inherited from a ratio that no longer holds, not a figure
-     chosen for today's geometry. Revisit it against the new overlap before
-     leaning on the "half to 60%" framing again.
-     It is a VEIL over the media, never a change to the media box: the video
-     keeps its width, its height, its 16:9 lock and every pixel of its picture
-     below this depth. */
-  --curtain-bleed: 15px;
   /* One easing for the whole entrance. The DURATIONS and the stagger are
      published from `entrance.js` (the rAF safety net and the stage's un-clip
      window need the same numbers); the literals here are the fallback for a
      frame rendered without that JS. */
   --enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-
-  /* Low-contrast paper fibre for the programme panels — no asset, same trick as
-     ArtMode's mat. Kept faint: this is stock, not texture for its own sake. */
-  --programme-fibre: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
 
   position: relative;
   display: flex;
@@ -111,9 +56,16 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--hall-ink);
-  color: var(--ink);
-  font-family: var(--surround-body);
+}
+
+/* THE NEUTRAL GROUND — the `neutral` theme, which is what a definition that
+   names no theme wears. A plain dark room in the system sans, so no surround
+   inherits the concert hall by accident. `:where()` takes it to ZERO
+   specificity: any theme's own root rule beats it regardless of source order. */
+:where(.surround-frame) {
+  background: #000;
+  color: #ececec;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 /* Main column: stage on top, footer beneath, footer never squeezing the stage
@@ -159,76 +111,6 @@
   justify-content: center;
   overflow: hidden;
 
-  /* THE HALL WEARS VELVET (design wave 5). Every pixel of this box that the
-     video does not cover — the strip above it that the placard hangs on, and
-     the letterbox slack beside it on a screen too narrow for a full-width 16:9
-     — is a drape, not a hole. Flat near-black read as absence; a house has a
-     surface behind its stage.
-     It is ArtMode's curtain recipe (`ArtMode.css`), taken down two registers:
-     the same vertical fold stripes over the same burgundy ramp, but the ramp's
-     lit end is `--velvet` rather than ArtMode's brighter #5c151d, the fold
-     highlight is 3.5% rather than 5%, and a vertical gradient darkens the whole
-     thing towards the video's edges. It is STATIC — ArtMode's drape opens, this
-     one is scenery — and it is deliberately quieter than the rail's maroon, so
-     the picture and the plate stay the brightest things in the room.
-     Only the STAGE wears it. The media box paints its own black, the rail its
-     own oxblood, the band its own stone, the plate its own stone; nothing here
-     changes any of them. And the whole rule is dead on the inactive shell,
-     which has no class and generates no box. */
-  background-color: #{$drape-back};
-  background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.5) 100%),
-    repeating-linear-gradient(90deg,
-      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
-      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
-    linear-gradient(90deg, #{$drape-edge}, var(--velvet, #{$velvet}) 42%, #{$drape-fold} 68%, #{$drape-edge});
-  box-shadow: inset 0 -0.5vh 1.4vh rgba(0, 0, 0, 0.5);
-}
-
-/* THE CURTAIN BLEEDS INTO THE PICTURE (design wave 7).
-   The drape above the video used to stop at the video's top edge, dead level,
-   and that line was the one hard join left in the frame — the band already
-   dissolves upward into the picture's foot.
-   IT IS THE SAME CLOTH, FADED OUT. The two horizontal layers below are the
-   stage's own fold stripes and its own burgundy ramp, verbatim, at the same
-   `vw` phase and across the same width — so at the veil's top edge it paints
-   the identical colour the drape a pixel above it does, and the join has
-   nothing to be seen at. Only the vertical darkening differs: the stage's is a
-   gradient across its whole height (38% black at the top, 6% at the middle),
-   and this reproduces its value AT THE VIDEO'S TOP EDGE as a flat 30% —
-   computed, not guessed: the edge sits at 12.2% of the stage on the office
-   screen (67.2px of inset over a 549.6px stage), which is 0.38 - 0.32 x 0.244
-   = 0.302. The same point is 0.280 at 960x540 and 0.326 at 1920x1080, so one
-   flat value is within +/-0.03 alpha — about one level on a colour this dark —
-   at every screen in the fleet.
-   THE MASK is what makes it a bleed rather than a bar. It holds fully opaque
-   for the first 12% so the topmost rows paint the drape's own colour exactly
-   (a straight 0%-to-100% ramp is already ~9% transparent on its first pixel
-   row, which showed as a faint step at the join), then falls to nothing by
-   `--curtain-bleed` into the picture.
-   IT IS A VEIL, NOT A CHANGE TO THE BOX. The media box is untouched: same
-   width, same height, same 16:9, and every pixel below `--curtain-bleed` is the
-   picture exactly as decoded. `pointer-events: none` because the video's top
-   edge is real estate a viewer taps.
-   IT ONLY EXISTS WHEN THE FRAME IS ON: the inactive shell has no class and
-   generates no box, so this rule matches nothing there. */
-.surround-frame__stage::after {
-  content: "";
-  position: absolute;
-  top: var(--placard-inset);
-  left: 0;
-  right: 0;
-  height: var(--curtain-bleed);
-  background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
-    repeating-linear-gradient(90deg,
-      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
-      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
-    linear-gradient(90deg, #{$drape-edge}, var(--velvet, #{$velvet}) 42%, #{$drape-fold} 68%, #{$drape-edge});
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
-  pointer-events: none;
-  z-index: 1;
 }
 
 /* The corpus's declared aspect ratio is inviolable — letterbox or pillarbox,
@@ -310,19 +192,6 @@
   overflow: visible;
 }
 
-/* The soft join: the dark band fading upwards onto the video's last pixels.
-   Sits above the band's top edge, over the video, and is pure decoration. */
-.surround-frame__footer::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  height: 22px;
-  background: linear-gradient(to top, rgba($hall-ink, 0.92), rgba($hall-ink, 0));
-  pointer-events: none;
-}
-
 /* The work placard: a museum plate, not a band. Out of the column's flow,
    content-width, hung on the video's TOP EDGE — half on the dark hall, half
    over the picture (`--placard-straddle`). The translate is what makes that
@@ -347,11 +216,6 @@
      not die on an inert nameplate: this layer is see-through to input, not
      just to light. */
   pointer-events: none;
-  /* It sits ON the video, so it casts: a tight contact shadow plus a wide soft
-     one. This is the one element in the frame allowed a drop shadow. */
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.55),
-    0 14px 30px -10px rgba(0, 0, 0, 0.85);
 }
 
 /* Right rail — full height, because it carries identity, not progress. */
@@ -386,27 +250,17 @@
   order: -1;
 }
 
-/* Programme stock. One paper ground and a 1px edge rule — no drop shadow per
-   element; the design calls for one plate, not a gallery. */
+/* Every region clips its own content. Its GROUND is the theme's to paint. */
 .surround-frame__region {
   position: relative;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  background-color: var(--programme);
-  background-image: var(--programme-fibre);
-  background-size: 180px 180px;
-  background-blend-mode: multiply;
-  box-shadow: inset 0 0 0 1px var(--programme-edge);
 }
 
-/* The plate brings its own stone (WorkPlacard.scss); the programme ground would
-   only show as a paper hairline around it. */
+/* The top region holds the floating plate; it is sized by its content. */
 .surround-frame__region--top {
   flex: 0 0 auto;
-  background-color: transparent;
-  background-image: none;
-  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.16);
 }
 
 .surround-frame__region--bottom {
@@ -426,58 +280,11 @@
     flex: 1 1 auto;
     min-height: 0;
   }
-
-  /* The work-in-time band is part of the darkened house, not the programme:
-     near-black stone with the text in parchment. Re-mapping the frame tokens
-     HERE restyles SegmentMap and CueTicker without touching either module —
-     they keep reading var(--ink)/var(--ink-soft)/var(--programme-edge). */
-  --ink: #e9dfc8;
-  --ink-soft: #a89a80;
-  --programme-edge: rgba(233, 223, 200, 0.28);
-  /* THE BOND'S GROUND (design wave 7; re-hued in wave 9). The sounding
-     segment's panel on the rail, the waist that joins them and the NOW
-     register's panel in the listening band are the SAME colour — that is the
-     whole mechanism by which they read as one shape, and so the colour is
-     published once, here, on the region both modules live in, rather than twice
-     in two stylesheets that would drift. The literal itself lives in
-     `_tokens.scss`, which is what makes the modules' own fallbacks the same
-     value rather than three hand-copied hexes.
-     MAROON, NOT BROWN. It was #241c15, a warm brown, and it read as brown. It
-     is now house material: the velvet drape's own hue family, darker than the
-     rail's ground, and three and a half times as distinct from the band's unlit
-     ground as the brown was — see `_tokens.scss` for the CIELAB table. */
-  --bond-ground: #{$bond-ground};
-  /* THE BAND'S ONE RADIUS, and the rule it states: every corner on the outside
-     of the bond's silhouette carries it, every corner where its parts weld is
-     square, and nothing else in the band is rounded. */
-  --bond-radius: #{$bond-radius};
-  background-color: #{$hall-ground};
-  background-image: linear-gradient(180deg, #{$band-lit} 0%, #{$hall-ink} 100%);
-  box-shadow: inset 0 1px 0 rgba(233, 223, 200, 0.08);
 }
 
-/* The rail is part of the darkened house too. A wall of video makes white paper
-   read as a light leak, so the rail's ground goes to deep oxblood — the same
-   move `--bottom` already makes, one register warmer, so band and rail read as
-   one house material (near-black stone under the video, maroon beside it).
-   The paper FIBRE stays, multiplied over the maroon, so the stock keeps its
-   tooth: this is a darker paper, not a flat panel.
-     `--programme` is deliberately NOT re-mapped. The portrait mat and the
-   carousel's mats read it, and paper survives in the frame exactly there — lit
-   mats and a brass nameplate on a dark wall.
-     `--map-halo` is the rail's own ground, published as a token because the
-   country map cannot derive it: its labels are haloed against whatever they are
-   drawn over, and that is the one colour the `--ink` family does not carry.
-   (This replaces wave 2's `--velvet` re-map, which existed only to keep the
-   pre-redesign map's SOLID highlight visible on maroon. The map is drawn in ink
-   hairlines now and reads `--ink`/`--ink-soft` like every other module, so the
-   stopgap is gone rather than retuned.) */
-/* The lyric rail is the SAME COLUMN as the programme rail — same ground, same
-   ink, same fibre, and the same "claim the rail's height" sizing. It is never
-   on screen beside the right rail, it is on screen INSTEAD of it, so anything
-   that made it a different material would read as the frame having changed
-   rooms rather than turned a page. Sharing the selector rather than restating
-   the block is what keeps that true after the next palette edit. */
+/* The lyric rail is the SAME COLUMN as the programme rail, with the same "claim
+   the rail's height" sizing. It is on screen INSTEAD of the right rail, never
+   beside it, so the two share one selector (a theme paints them as one too). */
 .surround-frame__region--right,
 .surround-frame__region--lyric {
   flex: 1 1 auto;
@@ -489,24 +296,10 @@
      the middle of the rail with dead ground beneath it. */
   display: flex;
   flex-direction: column;
-
-  --ink: #e9dfc8;
-  --ink-soft: #a89a80;
-  --programme-edge: rgba(233, 223, 200, 0.26);
-  --map-halo: #{$rail-ground};
-  background-color: #{$rail-ground};
-  background-image:
-    var(--programme-fibre),
-    linear-gradient(180deg, #{$rail-lit} 0%, #{$rail-deep} 100%);
-  background-size: 180px 180px, cover;
-  background-blend-mode: multiply, normal;
-  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.1);
 }
 
-/* An unresolved module leaves paper, not a hole — the frame stays composed. */
+/* An unresolved module leaves a dimmed region, not a hole — the frame stays composed. */
 .surround-frame__region--empty {
-  background-image: none;
-  background-color: var(--programme);
   opacity: 0.55;
 }
 

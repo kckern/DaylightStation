@@ -53,6 +53,7 @@ import { worthLine } from "../../domain/documents/worthLine.mjs";
 // handlers that can actually release a finish code. See its doc comment.
 import { COMPANION_COMPLETION_HANDLERS } from "../../domain/curriculum/unitValidation.mjs";
 import { resolveScripturePlaylist } from "../readalong/resolveScripturePlaylist.mjs";
+import { resolvePassingPercent, courseEntryFor } from "../passBar.mjs";
 
 /**
  * States in which handing over a sheet still means something — DERIVED from the
@@ -260,7 +261,7 @@ const FAILURE_COPY = Object.freeze({
 export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader; #realtime;
   #printDocuments; #renderPrintDocument; #allocationStore;
-  #assignments; #worksheetInstances; #publishPrintDocument; #companions;
+  #assignments; #worksheetInstances; #publishPrintDocument; #companions; #passOverrides;
   #companionCodes; #householdId;
   #issuedArtifacts; #renderIssuedArtifact; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes; #practiceAssessments;
@@ -325,6 +326,9 @@ export class IssueDocument {
     // a disc on the status board should turn amber, and until this the
     // board only learned of it on its five-minute poll.
     realtime = null,
+    // Optional per-lesson pass overrides — read with the enrollment so the
+    // bar printed on the sheet is the one `GradeSubmission` will stamp.
+    passOverrides = null,
     clock = () => new Date(), rng = Math.random, timezone = null,
     newArtifactId = () => `art_${shortId(8)}`, earningsQuote = null, planProjection = null, logger = console,
   } = {}) {
@@ -344,6 +348,7 @@ export class IssueDocument {
     this.#renderPrintDocument = renderPrintDocument;
     this.#allocationStore = allocationStore;
     this.#assignments = assignments;
+    this.#passOverrides = passOverrides;
     this.#worksheetInstances = worksheetInstances;
     this.#companions = companions;
     this.#companionCodes = companionCodes;
@@ -771,15 +776,19 @@ export class IssueDocument {
       return this.#unavailable(sessionId, 'worksheet-instance-not-configured', 'There is no sheet to print for this one.');
     }
     const assignment = await this.#assignments.get(state.learnerId);
-    const course = (assignment?.courses ?? []).find((entry) => (
-      entry.courseId === unit.courseId || entry.enrollment?.lessonOrder
-        && Object.values(entry.enrollment.lessonOrder).flat().includes(unit.unitId)
-    ));
+    // Matched the way the pass bar below is (`courseEntryFor`): an exact
+    // course id wins over a lesson-order match.
+    const course = courseEntryFor(assignment, unit);
     const enrollmentId = course?.enrollment?.enrollmentId;
     const profile = course?.profile ?? course?.enrollment?.profile;
     if (!enrollmentId || !profile) {
       return this.#unavailable(sessionId, 'no-enrollment', 'This lesson is not enrolled for this learner.');
     }
+    // The bar printed on the sheet (lesson card and header manifest) is the
+    // one grading will stamp: override → enrollment → the unit's own (Task 16).
+    const passPercent = (await resolvePassingPercent({
+      passOverrides: this.#passOverrides, assignments: this.#assignments, learnerId: state.learnerId, unit,
+    })) ?? null;
     const works = await this.#curriculum.listWorks?.() ?? [];
     const work = works.find((candidate) => candidate?.work === unit.courseId) ?? null;
     const presentation = worksheetPresentation({ unit, work, enrollment: course?.enrollment });
@@ -828,7 +837,7 @@ export class IssueDocument {
             subjectIcon: unit.subject ?? 'school',
             subjectName: unit.subject ?? 'School',
             breadcrumb: presentation.breadcrumb,
-            passPercent: unit.passing?.percent ?? null,
+            passPercent,
             progress: await this.#lessonProgress({ state, unit, nowIso }),
             companionCode: companion?.accessCode ?? null,
             // TWO CODES, NEVER THE SAME FIELD. `companionCode` above is the
@@ -858,14 +867,12 @@ export class IssueDocument {
     const learnerName = deriveLearnerName(instance.learnerId);
     const issueDate = deriveIssueDate(instance.issuedAt);
     // Header manifest (Task 2, RenderPrintDocument's `context.passPercent`):
-    // `unit.passing.percent` is the SAME field `GradeSubmission`/
-    // `CloseSessionOutcome` already read as the authoritative pass bar for
-    // closing this exact lesson's session — reading anything else here (a
-    // course-level default, a hand-copied constant) would risk the printed
-    // sheet disagreeing with what actually grades it. `?? null` (no
-    // `passing` authored for this unit) prints the question count alone —
+    // `passPercent` above comes from `resolvePassingPercent`, the SAME
+    // resolver `GradeSubmission` stamps and `CloseSessionOutcome` falls back
+    // to — reading anything else here (the unit's bare percent, a hand-copied
+    // constant) would risk the printed sheet disagreeing with what actually
+    // grades it. `null` (no bar anywhere) prints the question count alone —
     // see `RenderPrintDocument`'s `buildManifestText`.
-    const passPercent = unit.passing?.percent ?? null;
     // THE PRICE, priced at print time and frozen into the render context, so a
     // reprint shows what this sheet was printed as worth (spec: before/after).
     // An exact reprint replays the retained context (`RenderIssuedWorksheetArtifact`)
@@ -884,6 +891,7 @@ export class IssueDocument {
         learnerName,
         date: issueDate,
         sessionId,
+        unitId: state.unitId,
         passPercent,
         worth,
       };
@@ -932,13 +940,21 @@ export class IssueDocument {
     // artifact was recorded under, with no separate id-reconciliation needed.
     const artifactId = replacementArtifactId ?? instance.id;
 
-    rendered.pdf = await this.#retainIssuedPdf({
-      artifactId, rendered, nowIso, sessionId, state,
-      worksheetInstanceId: instance.id, allocation: rendered.allocation,
-      document: publishedDocument,
-      renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
-      captureKind: replacementArtifactId ? 'replacement' : 'original',
+    const retained = await this.#retainOrRecordFailure({
+      retain: {
+        artifactId, rendered, nowIso, sessionId, state,
+        worksheetInstanceId: instance.id, allocation: rendered.allocation,
+        document: publishedDocument,
+        renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
+        captureKind: replacementArtifactId ? 'replacement' : 'original',
+      },
+      // Only a window this attempt allocated is ours to release; a reused
+      // instance binding belongs to a sheet already on paper.
+      allocation: mustPersistOmrBinding ? rendered.allocation : null,
+      sessionId, nowIso, state,
     });
+    if (retained.failure) return retained.failure;
+    rendered.pdf = retained.pdf;
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -1334,6 +1350,7 @@ export class IssueDocument {
       freshCard: true,
       learnerId: state.learnerId ?? null,
       sessionId,
+      unitId: state.unitId,
       tokens,
       ...(state.practiceAssessment ? { assessmentItemIds: state.practiceAssessment.questionIds } : {}),
     };
@@ -1371,12 +1388,17 @@ export class IssueDocument {
       });
     }
 
-    rendered.pdf = await this.#retainIssuedPdf({
-      artifactId, rendered, nowIso, sessionId, state, allocation: rendered.allocation,
-      document: renderedDocument,
-      renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
-      captureKind: replacementArtifactId ? 'replacement' : 'original',
+    const retained = await this.#retainOrRecordFailure({
+      retain: {
+        artifactId, rendered, nowIso, sessionId, state, allocation: rendered.allocation,
+        document: renderedDocument,
+        renderContext: { ...renderContext, cardFirstUse: rendered.cardFirstUse, duplex: rendered.duplex ?? null },
+        captureKind: replacementArtifactId ? 'replacement' : 'original',
+      },
+      allocation: rendered.allocation, sessionId, nowIso, state,
     });
+    if (retained.failure) return retained.failure;
+    rendered.pdf = retained.pdf;
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -1446,13 +1468,21 @@ export class IssueDocument {
     };
   }
 
-  /** Persist the semantic render recipe before dispatch; keep PDF bytes in memory only. */
+  /**
+   * Persist the semantic render recipe before dispatch; keep PDF bytes in memory only.
+   *
+   * An `original` capture runs only for a session with no `issued` event, so
+   * any recipe already under this id came from an attempt that never reached
+   * paper (2026-10-10: a print timeout froze one, and every retry after it
+   * failed ARTIFACT_IMMUTABLE). Those may be superseded. A `replacement`
+   * re-creates a sheet that DID print, so its recipe stays first-wins.
+   */
   async #retainIssuedPdf({ artifactId, rendered, nowIso, sessionId, state,
     worksheetInstanceId = null, allocation = null, document = null,
     renderContext = null, captureKind = 'original' }) {
     const renderedBytes = Buffer.isBuffer(rendered.pdf) ? rendered.pdf : Buffer.from(rendered.pdf);
     if (!this.#issuedArtifacts) return renderedBytes;
-    await this.#issuedArtifacts.put({
+    const saved = await this.#issuedArtifacts.put({
       artifactId, bytes: renderedBytes, pageCount: rendered.pageCount ?? null,
       issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
       captureKind, worksheetInstanceId, allocation,
@@ -1462,8 +1492,33 @@ export class IssueDocument {
         variant: state.variant ?? 0, passPercent: state.passingPercent ?? null,
         duplex: rendered.duplex ?? null,
       },
+      supersedeUnissued: captureKind === 'original',
     });
+    if (saved?.superseded) {
+      this.#logger.warn?.('school.issue.artifact-superseded', {
+        sessionId, artifactId,
+        previousCardId: saved.superseded.allocation?.cardId ?? null,
+        previousRecordId: saved.superseded.allocation?.recordId ?? null,
+        previousIssuedAt: saved.superseded.issuedAt,
+      });
+    }
     return renderedBytes;
+  }
+
+  /**
+   * `#retainIssuedPdf` for the paths that allocate card rows before it runs.
+   * A failure here would otherwise escape with the rows still `live`, leaking
+   * a fresh card window on every retry.
+   */
+  async #retainOrRecordFailure({ retain, allocation, sessionId, nowIso, state }) {
+    try {
+      return { pdf: await this.#retainIssuedPdf(retain) };
+    } catch (err) {
+      await this.#orphanAllocation(allocation, { sessionId, unitId: state.unitId, stage: 'retain' });
+      return {
+        failure: await this.#recordFailure({ sessionId, stage: 'retain', reason: err.message, nowIso, state, cause: 'render' }),
+      };
+    }
   }
 
   /**
@@ -1480,12 +1535,31 @@ export class IssueDocument {
    * unreachable) is itself logged, never thrown — this runs from inside an
    * already-failed issue attempt, and a SECOND failure here must not replace
    * the FIRST one in what gets reported back to the child.
+   *
+   * A store that can `vacate` holds the window for this unit instead of
+   * releasing it, so the retry (or a later session for the same unit) lands
+   * back on these rows rather than leaving a blank stripe on the card.
    */
   async #orphanAllocation(allocation, { sessionId, unitId, stage }) {
     if (!allocation) return;
     this.#logger.warn?.('school.issue.allocation-orphaned', {
       sessionId, unitId, stage, cardId: allocation.cardId, recordId: allocation.recordId, rowRange: allocation.rowRange,
     });
+    if (typeof this.#allocationStore?.vacate === 'function') {
+      try {
+        const vacated = await this.#allocationStore.vacate({
+          cardId: allocation.cardId, recordId: allocation.recordId, unitId, reason: stage,
+        });
+        this.#logger.warn?.('school.issue.allocation-vacated', {
+          sessionId, unitId, cardId: allocation.cardId, recordId: allocation.recordId, vacated: Boolean(vacated),
+        });
+      } catch (err) {
+        this.#logger.warn?.('school.issue.allocation-release-failed', {
+          sessionId, cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
+        });
+      }
+      return;
+    }
     if (typeof this.#allocationStore?.release !== 'function') return;
     try {
       const released = await this.#allocationStore.release({ cardId: allocation.cardId, rows: allocation.rowRange });

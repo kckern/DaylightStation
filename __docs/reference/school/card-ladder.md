@@ -54,11 +54,11 @@ drill, speaking, on-screen keypad, practice menu)** actually ship; see
 | Judgement cache | `data/household/school/runtime/card-ladder/<package>/judgements.yml` (derived, shared across learners) |
 | Spoken takes | `media/school/recordings/card-ladder/<package>/<learnerId>/<studyDay>/<wordId>-<n>.<ext>` (for grown-ups; never graded) |
 | Program poster | `media/school/programs/card-ladder/<package>/poster.jpg` (JPEG, 2:3), falling back to the pre-rename `programs/word-ladder/<package>/poster.jpg` — served at `/api/v1/school/self-service/programs/card-ladder/<package>/poster.jpg`; missing = 404 and the surface draws its own placeholder |
-| Code (domain) | `__backend/src/2_domains/school/cardLadder/` — pure engine, states, choices, rounds, the target-script seam (`targetScript.mjs`) and Hangul scoring (`jamo.mjs`), settings, scenarios |
-| Code (application) | `__backend/src/3_applications/school/{CardLadderSittingService,CardLadderTypedJudge,CardLadderDoorLauncher}.mjs` |
-| Code (adapters) | `__backend/src/1_adapters/school/cardLadder/{YamlCardLadderStore,ShadowCardLadderStores,YamlJudgementCache,FilesystemCardLadderRecordings,DiscardingRecordings}.mjs` |
-| Code (API) | `__backend/src/4_api/v1/routers/school.cardLadder.mjs` |
-| Code (frontend) | `frontend/src/modules/School/Programs/Flashcards/CardLadder/` |
+| Code (domain) | `__app_modules/learning/school/server/domain/cardLadder/` — pure engine, states, choices, rounds, the target-script seam (`targetScript.mjs`) and Hangul scoring (`jamo.mjs`), settings, scenarios |
+| Code (application) | `__app_modules/learning/school/server/application/{CardLadderSittingService,CardLadderTypedJudge,CardLadderDoorLauncher}.mjs` |
+| Code (adapters) | `__app_modules/learning/school/server/adapters/cardLadder/{YamlCardLadderStore,ShadowCardLadderStores,YamlJudgementCache,FilesystemCardLadderRecordings,DiscardingRecordings}.mjs` |
+| Code (API) | `__app_modules/learning/school/server/api/school.cardLadder.mjs` |
+| Code (frontend) | `__app_modules/learning/school/browser/Programs/Flashcards/CardLadder/` |
 
 Everything per learner is keyed by the lexicon's `package`: status, day files
 and the judgement cache. Word ids need only be unique **within** a package.
@@ -140,6 +140,12 @@ English until they have shown they can recognise it, claimed it, and matched
 it. Copy-typing (1.1) with the word on screen is fine at any time (Learn,
 drill, Write with help); speaking is never graded and never gates anything.
 
+**One exception: [weekly dictation](#weekly-dictation-spec-2026-11-06).** A
+dictation run has its own scaffolding (match → copy → blind), so every word
+on the week's list may reach the blind step whatever its ladder state. The
+rule above still holds for the ladder itself, and dictation never changes a
+word's ladder state.
+
 Per-word flags in status v3 (`mastery.mjs`):
 
 | Flag | Set by | Meaning |
@@ -182,7 +188,7 @@ already was.
 
 `missStreak ≥ drill.afterMisses` sets `tricky` (flags the word — see
 [The tricky-word drill](#the-tricky-word-drill-spec-3-drill-path) below).
-Code: `__backend/src/2_domains/school/cardLadder/mastery.mjs`.
+Code: `__app_modules/learning/school/server/domain/cardLadder/mastery.mjs`.
 
 ## Rounds and the three piles
 
@@ -268,7 +274,7 @@ stays tricky for another day. **Nothing in a drill grades or changes word
 state**; it exists purely to walk one word from full support to none.
 
 Steps, fixed at creation and always in this order
-(`DRILL_STEPS` in `__backend/src/2_domains/school/cardLadder/drill.mjs`) — the
+(`DRILL_STEPS` in `__app_modules/learning/school/server/domain/cardLadder/drill.mjs`) — the
 unsupported production steps (dictation, say-from-cue, type) come last, after
 the scaffolded tiles, so writing from sound or memory is never front-loaded.
 **Typing from memory (dictation, type) is in a drill only for a word
@@ -294,6 +300,13 @@ blocked on, and never an error. **Tiles and dictation are never dead ends**: a m
 the same step in place — the term stays hidden through the first miss, is
 **revealed** (read-only, "It's 가위 — …", the step becomes copyable) after
 the **second** miss, and the step **advances regardless on the third try**.
+**Don't know** (`\`) ends the step at once instead: an empty answer
+(`{typed:''}`, or `{tiles:[]}`) advances with `{correct:false, answer, dontKnow:true}`,
+held like a third miss — the *type* step's Show me the same way. Copy's give-up
+reads **Skip** (the word is on screen; it is a way past a step that will not
+take, not a knowledge question), is tagged `skipped:true` instead (so the tuner
+never counts it as a Don't know), and is not held. Dictation's button reads Skip
+too once its second miss has shown the word.
 When a tiles or dictation step advances (a match or the third miss) the
 program **holds** that verdict — "Right!" or "It's 가위" — with a Next
 button before the next step replaces it (`HELD_DRILL_STEPS`). An open drill
@@ -409,17 +422,126 @@ stops propagation before it would otherwise reach the field. When the
 keypad is open, the typed item's prompt collapses to a compact height so
 the stage still fits at 1280×800.
 
+## Not knowing is never a wall
+
+Owner, 2026-11-03: getting it wrong, guessing and not knowing are all fine —
+the card just goes back in the stack and comes round again. None of them may
+**block** the child. Every screen that asks for recall has a give-up, touch
+first, on the hunted-for `\` key, and it is an ordinary miss:
+
+| Screen | Give-up | Sends | What happens |
+|---|---|---|---|
+| Choice (2.2 / 3.1) | **Don't know** (0, or `\`) | `{dontKnow:true}` | a miss; the answer with its audio |
+| Typed, graded (3.3, the 1.4 sign-off) | **Don't know** | `{typed:''}` | judged `dont-know`, score 0 — a miss; the result reads *Here's the answer*. A grown-up cannot re-grade it (nothing was typed); the Words panel lists it as *Don't know* with no Pass/Fail |
+| Typed, unjudged practice (drill *type*, Write without help) | **Show me** | `{typed:''}` | the word; never graded |
+| Drill dictation, drill tiles | **Don't know** | `{typed:''}` / `{tiles:[]}` | the step ends at once, held with *It's 가위* |
+| Copy (a new word's intro, drill *copy*, Write with help) | **Skip** | `{typed:''}` | moves on (the word was on screen); `skipped:true`, not counted as Don't know |
+| Say | **Skip** | `{done:true}` | see [Speaking](#speaking-never-graded) |
+| Match, Listen, Look | — | — | nothing to know: trial and error converges, or Next is the answer |
+
+Enter on an empty field still does nothing — only the give-up button or `\`
+gives up, so a stray Enter never throws an answer away. A give-up is logged
+`showme.used` (with `mode` and `label`) and the answer's `result.judge` is
+`dont-know` (typed), `result.dontKnow: true` (drill steps) or `result.skipped: true` (copy), so a grown-up
+reading a day can tell *didn't know* from a real wrong attempt.
+
+Why: on 2026-11-03 a learner, stuck on graded 3.3 cards with no way out, typed `.`
+after three minutes on one and held down `\` (the give-up key everywhere
+else, inert there) on another — both came back `wrong-script`.
+
 ## Typed input and the judge (`CardLadderTypedJudge`)
 
-A mastery test, not a spelling test — grading is deliberately generous.
-`__backend/src/3_applications/school/CardLadderTypedJudge.mjs` runs the
-deterministic half (`2_domains/school/cardLadder/{scriptRules,targetScript,jamo,typedScore}.mjs`) in
-order, first decision wins. The sitting passes the judge the target side's
-script and language (`targetScript`, `targetLanguage`) — the one seam where
-script-specific grading plugs in:
+A mastery test, not a spelling test. **The score says whether the child gave
+the right answer, not how many letters line up with the card** (owner ruling
+2026-11-03). A synonym, a valid other spelling or the same words in another
+order can be fully right — a 10 — though no letter match would say so; an
+answer a letter or two away can be wrong if those letters change the meaning.
+So with Jev configured, **Jev grades every real attempt** and the letter rules
+below settle only what they can settle with certainty.
+
+`__app_modules/learning/school/server/application/CardLadderTypedJudge.mjs` holds both
+halves. The sitting passes it the target side's script and language
+(`targetScript`, `targetLanguage`) and the other introduced words **with their
+meanings** (`otherWords: [{term, gloss}]`, authored decoys with `gloss: null`),
+so Jev can tell a synonym from another word.
+
+### With Jev: correctness, not letters
 
 | Step | Condition | Score |
 |---|---|---|
+| Nothing typed | empty — the *Don't know* button | 0, `dont-know`, no call |
+| Only punctuation | `.` `?!` — junk typed to get past the card | 1, `wrong-script`, no call |
+| A grown-up's re-grade | cached `judge: grown-up` for this answer | theirs, wins over everything |
+| Identical | match under the script's `normalize` | 10, `exact`, no call |
+| No target-script letters | e.g. Latin typed for a Hangul word | 1, `wrong-script`, no call |
+| A wrong number | digits typed, and the digit tokens differ (a number written in words goes to Jev) | 2, `number`, no call |
+| **Everything else** | Jev, two atomic questions | **Jev's** |
+
+The two questions (`IDecisionGateway.evaluate`, one call):
+
+- **`correct`** — a Score over `CORRECT_LEVELS`, about meaning: *wrong* (a
+  different meaning — another word, see `otherWords` — or no answer) → 2 ·
+  *partly right* → 4 · *right idea, a slip a teacher would correct* (a wrong
+  ending, particle or tense) → 6 · *right, misspelled* → 8 · ***fully right***
+  *— the same word, a synonym, a valid other spelling, or the same words in
+  another order* → 10. The level (rounded, clamped) **is** the score; nothing
+  clamps it to the letter distance, up or down. *Right idea, a slip* passes at
+  the default `passScore` 6 **on purpose**: the owner asked for close-enough
+  intents to count; the result screen still shows the card's form.
+- **`match`** — a Choice over `MATCH_KINDS`: `identical`, `synonym`,
+  `reordered`, `variant`, `misspelled`, `other-form`, `different`. It **never
+  moves the score**; it is carried on the verdict, the result and the day's
+  record (`match`) for the result screen and the grown-up view (`typedAnswers`
+  and the day review carry it). An option Jev did not offer is dropped.
+
+**Jev must be sure.** A replay of every past typed answer (2026-11-03, 72
+answers, 26 Jev calls) showed Jev's wrong verdicts were its unsure ones —
+한교 for 한국 passed at confidence 0.05, 중유하다 for 중요하다 failed at 0.27,
+도와줄다 for 불우 이웃을 돕다 passed while its own match said `different` — and
+its right ones came sure and consistent (아빠가 게워 줄 테니까 for 아빠가 도와줄
+테니까: close letters, another meaning, failed). So Jev's score stands only
+when its `correct` confidence is **≥ 0.4** and the two answers **agree** (a pass
+whose match is `different`, or a fail whose match is `identical` / `synonym` /
+`reordered` / `variant`, is a contradiction). Otherwise the letter rules decide
+— their `judge` (`distance`, `guard`, …), no `match` — and the log says
+`jev: unsure` with `unsure: low-confidence | contradiction`. With the
+guardrails the same replay changes exactly one grade, the 게워 sentence.
+
+The **1.4 sign-off** tells Jev the child *heard* the word read aloud; 3.3 says
+it was asked for. The rubric is the same (owner: a synonym is right).
+
+Jev's state is the target, its meaning (`gloss`), `kind`, the attempt **as
+typed** (spaces and word order intact, NFC, ≤ 80 chars — the normalized form is
+only the cache key), the other words with meanings, `script`, `language`, and
+for Hangul both sides as keystroke jamo syllable by syllable (`targetJamo`,
+`attemptJamo`: `ㄷㅗ ㅇㅗㅏ ㅈㅜ ㄷㅏ`), so a spelling slip (깨워 / 개워) reads
+differently from a different word.
+
+On the result screen a right answer in other words is **never "Close!"**:
+`synonym` / `reordered` / `variant` read *Same meaning! This card says:* with
+the card's wording; `other-form` reads *Right word! This card has:*; a pass
+below 10 that is a plain misspelling stays *Close! It's spelled:*.
+
+Every call logs `school.card-ladder.judge-model` with `engine: jev`, `model`,
+`rules` / `rulesJudge` (what the letter rules alone would have said — the
+running comparison), `level`, `confidence`, `score`, `pass`, `match`,
+`matchConfidence` and `ms`. A failure or a malformed answer logs
+`judge-fallback` and grades by the letter rules (`judge: fallback`). Every
+Jev verdict, sure or not, is cached with `engine: jev, v: 2` (and `match`,
+`model`, `unsure`) in `judgements.yml`, so a repeated answer is never asked
+twice; Jev rows cached before this ruling (the one-band clamp, no `v`) are not
+reused — the answer is asked again. The log row also carries `jevScore` /
+`jevMatch` (Jev's own read) beside the final `score`.
+
+### Without Jev: the letter rules
+
+`domain/cardLadder/{scriptRules,targetScript,jamo,typedScore}.mjs`, in order,
+first decision wins — the whole judge where no decision model is configured,
+and the fallback when Jev fails:
+
+| Step | Condition | Score |
+|---|---|---|
+| Nothing typed | the attempt is empty after `normalize` — the child's *Don't know* | 0, `judge: dont-know` (never the model; kept out of the tuner's `typedScores`, counted in its `dontKnow`) |
 | Exact | match under the script's `normalize` | 10, `judge: exact` |
 | Wrong script | the target has letters of its script and the attempt has none (a `generic` target has no floor) | 1, `judge: wrong-script` (days before 2026-09-23 say `no-hangul`) |
 | Different real word | match, under the script's `normalize`, to another introduced word or an authored decoy | 2, `judge: guard` |
@@ -432,44 +554,32 @@ Distance is Levenshtein over the script's units (`keystrokeUnits(text,
 targetScript)`): for a Hangul target, **jamo as typed on a two-set keyboard**
 (compound vowels/finals split into component keys; tense consonants and ㅒ/ㅖ
 stay single); for Latin, letters after case-fold with diacritics stripped; for
-every other script, grapheme clusters. The model's instructions name the
-target language (the lexicon's name, `typed Korean answer` / `typed English
-answer`) and script, and its JSON carries `script` and `language`; nothing in
-them assumes Korean. **Short words (≤ 2 units — Hangul syllables, Han/kana
-characters, graphemes): the deterministic score is final** — no
-model call. **Longer words**: if `card_ladder.judge.model` is configured, a
-small low-effort model may raise an eligible floor (score ≥ 4 and d/L ≤ 33%) by
-**one band** (`judge: model`), never lower it; model failure or timeout falls
-back to the deterministic score (`judge: fallback`). **On this household
-`card_ladder.judge.model` is `gpt-5-nano`**, so a long-word misspelling that
-clears the deterministic floor can still gain the model's +1-band step;
-verdicts still land on `exact`, `wrong-script`, `guard`, `distance`, `cache` or
-`fallback` whenever the model doesn't apply or doesn't answer in time.
+every other script, grapheme clusters. **Without Jev**, short words (≤ 2
+units) are final on these rules, and a chat model (`card_ladder.judge.model`,
+`gpt-5-nano` on this household; `engine: llm`) may raise an eligible longer
+floor (score ≥ 4, d/L ≤ 33%) by one band, never lower it. Its instructions name
+the target language and script; nothing in them assumes Korean.
 
-**Shadow judge (2026-09-24).** When a typed-decision model is configured
-(`IDecisionGateway`, TypeSafe Jev, key in `system/auth/jev.yml`), it scores the
-same answer in parallel whenever the model step above runs. It never runs for
-short, exact, guarded or cached answers. It answers one Score question over the
-same rubric as five levels (different word · partly there · misspelled but
-intended · one slip · exact → 2/4/6/8/10), clamped the same way (never below the
-floor, at most one band up). **It decides nothing.** Each run logs
-`school.card-ladder.judge-shadow` with `base`, `llm`, `jev`, `jevConfidence`,
-`jevMs`, `agreed` and `passAgreed`. That is the evidence for or against letting
-it replace the LLM step, and it matters here because the provider rates its CJK
-accuracy below English. A shadow failure logs `judge-shadow-failed` and does not
-affect the verdict.
+**History.** 2026-10-30 (prefer Jev over small chat models) put Jev at the
+model step on the same one-band clamp. In practice it never moved a grade —
+every call in the week to 2026-11-03 came back at or under the letter floor —
+and the clamp kept it from the answers it exists for: 도와줄다 for the
+*help-neighbors* card scored 2 on distance and was never asked, and short words
+were never asked at all. The 2026-11-03 ruling replaced the clamp with the
+correctness rubric above. The `judge-shadow` events (2026-09-24 → 2026-10-30)
+were the decide-nothing first version of the step.
 
 ### Grading by script
 
 **2026-09-23 owner: per-script grading — Latin case-insensitive, accents a small slip, numbers exact; Hangul unchanged.**
 
 Each script is a small pure rule object in
-`2_domains/school/cardLadder/scriptRules.mjs` (`ruleFor(script)`), selected by
+`domain/cardLadder/scriptRules.mjs` (`ruleFor(script)`), selected by
 `scriptFor(target language)` or, with no language, read off the target text
 (`scriptOfText`). The client's `keypadFor(script)` (`CardLadder/targetScript.js`)
 mirrors the language table.
 
-| Script | Languages | `normalize` | Distance units | Wrong script (→ 1) | Short (≤ 2 → deterministic) | Keypad |
+| Script | Languages | `normalize` | Distance units | Wrong script (→ 1) | Short (≤ 2 → final, without Jev) | Keypad |
 |---|---|---|---|---|---|---|
 | `hangul` | ko | `normalizeAnswer`: NFC, whitespace and punctuation removed (unchanged) | keystroke jamo | no Hangul typed — only when the target itself has Hangul letters; a bare-number target (`1945`) is judged by the numbers rule | syllables | jamo keypad |
 | `latin` | en, es, fr, de, … | NFC, trim, collapse whitespace, strip punctuation, case-fold | letters, diacritics stripped (+ the accent-slip 8) | no Latin letter | graphemes | none |
@@ -507,6 +617,109 @@ Every task item's day-file record (`items[itemId]`) keeps `wordId`, `task`,
 lists and re-grades. Older records without them are resolved from the day's
 plan (`rc:<word>`, a round's quiz queue, the latest practice run).
 
+## Weekly dictation (spec 2026-11-06)
+
+The class gives a dictation (받아쓰기) every week: ten words the child will
+hear and must write. Dictation is a **mode inside the card-ladder program**,
+not an enrollment: the words are ordinary deck words (same ids, media,
+lexicon), drilled on their own, on separate time.
+
+**The list is a tag on lexicon entries.** Each entry on a week's dictation
+carries `dictation: [<ISO week>]`, e.g.
+
+```yaml
+  - id: geomi
+    term: 거미
+    dictation: ['2026-W46']
+```
+
+The **current week** is the newest ISO week in any entry's tags; its words
+are the tagged entries in lexicon order (optional `dictationOrder:
+{ '2026-W46': 3 }` overrides). A week should have exactly **10**: any other
+count logs warn `school.card-ladder.dictation.count` and shows on the
+teacher panel, and the words are still served. Resolver:
+`currentDictation(lexicon)` in `server/domain/cardLadder/dictation.mjs`.
+Words must also be in the learner's deck and have term audio, or they wait
+on a grown-up (below).
+
+**Three steps per word**, in order: **match** (D.1: hear it, pick the
+spelling — authored `decoys.term` first), **copy** (D.2: hear it, see it,
+type it), **blind** (D.3: hear it, type it; the word is never sent or
+shown). Strict spelling — the same `answersMatch` compare as copy; no Jev. A
+pass moves the word on; a miss or Don't know steps it back one (a match miss
+stays at match) and the **same word is served again** at its new step, with
+the miss held on screen: *Not quite — let's look at it again* and Next.
+**Done** = every word typed correctly blind twice (not necessarily in a row).
+
+**Where it is offered — before and after the flashcards** (owner,
+2026-11-06):
+
+| Place | While words are left | Once ready |
+|---|---|---|
+| Start card | `Dictation: N words` beside Start (primary once the day is done; D) | *Dictation ready ✓* line + `Review dictation` (D) |
+| Day-done card | the big `Dictation: N words` above Done (Space) | *Dictation ready ✓* line + `Review dictation` (D), Done leads |
+| Practice menu | `Dictation: N words` (D) | `Review dictation` (D) |
+| Launch card (agenda) | the lesson line says `Dictation: N words left`; once the day is done the lesson TITLE is `Dictation: N words` (the button reads *Open Dictation: N words*) | `Dictation ready ✓` line |
+
+On a finished day the launch card also says `Flashcards: practise anytime`.
+(The card renders the lesson's title and description — not the projection's
+top-level `description`.)
+
+When the only words left are waiting on a grown-up (no recording, not in the
+deck), every place says `Dictation: N words waiting for a grown-up` instead —
+it never goes quiet.
+
+**Review.** A finished week can be drilled again before the test:
+`POST …/dictation {userId, review: true}` opens a run with every word at
+blind and one pass banked, so one correct write finishes each word (a miss
+steps back as usual). The review's word state lives on the day file's run
+(`dictation.review.words`); `dictation-progress.yml` is never written.
+
+**The run.** The header shows one dot per word (filled when that word is
+done; the minutes bar is hidden — dictation is separate time) and *Dictation ·
+Word 4 of 10* — never the word — and **Stop for now**, which ends the run (`{stop:
+true}`) and returns the sitting to its own ladder. The jamo keypad opens at
+once (no 10 s wait) unless a keyboard is known, its toggle stays even with a
+keyboard declared (a dozing BLE keyboard must not lock the child out), and it
+has a **space** key for phrases (여우 두 마리). The run ends on an explicit
+**dictation-ready** item: *Dictation ready ✓* only when every word was
+drilled AND none is waiting; otherwise *9 of 10 words done* and which words
+need a recording or a place in the deck. Done (`{done: true}`) returns to the
+sitting's ladder.
+
+Every typed verdict is held with Next: *That's it!* on a pass, *Not quite —
+let's look at it again* on a miss. If the week's tags vanish mid-run the
+sitting returns to its ladder with *This week's dictation list changed.*; a
+run that cannot start says *Dictation couldn't start. Tap it again in a
+moment.* If saving a word's progress fails, the run ends (warn
+`school.card-ladder.dictation.progress-write-failed`) rather than repeating
+the word.
+
+**Separate time.** Dictation answers — re-sent ones included — never add to the day's active minutes
+and never satisfy or advance the daily goal; they do count as input for the
+idle clock. Dictation passes never change a word's ladder state.
+
+**Files.** Per learner and package, `dictation-progress.yml` beside the
+status file, keyed by week (a new week starts clean):
+`{ week, words: { <id>: { step, blindPasses, lastAttemptAt } } }`. Each
+answer is also a day-file item (`source: dictation`, `task: D.1|D.2|D.3`), so
+the teacher Days panel shows it. A corrupt progress file refuses Start with
+a message for a grown-up rather than failing mid-run.
+
+**Teacher view.** `GET /admin/words` adds `dictation` (week, count, count
+warning, remaining, `needsRecording`, `unknown`) and, on each list word only,
+`dictation: {step, blindPasses, done}`; the Words panel shows a *Dictation ·
+2026-W46* section with `copy · 1/2 blind` per word.
+
+**Test mode.** `?scenario=dictation` starts the week fresh in the shadow.
+
+**Events.** Server: `school.card-ladder.dictation.started`, `.attempt`,
+`.done`, `.exited` (`reason`: `stop`, or the sitting's close reason),
+`.ready-seen`, `.replaced`, `.progress-write-failed`, `.nothing-to-drill`, `.count`, `.unknown-word`, `.corrupt`, `.already-done`,
+`.admin-unavailable`. Frontend (card-ladder facade): `dictation.started`
+(`from: start|summary|menu|replaced`), `dictation.attempt`,
+`dictation.exited` (`stop|ready|replaced`), `dictation.failed`.
+
 ## Goal, cap, and a study day
 
 Goal and cap are **per study day, across all of that day's sittings** — idle
@@ -537,13 +750,33 @@ carry `introducedExtra: true` and `newAllowance` skips them on both counts:
 they never use up a day's `newPerDay` and never fill the working set, so
 extra learning today never shrinks tomorrow's goal.
 
+### Release calendar (`releases`)
+
+A lexicon deck may pace its introductions by date, for a deck that follows an
+outside class rather than the learner's own speed:
+
+```yaml
+words: [w1, w2, w3, w4]          # still the whole deck
+releases:
+  - { opensOn: '2026-10-18', words: [w1, w2] }
+  - { opensOn: '2026-10-25', words: [w3] }
+```
+
+A word named in a release enters the new-word pool from its `opensOn` study
+day; a word in no release (`w4`) is always eligible. Only introduction is held:
+a word already met reviews as usual, and quizzes, My words and paper feedback
+still see `words`. Learn more respects the calendar too. `expandLexiconDeck`
+rejects a malformed day, a release word missing from `words`, or a word in two
+releases. Filter: `unreleasedWords` (`domain/cardLadder/lexicon.mjs`), applied
+in `CardLadderSittingService#pool`.
+
 The cap stops the **guided** day continuing on its own; it never locks a
 child out. Past the cap, the practice menu and Learn more stay available on
 request.
 
 ## Settings and bounds
 
-Defaults live in `__backend/src/2_domains/school/cardLadder/settings.mjs`;
+Defaults live in `__app_modules/learning/school/server/domain/cardLadder/settings.mjs`;
 `school.yml`'s `card_ladder.settings` / `card_ladder.bounds` override them
 (`resolveSettings`). **The tuning values in force for a study day are frozen
 at its first open** (`dayFile.atOpen.settings`) — a mid-day config edit never
@@ -675,12 +908,21 @@ and the secondary choices smaller underneath — **Practise more** (1) and, whil
 new words remain, **Learn more words** (2). Reduced motion swaps the sides
 instantly.
 
-## The practice menu (spec §6, post-goal)
+## The practice menu (anytime — owner, 2026-11-06)
+
+**Review is open anytime, goal or not** (overrules spec §6's "post-goal").
+The start card always offers **Review flashcards** (R) beside Start and
+Dictation; it opens the sitting and asks `POST …/sittings/:id/menu` for the
+menu, without showing the day's first card. A practice run started before
+the goal is served ahead of the round, and ending it (or Done on that menu)
+returns to today's cards where they were. After the goal the menu still
+follows the summary, as below.
+
 
 Once the day is done (goal or cap) the summary shows once
 (`dayFile.summarySeen`), then the **practice menu**: exactly the modes the
 server lists in `item.modes` (`PRACTICE_MODES` in
-`__backend/src/2_domains/school/cardLadder/practice.mjs`: flashcards, match,
+`__app_modules/learning/school/server/domain/cardLadder/practice.mjs`: flashcards, match,
 say, write, listen, drill, quiz) — a mode whose default run (with help,
 every introduced word) would come up empty is not offered at all. **Say** is
 the exception: it is offered when EITHER variant has a run (Without help
@@ -698,7 +940,7 @@ round stream).
 | Flashcards | front side ("Word first" / "Meaning first") | term-first | meaning-first |
 | Match | starts directly | 4–6 pair picture/text boards over the practice word set; finishing a board sets `matched` on its words | — |
 | Say | With help / Without help | **1.2 say-after** — hears the term, says it after (dropped from the run if no microphone or the word has no term audio) | **3.4 say-from-cue** — cue only; there's no model to say after, so the native comparison at the end is simply skipped |
-| Write | With help (offered first) / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — only over words `readyForSignOff` (locked until one is); free practice, never graded and never a sign-off; cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too). Typing from memory is never the first suggestion: With help is option 1 |
+| Write | With help (offered first) / Without help | **1.1 copy-type** — the term is on screen, type it | **3.3 type-from-cue** — only over words `readyForSignOff` (locked until one is); free practice, never graded and never a sign-off; cue only, no reference to copy; a **Show me** button submits an empty answer and reveals the word (the drill's type step has it too); With help's copy has **Skip**, which moves on the same way. Typing from memory is never the first suggestion: With help is option 1 |
 | Listen | starts directly | one run through every practice word that has term audio (`items/ListenItem.jsx`) | — |
 | Drill | word picker first (**My words**, multi-select, "Drill these") | the same drill walk as the tricky-word drill (look → … → type), over the chosen words | — |
 | Quiz me | starts directly | graded, recognition only (3.1 then 2.2, like the round quiz), then a Match of the words it passed (see Match (guided)) — see below | — |
@@ -804,7 +1046,7 @@ actorId, pin, action: 'card-ladder.admin', context: {learnerId}})` first — a
 refusal changes nothing. Each mutation logs `school.card-ladder.admin`
 `{actorId, learnerId, package, wordId, action}` and a `transition` (source
 `admin`) for any word whose state or stage it moved. Pure parts live in
-`2_domains/school/cardLadder/admin.mjs`; the service methods are
+`domain/cardLadder/admin.mjs`; the service methods are
 `CardLadderSittingService.admin*`.
 
 A control that does not touch the day's plan (reset, mark mastered, drop deck,
@@ -815,7 +1057,7 @@ day the learner actually opened (`listDays` = their study days).
 | Action | Effect |
 |---|---|
 | **Words** (`adminWords`) | Every word the learner can meet (decks seen in order, this deck, then any other word with a record): state, `level` (the chip: Learning / Recognised / Mastered — Mastered only once signed off), `recognizedCount`, `matched`, `typedSignedOff`, stage, due, miss streak, tricky, excluded, `lastGraded`, `recentTyped` — judged typed answers (3.3, and 1.4 dictation sign-offs) from the last 14 study days' files, newest first, each with `itemId`, typed text, score, judge, reason and any `regraded` stamp |
-| **Reset** | The record becomes `emptyWordV3()` — nothing kept, `notYetCarry` included. If a round under way still quizzes it, grading fills `introducedDay` with that day (`applyGraded` does this for any verify/recheck on a word without one), so a miss is carried |
+| **Reset** | The record becomes `emptyWordV3()` — nothing kept, `notYetCarry` included. If a round under way still quizzes it, grading fills `introducedDay` with that day (`applyGraded` does this for any verify/recheck on a word without one), so a miss is carried. The console arms it first: one tap shows Confirm reset and Cancel, and only the second tap writes |
 | **Mark mastered (stage n)** | `mastered`, stage n, due today + `max(1, round(GAPS[min(n,5)] × review.gapScale))` — the day's tuned scale, as a recheck pass uses (1 when absent); miss streak, tricky and `notYetCarry` cleared. A word never introduced gets `introducedDay` = today and `introducedBy: admin`, so a later recheck miss (→ familiar) is carried like any other, but it does not count toward today's `batch.newPerDay` intros (`newAllowance` skips it) |
 | **Exclude / Include** | Sets `excluded`. An excluded word is never in the new-word pool or an intro, a carry round, a recheck (`isDue` is false), a tricky drill or drill offer, a practice run, a match board or 3.1 distractor, the printed learner quiz, or My words, and never counts toward the working set (`isUnsettled` is false). Excluding mid-day also drops its pending recheck and ends an unfinished drill on it (`excludeWordFromDay`, the drill marked `excluded: true` — it does not count toward `drill.perSitting`, so another tricky word may still be drilled); a round already under way keeps it until the round ends. An opened day is then **re-settled** in the same transaction: with nothing else pending, the next round or drill is planned, or the day is credited (`doneAt`) — the child never lands on a "done" summary for an uncredited day |
 | **Drop deck** | Removes the deck from `decksSeen` (the new-word pool); introduced words keep their state. Refused (400) for the current deck or any deck the learner is still enrolled in — the next open would re-add it; `adminWords.droppableDecks` lists the decks that can go |
@@ -823,7 +1065,7 @@ day the learner actually opened (`listDays` = their study days).
 
 ## API
 
-Mounted by `mountCardLadderRoutes` (`__backend/src/4_api/v1/routers/school.cardLadder.mjs`)
+Mounted by `mountCardLadderRoutes` (`__app_modules/learning/school/server/api/school.cardLadder.mjs`)
 at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
 (test mode, same shape). Every response is `Cache-Control: private, no-store`.
 
@@ -836,7 +1078,9 @@ at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
   (no microphone → no speaking steps; test mode also takes `scenario`)
 - `POST /card-ladder/sittings/:sittingId/items/:itemId {userId, response}` → `{result, item, progress}`;
   `response` shape depends on the current item: `{seen:true}` (flashcard intro),
-  `{sort}` (flashcard stream), `{typed}` (copy / typed), `{choice}` / `{dontKnow:true}` (choice)
+  `{sort}` (flashcard stream), `{typed}` (copy / typed), `{choice}` / `{dontKnow:true}` (choice).
+  An **empty** answer — `{typed:''}` (whitespace counts as empty) or `{tiles:[]}` — is the
+  child's *Don't know* everywhere else: see [Not knowing is never a wall](#not-knowing-is-never-a-wall)
 - `GET /card-ladder/sittings/:sittingId?userId=` → current item + progress (reload)
 - `POST /card-ladder/sittings/:sittingId/close {userId, reason}` — `reason` ∈ `goal|cap|leave|idle|unmount`
 - `POST /card-ladder/sittings/:sittingId/recordings/:itemId?userId=&ext=` — raw audio body
@@ -846,6 +1090,10 @@ at `/api/v1/school/card-ladder` (live) and `/api/v1/school/card-ladder/test`
   say-from-cue); never touches status. Test mode's sink keeps nothing.
 - `POST /card-ladder/sittings/:sittingId/practice {userId, mode, help, filter, chosen, frontSide}` → `{item, progress}`;
   400 before today's goal
+- `POST /card-ladder/sittings/:sittingId/dictation {userId, review?}` → `{item, progress, dictation}` — starts this
+  week's [dictation](#weekly-dictation-spec-2026-11-06) run in the sitting, before or after the goal; a week with
+  nothing left to drill answers `{done, dictation}` with no item. A dictation item also takes `{stop: true}`
+  (Stop for now) and the ending `{done: true}`
 - `POST /card-ladder/sittings/:sittingId/learn-more {userId}` → `{item, progress}` (the round's first intro card;
   `progress.round.extra: true`); 400 while guided work is open or no new word is left. Never refused by the cap
 - `GET /card-ladder/words?userId=&deckId=[&sittingId=]` → `{words: [{wordId, term, gloss, state, stage, tricky, dueDay}]}`
@@ -864,6 +1112,18 @@ no audio until the take; look / copy / say-after the full word card.
   `POST /card-ladder/admin/reset {learnerId, deckId, wordId, actorId, pin}`,
   `…/admin/mastered {…, wordId, stage}`, `…/admin/exclude {…, wordId, excluded}`,
   `…/admin/drop-deck {…, dropDeckId}`, `…/admin/regrade {…, day, itemId, pass}`
+- Day by day, **live mount only**, teacher-gated like `admin/words` (cookie's teacher, else `actorId`), reads only:
+  `GET /card-ladder/admin/days?learnerId=&deckId=` → `{learnerId, package, days: [{day, doneAt, activeMs, sittings, answered, graded, correct, missedWords}], more}`
+  (the last 60 opened days, newest first, `more: true` when older ones exist; `daySummary`);
+  `GET /card-ladder/admin/day?learnerId=&deckId=&day=` → that summary plus `answers` — every item in answer order
+  (`dayAnswers`: `kind` recheck / intro / sort / quiz / match / offer / drill / practice, the drill or intro `step`
+  — inferred from the response for a practice item that names none — `task`, the verbatim `response`, `correct` —
+  null where the step is not graded, and a grown-up's re-grade where there is one, with the engine's own verdict
+  kept as `engineCorrect` — `answer`, and for a typed answer `score` / `judge` / `reason` / `regraded`, each with
+  the word's `term` and `gloss`) and `recordings` — every take kept that day (`[{wordId, take, ext, term, gloss}]`);
+  404 for a day never opened. Menu taps (`{menu: true}`) and the summary card are not answers and are left out;
+  `GET /card-ladder/admin/recording?learnerId=&deckId=&day=&wordId=&take=` → one take's audio (`private, no-store`).
+  The console's Cards tab shows these under each deck (`CardLadderDaysPanel`).
 - Tuning, **live mount only**, teacher-gated in `CardLadderTuningService`. The
   acting teacher is the capability session's own user when the cookie holds
   one, else the `actorId` given:
@@ -905,7 +1165,7 @@ shadow 404s on next touch and the client reopens. The banner reads
 **"TEST — nothing is saved"**.
 
 `?scenario=` seeds the shadow before the sitting opens
-(`__backend/src/2_domains/school/cardLadder/scenarios.mjs`):
+(`__app_modules/learning/school/server/domain/cardLadder/scenarios.mjs`):
 
 | Scenario | Seeds |
 |---|---|
@@ -916,9 +1176,10 @@ shadow 404s on next touch and the client reopens. The banner reads
 | `tricky` | every deck word `familiar` (introduced 3 days ago); the first is tricky since yesterday — the day opens on its drill |
 | `typos` | every deck word due for its typed sign-off recheck — typed items to misspell (the round quiz is recognition only) |
 | `done` | today already closed (`doneAt` = today) — straight to the summary/menu |
+| `dictation` | the real snapshot, and this week's dictation from its start — the shadow's progress is empty, so every tagged word is at match (the real `dictation-progress.yml` is never read or written) |
 
 A backend safety test
-(`__backend/src/3_applications/school/CardLadderTestMode.test.mjs`) drives a full
+(`__app_modules/learning/school/server/application/CardLadderTestMode.test.mjs`) drives a full
 test sitting end to end and asserts every real file on disk is byte-identical
 before and after — this is the guarantee the banner promises.
 
@@ -1083,7 +1344,7 @@ button that currently owns the key.
 | Space on **Say** | Record (before a take) → Stop (while recording) → Next (after a take). No mic (none, refused, errored) → **Next** (an answer, logged `item.answered` with `micOff`), never a Skip and never a dead end | `SayItem.jsx` |
 | **←** (ArrowLeft) | Record again — only after a take, not while recording/saving, never without a mic | Say |
 | **Tab** | Hear it again — the term (say-after's model and a take's revealed word on Say included), the cue's gloss clip, or the result's revealed word; `preventDefault`, so focus never moves, and it works **inside a typing field** without typing or blurring — a typed item with no audio still maps it, as a no-op, so focus stays put | every item with any audio (and every typed item) |
-| **\** (Backslash) | Skip (Say — only while the button reads Skip: a working mic, no take yet) / Show me (typed) — the deliberately hunted-for give-up; Skip is touch-first | Say, typed practice |
+| **\** (Backslash) | Skip (Say — only while the button reads Skip: a working mic, no take yet) / the typing give-up (Show me · Don't know · Skip) / Don't know (tiles; an alias of 0 on choice) — the deliberately hunted-for give-up; touch-first | Say, every typed item, tiles, choice |
 | 1 / 2 / 3 | Not yet / Familiar / Got it | flipped flashcard |
 | U / Q | Undo / Quiz me | stream flashcards |
 | 1–4, 0 | Choices, Don't know | choice |
@@ -1197,6 +1458,16 @@ through `readOnlyView()`, which reads an unmoved package in place and has no
 writer, so a test sitting writes neither path. The CLI reads `card-ladder/`
 first, else `word-ladder/`, and never copies.
 
+## Achievement record (gems)
+
+`CardLadderSittingService.achievementRecord({userId, from, to})` (live only,
+read only, through the store's `readOnlyView`) answers the economy's gems:
+per package on disk (`YamlCardLadderStore.listPackages`, both `card-ladder/`
+and pre-rename `word-ladder/` names, never migrating), the study days in range
+with `doneAt`, and every word currently signed off. An unreadable package is
+skipped with `school.card-ladder.achievement-package-skipped` (warn). See
+[Agenda and completion — School achievements for gems](./agenda-and-completion.md#school-achievements-for-gems).
+
 ## Logs
 
 Everything lands in the log store as `school.card-ladder.*`, and every event
@@ -1224,7 +1495,8 @@ sequencing events) `package` and `day`:
 | `word.prereqs` | a word's sign-off prerequisites moved (a recognition pass, a finished Match, a typed sign-off or its loss) | `wordId`, `changed`, `recognizedCount`, `matched`, `typedSignedOff`, `readyForSignOff`, `gaps` |
 | `recorded` / `practice` | a spoken take stored; a practice run built | `step`, `take`, `bytes`; `practice`, `help`, `filter`, `size`, `first` |
 | `learn-more` | a Learn more round started (ruling 2026-09-23) | `round`, `newIds`, `doneAt` (unchanged), `activeMs`; its `round.planned` carries `extra: true` |
-| `judge-fallback` (warn) | the typed judge's model failed or timed out | `wordId`, `error` |
+| `judge-model` | the typed judge's model step answered (Jev, or the chat model where no decision model is configured) | `wordId`, `engine`, `model`, `floor`, `raw`, `level`, `confidence`, `score`, `ms` |
+| `judge-fallback` (warn) | the typed judge's model failed or timed out | `wordId`, `engine`, `error`, `ms` |
 | `admin` | a grown-up word control (reset, mark mastered, exclude, drop deck, **regrade**) | `actorId`, `action`, `wordId`; a regrade adds `itemId`, `pass`, `score`, `was` |
 | `folded` / `fold-refused` / `fold-deck-skipped` | the printed quiz folded in (spec §8) | `source`, `count`, `demoted` |
 | `tuning` | one line per applied or dropped tuner change, and per grown-up undo | `setting`, `from`, `to`, `reason`, `dropped?`, `actorId` on an undo |
@@ -1282,7 +1554,7 @@ an Enter that submits a field. Nothing is logged per keystroke.
 | `item.answered` | the service accepted a response | `itemId`, `type`, `task`, `response`, `correct`, `score`, `judge`, `next`, `ms`, **`input`**; `micOff: true` on a say step moved past with no mic (the trace marks it "(no mic)") |
 | `result.shown` / `result.dismissed` | the verdict panel appears / Next past a held verdict | `itemId`, `correct`, `score`, `judge`, `held` (false = a retry on the same item); `via`, `ms` |
 | `item.skipped` | Skip on a say step with no take, past a working mic (with no mic it is an `item.answered`) | `itemId`, `type`, `what: say`, `itemMode`, `via`, `ms`, `micOff` (always false now; kept for older traces) |
-| `showme.used` | Show me on a practice typing item | `itemId`, `via`, `ms` |
+| `showme.used` | a give-up: Show me / Don't know / Skip on a typed item, Don't know on tiles | `itemId`, `mode`, `label`, `via`, `ms` |
 | `item.stalled` (warn) | 45 s and 120 s with no key or pointer on the current item | `itemId`, `ms`, `visibility: visible\|hidden`, `screen: item\|result` |
 | `visibility` | the tab is hidden or shown | `state` |
 | `audio.played` | every clip that finished or failed (warn when `error`/`blocked`) | `clip: term\|gloss\|take`, `trigger: auto\|key\|touch`, `input` (for key/touch), `outcome: ended\|error\|blocked` |
@@ -1316,7 +1588,7 @@ own scope:
 ## Printed quiz and the fold (spec §8)
 
 Two quiz sources share one row shape (`buildWordQuizSource` /
-`buildLearnerQuizSource`, `__backend/src/2_domains/school/cardLadder/quizSource.mjs`):
+`buildLearnerQuizSource`, `__app_modules/learning/school/server/domain/cardLadder/quizSource.mjs`):
 one `question` block per word, `itemId: <wordId>` (so a scanned row's attempt
 names the word the fold demotes), answer + three authored decoys, alternating
 term→gloss (`What does **<term>** mean?`) / gloss→term (`Which is **<gloss>**
@@ -1410,7 +1682,7 @@ renders around them and `school certify` warns (`--strict-media` fails).
 ## Migration from v2
 
 The v1 `status.card-ladder-status/v1` (or unversioned) shape is migrated on
-read (`migrateStatusV2` in `2_domains/school/cardLadder/statusV3.mjs`) and
+read (`migrateStatusV2` in `domain/cardLadder/statusV3.mjs`) and
 written as v3 on the next transaction: NEW → `new`, LEARNING → `familiar`,
 CLAIMED → `claimed`, KNOWN step n → `mastered` stage n+1 with `dueDay` = the v2
 next-check day verbatim. v2 day plans, the review run, the recording gate and

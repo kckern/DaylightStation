@@ -285,6 +285,21 @@ literal text: `pending` with no sources, then `complete` with a warning
 (`GET …/search` answers the same warning with no items). Text such as
 `mission:impossible` still searches everywhere.
 
+Id-shaped text is also looked up directly, alongside the text search (`GET …/search`
+does the same). Explicit `plex:697495` always works. Unprefixed text is matched
+against the `directIdPatterns` the source adapters declare (see
+`__docs/reference/content/content-sources.md`): today a bare number of 2 or
+more digits is a Plex rating key and a bare UUID is an Immich asset. If several
+adapters' patterns match, each is looked up in parallel (at most 4), ordered by
+declared `priority` then adapter registration order. No adapter declaring
+patterns means no change. Each hit streams as its own `results` event scored
+as an exact id match with `matchReason: "id-lookup"`, and a text-search hit for
+the same id is upgraded to that score (even if its title lacks the number), so
+the exact item always leads, and the client's merge upgrades an earlier,
+lower-scored copy of the same id. A miss or 404 is silent (no warning); real
+lookup errors surface as warnings. Logged as `content-query.direct-id.matched`,
+`.hit` and `.miss`.
+
 **App behavior requirement:** the app MUST use `/stream` for live search.
 
 #### `GET /api/v1/media/config`
@@ -312,6 +327,23 @@ reads that registry. The fitness context also stores raw media elements for
 governance and overlays; those are not Player handles and must not feed the
 fleet session bridge. Unmounting the Player removes its registration so the
 next device heartbeat reports idle rather than the previous title.
+
+The fitness kiosk is also a cast target ("Play on garage"). It is not a
+screen-framework screen, so it carries its own receiver,
+`useFitnessCastReceiver` (fitness `browser/hooks/fitness/`), mounted in
+`FitnessApp` with the kiosk's explicit `FLEET_DEVICE_ID`. The receiver:
+
+- sends `command-handler-presence` heartbeats, so WakeAndLoad takes the
+  WS-first path;
+- acks a `queue` play-now of a `plex:` id on receipt, then plays it through
+  the normal `/fitness/play/:id` path (any open module, such as an ambience,
+  closes first);
+- refuses adds, other commands and non-Plex sources with a coded ack.
+
+"Now playing" is confirmed by the `DeviceStatePublisher` above. On the
+WS-fallback path, a device with no content control that never acks, or any
+receiver that answers `ok:false` with a `code`, now fails the load step
+immediately instead of reporting it delivered.
 
 Playback-hub speaker lanes publish their known current track and playback
 state. Their native playlist cursor does not index the fleet queue: until the
@@ -423,8 +455,10 @@ When a start reports none, the ledger takes the origin a load noted for that
 screen within the last 3 min (routine or remote send, §2.6).
 
 **Defaults** (NF-DEF): unfinished after **5 min or 5%** played; finished at
-**90%** — the line `MediaProgress.isWatched`, `completedAt` and Plex
-next-episode selection already use, read as "the credits have started". An
+the library's completion rule — default **90%**, read as "the credits have
+started" (`watch_completion` in the household media config; Fitness overrides
+it, see `__docs/reference/content/content-progress.md`). Spots and
+`MediaProgress.isWatched` use the default. An
 item leaves carry on only when no screen holds an open spot. A same-item
 report after **15 quiet minutes** on a screen is a new ledger start; a
 terminal report (`naturalEnd`, or `status` `completed`/`stopped`/`ended`)
@@ -1365,6 +1399,25 @@ destination is adopted and the source still has the same owner revision is
 the source stopped, by `POST /session/claim` (stop with `intent: "move"`, so
 the source shows "Moved by …"). Any other result leaves the source playing.
 
+**Fling: this device → a screen** (`shell/FlingButton.jsx`, on the handle and
+the local transport). The same destination as above through `useHandOff(id,
+{ mode: 'transfer', startAt })`: the local capture is the source, the screen
+adopts first (typed hand-off `positionPolicy: { kind: 'absolute', seconds }`,
+or the adopt load's snapshot `position`), and `portability.stopIfCurrent`
+stops this device only for the same owner revision. The fling passes
+`play: true`, so the sent snapshot's `state` is `playing` (a paused item here
+starts playing there; a plain move keeps `paused`). The whole captured queue
+travels, as with Move to…. `startAt` overwrites the captured `position` and
+marks the started queue entry and `currentItem` `resume: false` (SinglePlayer
+forwards it to `/play`, so the library's saved spot never overrides the
+explicit start): `0` by default; with "Start where I am" (offered when
+the hot position is ≥ 10% of a known, non-live duration — `cast/flingStart.js`
+`FLING_CHOICE_FRACTION`) the hot-tier position read at the tap. Targets are
+`moveDestinations(devices)` (content screens, no browsers); the control is
+absent without a current item in `playing | paused | buffering | stalled` or
+without a target. The outcome is a `kind: "move"` local record with the title
+only, so the tray offers no plain-play Retry; the panel stays open on failure.
+
 **Player completion guard.** `Player.beginRendererBoundary` (a new owner
 operation on the mounted content: sleep resume, Put it back, a same-item
 adopt) resets the duplicate-completion key, so the resumed item's next
@@ -1401,6 +1454,7 @@ with the screen's `code`). Every body takes `commandId` and optional
 
 | Route | Body | Envelope |
 |---|---|---|
+| `POST /api/v1/device/:id/session/quality` | `{ contentId, queueItemId?, sessionId?, quality: { maxResolution?, maxVideoBitrate?, transcode?, adaptive? } }` | `session` `{ action: "set-quality", … }`; empty quality clears current-visit overrides |
 | `POST /api/v1/device/:id/session/tracks` | `{ audio?: "<track id>", subtitle?: "<track id>" \| "off" }` (at least one) | `session` `{ action: "set-tracks", … }` |
 | `POST /api/v1/device/:id/session/brief/close` | `{}` | `session` `{ action: "close-brief" }` |
 | `POST /api/v1/device/:id/session/music-behind` | `{ op: "start" \| "play" \| "pause" \| "next" \| "prev" \| "stop", contentId?, title? }` (`start` needs `contentId`) | `session` `{ action: "music-behind", … }` |
@@ -1672,8 +1726,8 @@ Hybrid model:
 
 - **Reactive push** on any state change (play/pause/stop, seek, item advance,
   queue mutation, config change, adoption completion). Debounced 500ms.
-- **Heartbeat** every 5s while in any non-idle state. Every 30s (or suppressed)
-  while idle.
+- **Heartbeat** every 5s, idle included (`useSessionStatePublisher`,
+  `HEARTBEAT_INTERVAL_MS`).
 - **On subscription**: backend MUST replay the last known snapshot.
 
 Payload:
@@ -1689,8 +1743,9 @@ Payload:
 
 **Verified by:**
 - `shared/contracts/media/envelopes.test.mjs` — `buildDeviceStateBroadcast` + `validateDeviceStateBroadcast`
-- `frontend/src/screen-framework/publishers/useSessionStatePublisher.test.jsx` — reactive + heartbeat + debounce
-- `frontend/src/screen-framework/publishers/SessionSource.test.js` — source factory contract
+- `__capabilities/screen-host/browser/publishers/useSessionStatePublisher.test.jsx` — reactive + heartbeat + debounce
+- `__capabilities/playback/browser/sessions/SessionSource.test.js` — source factory contract
+- `__capabilities/playback/browser/sessions/registrySessionSource.audience.test.js` — the declared audience rides every snapshot
 - `__backend/tests/unit/suite/3_applications/devices/DeviceLivenessService.test.mjs` — last-snapshot cache + replay on subscribe
 - `__backend/tests/unit/suite/3_applications/devices/DeviceLiveness.integration.test.mjs` — end-to-end reason:offline + reason:initial synthesis
 
@@ -2090,9 +2145,39 @@ Central portable type.
     "ownerId": "<deviceId>" | "<clientId>",
     "origin": { /* optional — who last commanded it, §6.2.7 */ }
   },
-  "controls": { /* optional — screen session controls, §9.14 */ }
+  "controls": { /* optional — screen session controls, §9.14 */ },
+  "audience": { /* optional — who is using the device, below */ }
 }
 ```
+
+**`audience`** (optional) — who is using the device, so the fleet card can show
+their faces. Absent means nobody declared.
+
+```json
+{
+  "activity": "workout" | "story" | "lesson" | "game" | "video" | "music",
+  "people": [ { "id": "<user id>", "name": "<display name>" | null, "role": "rider" | "learner" | "player" | "viewer", "guest": false } ]
+}
+```
+
+- `id` is a household user id: the avatar is `/static/img/users/<id>` (fallback
+  `user`). No image URLs travel. A guest has `guest: true`, `name: null`, and
+  is shown as the generic face labelled "Guest" — never named.
+- Validated by `validateAudience` (`shared/contracts/media/shapes.mjs`) inside
+  `validateSessionSnapshot`.
+- **Who fills it:** any component on the device calls `useDeviceAudience(audience)`
+  (`__capabilities/playback/browser/sessions.mjs`). Declarations stack — the
+  latest live one wins and withdrawing it reveals the one beneath — and are
+  keyed by activity + people, so a roster that changes every heart-rate tick
+  never re-publishes. `createRegistrySessionSource` attaches the current one to
+  every snapshot (idle ones too) and re-publishes when it changes. Today: the
+  garage during a workout (riders), the living room while a reading session is
+  open (the credited child, story playing or not), the piano tablet (the
+  current player; `game` while a game is mounted, `lesson` otherwise). Server
+  producers (speakers, arcade) send none.
+- The relay passes `snapshot` through untouched; a field outside the snapshot
+  would be dropped (`ClientIngressService`), and browser `currentItem` keeps
+  only six fields — which is why `audience` lives here.
 
 Queue items added by "keep similar things playing" carry
 `addedBy: "auto-continue"` and the batch's `itemActionId`.
@@ -2415,7 +2500,7 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `takeover.initiated` | info | Take Over started. | `deviceId`, `sessionId` |
 | `takeover.succeeded` | info | Take Over completed. | `deviceId`, `sessionId`, `position` |
 | `takeover.failed` | warn | Take Over failed. | `deviceId`, `error` |
-| `handoff.initiated` | info | Hand Off started. | `deviceId`, `mode` |
+| `handoff.initiated` | info | Hand Off started. | `deviceId`, `mode`, `operationId`, `startAt` (when the hand-off names a start) |
 | `handoff.succeeded` | info | Hand Off completed. | `deviceId`, `mode` |
 | `handoff.failed` | warn | Hand Off failed. | `deviceId`, `error` |
 | `ws.connected` / `ws.disconnected` / `ws.reconnected` | info | WS lifecycle. | `attempt?` |
@@ -2453,6 +2538,11 @@ Screen session controls (component `ScreenSessionControls` / `ScreenSessionContr
 | `line-up.requested` / `.failed` | info/warn | Line up with another screen. | `target`, `withId`, `contentId`, `seconds` |
 | `aim.drift-warned` | info | Several screens chosen in one or neighbouring rooms (or the registry was unreadable). | `targetIds`, `rooms`, `neighbouringRooms`, `state` |
 | `screen-move.initiated` / `.succeeded` / `.failed` | info/warn | Move to… between screens / to this device. | `sourceId`, `destinationId`, `operationId`, `path`, `status`, `reason`, `sourceStopped` |
+| `fling.opened` | info | **Play on a screen** opened from the handle or the local transport. | `contentId`, `targetIds`, `position`, `duration`, `offerChoice` |
+| `fling.start-mode-changed` | info | Start choice changed (offered at ≥ 10%). | `contentId`, `startMode` (`beginning` \| `current`) |
+| `fling.target-chosen` | info | A screen tapped; the hand-off starts. | `targetId`, `contentId`, `startMode`, `startAt` |
+| `fling.dispatched` / `fling.failed` | info/warn | The screen adopted / did not confirm (local untouched on failure). | `targetId`, `contentId`, `startMode`, `startAt` / `status`, `error`, `sourceStopped` |
+| `fling.local-stopped` | info | This device stopped after the screen adopted. | `targetId`, `contentId`, `sourceStopped` |
 
 ### 10.2 Sampling
 
@@ -2598,3 +2688,11 @@ All 4xx/5xx JSON responses from the APIs defined in §2 and §4 MUST use:
   explicit user action.
 - `DEVICE_OFFLINE` MUST NOT be surfaced as an app-breaking error — the
   device is marked offline and observation continues (C9.6).
+
+
+Quality intent and the current-item replacement contract are specified in
+[player/playback-quality.md](../player/playback-quality.md). Selected overrides
+are stored per content ID in tab session storage (`media-app.quality-overrides.v1`)
+and attached by `useContentDispatch`. The active command validates the captured
+content/visit/session identity at the receiving owner, then adopts a snapshot
+with updated quality fields while preserving hot position and pause intent.

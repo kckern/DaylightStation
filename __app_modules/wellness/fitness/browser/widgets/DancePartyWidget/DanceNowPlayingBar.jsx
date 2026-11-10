@@ -33,19 +33,48 @@ const StrobeIcon = () => (
   </svg>
 );
 
+// Immersive (feather "maximize"): hide the bar, keep only a faint Next.
+const ImmersiveIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    />
+  </svg>
+);
+
+// Wand (soundboard effects), stroke follows currentColor.
+const WandIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M4 20L14 10M14 10l2-2m-2 2l-2-2m2 2l2 2M17 3v3m0 0v3m0-3h-3m3 0h3M19 13v2m0 0v2m0-2h-2m2 0h2M8 4v2m0 0v2m0-2H6m2 0h2"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export default function DanceNowPlayingBar({
   track, isPlaying, onPlayPause, onNext, onExit,
-  volumeLevel = 100, onVolumeSelect,
+  volumeChannels = [],
   lightsOn = false, onToggleLights,
-  strobeOn = false, onToggleStrobe
+  strobeOn = false, onToggleStrobe,
+  immersive = false, onToggleImmersive,
+  onOpenEffects
 }) {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const closeVolume = useCallback(() => setVolumeOpen(false), []);
+  const allMuted = volumeChannels.length > 0 && volumeChannels.every((ch) => ch.level === 0);
+  if (immersive) {
+    // Immersive: nothing but a faint Next — the one control that must stay.
+    return (
+      <button type="button" className="dance-immersive-next" aria-label="Next" onClick={onNext}>⏭</button>
+    );
+  }
   return (
     <>
       <button type="button" className="dance-exit" aria-label="Exit dance party" onClick={onExit}>✕</button>
-      {volumeOpen && onVolumeSelect && (
-        <DanceVolumeModal level={volumeLevel} onSelect={onVolumeSelect} onClose={closeVolume} />
+      {volumeOpen && volumeChannels.length > 0 && (
+        <DanceVolumeModal channels={volumeChannels} onClose={closeVolume} />
       )}
       <div className="dance-nowplaying">
         <div className="dance-cover">
@@ -56,6 +85,11 @@ export default function DanceNowPlayingBar({
           <div className="dance-artist">{track?.artist || ''}</div>
         </div>
         <div className="dance-controls">
+          {onOpenEffects && (
+            <button type="button" className="dance-effects-btn" aria-label="Effects" onClick={onOpenEffects}>
+              <WandIcon />
+            </button>
+          )}
           {onToggleStrobe && (
             <button
               type="button"
@@ -78,10 +112,10 @@ export default function DanceNowPlayingBar({
               <LightsIcon />
             </button>
           )}
-          {onVolumeSelect && (
+          {volumeChannels.length > 0 && (
             <button
               type="button"
-              className={`dance-volume-btn${volumeLevel === 0 ? ' is-muted' : ''}`}
+              className={`dance-volume-btn${allMuted ? ' is-muted' : ''}`}
               aria-label="Volume"
               onClick={() => setVolumeOpen((v) => !v)}
             >
@@ -90,6 +124,11 @@ export default function DanceNowPlayingBar({
           )}
           <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onClick={onPlayPause}>{isPlaying ? '⏸' : '▶'}</button>
           <button type="button" aria-label="Next" onClick={onNext}>⏭</button>
+          {onToggleImmersive && (
+            <button type="button" className="dance-immersive-btn" aria-label="Immersive mode" onClick={onToggleImmersive}>
+              <ImmersiveIcon />
+            </button>
+          )}
         </div>
       </div>
     </>
@@ -102,10 +141,17 @@ DanceNowPlayingBar.propTypes = {
   onPlayPause: PropTypes.func.isRequired,
   onNext: PropTypes.func.isRequired,
   onExit: PropTypes.func.isRequired,
-  volumeLevel: PropTypes.number,
-  onVolumeSelect: PropTypes.func,
+  volumeChannels: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    level: PropTypes.number.isRequired,
+    onSelect: PropTypes.func.isRequired
+  })),
   lightsOn: PropTypes.bool,
   onToggleLights: PropTypes.func,
   strobeOn: PropTypes.bool,
-  onToggleStrobe: PropTypes.func
+  onToggleStrobe: PropTypes.func,
+  immersive: PropTypes.bool,
+  onToggleImmersive: PropTypes.func,
+  onOpenEffects: PropTypes.func
 };

@@ -38,7 +38,9 @@ export function resolveTranscodeCaps(opts = {}) {
     ? Math.min(reqBitrate, DEFAULT_MAX_VIDEO_BITRATE)
     : DEFAULT_MAX_VIDEO_BITRATE;
 
-  const maxResolution = opts.maxResolution ? String(opts.maxResolution) : DEFAULT_MAX_RESOLUTION;
+  const maxResolution = opts.maxResolution
+    ? String(Math.min(Number(String(opts.maxResolution).replace(/p$/, '')), Number(DEFAULT_MAX_RESOLUTION)))
+    : DEFAULT_MAX_RESOLUTION;
 
   const reqFps = Number(opts.maxFrameRate);
   const maxFrameRate = Number.isFinite(reqFps) && reqFps > 0
@@ -46,6 +48,13 @@ export function resolveTranscodeCaps(opts = {}) {
     : DEFAULT_MAX_FRAME_RATE;
 
   return { maxVideoBitrate, maxResolution, maxFrameRate };
+}
+
+/** Plex expects dimensions as well as the public resolution class. Never upscale. */
+export function transcodeDimensions(resolution) {
+  const height = Number(resolution);
+  const width = ({ 240: 426, 360: 640, 480: 854, 720: 1280, 1080: 1920 })[height];
+  return width ? `${width}x${height}` : '1920x1080';
 }
 
 const CODEC_ADVERT = 'append-transcode-target-codec(type=videoProfile&context=streaming&videoCodec=h264,hevc&audioCodec=aac&protocol=dash)';

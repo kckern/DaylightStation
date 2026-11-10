@@ -1,0 +1,97 @@
+/**
+ * What kind of evidence a cue needs, and how to recognise its word.
+ *
+ *   speech      a single tagged word (VidAngel mute with a censored-word label)
+ *   speech-line something said, described in prose ("A man talks about ...")
+ *   visual      something shown
+ *   credits     opening/closing credits
+ *   sound       a non-speech sound ("Gunfire can be heard")
+ *
+ * `initialKind` is a guess from fields alone. Labels in prose under a
+ * language category are ambiguous (said vs shown on a sign); those return
+ * `needsRouting: true` and the refiner asks the decision model.
+ */
+
+import { isWordLabel, SOUND_LABEL } from '../../../../../../../shared/contracts/content-filter/cueModality.mjs';
+
+export { isWordLabel };
+
+export function initialKind(cue) {
+  const cat = String(cue.category || '');
+  const label = String(cue.label || '').trim();
+  if (cat.startsWith('credits/')) return { kind: 'credits', needsRouting: false };
+  if (cue.type === 'mute' && isWordLabel(label)) return { kind: 'speech', needsRouting: false };
+  if (SOUND_LABEL.test(label) && cue.type === 'mute') return { kind: 'sound', needsRouting: false };
+  if (cue.type === 'mute') return { kind: 'speech-line', needsRouting: true };
+  if (cat.startsWith('language/')) return { kind: isWordLabel(label) ? 'speech' : 'speech-line', needsRouting: !isWordLabel(label) };
+  return { kind: 'visual', needsRouting: false };
+}
+
+/**
+ * Does `cue` belong to a `--kinds` selection? A skip cue under a language category is
+ * `shown` (a sign, a billboard) however its label reads; `initialKind` calls it a line
+ * only because the router has to decide, so a `visual` selection must still reach it.
+ */
+export function cueMatchesKinds(cue, wanted) {
+  const { kind, needsRouting } = initialKind(cue);
+  if (wanted.has(kind)) return true;
+  return wanted.has('visual') && needsRouting && cue.type === 'skip';
+}
+
+// Spoken forms per category leaf. Compounds count for each part (goddammit is god and damn).
+const FORMS = {
+  god: ['god', 'gods', "god's", 'goddamn', 'goddamnit', 'goddammit', 'godsakes', 'godawful'],
+  damn: ['damn', 'damned', 'damnit', 'dammit', 'goddamn', 'goddamnit', 'goddammit'],
+  hell: ['hell', "hell's", 'hellhole'],
+  shit: ['shit', 'shits', 'shitty', 'bullshit', 'shitload', 'shithead'],
+  jesus: ['jesus', 'jeez', 'geez', 'jeezus'],
+  christ: ['christ', "christ's", 'christsakes'],
+  ass: ['ass', 'asses', 'asshole', 'assholes', 'jackass', 'smartass', 'dumbass'],
+  bastard: ['bastard', 'bastards'],
+  bitch: ['bitch', 'bitches', 'bitchin', "bitchin'", 'bitching'],
+  screw: ['screw', 'screwed', 'screwing', 'screwin', 'screwball'],
+  fuck: ['fuck', 'fucking', 'fuckin', 'fucked', 'fucker', 'motherfucker'],
+};
+
+/**
+ * The plain word to prompt a speech model with for a tagged word, or null when
+ * the label cannot be resolved ("G*d" -> "god"; "p*ck*rw**d" -> null).
+ */
+export function wordPrompt(cue) {
+  const label = String(cue.label || '').trim();
+  if (!isWordLabel(label)) return null;
+  const leaf = String(cue.category || '').split('/').pop();
+  if (FORMS[leaf]) return leaf;
+  if (!label.includes('*')) return label.toLowerCase();
+  const rx = new RegExp(`^${label.toLowerCase().replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[a-z]')}$`);
+  return Object.keys(FORMS).find((k) => rx.test(k)) || null;
+}
+
+function normWord(w) {
+  return String(w || '').toLowerCase().replace(/[^a-z']/g, '').replace(/^'+|'+$/g, '');
+}
+
+/**
+ * A matcher for the tagged word, or null when the cue is not a single word.
+ * Uses the category leaf when known, else the label with '*' as one letter.
+ * @returns {((word: string) => boolean)|null}
+ */
+export function wordMatcher(cue) {
+  const label = String(cue.label || '').trim();
+  if (!isWordLabel(label)) return null;
+  const leaf = String(cue.category || '').split('/').pop();
+  let forms = FORMS[leaf];
+  if (!forms) {
+    const rx = new RegExp(`^${label.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, (c) => (c === '*' ? '*' : `\\${c}`)).replace(/\*/g, '[a-z]')}$`);
+    const key = Object.keys(FORMS).find((k) => rx.test(k));
+    if (key) forms = FORMS[key];
+  }
+  if (forms) {
+    const set = new Set(forms);
+    return (w) => set.has(normWord(w));
+  }
+  // Unknown word: the label itself (multi-word labels match their first word), '*' = any letters
+  const first = label.toLowerCase().split(/\s+/)[0];
+  const rx = new RegExp(`^${first.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[a-z]+')}s?$`);
+  return (w) => rx.test(normWord(w));
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PROGRESS_MODES, inferProgressMode, projectShelfItem, projectReading, measureObligation, isDayKey, noonOf,
+  PROGRESS_MODES, inferProgressMode, defaultProgressMode, projectShelfItem, projectReading, measureObligation, isDayKey, noonOf,
   selectFeaturedShelfItem, readingFromLegacyItem,
 } from "./bookShelf.mjs";
 
@@ -22,6 +22,24 @@ describe('inferProgressMode', () => {
   it('never infers minutes — nothing in metadata reliably says "audiobook"', () => {
     expect(PROGRESS_MODES).toEqual(['page', 'minutes', 'check']);
     expect(inferProgressMode({ pageCount: 0 })).toBe('check');
+  });
+});
+
+describe('defaultProgressMode', () => {
+  it('is page from 64 pages up — long enough that "which page" is the question', () => {
+    expect(defaultProgressMode(64)).toBe('page');
+    expect(defaultProgressMode(320)).toBe('page');
+  });
+
+  it('is check under 64 pages — a picture book is read, not paged through', () => {
+    expect(defaultProgressMode(63)).toBe('check');
+    expect(defaultProgressMode(32)).toBe('check');
+  });
+
+  it('is check when the length is unknown or not a real count', () => {
+    for (const value of [null, undefined, 0, -5, 64.5, '200', Number.NaN]) {
+      expect(defaultProgressMode(value)).toBe('check');
+    }
   });
 });
 

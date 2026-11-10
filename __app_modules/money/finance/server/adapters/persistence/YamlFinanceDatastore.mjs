@@ -368,6 +368,26 @@ export class YamlFinanceDatastore extends IFinanceStore {
     return this.#readData(filePath);
   }
 
+  /**
+   * Get the categorizer's settled map (transaction id -> friendly name)
+   * @param {string} [householdId]
+   * @returns {Object<string,string>|null}
+   */
+  getCategorizationSettled(householdId) {
+    const filePath = path.join(this.getBasePath(householdId), 'categorization.settled');
+    return this.#readData(filePath);
+  }
+
+  /**
+   * Save the categorizer's settled map
+   * @param {Object<string,string>} map
+   * @param {string} [householdId]
+   */
+  saveCategorizationSettled(map, householdId) {
+    const filePath = path.join(this.getBasePath(householdId), 'categorization.settled');
+    this.#writeData(filePath, map);
+  }
+
   // ==========================================================================
   // Payroll Data
   // ==========================================================================

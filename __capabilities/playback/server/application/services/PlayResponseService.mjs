@@ -1,6 +1,7 @@
 // __backend/src/3_applications/content/services/PlayResponseService.mjs
 
 import { MediaProgress } from "../../../../content-catalog/server/progress.mjs";
+import { normalizePlaybackQuality } from '#shared/contracts/media/playbackQuality.mjs';
 
 /**
  * PlayResponseService
@@ -67,12 +68,14 @@ export class PlayResponseService {
    *   media item, which is what keeps a standalone étude a whole work.
    * @returns {Object} Play response DTO
    */
-  toPlayResponse(item, watchState = null, { descriptor = {}, resume, session = null, containerId = null } = {}) {
+  toPlayResponse(item, watchState = null, { descriptor = {}, resume, session = null, containerId = null, quality = {} } = {}) {
+    const normalizedQuality = normalizePlaybackQuality(quality);
     const response = {
+      ...normalizedQuality,
       id: item.id,
       assetId: item.id,
-      mediaUrl: item.mediaUrl,
-      mediaType: item.mediaType,
+      mediaUrl: descriptor.mediaUrl ?? item.mediaUrl,
+      mediaType: descriptor.mediaType ?? item.mediaType,
       format: descriptor.format ?? item.format ?? null,
       title: item.title,
       duration: item.duration,
@@ -113,6 +116,11 @@ export class PlayResponseService {
       //                    will see a fresh random client for every request
       response.plexClientIdentifier = descriptor.clientIdentifier ?? null;
 
+      for (const [key, value] of Object.entries(normalizedQuality)) {
+        const sep = response.mediaUrl.includes('?') ? '&' : '?';
+        response.mediaUrl += `${sep}${key}=${encodeURIComponent(value)}`;
+      }
+
       if (session) {
         const sep = response.mediaUrl.includes('?') ? '&' : '?';
         // Encoded on our own hop; the proxy route decodes it back to the exact
@@ -127,7 +135,7 @@ export class PlayResponseService {
 
     // Set videoUrl when media is video (readalong scrollers check this field)
     if (item.mediaType === 'video' && item.mediaUrl) {
-      response.videoUrl = item.mediaUrl;
+      response.videoUrl = response.mediaUrl;
     }
 
     // Pass through content/style/subtitle/ambientUrl for readalong/singalong scrollers

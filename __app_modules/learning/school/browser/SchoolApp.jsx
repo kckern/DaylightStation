@@ -33,8 +33,10 @@ import FlashcardDeckBrowser from "./Programs/Flashcards/FlashcardDeckBrowser.jsx
 import CardLadderProgram from "./Programs/Flashcards/CardLadder/CardLadderProgram.jsx";
 import { isCardLadderPolicy } from "./Programs/Flashcards/CardLadder/cardLadderMode.js";
 import RubiksCubeProgram from "./Programs/RubiksCube/RubiksCubeProgram.jsx";
+import SchoolDebriefProgram from "./Programs/SchoolDebrief/SchoolDebriefProgram.jsx";
 import BookShelf from "./books/BookShelf.jsx";
 import BookScanEntry from "./books/BookScanEntry.jsx";
+import BookPile from "./books/BookPile.jsx";
 import BookShelfDoor from "./books/BookShelfDoor.jsx";
 import ReportPanel from "./report/ReportPanel.jsx";
 import AdaptiveTutorPanel from "./remediation/AdaptiveTutorPanel.jsx";
@@ -49,6 +51,8 @@ import { moduleLaunchAllowed } from "./catalog/certification.js";
 import Keypad from "./selfService/Keypad.jsx";
 import AgendaStatusBoard from "./status/AgendaStatusBoard.jsx";
 import BoardHeader from "./status/BoardHeader.jsx";
+import BankScreen from "./bank/BankScreen.jsx";
+import { useBankDoor, BankDoorSheet } from "./bank/BankDoor.jsx";
 import LaunchCard from "./selfService/LaunchCard.jsx";
 import LaunchCardPreview from "./selfService/LaunchCardPreview.jsx";
 import ScanCeremony from "./selfService/ScanCeremony.jsx";
@@ -57,6 +61,11 @@ import { useScanCeremony } from "./selfService/useScanCeremony.js";
 import { ReadalongPlaylistPlayer as ReadalongPlaylistPlayer } from "../../../../__capabilities/playback/browser/readalong.mjs";
 import { ShutdownBlackout, useShutdownLock } from "../../../../frontend/src/hooks/useShutdownLock.js";
 import HangulTypingProvider from "./ime/HangulTypingProvider.jsx";
+import GemBoardOverlay from "../../../../frontend/src/lib/economy/GemBoard/GemBoard.jsx";
+import GemCeremony from "../../../../frontend/src/lib/economy/GemBoard/GemCeremony.jsx";
+import { useGemCeremony } from "../../../../frontend/src/lib/economy/GemBoard/useGemCeremony.js";
+import { playCoinCue } from "../../../../frontend/src/lib/economy/coinCeremonyAudio.js";
+import GemIcon from "../../../../frontend/src/lib/icons/GemIcon.jsx";
 import "./School.scss";
 
 /**
@@ -113,26 +122,26 @@ const configuredSeconds = (value) => (
     : null
 );
 
-function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
+export function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
   const explicit = mode === 'locked' || mode === 'open' || mode === 'unlocked';
   // A standalone mount resolves synchronously — there is no screen config to
   // fetch — and it defaults to LOCKED so the keypad is what opens.
   const browserLocked = () => (browserModeFromUrl() ?? 'locked') === 'locked';
   const [state, setState] = useState(() => (
     explicit
-      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
+      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
       : !isPanelSurface(screenId)
-        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
-        : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
+        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
+        : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null }
   ));
 
   useEffect(() => {
     if (explicit) {
-      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
+      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null });
       return undefined;
     }
     if (!isPanelSurface(screenId)) {
-      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
+      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null, coinCeremony: null });
       return undefined;
     }
     let alive = true;
@@ -144,6 +153,7 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
         locked: cfg?.mode === 'locked',
         idleTimeoutSeconds: configuredSeconds(cfg?.idleTimeoutSeconds),
         screenOffTimeoutSeconds: configuredSeconds(cfg?.screenOffTimeoutSeconds),
+        coinCeremony: cfg && cfg.coinCeremony && typeof cfg.coinCeremony === 'object' ? cfg.coinCeremony : null,
       });
     });
     return () => { alive = false; };
@@ -161,6 +171,8 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeou
     screenOffTimeoutSeconds: configuredSeconds(screenOffTimeoutSeconds) !== null
       ? configuredSeconds(screenOffTimeoutSeconds)
       : (state.screenOffTimeoutSeconds ?? 0),
+    // The screen YAML's school.coinCeremony block (sound, volume, duration); null = the board's defaults.
+    coinCeremony: state.coinCeremony ?? null,
   };
 }
 
@@ -193,6 +205,7 @@ function schoolUrlBase() {
   return null;
 }
 import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from "./schoolPathModel.js";
+import { setSchoolDeviceId } from "./schoolDevice.js";
 
 /**
  * Turning the diagnostics up, from outside the code.
@@ -225,11 +238,20 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
   const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
+  // Set synchronously (idempotent) so children's first effects already carry it.
+  useMemo(() => setSchoolDeviceId(deviceIdFor(screenId)), [screenId]);
+  useEffect(() => () => setSchoolDeviceId(null), []);
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
   // Whether the open reading shelf is ASKING for a barcode right now (see
   // BookShelf `onScanReadyChange`); only then is a scan claimed for its child.
   const [shelfScanReady, setShelfScanReady] = useState(false);
+  // What the open shelf's scan chip says (book-scan experience task 3): the
+  // scan it is about to take (`BookScanEntry`) and the pile cards scanned
+  // since it opened (`BookPile`). Both report null once no shelf is open.
+  const [shelfScanAck, setShelfScanAck] = useState(null);
+  const [shelfWaiting, setShelfWaiting] = useState(null);
+  const shelfScanStatus = useMemo(() => ({ acknowledging: shelfScanAck, cards: shelfWaiting ?? [] }), [shelfScanAck, shelfWaiting]);
   const [queryPreviewLink, setQueryPreviewLink] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('preview'); } catch { return null; }
   });
@@ -261,7 +283,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [studyLaunch, setStudyLaunch] = useState(null);
   const [reelLaunch, setReelLaunch] = useState(null);
   const [cubeLaunch, setCubeLaunch] = useState(null);
+  const [debriefLaunch, setDebriefLaunch] = useState(null);
   const [bookLaunch, setBookLaunch] = useState(null);
+  // The coin bank screen (economy slice 1, C3): `{ learnerId }`
+  // from the panel's bank door. Memory only: no path names it, so a reload
+  // or a back button never reopens a kid's bank.
+  const [bankLaunch, setBankLaunch] = useState(null);
   const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
   // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
   // after a redeploy fans out to every source). Track whether it has resolved so
@@ -508,6 +535,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       openSection('rubiks-cube');
       return true;
     }
+    if (target?.kind === 'program' && target.program === 'school-debrief') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.debriefGrant || !learnerId) { schoolLog.bank('program-unavailable', { program: target.program }); return false; }
+      setDebriefLaunch({ learnerId, debriefGrant: target.debriefGrant, lateDay: target.lateDay ?? null, today: target.today ?? null });
+      openSection('school-debrief');
+      return true;
+    }
     // The reading shelf (book-shelf UI design §2): the grant is the shelf's
     // only identity — every shelf request carries it and the router acts for
     // the learner it names — so a target without one has nothing to mount.
@@ -522,13 +556,31 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       openSection('book-shelf');
       return true;
     }
+    // The coin bank screen. NOT `kind: 'bank'`, which is a question bank (the
+    // quiz branch below). No grant: the door is the roster check plus the face
+    // tap, and the bank read is unauthenticated in slice 1. What this checks is
+    // that the target names one learner, the same one that was launched for;
+    // the render below shows it only while that learner is the current one.
+    // `openSection('bank')` pushes no path (`sectionPathFor` has no entry for
+    // it), so the bank stays memory-only.
+    if (target?.kind === 'program' && target.program === 'economy-bank') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      const mismatch = Boolean(launchedLearnerId && target.learnerId && launchedLearnerId !== target.learnerId);
+      if (!learnerId || mismatch) {
+        schoolLog.bank('economy-bank-refused', { reason: mismatch ? 'learner-mismatch' : 'no-learner' });
+        return false;
+      }
+      setBankLaunch({ learnerId });
+      openSection('bank');
+      return true;
+    }
     // A card-ladder enrollment is still program `flashcards`; its mode rides
     // the launch target's policy. The ladder loads its own day from the
     // server, so there is no deck or assessment to fetch here.
     if (target?.kind === 'program' && target.program === 'flashcards' && isCardLadderPolicy(target.policy)) {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
-      setActive({ mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null } });
+      setActive({ mode: 'card_ladder', descriptor: { deckId: target.deckId, userId: learnerId, test: target.test === true, scenario: target.test === true ? target.scenario ?? null : null, entry: target.entry ?? null } });
       openSection('flashcards');
       return true;
     }
@@ -637,6 +689,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
   const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
+  // The bank opens from the board's coin cells (`onOpenBank`); there is no
+  // bank strip. Below 820px the board pane, and with it the coin cells, is
+  // hidden.
 
   // The `school.launch` subscription stays live in lock mode, deliberately.
   // `portal.yml` is the ONLY screen in the house that mounts School, so
@@ -659,6 +714,33 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     // put every developer's tab in one shared throttle bucket.
     deviceId: deviceIdFor(screenId),
   });
+
+  // The panel's bank door: a tap on a kid's coin cell on the board opens that
+  // kid's bank through `POST /school/bank/open`. Like the shelf
+  // door, it claims the kid and lands in `onPortalLaunch`.
+  const launchFromBankDoor = useCallback((target, learnerId) => {
+    claim(learnerId);
+    return onPortalLaunch(target, learnerId);
+  }, [claim, onPortalLaunch]);
+  const bankDoor = useBankDoor({ screenId, onLaunch: launchFromBankDoor });
+  const { choose: chooseBank, close: closeBankDoor } = bankDoor;
+  // The board's coin cell: the kid is known, so no face picker.
+  const openBankFor = useCallback((learnerId) => { chooseBank(learnerId, 'coin-cell'); }, [chooseBank]);
+  // The door belongs to the locked panel's resting view (keypad + board).
+  // Anything that leaves it (a code's card, a runner, a section) closes it.
+  const bankDoorView = lock.locked && !active && !section && !queryPreviewLink && selfService.view === 'keypad';
+  useEffect(() => { if (!bankDoorView) closeBankDoor(); }, [bankDoorView, closeBankDoor]);
+  // The family Gem Board: from the header's Gems door, or a kid's gem door on
+  // the board (focused on that kid). Read-only; it belongs to the same resting
+  // view as the bank door and closes when that view is left.
+  const [gemBoard, setGemBoard] = useState(null); // null closed, else { focus }
+  const openGemsFor = useCallback((learnerId) => setGemBoard({ focus: learnerId ?? null }), []);
+  useEffect(() => { if (!bankDoorView) setGemBoard(null); }, [bankDoorView]);
+  // A gem that landed since the panel last looked (a worksheet graded, a race
+  // of the week taken in the garage, a book logged): celebrated over the board
+  // pane — never the keypad — while the panel rests, from a minute poll and
+  // each time a child comes back to the keypad.
+  const gemCeremony = useGemCeremony({ surface: `school-${screenId}`, enabled: bankDoorView, pollMs: 60_000 });
 
   const [lockSide, setLockSide] = useState('keypad-left');
   // What the Keypad reports about the child in front of it. Refs, not state:
@@ -760,12 +842,14 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     setSection(null);
     setStudyLaunch(null);
     setBookLaunch(null); // the grant leaves with the shelf; nothing keeps a credential past its workspace
+    setBankLaunch(null);
+    closeBankDoor(); // a "Whose bank?" sheet (or its refusal) never waits for the next child
     setActive(null);
     setNotice(null);
     setMaterialPath([]);
     syncUrl(null, []);
     schoolLog.nav('home', {});
-  }, [syncUrl]);
+  }, [syncUrl, closeBankDoor]);
 
   // MaterialsSection reports its live nav chain (collection → work → track ids)
   // here so the URL tracks the breadcrumb all the way down to a playing track.
@@ -843,11 +927,15 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     ));
     setReelLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
     setCubeLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
+    setDebriefLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
     // The shelf is the one section that hides BOTH its runner and the locked
     // panel's Done overlay (it carries its own), so an identity lapse that
     // only nulled the launch would leave `section` on a blank wall with no
     // way back. A lapse ends the workspace: home, which is the keypad here.
     if (bookLaunch && bookLaunch.learnerId !== currentUser?.id) goHome();
+    // The bank screen likewise carries its own Back and no Done overlay, and
+    // shows one kid's coins: a lapse closes it.
+    if (bankLaunch && bankLaunch.learnerId !== currentUser?.id) goHome();
     // The ladder is the OTHER section that hides the locked panel's Done
     // overlay (`!courseId`, below), for the same reason: it carries its own
     // exit. So a lapse that only nulled the launch leaves `section` set with
@@ -894,7 +982,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               : section === 'typing' ? 'Typing'
                 : section === 'geography' ? 'Geography'
                   : section === 'rubiks-cube' ? 'Rubik’s Cube'
+                  : section === 'school-debrief' ? 'After-school debrief'
                   : section === 'book-shelf' ? 'Reading'
+                  : section === 'bank' ? 'Bank'
                   : launchPreviewLink ? 'Launch card preview'
                   : languageCourseId ? (courses.find((c) => c.id === languageCourseId)?.label ?? 'Language')
                     : section;
@@ -945,6 +1035,16 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     ? extraCrumbs
     : (section ? [{ label: sectionLabel }] : []);
 
+  // A scan may land at any moment; these say whether the panel is free to show
+  // it, and whether an open shelf already owns it. The pile and the scoped
+  // claim read the same two answers.
+  const scanSafe = lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged;
+  // Whose shelf is OPEN (ready for a barcode or not), and whose shelf is
+  // asking for one right now. A scan is claimed only under `scanScope`; but
+  // the shelf being open is what decides which scans were already waiting and
+  // keeps the pile from filing a book this child is in the middle of scanning.
+  const shelfOwner = section === 'book-shelf' && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null;
+  const scanScope = shelfOwner && shelfScanReady ? shelfOwner : null;
   // `!lock.resolved` is part of this gate on purpose: a locked panel must never
   // flash the browsable home for the beat it takes the screen config to land.
   if (status !== 'ready' || !lock.resolved) return <div className="school-app school-app--loading">Loading…</div>;
@@ -1003,13 +1103,20 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             inside it — a scan can land whether the panel is locked or open,
             and this must render either way. */}
         {isPanelSurface(screenId) && <BookScanEntry screenId={screenId} roster={roster}
-          safe={lock.locked && !pending && !pickerOpen && !selfService.busy && !active && !section && !launchPreviewLink && !ceremony.current && selfService.view === 'keypad' && !keypadEngaged}
+          safe={scanSafe}
           onOpen={lock.locked ? openDeferredScan : null}
           confirmExit={gradedRunInFlight}
           // A child's reading shelf is open and says "scan the barcode": the
           // scan is theirs, claimed for them without a detour home (2026-09-30).
-          scopeLearnerId={section === 'book-shelf' && shelfScanReady && !active && bookLaunch?.learnerId && bookLaunch.learnerId === currentUser?.id ? bookLaunch.learnerId : null}
+          scopeLearnerId={scanScope}
+          shelfLearnerId={shelfOwner}
+          onShelfScan={setShelfScanAck}
+          // Unscoped scans belong to the pile below, not the one-book dialog.
+          pile
           onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />}
+        {isPanelSurface(screenId) && <BookPile screenId={screenId} roster={roster} safe={scanSafe}
+          onOpen={lock.locked ? openDeferredScan : null} confirmExit={gradedRunInFlight} scopeLearnerId={shelfOwner}
+          onShelfCards={setShelfWaiting} />}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* Launch-card preview (teacher-only deep link). A sibling of the lock
             branch below, not inside it: the Portal is the screen most worth
@@ -1060,23 +1167,45 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
                 screenOffSuppressed={!!ceremony.current}
                 onActivity={onKeypadActivity}
                 onEngagedChange={onKeypadEngagedChange}
+                onEntryStart={selfService.startEntry}
                 clearToken={keypadClearToken}
               />
               {/* Read-only status pane: names appear here by design — this is
                   the family's own day board, not a claim affordance; codes
                   remain the only entry path. Never intercepts a tap. */}
               {/* The board itself stays read-only — see AgendaStatusBoard's own
-                  header. The door rides in the HEADER, which is the board's
+                  header. The book door rides in the HEADER, which is the board's
                   neighbour rather than a row on it, so the pane's
                   `pointer-events: none` is re-enabled on the button alone and
-                  both survive a day the board draws nothing. */}
+                  it survives a day the board draws nothing. The bank's door
+                  is the coin cell on each kid's own card (`onOpenBank`). */}
               <div className="school-lock-split__board" aria-label="Today's school status">
                 <BoardHeader>
-                  <BookShelfDoor screenId={screenId} roster={roster}
-                    onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
+                  <div className="school-board-header__doors">
+                    <button type="button" className="school-book-door school-gem-door" data-testid="board-gem-board-door"
+                      aria-label="Open the gem board" onClick={() => openGemsFor(null)}>
+                      <GemIcon className="school-book-door__icon" size="1.6rem" />
+                      <span className="school-book-door__label">Gems</span>
+                    </button>
+                    <BookShelfDoor screenId={screenId} roster={roster}
+                      onLaunch={(target, learnerId) => { claim(learnerId); return onPortalLaunch(target, learnerId); }} />
+                  </div>
                 </BoardHeader>
-                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} />
+                <AgendaStatusBoard kids={roster} onOpenSegment={openSegmentFromBoard} onOpenBank={openBankFor} onOpenGems={openGemsFor} coinCeremony={lock.coinCeremony} />
+                {gemCeremony.ceremony && !gemBoard && (
+                  <GemCeremony key={gemCeremony.ceremony.id} surface="school" contained awards={gemCeremony.ceremony.awards}
+                    onShow={() => playCoinCue({ sound: lock.coinCeremony?.sound ?? 'school/_ux/coin.mp3', volume: lock.coinCeremony?.volume ?? 0.8 })}
+                    onDone={gemCeremony.done} />
+                )}
               </div>
+              {/* Over the whole panel, keypad included, only while a child holds
+                  it open: a tap anywhere outside, × or 45 s idle closes it. */}
+              <GemBoardOverlay open={gemBoard != null} surface="school" focusLearnerId={gemBoard?.focus ?? null}
+                idleMs={45_000} onClose={() => setGemBoard(null)} />
+              {/* A bank refusal ("Whose bank?") is drawn by the panel, not inside
+                  the board pane, so it is never clipped by or stacked under
+                  the board. */}
+              <BankDoorSheet door={bankDoor} roster={roster} idleTimeoutSeconds={lock.idleTimeoutSeconds} />
             </div>
           ) : (
             <LaunchCard
@@ -1216,7 +1345,20 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             onExit={() => setActive(null)}
           />
         )}
-        {active?.mode === 'problems' && <QuizRunner bank={active.bank} mode="drill" learning={active.learning} onExit={() => setActive(null)} />}
+        {/* Same remount-by-key restart as the quiz mount above (2026-10-21:
+            on-screen quizzes retake until passed) — without onRestart a failed
+            drill had no way to go again. */}
+        {active?.mode === 'problems' && (
+          <QuizRunner
+            key={`drill:${active.bank.id}:${runNonce}`}
+            bank={active.bank}
+            mode="drill"
+            learning={active.learning}
+            fresh={runFresh}
+            onExit={() => setActive(null)}
+            onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
+          />
+        )}
         {active?.mode === 'learning_probe' && (
           <LearningProbeRunner module={active.module} learning={active.learning} onExit={() => setActive(null)} />
         )}
@@ -1281,7 +1423,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             NOR ON THE SHELF. It is a workspace, not a section (design §2),
             and carries its own always-visible Done; a second one, drawn
             bottom-right over its `history ›` link, would be a duplicate. */}
-        {lock.locked && section && !launchPreviewLink && !active && !courseId && section !== 'book-shelf' && (
+        {lock.locked && section && !launchPreviewLink && !active && !courseId && section !== 'book-shelf' && section !== 'bank' && (
           <button
             type="button"
             className="school-selfservice-card__action school-selfservice-card__action--exit school-app__locked-exit"
@@ -1323,6 +1465,19 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             onExit={goHome}
           />
         )}
+        {/* The debrief sits out here with the reels: the Portal mounts it from
+            the agenda code, LOCKED, so the `!lock.locked` wrapper never paints.
+            With no launch (a grown-up opening it from /school) it shows its
+            own no-grant state; a launch claimed by another learner never paints. */}
+        {section === 'school-debrief' && (!debriefLaunch || debriefLaunch.learnerId === currentUser?.id) && (
+          <SchoolDebriefProgram
+            learnerId={debriefLaunch?.learnerId ?? null}
+            debriefGrant={debriefLaunch?.debriefGrant ?? null}
+            lateDay={debriefLaunch?.lateDay ?? null}
+            today={debriefLaunch?.today ?? null}
+            onExit={() => { setDebriefLaunch(null); goHome(); }}
+          />
+        )}
         {/* The reading shelf sits out here with the ladder and the reels, not
             beside the cube: the wall panel mounts it LOCKED, from the reading
             code, and the `!lock.locked` wrapper above never paints in that
@@ -1330,16 +1485,28 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             source the keypad's card timer reads — never a constant here. */}
         {section === 'book-shelf' && !active && bookLaunch && bookLaunch.learnerId === currentUser?.id && (
           <BookShelf
-            // A scan claimed while the shelf is open relaunches it with that
-            // book; the shelf seeds a scanned entry once per mount, so a new
-            // scan must be a new mount.
-            key={bookLaunch.bookEntry?.intentId ?? 'shelf'}
+            // ONE MOUNT PER CHILD. A scan claimed while the shelf is open is
+            // handed in as `initialBookEntry` (keyed by its intentId) and the
+            // mounted shelf queues it; keying the mount on the scan remounted
+            // and reloaded the shelf on every scan, throwing away an Add the
+            // child had just started (2026-11-05).
+            key={bookLaunch.learnerId}
             learnerId={bookLaunch.learnerId}
             grant={bookLaunch.bookGrant}
             initialBookEntry={bookLaunch.bookEntry}
             openAdd={bookLaunch.openAdd}
             idleTimeoutSeconds={lock.idleTimeoutSeconds}
             onScanReadyChange={setShelfScanReady}
+            scanStatus={shelfScanStatus}
+            onExit={goHome}
+          />
+        )}
+        {/* The coin bank: out here with the shelf for the same reason (the
+            panel mounts it LOCKED), with its own Back and no Done overlay. */}
+        {section === 'bank' && !active && bankLaunch && bankLaunch.learnerId === currentUser?.id && (
+          <BankScreen
+            learner={currentUser}
+            idleTimeoutSeconds={lock.idleTimeoutSeconds}
             onExit={goHome}
           />
         )}

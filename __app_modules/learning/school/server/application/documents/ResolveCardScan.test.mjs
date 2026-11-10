@@ -590,7 +590,7 @@ describe('execute — grading across item types (spec §5.4/§5.5)', () => {
       testId: allocation.cardId,
       answers: {
         1: 'A', // correct multiple_choice (Alpha)
-        2: ['A', 'B'], // double-mark on a single-select row -> ambiguous
+        2: ['B', 'C'], // double-mark on a single-select row -> ambiguous
         3: 'A', // true_false: A = true = correct
         4: ['A', 'C'], // multi_select exact set {Red, Blue} -> correct
         // row 5 left unanswered -> blank
@@ -610,7 +610,7 @@ describe('execute — grading across item types (spec §5.4/§5.5)', () => {
         row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: 'Prompt for q1', status: 'correct', given: 'Alpha', points: 1, earned: 1, concepts: [],
       },
       {
-        row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'Prompt for q2', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0, concepts: [],
+        row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'Prompt for q2', status: 'ambiguous', given: ['B', 'C'], points: 1, earned: 0, concepts: [],
       },
       {
         row: 3, itemId: 'q3', itemType: 'true_false', prompt: 'Prompt for q3', status: 'correct', given: 'A', points: 1, earned: 1, concepts: [],

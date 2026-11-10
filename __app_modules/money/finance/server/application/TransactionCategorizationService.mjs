@@ -32,8 +32,10 @@ export class TransactionCategorizationService {
   // id → the description this service wrote when that description still looks
   // raw to the patterns below (e.g. "Direct Deposit" vs /^Direct/). Without it
   // the next harvest re-sends the row to the LLM forever. In-process only: a
-  // restart costs one re-ask per such row.
+  // restart costs one re-ask per such row. Persisted through the finance store
+  // (loaded once, saved after a run that added entries).
   #settled = new Map();
+  #settledLoaded = false;
 
   // Patterns that indicate raw/unprocessed descriptions
   #rawDescriptionPatterns = [
@@ -79,13 +81,14 @@ export class TransactionCategorizationService {
    * @returns {Promise<{processed: Object[], failed: Object[], skipped: Object[]}>}
    */
   async categorize(transactions, householdId) {
+    this.#ensureSettled(householdId);
     const config = this.#financeStore.getCategorizationConfig(householdId);
     if (!config?.validTags) {
       this.#log('warn', 'categorization.config.missing');
       return { processed: [], failed: [], skipped: transactions };
     }
 
-    const { validTags, chat: chatTemplate, descriptionRules } = config;
+    const { validTags, chat: chatTemplate, descriptionRules, tagDescriptions } = config;
     const policy = this.#jevPolicy(config);
 
     // Apply deterministic description rules before AI categorization
@@ -104,10 +107,11 @@ export class TransactionCategorizationService {
 
     const processed = [];
     const failed = [];
+    let settledAdded = false;
 
     for (const txn of needsProcessing) {
       try {
-        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'apply' });
+        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'apply', tagDescriptions });
 
         if (result.success) {
           // Update transaction in external system
@@ -123,6 +127,7 @@ export class TransactionCategorizationService {
           if (result.memo) txn.memo = result.memo;
           if (this.#hasRawDescription(result.friendlyName)) {
             this.#settled.set(String(txn.id), result.friendlyName);
+            settledAdded = true;
             this.#log('info', 'categorization.settled', { id: txn.id, friendlyName: result.friendlyName });
           }
 
@@ -172,6 +177,8 @@ export class TransactionCategorizationService {
       }
     }
 
+    if (settledAdded) this.#saveSettled(householdId);
+
     this.#log('info', 'categorization.complete', {
       processed: processed.length,
       failed: failed.length,
@@ -179,6 +186,45 @@ export class TransactionCategorizationService {
     });
 
     return { processed: [...ruleResults, ...processed], failed, skipped };
+  }
+
+  /**
+   * Drop settled entries for ids not in `seenIds`. Callers pass the union of ids
+   * seen across every period of one run (categorize works per period, so it
+   * cannot prune on its own without dropping another period's entries).
+   * @param {Iterable<string|number>} seenIds
+   * @param {string} [householdId]
+   */
+  pruneSettled(seenIds, householdId) {
+    this.#ensureSettled(householdId);
+    const seen = new Set([...seenIds].map(String));
+    let dropped = 0;
+    for (const id of [...this.#settled.keys()]) {
+      if (!seen.has(id)) { this.#settled.delete(id); dropped++; }
+    }
+    if (dropped > 0) {
+      this.#saveSettled(householdId);
+      this.#log('info', 'categorization.settled.pruned', { dropped, kept: this.#settled.size });
+    }
+  }
+
+  #ensureSettled(householdId) {
+    if (this.#settledLoaded) return;
+    this.#settledLoaded = true;
+    try {
+      const stored = this.#financeStore.getCategorizationSettled?.(householdId);
+      for (const [id, name] of Object.entries(stored || {})) this.#settled.set(String(id), name);
+    } catch (error) {
+      this.#log('warn', 'categorization.settled.load_failed', { error: error.message });
+    }
+  }
+
+  #saveSettled(householdId) {
+    try {
+      this.#financeStore.saveCategorizationSettled?.(Object.fromEntries(this.#settled), householdId);
+    } catch (error) {
+      this.#log('warn', 'categorization.settled.save_failed', { error: error.message });
+    }
   }
 
   /**
@@ -190,12 +236,13 @@ export class TransactionCategorizationService {
    * @returns {Promise<{suggestions: Object[], failed: Object[]}>}
    */
   async preview(transactions, householdId) {
+    this.#ensureSettled(householdId);
     const config = this.#financeStore.getCategorizationConfig(householdId);
     if (!config?.validTags) {
       return { suggestions: [], failed: [] };
     }
 
-    const { validTags, chat: chatTemplate, descriptionRules } = config;
+    const { validTags, chat: chatTemplate, descriptionRules, tagDescriptions } = config;
     const policy = this.#jevPolicy(config);
 
     // Simulate each rule on a copy, so the LLM step sees exactly the rows (and
@@ -204,7 +251,7 @@ export class TransactionCategorizationService {
     const ruleMatches = [];
     const simulated = transactions.map(txn => {
       const desc = txn.description || '';
-      const rule = this.#matchRule(desc, compiled);
+      const rule = this.#matchRule(txn, compiled);
       if (!rule) return txn;
       ruleMatches.push({
         id: txn.id, date: txn.date, originalDescription: desc,
@@ -220,7 +267,7 @@ export class TransactionCategorizationService {
 
     for (const txn of needsProcessing) {
       try {
-        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'preview' });
+        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'preview', tagDescriptions });
 
         if (result.success) {
           suggestions.push({
@@ -269,7 +316,7 @@ export class TransactionCategorizationService {
 
     for (const txn of transactions) {
       const originalDescription = txn.description || '';
-      const rule = this.#matchRule(originalDescription, compiled);
+      const rule = this.#matchRule(txn, compiled);
       if (!rule) continue;
 
       txn.description = rule.rename;
@@ -293,13 +340,27 @@ export class TransactionCategorizationService {
   }
 
   #compileRules(rules) {
-    return (rules || []).map(r => ({ pattern: new RegExp(r.pattern, 'i'), rename: r.rename, tag: r.tag }));
+    return (rules || []).map(r => ({
+      pattern: new RegExp(r.pattern, 'i'),
+      account: r.account?.toLowerCase(),
+      rename: r.rename,
+      tag: r.tag,
+    }));
   }
 
-  /** First matching rule wins; a description already equal to its rename matches nothing. */
-  #matchRule(description, compiled) {
-    const rule = compiled.find(r => r.pattern.test(description));
-    return rule && description !== rule.rename ? rule : null;
+  /**
+   * First matching rule wins. A rule with `account` only sees rows on that account.
+   * A description already equal to its rename matches nothing, except that an
+   * account-scoped rule still corrects the tag: its name can legitimately be shared
+   * with rows on other accounts, so the provider or LLM may have tagged it wrongly.
+   */
+  #matchRule(txn, compiled) {
+    const description = txn.description || '';
+    const account = txn.accountName?.toLowerCase();
+    const rule = compiled.find(r => r.pattern.test(description) && (!r.account || r.account === account));
+    if (!rule) return null;
+    if (description !== rule.rename) return rule;
+    return rule.account && rule.tag && txn.tagNames?.[0] !== rule.tag ? rule : null;
   }
 
   /**
@@ -356,13 +417,13 @@ export class TransactionCategorizationService {
    *
    * @returns {Promise<Object>} { success, friendlyName, category, categoryVia, memo, originalDescription } on success; { success, reason, originalDescription } with success set to false otherwise
    */
-  async #categorizeTransaction(transaction, validTags, chatTemplate, { policy, path }) {
+  async #categorizeTransaction(transaction, validTags, chatTemplate, { policy, path, tagDescriptions }) {
     const { description, id } = transaction;
     const jevPending = policy.mode === 'off'
       ? Promise.resolve(null)
       // judge() is written never to reject; the catch keeps an unobserved
       // rejection (while the LLM is awaited) from crashing the process if it ever does.
-      : this.#categoryJudge.judge(transaction, validTags).catch(() => null);
+      : this.#categoryJudge.judge(transaction, validTags, tagDescriptions).catch(() => null);
     const llm = await this.#askLlm(transaction, validTags, chatTemplate);
     const jev = await jevPending;
     const outcome = this.#decide(llm, jev, validTags, policy, description);
@@ -438,9 +499,11 @@ export class TransactionCategorizationService {
    * Get list of transactions needing categorization
    *
    * @param {Object[]} transactions - Transactions to check
+   * @param {string} [householdId] - Household ID (for loading the settled map)
    * @returns {Object[]} Transactions needing categorization
    */
-  getUncategorized(transactions) {
+  getUncategorized(transactions, householdId) {
+    this.#ensureSettled(householdId);
     return transactions.filter(txn => this.#needsCategorization(txn));
   }
 

@@ -4,6 +4,7 @@
  * the program must tell 403 from 404 from 0.
  */
 import { cardLadderLog } from "./cardLadderLog.js";
+import { schoolDeviceHeaders } from "../../../schoolDevice.js";
 
 const enc = encodeURIComponent;
 
@@ -13,7 +14,7 @@ export function createCardLadderApi({ test = false } = {}) {
   async function call(path, { method = 'GET', body, raw = false, contentType = null } = {}) {
     const startedAt = Date.now();
     try {
-      const init = { method, credentials: 'same-origin', headers: {} };
+      const init = { method, credentials: 'same-origin', headers: schoolDeviceHeaders() };
       if (body !== undefined) {
         if (raw) {
           init.body = body;
@@ -63,6 +64,11 @@ export function createCardLadderApi({ test = false } = {}) {
       method: 'POST',
       body: Object.fromEntries(Object.entries({ userId, mode, help, filter, chosen, frontSide }).filter(([, v]) => v !== null && v !== undefined)),
     }),
+    /** This week's dictation (spec 2026-11-06): a focused run in the sitting,
+     *  before or after the daily goal. */
+    dictation: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/dictation`, { method: 'POST', body: { userId } }),
+    /** The practice menu on request — review is open anytime (owner, 2026-11-06). */
+    menu: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/menu`, { method: 'POST', body: { userId } }),
     /** Learn more words (ruling 2026-09-23): one more guided round over the
      *  next new words, from the menu or the Done summary. */
     learnMore: (sittingId, { userId }) => call(`/sittings/${enc(sittingId)}/learn-more`, { method: 'POST', body: { userId } }),

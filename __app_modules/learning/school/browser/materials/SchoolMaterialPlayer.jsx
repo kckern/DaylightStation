@@ -74,6 +74,12 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
   const isAudio = material?.medium === 'audio';
 
   const [quizBank, setQuizBank] = useState(null); // fetched bank once end-with-quiz resolves
+  // Gate-quiz Try again (2026-10-21: on-screen quizzes retake until passed):
+  // the same remount-by-key + fresh latch SchoolApp uses for its runners. The
+  // gate reports nothing to this player on a fail — the sitting is the record
+  // and Done refetches the unit — so a restart needs no extra plumbing.
+  const [quizNonce, setQuizNonce] = useState(0);
+  const [quizFresh, setQuizFresh] = useState(false);
 
   const playerRef = useRef(null);
   const chrome = useMediaChrome(playerRef, { autoHide: !isAudio });
@@ -201,14 +207,21 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
 
   if (quizBank) {
     // The gate quiz is pass/fail — hand the runner the bar so the summary
-    // says so and a fail offers the retake ask (advocacy M7 fix). Only the
-    // threshold: no moduleId means no catalog reflection prompt.
+    // says so and a fail offers Try again (advocacy M7 fix; a retake ask
+    // until 2026-10-21). Only the threshold: no moduleId means no catalog
+    // reflection prompt.
     const passingPercent = typeof unit?.quiz?.passingPercent === 'number' ? unit.quiz.passingPercent : null;
     return (
       <QuizRunner
+        key={`gate:${quizBank.id}:${quizNonce}`}
         bank={quizBank}
         learning={passingPercent !== null ? { passingPercent } : null}
+        fresh={quizFresh}
         onExit={exitToDetail}
+        onRestart={({ fresh = true } = {}) => { setQuizFresh(fresh); setQuizNonce((n) => n + 1); }}
+        // A pass unlocks the next chapter, which only Done → refetch reaches:
+        // Try again after a pass would replay the chapter just passed.
+        retakeAfterPass={false}
       />
     );
   }

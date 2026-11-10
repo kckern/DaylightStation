@@ -1,0 +1,30 @@
+.presence-gate-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: rgba(0, 0, 0, 0.92);
+  color: white;
+  text-align: center;
+  padding: 2rem;
+  strong { font-size: clamp(1.5rem, 3vw, 3rem); }
+  p { font-size: clamp(1rem, 2vw, 1.75rem); max-width: 40ch; margin: 0; }
+}
+.presence-gate-notice__actions { display: flex; gap: 1.5rem; margin-top: 1rem; }
+.presence-gate-notice__btn {
+  min-width: 10rem;
+  min-height: 4rem;
+  padding: 0 2rem;
+  font-size: clamp(1.25rem, 2vw, 2rem);
+  border: 0;
+  border-radius: 1rem;
+  background: #2f80ed;
+  color: white;
+  touch-action: manipulation;
+  &:focus-visible { outline: 4px solid #fff; outline-offset: 4px; }
+}
+.presence-gate-notice__btn--secondary { background: rgba(255, 255, 255, 0.18); }

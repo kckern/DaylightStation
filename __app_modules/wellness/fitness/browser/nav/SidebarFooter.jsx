@@ -237,6 +237,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     const { key, userName } = resolveDeviceParticipant(device);
     if (!key || !userName) return null;
     const entry = userCurrentZones?.[userName];
+    if (entry?.trusted === false) return null;
     let zoneId = null;
     let color = null;
     if (entry) {
@@ -264,6 +265,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     const { key, userName } = resolveDeviceParticipant(device);
     if (!key || !userName) return null;
     const entry = userCurrentZones?.[userName];
+    if (entry?.trusted === false) return null;
     if (entry) {
       if (typeof entry === 'object' && entry.color) {
         return entry.color;
@@ -295,7 +297,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const isVideoPlaying = Array.isArray(fitnessPlayQueue) && fitnessPlayQueue.length > 0;
 
   const handleContainerClick = React.useCallback(() => {
-    console.log('[SidebarFooter] device-container clicked', { 
+    getLogger().debug('fitness.sidebar_footer.clicked', { 
       hasOnAvatarClick: Boolean(onAvatarClick), 
       hasOnContentSelect: Boolean(onContentSelect),
       deviceCount: sortedDevices.length,
@@ -314,7 +316,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
       // Only navigate when NOT in video playback mode.
       // During playback, FitnessPlayer already shows FitnessSidebar with users.
       // Navigating to 'users' view would cause duplicate sidebars.
-      console.log('[SidebarFooter] navigating to users view (fitness_session module)');
+      getLogger().debug('fitness.sidebar_footer.navigate_users');
       onContentSelect('view_direct', { view: 'users' });
     }
   }, [onAvatarClick, onContentSelect, sortedDevices, resolveDeviceKey, hrOwnerMap, userIdMap, isVideoPlaying]);

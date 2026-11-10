@@ -18,6 +18,22 @@ Piano remains the context owner for MIDI, instrument addressing, pedagogy, progr
 - Battle Stadium remains an external runtime. It participates in registry discovery but does not inherit a piano gameplay model.
 
 
+## Run roles and the real-time kit
+
+`game-platform/host/gameLifecycle.js` no longer owns a phase vocabulary: it
+re-exports the gaming kit's `RUN_ROLES` and `projectRunRole` as `HOST_PHASES` and
+`projectHostPhase`. A game keeps its own phase names and maps them onto the roles.
+Real-time games (the Side Scroller) step on the kit's fixed-step runner; see
+[Real-time Game Kit](../gaming/realtime-kit.md).
+
+## The gem ceremony in the Games picker
+
+The Games mode runs the gem ceremony for the piano surface. Its queue is held
+above the routes, so a ceremony interrupted by opening a game shows again on
+return; looking is enabled only on the picker and the card renders only there, so
+it never appears during a live game. The coin cue is primed from the first
+gesture. See [Household economy](../economy/economy.md#gem-board).
+
 ## The chrome kit
 
 Before this existed, the platform owned layout and nothing else, so every game invented its own surface, border, accent and idea of how big a button is. Eight games shipped six palettes: Chess's stylesheet was 76% tokenized and the other seven were 0%, Checkers' panel was `#071526b8` where Connect Four's was `#071526aa`, and four separate games each picked their own neon for "you scored" (`#00ffc8`, `#38f0cf`, `#72f1b8`, and the house `#2ec46f`).
@@ -49,7 +65,7 @@ A game overrides **the board's colours and nothing else**. The board carries the
 | `GameStatusBar` | the one sentence under the board, with `role="status"` and a reserved height. |
 | `GameToggle` / `GameChoice` | replace the native checkbox and `<select>`, which rendered as OS widgets on a charcoal kiosk at hit sizes a child misses. |
 | `LadderBadge` / `WinTally` | who you are playing, drawn as a ladder and a tally rather than spelled as "Level 3 of 7 · 1 / 3 wins". |
-| `CountdownOverlay` / `LifeMeter` / `ProgressMeter` | the HUD. These existed unstyled for a year — `.piano-game-life__notch` drew nothing at all. |
+| `CountdownOverlay` / `LifeMeter` / `ProgressMeter` / `MomentBanner` | the HUD. Re-exported from the shared kit (`__capabilities/gaming/browser/platform/ui/hud`), all four including `MomentBanner`; piano games import them from `chrome/index.js`, never the kit path. Chrome only maps `--game-hud-*` to `--pg-*`. `MomentBanner`'s `role="status"` is a persistent wrapper; the game's `className` lands on the visible child (the Side Scroller's `side-scroller__level-up`). See [HUD set](../gaming/realtime-kit.md#hud-set). |
 
 Checkers and Connect Four expose separate seven-character rosters; Chess exposes
 twenty-one. Household and user configuration may replace the selected roster
@@ -277,6 +293,35 @@ pins both halves: every rung opens in the centre, and the deeper rung beats the
 shallower one from both seats.
 
 Both new games persist configuration, ranked records, ladder progress, and household archives through `IPianoGameRepository`. A client-side fallback is labeled local practice and recorded with `ranked: false`, so loss of Wi-Fi never turns offline engine help into ladder advancement.
+
+## Rung log (dated promotions)
+
+The ladders store only where a player is now — `ladder.yml` `unlocked_through` (the opponent,
+or **match**, ladder) and `config.yml` `addressing.ladder.unlocked_through` (the **addressing**
+ladder) — with no date. Every raise of either, for every board game, is also appended to a
+per-player log, so a promotion can be dated later (the gem economy's `piano-rung` milestone reads it):
+
+```yaml
+# users/{id}/apps/piano/rung-log.yml
+schema: piano.rung-log/v1
+entries:
+  - { at: "2026-11-04T18:00:00.000Z", game: checkers, ladder: match, from: 3, to: 4 }
+```
+
+- Rungs are in the units the game stores: chess's match ladder is zero-based (Level 0 … ), the rest one-based.
+- Only a raise is logged. A demotion or a rewrite of the same rung is not; a missing previous value
+  reads as the floor (chess match 0, otherwise 1).
+- Written at the writes themselves: `PianoGamesContainer.recordGame` / `writeConfig` (checkers,
+  connect-four) and `createChessRungLoggedWriters` in the chess runtime (chess match + addressing).
+  One `PianoRungLog` (`composition/rungLog.mjs`) is shared by both.
+- Best-effort: the append runs after the ladder write and never throws into it. Failures log
+  `piano.rung-log.append-failed` (warn); successes `piano.rung-log.appended` (info).
+- No backfill. Promotions before the log shipped (2026-11) have no date and are never milestones.
+
+The piano's achievement provider (`application/PianoAchievementProvider.mjs`, built by
+`composition/achievements.mjs`) reads this log plus the game records (first-ever win per opponent
+level: `board-game-level`) and passed challenge attempts (`piano-practice`) for the economy's
+achievement evidence. Logs `piano.achievements.source-unavailable` (warn) when one source fails.
 
 ## Adding a game
 

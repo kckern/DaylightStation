@@ -14,7 +14,7 @@ export function WagerPanel({ teamName, score, roundMax, value, onChange, onConfi
         <div className="gp-wager__amount">{clampWager(value, bounds).toLocaleString()}</div>
         <button type="button" onClick={() => onChange(clampWager(value + STEP, bounds))}>+{STEP}</button>
       </div>
-      <button type="button" className="gp-wager__confirm" onClick={() => onConfirm(clampWager(value, bounds))}>
+      <button type="button" autoFocus data-remote-autofocus="true" className="gp-wager__confirm" onClick={() => onConfirm(clampWager(value, bounds))}>
         Lock wager
       </button>
     </div>

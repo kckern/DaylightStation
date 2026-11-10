@@ -6,14 +6,19 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium } from 'playwright';
 import { createServer as createViteServer } from 'vite';
 
-const frontendRoot = path.resolve(fileURLToPath(new URL("../../../../../frontend/src/modules/Media/shell", import.meta.url)), '../../../..');
+// The Media shell moved into __app_modules; Vite still roots at frontend/ (its
+// plugins and deps live there) and serves the fixture beside this test by path.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, '../../../../..');
+const frontendRoot = path.join(repoRoot, 'frontend');
+const fixtureUrl = `/@fs${path.join(here, 'DismissStackProvider.browser.fixture.jsx')}`;
 let browser;
 let server;
 let vite;
 let origin;
 
 beforeAll(async () => {
-  vite = await createViteServer({ root: frontendRoot, appType: 'custom', server: { middlewareMode: true } });
+  vite = await createViteServer({ root: frontendRoot, appType: 'custom', server: { middlewareMode: true, fs: { allow: [repoRoot] } } });
   server = http.createServer((request, response) => {
     if (request.url === '/dismiss-stack-browser-fixture.html') {
       response.writeHead(200, { 'content-type': 'text/html' });
@@ -25,7 +30,7 @@ beforeAll(async () => {
           window.$RefreshSig$ = () => type => type;
           window.__vite_plugin_react_preamble_installed__ = true;
         </script>
-        <script type="module" src="/src/modules/Media/shell/DismissStackProvider.browser.fixture.jsx"></script>`);
+        <script type="module" src="${fixtureUrl}"></script>`);
       return;
     }
     vite.middlewares(request, response);

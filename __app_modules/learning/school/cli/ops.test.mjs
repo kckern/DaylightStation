@@ -20,6 +20,26 @@ const unlockResponse = () => ({
 });
 
 describe('school ops', () => {
+  it('sweep asks the server for a dry run by default, and a teacher-authored write only with --apply', async () => {
+    const fetchImpl = vi.fn(async () => response({ dryRun: true, leaksRecovered: [], writtenOff: [], gapsAccepted: [] }));
+    let output = '';
+    const stdout = { write: (s) => { output += s; } };
+    await runOps({ argv: ['sweep', '--base-url', 'http://school'], fetchImpl, stdout });
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://school/lifecycle/maintenance/answer-sheets/sweep');
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ dryRun: true });
+    expect(JSON.parse(output).dryRun).toBe(true);
+
+    await expect(runOps({ argv: ['sweep', '--apply', '--base-url', 'http://school'], fetchImpl, stdout }))
+      .rejects.toThrow(/--teacher/);
+    await runOps({
+      argv: ['sweep', '--apply', '--teacher', 'kckern', '--leak-after-hours', '6', '--base-url', 'http://school'],
+      fetchImpl, stdout,
+    });
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+      dryRun: false, leakAfterHours: 6, decidedBy: 'kckern', pin: null,
+    });
+  });
+
   it('aggregates completion, assignment, and today sessions for diagnosis', async () => {
     const fetchImpl = vi.fn(async (url) => {
       if (url.includes('/completion')) return response({ state: 'indeterminate', faults: [{ reason: 'plan_error' }] });

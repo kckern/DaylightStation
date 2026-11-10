@@ -4,6 +4,8 @@ import { YamlCycleRaceDatastore } from "../adapters/persistence/YamlCycleRaceDat
 import { YamlSkylineGliderRunDatastore } from "../adapters/persistence/YamlSkylineGliderRunDatastore.mjs";
 import { CycleRaceService } from "../application/services/CycleRaceService.mjs";
 import { SkylineGliderRunService } from "../application/services/SkylineGliderRunService.mjs";
+import { SkylineGliderProgressService } from "../application/services/SkylineGliderProgressService.mjs";
+import { YamlSkylineGliderProgressDatastore } from "../adapters/persistence/YamlSkylineGliderProgressDatastore.mjs";
 import { ActivityRegistry } from "../application/activities/ActivityRegistry.mjs";
 import { CycleGameProvider } from "../application/activities/CycleGameProvider.mjs";
 import { SkylineGliderProvider } from "../application/activities/SkylineGliderProvider.mjs";
@@ -11,6 +13,7 @@ import { SkylineGliderCourseCatalog } from "../adapters/SkylineGliderCourseCatal
 import { SessionGroupingService } from "../application/services/SessionGroupingService.mjs";
 import { AmbientLedAdapter } from "../adapters/AmbientLedAdapter.mjs";
 import { DanceLightingController } from "../adapters/DanceLightingController.mjs";
+import { AmbienceController } from "../adapters/AmbienceController.mjs";
 import { GarageFanAdapter } from "../adapters/GarageFanAdapter.mjs";
 import { VoiceTranscriptionService } from "#adapters/ai/VoiceTranscriptionService.mjs";
 import { fitnessTranscriptionProfile } from "../adapters/ai/transcriptionProfiles/fitness.mjs";
@@ -42,7 +45,12 @@ export function createFitnessServices(config) {
   const cycleRaceStore = new YamlCycleRaceDatastore({ configService });
   const cycleRaceService = new CycleRaceService({ datastore: cycleRaceStore, logger });
   const skylineGliderRunStore = new YamlSkylineGliderRunDatastore({ configService });
-  const skylineGliderRunService = new SkylineGliderRunService({ datastore: skylineGliderRunStore, logger });
+  const skylineGliderProgressService = new SkylineGliderProgressService({
+    progressStore: new YamlSkylineGliderProgressDatastore({ configService }),
+    runStore: skylineGliderRunStore,
+    logger,
+  });
+  const skylineGliderRunService = new SkylineGliderRunService({ datastore: skylineGliderRunStore, progress: skylineGliderProgressService, logger });
   const skylineGliderCourseCatalog = new SkylineGliderCourseCatalog({ configService, logger });
 
   const activityRegistry = new ActivityRegistry()
@@ -54,12 +62,24 @@ export function createFitnessServices(config) {
   const haGateway = preloadedHaGateway ?? null;
   let ambientLedController = null;
 
+  // Ambience controller (nav_items type: ambience → its HA script). Created
+  // first so the zone LEDs can stand down while an ambience runs.
+  let ambienceController = null;
+  if (haGateway) {
+    ambienceController = new AmbienceController({
+      gateway: haGateway,
+      loadFitnessConfig,
+      logger
+    });
+  }
+
   // Ambient LED controller (uses home automation gateway)
   if (haGateway) {
     ambientLedController = new AmbientLedAdapter({
       gateway: haGateway,
       loadFitnessConfig,
-      logger
+      logger,
+      isSuppressed: () => ambienceController.isActive()
     });
   } else {
     logger.warn?.('fitness.homeassistant.disabled', {
@@ -109,10 +129,12 @@ export function createFitnessServices(config) {
     cycleRaceService,
     skylineGliderRunStore,
     skylineGliderRunService,
+    skylineGliderProgressService,
     skylineGliderCourseCatalog,
     sessionGroupingService,
     ambientLedController,
     danceLightingController,
+    ambienceController,
     equipmentFanController,
     transcriptionService,
     haGateway // Expose for other uses

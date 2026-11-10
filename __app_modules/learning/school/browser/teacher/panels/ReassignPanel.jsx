@@ -19,16 +19,18 @@
  * attempts, and offering it nowhere would send a grown-up back to typing dates
  * blind, which is the defect the picker exists to have fixed.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import { useTeacherWrite } from "../useTeacherWrite.js";
 import { curriculumTitles } from "../curriculumTitles.js";
+import { humanDate } from "../teacherDates.js";
+import { presentSessionState } from "../sessionPresentation.js";
 
 const RECENT_DAYS = 14;
 
-export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
-  const [day, setDay] = useState('');
+export default function ReassignPanel({ learnerId, learnerName, kids = [], initialDay = null }) {
+  const [day, setDay] = useState(initialDay ?? '');
   // Recent days WITH recorded work (advocacy B18) — no more typing dates blind.
   const recentDays = usePanelFetch(() => schoolApi.attemptDays(learnerId), {
     deps: [learnerId],
@@ -88,12 +90,22 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
     ? titles.lesson(s.unitId)
     : s.unitId ?? 'Lesson with no unit recorded');
 
+  // Only the newest load may write: chips load on tap now, and a slow reply
+  // for an earlier tap must not replace the day the teacher is looking at.
+  const loadSeq = useRef(0);
+
   const load = async (forDay = day) => {
+    const mine = ++loadSeq.current;
     setLoadError(null);
     const summary = await schoolApi.attemptsSummary(learnerId, forDay);
+    if (mine !== loadSeq.current) return;
     if (!summary.ok) { setLoadError('Couldn’t load that day’s work.'); setLoaded(null); return; }
     setLoaded({ day: forDay, assessments: summary.data?.assessments ?? [] });
   };
+
+  // Opened from a lesson ("this was another child's work"): its day is
+  // already known, so it is loaded, not left for a second tap.
+  useEffect(() => { if (initialDay) load(initialDay); }, [learnerId, initialDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const move = (a) => run(a.assessmentId, ({ actorId, pin }) => schoolApi.reassign({
     fromLearnerId: learnerId, toLearnerId: target, day: loaded.day, assessmentId: a.assessmentId,
@@ -116,7 +128,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
       {days.length > 0 && (
         <div className="teacher-reassign__days">
           {days.map((d) => (
-            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => setDay(d)}>{d}</button>
+            <button key={d} type="button" data-active={d === day ? '' : undefined} onClick={() => { setDay(d); load(d); }}>{humanDate(d) ?? d}</button>
           ))}
         </div>
       )}
@@ -165,7 +177,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
             {sessions.map((s) => (
               <li key={s.sessionId} className="teacher-quizreq__row">
                 <span>{labelFor(s)}</span>
-                <span className="teacher-quizreq__meta">{s.state ?? 'not started'}</span>
+                <span className="teacher-quizreq__meta">{s.state ? presentSessionState(s).label : 'Not started'}</span>
                 <button
                   type="button"
                   disabled={!target || !reason.trim() || busy === `session:${s.sessionId}`}

@@ -137,3 +137,23 @@ describe('shared portion draft', () => {
     expect(result.current.control.draft.row.uuid).toBe('yogurt');
   });
 });
+
+it('keeps independent row saves editable and retains both drafts across dates', async()=>{
+ let finishA,finishB;
+ api.mockReset().mockImplementation(path=>new Promise(resolve=>{if(path.endsWith('/chia'))finishA=resolve;else finishB=resolve;}));
+ const {result,rerender}=renderHook(selected=>usePortionDraft(day(),selected),{initialProps:date});
+ act(()=>{result.current.control.forRow(chia).begin();result.current.control.forRow(chia).preview(28);});
+ let a,b;
+ act(()=>{a=result.current.control.forRow(chia).commit();});
+ expect(result.current.control.forRow(chia).locked).toBe(true);
+ expect(result.current.control.forRow(yogurt).locked).toBe(false);
+ act(()=>{result.current.control.forRow(yogurt).begin();result.current.control.forRow(yogurt).preview(340);b=result.current.control.forRow(yogurt).commit();});
+ expect(api).toHaveBeenCalledTimes(2);
+ rerender('2026-09-06');
+ expect(result.current.control.draft).toBeNull();
+ rerender(date);
+ expect(result.current.control.forRow(chia).locked).toBe(true);
+ await act(async()=>{finishB({data:{...yogurt,version:3},versions:{yogurt:3}});await b;finishA({data:{...chia,version:2},versions:{chia:2}});await a;});
+ expect(result.current.items[0].grams).toBe(28);
+ expect(result.current.items[1].amount).toBe(340);
+});

@@ -39,9 +39,10 @@ export function buildParticipantDisplayMap(profiles, roster) {
       displayName: profile?.displayName || profile?.name || rosterEntry?.displayLabel || rosterEntry?.name || id,
       avatarSrc,
       heartRate: profile?.heartRate ?? rosterEntry?.heartRate ?? null,
-      zoneId: profile?.currentZoneId || rosterEntry?.zoneId || null,
+      zoneId: profile ? (profile.zoneTrusted === false ? null : profile.currentZoneId ?? null) : rosterEntry?.zoneId || null,
+      zoneTrusted: profile?.zoneTrusted ?? false,
       zoneName: profile?.currentZoneName || null,
-      zoneColor: profile?.currentZoneColor || rosterEntry?.zoneColor || null,
+      zoneColor: profile ? (profile.zoneTrusted === false ? null : profile.currentZoneColor ?? null) : rosterEntry?.zoneColor || null,
       zoneIndex: Number.isFinite(profile?.zoneSnapshot?.zoneIndex)
         ? profile.zoneSnapshot.zoneIndex
         : null,

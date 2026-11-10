@@ -1,3 +1,5 @@
+@use '../../shared/styles/zones' as zones;
+
 .governance-overlay {
   --governance-overlay-gutter: clamp(4px, 0.9vw, 10px);
   --governance-overlay-avail-w: calc(100% - (var(--governance-overlay-gutter) * 2));
@@ -6,10 +8,6 @@
   --governance-overlay-panel-h-driven-w: calc((var(--governance-overlay-avail-h) * 16) / 9);
   --governance-overlay-panel-w: min(var(--governance-overlay-panel-max-w), var(--governance-overlay-panel-h-driven-w));
   --governance-lock-row-min-h: clamp(54px, 8.8vh, 64px);
-  // Rows absorb the height the panel reserves, but only up to a point — one
-  // rider alone should get a large legible row, not a single 600px slab.
-  --governance-lock-row-max-h: clamp(72px, 20vh, 132px);
-  --governance-lock-table-min-h: calc((var(--governance-lock-row-min-h) * 2) + 1px);
   --governance-lock-credit-size: clamp(34px, 3.4vw, 52px);
   position: absolute;
   inset: 0;
@@ -23,11 +21,12 @@
 
   &__panel {
     width: var(--governance-overlay-panel-w);
-    min-height: calc((var(--governance-overlay-panel-w) * 9) / 16);
+    min-height: 0;
     height: auto;
     flex: 0 0 auto;
     max-width: none;
-    max-height: none;
+    // Natural-height rows; overflow stays within the visible video frame.
+    max-height: 100%;
     aspect-ratio: auto;
     background: rgba(17, 24, 39, 0.82);
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -249,14 +248,14 @@
     overflow: hidden;
     background: rgba(15, 23, 42, 0.65);
     margin-top: clamp(4px, 0.9vw, 8px);
-    // The panel holds a 16:9 floor; the table absorbs whatever the header
-    // doesn't use instead of leaving dead space below it.
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    flex: 1 1 auto;
-    min-height: var(--governance-lock-table-min-h);
+    // safe: when rows overflow, start at the top so the first row stays reachable.
+    justify-content: flex-start;
+    flex: 0 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    pointer-events: auto;
 
     &--init {
       flex: 1 1 auto;
@@ -306,9 +305,8 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     align-items: center;
     column-gap: clamp(8px, 1vw, 14px);
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: var(--governance-lock-row-min-h);
-    max-height: var(--governance-lock-row-max-h);
     padding: clamp(8px, 1vw, 12px) clamp(10px, 1.4vw, 16px);
     transform-origin: center;
     will-change: transform, opacity;
@@ -344,11 +342,12 @@
     }
   }
 
+  // No overflow clip here: this cell hugs the avatar, so one would cut its zone
+  // glow on three sides. Long names truncate on __chip-name instead.
   &__identity {
     display: flex;
     align-items: center;
     min-width: 0;
-    overflow: hidden;
   }
 
   &__metric {
@@ -440,30 +439,34 @@
     min-width: 0;
     position: relative;
     z-index: 1;
-
-    &--inline {
-      flex-direction: row;
-      align-items: baseline;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
   }
 
   &__chip-name {
     font-weight: 600;
-    font-size: clamp(0.84rem, 1.2vw, 0.98rem);
+    font-size: 1rem;
     color: #f8fafc;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  &__chip-meta {
-    font-size: clamp(0.68rem, 0.95vw, 0.76rem);
-    text-transform: none;
-    letter-spacing: 0.04em;
-    color: rgba(248, 250, 252, 0.75);
+  // Legibility floor: the lock panel is read from the bike, 2-3 m away.
+  &__chip-hint {
+    font-size: 0.875rem;
+    color: rgba(248, 250, 252, 0.65);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__chip-meta {
+    font-size: 0.875rem;
+    text-transform: none;
+    letter-spacing: 0.02em;
+    color: rgba(248, 250, 252, 0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__pill {
@@ -476,7 +479,7 @@
     padding: 7px 12px;
     border-radius: 999px;
     border: 1px solid rgba(255, 255, 255, 0.18);
-    font-size: clamp(0.78rem, 1.05vw, 0.88rem);
+    font-size: clamp(14px, 1.05vw, 0.88rem);
     font-weight: 600;
     letter-spacing: 0.03em;
     color: #f8fafc;
@@ -538,11 +541,28 @@
 
   &__progress--inline {
     width: 100%;
+    // Room for the 22px knob centred on the 8px track (7px over each side).
+    padding-block: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
+  // Progress bar with a knob that rides the tip. A single input, `--p` (0-1,
+  // set inline on the track), drives both transforms below with the SAME
+  // duration and curve, so the percentage can never drift from the fill:
+  // they start in the same style recalc and ease identically. Transform-only
+  // (compositor); never transition `left`, `filter`, or the shadow.
   &__progress-track {
+    --p: 0;
+    --tip-t: 450ms var(--ds-motion-easing, cubic-bezier(0.4, 0, 0.2, 1));
+    --knob-w: 48px;
     position: relative;
     height: 8px;
+    // Half the knob's width (+6px air): centred honestly on the tip, the knob
+    // overhangs the bar end at 0% / 100% but stays inside the metric cell and
+    // clear of the neighbouring zone pills on narrow (sidebar-open) layouts.
+    margin-inline: calc(var(--knob-w) / 2 + 6px);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.12);
     overflow: visible;
@@ -554,29 +574,47 @@
     border-radius: inherit;
     background: linear-gradient(90deg, #38bdf8, #22c55e);
     transform-origin: left;
-    transform: scaleX(0);
-    transition: transform 0.5s ease-out;
+    transform: scaleX(var(--p));
+    transition: transform var(--tip-t);
     will-change: transform;
     overflow: hidden;
   }
 
+  // Full-track-width wrapper slid so its left edge IS the tip: translateX(%)
+  // is a percentage of its own width, which equals the track's.
+  &__progress-tip {
+    position: absolute;
+    inset: 0;
+    z-index: 2; // above the zone markers, so the knob covers one it passes
+    pointer-events: none;
+    transform: translateX(calc(var(--p) * 100%));
+    transition: transform var(--tip-t);
+    will-change: transform;
+  }
+
+  // The knob: a dark tab centred on the wrapper's left edge (= the tip), its
+  // rim in the rider's current zone colour. Fixed width + tabular figures so
+  // the number changing on each HR tick never resizes or jitters it.
   &__progress-indicator {
     position: absolute;
+    left: 0;
     top: 50%;
     transform: translate(-50%, -50%);
-    min-width: 28px;
-    padding: 1px 5px;
+    box-sizing: border-box;
+    width: var(--knob-w);
+    height: 22px;
+    display: grid;
+    place-items: center;
     border-radius: 999px;
-    background: rgba(15, 23, 42, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    font-size: 0.58rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
+    background: rgba(15, 23, 42, 0.94);
+    border: 2px solid var(--tip-color, #f8fafc);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
     color: #f8fafc;
-    text-align: center;
-    pointer-events: none;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-    transition: left 0.5s ease-out, opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   &__zone-marker {
@@ -633,18 +671,9 @@
       font-size: 0.95rem;
     }
 
-    .governance-lock__chip-meta {
-      font-size: 0.72rem;
-    }
 
     .governance-lock__progress-track {
       height: 8px;
-    }
-
-    .governance-lock__progress-indicator {
-      min-width: 28px;
-      padding: 1px 4px;
-      font-size: 0.58rem;
     }
 
     .governance-lock__progress--compact {
@@ -732,9 +761,6 @@
       padding: 8px 10px;
     }
 
-    &__chip-meta {
-      display: none;
-    }
   }
 }
 
@@ -746,12 +772,16 @@
   }
 }
 
+// Heart-rate zones come from the shared palette (shared/styles/_zones.scss,
+// mirrored by shared/constants/fitness.js), so a lock row's pills match its
+// progress bar and the sidebar. This map used to say Warm = orange and
+// Hot = Fire = red.
 $lock-zone-hues: (
-  cool: #38bdf8,
-  active: #22c55e,
-  warm: #fb923c,
-  hot: #ef4444,
-  fire: #ef4444,
+  cool: zones.$zone-cool,
+  active: zones.$zone-active,
+  warm: zones.$zone-warm,
+  hot: zones.$zone-hot,
+  fire: zones.$zone-fire,
   cardio: #f97316,
   peak: #c084fc,
   "green": #22c55e,
@@ -800,16 +830,6 @@ $lock-zone-hues: (
   pointer-events: none;
   contain: layout style;
 
-
-.governance-overlay__audio {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
   &__offenders {
     position: absolute;
     bottom: clamp(18px, 4vw, 48px);
@@ -818,10 +838,12 @@ $lock-zone-hues: (
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    max-width: min(560px, 100%);
+    // Three chips per row (3 x 224 + 2 x 10), so six riders form even rows.
+    // An explicit width: anchored at left 50%, a shrink-to-fit box only gets
+    // half the video's width and wrapped two to a row.
+    width: min(692px, calc(100% - 32px));
     justify-content: center;
-    align-items: center;
-    width: auto;
+    align-items: stretch;
   }
 
   &__chip {
@@ -834,8 +856,9 @@ $lock-zone-hues: (
     background: rgba(15, 23, 42, 0.95);
     border: 1px solid rgba(255, 255, 255, 0.3);
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
-    min-width: 180px;
-    max-width: min(260px, 100%);
+    box-sizing: border-box;
+    width: 224px;
+    max-width: 100%;
   }
 
   &__chip-main {
@@ -864,22 +887,46 @@ $lock-zone-hues: (
     display: flex;
     flex-direction: column;
     gap: 2px;
-    line-height: 1.1;
+    line-height: 1.15;
+    min-width: 0;
+
+    .governance-start-badge {
+      align-self: flex-start;
+    }
+  }
+
+  // D5: in the zone, hold still running — set apart from the missing chips.
+  &__chip--holding {
+    border-style: dashed;
+  }
+
+  &__chip-name,
+  &__chip-meta,
+  &__chip-hint {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__chip-name {
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 1rem;
     color: #f8fafc;
   }
 
   &__chip-meta {
-    font-size: 0.75rem;
-    letter-spacing: 0.04em;
+    font-size: 0.875rem;
+    letter-spacing: 0.02em;
     color: rgba(248, 250, 252, 0.85);
   }
 
+  &__chip-hint {
+    font-size: 0.875rem;
+    color: rgba(248, 250, 252, 0.7);
+  }
+
   &__chip-progress {
+    margin-top: auto; // chips in a row stretch to one height; bar stays at the foot
     width: 100%;
     height: 4px;
     border-radius: 999px;
@@ -898,6 +945,59 @@ $lock-zone-hues: (
     will-change: transform;
   }
 }
+
+.governance-overlay__audio {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+// The governance warning scrim. Rendered by the warning overlay as the sibling
+// just before `.governance-progress-overlay`, inside `.fitness-video-shell`, so
+// it shares `.fitness-player-content`'s stacking context: z 5 puts it over the
+// video and under the chips, the challenge deck and the player's own layers.
+//
+// Five fixed steps (warningScrimStep.js), changed four times per warning:
+// - darkness is the scrim's background-color — the only thing that eases;
+// - desaturation is a STATIC `filter` on the <video> per step, confined to the
+//   video's own subtree so it can never sample or interleave with the chips.
+// No blur and no backdrop-filter: the full-screen, continuously transitioning
+// backdrop-filter that used to do this was the paint-path thrash behind the
+// chips flickering soft (ops:docs/_wip/bugs/2026-10-23-fitness-governance-chip-layer-blur-thrash.md).
+// Never transition `filter` here (warningScrimStep.test.js guards it).
+$warning-scrim-steps: (
+  // step: (darkness, grayscale, sepia)
+  0: (0.1, 0.15, 0.1),
+  1: (0.2, 0.35, 0.15),
+  2: (0.35, 0.6, 0.25),
+  3: (0.55, 0.85, 0.35),
+  4: (0.72, 1, 0.4)
+);
+
+.governance-warning-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background-color: rgba(0, 0, 0, 0.55);
+  transition: background-color 600ms linear;
+
+  @each $step, $v in $warning-scrim-steps {
+    &[data-step="#{$step}"] {
+      background-color: rgba(0, 0, 0, nth($v, 1));
+    }
+  }
+}
+
+@each $step, $v in $warning-scrim-steps {
+  .governance-warning-scrim[data-step="#{$step}"] ~ .fitness-video-mirror-wrap :is(video, dash-video) {
+    filter: grayscale(nth($v, 2)) sepia(nth($v, 3));
+  }
+}
+// end warning scrim
 
 .governance-life-meter {
   position: absolute;
@@ -971,4 +1071,87 @@ $lock-zone-hues: (
     text-align: center;
     color: rgba(241, 245, 249, 0.9);
   }
+}
+
+
+.governance-pedal-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.governance-pedal-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+// Challenge hold: slim bar + a quiet label on the same line (HoldProgress.jsx).
+// The fill is one linear transform animation over the whole hold, entered
+// part-way with a negative animation-delay — never a per-tick width/scale step.
+.governance-hold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.governance-hold__label {
+  flex: 0 0 auto;
+  min-width: 5.5em;
+  text-align: right;
+  font-size: 0.72rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(226, 232, 240, 0.55);
+  white-space: nowrap;
+}
+
+.governance-hold-progress {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 3px;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.18);
+  overflow: hidden;
+
+  > span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background: currentColor;
+    transform-origin: left;
+    transform: scaleX(0);
+  }
+
+  > .governance-hold-progress__fill--running {
+    animation-name: governance-hold-fill;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    will-change: transform;
+  }
+}
+
+@keyframes governance-hold-fill {
+  from { transform: scaleX(0); }
+  // HOLD_VISUAL_CAP in HoldProgress.jsx: full only once the engine credits it.
+  to { transform: scaleX(0.98); }
+}
+
+.governance-overlay__panel--sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.governance-lock__section {
+  flex: 0 0 auto;
+  min-width: 0;
 }

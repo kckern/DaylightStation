@@ -26,8 +26,12 @@ export const ROW_CHOICES = 5;
  */
 export const ROW_MAPPABLE_TYPES = ['multiple_choice', 'true_false', 'multi_select', 'companion_code'];
 
-/** Allocation record lifecycle states (spec §5.4). */
-export const ALLOCATION_STATUSES = ['live', 'satisfied', 'released', 'superseded'];
+/**
+ * Allocation record lifecycle states (spec §5.4). `vacated` is a window whose
+ * attempt failed before paper: off the card, but held so the same unit's
+ * regeneration lands on those exact rows instead of leaving a gap.
+ */
+export const ALLOCATION_STATUSES = ['live', 'satisfied', 'released', 'superseded', 'vacated'];
 
 // --- card identity (spec §5.2) ---
 

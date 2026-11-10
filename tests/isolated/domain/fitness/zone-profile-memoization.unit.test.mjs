@@ -56,28 +56,23 @@ describe('ZoneProfileStore.syncFromUsers memoization', () => {
     expect(store.syncFromUsers([makeUser('alice', 130)])).toBe(true);
   });
 
-  it('uses cache when inputs are identical (cache populated)', () => {
-    const users = [makeUser('alice', 110)];
-    store.syncFromUsers(users);
-
-    // After first sync, cache should have 1 entry (keyed with committedZone '_none_')
-    expect(store._profileCache.size).toBe(1);
-
-    // Second sync: hysteresis has now committed a zone, so the cache key changes
-    // (committedZone shifts from '_none_' to the actual zone). This is correct —
-    // the key must include committed zone to avoid skipping #applyHysteresis().
-    store.syncFromUsers(users);
-    expect(store._profileCache.size).toBe(2);
-
-    // Third sync: committed zone is stable, so the key matches the second entry — cache hit
-    store.syncFromUsers(users);
-    expect(store._profileCache.size).toBe(2);
-  });
-
-  it('clears cache on clear()', () => {
-    store.syncFromUsers([makeUser('alice', 110)]);
-    expect(store._profileCache.size).toBe(1);
-    store.clear();
-    expect(store._profileCache.size).toBe(0);
+  // The profile cache is gone on purpose (7e98604f22): it skipped raw-zone
+  // changes and stability expiry on a repeated heart rate. A repeated reading
+  // must still advance the state machine, while the return value keeps
+  // telling consumers nothing changed.
+  it('still advances the zone state on a repeated reading, while reporting no change', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(100000);
+      store.syncFromUsers([makeUser('alice', 90)]);
+      vi.setSystemTime(106000);
+      store.syncFromUsers([makeUser('alice', 110)]);
+      expect(store.getProfile('alice').currentZoneId).toBe('cool');
+      vi.setSystemTime(107000);
+      store.syncFromUsers([makeUser('alice', 110)]);
+      expect(store.getProfile('alice').currentZoneId).toBe('active');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

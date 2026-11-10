@@ -40,6 +40,24 @@ export const cardLadderAdminApi = {
     if (actorId) query.set('actorId', actorId);
     return request(`/words?${query}`);
   },
+  // Day by day: the opened days at a glance, then one day's every answer and
+  // its spoken takes. GETs, so `actorId` rides the query like `words`.
+  days: (learnerId, deckId, actorId = null) => {
+    const query = new URLSearchParams({ learnerId, deckId });
+    if (actorId) query.set('actorId', actorId);
+    return request(`/days?${query}`);
+  },
+  day: (learnerId, deckId, day, actorId = null) => {
+    const query = new URLSearchParams({ learnerId, deckId, day });
+    if (actorId) query.set('actorId', actorId);
+    return request(`/day?${query}`);
+  },
+  /** An <audio src> for one kept take; the browser sends the console cookie itself. */
+  recordingUrl: (learnerId, deckId, day, wordId, take, actorId = null) => {
+    const query = new URLSearchParams({ learnerId, deckId, day, wordId, take: String(take) });
+    if (actorId) query.set('actorId', actorId);
+    return `${BASE}/recording?${query}`;
+  },
   reset: (body) => request('/reset', { method: 'POST', body }),
   markMastered: (body) => request('/mastered', { method: 'POST', body }),
   exclude: (body) => request('/exclude', { method: 'POST', body }),

@@ -1,5 +1,7 @@
 .voice-capture-overlay {
-  position: fixed; inset: 0; z-index: 1000;
+  // Body portal: above player/settings scrims (1001) and voice memo (2000).
+  // Match the Fitness feedback layer; emergency/unlock overlays remain higher.
+  position: fixed; inset: 0; z-index: 2100;
   display: flex; align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.62);
 

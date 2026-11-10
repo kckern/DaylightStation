@@ -243,6 +243,12 @@ public final class Heartbeat {
             A2dpConnector spk = core.getA2dpConnector();
             if (spk != null) o.put("speaker", spk.status().optBoolean("connected", false));
 
+            // Compact Wi-Fi link (p34): the per-minute view beside everything above. The
+            // 10 s detail is its own bridge.wifi event; this is for reading one beat.
+            WifiLink wl = core.getWifiLink();
+            JSONObject w = wl == null ? null : wl.compact();
+            if (w != null) o.put("wifi", w);
+
             o.put("beatFailures", new JSONObject()
                     .put("logStore", logStoreFailures.get())
                     .put("backend", backendFailures.get()));
@@ -266,10 +272,15 @@ public final class Heartbeat {
 
     /** Any bridge event in the same envelope (see {@link LogEvents}). */
     static String toLogStoreLine(String msg, String level, String deviceId, JSONObject body) {
+        return toLogStoreLine(msg, level, deviceId, body, System.currentTimeMillis());
+    }
+
+    /** Same envelope, stamped with when the thing HAPPENED — for lines sent late (WifiLink backlog). */
+    static String toLogStoreLine(String msg, String level, String deviceId, JSONObject body, long epochMs) {
         try {
             JSONObject line = new JSONObject();
             line.put("_msg", msg);
-            line.put("_time", iso(System.currentTimeMillis()));
+            line.put("_time", iso(epochMs));
             line.put("level", level);
             line.put("context.source", "piano-bridge");
             line.put("context.app", "piano-bridge");

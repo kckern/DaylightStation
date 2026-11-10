@@ -1,0 +1,60 @@
+# The original Skyline Glider look, built entirely from the built-in SVG presets.
+# Every art slot can be swapped for a file under the media mount at
+# media/<asset_root>/ — e.g. replace the far layer with
+#   - { id: far, kind: image, src: far.png, parallax: 0.14, y: 0.38, height: 0.34, fallback: alpine-far }
+# `parallax` is a fraction of the course scroll speed (1 = moves with the terrain).
+# Sounds below are placeholders until the files are populated; an empty or
+# missing file falls back to the synthesized cue.
+schema: skyline-glider-zone/v1
+id: alpine
+name: Alpine
+asset_root: fitness/skyline-glider/alpine
+pixel_art: false
+layers:
+  - { id: sky, kind: svg, draw: alpine-sky }
+  - { id: far, kind: svg, draw: alpine-far, parallax: 0.14 }
+  - { id: middle, kind: svg, draw: alpine-middle, parallax: 0.31 }
+  - { id: near, kind: svg, draw: alpine-near, parallax: 0.53 }
+terrain: { draw: alpine-rock, edge_lip: 0.02 }
+craft: { draw: glider }
+collectible: { draw: bell }
+# Weapons draw with the built-in SVG presets, chosen by shot kind. To use
+# sprites, add a `weapons:` slot naming frames from the zone sheet. The laser
+# and bomb animate by time; a blast steps through its frames once over its
+# lifetime instead of by clock time.
+# weapons:
+#   laser: { frames: [laser-0, laser-1], fps: 12 }
+#   bomb: { frame: bomb }
+#   blast: { frames: [blast-0, blast-1, blast-2] }
+# Entity classes: breakable (broken by a hit, a laser, a missile or a bomb), solid (a wall;
+# only a bomb destroys it), scenery (never touched). Set
+# `vulnerable_to: [laser, bomb, missile]` (or []) on a definition or placement to override.
+# `role` tells the rider what to do and drives the on-screen marking:
+# shoot (crosshair brackets + health pips), bomb ("BOMB ↓"), avoid, scenery.
+entities:
+  bombwall: { class: solid, role: bomb, draw: barrier, width_s: 1.2, height: 0.9, vulnerable_to: [bomb] }
+  # A cracked wall across the whole sky: only a missile breaks it; lasers spark off.
+  crackwall: { class: solid, role: missile, draw: crackwall, width_s: 1, height: 0.9, vulnerable_to: [missile] }
+  # A wall nothing breaks, with an opening `gap` tall to fly through (see resolveAct expandGate).
+  gate: { class: solid, role: avoid, draw: gate, width_s: 0.8, gap: 0.24, vulnerable_to: [] }
+  # Ground targets for bombs: they sit below the lowest the craft can fly.
+  bunker: { class: breakable, role: bomb, draw: bunker, width_s: 0.9, height: 0.08, vulnerable_to: [bomb] }
+  # A tower rising into the low flight band: fly over it, or bomb it from above.
+  tower: { class: solid, role: bomb, draw: tower, width_s: 0.7, height: 0.36, vulnerable_to: [bomb] }
+  target: { class: breakable, role: shoot, draw: target, width_s: 0.55, height: 0.16 }
+  pine: { role: avoid, class: breakable, draw: pine, width_s: 0.5, height: 0.14 }
+  chalet: { role: avoid, class: breakable, draw: chalet, width_s: 0.9, height: 0.16 }
+  boulder: { role: avoid, class: solid, draw: boulder, width_s: 0.8, height: 0.12 }
+  signpost: { class: scenery, draw: signpost, width_s: 0.3, height: 0.1 }
+sounds:
+  bell: sounds/bell.mp3
+  checkpoint: sounds/checkpoint.mp3
+  breakable: sounds/breakable.mp3
+  crash: sounds/crash.mp3
+  restart: sounds/restart.mp3
+  finish: sounds/finish.mp3
+  laser: sounds/laser.mp3
+  bomb: sounds/bomb.mp3
+  explosion: sounds/explosion.mp3
+  wind: sounds/wind.mp3
+  music: sounds/music.mp3

@@ -12,6 +12,17 @@ uses measured marks, never the answer key. New answers and small revisions are
 allowed; sparse scans retain evidence for omitted rows. Reallocated rows are
 excluded by their allocation owner. Suspect scans never replace the baseline.
 
+**A refusal is never a dead end.** A shifted pattern looks the same whether the
+card slipped in the reader or the child moved their own answers (bubbled a run
+one row high, then re-bubbled it one row lower). A slip does not reproduce on a
+fresh feed; real marks do. So the first refused read is noted beside the
+baseline (`refused: { answers, at }`), and the same card fed again within 24 h
+with an identical read (`sameOmrRead`, multiselect order-insensitive) is accepted
+as the child's actual card, logged `school.scan.alignment-confirmed-by-refeed`.
+A different read replaces the noted one. The child's message on a refusal says
+to scan again and that a deliberate change counts on the second scan. Before this
+(2026-11-03) a corrected card was refused on every feed, forever.
+
 Baselines persist in application data under the print artifact store's
 `scan-alignment` directory. Unvalidated historical scans are not imported as
 trusted baselines. First scans have structural protection only; sparse or

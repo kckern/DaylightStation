@@ -6,6 +6,8 @@ import {
 } from "../../../../../../__capabilities/gaming/portable/kernel/index.mjs";
 import { authorizeGamingSessionCreation, prepareGamingSessionSetup } from "./gamingSessionSetup.mjs";
 
+import { completedResult } from "./gamingResult.mjs";
+
 const clone = (value) => structuredClone(value);
 
 function mergePatch(target, patch) {
@@ -163,7 +165,9 @@ export class GamingDiagnosticSessions {
   #view(record, viewer) {
     const projection = this.runtime.project(record.session, record.definition, viewer);
     if (viewer.role === 'host' || viewer.role === 'system') projection.definition = clone(record.definition);
-    return { header: clone(record.session.header), ...projection, diagnostic: this.#metadata(record) };
+    const view = { header: clone(record.session.header), ...projection, diagnostic: this.#metadata(record) };
+    const result = completedResult(view);
+    return result ? { ...view, result } : view;
   }
 
   #metadata(record) {

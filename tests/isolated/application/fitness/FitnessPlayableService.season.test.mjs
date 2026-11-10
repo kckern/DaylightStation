@@ -11,9 +11,6 @@ import { FitnessPlayableService } from "../../../../__app_modules/wellness/fitne
 describe('FitnessPlayableService - season label inheritance', () => {
   function buildDeps(overrides = {}) {
     return {
-      fitnessConfigService: {
-        getProgressClassification: vi.fn().mockReturnValue({})
-      },
       contentCatalog: {
         canonicalize: (id) => ({ contentId: `plex:${String(id).replace(/^(?:plex:)+/, '')}`, localId: String(id).replace(/^(?:plex:)+/, '') }),
         resolvePlayables: vi.fn().mockResolvedValue([]),
@@ -22,7 +19,6 @@ describe('FitnessPlayableService - season label inheritance', () => {
         getItem: vi.fn().mockResolvedValue(null)
       },
       contentQueryService: null,
-      createProgressClassifier: () => ({ classify: () => 'unknown' }),
       logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
       ...overrides
     };

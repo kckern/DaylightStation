@@ -171,6 +171,14 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
       // up by kind and routes it to `OpenRemediation`. Only the wording
       // follows the composition — and paper keeps "a fresh sheet", which is
       // the thing that distinguishes a remediation from an ordinary reprint.
+      //
+      // A TEACHER HOLD has nothing to offer at all. This is the one place the
+      // card reads `move.kind`: whether a failure is held depends on how many
+      // retries sit behind it and how long it has sat unretried, which only
+      // the planner knows (it walked the lineage and the calendar). Re-deriving
+      // it here from session state alone would offer a sheet the agenda has
+      // stopped offering. `waitingSentence` names the grown-up instead.
+      if (resolution.move?.kind === 'teacher') return null;
       if (resolution.state?.outcome?.result === 'needs_remediation') {
         const fresh = atCreated(unit, { mediaSurface, bankPrintable });
         if (!fresh) return action('retry', 'Try again');
@@ -237,7 +245,11 @@ function buildCard(resolution, { mediaSurface = null, bankPrintable = false, ban
       // Opens in place on the panel — no room to walk to, so no destination to
       // name beyond the program itself.
       const name = resolution.unit?.title ?? resolution.programId;
-      return { work: action('program', `Open ${name}`, resolution.programId), sentence: null };
+      const work = action('program', `Open ${name}`, resolution.programId);
+      // Entries are buttons of this ONE action (each opens the program at a
+      // place), so the action stays unique by kind for RunSelfServiceAction.
+      const entries = resolution.unit?.entries;
+      return { work: Array.isArray(entries) && entries.length ? { ...work, entries } : work, sentence: null };
     }
     case 'companion':
       return {
@@ -299,6 +311,9 @@ function resumedSentence(resolution, now) {
 
 /** Why this card has no button — reached only when `workAction` found nothing. */
 function waitingSentence(resolution) {
+  // A teacher hold (two remediation rounds did not land): the child has
+  // nothing to do here until a grown-up sits down with them.
+  if (resolution.move?.kind === 'teacher') return 'Waiting for a grown-up.';
   switch (resolution.state?.state) {
     case 'media_dispatched':
       // `nextMove` says "finish watching, then scan your card" — paper words.

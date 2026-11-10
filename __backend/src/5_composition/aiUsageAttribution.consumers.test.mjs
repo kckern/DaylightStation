@@ -58,7 +58,9 @@ async function harness() {
 
 const MESSAGES = [{ role: 'user', content: 'hi' }];
 
-describe('AI usage attribution — previously feature-less consumers', () => {
+// Several tests cold-import the whole bootstrap graph; that setup, not the
+// assertion, ran past 20s on a loaded host (2026-11-03).
+describe('AI usage attribution — previously feature-less consumers', { timeout: 120000 }, () => {
   beforeEach(() => { for (const key of Object.keys(captured)) delete captured[key]; });
 
   it('finance categorization (hourly budget job) writes finance/categorization', async () => {

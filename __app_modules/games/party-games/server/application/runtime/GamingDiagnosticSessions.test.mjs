@@ -61,3 +61,11 @@ describe('GamingDiagnosticSessions', () => {
     expect(() => service.inspect('diagnostic:test', { role: 'host' })).toThrow(/not found/);
   });
 });
+
+it('returns the same terminal result contract on diagnostic completion and resume',async()=>{
+ const service=fixture();const viewer={role:'host'};
+ await service.createSession({definitionId:'dice:test',surfaceId:'party-games',viewer});
+ const ended=service.closeSession('diagnostic:test',{reason:'experience_complete'},viewer);
+ expect(ended.result).toMatchObject({schema:'gaming-result/v1',status:'completed'});
+ expect(service.resumeSession('diagnostic:test',viewer).result).toEqual(ended.result);
+});

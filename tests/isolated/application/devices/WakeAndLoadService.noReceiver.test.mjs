@@ -9,11 +9,11 @@ import { testApplicationRuntime } from '../../../_lib/applicationRuntime.mjs';
 
 const logger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
-function setup({ subscribers = 0, loadResult = { ok: false, error: 'Screen not connected (no receiver subscribed)' }, loads = null } = {}) {
+function setup({ subscribers = 0, loadResult = { ok: false, error: 'Screen not connected (no receiver subscribed)' }, loads = null, waitForMessage = null } = {}) {
   const broadcast = vi.fn();
   const eventBus = {
     getTopicSubscriberCount: vi.fn().mockReturnValue(subscribers),
-    waitForMessage: vi.fn().mockRejectedValue(new Error('waitForMessage timed out')),
+    waitForMessage: waitForMessage ?? vi.fn().mockRejectedValue(new Error('waitForMessage timed out')),
     subscribe: vi.fn().mockReturnValue(() => {}),
   };
   const device = {
@@ -72,5 +72,22 @@ describe('WakeAndLoadService with no receiver', () => {
     const result = await svc.execute('tv', { play: 'plex:1' }, { dispatchId: 'd-4', deferredRetry: false });
     expect(queueBroadcasts(broadcast).length).toBeGreaterThan(0);
     expect(result.ok).toBe(true);
+  });
+
+  // Garage kiosk 2026-10-31: no content control, so the WS command is the
+  // only delivery. An unanswered command must fail now, not report "done"
+  // and time out 90 s later.
+  it('fails Screen not connected when a device with no content control never acks the WS fallback', async () => {
+    const { svc, broadcast } = setup({ subscribers: 1, loadResult: { ok: false, error: 'No content control configured' } });
+    const result = await svc.execute('tv', { play: 'plex:1' }, { dispatchId: 'd-5', deferredRetry: false });
+    expect(queueBroadcasts(broadcast).length).toBeGreaterThan(0);
+    expect(result).toMatchObject({ ok: false, failedStep: 'load', error: 'Screen not connected' });
+  });
+
+  it('fails with the receiver\'s own reason when it rejects the WS fallback', async () => {
+    const waitForMessage = vi.fn().mockResolvedValue({ ok: false, code: 'UNSUPPORTED', error: 'The garage screen plays one item at a time' });
+    const { svc } = setup({ subscribers: 1, loadResult: { ok: false, error: 'FKB unreachable' }, waitForMessage });
+    const result = await svc.execute('tv', { play: 'plex:1' }, { dispatchId: 'd-6', deferredRetry: false });
+    expect(result).toMatchObject({ ok: false, failedStep: 'load', error: 'The garage screen plays one item at a time' });
   });
 });

@@ -38,7 +38,7 @@ describe('YamlSessionDatastore — findInRange index', () => {
       // reported zero. The ASSERTION below reads `totalRings` — legacy in, new
       // name out, which is exactly the dual-read contract.
       summary: { coins: { total: overrides.coins ?? 0 } },
-      timeline: { series: {}, events: [] },
+      timeline: { series: { 'kc:hr': '[[120,12]]' }, events: [] },
       ...overrides.data,
     });
   };
@@ -99,7 +99,7 @@ describe('YamlSessionDatastore — findInRange index', () => {
       timezone: 'UTC',
       participants: {},
       summary: { coins: { total: 11 } },
-      timeline: { series: {}, events: [] },
+      timeline: { series: { 'kc:hr': '[[120,12]]' }, events: [] },
     }, undefined);
 
     const after = await store.findInRange('2026-06-01', '2026-06-30', undefined);

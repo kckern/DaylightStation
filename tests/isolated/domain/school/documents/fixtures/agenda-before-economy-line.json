@@ -1,0 +1,227 @@
+{
+  "_comment": "agendaDocument output captured at 6d5eac33ac, before the economy line existed. Do not regenerate: it is the byte-identity baseline.",
+  "cases": [
+    {
+      "name": "empty plan, no clock",
+      "args": {
+        "learnerId": "kid1"
+      },
+      "document": {
+        "id": "agenda-kid1",
+        "seed": 0,
+        "variant": 0,
+        "target": [
+          "receipt"
+        ],
+        "blocks": [
+          {
+            "type": "rich_text",
+            "md": "Nothing is assigned right now. Ask a grown-up what to do next."
+          }
+        ],
+        "title": "Hello!"
+      }
+    },
+    {
+      "name": "empty plan with notes and a printed time",
+      "args": {
+        "learnerId": "kid1",
+        "learnerName": "Kid One",
+        "generatedAt": "2026-07-27T15:00:00.000Z",
+        "timeZone": "America/Los_Angeles",
+        "sections": [],
+        "notes": [
+          "Q3: check your signs"
+        ]
+      },
+      "document": {
+        "id": "agenda-kid1",
+        "seed": 0,
+        "variant": 0,
+        "target": [
+          "receipt"
+        ],
+        "blocks": [
+          {
+            "type": "rich_text",
+            "md": "Nothing is assigned right now. Ask a grown-up what to do next."
+          },
+          {
+            "type": "rich_text",
+            "md": "## NOTES FOR YOU"
+          },
+          {
+            "type": "rich_text",
+            "md": "Q3: check your signs"
+          },
+          {
+            "type": "rich_text",
+            "md": "Mon 27 Jul, 8:00 am",
+            "align": "center"
+          }
+        ],
+        "title": "Kid One"
+      }
+    },
+    {
+      "name": "sections, codes, bulk, reading and notes",
+      "args": {
+        "learnerId": "kid1",
+        "learnerName": "Kid One",
+        "generatedAt": "2026-07-27T15:00:00.000Z",
+        "timeZone": "America/Los_Angeles",
+        "sections": [
+          {
+            "subject": "math",
+            "servedToday": false,
+            "progressLabel": "Unit 2 of 4",
+            "gradePercent": 88,
+            "next": {
+              "title": "Unit Two",
+              "token": "sch:AAAA",
+              "actionLabel": "watch it"
+            }
+          },
+          {
+            "subject": "science",
+            "servedToday": false,
+            "next": {
+              "title": "Plants",
+              "token": "sch:BBBB"
+            }
+          },
+          {
+            "subject": "language",
+            "servedToday": true,
+            "progressLabel": "Day 61"
+          }
+        ],
+        "tokensBySubject": {
+          "math": "sch:AAAA",
+          "science": "sch:BBBB"
+        },
+        "accessCodesByToken": {
+          "sch:AAAA": "123456"
+        },
+        "bulkToken": "sch:BULK",
+        "bulkAccessCode": "654321",
+        "bulkSubjects": [
+          "math",
+          "science"
+        ],
+        "readingToken": "sch:READ",
+        "readingAccessCode": "111222",
+        "readingFeature": {
+          "state": "reading",
+          "book": {
+            "title": "A Book",
+            "authors": [
+              "An Author"
+            ]
+          },
+          "page": 40,
+          "pageCount": 120,
+          "daysRead": 3
+        },
+        "notes": [
+          "Q3: check your signs",
+          "Nice work on Q7"
+        ],
+        "footer": "Have a good day"
+      },
+      "document": {
+        "id": "agenda-kid1",
+        "seed": 0,
+        "variant": 0,
+        "target": [
+          "receipt"
+        ],
+        "blocks": [
+          {
+            "type": "scan_action",
+            "action": "sch:AAAA",
+            "label": "Unit Two",
+            "presentation": "lesson",
+            "hideCode": true,
+            "icon": "math",
+            "meta": "WATCH IT",
+            "panelCode": "123456"
+          },
+          {
+            "type": "scan_action",
+            "action": "sch:BBBB",
+            "label": "Plants",
+            "presentation": "lesson",
+            "hideCode": true,
+            "icon": "science",
+            "meta": "SCAN TO PRINT"
+          },
+          {
+            "type": "scan_action",
+            "action": "sch:READ",
+            "label": "A Book",
+            "presentation": "lesson",
+            "hideCode": true,
+            "unit": "An Author",
+            "description": "Page 40 of 120. Save tonight's page, or say you finished it.",
+            "icon": "english",
+            "meta": "UPDATE ON THE PANEL",
+            "taxonomy": {
+              "subject": "English",
+              "course": "Reading log",
+              "unit": "An Author",
+              "lesson": "A Book"
+            },
+            "panelCode": "111222"
+          },
+          {
+            "type": "scan_action",
+            "action": "sch:BULK",
+            "presentation": "bulk_print",
+            "label": "Print all sheets",
+            "hideCode": true,
+            "subjects": [
+              "math",
+              "science"
+            ],
+            "panelCode": "654321"
+          },
+          {
+            "type": "done_summary",
+            "label": "Done today",
+            "entries": [
+              {
+                "subject": "language",
+                "icon": "language",
+                "titles": []
+              }
+            ]
+          },
+          {
+            "type": "rich_text",
+            "md": "## NOTES FOR YOU"
+          },
+          {
+            "type": "rich_text",
+            "md": "Q3: check your signs"
+          },
+          {
+            "type": "rich_text",
+            "md": "Nice work on Q7"
+          },
+          {
+            "type": "rich_text",
+            "md": "Have a good day"
+          },
+          {
+            "type": "rich_text",
+            "md": "Mon 27 Jul, 8:00 am",
+            "align": "center",
+            "rule": "above"
+          }
+        ],
+        "title": "Kid One"
+      }
+    }
+  ]
+}

@@ -10,7 +10,7 @@ For API reference and configuration, see `governance-engine.md`.
 
 The governance system enforces exercise participation requirements during video playback. When media tagged with governed labels plays, participants must maintain prescribed heart rate zones or playback locks.
 
-The system is **event-driven and reactive**: heart rate sensor data flows through a pipeline of transforms (device → user → zone → governance decision), with hysteresis at two layers to prevent jitter from noisy biometric data.
+The system is **event-driven and reactive**: heart rate sensor data flows through a pipeline of transforms (device → user → zone → governance decision), with zone hysteresis in ZoneProfileStore to absorb jitter from noisy biometric data. The GovernanceEngine itself unlocks as soon as requirements are met; its only damping is on the way down (grace period, warning cooldown).
 
 ### Component Map
 
@@ -75,8 +75,11 @@ WebSocket message arrives
     │       │
     │       ├──▶ ZoneProfileStore.syncFromUsers(allUsers)
     │       │       Derives: raw zone from HR + zone thresholds
-    │       │       Applies: hysteresis (5s cooldown, 3s stability)
-    │       │       Stores: profile.currentZoneId (stabilized)
+    │       │       Requires: accepted real Cool baseline for each wearer,
+    │       │                 or recent same-strap evidence (resume, <= 60 min)
+    │       │       Applies: upward confirmation (2 samples >= 1s),
+    │       │                hysteresis (5s cooldown, 3s stability)
+    │       │       Stores: zoneTrusted, currentZoneId, accepted zoneEntry evidence
     │       │       Returns: true if zone signature changed
     │       │
     │       └──▶ [if zone changed] GovernanceEngine.notifyZoneChange()
@@ -103,13 +106,13 @@ WebSocket message arrives
 |------|---------|------------|
 | Sensor → WebSocket | ~50ms | 50ms |
 | ingestData pipeline | ~5ms | 55ms |
-| Zone hysteresis | 0ms (or 3-5s if jittering) | 55ms |
+| Zone hysteresis | 0ms down / ~1s up (or 3-5s if jittering) | 55ms |
 | notifyZoneChange debounce | 100ms | 155ms |
 | evaluate() | ~5ms | 160ms |
 | React render | ~16ms | 176ms |
 | UI update visible | ~0ms | 176ms |
 
-**Total: ~176ms sensor-to-UI** (when zone is stable). Up to **5 seconds** when zone is jittering near a boundary (by design — hysteresis prevents flicker).
+**Total: ~176ms sensor-to-UI** (when zone is stable). A climb into a higher zone adds about **1 second** (the confirming second sample). Up to **5 seconds** when zone is jittering near a boundary (by design — hysteresis prevents flicker).
 
 ---
 
@@ -164,7 +167,7 @@ The GovernanceEngine is a four-phase state machine:
               └────┬─────┘                                             │
                    │                                                   │
                    │ requirements satisfied                            │
-                   │ + 500ms hysteresis hold                           │
+                   │ (same evaluation, no hold)                        │
                    │                                                   │
               ┌────▼─────┐                                             │
     ┌────────▶│ UNLOCKED │ ◀───── Video plays, challenges can trigger  │
@@ -189,7 +192,7 @@ The GovernanceEngine is a four-phase state machine:
     │         │ (locked) │                                        │    │
     │         └────┬─────┘                                        │    │
     │              │                                               │    │
-    │              │ requirements satisfied + 500ms hysteresis     │    │
+    │              │ requirements satisfied, no failed challenge   │    │
     │              │                                               │    │
     └──────────────┘                                     ┌────────┘    │
                                                          │             │
@@ -200,12 +203,12 @@ The GovernanceEngine is a four-phase state machine:
 
 | From | To | Condition |
 |------|----|-----------|
-| pending → unlocked | All requirements met for 500ms continuously |
+| pending → unlocked | All requirements met (on the same evaluation; no hold timer) |
 | unlocked → warning | Requirements break AND `satisfiedOnce = true` |
 | unlocked → locked | Challenge failure (absolute — base requirements irrelevant) |
 | warning → unlocked | Requirements re-satisfied |
 | warning → locked | Grace period expires OR challenge fails |
-| locked → unlocked | Requirements met for 500ms AND no active failed challenge |
+| locked → unlocked | Requirements met AND no active failed challenge |
 | any → pending | No media, no participants, or engine reset |
 
 ---
@@ -237,7 +240,7 @@ Timer fires → _triggerPulse()
         evaluate() on each pulse
             │
             ├── Participants meet challenge zone?
-            │       YES (for 500ms) → status: 'success'
+            │       YES (optional configured hold) → status: 'success'
             │           Clear challenge, schedule next
             │           _schedulePulse(nextInterval)
             │
@@ -246,14 +249,25 @@ Timer fires → _triggerPulse()
             │           videoLocked = true
             │           phase → locked
             │
-            └── Phase changed to warning/locked?
-                    Challenge timer PAUSES
-                    challenge.pausedAt = now
-                    challenge.pausedRemainingMs = remaining
-                    Timer resumes when phase returns to unlocked
+            └── Any evaluated floor criterion unmet?
+                    Challenge PAUSES and backgrounds (including grace)
+                    Identity/status, clock and earned progress are banked
+                    Resume once when every floor criterion recovers
 ```
 
-**Challenge timer pausing rule:** Challenge timers only count down during `unlocked` phase. If the user drops below base requirements (entering `warning`), the challenge clock freezes. This prevents double-penalizing users who are already being warned about base requirements.
+**Challenge suspension rule:** Evaluated floor satisfaction controls suspension,
+independently of the overall playback phase. A failed challenge can itself hold
+that phase locked while the floor is satisfied. Any unmet floor backgrounds zone,
+step and cycle challenges, banking countdown and earned progress throughout
+warning/grace and lock. Recovery resumes the same challenge once; recoverable
+failed zone/step challenges and recoverable cycle locks then own their explanation again. Terminal
+failed-cycle outcomes retain existing history/cooldown and cleanup after their
+remaining publication window resumes; they gain no new recovery policy. Optional
+per-person holds default to zero, exclude paused time, and reset on observed target loss or departure. Display
+obligations keep floor targets/counts/rows/faces scoped; no challenge-only blocker
+or credit appears in a floor explanation. See the
+[governance reference](./governance-engine.md#floor-priority-and-challenge-suspension)
+for the snapshot and display contracts.
 
 ---
 
@@ -338,7 +352,7 @@ Each piece of data has exactly one authoritative source. All other components mu
 Governance may pause the video only while the **live** governance state says
 locked. Callbacks handed to `<Player>` read governance through
 `useGovernanceProgressEnforcer`
-(`frontend/src/modules/Fitness/player/governanceProgressEnforcer.js`), never a
+(`__app_modules/wellness/fitness/browser/player/governanceProgressEnforcer.js`), never a
 captured value: a media listener can outlive the render that bound it, and a
 boolean captured during a lock keeps pausing after the unlock. After unmount the
 enforcer does nothing, so a listener on a dead element cannot call
@@ -370,10 +384,23 @@ Prevents rapid visual toggling when HR hovers near zone boundaries (e.g., 99-101
 **Algorithm:**
 
 ```
+Before the store (DeviceManager slew gate, hrPlausibility.createHrSlewGate):
+  A reading >= 25 BPM away from the strap's previous one within 2s is HELD:
+  it reaches no user, zone store or TreasureBox. The next packet confirms it
+  (agrees with the held value) or rejects it (agrees with the previous one).
+  A packet with no reading clears the baseline.
+
 For each HR update:
-  1. Derive rawZoneId from HR + zone thresholds
+  0. Untrusted → no committed zone until an accepted real Cool reading, or a
+     resume from recent trusted evidence (below)
+  1. Derive rawZoneId from HR + validated personal zone thresholds
+     No accepted reading → preserve trusted committed zone, commit nothing
   2. If rawZoneId === committedZoneId → no change
-  3. If timeSinceLastCommit > 5000ms → commit immediately (first transition)
+  2a. If rawZone is a downgrade and HR >= committedZoneMin - 5 BPM
+      → suppress (exit margin, Schmitt trigger)
+  2b. If rawZone is an UPGRADE → wait until it has held for 2 separate
+      samples spanning >= 1000ms (UPWARD_CONFIRM_SAMPLES / _MS)
+  3. If timeSinceLastCommit > 5000ms → commit (confirmed climb, or a drop at once)
   4. If rawZoneStableDuration >= 3000ms → commit (stable long enough)
   5. Else → suppress change, keep showing committedZoneId
 ```
@@ -381,11 +408,154 @@ For each HR update:
 **Parameters:**
 - Cooldown window: 5 seconds after last zone commit
 - Stability requirement: 3 seconds of continuous new zone
-- First transition: instant (no stability wait)
+- Exit margin: 5 BPM below the committed zone's floor before a downgrade can
+  commit (`EXIT_MARGIN_BPM`; logged as `zoneprofilestore.exit_margin_suppressed`)
+- First transition (accepted Cool, or a resume): instant (no stability wait)
+- Upward confirmation: a higher zone commits only on its second separate
+  sample at least 1s after the first. A "sample" is a distinct reading
+  (`zoneReadingAt`, the user's last real HR time): every rider is re-synced on
+  every rider's packet, and a re-sync of the same reading is not a second
+  sample. This is what stopped single corrupt 204 BPM packets committing Fire
+  (2026-10-23). A drop still commits on its first sample.
+- Slew gate (`hrPlausibility.createHrSlewGate`, in DeviceManager): a ≥25 BPM
+  jump inside 2s is held for the next sample. After a short *silent* gap
+  (no packets, baseline under `HR_SLEW_MEMORY_MS` = 30s old) a jump is
+  accepted only **provisionally**: if the next sample returns to the pre-gap
+  line, the gap reading was the spike and the next sample is accepted
+  (`spike_rejected`, `rejectedProvisional`). A 204/real alternation after a
+  gap therefore never keeps the spike as the baseline. A no-reading packet
+  still resets the device, so a reconnect is never held.
+- `fitness.zone_state.transition` carries `commitPath`
+  (`instant-first` / `confirmed-upward` / `downgrade` / `stable`),
+  `rawSamples`, `rawStableMs`, `deviceId` and the previous zone and HR.
+- A sample with no reading never commits or establishes Cool trust. Brief
+  same-wearer gaps retain the trusted committed zone within the existing
+  five-second HR-loss grace, while scoring stops immediately.
+- Confirmed loss, session reset and wearer changes clear trust, smoothing and
+  the zone entry. They differ in **resume evidence**: the store keeps each
+  rider's last *confirmed* trusted reading (`{deviceId, zoneId, heartRate, at}`
+  — a reading the committed zone agrees with, so a held spike never qualifies).
+  A confirmed loss keeps it; a wearer change (handover or correction, both
+  identities) and a session reset delete it; a configuration rebuild
+  (`clear({preserveTrust})`) keeps it.
+- **Resume (the water break).** An untrusted rider with evidence at most
+  `ZONE_TRUST_RESUME_WINDOW_MS` (60 min) old, from the same strap
+  (`zoneReadingDeviceId`), regains trust on an eligible reading (the 3-packet
+  reconnect discard still applies) that is within 25 BPM of the evidence — or,
+  failing that, on two consistent readings at least 1s apart. Hysteresis
+  restarts empty, so the zone is that of the **current** reading. The entry is
+  marked `resumed: true` and never celebrates. Logged as
+  `fitness.zone_trust.resumed` (path `evidence-plausible` /
+  `consistent-samples`), `resume_held` (an implausible first reading back) and
+  `resume_refused` (`evidence-expired` / `different-strap`, once per loss).
+  Known, accepted miss: a rider who comes back already in Fire gets no
+  ceremony for that return; the next real crossing into Fire celebrates. A
+  kiosk reload resumes the same way (v2 snapshot), so riders are untrusted for
+  about a second after a reload, well inside governance grace.
+- **Reload restore without evidence (v1 snapshot).** `restoreTrust` re-admits
+  the rider with no evidence and no smoothing state, so their first reading
+  commits instantly with no upward confirmation. That first entry is marked
+  `resumed: true, restored: 'no-evidence'` and never celebrates; later real
+  crossings do.
+- **Ladder change (reclassification).** The store remembers each rider's ladder
+  signature across a config rebuild (`clear({preserveTrust})` keeps it; a
+  session reset or wearer reset drops it). When the thresholds change
+  (`fitness.zone_ladder.changed`), every zone entry is marked
+  `reclassified: true` until the rider has a trusted real reading **below
+  Fire** under the new ladder (`fitness.zone_ladder.reclassify_guard_cleared`).
+  A lowered Fire line at an unchanged HR therefore commits Fire for
+  governance and rings, but never celebrates; the next real upward crossing
+  under the new ladder does.
+- **Simulated input.** Packets with `source: 'fitness-simulator'` (the backend
+  rebroadcasts them to every client, so the garage kiosk ingests them too)
+  mark their device simulated for `SIMULATED_DEVICE_HOLD_MS` (10 min) after the
+  last such packet (`fitness.device.simulated_source`). Zones, governance and
+  rings work exactly as before; the profile carries
+  `zoneReadingSimulated: true` and the entry `simulated: true`, and no Fire
+  ceremony comes of it.
+- A new session, or a first attach with no evidence, still requires an
+  accepted Cool. That is the only case suppression exists for: a strap still
+  emitting a previous day's Fire.
+- Shared synchronization carries **each user's own selected sample's** startup
+  acceptance flag and respects its originating strap. Lowest-HR arbitration
+  retains per-sample acceptance, so an accepted higher packet cannot authorize
+  a different strap's discarded Cool. Scoring uses the same eligible canonical HR.
+- Correction and ordinary handover reset both identities synchronously, before
+  another packet or sync: pending HR provenance, earned zones, cached profile
+  maps and unfinished intervals clear; historical totals remain intact.
+  A **re-tag under the same id** (the shared generic `guest_<deviceId>`, or a
+  changed name) is treated the same way (`guest_assignment.retag_same_id`):
+  the new wearer never inherits the last one's trust, zone or baseline.
+- Every sync advances smoothing even for repeated HR. Profile memoization is
+  unsafe: its key cannot describe elapsed stability or interrupted raw-zone
+  runs, and historical profiles must not survive resets.
 
-### Layer 2: GovernanceEngine (Phase Flap Prevention)
+The public profile adds `zoneTrusted: boolean`,
+`zoneEntry: { id, zoneId, heartRate, threshold, enteredAt, deviceId, resumed?,
+restored?, reclassified?, simulated? } | null`, and the reading it was built
+from: `zoneReadingAt`, `zoneReadingDeviceId`, `zoneReadingEligible`,
+`zoneReadingSimulated`. The store keeps the newest snapshot on every sync even
+when the signature is unchanged, so a repeated HR still advances
+`zoneReadingAt`. The entry
+captures an accepted reading that justified the current committed transition;
+its ID is monotonic for the store lifetime. Read APIs clone the evidence.
+A reset clears published trust and current-zone fields immediately, before the
+next reading arrives. Raw `displayZone*`, `zoneSnapshot`, progress and HR remain
+measurement data; they must not be substituted for an untrusted earned zone.
 
-Prevents rapid phase cycling between unlocked/warning when requirements hover at boundary.
+TreasureBox requires a trusted profile before resolving or awarding an HR
+interval. It cannot fall back to global thresholds while the profile is absent
+or untrusted. The roster and participant display map retain the authoritative
+null earned zone, so governance cannot count a startup spike.
+
+#### Fire ceremony (toast + fireball sound)
+
+Owner rule: **a Fire ceremony never happens if the rider is not actually in
+Fire.** Missing a real ceremony in an ambiguous case is acceptable; a false one
+never is. Three stages, each able only to say no:
+
+1. **Crossing** (`fireZoneTracker.nextFireToasts`). A trusted non-Fire → Fire
+   crossing with new entry identity, matching personal threshold and captured
+   HR at/above it. Retained Fire under hysteresis is not another entry. First
+   observation in Fire, a default Cool baseline, a reused entry, a
+   `resumed` / `reclassified` / `simulated` entry, a changed Fire line, or
+   contradictory HR/threshold never qualifies. A 5-minute per-rider cooldown
+   applies.
+2. **Sustained Fire.** A crossing only opens a candidate stint. It becomes a
+   ceremony after committed Fire has been held for `FIRE_CEREMONY_SUSTAIN_MS`
+   (5s) with at least `FIRE_CEREMONY_MIN_SAMPLES` (3) distinct readings
+   (`zoneReadingAt`), **every one at or above the Fire minimum**, from the same
+   strap, under the same ladder. Leaving Fire, a new entry, any reading below
+   the line (Fire held only by the exit margin), a strap change (two straps on
+   one rider), a ladder change or a simulated reading abandons the stint
+   (logged `fitness.fire_ceremony.dropped` with `stage: 'stint'`); only a new
+   real crossing opens another. This is the main defense against spike,
+   alternation and two-strap artifacts.
+3. **Display-time re-check** (`fireCeremonyEligibility.evaluateFireCeremony`,
+   run by FitnessContext's flush). A qualified entry may wait behind a ring
+   card or another rider's toast. When it reaches the slot it is shown only if
+   the rider's **live** profile still has: the same session id, trust,
+   committed zone Fire, the same zone entry id (same uninterrupted stint), the
+   same strap, a non-simulated reading, a fresh eligible reading
+   (`FIRE_CEREMONY_FRESH_MS`, 5s) and current HR ≥ the current Fire minimum.
+   Otherwise it is dropped: `fitness.fire_ceremony.dropped`
+   `{ reason, userId, entryId, queuedForMs }` with reason `session-changed`,
+   `rider-gone`, `untrusted`, `not-in-fire`, `entry-changed`, `simulated`,
+   `device-changed`, `hr-stale` or `hr-below-fire`.
+
+The tracker and the queue belong to one session: a new session object or
+session id (end, reset, new session) clears both
+(`fitness.fire_ceremony.queue_cleared`). `fitness.fire_toast.shown` logs the HR
+**at display time** (`hr`), the crossing HR (`entryHr`), `fireThreshold`,
+`zoneEntryId`, `deviceId`, `sustainedMs`, `samples` and `queuedForMs`.
+
+### Layer 2: GovernanceEngine (no unlock hold)
+
+The engine does **not** debounce unlocking. An earlier 500ms sustained-
+satisfaction hold (`_hysteresisMs` / `satisfiedSince`) was removed; the engine
+unlocks on the same evaluation in which every requirement is satisfied. Jitter
+is absorbed upstream by Layer 1, which feeds the engine already-stabilized
+zones. Damping remains only on the way down.
 
 **Algorithm:**
 
@@ -394,21 +564,33 @@ For each evaluate():
   If challengeForcesRed (active challenge with status 'failed'):
     phase = 'locked'   (recovery only via challenge satisfaction check)
   Else if allSatisfied:
-    If satisfiedSince is null → set satisfiedSince = now
-    If (now - satisfiedSince) >= 500ms:
-      satisfiedOnce = true
-      phase = 'unlocked'
-    Else:
-      Keep current phase (don't flap back to pending)
+    satisfiedOnce = true
+    clear grace deadline
+    phase = 'unlocked'          (immediately, no hold)
+  Else if !satisfiedOnce:
+    phase = 'pending'
+  Else if inside warning cooldown:
+    keep current phase
+  Else if no grace period configured:
+    phase = 'locked'
   Else:
-    Clear satisfiedSince
-    If satisfiedOnce → phase = 'warning'
-    Else → phase = 'pending'
+    start/continue grace deadline
+    phase = 'warning' until the deadline passes, then 'locked'
 ```
 
 **Parameters:**
-- Unlock hysteresis: 500ms sustained satisfaction required
+- Unlock: immediate once all requirements are satisfied
 - Grace period: configurable per-policy (default from `grace_period_seconds`)
+- Warning cooldown: after returning to `unlocked` from `warning` or `locked`,
+  `warning_cooldown_seconds` suppresses immediate re-entry into `warning`.
+  The phase stays `unlocked` while a floor is unmet; the display marks it
+  `quiet` (`resolveGovernanceDisplay`: shown, unlocked, no locking challenge,
+  obligations present) and the overlay renders rider chips only, with no life
+  meter, scrim or audio (`governance-progress-overlay--quiet`; the
+  `warning_overlay.shown`/`hidden` events carry `quiet`). The engine logs
+  `governance.warning_suppressed` once per suppression episode. The player
+  clears governance media on unmount so the engine returns to idle and stops
+  evaluating once it closes.
 
 ---
 
@@ -520,7 +702,7 @@ All previously documented SSoT violations have been addressed:
 
 | # | Violation | Resolution |
 |---|-----------|-----------|
-| 1 | `getUserVitals().zoneId` raw zone | Now reads from ZoneProfileStore first, falls back to raw zone for initial state |
+| 1 | `getUserVitals().zoneId` raw zone | Reads the trusted ZoneProfileStore zone; initial state remains untrusted |
 | 2 | FitnessPlayer dual governance check | Removed local label check from `pauseDecision` and `playObject.autoplay`; `governanceState.videoLocked` is sole lock authority |
 | 3 | Heart rate triple-storage | Documented propagation chain in `ingestData()`; removed stale snapshot fallback in ZoneProfileStore |
 | 4 | Progress bar data source split | Fallback path now prefers `progressEntry.currentHR` over raw `heartRate` |
@@ -529,7 +711,7 @@ All previously documented SSoT violations have been addressed:
 ### Design Decisions
 
 - **Triple HR storage retained:** DeviceManager, UserManager, and ZoneProfileStore each serve different roles. The three stores update synchronously in `ingestData()`. If any path becomes async, this must be collapsed to a single authoritative store.
-- **Raw zone fields retained in vitals:** `getUserVitals().zoneId` now prefers ZoneProfileStore but falls back to raw zone for initial state before first stabilization cycle.
+- **Raw zone fields retained in vitals:** Raw vitals remain measurement data. Earned zone consumers use ZoneProfileStore and preserve its untrusted/null result during startup.
 - **`computeProgressData` two paths retained:** Zone-based and HR-based are fundamentally different algorithms for different scenarios. The fix ensures both use the same HR source (snapshot preferred over raw).
 
 ---
@@ -565,20 +747,20 @@ Payload is validated before API call (minimum 60s duration, valid roster, series
 
 | File | Role | SSoT Responsibility |
 |------|------|-------------------|
-| `frontend/src/hooks/fitness/GovernanceEngine.js` | State machine, phase transitions, challenges | Phase, lock decision |
-| `frontend/src/hooks/fitness/ZoneProfileStore.js` | Zone stabilization via hysteresis | Current zone per user |
-| `frontend/src/hooks/fitness/FitnessSession.js` | Session orchestration, data routing | Roster, session lifecycle |
-| `frontend/src/hooks/fitness/PersistenceManager.js` | Validation, encoding, API persistence | Session payload format |
-| `frontend/src/hooks/fitness/DeviceManager.js` | Raw device tracking | Device readings |
-| `frontend/src/hooks/fitness/UserManager.js` | Device → user mapping | User-device associations |
-| `frontend/src/context/FitnessContext.jsx` | React context, WebSocket → session bridge | Governed labels config |
-| `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` | Video control, bypass-aware effective state | Playback state, effective governance state |
-| `frontend/src/modules/Fitness/player/governanceProgressEnforcer.js` | Live-read governance enforcement on progress ticks (`useGovernanceProgressEnforcer`) | Governance pause on progress ticks |
-| `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` | Overlay dispatch |
-| `frontend/src/modules/Fitness/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI, zone display | Display rendering |
-| `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` | Cue SFX + duck/restore lifecycle | Audio duck session |
-| `frontend/src/modules/Fitness/player/FitnessSidebar.jsx` | Sidebar governance panel (reads raw context state) | Sidebar display |
-| `frontend/src/Apps/FitnessApp.jsx` | URL routing, config loading, queue management | Content source |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js` | State machine, phase transitions, challenges | Phase, lock decision |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js` | Zone stabilization via hysteresis | Current zone per user |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js` | Session orchestration, data routing | Roster, session lifecycle |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/PersistenceManager.js` | Validation, encoding, API persistence | Session payload format |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/DeviceManager.js` | Raw device tracking | Device readings |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/UserManager.js` | Device → user mapping | User-device associations |
+| `__app_modules/wellness/fitness/browser/context/FitnessContext.jsx` | React context, WebSocket → session bridge | Governed labels config |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx` | Video control, bypass-aware effective state | Playback state, effective governance state |
+| `__app_modules/wellness/fitness/browser/player/governanceProgressEnforcer.js` | Live-read governance enforcement on progress ticks (`useGovernanceProgressEnforcer`) | Governance pause on progress ticks |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` | Overlay dispatch |
+| `__app_modules/wellness/fitness/browser/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI, zone display | Display rendering |
+| `__app_modules/wellness/fitness/browser/player/hooks/useGovernanceAudioDuck.js` | Cue SFX + duck/restore lifecycle | Audio duck session |
+| `__app_modules/wellness/fitness/browser/player/FitnessSidebar.jsx` | Sidebar governance panel (reads raw context state) | Sidebar display |
+| `__app_modules/wellness/fitness/browser/FitnessApp.jsx` | URL routing, config loading, queue management | Content source |
 | `__backend/src/4_api/v1/routers/info.mjs` | Content metadata API | Media metadata |
 
 ---

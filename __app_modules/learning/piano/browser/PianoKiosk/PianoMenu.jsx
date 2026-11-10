@@ -11,6 +11,7 @@ import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 import usePianoCurfew from './usePianoCurfew.js';
 import useSchoolGameAccess from './useSchoolGameAccess.js';
+import { canBuyPass, canEnterLock } from './earlyPass.js';
 import usePianoLessonGate, { PENDING_CAPTION } from './usePianoLessonGate.js';
 import TodaysLessonGate from './TodaysLessonGate.jsx';
 import { PIANO_MODES } from './pianoModes.js';
@@ -113,7 +114,15 @@ export function PianoMenu() {
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
               const gamesOffTile = m.id === 'games' && gamesOff;
-              const schoolLocked = m.id === 'games' && !gamesOff && !gameAccess.unlocked;
+              // The early pass: a school-locked tile stays live while today's
+              // pass cap is unused, affordable or not, so the child reaches
+              // the lock (its progress line and Print button) and, with the
+              // coins, the offer. An active pass already reads as unlocked
+              // (`via: 'pass'`). A used cap or an unreadable ledger leaves
+              // the tile shut, as before.
+              const lockReachable = m.id === 'games' && !gamesOff && !gameAccess.unlocked && canEnterLock(gameAccess);
+              const passOffer = lockReachable && canBuyPass(gameAccess);
+              const schoolLocked = m.id === 'games' && !gamesOff && !gameAccess.unlocked && !lockReachable;
               const videosLocked = m.id === 'videos' && videosCapped;
               const disabled = m.disabled || gamesOffTile || schoolLocked || videosLocked || curfew || pending;
               // The count is the whole message. "Videos are locked" invites an
@@ -123,8 +132,12 @@ export function PianoMenu() {
                 ? 'Not part of your piano'
                 : videosLocked
                 ? `${lessonGate.videos?.completedToday ?? '?'} of ${lessonGate.videos?.cap ?? '?'} lessons today`
+                : m.id === 'games' && gameAccess.via === 'pass'
+                ? 'One game today'
                 : m.id !== 'games' || gameAccess.unlocked
                 ? m.blurb
+                : passOffer
+                ? 'Finish school, or buy one game'
                 : gameAccess.status === 'error'
                   ? 'School status unavailable'
                   : gameAccess.state === 'indeterminate'

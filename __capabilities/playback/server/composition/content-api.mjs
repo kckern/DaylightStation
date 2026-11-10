@@ -42,7 +42,7 @@ export function createPlaybackSurroundContext({ dataPath, logger, configService,
   return { surroundStore, surroundEnforceOrder, playResponseService };
 }
 
-export function createPlaybackProgressOperations({ contentCatalog, mediaProgressMemory, progressSyncSources, progressSyncService, reportPlaybackSession, playLedger, isKnownSpotDevice, eventBus, userVideoProgressStore, economyService, logger }) {
+export function createPlaybackProgressOperations({ contentCatalog, mediaProgressMemory, progressSyncSources, progressSyncService, reportPlaybackSession, playLedger, isKnownSpotDevice, completionRules = null, eventBus, userVideoProgressStore, economyService, logger }) {
   const updateContentProgress = new UpdateContentProgress({
     contentCatalog,
     mediaProgressMemory,
@@ -59,6 +59,7 @@ export function createPlaybackProgressOperations({ contentCatalog, mediaProgress
     reportPlaybackSession,
     playLedger,
     isKnownSpotDevice,
+    completionRules,
     playbackPublications: new PlaybackPublications({ eventBus }),
     userVideoProgressStore,
     economyService,

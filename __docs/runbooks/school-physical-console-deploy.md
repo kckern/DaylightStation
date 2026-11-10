@@ -102,10 +102,14 @@ whenever the hardware exists.
 
 ---
 
-## 5. Before enabling coins
+## 5. Coins
 
-`lifecycle.economy.enabled: false` is the shipping default and should stay that
-way until you have watched real sessions settle. When enabled:
+Leave `lifecycle.economy.enabled: false`. School work is paid by the economy's
+PayoutService, which mints what the weekly earnings preview prices and is
+turned on by the economy catalog's `mode` (`dry-run` first, then `live`; see
+`__docs/reference/economy/economy.md`, "Rollout"). Turning School's per-unit
+reward on as well would pay a unit twice. For reference, the per-unit path
+does this when enabled:
 
 - a unit's `reward.amount` is paid through `EconomyService.earn`, still bounded
   by the household `daily_cap`;

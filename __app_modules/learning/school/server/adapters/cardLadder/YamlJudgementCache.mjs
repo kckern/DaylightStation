@@ -35,7 +35,11 @@ export class YamlJudgementCache {
   get(pkg, wordId, normalized) { return this.#read(pkg)[key(wordId, normalized)] ?? null; }
   set(pkg, wordId, normalized, verdict) {
     const all = this.#read(pkg);
-    all[key(wordId, normalized)] = { score: verdict.score, judge: verdict.judge, reason: verdict.reason ?? null };
+    // Jev's rows carry their rubric version (`v`), `match`, `engine`, `model` and
+    // `unsure`: without `v` a cached Jev verdict is never reused (CardLadderTypedJudge).
+    const extra = Object.fromEntries(['match', 'engine', 'model', 'v', 'unsure']
+      .filter((field) => verdict[field] != null).map((field) => [field, verdict[field]]));
+    all[key(wordId, normalized)] = { score: verdict.score, judge: verdict.judge, reason: verdict.reason ?? null, ...extra };
     saveYamlToPathAtomic(this.#file(this.#rootDir, pkg), all, { noRefs: true });
   }
 }

@@ -4,6 +4,7 @@ import { render, act } from '@testing-library/react';
 import { useCommonMediaController } from './useCommonMediaController.js';
 import * as Logger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
+import { registerPlaybackLinkProbe } from '../lib/linkProbe.js';
 
 // The controller logs playback progress to the backend; stub the API client so
 // timeupdate-driven logProgress calls can't hit the network (the old version of
@@ -266,6 +267,41 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     ]);
     // The softReinit attempt still counts toward the session cap (visibility).
     expect(ledger.snapshot(SESSION_KEY)?.count).toBe(2);
+  });
+
+  // 2026-10-28: on a 0.3x link a reload's moov fetch outlasted HARD_STALL_MS;
+  // treating its NaN duration as "lost" restarted the fetch from zero.
+  it('a NaN duration while the header is still loading (readyState 0, LOADING) is not duration-lost — no softReinit', () => {
+    const { video } = renderStalled();
+    act(() => { video.duration = NaN; video.readyState = 0; video.networkState = 2; });
+    act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
+    expect(events.filter(([e]) => e === 'playback.duration-lost').length).toBe(0);
+    expect(events.filter(([e]) => e === 'playback.duration-pending-load').length).toBe(1);
+    expect(strategiesFired()).toEqual([]);
+  });
+
+  it('playback.stalled carries the buffer and link fields', () => {
+    renderStalled();
+    const stalled = events.find(([e]) => e === 'playback.stalled')?.[1];
+    expect(stalled).toEqual(expect.objectContaining({
+      bufferAheadSec: expect.any(Number),
+      bufferedEndSec: expect.any(Number),
+      readyState: 4,
+      networkState: 2,
+      bufferGrowthSec: expect.any(Number),
+    }));
+    expect(stalled).toHaveProperty('bufferGrowthRate');
+    expect(stalled).toHaveProperty('connection');
+  });
+
+  it('a registered link probe answers as a playback.stalled.link row; without one, no row', async () => {
+    const off = registerPlaybackLinkProbe(async () => ({ rssi: -78, linkSpeedMbps: 6 }));
+    try {
+      renderStalled();
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      const row = events.find(([e]) => e === 'playback.stalled.link')?.[1];
+      expect(row).toEqual(expect.objectContaining({ mediaKey: 'plex:1', link: { rssi: -78, linkSpeedMbps: 6 } }));
+    } finally { off(); }
   });
 
   it('resolves only on genuine forward advance and clears the ledger via recordSuccess', () => {

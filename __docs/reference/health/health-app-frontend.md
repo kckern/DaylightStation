@@ -215,3 +215,74 @@ timing. Frontend events ship to the log store only at info and above:
 | `day.quality` | info | `today/useHealthDay.js` (`today/dayQuality.js`) | once per date + ledger revision, only when the day has gaps: `noArtwork`, `unknownCalories`, `noGrams`, `allCaps`, `duplicates`, each `{count, samples}`. |
 
 All carry `context.app: health`.
+
+
+## Calorie budget ruler
+
+The ruler uses food calories, with a fixed goal start from the configured range
+floor and a goal end extended by exercise credit. Estimated break-even is
+maintenance plus the same exercise credit. Goal start/end remain green marks;
+the base goal end and break-even remain independently marked and labeled.
+
+One consumed fill takes its color from its endpoint: blue below the floor while
+the day is in progress, green within the adjusted goal range, amber over goal
+while still below break-even, and red in surplus. Exact break-even and finished
+under-floor logs use a neutral fill. Uneaten space remains neutral. Diagonal
+hatching identifies only the consumed part of the exercise extension, over the
+same endpoint color. The goal-position label (under/within/over the range) and
+estimated deficit/surplus readout are separate; exceeding goal need not mean a
+surplus. Missing maintenance explicitly leaves the energy balance unavailable.
+The configured floor also remains the existing completeness threshold; this
+presentation does not change goal settings or backend completeness rules.
+
+## Concurrent food entry and saving
+
+The Health shell owns a user-scoped operation session in
+`__app_modules/wellness/health/browser/operations/`. Each operation has its own
+request ID, immutable submitted input, affected food IDs, progress and recovery.
+Changing the viewed day or switching tabs does not abandon submitted work.
+Changing the confirmed user disposes the old session and prevents its responses
+from patching the new user's cache.
+
+A submitted sentence clears the add field immediately. Further sentences can be
+submitted through the same field while earlier analysis continues. Each sentence
+keeps its own progress entry until its resulting foods are available; failure
+keeps the submitted text with Retry and Dismiss, without changing newer input.
+Clarifications and no-food outcomes remain attached to their submission.
+
+Only affected foods lock while saving. Group commands reserve their dependent
+members atomically; unrelated foods and capture controls remain available.
+Affected row content is greyed and a small SVG spinner replaces the dots icon
+inside its existing action button. Saving inserts no grid cell, adds no row
+height, and moves no columns or neighboring rows. An accessible saving status
+stays out of layout; reduced motion stops spinner rotation. Recovery controls
+remain fully readable.
+Already-open editors recheck reservations before sending. Pending catalog rows
+are visible but cannot be edited before the server assigns their real IDs.
+
+A server acknowledgment and a refreshed day snapshot are separate states.
+Authoritative returned rows release the save lock immediately. Responses carrying
+only IDs or incomplete group values keep those affected foods reconciling until a
+fresh read supplies the values. Retry refresh never resends an acknowledged write.
+Version floors, move/delete tombstones, and completed-read provenance prevent
+older polls from reverting saved values or resurrecting removed foods. Numeric
+previews compose independently and adjust counted food totals without counting
+group headers twice. Failed numeric drafts keep their intended values and local
+Retry/Discard controls.
+
+Explicit retries reuse the same request ID and bytes. Intentional identical
+submissions get different IDs. Local reservations coordinate this browser
+session; server version checks protect writes from other clients. There is no
+queue of edits to a saving item and no automatic conflict rebase.
+
+
+Revision analysis and its application are one resumable operation. Retry repeats
+failed analysis with the same request, or resumes the recorded proposal and exact
+versioned write when analysis already succeeded. Child writes share the parent
+reservation; dismissing a failed workflow releases its retained children too.
+
+Read provenance comes from a side channel on actual network response objects in
+`useApiResource`; optimistic patches and restored disk snapshots never establish
+authoritative absence. The payload and shared cache behavior are unchanged.
+Reconciliation retains removal evidence for every prior date when a food moves
+repeatedly or is edited after a move.

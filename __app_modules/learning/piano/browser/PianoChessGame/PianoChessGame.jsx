@@ -551,8 +551,11 @@ export function PianoChessGame({
         announce(projected);
         logger().info('move-played', { san: event.move.san, chords: projected.history.at(-1)?.chords });
       }).catch((error) => {
-        setGame((current) => ({ ...current, origin: null }));
-        setToast({ text: 'That move could not be committed. Try again.', seq: `authority-${Date.now()}` });
+        // The piece stays in the player's hand. Dropping it (as this did until
+        // 2026-10-23) turned the destination chord the child was still holding
+        // into a fresh pick-up, and the board answered "Nothing on that square"
+        // to a legal move — thirteen times in a row on the office screen.
+        setToast({ text: 'That move could not be saved. Play it again.', seq: `authority-${Date.now()}` });
         logger().error('authority-move-failed', { error: error.message, from: event.move.from, to: event.move.to });
       });
     } else {

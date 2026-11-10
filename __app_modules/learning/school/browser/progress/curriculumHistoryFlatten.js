@@ -6,6 +6,9 @@
 // human and "us" is an acronym, not a word. A real catalog title (via
 // `resolveTitle`) always beats this prettifier.
 function displayId(value) {
+  // A media-library content id ("LessonPlex:6760005") names a video, not a
+  // lesson a person would recognise: say what it is, never the number.
+  if (/^[A-Za-z]+:\d+$/.test(String(value ?? ''))) return 'Video lesson';
   return String(value ?? '')
     .replace(/[-_]+/g, ' ')
     .replace(/\b[pP]\d{2,4}\b/g, ' ')

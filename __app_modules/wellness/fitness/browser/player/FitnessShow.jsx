@@ -8,14 +8,25 @@ import { buildVirtualSeasons } from "../lib/playlistVirtualSeasons.js";
 import { formatFitnessDate } from "../lib/dateFormatter.js";
 import { useIdentity } from "../identity/useIdentity.js";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
+import PresenceGateNotice from "./overlays/PresenceGateNotice.jsx";
+import usePresenceGate from "../hooks/usePresenceGate.js";
+import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import LockIcon from "./overlays/LockIcon.jsx";
 import { isKioskEnv } from '@/lib/kioskEnv.js';
+import { useGamepadKeys } from "../lib/useGamepadKeys.js";
 import getLogger from '@/lib/logging/Logger.js';
 import { isGovernedContainer } from "../hooks/fitness/governedContent.js";
+import { gridBadge } from "../lib/episodeHistory.js";
+import { RiderStack } from "./EpisodeHistory.jsx";
+import EpisodePanel from "./EpisodePanel.jsx";
 
-const formatWatchedDate = (dateString) => {
+// Accepts the media server's "YYYY-MM-DD hh:mm:ssa" string or a session's epoch ms.
+const formatWatchedDate = (dateInput) => {
   try {
-    const parsed = moment(dateString, 'YYYY-MM-DD hh:mm:ssa');
+    if (dateInput == null || dateInput === '') return '';
+    const parsed = typeof dateInput === 'number' || dateInput instanceof Date
+      ? moment(dateInput)
+      : moment(dateInput, 'YYYY-MM-DD hh:mm:ssa');
     const today = moment();
     const yesterday = moment().subtract(1, 'days');
     if (parsed.isSame(today, 'day')) return 'Today';
@@ -96,81 +107,18 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
   );
 };
 
-// Episode Info Component - Rich layout for an episode with parent (season) context
-const EpisodeInfo = ({ episode, showInfo, parentsMap, parentsList, onPlay }) => {
-  if (!episode) return null;
-  const parentId = episode.parentId;
-  // Try map first, then list
-  const parentFromMap = parentsMap && parentId ? parentsMap[parentId] : null;
-  const parentFromList = !parentFromMap && parentsList ? parentsList.find(s => s.id === parentId) : null;
-  const parent = parentFromMap || parentFromList || {};
-  // Robust parent (season) name fallback priority
-  const rawParentName = parent.title || parent.name;
-  const numericParent = (() => {
-    // prefer explicit numeric properties
-    if (Number.isFinite(parent.index)) return parent.index;
-    if (Number.isFinite(parent.number)) return parent.number;
-    const parsed = parseInt(parent.id, 10);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  })();
-  const parentName = rawParentName && rawParentName.toString().trim().length
-    ? rawParentName
-    : (Number.isFinite(numericParent) ? `Season ${numericParent}` : 'Season');
+/**
+ * An episode's identity. Playable items may carry only `id` ("plex:600747")
+ * with no `plex` field — comparing `.plex` alone matches every such episode.
+ */
+const episodeKey = (ep) => (ep ? String(ep.plex || ep.id || '') || null : null);
 
-  // Parent (season) description fallback chain: explicit summary/description -> show summary
-  const parentDescription = [parent.summary, parent.description, showInfo?.summary]
-    .find(v => typeof v === 'string' && v.trim().length) || '';
-
-  // For playlist episodes, use the actual show poster (grandparentId) instead of the virtual season's poster
-  const isVirtualParent = parentId && String(parentId).startsWith('virtual-');
-  const parentImage = isVirtualParent && episode.grandparentId
-    ? ContentDisplayUrl(episode.grandparentId)
-    : normalizeImageUrl(parent.thumbnail || parent.image) || (parentId ? ContentDisplayUrl(parent.contentId || parentId) : normalizeImageUrl(showInfo?.image));
-  // Use the same episode image source as grid: primary is episode.image; fallback to thumbId path
-  const episodeImage = (episode.image && episode.image.trim())
-    ? normalizeImageUrl(episode.image)
-    : (episode.thumbId ? ContentDisplayUrl(episode.thumbId) : null);
-  const durationText = episode.duration ? formatDuration(episode.duration) : null;
-  const epTitle = episode.label || episode.title || `Episode ${episode.itemIndex || ''}`.trim();
-  const epNumber = episode.itemIndex;
-  const epDescription = episode.episodeDescription || episode.summary || '';
-
-  return (
-    <div className="episode-info">
-      <div className="episode-season-header">
-        {parentImage && (
-          <div className="season-thumb-wrapper">
-            <img key={parentImage} src={parentImage} alt={parentName} className="season-thumb" />
-          </div>
-        )}
-        <div className="season-meta">
-          <h2 className="show-name">{isVirtualParent && episode.grandparentTitle ? episode.grandparentTitle : showInfo?.title}</h2>
-          {parentDescription && (
-            <div className="season-description"><p>{parentName}—{parentDescription}</p></div>
-          )}
-        </div>
-      </div>
-      <div className="episode-media-section">
-        {episodeImage && (
-          <div className="episode-image-wrapper">
-            <img src={episodeImage} alt={epTitle} className="episode-image" />
-          </div>
-        )}
-        <div className="episode-meta-block">
-          <div className="episode-heading-row">
-            <h3 className="episode-heading">
-              {epNumber != null && <span className="episode-number">E{epNumber}</span>} {epTitle}
-            </h3>
-            {durationText && <span className="duration-badge">{durationText}</span>}
-          </div>
-          {epDescription && <div className="episode-description"><p>{epDescription}</p></div>}
-        </div>
-      </div>
-      <div className="episode-actions center">
-  <button className="play-button" data-testid="play-episode-button" onPointerDown={(e) => onPlay && onPlay(episode, null, e)}>▶ Play</button>
-      </div>
-    </div>
-  );
+/** A season's display name: its title, else "Season N", else "Season". */
+const seasonNameOf = (parent = {}) => {
+  const raw = parent.title || parent.name;
+  if (raw && String(raw).trim()) return String(raw);
+  const n = Number.isFinite(parent.index) ? parent.index : (Number.isFinite(parent.number) ? parent.number : parseInt(parent.id, 10));
+  return Number.isFinite(n) ? `Season ${n}` : 'Season';
 };
 
 // Utility function to format duration from seconds to mm:ss
@@ -215,6 +163,9 @@ const deriveResumeMeta = (episode) => {
   };
 };
 
+// The presence-gate prompt waits longer than a casual unlock: it is the only way in.
+const PRESENCE_PROMPT_TIMEOUT_MS = 30000;
+
 const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack: _onBack, viewportRef, setFitnessPlayQueue, onPlay }) => {
   // Parse showId - strip any prefix (e.g., "plex:662027" -> "662027")
   // The fitness API assumes plex source, so we only need the numeric ID
@@ -236,6 +187,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   const [selectedInfo, setSelectedInfo] = useState(null); // Selected episode or season for info panel
   const [infoType, setInfoType] = useState('episode'); // 'episode' or 'season'
   const [loadedEpisodeImages, setLoadedEpisodeImages] = useState({});
+  // Bumped with every show refresh (an episode just ended) so the per-rider
+  // history refetches too — the episode ids alone don't change.
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [loadedSeasonImages, setLoadedSeasonImages] = useState({});
 
   // Access the setFitnessPlayQueue from the parent component (FitnessApp)
@@ -304,6 +258,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     setPendingUnlock(null);
     clearUnlock();
   }, [showId, clearUnlock]);
+
+  // Presence gate (fitness config `presence_gate`): while the supervising adult
+  // is away, opening a show needs an admin fingerprint. Declared AFTER the reset
+  // effect above so its clearUnlock() on a show change never cancels this prompt.
+  const presenceGate = usePresenceGate('show');
+  const presencePrompt = usePresenceGatePrompt(presenceGate, showId ? String(showId) : null, {
+    kind: 'show',
+    onDismiss: _onBack,
+  });
 
   const fetchShowData = useCallback(async () => {
     if (!showId) {
@@ -406,8 +369,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     if (typeof window === 'undefined') return undefined;
     const handleRefresh = (event) => {
       const targetId = event?.detail?.showId || event?.detail?.id || null;
-      if (targetId && String(targetId) !== String(showId)) return;
+      if (targetId && String(targetId).replace(/^[a-z]+:/i, '') !== String(showId)) return;
       fetchShowData();
+      setHistoryRefresh((n) => n + 1);
     };
     window.addEventListener('fitness-show-refresh', handleRefresh);
     return () => window.removeEventListener('fitness-show-refresh', handleRefresh);
@@ -473,10 +437,6 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     const rect = el.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
   }, [viewportRef]);
-
-  const handleEpisodeSelect = (episode) => {
-    setSelectedEpisode(episode);
-  };
 
   // Scroll behavior utilities (touch-first): only activate action if element fully visible with margin
   const getScrollParent = (el, axis = 'y') => {
@@ -593,7 +553,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
 
   const isEpisodeWatched = useCallback((episode) => {
     // Trust backend-computed isWatched (SSOT)
-    // See: FitnessProgressClassifier for threshold logic
+    // Judged by the library's rule: watch_completion in household media config
     return episode?.isWatched ?? false;
   }, []);
 
@@ -1096,10 +1056,56 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
       : items;
     if (!filtered.length) return;
-    if (!selectedEpisode || !filtered.some(ep => ep.plex === selectedEpisode.plex)) {
+    if (!selectedEpisode || !filtered.some(ep => episodeKey(ep) === episodeKey(selectedEpisode))) {
       setSelectedEpisode(filtered[0]);
     }
   }, [items, seasons, activeSeasonId, selectedEpisode]);
+
+  // Per-rider history for this show's episodes, from the session log. The
+  // media server's watched date stays the fallback when this is empty or fails.
+  const [episodeHistory, setEpisodeHistory] = useState({});
+  const historyEpisodeIds = useMemo(() => {
+    const ids = (showData?.items || []).map((ep) => ep?.id || ep?.plex).filter(Boolean);
+    return [...new Set(ids.map(String))].join(',');
+  }, [showData]);
+  useEffect(() => {
+    if (!historyEpisodeIds) { setEpisodeHistory({}); return undefined; }
+    let cancelled = false;
+    const log = getLogger().child({ component: 'FitnessShow' });
+    DaylightAPI(`/api/v1/fitness/sessions/episode-history?episodes=${encodeURIComponent(historyEpisodeIds)}`)
+      .then((response) => {
+        if (cancelled) return;
+        const episodes = response?.episodes && typeof response.episodes === 'object' ? response.episodes : {};
+        setEpisodeHistory(episodes);
+        log.debug('fitness.show.episode_history_loaded', { showId: showIdRef.current, episodes: Object.keys(episodes).length, refresh: historyRefresh });
+      })
+      .catch((err) => {
+        if (!cancelled) log.warn('fitness.show.episode_history_failed', { showId: showIdRef.current, error: err?.message });
+      });
+    return () => { cancelled = true; };
+    // Keyed on the loaded show's ids (not showId, which changes before its data
+    // arrives and would scan once with the previous show's ids) and on refreshes.
+  }, [historyEpisodeIds, historyRefresh]);
+  const historyFor = useCallback((episode) => episodeHistory[episode?.id] || episodeHistory[`plex:${episode?.plex}`] || null, [episodeHistory]);
+
+  // The panel always describes the focused episode: the next-up one on load,
+  // then whatever was tapped (title strip, mosaic) or reached with the pad.
+  const panelEpisode = (infoType === 'episode' && selectedInfo) || selectedEpisode || null;
+  const focusEpisode = useCallback((episode) => {
+    if (!episode) return;
+    setSelectedInfo(null);
+    setInfoType('episode');
+    setSelectedEpisode(episode);
+    getLogger().child({ component: 'FitnessShow' }).debug('fitness.show.episode_focus', { showId: showIdRef.current, episode: episode.plex || episode.id });
+  }, []);
+  // Household riders (never guests) for "who's done it" and season coverage.
+  const household = useMemo(() => {
+    const primary = fitnessContext.usersConfig?.primary;
+    return (Array.isArray(primary) ? primary : [])
+      .filter((u) => u && u.id)
+      .map((u) => ({ id: u.id, displayName: u.name || u.id }));
+  }, [fitnessContext.usersConfig]);
+  const activeRiderIds = (fitnessSessionInstance?.roster || []).map((e) => e?.id || e?.profileId).filter(Boolean);
 
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)
@@ -1117,6 +1123,89 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     });
   }, [items, seasons, activeSeasonId]);
 
+  // The mosaic shows the focused episode's season as the grid has it (a
+  // playlist's current page of 20 included).
+  const panelSeasonEpisodes = useMemo(() => {
+    if (!panelEpisode) return [];
+    const same = filteredItems.filter((ep) => String(ep.parentId) === String(panelEpisode.parentId));
+    return same.length ? same : filteredItems;
+  }, [filteredItems, panelEpisode]);
+  const playFromPanel = (episode, mode) => {
+    // A locked (sequential) episode is only ever reached through its unlock prompt.
+    if (lockedEpisodeIds.has(episode.plex || episode.id)) {
+      getLogger().child({ component: 'FitnessShow' }).warn('fitness.show.panel_play_locked', { episode: episode.plex || episode.id });
+      return;
+    }
+    getLogger().child({ component: 'FitnessShow' }).info('fitness.show.panel_play', { showId: showIdRef.current, episode: episode.plex || episode.id, mode });
+    const target = mode === 'start-over'
+      ? { ...episode, watchSeconds: 0, watchProgress: 0, seconds: 0, resumeSeconds: 0 }
+      : episode;
+    handlePlayEpisode(target);
+  };
+
+  // Gamepad / arrow keys: the D-pad walks the grid and focus selects (the panel
+  // follows); A / Enter plays the focused episode. Focus alone never launches,
+  // and a locked episode is left to its tap-to-unlock path. Keys belong to the
+  // sidebar menu while it is open, and to the player while something plays.
+  const [padFocused, setPadFocused] = useState(false);
+  const handleShowKey = (key) => {
+    // Anything on top of the grid owns the keys: the sidebar menu, a modal
+    // (unlock / feedback prompt), the voice-memo overlay, the player.
+    if (typeof document !== 'undefined'
+      && document.querySelector('.fitness-sidebar-menu, .voice-memo-overlay, [aria-modal="true"]')) return false;
+    if (fitnessPlayQueue?.length > 0 || pendingUnlock) return false;
+    // Behind the presence gate nothing is browsed or played; while loading or
+    // failed the grid is not on screen.
+    if (presencePrompt.blocked || presencePrompt.open || loading || error) return false;
+    // The panel is showing a season, not an episode: there is nothing to play.
+    if (selectedInfo && infoType === 'season') return false;
+    const list = filteredItems;
+    if (!list.length) return false;
+    const current = Math.max(0, list.findIndex((ep) => episodeKey(ep) === episodeKey(panelEpisode)));
+    if (key === 'Enter') {
+      const ep = list[current];
+      if (lockedEpisodeIds.has(ep.plex || ep.id)) {
+        getLogger().child({ component: 'FitnessShow' }).info('fitness.show.pad_play_locked', { episode: ep.plex || ep.id });
+        return true;
+      }
+      const resumable = isResumable && !ep.isWatched && deriveResumeMeta(ep).resolvedSeconds > 0;
+      playFromPanel(ep, resumable ? 'resume' : 'play');
+      return true;
+    }
+    const grid = typeof document !== 'undefined' ? document.querySelector('.fitness-show .episodes-grid') : null;
+    const columns = (() => {
+      const tpl = grid ? getComputedStyle(grid).gridTemplateColumns : '';
+      const n = tpl ? tpl.split(' ').filter(Boolean).length : 0;
+      return n > 0 ? n : 3;
+    })();
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[key];
+    if (step == null) return false;
+    const next = list[Math.min(list.length - 1, Math.max(0, current + step))];
+    setPadFocused(true);
+    focusEpisode(next);
+    const card = document.querySelector(`.fitness-show [data-plex-id="${next.plex || next.id}"]`)?.closest('.episode-card');
+    card?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    return true;
+  };
+  const showKeyRef = useRef(handleShowKey);
+  showKeyRef.current = handleShowKey;
+  useGamepadKeys(!(fitnessPlayQueue?.length > 0) && !presencePrompt.blocked, (key) => showKeyRef.current(key));
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const tag = event.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
+      if (showKeyRef.current(event.key)) event.preventDefault();
+    };
+    // A touch anywhere drops the pad focus ring; the next D-pad press brings it back.
+    const onPointerDown = () => setPadFocused(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+    };
+  }, []);
+
   // Early return UI states (after all hooks above to keep hook order stable)
   if (!showId) {
     return (
@@ -1126,6 +1215,25 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
           <div className="no-selection-title">Select a Show</div>
           <div className="no-selection-text">Choose a fitness show from the menu to get started</div>
         </div>
+      </div>
+    );
+  }
+
+  // Gated: the show's contents never render, so nothing can be browsed or played.
+  if (presencePrompt.blocked) {
+    return (
+      <div className="fitness-show presence-gated" style={{ position: 'relative', minHeight: '100%' }}>
+        {!presencePrompt.open && presenceGate.settled && (
+          <PresenceGateNotice onUnlock={presencePrompt.retry} onBack={_onBack} />
+        )}
+        <UnlockPrompt
+          open={presencePrompt.open}
+          state={presencePrompt.state}
+          lockLabel="Grown-up needed"
+          unlockedUser={presencePrompt.unlockedUser}
+          onCancel={presencePrompt.cancel}
+          timeoutMs={PRESENCE_PROMPT_TIMEOUT_MS}
+        />
       </div>
     );
   }
@@ -1196,6 +1304,65 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
 
   // Helper function to add an episode to the queue
     
+  // The governed-show lock and the voice-memo button ride beside the show title,
+  // wherever the panel puts it.
+  const titleBadges = (
+    <>
+      {isGovernedShow && (
+        governanceBypassed ? (
+          <span
+            className="governed-lock-icon governed-lock-icon--unlocked"
+            title="Governance unlocked"
+            aria-label="Governance unlocked"
+            role="img"
+          >
+            🔓
+          </span>
+        ) : isLockActive('governance_bypass') ? (
+          <button
+            type="button"
+            className="governed-lock-icon governed-lock-icon--button"
+            title="Unlock governed content"
+            aria-label="Unlock governed content"
+            onPointerDown={handleGovernanceUnlockTap}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleGovernanceUnlockTap();
+              }
+            }}
+          >
+            <LockIcon />
+          </button>
+        ) : (
+          <span
+            className="governed-lock-icon"
+            title="Governed content"
+            aria-label="Governed content"
+            role="img"
+          >
+            <LockIcon />
+          </span>
+        )
+      )}
+      {fitnessSessionInstance?.isActive && (
+        <button
+          type="button"
+          className="show-voice-memo-btn"
+          onClick={() => openVoiceMemoCapture?.(null)}
+          aria-label="Record voice memo"
+          title="Record voice memo"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+          </svg>
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div className="fitness-show">
 
@@ -1205,16 +1372,27 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
           {selectedInfo && infoType === 'season' && (
             <SeasonInfo item={selectedInfo} type="season" showSummary={info?.summary} />
           )}
-          {selectedInfo && infoType === 'episode' && (
-            <EpisodeInfo
-              episode={selectedInfo}
-              showInfo={info}
-              parentsMap={parentsMap}
-              parentsList={seasons}
-              onPlay={handlePlayEpisode}
+          {!(selectedInfo && infoType === 'season') && panelEpisode && (
+            <EpisodePanel
+              episode={panelEpisode}
+              showTitle={panelEpisode.grandparentTitle && String(panelEpisode.parentId || '').startsWith('virtual-')
+                ? panelEpisode.grandparentTitle
+                : info?.title}
+              seasonName={seasonNameOf((parentsMap && parentsMap[panelEpisode.parentId]) || seasons.find((x) => x.id === panelEpisode.parentId) || {})}
+              seasonEpisodes={panelSeasonEpisodes}
+              historyFor={historyFor}
+              household={household}
+              activeIds={activeRiderIds}
+              resumeSeconds={isResumable && !panelEpisode.isWatched ? deriveResumeMeta(panelEpisode).resolvedSeconds : 0}
+              formatDate={formatWatchedDate}
+              onFocus={focusEpisode}
+              onPlay={playFromPanel}
+              locked={lockedEpisodeIds.has(panelEpisode.plex || panelEpisode.id)}
+              onUnlock={isLockActive('skip_content') ? (ep) => handleLockedEpisodeUnlockTap(ep) : null}
+              headerExtras={titleBadges}
             />
           )}
-          {!selectedInfo && info && (
+          {!(selectedInfo && infoType === 'season') && !panelEpisode && info && (
             <>
               {/* Show Image - Top 50% */}
               <div className="show-poster" ref={posterRef}>
@@ -1235,58 +1413,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
               <div className="show-description">
                 <div className="show-title-row">
                   <h1 className="show-title">{info.title}</h1>
-                  {isGovernedShow && (
-                    governanceBypassed ? (
-                      <span
-                        className="governed-lock-icon governed-lock-icon--unlocked"
-                        title="Governance unlocked"
-                        aria-label="Governance unlocked"
-                        role="img"
-                      >
-                        🔓
-                      </span>
-                    ) : isLockActive('governance_bypass') ? (
-                      <button
-                        type="button"
-                        className="governed-lock-icon governed-lock-icon--button"
-                        title="Unlock governed content"
-                        aria-label="Unlock governed content"
-                        onPointerDown={handleGovernanceUnlockTap}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleGovernanceUnlockTap();
-                          }
-                        }}
-                      >
-                        <LockIcon />
-                      </button>
-                    ) : (
-                      <span
-                        className="governed-lock-icon"
-                        title="Governed content"
-                        aria-label="Governed content"
-                        role="img"
-                      >
-                        <LockIcon />
-                      </span>
-                    )
-                  )}
-                  {fitnessSessionInstance?.isActive && (
-                    <button
-                      type="button"
-                      className="show-voice-memo-btn"
-                      onClick={() => openVoiceMemoCapture?.(null)}
-                      aria-label="Record voice memo"
-                      title="Record voice memo"
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                        <line x1="12" y1="19" x2="12" y2="22" />
-                      </svg>
-                    </button>
-                  )}
+                  {titleBadges}
                 </div>
                 {info.tagline && <div className="show-tagline">{info.tagline}</div>}
                 {info.summary && (
@@ -1332,11 +1459,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                             ? episode.itemIndex
                             : null;
                           const isLocked = lockedEpisodeIds.has(episode.plex || episode.id);
+                          const riderBadge = showProgressBar ? null : gridBadge(historyFor(episode), episode.duration);
 
                           return (
                           <div
                             key={episode.plex || index}
-                            className={`episode-card vertical ${selectedEpisode?.plex === episode.plex ? 'selected' : ''} ${isWatched ? 'watched' : ''} ${showProgressBar ? 'in-progress' : ''} ${isLocked ? 'locked' : ''}`}
+                            className={`episode-card vertical ${episodeKey(selectedEpisode) === episodeKey(episode) ? 'selected' : ''} ${padFocused && episodeKey(panelEpisode) === episodeKey(episode) ? 'pad-focused' : ''} ${isWatched ? 'watched' : ''} ${showProgressBar ? 'in-progress' : ''} ${isLocked ? 'locked' : ''}`}
                             title={episode.label}
                           >
                             {episode.image && (
@@ -1364,7 +1492,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                                   <div className="badge duration">
                                     {episode.duration && formatDurationBadge(episode.duration)}
                                   </div>
-                                  {isWatched && watchedDate && (
+                                  {riderBadge ? (
+                                    <div className="badge watched-date watched-date--riders" data-testid="episode-rider-badge">
+                                      <RiderStack riders={riderBadge.riders} overflow={riderBadge.overflow} />
+                                      {formatWatchedDate(riderBadge.latestStartTime)}
+                                    </div>
+                                  ) : isWatched && watchedDate && (
                                     <div className="badge watched-date">
                                      ✔️ {formatWatchedDate(watchedDate)}
                                     </div>
@@ -1391,9 +1524,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                                 const card = e.currentTarget.closest('.episode-card');
                                 const { didScroll } = scrollIntoViewIfNeeded(card, { axis: 'y', margin: 24 });
                                 if (didScroll) return; // require second tap when visible
-                                setSelectedInfo({ ...episode, title: episode.label });
-                                setInfoType('episode');
-                                handleEpisodeSelect(episode);
+                                focusEpisode(episode);
                               }}
                             >
                               <div className="episode-title-flex">

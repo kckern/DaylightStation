@@ -54,82 +54,75 @@ describe('ZoneProfileStore hysteresis', () => {
     Date.now = realDateNow;
   });
 
-  test('first zone assignment is instant (no delay)', () => {
-    store.syncFromUsers([makeUser('user-1', 110)]); // active zone
-    const profile = store.getProfile('user-1');
-    expect(profile.currentZoneId).toBe('active');
+  // Zones are earned (ZoneProfileStore.startupTrust): a real Cool reading admits
+  // the rider and commits at once; an upward move then needs a second sample at
+  // least UPWARD_CONFIRM_MS later. `commitAt` walks a rider through both, past
+  // the cooldown, and leaves them committed in the zone for `hr`.
+  const sync = (hr) => { store.syncFromUsers([makeUser('user-1', hr)]); return store.getProfile('user-1'); };
+  const commitAt = (hr) => {
+    sync(50);
+    mockTime += 6000;
+    sync(hr);
+    mockTime += 1000;
+    return sync(hr);
+  };
+
+  test('a first real Cool reading is committed instantly; a higher first reading is not trusted', () => {
+    expect(sync(110).currentZoneId).toBeNull();
+    expect(sync(50).currentZoneId).toBe('cool');
   });
 
-  test('zone transitions after cooldown period are instant', () => {
-    // First sync: active zone
-    store.syncFromUsers([makeUser('user-1', 110)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
-
-    // Advance past cooldown (5000ms)
+  test('an upward move commits on its confirming second sample', () => {
+    sync(50);
     mockTime += 6000;
+    expect(sync(110).currentZoneId).toBe('cool');
+    mockTime += 1000;
+    expect(sync(110).currentZoneId).toBe('active');
+  });
 
-    // Second sync: warm zone — should commit instantly (outside cooldown)
-    store.syncFromUsers([makeUser('user-1', 140)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+  test('zone transitions after cooldown period commit once confirmed', () => {
+    expect(commitAt(110).currentZoneId).toBe('active');
+    mockTime += 6000;
+    sync(140);
+    mockTime += 1000;
+    expect(sync(140).currentZoneId).toBe('warm');
   });
 
   test('rapid toggling within cooldown holds committed zone', () => {
-    // First sync: active zone
-    store.syncFromUsers([makeUser('user-1', 110)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(commitAt(110).currentZoneId).toBe('active');
 
-    // 100ms later: HR crosses into warm
+    // 100ms later: HR crosses into warm — one sample is not a climb
     mockTime += 100;
-    store.syncFromUsers([makeUser('user-1', 140)]);
-    // Within cooldown, but this is the first change — should commit
-    // (Actually, within 5s of last commit, so this is rapid toggling)
-    // The first transition is at t=0. 100ms later is within cooldown.
-    // New zone must be stable for HYSTERESIS_STABILITY_MS (3000ms)
-    // Since raw just changed, not stable yet → keep active
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(sync(140).currentZoneId).toBe('active');
 
     // 200ms later: HR drops back to active
     mockTime += 200;
-    store.syncFromUsers([makeUser('user-1', 110)]);
-    // Back to committed zone — shows as active (committed)
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(sync(110).currentZoneId).toBe('active');
 
-    // 100ms later: HR crosses into warm again
+    // 100ms later: HR crosses into warm again — raw just changed, not stable
     mockTime += 100;
-    store.syncFromUsers([makeUser('user-1', 140)]);
-    // Still within cooldown, raw just changed again → not stable → keep active
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(sync(140).currentZoneId).toBe('active');
   });
 
   test('new zone commits after stability period within cooldown', () => {
-    // First sync: active zone
-    store.syncFromUsers([makeUser('user-1', 110)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(commitAt(110).currentZoneId).toBe('active');
 
-    // 100ms later: HR crosses into warm
     mockTime += 100;
-    store.syncFromUsers([makeUser('user-1', 140)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active'); // Not stable yet
+    expect(sync(140).currentZoneId).toBe('active'); // Not stable yet
 
-    // Warm stays stable for 3000ms (HYSTERESIS_STABILITY_MS)
+    // Warm stays for HYSTERESIS_STABILITY_MS (3000ms), still inside the 5s cooldown
     mockTime += 3000;
-    // Use a slightly different HR to invalidate the per-user input cache
-    // (same HR + same committed zone = cache hit, skipping hysteresis re-check)
-    store.syncFromUsers([makeUser('user-1', 141)]);
-    // Now raw warm has been stable for 3100ms (since t+100) ≥ 3000ms → commits
-    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+    expect(sync(141).currentZoneId).toBe('warm');
   });
 
-  test('HR value 0 maps to first zone (no fallback to stale data)', () => {
-    // After SSoT fix: HR 0 means no fallback, just first zone
-    store.syncFromUsers([makeUser('user-1', 0)]);
-    const profile = store.getProfile('user-1');
-    // HR=0 should be in cool zone (min: 0)
-    expect(profile.heartRate).toBe(0);
-    expect(profile.currentZoneId).toBe('cool');
+  test('HR 0 is no reading: it earns no zone, and a trusted zone holds through it', () => {
+    expect(sync(0).currentZoneId).toBeNull();
+    commitAt(110);
+    mockTime += 1000;
+    expect(sync(0).currentZoneId).toBe('active');
   });
 
-  test('missing HR (NaN/undefined) defaults to 0 heartRate', () => {
+  test('missing HR (NaN/undefined) is shown as missing, not as 0', () => {
     store.syncFromUsers([{
       id: 'user-1',
       name: 'user-1',
@@ -138,35 +131,23 @@ describe('ZoneProfileStore hysteresis', () => {
       source: 'test'
     }]);
     const profile = store.getProfile('user-1');
-    expect(profile.heartRate).toBe(0);
+    expect(profile.heartRate).toBeNull();
+    expect(profile.currentZoneId).toBeNull();
   });
 
   test('profile returns stabilized zone, not raw snapshot zone', () => {
-    // First sync: active
-    store.syncFromUsers([makeUser('user-1', 110)]);
-
-    // Quick zone change during cooldown
+    commitAt(110);
     mockTime += 100;
-    store.syncFromUsers([makeUser('user-1', 140)]); // raw: warm
-
-    const profile = store.getProfile('user-1');
-    // currentZoneId should be stabilized (active), not raw (warm)
+    const profile = sync(140); // raw: warm
     expect(profile.currentZoneId).toBe('active');
-    // But the raw snapshot should show warm
     expect(profile.zoneSnapshot?.currentZoneId).toBe('warm');
   });
 
   test('getZoneState returns stabilized zone matching getProfile', () => {
-    store.syncFromUsers([makeUser('user-1', 110)]);
-
-    // Quick change during cooldown
+    commitAt(110);
     mockTime += 100;
-    store.syncFromUsers([makeUser('user-1', 140)]);
-
-    const profile = store.getProfile('user-1');
+    const profile = sync(140);
     const zoneState = store.getZoneState('user-1');
-
-    // Both should return stabilized zone
     expect(zoneState.zoneId).toBe(profile.currentZoneId);
     expect(zoneState.zoneId).toBe('active'); // Stabilized, not raw warm
   });
@@ -174,66 +155,41 @@ describe('ZoneProfileStore hysteresis', () => {
   // --- Schmitt trigger exit margin tests ---
 
   test('exit margin suppresses downgrade when HR within margin', () => {
-    // Commit to active zone (min: 100) at HR 110
-    store.syncFromUsers([makeUser('user-1', 110)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
-
-    // Advance past cooldown so next change would normally be instant
+    commitAt(110);
     mockTime += 6000;
-
-    // HR drops to 97 — below active threshold (100) but above exit threshold (100 - 5 = 95)
-    // Raw zone = cool, but exit margin should suppress the downgrade
-    store.syncFromUsers([makeUser('user-1', 97)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    // 97 — below active (100) but above exit threshold (100 - 5 = 95)
+    expect(sync(97).currentZoneId).toBe('active');
   });
 
   test('exit margin allows downgrade when HR below exit threshold', () => {
-    // Commit to active zone at HR 110
-    store.syncFromUsers([makeUser('user-1', 110)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
-
-    // Advance past cooldown
+    commitAt(110);
     mockTime += 6000;
-
-    // HR drops to 94 — below exit threshold (100 - 5 = 95)
-    store.syncFromUsers([makeUser('user-1', 94)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('cool');
+    expect(sync(94).currentZoneId).toBe('cool');
   });
 
   test('exit margin does not apply to upgrades', () => {
-    // Commit to cool zone at HR 50
-    store.syncFromUsers([makeUser('user-1', 50)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('cool');
-
-    // Advance past cooldown
+    expect(sync(50).currentZoneId).toBe('cool');
     mockTime += 6000;
-
-    // HR rises to 101 — just above active threshold (100)
-    // Upgrades should be instant, no exit margin applied
-    store.syncFromUsers([makeUser('user-1', 101)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    // 101 — just above active (100); commits on the confirming sample 1s later
+    sync(101);
+    mockTime += 1000;
+    expect(sync(101).currentZoneId).toBe('active');
   });
 
   test('exit margin and time-based hysteresis work together', () => {
-    // Commit to warm zone (min: 130) at HR 140
-    store.syncFromUsers([makeUser('user-1', 140)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+    expect(commitAt(140).currentZoneId).toBe('warm');
 
-    // 100ms later (within cooldown): HR drops to 127 — below warm (130) but above exit threshold (125)
-    // Both exit margin AND time-based hysteresis should suppress
+    // 100ms later (within cooldown): 127 — below warm (130), above exit (125)
     mockTime += 100;
-    store.syncFromUsers([makeUser('user-1', 127)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+    expect(sync(127).currentZoneId).toBe('warm');
 
-    // Advance past cooldown: exit margin still suppresses even without time-based protection
+    // Past cooldown: exit margin still suppresses
     mockTime += 6000;
-    store.syncFromUsers([makeUser('user-1', 127)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('warm');
+    expect(sync(127).currentZoneId).toBe('warm');
 
-    // HR drops to 124 — below exit threshold (130 - 5 = 125) → downgrade commits
+    // 124 — below exit threshold → downgrade commits
     mockTime += 6000;
-    store.syncFromUsers([makeUser('user-1', 124)]);
-    expect(store.getProfile('user-1').currentZoneId).toBe('active');
+    expect(sync(124).currentZoneId).toBe('active');
   });
 
   test('a ladder with an earned rung below the cool baseline is never committed', () => {

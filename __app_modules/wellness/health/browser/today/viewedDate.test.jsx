@@ -68,9 +68,8 @@ describe('TodayView — the viewed day rides along with a capture', () => {
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('MockVoiceCapture-morning'));
 
-    // The week strip is how a person gets to another day.
-    const yesterdayCell = document.querySelector(`[data-date="${YESTERDAY}"]`);
-    fireEvent.click(yesterdayCell);
+    // DateStepper is the date navigation in the current summary.
+    fireEvent.click(screen.getByRole('button', { name: 'Previous day' }));
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.includes(`health/day?date=${YESTERDAY}`))).toBe(true));
 
     fireEvent.click(screen.getByText('MockVoiceCapture-morning'));

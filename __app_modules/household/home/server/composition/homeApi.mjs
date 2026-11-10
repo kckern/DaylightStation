@@ -13,6 +13,8 @@ import { dataService } from "../../../../../__backend/src/5_composition/runtimeP
 import { YamlWeatherDatastore } from '#adapters/persistence/yaml/YamlWeatherDatastore.mjs';
 import { buildPhotoTitle, formatPhotoDate, orderPeopleByFace } from '#shared/content/immich/photoLabels.mjs';
 import { HouseholdHomeStateRepository } from "../adapters/HouseholdHomeStateRepository.mjs";
+import { HomeAssistantEntityGateway } from "../adapters/HomeAssistantEntityGateway.mjs";
+import { HomeAssistantHistoryGateway } from "../adapters/HomeAssistantHistoryGateway.mjs";
 
 /**
  * Create home automation API router
@@ -115,9 +117,16 @@ export function createHomeDashboardApiRouter(config) {
     logger,
   });
 
+  // One "now" for the history use cases and the history gateway: the window's
+  // floored start and an open window's ceiled end come from the same clock.
+  const clock = () => Date.now();
   const container = new HomeAutomationContainer({
     configRepository,
     haGateway,
+    entityGateway: new HomeAssistantEntityGateway({}, { gateway: haGateway, logger }),
+    historyGateway: new HomeAssistantHistoryGateway({}, { gateway: haGateway, logger, clock }),
+    timeZone: configService.getHouseholdTimezone(),
+    clock,
     logger,
   });
 
@@ -128,6 +137,9 @@ export function createHomeDashboardApiRouter(config) {
       getHistory: container.getDashboardHistory(),
       toggleEntity: container.toggleDashboardEntity(),
       activateScene: container.activateDashboardScene(),
+      getEntities: container.getHomeEntities(),
+      getTimeline: container.getHomeTimeline(),
+      getEntityHistory: container.getEntityHistory(),
     },
     logger,
   });

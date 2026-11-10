@@ -42,6 +42,8 @@ existed, and one testing a deleted module.
 | Live | `npm run test:live` | Live APIs and real backend (`tests/live/`) |
 | Runtime | `npm run test:browser --` | Real backend |
 
+Live harvester tests for providers that rotate refresh tokens (Withings, Strava; any FitnessSyncer live test should use the same guard) are skipped outside the container unless `DAYLIGHT_TOKEN_WRITER=true`. Set it only when no other copy (the server) is refreshing the same account: each refresh invalidates the previous token. Wrap such suites in `describeIfTokenWriter` from `tests/live/adapter/harvesters/_test-helper.mjs`. A test that refreshes one of these tokens must save the new token, never discard it.
+
 ## Running Tests
 
 ### Unit Tests
@@ -143,6 +145,38 @@ Registry: `data/system/testdata.yml`
    - Unit test? → `tests/unit/suite/`
    - API test? → `tests/integration/suite/`
    - E2E? → `tests/runtime/suite/`
+
+## Isolated Fitness styled acceptance
+
+Run `node tests/_infrastructure/harnesses/fitness-sidebar-layout.mjs chromium`
+and repeat with `firefox`. Install the selected Playwright browser first.
+`--integration-only` skips the roster/menu/ceremony sweep. Each run writes its
+screenshots and `<engine>-geometry.json` to a fresh `fitness-harness-XXXXXX`
+directory under the OS temp dir (`os.tmpdir()`, honours `TMPDIR`); pass
+`--out-dir <dir>` or set `FITNESS_HARNESS_OUT_DIR` to choose one. The directory
+is printed to stderr at start and returned as `outDir` in the JSON result line.
+The harness bundles production components and SCSS on a temporary loopback
+server; external requests are blocked and microphone capture is refused. It
+never connects to a household backend or publishes workout events.
+
+Coverage includes roster/RPM allocation, the production player frame with the
+sidebar governance/media reservations and an 80px footer reservation, compact
+governance rows, live display colors, percentage notches, hold-credit migration,
+floor interruption/recovery, Settings wheel/keyboard/native Chromium touch,
+End Session confirmation, scrim dismissal and the real Feedback dialog surviving
+idle dismissal. Governance transitions use the real engine and display resolver;
+sensor trust/Fire qualification, nested pause and step/cycle freezing remain
+covered by their Fitness source suites. Pedal geometry is a presentation fixture;
+cadence OR Active behavior is covered by the real engine source tests.
+
+The sidebar slot structure is reproduced without mounting camera/music/session
+services. The footer is a reserved layout slot, not playback controls. Feedback
+open/close is exercised without recording or submitting audio. Screenshots and
+geometry JSON are written under the system temporary directory. Viewports are
+1920×1080 CSS, 1381×777 CSS and 1024×640 CSS at scale factor 1.39; screenshot pixels
+must not be confused with CSS layout dimensions. `--integration-only` runs just
+the added frame/governance/interaction checks during fixture development; use the
+full command for acceptance evidence.
 
 ## Media acceptance fixtures
 

@@ -7,7 +7,7 @@ import { entryId } from "./entryCommands.js";
 import { useDismissLayer } from "../../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js";
 
 export function PortionControl({ row, field = 'portion', children, className }) {
-  const control = usePortionControl();
+  const control = usePortionControl(row);
   const gesture = useRef(null);
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');

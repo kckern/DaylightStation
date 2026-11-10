@@ -10,15 +10,12 @@
 // One vocabulary everywhere: free, workout, deficit, to break even, over plan.
 // Pure: the card, its tests and the drag preview all read the same sentence.
 import { priceLadder, priceOf } from "../../portable/contracts/health/budgetTiers.mjs";
+import { assessBudgetDay } from "../../portable/contracts/health/budgetAssessment.mjs";
+export { isFinishedDay } from "../../portable/contracts/health/budgetAssessment.mjs";
 
 const n = (v) => Math.round(Number(v || 0)).toLocaleString('en-US');
 const join = (parts) => parts.filter(Boolean).join(' · ') || null;
 const PRICE_WORDS = { free: 'free', workout: 'workout', deficit: 'deficit', over: 'over plan', gain: 'past break even' };
-
-/** A past date, or a day declared done or fasted. A skipped meal does not finish a day. */
-export function isFinishedDay({ date, today, declared }) {
-  return Boolean(date && today && date < today) || declared === 'done' || declared === 'fasting';
-}
 
 // While a portion is being dragged, the sub-line prices the change.
 function priceLine(budget, baseline) {
@@ -80,7 +77,7 @@ function live({ lines: L, spend, over, gain, tiers }) {
  */
 export function budgetStory(budget, { date = null, today = null, baseline = null } = {}) {
   const ladder = priceLadder(budget);
-  const finished = isFinishedDay({ date, today, declared: budget.declared });
+  const { finished } = assessBudgetDay(budget, { date, today });
   // An unverified log still leads with the free number (the morning's Afford
   // job); the dimmed bar and the sub-line say it rests on a complete log.
   const tentative = !finished && budget.zone === 'incomplete';

@@ -39,6 +39,16 @@ describe('GameBoundary', () => {
     expect(container.textContent).toContain('Tetris stopped.');
   });
 
+  it('tells the host which game crashed, and survives a host that throws', () => {
+    const onCrash = vi.fn(() => { throw new Error('host fault'); });
+    const { container } = render(
+      <GameBoundary resetKey="tetris:2" gameId="tetris" onExit={() => {}} onCrash={onCrash}><Boom explode /></GameBoundary>,
+    );
+    expect(onCrash).toHaveBeenCalledTimes(1);
+    expect(onCrash.mock.calls[0][0]).toMatchObject({ gameId: 'tetris', error: expect.objectContaining({ message: 'board fell over' }) });
+    expect(container.querySelector('[role="alert"]')).toBeTruthy();
+  });
+
   it('offers the way out, and takes it', () => {
     const onExit = vi.fn();
     const { container } = render(

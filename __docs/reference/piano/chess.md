@@ -380,6 +380,12 @@ report that as a finding. Below four moves either side of the split, nothing is 
 An unfinished game is held by the **server**, not by the tablet. The tablet's
 localStorage checkpoint is a fast path for a reload; it is never the only copy.
 
+A server resume is indexed like a new game (`gaming:piano-chess:active:<user>`), so the
+checkpoint sweep keeps it (see "Only indexed sessions survive" in `piano-games.md`). A move
+whose save fails keeps the piece lifted and says "That move could not be saved. Play it
+again." Dropping it, as the board did until 2026-10-23, made the held destination chord read
+as a fresh pick-up, answered "Nothing on that square."
+
 **Incident, 2026-10-09.** A child one or two moves from mate (ply 74 against
 the level-1 opponent) left the board. The next morning the launch logged
 `chess.resume.stale-discarded {idleMs: 45776902, plies: 74}`: the checkpoint

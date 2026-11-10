@@ -28,3 +28,16 @@ describe('parseAutoplayParams queue operation routing', () => {
     });
   });
 });
+
+it('preserves validated quality on cold correlated TV loads', () => {
+  const result = autoplayToAction(parseAutoplayParams('?play=plex:42&dispatchId=cold&maxResolution=720p&maxVideoBitrate=4000&transcode=force&adaptive=false', AUTOPLAY_ACTIONS));
+  expect(result.payload).toMatchObject({ contentId: 'plex:42', maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false });
+});
+
+describe('start-seek params ride along', () => {
+  it('?start / ?goto never become content and keep the play action', () => {
+    expect(parseAutoplayParams('?play=plex:662169&start=0', ['play']).play.contentId).toBe('plex:662169');
+    expect(parseAutoplayParams('?start=0', ['play'])).toBeNull();
+    expect(parseAutoplayParams('?goto=30', ['play'])).toBeNull();
+  });
+});

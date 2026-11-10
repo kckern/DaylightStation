@@ -1,0 +1,2 @@
+Images: Twemoji 14.0.2 (c) Twitter, Inc and other contributors, CC-BY 4.0 — https://github.com/twitter/twemoji
+baby=1f476 potter=1f3fa (clay pot) water=1f4a7 fire=1f525 fish=1f41f, set on a light rounded card for contrast on the dark clue screen.

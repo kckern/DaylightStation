@@ -4,6 +4,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from "#api/v1/utils/actionRouteParser.mjs";
 import { splatPath } from '#api/utils/wildcard.mjs';
 import { presentPublicResources } from "#api/v1/presenters/publicResourceRefs.mjs";
+import { normalizePlaybackQuality } from '#shared/contracts/media/playbackQuality.mjs';
 
 /**
  * Read the opaque client session off the query string.
@@ -105,9 +106,7 @@ export function createPlayRouter(config) {
    */
   router.get('/plex/mpd/:id', asyncHandler(async (req, res) => {
     const { id } = req.params;
-      const maxVideoBitrate = parseInt(req.query.maxVideoBitrate, 10);
-
-      const opts = Number.isFinite(maxVideoBitrate) ? { maxVideoBitrate } : {};
+      const opts = normalizePlaybackQuality(req.query);
       const result = await playbackReadService.getPlexManifest(id, opts);
       if (result.kind === 'unconfigured') {
         return res.status(503).json({ error: 'Plex adapter not configured' });
@@ -145,6 +144,7 @@ export function createPlayRouter(config) {
       const { compoundId, modifiers } = parseActionRouteId({ source, path: rawPath });
 
       const result = await playbackReadService.resolve({
+        quality: normalizePlaybackQuality(req.query),
         compoundId,
         shuffle: modifiers.shuffle,
         resume: req.query.resume === 'false' ? false : undefined,
@@ -177,6 +177,7 @@ export function createPlayRouter(config) {
     const { compoundId, modifiers } = parseActionRouteId({ source, path: '' });
 
     const result = await playbackReadService.resolve({
+      quality: normalizePlaybackQuality(req.query),
       compoundId,
       shuffle: modifiers.shuffle,
       resume: req.query.resume === 'false' ? false : undefined,

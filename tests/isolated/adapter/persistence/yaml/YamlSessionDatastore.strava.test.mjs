@@ -83,6 +83,7 @@ describe('YamlSessionDatastore — strava extraction in findByDate', () => {
       participants: {
         john: { display_name: 'John' },
       },
+      timeline: { series: { 'john:hr': '[[120,12]]' }, events: [] },
     };
 
     const sessionsDir = path.join(tmpDir, 'fitness/log', DATE);

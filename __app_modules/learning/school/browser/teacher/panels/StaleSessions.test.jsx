@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import StaleSessions from "./StaleSessions.jsx";
+import { presentSessionState } from "../sessionPresentation.js";
 
 vi.mock("../../schoolApi.js", () => ({
   schoolApi: {
@@ -12,7 +13,7 @@ vi.mock("../../schoolApi.js", () => ({
 vi.mock("../TeacherProfileContext.jsx", () => ({
   useTeacherProfileOptional: () => ({ currentTeacher: { id: 't1' } }),
   useTeacherProfile: () => ({
-    currentTeacher: { id: 'kckern', name: 'KC' },
+    currentTeacher: { id: 'teacher_1', name: 'Teacher One' },
     pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
@@ -59,8 +60,28 @@ describe('StaleSessions', () => {
     render(<StaleSessions kids={KIDS} />);
 
     const link = await screen.findByRole('link', { name: /Settle by hand/ });
-    expect(link.getAttribute('href')).toBe('/school/teacher/sessions/ses_2');
+    // Opened from Operations, so the inspector's Back returns there.
+    expect(link.getAttribute('href')).toBe('/school/teacher/students/learner-1/history/sessions/ses_2?from=operations');
     expect(screen.queryByRole('button', { name: 'Abandon…' })).toBeNull();
+  });
+
+  // Three quiet days already reads as stuck to the family; the server's
+  // default week hid it for four more.
+  it('asks for sessions quiet for three days', async () => {
+    schoolApi.staleSessions.mockResolvedValue({ ok: true, status: 200, data: { sessions: [] } });
+    render(<StaleSessions kids={KIDS} />);
+    await waitFor(() => expect(schoolApi.staleSessions).toHaveBeenCalledWith(3));
+    expect(await screen.findByText(/more than 3 days/)).toBeTruthy();
+  });
+
+  it('names the state in words, never the slug', async () => {
+    schoolApi.staleSessions.mockResolvedValue({
+      ok: true, status: 200, data: { sessions: [row({ state: 'outcome_recorded', abandonable: false })] },
+    });
+    render(<StaleSessions kids={KIDS} />);
+    const meta = await screen.findByText(/waiting since/);
+    expect(meta.textContent).toContain(presentSessionState({ state: 'outcome_recorded' }).label);
+    expect(meta.textContent).not.toContain('outcome_recorded');
   });
 
   it('a row with pending items shows the count, linking to the action queue', async () => {

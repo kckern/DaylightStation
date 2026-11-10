@@ -1,6 +1,6 @@
 export {
   LEXICON_SCHEMA, LEXICON_SCHEMA_V3, LEXICON_SCHEMAS, WORD_KINDS, DECOY_SIDES, SLUG, validateLexicon, parseMediaRef, wordPackageDir, wordAssetIds,
-  isLexiconDeck, expandLexiconDeck,
+  isLexiconDeck, expandLexiconDeck, unreleasedWords,
 } from "./lexicon.mjs";
 export { hashString, seededShuffle } from "./checkItem.mjs";
 export {
@@ -28,7 +28,7 @@ export {
 export { servedWhy, dayChanges, prereqChanges, signOffGaps } from "./observe.mjs";
 export { foldPaperAttempts } from "./foldPaperAttempts.mjs";
 export { formatTrace, canonicalTraceMsg } from "./trace.mjs";
-export { markMastered, typedAnswers } from "./admin.mjs";
+export { markMastered, typedAnswers, dayAnswers, daySummary } from "./admin.mjs";
 export {
   quizDocumentIdFor, deckDirOf, isoWeekOf, learnerQuizDocumentId, learnerQuizPrefix, parseLearnerQuizId,
 } from "./quizId.mjs";
@@ -40,3 +40,6 @@ export {
   TUNABLE, TUNING_BOUNDS, GROWN_UP_SETTINGS, tunableValues, dayStats, buildTuningDigest, applyTuningProposal,
   withTunedValues, TUNING_FILE_SCHEMA, TUNING_HISTORY_KEEP, emptyTuning,
 } from "./tuning.mjs";
+export {
+  DICTATION_STEPS, BLIND_PASSES_TO_FINISH, applyDictationAttempt, currentDictation, dictationState, nextDictationWord, normalizeDictationWeek,
+} from "./dictation.mjs";

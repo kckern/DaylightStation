@@ -1,0 +1,13 @@
+devices:
+  - slot: 7
+    color: white
+    mac: 'AA:BB:CC:DD:EE:07'
+    class: private
+    queue: '767429'
+    shuffle: false
+    resume_queue: false
+    resume_track: false
+    wind_down:
+      fallback_queue: '697317'
+      max_session_seconds: 18000
+      reconnect_seconds: 120

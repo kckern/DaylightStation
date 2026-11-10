@@ -258,6 +258,72 @@ describe('TransactionCategorizationService', () => {
     });
   });
 
+  describe('account-scoped description rules', () => {
+    const useRule = () => mockFinanceStore.getCategorizationConfig.mockReturnValue({
+      ...mockCategorizationConfig,
+      descriptionRules: [{ pattern: 'Acme', account: 'Brokerage', rename: 'Acme Pay', tag: 'Transfer' }],
+    });
+
+    beforeEach(useRule);
+
+    it('applies only to rows on the named account', async () => {
+      const checking = { id: '1', date: '2026-01-02', description: 'Direct Deposit Acme', accountName: 'Brokerage', tagNames: [] };
+      const payroll = { id: '2', date: '2026-01-02', description: 'Acme Pay', accountName: 'Payroll', tagNames: ['Income'] };
+
+      await service.categorize([checking, payroll]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledTimes(1);
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Acme Pay', tags: 'Transfer' });
+      expect(payroll.tagNames).toEqual(['Income']);
+    });
+
+    it('does not apply to a row with no account', async () => {
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'Acme Pay Out', tagNames: ['Income'] }]);
+
+      expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
+    });
+
+    it('matches the account name regardless of case', async () => {
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'Direct Deposit Acme', accountName: 'BROKERAGE', tagNames: [] }]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Acme Pay', tags: 'Transfer' });
+    });
+
+    it('corrects the tag on a row already carrying the rule name', async () => {
+      const row = { id: '1', date: '2026-01-02', description: 'Acme Pay', accountName: 'Brokerage', tagNames: ['Payroll'] };
+
+      await service.categorize([row]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Acme Pay', tags: 'Transfer' });
+      expect(row.tagNames).toEqual(['Transfer']);
+    });
+
+    it('leaves a row alone once it has the rule name and tag', async () => {
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'Acme Pay', accountName: 'Brokerage', tagNames: ['Transfer'] }]);
+
+      expect(mockTransactionSource.updateTransaction).not.toHaveBeenCalled();
+    });
+
+    it('preview decides alike', async () => {
+      const result = await service.preview([
+        { id: '1', date: '2026-01-02', description: 'Acme Pay', accountName: 'Brokerage', tagNames: ['Payroll'] },
+        { id: '2', date: '2026-01-02', description: 'Acme Pay', accountName: 'Payroll', tagNames: ['Income'] },
+      ]);
+
+      expect(result.suggestions).toEqual([expect.objectContaining({ id: '1', source: 'rule', suggestedCategory: 'Transfer' })]);
+    });
+
+    it('a rule with no account still matches every account', async () => {
+      mockFinanceStore.getCategorizationConfig.mockReturnValue({
+        ...mockCategorizationConfig, descriptionRules: [{ pattern: 'CASH SWEEP', rename: 'Cash Sweep', tag: 'Transfer' }],
+      });
+
+      await service.categorize([{ id: '1', date: '2026-01-02', description: 'FIDELITY CASH SWEEP', accountName: 'Anything', tagNames: [] }]);
+
+      expect(mockTransactionSource.updateTransaction).toHaveBeenCalledWith('1', { description: 'Cash Sweep', tags: 'Transfer' });
+    });
+  });
+
   describe('getUncategorized', () => {
     it('returns transactions needing categorization', () => {
       const transactions = [
@@ -317,6 +383,57 @@ describe('TransactionCategorizationService', () => {
     });
   });
 
+  describe('settled map persistence', () => {
+    const directDeposit = () => [{ id: 245703143, date: '2026-09-15', description: 'Direct Deposit', tagNames: ['Income'] }];
+
+    it('a fresh instance loads the stored map and does not re-ask', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({ '245703143': 'Direct Deposit' });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      const result = await service.categorize(directDeposit());
+      expect(mockAIGateway.chatStructured).not.toHaveBeenCalled();
+      expect(result.skipped).toHaveLength(1);
+    });
+
+    it('getUncategorized on a fresh instance excludes a settled row', () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({ '245703143': 'Direct Deposit' });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      expect(service.getUncategorized(directDeposit())).toEqual([]);
+    });
+
+    it('saves the map after settling a new row', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue(null);
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }], 'h1');
+      expect(mockFinanceStore.saveCategorizationSettled).toHaveBeenCalledWith({ '9': 'Direct Deposit' }, 'h1');
+    });
+
+    it('a throwing load logs a warning and categorization still runs', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn(() => { throw new Error('disk'); });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      const result = await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+      expect(result.processed).toHaveLength(1);
+      expect(mockLogger.warn).toHaveBeenCalledWith('categorization.settled.load_failed', { error: 'disk' });
+    });
+
+    it('a throwing save logs a warning and never fails categorization', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({});
+      mockFinanceStore.saveCategorizationSettled = vi.fn(() => { throw new Error('ro'); });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Income', friendlyName: 'Direct Deposit' });
+      const result = await service.categorize([{ id: 9, date: '2026-09-15', description: 'Direct Deposit Acme Payroll Ppd', tagNames: [] }]);
+      expect(result.processed).toHaveLength(1);
+      expect(mockLogger.warn).toHaveBeenCalledWith('categorization.settled.save_failed', { error: 'ro' });
+    });
+
+    it('pruneSettled drops ids not seen in the run, keeps seen ones', async () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({ '1': 'Direct Deposit', '2': 'Direct Deposit' });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      await service.pruneSettled(['1'], 'h1');
+      expect(mockFinanceStore.saveCategorizationSettled).toHaveBeenCalledWith({ '1': 'Direct Deposit' }, 'h1');
+    });
+  });
+
   describe('Jev category shadow', () => {
     let decisionGateway;
     const jevSays = (category, confidence) => decisionGateway.evaluate.mockResolvedValue({
@@ -335,6 +452,21 @@ describe('TransactionCategorizationService', () => {
         aiGateway: mockAIGateway, transactionSource: mockTransactionSource,
         financeStore: mockFinanceStore, decisionGateway, logger: mockLogger,
       });
+    });
+
+    it('hands Jev the configured tagDescriptions as option descriptions', async () => {
+      mockFinanceStore.getCategorizationConfig.mockReturnValue({
+        ...mockCategorizationConfig,
+        tagDescriptions: { Transfer: 'Money moved between our own accounts' },
+      });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      jevSays('Shopping', 0.95);
+
+      await service.categorize(walmart());
+
+      const [, questions] = decisionGateway.evaluate.mock.calls[0];
+      expect(questions.category.options.Transfer).toBe('Money moved between our own accounts');
+      expect(questions.category.options.Groceries).toBeNull();
     });
 
     it('logs both picks and keeps the LLM category on the apply path', async () => {

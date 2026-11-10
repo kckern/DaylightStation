@@ -138,6 +138,19 @@ describe('TilesItem', () => {
     rerender(<TilesItem item={tilesItem} langs={langs} resolveAssetUrl={id} onRespond={vi.fn()} result={{ correct: false, answer: '가위' }} />);
     expect(screen.getByText('가위')).toBeInTheDocument();
   });
+
+  it("Don't know sends an empty spelling (button or Backslash) — no random tiles to get past it", () => {
+    const onRespond = vi.fn();
+    const { rerender } = render(<TilesItem item={tilesItem} langs={langs} resolveAssetUrl={id} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole('button', { name: "Don't know" }));
+    expect(onRespond).toHaveBeenLastCalledWith({ tiles: [] });
+    fireEvent.keyDown(window, { key: '\\', code: 'Backslash' });
+    expect(onRespond).toHaveBeenCalledTimes(2);
+    // Held (the server moved on): only Next remains.
+    rerender(<TilesItem item={tilesItem} langs={langs} resolveAssetUrl={id} onRespond={onRespond} pending result={{ correct: false, answer: '가위', dontKnow: true }} />);
+    expect(screen.queryByRole('button', { name: "Don't know" })).toBeNull();
+    expect(screen.getByText('가위')).toBeInTheDocument();
+  });
 });
 
 const offer = {

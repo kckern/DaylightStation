@@ -299,7 +299,7 @@ Enable it for a household with `decision: [{ provider: jev }]` in
 `integrations.yml`, then `adapters.get('decision')`; unconfigured households
 get a NoOp whose `evaluate()` throws. Jev bills input tokens only.
 Consumers today: nutrition icon choice and audit triage, the card-ladder typed
-judge (shadow), and finance transaction categorization (`TransactionCategoryJudge`,
+judge (its model step, ahead of the chat model), and finance transaction categorization (`TransactionCategoryJudge`,
 shadow by default; `jev.mode` in the household finance `gpt.yml`, see
 `__docs/reference/finance/categorization.md`).
 
@@ -548,6 +548,12 @@ Configs that are NOT in the registry, deliberately:
 - `home/dashboard` and `player/config` are read directly via
   `dataService.household.read()` rather than through the app union.
 - `triggers/` is bindings, not app config.
+- `gaming/retroarch/catalog.yml` is read and written via
+  `dataService.household` (the RetroArch sync regenerates its `games:` list).
+  Its `overrides:` map survives sync and carries per-game settings, including
+  `resume` (savestate auto-load). Per-console `core_name` and
+  `launch.game_overrides` live in the registered `games` config. See
+  `__docs/reference/gaming/retroarch-game-overrides.md`.
 - `household.yml`, `integrations.yml` and `hardware/devices.yml` are not app
   configs either. The first two are loaded by `configLoader`'s own dedicated
   loaders (household identity at the household root, `loadHouseholdIntegrations`

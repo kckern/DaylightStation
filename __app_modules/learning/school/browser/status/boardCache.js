@@ -20,7 +20,10 @@
  * every access is guarded and a failure only means the board paints cold.
  */
 
-const KEY = 'daylight.school.status-board.v1';
+// v2 (34d4d57f5f): v1 snapshots stored the wallet's SILVER `balance` as
+// gold, so they are never read; the first v2 write removes the old key.
+const KEY = 'daylight.school.status-board.v2';
+const RETIRED_KEYS = ['daylight.school.status-board.v1'];
 
 /** @returns {{studyDay: string|null, learners: Object<string, {summary?: object|null, term?: object|null}>, rings: object, earnings: object, gold: object}|null} */
 export function readBoardCache(storage = safeStorage()) {
@@ -69,6 +72,7 @@ export function writeBoardCache({ studyDay, learners = {}, rings, earnings, gold
       gold: gold ?? previous?.gold ?? {},
       savedAt: new Date().toISOString(),
     }));
+    for (const retired of RETIRED_KEYS) storage?.removeItem?.(retired);
   } catch {
     // Quota or a blocked store: the board simply paints cold next time.
   }

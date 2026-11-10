@@ -43,7 +43,8 @@ describe('integration: under-reporting-calories playbook recipe', () => {
   it('produces a ~99% gap as expected', async () => {
     const fix = makeFixtureServices();
     const queryService     = new HealthQueryService({ healthStore: fix.healthStore, healthService: fix.healthService, now: fix.now });
-    const sandbox          = new ComputeSandbox();
+    // Headroom for a stalled test host; the runaway guard has its own test.
+    const sandbox          = new ComputeSandbox({ timeoutMs: 5000 });
     const constantsService = new PersonalConstantsService({
       workspaceRepository: { getHealthProfile: (userId) => fix.dataService.user.read('profile/health', userId) },
       healthStore: fix.healthStore,

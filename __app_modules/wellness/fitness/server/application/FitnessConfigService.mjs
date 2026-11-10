@@ -24,7 +24,6 @@ export function normalizeFitnessConfig(raw, householdId) {
     governance: { ...governance, usage_threshold_seconds: governance.usage_threshold_seconds ?? 300 },
     governedLabels: governance.governed_labels?.length ? governance.governed_labels : plex.governed_labels || [],
     governedTypes: governance.governed_types?.length ? governance.governed_types : plex.governed_types || ['show', 'movie'],
-    progressClassification: raw.progressClassification || {},
     users: raw.users || {},
     timelapse: {
       ...TIMELAPSE_DEFAULTS,
@@ -125,7 +124,6 @@ export class FitnessConfigService {
       || whitelist.some((pattern) => String(userAgent).includes(pattern));
   }
 
-  getProgressClassification(householdId) { return this.configProjection.raw(householdId)?.progressClassification || {}; }
   getSuggestionPolicy(householdId) { return fitnessSuggestionPolicy(this.configProjection.raw(householdId) || {}); }
   getMenuMusicVolume(householdId) { return this.configProjection.raw(householdId)?.menu_music?.volume ?? 0.05; }
   getAccessPolicy(householdId) { return { users: this.configProjection.raw(householdId)?.users || {} }; }

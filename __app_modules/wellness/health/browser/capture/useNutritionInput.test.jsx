@@ -53,3 +53,12 @@ describe('useNutritionInput', () => {
     expect(result.current.busy).toBe(false);
   });
 });
+
+it('keeps identical concurrent submissions distinct and honors explicit retry identity', async () => {
+ apiMock.mockReset().mockResolvedValue({committed:true});
+ const {result}=renderHook(()=>useNutritionInput());
+ await act(async()=>{await Promise.all([result.current.submit('text','apple'),result.current.submit('text','apple')]);});
+ expect(apiMock.mock.calls[0][1].operationId).not.toBe(apiMock.mock.calls[1][1].operationId);
+ await act(()=>result.current.submit('text','apple',{operationId:'retry-one'}));
+ expect(apiMock.mock.calls[2][1].operationId).toBe('retry-one');
+});

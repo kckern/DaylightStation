@@ -31,7 +31,7 @@ function session(durationMs, extra = {}) {
     durationMs,
     roster: [{ userId: 'user_2' }],
     deviceAssignments: [{ deviceId: 'd1' }],
-    timeline: { series: { 'user:user_2:hr': [120, 121, 122] }, timebase: { tickCount: 20 }, events: [] },
+    timeline: { series: { 'user:user_2:hr': Array.from({ length: 20 }, (_, i) => 120 + i) }, timebase: { tickCount: 20 }, events: [] },
     tickCount: 20,
     ...extra,
   };
@@ -45,6 +45,24 @@ describe('PersistenceManager — provisional persistence', () => {
     const v = pm.validateSessionPayload(session(45000));
     expect(v.ok).toBe(false);
     expect(v.reason).toBe('session-too-short');
+  });
+
+  it('holds the first save of a stray strap that gave a few seconds of HR (2026-11-08)', () => {
+    const pm = new PersistenceManager({ persistApi: vi.fn().mockResolvedValue({ ok: true }) });
+    const hr = [120, 120, 120, ...Array(50).fill(null)];
+    const v = pm.validateSessionPayload(session(250000, {
+      timeline: { series: { 'device:2747:hr': hr }, timebase: { tickCount: 53 }, events: [] },
+    }));
+    expect(v).toMatchObject({ ok: false, reason: 'no-activity', hrReadings: 3 });
+  });
+
+  it('keeps saving a session that already saved, even through a quiet stretch', () => {
+    const pm = new PersistenceManager({ persistApi: vi.fn().mockResolvedValue({ ok: true }) });
+    const s = session(250000, {
+      timeline: { series: { 'user:user_2:hr': [120, 121, ...Array(50).fill(null)] }, timebase: { tickCount: 52 }, events: [] },
+    });
+    pm.hasSuccessfulSave = () => true;
+    expect(pm.validateSessionPayload(s).ok).toBe(true);
   });
 
   it('accepts a 90s session (was rejected under the old 5-min floor)', () => {

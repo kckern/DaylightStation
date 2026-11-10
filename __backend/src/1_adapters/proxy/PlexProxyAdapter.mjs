@@ -249,6 +249,11 @@ export class PlexProxyAdapter {
    * Longer timeout for media operations
    * @returns {number}
    */
+  /** Direct-play part files get delivery-rate telemetry (ProxyService#meterStream). */
+  isMeteredStreamPath(path) {
+    return isMediaPartFile(path);
+  }
+
   getTimeout() {
     return 60000; // 60 seconds
   }

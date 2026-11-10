@@ -1,0 +1,67 @@
+// The shelf's scan status. School's own `--school-*` tokens (set on
+// `.school-app`), the contract's motion tokens. It lives in the header's
+// free middle and overlays the body with its superseded list, so it never
+// moves the shelf.
+
+.school-scan-status {
+  position: relative;
+  margin-left: auto;
+  display: flex; flex-direction: column; align-items: flex-end;
+  min-width: 0;
+  pointer-events: none;
+  animation: school-scan-status-in var(--ds-motion-base, 200ms) var(--ds-motion-easing, ease-out);
+
+  &__pill {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem;
+    padding: 0.45rem 1rem;
+    border-radius: 999px;
+    border: 2px solid var(--school-accent);
+    background: var(--school-surface-2);
+    color: var(--school-fg);
+    font-size: clamp(0.95rem, 2.2vh, 1.15rem); font-weight: 700; line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  &__line { display: flex; align-items: center; gap: 0.5rem; }
+
+  // A live dot: the scan is being worked on, not merely noted.
+  &__line--ack::before {
+    content: ''; flex: 0 0 auto;
+    width: 0.6rem; height: 0.6rem; border-radius: 50%;
+    background: var(--school-accent);
+    animation: school-scan-status-pulse 1s ease-in-out infinite alternate;
+  }
+
+  // Overlays the body under the pill: listing a book must not push the shelf.
+  &__again {
+    position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 5;
+    margin: 0; padding: 0.5rem 0.75rem; list-style: none;
+    display: flex; flex-direction: column; gap: 0.35rem;
+    max-width: min(26rem, 60vw);
+    border-radius: 12px;
+    border: 1px solid var(--school-border);
+    background: var(--school-surface);
+  }
+
+  &__again-item { display: flex; flex-direction: column; min-width: 0; }
+  &__again-title {
+    color: var(--school-fg); font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  &__again-hint { color: var(--school-warn); font-size: 0.9rem; font-weight: 600; }
+}
+
+@keyframes school-scan-status-in {
+  from { opacity: 0; transform: translateY(-0.25rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes school-scan-status-pulse {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .school-scan-status,
+  .school-scan-status__line--ack::before { animation: none; }
+}

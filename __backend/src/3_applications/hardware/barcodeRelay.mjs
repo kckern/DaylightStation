@@ -58,7 +58,8 @@ export function createBarcodeRelay({
   // ---- 2) PERSIST: bus → disk (every scan) -------------------------------
   let writeChain = Promise.resolve();
   const unsubscribe = relayGateway.subscribe((payload) => {
-    logger.info?.('barcode_relay.scan', { device: payload.device, code: payload.code });
+    logger.info?.('barcode_relay.scan', { device: payload.device, code: payload.code,
+      ...(payload.delayedMs ? { delayedMs: payload.delayedMs, capturedAt: payload.capturedAt } : {}) });
     if (typeof onScan === 'function') {
       try { onScan(payload); } catch (err) { logger.warn?.('barcode_relay.onScan.failed', { error: err.message }); }
     }

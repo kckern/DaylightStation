@@ -58,6 +58,12 @@ function toVariables(outcome) {
     // Forwarded untouched: the HA script relays it and never templates it.
     // null = "no push for this event"; the siren still branches on `result`.
     notification: o.notification ?? null,
+    // Presence-hook context (card tap / OMR / portal use). null for hooks
+    // that do not carry it — one uniform key set for every hook.
+    source: o.source ?? null,
+    location: o.location ?? null,
+    device: o.device ?? null,
+    event: o.event ?? null,
   };
 }
 
@@ -68,6 +74,8 @@ export class SchoolGradingHookAdapter {
   #configKey;
   #eventPrefix;
   #logger;
+  #now;
+  #cooldownUntil = 0;
 
   constructor(config) {
     if (!config?.gateway) {
@@ -94,26 +102,29 @@ export class SchoolGradingHookAdapter {
     // byte — every existing query and every existing test keeps working.
     this.#eventPrefix = `school.${this.#configKey}`;
     this.#logger = config.logger || console;
+    // Injectable clock (tests); cooldown windows are measured against it.
+    this.#now = config.now || Date.now;
 
     this.failureCount = 0;
     this.backoffUntil = 0;
     this.metrics = {
       totalRequests: 0, firedCount: 0, failureCount: 0,
-      skippedNotConfigured: 0, skippedBackoff: 0,
+      skippedNotConfigured: 0, skippedBackoff: 0, skippedCooldown: 0,
       resultHistogram: {}, lastFiredAt: null,
     };
   }
 
   async fire(outcome) {
     this.metrics.totalRequests++;
-    const now = Date.now();
+    const now = this.#now();
 
     // Outer guard: config loading and outcome shaping are NOT gateway calls,
     // so their failures must never reach or arm the circuit breaker below.
     // The inner try/catch (around the actual gateway call) keeps sole
     // ownership of failureCount/backoffUntil.
     try {
-      const script = this.#loadSchoolConfig(outcome?.householdId)?.[this.#configKey]?.script;
+      const block = this.#loadSchoolConfig(outcome?.householdId)?.[this.#configKey];
+      const script = block?.script;
       if (!script) {
         this.metrics.skippedNotConfigured++;
         this.#logger.debug?.(`${this.#eventPrefix}.skipped`, { reason: 'not_configured' });
@@ -128,10 +139,36 @@ export class SchoolGradingHookAdapter {
         return { ok: true, skipped: true, reason: 'backoff' };
       }
 
+      // Per-hook cooldown: one HA call per window. Absent/0 = every event
+      // (grading_hook and piano_lesson_hook behave exactly as before).
+      // Armed only by a SUCCESSFUL call (below), never by a failed one.
+      const cooldownMs = Math.max(0, Number(block?.cooldownMinutes) || 0) * 60000;
+      if (cooldownMs > 0 && this.#cooldownUntil > now) {
+        this.metrics.skippedCooldown++;
+        // Rate-limited at info so operators can see it in the log store
+        // (debug never ships) without a ~1/s card-ladder flood. Loggers
+        // without `sampled` fall back to debug.
+        const skipData = { reason: 'cooldown', remainingMs: this.#cooldownUntil - now };
+        if (typeof this.#logger.sampled === 'function') {
+          this.#logger.sampled(`${this.#eventPrefix}.skipped`, skipData, { maxPerMinute: 2, aggregate: true });
+        } else {
+          this.#logger.debug?.(`${this.#eventPrefix}.skipped`, skipData);
+        }
+        return { ok: true, skipped: true, reason: 'cooldown' };
+      }
+
       // `script.school_graded` -> domain script, service school_graded.
       // A bare `school_graded` is used as the service name as-is.
       const service = script.startsWith('script.') ? script.slice('script.'.length) : script;
       const variables = toVariables(outcome);
+      // Arm the window BEFORE any await (the student lookup included) so
+      // concurrent fires (card-ladder POSTs arrive ~1/s) are deduplicated;
+      // restored below if the call fails.
+      // The window is per adapter instance, i.e. household-wide: one child's
+      // tap covers a sibling's within the window.
+      const priorCooldownUntil = this.#cooldownUntil;
+      if (cooldownMs > 0) this.#cooldownUntil = now + cooldownMs;
+
       if (this.#resolveStudent && variables.learner_id && !outcome?.student) {
         try { variables.student = (await this.#resolveStudent(variables.learner_id)) ?? variables.learner_id; } catch { /* identifier remains useful */ }
       }
@@ -164,13 +201,14 @@ export class SchoolGradingHookAdapter {
         });
         return { ok: true };
       } catch (error) {
+        if (cooldownMs > 0) this.#cooldownUntil = priorCooldownUntil;
         this.failureCount++;
         this.metrics.failureCount++;
         if (this.failureCount >= MAX_FAILURES) {
           const backoffMs = Math.min(
             MAX_BACKOFF_MS, 1000 * (2 ** (this.failureCount - MAX_FAILURES)),
           );
-          this.backoffUntil = Date.now() + backoffMs;
+          this.backoffUntil = this.#now() + backoffMs;
           this.#logger.error?.(`${this.#eventPrefix}.circuit_open`, {
             failureCount: this.failureCount, backoffMs, error: error.message,
           });
@@ -197,7 +235,7 @@ export class SchoolGradingHookAdapter {
       circuitBreaker: {
         failureCount: this.failureCount,
         maxFailures: MAX_FAILURES,
-        isOpen: this.backoffUntil > Date.now(),
+        isOpen: this.backoffUntil > this.#now(),
       },
     };
   }
@@ -206,7 +244,7 @@ export class SchoolGradingHookAdapter {
     const previous = { failureCount: this.failureCount, backoffUntil: this.backoffUntil };
     this.failureCount = 0;
     this.backoffUntil = 0;
-    this.#logger.info?.('school.grading_hook.reset', { previous });
+    this.#logger.info?.(`${this.#eventPrefix}.reset`, { previous });
     return { ok: true, previous };
   }
 }

@@ -1,0 +1,184 @@
+/**
+ * WorkshopPanel — the grown-up's rulings for the selected scene or cue, inside the
+ * preview rail. A scene: Play it (off) / Hide picture (blackout) / Skip / Use settings
+ * (clear the ruling), plus its title card (draft with AI, edit, approve, withdraw)
+ * once the scene is cut. A cue: Off / Mute / Bleep / Blur / Skip, and Use settings
+ * when it has a ruling of its own.
+ * Every successful write refreshes the player's filter; a failure shows its text and
+ * leaves the player alone. Mouse-only: plain buttons.
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { useFilterPreview, previewStore } from './previewStore.js';
+import { baseId } from '../useContentFilter.js';
+import { useFilterWrite, errText } from './useFilterWrite.js';
+import { kindOf } from './effectKinds.js';
+import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
+import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
+
+const SCENE_EFFECTS = [
+  { label: 'Play it', value: 'off', current: (r) => r.effect === 'off', hint: 'Play the scene. Its own words and moments are still muted or blurred.' },
+  { label: 'Hide picture', value: 'blackout', current: (r) => r.effect === 'blackout', hint: 'The picture goes dark; the sound keeps playing.' },
+  { label: 'Skip', value: 'skip', current: (r) => r.effect === 'skip', hint: 'Jump past the whole scene.' },
+  { label: 'Use settings', value: 'profile', current: (r) => !r.effect, hint: 'Do what Settings says for scenes like this.' },
+];
+const CUE_EFFECTS = [
+  { label: 'Off', value: 'off' }, { label: 'Mute', value: 'mute' }, { label: 'Bleep', value: 'bleep' },
+  { label: 'Blur', value: 'blur' }, { label: 'Skip', value: 'skip' },
+];
+
+const base = (rk) => `/api/v1/content-filter/${encodeURIComponent(rk)}`;
+
+export default function WorkshopPanel() {
+  const snap = useFilterPreview();
+  const logger = useMemo(() => getChildLogger({ app: 'content-filter', component: 'workshop-panel' }), []);
+  const sel = snap.selected;
+  const rk = snap.ratingKey;
+  const { error, setError, busy, setBusy, write } = useFilterWrite(logger);
+  const [draft, setDraft] = useState(null); // { id, text } typed or drafted, not yet approved
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => { setError(''); setDraft(null); setEditing(false); }, [sel?.id, sel?.kind]);
+
+  if (!sel || rk == null) return null;
+  const isScene = sel.kind === 'scene';
+
+  if (!isScene) {
+    const cueId = baseId(sel.id); // measured ids (va123#0) are ruled by their base id
+    const ruling = snap.override?.cueOverrides?.[cueId] || {};
+    const cur = ruling.disabled ? 'off' : ruling.effect;
+    const rule = (effect) => write(
+      () => DaylightAPI(`${base(rk)}/cues/${encodeURIComponent(cueId)}`, { effect }, 'PUT'),
+      'content-filter.cue.ruled', { ratingKey: rk, cue: cueId, effect },
+    );
+    const isSkip = ['skip', 'skip-card'].includes(ruling.effect || sel.effect);
+    const cueUrl = `${base(rk)}/cues/${encodeURIComponent(cueId)}`;
+    const approvedCue = ruling.card?.text || '';
+    const cueText = draft?.id === sel.id ? draft.text : (approvedCue || ruling.cardDraft?.text || '');
+    const draftCueCard = async () => {
+      setBusy(true); setError('');
+      logger.info('content-filter.cue-card.requested', { ratingKey: rk, cue: cueId });
+      try {
+        const out = await DaylightAPI(`${cueUrl}/card`, {}, 'POST');
+        setDraft({ id: sel.id, text: out?.cardDraft?.text || '' });
+        setEditing(false);
+        logger.info('content-filter.cue-card.drafted', { ratingKey: rk, cue: cueId });
+        await previewStore.refresh();
+      } catch (e) {
+        setError(`Could not draft a card: ${errText(e)}`);
+        logger.warn('content-filter.cue-card.failed', { ratingKey: rk, cue: cueId, error: errText(e) });
+      } finally { setBusy(false); }
+    };
+    const approveCue = async () => {
+      const ok = await write(
+        () => DaylightAPI(cueUrl, { card: { approve: true, text: cueText } }, 'PUT'),
+        'content-filter.cue-card.approved', { ratingKey: rk, cue: cueId },
+      );
+      if (ok !== undefined) { setDraft(null); setEditing(false); }
+    };
+    const withdrawCue = async () => {
+      const ok = await write(() => DaylightAPI(cueUrl, { card: null }, 'PUT'), 'content-filter.cue-card.withdrawn', { ratingKey: rk, cue: cueId });
+      if (ok !== undefined) setDraft(null);
+    };
+    return (
+      <section className="filter-rail__section" data-testid="workshop-panel">
+        <h4>{kindOf(sel.effect) === 'words' ? 'For this word' : 'For this moment'}</h4>
+        <div className="filter-rail__buttons">
+          {CUE_EFFECTS.map((o) => (
+            <button key={o.value} type="button" className={`filter-rail__btn${cur === o.value ? ' is-selected' : ''}`} disabled={busy} onClick={() => rule(o.value)}>{o.label}</button>
+          ))}
+          {cur ? <button type="button" className="filter-rail__btn" disabled={busy} data-cf-hint="Drop this choice and do what Settings says." data-cf-hint-align="end" onClick={() => rule('profile')}>Use settings</button> : null}
+        </div>
+        {isSkip ? (
+          <CardControls
+            text={cueText} approved={approvedCue} editing={editing} busy={busy} id={sel.id}
+            onDraft={draftCueCard} onApprove={approveCue} onWithdraw={withdrawCue}
+            onEdit={() => setEditing((v) => !v)} onType={(t) => setDraft({ id: sel.id, text: t })}
+          />
+        ) : null}
+        {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}
+      </section>
+    );
+  }
+
+  const ruling = snap.override?.sceneOverrides?.[sel.id] || {};
+  const scene = (snap.scenes || []).find((s) => String(s.id) === String(sel.id));
+  const approved = ruling.card?.text || '';
+  const drafted = scene?.card?.text || '';
+  const text = draft?.id === sel.id ? draft.text : (approved || drafted);
+  const url = `${base(rk)}/scenes/${encodeURIComponent(sel.id)}`;
+  // Is the scene cut right now (a skip or a hide is playing)? Only then does a card show.
+  const cut = (snap.cues || []).some((c) => String(c.scene) === String(sel.id));
+
+  const rule = (effect) => write(
+    () => DaylightAPI(url, { effect }, 'PUT'),
+    'content-filter.scene.ruled', { ratingKey: rk, scene: sel.id, effect },
+  );
+  const draftCard = async () => {
+    setBusy(true); setError('');
+    try {
+      const out = await DaylightAPI(`${url}/card`, {}, 'POST');
+      setDraft({ id: sel.id, text: out?.card?.text || '' });
+      setEditing(false);
+      logger.info('content-filter.card.drafted', { ratingKey: rk, scene: sel.id });
+      await previewStore.refresh();
+    } catch (e) {
+      setError(`Could not draft a card: ${errText(e)}`);
+      logger.warn('content-filter.workshop.failed', { ratingKey: rk, scene: sel.id, error: errText(e) });
+    } finally { setBusy(false); }
+  };
+  const approve = async () => {
+    const ok = await write(
+      () => DaylightAPI(url, { card: { approve: true, text } }, 'PUT'),
+      'content-filter.card.approved', { ratingKey: rk, scene: sel.id },
+    );
+    if (ok !== undefined) { setDraft(null); setEditing(false); }
+  };
+  const withdraw = async () => {
+    const ok = await write(() => DaylightAPI(url, { card: null }, 'PUT'), 'content-filter.card.withdrawn', { ratingKey: rk, scene: sel.id });
+    if (ok !== undefined) setDraft(null);
+  };
+
+  return (
+    <section className="filter-rail__section" data-testid="workshop-panel">
+      <h4>For this scene</h4>
+      <div className="filter-rail__buttons">
+        {SCENE_EFFECTS.map((o) => (
+          <button key={o.value} type="button" aria-pressed={o.current(ruling)} data-cf-hint={o.hint} data-cf-hint-side="below" className={`filter-rail__btn${o.current(ruling) ? ' is-selected' : ''}`} disabled={busy} onClick={() => rule(o.value)}>{o.label}</button>
+        ))}
+      </div>
+      {cut || text ? <CardControls
+        text={text} approved={approved} editing={editing} busy={busy} id={sel.id}
+        onDraft={draftCard} onApprove={approve} onWithdraw={withdraw}
+        onEdit={() => setEditing((v) => !v)} onType={(t) => setDraft({ id: sel.id, text: t })}
+      /> : <p className="filter-rail__note">A title card can be written once the scene is skipped or hidden.</p>}
+      {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}
+    </section>
+  );
+}
+
+/** The title-card editor shared by scenes and skip cues: draft, edit, approve, withdraw. */
+function CardControls({ text, approved, editing, busy, id, onDraft, onApprove, onWithdraw, onEdit, onType }) {
+  return (
+    <>
+      <h4>Title card</h4>
+      {editing ? (
+        <textarea
+          className="filter-rail__card-input"
+          aria-label="Card text"
+          value={text}
+          maxLength={90}
+          onChange={(e) => onType(e.target.value)}
+        />
+      ) : (
+        <div className="filter-rail__card" data-testid="workshop-card" data-card-for={id}>{text || 'No card yet'}</div>
+      )}
+      {approved && text === approved ? <div className="filter-rail__empty">Approved</div> : null}
+      <div className="filter-rail__buttons">
+        <button type="button" className="filter-rail__btn" disabled={busy} onClick={onDraft}>{text ? 'Regenerate' : 'Draft with AI'}</button>
+        {text ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={onEdit}>{editing ? 'Done' : 'Edit'}</button> : null}
+        {text && text !== approved ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={onApprove}>Approve</button> : null}
+        {approved ? <button type="button" className="filter-rail__btn" disabled={busy} onClick={onWithdraw}>Withdraw</button> : null}
+      </div>
+    </>
+  );
+}

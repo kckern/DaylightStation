@@ -23,6 +23,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { IssueDocument } from "./IssueDocument.mjs";
 import { YamlCompanionCodeStore } from "../../adapters/persistence/YamlCompanionCodeStore.mjs";
+import { YamlIssuedArtifactStore } from "../../adapters/persistence/YamlIssuedArtifactStore.mjs";
 import {
   FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore, seededRng, silentLogger,
 } from "../../../../../../tests/_lib/school/lifecycleFakes.mjs";
@@ -98,6 +99,7 @@ function issuer({
   householdId = HOUSEHOLD, sessions = new FakeSessionRepository(),
   cardRequests = [], printer: suppliedPrinter = null, allocationStore: suppliedAllocationStore = null,
   issuedArtifacts = null, renderAllocation = null, publishPrintDocument: suppliedPublish = null,
+  coursePassing = undefined, passOverrides = null, extraCourses = [],
 }) {
   const unitsById = new Map(units.map((unit) => [unit.unitId, unit]));
   const instances = new Map();
@@ -125,12 +127,13 @@ function issuer({
           courses: [{
             courseId: 'cfm',
             profile: 'lower',
+            ...(coursePassing !== undefined ? { passing: coursePassing } : {}),
             enrollment: {
               enrollmentId: 'enr-1',
               moduleOrder: ['w35-aug24'],
               lessonOrder: { 'w35-aug24': units.map((u) => u.unitId) },
             },
-          }],
+          }, ...extraCourses],
         };
       },
     },
@@ -161,6 +164,7 @@ function issuer({
     companions,
     companionCodes,
     householdId,
+    passOverrides,
     clock: () => new Date(now),
     rng,
     issuedArtifacts,
@@ -245,6 +249,47 @@ describe('IssueDocument — a required companion binds its finish code before th
     expect(cardRequests.every((request) => request.automaticCard === true)).toBe(true);
     expect([...instances.values()][0].omr).toMatchObject({ cardId: '7654321', recordId: 'rec-2' });
     expect(cards.get('7654321')[0]).toMatchObject({ deliveryState: 'delivered' });
+  });
+
+  it('retries a print that timed out, even though the failed attempt already retained its recipe', async () => {
+    // 2026-10-06: a printer timeout released the card, and every retry after it
+    // was refused with "issued artifact … is immutable" — the retry draws a new
+    // card under the same session-derived id. A fake store that overwrites
+    // freely hid it; this one is the real store.
+    const issuedArtifacts = new YamlIssuedArtifactStore({
+      configService: { getHouseholdPath: (rel) => path.join(dir, rel) },
+    });
+    let dispatch = 0;
+    const printer = {
+      jobs: [],
+      async printPdf(bytes, options) {
+        dispatch += 1;
+        if (dispatch === 1) throw new Error('The operation was aborted due to timeout');
+        this.jobs.push({ bytes, options });
+        return { confirmed: true };
+      },
+    };
+    const renderAllocation = (attempt) => ({
+      cardId: attempt === 1 ? '1234567' : '7654321', recordId: `rec-${attempt}`, rowRange: { start: 1, end: 8 },
+    });
+    const unit = unitFor({ participation: 'optional' });
+    const { issueDocument, sessions, instances } = issuer({
+      companionCodes: codeStore(), units: [unit], printer, issuedArtifacts, renderAllocation,
+      allocationStore: { async release() { return []; }, async markDelivered() { return null; } },
+    });
+    await seedSession(sessions, { sessionId: 'ses-timeout', learnerId: 'kid1', unitId: unit.unitId });
+
+    await expect(issueDocument.execute({ sessionId: 'ses-timeout' }))
+      .resolves.toMatchObject({ status: 'print_failed' });
+    await expect(issueDocument.execute({ sessionId: 'ses-timeout' }))
+      .resolves.toMatchObject({ status: 'issued', allocation: { cardId: '7654321' } });
+    expect(printer.jobs).toHaveLength(1);
+    const artifactId = [...instances.values()][0].id;
+    const { manifest } = await issuedArtifacts.get(artifactId);
+    expect(manifest.allocation).toMatchObject({ cardId: '7654321' });
+    expect(manifest.supersedes).toEqual([expect.objectContaining({
+      renderInputSha256: expect.any(String), allocation: expect.objectContaining({ cardId: '1234567' }),
+    })]);
   });
 
   it('leaves an OPTIONAL companion exactly as it was: no finish code, no codeRef, no record', async () => {
@@ -647,3 +692,39 @@ describe('IssueDocument — a publish refusal is a render failure caught before 
   });
 });
 
+describe('IssueDocument — the printed pass bar is the one that will grade it (Task 16)', () => {
+  it('prints the learner\'s enrollment bar over the unit\'s own', async () => {
+    const unit = unitFor({ participation: 'optional' });
+    const { issueDocument, sessions, cardRequests, published } = issuer({ companionCodes: codeStore(), units: [unit], coursePassing: 70 });
+    await seedSession(sessions, { sessionId: 'ses-bar', learnerId: 'kid1', unitId: unit.unitId });
+    await issueDocument.execute({ sessionId: 'ses-bar' });
+    expect(cardRequests[0].passPercent).toBe(70);
+    // The lesson card on the sheet says the same number the header does.
+    expect(JSON.stringify([...published.values()][0])).toContain('"passPercent":70');
+  });
+
+  it('issues against the entry the bar came from: an exact course id beats a lesson-order match', async () => {
+    const unit = unitFor({ participation: 'optional' });
+    const exact = {
+      courseId: unit.courseId, profile: 'lower', passing: 55,
+      enrollment: { enrollmentId: 'enr-exact', moduleOrder: ['w35-aug24'], lessonOrder: {} },
+    };
+    const { issueDocument, sessions, cardRequests, instances } = issuer({
+      companionCodes: codeStore(), units: [unit], coursePassing: 70, extraCourses: [exact],
+    });
+    await seedSession(sessions, { sessionId: 'ses-bar3', learnerId: 'kid1', unitId: unit.unitId });
+    await issueDocument.execute({ sessionId: 'ses-bar3' });
+    expect(cardRequests[0].passPercent).toBe(55);
+    expect([...instances.values()][0].enrollmentId).toBe('enr-exact');
+  });
+
+  it('prints a per-lesson override over both', async () => {
+    const unit = unitFor({ participation: 'optional' });
+    const { issueDocument, sessions, cardRequests } = issuer({
+      companionCodes: codeStore(), units: [unit], coursePassing: 70, passOverrides: { percentFor: () => 65 },
+    });
+    await seedSession(sessions, { sessionId: 'ses-bar2', learnerId: 'kid1', unitId: unit.unitId });
+    await issueDocument.execute({ sessionId: 'ses-bar2' });
+    expect(cardRequests[0].passPercent).toBe(65);
+  });
+});

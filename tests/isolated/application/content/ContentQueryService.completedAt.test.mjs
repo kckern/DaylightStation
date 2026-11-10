@@ -38,6 +38,8 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
     const enriched = await service.enrichWithWatchState(items, 'plex', 'plex:674496');
 
     expect(enriched[0].completedAt).toBe('2026-04-20 06:07:44');
+    // The library whose completion rule judges this item (watch_completion).
+    expect(enriched[0].progressNamespace).toBe('plex/14_fitness');
   });
 
   test('enriched item has completedAt=null when progress has no completedAt', async () => {
@@ -74,5 +76,29 @@ describe('ContentQueryService.enrichWithWatchState propagates completedAt', () =
     const enriched = await service.enrichWithWatchState(items, 'plex', 'plex:99');
 
     expect(enriched[0].completedAt).toBeNull();
+  });
+
+  test('Plex unreachable: each item carries its own record namespace, not the bare source', async () => {
+    const mockAdapter = { source: 'plex', getStoragePath: vi.fn().mockResolvedValue('plex') };
+    const mockRegistry = { get: vi.fn().mockReturnValue(mockAdapter), list: vi.fn(() => []), resolveSource: vi.fn(() => []) };
+    const record = { contentId: 'plex:674290', playhead: 16429, duration: 17459, percent: 94, watchTime: 19111, completedAt: null };
+    const mockMemory = {
+      listProgress: vi.fn().mockResolvedValue([]),
+      listSourceProgress: vi.fn().mockResolvedValue([record]),
+      listAllProgress: vi.fn().mockResolvedValue([
+        { namespaceId: 'plex/14_fitness', progress: record },
+        { namespaceId: 'abs/books', progress: { contentId: 'abs:1', playhead: 5, percent: 1 } },
+      ]),
+    };
+    const service = new ContentQueryService({
+      contentCatalog: new RegistryContentCatalogGateway({ registry: mockRegistry }),
+      mediaProgressMemory: mockMemory
+    });
+
+    const enriched = await service.enrichWithWatchState([{ id: 'plex:674290' }], 'plex', 'plex:603407');
+
+    expect(enriched[0].percent).toBe(94);
+    // The Fitness rule must judge it; the bare 'plex' would fall to the 90% default.
+    expect(enriched[0].progressNamespace).toBe('plex/14_fitness');
   });
 });

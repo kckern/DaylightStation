@@ -46,3 +46,28 @@ describe('CircularUserAvatar weakSignal', () => {
     expect(container.querySelector('.circular-user-avatar.weak-signal')).toBeNull();
   });
 });
+
+describe('CircularUserAvatar statusBadge', () => {
+  it('renders "Reach Hot" for a child who has not started', () => {
+    const { container } = render(
+      <CircularUserAvatar name="Child B" statusBadge={{ status: 'reach-start', zoneLabel: 'hot' }} />
+    );
+    const badge = container.querySelector('.governance-start-badge');
+    expect(badge.textContent).toBe('Reach Hot');
+    expect(badge.classList.contains('governance-start-badge--overdue')).toBe(false);
+  });
+
+  it('renders the overdue badge in the warning style', () => {
+    const { container } = render(
+      <CircularUserAvatar name="Child B" statusBadge={{ status: 'start-overdue', zoneLabel: 'Hot' }} />
+    );
+    const badge = container.querySelector('.governance-start-badge');
+    expect(badge.textContent).toBe('Reach Hot');
+    expect(badge.classList.contains('governance-start-badge--overdue')).toBe(true);
+  });
+
+  it('renders no start badge for a holding or absent status', () => {
+    const { container } = render(<CircularUserAvatar name="Child B" statusBadge={{ status: 'holding', zoneLabel: 'Hot' }} />);
+    expect(container.querySelector('.governance-start-badge')).toBeNull();
+  });
+});

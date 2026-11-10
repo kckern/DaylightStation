@@ -25,6 +25,10 @@ const normalizeZoneId = (value) => {
     .replace(/[^a-z0-9]+/g, '-');
 };
 
+// Unattended: every eligible child must reach the startup zone once within this
+// window of joining (or of the video opening, for children already present).
+const CHILD_START_WINDOW_MS = 120_000;
+
 const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 // Supported governance audio-cue triggers (see _normalizeAudioCues).
@@ -44,6 +48,11 @@ const SUPPORTED_AUDIO_CUE_TRIGGERS = new Set([
 // Cycle challenge "health" pool: depletes while RPM is below loRpm, regenerates
 // while in the green zone (>= hiRpm). At zero the video pauses until the rider
 // is back in green. Replaces the old 3-second danger grace.
+// Terminal cycle statuses observable on activeChallenge.status. 'abandoned'
+// and 'cancelled' are never observable there: abandon records history and nulls
+// the challenge, and sensor-offline sets 'cancelled' then nulls it in the same
+// synchronous block.
+const CYCLE_TERMINAL_STATUSES = ['success', 'failed'];
 const CYCLE_HEALTH_MAX_MS = 3000;
 const CYCLE_SUCCESS_PUBLISH_MS = 600;
 const CYCLE_SENSOR_FRESHNESS_MS = 2000;
@@ -326,12 +335,14 @@ export class GovernanceEngine {
     this._warningStartTime = null;
     this._lockStartTime = null;
     this._warningCooldownUntil = null;
+    this._cooldownSuppressionLogged = false;
 
     // Expose governance state globally for cross-component correlation
     this._updateGlobalState();
 
     // Timer pause state for playback stall coordination
     this._timersPaused = false;
+    this._timerPauseReasons = new Set();
     this._pausedAt = null;
     this._remainingMs = null;
 
@@ -482,6 +493,36 @@ export class GovernanceEngine {
   }
 
   /**
+   * True when `zone` ranks strictly above every zone the active policy's
+   * baseline requires. A challenge at or below the baseline is no challenge.
+   * With no active policy (or no zone baseline) every zone qualifies.
+   */
+  _isAboveBaselineZone(zone) {
+    const policy = this._activePolicy || this._chooseActivePolicy?.(0) || null;
+    if (!policy) return true;
+    const baselineZones = new Set(Object.keys(policy.baseRequirement || {}).map(normalizeZoneId));
+    (policy.requirements || []).forEach((req) => {
+      if (req && req.type === 'zone' && req.zone) baselineZones.add(normalizeZoneId(req.zone));
+    });
+    const rankMap = this._latestInputs?.zoneRankMap || {};
+    const fallbackOrder = ['cool', 'active', 'warm', 'hot', 'fire'];
+    const rankOf = (z) => {
+      const id = normalizeZoneId(z);
+      if (Number.isFinite(rankMap[id])) return rankMap[id];
+      const idx = fallbackOrder.indexOf(id);
+      return idx >= 0 ? idx : null;
+    };
+    const candidateRank = rankOf(zone);
+    if (candidateRank == null) return true;
+    let floor = -Infinity;
+    baselineZones.forEach((z) => {
+      const r = rankOf(z);
+      if (r != null && r > floor) floor = r;
+    });
+    return candidateRank > floor;
+  }
+
+  /**
    * Check if a challenge zone is achievable given current participant HR.
    * Used to prevent starting structurally impossible challenges.
    * @param {string} targetZone - Zone the challenge requires
@@ -545,6 +586,13 @@ export class GovernanceEngine {
       const targetIdx = zoneDowngrades.indexOf(normalizeZoneId(targetZone));
       if (targetIdx >= 0 && targetIdx < zoneDowngrades.length - 1) {
         const downgrade = zoneDowngrades[targetIdx + 1];
+        // Never downgrade onto (or below) the policy's baseline zone. The
+        // baseline already holds everyone there to keep the video playing, so
+        // a "warm → active" downgrade completed in ~100ms and was recorded as
+        // a won challenge (2026-10-09 Game Cycling and 15 sessions before it).
+        if (!this._isAboveBaselineZone(downgrade)) {
+          return { feasible: false, reason: `Only ${achievableCount}/${requiredCount} within ${FEASIBILITY_MARGIN_BPM} BPM of ${targetZone}; ${downgrade} is the baseline` };
+        }
         const downResult = this._checkChallengeFeasibility(downgrade, rule, activeParticipants);
         if (downResult.feasible) {
           return { feasible: false, suggestedZone: downgrade, reason: `${targetZone} not achievable, downgraded to ${downgrade}` };
@@ -860,6 +908,8 @@ export class GovernanceEngine {
         id: activeChallenge.id,
         type: 'cycle',
         status: activeChallenge.status,
+        paused: Number.isFinite(activeChallenge.pausedAt) || this._timersPaused,
+        pauseReason: activeChallenge.pauseReason || null,
         rider: { id: activeChallenge.rider, name: riderName },
         cycleState: publishedState,
         sensorUnavailable: Boolean(activeChallenge.sensorUnavailable),
@@ -895,7 +945,7 @@ export class GovernanceEngine {
 
     const expiresAt = Number.isFinite(activeChallenge.expiresAt) ? activeChallenge.expiresAt : null;
     const startedAt = Number.isFinite(activeChallenge.startedAt) ? activeChallenge.startedAt : null;
-    const paused = Boolean(activeChallenge.pausedAt);
+    const paused = Number.isFinite(activeChallenge.pausedAt) || this._timersPaused;
     // While paused, expiresAt is frozen at a stale absolute value — the real
     // remaining time is banked in pausedRemainingMs (see the freeze-resume
     // branch in evaluate()). Reading expiresAt - now here would keep counting
@@ -904,7 +954,8 @@ export class GovernanceEngine {
     if (paused && Number.isFinite(activeChallenge.pausedRemainingMs)) {
       remainingSeconds = Math.max(0, Math.round(activeChallenge.pausedRemainingMs / 1000));
     } else if (expiresAt != null) {
-      remainingSeconds = Math.max(0, Math.round((expiresAt - now) / 1000));
+      const clockNow = this._timersPaused && Number.isFinite(this._pausedAt) ? this._pausedAt : now;
+      remainingSeconds = Math.max(0, Math.round((expiresAt - clockNow) / 1000));
     }
     let totalSeconds = null;
     if (Number.isFinite(activeChallenge.timeLimitSeconds)) {
@@ -930,6 +981,11 @@ export class GovernanceEngine {
       actualCount: summary && summary.actualCount != null ? summary.actualCount : null,
       metUsers: Array.isArray(summary && summary.metUsers) ? [...summary.metUsers] : [],
       missingUsers: Array.isArray(summary && summary.missingUsers) ? [...summary.missingUsers] : [],
+      // D5: riders in the zone whose hold has not completed yet (still in
+      // missingUsers — the display layer shows them as "holding").
+      holding: Array.isArray(summary && summary.holding) ? [...summary.holding] : [],
+      holdRemainingMs: Number.isFinite(summary?.holdRemainingMs) ? summary.holdRemainingMs : null,
+      holdProgressByUser: structuredClone(summary?.holdProgressByUser || {}),
       remainingSeconds,
       totalSeconds,
       startedAt,
@@ -943,6 +999,7 @@ export class GovernanceEngine {
       stepsPerMinute: summary?.stepsPerMinute ?? null,
       sensorOnline: summary?.online ?? null,
       reward: activeChallenge.reward || null,
+      pauseReason: activeChallenge.pauseReason || null,
       paused
     };
   }
@@ -1187,10 +1244,19 @@ export class GovernanceEngine {
             const armSeconds = Number(entry.arm_seconds ?? 30);
             const armMinRpm = Number(entry.arm_min_rpm ?? 30);
             const tripAfterSeconds = Number(entry.trip_after_seconds ?? 10);
+            const windowSeconds = Number(entry.window_seconds ?? 10);
+            const movingMinRpm = Number(entry.moving_min_rpm ?? armMinRpm);
+            // The zone that excuses a stop. `none`/false/null switches the
+            // alternative off, leaving a pure RPM floor.
+            const rawOrZone = entry.or_zone === undefined ? 'active' : entry.or_zone;
+            const orZone = rawOrZone && String(rawOrZone).toLowerCase() !== 'none'
+              ? String(rawOrZone).toLowerCase()
+              : null;
             const positive = (value) => Number.isFinite(value) && value > 0;
-            if (!equipment || !positive(armSeconds) || !positive(armMinRpm) || !positive(tripAfterSeconds)) {
+            if (!equipment || !positive(armSeconds) || !positive(armMinRpm) || !positive(tripAfterSeconds)
+              || !positive(windowSeconds) || !positive(movingMinRpm)) {
               getLogger().warn('governance.cadence_floor.config_rejected', {
-                policyId, requirementIndex, equipment, armSeconds, armMinRpm, tripAfterSeconds,
+                policyId, requirementIndex, equipment, armSeconds, armMinRpm, tripAfterSeconds, windowSeconds, movingMinRpm,
               });
               return null;
             }
@@ -1201,6 +1267,9 @@ export class GovernanceEngine {
               armSeconds,
               armMinRpm,
               tripAfterSeconds,
+              windowSeconds,
+              movingMinRpm,
+              orZone,
               enabled: entry.enabled !== false,
               requireRiderHr: entry.require_rider_hr !== false,
               label: entry.label ? String(entry.label) : null,
@@ -1497,30 +1566,32 @@ export class GovernanceEngine {
   }
 
   _setPhase(newPhase, evalContext = null) {
+    // A cause can change while playback stays locked. Keep historical evidence
+    // scoped to that cause, without recapturing live HR on every evaluation.
+    const challenge = this.challengeState?.activeChallenge;
+    const zones = evalContext?.userZoneMap || this._latestInputs?.userZoneMap || {};
+    const unmet = this.requirementSummary?.requirements?.find((requirement) => !requirement.satisfied);
+    const challengeOwns = !unmet && challenge?.status === 'failed';
+    const missing = challengeOwns ? challenge.summary?.missingUsers : unmet?.missingUsers;
+    const participantId = missing?.[0] || Object.keys(zones)[0] || null;
+    const reason = newPhase === 'pending' ? 'startup_gate'
+      : newPhase === 'locked' && challengeOwns ? 'challenge_failed'
+      : newPhase === 'locked' || newPhase === 'warning' ? 'requirements_not_met' : null;
+    const startup = newPhase === 'unlocked' && this.phase === 'pending'
+      && this._playbackEvidence?.reason === 'startup_gate' && this._playbackEvidence?.participantId;
+    if (!startup && (this.phase !== newPhase || (reason && this._playbackEvidence?.reason !== reason))) {
+      this._playbackEvidence = this._capturePlaybackEvidence(
+        participantId, zones[participantId] || null, reason, challengeOwns ? challenge.id : null,
+        challengeOwns ? challenge.zone || null
+          : newPhase === 'locked' || newPhase === 'warning' ? (unmet?.zone || unmet?.orZone || null)
+          : zones[participantId] || null
+      );
+      this._invalidateStateCache();
+    }
     if (this.phase !== newPhase) {
       const oldPhase = this.phase;
       const now = this._now();
       this.phase = newPhase;
-      // Explanation evidence is a historical snapshot, not a live HR series.
-      const challenge = this.challengeState?.activeChallenge;
-      const zones = evalContext?.userZoneMap || this._latestInputs?.userZoneMap || {};
-      const unmet = this.requirementSummary?.requirements?.find(r => !r.satisfied);
-      const missing = challenge?.status === 'failed' ? challenge.summary?.missingUsers : unmet?.missingUsers;
-      const participantId = missing?.[0] || Object.keys(zones)[0] || null;
-      const startup = newPhase === 'unlocked' && oldPhase === 'pending'
-        && this._playbackEvidence?.reason === 'startup_gate' && this._playbackEvidence?.participantId;
-      if (!startup) {
-        this._playbackEvidence = this._capturePlaybackEvidence(
-          participantId, zones[participantId] || null,
-          newPhase === 'pending' ? 'startup_gate'
-            : newPhase === 'locked' && challenge?.status === 'failed' ? 'challenge_failed'
-            : newPhase === 'locked' || newPhase === 'warning' ? 'requirements_not_met' : null,
-          challenge?.id || null,
-          challenge?.status === 'failed' ? (challenge.zone || null)
-            : newPhase === 'locked' || newPhase === 'warning' ? (unmet?.zone || null)
-            : zones[participantId] || null
-        );
-      }
       this._invalidateStateCache(); // Invalidate cache on phase change
 
       // Track warning/lock timing for production correlation
@@ -1537,6 +1608,7 @@ export class GovernanceEngine {
         const cooldownSeconds = Number(this.config?.warning_cooldown_seconds);
         if (Number.isFinite(cooldownSeconds) && cooldownSeconds > 0) {
           this._warningCooldownUntil = now + cooldownSeconds * 1000;
+          this._cooldownSuppressionLogged = false;
         }
       }
 
@@ -1611,7 +1683,7 @@ export class GovernanceEngine {
         );
         logger.info('governance.lock_triggered', {
           contentId: this.media?.id,
-          reason: this.challengeState?.activeChallenge?.status === 'failed' ? 'challenge_failed' : 'requirements_not_met',
+          reason: challengeOwns ? 'challenge_failed' : 'requirements_not_met',
           timeSinceWarningMs: timeSinceWarning,
           participantStates: this._getParticipantStates(evalContext),
           subjects: lockCls.subjects,
@@ -1802,7 +1874,8 @@ export class GovernanceEngine {
    * Pause governance timers during playback stalls.
    * Preserves remaining time so countdown can resume accurately.
    */
-  _pauseTimers() {
+  _pauseTimers(reason = 'transport') {
+    this._timerPauseReasons.add(reason);
     if (this._timersPaused) return;
     this._timersPaused = true;
     this._pausedAt = this._now();
@@ -1825,11 +1898,12 @@ export class GovernanceEngine {
    * countdown, the active HR challenge timer, the cycle tick clock, the warning/
    * lock stopwatches, and the next-challenge schedule.
    */
-  _resumeTimers() {
-    if (!this._timersPaused) return;
+  _resumeTimers(reason = 'transport') {
+    this._timerPauseReasons.delete(reason);
+    if (!this._timersPaused || this._timerPauseReasons.size) return;
     this._timersPaused = false;
 
-    const pauseDuration = this._pausedAt ? this._now() - this._pausedAt : 0;
+    const pauseDuration = Number.isFinite(this._pausedAt) ? this._now() - this._pausedAt : 0;
     this._pausedAt = null;
     this._remainingMs = null;
 
@@ -1857,10 +1931,14 @@ export class GovernanceEngine {
     if (Number.isFinite(this._warningCooldownUntil)) this._warningCooldownUntil += delta;
 
     const cs = this.challengeState || {};
-    if (Number.isFinite(cs.nextChallengeAt)) cs.nextChallengeAt += delta;
-
     const active = cs.activeChallenge;
-    if (active) {
+    // A floor suspension already banks this entire interval, including any
+    // nested playback pause. Shift challenge clocks exactly once on floor resume.
+    const floorSuspended = active?.pauseReason === 'floor_unmet';
+    if (!floorSuspended && Number.isFinite(cs.nextChallengeAt)) cs.nextChallengeAt += delta;
+
+    if (active && !floorSuspended) {
+      Object.keys(active.zoneHold || {}).forEach((id) => { active.zoneHold[id] += delta; });
       // HR challenge anchors
       if (Number.isFinite(active.expiresAt)) active.expiresAt += delta;
       if (Number.isFinite(active.startedAt)) active.startedAt += delta;
@@ -1883,12 +1961,12 @@ export class GovernanceEngine {
    */
   setPlaybackPaused(paused) {
     const next = Boolean(paused);
-    if (next === this._timersPaused) return;
+    if (next === this._timerPauseReasons.has('playback')) return;
     if (next) {
-      this._pauseTimers();
+      this._pauseTimers('playback');
       this._updateGlobalState?.();
     } else {
-      this._resumeTimers();
+      this._resumeTimers('playback');
       this._invalidateStateCache?.();
       this._triggerPulse?.();
     }
@@ -1929,6 +2007,16 @@ export class GovernanceEngine {
       this._unsubscribeRecovered();
       this._unsubscribeRecovered = null;
     }
+  }
+
+  /**
+   * Forget per-session alarm memory (the inert-requirement alarm is "once per
+   * requirement per SESSION"). Called from FitnessSession.reset() at session
+   * end — NOT from reset(), which also runs mid-session in evaluate()'s
+   * no-policy branch and would let the alarm fire again within one session.
+   */
+  resetSessionAlarms() {
+    this._requirementLiveness = null;
   }
 
   reset() {
@@ -1975,9 +2063,11 @@ export class GovernanceEngine {
     };
     this._lastEvaluationTs = null;
     this._timersPaused = false;
+    this._timerPauseReasons = new Set();
     this._pausedAt = null;
     this._remainingMs = null;
     this._warningCooldownUntil = null;
+    this._cooldownSuppressionLogged = false;
     this._activeRequirementIds.clear();
     this._cadenceFloorState.clear();
     this._unattendedPolicyState = { mediaId: this.media?.id ?? null, active: false, startupSatisfied: false };
@@ -2061,9 +2151,11 @@ export class GovernanceEngine {
     };
     this._lastEvaluationTs = null;
     this._timersPaused = false;
+    this._timerPauseReasons = new Set();
     this._pausedAt = null;
     this._remainingMs = null;
     this._warningCooldownUntil = null;
+    this._cooldownSuppressionLogged = false;
     this._stateCache = null;
     this._activeRequirementIds.clear();
     this._cadenceFloorState.clear();
@@ -2168,12 +2260,17 @@ export class GovernanceEngine {
     }
 
     const emit = (cue, token, extra = {}) => {
-      getLogger().sampled('governance.audio_cue.fired', {
-        cueId: cue.id,
-        trigger: cue.trigger,
-        token,
-        ...extra
-      }, { maxPerMinute: 12, aggregate: true });
+      // The cue is recomputed on every state compose (~4/s) with the same
+      // token; the consumer dedupes by token and plays it once, so log it once.
+      if (token !== this._lastLoggedCueToken) {
+        this._lastLoggedCueToken = token;
+        getLogger().info('governance.audio_cue.fired', {
+          cueId: cue.id,
+          trigger: cue.trigger,
+          token,
+          ...extra
+        });
+      }
       return { cueId: cue.id, trigger: cue.trigger, sound: cue.sound, duckTo: cue.duckTo, volume: cue.volume, token };
     };
 
@@ -2342,7 +2439,10 @@ export class GovernanceEngine {
           && this.phase !== 'unlocked' && this.phase !== 'warning')
         || (challengeSnapshot?.type === 'cycle'
             && challengeSnapshot?.cycleState === 'locked'
-            && !challengeSnapshot?.sensorUnavailable),
+            && !challengeSnapshot?.sensorUnavailable
+            // Only the floor backgrounds a cycle lock; a playback pause
+            // (voice memo, stall) freezes its clock but keeps it locking.
+            && challengeSnapshot?.pauseReason !== 'floor_unmet'),
       challengePaused: challengeSnapshot ? Boolean(challengeSnapshot.paused) : false,
       challenge: challengeSnapshot,
       audioDuck: this._computeAudioDuck(challengeSnapshot),
@@ -2352,8 +2452,35 @@ export class GovernanceEngine {
       challengeCountdownSeconds: challengeSnapshot ? challengeSnapshot.remainingSeconds : null,
       challengeCountdownTotal: challengeSnapshot ? challengeSnapshot.totalSeconds : null,
       nextChallenge: nextChallengeSnapshot,
+      unattendedStart: this._buildUnattendedStartSnapshot(now),
       hrInactiveUsers: Array.isArray(this._latestInputs?.hrInactiveUsers) ? [...this._latestInputs.hrInactiveUsers] : []
     };
+  }
+
+  /**
+   * D3 per-child start state for the display: who still has to reach the
+   * startup zone once, and how long they have. Null unless the unattended
+   * policy is active and the video has opened.
+   */
+  _buildUnattendedStartSnapshot(now) {
+    const state = this._unattendedPolicyState;
+    if (!state?.active || !state.startupSatisfied) return null;
+    const settings = this.config?.unattended_policy || {};
+    const zone = String(settings.startup_zone || 'hot').toLowerCase();
+    const zoneInfo = this._getZoneInfo(zone);
+    const children = {};
+    // state.children keeps departed children too (their start survives a
+    // rejoin), so this is NOT the live roster — consumers key by participant.
+    Object.entries(state.children || {}).forEach(([id, child]) => {
+      if (!child) return;
+      if (child.started) {
+        children[id] = { started: true, overdue: false, remainingMs: 0 };
+        return;
+      }
+      const remainingMs = Math.max(0, CHILD_START_WINDOW_MS - (now - child.since));
+      children[id] = { started: false, overdue: remainingMs === 0, remainingMs };
+    });
+    return { zone, zoneLabel: zoneInfo?.name || zone, children };
   }
 
   // Main evaluation loop, called periodically or on data change
@@ -2374,6 +2501,11 @@ export class GovernanceEngine {
 
     // Skip evaluation while timers are paused (playback stalled)
     if (this._timersPaused) {
+      const challenge = this.challengeState?.activeChallenge;
+      if (challenge && Array.isArray(activeParticipants) && userZoneMap) {
+        this._invalidateChallengeHolds(challenge, activeParticipants, userZoneMap);
+        this._invalidateStateCache();
+      }
       getLogger().debug('governance.evaluate.skipped_paused', { phase: this.phase });
       return;
     }
@@ -2457,10 +2589,11 @@ export class GovernanceEngine {
     // accidentally regress §4 by letting INACTIVE IDs leak into
     // base-requirement / min-participants evaluation.
     //
-    // The pulse path is intentionally skipped — getActiveParticipantState()
-    // is the canonical source there, and touching session.roster from this
-    // branch would violate the canonical-state invariant enforced by
-    // tests/isolated/domain/fitness/governance-canonical-state.unit.test.mjs.
+    // The pulse path is intentionally skipped — the participant SET comes from
+    // getActiveParticipantState() (canonical state), never from session.roster
+    // (enforced by tests/isolated/domain/fitness/governance-canonical-state.unit.test.mjs).
+    // The roster is read elsewhere only to decorate evidence/lock logs
+    // (_capturePlaybackEvidence, _getParticipantStates).
     if (this._lastEvaluatePath === 'snapshot'
         && Array.isArray(this.session?.roster)
         && activeParticipants.length > 0) {
@@ -2686,6 +2819,10 @@ export class GovernanceEngine {
       }
       
       this._clearTimers();
+      if (this.challengeState.activeChallenge) {
+        this._suspendChallengeForFloor(this.challengeState.activeChallenge, now, activeParticipants, userZoneMap);
+        this.challengeState.videoLocked = false;
+      }
       this._setPhase('pending', evalContext);
       // Capture latest inputs so UI (watchers) reflects the current empty state
       this._latestInputs = {
@@ -2769,8 +2906,9 @@ export class GovernanceEngine {
       this.meta.satisfiedOnce = true;
     }
 
-    if (challengeForcesRed) {
-      // Failed challenge -> locked (regardless of base requirements)
+    if (challengeForcesRed && allSatisfied) {
+      // Failed challenge -> locked, but only once the floor is satisfied; an unmet
+      // floor owns the phase (6bb1f83d42).
       if (this.timers.governance) clearTimeout(this.timers.governance);
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
@@ -2780,6 +2918,7 @@ export class GovernanceEngine {
       this.meta.satisfiedOnce = true;
       this.meta.deadline = null;
       this.meta.gracePeriodTotal = null;
+      this._cooldownSuppressionLogged = false;
       this._setPhase('unlocked', evalContext);
     } else if (!this.meta.satisfiedOnce) {
       // Never been satisfied -> pending
@@ -2793,6 +2932,17 @@ export class GovernanceEngine {
       if (inCooldown) {
         // Stay in current phase (unlocked) during cooldown
         // Don't clear satisfiedOnce so next eval after cooldown works normally
+        if (!this._cooldownSuppressionLogged) {
+          this._cooldownSuppressionLogged = true;
+          const missingUsers = [...new Set(summaries
+            .filter((summary) => !summary.satisfied)
+            .flatMap((summary) => (Array.isArray(summary.missingUsers) ? summary.missingUsers : [])))];
+          getLogger().info('governance.warning_suppressed', {
+            contentId: this.media?.id ?? null,
+            cooldownRemainingMs: this._warningCooldownUntil - now,
+            missingUsers
+          });
+        }
       } else {
         let graceSeconds = baseGraceSeconds;
         if (!Number.isFinite(graceSeconds) || graceSeconds <= 0) {
@@ -2803,6 +2953,8 @@ export class GovernanceEngine {
           this._setPhase('locked', evalContext);
         } else {
           // Start or continue grace period countdown
+          // A failed-challenge lock stays locked when the floor also drops:
+          // backgrounding the challenge must never open a fresh grace window.
           if (!Number.isFinite(this.meta.deadline) && this.phase !== 'locked') {
             this.meta.deadline = now + graceSeconds * 1000;
             this.meta.gracePeriodTotal = graceSeconds;
@@ -2844,7 +2996,7 @@ export class GovernanceEngine {
         this.swapCycleRider(_claim, { force: true });
       }
     }
-    this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext);
+    this._evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext, allSatisfied);
 
     // Once an activity requirement is latched, keep a low-rate clock running
     // even if both the mat and all HR broadcasters disappear. This ages SPM,
@@ -2908,8 +3060,24 @@ export class GovernanceEngine {
     const settings = this.config?.unattended_policy || {};
     const superusers = new Set((this.config?.superusers || []).map(normalizeName));
     const enabled = settings.enabled !== false && superusers.size > 0;
-    const adminPresent = classifySupervision({ participantIds: activeParticipants, supervisorIds: [...superusers] }).supervised;
-    const shouldApply = enabled && !adminPresent;
+    const guestIds = new Set(this._latestInputs?.guestIds || []);
+    // A supervisor counts only on their own strap: one picked in the guest
+    // picker (no PIN) is a guest, or a child could "pick Mom" to escape.
+    const adminPresent = classifySupervision({
+      participantIds: activeParticipants, supervisorIds: [...superusers], guestIds: [...guestIds],
+    }).supervised;
+    const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
+    const eligibleChildren = activeParticipants.filter((id) =>
+      !guestIds.has(id)
+      && !superusers.has(normalizeName(id))
+      && !exemptUsers.has(normalizeName(id))
+    );
+    // Guests never unlock governed content by themselves: a guest on the roster
+    // keeps the policy engaged even with no eligible child, and the start gate
+    // (which only eligible children can satisfy) keeps the video locked. An
+    // exempt-only roster gets the normal policy.
+    const guestPresent = activeParticipants.some((id) => guestIds.has(id));
+    const shouldApply = enabled && !adminPresent && (eligibleChildren.length > 0 || guestPresent);
     const state = this._unattendedPolicyState || {
       mediaId: this.media?.id ?? null,
       active: false,
@@ -2920,7 +3088,7 @@ export class GovernanceEngine {
       if (state.active) {
         getLogger().info('governance.unattended.stood_down', {
           contentId: this.media?.id ?? null,
-          reason: adminPresent ? 'admin_present' : 'disabled',
+          reason: adminPresent ? 'admin_present' : (eligibleChildren.length === 0 ? 'no_eligible_child' : 'disabled'),
         });
         this.challengeState.activeChallenge = null;
         this.challengeState.nextChallenge = null;
@@ -2928,10 +3096,13 @@ export class GovernanceEngine {
         this.challengeState.nextChallengeRemainingMs = null;
         this.challengeState.videoLocked = false;
       }
+      const mediaId = this.media?.id ?? null;
       this._unattendedPolicyState = {
-        mediaId: this.media?.id ?? null,
+        mediaId,
         active: false,
         startupSatisfied: false,
+        // A child who leaves and rejoins within the same video keeps their start.
+        children: state.mediaId === mediaId ? (state.children || {}) : {},
       };
       return policy;
     }
@@ -2955,13 +3126,22 @@ export class GovernanceEngine {
 
     const startupZone = String(settings.startup_zone || 'hot').toLowerCase();
     const startupRank = this._getZoneRank(startupZone);
-    const guestIds = new Set(this._latestInputs?.guestIds || []);
-    const exemptUsers = new Set((this.config?.exemptions || []).map(normalizeName));
-    const eligibleChildren = activeParticipants.filter((id) =>
-      !guestIds.has(id)
-      && !superusers.has(normalizeName(id))
-      && !exemptUsers.has(normalizeName(id))
-    );
+    const now = this._now();
+    const currentMediaId = this.media?.id ?? null;
+    if (state.mediaId !== currentMediaId) {
+      state.mediaId = currentMediaId;
+      state.startupSatisfied = false;
+      state.children = {};
+    }
+    state.children = state.children || {};
+    for (const id of eligibleChildren) {
+      const rank = this._getZoneRank(userZoneMap?.[id]);
+      const child = state.children[id] || (state.children[id] = { since: now, started: false });
+      if (!child.started && Number.isFinite(rank) && Number.isFinite(startupRank) && rank >= startupRank) {
+        child.started = true;
+        getLogger().info('governance.unattended.child_started', { contentId: state.mediaId, participantId: id });
+      }
+    }
     if (!state.startupSatisfied && Number.isFinite(startupRank)) {
       const achiever = eligibleChildren.find((id) => {
         const rank = this._getZoneRank(userZoneMap?.[id]);
@@ -2969,6 +3149,10 @@ export class GovernanceEngine {
       });
       if (achiever) {
         state.startupSatisfied = true;
+        // The 120s window counts from the video opening for children already present.
+        for (const child of Object.values(state.children)) {
+          if (!child.started) child.since = now;
+        }
         this._playbackEvidence = this._capturePlaybackEvidence(achiever, startupZone, 'startup_gate');
         getLogger().info('governance.unattended.startup_satisfied', {
           contentId: state.mediaId,
@@ -2979,7 +3163,9 @@ export class GovernanceEngine {
     }
     this._unattendedPolicyState = state;
 
-    if (!state.startupSatisfied) {
+    // No eligible child (guests only): nobody can hold the video open, even
+    // after it was opened by a child who has since left.
+    if (!state.startupSatisfied || eligibleChildren.length === 0) {
       return {
         ...policy,
         requirements: [
@@ -2990,6 +3176,18 @@ export class GovernanceEngine {
       };
     }
 
+    const overdue = eligibleChildren.filter((id) => !state.children[id]?.started
+      && now - state.children[id].since >= CHILD_START_WINDOW_MS);
+    for (const id of overdue) {
+      if (!state.children[id].overdueLogged) {
+        state.children[id].overdueLogged = true;
+        getLogger().info('governance.unattended.child_start_overdue', { contentId: state.mediaId, participantId: id });
+      }
+    }
+    const childStartRequirement = overdue.length
+      ? [{ id: '__unattended_child_start', type: 'unattended_startup', zone: startupZone, rule: 'all', eligibleChildren: overdue }]
+      : [];
+
     const intervalSeconds = Math.max(1, Math.round(Number(settings.challenge_interval_seconds) || 180));
     const timeAllowedSeconds = Math.max(1, Math.round(Number(settings.challenge_time_allowed_seconds) || 90));
     const configuredChallengeZones = Array.isArray(settings.challenge_zones)
@@ -2999,8 +3197,12 @@ export class GovernanceEngine {
       .map((zone) => String(zone || '').toLowerCase())
       .filter((zone) => Number.isFinite(this._getZoneRank(zone))))];
     const effectiveChallengeZones = challengeZones.length > 0 ? challengeZones : [startupZone];
+    // One or two children must all make it; with three or more, "most" keeps a
+    // single straggler from locking everyone (still named in missingUsers).
+    const groupRule = eligibleChildren.length >= 3 ? 'most' : 'all';
     return {
       ...policy,
+      requirements: [...(policy.requirements || []), ...childStartRequirement],
       challenges: [{
         id: '__unattended_zone_cycle',
         intervalRangeSeconds: [intervalSeconds, intervalSeconds],
@@ -3014,10 +3216,10 @@ export class GovernanceEngine {
           id: `__unattended_${zone}_${index}`,
           type: 'zone',
           zone,
-          rule: 'all',
+          rule: groupRule,
           timeAllowedSeconds,
           weight: 1,
-          label: `All ${zone}`,
+          label: `${groupRule === 'most' ? 'Most' : 'All'} ${zone}`,
         })),
       }],
     };
@@ -3181,7 +3383,10 @@ export class GovernanceEngine {
       if (definitionType === 'unattended_startup') {
         const zoneId = String(definition.zone || 'hot').toLowerCase();
         const requiredRank = this._getZoneRank(zoneId);
-        const metUsers = (definition.eligibleChildren || []).filter((id) => {
+        const children = definition.eligibleChildren || [];
+        const ruleAll = definition.rule === 'all';
+        const required = ruleAll ? children.length : 1;
+        const metUsers = children.filter((id) => {
           const rank = this._getZoneRank(userZoneMap?.[id]);
           return Number.isFinite(rank) && rank >= requiredRank;
         });
@@ -3192,13 +3397,13 @@ export class GovernanceEngine {
           zoneLabel: this._getZoneInfo(zoneId)?.name || zoneId,
           targetZoneId: zoneId,
           severity: requiredRank,
-          rule: 1,
-          ruleLabel: this._describeRule(1, 1),
-          requiredCount: 1,
+          rule: ruleAll ? 'all' : 1,
+          ruleLabel: this._describeRule(ruleAll ? 'all' : 1, required),
+          requiredCount: required,
           actualCount: metUsers.length,
           metUsers,
-          missingUsers: metUsers.length ? [] : [...(definition.eligibleChildren || [])],
-          satisfied: metUsers.length >= 1,
+          missingUsers: children.filter((id) => !metUsers.includes(id)),
+          satisfied: metUsers.length >= required,
         };
       } else if (definitionType !== 'zone') {
         summary = this.requirementTypes.evaluate(definitionType, definition, {
@@ -3207,6 +3412,7 @@ export class GovernanceEngine {
           equipmentRiderMap: this._latestInputs?.equipmentRiderMap || {},
           hrInactiveUsers: this._latestInputs?.hrInactiveUsers || [],
           activeParticipants,
+          userZoneMap: userZoneMap || {},
           timestamp: Date.now(),
         });
         if (summary?.justEngaged) justEngaged = true;
@@ -3289,6 +3495,15 @@ export class GovernanceEngine {
    * not to excuse them from continuing an activity they visibly started.
    * This is the ONE place a non-subject can land in `missingUsers`.
    *
+   * PEDAL OR GET ACTIVE. Once armed, the rider is in good standing while EITHER
+   * the rolling `windowSeconds` cadence is at least `movingMinRpm` (counted
+   * from the crank's revolution counter — see `_cadenceFloorWindowRpm`), OR
+   * their heart rate is in `orZone` or above. The idle clock starts from the
+   * last moment they were doing either, and trips after `tripAfterSeconds`. A
+   * trip clears only on the same terms, so a lone push of the pedal neither
+   * resets the clock nor clears the warning (2026-10-21: a rider stopped for
+   * 4.5 minutes nudging one revolution at a time and never locked).
+   *
    * READING CADENCE HERE IS SUBTLE. `_readCadenceDevice` reports
    * `connected: false` within rpmZero (~1.2s) of the rider stopping, because
    * `lastSignificantActivity` only advances on non-zero cadence. So
@@ -3307,11 +3522,16 @@ export class GovernanceEngine {
     equipmentRiderMap = {},
     activeParticipants = [],
     hrInactiveUsers = [],
+    userZoneMap = {},
     timestamp = Date.now(),
   } = {}) {
     const id = requirement.id || `cadence_floor:${requirement.equipment}`;
-    const state = this._cadenceFloorState.get(id)
-      || { riderId: null, armedMs: 0, armed: false, lastTs: null, zeroSince: null };
+    const fresh = (riderId) => ({
+      riderId, armedMs: 0, armed: false, lastTs: null,
+      samples: [], lastRev: null, lastRevDevice: null,
+      lastMotionTs: null, lastActiveTs: null, idleSince: null, tripped: false,
+    });
+    const state = this._cadenceFloorState.get(id) || fresh(null);
 
     const standDown = (reason) => {
       if (state.armed) {
@@ -3319,9 +3539,7 @@ export class GovernanceEngine {
           requirementId: id, equipment: requirement.equipment, riderId: state.riderId, reason,
         });
       }
-      this._cadenceFloorState.set(id, {
-        riderId: state.riderId, armedMs: 0, armed: false, lastTs: null, zeroSince: null,
-      });
+      this._cadenceFloorState.set(id, fresh(state.riderId));
       this._activeRequirementIds.delete(id);
       return null;
     };
@@ -3330,13 +3548,7 @@ export class GovernanceEngine {
 
     const riderId = equipmentRiderMap?.[requirement.equipment] || null;
     // Evidence belongs to the person who produced it. A new rider starts over.
-    if (state.riderId !== riderId) {
-      state.riderId = riderId;
-      state.armedMs = 0;
-      state.armed = false;
-      state.lastTs = null;
-      state.zeroSince = null;
-    }
+    if (state.riderId !== riderId) Object.assign(state, fresh(riderId));
     if (!riderId) return standDown('unclaimed');
     if ((this._latestInputs.guestIds || []).includes(riderId)) return standDown('guest-rider');
 
@@ -3354,27 +3566,31 @@ export class GovernanceEngine {
       // Hold the latch — a starved pipeline says nothing about this rider — but
       // never accrue evidence or count down toward a lock on data we don't have.
       state.lastTs = timestamp;
-      state.zeroSince = null;
+      state.idleSince = null;
+      // Unknown is not idle: the idle clock restarts when data resumes.
+      state.lastMotionTs = timestamp;
       this._cadenceFloorState.set(id, state);
       if (!state.armed) return null;
-      return this._cadenceFloorSummary(requirement, id, riderId, 0, { suspended: true });
+      return this._cadenceFloorSummary(requirement, id, riderId, { suspended: true, windowRpm: 0 });
     }
 
     const rpm = Number(cadence.rpm) || 0;
     // `connected: false` without a stall = the cadence device went quiet = stopped.
-    const movingAboveArm = Boolean(cadence.connected) && rpm >= requirement.armMinRpm;
+    const liveRpm = cadence.connected ? rpm : 0;
     const elapsed = state.lastTs == null ? 0 : Math.max(0, timestamp - state.lastTs);
     state.lastTs = timestamp;
 
+    const windowRpm = this._cadenceFloorWindowRpm(requirement, state, cadence, liveRpm, timestamp);
+
     if (!state.armed) {
-      if (movingAboveArm) state.armedMs += elapsed;
+      if (cadence.connected && rpm >= requirement.armMinRpm) state.armedMs += elapsed;
       if (state.armedMs >= requirement.armSeconds * 1000) {
         state.armed = true;
         getLogger().info('governance.cadence_floor.armed', {
           requirementId: id, equipment: requirement.equipment, riderId, armSeconds: requirement.armSeconds,
         });
       }
-      state.zeroSince = null;
+      state.idleSince = null;
       this._cadenceFloorState.set(id, state);
       if (!state.armed) {
         this._activeRequirementIds.delete(id);
@@ -3382,28 +3598,104 @@ export class GovernanceEngine {
       }
     }
 
-    const stopped = !cadence.connected || rpm <= 0;
-    if (stopped) {
-      if (state.zeroSince == null) state.zeroSince = timestamp;
-    } else {
-      state.zeroSince = null;
-    }
-    this._cadenceFloorState.set(id, state);
+    // Either alternative keeps the rider in good standing: pedaling (judged on
+    // the rolling window, so a lone push of the pedal cannot pass) or a heart
+    // rate in `orZone` or above (off the bike, doing something else).
+    const pedaling = windowRpm >= requirement.movingMinRpm;
+    const riderZone = userZoneMap?.[riderId] || null;
+    const orRank = requirement.orZone ? this._getZoneRank(requirement.orZone) : null;
+    const riderRank = riderZone ? this._getZoneRank(riderZone) : null;
+    const active = Number.isFinite(orRank) && Number.isFinite(riderRank) && riderRank >= orRank;
+    if (active) state.lastActiveTs = timestamp;
 
-    const stoppedMs = state.zeroSince == null ? 0 : timestamp - state.zeroSince;
-    const tripped = stoppedMs >= requirement.tripAfterSeconds * 1000;
-    const justEngaged = !this._activeRequirementIds.has(id);
-    this._activeRequirementIds.add(id);
-    if (tripped && justEngaged) {
-      getLogger().info('governance.cadence_floor.tripped', {
-        requirementId: id, equipment: requirement.equipment, riderId, stoppedMs,
+    if (pedaling || active) {
+      state.idleSince = null;
+    } else if (state.idleSince == null) {
+      // The idle clock runs from the last moment the rider was actually doing
+      // something — the last revolution, or the last sample in `orZone` — not
+      // from when the rolling average sank, which lags a clean stop.
+      const lastDoing = Math.max(state.lastMotionTs ?? -Infinity, state.lastActiveTs ?? -Infinity);
+      state.idleSince = Number.isFinite(lastDoing) ? Math.min(lastDoing, timestamp) : timestamp;
+      getLogger().info('governance.cadence_floor.idle_started', {
+        requirementId: id, equipment: requirement.equipment, riderId,
+        windowRpm: Math.round(windowRpm), riderZone, idleForMs: timestamp - state.idleSince,
       });
     }
-    return this._cadenceFloorSummary(requirement, id, riderId, rpm, { tripped, justEngaged, stoppedMs });
+
+    const stoppedMs = state.idleSince == null ? 0 : timestamp - state.idleSince;
+    const tripped = stoppedMs >= requirement.tripAfterSeconds * 1000;
+    if (tripped && !state.tripped) {
+      getLogger().info('governance.cadence_floor.tripped', {
+        requirementId: id, equipment: requirement.equipment, riderId, stoppedMs,
+        windowRpm: Math.round(windowRpm), riderZone,
+      });
+    } else if (!tripped && state.tripped) {
+      getLogger().info('governance.cadence_floor.cleared', {
+        requirementId: id, equipment: requirement.equipment, riderId,
+        // `resumed`: a transport stall restarted the idle clock.
+        reason: pedaling ? 'pedaling' : (active ? 'active' : 'resumed'), windowRpm: Math.round(windowRpm), riderZone,
+      });
+    }
+    state.tripped = tripped;
+    this._cadenceFloorState.set(id, state);
+
+    const justEngaged = !this._activeRequirementIds.has(id);
+    this._activeRequirementIds.add(id);
+    const status = pedaling ? 'pedaling' : (active ? 'active' : 'idle');
+    return this._cadenceFloorSummary(requirement, id, riderId, {
+      tripped, justEngaged, stoppedMs, windowRpm, status, riderZone,
+    });
   }
 
-  _cadenceFloorSummary(requirement, id, riderId, rpm, { tripped = false, suspended = false, justEngaged = false, stoppedMs = 0 } = {}) {
+  /**
+   * Rolling-window cadence for a cadence_floor, in RPM. Counts real crank
+   * revolutions from the sensor's cumulative counter when it sends one: the
+   * instantaneous RPM is held by the sensor for ~2.5s after every single push
+   * (a lone nudge reads ~41 RPM for three packets), so it cannot tell a rider
+   * from a fidget. Without a counter, averages the RPM samples in the window.
+   * Records `state.lastMotionTs` for the idle clock either way.
+   */
+  _cadenceFloorWindowRpm(requirement, state, cadence, liveRpm, timestamp) {
+    const windowMs = requirement.windowSeconds * 1000;
+    const revs = Number(cadence.revolutions);
+    const hasRevs = Number.isFinite(revs) && cadence.revolutions !== null;
+    const device = cadence.deviceId ?? null;
+    let turns = 0;
+    if (hasRevs) {
+      if (state.lastRev != null && state.lastRevDevice === device) {
+        // 16-bit counter. A jump this large between samples is a resync, not riding.
+        const delta = (revs - state.lastRev + 65536) % 65536;
+        turns = delta <= 64 ? delta : 0;
+      }
+      state.lastRev = revs;
+      state.lastRevDevice = device;
+      if (turns > 0) state.lastMotionTs = timestamp;
+    } else if (liveRpm > 0) {
+      state.lastMotionTs = timestamp;
+    }
+    state.samples.push({ ts: timestamp, turns, rpm: liveRpm, counted: hasRevs });
+    const cutoff = timestamp - windowMs;
+    while (state.samples.length && state.samples[0].ts <= cutoff) state.samples.shift();
+
+    // Mode by history, not by this sample: one reading without a counter must
+    // not flip a counted window to the RPM average and read a rider as stopped.
+    if (state.samples.some((s) => s.counted)) {
+      const total = state.samples.reduce((sum, s) => sum + (s.counted ? s.turns : 0), 0);
+      return (total * 60_000) / windowMs;
+    }
+    const rpmSamples = state.samples.filter((s) => !s.counted);
+    if (!rpmSamples.length) return 0;
+    return rpmSamples.reduce((sum, s) => sum + s.rpm, 0) / rpmSamples.length;
+  }
+
+  _cadenceFloorSummary(requirement, id, riderId, {
+    tripped = false, suspended = false, justEngaged = false, stoppedMs = 0,
+    windowRpm = 0, status = 'pedaling', riderZone = null,
+  } = {}) {
     const label = requirement.label || 'Keep pedaling';
+    const orZoneLabel = requirement.orZone
+      ? (this._getZoneInfo(requirement.orZone)?.name || requirement.orZone)
+      : null;
     return {
       id,
       type: 'cadence_floor',
@@ -3412,15 +3704,21 @@ export class GovernanceEngine {
       zone: null,
       zoneLabel: requirement.label || 'Pedaling',
       targetZoneId: null,
+      // The alternative that also satisfies this requirement — the display
+      // targets it so a rider off the bike sees how close their HR is.
+      orZone: requirement.orZone,
+      orZoneLabel,
+      riderZone,
       severity: requirement.armMinRpm,
       rule: 'minimum',
       ruleLabel: suspended ? 'Sensor unavailable' : label,
       requiredCount: 1,
       actualCount: tripped ? 0 : 1,
-      currentRate: rpm,
-      targetRate: requirement.armMinRpm,
+      currentRate: Math.round(windowRpm),
+      targetRate: requirement.movingMinRpm,
       riderId,
       stoppedMs,
+      status: suspended ? 'suspended' : status,
       metUsers: tripped ? [] : [riderId],
       // The one deliberate exception to "an exempt rider is never blamed" — see
       // the evaluator's header for why the evidence latch makes this fair.
@@ -3445,13 +3743,21 @@ export class GovernanceEngine {
     activeParticipants.forEach((participantId) => {
       const participantZoneId = userZoneMap[participantId];
       if (!participantZoneId) {
-        getLogger().warn('participant.zone.lookup_failed', {
+        // Runs every tick (~5-10Hz). A rider with no committed zone yet (just
+        // joined, untagged strap, a guest) used to log a warn on EVERY tick —
+        // ~50 per session for one guest. A non-subject can't satisfy or be
+        // blamed by steady-state, so its miss is debug; a subject's stays a
+        // warn, rate-limited.
+        // (Separate event names: sampling budgets are per event name, so a
+        // guest's misses must not spend a subject's warn budget.)
+        const subject = isSubject(participantId);
+        getLogger().sampled(subject ? 'participant.zone.lookup_failed' : 'participant.zone.lookup_failed_nonsubject', {
           key: participantId,
           availableKeys: Object.keys(userZoneMap),
           caller: 'GovernanceEngine._evaluateZoneRequirement'
-        });
+        }, { maxPerMinute: subject ? 6 : 1, aggregate: true, level: subject ? 'warn' : 'debug' });
       }
-      const participantRank = this._getZoneRank(participantZoneId) ?? 0;
+      const participantRank = this._getZoneRank(participantZoneId);
       // STEPPING COUNTS. A zone is a heart-rate band, and a heart-rate band is
       // a proxy for "is this person working" that fails exactly where it is
       // needed most: the youngest riders wear the least reliable straps, and a
@@ -3461,7 +3767,7 @@ export class GovernanceEngine {
       // onto someone with no pulse reading would put "Active" beside an empty
       // heart rate on every readout downstream. The credit stays here, in
       // governance, and says so in `metViaActivity`.
-      const met = participantRank >= requiredRank || activityMet.has(participantId);
+      const met = (Number.isFinite(participantRank) && participantRank >= requiredRank) || activityMet.has(participantId);
       if (met) {
         if (participantRank < requiredRank) metViaActivity.push(participantId);
         metUsers.push(participantId);
@@ -3514,6 +3820,7 @@ export class GovernanceEngine {
       ruleLabel: this._describeRule(rule, requiredCount),
       requiredCount,
       actualCount: subjectMetCount,
+      eligibleMetUsers: metUsers.filter(isSubject),
       ...(anchorMissing ? { reason: 'non_exempt_contributor_required' } : {}),
       metUsers,
       missingUsers,
@@ -3524,9 +3831,8 @@ export class GovernanceEngine {
   /**
    * Challenge zone scoring. Unlike steady-state, the numerator counts EVERY
    * eligible participant who met the zone (subjects + guests + exempt) — a guest
-   * can fill the group tally. Household challenges also need a contributing
-   * subject; pure guest scoring retains its standalone tally. When subjects
-   * are present they set requiredCount, and only subjects appear in missingUsers.
+   * can fill the group tally, and can satisfy it alone. When subjects are
+   * present they set requiredCount, and only subjects appear in missingUsers.
    */
   evaluateChallengeZone(challenge, activeParticipants, userZoneMap, totalCount) {
     const zoneId = challenge.zone;
@@ -3534,16 +3840,74 @@ export class GovernanceEngine {
     const requiredRank = this._getZoneRank(zoneId) ?? 0;
     const isSubject = this._buildSubjectFilter(activeParticipants);
 
-    const metUsers = [];
+    // A rider counts only after holding the zone for challenge_hold_seconds
+    // continuously within this challenge (0 = instant). Dropping out resets.
+    // A challenge may carry its own hold (set at start when it was already met
+    // — see _alreadyMetHoldSeconds); otherwise the configured hold applies.
+    const holdSetting = Number(challenge.holdSeconds ?? this.config?.challenge_hold_seconds ?? 0);
+    const holdMs = (Number.isFinite(holdSetting) && holdSetting >= 0 ? holdSetting : 0) * 1000;
+    const now = this._now();
+    challenge.zoneHold = challenge.zoneHold || {};
+    // The already-met hold (challenge.holdSeconds) exists only to keep a
+    // challenge from completing on its first tick. A rider whose HR straddles
+    // the zone boundary must not lose it to one sub-zone sample — that turned
+    // an instant win into a failed challenge and a video lock. Brief dips (up
+    // to challenge_hold_dip_grace_seconds, default 3) keep the hold; a longer
+    // one resets it. A configured challenge_hold_seconds keeps its strict
+    // reset-on-any-dip contract.
+    const dipGraceSetting = Number(this.config?.challenge_hold_dip_grace_seconds ?? 3);
+    const dipGraceMs = challenge.holdSeconds != null && Number.isFinite(dipGraceSetting) && dipGraceSetting > 0
+      ? dipGraceSetting * 1000
+      : 0;
+    challenge.zoneDipAt = challenge.zoneDipAt || {};
+    const inZone = [];
     activeParticipants.forEach((participantId) => {
-      const pRank = this._getZoneRank(userZoneMap[participantId]) ?? 0;
-      if (pRank >= requiredRank) metUsers.push(participantId);
+      const pRank = this._getZoneRank(userZoneMap[participantId]);
+      if (Number.isFinite(pRank) && pRank >= requiredRank) {
+        inZone.push(participantId);
+        delete challenge.zoneDipAt[participantId];
+        if (challenge.zoneHold[participantId] == null) challenge.zoneHold[participantId] = now;
+      } else if (dipGraceMs > 0 && challenge.zoneHold[participantId] != null) {
+        if (challenge.zoneDipAt[participantId] == null) challenge.zoneDipAt[participantId] = now;
+        if (now - challenge.zoneDipAt[participantId] <= dipGraceMs) {
+          inZone.push(participantId); // a brief dip: the hold keeps running
+        } else {
+          delete challenge.zoneHold[participantId];
+          delete challenge.zoneDipAt[participantId];
+        }
+      } else {
+        delete challenge.zoneHold[participantId];
+        delete challenge.zoneDipAt[participantId];
+      }
     });
+    // Riders who left the session lose their hold too.
+    Object.keys(challenge.zoneHold).forEach((id) => {
+      if (!activeParticipants.includes(id)) {
+        delete challenge.zoneHold[id];
+        delete challenge.zoneDipAt[id];
+      }
+    });
+    const holdProgressByUser = Object.fromEntries(inZone.map((id) => {
+      const elapsedMs = Math.min(holdMs, Math.max(0, now - challenge.zoneHold[id]));
+      return [id, { elapsedMs, remainingMs: holdMs - elapsedMs, totalMs: holdMs }];
+    }));
+    const metUsers = inZone.filter((id) => holdProgressByUser[id].remainingMs === 0);
+    const holding = inZone.filter((id) => !metUsers.includes(id));
+    // Time until the earliest in-progress hold completes, so the caller can
+    // pulse then instead of waiting for the challenge deadline.
+    const holdRemainingMs = holding.length
+      ? Math.max(0, holdMs - (now - Math.min(...holding.map((id) => challenge.zoneHold[id]))))
+      : null;
 
     const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
     const cls = this._classifyParticipants(activeParticipants);
-    const anchorMissing = (cls.subjects.length > 0 || cls.exempt.length > 0) && !metUsers.some(isSubject);
-    const satisfied = !anchorMissing && metUsers.length >= requiredCount;
+    // Owner ruling (2026-10-29): guests and exempt riders are never punished,
+    // but they DO count toward winning. A guest alone in the zone satisfies the
+    // challenge — there is no "a subject must also contribute" anchor here
+    // (that anchor cost three video locks while a household member rode as a
+    // guest). The steady-state anti-cheat in _evaluateZoneRequirement still
+    // stands: only subjects clear the always-on requirement.
+    const satisfied = metUsers.length >= requiredCount;
     const missingUsers = activeParticipants.filter((participantId) =>
       !metUsers.includes(participantId) && isSubject(participantId)
     );
@@ -3563,6 +3927,8 @@ export class GovernanceEngine {
         actualCount: metUsers.length,   // eligible numerator
         satisfied,
         metUsers,
+        holding,                        // in zone, hold not yet complete
+        holdMs,
         nonSubjectContributors,         // guests/exempt whose in-zone HR fed the tally
         missingUsers,                   // subjects-only
         subjects: cls.subjects,
@@ -3575,11 +3941,34 @@ export class GovernanceEngine {
       satisfied,
       metUsers,
       missingUsers,
+      holding,
+      holdRemainingMs,
+      holdProgressByUser,
       actualCount: metUsers.length,
-      ...(anchorMissing ? { reason: 'non_exempt_contributor_required' } : {}),
       requiredCount,
       zoneLabel: zoneInfo?.name || zoneId
     };
+  }
+
+  /**
+   * If a zone challenge would be satisfied the instant it starts and no hold is
+   * configured, return the hold (seconds) it must require instead —
+   * `challenge_already_met_hold_seconds` (default 10). Otherwise null.
+   * Pure: reads the zone map, never mutates the challenge.
+   */
+  _alreadyMetHoldSeconds(challenge, activeParticipants = [], userZoneMap = {}, totalCount = 0) {
+    if (!challenge?.zone) return null;
+    const configured = Number(this.config?.challenge_hold_seconds ?? 0);
+    if (Number.isFinite(configured) && configured > 0) return null;
+    const requiredRank = this._getZoneRank(challenge.zone) ?? 0;
+    const inZone = (activeParticipants || []).filter((id) => {
+      const rank = this._getZoneRank(userZoneMap?.[id]);
+      return Number.isFinite(rank) && rank >= requiredRank;
+    });
+    const requiredCount = this._normalizeChallengeRequiredCount(challenge.rule, totalCount, activeParticipants);
+    if (inZone.length < requiredCount) return null;
+    const setting = Number(this.config?.challenge_already_met_hold_seconds ?? 10);
+    return Number.isFinite(setting) && setting > 0 ? setting : 10;
   }
 
   /**
@@ -4089,8 +4478,8 @@ export class GovernanceEngine {
     // (e.g. phaseProgressMs >= maintainSeconds*1000) and would otherwise
     // re-emit the same state_transition every tick.
     // Terminal challenges are held published for a brief window (success) or
-    // about to clear (failed/abandoned); do not re-process their state machine.
-    if (active.status === 'success' || active.status === 'failed' || active.status === 'abandoned') {
+    // about to clear (failed); do not re-process their state machine.
+    if (CYCLE_TERMINAL_STATUSES.includes(active.status)) {
       return;
     }
 
@@ -4187,7 +4576,8 @@ export class GovernanceEngine {
       active._pausedAt = null;
     }
 
-    const dt = Number.isFinite(active._lastCycleTs) ? now - active._lastCycleTs : 0;
+    const dt = ctx.baseReqSatisfiedGlobal === false && !active.manualTrigger
+      ? 0 : (Number.isFinite(active._lastCycleTs) ? now - active._lastCycleTs : 0);
     active._lastCycleTs = now;
 
     if (active.cycleState === 'init') {
@@ -4508,7 +4898,69 @@ export class GovernanceEngine {
     return false;
   }
 
-  _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null) {
+  _suspendChallengeForFloor(challenge, now, activeParticipants, userZoneMap) {
+    if (challenge.pauseReason !== 'floor_unmet') {
+      challenge.pausedAt = now;
+      challenge.pauseReason = 'floor_unmet';
+      challenge.pausedRemainingMs = Number.isFinite(challenge.expiresAt)
+        ? Math.max(0, challenge.expiresAt - now) : null;
+      challenge._floorStepProgress = challenge.summary?.actualCount || 0;
+      getLogger().info('governance.challenge.paused', {
+        challengeId: challenge.id, type: challenge.type || 'zone', reason: 'floor_unmet',
+        status: challenge.status, remainingMs: challenge.pausedRemainingMs,
+      });
+    }
+    this._invalidateChallengeHolds(challenge, activeParticipants, userZoneMap);
+    challenge._lastCycleTs = now;
+  }
+
+  _invalidateChallengeHolds(challenge, activeParticipants, userZoneMap) {
+    const rank = this._getZoneRank(challenge.zone);
+    Object.keys(challenge.zoneHold || {}).forEach((id) => {
+      const currentRank = this._getZoneRank(userZoneMap[id]);
+      if (!activeParticipants.includes(id) || !Number.isFinite(currentRank) || currentRank < rank) {
+        delete challenge.zoneHold[id];
+        if (challenge.summary?.holdProgressByUser) delete challenge.summary.holdProgressByUser[id];
+        ['metUsers', 'holding'].forEach((key) => {
+          if (Array.isArray(challenge.summary?.[key])) {
+            challenge.summary[key] = challenge.summary[key].filter((userId) => userId !== id);
+          }
+        });
+      }
+    });
+  }
+
+  _resumeChallengeFromFloor(challenge, now) {
+    if (challenge.pauseReason !== 'floor_unmet') return;
+    const durationMs = now - challenge.pausedAt;
+    if (Number.isFinite(challenge.pausedRemainingMs)) challenge.expiresAt = now + challenge.pausedRemainingMs;
+    ['startedAt', 'completedAt', 'successPublishedAt', 'failPublishedAt'].forEach((key) => {
+      if (Number.isFinite(challenge[key])) challenge[key] += durationMs;
+    });
+    Object.keys(challenge.zoneHold || {}).forEach((id) => { challenge.zoneHold[id] += durationMs; });
+    // A completed challenge's follow-up is already scheduled; the floor pause
+    // must not count toward it.
+    if (Number.isFinite(this.challengeState.nextChallengeAt)) this.challengeState.nextChallengeAt += durationMs;
+    if (challenge.type === 'step') {
+      const mat = this._latestInputs?.activityMetricMap?.[challenge.equipment];
+      const count = challenge.metric === 'stomps' ? mat?.sessionStomps : mat?.sessionSteps;
+      challenge.startCount = (Number(count) || 0) - (challenge._floorStepProgress || 0);
+      // Offline time before the floor dropped still counts toward the sensor
+      // grace and the deadline extension; only the paused interval is excluded.
+      if (Number.isFinite(challenge.sensorUnavailableAt)) challenge.sensorUnavailableAt += durationMs;
+    }
+    challenge._lastCycleTs = now;
+    challenge.pausedAt = null;
+    challenge.pausedRemainingMs = null;
+    challenge.pauseReason = null;
+    delete challenge._floorStepProgress;
+    getLogger().info('governance.challenge.resumed', {
+      challengeId: challenge.id, type: challenge.type || 'zone', reason: 'floor_recovered',
+      status: challenge.status, durationMs,
+    });
+  }
+
+  _evaluateChallenges(activePolicy, activeParticipants, userZoneMap, zoneRankMap, zoneInfoMap, totalCount, evalContext = null, floorSatisfied = this.phase === 'unlocked') {
     const now = this._now();
     const challengeConfig = Array.isArray(activePolicy.challenges) && activePolicy.challenges.length
       ? activePolicy.challenges[0]
@@ -4524,28 +4976,14 @@ export class GovernanceEngine {
 
     if (this._cancelGuestChallenge(activeParticipants)) return;
 
-    // Guard: don't START new challenges if below minimum participant count.
-    // An already-active cycle challenge is preserved — it has its own rider
-    // eligibility model and shouldn't be wiped just because the zone roster
-    // hasn't filled in yet (this matters for manually-triggered cycles via
-    // the simulator popout, where the user clicks Trigger before all
-    // participants register a zone).
-    if (
-      Number.isFinite(challengeConfig.minParticipants) &&
-      challengeConfig.minParticipants > 0 &&
-      totalCount < challengeConfig.minParticipants
-    ) {
-      const activeIsCycle = this.challengeState.activeChallenge?.type === 'cycle';
-      if (!activeIsCycle) {
-        this.challengeState.activeChallenge = null;
-      }
+    // The start minimum prevents scheduling, not resumption of an existing
+    // obligation. Departures invalidate their own holds without clearing it.
+    if (Number.isFinite(challengeConfig.minParticipants)
+        && totalCount < challengeConfig.minParticipants) {
       this.challengeState.nextChallenge = null;
       this.challengeState.nextChallengeAt = null;
       this.challengeState.nextChallengeRemainingMs = null;
-      if (!activeIsCycle) {
-        return;
-      }
-      // Fall through so _evaluateCycleChallenge can tick the active cycle.
+      if (!this.challengeState.activeChallenge) return;
     }
 
     const chooseSelectionPayload = () => {
@@ -4762,6 +5200,21 @@ export class GovernanceEngine {
         return true;
       }
 
+      // A zone challenge at or below the baseline is satisfied the moment it
+      // starts; skip it the same way an infeasible one is skipped.
+      if (!forced && preview.type === 'zone' && !this._isAboveBaselineZone(preview.zone)) {
+        getLogger().warn('governance.challenge.skipped_baseline_zone', {
+          zone: preview.zone, selectionLabel: preview.selectionLabel || null
+        });
+        if (challengeConfig.selectionType === 'cyclic' && Number.isInteger(preview.cursorIndex)) {
+          this.challengeState.selectionCursor[challengeConfig.id] = preview.cursorIndex;
+        }
+        this.challengeState.nextChallenge = null;
+        queueNextChallenge(this._pickIntervalMs?.(challengeConfig.intervalRangeSeconds) || 60000);
+        this._schedulePulse(50);
+        return false;
+      }
+
       // Feasibility check: don't start challenges participants can't reach
       if (!forced && preview.type === 'zone' && !challengeConfig.skipFeasibility) {
         const feasibility = this._checkChallengeFeasibility(
@@ -4840,6 +5293,23 @@ export class GovernanceEngine {
       this.challengeState.nextChallengeRemainingMs = null;
       this.challengeState.videoLocked = false;
 
+      // A zone challenge the room ALREADY meets at its start would complete on
+      // the next tick (audit 2026-10-29: 6 of 12 completed 1–158ms after
+      // starting, cutting their own start sound). Never let one be satisfied at
+      // start: when no hold is configured, it asks the riders to HOLD the zone.
+      if ((preview.type || 'zone') === 'zone') {
+        const holdSeconds = this._alreadyMetHoldSeconds(this.challengeState.activeChallenge, activeParticipants, userZoneMap, totalCount);
+        if (holdSeconds != null) {
+          this.challengeState.activeChallenge.holdSeconds = holdSeconds;
+          getLogger().info('governance.challenge.already_met_at_start', {
+            zone: this.challengeState.activeChallenge.zone,
+            rule: this.challengeState.activeChallenge.rule,
+            selectionLabel: this.challengeState.activeChallenge.selectionLabel,
+            holdSeconds
+          });
+        }
+      }
+
       if (challengeConfig.selectionType === 'cyclic' && Number.isInteger(preview.cursorIndex)) {
         this.challengeState.selectionCursor[challengeConfig.id] = preview.cursorIndex;
       }
@@ -4874,7 +5344,12 @@ export class GovernanceEngine {
     };
 
     // --- Main Logic ---
-    const isGreenPhase = this.phase === 'unlocked';
+    // A manual start cannot override an unmet floor. Drop it rather than
+    // queue it, so it never fires unexpectedly minutes after recovery.
+    if (!floorSatisfied && this.challengeState.forceStartRequest) {
+      getLogger().info('governance.challenge.force_start_dropped', { reason: 'floor_unmet' });
+      this.challengeState.forceStartRequest = null;
+    }
     const forceStartRequest = this.challengeState.forceStartRequest;
 
     if (this.challengeState.activeChallenge) {
@@ -4883,6 +5358,25 @@ export class GovernanceEngine {
         this.challengeState.videoLocked = false;
       } else {
         const challenge = this.challengeState.activeChallenge;
+
+        if (!floorSatisfied) {
+          this._suspendChallengeForFloor(challenge, now, activeParticipants, userZoneMap);
+          // Recovery still observes the sensor/cadence, but cannot earn effort,
+          // expire a challenge, award a reward, or own playback over the floor.
+          if (challenge.type === 'cycle') {
+            if (this._updateCycleSensorRecovery(challenge, now, queueNextChallenge)) return;
+            const filtered = this._filteredCadenceFor(challenge.equipment, now);
+            this._evaluateCycleChallenge(challenge, {
+              equipmentRpm: filtered.rpm, cadenceFlags: filtered.flags,
+              activeParticipants, userZoneMap, baseReqSatisfiedGlobal: false,
+              baseReqSatisfiedForRider: false,
+            });
+          }
+          this.challengeState.videoLocked = false;
+          this._schedulePulse(500);
+          return;
+        }
+        this._resumeChallengeFromFloor(challenge, now);
 
         if (challenge.type === 'step') {
           const mat = this._latestInputs?.activityMetricMap?.[challenge.equipment];
@@ -4944,7 +5438,7 @@ export class GovernanceEngine {
           const riderRank = this._getZoneRank(riderZone) ?? 0;
           const baseReqMinRank = this._getBaseRequirementMinRank(activePolicy.baseRequirement);
           const baseReqSatisfiedForRider = riderRank >= baseReqMinRank;
-          const baseReqSatisfiedGlobal = this.phase === 'unlocked';
+          const baseReqSatisfiedGlobal = floorSatisfied;
 
           const ctx = {
             equipmentRpm,
@@ -5127,25 +5621,6 @@ export class GovernanceEngine {
         }
 
         if (challenge.status === 'pending') {
-          if (!isGreenPhase) {
-            if (!challenge.pausedAt) {
-              challenge.pausedAt = now;
-              challenge.pausedRemainingMs = Math.max(0, challenge.expiresAt - now);
-            }
-            challenge.summary = buildChallengeSummary(challenge);
-            this._schedulePulse(500);
-            return;
-          }
-
-          if (challenge.pausedAt) {
-            const resumeRemainingMs = Number.isFinite(challenge.pausedRemainingMs)
-              ? Math.max(0, challenge.pausedRemainingMs)
-              : Math.max(0, challenge.expiresAt - challenge.pausedAt);
-            challenge.expiresAt = now + resumeRemainingMs;
-            challenge.pausedAt = null;
-            challenge.pausedRemainingMs = null;
-          }
-
           challenge.summary = buildChallengeSummary(challenge);
 
           if (challenge.summary?.satisfied) {
@@ -5222,9 +5697,15 @@ export class GovernanceEngine {
             this._schedulePulse(500);
             return;
           } else {
-            this._schedulePulse(challenge.type === 'step'
+            const untilDeadline = challenge.type === 'step'
               ? Math.min(500, Math.max(50, challenge.expiresAt - now))
-              : Math.max(50, challenge.expiresAt - now));
+              : Math.max(50, challenge.expiresAt - now);
+            // A rider mid-hold completes before the deadline: pulse at the
+            // earliest hold end so completion is not late.
+            const holdRemainingMs = challenge.summary?.holdRemainingMs;
+            this._schedulePulse(Number.isFinite(holdRemainingMs)
+              ? Math.min(untilDeadline, Math.max(50, holdRemainingMs))
+              : untilDeadline);
             return;
           }
         } else {
@@ -5252,6 +5733,7 @@ export class GovernanceEngine {
               challenge.summary = buildChallengeSummary(challenge);
               this._awardStepChallengeBonus(challenge, challenge.summary, userZoneMap);
               this.challengeState.videoLocked = false;
+              this._setPhase('unlocked', evalContext);
               if (!challenge.historyRecorded) {
                 this.challengeState.challengeHistory.push({
                   id: challenge.id,
@@ -5321,10 +5803,10 @@ export class GovernanceEngine {
       ? { ...forceStartRequest.payload }
       : null;
 
-    // Challenges can only trigger in unlocked phase - they pause during warning
-    const canTriggerChallenge = isGreenPhase;
+    // A failed challenge may own a locked phase even with a satisfied floor.
+    const canTriggerChallenge = floorSatisfied;
 
-    if (!canTriggerChallenge && !shouldForceStart) {
+    if (!canTriggerChallenge) {
       if (Number.isFinite(this.challengeState.nextChallengeAt)) {
         this.challengeState.nextChallengeRemainingMs = Math.max(0, this.challengeState.nextChallengeAt - now);
         this.challengeState.nextChallengeAt = null;
@@ -5336,10 +5818,7 @@ export class GovernanceEngine {
     if (shouldForceStart) {
       // Only bypass feasibility if explicitly requested via payload.forced
       const isForced = forceStartRequest?.payload?.forced === true;
-      const started = startChallenge({ previewOverride: forcePreviewPayload, forced: isForced });
-      if (!started && !canTriggerChallenge) {
-        this._schedulePulse(1000);
-      }
+      startChallenge({ previewOverride: forcePreviewPayload, forced: isForced });
       return;
     }
     
@@ -5613,6 +6092,9 @@ export class GovernanceEngine {
    */
   _isCycleSwapAllowed(active) {
     if (!active || active.type !== 'cycle') return false;
+    // Terminal lives in `status`: success holds cycleState 'maintain' for the
+    // success-publish window, so cycleState alone would accept a swap there.
+    if (CYCLE_TERMINAL_STATUSES.includes(active.status)) return false;
     return ['init', 'ramp', 'maintain', 'locked'].includes(active.cycleState);
   }
 

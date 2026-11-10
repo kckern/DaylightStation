@@ -782,4 +782,22 @@ describe('mergeSearchResults', () => {
     expect(second.map((r) => r.id)).toEqual(['b', 'a']);
     expect(first).toEqual(firstSnapshot); // prev array untouched
   });
+
+  it('upgrades an existing entry for the same id when the newcomer scores higher (exact id match arriving last)', () => {
+    const weak = mergeSearchResults([], [
+      { id: 'plex:697495', title: 'Unrelated Title', score: 0.5 },
+      { id: 'plex:5', title: 'Mid', score: 3 },
+    ], '697495');
+    expect(weak.map((r) => r.id)).toEqual(['plex:5', 'plex:697495']);
+    const merged = mergeSearchResults(weak, [{ id: 'plex:697495', title: 'Unrelated Title', score: 1000 }], '697495');
+    expect(merged.map((r) => r.id)).toEqual(['plex:697495', 'plex:5']);
+    expect(merged).toHaveLength(2);
+  });
+
+  it('keeps the first copy when the later copy does not score higher', () => {
+    const a = mergeSearchResults([], [{ id: 'x', title: 'First', score: 1000 }], 'q');
+    const b = mergeSearchResults(a, [{ id: 'x', title: 'Second', score: 1 }], 'q');
+    expect(b).toHaveLength(1);
+    expect(b[0].title).toBe('First');
+  });
 });

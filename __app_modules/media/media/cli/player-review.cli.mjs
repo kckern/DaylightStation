@@ -6,7 +6,7 @@
  *
  * It launches the screen route with the ?goto surgical seek (see
  * frontend/src/lib/Player/reviewParams.js), waits for playback to land on target,
- * screenshots, and prints the live state (playhead, firing effect, debug-HUD text).
+ * screenshots, and prints the live state (playhead, firing effect).
  * Cue-by-id resolves to a concrete ?goto time using the SAME effective-cue math the
  * player uses (resolveEffectiveCues → gotoForCueId), so the sync offset + lead match.
  *
@@ -100,7 +100,8 @@ async function cmdCues(contentId) {
 
 async function drive({ contentId, goto, filter, label, waitUntilTime = null }) {
   const params = new URLSearchParams({ play: toContentId(contentId), goto: String(Math.floor(goto)) });
-  if (filter) { params.set('filter', '1'); params.set('filter-debug', '1'); }
+  // Certified titles filter by default; force on/off explicitly so the review is deterministic.
+  params.set('filter', filter ? '1' : '0');
   const url = `${HOST}/screen/${SCREEN}?${params}`;
   const out = flags.out
     ? pathResolve(process.cwd(), flags.out)
@@ -116,13 +117,11 @@ async function drive({ contentId, goto, filter, label, waitUntilTime = null }) {
   const read = () => page.evaluate(() => {
     const host = document.querySelector('.video-element, dash-video, video');
     const v = host?.shadowRoot?.querySelector('video') || host;
-    const hud = document.querySelector('.filter-debug-hud');
     return {
       t: v && Number.isFinite(v.currentTime) ? v.currentTime : null,
       paused: v ? v.paused : null,
       readyState: v ? v.readyState : 0,
       effect: document.querySelector('.filter-overlay [data-filter-effect]')?.getAttribute('data-filter-effect') || null,
-      hud: hud ? hud.innerText.replace(/\s+/g, ' ').trim() : null,
     };
   });
 
@@ -170,7 +169,6 @@ async function drive({ contentId, goto, filter, label, waitUntilTime = null }) {
   await browser.close();
 
   console.log(`✓ ${JSON.stringify({ target: Math.round(goto * 100) / 100, landed: state.t == null ? null : Math.round(state.t * 10) / 10, firing: state.effect, paused: state.paused })}`);
-  if (state.hud) console.log(`  HUD: ${state.hud}`);
   console.log(`  📸 ${out}`);
 }
 

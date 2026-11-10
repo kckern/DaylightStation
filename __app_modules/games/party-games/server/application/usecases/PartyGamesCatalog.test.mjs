@@ -11,14 +11,14 @@ const HOUSEHOLD_CFG = {
   defaults: { timer_seconds: 15 }, sounds: { pack: 'classic' },
 };
 
-function makeService({ cfg = HOUSEHOLD_CFG, casual = false, launch } = {}) {
+function makeService({ cfg = HOUSEHOLD_CFG, casual = false, launch, partyGames, rounds, experienceId = 'quiz' } = {}) {
   const userService = {
     getProfile: (id) => id === 'ghost_user' ? null : id === 'kckern'
       ? { username: id, display_name: 'User_1', group_label: 'Dad' }
       : { username: id, display_name: id.toUpperCase() },
   };
   const definitions = new Map([
-    ['quiz:night', { definition: { experience: { id: 'quiz', version: 1 } }, parts: { content: { artifact: {}, title: 'Fixture Night', description: 'Questions' } } }],
+    ['quiz:night', { definition: { experience: { id: experienceId, version: 1 }, party_games: partyGames, rounds }, parts: { content: { artifact: {}, title: 'Fixture Night', description: 'Questions' } } }],
     ['drawing:family', { definition: { experience: { id: 'drawing', version: 2 }, ...(casual ? { competition: false } : {}), ...(launch ? { launch } : {}) }, parts: { content: { artifact: {}, catalog: { title: 'Draw Together', description: 'Prompts' } } } }],
     ['solo:private', { definition: { experience: { id: 'solo', version: 1 } }, parts: { content: { artifact: {}, title: 'Not Party Games' } } }],
     ['quiz:broken', { definition: { experience: { id: 'quiz', version: 1 } }, parts: { content: { artifact: {} } } }],
@@ -29,8 +29,8 @@ function makeService({ cfg = HOUSEHOLD_CFG, casual = false, launch } = {}) {
     getContent: (id) => Object.fromEntries(Object.entries(definitions.get(id)?.parts.content || {}).filter(([key]) => key !== 'artifact')),
   };
   const manifests = new Map([
-    ['quiz@1', {
-      id: 'quiz', version: 1, theme: { id: 'quiz-show' },
+    [`${experienceId}@1`, {
+      id: experienceId, version: 1, theme: { id: 'quiz-show' },
       input_profile: { gamepad: 'host-and-buzzer' }, lifecycle_capabilities: ['teams', 'scores'],
       surfaces: [{ id: 'party-games', presenter: 'quiz-board', inputs: ['keyboard', 'gamepad'] }], setup: { kind: 'teams' },
     }],
@@ -93,4 +93,14 @@ it('projects the reusable definition launch preset and rejects malformed launch 
   expect(entry.launch).toEqual(launch);
   expect(entry.launch).not.toBe(launch);
   expect(makeService({casual:true,launch:{autostart:true,participants:'everyone'}}).listCatalog().find(e=>e.definition_id==='drawing:family')).toMatchObject({valid:false});
+});
+
+
+it('projects preset-specific anonymous teams and skips buzzers only for all-turns Jeopardy',()=>{
+ const partyGames={anonymous_teams:[{name:'Blue Team',color:'#3273dc'},{name:'Gold Team',color:'#e6b325'}],setup_revision:'guest-teams-v1'};
+ const entry=makeService({partyGames,experienceId:'jeopardy',rounds:[{mode:'turns'}]}).listCatalog()[0];
+ expect(entry.setup_profile).toMatchObject(partyGames);
+ expect(entry.input_profile.gamepad).toBe('host');
+ expect(makeService({partyGames,experienceId:'jeopardy',rounds:[{mode:'turns'},{mode:'hosted'}]}).listCatalog()[0].input_profile.gamepad).toBe('host-and-buzzer');
+ expect(makeService({partyGames:{anonymous_teams:[]}}).listCatalog()[0]).toMatchObject({valid:false});
 });

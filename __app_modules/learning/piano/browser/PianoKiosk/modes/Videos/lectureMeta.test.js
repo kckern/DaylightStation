@@ -1,6 +1,6 @@
 // lectureMeta.test.js
 import { describe, it, expect } from 'vitest';
-import { lectureContentId, lectureStatus, resumeSecondsFor } from './lectureMeta.js';
+import { isAtTail, lectureContentId, lectureStatus, resumeSecondsFor } from './lectureMeta.js';
 
 describe('lectureContentId', () => {
   it('prefers the plex field', () => {
@@ -60,5 +60,32 @@ describe('resumeSecondsFor', () => {
     // playhead of their own. Device-level watchSeconds sits at the tail — e.g.
     // another user on the shared kiosk nearly finished it. Must NOT leak.
     expect(resumeSecondsFor({ userWatched: false, userPercent: null, watchSeconds: 1790, duration: 1800 })).toBe(0);
+  });
+
+  // 2026-10-28: a 77.5s lecture held userPlayhead 78 but was never credited, so
+  // every open seeked to the end, fired `ended` at once and closed the player.
+  it('restarts an uncredited lecture whose playhead sits at the tail', () => {
+    expect(resumeSecondsFor({ userWatched: false, userPercent: 100, userPlayhead: 78, duration: 77.547 })).toBe(0);
+    expect(resumeSecondsFor({ userWatched: false, userPercent: 99, userPlayhead: 1790, duration: 1800 })).toBe(0);
+  });
+
+  it('still resumes a long lecture stopped short of the tail', () => {
+    expect(resumeSecondsFor({ userWatched: false, userPercent: 94, userPlayhead: 1700, duration: 1800 })).toBe(1700);
+    expect(resumeSecondsFor({ userWatched: false, userPercent: 50, userPlayhead: 40, duration: 77.547 })).toBe(40);
+  });
+});
+
+describe('isAtTail', () => {
+  it('is true within the last 5 seconds or the last 2%, whichever is longer', () => {
+    expect(isAtTail(73, 77.547)).toBe(true);
+    expect(isAtTail(72, 77.547)).toBe(false);
+    expect(isAtTail(1765, 1800)).toBe(true);
+    expect(isAtTail(1760, 1800)).toBe(false);
+  });
+
+  it('is false when the duration is unknown', () => {
+    expect(isAtTail(78, 0)).toBe(false);
+    expect(isAtTail(78, undefined)).toBe(false);
+    expect(isAtTail(78, NaN)).toBe(false);
   });
 });

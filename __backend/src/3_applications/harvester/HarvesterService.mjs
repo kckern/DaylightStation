@@ -16,6 +16,7 @@
 
 import { ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 import { ServiceNotFoundError } from '../common/errors/index.mjs';
+import { isFailedHarvest, describeHarvestFailure } from './ports/IHarvester.mjs';
 
 /**
  * Application service that orchestrates harvester operations
@@ -217,6 +218,16 @@ export class HarvesterService {
    */
   get(serviceId) {
     return this.#harvesters.get(serviceId);
+  }
+
+  /**
+   * Why a harvest result counts as a failure, for callers outside this layer.
+   *
+   * @param {HarvestResult} result - Result returned by harvest()
+   * @returns {string|null} Failure message, or null when the result is not a failure
+   */
+  describeFailure(result) {
+    return isFailedHarvest(result) ? describeHarvestFailure(result) : null;
   }
 
   // ==========================================================================

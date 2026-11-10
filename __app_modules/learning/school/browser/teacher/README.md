@@ -13,23 +13,33 @@ The dashboard the URL lands on is the **Today tab**. Reading down the page:
 
 | What you see | Component | File |
 |---|---|---|
-| "HOUSEHOLD SCHOOL / Today at a glance" heading + "Open action queue" | `TeacherConsole` | `TeacherConsole.jsx` |
+| The three-section nav (Home · Manage · Fix — ids `dashboard` / `curriculum` / `operations`; the backlog badge rides on Home). `queue` and `coins` keep their URLs, off the menu | `TeacherConsole` (`GLOBAL_NAV`, `SECTION_LABEL`) | `TeacherConsole.jsx` |
+| "Needs you" at the top of Home — the backlog strip and the "N subjects need a grown-up" list in one box; "Nothing needs you right now" when empty | `TodayTab` | `tabs/TodayTab.jsx` |
 | The "Today" card, its loading/empty/error frame | `TodayTab` → `PanelFrame` | `tabs/TodayTab.jsx`, `panels/PanelFrame.jsx` |
-| One collapsed row per learner (avatar, name, "6 / 6 correct", day dots, agenda icon, chevron) | `RosterEntry`, `DayDots` | `panels/RosterStrip.jsx` |
-| The expanded grid of lesson cards under a learner | `LearnerDayGrid` | `panels/RosterStrip.jsx` |
+| One collapsed row per learner (avatar, name, "n of m lessons done", the week's silver and green days, one chip per lesson — subject mark, short name, result: a percent or done / started / to do / stuck / needs you / to mark — then print · sheet · "See today's plan" / "Open X's day") | `RosterEntry`, `DayDots` | `panels/RosterStrip.jsx` (coins: one `schoolApi.earningsRoster()` read in `tabs/TodayTab.jsx`, passed down as `coinsByLearner`) |
+| The expanded grid of lesson cards under a learner — compact on Home (no poster column, no reserved heights: `.teacher-roster__details .teacher-lesson-card` in `Teacher.scss`) | `LearnerDayGrid` | `panels/RosterStrip.jsx` |
 | **One lesson card** — subject header band, breadcrumb, poster, title, footer chip/score/paper icons | `LessonCard` | `panels/RosterStrip.jsx` |
 | A card that says "This program can't start" / "Locked behind work nothing can reach" (red header/foot) | `LessonCard` (`teacher-lesson-card--faulted`) | `panels/RosterStrip.jsx` |
-| The muted excuse sentence / "Open Courses" / "School → Operations" link in a card's footer | `LessonCard` (`GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK`) | `panels/RosterStrip.jsx` |
+| The muted excuse sentence / "Open Courses" / "Open repair tools" / "Open the lesson" link in a card's footer | `LessonCard` (words: `GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK`; link: `grownUpHref`) | `panels/RosterStrip.jsx` (copy: `obligationCopy.js`; learner Operations link: `teacherUrl.js`'s `teacherLearnerOpsPath`) |
 | Green ✓ / red ✗ marks + percent | `ScoreMarks` | `panels/RosterStrip.jsx` |
 | The PDF / receipt square buttons | `ArtifactButtons` | `panels/RosterStrip.jsx` |
 | "CIVILIZATION" / "SCRIPTURE & GOSPEL" subject label + icon | `SubjectIdentity` | `CurriculumIdentity.jsx` (labels: `../home/subjects.js`, icons: `../home/icons/svg/*.svg`) |
-| "· N to review / N prints / N quiz requests →" strip | `BacklogStrip` | `tabs/TodayTab.jsx` |
-| "N subjects need a grown-up →" strip, above the roster | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
+| "· N to review / N prints / N quiz requests →" strip | `BacklogStrip` | `tabs/TodayTab.jsx` (counts: `useBacklog.js`) |
+| The backlog count on the rail badge, the phone tab bar and the dashboard strip (one count for all three, polled every 60 s, refreshed when the teacher acts) | `useBacklog` | `useBacklog.js` (called once, in `TeacherConsole.jsx`) |
+| The words and link on a "needs a grown-up" row or card (never a raw reason slug) | `GROWN_UP_ACTION`, `MUTED_EXCUSE_FALLBACK` | `obligationCopy.js` (read by `panels/RosterStrip.jsx`, whose links also feed `tabs/TodayTab.jsx`'s `GrownUpStrip`, and by `WorkspaceViews.jsx`) |
+| A teacher's name where a record stores their id ("Assigned by …", "decided by …") | `useActorName` | `useActorName.js` (falls back to the id, then "someone") |
+| "N subjects need a grown-up" strip, above the roster, with one "child · subject — problem →" link per affected subject | `GrownUpStrip` | `tabs/TodayTab.jsx` (tally and links reported up from `panels/RosterStrip.jsx`'s `onNeedsGrownUp`) |
+| **A child's page** (`/students/:id[/<section>]`) — one page, no tab strip (owner ruling 2026-10-29): the day (week strip, stepper, lessons) always on top, then one fold per program in `LEARNER_FOLDS` order (Reading · Cards · Sentences · Debriefs · Coins · Courses · History · Reports · Fix something). A fold mounts its view only when opened; the old tab URL opens that fold and scrolls to it; opening a fold writes its URL back with `replace`. Inside a fold each view's own heading is hidden. Below, "A student's X tab" means that fold | `LearnerPage` | `LearnerPage.jsx` (views from `WorkspaceViews.jsx`; styles `.teacher-learner-fold`) |
 | The Records tab, day record, session detail | `RecordsTab`, `WorkspaceViews` | `tabs/RecordsTab.jsx`, `WorkspaceViews.jsx`, `panels/LearnerDayView.jsx` |
+| "This week" grid above a student's Day (subjects × the seven days ending today) | `WeekGrid` | `panels/WeekGrid.jsx` (cells built by `learnerWeek.js`; starts after the Day's reads, three days at a time) |
+| "See the marked sheet" in the session inspector (the postview PDF, behind the `artifact.postview` step-up) | `MarkedSheet` | `WorkspaceViews.jsx` |
 | A student's **Reading** tab — the obligation strip, the three counts, and the READING NOW / FINISHED / SET ASIDE rows | `ReadingView` → `ReadingShelfPanel` | `WorkspaceViews.jsx`, `panels/ReadingShelfPanel.jsx` (covers/titles: `../books/BookCover.jsx`, `../books/bookPresentation.js`; day + duration: `../books/ShelfTile.jsx`) |
 | The `⋯` on a reading row, and the panel it opens (identity / what was read / state / danger / history) | `ReadingDetailPanel` | `panels/ReadingDetailPanel.jsx` (which verbs need a reason, and how the server's counted window and undo refusals are read: `panels/readingDetail.js`) |
 | A student's **Cards** tab (id `words`) — one table per card-ladder deck (term, gloss, state chip, stage, due, streak, tricky, excluded, typed answers), Reset / Mark mastered / Exclude / Re-grade, and the deck pool's Drop from pool | `WordsView` → `CardLadderWordsPanel` | `WorkspaceViews.jsx`, `panels/CardLadderWordsPanel.jsx` (enrollments filtered from the learner's `programs` — `cardLadderEnrollments`; writes through `cardLadderAdminApi.js`, a separate client from `teacherWorkspaceApi.js`/`schoolApi.js` because the admin routes are mounted at `/api/v1/school/card-ladder/admin`, not `/api/v1/school/teacher`) |
-| A student's **Coins** tab — the week's work (day + per-subject grid, rings), what each household earn rule pays for it (status, why not, amount), inline per-learner rates and multiplier; week stepper | `CoinsView` → `CoinsPanel` | `WorkspaceViews.jsx`, `panels/CoinsPanel.jsx`, `panels/earningsModel.js` (reads `GET /api/v1/earnings/preview/:id` via `schoolApi.earningsPreview`; rate edits `PUT /api/v1/school/teacher/economy/earn-rates/:id` through `useTeacherWrite` — see `__docs/reference/economy/economy.md` "Weekly earnings preview") |
+| Under each deck on the **Cards** tab: "— day by day", one row per opened day (right / graded, active time, missed words), opening into every answer in order (step, what they did, ✓/✗/—, correct answer, judge note) and the spoken takes | `CardLadderDaysPanel` | `panels/CardLadderDaysPanel.jsx` (words: `cardLadderDayLog.js`; reads `cardLadderAdminApi.days/day/recordingUrl` → `GET /card-ladder/admin/days|day|recording`) |
+| "Flashcard reviews" at the foot of the **Cards** tab — ordinary (not card-ladder) decks, one row per study session, opening into each card's faces and its Again/Hard/Good/Easy | `FlashcardReviewsPanel` | `panels/FlashcardReviewsPanel.jsx` (`schoolApi.flashcardTeacherReport` → `POST /flashcards/teacher-report`, whose decks carry `sessions`). Hidden for a learner with no ordinary flashcards and nothing reviewed |
+| A student's **Sentences** tab — sentence-ladder history: course chips, then each day's dictation/interpretation diffs, accuracy, "Answer shown", and recordings | `SentencesView` → `SentenceLadderHistoryPanel` → the child's own `ReviewPanel` | `WorkspaceViews.jsx`, `panels/SentenceLadderHistoryPanel.jsx`, `../Programs/SentenceLadder/ReviewPanel.jsx` (handed a `source`; reads `languageApi.teacherCourses/teacherHistory/teacherRecordingBlob` → `GET /sentence-ladder/teacher/:learnerId/*`). Styles: `.teacher-sentences` in `Teacher.scss` |
+| A student's **Coins** tab — the week's work (day + per-subject grid, rings), what each household earn rule pays for it (status, why not, amount), inline per-learner rates and multiplier; week stepper | `CoinsView` → `CoinsPanel` | `WorkspaceViews.jsx`, `panels/CoinsPanel.jsx`, `panels/earningsModel.js` (reads `GET /api/v1/earnings/preview/:id` via `schoolApi.earningsPreview`; rate edits `PUT /api/v1/school/teacher/economy/earn-rates/:id` through `useTeacherWrite` — see `__docs/reference/economy/economy.md` "Earn rules and the weekly preview") |
 | The global **Coins** section — every learner's week in silver, roster order (never ranked), pending and green days, each row opening that learner's Coins tab | `CoinsRosterView` → `CoinsRosterPanel` | `WorkspaceViews.jsx`, `panels/CoinsRosterPanel.jsx` (`GET /api/v1/earnings/preview`) |
 
 **Decides Done / Not started / Deferred / Blocked, and which session belongs
@@ -37,6 +47,21 @@ to which planned lesson:** (provenance — `unplanned`, `carriedOver` — is a f
 beside the status, never a status value) `learnerDay.js` (`joinLearnerDay`). Pure
 function, no fetching — this is where card status and titles are actually
 decided, *not* in the JSX. Status copy: `DAY_STATUS_LABEL` in the same file.
+
+**Links route in-app through one handler.** Console links are plain `<a href>`
+anchors; `TeacherConsole.jsx`'s `onLinkClick` takes a plain left-click on one
+(`consoleLinkTarget` in `teacherUrl.js` decides which clicks qualify) and
+navigates without a reload. Middle-click and long-press still open a new tab.
+A same-page query change dispatches `popstate` so views that keep query state
+resync.
+
+**Where Back goes from a session** is in its URL: `teacherSessionPath(…, { from,
+studyDay })` adds `?from=`, and the shell's `ORIGINS` map reads it —
+`today` (a dashboard lesson card → back to the dashboard with `?open=<learnerId>`,
+so that roster card is open again), `day` (with `studyDay` → that day),
+`queue` (the action queue), `operations` (stuck sessions). Anything else falls
+back to History. `?open=` itself is read by `RosterStrip.jsx` and kept in sync
+on popstate.
 
 **All styling:** `Teacher.scss` (single file, ~1500 lines). Card bands are
 `.teacher-lesson-card__header / __body / __foot`; grid is
@@ -85,9 +110,28 @@ The shelf carries one write of its own: **Add a book**
 (`teacherWorkspaceApi.addReadingForLearner`), offered on an `ok` shelf and on an
 EMPTY one — that is when a grown-up adds the first book — and on neither of the
 other three states. It asks for an ISBN and the child's own three doors
-(starting / partway with a page / finished on a day), judges the number with
-the panel's `checkIsbn` before the network, and is idempotent on a key the
-client mints.
+(starting / partway with a page / finished on a day, blank meaning today),
+judges the number with the panel's `checkIsbn` before the network, and is
+idempotent on a key the client mints. It looks the number up by itself
+(`useBookFacts`; a ten-digit number once typing settles), defaults a tracking
+toggle (check-ins / pages) from the server's suggestion, offers partway in page
+mode only, and warns without blocking when the child already logged the book
+today or is reading it now. Its body is `logBookPlan.js#newReadingBody`, the
+same one the "Log a book" sheet sends.
+
+**Log a book** (`panels/LogBookSheet.jsx`) is the console-wide quick log: one
+book, several children, today. It scans through the shared
+`frontend/src/lib/camera/useBarcodeScanner.js` (typed number always offered),
+then reads `useBookFacts`: the lookup first and the readers
+(`teacherWorkspaceApi.bookReaders`, `GET /books/:isbn/readers`) second,
+because the readers view takes the book's length from the cache the lookup
+fills. A reload re-reads the readers only and keeps the last answer on screen,
+and a rejected call is a failed read. What each child's save does is
+`panels/logBookPlan.js`: `planFor` decides new / open / done / skip from the
+server's row, and `performPlan` chains the entry and the finish on the served
+revision count. The batch is one `useTeacherWrite` run (`awaitClaim`, so a
+save waiting on the teacher picker stays one save). Each book is its own
+remounted step, so nothing carries over to the next book.
 
 The **detail** a row opens is a second read and nine writes, all under the same
 prefix (`teacherWorkspaceApi.readingDetail` / `updateReading` /

@@ -23,6 +23,10 @@ export function validateActivityPartyDefinition(definition) {
   const imageParticipants = definition?.presentation?.image_participants;
   if (imageParticipants != null && (!Array.isArray(imageParticipants) || imageParticipants.some((id) => !['string', 'number'].includes(typeof id) || String(id).trim() === ''))) errors.push('presentation.image_participants must contain participant ids');
   if (Array.isArray(imageParticipants) && new Set(imageParticipants.map(String)).size !== imageParticipants.length) errors.push('presentation.image_participants must be unique');
+  const readerParticipants = definition?.presentation?.reader_participants;
+  if (readerParticipants != null && (!Array.isArray(readerParticipants) || readerParticipants.some((id) => !['string', 'number'].includes(typeof id) || String(id).trim() === ''))) errors.push('presentation.reader_participants must contain participant ids');
+  if (Array.isArray(readerParticipants) && new Set(readerParticipants.map(String)).size !== readerParticipants.length) errors.push('presentation.reader_participants must be unique');
+  if (Array.isArray(readerParticipants) && Array.isArray(imageParticipants) && readerParticipants.some((id) => imageParticipants.map(String).includes(String(id)))) errors.push('a participant cannot be in both image_participants and reader_participants');
   if (definition?.guessing_music != null) {
     if (typeof definition.guessing_music !== 'object' || Array.isArray(definition.guessing_music)) errors.push('guessing_music must be an object');
     else {
@@ -92,6 +96,7 @@ export const activityPartyRuleModule = defineRuleModule({
         turnOrder: turns.order,
         cluesPerTurn: definition.clues_per_turn,
         imageParticipantIds: definition.presentation.image_participants,
+        readerParticipantIds: definition.presentation.reader_participants || [],
         historyIds: setup.charades_history_ids,
         seed: turns.rngState,
       });

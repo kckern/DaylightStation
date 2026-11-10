@@ -1,7 +1,8 @@
 // tests/live/adapter/harvesters/strava.live.test.mjs
-import { runHarvest, daysAgo, ACCEPTABLE_STATUSES } from './_test-helper.mjs';
+import { runHarvest, daysAgo, ACCEPTABLE_STATUSES, describeIfTokenWriter } from './_test-helper.mjs';
 
-describe('Strava Harvester Live', () => {
+// Each refresh rotates the Strava token; see describeIfTokenWriter.
+describeIfTokenWriter('Strava Harvester Live', () => {
   it('harvests recent activities', async () => {
     const result = await runHarvest('strava');
     expect(result.status).not.toBe('auth_error');

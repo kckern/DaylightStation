@@ -1,8 +1,8 @@
 // tests/unit/governance/GovernanceEngine-cycleStart.test.mjs
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() }),
-  getLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() })
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
+  default: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() }),
+  getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() })
 }));
 const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js");
 
@@ -64,14 +64,22 @@ describe('GovernanceEngine cycle challenge start', () => {
     expect(active.boostContributors instanceof Set).toBe(true);
   });
 
-  it('returns null when no eligible users available', () => {
+  it('rejects with equipment_not_found when the equipment has no catalog entry (no eligible users)', () => {
+    // Since 50a77af429 the start helper returns a { ok: false, reason } result
+    // instead of null so triggerChallenge can surface the specific reason.
     const selection = { ...sampleSelection(), equipment: 'nonexistent' };
-    expect(engine._startCycleChallenge(selection, {})).toBeNull();
+    expect(engine._startCycleChallenge(selection, {})).toEqual({ ok: false, reason: 'equipment_not_found' });
+  });
+
+  it('rejects with no_eligible_riders when the catalog entry has no eligible users', () => {
+    engine.session._deviceRouter.getEquipmentCatalog = () => [{ id: 'cycle_empty', eligible_users: [] }];
+    const selection = { ...sampleSelection(), equipment: 'cycle_empty' };
+    expect(engine._startCycleChallenge(selection, {})).toEqual({ ok: false, reason: 'no_eligible_riders' });
   });
 
   it('filters out riders on cooldown', () => {
     engine._cycleCooldowns = { user_2: nowValue + 5000, user_3: nowValue + 5000 };
-    expect(engine._startCycleChallenge(sampleSelection(), {})).toBeNull();
+    expect(engine._startCycleChallenge(sampleSelection(), {})).toEqual({ ok: false, reason: 'all_riders_on_cooldown' });
   });
 
   it('rider with expired cooldown is eligible', () => {

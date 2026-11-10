@@ -24,6 +24,13 @@ describe('finance-jev-replay', () => {
     expect(summary.disagreements).toEqual([['Fuel -> Shopping', 1]]);
   });
 
+  it('passes the tag descriptions to every judgement', async () => {
+    const judge = { judge: vi.fn(async () => ({ category: 'Fuel', confidence: 0.9, cjk: false })) };
+    const tagDescriptions = { Fuel: 'Gas stations' };
+    await runReplay({ transactions: [{ id: 'a', tagNames: ['Fuel'] }], validTags: TAGS, judge, tagDescriptions });
+    expect(judge.judge).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), TAGS, tagDescriptions);
+  });
+
   it('respects the limit', async () => {
     const judge = { judge: vi.fn(async () => ({ category: 'Fuel', confidence: 0.9, cjk: false })) };
     const transactions = Array.from({ length: 5 }, (_, i) => ({ id: i, description: 'Shell', tagNames: ['Fuel'] }));
@@ -75,12 +82,12 @@ describe('finance-jev-replay', () => {
 
   describe('parseArgs', () => {
     it('defaults', () => {
-      expect(parseArgs([])).toEqual({ period: null, limit: 200, floor: 0.8, household: null, help: false });
+      expect(parseArgs([])).toEqual({ period: null, limit: 200, floor: 0.8, household: null, descriptions: null, help: false });
     });
 
     it('reads every flag', () => {
-      expect(parseArgs(['--period', '2026-01-01', '--limit', '50', '--floor', '0.9', '--household', 'h2']))
-        .toEqual({ period: '2026-01-01', limit: 50, floor: 0.9, household: 'h2', help: false });
+      expect(parseArgs(['--period', '2026-01-01', '--limit', '50', '--floor', '0.9', '--household', 'h2', '--descriptions', '/tmp/d.yml']))
+        .toEqual({ period: '2026-01-01', limit: 50, floor: 0.9, household: 'h2', descriptions: '/tmp/d.yml', help: false });
     });
 
     it('recognises --help and -h', () => {

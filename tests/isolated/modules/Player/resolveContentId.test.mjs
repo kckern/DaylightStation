@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveMediaIdentity, resolveContentId } from '#frontend/modules/Player/utils/mediaIdentity.js';
+import { resolveMediaIdentity, resolveContentId } from '../../../../__capabilities/playback/browser/player/utils/mediaIdentity.js';
 
 describe('resolveMediaIdentity', () => {
 

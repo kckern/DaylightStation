@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { CastTargetProvider } from "./CastTargetProvider.jsx";
 import { DestinationLine } from "./DestinationLine.jsx";
@@ -40,6 +40,9 @@ describe('DestinationLine Escape ownership', () => {
     expect(screen.getByTestId('search-sentinel')).toBeVisible();
     expect(onBaseDismiss).not.toHaveBeenCalled();
 
+    // Closing the sheet hands Escape back to the base layer in an effect; press
+    // only once it has (an Escape in that gap was lost and the wait ran out).
+    await act(async () => {});
     fireEvent.keyDown(screen.getByTestId('search-sentinel'), { key: 'Escape' });
     await waitFor(() => expect(onBaseDismiss).toHaveBeenCalledTimes(1));
   });

@@ -27,6 +27,16 @@ function isUserScoped(item) {
 }
 
 /**
+ * True when `seconds` is within the last 5s (or last 2% of a long lecture) of
+ * `duration`. Resuming there plays nothing and ends the lecture on open. An
+ * unknown duration is never the tail.
+ */
+export function isAtTail(seconds, duration) {
+  if (!(duration > 0) || !Number.isFinite(seconds)) return false;
+  return duration - seconds <= Math.max(5, duration * 0.02);
+}
+
+/**
  * Where to open a lecture. A COMPLETED lecture (per the standard completion
  * gate — lectureUserStatus) restarts from 0: rewatching a done video must not
  * drop you at the tail. Progress/completion records are untouched — replaying
@@ -43,7 +53,9 @@ export function resumeSecondsFor(item) {
   // "finished" flag only ever produces a restart-from-zero, never a leak.
   const watched = isUserScoped(item) ? lectureUserStatus(item).watched : lectureStatus(item).watched;
   if (watched) return 0;
-  if (item?.userPlayhead != null) return item.userPlayhead;
+  // A playhead at the tail of an UNcredited lecture would seek to the end, fire
+  // `ended` on open and close the player — every time (2026-10-28).
+  if (item?.userPlayhead != null) return isAtTail(item.userPlayhead, num(item.duration)) ? 0 : item.userPlayhead;
   // Wave-3 J: no per-user record → start at the top. The device playhead
   // (watchSeconds/watchProgress) belonged to whoever used the kiosk last and
   // must never position someone else's playback.

@@ -69,3 +69,29 @@ it('rejects incomplete exhausted buckets instead of treating them as a new day',
  const [key,value]=[...h.records.entries()][0];delete value.policies.unattended.localDate;value.policies.unattended.spentMs=900000;h.records.set(key,value);
  await expect(h.service.observe({...h.req,sequence:2})).rejects.toThrow('Corrupt');
 });
+
+describe('one governed-child rule: not supervisor, not exempt, not guest',()=>{
+ it('meters a member rider who has no household profile',async()=>{
+  const h=harness();
+  const view=await h.service.observe({...h.req,sequence:1,participantIds:['member-rider']});
+  expect(view.policies[0].grant.ms).toBe(5000);
+ });
+ it('does not meter a roster of guests only',async()=>{
+  const h=harness();
+  const view=await h.service.observe({...h.req,sequence:1,participantIds:['visitor'],guestIds:['visitor']});
+  expect(view.policies[0].grant).toBeNull();expect(view.policies[0].spentMs).toBe(0);expect(view.supervised).toBe(false);
+ });
+ it('a supervisor assigned as a guest neither supervises nor resets the day',async()=>{
+  const h=harness();await h.service.observe({...h.req,sequence:1});
+  const joined=await h.service.observe({...h.req,sequence:2,participantIds:['child','parent'],guestIds:['parent'],previousGrantId:undefined});
+  expect(joined.supervised).toBe(false);
+  expect(joined.generation).toBe(1);
+  expect(joined.policies[0].spentMs).toBeGreaterThan(0);
+  expect(joined.policies[0].grant.ms).toBe(5000);
+ });
+ it('rejects malformed guestIds',async()=>{
+  const h=harness();
+  for(const guestIds of ['visitor',[1],['x'.repeat(101)],Array.from({length:101},(_,i)=>`g${i}`)])
+   await expect(h.service.observe({...h.req,sequence:1,guestIds})).rejects.toThrow(TypeError);
+ });
+});

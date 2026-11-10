@@ -8,7 +8,49 @@ import { createChessRouter } from "../api/chess.mjs";
 import { chessArchiveDayDir } from "../../portable/archivePaths.mjs";
 import { buildChessArchiveFilename } from "../adapters/persistence/ChessRecordNames.mjs";
 
-export function createChessRuntime({configService,dataService,rootLogger,server}) {
+function noteRung(rungLog, change) {
+  try { rungLog?.note?.(change); } catch { /* best-effort: never fails the write */ }
+}
+
+const addressingRung = (config) => {
+  const value = config?.addressing?.ladder?.unlocked_through;
+  return value === undefined ? null : value;
+};
+
+/**
+ * The two chess writes that can raise a rung, with the raise noted.
+ *
+ * `rungLog` is the piano's dated promotion log (`createPianoRungLog`, a
+ * `{ note({userId, game, ladder, from, to}) }`). Optional; when given, every
+ * raise of the chess match ladder (`ladder.yml unlocked_through`, zero-based)
+ * and of the chess addressing ladder (`config.yml
+ * addressing.ladder.unlocked_through`) is noted with its date. Detected at the
+ * writes themselves, so no ladder path can raise a rung unlogged. The note is
+ * best-effort and runs after the write: it can never fail or undo it.
+ */
+export function createChessRungLoggedWriters({ configService, dataService, rungLog = null }) {
+  const householdRung = () => addressingRung(configService.getHouseholdAppConfig(null, 'chess'));
+  return {
+    writeUserConfig(userId, data) {
+      const before = addressingRung(dataService.user.read('apps/chess/config', userId)) ?? householdRung();
+      const written = dataService.user.write('apps/chess/config', data, userId);
+      if (written !== false) {
+        noteRung(rungLog, { userId, game: 'chess', ladder: 'addressing', from: before, to: addressingRung(data) ?? householdRung() });
+      }
+      return written;
+    },
+    writeProgress(userId, progress) {
+      const before = dataService.user.read('apps/chess/ladder', userId)?.unlocked_through ?? null;
+      const written = dataService.user.write('apps/chess/ladder', progress, userId);
+      if (written !== false) {
+        noteRung(rungLog, { userId, game: 'chess', ladder: 'match', from: before, to: progress?.unlocked_through ?? null });
+      }
+      return written;
+    },
+  };
+}
+
+export function createChessRuntime({configService,dataService,rootLogger,server,rungLog = null}) {
   // Chess: server-side Stockfish behind a worker thread + household/user config layers.
   const chessEngine = createStockfishEngine({ logger: rootLogger.child({ module: 'chess-engine' }) });
   // A SECOND engine, never handicapped, for hints and analysis. Separate from
@@ -21,10 +63,11 @@ export function createChessRuntime({configService,dataService,rootLogger,server}
     logger: rootLogger.child({ module: 'chess-analyst' }),
   });
   server?.once?.('close', () => { chessEngine.dispose(); chessAnalyst.dispose(); });
+  const rungLoggedWriters = createChessRungLoggedWriters({ configService, dataService, rungLog });
   const chessConfigService = createChessConfigService({
     readHouseholdConfig: () => configService.getHouseholdAppConfig(null, 'chess'),
     readUserConfig: (userId) => dataService.user.read('apps/chess/config', userId) || {},
-    writeUserConfig: (userId, data) => dataService.user.write('apps/chess/config', data, userId),
+    writeUserConfig: rungLoggedWriters.writeUserConfig,
     logger: rootLogger.child({ module: 'chess-config' }),
   });
   const readChessLadderConfig = async (userId) => mergeLadderConfig(
@@ -34,7 +77,7 @@ export function createChessRuntime({configService,dataService,rootLogger,server}
   const chessLadderService = createChessLadderService({
     readConfig: readChessLadderConfig,
     readProgress: (userId) => dataService.user.read('apps/chess/ladder', userId) || null,
-    writeProgress: (userId, progress) => dataService.user.write('apps/chess/ladder', progress, userId),
+    writeProgress: rungLoggedWriters.writeProgress,
     logger: rootLogger.child({ module: 'chess-ladder' }),
   });
 

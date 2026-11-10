@@ -301,7 +301,7 @@ Five domains implement `IGoalProvider` in the initial rollout:
 
 ### FitnessGoalProvider
 
-**Data source:** `SessionService`, `FitnessProgressClassifier`
+**Data source:** `SessionService`, `FitnessPlayableService` (watched state, per the library completion rule)
 
 **Example goals and params:**
 

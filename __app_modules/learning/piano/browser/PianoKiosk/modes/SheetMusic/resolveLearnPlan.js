@@ -81,6 +81,7 @@ function authoredSegments(raw, score, ladder) {
       id, order: result.length + 1, inMeasure: start, outMeasure: end,
       printedMeasures: [measures[start]?.number, measures[end]?.number], playableParts,
       name: item.name ?? null,
+      authoredLadder: Boolean(segmentLadder),
       ...(segmentLadder ? { ladder: segmentLadder.ladder.map((rung) => (
         rung.mastery || rung.completion === 'tested-out' ? { ...rung, tempoPercent: 100, mastery: true } : rung
       )) } : {}),
@@ -123,6 +124,9 @@ const behaviorRung = (rung) => ({
 export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, category, piece, user, userPiece, score = {} } = {}) {
   const merged = [defaults, category, piece, user, userPiece].reduce(mergeSafe, {});
   const normalized = resolveSheetMusicConfig({ learn: merged }).learn;
+  const authoredLadder = !normalized.configFallback && [
+    ...(defaults === SHEET_MUSIC_DEFAULTS.learn ? [] : [defaults]), category, piece, user, userPiece,
+  ].some((layer) => isObject(layer) && Object.hasOwn(layer, 'ladder'));
   const configuredLadder = normalized.ladder.map((rung) => ({
     ...rung,
     ...(rung.mastery || rung.completion === 'tested-out' ? { tempoPercent: 100, mastery: true } : {}),
@@ -161,6 +165,7 @@ export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, catego
     navigation, segments, ladder, testOut, ...tempo,
     settings: { passages: normalized.passages, tempo: normalized.tempo, feedback: normalized.feedback },
     configFallback: normalized.configFallback || (Array.isArray(merged.segments) && authored == null),
+    authoredLadder,
   });
 }
 

@@ -146,6 +146,17 @@ const FAULT_REASONS = new Set(['program_unavailable', 'blocked_unreachable']);
  * module carries no window at all is not waiting for a date, it is waiting for
  * a date that will never exist.
  */
+/**
+ * A teacher hold (`planner.mjs` → `entry.remediation.held`): the open failure
+ * is past the retry cap, or has sat unretried for days, and the work now waits
+ * for a grown-up. Still the
+ * work in hand, so it keeps its place and its successors stay locked behind
+ * it, but it is offered only when nothing else in the subject is, and it is
+ * never owed — a child cannot clear it alone, and an item nobody can clear
+ * must not keep the day (and the games hanging off it) shut.
+ */
+const isTeacherHeld = (entry) => entry?.remediation?.held === true;
+
 const isTimeHeld = (entry) => (entry.status === 'upcoming' || entry.status === 'dormant')
   && !(entry.timingReasons ?? []).includes('not_scheduled');
 
@@ -352,10 +363,16 @@ export function planDailyAgenda({
         ? programStatusFor(programStatuses, entry)?.doneToday !== true
         : !curriculumServedForOffers
     ));
+    // A teacher hold is the LAST resort: any other open or available work in
+    // the subject is offered first, and the hold is named only so the paper
+    // still says why the subject has nothing for the child to do.
+    const offerable = offerEligible.filter((e) => !isTeacherHeld(e));
     const candidate = [
-      ...offerEligible.filter((e) => e.status === 'in_progress'),
-      ...offerEligible.filter((e) => e.status === 'available'),
-    ].sort(byEntryPriority)[0] ?? null;
+      ...offerable.filter((e) => e.status === 'in_progress'),
+      ...offerable.filter((e) => e.status === 'available'),
+    ].sort(byEntryPriority)[0]
+      ?? offerEligible.filter((e) => isTeacherHeld(e) && e.status === 'in_progress').sort(byEntryPriority)[0]
+      ?? null;
     const servedToday = (subjectPassedToday || programDone) && !candidate && !programUnavailable;
 
     const candidateStatus = candidate?.program ? programStatusFor(programStatuses, candidate) : null;
@@ -402,7 +419,8 @@ export function planDailyAgenda({
         ? programStatusFor(programStatuses, entry)?.doneToday !== true
         : !nonElectivePassedToday
     ));
-    const actionable = obligationEligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
+    const actionable = obligationEligible.filter((e) => !e.elective && !isTeacherHeld(e)
+      && (e.status === 'in_progress' || e.status === 'available'));
     const nonElectiveProgramDone = nonElectiveList.some((e) => (
       e.program && programStatusFor(programStatuses, e)?.error !== true
       && programStatusFor(programStatuses, e)?.doneToday === true
@@ -448,6 +466,9 @@ export function planDailyAgenda({
         && nonElectiveList.every((e) => e.program && (weeklySatisfiedKeys.has(programStatusKey(e))
           || unknowableProgramKeys.has(programStatusKey(e)) || terminalProgramKeys.has(programStatusKey(e))))) reason = 'weekly_satisfied';
       else if (hasNonElective((e) => e.program && unavailableProgramKeys.has(programStatusKey(e)))) reason = 'program_unavailable';
+      // Ahead of the lock check: the successors locked behind a held unit are
+      // locked BECAUSE of it, and "blocked" would hide that a person is needed.
+      else if (hasNonElective(isTeacherHeld)) reason = 'teacher_hold';
       else if (hasNonElective((e) => e.status === 'locked')) {
         // The split the 2026-08-25 unlock incident demanded: being blocked by a
         // sibling the child can still get to excuses the day, being blocked by

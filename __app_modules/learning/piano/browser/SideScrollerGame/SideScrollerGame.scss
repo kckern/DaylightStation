@@ -39,38 +39,44 @@
     width: clamp(32px, 3.5vw, 56px);
     z-index: 30;
     pointer-events: none;
-  }
 
-  &__life-frame {
-    height: 100%;
-    width: 100%;
-    display: flex;
-    flex-direction: column-reverse;
-    gap: clamp(1px, 0.15vh, 3px);
-    padding: clamp(4px, 0.5vw, 8px);
-    background: var(--scroller-well);
-    border: clamp(2px, 0.3vw, 5px) solid var(--scroller-night);
-    border-radius: clamp(6px, 0.8vw, 14px);
-    box-shadow: inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08);
-    box-sizing: border-box;
-  }
+    // The shared HUD meter (role=meter, one notch per health point), set into
+    // this scene's well: notches stack bottom-up and fill the frame. The house
+    // warn/danger colours go in through --game-hud-live / --game-hud-danger.
+    --game-hud-live: var(--piano-warn);
+    --game-hud-danger: var(--pg-felt);
 
-  &__life-notch {
-    flex: 1;
-    width: 100%;
-    border-radius: clamp(1px, 0.1vw, 2px);
-    background: transparent;
-
-    &--active {
-      background: var(--piano-warn);
-      box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-      border-top: clamp(1px, 0.08vh, 2px) solid color-mix(in srgb, var(--piano-warn) 60%, transparent);
+    &.game-hud-life {
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: stretch;
+      gap: clamp(1px, 0.15vh, 3px);
+      padding: clamp(4px, 0.5vw, 8px);
+      background: var(--scroller-well);
+      border: clamp(2px, 0.3vw, 5px) solid var(--scroller-night);
+      border-radius: clamp(6px, 0.8vw, 14px);
+      box-shadow: inset 0 0 0 clamp(1px, 0.1vw, 2px) rgba(255, 255, 255, 0.08);
+      box-sizing: border-box;
     }
 
-    &--danger {
-      background: var(--pg-felt);
+    .game-hud-life__notch {
+      flex: 1;
+      width: 100%;
+      height: auto;
+      border: 0;
+      border-radius: clamp(1px, 0.1vw, 2px);
+      background: transparent;
+    }
+
+    .game-hud-life__notch.is-active {
+      background: var(--game-hud-live);
       box-shadow: inset 0 clamp(-1px, -0.1vh, -2px) 0 rgba(0, 0, 0, 0.35);
-      border-top-color: color-mix(in srgb, var(--pg-felt) 60%, transparent);
+      border-top: clamp(1px, 0.08vh, 2px) solid color-mix(in srgb, var(--game-hud-live) 60%, transparent);
+    }
+
+    .game-hud-life__notch.is-active.is-danger {
+      background: var(--game-hud-danger);
+      border-top-color: color-mix(in srgb, var(--game-hud-danger) 60%, transparent);
     }
   }
 
@@ -151,6 +157,41 @@
   &__staff-shoot {
     top: 9%;
     height: 28%;
+  }
+
+  // ─── LEVEL UP ─────────────────────────────────────────────────
+  // The shared MomentBanner, rendered in the play canvas (not the overlay) so
+  // the run keeps going under it. Centred in the band between the top staves
+  // (jump 2–30%, shoot 9–37%) and the duck staff (70–98%), so it never covers
+  // a note the child is reading; it never takes pointer input.
+  &__level-up.game-hud-moment {
+    position: absolute;
+    inset: 37% 0 30%;
+    margin: auto;
+    width: fit-content;
+    height: fit-content;
+    z-index: 40;
+    pointer-events: none;
+    gap: 0;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 20px 48px;
+    border-radius: 16px;
+    border: 2px solid color-mix(in srgb, var(--pg-brass-fill) 55%, transparent);
+
+    h2 {
+      font-size: 3rem;
+      font-weight: 900;
+      margin: 0 0 8px;
+      color: var(--pg-brass);
+      text-shadow: 0 0 20px color-mix(in srgb, var(--pg-brass) 60%, transparent);
+    }
+
+    p {
+      font-size: 1.5rem;
+      color: var(--pg-ivory-dim);
+      margin: 0;
+    }
   }
 
   // ─── Keyboard ─────────────────────────────────────────────────

@@ -101,6 +101,39 @@ describe('YamlIssuedArtifactStore', () => {
     expect((await store.get('art_1')).bytes).toBeNull();
   });
 
+  it('lets an unissued retry replace a recipe that never reached paper, keeping its lineage', async () => {
+    const base = { artifactId: 'math/course/ws-ses_1', bytes: Buffer.from('one'), issuedAt: '2026-10-10T14:12:17.741Z',
+      sessionId: 'ses_1', sourceDocument: { schema: 'school.document/v2', id: 'doc', rev: 'one', blocks: [] },
+      renderContext: { learnerId: 'kid' },
+      allocation: { cardId: '7000002', recordId: 'doc@one:v0:23-25', rowRange: { start: 23, end: 25 } } };
+    const first = await store.put(base);
+    const retry = { ...base, issuedAt: '2026-10-20T18:05:12.000Z',
+      sourceDocument: { ...base.sourceDocument, rev: 'two' },
+      allocation: { cardId: '7000001', recordId: 'doc@two:v0:1-3', rowRange: { start: 1, end: 3 } } };
+
+    await expect(store.put(retry)).rejects.toMatchObject({ code: 'ARTIFACT_IMMUTABLE' });
+    const saved = await store.put({ ...retry, supersedeUnissued: true });
+
+    expect(saved.superseded).toMatchObject({ renderInputSha256: first.manifest.renderInputSha256 });
+    expect(saved.manifest.allocation).toMatchObject({ cardId: '7000001' });
+    expect(saved.manifest.supersedes).toEqual([{
+      renderInputSha256: first.manifest.renderInputSha256,
+      issuedAt: '2026-10-10T14:12:17.741Z',
+      allocation: base.allocation,
+    }]);
+    // Lineage is outside the digest, so the replaced recipe still verifies on read.
+    expect((await store.get(base.artifactId)).manifest.renderInputSha256).toBe(saved.manifest.renderInputSha256);
+  });
+
+  it('reuses an identical recipe even when supersedeUnissued is set', async () => {
+    const base = { artifactId: 'art_same', bytes: Buffer.from('one'), sessionId: 'ses_1',
+      sourceDocument: { schema: 'school.document/v2', id: 'doc', rev: 'one', blocks: [] }, renderContext: { learnerId: 'kid' } };
+    await store.put(base);
+    const again = await store.put({ ...base, supersedeUnissued: true });
+    expect(again.superseded).toBeUndefined();
+    expect(again.manifest.supersedes).toBeUndefined();
+  });
+
   it('detects a modified generated-PDF recipe by its input digest', async () => {
     const artifactId = 'math/course/ws-tampered';
     await store.put({ artifactId, bytes: Buffer.from('%PDF disposable'),

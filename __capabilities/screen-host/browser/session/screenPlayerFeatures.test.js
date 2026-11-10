@@ -26,6 +26,18 @@ function setup(snapshot = playing()) {
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-03T12:00:00Z')); });
 afterEach(() => { vi.useRealTimers(); });
 
+describe('target-bound video quality', () => {
+  it('routes quality changes to the owner and propagates a stale-target refusal', async () => {
+    const features = createScreenPlayerFeatures({ ownerId: 'tv', ports: {
+      setQuality: () => ({ ok: false, code: 'PLAYBACK_CHANGED', error: 'The current item changed' }),
+    } });
+    expect(features.handles('set-quality')).toBe(true);
+    expect(await features.handleSession('set-quality', { contentId: 'plex:1', quality: { maxResolution: '720' } }))
+      .toMatchObject({ ok: false, code: 'PLAYBACK_CHANGED' });
+    features.dispose();
+  });
+});
+
 describe('Show briefly (PLAY.8a)', () => {
   it('puts the camera over what is playing and says what interrupted and from where (AC1, AC3)', () => {
     const { features, ports } = setup();

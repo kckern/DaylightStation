@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JevAdapter } from './JevAdapter.mjs';
-import { yesNo, choice, score, isDecisionGateway } from '#apps/common/ports/IDecisionGateway.mjs';
+import { JevAdapter, pngSize } from './JevAdapter.mjs';
+import { yesNo, choice, score, image, isDecisionGateway } from '#apps/common/ports/IDecisionGateway.mjs';
 
 function makeDeps(post) {
   return {
@@ -249,5 +249,53 @@ describe('IDecisionGateway question builders', () => {
 
   it('accepts bare option keys for choice', () => {
     expect(choice('q', ['a', 'b'])).toEqual({ type: 'choice', instructions: 'q', options: { a: null, b: null } });
+  });
+});
+
+/** A minimal PNG header (signature + IHDR) with the given size. */
+function fakePng(width, height) {
+  const b = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'ascii');
+  b.writeUInt32BE(width, 16); b.writeUInt32BE(height, 20);
+  return b;
+}
+
+describe('JevAdapter images', () => {
+  it('reads PNG dimensions', () => {
+    expect(pngSize(fakePng(640, 360))).toEqual({ width: 640, height: 360 });
+    expect(pngSize(Buffer.from('not a png at all, really not'))).toBeNull();
+  });
+
+  it('sends image state as multipart with asset refs and the images header', async () => {
+    const post = vi.fn(async () => ({ status: 200, headers: {}, data: { model: 'jev-1', answers: { q: { type: 'noul', noul: 0.9 } } } }));
+    const adapter = new JevAdapter({ apiKey: 'k' }, makeDeps(post));
+    const res = await adapter.evaluate({ frame: image(fakePng(640, 360)), label: 'a kiss' }, { q: yesNo('`frame` shows `label`.') });
+    expect(res.answers.q.probability).toBe(0.9);
+    const [, body, opts] = post.mock.calls[0];
+    expect(body).toBeInstanceOf(FormData);
+    expect(opts.headers['TypeSafe-Danger-Zone-Images']).toBe('true');
+    expect(opts.headers['Content-Type']).toBeUndefined();
+    const request = JSON.parse(await body.get('request').text());
+    expect(request.state.label).toBe('a kiss');
+    const ref = request.state.frame;
+    expect(request.assets[ref]).toEqual({ type: 'image', part: 'img-0' });
+    expect(body.get('img-0')).toBeInstanceOf(Blob);
+  });
+
+  it('keeps text-only state as JSON', async () => {
+    const post = vi.fn(async () => ({ status: 200, headers: {}, data: { answers: { q: { type: 'noul', noul: 0.1 } } } }));
+    const adapter = new JevAdapter({ apiKey: 'k' }, makeDeps(post));
+    await adapter.evaluate({ note: 'x' }, { q: yesNo('q') });
+    const [, body, opts] = post.mock.calls[0];
+    expect(body.state).toEqual({ note: 'x' });
+    expect(opts.headers['Content-Type']).toBe('application/json');
+  });
+
+  it('rejects an image outside the size range before calling', async () => {
+    const post = vi.fn();
+    const adapter = new JevAdapter({ apiKey: 'k' }, makeDeps(post));
+    await expect(adapter.evaluate({ img: image(fakePng(200, 100)) }, { q: yesNo('q') })).rejects.toThrow(/280-1568/);
+    expect(post).not.toHaveBeenCalled();
   });
 });

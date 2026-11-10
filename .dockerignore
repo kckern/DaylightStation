@@ -45,7 +45,7 @@ AGENTS.md
 !__backend/config/*.yml
 # Authored Fitness course YAML must reach the image at its owner path.
 # School Rubiks course data is compiled into courseSource.mjs and needs no YAML exception.
-!__app_modules/wellness/fitness/server/adapters/courses/*.yml
+!__app_modules/wellness/fitness/server/adapters/skylineGlider/**/*.yml
 # School's seed installer reads these examples from its owning module.
 !__app_modules/learning/school/seeds/**/*.yml
 secrets.dev.yaml

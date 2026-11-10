@@ -65,8 +65,17 @@ describe('CoinsPanel', () => {
     expect(screen.getByText(/silver earned/i)).toBeInTheDocument();
     expect(screen.getByText(/\+5 silver and 1 gem pending/i)).toBeInTheDocument();
     expect(screen.getByText(/preview — nothing is paid yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/rules revision 3/i)).toBeInTheDocument();
+    // The revision number is not parent copy; it stays reachable as a tooltip.
+    expect(screen.queryByText(/rules revision/i)).toBeNull();
+    expect(screen.getByText(/preview — nothing is paid yet/i)).toHaveAttribute('title', 'Earning rules revision 3');
     expect(schoolApi.earningsPreview).toHaveBeenCalledWith('learner-a', null);
+  });
+
+  it('reads a subject not done today as "not yet", never a ✗, until the day is over', async () => {
+    schoolApi.earningsPreview.mockResolvedValue(ok(preview({ today: '2026-09-22' })));
+    render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
+    expect(await screen.findByText(/not done yet today/)).toBeInTheDocument();
+    expect(screen.queryByText(/: not done$/)).toBeNull();
   });
 
   it('draws the week\'s work: a day row and a row per subject, Monday to Sunday', async () => {
@@ -107,7 +116,8 @@ describe('CoinsPanel', () => {
     render(<CoinsPanel learnerId="learner-a" learnerName="Learner A" />);
     const input = await screen.findByLabelText('Silver for Rings');
     fireEvent.change(input, { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save rate for Rings' }));
+    // Save renders once the edit makes the row dirty (failed in 328ms on a slow worker).
+    fireEvent.click(await screen.findByRole('button', { name: 'Save rate for Rings' }));
     await waitFor(() => expect(schoolApi.putEarnRates).toHaveBeenCalledWith('learner-a', expect.objectContaining({
       patch: { rules: { rings: { rate: { rings: 100, silver: 2 } } } },
     })));

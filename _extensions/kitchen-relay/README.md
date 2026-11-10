@@ -278,8 +278,17 @@ counter moves — once per reboot, not once per heartbeat.
 |---|---|
 | `boot.count` | NVS counter, survives reboots |
 | `boot.last_reset` | `TASK_WDT` = loop() wedged and the watchdog recovered it · `BROWNOUT` = the supply sagged, suspect the USB brick · `PANIC` = crash, read `recent_logs` · `POWERON` = the plug (or a human power-cycling a hang) · `SW` = our own `/reboot` |
+| `boot.crash` | the last panic, read back from the coredump flash partition: `task`, `pc`, exception `cause`/`vaddr`, `backtrace`, `elf_sha256`. The RAM log ring dies with a panic; this does not. Decode with `xtensa-esp32-elf-addr2line -pfiaC -e firmware.elf <pcs>` against the crashing build (rebuild that commit if its `.pio` is gone) |
 | `heap.min_free` | low-water mark — a leak is the most likely wedge mechanism, and it was invisible before |
 | `wifi.drops` | link losses since boot; this board sits at rssi ~-78 |
+
+**The twice-daily PANIC (fixed 2026-10-30).** Boots 143–157 died every
+~12.4 h, each preceded by 5–20 min of WiFi/WS reconnect storms. `boot.crash`
+showed the `wifi` task aborting in `cnx_beacon_timeout_process →
+ets_timer_setfn` — `esp_timer_create` out of internal heap. The heap went
+because every gun/scale reconnect `createClient()`'d a fresh NimBLE client and
+never deleted it (~1.5–4 KB each, measured by forcing `/barcode/disconnect`).
+Clients are now created once and reused; heap stays flat across reconnects.
 
 A **task watchdog** (30 s, `panic=true`) is armed at the end of `setup()` — after
 the WiFi wait, which blocks up to 20 s and must not be watched. This is what

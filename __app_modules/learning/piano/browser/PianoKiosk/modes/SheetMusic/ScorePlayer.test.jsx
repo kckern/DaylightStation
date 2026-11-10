@@ -136,14 +136,15 @@ vi.mock('./LearnLab.jsx', () => ({
     h.learnLabProps = props;
     return <section role="dialog" aria-label={`${props.segment.label} · ${props.rung.label}`}>
       <button type="button" onClick={props.onClose}>Close lab</button>
-      <button type="button" onClick={() => props.onFinished({ passed: true, score: 0.92 })}>Complete rung</button>
+      <button type="button" onClick={() => (props.onOutcome ?? props.onFinished)({ assessmentId: 'played', status: 'completed', diagnostics: { expected_notes: 8, matched_notes: 8 }, criteria: { completeness: 1, cleanliness: 1 }, verdict: { passed: true } })}>Complete rung</button>
       <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onFinished({ passed: true, score: 1 }); }}>Master segment</button>
       <button type="button" onClick={() => props.onUnavailable('passage-too-dense')}>Fail segment</button>
     </section>;
   },
 }));
-vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: () => <div data-testid="passage-preview">Music preview</div> }));
-vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: h.config }) }));
+vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: ({ onExpectation }) => <button data-testid="passage-preview" onClick={() => onExpectation?.({ events: [{ notes: [60] }] })}>Music ready</button> }));
+vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'guest' }) }));
+vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: h.config }), usePianoKioskConfigOptional: () => ({ config: h.config }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 // Spyable click scheduler: useMetronomeClick creates one per enable, so hand it
@@ -256,7 +257,7 @@ const emitNote = (evt) => act(() => { [...h.noteCbs].forEach((fn) => fn(evt)); }
 const play = (note) => emitNote({ type: 'note_on', note, velocity: 80 });
 const LocationProbe = () => { h.locationSearch = useLocation().search; return null; };
 const renderPlayer = (entry = '/') =>
-  render(<MemoryRouter initialEntries={[entry]}><LocationProbe /><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[entry]}><LocationProbe /><ScorePlayer score={{ id: 'files:mary.musicxml', title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
 // Sets the mocked live-note store's activeNotes and notifies every subscribed
 // component (see the usePianoMidiNotes mock above) so it re-renders holding
@@ -269,6 +270,7 @@ const holdNotes = (...midis) => act(() => {
 });
 
 beforeEach(() => {
+  localStorage.clear();
   h.noteCbs = new Set(); h.rawCb = null; h.layoutExtras = {};
   h.holdLayout = false; h.releaseLayout = null;
   h.pressNote.mockClear(); h.releaseNote.mockClear();
@@ -301,104 +303,46 @@ beforeEach(() => {
   h.locationSearch = '';
 });
 
-describe('ScorePlayer — score-native Learn roadmap', () => {
-  it('opens a deep-linked rung at the chooser instead of auto-starting it', () => {
-    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
-    h.layoutExtras = {
-      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
-      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
-    };
-    renderPlayer('/?learnPassage=m0-1&learnRung=right');
-    pickMode('Learn');
-    expect(screen.getByRole('dialog', { name: 'Segment 1 practice' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Segment 1 · Right hand' })).not.toBeInTheDocument();
-  });
-  it('keeps piece progress visible and opens a segment launchpad before the recommended drill', () => {
-    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
-    h.layoutExtras = {
-      measures: [
-        { number: 1, firstStep: 0, lastStep: 1 },
-        { number: 2, firstStep: 2, lastStep: 3 },
-      ],
-      measureBounds: [
-        { left: 80, right: 190, top: 10, bottom: 210 },
-        { left: 190, right: 310, top: 10, bottom: 210 },
-      ],
-    };
-    renderPlayer();
-    pickMode('Learn');
-    expect(screen.queryByRole('navigation', { name: 'Selected segment' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Learn roadmap' })).not.toBeInTheDocument();
-    const progress = screen.getByRole('navigation', { name: 'Piece learning progress' });
-    fireEvent.click(within(progress).getByRole('button', { name: /Segment 1/ }));
-    expect(screen.getByRole('dialog', { name: 'Segment 1 practice' })).toBeInTheDocument();
-    expect(screen.getByTestId('passage-preview')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
-    expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
-    expect(h.locationSearch).toContain('learnPassage=m0-1');
-    expect(h.locationSearch).toContain('learnRung=right');
-  });
-
-  it('plucks a segment into the lab, restores the score anchor, and celebrates only that segment once', async () => {
-    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
-    h.layoutExtras = {
-      measures: [
-        { number: 1, firstStep: 0, lastStep: 1 },
-        { number: 2, firstStep: 2, lastStep: 3 },
-      ],
-      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
-    };
-    renderPlayer();
-    pickMode('Learn');
-    const scroll = document.querySelector('.piano-score-player__scroll');
-    scroll.scrollTop = 137;
-    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
-    expect(screen.getByRole('dialog', { name: 'Segment 1 · Right hand' })).toBeInTheDocument();
-    expect(screen.queryByTestId('renderer')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Master segment' }));
-    expect(screen.getByRole('dialog', { name: 'Practice result' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Back to segment' }));
-    await waitFor(() => expect(screen.getByTestId('renderer')).toBeInTheDocument());
-    await waitFor(() => expect(document.querySelector('.piano-score-player__scroll').scrollTop).toBe(137));
-    const achieved = screen.getAllByRole('button', { name: /Segment 1/ }).find((button) => button.classList.contains('piano-learn-passage-map'));
-    expect(achieved).toHaveClass('is-achievement');
-    await waitFor(() => expect(achieved).not.toHaveClass('is-achievement'), { timeout: 1800 });
-  });
-
-  it('offers explicit choices after a rung instead of opening the next run', async () => {
-    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
-    h.layoutExtras = {
-      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
-      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
-    };
-    renderPlayer();
-    pickMode('Learn');
-    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
-
-    expect(screen.getByRole('dialog', { name: 'Practice result' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Next drill' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Practice again' })).toBeInTheDocument();
-    expect(h.locationSearch).toContain('learnPassage=m0-1');
-    expect(h.locationSearch).toContain('learnRung=right');
-  });
-
-  it('returns from an unrunnable lab with an explanation', async () => {
-    h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
-    h.layoutExtras = {
-      measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
-      measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }],
-    };
-    renderPlayer();
-    pickMode('Learn');
-    fireEvent.click(screen.getAllByRole('button', { name: /Segment 1/ })[0]);
-    fireEvent.click(screen.getByRole('button', { name: /Up next/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Fail segment' }));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('too much music to fit'));
-    expect(screen.getByTestId('renderer')).toBeInTheDocument();
-  });
+describe('ScorePlayer — guided Learn composition', () => {
+ const setup = () => {
+  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+  h.layoutExtras = { measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+    measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }] };
+ };
+ it('opens a deep link at preparation without starting a take', () => {
+  setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right'); pickMode('Learn');
+  expect(screen.getByRole('region', { name: 'Segment 1 learning' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Find the right-hand notes' })).toBeInTheDocument();
+  expect(h.learnLabProps).toBeNull();
+ });
+ it('provides one learning entry, explicit start, result choice, and return to the score', async () => {
+  setup(); renderPlayer(); pickMode('Learn');
+  expect(screen.getByRole('navigation', { name: 'Piece learning progress' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Start learning' }));
+  expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeDisabled();
+  fireEvent.click(screen.getByText('Music ready')); fireEvent.click(screen.getByRole('button', { name: 'Start practice', exact: true }));
+  expect(h.learnLabProps.coachingTask.parts).toEqual(['rh']);
+  fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
+  expect(await screen.findByRole('heading', { name: 'Nice work!' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Complete rung' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Finish for now' }));
+  expect(screen.getByTestId('renderer')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Continue learning' })).toBeInTheDocument();
+ });
+ it('ignores a stale passage selection and keeps learning reachable', () => {
+  setup(); renderPlayer('/?learnPassage=gone&learnRung=obsolete'); pickMode('Learn');
+  expect(screen.getByRole('button', { name: 'Start learning' })).toBeInTheDocument();
+  expect(h.learnLabProps).toBeNull();
+ });
+ it('keeps direct passage selection and listening available', () => {
+  setup(); renderPlayer(); pickMode('Learn');
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Piece learning progress' })).getByRole('button', { name: /Segment 1/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+  expect(screen.getByRole('heading', { name: 'Listen to this passage' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));
+  expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeInTheDocument();
+  expect(h.learnLabProps).toBeNull();
+ });
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
@@ -4156,7 +4100,7 @@ describe('ScorePlayer — armed endpoint picking (wave-3 F)', () => {
   it('snaps an endpoint to a section boundary within one measure of the tap', () => {
     h.layoutExtras = EIGHTEEN;
     const emitted = captureLog();
-    render(<MemoryRouter><ScorePlayer score={{ title: 'S', musicXml: sectionedXml(18, { 8: 'A', 16: 'B' }) }} /></MemoryRouter>);
+    render(<MemoryRouter><ScorePlayer score={{ id: 'files:sections.musicxml', title: 'S', musicXml: sectionedXml(18, { 8: 'A', 16: 'B' }) }} /></MemoryRouter>);
     enterLearn();
     armAndTap('in', xOfMeasure(7));   // one measure BEFORE the mark at m8 → snaps forward
     expect(loopSpan()).toBe('m8–m8');
@@ -4231,7 +4175,7 @@ describe('ScorePlayer — armed endpoint picking (wave-3 F)', () => {
 
   const renderSectioned = () => {
     h.layoutExtras = EIGHTEEN;
-    render(<MemoryRouter><ScorePlayer score={{ title: 'S', musicXml: sectionedXml(18, { 8: 'A', 16: 'B' }) }} /></MemoryRouter>);
+    render(<MemoryRouter><ScorePlayer score={{ id: 'files:sections.musicxml', title: 'S', musicXml: sectionedXml(18, { 8: 'A', 16: 'B' }) }} /></MemoryRouter>);
     enterLearn();
   };
 

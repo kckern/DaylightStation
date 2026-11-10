@@ -7,16 +7,37 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createRequire } from 'module';
 import { createCadenceGate } from "./cadenceGate.mjs";
+import { createHrBeatGate } from "./hrBeatGate.mjs";
+import { createHrSpikeGate } from "./hrSpikeGate.mjs";
+
+// Raw ANT+ HR fields kept on a spike line: they tell a corrupt packet
+// (BeatCount advancing normally) from a beat misdetection.
+function rawHrFields(data) {
+  const out = {};
+  for (const [key, value] of Object.entries(data || {})) {
+    if (key === 'ComputedHeartRate' || key === 'BeatCount' || key === 'BeatTime'
+        || key === 'PreviousBeat' || /page/i.test(key)) out[key] = value;
+  }
+  return out;
+}
 
 const execAsync = promisify(exec);
 const require = createRequire(import.meta.url);
 
 export class ANTPlusManager {
-  constructor(broadcastCallback) {
+  /**
+   * @param {Function} broadcastCallback
+   * @param {{ logEvent?: (level: string, event: string, data: object) => void }} [options]
+   *   logEvent ships a structured event to the app's log store. This
+   *   container's own stdout never reaches it, which is how a spike packet
+   *   went unrecorded on 2026-10-22.
+   */
+  constructor(broadcastCallback, { logEvent = null } = {}) {
     this.devices = new Map(); // Map of device index -> AntDevice
     this.sensors = new Map();
     this.scanInterval = null;
     this.broadcastCallback = broadcastCallback;
+    this._logEvent = typeof logEvent === 'function' ? logEvent : null;
     this._lastLogTime = new Map(); // Throttle logging per device
 
     // Multi-dongle deduplication: when multiple USB dongles receive the same
@@ -27,7 +48,7 @@ export class ANTPlusManager {
 
     // Gate cadence on revolution-count advancement so a sensor that holds its
     // last CalculatedCadence after the crank stops reports 0 instead of a stuck value.
-    this._cadenceGate = createCadenceGate({ revStaleMs: 2500 });
+    this._cadenceGate = createCadenceGate();
 
     // Plausibility gate for heart rate. The ANT+ scanner pairs to ANY device
     // broadcasting an HR page (wildcard scan), so dying straps and bike sensors
@@ -35,6 +56,17 @@ export class ANTPlusManager {
     // a session. Drop ANT+ HR readings outside a physiological window.
     this._minHr = 50;
     this._maxHr = 230;
+
+    // Gate heart rate on BeatCount advancement. A strap waking from sleep replays
+    // its pre-sleep HR (e.g. 161 hours later) and then zeros on a frozen beat
+    // count; the range check alone passes the replay. HR is withheld until the
+    // strap has counted two new beats, and again whenever the count freezes.
+    this._hrBeatGate = createHrBeatGate();
+
+    // Slew-limit heart rate: a >= 25 bpm jump inside 2s is held until the next
+    // packet confirms it. One corrupt 204 bpm packet per strap became a Fire
+    // ceremony twice on 2026-10-23; the beat gate and range check both pass it.
+    this._hrSpikeGate = createHrSpikeGate();
 
     /**
      * Which sensors are currently speaking, and when each last did.
@@ -227,7 +259,26 @@ export class ANTPlusManager {
         }
 
         // Extract key metrics for logging (avoid raw buffer spam)
-        const rawHr = data.ComputedHeartRate ?? data.heartRate ?? null;
+        const packetHr = data.ComputedHeartRate ?? data.heartRate ?? null;
+        // Beat-gate first: a value on a beat count that is not advancing (wake-up
+        // replay, lost contact) is not a heartbeat, whatever its magnitude.
+        let rawHr = packetHr;
+        if (packetHr !== null) {
+          const beat = this._hrBeatGate.gate(deviceId, {
+            heartRate: packetHr,
+            beatCount: data.BeatCount,
+            beatTime: data.BeatTime,
+            now: Date.now()
+          });
+          rawHr = beat.hr;
+          if (rawHr === null) {
+            if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
+            if ('heartRate' in data) data.heartRate = null;
+          }
+          if (beat.openedAfterMs !== undefined) {
+            console.log(`[${timestamp}] ${deviceId} HR beat-gate open after ${beat.openedAfterMs}ms (wake; first value ${packetHr} bpm)`);
+          }
+        }
         // Reject physiologically implausible HR (phantom straps / bike sensors
         // leaking a junk HR page). Strip it from `data` so downstream consumers
         // (the app's DeviceManager) never see the ghost reading.
@@ -238,6 +289,35 @@ export class ANTPlusManager {
           if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
           if ('heartRate' in data) data.heartRate = null;
           console.log(`[${timestamp}] ${deviceId} HR rejected: ${rawHr} bpm outside ${this._minHr}-${this._maxHr}`);
+          this._logEvent?.('warn', 'fitness.ant.hr_range_rejected', {
+            deviceId, hr: rawHr, min: this._minHr, max: this._maxHr, raw: rawHrFields(data)
+          });
+        }
+        // Spike gate last: only a value that is a heartbeat and in range can
+        // be implausible. Every verdict but a plain accept is logged
+        // UNTHROTTLED — the 1 Hz line below is how a 2026-10-22 spike slipped
+        // between log lines and could never be proven.
+        const spike = this._hrSpikeGate.gate(deviceId, {
+          heartRate: hr,
+          now: Date.now(),
+          beatCount: Number.isFinite(data.BeatCount) ? data.BeatCount : null,
+          rangeRejected: rawHr !== null && hr === null
+        });
+        if (spike.verdict === 'held' || spike.verdict === 'confirmed' || spike.verdict === 'rejected') {
+          const raw = rawHrFields(data);
+          console.log(`[${timestamp}] ${deviceId} HR spike ${spike.verdict}: held ${spike.heldHr} bpm, previous ${spike.previousHr} bpm (${spike.previousAgeMs}ms ago) raw=${JSON.stringify(raw)}`);
+          this._logEvent?.(spike.verdict === 'confirmed' ? 'info' : 'warn', `fitness.ant.hr_spike_${spike.verdict}`, {
+            deviceId, hr: spike.hr, heldHr: spike.heldHr, previousHr: spike.previousHr,
+            previousAgeMs: spike.previousAgeMs, raw
+          });
+        }
+        if (spike.verdict === 'duplicate') return; // the other dongle's copy of a held packet
+        if (spike.verdict === 'held') {
+          if ('ComputedHeartRate' in data) data.ComputedHeartRate = null;
+          if ('heartRate' in data) data.heartRate = null;
+          // Not a "no reading" either: drop the packet, so the app keeps the
+          // strap's last accepted value instead of seeing a null blip.
+          return;
         }
         const rawCadence = data.CalculatedCadence ?? data.cadence ?? null;
         const revolutionCount = Number.isFinite(data.CumulativeCadenceRevolutionCount)

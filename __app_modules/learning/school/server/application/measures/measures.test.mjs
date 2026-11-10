@@ -96,7 +96,7 @@ describe('fitnessRingsProvider.standings — the ring award week (Mon 04:00 → 
       ]; } },
     });
     const out = await p.standings({ learnerIds: ['user_4', 'user_3', 'user_2'], fromMs: FROM, toMs: TO });
-    expect(out).toEqual([{ learnerId: 'user_4', rings: 23 }, { learnerId: 'user_3', rings: 5 }, { learnerId: 'user_2', rings: 0 }]);
+    expect(out).toMatchObject([{ learnerId: 'user_4', rings: 23 }, { learnerId: 'user_3', rings: 5 }, { learnerId: 'user_2', rings: 0, sessions: [] }]);
     // It lists the study days the window touches, and filters to the instant.
     expect(asked[0]).toEqual({ from: '2026-08-23', to: '2026-08-29' });
   });
@@ -106,7 +106,37 @@ describe('fitnessRingsProvider.standings — the ring award week (Mon 04:00 → 
       timezone: TZ,
       sessions: sourceOf([{ date: '2026-08-25', participants: { user_4: { rings: 9 } } }]),
     });
-    expect(await p.standings({ learnerIds: ['user_4'], fromMs: FROM, toMs: TO })).toEqual([{ learnerId: 'user_4', rings: 0 }]);
+    expect(await p.standings({ learnerIds: ['user_4'], fromMs: FROM, toMs: TO })).toEqual([{ learnerId: 'user_4', rings: 0, sessions: [] }]);
+  });
+});
+
+describe('fitnessRingsProvider.standings — each learner\'s workouts', () => {
+  const FROM = Date.parse('2026-08-24T11:00:00Z');
+  const TO = Date.parse('2026-08-29T19:00:00Z');
+  const NOW = Date.parse('2026-08-25T20:00:00Z');
+  const MIN = 60_000;
+
+  it('lists the learner\'s sessions with rings, oldest first: title, end, and final once the resume window has passed', async () => {
+    const p = createFitnessRingsProvider({ studyDayFor, isInWindow, timezone: TZ, now: () => NOW,
+      sessions: sourceOf([
+        // Still running: ended (last saved) 5 minutes ago.
+        { ...session('2026-08-25T19:00:00Z', { user_4: { rings: 40 } }), durationMs: 55 * MIN, sessionId: 's3' },
+        // Ended 31 minutes ago, with a video playing.
+        { ...session('2026-08-25T18:00:00Z', { user_4: { rings: 588 }, user_3: { rings: 0 } }), endTime: NOW - 31 * MIN, sessionId: 's2',
+          media: { primary: { title: 'Sonic & Sega All Stars Racing' } } },
+        // Explicitly finalized a minute ago.
+        { ...session('2026-08-24T16:00:00Z', { user_4: { rings: 34 } }), endTime: NOW - MIN, finalized: true, sessionId: 's1' },
+      ]),
+    });
+    const [kid, other] = await p.standings({ learnerIds: ['user_4', 'user_3'], fromMs: FROM, toMs: TO });
+    expect(kid.rings).toBe(662);
+    expect(kid.sessions).toEqual([
+      { sessionId: 's1', startMs: Date.parse('2026-08-24T16:00:00Z'), endMs: NOW - MIN, rings: 34, title: null, final: true },
+      { sessionId: 's2', startMs: Date.parse('2026-08-25T18:00:00Z'), endMs: NOW - 31 * MIN, rings: 588, title: 'Sonic & Sega All Stars Racing', final: true },
+      { sessionId: 's3', startMs: Date.parse('2026-08-25T19:00:00Z'), endMs: Date.parse('2026-08-25T19:55:00Z'), rings: 40, title: null, final: false },
+    ]);
+    // A session with no rings for this learner is not one of theirs.
+    expect(other.sessions).toEqual([]);
   });
 });
 

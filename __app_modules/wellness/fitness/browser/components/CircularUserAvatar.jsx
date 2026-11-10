@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import "./CircularUserAvatar.scss";
+import GovernanceStartBadge from "./GovernanceStartBadge.jsx";
 
 const GAUGE_RADIUS = 47;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
@@ -42,6 +43,7 @@ const CircularUserAvatar = ({
   onClick,
   role,
   boostBadge,
+  statusBadge = null,
   weakSignal = false
 }) => {
   const isFireZone = zoneId === 'fire';
@@ -111,6 +113,7 @@ const CircularUserAvatar = ({
       {boostBadge ? (
         <div className="vital-boost-badge" aria-hidden="true">{boostBadge}</div>
       ) : null}
+      <GovernanceStartBadge statusBadge={statusBadge} className="vital-start-badge" />
       {/* Fire sunbeams effect */}
       {isFireZone && (
         <div className="fire-sunbeams" aria-hidden="true">
@@ -199,6 +202,11 @@ CircularUserAvatar.propTypes = {
   onClick: PropTypes.func,
   role: PropTypes.string,
   boostBadge: PropTypes.string,
+  statusBadge: PropTypes.shape({
+    status: PropTypes.string,
+    zoneLabel: PropTypes.string,
+    remainingMs: PropTypes.number
+  }),
   weakSignal: PropTypes.bool
 };
 

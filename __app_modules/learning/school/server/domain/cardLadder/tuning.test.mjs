@@ -148,6 +148,9 @@ function fixtureDay(day, overrides = {}) {
       'r1:q:0': { at: 'a', response: { typed: 'x' }, result: { correct: false, score: 3, judge: 'distance' } },
       'r1:q:1': { at: 'a', response: { typed: 'y' }, result: { correct: true, score: 7, judge: 'fallback' } },
       'r1:q:2': { at: 'a', response: { dontKnow: true }, result: { correct: false } },
+      // A typed answer left empty, and a drill step given up: both "Don't know", neither a typed score.
+      'rc:w8': { at: 'a', response: { typed: '' }, result: { correct: false, score: 0, judge: 'dont-know' } },
+      'd1:6': { at: 'a', response: { tiles: [] }, result: { correct: false, answer: 'x', dontKnow: true } },
     },
     sittings: { s1: { reason: 'goal' } },
     doneAt: `${day}T16:20:00-07:00`,
@@ -181,7 +184,7 @@ describe('buildTuningDigest', () => {
       passedByPile: { familiar: 1, claimed: 2, other: 0 },
       failedByPile: { familiar: 1, claimed: 0, other: 0 },
       rechecks: { asked: 1, missed: 1 },
-      dontKnow: 2, typedScores: [3, 7], judgeFallbacks: 1, stalls: null,
+      dontKnow: 4, typedScores: [3, 7], judgeFallbacks: 1, stalls: null,
       activeMin: 15, capHit: true, credited: true, newIntroduced: 2, extraIntroduced: 0, extraRounds: 0, drillsRun: 1, reachedGoal: true,
     });
     expect(digest.trailing7).toEqual({ days: 0 });
@@ -274,5 +277,15 @@ describe('applyTuningProposal bounds', () => {
     expect(out.applied).toEqual([]);
     expect(out.dropped.map(d => d.brake)).toEqual(['bounds']);
     expect(out.next['round.size']).toBe(specLo);
+  });
+});
+
+describe('dayStats — dictation is apart from the ladder', () => {
+  it('a dictation attempt (Don\'t know included) never counts in the day\'s numbers', async () => {
+    const { dayStats: stats } = await import('./tuning.mjs');
+    const day = { day: '2026-11-06', rounds: [], rechecks: { answered: {} }, activeMs: 0, sittings: {}, items: {
+      'dc1:0': { at: 'x', response: { dontKnow: true }, result: { correct: false, dontKnow: true }, wordId: 'gawi', task: 'D.1', source: 'dictation' },
+    } };
+    expect(stats(day, {}).dontKnow).toBe(0);
   });
 });

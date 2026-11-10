@@ -12,6 +12,17 @@
  * back. It cycles within the unit's declared `retry.variants`, so a unit with
  * three forms gives three genuinely different sheets before it repeats.
  *
+ * TWO ROUNDS, THEN A GROWN-UP. A child may open at most `maxRounds` retries
+ * (`school.yml → lifecycle.remediation.maxRounds`, default 2) counted back to
+ * the original sheet; past that the scan is refused and the unit is a teacher
+ * hold (`remediationLineage.mjs`). The refusal is the backstop for a retry
+ * ticket already printed: the agenda and the panel stop offering the retry on
+ * their own. A grown-up opening one through the teacher gate (`openedBy`) is
+ * never capped — the hold exists to bring a person in. A STALE hold (a failure
+ * left unretried for days; see `remediationLineage.mjs`) is not checked here
+ * at all: it stops the work being owed, but a child who comes back with the
+ * retry ticket may still use it.
+ *
  * This is its own use case rather than a branch inside `CloseSessionOutcome`
  * because it is a different business operation happening at a different moment:
  * settling a result is what the grader does, and starting the retry is what the
@@ -21,9 +32,12 @@ import { reduceSession, createEvent } from "../../domain/sessions/sessionEvents.
 import { noticeDocument } from "../../domain/documents/receipts.mjs";
 import { shortId } from '#system/utils/id.mjs';
 import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
+import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds, retriesPhrase } from "../../domain/sessions/remediationLineage.mjs";
+import { remediationDepthOf } from "../remediationDepth.mjs";
 
 export class OpenRemediation {
   #practiceAssessments; #curriculum; #sessions; #clock; #newSessionId; #logger; #curriculumExceptions;
+  #maxRounds;
 
   /**
    * @param {object} deps
@@ -31,9 +45,10 @@ export class OpenRemediation {
    * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
    * @param {() => Date} [deps.clock]
    * @param {() => string} [deps.newSessionId]
+   * @param {number|null} [deps.remediationMaxRounds] - retries a child may open
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, practiceAssessments = null, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, logger = console } = {}) {
+  constructor({ curriculum, sessions, practiceAssessments = null, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, remediationMaxRounds: maxRounds = null, logger = console } = {}) {
     if (!curriculum || !sessions) throw new Error('OpenRemediation requires curriculum and sessions');
     this.#practiceAssessments = practiceAssessments;
     this.#curriculum = curriculum;
@@ -42,16 +57,24 @@ export class OpenRemediation {
     this.#newSessionId = newSessionId;
     this.#logger = logger;
     this.#curriculumExceptions = curriculumExceptions;
+    this.#maxRounds = remediationMaxRounds(maxRounds);
   }
 
   /**
    * @param {object} args
    * @param {string} args.sessionId - the FAILED session the retry hangs off
+   * @param {string|null} [args.openedBy] - a grown-up, already through the
+   *   teacher gate; never capped
+   * @param {'corrected_sheet'|null} [args.lane] - `corrected_sheet`: the child
+   *   fixed the marks on the paper they already hold (`RecordCardScanOutcome`'s
+   *   corrected-sheet lane). That is not a fresh sheet, so it may open ONE round
+   *   past the cap; a correction that also fails is a hold like any other.
    * @returns {Promise<{ status: 'opened'|'already_opened'|'unavailable',
+   *                     reason?: 'remediation_capped',
    *                     sessionId: string|null, newSessionId: string|null,
    *                     variant: number|null, document: object|null, message: string }>}
    */
-  async execute({ sessionId, openedBy = null } = {}) {
+  async execute({ sessionId, openedBy = null, lane = null } = {}) {
     const nowIso = this.#clock().toISOString();
     const state = reduceSession(await this.#sessions.readEvents(sessionId));
     if (!state.sessionId) return this.#unavailable(sessionId, 'We could not find that work.');
@@ -70,6 +93,26 @@ export class OpenRemediation {
     }
     if (state.state !== 'outcome_recorded' || state.outcome?.result !== 'needs_remediation') {
       return this.#unavailable(sessionId, 'There is nothing to try again right now.');
+    }
+
+    if (!openedBy) {
+      const depth = await remediationDepthOf(state.remediationOf, this.#sessions, {
+        limit: this.#maxRounds + REMEDIATION_COUNT_HEADROOM,
+      });
+      const correctedSheet = lane === 'corrected_sheet';
+      if (depth >= this.#maxRounds + (correctedSheet ? 1 : 0)) {
+        this.#logger.info?.('school.remediation.capped', {
+          learnerId: state.learnerId, unitId: state.unitId, depth, sessionId, maxRounds: this.#maxRounds,
+        });
+        return this.#unavailable(sessionId, `After ${retriesPhrase(depth)}, a grown-up will help with this one.`, {
+          headline: 'A grown-up will help', reason: 'remediation_capped',
+        });
+      }
+      if (correctedSheet && depth >= this.#maxRounds) {
+        this.#logger.info?.('school.remediation.corrected-past-cap', {
+          learnerId: state.learnerId, unitId: state.unitId, sessionId, depth,
+        });
+      }
     }
 
     const paused = pausedExceptionFor(await this.#curriculumExceptions?.active?.() ?? [], state.unitId);
@@ -91,6 +134,7 @@ export class OpenRemediation {
       type: 'created', at: nowIso, sessionId: newSessionId,
       learnerId: state.learnerId, unitId: state.unitId, remediationOf: sessionId, variant,
       remediationItemIds: state.missedItemIds, ...(openedBy ? { openedBy } : {}),
+      ...(lane ? { lane } : {}),
     });
     if (opened.errors.length) throw new Error(`OpenRemediation: could not open the retry: ${opened.errors.join('; ')}`);
     await this.#sessions.appendEvent(newSessionId, opened.event);
@@ -117,16 +161,17 @@ export class OpenRemediation {
     };
   }
 
-  #unavailable(sessionId, line) {
+  #unavailable(sessionId, line, { headline = 'Nothing to try again', reason = null } = {}) {
     return {
       status: 'unavailable',
+      ...(reason ? { reason } : {}),
       sessionId: sessionId ?? null,
       newSessionId: null,
       variant: null,
       message: line,
       document: noticeDocument({
         id: `retry-${sessionId ?? 'none'}`,
-        headline: 'Nothing to try again',
+        headline,
         lines: [line, 'Scan your card to see what is next.'],
       }),
     };

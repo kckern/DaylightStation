@@ -66,6 +66,7 @@ export function createSchoolRouter({
   moveReading = null,
   deleteReading = null,
   undoReadingRevision = null,
+  getBookReaders = null,
   adjustSessionGrade = null,
   retractSessionGradeAdjustment = null,
   invalidateSessionEvidence = null,
@@ -75,6 +76,9 @@ export function createSchoolRouter({
   // Economy earn rules, changed from the teacher console (ManageEarnRules):
   // the rules are the economy's; this surface only gates who may edit them.
   manageEarnRules = null,
+  // The coin bank's panel door (`OpenBankAtPanel`): a face tap in, a
+  // short-lived bank launch target out. Null hides the route (404).
+  openBankAtPanel = null,
   teacherCapabilitySessions = null,
   teacherGate = null,
   openRemediation = null,
@@ -112,6 +116,8 @@ export function createSchoolRouter({
   milestoneStatuses = null,
   setMilestones = null,
   recordEnrichment = null,
+  // Express middleware mounted first: human use of the Portal reports presence.
+  presenceMiddleware = null,
   logger = console,
 }) {
   // School error CLASSES arrive via the factory. A router may not import
@@ -123,6 +129,7 @@ export function createSchoolRouter({
   const { GuestForbiddenError, SessionGoneError } = schoolErrors;
   const { ValidationError, EntityNotFoundError, DomainInvariantError } = coreErrors;
   const router = express.Router();
+  if (presenceMiddleware) router.use(presenceMiddleware);
   const cookieValue = (req, name) => {
     const raw = req.get('cookie') ?? '';
     for (const part of raw.split(';')) {
@@ -558,7 +565,7 @@ export function createSchoolRouter({
   // card-ladder`. Its own module, like the teacher reading workspace.
   mountCardLadderRoutes({
     router, wrap, cardLadderStudy, cardLadderTest, stageScreen: cardLadderStageScreen, capabilityProof,
-    teacherCapabilitySessions, cardLadderTuning,
+    teacherCapabilitySessions, cardLadderTuning, sendFileResource,
     notConfigured: (what) => new EntityNotFoundError(what, 'not configured'),
   });
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {
@@ -1038,6 +1045,7 @@ export function createSchoolRouter({
     if (!getTeacherToday) throw new EntityNotFoundError('teacher day', 'not configured');
     res.set('Cache-Control', 'no-store').json(presentPublicResources(await getTeacherToday.execute({
       studyDay: req.query.studyDay == null ? null : requiredTextQuery(req.query.studyDay, 'studyDay'), version: 'v2',
+      learnerId: req.query.learnerId == null ? null : requiredTextQuery(req.query.learnerId, 'learnerId'),
     })));
   }));
   // A course with no published cover 404s. Every consumer here draws through
@@ -1082,6 +1090,19 @@ export function createSchoolRouter({
     if (!cards) throw new EntityNotFoundError('learner answer sheets', 'not configured');
     res.set('Cache-Control', 'no-store').json({ schema: 'school.answer-sheets/v1',
       learnerId: req.params.learnerId, cards });
+  }));
+  // The coin bank's door on the wall panel (economy slice 1, C3). The use
+  // case owns both checks and stamps its refusals with a `status`; this maps
+  // that status and reads nothing from the body but the screen and learner.
+  router.post('/bank/open', wrap(async (req, res) => {
+    if (!openBankAtPanel) throw new EntityNotFoundError('bank door', 'not configured');
+    res.set('Cache-Control', 'no-store');
+    try {
+      res.json(await openBankAtPanel.open({ screenId: req.body?.screenId, learnerId: req.body?.learnerId }));
+    } catch (err) {
+      if (Number.isInteger(err?.status)) return res.status(err.status).json({ error: err.message });
+      throw err;
+    }
   }));
   // What school work pays (economy earn rules). Reads are the economy's own
   // /api/v1/earnings; writes live HERE so the teacher capability cookie
@@ -1172,6 +1193,7 @@ export function createSchoolRouter({
     getBookShelf, getLearnerReadings, updateReading,
     addReadingEntry, updateReadingEntry, deleteReadingEntry,
     addReadingForLearner, moveReading, deleteReading, undoReadingRevision,
+    getBookReaders,
   });
   // Opened directly by window.open so the popup is created during the click
   // gesture. This signs a five-minute read-only scope and redirects to the

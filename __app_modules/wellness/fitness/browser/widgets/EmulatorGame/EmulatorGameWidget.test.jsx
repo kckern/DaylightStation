@@ -15,13 +15,22 @@ const bus = vi.hoisted(() => {
 });
 vi.mock("../../../../../../frontend/src/services/WebSocketService.js", () => ({ wsService: bus }));
 
+const saveBarrier = vi.hoisted(() => ({ wait: vi.fn() }));
+
 // Stub the heavy console so the test asserts wiring, not EmulatorJS boot.
 vi.mock("../../../../../games/emulator/browser/EmulatorConsole.jsx", () => ({
-  EmulatorConsole: (props) => (
+  EmulatorConsole: (props) => {
+    React.useEffect(() => {
+      props.onExitGuardReady?.(saveBarrier.wait);
+      return () => props.onExitGuardReady?.(null);
+    }, [props.onExitGuardReady]);
+    return (
     <>
       <div
         data-testid="console"
         data-game={props.game?.id}
+        data-checkpoint-user={props.persistence?.checkpoint?.key?.user || ''}
+        data-save-intent={props.persistence?.intent || ''}
         data-haskbd={!!props.engineConfig?.controls}
         data-core={props.engineConfig?.core}
         data-gate={props.governanceGate?.mode}
@@ -48,7 +57,7 @@ vi.mock("../../../../../games/emulator/browser/EmulatorConsole.jsx", () => ({
       <button data-testid="play-signal" onClick={() => props.onArcadeGameSessionStateChange?.('playing')}>playing</button>
       <button data-testid="pause-signal" onClick={() => props.onArcadeGameSessionStateChange?.('paused')}>paused</button>
     </>
-  ),
+  ); },
 }));
 
 // Identity + kiosk env are mocked so we can drive the launch flow deterministically.
@@ -65,7 +74,7 @@ const identity = {
   unlockedUser: null,
 };
 vi.mock("../../identity/useIdentity.js", () => ({ useIdentity: () => identity }));
-vi.mock("../../player/overlays/UnlockPrompt.jsx", () => ({ default: ({ open }) => (open ? <div data-testid="unlock" /> : null) }));
+vi.mock("../../player/overlays/UnlockPrompt.jsx", () => ({ default: ({ open, onCancel }) => (open ? <div data-testid="unlock"><button onClick={onCancel}>Cancel identity</button></div> : null) }));
 
 // Stub saveClient so the resume lookup is controllable (no real fetch).
 const saveClient = { loadResume: vi.fn(), persistResume: vi.fn(), clearResume: vi.fn() };
@@ -91,6 +100,7 @@ function libraryWith(saveMode, extra = {}) {
 
 beforeEach(() => {
   api.mockReset();
+  saveBarrier.wait.mockReset().mockResolvedValue({ status: 'ok' });
   kiosk.value = false;
   devHost.value = true;
   identity.registerIdentify.mockReset();
@@ -676,4 +686,66 @@ describe('EmulatorGameWidget coin economy', () => {
     expect(el.getAttribute('data-coins')).toBe(''); // '—' fallback stays in the console
     expect(economyApi.openSession).not.toHaveBeenCalled();
   });
+});
+
+
+describe('EmulatorGameWidget protected transitions', () => {
+  async function launchGuest() {
+    kiosk.value = true; devHost.value = false;
+    api.mockImplementation(p => p === 'api/v1/emulator/library' ? Promise.resolve(libraryWith('battery')) : Promise.resolve({ users: ['user_5'] }));
+    identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
+    render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+    fireEvent.pointerDown(await screen.findByLabelText('Example Quest'));
+    await screen.findByLabelText('Continue as User_5');
+  }
+  it('waits for the running progress before switching to an identified saved game', async () => {
+    let finish; saveBarrier.wait.mockImplementation(() => new Promise(done => { finish = done; }));
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
+    await launchGuest(); fireEvent.click(screen.getByLabelText('Continue as User_5'));
+    await waitFor(() => expect(saveBarrier.wait).toHaveBeenCalled());
+    expect(screen.getByTestId('console').getAttribute('data-user')).toBe('');
+    await act(async () => finish({ status: 'ok' }));
+    await waitFor(() => expect(screen.getByTestId('console').getAttribute('data-checkpoint-user')).toBe('user_5'));
+    expect(screen.getByTestId('console').getAttribute('data-save-intent')).toBe('resume');
+  });
+  it('does not switch players after the save barrier fails', async () => {
+    saveBarrier.wait.mockResolvedValue({ status: 'error', error: 'Saving is unavailable' });
+    identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
+    await launchGuest(); fireEvent.click(screen.getByLabelText('Continue as User_5'));
+    await waitFor(() => expect(saveBarrier.wait).toHaveBeenCalled());
+    expect(screen.getByTestId('console').getAttribute('data-user')).toBe('');
+  });
+  it('does not reopen a departed game when an earlier fingerprint response arrives late', async () => {
+    let scanned; identity.registerIdentify.mockImplementation(() => new Promise(done => { scanned = done; }));
+    await launchGuest(); fireEvent.click(screen.getByLabelText('Continue as User_5'));
+    fireEvent.click(screen.getByTestId('exit'));
+    await waitFor(() => expect(screen.queryByTestId('console')).toBeNull());
+    await act(async () => scanned({ matched: true, userId: 'user_5' }));
+    expect(screen.queryByTestId('console')).toBeNull();
+  });
+});
+
+
+it('does not launch a cancelled owned game when its fingerprint response arrives later', async () => {
+  kiosk.value = true; devHost.value = false;
+  api.mockImplementation(p => p === 'api/v1/emulator/library' ? Promise.resolve(libraryWith('battery', { saveOwner: 'user_5' })) : Promise.resolve({ users: ['user_5'] }));
+  identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
+  let scanned; identity.registerIdentify.mockImplementation(() => new Promise(done => { scanned = done; }));
+  render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+  fireEvent.pointerDown(await screen.findByLabelText('Example Quest'));
+  await waitFor(() => expect(identity.registerIdentify).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel identity' }));
+  await act(async () => scanned({ matched: true, userId: 'user_5' }));
+  expect(screen.queryByTestId('console')).toBeNull();
+});
+it('does not treat a failed save-owner list as permission to claim over an unknown save', async () => {
+  kiosk.value = true; devHost.value = false;
+  api.mockImplementation(p => p === 'api/v1/emulator/library' ? Promise.resolve(libraryWith('battery'))
+    : p.startsWith('api/v1/emulator/saves/') ? Promise.reject(new Error('temporarily unavailable')) : Promise.resolve({}));
+  identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
+  identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
+  render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
+  fireEvent.pointerDown(await screen.findByLabelText('Example Quest')); await screen.findByTestId('console');
+  fireEvent.click(screen.getByText('Save as me')); await act(async () => {});
+  expect(screen.getByTestId('console').getAttribute('data-persist')).toBe('0');
 });

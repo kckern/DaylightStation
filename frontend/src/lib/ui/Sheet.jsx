@@ -14,11 +14,12 @@ const CloseIcon = () => (
 );
 
 /**
- * The house overlay: bottom sheet on mobile, centered dialog on desktop (CSS).
- * Registers on the dismiss stack (Escape), closes on scrim click, locks
+ * The house overlay: bottom sheet on mobile; on desktop a centered dialog by
+ * default, or — `placement="side"` — a full-height panel on the right edge, for
+ * a drill-in that sits beside the page it came from (CSS). Registers on the dismiss stack (Escape), closes on scrim click, locks
  * body scroll while open.
  */
-export function Sheet({ open, onClose, title, children }) {
+export function Sheet({ open, onClose, title, children, placement = 'center' }) {
   useDismissLayer(open, onClose);
   // Also handle sheets mounted already open and removed on close. A hook
   // listening only for opened -> false misses that common lifecycle.
@@ -45,7 +46,7 @@ export function Sheet({ open, onClose, title, children }) {
 
   if (!open) return null;
   return (
-    <div className="ds-sheet" role="dialog" aria-modal="true" aria-label={title}>
+    <div className={placement === 'side' ? 'ds-sheet ds-sheet--side' : 'ds-sheet'} role="dialog" aria-modal="true" aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
       <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">

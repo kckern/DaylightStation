@@ -74,3 +74,22 @@ describe('tokenFor', () => {
     expect(tokenFor('?play=plex:1')).not.toBe(tokenFor('?play=plex:1&shuffle=1'));
   });
 });
+
+it('keeps quality fields in Media deep links and includes them in dedupe identity', () => {
+  localStorage.clear();
+  const first = makeController();
+  const { unmount } = renderHook(() => useUrlCommand(first, '?play=plex:42&maxResolution=720&maxVideoBitrate=4000&transcode=force&adaptive=false'));
+  expect(first.queue.playNow).toHaveBeenCalledWith({ contentId: 'plex:42', maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false }, { clearRest: true });
+  unmount();
+  const second = makeController();
+  renderHook(() => useUrlCommand(second, '?play=plex:42&maxResolution=480'));
+  expect(second.queue.playNow).toHaveBeenCalledWith({ contentId: 'plex:42', maxResolution: '480' }, { clearRest: true });
+});
+
+it('does not replay an unchanged legacy URL after quality keys are added to the protocol', () => {
+  localStorage.clear();
+  localStorage.setItem('media-app.url-command-token', 'v2:play=plex:42&queue=&shuffle=&shader=&volume=');
+  const controller = makeController();
+  renderHook(() => useUrlCommand(controller, '?play=plex:42'));
+  expect(controller.queue.playNow).not.toHaveBeenCalled();
+});

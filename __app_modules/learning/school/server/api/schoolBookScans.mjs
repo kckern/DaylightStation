@@ -13,12 +13,33 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 export function createSchoolBookScansRouter({ bookScans, openAtPanel = null }) {
   const router = express.Router();
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  router.get('/pending', (req, res) => res.json({ intent: bookScans.pending(req.query.screenId) }));
+  // On a pile screen (the Portal) the waiting scans are a queue the panel
+  // drains in order; `queue` carries all of them, oldest first, beside the
+  // head `intent`. Absent on a screen without a pile.
+  router.get('/pending', (req, res) => {
+    const queue = bookScans.queue?.(req.query.screenId) ?? null;
+    res.json({ intent: bookScans.pending(req.query.screenId), ...(queue ? { queue } : {}) });
+  });
   if (openAtPanel) {
     router.post('/open', express.json(), asyncHandler(async (req, res) => {
       res.json(await openAtPanel.open({ screenId: req.body?.screenId, learnerId: req.body?.learnerId }));
     }));
   }
+  // The pile (see `PrepareBookScan`). Declared before `/:id/...` so `pile` is
+  // never read as an intent id. Filing writes the child's shelf directly; the
+  // authority is the same as a claim's — the barcode was read at this screen —
+  // and only card ids already in this screen's pile are accepted.
+  router.get('/pile', (req, res) => res.json({ pile: bookScans.pile(req.query.screenId) }));
+  router.post('/pile/file', express.json(), asyncHandler(async (req, res) => {
+    const { screenId, learnerId, cardIds = null } = req.body ?? {};
+    res.json({ pile: await bookScans.filePile({ screenId, learnerId, cardIds: Array.isArray(cardIds) ? cardIds : null }) });
+  }));
+  router.post('/pile/:cardId/move', express.json(), asyncHandler(async (req, res) => {
+    res.json({ pile: await bookScans.moveCard({ screenId: req.body?.screenId, cardId: req.params.cardId, learnerId: req.body?.learnerId }) });
+  }));
+  router.post('/pile/:cardId/remove', express.json(), asyncHandler(async (req, res) => {
+    res.json({ pile: await bookScans.removeCard({ screenId: req.body?.screenId, cardId: req.params.cardId }) });
+  }));
   router.post('/:id/claim', express.json(), asyncHandler(async (req, res) => {
     res.json(await bookScans.claim({ id: req.params.id, screenId: req.body?.screenId, learnerId: req.body?.learnerId }));
   }));

@@ -22,6 +22,7 @@ import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
  *   /scheduler/* - Cron job management
  *   /household/* - Household config, members, and devices
  *   /integrations/* - Integration status and health checks
+ *   /oauth/*     - OAuth reconnect flows (optional, injected)
  *   /images/*    - Image uploads
  *   /media/*     - Media operations (freshvideo metadata)
  *   /ws/*        - EventBus/WebSocket management
@@ -41,6 +42,7 @@ import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
  * @param {Object} config.schedulerAdminService - Injected SchedulerAdminService
  * @param {Object} config.integrationsQueryService - Injected IntegrationsQueryService
  * @param {Object} config.adminArtService - Injected AdminArtService
+ * @param {express.Router} [config.oauthRouter] - Prebuilt OAuth reconnect router (optional)
  * @param {Object} [config.logger=console] - Logger instance
  * @returns {express.Router}
  */
@@ -61,6 +63,7 @@ export function createAdminRouter(config) {
     stateGatesAdministration,
     stateGatesActorFromRequest,
     deviceRemoteAdministrationService,
+    oauthRouter,
     logger = console
   } = config;
   const router = express.Router();
@@ -108,6 +111,11 @@ export function createAdminRouter(config) {
     logger: logger.child?.({ submodule: 'integrations' }) || logger
   });
   router.use('/integrations', integrationsRouter);
+
+  // OAuth reconnect (built at the composition root; absent when not configured)
+  if (oauthRouter) {
+    router.use('/oauth', oauthRouter);
+  }
 
   // Mount apps config router (per-app YAML I/O lives in the injected AppsConfigService)
   const appsRouter = createAdminAppsRouter({

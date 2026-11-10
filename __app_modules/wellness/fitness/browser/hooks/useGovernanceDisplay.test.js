@@ -210,12 +210,12 @@ describe('resolveGovernanceDisplay — metRows', () => {
     expect(result.metRows.map((r) => r.key)).not.toContain('rider-a');
   });
 
-  it('credits met users from an active challenge', () => {
+  it('credits met users from a failed challenge', () => {
     const govState = makeGovState({
       status: 'locked',
       challenge: {
         type: 'zone',
-        status: 'pending',
+        status: 'failed',
         zone: 'cardio',
         missingUsers: ['rider-b'],
         metUsers: ['rider-a']
@@ -303,5 +303,225 @@ describe('resolveGovernanceDisplay — cadence sensor recovery', () => {
     expect(result.rows[0].targetZone.id).toBe('fat-burn');
     expect(result.metRows).toEqual([]);
     expect(result.challenge).toBeNull();
+  });
+});
+
+describe('resolveGovernanceDisplay — unattended start state and challenge holds', () => {
+  const unattendedStart = {
+    zone: 'cardio',
+    zoneLabel: 'Cardio',
+    children: {
+      'child-a': { started: true, overdue: false, remainingMs: 0 },
+      'child-b': { started: false, overdue: false, remainingMs: 80_000 },
+      'child-c': { started: false, overdue: true, remainingMs: 0 },
+    },
+  };
+
+  it('maps not-started children to reach-start / start-overdue, even while unlocked', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ unattendedStart }), emptyDisplayMap, zoneMetaWithCardio);
+    expect(result.show).toBe(false);
+    expect(result.participantStatuses['child-a']).toBeUndefined();
+    expect(result.participantStatuses['child-b']).toEqual({ status: 'reach-start', zoneLabel: 'Cardio', remainingMs: 80_000 });
+    expect(result.participantStatuses['child-c']).toEqual({ status: 'start-overdue', zoneLabel: 'Cardio', remainingMs: 0 });
+  });
+
+  it('marks the overdue child\'s warning row as start-overdue', () => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'warning',
+      unattendedStart,
+      requirements: [{ id: '__unattended_child_start', satisfied: false, zone: 'cardio', missingUsers: ['child-c'], metUsers: [] }],
+    }), makeDisplayMap({ 'child-c': { displayName: 'Child C', heartRate: 100, zoneId: 'fat-burn' } }), zoneMetaWithCardio);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({ userId: 'child-c', status: 'start-overdue', statusZoneLabel: 'Cardio' });
+  });
+
+  it('a rider mid-hold is holding, not missing', () => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'warning',
+      challenge: {
+        type: 'zone', status: 'failed', zone: 'cardio', zoneLabel: 'Cardio',
+        metUsers: [], missingUsers: ['child-a', 'child-b'], holding: ['child-a'], holdRemainingMs: 4_000,
+      },
+    }), makeDisplayMap({
+      'child-a': { displayName: 'Child A', heartRate: 150, zoneId: 'cardio' },
+      'child-b': { displayName: 'Child B', heartRate: 100, zoneId: 'fat-burn' },
+    }), zoneMetaWithCardio);
+    const byId = Object.fromEntries(result.rows.map((row) => [row.userId, row.status]));
+    expect(byId).toEqual({ 'child-a': 'holding', 'child-b': 'missing' });
+    expect(result.participantStatuses['child-a']).toMatchObject({ status: 'holding', zoneLabel: 'Cardio' });
+  });
+
+  it('no unattended state and no holds means no participant statuses', () => {
+    const result = resolveGovernanceDisplay(makeGovState(), emptyDisplayMap, emptyZoneMeta);
+    expect(result.participantStatuses).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cadence_floor rows: the rule is "pedal OR reach Active", not a heart rate
+// ---------------------------------------------------------------------------
+
+describe('resolveGovernanceDisplay — cadence_floor rows', () => {
+  const zoneMeta = {
+    map: {
+      cool: { id: 'cool', name: 'Cool', rank: 0 },
+      active: { id: 'active', name: 'Active', rank: 1 },
+    },
+  };
+  const displayMap = new Map([
+    ['rider_a', { displayName: 'Rider A', heartRate: 104, zoneId: 'cool', avatarSrc: '/a.png' }],
+  ]);
+  const floor = (overrides = {}) => ({
+    id: 'trike_floor',
+    type: 'cadence_floor',
+    zone: null,
+    orZone: 'active',
+    orZoneLabel: 'Active',
+    currentRate: 0,
+    targetRate: 30,
+    status: 'idle',
+    missingUsers: ['rider_a'],
+    metUsers: [],
+    satisfied: false,
+    ...overrides,
+  });
+
+  it('tags the row as a pedal row and targets the alternative zone', () => {
+    const result = resolveGovernanceDisplay(
+      makeGovState({ status: 'warning', requirements: [floor()] }),
+      displayMap,
+      zoneMeta,
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].pedal).toEqual({ rpm: 0, targetRpm: 30, orZoneLabel: 'Active' });
+    expect(result.rows[0].targetZone?.id).toBe('active');
+  });
+
+  it('a pure RPM floor (no alternative zone) has no target zone', () => {
+    const result = resolveGovernanceDisplay(
+      makeGovState({ status: 'warning', requirements: [floor({ orZone: null, orZoneLabel: null })] }),
+      displayMap,
+      zoneMeta,
+    );
+    expect(result.rows[0].pedal).toEqual({ rpm: 0, targetRpm: 30, orZoneLabel: null });
+    expect(result.rows[0].targetZone).toBeNull();
+  });
+});
+
+// Incident-shaped fixture uses generic riders: 3/4 Active, 1/2 Warm.
+const repairZones = { map: Object.fromEntries(['cool', 'active', 'warm', 'hot', 'fire'].map((id, rank) =>
+  [id, { id, name: id[0].toUpperCase() + id.slice(1), rank, color: ['#94a3b8', '#22c55e', '#eab308', '#f97316', '#ef4444'][rank] }])) };
+const repairProfiles = () => new Map(['a', 'b', 'c', 'd', 'exempt'].map((id, i) => [id, {
+  displayName: `Rider ${id.toUpperCase()}`, heartRate: i ? 120 : 105, zoneId: i ? 'active' : 'cool',
+  zoneTrusted: true, targetHeartRate: 110,
+  zoneSequence: [{ id: 'cool', threshold: 60 }, { id: 'active', threshold: 110 }, { id: 'warm', threshold: 140 }, { id: 'hot', threshold: 160 }, { id: 'fire', threshold: 180 }],
+}]));
+const repairFloor = { id: 'base', zone: 'active', zoneLabel: 'Active', satisfied: false,
+  actualCount: 3, requiredCount: 4, metUsers: ['b', 'c', 'd', 'exempt'], eligibleMetUsers: ['b', 'c', 'd'], missingUsers: ['a'] };
+const repairChallenge = { id: 'warm-challenge', type: 'zone', zone: 'warm', zoneLabel: 'Warm', requiredCount: 2,
+  actualCount: 1, status: 'pending', metUsers: ['c'], missingUsers: ['a', 'b'], holding: ['b'],
+  holdProgressByUser: { b: { elapsedMs: 4000, remainingMs: 6000, totalMs: 10000 } } };
+
+describe('resolveGovernanceDisplay — scoped foreground obligations', () => {
+  it.each(['pending', 'failed'])('floor owns the 3/4 Active explanation over %s Warm 1/2', (status) => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [repairFloor], challenge: { ...repairChallenge, status } }), repairProfiles(), repairZones);
+    expect(result.obligations).toHaveLength(1);
+    expect(result.obligations[0]).toMatchObject({ source: 'requirement', zone: 'active', zoneLabel: 'Active', actualCount: 3, requiredCount: 4 });
+    expect(result.rows.map((r) => r.userId)).toEqual(['a']);
+    expect(result.rows[0]).toMatchObject({ targetHeartRate: 110, status: 'missing', holdProgress: null });
+    expect(result.metRows.map((r) => r.userId)).toEqual(['b', 'c', 'd']);
+    expect(result.challenge).toBeNull();
+  });
+  it('restores the failed Warm obligation only after floor recovery', () => {
+    const display = (floor) => resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [floor], challenge: { ...repairChallenge, status: 'failed' } }), repairProfiles(), repairZones);
+    expect(display(repairFloor).obligations[0].source).toBe('requirement');
+    const recovered = display({ ...repairFloor, satisfied: true, actualCount: 4, missingUsers: [] });
+    expect(recovered.obligations).toHaveLength(1);
+    expect(recovered.obligations[0]).toMatchObject({ source: 'challenge', zone: 'warm', actualCount: 1, requiredCount: 2 });
+    expect(recovered.rows.map((r) => r.userId)).toEqual(['a', 'b']);
+    expect(recovered.rows[0].targetHeartRate).toBe(140);
+    expect(recovered.rows[1].holdProgress).toEqual({ elapsedMs: 4000, remainingMs: 6000, totalMs: 10000 });
+    expect(recovered.rows[1].holdPaused).toBe(false);
+    const paused = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [{ ...repairFloor, satisfied: true, actualCount: 4, missingUsers: [] }], challenge: { ...repairChallenge, status: 'failed', paused: true } }), repairProfiles(), repairZones);
+    expect(paused.rows[1].holdPaused).toBe(true);
+    expect(recovered.metRows.map((r) => r.userId)).toEqual(['c']);
+  });
+  it('pending challenges alone never supply a lock explanation', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'unlocked', challenge: repairChallenge }), repairProfiles(), repairZones);
+    expect(result.obligations).toEqual([]);
+    expect(result.show).toBe(false);
+    expect(result.rows).toEqual([]);
+  });
+  it.each([
+    ['cool', 'warm', 105, 110, 140], ['active', 'fire', 125, 140, 180],
+  ])('uses personal %s-to-%s target instead of the next-zone denominator', (current, target, hr, next, want) => {
+    const profiles = repairProfiles();
+    Object.assign(profiles.get('a'), { zoneId: current, heartRate: hr, targetHeartRate: next });
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [{ ...repairFloor, zone: target }] }), profiles, repairZones);
+    expect(result.rows[0].targetHeartRate).toBe(want);
+    expect(result.rows[0].currentZone.id).toBe(current);
+  });
+  it('keeps multiple floor obligations separate without merging their credit', () => {
+    const second = { ...repairFloor, id: 'higher', zone: 'warm', zoneLabel: 'Warm', actualCount: 1, requiredCount: 2, eligibleMetUsers: ['d'], missingUsers: ['b', 'c'] };
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [repairFloor, second], challenge: repairChallenge }), repairProfiles(), repairZones);
+    expect(result.obligations).toHaveLength(2);
+    expect(result.obligations.map((o) => [o.zone, o.rows.map((r) => r.userId), o.metRows.map((r) => r.userId)]))
+      .toEqual([['warm', ['b', 'c'], ['d']], ['active', ['a'], ['b', 'c', 'd']]]);
+    expect(result.rows.map((r) => r.userId)).toEqual(['b', 'c']);
+  });
+  it('never paints an untrusted fallback zone as earned current state', () => {
+    const profiles = repairProfiles();
+    profiles.get('a').zoneTrusted = false;
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', requirements: [repairFloor] }), profiles, repairZones);
+    expect(result.rows[0].currentZone).toBeNull();
+    expect(result.rows[0].heartRate).toBe(105);
+  });
+});
+
+describe('resolveGovernanceDisplay — playback pause vs floor backgrounding', () => {
+  const failedZone = (extra) => ({ id: 'z', type: 'zone', status: 'failed', zone: 'warm', missingUsers: [], metUsers: [], ...extra });
+  it('keeps a failed challenge as the lock owner while playback is paused', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', videoLocked: true,
+      challenge: failedZone({ paused: true, pauseReason: null }) }), emptyDisplayMap, emptyZoneMeta);
+    expect(result.challenge).toMatchObject({ id: 'z', status: 'failed' });
+  });
+  it('backgrounds a challenge suspended by the floor', () => {
+    const result = resolveGovernanceDisplay(makeGovState({ status: 'locked', videoLocked: true,
+      challenge: failedZone({ paused: true, pauseReason: 'floor_unmet' }) }), emptyDisplayMap, emptyZoneMeta);
+    expect(result.challenge).toBeNull();
+  });
+});
+
+describe('resolveGovernanceDisplay — warning cooldown (quiet)', () => {
+  const floor = { id: 'floor', zone: 'active', zoneLabel: 'Active', satisfied: false, missingUsers: ['rider-a'], metUsers: [], requiredCount: 2, actualCount: 1 };
+  const zones = { map: { cool: { id: 'cool', name: 'Cool', rank: 0 }, active: { id: 'active', name: 'Active', rank: 1 } } };
+  const riders = (heartRate = 94) => new Map([['rider-a', { displayName: 'Rider A', heartRate, zoneId: 'cool' }]]);
+  const run = (status, map = riders()) => resolveGovernanceDisplay(makeGovState({ status, requirements: [floor] }), map, zones);
+
+  it('is quiet when unlocked with an unmet floor (warning cooldown)', () => {
+    const result = run('unlocked');
+    expect(result.show).toBe(true);
+    expect(result.quiet).toBe(true);
+    expect(result.status).toBe('unlocked');
+    expect(result.rows[0].userId).toBe('rider-a');
+  });
+  it('is not quiet during warning', () => {
+    expect(run('warning').quiet).toBe(false);
+  });
+  it('is not quiet while pending', () => {
+    expect(run('pending').quiet).toBe(false);
+  });
+  it('is not quiet for a cycle init lock while unlocked', () => {
+    const result = resolveGovernanceDisplay(makeGovState({
+      status: 'unlocked', requirements: [],
+      challenge: makeCycleChallenge({ cycleState: 'locked', lockReason: 'init' }),
+    }), new Map(), zones);
+    expect(result.show).toBe(true);
+    expect(result.quiet).toBe(false);
+  });
+  it('is not quiet when every missing rider is filtered out', () => {
+    const result = run('unlocked', riders(null));
+    expect(result.show).toBe(false);
+    expect(result.quiet).toBe(false);
   });
 });

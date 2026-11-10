@@ -43,7 +43,7 @@ describe('recovery exhaustion behavior', () => {
   });
 
   test('RESILIENCE_STATUS includes exhausted', async () => {
-    const { RESILIENCE_STATUS } = await import('#frontend/modules/Player/hooks/useResilienceState.js');
+    const { RESILIENCE_STATUS } = await import('../../../../__capabilities/playback/browser/player/hooks/useResilienceState.js');
     expect(RESILIENCE_STATUS).toHaveProperty('exhausted');
     expect(RESILIENCE_STATUS.exhausted).toBe('exhausted');
   });

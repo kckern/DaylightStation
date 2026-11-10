@@ -1,3 +1,5 @@
+import { GamingSessionRestarts } from '../application/runtime/GamingSessionRestarts.mjs';
+import { YamlGamingSessionRestarts } from '../adapters/persistence/YamlGamingSessionRestarts.mjs';
 import { createGamingSessionRuntime } from '../../../../../__capabilities/gaming/server/composition/session-runtime.mjs';
 import path from 'node:path';
 import { SessionActorAuthorization } from "../../../../../__capabilities/gaming/portable/kernel/index.mjs";
@@ -23,11 +25,12 @@ import { YamlDrawingCheckpointRepository } from "../adapters/persistence/YamlDra
 import { YamlCharadesClueHistory } from "../adapters/persistence/YamlCharadesClueHistory.mjs";
 import { createGamingIdentitySource } from "../application/GamingIdentityPolicy.mjs";
 
-export function createGamingApiModule({ definitionStore, manifestStore, snapshotsDir, journalsDir, effectsDir, drawingCheckpointsDir, historyDir, partyGamesCatalog = null, aiGateway = null, aiConfig = {}, printer = null, broadcastEvent = null, logger = null, autoPrint = false, clock = { now: () => new Date() } }) {
+export function createGamingApiModule({ definitionStore, manifestStore, snapshotsDir, journalsDir, effectsDir, drawingCheckpointsDir, historyDir, restartsDir, partyGamesCatalog = null, aiGateway = null, aiConfig = {}, printer = null, broadcastEvent = null, logger = null, autoPrint = false, clock = { now: () => new Date() } }) {
   const { snapshots, journal, runtime, ids, coordinator } = createGamingSessionRuntime({
     definitions: definitionStore, snapshotsDir, journalsDir,
     rulesets: [cardBattleRuleModule, jeopardyRuleModule, activityPartyRuleModule, diceRuleModule, selectorRuleModule, checkersRuleModule, chessRuleModule, connectFourRuleModule],
     createIds: createGamingIdentitySource, clock,
+    onOperation: metric => logger?.info('gaming.session.operation', metric),
   });
   const effectStore = effectsDir ? new YamlGamingEffectStore({ effectsDir }) : null;
   const drawingCheckpoints = drawingCheckpointsDir ? new YamlDrawingCheckpointRepository({ checkpointsDir: drawingCheckpointsDir }) : null;
@@ -56,5 +59,6 @@ export function createGamingApiModule({ definitionStore, manifestStore, snapshot
     authorization: new SessionActorAuthorization(),
     clock,
   });
-  return { gamingApplication, gamingDiagnostics, coordinator, runtime, snapshots, journal, effects, observability, drawingCheckpoints, clueHistory };
+  const gamingSessionRestarts = new GamingSessionRestarts({ repository: new YamlGamingSessionRestarts({ restartsDir: restartsDir || path.join(journalsDir, 'restarts') }) });
+  return { gamingApplication, gamingDiagnostics, gamingSessionRestarts, coordinator, runtime, snapshots, journal, effects, observability, drawingCheckpoints, clueHistory };
 }

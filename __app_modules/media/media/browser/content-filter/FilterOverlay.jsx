@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { FilterBumper, FilterBadge } from './FilterChrome.jsx';
 
 /**
  * FilterOverlay — renders the OVERLAY-kind content-filter effects on top of the
@@ -18,6 +19,11 @@ import PropTypes from 'prop-types';
  * video element. (Letterbox-precise mapping — insetting to the real content rect
  * when object-fit letterboxes — is a follow-up; percentage-of-frame is correct
  * for the common fill case.)
+ *
+ * The same layer carries the viewer chrome from FilterChrome.jsx: `bumper`
+ * ({ summary }) over the opening, and `badge` ({ state, active, onOpen }) for as long
+ * as a filter is in force. The layer renders when either is present even with no
+ * effect active. The bumper yields to a skip-card; the badge stays.
  */
 
 const FADE_MS = 300;
@@ -58,7 +64,9 @@ function OverlayEffect({ effect, cue, theme, visible = true, art }) {
   const shown = useFadeShown(visible);
   const base = { pointerEvents: 'none', transition: FADE_TRANSITION, ...boxStyle(cue.rect) };
   const blur = (extra = '') => {
-    const value = `blur(${shown ? (BLUR_RADIUS[effect] || 0) : 0}px)${extra}`;
+    // A regional blur resolved from a full-blur (R2: tracked) keeps the full-blur radius.
+    const radius = effect === 'blur' && cue.heavy ? BLUR_RADIUS['full-blur'] : (BLUR_RADIUS[effect] || 0);
+    const value = `blur(${shown ? radius : 0}px)${extra}`;
     return { backdropFilter: value, WebkitBackdropFilter: value };
   };
   switch (effect) {
@@ -72,10 +80,36 @@ function OverlayEffect({ effect, cue, theme, visible = true, art }) {
       return <div data-filter-effect="full-blur" style={{ ...base, ...blur(), backgroundColor: shown ? (theme.fullBg || 'rgba(0,0,0,0.35)') : 'rgba(0,0,0,0)' }} />;
     case 'title-card':
       return <Card text={cue.text} theme={theme} effect="title-card" art={art} visible={visible} />;
+    case 'blackout':
+      return <Blackout cue={cue} theme={theme} shown={shown} base={base} />;
     default:
       return null;
   }
 }
+
+/**
+ * A scene hidden in full: opaque black, the sound keeps playing. Its card text
+ * (approved, else "Scene hidden.") shows on the black for the first `cardSec`,
+ * so a long black reads as a deliberate edit, not a broken TV.
+ */
+function Blackout({ cue, theme, shown, base }) {
+  const [textOn, setTextOn] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setTextOn(false), (cue.cardSec ?? 4.5) * 1000);
+    return () => clearTimeout(t);
+  }, [cue.id, cue.cardSec]);
+  const font = theme.font || 'Roboto Condensed, sans-serif';
+  return (
+    <div data-filter-effect="blackout" style={{ ...base, inset: 0, backgroundColor: '#000', opacity: shown ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {cue.firstPiece !== false && cue.text ? (
+        <div data-blackout-text style={{ color: '#fff', fontFamily: font, fontSize: '1.5em', textAlign: 'center', padding: '0 2em', opacity: textOn ? 0.9 : 0, transition: `opacity ${FADE_MS}ms ease` }}>{cue.text}</div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A clearLogo narrower than this is a thumbnail-grade asset: treated as missing. */
+export const MIN_LOGO_PX = 300;
 
 /** Hide an <img> that fails to load (e.g. a title with no clearLogo). */
 const hideOnError = (e) => { e.currentTarget.style.display = 'none'; };
@@ -133,10 +167,11 @@ function Card({ text, theme, effect = 'card', art, visible = true, fullFrame = f
         style={{ ...cardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}
       >
         {dim}
-        <img
+        {!logoFailed && <img
           src={art.logo} alt="" onError={() => setLogoFailed(true)}
+          onLoad={(e) => { if (e.currentTarget.naturalWidth < MIN_LOGO_PX) setLogoFailed(true); }}
           style={{ position: 'relative', maxWidth: '55%', maxHeight: '34%', objectFit: 'contain', marginBottom: '0.6em', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.75))' }}
-        />
+        />}
         <div style={{ ...textStyle, maxWidth: '82%', textAlign: 'center' }}>{text}</div>
       </div>
     );
@@ -165,14 +200,16 @@ function Card({ text, theme, effect = 'card', art, visible = true, fullFrame = f
   );
 }
 
-export function FilterOverlay({ activeOverlays = [], activeCard = null, theme = {}, art = null }) {
-  if (!activeOverlays.length && !activeCard) return null;
+export function FilterOverlay({ activeOverlays = [], activeCard = null, theme = {}, art = null, bumper = null, badge = null }) {
+  if (!activeOverlays.length && !activeCard && !bumper && !badge) return null;
   return (
     <div className="filter-overlay" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 50 }}>
       {activeOverlays.map(({ effect, cue, visible }) => (
         <OverlayEffect key={`${effect}:${cue.id}`} effect={effect} cue={cue} theme={theme} visible={visible !== false} art={art} />
       ))}
       {activeCard && <Card text={activeCard.text} theme={theme} art={art} fullFrame />}
+      {bumper && !activeCard && <FilterBumper summary={bumper.summary} art={art} theme={theme} />}
+      {badge && <FilterBadge state={badge.state} active={!!badge.active} onOpen={badge.onOpen} />}
     </div>
   );
 }
@@ -197,4 +234,6 @@ FilterOverlay.propTypes = {
   activeCard: PropTypes.shape({ text: PropTypes.string }),
   theme: PropTypes.object,
   art: artShape,
+  bumper: PropTypes.shape({ summary: PropTypes.string }),
+  badge: PropTypes.shape({ state: PropTypes.oneOf(['certified', 'provisional', 'failed']).isRequired, active: PropTypes.bool, onOpen: PropTypes.func }),
 };

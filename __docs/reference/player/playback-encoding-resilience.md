@@ -2,10 +2,10 @@
 
 How the backend decides whether Plex should **copy** a video stream or **re-encode**
 it, and why that decision is the difference between buttery native-framerate
-playback and a video that stalls every few seconds. This is the nuanced part of
-playback resilience: most stalls people blame on "the network" are actually a Plex
-encoder falling behind realtime because we asked it to re-encode something it
-could have copied.
+playback and a video that stalls every few seconds. An encoder falling behind
+is one cause; inspect buffer and segment delivery before attributing a stall to
+encoding load. Explicit [quality overrides](./playback-quality.md) intentionally
+force encoding when a person requests a lower ceiling.
 
 **The governing constraint:** Chromium/Firefox MSE (Media Source Extensions, which
 dash.js feeds) can only append fMP4 segments whose codec the SourceBuffer was
@@ -52,7 +52,8 @@ and stalling anyway because even 30fps realtime libx264 is marginal here.
 
 ### The fix: gate caps on direct-stream eligibility
 
-The caps (frame-rate limitation, max bitrate, max resolution) must only be sent
+For requests without explicit quality overrides, the default caps (frame-rate
+limitation, max bitrate, max resolution) must only be sent
 when the stream is **not** direct-streamable — i.e. when a re-encode is genuinely
 unavoidable. The gate is direct-stream eligibility, not direct-play eligibility:
 

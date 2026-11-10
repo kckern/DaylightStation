@@ -38,6 +38,10 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {{execute: (args: {code: string}) => Promise<object>}} deps.resolveAccessCode
  * @param {{execute: (args: {code: string, action: string}) => Promise<object>}} [deps.runSelfServiceAction]
  * @param {{getCoursePoster?: (courseId: string) => Promise<Buffer|null>}} [deps.curriculum]
+ * @param {{execute: Function, preview: Function}} [deps.issueSubjectNext] - the
+ *   code-free "print my next sheet" door (Portal bank strip, piano kiosk);
+ *   gates `POST /learners/:learnerId/print-next` and the dry-run
+ *   `GET /learners/:learnerId/next`
  * @returns {import('express').Router}
  */
 export function createSchoolSelfServiceRouter({
@@ -46,6 +50,7 @@ export function createSchoolSelfServiceRouter({
   recordLessonCompanionProgress = null,
   readPrinterHealth = null,
   curriculum = null,
+  issueSubjectNext = null,
 } = {}) {
   const router = express.Router();
 
@@ -173,6 +178,32 @@ export function createSchoolSelfServiceRouter({
       // override the path parameter — and `id` is not one field among many, it
       // selects which learner's companion record gets written.
       const result = await recordLessonCompanionProgress.execute({ ...(req.body || {}), id: req.params.id });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+
+  // --- print my next sheet (Portal bank strip, piano kiosk) -----------------
+  // No code and no PIN, so the body is read for exactly two things and nothing
+  // else: an optional subject and the device asking (the learner is the
+  // path). The use case refuses a learner off the roster and a subject that
+  // is not in that learner's plan; those are the only non-200 answers here,
+  // left to the app's error handler (404 / 400 by error name). It only ever
+  // prints the sheet the learner's own plan says is next, never a unit named
+  // by the caller. A refusal or a printer failure is a 200 with a sentence.
+  if (issueSubjectNext) {
+    router.post('/learners/:learnerId/print-next', asyncHandler(async (req, res) => {
+      const { subject = null, deviceId = null } = req.body || {};
+      const result = await issueSubjectNext.execute({
+        learnerId: req.params.learnerId, subject, deviceId,
+      });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+
+    // The dry run behind the button's label: which unit would print, and the
+    // reward for it when the economy can say. Opens no session.
+    router.get('/learners/:learnerId/next', asyncHandler(async (req, res) => {
+      const subject = typeof req.query.subject === 'string' && req.query.subject ? req.query.subject : null;
+      const result = await issueSubjectNext.preview({ learnerId: req.params.learnerId, subject });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

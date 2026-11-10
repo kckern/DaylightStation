@@ -3,6 +3,9 @@ package net.kckern.pianobridge;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayDeque;
+import java.util.function.LongSupplier;
+
 /**
  * AudioRouteGuard — the reconciler. Observes the audio route via Ops, asks
  * AudioGuardPolicy what should be true, and makes it so. Idempotent by design:
@@ -35,8 +38,16 @@ public final class AudioRouteGuard {
     private volatile String  reason  = "init";
     private volatile long    overrideUntilMs = 0L;
     private volatile int     clamps  = 0;
+    private static final long CLAMP_WINDOW_MS = 60_000L;
+    private final LongSupplier clock;
+    private final ArrayDeque<Long> recentClamps = new ArrayDeque<>();
+    private long lastClampLogMs = Long.MIN_VALUE / 2;
+    private int  clampLogs = 0;
 
-    public AudioRouteGuard(Ops ops) { this.ops = ops; }
+    public AudioRouteGuard(Ops ops) { this(ops, System::currentTimeMillis); }
+    public AudioRouteGuard(Ops ops, LongSupplier clock) { this.ops = ops; this.clock = clock; }
+
+    int clampLogs() { return clampLogs; }
 
     public boolean routeOk() { return routeOk; }
     public String  reason()  { return reason; }
@@ -54,11 +65,22 @@ public final class AudioRouteGuard {
 
         AudioGuardPolicy.Decision d = AudioGuardPolicy.decide(w);
 
-        // The volume floor is NEVER waived, override or not.
+        // The volume floor is NEVER waived, override or not — and never rate-limited.
+        // Only the LOG is: a fighting writer (FKB volumeLevels, 2026-10-23) once made
+        // this fire ~25x/s and flushed logcat's whole ring in four minutes.
         if (d.clampSpeakerVolume) {
             ops.clampSpeakerMusicVolume();
             clamps++;
-            Diag.log(TAG, "clamped built-in speaker STREAM_MUSIC to 0 (reason=" + d.reason + ")");
+            long now = clock.getAsLong();
+            recentClamps.addLast(now);
+            while (recentClamps.size() > 2000) recentClamps.removeFirst();
+            if (now - lastClampLogMs >= CLAMP_WINDOW_MS) {
+                int inWindow = countRecent(now);
+                Diag.log(TAG, "clamped built-in speaker STREAM_MUSIC to 0 (reason=" + d.reason
+                        + (inWindow > 1 ? ", " + inWindow + " clamps in the last minute" : "") + ")");
+                lastClampLogMs = now;
+                clampLogs++;
+            }
         }
 
         boolean overriding = System.currentTimeMillis() < overrideUntilMs;
@@ -74,13 +96,19 @@ public final class AudioRouteGuard {
         ops.setSynthGate(gateOpen);
     }
 
-    public JSONObject status() {
+    private int countRecent(long now) {
+        while (!recentClamps.isEmpty() && now - recentClamps.peekFirst() > CLAMP_WINDOW_MS) recentClamps.removeFirst();
+        return recentClamps.size();
+    }
+
+    public synchronized JSONObject status() {
         JSONObject o = new JSONObject();
         try {
             o.put("routeOk", routeOk);
             o.put("gated", !routeOk);
             o.put("reason", reason);
             o.put("clamps", clamps);
+            o.put("clampsPerMin", countRecent(clock.getAsLong()));
             o.put("overrideActive", System.currentTimeMillis() < overrideUntilMs);
         } catch (JSONException ignored) { }
         return o;

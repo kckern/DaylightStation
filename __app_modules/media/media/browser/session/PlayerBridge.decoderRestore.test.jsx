@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { createLocalSessionController } from "./LocalSessionController.js";
+import { createTrackPreferenceStore } from "../../../../../__capabilities/playback/browser/player/lib/trackPolicy.js";
+import { getLocalPlayerFeatures } from "./localPlayerFeatures.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 
 vi.mock("../../../../../frontend/src/lib/api.mjs", async importOriginal => ({
@@ -57,6 +59,7 @@ function restoredSnapshot(item, position) {
 describe('PlayerBridge decoder restoration', () => {
   beforeEach(async () => {
     hlsEngine.instances = [];
+    localStorage.clear();
     await import('hls.js');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200 });
     vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe');
@@ -79,7 +82,12 @@ describe('PlayerBridge decoder restoration', () => {
           id: contentId,
           assetId: contentId,
           mediaType: 'hls_video',
-          mediaUrl: `/stream/${encodeURIComponent(contentId)}.m3u8`,
+          mediaUrl: `/api/v1/proxy/plex/stream/${contentId.split(':')[1]}?session=fixture`,
+          metadata: { type: 'movie', Media: [{ Part: [{ Stream: [
+            { id: 7, streamType: 2, languageCode: 'eng', displayTitle: 'English', selected: true },
+            { id: 8, streamType: 2, languageCode: 'spa', displayTitle: 'Spanish' },
+            { id: 9, streamType: 3, languageCode: 'eng', displayTitle: 'English' },
+          ] }] }] },
         };
       }
       return {};
@@ -134,4 +142,46 @@ describe('PlayerBridge decoder restoration', () => {
       state: 'paused', currentItem: { contentId: 'plex:697368' }, position: 1805,
     }));
   });
+
+  it('replaces a paused decoder for quality without losing timeline position or queue', async () => {
+    createTrackPreferenceStore({ namespace: 'media-local' }).set('item:plex:42', { audio: { language: 'spa', label: 'Spanish' }, subtitle: { language: 'eng', label: 'English' } });
+    const controller = createLocalSessionController({ clientId: 'quality-decoder' });
+    await controller.queue.playNow(mediaItem('plex:42', 'Movie'));
+    render(<Harness controller={controller} />);
+    await waitFor(() => expect(document.querySelector('video')).not.toBeNull());
+    const original = document.querySelector('video');
+    Object.defineProperties(original, {
+      duration: { configurable: true, value: 8834 },
+      readyState: { configurable: true, value: 4 },
+      paused: { configurable: true, value: true },
+    });
+    original.currentTime = 4320.75;
+    act(() => {
+      controller.onPlayerPositionTick(4320.75);
+      controller.onPlayerStateChange('paused', 'plex:42');
+    });
+    const visit = controller.getSnapshot().queue.items[0].queueItemId;
+    await act(async () => {
+      expect(await controller.quality.setOverrides({ contentId: 'plex:42', queueItemId: visit,
+        quality: { maxResolution: '720', maxVideoBitrate: 4000, adaptive: false } })).toMatchObject({ ok: true });
+    });
+    await waitFor(() => expect(document.querySelector('video')).not.toBe(original));
+    const decoder = document.querySelector('video');
+    Object.defineProperties(decoder, {
+      duration: { configurable: true, value: 8834 }, readyState: { configurable: true, value: 4 },
+      paused: { configurable: true, value: true }, seeking: { configurable: true, value: false },
+      ended: { configurable: true, value: false }, error: { configurable: true, value: null },
+    });
+    act(() => decoder.dispatchEvent(new Event('loadedmetadata')));
+    await waitFor(() => expect(decoder.currentTime).toBe(4320.75));
+    act(() => { decoder.dispatchEvent(new Event('seeking')); decoder.dispatchEvent(new Event('seeked')); });
+    await waitFor(() => expect(controller.getSnapshot()).toMatchObject({ state: 'paused', position: 4320.75,
+      currentItem: { contentId: 'plex:42', maxResolution: '720', adaptive: false } }));
+    expect(controller.getSnapshot().queue.items[0].queueItemId).toBe(visit);
+    expect(hlsEngine.instances.at(-1).loadSource).toHaveBeenCalledWith(expect.stringContaining('audioStreamID=8'));
+    expect(hlsEngine.instances.at(-1).loadSource).toHaveBeenCalledWith(expect.stringContaining('subtitleStreamID=9'));
+    expect(getLocalPlayerFeatures().getState().tracks.selected).toEqual({ audio: '8', subtitle: '9' });
+    expect(DaylightAPI).toHaveBeenCalledWith(expect.stringMatching(/play\/plex:42.*maxResolution=720.*maxVideoBitrate=4000.*adaptive=false/));
+  });
+
 });

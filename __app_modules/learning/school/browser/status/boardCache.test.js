@@ -53,4 +53,17 @@ describe('boardCache', () => {
     writeBoardCache({ studyDay: 'd1', learners: {} }, store);
     expect(readBoardCache(store).earnings).toEqual({ a: { silver: 4 } });
   });
+
+  // Before 34d4d57f5f the board stored the wallet's SILVER `balance` as gold.
+  // A snapshot from then must never paint as gold.
+  it('ignores a snapshot written under the old key, whose gold was really silver', () => {
+    const store = memory();
+    store.setItem('daylight.school.status-board.v1', JSON.stringify({
+      studyDay: 'd1', learners: { a: { summary: { total: 1 } } }, gold: { a: 40 }, earnings: {}, rings: {},
+    }));
+    expect(BOARD_CACHE_KEY).not.toBe('daylight.school.status-board.v1');
+    expect(readBoardCache(store)).toBeNull();
+    writeBoardCache({ studyDay: 'd1', learners: {}, earnings: { a: { silver: 4 } } }, store);
+    expect(readBoardCache(store).gold).toEqual({});
+  });
 });

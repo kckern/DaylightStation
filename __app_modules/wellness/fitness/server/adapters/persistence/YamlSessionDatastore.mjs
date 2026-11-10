@@ -26,6 +26,7 @@ import { ItemId } from "../../../../../../__capabilities/content-catalog/server/
 import { selectPrimaryMedia, selectPrimaryMediaSummary, buildSelectionConfig } from "../../domain-services-select-primary-media.mjs";
 import { hydrateTimeline, dehydrateTimeline } from "./SessionTimelineCodec.mjs";
 import { stampIntegrity } from "../../domain-services-session-integrity.mjs";
+import { evaluateJunkSessionRecord } from "../../../shared/junkSession.mjs";
 
 // ── Session list index (derived read cache) ──────────────────────────────
 // The /sessions?since=Nd and /suggestions endpoints build per-session summaries
@@ -41,7 +42,10 @@ const INDEX_DIR_NAME = '_index';
 //     so every cached list summary's title had to be re-derived.
 // v5: media.primary carries the episode's description (Health's exercise rows).
 // v6: each participant carries hrAvg (Health credits home sessions from it).
-const INDEX_VERSION = 6;
+// v7: each participant carries isGuest (the show screen's per-rider episode badge).
+// v8: junk sessions (shared/junkSession.mjs) are left out of the list.
+// v9: media.items lists every video played (episode history credits each).
+const INDEX_VERSION = 9;
 
 /**
  * Derive session date from sessionId
@@ -403,6 +407,9 @@ export class YamlSessionDatastore extends ISessionDatastore {
       const basePath = path.join(sessionsDir, baseName);
       const data = loadYamlSafe(basePath);
       if (!data) continue;
+      // A stray strap's few seconds of HR is not a workout — keep it out of
+      // history (and everything built on this list). The file stays on disk.
+      if (evaluateJunkSessionRecord(data).junk) continue;
 
       const tz = typeof data.timezone === 'string' ? data.timezone : 'UTC';
       const startTime = parseToUnixMs(data.startTime, tz)
@@ -440,6 +447,8 @@ export class YamlSessionDatastore extends ISessionDatastore {
           // Average heart rate over the session — what the Health budget needs
           // to credit a workout Strava has not caught up with yet.
           hrAvg: Number.isFinite(Number(p?.hr_avg)) && Number(p.hr_avg) > 0 ? Number(p.hr_avg) : null,
+          // Guests ride but never earn the household's per-episode badge.
+          isGuest: info?.is_guest === true,
         };
       }
 
@@ -470,6 +479,16 @@ export class YamlSessionDatastore extends ISessionDatastore {
         };
         media = {
           primary: primaryItem ? formatMedia(primaryItem) : null,
+          // Every video the session played — episode history credits each one
+          // and caps riders' minutes at how long it ran.
+          items: summaryMediaObjects
+            // A video that never ran (opened and backed out of) is not "played".
+            .filter(m => m.contentId && m.mediaType !== 'audio' && !(Number(m.durationMs) <= 0))
+            .map(m => ({
+              contentId: ItemId.normalize(m.contentId, ItemId.extractSource(m.contentId)),
+              playedMs: m.durationMs != null && Number.isFinite(Number(m.durationMs)) ? Number(m.durationMs) : null,
+              rings: m.rings != null && Number.isFinite(Number(m.rings)) ? Number(m.rings) : null,
+            })),
         };
       }
 

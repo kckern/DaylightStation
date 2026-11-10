@@ -141,7 +141,7 @@ try {
       }
     }
   }
-  // Actual FlipMove insertion after hearts exist, no click required.
+  // Live insertion into the pinned equipment block after hearts exist, no click required.
   await page.evaluate(() => window.renderFixture({ count: 3, mat: false }));
   await page.getByRole('button', { name: /step mat:/i }).waitFor({ state: 'detached' });
   await page.evaluate(() => window.renderFixture({ count: 3, mat: true }));

@@ -316,14 +316,16 @@ describe('the dependency only points one way', () => {
   // `registerLessonSurround.test.jsx` already fails on ANY School import
   // anywhere in the Surround tree, which covers this module too. What it cannot
   // know about is this module's own file landing in the wrong tree.
+  // The Surround tree lives in the playback capability since the module reorg.
   const surroundDir = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)), '../../../Surround',
+    path.dirname(fileURLToPath(import.meta.url)), '../../../../../../__capabilities/playback/browser/surround',
   );
   const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
     e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]
   ));
 
   it('keeps the reading module out of the Surround tree', () => {
+    expect(fs.existsSync(surroundDir), `Surround tree not found at ${surroundDir}`).toBe(true);
     // Name the file, not the count — a walk that reports a number hides which
     // file moved.
     const stray = walk(surroundDir).filter((f) => /ReadingCredit/.test(path.basename(f)));

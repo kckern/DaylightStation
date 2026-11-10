@@ -22,7 +22,23 @@ export class CoachingMessageBuilder {
    * @param {{calories: {consumed, goal_min, goal_max}, protein: {consumed, goal}}} data
    * @returns {string} Telegram HTML
    */
-  static buildPostReportBlock({ calories, protein, inProgress = false }) {
+  static buildPostReportBlock({ calories, protein, inProgress = false, dayEvidence }) {
+    if (dayEvidence) {
+      const { assessment: a } = dayEvidence;
+      const live = !a.finished;
+      const amount = Number.isFinite(a.food) ? a.food : calories.consumed;
+      const calorieLine = dayEvidence.provenance === 'reconstructed'
+        ? `${dayEvidence.estimatedCalories == null ? 'intake estimate unavailable' : `${Math.round(dayEvidence.estimatedCalories)} cal estimated`}`
+        : `${Math.round(amount)} cal${live ? ' so far' : ' logged'}`;
+      const calorieTail = a.planFood == null || dayEvidence.provenance === 'reconstructed'
+        ? 'calorie budget unavailable' : `exercise-adjusted plan: ${Math.round(a.planFood)} cal`;
+      const knownProtein = a.proteinKnown && Number.isFinite(dayEvidence.protein);
+      const hasTarget = Number.isFinite(protein.goal) && protein.goal > 0;
+      const proteinLine = knownProtein
+        ? `${Math.round(dayEvidence.protein)}${hasTarget ? ` / ${protein.goal}` : ''}g protein${live ? ' so far' : ''}`
+        : 'protein unknown';
+      return [`🔥 <b>${calorieLine}</b> · ${calorieTail}`, `💪 <b>${proteinLine}</b>`].join('\n');
+    }
     const consumedCal = Math.round(calories.consumed);
     const consumedProt = Math.round(protein.consumed);
     if (inProgress) {
@@ -58,7 +74,7 @@ export class CoachingMessageBuilder {
     const lines = [...CoachingMessageBuilder.#yesterdayLines(yesterday, minCalories)];
 
     lines.push(weekAvg.trustedDays > 0
-      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(weekAvg.protein)} (target: ${proteinGoal}g)${CoachingMessageBuilder.#coverage(weekAvg)}`
+      ? `\u{1F4C9} <b>7-day avg:</b> ${weekAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(weekAvg.protein)} ${Number.isFinite(proteinGoal) && proteinGoal > 0 ? `(target: ${proteinGoal}g)` : ''}${CoachingMessageBuilder.#coverage(weekAvg)}${CoachingMessageBuilder.#proteinCoverage(weekAvg)}`
       : `\u{1F4C9} <b>7-day avg:</b> no fully logged days`);
 
     if (weight) {
@@ -76,11 +92,11 @@ export class CoachingMessageBuilder {
    */
   static buildWeeklyDigestBlock({ thisWeek, longTermAvg, weight }) {
     const lines = [thisWeek.trustedDays > 0
-      ? `\u{1F4CA} <b>This week:</b> ${thisWeek.calories} avg cal \u{00B7} ${CoachingMessageBuilder.#protein(thisWeek.protein, 'avg ')}${CoachingMessageBuilder.#coverage(thisWeek)}`
+      ? `\u{1F4CA} <b>This week:</b> ${thisWeek.calories} avg cal \u{00B7} ${CoachingMessageBuilder.#protein(thisWeek.protein, 'avg ')}${CoachingMessageBuilder.#coverage(thisWeek)}${CoachingMessageBuilder.#proteinCoverage(thisWeek)}`
       : `\u{1F4CA} <b>This week:</b> no fully logged days`];
 
     if (longTermAvg.trustedDays > 0) {
-      lines.push(`\u{1F4C8} <b>vs 8-wk avg:</b> ${longTermAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(longTermAvg.protein)}`);
+      lines.push(`\u{1F4C8} <b>vs 8-wk avg:</b> ${longTermAvg.calories} cal \u{00B7} ${CoachingMessageBuilder.#protein(longTermAvg.protein)}${CoachingMessageBuilder.#proteinCoverage(longTermAvg)}`);
     }
     if (weight) {
       lines.push(`\u{2696}\u{FE0F} <b>Weight trend:</b> ${CoachingMessageBuilder.#signed(weight.trend7d)} lbs this week \u{00B7} ${weight.weekStart.toFixed(1)} \u{2192} ${weight.weekEnd.toFixed(1)}`);
@@ -89,8 +105,12 @@ export class CoachingMessageBuilder {
   }
 
   static #yesterdayLines(day, minCalories) {
-    const totals = `${day.calories} cal \u{00B7} ${day.protein}g protein`;
+    const totals = `${day.calories == null ? 'calories unknown' : `${day.calories} cal`} \u{00B7} ${CoachingMessageBuilder.#protein(day.protein)}`;
     switch (day.status) {
+      case 'unavailable':
+        return [`\u{1F4CA} <b>Yesterday:</b> data unavailable`];
+      case 'reconstructed':
+        return [`\u{1F4CA} <b>Yesterday:</b> ${day.estimatedCalories == null ? 'intake estimate unavailable' : `${Math.round(day.estimatedCalories)} cal estimated`} \u{00B7} protein unknown`];
       case 'fasting':
         return [`\u{1F4CA} <b>Yesterday:</b> fast \u{00B7} ${totals}`];
       case 'incomplete':
@@ -106,6 +126,11 @@ export class CoachingMessageBuilder {
       default:
         return [`\u{1F4CA} <b>Yesterday:</b> ${totals}`];
     }
+  }
+
+  static #proteinCoverage({ proteinDays, trustedDays }) {
+    return Number.isInteger(proteinDays) && proteinDays > 0 && proteinDays !== trustedDays
+      ? ` · protein based on ${proteinDays} measured day${proteinDays === 1 ? '' : 's'}` : '';
   }
 
   static #coverage({ trustedDays, totalDays }) {
@@ -125,10 +150,10 @@ export class CoachingMessageBuilder {
    * @param {{activity: {type, durationMin, caloriesBurned}, budgetImpact: number}} data
    * @returns {string} Telegram HTML
    */
-  static buildExerciseReactionBlock({ activity, budgetImpact }) {
+  static buildExerciseReactionBlock({ activity, budgetImpact, activitySynced = null }) {
     return [
-      `\u{1F3C3} <b>${activity.type}:</b> ${activity.durationMin} min \u{00B7} ${activity.caloriesBurned} cal burned`,
-      `\u{1F525} <b>Budget update:</b> ~${budgetImpact} extra cal earned`,
+      `\u{1F3C3} <b>${String(activity.type).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}:</b> ${activity.durationMin} min \u{00B7} ${activity.caloriesBurned} cal burned`,
+      `\u{1F525} <b>Budget update:</b> ${budgetImpact == null ? 'exercise credit unavailable' : `${Math.round(budgetImpact)} cal exercise credit included today`}${activitySynced === false ? ' · activity budget synchronization pending' : ''}`,
     ].join('\n');
   }
 
@@ -141,6 +166,6 @@ export class CoachingMessageBuilder {
     if (!commentary) return '';
     const trimmed = commentary.trim();
     if (!trimmed) return '';
-    return `\n\n<blockquote>${trimmed}</blockquote>`;
+    return `\n\n<blockquote>${trimmed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</blockquote>`;
   }
 }

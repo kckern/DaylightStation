@@ -63,6 +63,7 @@ export function parseSchoolPath(urlBase) {
   if (seg[0] === 'geography') return { section: 'geography', materialPath: [] };
   if (seg[0] === 'chess') return { section: 'chess', materialPath: [] };
   if (seg[0] === 'rubiks-cube') return { section: 'rubiks-cube', materialPath: [] };
+  if (seg[0] === 'school-debrief') return { section: 'school-debrief', materialPath: [] };
   // Teacher-only entry into a stateless runner.  This is explicitly separate
   // from the learner launch below: no learner can be reconstructed from a
   // deep link and no grant is accepted here.
@@ -102,6 +103,7 @@ function sectionPathFor(urlBase, section) {
   if (section === 'geography') return `${urlBase}/geography`;
   if (section === 'chess') return `${urlBase}/chess`;
   if (section === 'rubiks-cube') return `${urlBase}/rubiks-cube`;
+  if (section === 'school-debrief') return `${urlBase}/school-debrief`;
   if (section.startsWith('sentence-ladder-preview:')) return `${urlBase}/sentence-ladder-preview/${encodeURIComponent(section.slice(24))}`;
   if (section.startsWith('launch-preview:')) return `${urlBase}/launch-preview/${encodeURIComponent(section.slice(15))}`;
   if (section === 'direct-launch') return `${urlBase}/go`;

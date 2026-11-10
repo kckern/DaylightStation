@@ -14,7 +14,11 @@ export function projectPortion(items, budget, draft) {
     : new Map(members.map(row => [entryId(row), scaleFoodPortion(row, portionFactor(draft.row, draft.portion))]));
   const replacements = new Map(members.map(row => [entryId(row), { ...row, ...patches.get(entryId(row)) }]));
   const projected = items.map(row => replacements.get(entryId(row)) || row);
-  if (!budget) return { items: projected, budget };
+  return { items: projected, budget: projectRowsBudget(items, budget, projected) };
+}
+
+export function projectRowsBudget(items, budget, projected) {
+  if (!budget) return budget;
   const delta = sumCounted(projected, 'calories') - sumCounted(items, 'calories');
   const food = budget.food + delta;
   // The same zone rule the server applies, so a live drag recolours exactly as
@@ -23,12 +27,16 @@ export function projectPortion(items, budget, draft) {
   const zoned = budget.range
     ? zoneFor({ food, exercise: budget.exercise, maintenance: budget.maintenance, range: budget.range, declared: budget.declared, fastedMeals: budget.fastedMeals })
     : null;
-  return { items: projected, budget: { ...budget,
+  return { ...budget,
     food,
     ...(zoned
       ? { zone: zoned.zone, remaining: zoned.remaining, net: zoned.net, complete: zoned.complete, status: statusForZone(zoned.zone) }
       : { remaining: budget.remaining - delta, status: budget.remaining - delta < 0 ? 'over' : 'under' }),
     macros: { ...budget.macros, ...Object.fromEntries(NUTRIENT_KEYS.filter(key => key !== 'calories').map(key =>
       [key, (budget.macros?.[key] || 0) + sumCounted(projected, key) - sumCounted(items, key)])) },
-  } };
+  };
+}
+
+export function projectPortions(items, budget, drafts) {
+  return drafts.reduce((state, draft) => projectPortion(state.items, state.budget, draft), { items, budget });
 }

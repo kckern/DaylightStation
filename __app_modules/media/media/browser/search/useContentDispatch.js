@@ -65,6 +65,7 @@ import { PeekContext } from "../peek/PeekContext.js";
 import { executeItemAction, createOperationId } from "../actions/itemAction.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { isShowItem } from "./showOn.js";
+import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 
 // Screens that apply an item action's start position: Media sessions (named
@@ -84,6 +85,7 @@ export function useContentDispatch() {
   const { dispatchToTarget, recordLocal, resolveLocal } = useDispatch();
   const { targetIds, mode } = useCastTarget();
   const { controller, queue, config } = useSessionController('local');
+  const quality = usePlaybackQuality();
   const peek = useContext(PeekContext);
   const fleetDevices = useContext(FleetContext)?.devices ?? null;
 
@@ -120,6 +122,7 @@ export function useContentDispatch() {
 
   const runAction = useCallback((kind, id, item, opts = {}) => {
     let input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title: item?.title };
+    input = { ...input, ...quality?.getOverrides(id) };
     // PLAY.4a: `startAt` is an explicit start the person chose (a screen's
     // spot, or 0 for the beginning) and rides the item; `resumedFrom` says the
     // play continues from a saved spot, so its confirmation offers Start over.
@@ -186,7 +189,7 @@ export function useContentDispatch() {
       if (!remote) resolveLocal?.(attemptId, { phase: 'failed', reason: error?.message ?? 'Could not apply action' });
     });
     return remote ? 'cast' : 'local';
-  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal, fleetDevices]);
+  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal, fleetDevices, quality]);
 
   // `opts.replaceHistoryEntry` is for a caller that is itself occupying the
   // current history entry and is about to close: the mobile Search Mode. Its
@@ -223,7 +226,7 @@ export function useContentDispatch() {
       confirmLocal('playNow', input);
       return 'local';
     }
-    if (controller) return runAction('playNow', id, item);
+    if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction('playNow', id, item);
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title);
       return 'cast';
@@ -232,7 +235,7 @@ export function useContentDispatch() {
     queue.playNow(input, { clearRest: true });
     confirmLocal('playNow', input);
     return 'local';
-  }, [push, targetIds, mode, queue, castTo, controller, runAction, confirmLocal]);
+  }, [push, targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
 
   // Explicit leaf actions from the ResultRow ⋯ menu share the aimed-target
   // route without inheriting selection's clearRest policy: More → Play Now
@@ -241,7 +244,7 @@ export function useContentDispatch() {
   const dispatchLeafVerb = useCallback((verb, id, item, opts = {}) => {
     const kind = ({ upNext: 'playFirst', playOn: 'playNow', addOn: 'add' })[verb] ?? verb;
     if (!['playNow', 'add', 'playNext', 'playFirst', 'shuffle'].includes(kind)) return undefined;
-    if (controller || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item, opts);
+    if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item, opts);
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { verb: verb === 'add' ? 'queue' : 'play' });
@@ -253,7 +256,7 @@ export function useContentDispatch() {
     else queue.add(input);
     confirmLocal(verb === 'playNow' ? 'playNow' : 'add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal]);
+  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
 
   // The ▶ verb on a container row: explicitly send the WHOLE container to
   // the current destination, replacing the queue. Same destination
@@ -264,7 +267,7 @@ export function useContentDispatch() {
   // false/omitted every payload is byte-identical to the pre-Task-15 shape.
   const playContainerAsQueue = useCallback((id, item, opts = {}) => {
     const { shuffle = false } = opts;
-    if (controller) return runAction(shuffle ? 'shuffle' : 'playNow', id, { ...item, itemType: 'container' }, { collection: true });
+    if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction(shuffle ? 'shuffle' : 'playNow', id, { ...item, itemType: 'container' }, { collection: true });
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { shuffle });
@@ -280,7 +283,7 @@ export function useContentDispatch() {
     queue.playNow(input, { clearRest: true });
     confirmLocal(shuffle ? 'shuffle' : 'playNow', input);
     return 'local';
-  }, [targetIds, mode, queue, config, castTo, controller, runAction, confirmLocal]);
+  }, [targetIds, mode, queue, config, castTo, controller, runAction, confirmLocal, quality]);
 
   // The + verb on a container row (Task 15): append the WHOLE container to
   // the current destination's queue instead of replacing it. Same
@@ -288,7 +291,7 @@ export function useContentDispatch() {
   // send the container as `queue:` (append) rather than `play:` (replace) —
   // see castTo's verb option and the header comment above.
   const addContainerToQueue = useCallback((id, item) => {
-    if (controller) return runAction('add', id, { ...item, itemType: 'container' });
+    if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction('add', id, { ...item, itemType: 'container' });
     const title = item?.title ?? null;
     if (targetIds.length > 0) {
       castTo(targetIds, mode, id, title, { verb: 'queue' });
@@ -299,7 +302,7 @@ export function useContentDispatch() {
     queue.add(input);
     confirmLocal('add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal]);
+  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
 
   // Add to this queue (STEER.1b/AC7, RQ-STEER-22): one addition to one
   // screen's queue — a leaf or a whole container — without touching the aim.

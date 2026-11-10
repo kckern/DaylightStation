@@ -1,13 +1,13 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   }),
   getLogger: () => ({
-    debug: jest.fn(), info: jest.fn(), warn: jest.fn(),
-    error: jest.fn(), sampled: jest.fn()
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(),
+    error: vi.fn(), sampled: vi.fn()
   })
 }));
 
@@ -28,7 +28,7 @@ describe('GovernanceEngine — idle state optimization', () => {
     expect(engine.phase).toBeNull();
 
     // Spy on _clearTimers to detect whether the reset body executes
-    const clearTimersSpy = jest.spyOn(engine, '_clearTimers');
+    const clearTimersSpy = vi.spyOn(engine, '_clearTimers');
 
     // Subsequent resets when already idle should early-return (no work at all)
     engine._resetToIdle();

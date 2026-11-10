@@ -18,12 +18,20 @@
 import { nowDate } from '#system/utils/time.mjs';
 import { NotFoundError, ValidationError } from '#apps/common/errors/SemanticErrors.mjs';
 
+// A budget year that ended this long ago no longer changes in Buxfer; its stored
+// transactions.yml is kept as is (compile still reads it).
+const FINISHED_PERIOD_GRACE_DAYS = 60;
+const DAY_MS = 86400000;
+
 export class FinanceHarvestService {
   #transactionSource;
   #financeStore;
   #categorizationService;
   #compilationService;
+  #rebalanceService;
   #logger;
+  #inFlight = new Map();
+  #today;
 
   /**
    * @param {Object} deps - Dependencies
@@ -32,13 +40,16 @@ export class FinanceHarvestService {
    * @param {Object} [deps.categorizationService] - TransactionCategorizationService instance
    * @param {Object} [deps.compilationService] - BudgetCompilationService instance
    * @param {Object} [deps.logger] - Logger instance
+   * @param {() => string} [deps.today] - Household-local date (YYYY-MM-DD); defaults to nowDate
    */
   constructor({
     transactionSource,
     financeStore,
     categorizationService,
     compilationService,
-    logger
+    rebalanceService,
+    logger,
+    today = nowDate
   }) {
     if (!transactionSource) {
       throw new ValidationError('FinanceHarvestService requires transactionSource', { field: 'transactionSource' });
@@ -50,7 +61,9 @@ export class FinanceHarvestService {
     this.#financeStore = financeStore;
     this.#categorizationService = categorizationService;
     this.#compilationService = compilationService;
+    this.#rebalanceService = rebalanceService;
     this.#logger = logger || console;
+    this.#today = today;
   }
 
   /**
@@ -60,10 +73,27 @@ export class FinanceHarvestService {
    * @param {Object} [options] - Harvest options
    * @param {boolean} [options.skipCategorization=false] - Skip AI categorization
    * @param {boolean} [options.skipCompilation=false] - Skip budget compilation
+   * @param {boolean} [options.skipRebalance=false] - Skip the day-to-day rebalance (runs after compilation)
    * @returns {Promise<{status: string, details: Object}>}
    */
-  async harvest(householdId, options = {}) {
-    const { skipCategorization = false, skipCompilation = false } = options;
+  harvest(householdId, options = {}) {
+    // Single-flight per household: a manual refresh during the hourly sync
+    // joins the run already in progress (its options are ignored).
+    // Keyed on the resolved household: undefined and 'default' name the same data.
+    const key = householdId ?? 'default';
+    const running = this.#inFlight.get(key);
+    if (running) {
+      this.#log('info', 'harvest.joined', { householdId });
+      return running;
+    }
+    const run = this.#runHarvest(householdId, options)
+      .finally(() => this.#inFlight.delete(key));
+    this.#inFlight.set(key, run);
+    return run;
+  }
+
+  async #runHarvest(householdId, options) {
+    const { skipCategorization = false, skipCompilation = false, skipRebalance = false } = options;
 
     this.#log('info', 'harvest.start', { householdId, options });
 
@@ -79,7 +109,8 @@ export class FinanceHarvestService {
       accountBalances: null,
       mortgageTransactions: null,
       categorization: null,
-      compilation: null
+      compilation: null,
+      rebalance: null
     };
 
     // Collect all unique accounts across budget periods
@@ -98,6 +129,11 @@ export class FinanceHarvestService {
       const startDate = this.#toDateString(budget.timeframe.start);
       const endDate = this.#toDateString(budget.timeframe.end);
 
+      if (this.#isFinished(endDate)) {
+        this.#log('debug', 'harvest.period.skipped', { start: startDate, end: endDate, reason: 'finished' });
+        continue;
+      }
+
       // Add accounts to set
       budget.accounts?.forEach(acc => allAccounts.add(acc));
 
@@ -110,13 +146,14 @@ export class FinanceHarvestService {
         budget.accounts
       );
 
-      // Save transactions
-      this.#financeStore.saveTransactions(startDate, transactions, householdId);
+      // Save transactions only when Buxfer changed them (the file lives on a synced volume)
+      const changed = this.#saveIfChanged(startDate, transactions, householdId);
 
       results.budgetPeriods.push({
         startDate,
         endDate,
-        transactionCount: transactions.length
+        transactionCount: transactions.length,
+        changed
       });
 
       this.#log('info', 'harvest.period.complete', {
@@ -157,6 +194,17 @@ export class FinanceHarvestService {
       await this.#compilationService.compile(householdId);
       results.compilation = 'success';
       this.#log('info', 'harvest.compilation.complete');
+
+      // Keep day-to-day on its burn-down by retagging fungible buys; it reads
+      // the compilation above and recompiles when it moves anything.
+      if (!skipRebalance && this.#rebalanceService) {
+        try {
+          results.rebalance = await this.#rebalanceService.rebalance(householdId);
+        } catch (error) {
+          results.rebalance = { error: error.message };
+          this.#log('warn', 'harvest.rebalance.failed', { error: error.message });
+        }
+      }
     }
 
     this.#log('info', 'harvest.complete', { results });
@@ -177,9 +225,9 @@ export class FinanceHarvestService {
     this.#log('info', 'harvest.period.refresh', { startDate, endDate, accounts });
 
     const transactions = await this.#fetchTransactions(startDate, endDate, accounts);
-    this.#financeStore.saveTransactions(startDate, transactions, householdId);
+    const changed = this.#saveIfChanged(startDate, transactions, householdId);
 
-    return { status: 'success', transactionCount: transactions.length };
+    return { status: 'success', transactionCount: transactions.length, changed };
   }
 
   /**
@@ -283,6 +331,8 @@ export class FinanceHarvestService {
   async #runCategorization(householdId, budgets) {
     let totalProcessed = 0;
     let totalFailed = 0;
+    const seenIds = new Set();
+    let unreadable = false;
 
     for (const budget of budgets) {
       if (budget.closed) continue;
@@ -290,7 +340,9 @@ export class FinanceHarvestService {
       const startDate = this.#toDateString(budget.timeframe.start);
       const transactions = this.#financeStore.getTransactions(startDate, householdId);
 
+      if (!transactions) unreadable = true;
       if (!transactions?.length) continue;
+      for (const txn of transactions) seenIds.add(String(txn.id));
 
       const { processed, failed } = await this.#categorizationService.categorize(
         transactions,
@@ -306,6 +358,13 @@ export class FinanceHarvestService {
       totalFailed += failed.length;
     }
 
+    // Settled entries are pruned against the ids seen across ALL periods of this run.
+    // Never prune on a run that saw nothing, or that could not read an open period:
+    // a partial view would wipe entries and cost a re-ask per row.
+    if (seenIds.size > 0 && !unreadable) {
+      this.#categorizationService.pruneSettled?.(seenIds, householdId);
+    }
+
     this.#log('info', 'harvest.categorization.complete', {
       processed: totalProcessed,
       failed: totalFailed
@@ -314,8 +373,39 @@ export class FinanceHarvestService {
     return { processed: totalProcessed, failed: totalFailed };
   }
 
+  /**
+   * Save a period's transactions unless they equal the stored copy.
+   * @returns {boolean} true when written
+   */
+  #saveIfChanged(startDate, transactions, householdId) {
+    const stored = this.#financeStore.getTransactions(startDate, householdId);
+    if (this.#sameTransactions(stored, transactions)) {
+      this.#log('debug', 'harvest.period.unchanged', { startDate, transactionCount: transactions.length });
+      return false;
+    }
+    this.#financeStore.saveTransactions(startDate, transactions, householdId);
+    return true;
+  }
+
+  #sameTransactions(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    // Sorted keys: a YAML round trip may reorder fields without changing a row.
+    const canon = (_k, v) => (v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]]))
+      : v);
+    // Rows are ordered by canonical JSON (not id): ids repeat (a transfer between two
+    // tracked accounts is returned once per account), so id alone leaves order ambiguous.
+    const rows = (list) => list.map(r => JSON.stringify(r, canon)).sort();
+    return JSON.stringify(rows(a)) === JSON.stringify(rows(b));
+  }
+
   #toDateString(date) {
     return new Date(date).toISOString().slice(0, 10);
+  }
+
+  #isFinished(endDate) {
+    const days = (Date.parse(this.#today()) - Date.parse(endDate)) / DAY_MS;
+    return days > FINISHED_PERIOD_GRACE_DAYS;
   }
 
   #getCurrentDate() {

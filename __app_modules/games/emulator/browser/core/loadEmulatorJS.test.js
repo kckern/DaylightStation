@@ -189,3 +189,29 @@ describe('buildEjsGlobals custom shaders', () => {
     expect('EJS_shaders' in g).toBe(false);
   });
 });
+
+describe('protected boot globals', () => {
+  it('uses verified assets, disables old databases/autoload and pins the selected variant', () => {
+    const romFile = new File(['rom'], 'verified.rom');
+    const protectedAssets = { romFile, paths: { 'gambatte-wasm.data': 'blob:verified' }, provenance: { core: { variant: 'legacy-wasm' } } };
+    const g = buildEjsGlobals({ player: '#m', romUrl: '/rom', pathtodata: '/engine/', protectedAssets });
+    expect(g.EJS_gameUrl).toBe(romFile);
+    expect(g.EJS_paths).toEqual(protectedAssets.paths);
+    expect(g.EJS_disableDatabases).toBe(true);
+    expect(g.EJS_forceLegacyCores).toBe(true);
+    expect(g.EJS_loadStateURL).toBeNull();
+    expect(g.EJS_gamePatchUrl).toBeNull();
+    expect(g.EJS_externalFiles).toEqual({});
+  });
+});
+
+it('does not reuse a boot when the verified core identity changes at the same ROM URL', async () => {
+  _resetLoaderForTests();
+  const win = makeFakeWin();
+  const assets = hash => ({ romFile: {}, paths: {}, provenance: { romHash: 'rom', core: { bundleHash: hash, variant: 'wasm' } } });
+  const first = loadEmulatorJS({ player: '#m', romUrl: '/rom', pathtodata: '/engine/', win, protectedAssets: assets('first') });
+  win.EJS_emulator = {}; win.EJS_onGameStart(); await first;
+  const second = loadEmulatorJS({ player: '#m', romUrl: '/rom', pathtodata: '/engine/', win, protectedAssets: assets('second') });
+  expect(second).not.toBe(first);
+  win.EJS_emulator = {}; win.EJS_onGameStart(); await second;
+});

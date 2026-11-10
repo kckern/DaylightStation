@@ -56,8 +56,9 @@ export class JobState {
       throw new ValidationError('now timestamp required', { code: 'MISSING_TIMESTAMP', field: 'now' });
     }
     if (!this.nextRun) return true; // Never run, needs initialization
-    const secondsUntil = this.secondsUntilNextRun(now);
-    return secondsUntil !== null && secondsUntil <= 0;
+    // Millisecond compare: flooring to whole seconds made a tick at hh:29:59.005 due for hh:30:00.
+    const slot = Date.parse(this.nextRun);
+    return Number.isNaN(slot) || slot <= now.getTime();
   }
 
   /**

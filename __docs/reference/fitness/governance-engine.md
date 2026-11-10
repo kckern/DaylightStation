@@ -14,9 +14,9 @@ steps per minute) can opt into the same warning, grace, and lock lifecycle.
 
 ## Related code:
 
-- frontend/src/hooks/fitness/GovernanceEngine.js
-- frontend/src/modules/Fitness/player/FitnessPlayer.jsx
-- frontend/src/Apps/FitnessApp.jsx
+- __app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js
+- __app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx
+- __app_modules/wellness/fitness/browser/FitnessApp.jsx
 
 ---
 
@@ -62,7 +62,7 @@ Note: The FPS profiler uses a global `window.__fitnessVideoElement` reference (s
 
 ## Core Components
 
-### GovernanceEngine (`frontend/src/hooks/fitness/GovernanceEngine.js`)
+### GovernanceEngine (`__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js`)
 
 The state machine that determines content access. Manages:
 - Phase transitions (pending/unlocked/warning/locked)
@@ -70,28 +70,36 @@ The state machine that determines content access. Manages:
 - Challenge timers
 - Grace period countdowns
 
-### FitnessSession (`frontend/src/hooks/fitness/FitnessSession.js`)
+### FitnessSession (`__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js`)
 
 Orchestrates the fitness experience:
 - Coordinates between DeviceManager, UserManager, GovernanceEngine
 - Manages the `snapshot` object used by UI components
 - Handles `updateSnapshot()` calls that trigger re-evaluation
 
-### ZoneProfileStore (`frontend/src/hooks/fitness/ZoneProfileStore.js`)
+### ZoneProfileStore (`__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js`)
 
-Stable, tick-aligned zone state for each user:
-- Derives zones from heart rate + zone config
-- Provides `getProfile(userId)` for zone lookup
-- Source of truth for GovernanceEngine zone data
+Authoritative accepted zone state for each user:
+- Derives raw zones from HR and the validated personal ladder.
+- Publishes `zoneTrusted: false` and a null `currentZoneId` until a real, accepted Cool reading establishes a baseline, or the rider resumes from recent trusted evidence. A synthetic/default Cool, null/zero HR, or a discarded startup packet cannot qualify.
+- FitnessSession supplies every rider's own `zoneReadingEligible` state on every shared synchronization, including synchronization triggered by another rider or a timeline tick. With multiple straps, this flag belongs to the actual lowest-HR sample selected by UserManager, including its originating device; an accepted higher packet cannot authorize another strap's discarded Cool. Scoring uses that same eligible canonical HR. Display HR remains available while untrusted.
+- A session reset, wearer change, or confirmed HR loss clears trust, smoothing and the zone entry immediately. A confirmed loss alone keeps the rider's last confirmed trusted reading as resume evidence: within 60 minutes, on the same strap, an eligible reading within 25 BPM of it (or two consistent readings 1s apart) resumes the zone of the current reading, with a `resumed: true` entry that never celebrates. A new session or a first attach without evidence still requires Cool. Kiosk reloads use the same rule: `zone_trust` v2 persists each rider's evidence and the reload seeds it (v1 files restore trust directly within the same 60 minutes). Both identities reset synchronously at correction/handover, including cached profile maps, pending HR provenance and unfinished scoring intervals; historical totals remain intact. A brief same-wearer gap within the existing five-second HR-loss grace preserves trust and the committed zone; it stops ring accrual immediately.
+- After trust, an upward zone change needs two separate samples spanning at least one second; then the five-second cooldown, three-second continuous stability and five-BPM exit margin apply. Before the store, DeviceManager holds any reading 25 BPM or more from the strap's previous one within two seconds until the next packet confirms it (`fitness.hr.spike_held` / `_confirmed` / `_rejected`, unthrottled, with raw packet fields). The garage bridge applies the same gate at the source (`satellites/fitness-controller/src/hrSpikeGate.mjs`, logged as `fitness.ant.hr_spike_*` to the log store). Repeated identical HR must still advance the state machine and interrupt pending transitions; stateful profiles are never memoized.
+- `getProfile(userId)` and `getZoneState(userId)` expose `zoneTrusted` and `zoneEntry`. `isZoneTrusted(userId)` provides a cheap credit check without cloning a full profile.
+- Roster/governance, display-map enrichment and TreasureBox respect the authoritative lack of an earned zone. Neither a roster fallback nor global thresholds may supply credit around the trust gate.
 
-### DeviceManager (`frontend/src/hooks/fitness/DeviceManager.js`)
+`displayZoneId/name/color`, `heartRate`, the raw `zoneSnapshot` and progress remain available for live measurements. They do not establish earned state; consumers must use the trusted committed zone for qualification and zone treatment.
+
+A committed transition backed by an accepted real reading carries `zoneEntry: { id, zoneId, heartRate, threshold, enteredAt }`. Its ID increases across the lifetime of a store, including resets; the evidence is cloned on reads and cleared on trust reset. It records the HR and threshold at commitment and persists while hysteresis retains that zone. Fire detection requires a trusted observed crossing, a new matching Fire entry and captured HR at or above the personal Fire threshold. Initial Fire, synthetic Cool → Fire, contradictory entry evidence, reused pre-reset entries and resumed entries cannot celebrate. Toast queues retain the captured entry HR/threshold even if the live HR later changes.
+
+### DeviceManager (`__app_modules/wellness/fitness/browser/hooks/fitness/DeviceManager.js`)
 
 Tracks physical devices and their current readings:
 - Maps device IDs to device objects
 - Stores current HR, zone, activity status
 - Handles device timeout/inactive detection
 
-### UserManager (`frontend/src/hooks/fitness/UserManager.js`)
+### UserManager (`__app_modules/wellness/fitness/browser/hooks/fitness/UserManager.js`)
 
 Maps users to their devices:
 - Resolves device ID → user ID
@@ -117,9 +125,8 @@ The GovernanceEngine has four phases:
 if (challengeForcesRed) {
   phase = 'locked';           // Failed challenge locks immediately
 } else if (allSatisfied) {
-  if (satisfiedDuration >= 500) {
-    phase = 'unlocked';       // Hysteresis: 500ms sustained
-  }
+  phase = 'unlocked';         // Unlocks on the same evaluation; no hold
+  satisfiedOnce = true;
 } else if (!satisfiedOnce) {
   phase = 'pending';          // Never unlocked before
 } else {
@@ -131,28 +138,35 @@ if (challengeForcesRed) {
 
 ## Critical Concepts
 
-### Hysteresis (500ms)
+### Immediate unlock (no engine-level hold)
 
-Requirements must be satisfied **continuously for 500ms** before:
-- `satisfiedOnce` is set to `true`
-- Phase transitions to `unlocked`
-
-**Why this matters**: Prevents rapid phase cycling when HR hovers around zone threshold.
+The engine unlocks on the **same evaluation** in which every requirement is
+satisfied. There is no sustained-satisfaction timer: an earlier 500ms
+`_hysteresisMs` / `satisfiedSince` hold was removed, and the engine no longer
+has either field. The same branch sets `satisfiedOnce = true` and clears any
+grace deadline.
 
 ```javascript
-// GovernanceEngine.js:147
-this._hysteresisMs = 500;
-
-// GovernanceEngine.js:1366-1376
-if (!this.meta.satisfiedSince) {
-  this.meta.satisfiedSince = now;
-}
-const satisfiedDuration = now - this.meta.satisfiedSince;
-if (satisfiedDuration >= this._hysteresisMs) {
+// GovernanceEngine.js, "6. Determine Phase"
+} else if (allSatisfied) {
+  // Requirements met -> unlocked immediately (no hysteresis delay)
   this.meta.satisfiedOnce = true;
-  this._setPhase('unlocked');
+  this.meta.deadline = null;
+  this.meta.gracePeriodTotal = null;
+  this._setPhase('unlocked', evalContext);
 }
 ```
+
+**Where jitter is absorbed instead**: debouncing lives one layer down, in
+`ZoneProfileStore` zone hysteresis (see ZoneProfileStore under Core Components above):
+the first zone change commits instantly, a second change within 5s must hold
+steady for 3s before it commits, and a downgrade is suppressed while HR stays
+within 5 bpm of the committed zone's floor. The engine reads those stabilized
+zones, so it can unlock at once without flickering. On the way down, the
+grace period (`warning` phase) and the post-recovery warning cooldown
+(`warning_cooldown_seconds`) keep a brief dip from locking the video; during
+the cooldown the overlay shows quiet chips only (see
+`governance-system-architecture.md`, warning cooldown).
 
 ### satisfiedOnce Flag
 
@@ -383,9 +397,9 @@ Bypassing governance via the show-title icon flips the title icon to unlocked an
 > **Route-level exception:** deep-linking directly to `/fitness/play/:id` for an episode of a sequential show redirects to the show UI unless `nogovern` is set — there the single `nogovern` flag lifts both the governance gate and the sequential redirect (see the `?nogovern` table below). This coupling exists only on the URL play path; inside the show UI the two controls remain independent. **This is intended behavior.**
 
 Related code:
-- `frontend/src/modules/Fitness/player/FitnessShow.jsx` — `isSequential`, `lockedEpisodeIds`, `handleLockedEpisodeUnlockTap` (`skip_content`), `handleGovernanceUnlockTap` (`governance_bypass`)
-- `frontend/src/modules/Fitness/player/overlays/UnlockPrompt.jsx` — shared fingerprint-unlock overlay
-- `frontend/src/Apps/FitnessApp.jsx` — `sequentialLabelSet`, route-level sequential redirect
+- `__app_modules/wellness/fitness/browser/player/FitnessShow.jsx` — `isSequential`, `lockedEpisodeIds`, `handleLockedEpisodeUnlockTap` (`skip_content`), `handleGovernanceUnlockTap` (`governance_bypass`)
+- `__app_modules/wellness/fitness/browser/player/overlays/UnlockPrompt.jsx` — shared fingerprint-unlock overlay
+- `__app_modules/wellness/fitness/browser/FitnessApp.jsx` — `sequentialLabelSet`, route-level sequential redirect
 
 ---
 
@@ -470,7 +484,7 @@ Challenge satisfaction is tracked separately. When a challenge is active:
 **Symptom in tests**:
 ```
 Video unlocked!                    ← Overlay disappeared
-WARNING: Governance phase is pending, not 'unlocked'  ← Engine hasn't completed hysteresis
+WARNING: Governance phase is pending, not 'unlocked'  ← Engine has not yet evaluated satisfied zones
 ```
 
 **Solution**: Always verify governance phase, not just overlay visibility:
@@ -577,7 +591,7 @@ async function unlockVideo(page, sim, devices) {
       return { unlocked: true, phaseUnlocked: true };
     }
 
-    // Keep sending HR through hysteresis
+    // Keep sending HR until ZoneProfileStore commits the zone and the engine re-evaluates
     for (const device of devices) {
       await sim.setZone(device.deviceId, 'warm');
     }
@@ -621,8 +635,17 @@ configured `Friend`/`Family` visitors using their own monitors. `Primary` and
 `Secondary` household riders retain their existing governance policy.
 
 With governed subjects present, all zone-challenge targets (`all`, `most`,
-`some`, and numeric counts) use only the subject count. Every active rider may
-fill the success tally. Continuous zone requirements are satisfied by subjects
+`majority`, `some`, and numeric counts) use only the subject count as the
+**target**, but guests and exempt riders who meet the zone **count toward**
+that target: an `all`/`majority`/`some` challenge is met when enough riders of
+any kind are in the zone, and an exempt adult (or a guest) alone can satisfy a
+challenge. There is no "a subject must also contribute" rule on the challenge
+path (owner ruling 2026-10-29: guests are never punished, but count toward
+winning). They are still never blamed — only subjects appear in `missingUsers`.
+
+A household member picked onto a borrowed strap from the Family tab is not a
+guest at all (`occupantType: 'member'`): they are a subject, held to challenges
+like anyone else (see `guest-mode.md`). Continuous zone requirements are satisfied by subjects
 only; guests never enter their required or missing lists. When only guests
 remain, blocking challenges are skipped or cancelled neutrally, without a
 failure, success record, or reward for zero work.
@@ -635,26 +658,87 @@ hold an exempt household rider to an established ride.
 
 Configured household exemptions are permanent non-subjects: they are never
 required, blamed, or promoted into the governed subject set when everyone else
-leaves. An exempt participant may add positive credit to a group challenge, but
-cannot be its sole satisfier. At least one non-exempt subject must also satisfy
-the challenge. Likewise, an exempt-only roster never clears the continuous zone
-gate; it remains locked with `non_exempt_contributor_required` and no exempt
-user in `missingUsers`. This lets an exempt child race with the group without
-turning their monitor into a solo playback key.
+leaves. An exempt participant adds positive credit to a group challenge and
+can satisfy it alone, like a guest. The anti-cheat lives on the continuous zone
+gate: an exempt-only roster never clears it; it remains locked with
+`non_exempt_contributor_required` and no exempt user in `missingUsers`. So an
+exempt child races with the group without turning their monitor into a solo
+playback key.
 
-When `unattended_policy` is enabled and none of the configured `superusers` is
-in the active roster, each governed video starts locked until a non-guest,
-non-exempt child reaches the configured startup zone. That achievement is
-latched for the current media item. The engine then replaces the ordinary
-random challenge schedule with cyclic `all` challenges at the configured zones
-on the exact configured interval. By default those targets alternate between
-Warm and the startup zone (normally Hot). These challenges bypass the 20-BPM
-feasibility check that ordinary policies use: the cycle exists to demand effort
-from children who are coasting, so "nobody is close to Hot right now" is the
-moment to fire, not a reason to skip. A missed challenge locks playback
-until every governed child reaches the target. A superuser joining immediately
-stands this policy down and restores the normal policy; leaving again starts a
-fresh startup gate.
+#### Unattended policy
+
+**Supervisors** come from household profiles: anyone whose profile has
+`type: owner`, plus anyone with `roles: [guardian]`. `governance.superusers` in
+the fitness config is retired and ignored; if present it logs
+`governance.config.superusers_retired` once. If no profile resolves as a
+supervisor, `FitnessConfigProjection` logs `governance.config.no_supervisors`
+at error level (once per process): with an empty set the unattended policy is
+off.
+
+A supervisor counts as present only on their own strap (an owned or member
+device, roster `isGuest: false`). Picking a supervisor's profile in the guest
+picker needs no PIN, so a guest-assigned supervisor is a guest: it does not
+stand the policy down, and it does not stand down or reset playback budgets
+either. This closes the "child picks Mom in the guest picker" bypass.
+
+The decision tree, evaluated against the active roster:
+
+1. `unattended_policy` disabled, or a supervisor (not guest-assigned) on the
+   roster: normal policy.
+2. Guests on the roster but no eligible child (for example a guest alone, or
+   a child who handed their strap to a "guest" and left): the unattended
+   policy stays engaged with its start gate, which only an eligible child can
+   satisfy, so the governed video stays locked. This holds even after a child
+   opened the video and left. Guests never unlock governed content by
+   themselves.
+3. No eligible child and no guest (only exempt riders): normal policy. An
+   exempt rider alone still cannot unlock governed content, because the
+   normal policy's non-exempt-contributor anchor is kept. An exempt adult who
+   should unlock content gets a profile with `roles: [guardian]`.
+4. Otherwise the unattended policy applies, as follows.
+
+Each governed video starts locked until a non-guest, non-exempt child reaches
+the configured startup zone (latched for the media item). Every other eligible
+child must then reach the startup zone once within 120 seconds of joining, or
+of the video opening for children already present. Inside that window nothing
+pauses. Past it, the engine adds a `__unattended_child_start` requirement
+(`rule: 'all'`) naming only the overdue children, which takes the normal
+warning, grace and lock path. The only way out is for the overdue child to
+reach the start zone: the requirement then disappears and the phase returns
+to unlocked.
+
+Start bookkeeping per media item:
+
+- A child who leaves before reaching the start zone keeps the original 120s
+  window on rejoin, so a flapping HR strap cannot extend it forever.
+- A child who already started keeps that on the same video, through leaving,
+  rejoining or a supervisor's visit.
+- A new video re-arms everything.
+- Events: `governance.unattended.child_started` and
+  `governance.unattended.child_start_overdue`.
+
+Once the video has opened, the composed state carries `unattendedStart`
+(`{ zone, zoneLabel, children: { [id]: { started, overdue, remainingMs } } }`,
+otherwise `null`); `resolveParticipantGovernanceStatuses()` in
+`useGovernanceDisplay.js` turns it into `reach-start` / `start-overdue`, which
+the sidebar roster card, the fullscreen vitals avatar and the warning/lock rows
+draw as a "Reach Hot" badge (`GovernanceStartBadge`, warning style once
+overdue).
+
+The engine also replaces the ordinary random challenge schedule with cyclic
+group challenges at the configured zones on the exact configured interval. The
+group rule scales with the roster: `all` (label "All warm") for one or two
+eligible children, `most` ("Most warm") for three or more. "Most" means at
+least half, `ceil(n/2)`: 3 children need 2, 4 need 2. One straggler therefore
+cannot lock the others. Each child's met/missing status is still evaluated,
+logged (`governance.challenge_eval`) and shown. By default those targets
+alternate between Warm and the startup zone (normally Hot). These challenges
+bypass the 20-BPM feasibility check that ordinary policies use: the cycle
+exists to demand effort from children who are coasting, so "nobody is close to
+Hot right now" is the moment to fire. A missed challenge locks playback until
+the rule's required count of governed children hold the target. A supervisor
+joining immediately stands this policy down and restores the normal policy;
+leaving again starts a fresh startup gate.
 
 Ordinary (non-unattended) zone challenges are feasibility-checked at start: if
 no participant is within 20 BPM of the target the challenge is skipped
@@ -662,17 +746,135 @@ no participant is within 20 BPM of the target the challenge is skipped
 In a `cyclic` selection the skip still advances the cursor, so the next attempt
 is the next selection rather than the same infeasible one.
 
+If some participants are close but not enough, the target drops one zone (hot →
+warm), but never onto or below the policy's baseline zone (`base_requirement` /
+zone `requirements`). The baseline already holds everyone there to keep the
+video playing, so a challenge at that zone is won the instant it starts. A
+challenge that cannot drop is skipped like an infeasible one, and any configured
+or unattended selection at or below the baseline is skipped at start
+(`governance.challenge.skipped_baseline_zone`).
+
+### Floor priority and challenge suspension
+
+Evaluated floor satisfaction determines priority independently of playback phase.
+Whenever a floor criterion is unmet, including its warning/grace interval, the
+floor owns the explanation. Its own target, subject numerator, denominator,
+blocker rows and credited faces stay together. Challenges are backgrounded and
+cannot introduce an earlier playback lock or start a replacement challenge.
+
+Zone, step and cycle challenges expose `paused: true` and
+`pauseReason: "floor_unmet"` during floor suspension. Their identity and
+pending/failed status persist. Countdown, optional holds and earned effort are
+banked; suspended wall time cannot expire a challenge, earn effort or award a
+reward. On recovery the same challenge resumes once with its saved time. A
+recoverable failed zone/step challenge returns to the foreground and keeps playback locked until its
+own recovery condition is met. Recoverable cycle `cycleState: locked` states also
+retain their existing recovery. Terminal cycle `status: failed` outcomes, such as
+`never_started`, keep their existing history, cooldown and automatic cleanup
+policy: the remaining outcome publication window freezes during floor suspension
+and resumes before cleanup, without introducing a new recovery condition. Cycle
+sensor/cadence recovery continues in the background without taking over the floor explanation or earning effort.
+
+Manual playback and transport pauses compose with floor suspension: only the
+union of paused time is excluded, including a pause beginning at timestamp zero.
+An active challenge survives departures below its start minimum; departure or
+observed target loss invalidates that rider's own uninterrupted hold. Step
+counters and cycle clocks rebase on recovery, excluding background effort.
+
+### Zone lookup misses
+
+A participant with no committed zone yet (just joined, untagged strap, guest)
+is looked up every evaluation tick. A **subject**'s miss logs
+`participant.zone.lookup_failed` (warn, at most 6/min, aggregated); a
+non-subject's logs `participant.zone.lookup_failed_nonsubject` at debug (1/min)
+— a guest can neither satisfy nor be blamed by the steady-state requirement, so
+its miss is not a warning.
+
+### Optional zone holds
+
+`challenge_hold_seconds` defaults to **0**, including invalid or negative settings.
+A zero hold credits a trusted eligible zone immediately and shows no secondary
+indicator. Explicit finite nonnegative settings, including 1 or 10 seconds,
+require continuous eligibility within that challenge. Another challenge cannot
+inherit a rider's hold credit.
+
+**A challenge is never satisfied at its start.** When a zone challenge comes due
+while the room already meets it and no hold is configured, it starts with its
+own hold (`activeChallenge.holdSeconds`, from
+`challenge_already_met_hold_seconds`, default **10**): the riders must hold the
+zone that long, so the start cue plays and the challenge is a real ask. Logged
+as `governance.challenge.already_met_at_start`. (Audit 2026-10-29: 6 of 12
+challenges completed 1–158ms after starting and cut their own start sound.)
+This hold tolerates brief dips: a rider whose HR straddles the zone boundary
+keeps their hold through up to `challenge_hold_dip_grace_seconds` (default
+**3**) below the zone; a longer stretch out of the zone resets it. Without that,
+a single sub-zone sample reset the hold and an already-met challenge could fail
+and lock the video. A configured `challenge_hold_seconds` keeps its strict
+reset-on-any-dip contract.
+
+The evaluation result and composed challenge snapshot expose
+`holdProgressByUser[userId]: { elapsedMs, remainingMs, totalMs }`. The existing
+`holdRemainingMs` is the earliest unfinished group hold and serves scheduling;
+it must not be shown as every person's remaining time. In-zone riders with an
+unfinished hold remain in `missingUsers` and `holding` until they qualify.
+Earned elapsed time survives a floor pause, while paused time earns nothing;
+observed ineligibility or departure resets the affected hold.
+
+### Foreground display contract
+
+`resolveGovernanceDisplay` emits ordered `display.obligations` entries with
+`{ key, source, zone, zoneLabel, requiredCount, actualCount, rows, metRows }`.
+`source` is `requirement` or `challenge`. While any floor is unmet, entries contain
+only unmet floors, ordered by target severity and kept separately scoped. Once
+all floors recover, a locking challenge may supply the explanation; a pending
+challenge never supplies a generic lock explanation. Activity and unavailable
+sensor policies retain their existing behavior. Compatibility fields such as
+`rows`, `metRows`, `requirements`, `challenge`, `zoneLabel`, and counts reflect the
+first selected obligation. Hosts presenting multiple floors consume the scoped
+entries instead of merging their rows and credit.
+
+Zone floor summaries carry `eligibleMetUsers` for the governed subjects counted
+by `actualCount`; broad `metUsers` can include guests/exempt riders and must not
+supply floor faces. Challenge credit retains its separate guest/exempt policy.
+
+Current zone pills and avatar rings follow live trusted committed state. HR
+remains visible while untrusted, without an earned-zone treatment. The HR
+denominator is the displayed obligation's personal target threshold, even if
+several zones above the rider's current zone. The numeric percentage notch tracks
+HR progress and remains within the bar at 0–100%. Nonzero holds add a slim
+secondary hold bar (`player/overlays/HoldProgress.jsx`) under the rider's zone
+bar, with accessible individual timing and a quiet label on the same line — no
+Holding prose and no extra text row. The label reads `Hold Ns` (whole seconds
+remaining) while counting, `Keep going` once the rider is below the target zone
+(during the dip grace, or after the engine dropped the hold — the empty track
+stays so nothing jumps), and is blank once the engine reports the hold complete.
+Until then the live estimate never finishes on its own: the fill stops at 98%
+(`HOLD_VISUAL_CAP`) and the label at `Hold 1s`, so a late completion pulse
+cannot show a full bar that the rider has not yet been credited for. The engine only
+re-evaluates a few times per hold, so the fill is never stepped from snapshots:
+it runs one linear `transform: scaleX` CSS animation over the whole hold, entered
+part-way with a negative `animation-delay`, and is re-keyed only when a snapshot
+disagrees with it by more than 500 ms (reset, pause/resume, new total). While the
+challenge is paused (`row.holdPaused`, from `challenge.paused`) the fill is a
+static transform at the engine's frozen elapsed time. Cadence blockers use a crank/pedal icon with an
+accessible pedal OR zone instruction and a compact measurement in the existing
+row. Lock rows use natural height and bounded scrolling rather than blank
+reserved table space. Zone colors use the shared palette; HR strap identity
+colors remain a separate contract.
+
 ## Configuration
 
 ### Governance Policies
 
-Located in `data/household/fitness/config.yml`:
+Located at `household/fitness/config.yml` under the configured data root:
 
 ```yaml
 governance:
   grace_period_seconds: 30
-  superusers:
-    - user_1
+  challenge_hold_seconds: 0   # immediate zone credit; set 1 or 10 for an optional hold
+  challenge_already_met_hold_seconds: 10   # hold asked of a challenge already met at its start
+  challenge_hold_dip_grace_seconds: 3      # brief dips that hold survives
+  # superusers: retired and ignored; supervisors are profiles with type: owner or roles: [guardian]
   unattended_policy:
     enabled: true
     startup_zone: hot
@@ -808,8 +1010,10 @@ Triggers (each fires once per occurrence):
 
 Common to all cues:
 
-- `duck_to` is multiplicative against the viewer's current volume (`0.1` = 10%),
-  so the duck respects wherever they set the master level.
+- `duck_to` is the fraction of the video's normal audible loudness during the
+  cue (`0.1` = 10%, about -20 dB), whatever level the viewer set. The duck is
+  applied once (see `audio-duck-cues.md`, "The boost amplifier carries the
+  un-ducked level").
 - `sound` resolves against the media root; the referenced file must exist there.
 - When two cues would coincide, the grace-period warning wins — an impending
   lock is the most important thing to signal. Challenge *failure* has no cue: the
@@ -881,16 +1085,16 @@ zones:
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/hooks/fitness/GovernanceEngine.js` | Core state machine |
-| `frontend/src/hooks/fitness/FitnessSession.js` | Session orchestration |
-| `frontend/src/hooks/fitness/ZoneProfileStore.js` | Stable zone state |
-| `frontend/src/hooks/fitness/DeviceManager.js` | Device tracking |
-| `frontend/src/hooks/fitness/UserManager.js` | User-device mapping |
-| `frontend/src/context/FitnessContext.jsx` | React context provider |
-| `frontend/src/modules/Fitness/player/FitnessPlayer.jsx` | Video control, bypass-aware effective governance state |
-| `frontend/src/modules/Fitness/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` |
-| `frontend/src/modules/Fitness/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI |
-| `frontend/src/modules/Fitness/player/hooks/useGovernanceAudioDuck.js` | Audio cue + duck/restore lifecycle |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js` | Core state machine |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/FitnessSession.js` | Session orchestration |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js` | Stable zone state |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/DeviceManager.js` | Device tracking |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/UserManager.js` | User-device mapping |
+| `__app_modules/wellness/fitness/browser/context/FitnessContext.jsx` | React context provider |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayer.jsx` | Video control, bypass-aware effective governance state |
+| `__app_modules/wellness/fitness/browser/player/FitnessPlayerOverlay.jsx` | Overlay host; honors `governanceStateOverride` |
+| `__app_modules/wellness/fitness/browser/player/overlays/GovernanceStateOverlay.jsx` | Lock / warning screen UI |
+| `__app_modules/wellness/fitness/browser/player/hooks/useGovernanceAudioDuck.js` | Audio cue + duck/restore lifecycle |
 | `tests/live/flow/fitness/governance-comprehensive.runtime.test.mjs` | Test suite |
 
 ---
@@ -900,7 +1104,42 @@ zones:
 - `ops:docs/_wip/bugs/2026-02-03-governance-test-flakiness.md` - Bug investigation
 - `ops:docs/_wip/bugs/2026-02-03-governance-test-skipped-items.md` - Skipped test details
 - `ops:docs/_wip/bugs/2026-09-22-fitness-play-repaused-by-stale-governance-closure.md` - Play re-paused after unlock by a stale closure
-- `ops:docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan
+- `ops:docs/plans/2026-02-03-governance-test-hysteresis-fix.md` - Implementation plan (historical: the 500ms engine hold it worked around was later removed)
+- `ops:docs/plans/2026-02-17-governance-ghost-oscillation-fix.md` - Removal of the engine hysteresis/relock logic
+
+## Warning overlay observability
+
+The engine's `governance.phase_change` says what governance decided; it cannot
+say what the household saw. The warning overlay (life meter + offender chips,
+`GovernanceStateOverlay.jsx`) logs that itself, under
+`context.component: governance-warning-overlay`:
+
+| Event | Level | When |
+|---|---|---|
+| `governance.warning_overlay.shown` | info | chips mount (`rows`: chip keys), with the meter when `quiet:false` |
+| `governance.warning_overlay.hidden` | info | they unmount, with `visibleMs` |
+| `governance.warning_overlay.rows_changed` | info | the riders named in the chips change |
+| `governance.warning_overlay.paint_check` | info | first check of each showing |
+| `governance.warning_overlay.dimmed` | **warn** | the meter/chips become dimmed |
+| `governance.warning_overlay.undimmed` | info | they are clean again |
+
+Every `warning_overlay.*` event carries `quiet`: `false` for a real warning
+(meter, scrim and chips), `true` for the cooldown's chips-only overlay (no
+meter, no scrim). A quiet overlay with no rows mounts nothing and logs nothing.
+
+A run of short `shown`/`hidden` pairs is what a "thrashing" warning looks like
+on screen. The paint check (`overlayPaintCheck.js`, every 2s while shown) reports
+per target whether the warning scrim — the darken/blur/grayscale backdrop —
+paints **above** it (`coveredByScrim`), and every filter or opacity < 1 on it or
+an ancestor (`filters`). The overlay (z 60) sits inside the video host and the
+scrim (z 5) is a later sibling; the meter stays above it only while nothing
+between them starts a new stacking context. Verified clean in Chromium and
+Firefox, and verified to fire when the host is forced into its own context.
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query="governance.warning_overlay" AND _time:24h' -d 'limit=200'
+```
 
 ## Cadence floor — holding a rider to the ride they started
 
@@ -921,22 +1160,65 @@ requirements:
     arm_min_rpm: 30
     trip_after_seconds: 10
     require_rider_hr: true
+    # Optional — defaults shown:
+    window_seconds: 10        # rolling window that decides "pedaling"
+    moving_min_rpm: 30        # defaults to arm_min_rpm
+    or_zone: active           # HR zone that also satisfies it; `none` = RPM only
 ```
 
 ### Armed by evidence, not by roster
 
 The gate is dormant until all of the following are true at once:
 
-1. The equipment is **claimed** by a rider who is an active participant.
+1. The equipment is **claimed** by a rider who is an active participant. An
+   equipment entry's configured `rider` is the default claim and is re-applied
+   at the start of **every** session (`FitnessSession.reset()` re-seeds), not
+   only on page load. Before 2026-10-20 it was cleared when a session ended, so
+   from the second workout after a page load the tricycle was unclaimed and its
+   floor stood down silently. A requirement that never produces a result for
+   its grace window logs `governance.requirement.inert` once per session.
 2. That rider has a **live heart-rate strap** (`require_rider_hr`, default true).
    An exempt rider satisfies this — exemption excuses an HR *target*, not
    presence.
 3. The rider has accumulated **`arm_seconds` above `arm_min_rpm`** on this
    equipment during this session.
 
-Only then does it start watching for a stop. After `trip_after_seconds` of
-continuous zero RPM the requirement goes unsatisfied and the ordinary
-warning → grace → lock path runs; there are no new phases. It disarms the moment
+Only then does it start watching for a stop. The ordinary warning → grace →
+lock path runs when it trips; there are no new phases.
+
+### Pedal OR get active
+
+Once armed, the rider is in good standing while **either** holds:
+
+- **Pedaling** — the rolling `window_seconds` cadence is at least
+  `moving_min_rpm`, counted from the sensor's cumulative crank-revolution
+  counter (`revolutions` on the cadence map entry; 16-bit, wraps). A sensor that
+  sends no counter falls back to averaging its RPM samples over the window.
+  The window counts whole turns, so it reads in steps of `60 / window_seconds`
+  RPM (6 at the default): a steady 29 RPM is 4 turns = 24 and counts as idle.
+  Lower `moving_min_rpm` if a slow rider needs room below the arm threshold.
+- **Active** — the rider's committed HR zone is `or_zone` or above. Off the
+  bike doing jumping jacks at Active is fine.
+
+The idle clock starts at the last moment the rider was doing either (last
+revolution, or last sample in `or_zone`), and the requirement trips after
+`trip_after_seconds` idle. A trip clears only on the same terms.
+
+**Why a window and a counter, not the instant RPM:** an ANT+ cadence sensor
+holds its RPM for ~2.5s after every single push of the pedal (one revolution
+reads ~41 RPM for three packets). Judged on the instant reading, any non-zero
+sample cleared the trip and reset the 30s grace. On 2026-10-21 a rider stopped
+for 4.5 minutes, nudged the pedal one revolution every 10–30s, collected six
+warnings and never locked — while the same floor locked him for standing at 0
+RPM doing jumping jacks at 146 bpm. Both are replayed from the garage
+controller's packets in `GovernanceEngine.cadenceFloorEitherOr.test.js`.
+
+The summary carries `status` (`pedaling` | `active` | `idle` | `suspended`),
+`currentRate` (the window RPM), `orZone` and `orZoneLabel`. The display turns a
+missing rider into a row with `pedal` set; the warning chip and lock row then
+read the rider's window RPM against the floor and the instruction —
+**"0 / 30 RPM · Pedal or reach Active"** (or **"… · Start pedaling"** with no
+`or_zone`) — instead of a heart rate, and the row's target pill is the `or_zone`. It disarms the moment
 the rider is unassigned, their strap drops, or a new rider takes over — a clean
 dismount can never lock the room, and evidence never transfers between riders.
 
@@ -967,5 +1249,6 @@ that still has no map keeps the previous one. An omitted map must never become
 resetting the rider's evidence on every pulse
 (`GovernanceEngine.cadenceFloorPulse.test.js`).
 
-Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`), and
-`.tripped`.
+Emits `governance.cadence_floor.armed`, `.disarmed` (with a `reason`),
+`.idle_started`, `.tripped` (once per trip, with `windowRpm` and `riderZone`) and
+`.cleared` (with `reason: pedaling | active`).

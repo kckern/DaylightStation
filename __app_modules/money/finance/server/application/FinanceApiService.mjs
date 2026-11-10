@@ -150,13 +150,14 @@ export class FinanceApiService {
     return mortgage ? { mortgage, household: householdId } : null;
   }
 
-  async refresh(householdId, { skipCategorization, skipCompilation }) {
+  async refresh(householdId, { skipCategorization, skipCompilation, skipRebalance }) {
     if (!this.#harvest) return { kind: 'service_not_configured' };
     if (!this.#providerConfigured()) return { kind: 'provider_not_configured' };
     this.#logger.info?.('finance.refresh.started', { householdId });
     const result = await this.#harvest.harvest(householdId, {
       skipCategorization: skipCategorization === true,
       skipCompilation: skipCompilation === true,
+      skipRebalance: skipRebalance === true,
     });
     this.#logger.info?.('finance.refresh.completed', { householdId, result: result.status });
     return { kind: 'ok', result };

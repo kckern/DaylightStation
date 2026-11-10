@@ -224,7 +224,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
         rejected: next?.error ?? null,
       });
       if (!next?.error) {
-        commitColumn(column);
+        commitColumn(column).catch((error) => logger.error('connect-four.commit-failed', { column, error: error.message }));
         if (reaction) dialogue.commitReaction(reaction);
       }
     },
@@ -284,7 +284,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     if (column === null) return;
     const next = playColumn({ moves }, column);
     if (!next.error) {
-      commitColumn(column);
+      commitColumn(column).catch((error) => logger.error('connect-four.commit-failed', { column, error: error.message }));
       logger.info('connect-four.drop', { column, ply: next.moves.length });
     }
     // A full column is a refused address, not a landed one.

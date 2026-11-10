@@ -41,6 +41,8 @@ public class AudioBridgeService extends Service {
     private static final int[] INIT_RETRY_DELAYS_MS = {500, 1000, 2000};
 
     private AudioBridgeServer wsServer;
+    private BluetoothControls bluetooth;
+    private ControlServer controlServer;
 
     @Override
     public void onCreate() {
@@ -53,12 +55,11 @@ public class AudioBridgeService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(TAG, "Service starting");
 
-        // Promote to foreground service with MICROPHONE type. This requires
-        // the Activity to have been in the foreground when startForegroundService()
-        // was called (createdFromFg=true). On Android 11 (Shield TV API 30),
-        // foreground services started from background are denied while-in-use
-        // permissions (microphone). The Activity uses Theme.Translucent and
-        // delays finish() to ensure it reaches onResume() before starting us.
+        // Android 11 denies the microphone to a foreground service started
+        // from the background (boot, or while FKB's kiosk owns the screen).
+        // The callers show an OverlayAnchor window before requesting the
+        // start; ensure() here covers a start from anywhere else.
+        OverlayAnchor.ensure(this);
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("Audio Bridge")
                 .setContentText("Streaming microphone audio")
@@ -66,9 +67,21 @@ public class AudioBridgeService extends Service {
                 .setOngoing(true)
                 .build();
 
+        // LOCATION as well: Bluetooth discovery is gated on fine location, and on
+        // Android 11 a foreground service only gets while-in-use location if it
+        // declares this type (the app is never otherwise in the foreground, so a
+        // microphone-only service had startDiscovery() denied — "Need
+        // ACCESS_FINE_LOCATION permission to get scan results").
         startForeground(NOTIFICATION_ID, notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
 
+        if (controlServer == null) {
+            bluetooth = new BluetoothControls(this);
+            bluetooth.start();
+            controlServer = new ControlServer(8766, new BluetoothController(bluetooth, System::currentTimeMillis));
+            try { controlServer.start(5000, false); Log.i(TAG, "bluetooth.control.started"); }
+            catch (java.io.IOException e) { controlServer.stop(); controlServer = null; bluetooth.close(); bluetooth = null; Log.e(TAG, "bluetooth.control.start-failed", e); }
+        }
         if (wsServer == null) {
             wsServer = new AudioBridgeServer(new InetSocketAddress(WS_PORT));
             wsServer.start();
@@ -81,6 +94,9 @@ public class AudioBridgeService extends Service {
     @Override
     public void onDestroy() {
         Log.i(TAG, "Service destroying");
+        OverlayAnchor.remove(this);
+        if (controlServer != null) controlServer.stop();
+        if (bluetooth != null) bluetooth.close();
         if (wsServer != null) {
             try {
                 wsServer.stop();

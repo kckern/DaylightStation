@@ -1,5 +1,5 @@
 export { AppThemeProvider } from './AppThemeProvider.jsx';
-export { AppChrome } from './AppChrome.jsx';
+export { AppChrome, CHROME_SCROLL_CLASS } from './AppChrome.jsx';
 export { Sheet } from './Sheet.jsx';
 export { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
 export { useDismissLayer } from './dismiss/useDismissLayer.js';

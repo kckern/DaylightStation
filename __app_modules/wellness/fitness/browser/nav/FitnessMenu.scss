@@ -6,7 +6,9 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
     gap: 1ex;
-    padding: 1ex 0;
+    // Bottom room so the last row scrolls clear of the corner mic button
+    // (FeedbackCornerButton.scss: 4.25rem tall, 1.25rem from the bottom).
+    padding: 1ex 0 calc(4.25rem + 2.5rem);
     margin-top: 0.5ex;
     margin-right: 1ex;
     width: 100%; // ensure it stretches inside flex parent so auto-fill can create multiple columns

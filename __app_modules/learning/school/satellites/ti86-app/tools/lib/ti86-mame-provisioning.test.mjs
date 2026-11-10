@@ -1,9 +1,21 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createTi86MameReleaseInstallers, TI86_MAME_INSTALL_MARKER } from "./ti86-mame-provisioning.mjs";
 import { readTi86VariableFile } from "./ti86-program.mjs";
 
 const DIST = new URL("../../dist/", import.meta.url);
+const TOOLS = new URL("../", import.meta.url);
+const REPO = fileURLToPath(new URL("../../../../../../", import.meta.url));
+
+// The release files are build outputs (dist/ is git-ignored), so build them
+// here rather than relying on another test file having run first.
+beforeAll(() => {
+  for (const tool of ['build-schoolcalc-shell.mjs', 'build-ti86a-provisioning.mjs']) {
+    execFileSync(process.execPath, [fileURLToPath(new URL(tool, TOOLS))], { cwd: REPO, stdio: 'pipe' });
+  }
+}, 120_000);
 
 describe('TI-86 MAME release provisioning', () => {
   it('preserves the exact program and String variable bytes from the release', () => {

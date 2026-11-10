@@ -1,4 +1,5 @@
 import { AuthorizationError } from '#apps/common/errors/SemanticErrors.mjs';
+import { EntityCatalogPolicy } from "../../../domain/home-automation/index.mjs";
 
 const VALID_STATES = new Set(['on', 'off', 'toggle']);
 
@@ -20,7 +21,7 @@ export class ToggleDashboardEntity {
       throw new Error(`ToggleDashboardEntity: desiredState must be on|off|toggle, got ${desiredState}`);
     }
     const config = await this.#configRepository.load();
-    if (!this.#isAllowed(config, entityId)) {
+    if (!(await this.#isAllowed(config, entityId))) {
       throw new AuthorizationError(`Entity ${entityId} is not on dashboard`, { entityId });
     }
     const domain = entityId.split('.')[0];
@@ -31,13 +32,19 @@ export class ToggleDashboardEntity {
     return this.#haGateway.callService(domain, service, { entity_id: entityId });
   }
 
-  #isAllowed(config, entityId) {
+  // A configured room light, or a real entity the household's entity policy
+  // lets a person switch. The existence check keeps a made-up id that merely
+  // looks like a light from reaching HA.
+  async #isAllowed(config, entityId) {
     for (const room of config.rooms || []) {
       for (const l of room.lights || []) {
         if (l.entity === entityId) return true;
       }
     }
-    return false;
+    const policy = EntityCatalogPolicy.fromConfig(config.entities);
+    if (!policy.isControllable(entityId)) return false;
+    const current = await this.#haGateway.getState(entityId);
+    return Boolean(current) && policy.isControllable(entityId, { deviceClass: current.attributes?.device_class || null });
   }
 }
 export default ToggleDashboardEntity;

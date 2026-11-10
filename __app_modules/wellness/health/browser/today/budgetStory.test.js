@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { budgetStory, isFinishedDay } from "./budgetStory.js";
+import { assessBudgetDay } from "../../portable/contracts/health/budgetAssessment.mjs";
+import { zoneFor } from "../../portable/contracts/health/budgetZone.mjs";
 
 const range = { floor: 1200, top: 1791 };
 const day = (food, exercise = 311, over = {}) => ({ food, exercise, maintenance: 2291, range, zone: 'in-range', declared: null, ...over });
@@ -189,5 +191,44 @@ describe('budgetStory — exact boundaries and log trust', () => {
   it('calls a finished boundary break even instead of zero under it', () => {
     const story = budgetStory(day(2602, 311, { zone: 'over' }), past);
     expect(story.sub).toBe('ended at break even');
+  });
+});
+
+describe('budgetStory — shared assessment parity', () => {
+  const budget = (food, exercise = 0, extra = {}) => {
+    const input = { food, exercise, maintenance: 2000, range: { floor: 1200, top: 1600 }, ...extra };
+    return { ...input, ...zoneFor(input) };
+  };
+
+  it.each([
+    [1704, 997, 'within', 'below-maintenance', 'On plan'],
+    [1800, 0, 'over', 'below-maintenance', 'Missed plan by 200'],
+    [2100, 0, 'over', 'surplus', 'Surplus of 100'],
+    [1600, 0, 'within', 'below-maintenance', 'On plan'],
+    [2000, 0, 'over', 'at-maintenance', 'Missed plan by 400'],
+    [330, 0, 'unknown', 'unknown', 'Incomplete log'],
+  ])('%i food / %i exercise shares the finished card verdict', (food, exercise, planState, energyState, text) => {
+    const input = budget(food, exercise);
+    const assessment = assessBudgetDay(input, past);
+    const story = budgetStory(input, past);
+    expect(assessment).toMatchObject({ planState, energyState });
+    expect(story.finished).toBe(assessment.finished);
+    expect(story.text).toBe(text);
+  });
+
+  it('shares complete-live and skipped-meal lifecycle while preserving the live card job', () => {
+    for (const input of [budget(1800), budget(330, 0, { fastedMeals: ['morning'] })]) {
+      const assessment = assessBudgetDay(input, live);
+      const story = budgetStory(input, live);
+      expect(assessment).toMatchObject({ finished: false, trustworthy: true });
+      expect(story.finished).toBe(false);
+      expect(story.tentative).toBe(false);
+      expect(story.job).toBe(input.food === 1800 ? 'contain' : 'afford');
+    }
+  });
+
+  it('keeps omitted dates live unless an explicit closure finishes the day', () => {
+    expect(budgetStory(budget(1300)).job).toBe('afford');
+    expect(budgetStory(budget(1300, 0, { declared: 'done' })).job).toBe('judge');
   });
 });

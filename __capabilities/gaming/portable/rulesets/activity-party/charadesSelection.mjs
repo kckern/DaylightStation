@@ -59,21 +59,26 @@ function startUnusedCycle(pool, challenges, historyIds, cursors, poolName, rngSt
   return shuffled.rngState;
 }
 
-export function createCharadesChallengeOrder({ challenges, turnOrder, cluesPerTurn, imageParticipantIds = [], historyIds = null, seed = 1 }) {
-  const imagePool = [];
-  const textPool = [];
+// Short words a beginning reader can read alone. A clue in this category is
+// dealt only to `readerParticipantIds`, and never to the regular word pile.
+export const EARLY_READER_CATEGORY = 'early-reader';
+
+export function createCharadesChallengeOrder({ challenges, turnOrder, cluesPerTurn, imageParticipantIds = [], readerParticipantIds = [], historyIds = null, seed = 1 }) {
+  const pools = { image: [], reader: [], text: [] };
   for (const [index, challenge] of (challenges || []).entries()) {
-    (challenge?.decoder?.image ? imagePool : textPool).push(index);
+    const pool = challenge?.decoder?.image ? 'image' : challenge?.category === EARLY_READER_CATEGORY ? 'reader' : 'text';
+    pools[pool].push(index);
   }
   const imageIds = new Set(imageParticipantIds.map(String));
+  const readerIds = new Set((readerParticipantIds || []).map(String));
   const cursors = {};
   const order = [];
   const presentations = [];
   let rngState = Number(seed) >>> 0;
 
   for (const participantId of turnOrder || []) {
-    const presentation = imageIds.has(String(participantId)) ? 'image' : 'text';
-    const pool = presentation === 'image' ? imagePool : textPool;
+    const presentation = imageIds.has(String(participantId)) ? 'image' : readerIds.has(String(participantId)) ? 'reader' : 'text';
+    const pool = pools[presentation];
     if (pool.length === 0) throw new Error(`Charades ${presentation} challenge pool is required for participant ${participantId}`);
     for (let clue = 0; clue < cluesPerTurn; clue += 1) {
       if (!cursors[presentation] && Array.isArray(historyIds)) {

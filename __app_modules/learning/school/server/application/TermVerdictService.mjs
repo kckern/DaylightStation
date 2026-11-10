@@ -42,6 +42,7 @@ const pendingRow = (studyDay, today) => ({ ...dayVerdict({ studyDay, today }), s
 export class TermVerdictService {
   #completion; #cache; #periods; #window; #timezone; #clock; #logger; #freshMs;
   #queues = new Map();
+  #changedAt = new Map(); // learnerId -> ms of the last completion input (see `invalidate`)
 
   /**
    * @param {object} deps
@@ -77,6 +78,17 @@ export class TermVerdictService {
     return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone });
   }
 
+  /**
+   * A completion input for this learner just landed (a graded sheet, a piano
+   * lesson, a story read): today's and yesterday's rows computed before it
+   * are no longer trusted, however recent. Without this the `freshMs` window
+   * served a payout settled seconds after a day turned green the row from
+   * just before it, and the green day waited for the hourly reconcile.
+   */
+  invalidate(learnerId) {
+    if (typeof learnerId === 'string' && learnerId) this.#changedAt.set(learnerId, this.#clock().getTime());
+  }
+
   /** The term the grid draws for `today` (or the named one). Null outside every period. */
   termFor({ today = this.today(), termId = null } = {}) {
     const periods = this.#periods.listPeriods?.() ?? [];
@@ -103,6 +115,29 @@ export class TermVerdictService {
   }
 
   /**
+   * One day's row by the READ RULE, for a caller that wants a single day
+   * (the parent digest's look-back): today and yesterday are computed now;
+   * an older day comes from the cache, and a missing, stale or retry-due row
+   * is replayed once and merged back so the next ask is a cache read.
+   */
+  async dayRow(learnerId, studyDay, today = this.today()) {
+    if (studyDay >= addDays(today, -1)) return this.computeDay(learnerId, studyDay, today);
+    const term = this.termFor({ today: studyDay });
+    if (!term) return this.computeDay(learnerId, studyDay, today);
+    const cached = await this.#cache.read(learnerId, term.termId);
+    const row = cached?.version === VERDICT_VERSION ? cached.days?.[studyDay] : null;
+    const nowMs = this.#clock().getTime();
+    const retryDue = row?.state === 'unknown'
+      && (row.reason === 'pending' || !row.retryAfter || Date.parse(row.retryAfter) <= nowMs);
+    if (row && !retryDue) return row;
+    const fresh = await this.computeDay(learnerId, studyDay, today);
+    this.#enqueue(learnerId, () => this.#merge(learnerId, term.termId, { [studyDay]: fresh })).catch((err) => {
+      this.#logger.warn?.('school.term-verdicts.day-cache-failed', { learnerId, studyDay, error: err?.message ?? String(err) });
+    });
+    return fresh;
+  }
+
+  /**
    * The term as the board reads it.
    * @returns {Promise<{term: object|null, today: string, version: number,
    *   days: object[], weeks: object[], pending: number}>}
@@ -121,9 +156,11 @@ export class TermVerdictService {
     const stale = [];
     const rows = {};
 
+    const changedAt = this.#changedAt.get(learnerId) ?? -Infinity;
     for (const day of termDaysFor(term.from, last)) {
       const row = valid[day] ?? null;
-      const recent = row?.computedAt && nowMs - Date.parse(row.computedAt) < this.#freshMs;
+      const computedMs = row?.computedAt ? Date.parse(row.computedAt) : NaN;
+      const recent = nowMs - computedMs < this.#freshMs && computedMs > changedAt;
       if ((day === today || day === yesterday) && !recent) {
         // eslint-disable-next-line no-await-in-loop
         rows[day] = fresh[day] = await this.computeDay(learnerId, day, today);

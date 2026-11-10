@@ -316,4 +316,25 @@ describe('LearnLab', () => {
     expect(onUnavailable).toHaveBeenCalledWith('passage-too-dense');
     expect(onClose).not.toHaveBeenCalled();
   });
+  it('reports exactly one coached take without legacy credit or automatic repetitions', () => {
+    const onOutcome = vi.fn(); const onRecord = vi.fn();
+    render(<LearnLab {...base} rung={{ ...rung, reps: 3, required: 6 }} coachingTask={{ key: 'task' }} onOutcome={onOutcome} onRecord={onRecord} />);
+    expect(screen.queryByText(/Set 1 of/)).not.toBeInTheDocument();
+    expect(exercise.props.persistAssessment).toBe(false);
+    expect(exercise.props.failurePresentation).toBe('host');
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(onOutcome).toHaveBeenCalledTimes(1);
+    expect(onRecord).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Rep 2/)).not.toBeInTheDocument();
+  });
+
+  it('hands a failed coached take to the host without counting it twice', () => {
+    const onOutcome = vi.fn(); const onRecord = vi.fn();
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={onOutcome} onRecord={onRecord} />);
+    const result = { assessmentId: 'original', status: 'completed', verdict: { passed: false } };
+    act(() => { exercise.props.onFailed(result); exercise.props.onFailed(result); });
+    expect(onOutcome).toHaveBeenCalledExactlyOnceWith(result);
+    expect(onRecord).not.toHaveBeenCalled();
+  });
+
 });

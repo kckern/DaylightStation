@@ -14,6 +14,7 @@ import {
   readJankProbes,
   readRenderRegistry,
 } from './jankProbes.js';
+import { readLogDeviceId } from './logDeviceId.js';
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
 
@@ -21,6 +22,18 @@ const LEVELS = ['debug', 'info', 'warn', 'error'];
 // build has one, else the build time in base36). Without it the log store
 // cannot say whether a misbehaving screen was running current code.
 const BUILD_ID = import.meta.env?.VITE_BUILD_ID || 'dev';
+// Which screen wrote the event (`?device=` on the kiosk URL, persisted). Every
+// kiosk logs through one proxy IP, so without it only the user agent tells the
+// garage display from the living-room TV. Read once, at module load, before
+// any router rewrites the URL.
+const DEVICE_ID = typeof window !== 'undefined'
+  ? readLogDeviceId(
+      window.location,
+      (() => { try { return window.sessionStorage; } catch { return null; } })(),
+      (() => { try { return window.localStorage; } catch { return null; } })()
+    )
+  : null;
+const DEVICE_CONTEXT = DEVICE_ID ? { deviceId: DEVICE_ID } : {};
 const LEVEL_PRIORITY = LEVELS.reduce((acc, level, idx) => ({ ...acc, [level]: idx }), {});
 
 const DEFAULT_OPTIONS = Object.freeze({
@@ -118,7 +131,7 @@ const emit = (level, eventName, data = {}, options = {}) => {
     message: options.message,
     data: data || {},
     source: options.source || config.name,
-    context: { build: BUILD_ID, ...config.context, ...(options.context || {}) },
+    context: { build: BUILD_ID, ...DEVICE_CONTEXT, ...config.context, ...(options.context || {}) },
     tags: options.tags || []
   };
 
@@ -146,13 +159,22 @@ const emit = (level, eventName, data = {}, options = {}) => {
  */
 const accumulateData = (aggregated, data) => {
   for (const [key, value] of Object.entries(data)) {
-    if (typeof value === 'number') {
-      aggregated[key] = (aggregated[key] || 0) + value;
-    } else if (typeof value === 'string') {
-      if (!aggregated[key]) aggregated[key] = {};
+    const existing = aggregated[key];
+    // A field can change type between samples (e.g. a governance `rule` that is
+    // 1 in one call and 'some' in the next). Never throw from a log call: a
+    // value whose type disagrees with what is already accumulated is counted
+    // in the string-count bucket under its stringified form.
+    if (typeof value === 'number' && (existing === undefined || typeof existing === 'number')) {
+      aggregated[key] = (existing || 0) + value;
+    } else if (typeof value === 'string' || typeof value === 'number') {
+      if (typeof existing === 'number') {
+        aggregated[key] = { [`sum:${existing}`]: 1 };
+      } else if (!existing || typeof existing !== 'object') {
+        aggregated[key] = {};
+      }
       const counts = aggregated[key];
       if (Object.keys(counts).length < 20) {
-        counts[value] = (counts[value] || 0) + 1;
+        counts[String(value)] = (counts[String(value)] || 0) + 1;
       } else {
         counts['__other__'] = (counts['__other__'] || 0) + 1;
       }
@@ -270,6 +292,38 @@ export const getLogger = () => {
     };
   }
   return singleton;
+};
+
+/**
+ * Push every buffered event out NOW and wait (bounded) for the socket to drain.
+ * For code that is about to unload the page (a hard reload): the buffering
+ * transport batches on a 1s timer, so an event logged just before
+ * `location.reload()` is otherwise lost with the page.
+ *
+ * Never throws and never waits longer than `timeoutMs`.
+ * @param {{ timeoutMs?: number, wsService?: object }} [opts] - wsService is a test seam
+ * @returns {Promise<boolean>} true when the buffer was handed to an open socket and drained
+ */
+export const flushLogs = async ({ timeoutMs = 500, wsService: injectedWs = null } = {}) => {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const remaining = () => Math.max(0, deadline - Date.now());
+  try {
+    const transport = ensureTransport();
+    if (!transport?.flush) return false;
+    await Promise.race([Promise.resolve(transport.flush()), sleep(remaining())]);
+    let ws = injectedWs;
+    if (!ws) {
+      try { ({ wsService: ws } = await import('../../services/WebSocketService.js')); } catch (_) { ws = null; }
+    }
+    const socket = ws?.ws;
+    const open = typeof WebSocket !== 'undefined' ? socket?.readyState === WebSocket.OPEN : socket?.readyState === 1;
+    if (!open) return false;
+    while ((socket.bufferedAmount || 0) > 0 && remaining() > 0) await sleep(Math.min(20, remaining()));
+    return (socket.bufferedAmount || 0) === 0;
+  } catch (_) {
+    return false;
+  }
 };
 
 /**

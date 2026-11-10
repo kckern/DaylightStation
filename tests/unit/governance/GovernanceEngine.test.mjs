@@ -1,21 +1,21 @@
 // tests/unit/governance/GovernanceEngine.test.mjs
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock the Logger module before importing GovernanceEngine
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
   default: () => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    sampled: jest.fn()
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    sampled: vi.fn()
   }),
   getLogger: () => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    sampled: jest.fn()
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    sampled: vi.fn()
   })
 }));
 
@@ -948,7 +948,7 @@ describe('GovernanceEngine', () => {
     let engine;
 
     beforeEach(() => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       engine = new GovernanceEngine({
         roster: [],
         zoneProfileStore: null,
@@ -963,7 +963,7 @@ describe('GovernanceEngine', () => {
     });
 
     afterEach(() => {
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('should NOT start a challenge when totalCount < minParticipants', () => {

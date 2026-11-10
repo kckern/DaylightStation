@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import * as sass from 'sass';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 vi.mock("./DispatchTargetPicker.jsx", () => ({
   DispatchTargetPicker: ({ source }) => <div data-testid="picker-stub" data-source={JSON.stringify(source)}>Picker</div>,
@@ -59,12 +59,10 @@ describe('CastButton viewport-bounded picker', () => {
   });
 
   it('scrolls the whole bounded portal so fixed controls cannot collapse the device list', () => {
-    // Both supported test roots stub CSS imports. Read the real stylesheet
-    // through Sass from either repository root or frontend project root.
-    const candidates = ['frontend/src/modules/Media/cast/Cast.scss', 'src/modules/Media/cast/Cast.scss']
-      .map((relative) => path.resolve(relative));
-    const stylesheet = candidates.find((candidate) => existsSync(candidate));
-    expect(stylesheet, 'real Cast.scss must exist under the supported test root').toBeTruthy();
+    // The test roots stub CSS imports, so read the real stylesheet through Sass.
+    // It sits beside this test (the Media app moved into __app_modules).
+    const stylesheet = fileURLToPath(new URL('./Cast.scss', import.meta.url));
+    expect(existsSync(stylesheet), 'real Cast.scss must exist beside this test').toBe(true);
     const css = sass.compile(stylesheet).css.replace(/\s+/g, ' ');
 
     expect(css).toMatch(/\.cast-button-popover-portal \.cast-picker \{[^}]*box-sizing: border-box;[^}]*max-height: var\(--cast-picker-max-height\);[^}]*overflow-y: auto/);

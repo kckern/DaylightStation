@@ -9,6 +9,9 @@ vi.mock("../../schoolApi.js", () => ({
     reportCardFrozenVersions: vi.fn(),
   },
 }));
+vi.mock("../TeacherProfileContext.jsx", () => ({
+  useTeacherProfileOptional: () => ({ teachers: [{ id: 'teacher_1', name: 'Teacher One' }], currentTeacher: null }),
+}));
 import { schoolApi } from "../../schoolApi.js";
 
 const KIDS = [{ id: 'user_4', name: 'User_4' }, { id: 'user_2', name: 'User_2' }];
@@ -54,14 +57,14 @@ describe('SystemHealthPanel', () => {
     schoolApi.bankHealth.mockResolvedValue({ ok: true, status: 200, data: { warmedAt: null, banks: 1, failed: [] } });
     schoolApi.reportCardFrozenVersions.mockResolvedValue({
       ok: true, status: 200, data: { versions: [
-        { version: 1, record: { period: { label: 'Fall 2026' }, closedBy: 'kckern', closedAt: '2026-09-01T00:00:00Z' } },
+        { version: 1, record: { period: { label: 'Fall 2026' }, closedBy: 'teacher_1', closedAt: '2026-09-01T00:00:00Z' } },
       ] },
     });
     render(<SystemHealthPanel kids={KIDS} />);
     const list = await screen.findByTestId('system-health-frozen-versions');
     expect(list.textContent).toContain('Fall 2026');
     expect(list.textContent).toContain('v1');
-    expect(list.textContent).toContain('Closed by kckern');
+    expect(list.textContent).toContain('Closed by Teacher One');
   });
 
   it('a failed bank-health read does not blank the versions section', async () => {

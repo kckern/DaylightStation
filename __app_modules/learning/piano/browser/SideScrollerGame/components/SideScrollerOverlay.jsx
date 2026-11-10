@@ -1,23 +1,11 @@
+import { CountdownOverlay } from '../../game-platform/chrome/index.js';
 import './SideScrollerOverlay.scss';
 
-export function SideScrollerOverlay({ phase, countdown, score, level, levelName }) {
+export function SideScrollerOverlay({ phase, countdown, score, level }) {
   if (phase === 'STARTING' && countdown != null) {
     return (
       <div className="scroller-overlay" role="status" aria-live="polite">
-        <div className="scroller-overlay__countdown">
-          {countdown === 0 ? 'GO!' : countdown}
-        </div>
-      </div>
-    );
-  }
-
-  if (phase === 'LEVEL_UP') {
-    return (
-      <div className="scroller-overlay" role="status" aria-live="polite">
-        <div className="scroller-overlay__level-up">
-          <h2 className="scroller-overlay__title">LEVEL UP!</h2>
-          <p className="scroller-overlay__level-name">{levelName}</p>
-        </div>
+        <CountdownOverlay value={countdown === 0 ? 'GO!' : countdown} className="scroller-overlay__countdown" />
       </div>
     );
   }

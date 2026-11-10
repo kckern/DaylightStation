@@ -8,6 +8,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { canRotateOAuthTokens } from '#system/runtime/runtimeEnvironment.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HARVEST_CLI = path.join(__dirname, '..', 'harvest.mjs');
@@ -74,3 +75,11 @@ export function daysAgo(n) {
  * (cooldown is acceptable - circuit breaker doing its job)
  */
 export const ACCEPTABLE_STATUSES = ['pass', 'cooldown', 'rate_limited'];
+
+/**
+ * describe() for harvesters whose provider rotates refresh tokens (Withings,
+ * Strava, FitnessSyncer). Outside the container the suite is reported skipped
+ * unless DAYLIGHT_TOKEN_WRITER=true: each refresh invalidates the previous
+ * token, so only the copy that keeps the result may refresh.
+ */
+export const describeIfTokenWriter = canRotateOAuthTokens() ? describe : describe.skip;

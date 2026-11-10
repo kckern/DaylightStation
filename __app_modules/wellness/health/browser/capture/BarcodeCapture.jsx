@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, TextInput, Text } from '@mantine/core';
 import { Sheet } from '@/lib/ui';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
+import { useBarcodeScanner } from "../../../../../frontend/src/lib/camera/useBarcodeScanner.js";
 
 const logger = createAppLogger('health').child('barcode-capture');
 
@@ -9,6 +10,10 @@ const logger = createAppLogger('health').child('barcode-capture');
  * Camera barcode scan with a manual-UPC field that is ALWAYS present —
  * it is the permission-denied fallback and the test seam: both paths call
  * the same onDecode(upc, bucket).
+ *
+ * The camera itself (native detector, zxing fallback, stream lifecycle) is
+ * the shared `useBarcodeScanner`; this sheet owns the manual field, the
+ * lookup and its error.
  *
  * `bucket` names which meal launched this scan (set by the caller before
  * opening the sheet); it is forwarded back unchanged on decode so the
@@ -18,72 +23,34 @@ const logger = createAppLogger('health').child('barcode-capture');
 export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
   const videoRef = useRef(null);
   const [manualUpc, setManualUpc] = useState('');
-  const [cameraState, setCameraState] = useState('starting'); // starting | live | denied
+  const [error, setError] = useState(null);
   const callback = useRef(onDecode);
   callback.current = onDecode;
+  const bucketRef = useRef(bucket);
+  bucketRef.current = bucket;
   const submitted = useRef(false);
-  const stopCamera = useRef(() => {});
-  const [error, setError] = useState(null);
+  const decodeRef = useRef(null);
+
+  const { cameraState, stop } = useBarcodeScanner({
+    active: Boolean(open), videoRef, logger,
+    onDecode: (upc) => decodeRef.current?.(upc, bucketRef.current),
+  });
+
   const decode = async (upc, targetBucket) => {
     if (submitted.current) return;
     submitted.current = true;
-    stopCamera.current();
+    stop();
     setError(null);
     try { await callback.current(upc, targetBucket); }
     catch (err) { setError(err?.message || 'Lookup failed. Try again.'); submitted.current = false; setManualUpc(upc); }
   };
+  decodeRef.current = decode;
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) return;
     submitted.current = false;
-    setCameraState('starting'); setError(null); setManualUpc('');
-    let stream, stopped = false, zxingControls = null;
-    stopCamera.current = () => {
-      stopped = true;
-      zxingControls?.stop?.();
-      stream?.getTracks?.().forEach(track => track.stop());
-    };
-
-    (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCameraState('live');
-
-        if ('BarcodeDetector' in window) {
-          const detector = new window.BarcodeDetector({ formats: ['upc_a', 'upc_e', 'ean_13', 'ean_8'] });
-          const tick = async () => {
-            if (stopped) return;
-            try {
-              const codes = await detector.detect(videoRef.current);
-              if (stopped) return; // sheet closed while detect() was in flight — don't fire a spurious submit
-              if (codes.length) { logger.info('decode.native', {}); return decode(codes[0].rawValue, bucket); }
-            } catch { /* frame not ready */ }
-            if (stopped) return;
-            requestAnimationFrame(tick);
-          };
-          tick();
-        } else {
-          const { BrowserMultiFormatReader } = await import('@zxing/browser');
-          const reader = new BrowserMultiFormatReader();
-          zxingControls = await reader.decodeFromVideoElement(videoRef.current, (result) => {
-            if (result && !stopped) { logger.info('decode.zxing', {}); decode(result.getText(), bucket); }
-          });
-          if (stopped) zxingControls?.stop?.();
-        }
-      } catch (err) {
-        logger.warn('camera.unavailable', { error: err?.message });
-        if (!stopped) setCameraState('denied');
-      }
-    })();
-
-    return () => {
-      stopped = true;
-      zxingControls?.stop?.();
-      stream?.getTracks?.().forEach((t) => t.stop());
-    };
+    setError(null);
+    setManualUpc('');
   }, [open]);
 
   return (

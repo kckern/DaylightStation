@@ -60,4 +60,10 @@ describe('teacherWorkspaceApi', () => {
     }));
   });
 
+  it('reads who has a book, same-origin, under the teacher prefix', async () => {
+    await teacherWorkspaceApi.bookReaders('9780000000002');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/books/9780000000002/readers', expect.objectContaining({
+      method: 'GET', credentials: 'same-origin',
+    }));
+  });
 });

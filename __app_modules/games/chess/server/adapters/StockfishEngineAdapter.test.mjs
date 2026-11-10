@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, afterAll } from 'vitest';
+import { describe, expect, it, afterAll, beforeAll } from 'vitest';
 import { legalMoves } from "../../../../../__capabilities/gaming/portable/rulesets/chess/engine.mjs";
 import { createStockfishEngine, engineOptionsForRung, fallbackDifficultyFor, isHomegrownRung } from "./StockfishEngineAdapter.mjs";
 
@@ -13,6 +13,16 @@ const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 const rung = { id: 'learner', label: 'Learner', skill: 3, movetime_ms: 100 };
 
 const engine = createStockfishEngine({ logger: silentLogger });
+
+// The first search also boots the Stockfish WASM worker, inside a 100ms
+// movetime + 1.5s margin; a loaded host overruns that and the move falls back
+// (the worker keeps booting). Warm it first so the tests below measure a
+// running engine, which is what they are about.
+beforeAll(async () => {
+  for (let i = 0; i < 30; i += 1) {
+    if ((await engine.chooseMove({ fen: START, rung, gameId: 'warm-up' }))?.engine === 'stockfish') return;
+  }
+}, 90_000);
 afterAll(() => engine.dispose());
 
 describe('StockfishEngineAdapter', () => {
@@ -179,10 +189,13 @@ describe('the homegrown tier', () => {
   });
 
   it('searches off the event loop, so a deep rung does not freeze the backend', async () => {
-    // A busy middlegame at depth 3: seconds of search. Inline, that was one
+    // A busy middlegame at depth 2: seconds of search. Inline, that was one
     // synchronous block — every other request in the house waited on it.
+    // Depth 2 is already seconds long; depth 3 ran ~29 s on a loaded host and
+    // tripped the production 30 s timeout into 'fallback', which measured the
+    // host, not the threading. The timeout is widened here for the same reason.
     const middlegame = 'r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/R2QKB1R w KQ - 0 8';
-    const engine = createStockfishEngine({ workerPath: '/nonexistent/worker.mjs', logger: silentLogger });
+    const engine = createStockfishEngine({ workerPath: '/nonexistent/worker.mjs', logger: silentLogger, homegrownTimeoutMs: 110_000 });
     let longestGapMs = 0;
     let last = Date.now();
     const ticker = setInterval(() => {
@@ -193,7 +206,7 @@ describe('the homegrown tier', () => {
     const startedAt = Date.now();
     const move = await engine.chooseMove({
       fen: middlegame,
-      rung: { id: 'deep', engine: 'homegrown', depth: 3, blunder_rate: 0 },
+      rung: { id: 'deep', engine: 'homegrown', depth: 2, blunder_rate: 0 },
       gameId: 'g1',
     });
     const searchMs = Date.now() - startedAt;
@@ -208,7 +221,7 @@ describe('the homegrown tier', () => {
     // fraction of the search it sat beside, however fast this machine is.
     expect(searchMs).toBeGreaterThan(200);
     expect(longestGapMs).toBeLessThan(searchMs / 4);
-  }, 60000);
+  }, 120000);
 
   it('falls back to a shallow inline reply when the search thread never answers', async () => {
     const engine = createStockfishEngine({

@@ -2,7 +2,7 @@
  * IStateDatastore - Interface for job runtime state persistence
  *
  * Implementations:
- * - YamlStateStore: Persists to system/state/cron-runtime
+ * - YamlStateDatastore: Persists to system/scheduling/cron-runtime
  */
 export class IStateDatastore {
   /**

@@ -47,6 +47,7 @@ export class WithingsHarvester extends IHarvester {
   #logger;
   #tokenCache;
   #weightProcessor;
+  #canRefreshTokens;
 
   /**
    * @param {Object} config
@@ -60,6 +61,7 @@ export class WithingsHarvester extends IHarvester {
    * @param {Object} config.weightProcessor - Application workflow invoked after persistence
    * @param {string} [config.timezone] - Timezone for date parsing
    * @param {Object} [config.logger] - Logger instance
+   * @param {() => boolean} [config.canRefreshTokens] - Whether this process may rotate the OAuth refresh token (default: yes)
    */
   constructor({
     httpClient,
@@ -72,6 +74,7 @@ export class WithingsHarvester extends IHarvester {
     weightProcessor,
     timezone = 'America/Los_Angeles',
     logger = console,
+    canRefreshTokens = () => true,
   }) {
     super();
 
@@ -103,6 +106,7 @@ export class WithingsHarvester extends IHarvester {
     this.#redirectUri = redirectUri;
     this.#timezone = timezone;
     this.#logger = logger;
+    this.#canRefreshTokens = canRefreshTokens;
 
     this.#weightProcessor = weightProcessor;
 
@@ -160,13 +164,19 @@ export class WithingsHarvester extends IHarvester {
       };
     }
 
+    // Refresh tokens rotate. Only the copy that keeps the result may refresh.
+    if (!this.#canRefreshTokens()) {
+      this.#logger.info?.('withings.harvest.token_writer_disabled', { username });
+      return { count: 0, status: 'skipped', reason: 'token_refresh_disabled' };
+    }
+
     try {
       this.#logger.info?.('withings.harvest.start', { username, yearsBack });
 
       // 1. Refresh access token
-      const accessToken = await this.#refreshAccessToken(username);
+      const { token: accessToken, error: authError } = await this.#refreshAccessToken(username);
       if (!accessToken) {
-        return { count: 0, status: 'error', reason: 'auth_failed' };
+        return { count: 0, status: 'error', reason: 'auth_failed', error: authError };
       }
 
       // 2. Fetch measurements
@@ -233,9 +243,16 @@ export class WithingsHarvester extends IHarvester {
     return this.#circuitBreaker?.isOpen?.() ?? false;
   }
 
+  /** After a reconnect: drop the cached access token and any cooldown. */
+  resetAuth() {
+    this.#tokenCache = { token: null, expiresAt: null };
+    this.#circuitBreaker.reset();
+  }
+
   /**
    * Refresh OAuth access token
    * @private
+   * @returns {Promise<{ token: string|null, error: string|null }>} error says why token is null
    */
   async #refreshAccessToken(username) {
     const now = moment();
@@ -243,7 +260,7 @@ export class WithingsHarvester extends IHarvester {
     // Check cache first
     if (this.#tokenCache.token && this.#tokenCache.expiresAt && now.isBefore(this.#tokenCache.expiresAt)) {
       this.#logger.debug?.('withings.auth.cache_hit', { expiresAt: this.#tokenCache.expiresAt.toISOString() });
-      return this.#tokenCache.token;
+      return { token: this.#tokenCache.token, error: null };
     }
 
     try {
@@ -256,7 +273,7 @@ export class WithingsHarvester extends IHarvester {
 
       if (!refresh) {
         this.#logger.error?.('withings.auth.noRefreshToken', { username });
-        return null;
+        return { token: null, error: 'no refresh token saved' };
       }
 
       // Get credentials
@@ -266,7 +283,7 @@ export class WithingsHarvester extends IHarvester {
 
       if (!clientId || !clientSecret) {
         this.#logger.error?.('withings.auth.credentials_missing', { message: 'WITHINGS_CLIENT_ID/SECRET missing' });
-        return null;
+        return { token: null, error: 'client id or secret missing' };
       }
 
       const params = {
@@ -283,7 +300,9 @@ export class WithingsHarvester extends IHarvester {
 
       if (!body.access_token) {
         this.#logger.error?.('withings.auth.no_access_token', { response: response?.data });
-        return null;
+        const error = response?.data?.error
+          || (response?.data?.status != null ? `Withings status ${response.data.status}` : 'no access token in Withings response');
+        return { token: null, error };
       }
 
       // Cache the token
@@ -304,7 +323,15 @@ export class WithingsHarvester extends IHarvester {
         delete newAuthData.refresh;
         // Remove legacy 'expires_in' - use absolute expires_at instead
         delete newAuthData.expires_in;
-        await this.#authStore.save(username, 'withings', newAuthData);
+        try {
+          await this.#authStore.save(username, 'withings', newAuthData);
+        } catch (error) {
+          this.#logger.error?.('withings.auth.token_persist_failed', {
+            username,
+            error: this.#cleanErrorMessage(error),
+          });
+          throw error;
+        }
         this.#logger.info?.('withings.auth.refresh_token_saved', { username });
       }
 
@@ -313,7 +340,7 @@ export class WithingsHarvester extends IHarvester {
         expiresAt: this.#tokenCache.expiresAt.toISOString(),
       });
 
-      return this.#tokenCache.token;
+      return { token: this.#tokenCache.token, error: null };
 
     } catch (error) {
       this.#logger.error?.('withings.auth.error', {
@@ -322,7 +349,7 @@ export class WithingsHarvester extends IHarvester {
       });
       this.#tokenCache.token = null;
       this.#tokenCache.expiresAt = null;
-      return null;
+      return { token: null, error: this.#cleanErrorMessage(error) };
     }
   }
 

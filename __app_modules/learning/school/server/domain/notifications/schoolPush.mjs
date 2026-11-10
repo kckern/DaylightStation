@@ -64,8 +64,57 @@ function metadata(event, lane, key) {
 }
 
 function push(emoji, event, message, lane, { unknownChild = false } = {}) {
-  const key = event.sessionId ?? event.testId ?? 'unknown';
+  // `tagSessionId`: a retake's original sheet, so its result replaces that card.
+  const key = event.tagSessionId ?? event.sessionId ?? event.testId ?? 'unknown';
   return { title: titleOf(emoji, event, unknownChild), message, data: metadata(event, lane, key) };
+}
+
+// The 6 pm parent digest. One line per child; a line longer than LINE_MAX
+// drops its tail clauses (failure, then passes, then silver) and a body past
+// DIGEST_MAX keeps the first children and counts the rest. No push standard
+// limit exists for length; these keep the card readable when expanded.
+const LINE_MAX = 100;
+const DIGEST_MAX = 600;
+const FAILURE_TEXT = {
+  print_failed: 'a print failed',
+  code_rejected: 'a code was turned away',
+  old_code: 'an old code was typed',
+  issue_failed: "a sheet couldn't be made",
+};
+const ORDINALS = { 2: 'second', 3: 'third', 4: 'fourth', 5: 'fifth' };
+
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+
+function digestLine(row, coins, who) {
+  const work = row.judged === false ? "couldn't be checked"
+    : !isCount(row.asked) || row.asked === 0 ? 'nothing asked'
+      : `${isCount(row.served) ? row.served : 0} of ${row.asked} done`;
+  const tail = [
+    coins === 'live' && isCount(row.silverEarned) && row.silverEarned > 0 ? `${row.silverEarned} silver` : null,
+    isCount(row.passesUsed) && row.passesUsed > 0 ? `${plural(row.passesUsed, 'pass', 'passes')} used` : null,
+    FAILURE_TEXT[row.failure] ?? null,
+  ];
+  let line;
+  for (let keep = tail.length; keep >= 0; keep -= 1) {
+    line = [`${who}: ${work}`, ...tail.slice(0, keep).filter(Boolean)].join(' · ');
+    if (Array.from(line).length <= LINE_MAX) return line;
+  }
+  // By code point, so an emoji in a name is never cut in half.
+  return Array.from(line).slice(0, LINE_MAX).join('');
+}
+
+function digestBody(learners, coins) {
+  // A child with no name is numbered, never shown by id.
+  let unnamed = 0;
+  const lines = learners.map((row) => digestLine(row, coins, row.child || `A learner (${unnamed += 1})`));
+  const footer = coins === 'dry-run' ? ['Coins not live yet'] : [];
+  const fits = (body) => body.join('\n').length <= DIGEST_MAX;
+  if (fits([...lines, ...footer])) return [...lines, ...footer].join('\n');
+  for (let keep = lines.length - 1; keep >= 1; keep -= 1) {
+    const body = [...lines.slice(0, keep), ...footer, `+${lines.length - keep} more in the teacher view`];
+    if (fits(body)) return body.join('\n');
+  }
+  return [lines[0], ...footer, `+${lines.length - 1} more in the teacher view`].join('\n');
 }
 
 export function composeSchoolPush(event = {}) {
@@ -73,6 +122,10 @@ export function composeSchoolPush(event = {}) {
     case 'graded': {
       const score = scoreText(event.earned, event.total);
       const late = lateSuffix(event);
+      // A hold (`CloseSessionOutcome`'s `teacherHold`) has no retake to point at.
+      if (event.result === 'needs_remediation' && event.held) {
+        return push('🙋', event, `${score ?? 'Not passed yet'} — retries used up, needs you for this one${late}`, 'needsYou');
+      }
       if (event.result === 'needs_remediation') {
         return push('🔁', event, `${score ?? 'Not passed yet'} — retake is on the receipt${late}`, 'needsYou');
       }
@@ -106,6 +159,10 @@ export function composeSchoolPush(event = {}) {
       return push('⚠️', event, `Nothing new was marked on this card${where} — fill in today's rows and rescan`,
         'needsYou', { unknownChild: true });
     }
+    case 'card-replaced':
+      return event.retired
+        ? push('⚠️', event, "Card couldn't be read — unfinished work reprinted on a new card", 'needsYou', { unknownChild: true })
+        : push('⚠️', event, "Card can't be read any more — needs you", 'needsYou', { unknownChild: true });
     case 'unresolved':
     case 'refused':
       return push('⚠️', event, CODE_TEXT[event.code] ?? CODE_FALLBACK, 'needsYou', { unknownChild: true });
@@ -136,6 +193,41 @@ export function composeSchoolPush(event = {}) {
         title: event.child ? `🔤 ${event.child} — ${subject}` : `🔤 ${subject}`,
         message: [note ?? "Word practice needs a grown-up's look", day].filter(Boolean).join(' · '),
         data: metadata(event, 'needsYou', `card-ladder-${event.package ?? 'words'}`),
+      };
+    }
+    case 'debrief-hook': {
+      // A conversation starter written by the debrief questioner (model text):
+      // shown only if it reads cleanly, else the grown-up hears nothing.
+      const hook = typeof event.hook === 'string' ? event.hook.trim().replace(/[.\s]+$/, '') : '';
+      if (!hook || DOTTED_ID.test(hook) || findPushTextDefects(hook).length) return null;
+      const day = formatStudyDay(event.studyDay);
+      return {
+        title: event.child ? `💬 ${event.child} — after school` : '💬 After school',
+        message: [hook, day].filter(Boolean).join(' · '),
+        data: metadata(event, 'progress', `debrief-${event.studyDay ?? 'today'}`),
+      };
+    }
+    case 'digest': {
+      const learners = Array.isArray(event.learners) ? event.learners.filter(Boolean) : [];
+      if (!learners.length) return null;
+      const day = event.today && event.studyDay && event.studyDay !== event.today ? formatStudyDay(event.studyDay) : null;
+      return {
+        title: day ? `School · ${day}` : 'School today',
+        message: digestBody(learners, event.coins),
+        data: pushData({ ...LANES.progress, tag: 'school-digest', group: 'school' }),
+      };
+    }
+    case 'zero-days': {
+      const days = Number.isInteger(event.days) && event.days >= 2 ? event.days : 2;
+      const run = ORDINALS[days]
+        ? `Nothing done for the ${ORDINALS[days]} study day in a row`
+        : `Nothing done for ${days} study days in a row`;
+      // A push held overnight names the day it was about.
+      const message = `${run}${lateSuffix(event)}`;
+      return {
+        title: event.child ? `📭 ${event.child} — School` : '📭 School',
+        message,
+        data: metadata(event, 'needsYou', 'zero-days'),
       };
     }
     default:

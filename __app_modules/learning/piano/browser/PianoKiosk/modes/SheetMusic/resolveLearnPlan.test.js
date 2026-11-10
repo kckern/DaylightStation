@@ -18,6 +18,11 @@ const score = (count = 8, extra = {}) => {
 const resolve = (over = {}) => resolveLearnPlan({ defaults: SHEET_MUSIC_DEFAULTS.learn, score: score(), ...over });
 
 describe('resolveLearnPlan', () => {
+  it('distinguishes explicit teaching ladders from default repetition quotas for coaching', () => {
+    expect(resolve().authoredLadder).toBe(false);
+    const custom = resolve({ piece: { ladder: [{ id: 'one', label: 'One', parts: ['rh'], mode: 'free', sets: 1, reps: 4 }] } });
+    expect(custom.authoredLadder).toBe(true);
+  });
   it('deep-merges layers in defaults → category → piece → user → user-piece order', () => {
     const plan = resolve({
       category: { passages: { targetMeasures: 3 }, navigation: { sequential: true }, tempo: { fallbackBpm: 70 }, feedback: { successReturnMs: 1200 } },

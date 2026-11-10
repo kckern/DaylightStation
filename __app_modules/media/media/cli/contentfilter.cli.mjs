@@ -25,6 +25,10 @@
  *   works                   Popular filterable titles available on your services
  *   tags <slug|workId>      Summarize a title's filter categories + tag counts
  *   export <slug|workId>    Emit a normalized FilterEDL (YAML) to stdout
+ *   preflight <ratingKey>   Can a pipeline run happen here? (refine deps, Plex part)
+ *   worker [--app <url>] [--data-dir <dir>]  The filter worker: claim Admin runs over HTTP, run them, hand back results
+ *   review-stats [--since 30d] [--rk <id>]  Human review verdicts as machine-certification feedback (read-only)
+ *   stack-scan [--profile <name>] [--json]  Films whose refined EDL stacks picture effects (read-only)
  *   match [--section <id>]  Cross-reference your Plex movie library vs VidAngel
  *
  * Options:
@@ -41,7 +45,7 @@
  * @module cli/contentfilter
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { hostname } from 'os';
 import path from 'path';
@@ -684,6 +688,7 @@ const VALUE_FLAGS = {
   '--content-id': 'content-id', '--method': 'method', '--samples': 'samples',
   '--window': 'window', '--model': 'model', '--cover-window': 'cover-window',
   '--srt': 'srt', '--concurrency': 'concurrency', '--min-confidence': 'min-confidence',
+  '--part': 'part', '--src': 'src', '--key': 'key', '--results': 'results', '--cues': 'cues', '--kinds': 'kinds', '--transcript': 'transcript', '--snap': 'snap', '--by': 'by', '--marks': 'marks', '--trust': 'trust', '--evidence': 'evidence', '--profile': 'profile', '--app': 'app', '--since': 'since', '--rk': 'rk', '--data-dir': 'data-dir', '--stage-dir': 'stage-dir',
 };
 for (const [flag, key] of Object.entries(VALUE_FLAGS)) {
   const i = args.indexOf(flag);
@@ -777,9 +782,10 @@ async function main() {
   if (command === 'export') {
     const va = new VidAngel(loadVidAngelAuth());
     const ref = cmdArgs[0];
-    if (!ref) { console.error('Usage: vidangel export <slug> [--out file.yml]'); process.exit(1); }
+    if (!ref) { console.error('Usage: contentfilter export <slug> [--content-id plex:ID] [--out file.yml]'); process.exit(1); }
     const { movie, tagSet } = await resolveTagSet(va, ref);
     const edl = tagSetToEdl(tagSet, { slug: ref, title: movie.title, year: movie.year });
+    if (flags['content-id']) edl.contentId = String(flags['content-id']);
     const output = flags.json ? JSON.stringify(edl, null, 2) : yaml.dump(edl, { lineWidth: 120 });
     if (flags.out) {
       writeFileSync(flags.out, output);
@@ -1044,6 +1050,191 @@ async function main() {
     return;
   }
 
+  if (command === 'refine-eval') {
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter refine-eval <ratingKey> [--key answer-key.yml] [--results results.json] [--json]'); process.exit(1); }
+    const { scoreVisual, scoreSpeech } = await import('../server/domain/content-filter/refine/refineScore.mjs');
+    const dir = path.join(filterMediaDir(), 'refine', rk);
+    const keyPath = flags.key || path.join(dir, 'answer-key.yml');
+    const key = loadYaml(keyPath);
+    if (!key) { console.error(`No answer key at ${keyPath}`); process.exit(1); }
+    const resultsPath = flags.results || path.join(dir, `results-${key.part}.json`);
+    if (!existsSync(resultsPath)) { console.error(`No results at ${resultsPath} (run refine first)`); process.exit(1); }
+    const { results } = JSON.parse(readFileSync(resultsPath, 'utf8'));
+    const v = scoreVisual(results, key.visual); const s = scoreSpeech(results, key.speech);
+    if (flags.json) { console.log(JSON.stringify({ visual: v, speech: s }, null, 1)); return; }
+    console.log(`visual: ${v.refined}/${v.keyed} refined ${JSON.stringify(v.status)}; both edges within 1 frame ${v.within1}, within 6 ${v.within6}, an edge off > 0.5 s ${v.offHalfSecond}`);
+    console.log(`        |start| median ${v.startMedian} p90 ${v.startP90} frames; |end| median ${v.endMedian} p90 ${v.endP90}; IoU median ${v.iouMedian?.toFixed(2)}; routing ${v.routing.ok}/${v.routing.n}`);
+    console.log(`speech: ${s.refined}/${s.keyed} refined; |start| median ${s.startMedian} ms p90 ${s.startP90}; |end| median ${s.endMedian} ms p90 ${s.endP90}; both within 30 ms ${s.within30}, within 80 ms ${s.within80}`);
+    return;
+  }
+
+  if (command === 'pin-page' || command === 'pin') {
+    const { runPinPage, runPin } = await import('./contentfilter/pinCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error('Usage: contentfilter pin-page <rk> --src <file> | pin <rk> --src <file> --marks <file> [--write]'); process.exit(1); }
+    try {
+      if (command === 'pin-page') runPinPage({ rk, flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() });
+      else await runPin({ rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() });
+    } catch (err) { console.error(`${command} ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
+  if (command === 'certify') {
+    const { runCertify, CERTIFY_USAGE } = await import('./contentfilter/certifyCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(CERTIFY_USAGE); process.exit(1); }
+    try { runCertify({ rk, flags, args, mediaFilterDir: filterMediaDir() }); } catch (err) { console.error(`certify ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
+  if (command === 'review-stats') {
+    const { runReviewStats, formatReviewStats } = await import('./contentfilter/reviewStatsCommand.mjs');
+    let report;
+    try { report = runReviewStats({ historyDir: path.join(filterCacheDir(), 'review-history'), flags }); } catch (err) { console.error(`review-stats failed: ${err.message}`); process.exit(1); }
+    if (flags.json) console.log(JSON.stringify(report, null, 2)); else console.log(formatReviewStats(report));
+    return;
+  }
+
+  if (command === 'stack-scan') {
+    // Runs the player's resolver, a browser module; let plain Node load it. Its logger prints to stdout.
+    (await import('./contentfilter/registerExtensionless.mjs')).registerExtensionless();
+    const { runStackScan, formatStackScan } = await import('./contentfilter/stackScanCommand.mjs');
+    let report;
+    const stdoutWrite = process.stdout.write; process.stdout.write = (...a) => process.stderr.write(...a);
+    try { report = runStackScan({ flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() }); } catch (err) { console.error(`stack-scan failed: ${err.message}`); process.exit(1); } finally { process.stdout.write = stdoutWrite; }
+    if (flags.json) console.log(JSON.stringify(report, null, 2)); else console.log(formatStackScan(report));
+    return;
+  }
+
+  if (command === 'worker') {
+    const os = await import('os');
+    const { runWorker, httpWorkerApi, STEP_TIMEOUT_MS } = await import('./contentfilter/workerCommand.mjs');
+    const { ChildProcessContentFilterCli } = await import('../server/adapters/content-filter/ChildProcessContentFilterCli.mjs');
+    const appUrl = flags.app || process.env.DAYLIGHT_APP_URL || 'http://localhost:3111';
+    // Read-only: lends the staged runs the app's auth and Plex config. Nothing is written there.
+    let realDataDir = flags['data-dir'] || null;
+    if (!realDataDir) { try { realDataDir = resolveDataDir(); } catch { realDataDir = null; } }
+    const stageRoot = flags['stage-dir'] || path.join(os.tmpdir(), 'daylight-cf-worker');
+    const owner = `${os.hostname()}:${process.pid}`;
+    const say = (event, data = {}) => console.error(JSON.stringify({ at: new Date().toISOString(), event, ...data }));
+    const cliPath = new URL(import.meta.url).pathname;
+    await runWorker({
+      api: httpWorkerApi(appUrl), owner, stageRoot, realDataDir, log: say,
+      runStep: (name, ctx) => new ChildProcessContentFilterCli({ cliPath, env: { DAYLIGHT_DATA_DIR: ctx.dataDir, DAYLIGHT_MEDIA_DIR: ctx.mediaDir } })
+        .run(name, ctx.args, { logPath: path.join(ctx.dir, 'run.log'), timeoutMs: STEP_TIMEOUT_MS[name] ?? 0 }),
+    });
+    return;
+  }
+
+  if (command === 'preflight') {
+    const rk = String(cmdArgs[0] || '');
+    if (!/^\d+$/.test(String(rk || ''))) { console.error('Usage: contentfilter preflight <ratingKey>'); process.exit(1); }
+    const { preflight } = await import('./contentfilter/preflightCommand.mjs');
+    const problem = await preflight({ rk, partOf: async (key) => {
+      const { token, host } = loadPlexConfig();
+      const res = await axios.get(`${host}/library/metadata/${key}?X-Plex-Token=${token}`, { headers: { Accept: 'application/json' }, timeout: 15000 });
+      return res.data?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0]?.key || null;
+    } });
+    if (problem) { console.error(problem); process.exit(1); }
+    console.error(`✓ preflight ok for ${rk}`);
+    return;
+  }
+
+  if (command === 'audit') {
+    // The audit runs the player's own resolver, a browser module; let plain Node load it.
+    (await import('./contentfilter/registerExtensionless.mjs')).registerExtensionless();
+    const { runAudit, formatAudit, AUDIT_USAGE } = await import('./contentfilter/auditCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(AUDIT_USAGE); process.exit(1); }
+    let report;
+    // The resolver's logger prints to stdout; keep stdout for the --json report only.
+    const stdoutWrite = process.stdout.write; process.stdout.write = (...a) => process.stderr.write(...a);
+    try { report = runAudit({ rk, flags, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir() }); } catch (err) { console.error(`audit ${rk} failed: ${err.message}`); process.exit(1); } finally { process.stdout.write = stdoutWrite; }
+    console.error(formatAudit(report));
+    if (flags.json) console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exit(1);
+    return;
+  }
+
+  if (command === 'scenes') {
+    const { runScenes, SCENES_USAGE } = await import('./contentfilter/scenesCommand.mjs');
+    const { getDecisionGateway } = await import('../../../../cli/_bootstrap.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(SCENES_USAGE); process.exit(1); }
+    try {
+      await runScenes({
+        rk, flags, args, mediaFilterDir: filterMediaDir(), dataFilterDir: filterCacheDir(), getDecisionGateway, loadPlexConfig,
+        getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+      });
+    } catch (err) { console.error(`scenes ${rk} failed: ${err.message}`); process.exit(1); }
+    return;
+  }
+
+  if (command === 'migrate-refined') {
+    const { runMigrate, MIGRATE_USAGE } = await import('./contentfilter/migrateCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(MIGRATE_USAGE); process.exit(1); }
+    try {
+      await runMigrate({
+        rk, flags, args, dataFilterDir: filterCacheDir(), mediaFilterDir: filterMediaDir(), loadPlexConfig,
+        getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+      });
+    } catch (err) {
+      console.error(`migrate-refined ${rk} failed: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (command === 'sync') {
+    const { runSync, SYNC_USAGE } = await import('./contentfilter/syncCommand.mjs');
+    const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
+    if (!rk) { console.error(SYNC_USAGE); process.exit(1); }
+    if (!process.env.DAYLIGHT_BASE_PATH) process.env.DAYLIGHT_BASE_PATH = path.dirname(resolveDataDir());
+    try {
+      await runSync({
+        rk, flags, args, dataFilterDir: filterCacheDir(), mediaFilterDir: filterMediaDir(), loadPlexConfig,
+        getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+      });
+    } catch (err) {
+      console.error(`sync ${rk} failed: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (command === 'refine') {
+    const { runRefine, REFINE_USAGE } = await import('./contentfilter/refineCommand.mjs');
+    // One key, a comma list, or --all (every EDL on disk). A batch keeps going past failures
+    // and skips titles that already have results unless --force.
+    let keys = String(cmdArgs[0] || '').split(',').map((k) => k.replace(/[^0-9]/g, '')).filter(Boolean);
+    if (args.includes('--all')) {
+      keys = readdirSync(path.join(filterMediaDir(), 'edl')).filter((f) => f.endsWith('.edl.yml')).map((f) => f.replace('.edl.yml', ''));
+    }
+    if (!keys.length) { console.error(`${REFINE_USAGE}\n  --all                Every title with an EDL (batch; skips done titles unless --force)`); process.exit(1); }
+    if (!process.env.DAYLIGHT_BASE_PATH) process.env.DAYLIGHT_BASE_PATH = path.dirname(resolveDataDir());
+    const { getDecisionGateway } = await import('../../../../cli/_bootstrap.mjs');
+    const batch = keys.length > 1;
+    const failed = [];
+    for (const rk of keys) {
+      const done = existsSync(path.join(filterMediaDir(), 'refine', rk)) && readdirSync(path.join(filterMediaDir(), 'refine', rk)).some((f) => f.startsWith('results-'));
+      if (batch && done && !args.includes('--force')) { console.error(`skip ${rk} (already refined; --force to redo)`); continue; }
+      try {
+        await runRefine({
+          rk, flags, args, dataFilterDir: filterCacheDir(), mediaFilterDir: filterMediaDir(), loadPlexConfig, getDecisionGateway,
+          getJson: async (url) => (await axios.get(url, { headers: { Accept: 'application/json' } })).data,
+        });
+      } catch (err) {
+        console.error(`refine ${rk} failed: ${err.message}`);
+        failed.push(rk);
+        if (!batch) process.exit(1);
+      }
+    }
+    if (batch) console.error(`\nbatch: ${keys.length} titles, ${failed.length} failed${failed.length ? `: ${failed.join(', ')}` : ''}`);
+    return;
+  }
+
   if (command === 'srt-review') {
     const rk = String(cmdArgs[0] || '').replace(/[^0-9]/g, '');
     if (!rk) { console.error('Usage: contentfilter srt-review <plexRatingKey> [--srt file] [--out path] [--concurrency 4] [--min-confidence 0.7]'); process.exit(1); }
@@ -1230,7 +1421,7 @@ Commands:
   search <query>        Find filterable titles (slug, year, type, tag_count)
   works                 Popular filterable titles available on your services
   tags <slug>           Summarize a title's filter categories + tag counts
-  export <slug>         Emit a normalized FilterEDL (YAML; --json for JSON)
+  export <slug>         Emit a normalized FilterEDL (YAML; --json for JSON; --content-id plex:ID)
   calibrate <ratingKey> Derive a per-file time sync (offset/scale) that aligns cues to your
                         Plex file, via SRT-snap (default) or --method whisper. --write saves it.
   srt-mutes <ratingKey> Scan the Plex English SRT (or --srt <file>) for every word in
@@ -1239,6 +1430,27 @@ Commands:
   srt-review <ratingKey> Ask the decision model (Jev) how each word-list cue is used in context and
                         write a review file for a grown-up (household/content-filter/review/<rk>.yml).
                         Never edits cues. --srt <file>, --out, --concurrency 4, --min-confidence 0.7.
+  refine <ratingKey>    Turn every coarse cue into frame/ms-precise observations (and region tracks),
+                        asking only the decision model (Jev). Unsettled cues go to
+                        household/content-filter/review/<rk>.refine.yml. --part, --src, --cues,
+                        --kinds, --limit, --concurrency, --no-region, --transcript, --write.
+  sync <ratingKey>      Fit this copy's sync from the anchors in the tag set's refined EDL
+                        (refined/<workId>-<tagSetId>.edl.yml); detects a different cut as
+                        segments. No decision model. --part, --src, --transcript, --write.
+  pin-page <ratingKey>  Clip page for safe-window mutes: mark where each word starts. --src.
+  pin <ratingKey>       Snap the marks to the words and write them as ms mutes. --src, --marks, --write.
+  scenes <ratingKey>    Group refined tags into scenes (shot-cut edges, situation + picture levels by Jev). --src, --same-scene, --out, --write.
+  audit <ratingKey>     Prove a title: tone cap, channel match, region-track share, same-subject groups, R4 counts,
+                        scene edge leaks, certification, language per group. --profile, --part, --json. Exit 1 on a hard fail.
+  review-stats          Human review verdicts as machine-certification feedback: counts by kind/category/effect/stage,
+                        remove rate by machine stage + unsure, action-change matrix, redo reasons, median dwell.
+                        --since 30d|12h|date, --rk, --json. Read-only.
+  stack-scan            Films whose refined EDL stacks picture effects (whole-frame blur under regional blurs ...):
+                        overlapping groups before/after the precedence guardrail. --profile, --json. Read-only.
+  certify <ratingKey>   Show/recompute a refined EDL's certification (machine: every mute precise);
+                        --parent --by <name> records a sign-off. --write.
+  migrate-refined <rk>  Move a title's refined cue times from its override into the shareable
+                        refined EDL (VidAngel clock); the override keeps its sync. --write.
   snap <ratingKey>      Whisper-align every mute cue to its true audio word boundary (ms) and
                         write precise in/out into the override. --limit N, --model, --write.
   bulk-export           Export every mapped movie's EDL (token; resumable; --force --delay)

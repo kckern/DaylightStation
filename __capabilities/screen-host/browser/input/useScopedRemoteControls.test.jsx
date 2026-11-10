@@ -1,3 +1,4 @@
+import GameButton from '../../../gaming/browser/platform/ui/GameButton.jsx';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useRef } from 'react';
 import { expect, it, vi } from 'vitest';
@@ -57,4 +58,33 @@ it('never treats an SVG href as a control — select with nothing focused activa
  // and Enter threw "click is not a function" 17 times in Charades.
  const action=vi.fn(); render(<SvgFirstControls action={action}/>); document.activeElement?.blur?.();
  fireEvent.keyDown(window,{key:'Enter'}); expect(action).toHaveBeenCalledTimes(1);
+});
+
+function ClaimingControls({ claim, exit, action }) { const ref=useRef(null); useScopedRemoteControls(ref,{onEscape:exit,onAction:claim}); return <div ref={ref}><button onClick={action}>One</button><button onClick={action}>Two</button></div>; }
+it('offers each remote action to onAction first; a claimed action skips focus, select and escape', () => {
+ const claim=vi.fn(({action,direction})=>action==='navigate'&&direction==='up' || action==='escape'), exit=vi.fn(), action=vi.fn();
+ render(<ClaimingControls claim={claim} exit={exit} action={action}/>);
+ fireEvent.keyDown(window,{key:'ArrowUp'}); expect(screen.getByText('One')).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Escape'}); expect(exit).not.toHaveBeenCalled();
+ expect(claim).toHaveBeenCalledWith({action:'navigate',direction:'up',repeat:false});
+ fireEvent.keyDown(window,{key:'ArrowDown'}); expect(screen.getByText('Two')).toHaveFocus();
+ fireEvent.keyDown(window,{key:'Enter'}); expect(action).toHaveBeenCalledTimes(1);
+});
+
+function PrimaryControls({start,add}) {
+ const ref=useRef(null); useScopedRemoteControls(ref);
+ return <div ref={ref}><button onClick={add}>Add team</button><button>Options</button><GameButton autoFocus onClick={start}>Start game</GameButton></div>;
+}
+it('recovers the intended primary action after focus is lost instead of activating the first button',()=>{
+ const start=vi.fn(),add=vi.fn();render(<PrimaryControls start={start} add={add}/>);
+ document.activeElement.blur();fireEvent.keyDown(window,{key:'Enter'});
+ expect(start).toHaveBeenCalledTimes(1);expect(add).not.toHaveBeenCalled();
+ expect(screen.getByRole('button',{name:'Start game'})).toHaveFocus();
+});
+it('uses the first direction press to restore a visible primary focus when focus is outside the app',()=>{
+ render(<PrimaryControls start={()=>{}} add={()=>{}}/>);
+ document.activeElement.blur();fireEvent.keyDown(window,{key:'ArrowDown'});
+ expect(screen.getByRole('button',{name:'Start game'})).toHaveFocus();
+ fireEvent.keyDown(window,{key:'ArrowUp'});
+ expect(screen.getByRole('button',{name:'Options'})).toHaveFocus();
 });

@@ -129,3 +129,12 @@ describe('term bounds', () => {
   });
   it('the ladder is versioned', () => { expect(VERDICT_VERSION).toBe(1); });
 });
+
+describe('dayVerdict — teacher hold (remediation cap)', () => {
+  it('a held subject is not asked: the rest of the day can still be met', () => {
+    expect(dayVerdict({
+      studyDay: '2026-09-29', today: '2026-09-30', completion: { state: 'complete' },
+      sections: [{ subject: 'language', state: 'served', reason: null }, { subject: 'math', state: 'excused', reason: 'teacher_hold' }],
+    })).toMatchObject({ state: 'met', served: 1, asked: 1 });
+  });
+});

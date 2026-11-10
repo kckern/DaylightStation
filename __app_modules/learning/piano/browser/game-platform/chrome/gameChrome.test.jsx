@@ -181,3 +181,14 @@ describe('GameRail', () => {
     expect(container.querySelector('.pg-rail__foot')).toBeNull();
   });
 });
+
+describe('piano chrome re-export', () => {
+  it('is the kit HUD — the same components, not copies', async () => {
+    const chrome = await import('./index.js');
+    const kit = await import('../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js');
+    expect(chrome.LifeMeter).toBe(kit.LifeMeter);
+    expect(chrome.CountdownOverlay).toBe(kit.CountdownOverlay);
+    expect(chrome.ProgressMeter).toBe(kit.ProgressMeter);
+    expect(chrome.MomentBanner).toBe(kit.MomentBanner);
+  });
+});

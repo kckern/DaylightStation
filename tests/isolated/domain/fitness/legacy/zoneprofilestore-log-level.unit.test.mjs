@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-const sourceFilePath = path.resolve(process.cwd(), 'frontend/src/hooks/fitness/ZoneProfileStore.js');
+const sourceFilePath = path.resolve(process.cwd(), '__app_modules/wellness/fitness/browser/hooks/fitness/ZoneProfileStore.js');
 
 describe('ZoneProfileStore build_profile log level contract', () => {
   let source;

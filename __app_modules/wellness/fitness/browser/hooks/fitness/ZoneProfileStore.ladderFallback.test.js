@@ -36,6 +36,13 @@ const zoneOf = (store) => store.getProfile('rider-a')?.currentZoneId ?? null;
 // (HYSTERESIS_COOLDOWN_MS). Real ticks are seconds apart; back-to-back syncs in
 // a test are not, so move the clock between them or every commit is debounced.
 const settle = () => vi.setSystemTime(Date.now() + 6000);
+// An upward zone change commits on a second sample at least 1s after the first
+// (UPWARD_CONFIRM_MS), so a single corrupt packet cannot claim a climb.
+const confirmUp = (store, zoneConfig, heartRate) => {
+  store.syncFromUsers([rider(zoneConfig, heartRate)]);
+  vi.setSystemTime(Date.now() + 1000);
+  store.syncFromUsers([rider(zoneConfig, heartRate)]);
+};
 
 describe('ZoneProfileStore — a degenerate ladder never commits a zone', () => {
   let store;
@@ -50,7 +57,9 @@ describe('ZoneProfileStore — a degenerate ladder never commits a zone', () => 
 
   it('holds the rider at active through a degenerate rebuild at a steady 134bpm', () => {
     // The incident: 134bpm against a warm threshold of 140 reported FIRE.
-    store.syncFromUsers([rider(GOOD, 134)]);
+    store.syncFromUsers([rider(GOOD, 80)]);
+    settle();
+    confirmUp(store, GOOD, 134);
     expect(zoneOf(store)).toBe('active');
 
     store.syncFromUsers([rider(DEGENERATE, 134)]);
@@ -65,29 +74,29 @@ describe('ZoneProfileStore — a degenerate ladder never commits a zone', () => 
     store.syncFromUsers([rider(DEGENERATE, 134)]);
     expect(zoneOf(store)).toBeNull();
 
+    store.syncFromUsers([rider(GOOD, 80)]);
     settle();
-    store.syncFromUsers([rider(GOOD, 134)]);
+    confirmUp(store, GOOD, 134);
     expect(zoneOf(store)).toBe('active');
   });
 
   it('still lets a real Fire through on a valid ladder', () => {
-    store.syncFromUsers([rider(GOOD, 134)]);
+    store.syncFromUsers([rider(GOOD, 80)]);
     settle();
-    store.syncFromUsers([rider(GOOD, 185)]);
+    confirmUp(store, GOOD, 185);
     expect(zoneOf(store)).toBe('fire');
   });
 
-  it('does not memoize a profile built on a fallback ladder', () => {
-    // Identical inputs twice. A cache hit would replay the fallback without
-    // re-validating, turning one bad tick into a permanent one.
-    store.syncFromUsers([rider(GOOD, 134)]);
+  it('revalidates repeated rejected inputs while preserving the last good ladder', async () => {
+    store.syncFromUsers([rider(GOOD, 80)]); settle();
+    confirmUp(store, GOOD, 134);
     store.syncFromUsers([rider(DEGENERATE, 134)]);
-    const cachedFallback = [...store._profileCache.values()]
-      .some((profile) => profile.id === 'rider-a' && profile.zoneConfig.some((z) => z.min === 0));
-    expect(cachedFallback).toBe(false);
-
     store.syncFromUsers([rider(DEGENERATE, 134)]);
     expect(zoneOf(store)).toBe('active');
+    expect(store.getProfile('rider-a').zoneConfig.map(z => z.min)).toEqual([60, 100, 140, 160, 175]);
+    store.syncFromUsers([rider(GOOD, 134)]);
+    const logger = await loggerOf();
+    expect(logger.info.mock.calls.find(([event]) => event === 'fitness.zone_ladder.recovered')[1].rejectedTicks).toBe(2);
   });
 
   it('warns once on entering the rejected state, not once per tick', async () => {

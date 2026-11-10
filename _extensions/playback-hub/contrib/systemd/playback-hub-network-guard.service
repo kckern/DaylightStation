@@ -1,0 +1,18 @@
+[Unit]
+Description=Playback hub independent IPv4 LAN recovery
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/default/playback-hub-network-guard
+ExecStart=/usr/bin/python3 /usr/local/lib/playback-hub/network_guard.py
+StateDirectory=playback-hub-network-guard
+StateDirectoryMode=0700
+TimeoutStartSec=90
+KillMode=control-group
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal

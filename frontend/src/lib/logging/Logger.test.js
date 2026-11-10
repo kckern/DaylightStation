@@ -32,3 +32,40 @@ describe('Logger.sampled — level option', () => {
     expect(recent.find((e) => e.event === `${name}.info`)?.level).toBe('info');
   });
 });
+
+describe('Logger — device identity in context', () => {
+  it('stamps ?device= from the page URL on every event as context.deviceId', async () => {
+    const { vi } = await import('vitest');
+    window.history.replaceState(null, '', '/fitness?device=garage-tv');
+    vi.resetModules();
+    const fresh = await import('./Logger.js');
+    window.history.replaceState(null, '', '/fitness/home'); // the router drops it
+    const name = `device-ctx-${Date.now()}`;
+    fresh.default().child({ component: 'device-test' }).info(name, {});
+    const evt = fresh.getRecentEvents(50).find((e) => e.event === name);
+    expect(evt.context.deviceId).toBe('garage-tv');
+    window.localStorage.removeItem('daylight.log.deviceId');
+  });
+});
+
+describe('Logger.sampled — aggregation survives a field changing type', () => {
+  it('does not throw when a field is a number in one sample and a string in the next', () => {
+    const log = getLogger().child({ component: 'sampled-mixed-test' });
+    const name = `sampled-mixed-${Date.now()}`;
+    expect(() => {
+      for (let i = 0; i < 6; i++) {
+        log.sampled(name, { rule: i % 2 ? 'some' : 1 }, { maxPerMinute: 1, aggregate: true });
+      }
+    }).not.toThrow();
+  });
+});
+
+describe('flushLogs', () => {
+  it('never throws and resolves within its timeout', async () => {
+    const { flushLogs } = await import('./Logger.js');
+    const t0 = Date.now();
+    const ok = await flushLogs({ timeoutMs: 50, wsService: { ws: { readyState: 1, bufferedAmount: 999 } } });
+    expect(typeof ok).toBe('boolean');
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+});

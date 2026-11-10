@@ -42,4 +42,12 @@ describe('course projection', () => {
     expect(projected.segments).toEqual([]);
     expect(projected.collectibles).toEqual([]);
   });
+  it('projects entities as boxes standing on their altitude', () => {
+    const projected = projectCourseWindow({ ...course, entities: [
+      { id: 'tree', class: 'breakable', at_s: 7, altitude: 0.75, width_s: 0.7, height: 0.2 },
+      { id: 'far', class: 'solid', at_s: 200, altitude: 0.75, width_s: 0.7, height: 0.2 },
+    ] }, 0);
+    expect(projected.entities).toHaveLength(1);
+    expect(projected.entities[0]).toMatchObject({ id: 'tree', x: 715, y: 330, width: 50, height: 120 });
+  });
 });

@@ -2,33 +2,38 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useBuzzers } from "../interaction/useBuzzers.js";
 import { GuessingMusic } from "../effects/GuessingMusic.js";
 import { AudioCueEngine } from "../effects/AudioCueEngine.js";
+import { restoreGamepadRoleBindings, clearGamepadRoleBindings, gamepadPresence, acquireGamepadBuzzerCapture } from "../../../../../__capabilities/screen-host/browser/input.mjs";
 
 // Adapts Party Games hardware/effects to the environment-neutral capability
 // ports consumed by experiences. Experiences never import this environment.
-export default function PartyGamesExperience({ component: Experience, seats, buzzerBindings, config, ...props }) {
+export default function PartyGamesExperience({ component: Experience, seats, buzzerBindings, config, audio: providedAudio, ...props }) {
   const buzzListeners = useRef(new Set());
+  const appliedBindings = useRef(null);
   const audio = useMemo(
-    () => new AudioCueEngine({ pack: config?.sounds?.pack, mute: config?.defaults?.mute }),
-    [config?.defaults?.mute, config?.sounds?.pack],
+    () => providedAudio || new AudioCueEngine({ pack: config?.sounds?.pack, mute: config?.defaults?.mute }),
+    [providedAudio, config?.defaults?.mute, config?.sounds?.pack],
   );
   const music = useMemo(() => new GuessingMusic(), []);
   const onBuzz = useCallback((teamId) => {
     for (const listener of buzzListeners.current) listener(teamId);
   }, []);
-  const { arbiter, locked, arm, disarm } = useBuzzers({ teams: seats, onLock: onBuzz });
+  const { arbiter, locked, arm, disarm, subscribeInput } = useBuzzers({ teams: seats, onLock: onBuzz, sessionId: props.sessionId });
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
 
+  // Team-bound gamepads stay buzzers for the life of the game (including after
+  // a refresh), and return to navigation when the game unmounts.
   useEffect(() => {
-    if (buzzerBindings) arbiter.restore({ slotToTeam: buzzerBindings });
+    if (buzzerBindings) { arbiter.restore({ slotToTeam: buzzerBindings }); restoreGamepadRoleBindings(buzzerBindings); }
   }, [arbiter, buzzerBindings]);
+  useEffect(() => () => clearGamepadRoleBindings(), []);
 
   useEffect(() => () => {
     music.stop();
     audio.stopChannel('music');
-    audio.stopChannel('sfx');
+    if (!providedAudio) audio.stopChannel('sfx');
     audio.stopChannel('clue-media');
-  }, [audio, music]);
+  }, [audio, music, providedAudio]);
 
   const subscribe = useCallback((listener) => {
     buzzListeners.current.add(listener);
@@ -42,8 +47,17 @@ export default function PartyGamesExperience({ component: Experience, seats, buz
       arm,
       disarm,
       subscribe,
+      subscribeInput,
+      capture: acquireGamepadBuzzerCapture,
+      presence: gamepadPresence,
+      restore(bindings) {
+        const key = JSON.stringify(Object.entries(bindings).sort(([a], [b]) => a.localeCompare(b)));
+        if (appliedBindings.current === key) return;
+        appliedBindings.current = key;
+        arbiter.restore({ slotToTeam: bindings }); clearGamepadRoleBindings(); restoreGamepadRoleBindings(bindings);
+      },
     },
-  }), [audio, music, arm, disarm, subscribe]);
+  }), [audio, music, arm, disarm, subscribe, subscribeInput, arbiter]);
 
   return <Experience {...props} seats={seats} config={config} gamingServices={gamingServices} />;
 }

@@ -31,6 +31,7 @@ import { questionItemIds, questionPrompts } from "../../domain/documents/documen
 import { PRINT_DOCUMENT_REF_PATTERN } from "../../domain/curriculum/unitValidation.mjs";
 import { worksheetInstanceRoster } from "../../domain/questionBankV2.mjs";
 import { isSyntheticReviewItem } from "../ports/IReviewQueue.mjs";
+import { resolvePassingPercent } from "../passBar.mjs";
 
 /**
  * The three things a PERSON (never the engine) can say about one question.
@@ -47,7 +48,7 @@ const HUMAN_VERDICTS = new Set(['correct', 'incorrect', 'void']);
 
 export class GradeSubmission {
   #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #teacherGate; #clock; #logger; #passOverrides;
-  #worksheetInstances;
+  #worksheetInstances; #assignments;
 
   /**
    * @param {object} deps
@@ -72,12 +73,16 @@ export class GradeSubmission {
    *   [deps.worksheetInstances] - the issued sheets. OPTIONAL and read-only:
    *   an install that never mints instances leaves it unwired and keeps
    *   marking against the bank, exactly as it did before instances existed.
+   * @param {{get: (learnerId: string) => Promise<object|null>}|null}
+   *   [deps.assignments] - the enrollment store. OPTIONAL: when wired, the
+   *   learner's enrollment `passing` for the unit's course is the bar stamped
+   *   below whenever no per-lesson override sets one (`resolvePassingPercent`).
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
   constructor({
     curriculum, sessions, reviewQueue, grader, bankReader = null, grownUps = null, teacherGate = null,
-    worksheetInstances = null, passOverrides = null, clock = () => new Date(), logger = console,
+    worksheetInstances = null, passOverrides = null, assignments = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!curriculum || !sessions || !reviewQueue || !grader) {
       throw new Error('GradeSubmission requires curriculum, sessions, reviewQueue and grader');
@@ -94,6 +99,7 @@ export class GradeSubmission {
     this.#clock = clock;
     this.#logger = logger;
     this.#passOverrides = passOverrides;
+    this.#assignments = assignments;
   }
 
   /**
@@ -415,9 +421,12 @@ export class GradeSubmission {
       : (attemptIds.length ? attemptIds : [`review:${sessionId}`]);
     // Stamp the bar IN EFFECT now (student-advocacy A4): the close prefers
     // this over a later override edit — the bar cannot move under a kid who
-    // has already been graded.
-    const effectivePassingPercent = this.#passOverrides?.percentFor?.(state.unitId)
-      ?? unit?.passing?.percent;
+    // has already been graded. The order is override → the learner's
+    // enrollment for this course → the unit's own bar (Task 16).
+    const effectivePassingPercent = await resolvePassingPercent({
+      passOverrides: this.#passOverrides, assignments: this.#assignments,
+      learnerId: state.learnerId, unit: unit ?? { unitId: state.unitId },
+    });
     const { errors, event } = createEvent({
       type: 'graded', at: nowIso, sessionId, attemptIds: recordedAttempts, percent,
       // The receipt says "8 of 10", not "80%". `CloseSessionOutcome` renders

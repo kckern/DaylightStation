@@ -132,6 +132,21 @@ describe('battery-both resume', () => {
     expect(r.status).toBe('absent');
   });
 
+  it('never substitutes an older battery save when the preferred snapshot read fails', async () => {
+    const fetchImpl = vi.fn(async url => url.includes('/state/')
+      ? res({ status: 503 }) : res({ buffer: new Uint8Array([1, 2, 3]).buffer }));
+    const result = await clientWith(fetchImpl).loadResume({ system: 'gb', gameId: 'g', user: 'user_5', saveMode: 'battery' });
+    expect(result.status).toBe('error');
+    expect(result.httpStatus).toBe(503);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('bypasses cached responses for save reads', async () => {
+    const fetchImpl = vi.fn(async () => res({ status: 204 }));
+    await clientWith(fetchImpl).getSave('gb', 'g', 'user_5');
+    expect(fetchImpl.mock.calls[0][1].cache).toBe('no-store');
+  });
+
   it('persistResume(battery) writes BOTH state + save', async () => {
     const calls = [];
     const fetchImpl = vi.fn(async (url, init) => { calls.push([url, init?.method]); return res({ status: 200 }); });

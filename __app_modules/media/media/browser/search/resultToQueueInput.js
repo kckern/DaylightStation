@@ -1,3 +1,5 @@
+import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
+
 export function resultToQueueInput(row) {
   if (!row || typeof row !== 'object') return null;
   const contentId = row.id
@@ -7,6 +9,7 @@ export function resultToQueueInput(row) {
   const mediaType = row.mediaType;
   const format = mediaType === 'video' || mediaType === 'audio' ? mediaType : null;
   const input = {
+    ...normalizePlaybackQuality(row),
     contentId,
     title: row.title ?? null,
     thumbnail: row.thumbnail ?? null,

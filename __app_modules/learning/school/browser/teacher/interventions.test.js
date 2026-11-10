@@ -24,6 +24,6 @@ describe('interventions registry', () => {
 
   it('builds learner-scoped hrefs', () => {
     const credit = INTERVENTIONS.find((item) => item.id === 'completion-credit');
-    expect(credit.href('user_4')).toBe('/school/teacher/students/user_4/operations');
+    expect(credit.href('user_4')).toBe('/school/teacher/operations?learner=user_4');
   });
 });

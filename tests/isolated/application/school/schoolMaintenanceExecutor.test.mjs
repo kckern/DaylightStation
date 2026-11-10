@@ -64,6 +64,24 @@ describe('SchoolMaintenanceExecutor', () => {
     await expect(build({ markSessionAbandoned }).execute(SCHOOL_STALE_SWEEP_JOB, {})).rejects.toThrow('store offline');
   });
 
+  it("then sweeps the answer sheets with the same dryRun, leaving the leak threshold to the sweep's own default", async () => {
+    const sweepAnswerSheets = { execute: vi.fn(async () => ({ leaksRecovered: [{ cardId: '7000001' }] })) };
+    const out = await build({ sweepAnswerSheets }).execute(SCHOOL_STALE_SWEEP_JOB, { dryRun: true });
+    expect(sweepAnswerSheets.execute).toHaveBeenCalledWith({ dryRun: true });
+    expect(out.answerSheets).toEqual({ leaksRecovered: [{ cardId: '7000001' }] });
+
+    await build({ sweepAnswerSheets }).execute(SCHOOL_STALE_SWEEP_JOB, { leakAfterHours: 6 });
+    expect(sweepAnswerSheets.execute).toHaveBeenLastCalledWith({ dryRun: false, leakAfterHours: 6 });
+  });
+
+  it('runs the answer-sheet pass even when the session sweep throws, then reports the failure', async () => {
+    const markSessionAbandoned = { sweepUntouched: vi.fn(async () => { throw new Error('store offline'); }) };
+    const sweepAnswerSheets = { execute: vi.fn(async () => ({})) };
+    await expect(build({ markSessionAbandoned, sweepAnswerSheets }).execute(SCHOOL_STALE_SWEEP_JOB, {}))
+      .rejects.toThrow('store offline');
+    expect(sweepAnswerSheets.execute).toHaveBeenCalled();
+  });
+
   it('returns the sweep result so a run is inspectable', async () => {
     const result = { swept: [{ sessionId: 'ses_a' }], skipped: [], olderThanDays: 14, dryRun: false };
     const out = await build({ markSessionAbandoned: sweeper(result) }).execute(SCHOOL_STALE_SWEEP_JOB, {});

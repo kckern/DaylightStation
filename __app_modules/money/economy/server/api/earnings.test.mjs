@@ -60,3 +60,44 @@ describe('/earnings', () => {
     expect((await request(app()).put('/earnings/rules').send({})).status).toBe(404);
   });
 });
+
+describe('/earnings workout + standings', () => {
+  function appWith(workoutEarnings) {
+    const a = express();
+    const earnRules = { describe: async () => ({}) };
+    const earningsPreview = { preview: async () => ({}), roster: async () => ({}) };
+    a.use('/earnings', createEarningsRouter({ earningsPreview, earnRules, workoutEarnings, logger: silent }));
+    return a;
+  }
+
+  it('GET /workout/:sessionId/paid returns the paid read, no-store', async () => {
+    const body = { sessionId: 's1', mode: 'live', learners: [{ learnerId: 'learner-a', learnerName: 'Learner A', entries: [], wallet: { silver: 0 } }] };
+    const res = await request(appWith({ workout: async () => ({}), standings: async () => ({}), paid: async (id) => ({ ...body, sessionId: id }) })).get('/earnings/workout/s1/paid');
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body).toEqual(body);
+  });
+
+  it('GET /workout/:sessionId/paid is 503 when the service is unwired', async () => {
+    expect((await request(appWith(null)).get('/earnings/workout/s1/paid')).status).toBe(503);
+    expect((await request(appWith({ workout: async () => ({}), standings: async () => ({}) })).get('/earnings/workout/s1/paid')).status).toBe(503);
+  });
+
+  it('GET /workout/:sessionId returns the service body, no-store', async () => {
+    const body = { sessionId: 's1', mode: 'live', learners: [] };
+    const res = await request(appWith({ workout: async (id) => ({ ...body, sessionId: id }), standings: async () => ({}) })).get('/earnings/workout/s1');
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body).toEqual(body);
+  });
+
+  it('GET /standings returns the service body', async () => {
+    const res = await request(appWith({ workout: async () => ({}), standings: async () => ({ mode: 'live', contestClosed: false, learners: [] }) })).get('/earnings/standings');
+    expect(res.status).toBe(200);
+    expect(res.body.learners).toEqual([]);
+  });
+
+  it('503s when the service is not wired', async () => {
+    expect((await request(appWith(null)).get('/earnings/standings')).status).toBe(503);
+  });
+});

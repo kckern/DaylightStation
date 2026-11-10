@@ -21,7 +21,7 @@ const silent = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 /** The sweep must never consult it — asserted below. */
 const loudGate = { assert: vi.fn(() => { throw new Error('teacher gate must not be asked by a cron sweep'); }) };
 
-async function build(sessions) {
+async function build(sessions, { answerSheets = null } = {}) {
   const repo = new FakeSessionRepository();
   for (const [sessionId, events] of Object.entries(sessions)) {
     for (const event of events) {
@@ -35,6 +35,7 @@ async function build(sessions) {
     learnerDirectory: { listLearners: async () => [{ id: 'learner4' }] },
     clock: () => NOW,
     logger: silent,
+    ...(answerSheets ? { answerSheets } : {}),
   });
   return { repo, useCase };
 }
@@ -43,6 +44,16 @@ const created = (at) => ({ type: 'created', at, learnerId: 'learner4', unitId: '
 const issued = (at) => ({ type: 'issued', at, artifactId: 'a1' });
 
 describe('sweepUntouched', () => {
+  it("frees a swept session's off-paper card windows for its unit, and only when not a dry run", async () => {
+    const answerSheets = { vacateSession: vi.fn(async () => []) };
+    const sessions = { ses_old: [created(daysAgo(20)), issued(daysAgo(20))] };
+    await (await build(sessions, { answerSheets })).useCase.sweepUntouched({ olderThanDays: 14, dryRun: true });
+    expect(answerSheets.vacateSession).not.toHaveBeenCalled();
+
+    await (await build(sessions, { answerSheets })).useCase.sweepUntouched({ olderThanDays: 14 });
+    expect(answerSheets.vacateSession).toHaveBeenCalledWith({ sessionId: 'ses_old', unitId: 'u1', reason: 'abandoned' });
+  });
+
   it('sweeps work issued and never returned, past the threshold', async () => {
     const { useCase, repo } = await build({
       ses_old: [created(daysAgo(20)), issued(daysAgo(20))],

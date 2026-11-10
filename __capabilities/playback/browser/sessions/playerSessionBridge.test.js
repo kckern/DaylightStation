@@ -8,6 +8,11 @@ import { createPlayerSessionBridge, normalizePlayableItem } from './playerSessio
 import { createRegistrySessionSource } from './registrySessionSource.js';
 import { createSessionSource } from './SessionSource.js';
 
+it('publishes the active quality policy including an explicit false', () => {
+  expect(normalizePlayableItem({ contentId: 'plex:42', format: 'hls_video', maxResolution: '720', transcode: 'force', adaptive: false }))
+    .toMatchObject({ maxResolution: '720', transcode: 'force', adaptive: false });
+});
+
 function makeMediaEl({ paused = false, ended = false } = {}) {
   return { paused, ended };
 }

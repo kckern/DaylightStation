@@ -2,6 +2,12 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useVolumeStore } from "../nav/useVolumeStore.js";
 
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'media-amplifier' });
+  return _logger;
+}
+
 const amplifiers = new WeakMap();
 
 const cleanupAmplifier = (element) => {
@@ -11,17 +17,17 @@ const cleanupAmplifier = (element) => {
   try {
     amp.source?.disconnect?.();
   } catch (e) {
-    getLogger().warn('media_amplifier.disconnect_source_failed', { error: e.message });
+    logger().warn('media_amplifier.disconnect_source_failed', { error: e.message });
   }
   try {
     amp.gainNode?.disconnect?.();
   } catch (e) {
-    getLogger().warn('media_amplifier.disconnect_gain_failed', { error: e.message });
+    logger().warn('media_amplifier.disconnect_gain_failed', { error: e.message });
   }
   try {
     amp.context?.close?.();
   } catch (e) {
-    getLogger().warn('media_amplifier.close_context_failed', { error: e.message });
+    logger().warn('media_amplifier.close_context_failed', { error: e.message });
   }
   amplifiers.delete(element);
 };
@@ -35,7 +41,7 @@ const buildAmplifier = (element, boostLevel) => {
   try {
     source = context.createMediaElementSource(element);
   } catch (e) {
-    console.error('Failed to create MediaElementSource', e);
+    logger().error('media_amplifier.create_source_failed', { error: e.message });
     try {
       context.close();
     } catch (_) {
@@ -60,7 +66,13 @@ const normalizePart = (value, fallback) => {
   return normalized;
 };
 
-export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, trackId } = {}) => {
+// `level` is the viewer's UN-DUCKED video level (usePersistentVolume's
+// `volume`). The gain carries it so normal playback keeps its historical
+// loudness (level^2 x boost: element.volume carries the level once, the gain
+// once more), while a duck, which lowers only element.volume, scales the
+// output by exactly duck_to. Without `level` the gain falls back to
+// element.volume (the pre-2026-10-23 behaviour, which squares a duck).
+export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, trackId, level } = {}) => {
   const { getVolume, setVolume } = useVolumeStore();
 
   const ids = useMemo(
@@ -74,6 +86,9 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
 
   const [boostLevel, setBoostLevel] = useState(1);
   const amplifierRef = useRef(null);
+  const levelRef = useRef(level);
+  levelRef.current = level;
+  const syncGainRef = useRef(null);
 
   useEffect(() => {
     const resolved = getVolume(ids);
@@ -116,11 +131,32 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
     const amp = ensureAmplifier();
     if (!amp) return undefined;
 
-    // Sync gain based on element volume and boost
+    // A MediaElementAudioSourceNode's output already carries element.volume
+    // (and muted). The gain used to be element.volume x boost, so the duck
+    // (which lowers element.volume) was applied twice: duck_to 0.15 became
+    // ~2%. The gain now uses the un-ducked level, so normal loudness is
+    // unchanged and the duck is linear. See
+    // ops:docs/_wip/bugs/2026-10-23-fitness-audio-ducking-goes-to-zero.md.
+    // Mute is already silent upstream; zeroing the gain too is harmless.
+    let lastGain = null;
     const syncGain = () => {
       if (!amplifierRef.current) return;
-      const volume = mediaElement.muted ? 0 : mediaElement.volume;
-      const totalGain = volume * amplifierRef.current.boost;
+      const { boost } = amplifierRef.current;
+      const unducked = Number.isFinite(levelRef.current)
+        ? Math.min(1, Math.max(0, levelRef.current))
+        : mediaElement.volume;
+      const totalGain = mediaElement.muted ? 0 : unducked * boost;
+      if (totalGain !== lastGain) {
+        logger().debug('media_amplifier.gain', {
+          gain: totalGain,
+          boost,
+          level: unducked,
+          levelSource: Number.isFinite(levelRef.current) ? 'volume-store' : 'element',
+          elementVolume: mediaElement.volume,
+          muted: Boolean(mediaElement.muted),
+        });
+        lastGain = totalGain;
+      }
       const currentTime = amplifierRef.current.context.currentTime;
       try {
         amplifierRef.current.gainNode.gain.cancelScheduledValues(currentTime);
@@ -130,6 +166,7 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
       }
     };
 
+    syncGainRef.current = syncGain;
     // Initial sync
     syncGain();
 
@@ -147,22 +184,21 @@ export const useMediaAmplifier = (mediaElement, { grandparentId, parentId, track
     return () => {
       mediaElement.removeEventListener('volumechange', syncGain);
       mediaElement.removeEventListener('play', handlePlay);
+      if (syncGainRef.current === syncGain) syncGainRef.current = null;
       cleanupAmplifier(mediaElement);
     };
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mediaElement]); // keep listener setup tied to the current element only
 
-  // Effect to handle boost level changes separately
+  // Effect to handle boost and un-ducked level changes separately
+  // (re-sync directly; no synthetic volumechange reaches other listeners).
   useEffect(() => {
     if (amplifierRef.current) {
-        amplifierRef.current.boost = boostLevel;
-        // Trigger sync
-        if (mediaElement) {
-            mediaElement.dispatchEvent(new Event('volumechange'));
-        }
+      amplifierRef.current.boost = boostLevel;
+      syncGainRef.current?.();
     }
-  }, [boostLevel, mediaElement]);
+  }, [boostLevel, level, mediaElement]);
 
   const setBoost = useCallback((level) => {
     setBoostLevel(level);

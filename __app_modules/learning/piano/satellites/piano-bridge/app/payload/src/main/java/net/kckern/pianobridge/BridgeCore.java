@@ -109,6 +109,7 @@ public class BridgeCore {
     private KioskSettingsGuard kioskSettingsGuard;
     private ForegroundWatch foregroundWatch;
     private Heartbeat heartbeat;
+    private WifiLink wifiLink;
     private Loopback loopback;
     // Raw MIDI-IN tap: the last chunks the read port delivered, exactly as received.
     // The only way to see what the parser is actually being handed — added when a
@@ -236,6 +237,13 @@ public class BridgeCore {
         } else {
             heartbeat.updateConfig(config);
         }
+        // Wi-Fi link telemetry (bridge.wifi) — same lifecycle as the heartbeat.
+        if (wifiLink == null) {
+            wifiLink = new WifiLink(this, config);
+            wifiLink.start();
+        } else {
+            wifiLink.updateConfig(config);
+        }
     }
 
     /** Tear down cleanly (before a payload swap or shell shutdown). */
@@ -246,6 +254,7 @@ public class BridgeCore {
         if (foregroundWatch != null) { foregroundWatch.stop(); foregroundWatch = null; }
         if (kioskSettingsGuard != null) { kioskSettingsGuard.stop(); kioskSettingsGuard = null; }
         if (heartbeat != null) { heartbeat.stop(); heartbeat = null; }
+        if (wifiLink != null) { wifiLink.stop(); wifiLink = null; }
         CrashLog.markCleanShutdown(); // so the next start isn't misread as a crash
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
@@ -628,6 +637,8 @@ public class BridgeCore {
 
     public Heartbeat getHeartbeat() { return heartbeat; }
 
+    public WifiLink getWifiLink() { return wifiLink; }
+
     public Loopback getLoopback() { return loopback; }
 
     /**
@@ -779,6 +790,7 @@ public class BridgeCore {
         if (kioskWatchdog != null) kioskWatchdog.updateConfig(config);
         if (kioskSettingsGuard != null) kioskSettingsGuard.updateConfig(config);
         if (heartbeat != null) heartbeat.updateConfig(config);
+        if (wifiLink != null) wifiLink.updateConfig(config);
     }
 
     /** Re-read the device config (after a pbctl /config edit) and reconnect. */
@@ -798,6 +810,7 @@ public class BridgeCore {
         // without a restart and its repair counters survive the reload.
         if (kioskSettingsGuard != null) kioskSettingsGuard.updateConfig(config);
         if (heartbeat != null) heartbeat.updateConfig(config);
+        if (wifiLink != null) wifiLink.updateConfig(config);
     }
 
     private synchronized void closeMidi() {

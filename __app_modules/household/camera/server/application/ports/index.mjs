@@ -26,3 +26,9 @@ export {
   assertCameraControlGateway,
   createNoOpCameraControlGateway
 } from "./ICameraControlGateway.mjs";
+
+export {
+  ICameraClipLibrary,
+  isCameraClipLibrary,
+  assertCameraClipLibrary
+} from "./ICameraClipLibrary.mjs";

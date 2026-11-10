@@ -10,10 +10,33 @@ const SEMANTIC_BUTTON_ACTIONS = Object.freeze({
 });
 const roleBindings = new Map();
 let pendingRole = null;
+let buzzerCaptures = 0;
+export function acquireGamepadBuzzerCapture() {
+  buzzerCaptures += 1;
+  let released = false;
+  return () => { if (!released) { released = true; buzzerCaptures -= 1; } };
+}
 let sharedHost = null;
 let sharedHostConsumers = 0;
+const observedNow = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
+export function gamepadPresence() {
+  const host = sharedHost;
+  const fresh = Boolean(host && host._observedAt != null && observedNow() - host._observedAt < 1000 &&
+    (typeof document === 'undefined' || document.visibilityState !== 'hidden') &&
+    (typeof window === 'undefined' || !window.__emulatorCapturingGamepad));
+  return { fresh, slots: host ? [...host._observedSlots] : [] };
+}
 export function bindNextGamepadPress(role) { pendingRole = role; }
 export function gamepadRoleBindings() { return Object.fromEntries(roleBindings); }
+export function cancelPendingGamepadBind() { pendingRole = null; }
+/** Release every controller from its team role (game over / exit). */
+export function clearGamepadRoleBindings() { roleBindings.clear(); pendingRole = null; logger().info('gamepad.role-bindings-cleared', {}); }
+/** Rebuild roles from buzzer-arbiter bindings ({ 'gamepad:<controllerId>': teamId, slot_1: … }). */
+export function restoreGamepadRoleBindings(slotToTeam = {}) {
+  for (const [slot, teamId] of Object.entries(slotToTeam || {})) {
+    if (slot.startsWith('gamepad:')) roleBindings.set(slot.slice('gamepad:'.length), teamId);
+  }
+}
 
 /** One browser-tab gamepad poller, shared by screens and direct app routes. */
 export function acquireGamepadInputHost(actionBus, options = {}) {
@@ -110,11 +133,14 @@ export class GamepadAdapter {
     // Suppresses phantom-enumeration double-fires: a press from the same id
     // within the dedupe window is dropped. Keyed by `${gpId}__${key}`.
     this._lastFireById = {};
+    this._lastFireByController = {};
     this._onConnected = null;
     this._onDisconnected = null;
     this._onVisibility = null;
     // Timestamp of the last poll frame; a large gap means the loop was frozen.
     this._lastPollAt = null;
+    this._observedAt = null;
+    this._observedSlots = [];
   }
 
   attach() {
@@ -141,6 +167,7 @@ export class GamepadAdapter {
     // changes as fresh presses (phantom Escape/Enter). Re-seed every gamepad on
     // resume so the post-suspend state becomes the new baseline.
     this._onVisibility = () => {
+      this._observedAt = null;
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         logger().info('gamepad.resume-reseed', {});
         this._invalidateAllSeeds();
@@ -188,6 +215,7 @@ export class GamepadAdapter {
     this._prevStick = {};
     this._seeded = {};
     this._lastFireById = {};
+    this._lastFireByController = {};
   }
 
   _hasAnyGamepad() {
@@ -234,6 +262,8 @@ export class GamepadAdapter {
   _handleDisconnect(e) {
     // Drop state for the disconnected gamepad only — leave others' state intact.
     const idx = e?.gamepad?.index;
+    const slot = `gamepad:${idx}:${e?.gamepad?.id}`;
+    this._observedSlots = this._observedSlots.filter(value => value !== slot);
     if (e?.gamepad) roleBindings.delete(`${e.gamepad.index}:${e.gamepad.id}`);
     if (idx != null) {
       delete this._prevButtons[idx];
@@ -259,11 +289,17 @@ export class GamepadAdapter {
       this._invalidateAllSeeds();
     }
     this._lastPollAt = now;
-    if (typeof window !== 'undefined' && window.__emulatorCapturingGamepad === true) {
+    if ((typeof window !== 'undefined' && window.__emulatorCapturingGamepad === true) || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) {
+      this._observedAt = null;
       this._invalidateAllSeeds();
       return;
     }
-    const gamepads = getActiveGamepads();
+    // Team-bound controllers poll first: a phantom twin (one physical pad at
+    // two indices) then loses the same-id dedupe and cannot navigate.
+    const gamepads = getActiveGamepads().filter(gp => gp.connected !== false).sort((a, b) => Number(roleBindings.has(`${b.index}:${b.id}`)) - Number(roleBindings.has(`${a.index}:${a.id}`)));
+    const slots = gamepads.map(gp => `gamepad:${gp.index}:${gp.id}`);
+    if (JSON.stringify(slots) !== JSON.stringify(this._observedSlots)) logger().info('gamepad.presence-changed', { slots });
+    this._observedSlots = slots; this._observedAt = now;
     for (const gp of gamepads) {
       this._pollOne(gp);
     }
@@ -295,6 +331,13 @@ export class GamepadAdapter {
     const prev = this._prevButtons[gpIdx];
     const prevStick = this._prevStick[gpIdx];
 
+    // A controller bound to a team (or the next press while a bind is pending)
+    // is a buzzer: every input is a semantic press, nothing navigates the UI.
+    if (buzzerCaptures > 0 || pendingRole !== null || roleBindings.has(`${gpIdx}:${gp.id}`)) {
+      this._pollBuzzer(gp, prev, prevStick);
+      return;
+    }
+
     // --- Mapped buttons ---
     for (const [indexStr, mapping] of Object.entries(BUTTON_MAP)) {
       const idx = Number(indexStr);
@@ -304,14 +347,14 @@ export class GamepadAdapter {
       let semanticEdgeAccepted = false;
 
       if (pressed && !wasPressed) {
-        if (this._claimFire(gp.id, `btn${idx}`)) {
+        if (this._claimFire(gp, `btn${idx}`)) {
           semanticEdgeAccepted = true;
           this._emit(mapping, idx);
           if (mapping.repeats) this._startRepeat(repeatKey, mapping);
         }
       } else if (!pressed && wasPressed) {
         this._stopRepeat(repeatKey);
-        semanticEdgeAccepted = this._claimFire(gp.id, `btn${idx}:release`);
+        semanticEdgeAccepted = this._claimFire(gp, `btn${idx}:release`);
       }
 
       if (pressed !== wasPressed && semanticEdgeAccepted) this._emitSemantic(gp, idx, pressed ? 'press' : 'release');
@@ -325,7 +368,7 @@ export class GamepadAdapter {
       const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
       const key = `unmapped_${idx}`;
       const wasPressed = !!prev[key];
-      if (pressed && !wasPressed && this._claimFire(gp.id, key)) {
+      if (pressed && !wasPressed && this._claimFire(gp, key)) {
         logger().debug('gamepad.button-pressed', {
           buttonIndex: idx, mapped: false, gamepadId: gp.id,
         });
@@ -342,7 +385,7 @@ export class GamepadAdapter {
       const repeatKey = `${gpIdx}__${stickKey}`;
 
       if (active && !wasActive) {
-        if (this._claimFire(gp.id, stickKey)) {
+        if (this._claimFire(gp, stickKey)) {
           this._emit(dir);
           this._startRepeat(repeatKey, dir);
         }
@@ -354,18 +397,56 @@ export class GamepadAdapter {
     }
   }
 
+  _pollBuzzer(gp, prev, prevStick) {
+    for (const key of Object.keys(this._repeatTimers)) {
+      if (key.startsWith(`${gp.index}__`)) this._stopRepeat(key);
+    }
+    for (let idx = 0; idx < gp.buttons.length; idx++) {
+      const pressed = !!gp.buttons[idx]?.pressed;
+      if (pressed !== !!prev[idx] && this._claimFire(gp, `btn${idx}${pressed ? '' : ':release'}`)) {
+        this._emitSemantic(gp, idx, pressed ? 'press' : 'release');
+      }
+      prev[idx] = pressed; prev[`unmapped_${idx}`] = pressed;
+    }
+    for (const dir of STICK_DIRECTIONS) {
+      const value = gp.axes[dir.axis] || 0;
+      const active = dir.threshold < 0 ? value < dir.threshold : value > dir.threshold;
+      const stickKey = `stick_${dir.key}`;
+      if (active !== !!prevStick[stickKey] && this._claimFire(gp, `${stickKey}${active ? '' : ':release'}`)) {
+        this._emitSemantic(gp, null, active ? 'press' : 'release', `stick.${dir.payload.direction}`);
+      }
+      prevStick[stickKey] = active;
+    }
+  }
+
   /**
    * Phantom-enumeration suppression: returns true if this (id, key) hasn't
    * fired within the dedupe window. The same physical 8Bitdo enumerated at
    * two indices on Shield TV mirrors button state — both indices observe
    * the press in the same frame and would fire twice without this guard.
    */
-  _claimFire(gamepadId, key) {
+  _claimFire(gamepad, key) {
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const fireKey = `${gamepadId}__${key}`;
-    const lastFire = this._lastFireById[fireKey];
-    if (lastFire != null && now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) return false;
-    this._lastFireById[fireKey] = now;
+    const controllerId = `${gamepad.index}:${gamepad.id}`;
+    const bound = roleBindings.has(controllerId);
+    const modelKey = `${gamepad.id}__${key}`;
+    // Independently bound pads are distinct devices even with identical models.
+    // Still stamp the model guard so an unbound mirrored slot cannot navigate.
+    const fireKey = bound ? `${controllerId}__${key}` : modelKey;
+    const history = bound ? this._lastFireByController : this._lastFireById;
+    const lastFire = history[fireKey];
+    // Bound inputs already passed per-controller fresh-edge detection. A
+    // cooldown here would discard a legitimate release/repress across the
+    // opening of a clue. Only an unbound model twin needs the phantom guard.
+    if (!bound && lastFire != null && now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) {
+      logger().sampled?.('gaming.input.suppressed', {
+        controller_id: controllerId, action: key,
+        reason: 'unbound-phantom-or-repeat',
+      }, { maxPerMinute: 10, aggregate: true });
+      return false;
+    }
+    history[fireKey] = now;
+    this._lastFireById[modelKey] = now;
     return true;
   }
 
@@ -391,12 +472,12 @@ export class GamepadAdapter {
     window.dispatchEvent(event);
   }
 
-  _emitSemantic(gamepad, buttonIndex, phase) {
+  _emitSemantic(gamepad, buttonIndex, phase, action = SEMANTIC_BUTTON_ACTIONS[buttonIndex] || `button.${buttonIndex}`) {
     const controllerId = `${gamepad.index}:${gamepad.id}`;
-    if (phase === 'press' && pendingRole) { roleBindings.set(controllerId, pendingRole); pendingRole = null; }
-    const button = gamepad.buttons[buttonIndex];
+    if (phase === 'press' && pendingRole && (!roleBindings.has(controllerId) || roleBindings.get(controllerId) === pendingRole)) { roleBindings.set(controllerId, pendingRole); logger().info('gamepad.role-bound', { controllerId, role: pendingRole }); pendingRole = null; }
+    const button = buttonIndex == null ? null : gamepad.buttons[buttonIndex];
     const intent = interactionIntent({
-      action: SEMANTIC_BUTTON_ACTIONS[buttonIndex] || `button.${buttonIndex}`,
+      action,
       phase,
       value: button?.value ?? Number(phase === 'press'),
       source: 'gamepad',

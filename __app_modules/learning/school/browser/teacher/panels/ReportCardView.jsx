@@ -1,5 +1,7 @@
 /**
- * ReportCardView — the live (DRAFT) period snapshot for one learner. An
+ * ReportCardView — the live period snapshot for one learner, recomputed on
+ * every read. It reads DRAFT while the period is open; once `closed`, it says
+ * so, and that this is still a recompute, not the frozen copy. An
  * ok-but-null body is the backend's "report cards not wired" tell and maps to
  * `unavailable`, never to a quiet nothing-graded-yet zero-state (spec §4.3).
  * The PDF link renders the same snapshot server-side.
@@ -9,7 +11,7 @@ import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { curriculumTitles } from "../curriculumTitles.js";
 
-export default function ReportCardView({ learnerId, periodId }) {
+export default function ReportCardView({ learnerId, periodId, closed = false }) {
   const card = usePanelFetch(() => schoolApi.reportCard({ learnerId, periodId }), {
     deps: [learnerId, periodId],
     panel: 'report-card',
@@ -37,7 +39,7 @@ export default function ReportCardView({ learnerId, periodId }) {
       {data && (
         <div className="teacher-reportcard">
           <div className="teacher-reportcard__head">
-            <span className="teacher-reportcard__mode">DRAFT</span>
+            <span className="teacher-reportcard__mode">{closed ? 'Closed · this is a live recompute — the frozen copy is under “Records and closing the period”' : 'DRAFT'}</span>
             <a
               className="teacher-pdf-pill"
               href={`/api/v1/school/report-card?learnerId=${encodeURIComponent(learnerId)}&periodId=${encodeURIComponent(periodId)}&format=pdf`}

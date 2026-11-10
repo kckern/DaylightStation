@@ -25,6 +25,9 @@ vi.mock("../controller/useSessionController.js", () => ({
   }),
 }));
 
+// The fling control itself is covered in FlingButton.test.jsx.
+vi.mock("./FlingButton.jsx", () => ({ FlingButton: () => <span data-testid="fling-stub" /> }));
+
 import { TransportBar } from "./TransportBar.jsx";
 
 function makeSnapshot({
@@ -60,6 +63,14 @@ beforeEach(() => {
 });
 
 describe('TransportBar', () => {
+  it('offers the fling only on local playback, never on a remote screen\'s transport', () => {
+    const { unmount } = render(<TransportBar target="local" />);
+    expect(screen.getByTestId('fling-stub').closest('.np-transport-secondary')).not.toBeNull();
+    unmount();
+    render(<TransportBar target={{ deviceId: 'den-tv' }} />);
+    expect(screen.queryByTestId('fling-stub')).toBeNull();
+  });
+
   it('pauses while playing and plays while paused', () => {
     render(<TransportBar target="local" />);
     fireEvent.click(screen.getByTestId('np-toggle'));

@@ -1,7 +1,7 @@
-import { describe, it, expect, jest } from '@jest/globals';
-jest.unstable_mockModule('#frontend/lib/logging/Logger.js', () => ({
-  default: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() }),
-  getLogger: () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), sampled: jest.fn() })
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('#frontend/lib/logging/Logger.js', () => ({
+  default: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() }),
+  getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() })
 }));
 const { GovernanceEngine } = await import("../../../__app_modules/wellness/fitness/browser/hooks/fitness/GovernanceEngine.js");
 

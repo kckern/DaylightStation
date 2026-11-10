@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { FilesystemEmulatorCheckpointRepository } from '../adapters/FilesystemEmulatorCheckpointRepository.mjs';
+import { EmulatorCheckpointService } from '../application/EmulatorCheckpointService.mjs';
 import path from 'node:path';
 import { loadEmulatorConfig } from "../application/loadEmulatorConfig.mjs";
 import { FilesystemEmulatorConfigRepository } from "../adapters/FilesystemEmulatorConfigRepository.mjs";
@@ -14,9 +17,15 @@ export function createEmulatorRuntime({configService,rootLogger,eventBus}) {
     const emuLogger = rootLogger.child({ module: 'emulator-api' });
     const configRepository = new FilesystemEmulatorConfigRepository({ emulationDir });
     const loadConfig = () => loadEmulatorConfig({ emulationDir, configRepository, logger: emuLogger });
+    const assetRepository = new FilesystemEmulatorAssetRepository({ emulationDir, engineDir, loadCatalog: loadConfig });
+    const saveRepository = new FilesystemEmulatorSaveRepository({ emulationDir });
+    const checkpointService = new EmulatorCheckpointService({
+      checkpointRepository: new FilesystemEmulatorCheckpointRepository({ emulationDir }),
+      assetRepository, saveRepository, loadConfig, makeId: randomUUID,
+    });
     const emulatorResources = new EmulatorResourceService({
-      assetRepository: new FilesystemEmulatorAssetRepository({ emulationDir, engineDir, loadCatalog: loadConfig }),
-      saveRepository: new FilesystemEmulatorSaveRepository({ emulationDir }),
+      assetRepository,
+      saveRepository,
       loadConfig,
       resolveGameRules,
     });
@@ -25,6 +34,7 @@ export function createEmulatorRuntime({configService,rootLogger,eventBus}) {
       logger: emuLogger,
       emulatorResources,
       emulatorLibrary,
+      checkpointService,
       // Broadcasts the bt.pair.request bus topic the garage fitness bridge
       // listens for (puts the box into controller-pairing mode without SSH).
       // eventBus is already constructed (above) and in scope here.

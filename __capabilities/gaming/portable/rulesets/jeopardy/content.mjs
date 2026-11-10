@@ -1,17 +1,48 @@
+import { validateJeopardyScoringMetadata } from './scoringPolicy.mjs';
+import { normalizeLearn, validateLearn } from "../../mechanics/learn.mjs";
 /**
  * Pure validation + normalization for Jeopardy content packs.
  * (data/content/games/<game>/<set-id>.yml). No I/O — callers load YAML
  * and pass the parsed object.
  *
  * Normalized shape (returned as `set` when valid):
- *   { id, title, description, rounds: [{ name, mode, multiplier,
+ *   { id, title, description, open_book, rounds: [{ name, mode, multiplier,
  *     timer_seconds|null, penalize_wrong, categories: [{ name,
- *     clues: [{ value, clue, answer, media|null, daily_double }] }] }],
- *     final: { category, clue, answer, media|null } | null }
+ *     clues: [{ value, clue, answer, scripture_reference|null, media|null, learn|null, daily_double }] }] }],
+ *     final: { category, clue, answer, scripture_reference|null, media|null, learn|null } | null }
  */
 
 const MODES = ['hosted', 'self', 'turns'];
 const MEDIA_TYPES = ['image', 'audio', 'video'];
+
+/** Shared metadata rules for authored packs and live definitions.
+ * Null is the normalized legacy sentinel, equivalent to an absent reference.
+ */
+export function validateJeopardyScriptureMetadata(definition) {
+  const errors = [];
+  if (definition == null || typeof definition !== 'object') return errors;
+  if (definition.open_book !== undefined && typeof definition.open_book !== 'boolean') {
+    errors.push('open_book must be a boolean');
+  }
+  const check = (clue, path) => {
+    const reference = clue?.scripture_reference;
+    if ((reference != null || definition.open_book === true) &&
+        (typeof reference !== 'string' || !reference.trim())) {
+      errors.push(`${path}.scripture_reference must be a nonblank string`);
+    }
+  };
+  if (Array.isArray(definition.rounds)) definition.rounds.forEach((round, r) => {
+    if (Array.isArray(round?.categories)) round.categories.forEach((category, c) => {
+      if (Array.isArray(category?.clues)) category.clues.forEach((clue, i) => {
+        check(clue, `rounds[${r}].categories[${c}].clues[${i}]`);
+      });
+    });
+  });
+  if (definition.final != null) check(definition.final, 'final');
+  return errors;
+}
+
+const normalizeReference = (clue) => typeof clue.scripture_reference === 'string' ? clue.scripture_reference.trim() : null;
 
 function normalizeMedia(media, path, errors) {
   if (media == null) return null;
@@ -44,11 +75,16 @@ function normalizeClue(clue, path, errors) {
   if (typeof clue.answer !== 'string' || !clue.answer) {
     errors.push(`${path}.answer is required`);
   }
+  if (clue.little_kids != null && typeof clue.little_kids !== 'boolean') errors.push(`${path}.little_kids must be a boolean`);
+  errors.push(...validateLearn(clue.learn, path));
   return {
+    ...(clue.little_kids === true ? { little_kids: true } : {}),
     value: clue.value,
     clue: clue.clue,
     answer: clue.answer,
+    scripture_reference: normalizeReference(clue),
     media: normalizeMedia(clue.media, path, errors),
+    learn: normalizeLearn(clue.learn),
     daily_double: clue.daily_double === true,
   };
 }
@@ -58,6 +94,7 @@ export function validateGameSet(raw) {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
     return { valid: false, errors: ['game set must be a mapping/object'], set: null };
   }
+  errors.push(...validateJeopardyScriptureMetadata(raw), ...validateJeopardyScoringMetadata(raw));
   if (typeof raw.id !== 'string' || !raw.id) errors.push('id is required');
   if (typeof raw.title !== 'string' || !raw.title) errors.push('title is required');
   if (!Array.isArray(raw.rounds) || raw.rounds.length === 0) errors.push('rounds must be a non-empty array');
@@ -96,6 +133,7 @@ export function validateGameSet(raw) {
       multiplier: typeof round.multiplier === 'number' && round.multiplier > 0 ? round.multiplier : 1,
       timer_seconds: typeof round.timer_seconds === 'number' ? round.timer_seconds : null,
       penalize_wrong: round.penalize_wrong !== false,
+      ...(Object.hasOwn(round, 'daily_double_penalize_wrong') ? { daily_double_penalize_wrong: round.daily_double_penalize_wrong } : {}),
       categories,
     };
   });
@@ -106,7 +144,8 @@ export function validateGameSet(raw) {
     if (typeof f !== 'object' || typeof f.category !== 'string' || typeof f.clue !== 'string' || typeof f.answer !== 'string') {
       errors.push('final requires category, clue, and answer strings');
     } else {
-      final = { category: f.category, clue: f.clue, answer: f.answer, media: normalizeMedia(f.media, 'final', errors) };
+      errors.push(...validateLearn(f.learn, 'final'));
+      final = { scripture_reference: normalizeReference(f), category: f.category, clue: f.clue, answer: f.answer, media: normalizeMedia(f.media, 'final', errors), learn: normalizeLearn(f.learn) };
     }
   }
 
@@ -115,6 +154,7 @@ export function validateGameSet(raw) {
     valid: true,
     errors: [],
     set: {
+      open_book: raw.open_book === true,
       id: raw.id,
       title: raw.title,
       description: typeof raw.description === 'string' ? raw.description : '',

@@ -46,6 +46,11 @@ describe('isChunkLoadError', () => {
     expect(isChunkLoadError(new Error('Importing a module script failed.'))).toBe(true);
   });
 
+  it("detects Vite's stale stylesheet preload error", () => {
+    // What the piano tablet threw after the 2026-10-20 deploy renamed the hashed CSS.
+    expect(isChunkLoadError(new Error('Unable to preload CSS for /assets/playback-qvQKrX9c-mvh6iatu.css'))).toBe(true);
+  });
+
   it('matches legacy webpack ChunkLoadError', () => {
     expect(isChunkLoadError(new Error('Loading chunk 42 failed'))).toBe(true);
   });

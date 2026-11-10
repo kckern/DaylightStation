@@ -29,3 +29,30 @@ export function omrAlignmentError(previous = {}, current = {}) {
   }
   return null;
 }
+
+/**
+ * Whether two reads of a card carry the same marks on every row. A reader slip
+ * (card skewed or misfed) does not reproduce byte-for-byte across separate
+ * feeds; a child's real marks do. So a refused read that comes back identical
+ * on the next feed is the card's true state, not a slip. 2026-11-03: a child
+ * bubbled a worksheet one row high, scanned, saw the result, and re-bubbled it
+ * correctly one row lower; the corrected card read identically four times and
+ * was refused every time, because the guard took his correction for a slip.
+ */
+export function sameOmrRead(a = {}, b = {}) {
+  const rows = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
+  for (const row of rows) if (canonical(a?.[row]) !== canonical(b?.[row])) return false;
+  return true;
+}
+
+/** How long a refused read stays eligible to be confirmed by feeding the card again. */
+export const OMR_REFEED_CONFIRM_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Refused reads in a row, none confirmed by a refeed, after which the card is
+ * the problem rather than the reader: it is retired and its unfinished work is
+ * reprinted on a fresh one (`ReplaceUnreadableCard`). A slip does not repeat,
+ * and a child's real marks repeat exactly, so three different reads inside the
+ * refeed window mean the paper itself cannot be read the same way twice.
+ */
+export const UNSALVABLE_REFUSALS = 3;

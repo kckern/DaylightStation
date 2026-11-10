@@ -4,7 +4,7 @@ import { PlayableItem } from "../../../domain/capabilities/Playable.mjs";
 import { ContentCategory } from "../../../domain/value-objects/ContentCategory.mjs";
 import { PlexClient } from "./PlexClient.mjs";
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { resolveTranscodeCaps, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo, needsAudioDownmix } from "./transcodeProfile.mjs";
+import { resolveTranscodeCaps, transcodeDimensions, buildClientProfileExtra, canDirectPlayH264, canDirectStreamVideo, needsAudioDownmix } from "./transcodeProfile.mjs";
 
 /**
  * Characters that may appear unescaped in a Plex session identifier.
@@ -259,6 +259,20 @@ export class PlexAdapter {
    */
   get prefixes() {
     return [{ prefix: 'plex' }];
+  }
+
+  /**
+   * Unprefixed text that is unambiguously a Plex item id, for direct lookup
+   * (see ContentSourceRegistry.getDirectIdPatterns). A Plex rating key is a
+   * positive integer. The floor is 2 digits: the search endpoints reject
+   * text shorter than 2 characters, so a 1-digit floor could never fire, and a
+   * single digit is as likely to be text as an id. Longer numbers that are
+   * really text ("1984") cost one silent lookup miss, and the text search
+   * still runs alongside.
+   * @returns {Array<{pattern: RegExp, toId: function(RegExpMatchArray): string}>}
+   */
+  get directIdPatterns() {
+    return [{ pattern: /^\d{2,}$/, toId: (m) => `plex:${m[0]}` }];
   }
 
   
@@ -1265,7 +1279,8 @@ export class PlexAdapter {
           playhead: state.playhead || 0,
           duration: state.duration || 0,
           percent: state.percent || 0,
-          lastPlayed: state.lastPlayed || null
+          lastPlayed: state.lastPlayed || null,
+          skipped: state.skipped === true
         };
       }
       return history;
@@ -1326,7 +1341,7 @@ export class PlexAdapter {
       const duration = entry?.duration ?? 0;
       const percent = entry?.percent ?? (duration > 0 ? (playhead / duration) * 100 : 0);
 
-      if (this._isWatched({ percent, seconds: playhead })) {
+      if (entry?.skipped || this._isWatched({ percent, seconds: playhead })) {
         watched.push(key);
       } else if (percent > 0) {
         inProgress.push(key);
@@ -1345,31 +1360,32 @@ export class PlexAdapter {
    * @param {string[]} watched - Watched keys
    * @param {Object} log - Viewing history log
    * @param {boolean} [shuffle=false] - Whether to shuffle within category
-   * @returns {[string|null, number, number]} [key, seconds, percent]
+   * @returns {[string|null, number, number, boolean]} [key, seconds, percent, restarted]
+   *   `restarted` is true only when everything was watched and the pick starts over.
    * @private
    */
   _selectEpisodeByPriority(unwatched, inProgress, watched, log, shuffle = false) {
     // Priority 1: First unwatched
     if (unwatched.length > 0) {
       const selected = shuffle ? unwatched[Math.floor(Math.random() * unwatched.length)] : unwatched[0];
-      return [selected, 0, 0];
+      return [selected, 0, 0, false];
     }
 
     // Priority 2: First in-progress
     if (inProgress.length > 0) {
       const selected = shuffle ? inProgress[Math.floor(Math.random() * inProgress.length)] : inProgress[0];
       const entry = log[selected] || {};
-      return [selected, entry.playhead ?? 0, entry.percent ?? 0];
+      return [selected, entry.playhead ?? 0, entry.percent ?? 0, false];
     }
 
     // Priority 3: Restart from first watched (clear watch status)
     if (watched.length > 0) {
       this._clearWatchedItems(watched);
       const selected = watched[0];
-      return [selected, 0, 0];
+      return [selected, 0, 0, true];
     }
 
-    return [null, 0, 0];
+    return [null, 0, 0, false];
   }
 
   /**
@@ -1379,7 +1395,7 @@ export class PlexAdapter {
    * @param {string[]|Object[]} keys - Array of plex keys or items with .plex property
    * @param {boolean} [shuffle=false] - Whether to shuffle within category
    * @param {string} [storagePath='plex'] - Storage path for history lookup
-   * @returns {Promise<[string|null, number, number]>} [key, seconds, percent]
+   * @returns {Promise<[string|null, number, number, boolean]>} [key, seconds, percent, restarted]
    */
   async selectKeyToPlay(keys, shuffle = false, storagePath = 'plex') {
     // Normalize keys array
@@ -1439,8 +1455,32 @@ export class PlexAdapter {
     // Get plex keys from list
     const keys = list.map(i => i.id.replace('plex:', ''));
 
+    // Children that are themselves containers (a show's seasons) carry no
+    // progress of their own, so judging them as keys always picked the first
+    // one. Walk them in order and take the first whose own pick is not a
+    // restart; only when every child is finished does the whole thing restart.
+    if (!shuffle && list.every(i => i.itemType === 'container')) {
+      let firstRestart = null;
+      for (const childKey of keys) {
+        const pick = await this.loadPlayableItemFromKey(childKey, opts);
+        if (!pick) continue;
+        if (!pick.restarted) {
+          pick.listkey = key;
+          pick.listType = item.metadata?.type;
+          return pick;
+        }
+        firstRestart ??= pick;
+      }
+      if (firstRestart) {
+        firstRestart.listkey = key;
+        firstRestart.listType = item.metadata?.type;
+        this.logger.debug?.('plex.nextup.restarted', { key });
+      }
+      return firstRestart;
+    }
+
     // Use smart selection
-    const [selectedKey, seconds, percent] = await this.selectKeyToPlay(keys, shuffle, storagePath);
+    const [selectedKey, seconds, percent, restarted] = await this.selectKeyToPlay(keys, shuffle, storagePath);
     if (!selectedKey) return null;
 
     // Recursively load the selected item (may need to drill down further)
@@ -1448,6 +1488,10 @@ export class PlexAdapter {
     if (selectedItem) {
       selectedItem.listkey = key;
       selectedItem.listType = item.metadata?.type;
+      if (restarted) {
+        selectedItem.restarted = true;
+        this.logger.debug?.('plex.nextup.restarted', { key });
+      }
     }
 
     return selectedItem;
@@ -1699,6 +1743,7 @@ export class PlexAdapter {
       allowDirectStream = allowDirectPlay,
       downmixAudio = false,
       burnSubtitles = false,
+      adaptive = undefined,
       deadline = undefined
     } = opts;
 
@@ -1725,7 +1770,8 @@ export class PlexAdapter {
       'X-Plex-Client-Profile-Extra',
       buildClientProfileExtra({ maxFrameRate: allowUnencodedVideo ? null : caps.maxFrameRate, downmixAudio, protocol: this.protocol })
     );
-    params.append('autoAdjustQuality', '1');
+    params.append('autoAdjustQuality', adaptive === false ? '0' : '1');
+    if (this.protocol === 'hls') params.append('secondsPerSegment', '3');
     // directPlay/directStream default to 0 (forced transcode). Only an already
     // h264/aac/mp4 source (canDirectPlayH264 gate) is allowed to direct-play —
     // everything else stays on the transcode path so AV1/VP9 sources cannot be
@@ -1752,6 +1798,7 @@ export class PlexAdapter {
     if (!allowUnencodedVideo) {
       params.append('maxVideoBitrate', String(caps.maxVideoBitrate));
       params.append('maxVideoResolution', String(caps.maxResolution));
+      params.append('videoResolution', transcodeDimensions(caps.maxResolution));
     }
 
     const decisionUrl = `/video/:/transcode/universal/decision?${params.toString()}`;
@@ -1826,8 +1873,8 @@ export class PlexAdapter {
    * @returns {string} Transcode URL
    * @private
    */
-  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false, downmixAudio = false, { burnSubtitles = false } = {}) {
-    const mediaBufferSize = 5242880 * 20; // 100MB buffer for better streaming
+  _buildTranscodeUrl(key, clientIdentifier, sessionIdentifier, maxVideoBitrate = null, maxResolution = null, startOffset = 0, allowDirectStream = false, downmixAudio = false, { burnSubtitles = false, adaptive } = {}) {
+    const mediaBufferSize = 102400; // Plex uses KiB: 100 MiB, not 100 GiB.
     // Cap the transcode so software libx264 stays ahead of realtime (June 8 fix).
     const caps = resolveTranscodeCaps({ maxVideoBitrate, maxResolution });
     const baseParams = [
@@ -1836,7 +1883,7 @@ export class PlexAdapter {
       `X-Plex-Client-Identifier=${clientIdentifier}`,
       `X-Plex-Session-Identifier=${sessionIdentifier}`,
       `X-Plex-Platform=${this.platform}`,
-      'autoAdjustQuality=1',
+      `autoAdjustQuality=${adaptive === false ? '0' : '1'}`,
       // The start request must enforce the same policy as its decision.
       // Bitrate/frame-rate ceilings alone can still admit stream-copy.
       'directPlay=0',
@@ -1861,6 +1908,10 @@ export class PlexAdapter {
       `X-Plex-Client-Profile-Extra=${encodeURIComponent(buildClientProfileExtra({ maxFrameRate: allowDirectStream ? null : caps.maxFrameRate, downmixAudio, protocol: this.protocol }))}`
     ];
 
+    // The encoder uses three-second segments. Plex otherwise synthesizes a
+    // five-second VOD playlist, which can make native HLS end before the film.
+    if (this.protocol === 'hls') baseParams.push('secondsPerSegment=3');
+
     if (this.protocol !== 'hls' && startOffset > 0) {
       baseParams.push(`offset=${Math.floor(startOffset)}`);
     }
@@ -1868,6 +1919,7 @@ export class PlexAdapter {
     if (!allowDirectStream) {
       baseParams.push(`maxVideoBitrate=${encodeURIComponent(caps.maxVideoBitrate)}`);
       baseParams.push(`maxVideoResolution=${encodeURIComponent(caps.maxResolution)}`);
+      baseParams.push(`videoResolution=${transcodeDimensions(caps.maxResolution)}`);
     }
 
     const extension = this.protocol === 'hls' ? 'm3u8' : 'mpd';
@@ -2038,11 +2090,18 @@ export class PlexAdapter {
         maxVideoBitrate = null,
         maxResolution = null,
         maxVideoResolution = null,
+        transcode = 'auto',
+        adaptive,
         session = null,
         startOffset = 0,
         tracks = null
       } = opts;
       const resolvedMaxResolution = maxResolution ?? maxVideoResolution;
+      // An explicit ceiling is an instruction, including on copyable sources.
+      // Stream copy cannot reduce resolution or bitrate; default playback keeps
+      // its existing direct-play/copy policy when no ceiling was requested.
+      const forceVideoTranscode = transcode === 'force'
+        || maxVideoBitrate != null || resolvedMaxResolution != null;
 
       if (mediaType === 'audio') {
         // The audio stream is a second, independent stream the same client can
@@ -2071,13 +2130,13 @@ export class PlexAdapter {
       // A chosen track needs Plex's transcoder: a direct-played file carries
       // every track and the browser cannot pick among them; a burned subtitle
       // needs the picture re-encoded.
-      const allowDirectPlay = !selection && canDirectPlayH264(playableItem.metadata)
+      const allowDirectPlay = !forceVideoTranscode && !selection && canDirectPlayH264(playableItem.metadata)
         && (this.protocol !== 'hls' || playableItem.mediaType === 'video');
       // Plex's copied DASH fragments can have source-GOP timestamps that do
       // not match its fixed-duration MPD (Arrival: advertised90s, actual154s).
       // Re-encoding gives DASH a seek-correct segment timeline. Keep original
       // MP4 direct play and non-DASH copy, where that faulty MPD is not used.
-      const allowDirectStream = this.protocol !== 'dash' && !burnSubtitles
+      const allowDirectStream = !forceVideoTranscode && this.protocol !== 'dash' && !burnSubtitles
         && (allowDirectPlay || canDirectStreamVideo(playableItem.metadata));
       if (this.protocol === 'dash') this.logger.info?.('plex.loadMediaUrl.dash-timeline-policy', {
         ratingKey, allowDirectPlay, allowDirectStream, fallback: 'bounded-transcode'
@@ -2102,6 +2161,7 @@ export class PlexAdapter {
           allowDirectStream,
           downmixAudio,
           burnSubtitles,
+          adaptive,
           // A mint holding the household's track selection must settle (and
           // restore) before the lock's safety expiry can release it.
           ...(selection ? { deadline: TRACK_DECISION_DEADLINE_MS } : {})
@@ -2130,7 +2190,7 @@ export class PlexAdapter {
             startOffset,
             allowDirectStream,
             downmixAudio,
-            { burnSubtitles }
+            { burnSubtitles, adaptive }
           )
         };
       }
@@ -2156,7 +2216,7 @@ export class PlexAdapter {
           startOffset,
           allowDirectStream,
           downmixAudio,
-          { burnSubtitles }
+          { burnSubtitles, adaptive }
         )
       };
     } catch (error) {
@@ -2280,6 +2340,14 @@ export class PlexAdapter {
    * @param {Object} [opts] - Same shape as loadMediaUrl opts
    * @returns {Promise<{ url: string|null, reason?: string }>}
    */
+  describePlayback(item, quality = {}) {
+    if (item.mediaType === 'audio' || !(quality.transcode === 'force'
+      || quality.maxResolution != null || quality.maxVideoBitrate != null)) return {};
+    const mediaType = this._determineMediaType(item.metadata?.type ?? item.type);
+    if (!['video', 'hls_video', 'dash_video'].includes(mediaType)) return {};
+    return { mediaUrl: `${this.proxyPath}/stream/${item.localId}`, mediaType, format: mediaType };
+  }
+
   async getMediaUrl(id, opts = {}) {
     const ratingKey = String(id).replace(/^plex:/, '');
     try {

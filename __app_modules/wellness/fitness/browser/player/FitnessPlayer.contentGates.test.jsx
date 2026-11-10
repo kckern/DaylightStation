@@ -116,6 +116,14 @@ describe('FitnessPlayer live content gates', () => {
     expectNoLiveScan();
   });
 
+  it('clears governance media when the player unmounts', async () => {
+    const view = renderPlayer();
+    await waitFor(() => expect(screen.getByTestId('playback')).toBeInTheDocument());
+    expect(fixture.context.setGovernanceMedia).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'plex:673797' }));
+    view.unmount();
+    expect(fixture.context.setGovernanceMedia).toHaveBeenLastCalledWith(null);
+  });
+
   it('releases KidsFun playback when exercise governance unlocks without a content scan', async () => {
     const view = renderPlayer();
     fixture.context = { ...fixture.context, governanceState: UNLOCKED };
@@ -301,7 +309,10 @@ describe('FitnessPlayer real-engine recovery audio', () => {
     view.rerender(playerNode());
     expect(fixture.duck).toBe(1);
     expect(view.container.querySelector('.governance-overlay')).not.toBeNull();
-    expect(screen.getByRole('status', { name: 'Cadence sensor unavailable' })).toBeVisible();
+    // The unmet floor owns the explanation; cadence recovery remains backgrounded.
+    expect(locked.challenge).toMatchObject({ sensorUnavailable: true, paused: true, pauseReason: 'floor_unmet' });
+    expect(screen.queryByRole('status', { name: 'Cadence sensor unavailable' })).not.toBeInTheDocument();
+    expect(view.container.querySelector('.cycle-challenge-overlay')).toBeNull();
   });
 });
 

@@ -35,4 +35,16 @@ describe('SkylineGliderRunService', () => {
     await expect(service.save({ run: { id: '../escape' } }, 'home')).rejects.toMatchObject({ code: 'INVALID_RUN' });
     expect(rows.size).toBe(0);
   });
+  it('records progress after a save and never fails the save when progress does', async () => {
+    const rows = new Map();
+    const datastore = { findById: async (id) => rows.get(id) ?? null, create: async (row) => { rows.set(row.run.id, row); return 'f'; } };
+    const recorded = [];
+    const ok = new SkylineGliderRunService({ datastore, progress: { recordRun: async (row) => { recorded.push(row.run.id); } } });
+    await ok.save(record(), 'home');
+    expect(recorded).toEqual(['run-1']);
+    const warnings = [];
+    const failing = new SkylineGliderRunService({ datastore, logger: { info() {}, warn: (event) => warnings.push(event) }, progress: { recordRun: async () => { throw new Error('disk full'); } } });
+    await expect(failing.save(record({ id: 'run-2' }), 'home')).resolves.toMatchObject({ created: true });
+    expect(warnings).toEqual(['fitness.skyline_glider.progress.record_failed']);
+  });
 });

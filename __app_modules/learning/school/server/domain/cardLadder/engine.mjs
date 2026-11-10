@@ -16,6 +16,7 @@ import { extraNewWords, newAllowance, planNextRound } from "./rounds.mjs";
 import { answersMatch } from "./scriptRules.mjs";
 import { drillSteps, matchBoard, tilesFor } from "./drill.mjs";
 import { PRACTICE_MODES, VERIFY_TASKS, buildPractice } from "./practice.mjs";
+import { BLIND_PASSES_TO_FINISH, applyDictationAttempt, nextDictationWord } from "./dictation.mjs";
 
 const IDLE_CAP_MS = 45000;
 const NOT_YET_GAP = 2;
@@ -235,14 +236,25 @@ function drillItem(ctx, drill, extra = {}) {
   return base;
 }
 
+// An empty answer is the child's give-up (owner, 2026-11-03 — not knowing is
+// never a wall): the step ends at once with the word shown, a miss like any
+// other. Copy's is a Skip — the word was on screen, so it is not a "Don't
+// know" and is tagged apart, out of the tuner's dontKnow count.
+const gaveUp = (response) => (typeof response.typed === 'string' && !response.typed.trim())
+  || (Array.isArray(response.tiles) && response.tiles.length === 0);
+const gaveUpResult = (term, isCopy) => ({ correct: false, answer: term, ...(isCopy ? { skipped: true } : { dontKnow: true }) });
+
 // Nothing here grades. copy advances only on an exact (normalized) match;
 // dictation and tiles advance on a match or after the third try, revealing the
-// answer after the second miss. Mutates `drill`.
+// answer after the second miss. Every typing step and tiles advances on a give-up.
+// Mutates `drill`.
 function respondDrill(ctx, drill, response) {
   const stepName = drill.steps[drill.index];
   const term = ctx.lexicon.entries.get(drill.wordId).term;
   let result = { ok: true };
-  if (stepName === 'dictation') {
+  if ((stepName === 'tiles' || TYPING_STEPS.has(stepName)) && gaveUp(response)) {
+    result = gaveUpResult(term, stepName === 'copy');
+  } else if (stepName === 'dictation') {
     // Like tiles, never a dead end: the first miss hides the term (recalling it
     // IS the step), the second reveals it (the step becomes a copy), and the
     // third try advances regardless.
@@ -377,8 +389,16 @@ function itemForRound(ctx, round) {
 }
 
 export function currentItem(ctx) {
+  const ending = dictationEnding(ctx);
+  if (ending) return ending;
+  const dictation = openDictation(ctx);
+  if (dictation) return dictationItem(ctx, dictation);
   const course = ctx.dayFile.courseReview;
   if (course && course.index < course.queue.length) return { ...practiceItem(ctx, course), courseUnitId: course.unitId };
+  // A practice run started before the goal (owner, 2026-11-06) is served
+  // ahead of the day's round; ending it returns to the round where it was.
+  const early = !ctx.dayFile.doneAt ? openPractice(ctx) : null;
+  if (early) return practiceItem(ctx, early);
   const pending = ctx.dayFile.rechecks.order.find((id) => !ctx.dayFile.rechecks.answered[id]);
   if (pending) return gradedItem(ctx, `rc:${pending}`, pending, recheckTask(wordOf(ctx.status, pending), pending, ctx.media?.[pending]), 'recheck');
   const drill = openDrill(ctx);
@@ -407,6 +427,9 @@ function buildRun(ctx, capabilities, { mode, help = true, filter = 'introduced',
 // word) would have something in it. Say is the exception: With help
 // (say-after) needs term audio, Without help (say-from-cue) does not, so it
 // is offered when EITHER has a run, and `sayHelp` lists the ones that do.
+/** The practice menu, on request at any time (owner, 2026-11-06). */
+export function practiceMenu(ctx) { return menuItem(ctx); }
+
 function menuItem(ctx) {
   const seed = `${ctx.learnerId}|${ctx.day}|menu`;
   const runs = (opts) => buildRun(ctx, ctx.dayFile.capabilities, opts, seed).queue.length > 0;
@@ -490,6 +513,154 @@ function practiceItem(ctx, run) {
   }
 }
 
+// ── Dictation (spec 2026-11-06, Revision 1) ──────────────────────────────
+// The week's dictation list is drilled in its own run, bound to the sitting
+// that started it: other sittings of the day keep the regular ladder. The
+// run's per-word state is NOT in the day file — the service reads it from
+// the dictation progress file and hands it in as `ctx.dictation` (a
+// `dictationState`); each answer returns the word's next progress row for the
+// service to persist. A dictation answer never adds active time, never
+// settles the day and never touches word status (ruling 10). It is an
+// explicit exception to the 2026-09-23 readiness rule (ruling 9): every list
+// word may reach the blind step through dictation's own scaffolding.
+const DICTATION_TASK = Object.freeze({ match: 'D.1', copy: 'D.2', blind: 'D.3' });
+const DICTATION_MIN_CHOICES = 3;
+
+function openDictation(ctx) {
+  const run = ctx.dayFile?.dictation;
+  const state = ctx.dictation;
+  if (!run || run.ended || !state || run.sittingId !== ctx.sittingId || state.week !== run.week) return null;
+  return nextDictationWord(state, { lastWordId: run.lastWordId, repeat: run.retry === true }) ? run : null;
+}
+
+// The run's explicit ending (UX audit #4): once every word is drilled, the
+// sitting that ran it is served a `dictation-ready` item until it is
+// acknowledged with `{ done: true }` — never a ladder item by surprise. It
+// reads only the outcome the finishing answer stored on the run, so it needs
+// no progress file. `ready` is false while any word is excluded (audit #5).
+function dictationEnding(ctx) {
+  const run = ctx.dayFile?.dictation;
+  if (!run || run.ended !== 'done' || run.readyAt || run.sittingId !== ctx.sittingId) return null;
+  const outcome = run.outcome ?? {};
+  return {
+    id: `${run.id}:ready`, type: 'dictation-ready', source: 'dictation', week: run.week,
+    ready: outcome.ready === true, wordCount: outcome.wordCount ?? 0, wordsDone: outcome.wordsDone ?? 0,
+    needsRecording: [...(outcome.needsRecording ?? [])], unknown: [...(outcome.unknown ?? [])],
+  };
+}
+
+const excludedIds = (state, reason) => (state?.excluded ?? []).filter((row) => row.reason === reason).map((row) => row.id);
+
+// Hear the term, pick its spelling. Decoys in order: the lexicon's authored
+// `decoys.term` (seeded order), then other list words of any kind, then other
+// lexicon terms — deduped, never the answer, so the pick is always the answer
+// plus three decoys when the lexicon has that many. Only the first three
+// reach `pickTermChoices`, so its own shuffle can never drop an authored one.
+const choiceKey = (text) => String(text ?? '').normalize('NFC').trim().toLowerCase();
+
+function dictationChoices(ctx, entry, seed) {
+  const listIds = (ctx.dictation?.words ?? []).map((w) => w.id).filter((id) => id !== entry.id);
+  const listTerms = listIds.map((id) => ctx.lexicon.entries.get(id)?.term);
+  const listSet = new Set(listIds);
+  const lexiconTerms = seededShuffle([...ctx.lexicon.entries.values()].filter((other) => other.id !== entry.id && !listSet.has(other.id)).map((other) => other.term), hashString(`${seed}|lexicon`));
+  const seen = new Set([choiceKey(entry.term)]);
+  const decoys = [];
+  for (const term of [...seededShuffle(entry.decoys?.term ?? [], hashString(`${seed}|authored`)), ...listTerms, ...lexiconTerms]) {
+    const key = choiceKey(term);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    decoys.push(term);
+    if (decoys.length === DICTATION_MIN_CHOICES) break;
+  }
+  return pickTermChoices({ ...entry, decoys: { ...entry.decoys, term: decoys } }, [], seed).choices;
+}
+
+function dictationItem(ctx, run) {
+  const state = ctx.dictation;
+  const wordId = nextDictationWord(state, { lastWordId: run.lastWordId, repeat: run.retry === true });
+  const word = state.words.find((w) => w.id === wordId);
+  const entry = ctx.lexicon.entries.get(wordId);
+  const id = `${run.id}:${run.index}`;
+  // Every step hears the word (audit #2): `channel: 'hear'` and `listen: true`.
+  // The header is the list's, not the drill's step trail (audit #7).
+  const base = {
+    id, source: 'dictation', wordId, dictationStep: word.step, channel: 'hear', listen: true,
+    wordIndex: state.words.findIndex((w) => w.id === wordId) + 1, wordCount: state.words.length, wordsDone: state.words.filter((w) => w.done).length,
+    // Each word's done flag, in list order, so the header's dots are per word (M8).
+    wordsDoneFlags: state.words.map((w) => w.done === true),
+    dictation: { step: word.step, blindPasses: word.blindPasses, remaining: state.remaining, total: state.words.length },
+  };
+  if (word.step === 'match') return { ...base, type: 'choice', task: DICTATION_TASK.match, choices: dictationChoices(ctx, entry, `${ctx.learnerId}|${ctx.day}|${id}`) };
+  // The drill's copy / dictation shapes; the blind step is the drill's dictation (audio only).
+  return { ...base, type: 'drill', step: word.step === 'copy' ? 'copy' : 'dictation' };
+}
+
+/**
+ * Opens a dictation run for `sittingId` over `ctx.dictation` (the list's
+ * `dictationState`). Allowed before or after the daily goal; never touches
+ * the goal, the clock or word status. Replaces any earlier run.
+ */
+export function startDictation(ctx, { sittingId, review = null }) {
+  const state = ctx.dictation;
+  if (typeof sittingId !== 'string' || !sittingId) throw new ValidationError('sittingId is required');
+  if (!state?.week) throw new ValidationError('no dictation list is set');
+  if (state.done) throw new ValidationError('this dictation list is already done');
+  if (!state.words.some((w) => !w.done)) throw new ValidationError('this dictation list has no word left to drill');
+  const dayFile = clone(ctx.dayFile);
+  const number = (dayFile.dictationRuns ?? 0) + 1;
+  dayFile.dictationRuns = number;
+  dayFile.dictation = { id: `dc${number}`, sittingId, week: state.week, index: 0, lastWordId: null, ended: null, endedAt: null };
+  // A review of a finished week (final review I2): its word state lives on
+  // the run itself, so the learner's progress file is never touched.
+  if (review) dayFile.dictation.review = { words: clone(review.words) };
+  return { status: clone(ctx.status), dayFile };
+}
+
+function dictationFits(item, response) {
+  const keys = keysOf(response);
+  const only = (key) => keys.length === 1 && keys[0] === key;
+  if (item.type === 'dictation-ready') return only('done') && response.done === true;
+  if (only('dontKnow')) return response.dontKnow === true;
+  if (only('stop')) return response.stop === true;
+  return item.type === 'choice' ? only('choice') && typeof response.choice === 'string' : only('typed') && typeof response.typed === 'string';
+}
+
+// Strict spelling (ruling 8): `answersMatch`, the drill's own compare — no
+// judge, no model. An empty answer or `dontKnow` is a Don't-know: a miss.
+// The blind step's result never carries the answer. Mutates ctx.dayFile.
+function respondDictation(ctx, item, itemId, response, at) {
+  const run = ctx.dayFile.dictation;
+  const state = ctx.dictation;
+  const word = state.words.find((w) => w.id === item.wordId);
+  const term = ctx.lexicon.entries.get(item.wordId).term;
+  const step = word.step;
+  const dontKnow = response.dontKnow === true || (typeof response.typed === 'string' && !response.typed.trim());
+  if (!dontKnow && item.type === 'choice' && !item.choices.includes(response.choice)) throw new ValidationError('choice is not one of the offered answers');
+  const pass = !dontKnow && (item.type === 'choice' ? response.choice === term : answersMatch(response.typed, term, ctx.lexicon?.targetScript));
+  const next = applyDictationAttempt({ step, blindPasses: word.blindPasses }, { step, pass, dontKnow }, at);
+  const result = { correct: pass, ...(dontKnow ? { dontKnow: true } : {}), ...(step === 'blind' ? {} : { answer: term }) };
+  const words = state.words.map((w) => (w.id === word.id ? { ...w, step: next.step, blindPasses: next.blindPasses, done: next.blindPasses >= BLIND_PASSES_TO_FINISH } : w));
+  const remaining = words.filter((w) => !w.done).length;
+  const nextState = { ...state, words, remaining, finished: remaining === 0, done: remaining === 0 && words.length > 0 && !(state.excluded?.length) };
+  if (run.review) run.review.words[word.id] = { step: next.step, blindPasses: next.blindPasses };
+  run.index += 1;
+  run.lastWordId = word.id;
+  // A miss keeps the word (audit #3): the next item is the same word at its new step.
+  run.retry = !pass;
+  if (nextState.finished) {
+    run.ended = 'done'; run.endedAt = at;
+    run.outcome = {
+      ready: nextState.done, wordCount: words.length, wordsDone: words.filter((w) => w.done).length,
+      needsRecording: excludedIds(state, 'needs-recording'), unknown: excludedIds(state, 'unknown-word'),
+    };
+  }
+  ctx.dayFile.items[itemId] = { at, response, result, wordId: item.wordId, task: item.task ?? DICTATION_TASK[step], source: 'dictation', dictationStep: step };
+  return {
+    status: ctx.status, dayFile: ctx.dayFile, result,
+    dictation: { wordId: word.id, week: state.week, step, pass, dontKnow, word: next, remaining, done: nextState.done, state: nextState, review: Boolean(run.review) },
+  };
+}
+
 /** A course-owned study/check run; never alters the frozen daily plan. */
 export function startCourseReview(ctx, { unitId, chosen = [], after = null }) {
   if (typeof unitId !== 'string' || !unitId) throw new ValidationError('course unit is required');
@@ -524,7 +695,7 @@ function respondCourseReview(ctx, item, response, verdict) {
  * any earlier run; starting one also passes the summary.
  */
 export function startPractice(ctx, { mode, help = true, filter = 'introduced', chosen = [], frontSide = 'term' } = {}) {
-  if (!ctx.dayFile.doneAt) throw new ValidationError("practice opens after today's goal");
+  // Owner ruling 2026-11-06: flashcard review is open anytime, goal or not.
   if (!PRACTICE_MODES.includes(mode)) throw new ValidationError(`unknown practice mode '${mode}'`);
   if (!PRACTICE_FILTERS.includes(filter)) throw new ValidationError(`unknown practice filter '${filter}'`);
   if (!FRONT_SIDES.includes(frontSide)) throw new ValidationError(`unknown flashcard front side '${frontSide}'`);
@@ -638,7 +809,7 @@ function gradeQuizTask(ctx, round, task, correct) {
 }
 
 function gradedResult(ctx, item, correct, verdict) {
-  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}) };
+  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}) } : {}) };
 }
 
 // Practice never grades except a Quiz me task (rule 1). Sorts obey rule 2 via
@@ -667,8 +838,11 @@ function respondPractice(ctx, item, response, verdict) {
     ctx.status.words[task.wordId] = applySort(wordOf(ctx.status, task.wordId), response.sort, ctx.day);
   } else if (task.kind === 'copy') {
     const term = ctx.lexicon.entries.get(task.wordId).term;
-    result = { correct: answersMatch(response.typed, term, ctx.lexicon?.targetScript), answer: term };
-    if (!result.correct) return { result, advance: false };
+    if (gaveUp(response)) result = gaveUpResult(term, true);
+    else {
+      result = { correct: answersMatch(response.typed, term, ctx.lexicon?.targetScript), answer: term };
+      if (!result.correct) return { result, advance: false };
+    }
   } else if (task.kind === 'type-practice') {
     result = gradedResult(ctx, item, gradedCorrect(ctx, item, response, verdict), verdict);
   }
@@ -700,6 +874,10 @@ const keysOf = (response) => Object.keys(response ?? {}).filter((key) => respons
 
 function validateResponse(item, response) {
   if (!response || typeof response !== 'object' || Array.isArray(response)) throw new ValidationError(NOT_FIT);
+  if (item.source === 'dictation') {
+    if (!dictationFits(item, response)) throw new ValidationError(NOT_FIT);
+    return;
+  }
   const keys = keysOf(response);
   const isStream = item.type === 'flashcard' && item.mode === 'stream';
   if (!isStream && keys.includes('undo')) throw new ValidationError('nothing to undo');
@@ -758,7 +936,7 @@ function gradedRecord(item, response, result, verdict) {
   if (!graded || response?.menu === true || typeof result?.correct !== 'boolean') return null;
   return {
     wordId: item.wordId, task: item.task, source: item.source, correct: result.correct,
-    ...(verdict ? { score: verdict.score, judge: verdict.judge } : {}),
+    ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}) } : {}),
   };
 }
 
@@ -776,6 +954,18 @@ export function respond(inputCtx, itemId, response = {}, { at, verdict = null } 
   const item = currentItem(ctx);
   if (item.id !== itemId) throw new ValidationError('stale item');
   validateResponse(item, response);
+  if (item.type === 'dictation-ready') {
+    // Acknowledged: the sitting goes back to wherever it was. Not a day-file item.
+    ctx.dayFile.dictation.readyAt = at;
+    return { status: ctx.status, dayFile: ctx.dayFile, result: { done: true }, transitions: [], graded: null };
+  }
+  if (item.source === 'dictation' && response.stop === true) {
+    // Stop for now (UX audit #6): the run ends without an answer; progress
+    // already on disk stays, and the sitting goes back to its own ladder.
+    ctx.dayFile.dictation = { ...ctx.dayFile.dictation, ended: 'stopped', endedAt: at };
+    return { status: ctx.status, dayFile: ctx.dayFile, result: { stopped: true }, transitions: [], graded: null };
+  }
+  if (item.source === 'dictation') return { ...respondDictation(ctx, item, itemId, response, at), transitions: [], graded: null };
   const out = applyResponse(ctx, item, itemId, response, { at, verdict });
   return {
     ...out,
@@ -829,9 +1019,13 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
       ctx.status.words[item.wordId] = round.extra && wordOf(ctx.status, item.wordId).state === 'new' ? { ...met, introducedExtra: true } : met;
       round.intro.step = 'copy';
     } else if (item.type === 'copy') {
-      const correct = answersMatch(response.typed, ctx.lexicon.entries.get(item.wordId).term, ctx.lexicon?.targetScript);
-      result = { correct, answer: ctx.lexicon.entries.get(item.wordId).term };
-      if (!correct) return { status: ctx.status, dayFile: ctx.dayFile, result };
+      const term = ctx.lexicon.entries.get(item.wordId).term;
+      if (gaveUp(response)) result = gaveUpResult(term, true);
+      else {
+        const correct = answersMatch(response.typed, term, ctx.lexicon?.targetScript);
+        result = { correct, answer: term };
+        if (!correct) return { status: ctx.status, dayFile: ctx.dayFile, result };
+      }
       if (ctx.dayFile.capabilities?.microphone === true && ctx.media?.[item.wordId]?.audio === true) round.intro.step = 'say';
       else nextIntro(round);
     } else if (item.type === 'say') {
