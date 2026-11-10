@@ -5,11 +5,14 @@
  * the bank cannot disagree. Design:
  * ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md.
  */
-import { buildGemBoard, lifetimeGemsByRule } from "../domain/earnings/index.mjs";
+import { buildGemBoard, gemCategories, lifetimeGemsByRule } from "../domain/earnings/index.mjs";
 import { isPayoutEntry, paidRefOf } from "../domain/index.mjs";
+
+const AREAS = new Set(['move', 'school', 'games']);
 
 export class GemBoardService {
   #preview; #rules; #economy; #config; #logger;
+  #warnedGroups = new Set(); // custom gem.group slugs already reported (once per process)
 
   /**
    * @param {object} deps
@@ -51,6 +54,12 @@ export class GemBoardService {
     const [ruleset, roster] = await Promise.all([this.#rules.get(), this.#preview.roster({ week, fresh })]);
     const ids = (roster?.learners ?? []).map((l) => l.learnerId);
     const lifetime = Object.fromEntries(await Promise.all(ids.map(async (id) => [id, await this.#lifetime(id)])));
+    for (const category of gemCategories(ruleset)) {
+      if (!AREAS.has(category.group) && !this.#warnedGroups.has(category.group)) {
+        this.#warnedGroups.add(category.group);
+        this.#logger.warn?.('economy.gems.group-filed-under-school', { group: category.group, row: category.id, area: category.area });
+      }
+    }
     const board = buildGemBoard({ ruleset, week: roster, lifetime, mode });
     this.#logger.debug?.('economy.gems.board.read', {
       week: board.week, learners: board.learners.length, categories: board.categories.length, ms: Date.now() - t0,

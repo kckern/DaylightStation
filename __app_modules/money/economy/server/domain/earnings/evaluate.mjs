@@ -102,7 +102,8 @@ function dayMet(rule, facts, ctx) {
  * satisfied (taxonomy §5). The week row alone covers weekly-cadence work only
  * — it reads `exempt / no_weekly_work` for a learner with none, however the
  * days went — so the days are folded here. Pays once the facts reach Friday
- * (Saturday is payday, D1), never earlier in the week.
+ * (Saturday is payday, D1), never earlier in the week; but a settled (past)
+ * non-green day ends it at once.
  */
 function weekMet(rule, facts, ctx) {
   const week = facts.week;
@@ -115,9 +116,15 @@ function weekMet(rule, facts, ctx) {
   if (week.state === 'unknown' || schoolDays.some((d) => d.state === 'unknown')) {
     return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Week not worked out yet' };
   }
-  if (!ctx.weekdaysCovered) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
   const notGreen = schoolDays.filter((d) => d.state !== 'met');
-  const closedNotGreen = notGreen.filter((d) => !ctx.isOpen(d.day));
+  const settled = (d) => (ctx.today == null ? ctx.weekdaysCovered : !ctx.isOpen(d.day));
+  const closedNotGreen = notGreen.filter(settled);
+  // A past day is SETTLED: the term grid replays it seeing only evidence
+  // stamped before its window closed (term-grid.md "How a past day is
+  // judged"), so late work cannot turn it green. A missed settled day ends
+  // the week now, not on Saturday. Today and later stay open; `unknown`
+  // days returned indeterminate above.
+  if (!ctx.weekdaysCovered && !closedNotGreen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'The week is still going' };
   if (closedNotGreen.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not green: ${closedNotGreen.map((d) => d.day).join(', ')}` };
   if (notGreen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to finish today' };
   if (!schoolDays.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: 'No school days this week' };

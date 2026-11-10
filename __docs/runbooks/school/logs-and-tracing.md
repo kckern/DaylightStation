@@ -257,6 +257,30 @@ the full event set (`school.grading_hook.fired/.skipped/.failed/.circuit_open/.e
 | `school.agenda.plan-errors` | warn | A work is assigned but has no eligible published units — see `known-issues.md` for the current live instance of this |
 | `school.curriculum.drafts-dropped` | warn | Draft-review-state units skipped — per [`failure-policy.md`](../../reference/school/failure-policy.md), this is deliberate, not a defect, but a *large* count every day means a course is stuck in draft |
 
+### Self-service keypad (input side)
+
+Emitted by the keypad component on the locked panel, all under `school.selfservice.keypad.*`
+(frontend, `context.component:school`). The digits of a code are **never** logged; only lengths.
+Resolve outcomes (`code.resolved` / `code.rejected`) come from the hook, not here.
+
+| Event | Level | Data | Meaning |
+|---|---|---|---|
+| `keypad.digit-pressed` | info | `{}` | A digit was accepted |
+| `keypad.backspace` | info | `{}` | Backspace accepted |
+| `keypad.clear` | info | `entryLength` | Clear wiped a non-empty entry |
+| `keypad.clear-reload` | info | `{}` | Clear on an empty entry reloaded the panel |
+| `keypad.submit` | info | `entryLength` | A full code went to the resolver |
+| `keypad.submit-blocked` | info | `reason` (`busy`/`incomplete`), `entryLength` | Submit refused before sending |
+| `keypad.stray-press` | info | `key` | Digit/backspace dropped inside the stray window after a submit |
+| `keypad.entry-abandoned` | info | `digits` | A partial entry was left to time out |
+| `keypad.reject-start` | info | `{}` | The NONONO refusal animation began (a bad code) |
+| `keypad.reject-complete` | debug | `{}` | The animation ran to its natural end |
+| `keypad.reject-cancelled` | info | `byKey` (`clear`/`digit`/`backspace`) | A key interrupted the animation |
+| `keypad.retry` | info | `{}` | Try again pressed in the degraded (offline) state |
+
+Screen sleep is logged separately as `school.selfservice.screen-off.*`
+(`armed` / `requested` / `succeeded` / `fallback` / `failed`).
+
 ### Sentence Ladder (language study)
 
 The ladder is the one School surface with **both sides of the wire on one

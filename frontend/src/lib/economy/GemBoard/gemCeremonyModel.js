@@ -13,8 +13,7 @@
  *
  * An award is a rule that now HOLDS a gem it did not before:
  *   earned / won   a gem paid this week (a count that grew is a new award)
- *   leading        a contest the child just took the lead in
- * A lead that becomes a win is celebrated again ("won"). Nothing is ever
+ * A contest LEAD is never an award (not a gem yet); a later win is. Nothing is ever
  * celebrated for a loss: a rule that drops back is just remembered. An award
  * is announced as its rule (label, cadence, colour), not as its row.
  *
@@ -29,7 +28,7 @@
  * either way: the snapshot keeps what it knew of that rule, so a gem that
  * comes back readable on the next look is the same gem, not a new one.
  */
-const HELD = new Set(['earned', 'won', 'leading']);
+const HELD = new Set(['earned', 'won']);
 const VERSION = 2;
 
 /** A cell's rules; a cell that lists none is one part under the row's id. */
@@ -60,7 +59,7 @@ export function gemSnapshot(board, previous = null) {
 }
 
 /**
- * @returns {{awards: Array<{learnerId, name, categoryId, ruleId, label, color, cadence, kind: 'earned'|'won'|'leading', count}>, snapshot: object}}
+ * @returns {{awards: Array<{learnerId, name, categoryId, ruleId, label, color, cadence, kind: 'earned'|'won', count}>, snapshot: object}}
  *   awards in row order, then roster order, then the row's rule order
  */
 export function gemAwards(previous, board) {
@@ -76,15 +75,13 @@ export function gemAwards(previous, board) {
         if (!HELD.has(part.state)) continue;
         const [wasState, wasWeek] = previous.parts?.[learnerId]?.[part.ruleId] ?? ['none', 0];
         const count = part.week ?? 0;
-        const fresh = part.state === 'leading'
-          ? wasState !== 'leading' && wasState !== 'won'
-          : (!HELD.has(wasState) || wasState === 'leading' || count > wasWeek);
+        const fresh = !HELD.has(wasState) || count > wasWeek;
         if (!fresh) continue;
         awards.push({
           learnerId, name: names[learnerId] ?? learnerId,
           categoryId: category.id, ruleId: part.ruleId,
           label: part.label ?? category.label, color: part.color ?? category.color, cadence: part.cadence ?? category.cadence,
-          kind: part.state, count: part.state === 'leading' ? 0 : Math.max(1, count - (HELD.has(wasState) && wasState !== 'leading' ? wasWeek : 0)),
+          kind: part.state, count: Math.max(1, count - (HELD.has(wasState) ? wasWeek : 0)),
         });
       }
     }
