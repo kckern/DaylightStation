@@ -64,9 +64,13 @@ describe('gem metadata', () => {
       { id: 'strong', kind: 'ring-days', days: 4, min: 100, reward: { gems: 1 }, gem: { category: 'exercise' } },
     ]);
     expect(gemCategories(rs)).toEqual([
-      { id: 'green-week', label: 'green-week', cadence: 'weekly', color: '#d6304a', ruleIds: ['green-week'] },
-      { id: 'exercise', label: 'Exercise', cadence: 'weekly', color: '#8e5bd0', ruleIds: ['moved', 'strong'] },
-      { id: 'contest', label: 'contest', cadence: 'contest', color: '#1e88e5', ruleIds: ['contest'] },
+      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', color: '#d6304a', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly' }] },
+      {
+        id: 'exercise', label: 'Exercise', cadence: 'weekly', group: 'move', color: '#8e5bd0', ruleIds: ['moved', 'strong'],
+        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly' }],
+      },
+      // The ring contest's default row: it shares `ring-contests` with the most-improved contest.
+      { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#1e88e5', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest' }] },
     ]);
   });
 });
@@ -98,14 +102,15 @@ describe('buildGemBoard', () => {
   it('lays out learners in roster order against every gem category', () => {
     const board = buildGemBoard({ ruleset: rs, week, lifetime: { a: { byRule: { 'green-week': 3, moved: 1 }, total: 7 } } });
     expect(board.learners).toEqual([{ learnerId: 'a', name: 'A' }, { learnerId: 'b', name: 'B' }]);
-    expect(board.categories.map((c) => c.id)).toEqual(['green-week', 'exercise', 'contest']);
+    expect(board.categories.map((c) => c.id)).toEqual(['green-week', 'exercise', 'ring-contests']);
+    expect(board.groups).toEqual([{ id: 'move', label: 'Move' }, { id: 'school', label: 'School' }]);
     expect(board.week).toBe('2026-11-02');
     // Two exercise rules in one row: both earned this week.
     expect(board.cells.exercise.a).toMatchObject({ state: 'earned', week: 2, lifetime: 2 });
     expect(board.cells.exercise.b).toMatchObject({ state: 'pending', week: 0, progress: { have: 1, need: 2 } });
     // The contest: a leads, not yet decided — no gem this week yet.
-    expect(board.cells.contest.a).toMatchObject({ state: 'leading', week: 0 });
-    expect(board.cells.contest.b.state).toBe('none');
+    expect(board.cells['ring-contests'].a).toMatchObject({ state: 'leading', week: 0 });
+    expect(board.cells['ring-contests'].b.state).toBe('none');
     // School evidence missing (no week verdict) reads unknown, never missed.
     expect(board.cells['green-week'].a).toMatchObject({ state: 'unknown', lifetime: 3 });
     // a holds the contest gem while leading it: week counts it, earned does not.
@@ -115,7 +120,7 @@ describe('buildGemBoard', () => {
 
   it('a decided contest reads won', () => {
     const closed = { ...week, contestClosed: true, learners: [learner('a', { rings: 300, ringDays: [] }, { standings, contestClosed: true })] };
-    expect(buildGemBoard({ ruleset: rs, week: closed }).cells.contest.a).toMatchObject({ state: 'won', week: 1 });
+    expect(buildGemBoard({ ruleset: rs, week: closed }).cells['ring-contests'].a).toMatchObject({ state: 'won', week: 1 });
   });
 });
 
@@ -130,5 +135,43 @@ describe('lifetimeGemsByRule', () => {
       { kind: 'adjust', ref: 'manual', delta: 4, currency: 'gems' },
     ];
     expect(lifetimeGemsByRule(list, { isPayoutEntry, paidRefOf })).toEqual({ gw: 1 });
+  });
+});
+
+describe('row defaults and groups', () => {
+  const rs = ruleset([
+    { id: 'reader-week', label: 'Story time 4 days', kind: 'activity-days', match: { activity: 'story-read' }, days: 4, reward: { gems: 1 } },
+    { id: 'moved-days', label: 'Moved 5 days', kind: 'ring-days', days: 5, reward: { gems: 1 } },
+    { id: 'book-finished', label: 'Book finished', kind: 'milestone', match: { activity: 'book-finished' }, reward: { gems: 1 } },
+    { id: 'ring-contest', label: 'Most rings this week', kind: 'ring-contest', tie: 'all', reward: { gems: 1 } },
+    { id: 'most-improved', label: 'Most improved rings', kind: 'activity-contest', match: { activity: 'ring-improved' }, tie: 'all', reward: { gems: 1 } },
+    { id: 'board-game-level', label: 'Board game level', kind: 'milestone', match: { activity: 'board-game-level' }, reward: { gems: 1 } },
+  ]);
+
+  it('folds same-subject rules into one row with a default label, group and parts', () => {
+    const rows = gemCategories(rs);
+    expect(rows.map((r) => [r.id, r.label, r.group])).toEqual([
+      ['reading', 'Reading', 'school'],
+      ['moved-days', 'Moved 5 days', 'move'],
+      ['ring-contests', 'Ring contests', 'move'],
+      ['board-game-level', 'Board game level', 'games'],
+    ]);
+    expect(rows[0].parts).toEqual([
+      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' },
+      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' },
+    ]);
+    expect(rows[0].cadence).toBe('weekly'); // the first rule's, as before
+  });
+
+  it('config wins: gem.category keeps a rule on its own row, gem.group and gem.label override', () => {
+    const own = ruleset([
+      { id: 'reader-week', label: 'Story time 4 days', kind: 'activity-days', match: { activity: 'story-read' }, days: 4, reward: { gems: 1 }, gem: { category: 'story-time', group: 'bedtime' } },
+      { id: 'book-finished', label: 'Book finished', kind: 'milestone', match: { activity: 'book-finished' }, reward: { gems: 1 }, gem: { label: 'Books' } },
+    ]);
+    expect(gemCategories(own).map((r) => [r.id, r.label, r.group])).toEqual([
+      ['story-time', 'Story time 4 days', 'bedtime'],
+      ['reading', 'Books', 'school'],
+    ]);
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { group: 'Not A Slug' } }])).toThrow(/group/);
   });
 });

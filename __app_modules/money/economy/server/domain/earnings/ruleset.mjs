@@ -29,10 +29,12 @@
  *
  * A rule that pays twice is two rules: there is no `bonus`.
  *
- * Any rule may carry `gem: {category?, label?, color?}` — how its gems read on
+ * Any rule may carry `gem: {category?, label?, color?, group?}` — how its gems read on
  * the Gem Board (ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md).
  * Rules that share a `category` share a board row; `color` is the gem's
- * provenance (taxonomy D12). Display only: it never changes what a rule pays.
+ * provenance (taxonomy D12); `group` is the board section the row sits under
+ * (`move`, `games`, `school`, or any slug). Display only: it never changes
+ * what a rule pays.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { CURRENCIES } from '../entities/Transaction.mjs';
@@ -147,14 +149,22 @@ function normalizeEffective(effective, field) {
   return Object.keys(out).length ? out : null;
 }
 
-/** `{category?, label?, color?}` — the rule's row on the Gem Board. */
+/**
+ * `{category?, label?, color?, group?}` — the rule's row on the Gem Board.
+ * `group` is the board section the row sits under (`move`, `games`, `school`,
+ * or any slug).
+ */
 function normalizeGem(gem, field) {
   if (gem == null) return null;
-  if (typeof gem !== 'object' || Array.isArray(gem)) fail(`${field} must be {category, label, color}`, field);
+  if (typeof gem !== 'object' || Array.isArray(gem)) fail(`${field} must be {category, label, color, group}`, field);
   const out = {};
   if (gem.category != null) {
     if (!ID.test(gem.category)) fail(`${field}.category must be a lowercase slug`, `${field}.category`);
     out.category = gem.category;
+  }
+  if (gem.group != null) {
+    if (!ID.test(gem.group)) fail(`${field}.group must be a lowercase slug`, `${field}.group`);
+    out.group = gem.group;
   }
   if (gem.label != null) {
     if (typeof gem.label !== 'string' || !gem.label.trim()) fail(`${field}.label must be a string`, `${field}.label`);

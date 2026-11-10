@@ -4,9 +4,12 @@
  * and each learner's lifetime gem counts from the ledger; nothing here reads
  * a clock or a file. Design: ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md.
  *
- * A board ROW is a gem category: a rule that pays gems (or names a `gem`
- * block), grouped by `gem.category` (default: the rule id). Rows keep the
- * rules' order. Columns are the learners in roster order — never ranked.
+ * A board ROW is a gem category: the rules that pay gems (or name a `gem`
+ * block), placed by `gem.category`, else the default row for the rule's
+ * activity or kind (reading, piano, racing, …), else the rule id. A row lists
+ * the rules folded into it as `parts`. Rows keep the rules' order and sit in
+ * sections (`groups`: Move / Games / School, or a slug a rule names with
+ * `gem.group`). Columns are the learners in roster order — never ranked.
  *
  * Totals per learner: `week` is what they HOLD this week (earned, plus a
  * contest gem while they lead it — the agenda card's figure), `earned` only
@@ -49,20 +52,62 @@ const STATE_ORDER = ['won', 'earned', 'leading', 'pending', 'unknown', 'none', '
 const paysGems = (rule) => (rule.reward?.gems ?? 0) > 0
   || (rule.thresholds ?? []).some((t) => (t.reward?.gems ?? 0) > 0);
 
-/** The board's rows, in rule order: `[{id, label, cadence, color, ruleIds}]`. */
+/** The board's sections, in display order. A rule may name another with `gem.group`. */
+export const GEM_GROUPS = Object.freeze([
+  Object.freeze({ id: 'move', label: 'Move' }),
+  Object.freeze({ id: 'games', label: 'Games' }),
+  Object.freeze({ id: 'school', label: 'School' }),
+]);
+const DEFAULT_GROUP = 'school';
+
+const defaultRow = (category, label, group) => Object.freeze({ category, label, group });
+const PIANO = defaultRow('piano', 'Piano', 'school');
+const FLASHCARDS = defaultRow('flashcards', 'Flashcards', 'school');
+const READING = defaultRow('reading', 'Reading', 'school');
+const RACING = defaultRow('racing', 'Racing', 'games');
+const GLIDER = defaultRow('skyline-glider', 'Skyline Glider', 'games');
+const RING_CONTESTS = defaultRow('ring-contests', 'Ring contests', 'move');
+/** Where a rule sits on the board when its `gem` block does not say. */
+const ROW_BY_ACTIVITY = Object.freeze({
+  'piano-practice': PIANO, 'piano-rung': PIANO,
+  'card-goal': FLASHCARDS, 'cards-mastered': FLASHCARDS,
+  'story-read': READING, 'book-finished': READING,
+  race: RACING, 'race-pb': RACING,
+  'glider-act': GLIDER, 'glider-bells': GLIDER,
+  'ring-improved': RING_CONTESTS,
+  'board-game-level': Object.freeze({ group: 'games' }),
+  'rings-lifetime': Object.freeze({ group: 'move' }),
+});
+const ROW_BY_KIND = Object.freeze({
+  'ring-contest': RING_CONTESTS,
+  'ring-days': Object.freeze({ group: 'move' }),
+});
+
+/**
+ * The board's rows, in rule order:
+ * `[{id, label, cadence, group, color, ruleIds, parts: [{ruleId, label, cadence}]}]`.
+ * A merged row takes its label, cadence, group and colour from its first rule.
+ */
 export function gemCategories(ruleset) {
   const rows = new Map();
   for (const rule of ruleset?.rules ?? []) {
     if (!rule.gem && !paysGems(rule)) continue;
-    const id = rule.gem?.category ?? rule.id;
-    const row = rows.get(id);
-    if (row) { row.ruleIds.push(rule.id); continue; }
+    const fallback = ROW_BY_ACTIVITY[rule.match?.activity] ?? ROW_BY_KIND[rule.kind] ?? {};
+    // A named category is the household's own row: the default label is not its label.
+    const usesDefaultRow = !rule.gem?.category && fallback.category;
+    const id = rule.gem?.category ?? fallback.category ?? rule.id;
+    const cadence = CADENCE[rule.kind] ?? 'weekly';
+    const part = { ruleId: rule.id, label: rule.label ?? rule.id, cadence };
+    const existing = rows.get(id);
+    if (existing) { existing.ruleIds.push(rule.id); existing.parts.push(part); continue; }
     rows.set(id, {
       id,
-      label: rule.gem?.label ?? rule.label ?? rule.id,
-      cadence: CADENCE[rule.kind] ?? 'weekly',
+      label: rule.gem?.label ?? (usesDefaultRow ? fallback.label : null) ?? rule.label ?? rule.id,
+      cadence,
+      group: rule.gem?.group ?? fallback.group ?? DEFAULT_GROUP,
       color: rule.gem?.color ?? GEM_ACTIVITY_COLORS[rule.match?.activity] ?? GEM_KIND_COLORS[rule.kind] ?? DEFAULT_COLOR,
       ruleIds: [rule.id],
+      parts: [part],
     });
   }
   return [...rows.values()];
@@ -98,6 +143,15 @@ function cell(row, learner, lifetimeByRule) {
   }
   const lifetime = row.ruleIds.reduce((sum, id) => sum + (lifetimeByRule?.[id] ?? 0), 0);
   return { state: state ?? 'none', progress, week, held, lifetime: Math.max(lifetime, week), note };
+}
+
+/** The sections that have rows: the known ones in order, then any the config named. */
+function boardGroups(rows) {
+  const used = [...new Set(rows.map((r) => r.group))];
+  const known = GEM_GROUPS.filter((g) => used.includes(g.id));
+  const custom = used.filter((id) => !GEM_GROUPS.some((g) => g.id === id))
+    .map((id) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, ' ') }));
+  return [...known, ...custom];
 }
 
 /**
@@ -137,6 +191,7 @@ export function buildGemBoard({ ruleset, week, lifetime = {}, mode = 'live' }) {
     contestClosed: Boolean(week?.contestClosed),
     rulesRevision: week?.rulesRevision ?? ruleset?.revision ?? null,
     learners,
+    groups: boardGroups(rows),
     categories: rows.map(({ ruleIds, ...row }) => row),
     cells,
     totals,
