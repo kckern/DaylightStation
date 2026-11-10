@@ -42,6 +42,16 @@ describe('RiderHrTrend', () => {
     expect(container.querySelector('.rider-hr-trend__plot').getAttribute('transform')).toMatch(/^matrix\(1 0 0 -/);
   });
 
+  it('is a line, never a filled shape: the path and every copy carry fill="none"', () => {
+    // A default fill closes the path back to its first point (a dark wedge with
+    // a diagonal edge). The <use> copies must not rely on the source's class rule.
+    const { container } = render(<RiderHrTrend {...base} />);
+    expect(container.querySelector('path.rider-hr-trend__line').getAttribute('fill')).toBe('none');
+    const uses = [...container.querySelectorAll('use')];
+    expect(uses.length).toBeGreaterThan(0);
+    uses.forEach((u) => expect(u.getAttribute('fill')).toBe('none'));
+  });
+
   it('never reads zone_id; the colour comes from height', () => {
     const getSeries = vi.fn((_id, metric) => series[metric]);
     render(<RiderHrTrend {...base} getSeries={getSeries} />);

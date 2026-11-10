@@ -155,7 +155,7 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
   return (
     <svg className="rider-hr-trend" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
       <defs>
-        <path ref={pathRef} id={lineId} className="rider-hr-trend__line" />
+        <path ref={pathRef} id={lineId} className="rider-hr-trend__line" fill="none" />
         {bands.map((band) => (
           <clipPath key={band.key} id={`${uid}-band-${band.key}`} clipPathUnits="userSpaceOnUse">
             <rect x="-1" width="102" y={band.lo} height={band.hi - band.lo} />
@@ -167,7 +167,7 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
           <line key={`g${b.key}`} className="rider-hr-trend__guide" x1="0" x2="100" y1={b.lo} y2={b.lo} />
         ))}
         {bands.map((band) => (
-          <use key={band.key} href={`#${lineId}`} clipPath={`url(#${uid}-band-${band.key})`} stroke={band.color} />
+          <use key={band.key} href={`#${lineId}`} clipPath={`url(#${uid}-band-${band.key})`} stroke={band.color} fill="none" />
         ))}
       </g>
     </svg>

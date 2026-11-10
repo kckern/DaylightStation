@@ -68,6 +68,12 @@ crosses a threshold, including mid-segment. Outer bands run to 0 and 400 bpm. A
 rider without zones gets one neutral band. Faint guides sit at the inner
 thresholds that fall inside the y-range.
 
+The path and every `<use>` carry `fill="none"` as an attribute. A `<use>` copy
+does not reliably pick up a class rule written for its source path (the garage
+Firefox drew the copies with the default black fill, which closes the path back
+to its first point: a dark wedge with a diagonal edge). Fill is inherited, so
+setting it on the `<use>` reaches the copy.
+
 The y-range is bounded by the rider's thresholds ±10 bpm and widens only when
 the data leaves them, so the line doesn't rescale every tick.
 

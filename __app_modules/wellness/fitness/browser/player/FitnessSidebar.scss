@@ -1803,7 +1803,12 @@
     display: block;
     overflow: visible;
   }
-  .rider-hr-trend__line {
+  // A <use> copy does not reliably take a rule written for its source path
+  // (Firefox drew the copies with the default black fill, which closes the
+  // path back to its first point: a dark wedge with a diagonal edge). Fill is
+  // inherited, so setting it on the <use> itself reaches every copy.
+  .rider-hr-trend__line,
+  .rider-hr-trend use {
     fill: none;
   }
   .rider-hr-trend__line,
