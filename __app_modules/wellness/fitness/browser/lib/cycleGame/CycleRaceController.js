@@ -251,10 +251,6 @@ export class CycleRaceController {
       noSensor: [...this.noSensor],
       overtime: [...this.overtime],
       endedEarly: this.endedEarly,
-      // Legacy keys, always empty. Removed with their last consumers in Task 6/8.
-      dnf: [],
-      penalized: [],
-      penaltyInfo: {},
       engineState: this.engine ? this.engine.getState() : null
     };
   }

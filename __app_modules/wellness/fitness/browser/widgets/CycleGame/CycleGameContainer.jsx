@@ -323,15 +323,15 @@ export default function CycleGameContainer({ onMount } = {}) {
     return getDisplayLabel?.(name, { userId }) || name;
   }, [getUserVitals, getUserByName, getDisplayName, getDisplayLabel]);
 
-  // Officiating thresholds (shared by the race config and the event toasts so
-  // the on-screen copy always matches the rule that fired).
+  // Officiating thresholds. `race_idle_dnf_s` is the park window (legacy key name).
   const raceIdleDnfS = Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20;
   // Grace before a rider's FIRST movement is required (vs the idle clock that
   // runs after they've started). Covers magnetless cadence sensors that take
   // ~20s to lock onto rotation from a dead stop (e.g. the tricycle's BK467).
   const raceStartGraceS = Number.isFinite(cycleGameConfig?.race_start_grace_s) ? cycleGameConfig.race_start_grace_s : 30;
   // Distance-race mercy-kill (issue 2): seconds after the FIRST rider crosses the
-  // line before the race auto-ends, forfeiting (DNF) anyone still going — a
+  // line before the race auto-ends; anyone still going is put in overtime with
+  // their real distance — a
   // distance race otherwise waits forever for the slowest rider. Defaults ON at
   // 60s; set race_mercy_after_winner_s: 0 to disable. Ignored by time races.
   const raceMercyAfterWinnerS = Number.isFinite(cycleGameConfig?.race_mercy_after_winner_s)
@@ -404,11 +404,13 @@ export default function CycleGameContainer({ onMount } = {}) {
   // exactly once — on the FIRST time the container reaches idle after mount
   // (not every return-to-idle, e.g. after backToHome/onCancel).
   const recoveryCheckedRef = useRef(false);
-  const prevDnfRef = useRef(new Set());
+  // Parked riders (idle past the park window) → the race time they parked at,
+  // so the resume log can say how long they were away. Edge-detected per tick.
+  const prevParkedRef = useRef(new Map());
   const prevNoSensorRef = useRef(new Set());
   // Riders whose race was cut short by the clock/operator (mercy-kill window
-  // closing, or a forced finish) while still honestly riding — see
-  // CycleRaceController's `overtime` set. Distinct from prevDnfRef (idle-quit).
+  // closing, or a forced finish) while still riding — see CycleRaceController's
+  // `overtime` set. Never a parked or no-sensor rider.
   const prevOvertimeRef = useRef(new Set());
   // Telemetry: track prior tick state so transitions (not steady state) are what
   // gets logged — cadence connect/drop, phase, and a monotonic tick index for
@@ -428,11 +430,8 @@ export default function CycleGameContainer({ onMount } = {}) {
   // because it's mutated synchronously inside the same tick effect that drives
   // the setSnapshot commit each tick, so it's always current by render.
   const gapTicksRef = useRef(new Map());
-  // Edge-detection for the sensor-lost telemetry (mirrors prevDnfRef/prevCadenceRef).
+  // Edge-detection for the sensor-lost telemetry (mirrors prevCadenceRef).
   const prevSensorLostRef = useRef(new Set());
-  // Officiating events (DNF) accumulated over the race —
-  // drives the persistent chart markers and the results legend.
-  const [raceEvents, setRaceEvents] = useState([]);
   const eventIdRef = useRef(0);
   // Single-slot, self-dismissing event toast + a queue for events that pile up.
   const [eventToast, setEventToast] = useState(null);
@@ -490,35 +489,32 @@ export default function CycleGameContainer({ onMount } = {}) {
     setEventToast(toastQueueRef.current.shift() || null);
   }, []);
 
-  // Record an officiating event: append it for the chart markers + results
-  // legend, and enqueue a self-explaining toast (single-slot; queue overflow).
-  const recordRaceEvent = useCallback((type, userId, state) => {
+  // A rider's away toast (single-slot; queue overflow). Parked is calm: they
+  // stopped pedalling and come back on their next stroke, so it says how to
+  // rejoin. A rider whose sensor never reported is NOT told they stopped
+  // pedalling: that sentence was once printed to a child who was pedalling the
+  // whole time, because his cadence sensor had been silent for four minutes,
+  // and the race cannot tell the difference from rpm alone. The blame goes to
+  // the equipment, which is where it belongs.
+  const recordRiderToast = useCallback((type, userId, state) => {
     const rider = state.engineState?.riders?.[userId] || {};
-    const seriesIndex = Math.max(0, (rider.distanceSeries?.length || 1) - 1);
-    const distanceM = rider.cumulativeDistanceM || 0;
     const displayName = rider.displayName || userId;
     const id = (eventIdRef.current += 1);
-    setRaceEvents((list) => [...list, { id, type, riderId: userId, displayName, seriesIndex, distanceM }]);
-    // A rider whose sensor never reported is NOT told they stopped pedalling.
-    // That sentence was printed to a child who was pedalling the whole time,
-    // because his cadence sensor had been silent for four minutes — and the
-    // race cannot tell the difference from rpm alone. The blame goes to the
-    // equipment, which is where it belongs.
     const toast = type === 'nosensor'
       ? { id, variant: 'nosensor', icon: <StopSignIcon />, title: `${displayName} — no sensor`, subtitle: 'Their bike never reported. Check the sensor.' }
-      : { id, variant: 'dnf', icon: <StopSignIcon />, title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` };
+      : { id, variant: 'parked', icon: null, title: `${displayName} is parked`, subtitle: 'Pedal to rejoin' };
     // Show now if the slot is free, otherwise queue behind the current toast.
     setEventToast((cur) => {
       if (cur) { toastQueueRef.current.push(toast); return cur; }
       return toast;
     });
-  }, [raceIdleDnfS]);
+  }, []);
 
   // Race-closed toast: the mercy-kill window (or a forced finish) can cut several
   // stragglers in the SAME tick — one summary toast, not a stack of per-rider
-  // "DNF" toasts, so the moment reads as "the race ended" rather than "you all
+  // toasts, so the moment reads as "the race ended" rather than "you all
   // failed" (audit game-design #7 — the riders it names are still credited their
-  // real distance in the results, not branded DNF).
+  // real distance in the results).
   const recordOvertimeEvent = useCallback((userIds) => {
     const id = (eventIdRef.current += 1);
     const n = userIds.length;
@@ -542,6 +538,12 @@ export default function CycleGameContainer({ onMount } = {}) {
   // moment the instant it happens, not just a row on the end-of-race results
   // screen.
   const recordDramaEvent = useCallback((event, snapshot, riders) => {
+    log.debug('cycle_game.drama_event', {
+      raceId: raceMetaRef.current?.raceId ?? null,
+      type: event.type,
+      riderIds: event.riderIds || [],
+      elapsedS: event.firedAtClock ?? null
+    });
     dramaEventToasts(event, snapshot, riders).forEach((t) => {
       const id = (eventIdRef.current += 1);
       const toast = { id, icon: DRAMA_ICON[t.variant] || null, ...t };
@@ -550,7 +552,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         return toast;
       });
     });
-  }, []);
+  }, [log]);
 
   // People to choose from on the home screen: the registered users, mapped to
   // the avatar/HR shape the lobby renders. Users with an active heart rate are
@@ -910,7 +912,8 @@ export default function CycleGameContainer({ onMount } = {}) {
     }
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
-    prevDnfRef.current = new Set();
+    prevParkedRef.current = new Map();
+    prevNoSensorRef.current = new Set();
     prevOvertimeRef.current = new Set();
     prevCadenceRef.current = new Map();
     rpmHistoryRef.current = new Map();
@@ -918,7 +921,6 @@ export default function CycleGameContainer({ onMount } = {}) {
     prevSensorLostRef.current = new Set();
     prevRaceSnapshotRef.current = null;
     tickCountRef.current = 0;
-    setRaceEvents([]);
     setSaveFailed(false);
     setLadderNotes([]);
     setEventToast(null);
@@ -1351,7 +1353,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         // real cooldown-to-stop is honored — but ONLY for a bounded number of
         // ticks: rpmDuringGap caps the hold (decay, then 0) so a sensor that
         // never comes back can't ride forever at a frozen RPM and can still
-        // idle-DNF (audit game-design #6). gapTicks is tracked only for riders
+        // be parked by the idle clock (audit game-design #6). gapTicks is tracked only for riders
         // with real equipment — a rider with none never had a "connected"
         // reading to begin with, so it isn't a sensor loss.
         let rawRpm;
@@ -1373,7 +1375,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         // A rider who has NEVER had a single connected reading since the race
         // started hasn't lost a sensor — they simply haven't started pedaling
         // yet (mounting the bike, clipping in), which raceStartGraceS already
-        // covers gracefully at the DNF layer. The SENSOR chip must only fire
+        // covers gracefully at the park layer. The SENSOR chip must only fire
         // for a genuine mid-race disconnect: was connected, then dropped.
         // Otherwise every race opened with an alarming false "SENSOR" warning
         // for the first ~9s, before the rider's first pedal stroke landed.
@@ -1402,9 +1404,14 @@ export default function CycleGameContainer({ onMount } = {}) {
       // FINAL_LAP / LAPPING_IMMINENT, edge-triggered against the previous tick's
       // snapshot. Runs every tick (not gated on phase==='racing' vs 'finished')
       // so the race-ending tick's own finisher still gets its ceremony toast.
+      // Away riders (parked or no sensor at this tick) are never announced as
+      // taking the lead, even when they are ahead on distance.
       const raceSnapshot = deriveRaceSnapshot(
         state.engineState,
-        { lapLengthM: raceMetaRef.current?.lapLengthM || 0 },
+        {
+          lapLengthM: raceMetaRef.current?.lapLengthM || 0,
+          awayIds: [...(state.parked || []), ...(state.noSensor || [])]
+        },
         prevRaceSnapshotRef.current
       );
       raceSnapshot.events.forEach((evt) => recordDramaEvent(evt, raceSnapshot, state.engineState?.riders || {}));
@@ -1453,20 +1460,38 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
       prevSensorLostRef.current = sensorLostNow;
 
-      // DNF detection — diff the controller dnf set; a new entry logs + raises
-      // an on-screen event (toast + persistent chart marker).
-      const dnfSet = new Set(state.dnf || []);
-      dnfSet.forEach((userId) => {
-        if (!prevDnfRef.current.has(userId)) {
-          log.info('cycle_game.rider_dnf', {
-            raceId: raceMetaRef.current?.raceId,
-            userId,
-            elapsedS: state.engineState?.elapsedS ?? null
-          });
-          recordRaceEvent('dnf', userId, state);
-        }
+      // Parked / resumed — diff the controller's parked set. Nobody is
+      // eliminated: a rider idle past the park window is parked (one calm
+      // toast) and rejoins on their next pedal stroke (logged, no toast).
+      const tickElapsedS = state.engineState?.elapsedS ?? null;
+      const distanceOf = (userId) => {
+        const d = state.engineState?.riders?.[userId]?.cumulativeDistanceM;
+        return Number.isFinite(d) ? Math.round(d) : 0;
+      };
+      const parkedSet = new Set(state.parked || []);
+      parkedSet.forEach((userId) => {
+        if (prevParkedRef.current.has(userId)) return;
+        prevParkedRef.current.set(userId, tickElapsedS);
+        log.info('cycle_game.rider_parked', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          elapsedS: tickElapsedS,
+          distanceM: distanceOf(userId)
+        });
+        recordRiderToast('parked', userId, state);
       });
-      prevDnfRef.current = dnfSet;
+      [...prevParkedRef.current.keys()].forEach((userId) => {
+        if (parkedSet.has(userId)) return;
+        const parkedAtS = prevParkedRef.current.get(userId);
+        prevParkedRef.current.delete(userId);
+        log.info('cycle_game.rider_resumed', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          elapsedS: tickElapsedS,
+          distanceM: distanceOf(userId),
+          awayS: Number.isFinite(parkedAtS) && Number.isFinite(tickElapsedS) ? tickElapsedS - parkedAtS : null
+        });
+      });
 
       // A rider whose sensor never reported. Logged under its own name so the
       // store can answer "was this a kid not pedalling, or a dead sensor?" —
@@ -1481,14 +1506,25 @@ export default function CycleGameContainer({ onMount } = {}) {
             equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
             elapsedS: state.engineState?.elapsedS ?? null
           });
-          recordRaceEvent('nosensor', userId, state);
+          recordRiderToast('nosensor', userId, state);
         }
+      });
+      // Their sensor woke and they are moving: back in the race.
+      prevNoSensorRef.current.forEach((userId) => {
+        if (noSensorSet.has(userId)) return;
+        log.info('cycle_game.rider_sensor_recovered', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
+          elapsedS: tickElapsedS,
+          distanceM: distanceOf(userId)
+        });
       });
       prevNoSensorRef.current = noSensorSet;
 
       // Overtime detection — diff the controller overtime set (mercy-kill window
       // closing / forced finish). Log each rider's edge individually (mirrors the
-      // DNF edge log above) but raise ONE summary toast for the whole batch —
+      // parked edge log above) but raise ONE summary toast for the whole batch —
       // several stragglers can land in `overtime` on the same tick.
       const overtimeSet = new Set(state.overtime || []);
       const newOvertime = [...overtimeSet].filter((userId) => !prevOvertimeRef.current.has(userId));
@@ -1537,6 +1573,7 @@ export default function CycleGameContainer({ onMount } = {}) {
             zoneId: r.zoneId ?? null,
             multiplier: zoneMultiplierFor(r.zoneId ?? null, zonesRef.current, hrlessMultiplierRef.current),
             distanceM: Math.round(Number.isFinite(r.cumulativeDistanceM) ? r.cumulativeDistanceM : 0),
+            parked: parkedSet.has(userId) || noSensorSet.has(userId),
             finished: r.finishTimeS != null
           };
         })
@@ -1628,7 +1665,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
     // interval is set up ONCE for the whole go→racing span and never starved by
     // context churn or torn down by the go→racing phase edge.
-  }, [isEngineLive, applySnapshot, recordRaceEvent, recordOvertimeEvent, log, recordDramaEvent]);
+  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent]);
 
   // ── pagehide best-effort save (audit C1) ─────────────────────────────────
   // A reload/crash may not give the periodic checkpoint a chance to run again
@@ -2143,10 +2180,13 @@ export default function CycleGameContainer({ onMount } = {}) {
     const winConditionNow = engineState.winCondition || raceMetaRef.current?.winCondition || 'distance';
     const placementByUser = {};
     (engineState.standings || []).forEach((s) => { placementByUser[s.userId] = s.placement; });
-    const dnfNow = new Set(snapshot?.dnf || []);
-    // Overtime = the mercy-kill/forced-finish window closed around an honest
-    // rider (T3) — distinct from dnfNow (idle-quit). The standings tower needs
-    // it live to dim/tag that row, same as RaceResults does after the race.
+    // Away from the pedals: parked (idle past the park window) or no sensor (the
+    // bike never reported). Both dim, leave the framing and come back on movement.
+    const parkedNow = new Set(snapshot?.parked || []);
+    const noSensorNow = new Set(snapshot?.noSensor || []);
+    // Overtime = the mercy-kill/forced-finish window closed around a rider who
+    // was still riding (T3). The standings tower needs it live to dim/tag that
+    // row, same as RaceResults does after the race.
     const overtimeNow = new Set(snapshot?.overtime || []);
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
@@ -2203,7 +2243,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         // change and lands on the eventual winner.
         isLeader: engineState.elapsedS > 0 && placementByUser[userId] === 1,
         maxRpm: resolveRpmLimits(bikeById.get(rider.equipmentId) || {}).gaugeMaxRpm,
-        dnf: dnfNow.has(userId),
+        // `parked` covers both away states; `noSensor` lets a surface word it as
+        // a sensor problem ("NO SIGNAL") rather than a stop ("PARKED").
+        parked: parkedNow.has(userId) || noSensorNow.has(userId),
+        noSensor: noSensorNow.has(userId),
         overtime: overtimeNow.has(userId),
         // Sensor presumed genuinely disconnected (not a broadcast blip, and not
         // simply "hasn't started pedaling yet" — see the everConnected gate in
@@ -2230,7 +2273,6 @@ export default function CycleGameContainer({ onMount } = {}) {
             winCondition: engineState.winCondition || raceMetaRef.current?.winCondition || 'distance',
             goalM: engineState.goalM ?? raceMetaRef.current?.goalM ?? null
           })}
-          events={raceEvents}
         />
         <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
         <RaceMenu onEnd={onFinishRace} onDiscard={onCancel} />
@@ -2246,7 +2288,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         standings={engineState.standings || []}
         riders={engineState.riders || {}}
         winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
-        dnf={snapshot?.dnf || []}
+        stopped={[...new Set([...(snapshot?.parked || []), ...(snapshot?.noSensor || [])])]}
         overtime={snapshot?.overtime || []}
         lapLengthM={effectiveLapLength({
           lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,

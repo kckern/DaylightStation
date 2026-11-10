@@ -29,10 +29,10 @@ export function clampCountedRpm(rpm, abuseMaxRpm) {
 //
 // The hold is CAPPED — a sensor that never comes back must not ride forever at
 // a frozen RPM (audit game-design #6: a dead sensor was an unlimited-distance
-// cheat AND blocked the idle-DNF clock from ever firing). Ticks 1-5 of a gap
+// cheat AND blocked the idle clock from ever parking them). Ticks 1-5 of a gap
 // behave as the original hold; ticks 6-8 decay the held value by half each
 // tick (a "coasting to a stop" read, not an abrupt cliff); tick 9+ goes to 0,
-// at which point the normal idle-DNF machinery (fed 0 rpm) takes back over.
+// at which point the normal idle (park) clock, fed 0 rpm, takes back over.
 //   recentRpms: the last few CONNECTED readings, oldest → newest.
 //   gapTicks: 1-based count of consecutive ticks the sensor has been gapped
 //     for (1 = the first disconnected tick). Defaults to 1 for callers that

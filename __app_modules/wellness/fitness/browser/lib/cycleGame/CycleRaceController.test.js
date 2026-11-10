@@ -537,13 +537,14 @@ describe('CycleRaceController — park and resume', () => {
     expect(k.getState().parked).toEqual(['a', 'b']);
   });
 
-  it('still returns the legacy keys, always empty', () => {
+  it('returns no legacy dnf / penalty keys: a parked rider is in `parked`', () => {
     const k = racing(cfg({ hotStartPenaltyS: 5 }));
     ride(k, 1, { a: { rpm: 60 }, b: { rpm: 60 } });
     const s = ride(k, 3, { a: { rpm: 60 }, b: { rpm: 0 } }); // b parked
-    expect(s.dnf).toEqual([]);
-    expect(s.penalized).toEqual([]);
-    expect(s.penaltyInfo).toEqual({});
+    expect(s.parked).toEqual(['b']);
+    expect(s).not.toHaveProperty('dnf');
+    expect(s).not.toHaveProperty('penalized');
+    expect(s).not.toHaveProperty('penaltyInfo');
   });
 
   it('finishNow marks the race ended early', () => {

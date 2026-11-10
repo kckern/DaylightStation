@@ -29,7 +29,7 @@ import "./CycleRaceScreen.scss";
 export default function CycleRaceScreen({
   winCondition = 'distance', goalM = 3000, timeCapS = 300, elapsedS = 0,
   riders = {}, riderLive = {}, cadenceBands = [], backgroundPlexId = null,
-  showSpeedos = true, lapLengthM = 0, events = []
+  showSpeedos = true, lapLengthM = 0
 }) {
   const riderIds = Object.keys(riders);
 
@@ -55,7 +55,7 @@ export default function CycleRaceScreen({
   const panels = {
     distanceChart: (slot) => (
       <DistanceChart riderIds={riderIds} riders={riders} riderLive={riderLive}
-        winCondition={winCondition} goalM={goalM} events={events} elapsedS={elapsedS}
+        winCondition={winCondition} goalM={goalM} elapsedS={elapsedS}
         clockSeconds={clockSeconds} maxDistanceM={maxDistance} zoneBox={slot?.zoneBox} />
     ),
     povGrid: () => (
@@ -116,12 +116,5 @@ CycleRaceScreen.propTypes = {
   cadenceBands: PropTypes.array,
   backgroundPlexId: PropTypes.string,
   showSpeedos: PropTypes.bool,
-  lapLengthM: PropTypes.number,
-  events: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.number,
-    type: PropTypes.oneOf(['dnf']),
-    riderId: PropTypes.string,
-    seriesIndex: PropTypes.number,
-    distanceM: PropTypes.number
-  }))
+  lapLengthM: PropTypes.number
 };

@@ -16,9 +16,11 @@ const FALLBACK_AVATAR = `${AVATAR_BASE}/user`;
  * nowhere on the race screen (UX §4.1). One row per rider: rank ordinal
  * (shared placements render the same ordinal, e.g. two "1st"), lane-color
  * chip, 32px avatar (ghost-treated), truncated name, and either the
- * gap-to-next-above or — for the group leader / a finisher / an overtime-DNF
- * row — their own total/final metric. Finished riders pin to the top with a
- * flag; overtime and DNF riders sink to the bottom, dimmed.
+ * gap-to-next-above or — for the group leader / a finisher / an overtime row —
+ * their own total/final metric. Finished riders pin to the top with a flag;
+ * overtime riders follow the active pack, dimmed; parked riders come last,
+ * dimmed, reading "Parked · 412 m" (or "No signal · 412 m" when their sensor
+ * never reported). A recap shows a rider saved as stopped as "Stopped at 412 m".
  *
  * The header line folds in what used to be the oval's "Last / Now" lap strip
  * (audit UX §4.2 — wide mode lost all lap info once the oval was gone): it's
@@ -29,7 +31,7 @@ export default function StandingsTower({
   riderIds = [], riders = {}, riderLive = {}, winCondition = 'distance',
   lapLengthM = 0, elapsedS = 0, lapLabel = null
 }) {
-  const { finishedRows, activeRows, overtimeRows, dnfRows } = buildStandingsGroups({ riderIds, riders, riderLive });
+  const { finishedRows, activeRows, overtimeRows, parkedRows } = buildStandingsGroups({ riderIds, riders, riderLive });
 
   let rankCounter = 0;
   const displayRows = [];
@@ -52,9 +54,14 @@ export default function StandingsTower({
     rankCounter += 1;
     displayRows.push({ r, rank: r.placement ?? rankCounter, kind: 'overtime', displayText: formatDistance(r.distanceM) });
   });
-  dnfRows.forEach((r) => {
+  parkedRows.forEach((r) => {
     rankCounter += 1;
-    displayRows.push({ r, rank: r.placement ?? rankCounter, kind: 'dnf', displayText: 'DNF' });
+    displayRows.push({
+      r, rank: r.placement ?? rankCounter, kind: 'parked',
+      displayText: r.stopped
+        ? `Stopped at ${formatDistance(r.distanceM)}`
+        : `${r.noSensor ? 'No signal' : 'Parked'} · ${formatDistance(r.distanceM)}`
+    });
   });
 
   // Header: the leader (furthest along, whether finished or not) drives the
@@ -84,7 +91,7 @@ export default function StandingsTower({
         {displayRows.map(({ r, rank, kind, displayText }) => (
           <li
             key={r.id}
-            className={`cg-tower__row${kind === 'finished' ? ' cg-tower__row--finished' : ''}${(kind === 'overtime' || kind === 'dnf') ? ' cg-tower__row--dim' : ''}`}
+            className={`cg-tower__row${kind === 'finished' ? ' cg-tower__row--finished' : ''}${(kind === 'overtime' || kind === 'parked') ? ' cg-tower__row--dim' : ''}`}
             data-testid="tower-row"
             data-rider={r.id}
             data-kind={kind}

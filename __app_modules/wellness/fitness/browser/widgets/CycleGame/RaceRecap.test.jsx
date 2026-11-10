@@ -109,6 +109,27 @@ describe('RaceRecap', () => {
     expect(speeds[0]).not.toBe('0 km/h');
   });
 
+  it('shows a participant saved as stopped as "Stopped at …" on the final standings, never DNF', () => {
+    const cand = {
+      ...candidate,
+      winCondition: 'time', goalM: null, timeCapS: 3,
+      participants: [
+        candidate.participants[0],
+        { id: 'dad', displayName: 'Dad', avatarSrc: '/api/v1/static/img/users/dad',
+          distanceSeries: JSON.stringify([30, 41]), hrSeries: JSON.stringify([]),
+          finalDistanceM: 41, finalTimeS: null, placement: 2, stopped: true }
+      ]
+    };
+    const { getByTestId, getAllByTestId } = render(<RaceRecap candidate={cand} onClose={() => {}} />);
+    fireEvent.click(getByTestId('race-recap-play'));
+    act(() => { vi.advanceTimersByTime(12000); }); // to the final frame
+    const row = getAllByTestId('tower-row').find((r) => r.dataset.rider === 'dad');
+    expect(row.querySelector('[data-testid="tower-metric"]').textContent).toBe('Stopped at 41 m');
+    expect(getByTestId('race-recap').textContent).not.toMatch(/DNF/);
+    // Replay is history: nobody is told to pedal.
+    expect(getByTestId('race-recap').textContent).not.toContain('Pedal to rejoin');
+  });
+
   it('threads the per-equipment gauge max into the recap speedometers', () => {
     const cand = { ...candidate, participants: [{ ...candidate.participants[0], gaugeMaxRpm: 250 }] };
     const { container } = render(<RaceRecap candidate={cand} onClose={() => {}} />);

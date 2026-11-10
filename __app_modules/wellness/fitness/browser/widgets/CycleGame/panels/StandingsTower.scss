@@ -68,7 +68,7 @@
       background: rgba(t.$cg-cyan, 0.1);
       border: 1px solid rgba(t.$cg-cyan, 0.28);
     }
-    // Overtime/DNF — out of contention; visually recede without disappearing.
+    // Overtime/parked — out of contention; visually recede without disappearing.
     &--dim { opacity: 0.55; }
   }
 
@@ -129,8 +129,7 @@
     letter-spacing: 0.04em;
   }
 
-  // Overtime dims to a neutral muted tone (still honestly riding); DNF reuses
-  // the danger red the penalty/sensor-lost chips use elsewhere in the HUD.
+  // Overtime and parked both dim to a neutral muted tone: parked is a pause,
+  // not an error, so it never takes the danger red.
   &__row--dim &__metric { color: t.$cg-muted; }
-  &__row[data-kind='dnf'] &__metric-text { color: t.$cg-danger; }
 }

@@ -34,20 +34,22 @@ describe('gapToAboveText — gap math for both win conditions (audit UX §4.1)',
 });
 
 describe('buildStandingsGroups — classification', () => {
-  it('splits dnf into its own group, sorted by distance covered (best progress first)', () => {
-    const riders = { a: { cumulativeDistanceM: 100 }, b: { cumulativeDistanceM: 300 } };
-    const riderLive = { a: { dnf: true }, b: { dnf: true } };
-    const { dnfRows, activeRows, finishedRows, overtimeRows } = buildStandingsGroups({ riderIds: ['a', 'b'], riders, riderLive });
-    expect(activeRows).toHaveLength(0);
-    expect(finishedRows).toHaveLength(0);
-    expect(overtimeRows).toHaveLength(0);
-    expect(dnfRows.map((r) => r.id)).toEqual(['b', 'a']);
+  it('splits parked riders into their own group, after the active riders, distance intact', () => {
+    const riders = { a: { cumulativeDistanceM: 100 }, b: { cumulativeDistanceM: 300 }, c: { cumulativeDistanceM: 50 } };
+    const riderLive = { a: { parked: true }, b: { parked: true }, c: {} };
+    const groups = buildStandingsGroups({ riderIds: ['a', 'b', 'c'], riders, riderLive });
+    expect(groups).not.toHaveProperty('dnfRows');
+    expect(groups.activeRows.map((r) => r.id)).toEqual(['c']);
+    expect(groups.finishedRows).toHaveLength(0);
+    expect(groups.overtimeRows).toHaveLength(0);
+    expect(groups.parkedRows.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(groups.parkedRows.map((r) => r.distanceM)).toEqual([300, 100]);
   });
-  it('dnf takes priority over overtime when (implausibly) both flags are set', () => {
+  it('parked takes priority over overtime when (implausibly) both flags are set', () => {
     const riders = { a: { cumulativeDistanceM: 50 } };
-    const riderLive = { a: { dnf: true, overtime: true } };
-    const { dnfRows, overtimeRows } = buildStandingsGroups({ riderIds: ['a'], riders, riderLive });
-    expect(dnfRows.map((r) => r.id)).toEqual(['a']);
+    const riderLive = { a: { parked: true, overtime: true } };
+    const { parkedRows, overtimeRows } = buildStandingsGroups({ riderIds: ['a'], riders, riderLive });
+    expect(parkedRows.map((r) => r.id)).toEqual(['a']);
     expect(overtimeRows).toHaveLength(0);
   });
   it('a rider with no live/persisted placement falls back to distance-desc ordering', () => {
@@ -98,6 +100,26 @@ describe('StandingsTower — 4-rider fixture (ghost + finished + overtime + acti
     expect(rows[3].className).toContain('cg-tower__row--dim');
     expect(rows[3].querySelector('[data-testid="tower-metric"]').textContent).toContain('300 m');
     expect(rows[3].querySelector('[data-testid="tower-metric"]').textContent).toContain('OT');
+  });
+
+  it('lists a parked rider after the active riders, dimmed, as Parked with their distance; never DNF', () => {
+    const live = { ...riderLive, user_3: { ...riderLive.user_3, placement: 2, parked: true } };
+    render(<StandingsTower riderIds={riderIds} riders={riders} riderLive={live} winCondition="distance" />);
+    const rows = screen.getAllByTestId('tower-row');
+    const order = rows.map((r) => r.dataset.rider);
+    expect(order.indexOf('user_3')).toBeGreaterThan(order.indexOf('ghost:r1:user_2'));
+    const row = rows.find((r) => r.dataset.rider === 'user_3');
+    expect(row.dataset.kind).toBe('parked');
+    expect(row.className).toContain('cg-tower__row--dim');
+    expect(row.querySelector('[data-testid="tower-metric"]').textContent).toBe('Parked · 488 m');
+    expect(screen.getByTestId('standings-tower').textContent).not.toMatch(/DNF/);
+  });
+
+  it('words a no-sensor rider as No signal', () => {
+    const live = { ...riderLive, user_3: { ...riderLive.user_3, parked: true, noSensor: true } };
+    render(<StandingsTower riderIds={riderIds} riders={riders} riderLive={live} winCondition="distance" />);
+    const row = screen.getAllByTestId('tower-row').find((r) => r.dataset.rider === 'user_3');
+    expect(row.querySelector('[data-testid="tower-metric"]').textContent).toBe('No signal · 488 m');
   });
 
   it('assigns lane colors by the ORIGINAL rider order, matching every other panel', () => {

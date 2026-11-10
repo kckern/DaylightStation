@@ -30,7 +30,10 @@
     background: var(--cycle-event-accent, #{cg.$cg-accent});
   }
 
-  &--dnf { --cycle-event-accent: #{cg.$cg-danger}; }
+  // Parked is a pause, not an error: a calm, muted accent.
+  &--parked { --cycle-event-accent: #{cg.$cg-muted}; }
+  // No sensor is equipment trouble: amber, like the ready strip's NO SIGNAL.
+  &--nosensor { --cycle-event-accent: #{cg.$cg-warn}; }
   &--overtime { --cycle-event-accent: #{cg.$cg-warn}; }
   &--info { --cycle-event-accent: #{cg.$cg-accent}; }
 

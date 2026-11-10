@@ -107,6 +107,34 @@ describe('povWorld', () => {
     expect(w.lastM).toBeCloseTo(40); // framing anchors on the mover, not the parked rider
   });
 
+  // A parked rider (idle past the park window) stays on the road but must not
+  // stretch the camera: framing comes from riders who are not parked.
+  it('frames the un-parked riders only: a parked trailer does not set lastM', () => {
+    const riders = [mk('a', 0, 80, 80), mk('b', 1, 60, 60), { ...mk('c', 2, 10, 10), parked: true }];
+    const w = povWorld({ ...base, riders, frac: 1, laneCount: 3 });
+    expect(w.lastM).toBeCloseTo(60); // the last UN-parked rider, not c at 10 m
+    expect(w.anchorM).toBeCloseTo(60);
+    expect(w.leaderM).toBeCloseTo(80);
+    const c = w.riders.find((r) => r.id === 'c');
+    expect(c).toBeTruthy(); // still on the road
+    expect(c.parked).toBe(true);
+    expect(w.riders.find((r) => r.id === 'a').parked).toBe(false);
+  });
+
+  it('a parked rider ahead of the field does not set leaderM', () => {
+    const riders = [{ ...mk('a', 0, 300, 300), parked: true }, mk('b', 1, 60, 60), mk('c', 2, 40, 40)];
+    const w = povWorld({ ...base, riders, frac: 1, laneCount: 3 });
+    expect(w.leaderM).toBeCloseTo(60);
+    expect(w.lastM).toBeCloseTo(40);
+  });
+
+  it('falls back to every rider when everyone is parked', () => {
+    const riders = [{ ...mk('a', 0, 80, 80), parked: true }, { ...mk('b', 1, 20, 20), parked: true }];
+    const w = povWorld({ ...base, riders, frac: 1, laneCount: 2 });
+    expect(w.leaderM).toBeCloseTo(80);
+    expect(w.lastM).toBeCloseTo(20);
+  });
+
   it('frames the whole grid (incl. parked riders) when framingMoved is false', () => {
     const riders = [mk('a', 0, 40, 40), mk('b', 1, 0, 0)];
     const w = povWorld({ ...base, riders, frac: 1, laneCount: 2, framingMoved: false });
@@ -210,11 +238,25 @@ describe('povBadges (rank + gap-to-next)', () => {
     expect(badges.b.text).toBe('2nd · −0:08');
   });
 
-  it('shows DNF/overtime riders their state without a gap', () => {
-    const riderLive = { a: { placement: 1 }, b: { dnf: true }, c: { overtime: true } };
+  it('shows parked/overtime riders their state and distance without a gap, never DNF', () => {
+    const riderLive = { a: { placement: 1 }, b: { parked: true }, c: { overtime: true } };
     const badges = povBadges({ riderIds: ['a', 'b', 'c'], riders, riderLive });
-    expect(badges.b.gapText).toBe('DNF');
+    expect(badges.b.gapText).toBe('Parked · 80 m');
     expect(badges.c.gapText).toBe('50 m'); // overtime shows real distance
+    Object.values(badges).forEach((b) => expect(b.text).not.toMatch(/DNF/));
+  });
+
+  it('words a no-sensor rider as No signal, not parked', () => {
+    const riderLive = { a: { placement: 1 }, b: { parked: true, noSensor: true } };
+    const badges = povBadges({ riderIds: ['a', 'b'], riders, riderLive });
+    expect(badges.b.gapText).toBe('No signal · 80 m');
+  });
+
+  it('a parked rider is not the chased rider: the next active rider gaps to the one above them', () => {
+    // b is parked between a and c; c's gap is to a, not to the parked b.
+    const riderLive = { a: { placement: 1 }, b: { placement: 2, parked: true }, c: { placement: 3 } };
+    const badges = povBadges({ riderIds: ['a', 'b', 'c'], riders, riderLive, winCondition: 'distance' });
+    expect(badges.c.gapText).toBe('−70 m');
   });
 
   // T9 review: a finished (non-DNF, non-overtime) rider's badge always showed

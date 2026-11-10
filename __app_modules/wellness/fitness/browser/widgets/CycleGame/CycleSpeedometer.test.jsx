@@ -77,6 +77,37 @@ describe('CycleSpeedometer', () => {
     const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
     expect(queryByTestId('cycle-speedometer-finished')).toBeNull();
   });
+  // Parked: idle past the park window. Shown in the FINISHED overlay's slot,
+  // calm wording, gone the moment the prop clears (the tick they pedal).
+  it('shows a PARKED overlay with "Pedal to rejoin" when parked, and clears it when not', () => {
+    const { getByTestId, queryByTestId, container, rerender } = render(<CycleSpeedometer {...baseProps} parked />);
+    const overlay = getByTestId('cycle-speedometer-parked');
+    expect(overlay.textContent).toContain('PARKED');
+    expect(overlay.textContent).toContain('Pedal to rejoin');
+    expect(overlay.textContent).not.toMatch(/DNF/);
+    expect(container.querySelector('.cycle-speedometer--parked')).not.toBeNull();
+    rerender(<CycleSpeedometer {...baseProps} parked={false} />);
+    expect(queryByTestId('cycle-speedometer-parked')).toBeNull();
+    expect(container.querySelector('.cycle-speedometer--parked')).toBeNull();
+  });
+  it('words a no-sensor rider as NO SIGNAL / Check the sensor, not parked', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} parked noSensor />);
+    const overlay = getByTestId('cycle-speedometer-parked');
+    expect(overlay.textContent).toContain('NO SIGNAL');
+    expect(overlay.textContent).toContain('Check the sensor');
+    expect(overlay.textContent).not.toContain('PARKED');
+    expect(overlay.textContent).not.toContain('Pedal to rejoin');
+  });
+  it('a parked rider whose sensor has dropped is told about the sensor, not told to pedal', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} parked sensorLost />);
+    const overlay = getByTestId('cycle-speedometer-parked');
+    expect(overlay.textContent).toContain('NO SIGNAL');
+    expect(overlay.textContent).not.toContain('Pedal to rejoin');
+  });
+  it('shows no parked overlay for a finished rider', () => {
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} finished placement={1} parked />);
+    expect(queryByTestId('cycle-speedometer-parked')).toBeNull();
+  });
   it('renders the leader medal in the odometer only when isLeader is true', () => {
     const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
     expect(queryByTestId('cycle-speedometer-leader-medal')).toBeNull();

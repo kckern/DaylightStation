@@ -24,7 +24,7 @@ export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, speedKmh = 0, cadenceBands = [], tickStep, labelStep,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
   isGhost = false, finished = false, placement = null, isLeader = false,
-  sensorLost = false
+  sensorLost = false, parked = false, noSensor = false
 }) {
   // Tick spacing scales with the gauge max (a fixed 10/30 crowds a 250 dial);
   // explicit tickStep/labelStep props still override when provided.
@@ -116,9 +116,24 @@ export default function CycleSpeedometer({
     clockRef.current.onTick(null);
   }, [needleDeg, distM]);
 
+  // Away from the pedals (never for a finisher). The overlay sits in the
+  // FINISHED overlay's slot. A rider whose sensor never reported, or whose
+  // sensor has dropped, is told to check the sensor rather than to pedal: they
+  // may be pedalling the whole time. Otherwise the calm PARKED card. Both clear
+  // the render after the controller sees movement.
+  const away = !finished && (parked || noSensor);
+  const signalProblem = noSensor || sensorLost;
+
   return (
-    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
+    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${away ? ' cycle-speedometer--parked' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
       <div className="cycle-speedometer__gauge" style={{ width: px, height: px, fontSize: overlayFontPx }}>
+        {away && (
+          <div className={`cycle-speedometer__parked${signalProblem ? ' cycle-speedometer__parked--no-signal' : ''}`}
+            data-testid="cycle-speedometer-parked">
+            <span className="cycle-speedometer__parked-title">{signalProblem ? 'NO SIGNAL' : 'PARKED'}</span>
+            <span className="cycle-speedometer__parked-sub">{signalProblem ? 'Check the sensor' : 'Pedal to rejoin'}</span>
+          </div>
+        )}
         {finished && (
           <div className="cycle-speedometer__finished" data-testid="cycle-speedometer-finished">
             <span className="cycle-speedometer__finished-flag" aria-hidden="true"><RaceFlagIcon /></span>
@@ -263,5 +278,7 @@ CycleSpeedometer.propTypes = {
   finished: PropTypes.bool,
   placement: PropTypes.number,
   isLeader: PropTypes.bool,
-  sensorLost: PropTypes.bool
+  sensorLost: PropTypes.bool,
+  parked: PropTypes.bool,
+  noSensor: PropTypes.bool
 };

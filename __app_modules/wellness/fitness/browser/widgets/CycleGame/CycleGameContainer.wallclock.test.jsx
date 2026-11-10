@@ -17,7 +17,6 @@ vi.mock("../../nav/usePersistentVolume.js", () => ({
 }));
 
 import CycleGameContainer from "./CycleGameContainer.jsx";
-import { readFreshCheckpoint } from "../../lib/cycleGame/raceCheckpoint.js";
 
 // Production constants mirrored here (not exported) — see CycleGameContainer.jsx.
 const RACE_TICK_MS = 1000;
@@ -266,11 +265,11 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     // The consequence the audit demanded: the hold now expires to a real 0,
     // so the controller's idle clock (previously starved by the infinite hold)
     // finally parks user_2. He had a connected reading before the sensor died,
-    // so he is parked, not "no sensor". Read from the tick-15 checkpoint.
-    const cp = readFreshCheckpoint(window.sessionStorage, Date.now());
-    expect(cp.raceState.parked).toContain('user_2');
-    expect(cp.raceState.noSensor).not.toContain('user_2');
-    expect(cp.raceState.parked).not.toContain('user_1');
+    // so he is parked, not "no sensor".
+    const parkedCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_parked');
+    expect(parkedCalls.map(([, p]) => p.userId)).toEqual(['user_2']);
+    const noSensorCalls = logSpy.warn.mock.calls.filter(([event]) => event === 'cycle_game.rider_no_sensor');
+    expect(noSensorCalls).toHaveLength(0);
   });
 
   it('clears the sensor_lost flag and logs sensor_recovered once the sensor reconnects', () => {

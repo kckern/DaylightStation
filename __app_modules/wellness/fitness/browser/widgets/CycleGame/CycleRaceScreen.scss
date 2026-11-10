@@ -89,7 +89,7 @@
   // readout (the leader shows total distance) so distance is read here, not off a
   // y-axis. De-overlapped vertically; a connector links a displaced tag back to its
   // true line endpoint.
-  // Tag / connector / marker positions are driven imperatively by the shared motion
+  // Tag / connector positions are driven imperatively by the shared motion
   // clock (DistanceChart) — NO CSS position transition here (that was one of the five
   // desynced clocks). They glide on the same linear rAF.
   &__tags { position: absolute; inset: 0; pointer-events: none; }
@@ -119,29 +119,11 @@
   }
   &__tag.is-leader &__tag-gap { color: cg.$cg-cyan; }
   &__tag.is-ghost &__tag-avatar { opacity: 0.9; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.28); }
+  // Parked rider (idle past the park window, or no sensor): the tag recedes
+  // with its lane. Opacity is not touched by the motion clock (it only moves
+  // left/top), so it is safe to set here.
+  &__tag.is-parked { opacity: 0.4; }
 
-  // Officiating-event markers — a glyph chip pinned to the spot on a rider's
-  // lane where a DNF fired. Persist for the whole race.
-  &__markers { position: absolute; inset: 0; pointer-events: none; }
-  &__marker {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    // Position glides on the shared motion clock (imperative); the pop-in is a
-    // one-shot STATE transition (a new event fired) and stays as a CSS animation.
-    animation: cg-marker-pop 0.32s cubic-bezier(0.2, 0.9, 0.3, 1) both;
-  }
-  // SVG glyph (audit UX §6.3 — 🛑/⏱️ emoji → icon set); the chip's own text-size
-  // is kept as an explicit floor so a future glyph swap can't regress under
-  // 1.1rem (T11).
-  &__marker-glyph {
-    display: flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; border-radius: 50%;
-    font-size: 1.1rem; line-height: 1; // was 0.95rem
-    background: cg.$cg-panel-2;
-    box-shadow: 0 0 0 2px var(--marker-color, #{cg.$cg-accent}), 0 2px 8px rgba(0, 0, 0, 0.6);
-    svg { width: 0.95em; height: 0.95em; display: block; }
-  }
-  &__marker--dnf &__marker-glyph { color: cg.$cg-danger; box-shadow: 0 0 0 2px cg.$cg-danger, 0 2px 8px rgba(0, 0, 0, 0.6); }
 
   // ── Speedometers ──────────────────────────────────────────────────────────
   // Reserved bottom band; ALWAYS a single row (gauges scale down to fit, never
@@ -154,9 +136,4 @@
     flex-wrap: nowrap;
     overflow: hidden;
   }
-}
-
-@keyframes cg-marker-pop {
-  from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }

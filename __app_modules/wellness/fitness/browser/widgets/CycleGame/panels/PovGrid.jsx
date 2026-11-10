@@ -125,13 +125,15 @@ const clamp = (lo, hi, v) => Math.max(lo, Math.min(hi, v));
  */
 export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM = 0, finishM = null, winCondition = 'distance' }) {
   const distOf = (id) => Math.max(0, riders[id]?.cumulativeDistanceM || 0);
-  // Start-line lineup (audit C5): EVERY non-DNF rider (incl. ghosts and not-yet-
-  // moved riders parked at z=0) renders from mount, so the screen is never empty
-  // at GO. The distM>0 filter now applies ONLY to camera framing, and only after
-  // a start grace (see the rAF loop's framingMoved) — a stalled rider still can't
-  // crush the scale mid-race, but the start line is always framed. DNF riders are
-  // off the course entirely.
-  const lineupIds = riderIds.filter((id) => !riderLive[id]?.dnf);
+  // Start-line lineup (audit C5): EVERY rider (incl. ghosts and not-yet-moved
+  // riders waiting at z=0) renders from mount, so the screen is never empty at
+  // GO. The distM>0 filter applies ONLY to camera framing, and only after a start
+  // grace (see the rAF loop's framingMoved) — a stalled rider still can't crush
+  // the scale mid-race, but the start line is always framed. Nobody is removed:
+  // a parked rider stays on the road, dimmed, and is left out of the framing
+  // (povWorld reads `parked`).
+  const lineupIds = riderIds;
+  const isParked = (id) => !!riderLive[id]?.parked;
   const colorOf = (id) => LINE_COLORS[riderIds.indexOf(id) % LINE_COLORS.length];
   // Fixed-screen-size rank + gap-to-next badge per card, mirroring the standings
   // tower (T8) off the SAME live `standings()` placement the container forwards.
@@ -159,12 +161,14 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
   if (!logRef.current) logRef.current = getLogger().child({ component: 'pov-grid' });
 
   // Capture each new data tick (only on real change) for the rAF loop to interpolate.
-  // All non-DNF riders are captured — the unmoved ones sit at prev=cur=0 (z=0) on
-  // the start line until they roll.
+  // All riders are captured — the unmoved ones sit at prev=cur=0 (z=0) on the
+  // start line until they roll. `parked` rides along so framing can skip them.
   useEffect(() => {
     const prev = prevDistRef.current;
+    const prevParked = tickRef.current.riders || [];
     const changed = lineupIds.length !== Object.keys(prev).length
-      || lineupIds.some((id) => prev[id] !== distOf(id));
+      || lineupIds.some((id) => prev[id] !== distOf(id))
+      || lineupIds.some((id) => (prevParked.find((r) => r.id === id)?.parked || false) !== isParked(id));
     if (!changed) return;
     tickRef.current = {
       riders: lineupIds.map((id, idx) => ({
@@ -172,6 +176,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         prev: Number.isFinite(prev[id]) ? prev[id] : distOf(id),
         cur: distOf(id),
         isGhost: !!riders[id]?.isGhost,
+        parked: isParked(id),
       })),
       tickAt: performance.now(),
     };
@@ -542,7 +547,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           const isGhost = !!riders[id]?.isGhost;
           const live = riderLive[id] || {};
           return (
-            <div key={id} className={`cg-pov__marker${isGhost ? ' is-ghost cg-ghost' : ''}`} data-testid="pov-marker"
+            <div key={id} className={`cg-pov__marker${isGhost ? ' is-ghost cg-ghost' : ''}${isParked(id) ? ' is-parked' : ''}`} data-testid="pov-marker"
               ref={(el) => { markerEls.current[id] = el; }} style={{ '--cg-pov-color': color }}>
               <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc} fallbackSrc={FALLBACK_AVATAR}
                 heartRate={live.heartRate} zoneId={live.zoneId} zoneColor={live.zoneColor || color}
@@ -555,7 +560,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           below each card by the rAF loop. Rank/gap mirror the standings tower. */}
       <div className="cg-pov__badges" aria-hidden="true">
         {lineupIds.map((id) => (
-          <div key={id} className={`cg-pov__badge${riders[id]?.isGhost ? ' is-ghost' : ''}`} data-testid="pov-badge"
+          <div key={id} className={`cg-pov__badge${riders[id]?.isGhost ? ' is-ghost' : ''}${isParked(id) ? ' is-parked' : ''}`} data-testid="pov-badge"
             data-rider={id} ref={(el) => { badgeEls.current[id] = el; }}
             style={{ '--cg-pov-color': colorOf(id), opacity: 0 }}>
             {badges[id]?.text || ''}

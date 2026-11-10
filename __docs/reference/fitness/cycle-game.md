@@ -70,7 +70,7 @@ Race screen + fixed layout ─────────────────�
   widgets/CycleGame/RaceLayoutManager.jsx       fixed layout by field size → zones
   widgets/CycleGame/panels/PanelSlot.jsx        per-zone mount (stable render prop)
   widgets/CycleGame/panels/SpeedoRow.jsx        bottom gauges row (per-rider colour tint)
-  widgets/CycleGame/panels/DistanceChart.jsx    climbing lanes + goal line + event markers
+  widgets/CycleGame/panels/DistanceChart.jsx    climbing lanes + goal line + terminus tags
   widgets/CycleGame/panels/SplitsChart.jsx      compact per-lap splits (live order early)
   widgets/CycleGame/panels/PovGrid.jsx          vertical Tron-style POV distance grid
   widgets/CycleGame/panels/OvalTrack.jsx        avatars circling a whole-race oval
@@ -160,8 +160,8 @@ React phases in `applySnapshot()`.
 
 ### A dead sensor is not a lazy child
 
-The garage screen told a child *"Did Not Finish — Stopped pedaling for 30s"* while he was
-pedalling. His cadence sensor had sent nothing for four minutes. Verified in production: the
+The garage screen once told a child *"Did Not Finish — Stopped pedaling for 30s"* while he was
+pedalling (nothing on screen says DNF any more). His cadence sensor had sent nothing for four minutes. Verified in production: the
 `niceday` bike's ANT+ sensor emitted no packets at all across three races that each forfeited him
 at the threshold with rpm 0, then woke, and his very next race registered 73 rpm. On the same day
 there were 29 `sensor_lost` events against 13 `sensor_recovered`, across all five machines.
@@ -172,13 +172,17 @@ a rider is in at most one of them:
 
 - **`parked`** — the rider's sensor reported and they stopped (or never started). Nobody is
   eliminated: a parked rider keeps their distance and is back in the race on their next pedal
-  stroke.
-- **`noSensor`** — the rider's sensor never reported at all. Never captioned "stopped pedaling";
-  the toast reads *"{name} — no sensor · Their bike never reported. Check the sensor."* Logged as
-  `cycle_game.rider_no_sensor` at warn, so the store can answer "dead sensor or idle kid?" — a
-  question that previously required diffing race telemetry against raw bridge output by hand. The
-  rider leaves this set the moment their sensor reports movement. If the sensor connects but the
-  rider is not pedalling, they move to `parked`.
+  stroke. On screen they are dimmed and left out of the chart and camera framing, their
+  speedometer shows **PARKED · Pedal to rejoin**, the standings tower lists them last as
+  *"Parked · 412 m"*, and one calm toast reads *"{name} is parked · Pedal to rejoin"*.
+- **`noSensor`** — the rider's sensor never reported at all. Never captioned "stopped pedaling" or
+  "parked": the speedometer shows **NO SIGNAL · Check the sensor**, the tower reads
+  *"No signal · 0 m"*, and the toast reads *"{name} — no sensor · Their bike never reported. Check
+  the sensor."* Logged as `cycle_game.rider_no_sensor` at warn, so the store can answer "dead
+  sensor or idle kid?" — a question that previously required diffing race telemetry against raw
+  bridge output by hand. The rider leaves this set the moment their sensor reports movement
+  (`cycle_game.rider_sensor_recovered`). If the sensor connects but the rider is not pedalling,
+  they move to `parked`.
 - **`overtime`** — the rider was still riding when the clock or the operator closed the race. A
   parked or no-sensor rider is never also overtime.
 
@@ -189,10 +193,10 @@ riders do not hold a race open: once a live rider has finished they are skipped,
 unfinished rider is away the race closes after `allParkedEndS`.
 
 **The SENSOR chip has two windows now.** It was gated on a rider having been connected once, so a
-sensor that never appeared produced no warning *ever* — and the forfeit was then the only thing
-anyone saw. A rider who was connected and drops is flagged at `SENSOR_LOST_GAP_TICKS` (9); a rider
+sensor that never appeared produced no warning *ever* — and being set aside was then the only
+thing anyone saw. A rider who was connected and drops is flagged at `SENSOR_LOST_GAP_TICKS` (9); a rider
 who has never connected gets the longer `SENSOR_ABSENT_GAP_TICKS` (15), which is past the mounting
-and lock-on window but still short of the start-grace that ends their race — so the warning arrives
+and lock-on window but still short of the start-grace that sets them aside — so the warning arrives
 while it can still be acted on. A rider sitting on a bike with a working sensor reports
 `connected: true, rpm: 0`, never advances the gap clock, and is never flagged at all.
 
@@ -451,7 +455,7 @@ restart to take effect.
 | `start_countdown_s` | 3 | Stoplight countdown length |
 | `cadence_zones` / `zones` | [] | HR zones; each `{ id, distance_multiplier, color }` |
 | `hrless_multiplier` | 1 | Distance multiplier for a rider with no HR strap |
-| `race_idle_dnf_s` | 20 | The park window: seconds of zero RPM (after a rider has started) before they are parked. Parked riders resume on their next pedal stroke. Reaches the controller as `raceIdleDnfS`; the controller prefers `parkIdleS` when both are given |
+| `race_idle_dnf_s` | 20 | The park window (the key keeps its old name; nobody is eliminated): seconds of zero RPM (after a rider has started) before they are parked. Parked riders resume on their next pedal stroke. Reaches the controller as `raceIdleDnfS`; the controller prefers `parkIdleS` when both are given |
 | `race_start_grace_s` | 30 | Seconds a rider may report zero RPM **before their first movement** before they are parked as a no-show. More generous than `race_idle_dnf_s` to cover magnetless cadence sensors (e.g. the tricycle's COOSPO BK467) that take ~20s to lock onto rotation from a dead stop |
 | `hot_start_penalty_s` | — | **Retired.** The start is rolling and there is no penalty box; nothing reads this key (the container, the lobby config builder and the controller all ignore it). Safe to delete from the YAML |
 | `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
@@ -521,9 +525,8 @@ standings[] }`.
 
 Wraps the engine with the lifecycle, **parking**, the rules for when a race
 closes, and the operator **finish-now** action. `getState()` returns `{ phase,
-countdownRemaining, parked[], noSensor[], overtime[], endedEarly, engineState }`,
-plus the legacy keys `dnf: []`, `penalized: []` and `penaltyInfo: {}`, which are
-always empty and remain only until their last readers are removed.
+countdownRemaining, parked[], noSensor[], overtime[], endedEarly, engineState }`.
+The old `dnf`, `penalized` and `penaltyInfo` keys are gone; nothing reads them.
 
 - **Countdown:** `startCountdown()` then `countdownTick()` decrements from
   `startCountdownS`; reaching the green light begins racing (`_beginRacing` builds
@@ -625,10 +628,14 @@ Climbing gradient lanes toward the goal, over a decimating, transform-aware
 - **Leading-edge interpolation:** the engine ticks at 1 Hz, so each lane's newest
   point glides from its previous position to the current one over the interval via a
   rAF clock, instead of snapping.
-- **Officiating-event markers** (DNF) are re-projected onto the lane where
-  they fired (`xFor(seriesIndex)`, `yFor(distanceM)`); a lane **starts at first
-  movement** (`chartTrim.plotStartIndex`), so a late starter emerges
-  to the right of the origin instead of drawing a flat zero line.
+- **Parked riders leave the framing.** The leader the tag gaps are measured
+  from, a time race's distance window and the log-scale crowding test all use
+  the riders who are not parked (`riderLive[id].parked`, which covers no-sensor
+  riders too), falling back to everyone when the whole field is parked. A parked
+  lane and its tag draw at 40% opacity; the tag shows the rider's own distance.
+  There are no event markers on the chart.
+- A lane **starts at first movement** (`chartTrim.plotStartIndex`), so a late
+  starter emerges to the right of the origin instead of drawing a flat zero line.
 
 ### 9.3 SplitsChart
 
@@ -650,17 +657,28 @@ avatar** — a pooled DOM label positioned by the render loop. Rider motion
 interpolates per-frame between 1 Hz ticks; React renders structure only — the
 rAF loop owns motion.
 
+Every rider stays on the road. A parked rider is passed to `povWorld` with
+`parked: true`: they keep their position, but the leader, the trailing rider
+and the camera anchor come from riders who are not parked (everyone, if the
+whole field is parked), so a stopped rider never stretches the camera. Their
+avatar card and rank badge carry `is-parked` (dimmed), and the badge reads
+"2nd · Parked · 412 m" (or "No signal · …").
+
 ### 9.5 StandingsTower & SpeedoRow
 
 - **StandingsTower** — the persistent rank/gap ladder the audit found missing from
   every live race (UX §4.1): rank ordinal (shared placements render the same
   ordinal — a dead heat shows two "1st"), lane-color chip, a 32px avatar
   (ghost-treated), the display name, and either a gap-to-next-above reading or —
-  for the group leader, a finisher, or an overtime/DNF row — their own
+  for the group leader, a finisher, or an overtime row — their own
   total/final metric. Distance races express the gap in metres; time races
   project it through the pace of the rider immediately above into a
   time-behind estimate. Finished riders pin to the top with a flag; overtime
-  and DNF riders sink to the bottom, dimmed. Its header line folds in what used
+  riders follow the active pack, dimmed; parked riders (`parkedRows`, kind
+  `parked`) come last, dimmed, reading "Parked · 412 m" or "No signal · 412 m".
+  Nobody chases a parked rider: the next active rider's gap is to the active
+  rider above them. In a recap, a participant saved as `stopped` reads
+  "Stopped at 412 m" once their recording has run out. Its header line folds in what used
   to be the oval's "Last / Now" lap strip ("Lap 3 · Last 0:42 · Now 0:12"),
   fed by the same `riders[id].lapSplits` data. Renders in **both** layouts —
   sidebar mode (replacing the oval's old slot) and wide mode (a docked
@@ -720,19 +738,24 @@ riders; a 7th+ reuses a hue.
 
 ## 11. Officiating events
 
-When a rider newly DNFs, the container records an event
-`{ id, type: 'dnf', riderId, displayName, seriesIndex, distanceM }` into
-`raceEvents` and enqueues a **toast**:
+The tick diffs the controller's sets each second and raises edge events. Toasts
+go through **`CycleEventToast`** — a single-slot, non-blocking toast
+auto-dismissing after ~4 s (or on click); extra events queue and it **never
+pauses the race**.
 
-- **`CycleEventToast`** — a single-slot, non-blocking toast
-  auto-dismissing after ~4 s (or on click). Extra events queue. **Never pauses the
-  race.**
-- **Chart markers** — `raceEvents` is threaded into `DistanceChart`, which
-  re-projects each event onto the rider's lane as a persistent glyph chip. *(These
-  live in `DistanceChart` because that's where the chart's coordinate projection
-  lives.)*
-- Logs: `cycle_game.rider_dnf`, and `cycle_game.cadence_change` on every sensor
-  connect/drop transition. There is no penalty lifecycle (rolling start, §10).
+| Edge | Toast (variant) | Log |
+|---|---|---|
+| A rider enters `parked` | *"{name} is parked · Pedal to rejoin"* (`parked`, calm muted accent, one per park) | `cycle_game.rider_parked` (INFO) |
+| A parked rider pedals | none | `cycle_game.rider_resumed` (INFO, with `awayS`) |
+| A rider enters `noSensor` | *"{name} — no sensor · Their bike never reported. Check the sensor."* (`nosensor`, amber) | `cycle_game.rider_no_sensor` (WARN) |
+| A no-sensor rider starts moving | none | `cycle_game.rider_sensor_recovered` (INFO) |
+| Riders land in `overtime` | one summary *"Race closed — N riders still riding"* (`overtime`) | `cycle_game.rider_overtime` per rider (INFO) |
+
+`cycle_game.cadence_change` logs every sensor connect/drop transition. There is
+no DNF toast, no DNF log, no penalty lifecycle (rolling start, §10) and no
+event markers on the chart. Riders away at a tick (parked ∪ no sensor) are
+passed to `deriveRaceSnapshot` as `awayIds`, so a parked rider who is ahead on
+distance is never announced as taking the lead.
 
 ---
 
@@ -742,13 +765,19 @@ When a rider newly DNFs, the container records an event
   (slide-into-podium, rows fly/fade in, metrics count up — the count-up is disabled
   under `prefers-reduced-motion`, and tests pass `animate={false}`), the full
   **lap-by-lap splits table** is shown (`SplitsChart final`), 🥇🥈🥉 medals (numeric
-  for 4+), the winner gets a 👑 and a larger avatar, and DNF rows show "DNF". The board **auto-returns to the lobby** after
+  for 4+), the winner gets a 👑 and a larger avatar. A rider who was parked or
+  had no sensor at the close (`stopped` = parked ∪ noSensor, passed by the
+  container) reads **"Stopped at 412 m"**: their real distance, muted, no crown.
+  An overtime rider keeps their distance with an **OT** tag, explained in the
+  legend. Nothing on the board says DNF. The board **auto-returns to the lobby** after
   `results_dwell_s` with a visible countdown, and a manual **Exit** button leaves
   immediately. Metric is finish-time (distance race) or distance covered (time race).
 - **`RaceRecap`** — full-screen modal that replays a saved race by feeding
   synthesized rider state into `CycleRaceScreen` over ~12 s regardless of race
   length, with play/pause + scrub, then the final standings. **RPM is always 0 in
-  recap.**
+  recap.** A participant saved with `stopped: true` (carried by
+  `mapRaceRecordToCandidate`) reads "Stopped at …" in the standings tower once
+  their recording has run out; the recap never shows the live PARKED overlay.
 - **Ending vs discarding.** The race menu (§3) offers **End race here** (saves
   the ride as incomplete and shows this board) and **Discard race** (saves
   nothing, back to the lobby). The board of an ended-early ride carries no
@@ -772,8 +801,18 @@ with the `cg-ghost` treatment.
   scale proportionally** (`scaleBands`) so a real sprint is the top red tier.
 - **Multiplier badge** (×2, ×3, ×5…) shows when the zone multiplier > 1, pinned
   top-right of the avatar.
-- **Overlay states:** **FINISHED** (🏁 + placement, gauge parked). There is no
-  penalty overlay (rolling start, §10).
+- **Overlay states** (one at a time, in the same slot):
+  - **FINISHED** — 🏁 + placement for a rider over the line in a distance race.
+  - **PARKED · Pedal to rejoin** — `parked` (idle past the park window). Calm,
+    not an alarm; the gauge dims.
+  - **NO SIGNAL · Check the sensor** — `noSensor`, **or** `parked` while the
+    `sensorLost` chip is up. A rider whose sensor has dropped may be pedalling
+    the whole time, so they are told to check the sensor, never to pedal.
+  Both away overlays clear on the render after the controller sees movement.
+  The **SENSOR** chip (rpm slot) is independent and can show under NO SIGNAL,
+  where it agrees; it never shows under PARKED, because PARKED is only chosen
+  when the sensor is not lost. A finisher never shows an away overlay. There is
+  no penalty overlay (rolling start, §10).
 - **Avatar compositor layer.** `.cycle-speedometer__avatar { transform: translateZ(0);
   will-change }` so the needle's per-tick repaint doesn't flicker the overlaid avatar.
 
@@ -811,8 +850,8 @@ participants:
     display_name: "User_3"
     equipment: "cycle_ace"
     final_distance_m: 3000
-    final_time_s: 142          # null if DNF / time race
-    placement: 1               # null if DNF
+    final_time_s: 142          # null if the rider did not finish / time race
+    placement: 1               # null if unplaced
     distance_series: "<RLE>"   # SessionSerializerV3-encoded
     hr_series: "<RLE>"
     rpm_series: "<RLE>"
@@ -995,7 +1034,7 @@ resolves.
   fallback, for races predating `course_id`) `win_condition` matches **and** the
   goal matches — `goal_m` for a distance course, `time_cap_s` for a time course.
 - **Attempt value:** a **distance** course ranks by `final_time_s` (lower is
-  better; a participant with a null `final_time_s` — DNF or unfinished — doesn't
+  better; a participant with a null `final_time_s` — stopped or unfinished — doesn't
   qualify). A **time** course ranks by `final_distance_m` (higher is better; any
   value `> 0` qualifies).
 - **Best per rider:** each rider's single best qualifying attempt in the window;
@@ -1073,6 +1112,47 @@ discards a newer shard and rewrites it in its own format.
 Two builds of different ages sharing one data tree therefore stay correct, at
 the cost of a full rebuild each time the other one has written last.
 
+### Race index: rebuilds, warm-up and logging
+
+The race index (`_index/{YYYY-MM}.json` beside the race folders) is derived data.
+A day is rebuilt from its race files when its month has no readable shard, when
+the shard was written by another index version, or when the day's folder changed
+(the day after any save). A rebuild parses race files synchronously, so:
+
+- **It yields.** The datastore returns to the event loop after each rebuilt day,
+  so other requests are served during a long rebuild.
+- **One pass at a time.** Per race folder, overlapping readers share one pass
+  rather than each parsing the files. A race saved while a pass is running is
+  left out of that pass's shards and read from its file by the next pass; a
+  reader that arrives after such a save waits for the running pass and starts a
+  fresh one, so it always sees the save.
+- **It is warmed at boot.** Five seconds after the fitness API is composed,
+  `CycleRaceService.warmIndex()` builds the index for the default household, so a
+  cold rebuild is not paid inside a rider's Start (the rival-pool lookup has a
+  1500 ms budget). The warm-up never blocks startup and never throws.
+- **Shards are written atomically** (staged beside the file, then renamed).
+
+| Event | Level | Data | When |
+|---|---|---|---|
+| `fitness.cycle_races.index.rebuilt` | info | `{ days, races, ms, reason }` | A pass rebuilt at least one day. `reason` is `version` (a shard of another index version was discarded), `cold` (a month had no readable shard) or `stale-day` (only days a good shard did not cover or whose folder changed). The strongest reason in the pass is reported, in that order. |
+| `fitness.cycle_races.index.warmed` | debug | `{ entries, ms }` | The boot warm-up finished. |
+| `fitness.cycle_races.index.warm_failed` | warn | `{ error }` | The boot warm-up failed; the first reader builds the index instead. |
+
+A `rebuilt` event with `days: 1, reason: 'stale-day'` after each saved race is
+normal. One with hundreds of days and `reason: 'version'` outside a deploy means
+an older build sharing the data tree rewrote the shards.
+
+### Rival-pool request: length parsing
+
+`GET /api/v1/fitness/cycle-races/rival-pool` takes `winCondition` (`distance` or
+`time`) and the length that belongs to it (`goalM` for distance, `timeCapS` for
+time). The length must be a plain decimal number: digits, optionally a point and
+more digits (`1500`, `1609.3`). It is not trimmed, so padding, a sign, an
+exponent, hex and separators are rejected, as is a zero length, a repeated
+parameter, or the other race type's length. A rejected request answers `400`
+with an error body, without reading the index. When cycle races are not wired
+the route answers `503`.
+
 ### Gems (economy achievement evidence)
 
 `application/measures/fitnessAchievementProvider.mjs` feeds the economy's
@@ -1114,9 +1194,23 @@ by `raceId` (+ `elapsedS` where relevant).
 - **Spine (INFO, always on)** — `phase_transition` (`{from,to}`), `config` (full
   effective config + zone multipliers, once at start), `ghost_rider` (per-ghost
   series point-counts), `staged` / `staging` / `race_started` / `race_finished` /
-  `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_dnf`, `cadence_change`,
+  `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_parked` /
+  `rider_resumed`, `rider_sensor_recovered`, `rider_overtime`, `cadence_change`,
   `ended_early`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`,
   `pace_rival`.
+- **Away riders.** `cycle_game.rider_parked` (INFO) `{ raceId, userId,
+  elapsedS, distanceM }` when a rider enters `parked`;
+  `cycle_game.rider_resumed` (INFO) the same plus `awayS` (race seconds spent
+  parked) when they pedal again; `cycle_game.rider_no_sensor` (WARN) `{ raceId,
+  userId, equipmentId, elapsedS }` when a rider's sensor never reported, and
+  `cycle_game.rider_sensor_recovered` (INFO) `{ raceId, userId, equipmentId,
+  elapsedS, distanceM }` when that rider starts moving. **Removed:**
+  `cycle_game.rider_dnf`, `penalty_entered`, `penalty_awaiting_stop`,
+  `penalty_cleared`, and the `falseStarters` field of `race_started`; the
+  `hotStartPenaltyS` field of `cycle_game.config` is gone too.
+- **`cycle_game.drama_event`** (DEBUG) — every edge `deriveRaceSnapshot` fires
+  (`LEAD_CHANGE`, `RIDER_FINISHED`, `PHOTO_FINISH`, `FINAL_LAP`,
+  `LAPPING_IMMINENT`): `{ raceId, type, riderIds, elapsedS }`.
 - **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
   and will be saved as incomplete: `{ raceId, elapsedS, control: 'race-menu.end' }`.
   It replaces `cycle_game.finish_forced`, which is no longer emitted.
@@ -1168,7 +1262,8 @@ by `raceId` (+ `elapsedS` where relevant).
   (`error` holds the message, else `null`).
 - **Firehose (DEBUG, off by default)** — `cycle_game.tick`: one event/second with a
   per-rider array `{ rpm, cadenceConnected, hr, zoneId, multiplier, distanceM,
-  penalized, finished }`, read from post-resolution engine state.
+  parked, finished }` (`parked` = parked or no sensor), read from post-resolution
+  engine state.
 - **Failures (WARN/ERROR)** — `music_unavailable` / `music_deferred` / `sfx`,
   `race_saved` / `history_error`.
 
@@ -1233,16 +1328,28 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   the mercy window, the all-away close, `finishNow` setting `endedEarly`),
   `raceCheckpoint` (race state round-trip, `checkpointOutcome`).
 - **Components (vitest + @testing-library):** `CycleRaceScreen` (clock, speedometers,
-  lanes, event markers, `showSpeedos`, `zoneBox` forwarding),
+  lanes, a parked rider worded "Parked" with no DNF / False start anywhere,
+  `showSpeedos`, `zoneBox` forwarding),
   `RaceLayoutManager` (mode by field size, splits-before-chart), `DistanceChart`,
   `SplitsChart` (sticky/live-order/final), `PovGrid`, `OvalTrack`, `SpeedoRow`,
   `CycleSpeedometer`, `CountdownStoplight` (ALL3→RED→YELLOW→GREEN), `RaceResults`
-  (exit button, count-up under `animate={false}`), `RaceMenu` (guard time, focus,
-  Escape), and `CycleGameContainer.raceMenu.test.jsx` (the menu in each phase,
-  what each save records, the ended-early results line).
+  (exit button, count-up under `animate={false}`, "Stopped at"), `RaceMenu`
+  (guard time, focus, Escape), `RiderReadyStrip` (READY / NO SIGNAL / AUTO),
+  `StandingsTower` (`parkedRows`), `CycleGameContainer.raceMenu.test.jsx` (the
+  menu in each phase, what each save records, the ended-early results line),
+  `CycleGameContainer.parked.test.jsx` (PARKED overlay, tower row, toast and
+  `rider_parked` / `rider_resumed`; NO SIGNAL for a no-sensor rider; a parked
+  rider ahead is never announced as leader; "Stopped at" on the board) and
+  `CycleGameContainer.lobbyBikes.test.jsx` (the lobby's `bikes[].sensorLive`).
+  The rolling start is covered in `CycleGameContainer.test.jsx` (staging reaches
+  the countdown while a rider pedals; NO SIGNAL on the ready strip).
 - **Live (Playwright):** `tests/live/flow/fitness/cycle-game-*.runtime.test.mjs`
   drive the simulator through full lifecycles via `FitnessSimHelper`
   (`launchCycleGame`, `setEquipmentRider`, `setRpm`).
+  `cycle-game-rolling-start` pedals through staging and the countdown and checks
+  that nothing holds the start and distance counts from green;
+  `cycle-game-lifecycle` checks an idle rider is parked (never `rider_dnf`) and
+  reads "Stopped at" on the board.
 - **Run unit tests:** `npx vitest run --config tests/_infrastructure/config/vitest.config.mjs <path>`.
 
 > Visual verification (kiosk 1280×720) is the only way to catch SCSS/layout

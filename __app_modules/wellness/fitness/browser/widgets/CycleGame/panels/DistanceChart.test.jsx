@@ -178,6 +178,76 @@ describe('DistanceChart panel', () => {
     expect(gaps).toContain('1.50 km');   // leader shows total distance
     expect(gaps).toContain('−600 m');    // trailer shows gap behind leader
   });
+  // ── Parked riders (idle past the park window) leave the framing ───────────
+  it('a parked rider ahead on distance is not the leader the gaps are measured from', () => {
+    const riders = {
+      a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 900, distanceSeries: [900] },
+      b: { userId: 'b', displayName: 'B', cumulativeDistanceM: 500, distanceSeries: [500] },
+      c: { userId: 'c', displayName: 'C', cumulativeDistanceM: 400, distanceSeries: [400] },
+    };
+    const { getAllByTestId } = render(
+      <DistanceChart riderIds={['a', 'b', 'c']} riders={riders}
+        riderLive={{ a: { parked: true }, b: {}, c: {} }}
+        winCondition="distance" goalM={3000} elapsedS={1} />
+    );
+    const tags = getAllByTestId('chart-tag');
+    const gaps = getAllByTestId('chart-tag-gap').map((g) => g.textContent);
+    expect(gaps).toContain('500 m');   // b leads the un-parked field
+    expect(gaps).toContain('−100 m');  // c is measured from b, not from parked a
+    expect(gaps).not.toContain('−500 m');
+    // The parked rider's tag keeps their own distance, dimmed.
+    const parkedTag = tags.find((t) => t.textContent.includes('900 m'));
+    expect(parkedTag.className).toContain('is-parked');
+    expect(tags.filter((t) => t.className.includes('is-leader'))).toHaveLength(1);
+    expect(tags.find((t) => t.className.includes('is-leader')).className).not.toContain('is-parked');
+  });
+
+  it('draws a parked lane at reduced opacity', () => {
+    const riders = {
+      a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 900, distanceSeries: [900] },
+      b: { userId: 'b', displayName: 'B', cumulativeDistanceM: 500, distanceSeries: [500] },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['a', 'b']} riders={riders} riderLive={{ a: { parked: true }, b: {} }}
+        winCondition="distance" goalM={3000} elapsedS={1} />
+    );
+    const [lineA, lineB] = container.querySelectorAll('[data-testid="race-line"]');
+    expect(Number(lineA.getAttribute('opacity'))).toBeCloseTo(0.4);
+    expect(Number(lineB.getAttribute('opacity'))).toBe(1);
+  });
+
+  it('a parked rider far ahead does not stretch a time race window or trip the log scale', () => {
+    const riders = {
+      far:  { displayName: 'F', cumulativeDistanceM: 2000, distanceSeries: [2000] },
+      lead: { displayName: 'L', cumulativeDistanceM: 100,  distanceSeries: [100] },
+      next: { displayName: 'N', cumulativeDistanceM: 60,   distanceSeries: [60] },
+    };
+    const { queryByTestId, getByTestId } = render(
+      <DistanceChart riderIds={['far', 'lead', 'next']} riders={riders}
+        riderLive={{ far: { parked: true }, lead: {}, next: {} }}
+        winCondition="time" goalM={3000} elapsedS={10} />
+    );
+    expect(queryByTestId('chart-log-chip')).toBeNull();
+    expect(getByTestId('chart-axis-y').textContent).not.toMatch(/km/);
+  });
+
+  it('a parked rider bunched with an active one does not trip the log scale', () => {
+    // Without the parked rider the two active riders are 80 m apart in a 150 m
+    // window: linear. Counting the parked rider 2 m off the leader would read
+    // as a crowded field and flip to the log scale.
+    const riders = {
+      lead:   { displayName: 'L', cumulativeDistanceM: 100, distanceSeries: [100] },
+      parked: { displayName: 'P', cumulativeDistanceM: 98,  distanceSeries: [98] },
+      next:   { displayName: 'N', cumulativeDistanceM: 20,  distanceSeries: [20] },
+    };
+    const { queryByTestId } = render(
+      <DistanceChart riderIds={['lead', 'parked', 'next']} riders={riders}
+        riderLive={{ lead: {}, parked: { parked: true }, next: {} }}
+        winCondition="time" goalM={3000} elapsedS={10} />
+    );
+    expect(queryByTestId('chart-log-chip')).toBeNull();
+  });
+
   it('ghost-treats the terminus avatar for a ghost rider', () => {
     const riders = {
       me:    { userId: 'me', displayName: 'Me', cumulativeDistanceM: 1200, distanceSeries: [1200] },

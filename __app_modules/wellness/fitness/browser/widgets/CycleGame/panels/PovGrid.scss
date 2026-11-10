@@ -28,6 +28,10 @@
       border-radius: 50%;
     }
     &.is-ghost { opacity: 0.6; }
+    // Parked (idle past the park window, or no sensor): still on the road,
+    // receded. The rAF loop owns the wrapper's inline opacity, so dim the
+    // avatar inside it rather than the wrapper.
+    &.is-parked .circular-user-avatar { opacity: 0.4; filter: grayscale(0.6); }
   }
 
   // Fixed-screen-size rank + gap badge ("2nd · −12 m"). NOT depth-scaled — it
@@ -53,6 +57,8 @@
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
     will-change: transform, opacity;
     &.is-ghost { filter: saturate(0.4) brightness(0.9); }
+    // Parked label — dimmed (the loop owns inline opacity, so use filter).
+    &.is-parked { filter: saturate(0.3) brightness(0.55); }
   }
 
   // Horizon leader chip — pinned high-centre, fixed size, plate-styled.

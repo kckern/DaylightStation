@@ -61,9 +61,10 @@
     color: cg.$cg-cyan; font-variant-numeric: tabular-nums;
     text-shadow: 0 0 8px rgba(33, 230, 255, 0.4);
   }
-  &__metric--dnf { color: cg.$cg-faint; }
+  // Stopped (parked or no signal at the close): their real distance, muted.
+  &__metric--stopped { color: cg.$cg-muted; text-shadow: none; }
   // "OT" badge — the rider kept riding until the race closed around them; a real
-  // metric, just tagged, never the grey "DNF" treatment above.
+  // metric, just tagged.
   &__ot-tag {
     display: inline-block;
     margin-left: 0.5em;

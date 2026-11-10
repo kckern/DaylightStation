@@ -90,16 +90,25 @@ describe('PovGrid (three.js shell)', () => {
     expect(getByTestId('race-pov')).toBeTruthy();
   });
 
-  it('renders a card per non-DNF rider, INCLUDING not-yet-moved riders (start-line lineup)', () => {
+  it('renders a card per rider, INCLUDING not-yet-moved riders (start-line lineup)', () => {
     // audit C5: everyone lines up at z=0 from mount so the road is never empty at GO.
     const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b', 'c']} riders={riders} riderLive={{}} />);
-    expect(getAllByTestId('pov-marker')).toHaveLength(3); // c (0 m) now parked on the line
+    expect(getAllByTestId('pov-marker')).toHaveLength(3); // c (0 m) waits on the line
   });
 
-  it('excludes DNF riders', () => {
+  // Nobody is eliminated: a parked rider stays on the road, dimmed, and their
+  // label reads Parked with their distance.
+  it('keeps a parked rider on the road with a dimmed (is-parked) label', () => {
     const { getAllByTestId } = render(
-      <PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{ b: { dnf: true } }} />);
-    expect(getAllByTestId('pov-marker')).toHaveLength(1);
+      <PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{ b: { parked: true } }} />);
+    const markers = getAllByTestId('pov-marker');
+    expect(markers).toHaveLength(2);
+    const badges = getAllByTestId('pov-badge');
+    const parkedBadge = badges.find((el) => el.getAttribute('data-rider') === 'b');
+    expect(parkedBadge.className).toContain('is-parked');
+    expect(parkedBadge.textContent).toContain('Parked');
+    expect(markers[1].className).toContain('is-parked');
+    expect(markers[0].className).not.toContain('is-parked');
   });
 
   it('marks ghost riders', () => {

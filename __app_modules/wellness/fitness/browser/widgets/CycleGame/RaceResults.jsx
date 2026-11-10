@@ -43,17 +43,19 @@ function useCountUp(target, active, durationMs = 950) {
 }
 
 // One finishing-order row — slides into place (CSS) with its metric ticking up.
-function ResultRow({ s, riders, winCondition, dnfSet, overtimeSet, index, animate }) {
+function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, animate }) {
   const name = riders[s.userId]?.displayName || s.userId;
-  const isDnf = dnfSet.has(s.userId);
+  // Stopped = parked or no-sensor when the race closed. Nobody is eliminated:
+  // they keep the distance they rode, worded "Stopped at 412 m".
+  const isStopped = stoppedSet.has(s.userId);
   // Overtime = the race closed around them (mercy-kill window / operator Finish)
-  // while they were still honestly riding — distinct from DNF (idle-quit). They
-  // keep their real metric, just tagged "OT" (audit game-design #7).
-  const isOvertime = !isDnf && overtimeSet.has(s.userId);
+  // while they were still riding. They keep their real metric, just tagged
+  // "OT" (audit game-design #7).
+  const isOvertime = !isStopped && overtimeSet.has(s.userId);
   const finished = s.finishTimeS != null;
   // Time races never stamp finishTimeS, so "finished" must not gate the crown —
-  // exclude only DNF/overtime (a race closed before ANY finisher has no winner).
-  const isWinner = s.placement === 1 && !isDnf && !isOvertime;
+  // exclude only stopped/overtime (a race closed before ANY finisher has no winner).
+  const isWinner = s.placement === 1 && !isStopped && !isOvertime;
   const rider = riders[s.userId] || {};
   const isGhost = !!rider.isGhost || String(s.userId).startsWith('ghost:');
   const sourceId = isGhost ? resolveParticipantIdentity(String(s.userId)).sourceId : s.userId;
@@ -62,12 +64,12 @@ function ResultRow({ s, riders, winCondition, dnfSet, overtimeSet, index, animat
 
   // Finishers headline the win-condition's counterpart metric (distance race →
   // finish time; time race → distance covered), exactly as before. Anyone who
-  // did NOT finish — overtime included — has no finish time, so they always show
-  // their real distance traveled; DNF alone masks it with the literal 'DNF'.
-  const metricTarget = isDnf ? NaN : finished ? (winCondition === 'distance' ? s.finishTimeS : s.distanceM) : s.distanceM;
+  // did NOT finish — overtime and stopped included — has no finish time, so they
+  // always show their real distance traveled ("Stopped at …" when stopped).
+  const metricTarget = finished && !isStopped ? (winCondition === 'distance' ? s.finishTimeS : s.distanceM) : s.distanceM;
   const counted = useCountUp(metricTarget, animate);
-  const metric = isDnf
-    ? 'DNF'
+  const metric = isStopped
+    ? `Stopped at ${formatDistance(counted)}`
     : finished ? (winCondition === 'distance' ? fmtTime(counted) : formatDistance(counted))
     : formatDistance(counted);
 
@@ -88,7 +90,7 @@ function ResultRow({ s, riders, winCondition, dnfSet, overtimeSet, index, animat
           {name}
           {isWinner && <span className="race-results__crown" aria-hidden="true">👑</span>}
         </span>
-        <span className={`race-results__metric${isDnf ? ' race-results__metric--dnf' : ''}`}>
+        <span className={`race-results__metric${isStopped ? ' race-results__metric--stopped' : ''}`}>
           {metric}
           {isOvertime && (
             <span className="race-results__ot-tag" title="Still riding when the race closed" aria-label="overtime">OT</span>
@@ -100,7 +102,7 @@ function ResultRow({ s, riders, winCondition, dnfSet, overtimeSet, index, animat
 }
 ResultRow.propTypes = {
   s: PropTypes.object.isRequired, riders: PropTypes.object.isRequired,
-  winCondition: PropTypes.string, dnfSet: PropTypes.instanceOf(Set), overtimeSet: PropTypes.instanceOf(Set),
+  winCondition: PropTypes.string, stoppedSet: PropTypes.instanceOf(Set), overtimeSet: PropTypes.instanceOf(Set),
   index: PropTypes.number, animate: PropTypes.bool
 };
 
@@ -113,14 +115,13 @@ ResultRow.propTypes = {
  * countdown. Distance races headline finish time; time races headline distance.
  */
 export default function RaceResults({
-  standings = [], riders = {}, winCondition = 'distance', dnf = [], overtime = [],
+  standings = [], riders = {}, winCondition = 'distance', stopped = [], overtime = [],
   lapLengthM = 0, elapsedS = 0, secondsLeft = null, animate = true, onExit = null,
   ladderNotes = [], saveFailed = false
 }) {
-  const dnfSet = new Set(dnf);
+  const stoppedSet = new Set(stopped);
   const overtimeSet = new Set(overtime);
-  const anyDnf = standings.some((s) => dnfSet.has(s.userId));
-  const anyOvertime = standings.some((s) => !dnfSet.has(s.userId) && overtimeSet.has(s.userId));
+  const anyOvertime = standings.some((s) => !stoppedSet.has(s.userId) && overtimeSet.has(s.userId));
   // Only review splits when laps were actually completed. With no completed laps
   // SplitsChart falls back to a "live order" list that just duplicates the podium
   // above — an empty box that inflates the page (short races never finish a lap).
@@ -139,7 +140,7 @@ export default function RaceResults({
       <ol className="race-results__list">
         {standings.map((s, i) => (
           <ResultRow key={s.userId} s={s} riders={riders} winCondition={winCondition}
-            dnfSet={dnfSet} overtimeSet={overtimeSet} index={i} animate={animate} />
+            stoppedSet={stoppedSet} overtimeSet={overtimeSet} index={i} animate={animate} />
         ))}
       </ol>
 
@@ -158,11 +159,8 @@ export default function RaceResults({
         </div>
       )}
 
-      {(anyDnf || anyOvertime) && (
+      {anyOvertime && (
         <dl className="race-results__legend" data-testid="race-results-legend">
-          {anyDnf && (
-            <div className="race-results__legend-item"><dt>DNF</dt><dd>Did Not Finish — stopped pedaling</dd></div>
-          )}
           {anyOvertime && (
             <div className="race-results__legend-item"><dt>OT</dt><dd>Still riding when the race closed</dd></div>
           )}
@@ -189,7 +187,7 @@ RaceResults.propTypes = {
   standings: PropTypes.array,
   riders: PropTypes.object,
   winCondition: PropTypes.string,
-  dnf: PropTypes.array,
+  stopped: PropTypes.array,
   overtime: PropTypes.array,
   lapLengthM: PropTypes.number,
   elapsedS: PropTypes.number,

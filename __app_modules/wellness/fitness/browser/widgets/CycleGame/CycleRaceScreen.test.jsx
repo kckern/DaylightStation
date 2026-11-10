@@ -87,18 +87,22 @@ describe('CycleRaceScreen', () => {
     expect(vid.tagName.toLowerCase()).toBe('video');
     expect(vid.getAttribute('src')).toContain('plex/123456');
   });
-  it('renders an officiating-event marker per event on the chart', () => {
-    const events = [
-      { id: 1, type: 'dnf', riderId: 'user_2', seriesIndex: 2, distanceM: 900 }
-    ];
-    const { getAllByTestId, getByTestId } = render(<CycleRaceScreen {...props} events={events} />);
-    expect(getByTestId('race-event-markers')).toBeTruthy();
-    expect(getAllByTestId(/^race-event-marker-/)).toHaveLength(1);
-    expect(getByTestId('race-event-marker-dnf')).toBeTruthy();
-  });
-  it('ignores events for riders not on the chart', () => {
-    const events = [{ id: 1, type: 'dnf', riderId: 'ghost-nobody', seriesIndex: 1, distanceM: 100 }];
-    const { queryByTestId } = render(<CycleRaceScreen {...props} events={events} />);
+  // Nobody is eliminated and nobody is penalised: a parked rider shows as
+  // Parked on every surface, and no surface ever says DNF or False start.
+  it('shows a parked rider as Parked with their distance, and never shows DNF or False start', () => {
+    const parked = {
+      ...props,
+      riderLive: {
+        user_3: { ...props.riderLive.user_3, placement: 1 },
+        user_2: { ...props.riderLive.user_2, placement: 2, parked: true, rpm: 0 }
+      }
+    };
+    const { getByTestId, queryByTestId } = render(<CycleRaceScreen {...parked} />);
+    const screenText = getByTestId('cycle-race-screen').textContent;
+    expect(screenText).toContain('Parked · 900 m');
+    expect(screenText).toContain('PARKED');
+    expect(screenText).not.toMatch(/DNF/);
+    expect(screenText).not.toMatch(/False start/i);
     expect(queryByTestId('race-event-markers')).toBeNull();
   });
   it('hides the speedometer row when showSpeedos is false', () => {

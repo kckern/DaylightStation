@@ -60,22 +60,12 @@ export function RaceFlagIcon() {
   );
 }
 
-/** Octagonal stop-sign glyph for the DNF chart/toast marker (was 🛑). */
+/** Octagonal stop-sign glyph for the no-sensor toast (was 🛑). */
 export function StopSignIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="M8 3h8l5 5v8l-5 5H8l-5-5V8Z" />
       <line x1="7" y1="12" x2="17" y2="12" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** No-entry / prohibition glyph for a served false-start penalty (was ⛔). */
-export function NoEntryIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="9" />
-      <line x1="5.5" y1="18.5" x2="18.5" y2="5.5" />
     </svg>
   );
 }

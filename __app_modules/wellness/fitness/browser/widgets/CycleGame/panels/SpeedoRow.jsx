@@ -51,6 +51,8 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             placement={live.placement}
             isLeader={!!live.isLeader}
             sensorLost={!!live.sensorLost}
+            parked={!!live.parked}
+            noSensor={!!live.noSensor}
             size={speedoSize}
           />
         );
