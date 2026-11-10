@@ -49,7 +49,7 @@ Lobby + lifecycle ────────────────────�
   widgets/CycleGame/CountdownStoplight.jsx     ALL3·RED·YELLOW·GREEN stoplight (presentational)
 
 Simulation ────────────────────────────────────────────────────────────────────
-  lib/cycleGame/CycleRaceController.js          lifecycle SM + DNF + false-start box
+  lib/cycleGame/CycleRaceController.js          lifecycle SM + parking + race close  
   lib/cycleGame/CycleRaceEngine.js              tick/scoring/finish/lap splits/ghost
   lib/cycleGame/distanceModel.js                distance + zone-multiplier math
   lib/cycleGame/equipmentRpm.js                 per-equipment gauge max + abuse cap
@@ -139,7 +139,7 @@ React phases in `applySnapshot()`.
 | `staging` | `staged` | `RiderReadyStrip` ("to your bikes") | Start, if `staging_buffer_ms > 0` | buffer elapsed **and** all riders at RPM 0 (see §10) |
 | `countdown` | `staged`→`countdown` | `CountdownStoplight` + `RiderReadyStrip` | staging gate clears (or Start if buffer 0) | countdown reaches the green light |
 | `go` | `racing` | `CountdownStoplight` (GREEN) — engine already live | green light | brief hold (`GO_HOLD_MS` ≈ 800 ms) |
-| `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` | go-hold ends | all riders finished/DNF, time cap, or operator **Finish race** |
+| `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` | go-hold ends | distance: every live rider finished or in overtime (parked and no-sensor riders stop holding it open once a live rider has finished); time: the cap; either: every live unfinished rider away for `allParkedEndS` (15 s); or operator **Finish race** |
 | `results` | `finished`→`results` | `RaceResults` | engine `finished` | manual **Exit** or auto-dwell countdown → `idle` |
 
 ### A dead sensor is not a lazy child
@@ -150,21 +150,27 @@ pedalling. His cadence sensor had sent nothing for four minutes. Verified in pro
 at the threshold with rpm 0, then woke, and his very next race registered 73 rpm. On the same day
 there were 29 `sensor_lost` events against 13 `sensor_recovered`, across all five machines.
 
-From rpm alone a still bike and a silent sensor are identical, so the rider's sensor connectivity
-now reaches the controller on its `connected` input and it keeps a third set beside `dnf` and
-`overtime`:
+From rpm alone a still bike and a sensor that sends nothing are identical, so the rider's sensor
+connectivity reaches the controller on its `connected` input. The controller keeps three sets, and
+a rider is in at most one of them:
 
-- **`dnf`** — the rider's sensor reported and they stopped (or never started). An honest forfeit.
-- **`noSensor`** — the rider's sensor never reported at all. Not a forfeit and never captioned
-  "stopped pedaling"; the toast reads *"{name} — no sensor · Their bike never reported. Check the
-  sensor."* Logged as `cycle_game.rider_no_sensor` at warn, so the store can answer "dead sensor or
-  idle kid?" — a question that previously required diffing race telemetry against raw bridge output
-  by hand.
+- **`parked`** — the rider's sensor reported and they stopped (or never started). Nobody is
+  eliminated: a parked rider keeps their distance and is back in the race on their next pedal
+  stroke.
+- **`noSensor`** — the rider's sensor never reported at all. Never captioned "stopped pedaling";
+  the toast reads *"{name} — no sensor · Their bike never reported. Check the sensor."* Logged as
+  `cycle_game.rider_no_sensor` at warn, so the store can answer "dead sensor or idle kid?" — a
+  question that previously required diffing race telemetry against raw bridge output by hand. The
+  rider leaves this set the moment their sensor reports movement. If the sensor connects but the
+  rider is not pedalling, they move to `parked`.
+- **`overtime`** — the rider was still riding when the clock or the operator closed the race. A
+  parked or no-sensor rider is never also overtime.
 
 A rider who HAS ridden keeps the idle clock even if their sensor drops later: they demonstrably had
-one, so a silent bike honestly reads as stopping. A missing `connected` flag counts as connected, so
-callers that do not report sensor state are unchanged. No-sensor riders still close the race, or it
-would wait for them forever.
+one, so a bike that stops reporting is read as a rider who stopped. A missing `connected` flag
+counts as connected, so callers that do not report sensor state are unchanged. Parked and no-sensor
+riders do not hold a race open: once a live rider has finished they are skipped, and if every live
+unfinished rider is away the race closes after `allParkedEndS`.
 
 **The SENSOR chip has two windows now.** It was gated on a rider having been connected once, so a
 sensor that never appeared produced no warning *ever* — and the forfeit was then the only thing
@@ -291,9 +297,9 @@ restart to take effect.
 | `start_countdown_s` | 3 | Stoplight countdown length |
 | `cadence_zones` / `zones` | [] | HR zones; each `{ id, distance_multiplier, color }` |
 | `hrless_multiplier` | 1 | Distance multiplier for a rider with no HR strap |
-| `race_idle_dnf_s` | 20 | Seconds of zero RPM (after a rider has started) before they're DNF'd |
-| `race_start_grace_s` | 30 | Seconds a rider may report zero RPM **before their first movement** before a no-show DNF. More generous than `race_idle_dnf_s` to cover magnetless cadence sensors (e.g. the tricycle's COOSPO BK467) that take ~20s to lock onto rotation from a dead stop |
-| `hot_start_penalty_s` | 0 | False-start penalty seconds (0 = disabled) |
+| `race_idle_dnf_s` | 20 | The park window: seconds of zero RPM (after a rider has started) before they are parked. Parked riders resume on their next pedal stroke. Reaches the controller as `raceIdleDnfS`; the controller prefers `parkIdleS` when both are given |
+| `race_start_grace_s` | 30 | Seconds a rider may report zero RPM **before their first movement** before they are parked as a no-show. More generous than `race_idle_dnf_s` to cover magnetless cadence sensors (e.g. the tricycle's COOSPO BK467) that take ~20s to lock onto rotation from a dead stop |
+| `hot_start_penalty_s` | 0 | No longer read by the controller, which has no penalty box. The key is retired in a later change |
 | `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
 | `results_dwell_s` | 20 | Results auto-return countdown before returning to the lobby |
 | `default_background` | null | Ambient background Plex id for the race screen |
@@ -358,33 +364,42 @@ standings[] }`.
 
 ## 8. The controller (`CycleRaceController`)
 
-Wraps the engine with the lifecycle, **DNF**, **false-start box**, and the operator
-**finish-now** action. `getState()` returns `{ phase, countdownRemaining, dnf[],
-penalized[], penaltyInfo{}, engineState }`.
+Wraps the engine with the lifecycle, **parking**, the rules for when a race
+closes, and the operator **finish-now** action. `getState()` returns `{ phase,
+countdownRemaining, parked[], noSensor[], overtime[], endedEarly, engineState }`,
+plus the legacy keys `dnf: []`, `penalized: []` and `penaltyInfo: {}`, which are
+always empty and remain only until their last readers are removed.
 
 - **Countdown:** `startCountdown()` then `countdownTick()` decrements from
   `startCountdownS`; reaching the green light begins racing (`_beginRacing` builds
   the engine).
-- **Idle → DNF:** per non-ghost rider, an idle timer increments while `rpm === 0`
-  and resets when pedalling; the rider joins `dnf` (and their input is zeroed for
-  the rest of the race) once the timer crosses its threshold. The threshold is
-  **two-phase**: before the rider's first `rpm > 0` reading it's `race_start_grace_s`
-  (a generous no-show window covering magnetless-sensor lock-on lag); after they've
-  registered any movement it drops to the normal `race_idle_dnf_s` (gave-up window).
-- **False start (pre-green only):** riders may **legally start pedalling on GREEN** —
-  the engine is live at the green light. A false start is **only** a rider who
-  pedalled **before** green. The container tracks pre-green pedallers during the
-  countdown and commits them via `controller.markFalseStarters(userIds)`, which puts
-  each into the penalty box (and suppresses the engine's first-tick auto-check).
-- **Penalty box:** a boxed rider's meter is locked (input zeroed, no distance) for
-  `hot_start_penalty_s`, and releases only when **both** the timer has elapsed **and**
-  the rider has returned to **RPM 0** — keep pedalling and you stay boxed.
-  `getState().penaltyInfo[userId] = { remainingS, totalS, awaitingStop }`. Disabled
-  when `hot_start_penalty_s = 0`.
-- **Finish now (`finishNow`):** marks every non-ghost rider who hasn't crossed the
-  line as a forfeit (adds them to `dnf`) and ends the race → results finalized and
-  **saved**. No-op outside racing.
-- **Ghosts are exempt** from idle/DNF, the penalty box, and forfeit.
+- **Idle → parked:** per non-ghost rider, an idle count increments on each tick
+  with `rpm === 0` and resets when pedalling; the rider joins `parked` once the
+  idle time reaches its threshold. Their input is not altered, and the first
+  `rpm > 0` reading removes them from `parked` (and from `noSensor`). The
+  threshold is **two-phase**: before the rider's first `rpm > 0` reading it is
+  `race_start_grace_s` (a generous no-show window covering magnetless-sensor
+  lock-on lag); after they have registered any movement it drops to the park
+  window (`parkIdleS`, else `race_idle_dnf_s`). A rider who has finished is never
+  parked. Idle time is counted in ticks, so the threshold is exact at any tick
+  interval.
+- **No penalty box:** pedalling counts from the first racing tick.
+  `markFalseStarters()` no longer exists and `hotStartPenaltyS` is ignored.
+- **Mercy window:** in a distance race with `raceMercyAfterWinnerS > 0`, the race
+  closes that many seconds after the first **live** rider finishes. Riders still
+  riding land in `overtime`; parked and no-sensor riders stay where they are. A
+  recording crossing the line does not start the window.
+- **All-away close:** in either race type, once every live unfinished rider is
+  parked or no-sensor, the controller notes the race time. If they are all still
+  away `allParkedEndS` seconds of race time later (default 15), the race
+  finishes. Any rider pedalling again clears the mark. `allParkedEndS: 0` closes
+  on the tick everyone is away.
+- **Finish now (`finishNow`):** puts every non-ghost rider still riding in
+  `overtime`, sets `endedEarly: true` and ends the race. Parked and no-sensor
+  riders stay in their own set. `endedEarly` is `false` for every other kind of
+  finish. No-op outside racing.
+- **Ghosts** are never parked, never overtime, and never affect when a race
+  closes.
 
 ### Cadence broadcast-gap tolerance (container, racing only)
 

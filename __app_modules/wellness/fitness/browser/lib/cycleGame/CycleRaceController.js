@@ -1,21 +1,27 @@
 import { CycleRaceEngine } from "./CycleRaceEngine.js";
 
+// Slack for comparing accumulated seconds against a threshold. The engine sums
+// its interval in floating point, so ten 100 ms ticks read as 0.9999999999999999.
+const EPSILON_S = 1e-6;
+
 /**
  * Lifecycle state machine for a cycle race. Wraps CycleRaceEngine and adds the
  * countdown, parking, and the mercy-kill/forced-finish handling.
  *
  * Nobody is eliminated. A rider idle for `parkIdleS` is PARKED: they stay in
  * the race with the distance they have, and the first pedal stroke brings them
- * back. A rider cut off by the clock or the operator while unfinished is
- * `overtime` and keeps their real distance.
+ * back. A rider still riding when the clock or the operator closes the race is
+ * `overtime` and keeps their real distance. `parked`, `noSensor` and `overtime`
+ * are mutually exclusive: a rider who is away is never also overtime.
  *
  * The race ends when:
  *  - distance: every live rider has finished or is in overtime; once somebody
  *    has crossed the line, parked and no-sensor riders stop holding it open
  *  - time: the cap is reached
  *  - either: every live unfinished rider has been away from the pedals for
- *    `allParkedEndS`
- * A ghost (recording) never holds a race open.
+ *    `allParkedEndS` of race time
+ * A ghost (recording) never affects when a race closes: it neither holds a race
+ * open nor starts the mercy window.
  *
  * Pure (caller drives countdownTick/tick). Phases: staged → countdown → racing
  * → finished → results; cancelled (any).
@@ -31,7 +37,9 @@ export class CycleRaceController {
       : (Number.isFinite(config.raceIdleDnfS) ? config.raceIdleDnfS : 20);
     // Seconds every live rider must stay parked before the race closes itself.
     this.allParkedEndS = Number.isFinite(config.allParkedEndS) ? config.allParkedEndS : 15;
-    this._allParkedForS = 0;
+    // Race time (engine elapsedS) at which every live unfinished rider was first
+    // away from the pedals; null while anybody is riding.
+    this._allAwaySinceS = null;
     // True once the operator ended the race by hand (finishNow).
     this.endedEarly = false;
     // Start-grace: a rider who has NOT yet registered any movement gets this
@@ -45,10 +53,10 @@ export class CycleRaceController {
     // Riders who have stopped pedalling. They are still in the race and come
     // back on their next pedal stroke.
     this.parked = new Set();
-    // Riders whose race was cut short by the CLOCK/OPERATOR (mercy-kill window
-    // closing, or a forced finish) before they crossed the line. They keep their
-    // real distance in the results (audit game-design #7 — mercy-kill must not
-    // brand an honest finisher a failure).
+    // Riders who were still riding when the CLOCK/OPERATOR closed the race
+    // (mercy-kill window closing, or a forced finish). They keep their real
+    // distance in the results (audit game-design #7 — mercy-kill must not brand
+    // a rider who was still going a failure). Never a parked or no-sensor rider.
     this.overtime = new Set();
     // Riders whose SENSOR never reported, as distinct from riders who did not
     // pedal. Both look like rpm 0 from here, and blaming the rider for the first
@@ -57,7 +65,7 @@ export class CycleRaceController {
     // connected reading has not idled out; there is nothing to idle. They leave
     // this set the moment their sensor reports movement.
     this.noSensor = new Set();
-    this._idle = new Map();
+    this._idle = new Map(); // userId -> consecutive idle TICKS (not summed seconds)
     this._started = new Set(); // riders that have registered rpm > 0 at least once
     // Riders that have had at least one CONNECTED sensor reading. Absent a
     // `connected` flag the input is treated as connected, so a caller that does
@@ -122,25 +130,31 @@ export class CycleRaceController {
         this.parked.delete(userId);
         this.noSensor.delete(userId);
       }
-      const nextIdle = moving ? 0 : (this._idle.get(userId) || 0) + intervalS;
-      this._idle.set(userId, nextIdle);
+      const idleTicks = moving ? 0 : (this._idle.get(userId) || 0) + 1;
+      this._idle.set(userId, idleTicks);
       const finished = before.riders[userId].finishTimeS != null;
       // Before a rider's first movement the (more generous) start-grace applies —
       // covering sensor lock-on lag; afterwards the normal idle clock governs.
       const threshold = this._started.has(userId) ? this.parkIdleS : this.raceStartGraceS;
-      if (!finished && !moving && nextIdle >= threshold) {
+      if (!finished && !moving && idleTicks * intervalS + EPSILON_S >= threshold) {
         // Never a connected reading and never a revolution: the sensor did not
         // show up, and the rider is not the one who stopped. A rider who HAS
         // ridden keeps the idle clock even if their sensor drops later — they
         // demonstrably had one, so the plain reading of a still bike is that
         // they stopped.
-        if (!this._sensorSeen.has(userId) && !this._started.has(userId)) this.noSensor.add(userId);
-        else this.parked.add(userId);
+        // A rider is in one set or the other, never both.
+        if (!this._sensorSeen.has(userId) && !this._started.has(userId)) {
+          this.noSensor.add(userId);
+          this.parked.delete(userId);
+        } else {
+          this.parked.add(userId);
+          this.noSensor.delete(userId);
+        }
       }
       filtered[userId] = input;
     }
     this.engine.tick(filtered);
-    this._trackAllParked(intervalS);
+    this._trackAllAway();
     this._applyMercyKill();
     if (this._isFinished()) this.phase = 'finished';
     return this.getState();
@@ -148,38 +162,45 @@ export class CycleRaceController {
 
   _away(userId) { return this.parked.has(userId) || this.noSensor.has(userId); }
 
-  // Counts how long EVERY live, unfinished rider has been away from the pedals.
-  _trackAllParked(intervalS) {
+  // Remembers the race time at which EVERY live, unfinished rider was first away
+  // from the pedals. Anybody riding clears it.
+  _trackAllAway() {
     const s = this.engine.getState();
     const open = Object.values(s.riders)
       .filter((r) => !this.ghosts.has(r.userId) && r.finishTimeS == null);
     const allAway = open.length > 0 && open.every((r) => this._away(r.userId));
-    this._allParkedForS = allAway ? this._allParkedForS + intervalS : 0;
+    if (!allAway) this._allAwaySinceS = null;
+    else if (this._allAwaySinceS == null) this._allAwaySinceS = s.elapsedS;
   }
 
-  // Distance-race mercy-kill: once the first rider has finished, close the race
-  // for every still-racing non-ghost rider after raceMercyAfterWinnerS seconds —
-  // they land in `overtime` (real distance kept), parked riders included. The
-  // subsequent _isFinished() check then ends the race. No-op when disabled, for
-  // time races, or before anyone has crossed the line.
+  // Distance-race mercy-kill: once the first LIVE rider has finished, close the
+  // race raceMercyAfterWinnerS seconds later. Every non-ghost rider still riding
+  // lands in `overtime` (real distance kept); a parked or no-sensor rider stays
+  // where they are. The subsequent _isFinished() check then ends the race. A
+  // recording crossing the line does not start the window (a ghost-only field,
+  // which has no live rider to wait for, uses the ghosts' times). No-op when
+  // disabled, for time races, or before anyone has crossed the line.
   _applyMercyKill() {
     if (this.raceMercyAfterWinnerS <= 0 || this.config.winCondition === 'time') return;
     const s = this.engine.getState();
-    const finishTimes = Object.values(s.riders)
+    const riders = Object.values(s.riders);
+    const live = riders.filter((r) => !this.ghosts.has(r.userId));
+    const finishTimes = (live.length ? live : riders)
       .map((r) => r.finishTimeS)
       .filter((t) => t != null);
     if (!finishTimes.length) return;
     const firstFinish = Math.min(...finishTimes);
-    if (s.elapsedS - firstFinish < this.raceMercyAfterWinnerS) return;
-    Object.values(s.riders).forEach((r) => {
+    if (s.elapsedS - firstFinish + EPSILON_S < this.raceMercyAfterWinnerS) return;
+    riders.forEach((r) => {
       if (this.ghosts.has(r.userId)) return;
       if (r.finishTimeS != null) return;
+      if (this._away(r.userId)) return; // parked / no-sensor: not riding, not overtime
       this.overtime.add(r.userId);
     });
   }
 
-  // Operator-driven end: close the race for every non-ghost rider who hasn't
-  // crossed the line — landing in `overtime` (real distance kept), same rule as
+  // Operator-driven end: close the race for every non-ghost rider who is still
+  // riding — landing in `overtime` (real distance kept), same rule as
   // the mercy-kill above — and mark the race `endedEarly`. Distinct from
   // cancel() — the race is finalized and saved, not discarded. No-op outside the
   // racing phase.
@@ -189,6 +210,7 @@ export class CycleRaceController {
     Object.values(s.riders).forEach((r) => {
       if (this.ghosts.has(r.userId)) return;
       if (r.finishTimeS != null) return;
+      if (this._away(r.userId)) return; // parked / no-sensor: not riding, not overtime
       this.overtime.add(r.userId);
     });
     this.endedEarly = true;
@@ -200,10 +222,9 @@ export class CycleRaceController {
     const s = this.engine.getState();
     const riders = Object.values(s.riders);
     const live = riders.filter((r) => !this.ghosts.has(r.userId));
-    // Everyone walked away: close the race in either mode. The clock must have
-    // started, so `allParkedEndS: 0` means "the moment everyone is parked" and
-    // not "at the first tick".
-    if (live.length && this._allParkedForS > 0 && this._allParkedForS >= this.allParkedEndS) return true;
+    // Everyone walked away and stayed away: close the race in either mode.
+    if (live.length && this._allAwaySinceS != null
+      && s.elapsedS - this._allAwaySinceS + EPSILON_S >= this.allParkedEndS) return true;
     if (this.config.winCondition === 'time') return s.finished;
     const field = live.length ? live : riders;
     const done = (r) => r.finishTimeS != null || this.overtime.has(r.userId);
