@@ -710,11 +710,13 @@ is the preview's current study day, `currentStudyDay()`).
     failing wallet omits that learner, `economy.workout-earnings.learner-failed`).
     Logged `economy.workout-earnings.query`.
   - `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
-    `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `move`:
-    the Gem Board's Move rows for that learner as `[{id, label, color, cell}]`,
-    each `cell` cut down to `state`, `week`, `streak` and its parts' colours,
-    which is what a home card needs to draw the board's glyph; empty, with
-    `economy.standings.move-gems-unavailable` logged, when the board cannot be
+    `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `gems`:
+    the gems that learner has EARNED this week, rolled up by area from every
+    Gem Board row as `[{area, earned, color}]` — `earned` is the sum of the
+    area's cells' `week` (paid or owed this week), `color` the area's own
+    (`GEM_AREAS`), in Move · School · Games order, only areas with
+    `earned > 0`; a lead, a running day-count or a zero is never in it. Empty,
+    with `economy.standings.gems-unavailable` logged, when the board cannot be
     read).
   All read-only, `no-store`; with the catalog `off` they return no learners.
 - **The fitness coin ceremony** (`useWorkoutCoinCeremony`) reads only `/paid`.

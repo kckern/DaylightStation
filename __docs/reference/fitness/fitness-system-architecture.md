@@ -1018,14 +1018,15 @@ Monday 04:00 local through the next Monday 04:00, matching
 `weeklyWindow.mjs` and the State Gates producer. Monday therefore resets the
 current bar even though Sunday is less than seven days old.
 
-Bar height and the number above it are rings. Green, yellow, orange, and red
+Bar height is rings (the bars carry no numbers or dates: at four to a column
+they cannot be read from the room). Green, yellow, orange, and red
 remain as the composition bands: session zone minutes are weighted by the
 configured per-zone ring rates and normalized back to the exact stored ring
 total. The top-right household total uses the canonical `RingIcon`. The sampled
 `momentum.render` event includes `householdRings` and `weekStartMs` so a stale or
 mis-bucketed home screen can be reconstructed from production logs.
 
-Each card's rail (bank silver + the week's Move gems) is a button that opens
+Each card's rail (bank silver + the gems earned this week) is a button that opens
 the shared Gem Board focused on that person, and the headline carries a **Gems**
 chip that opens it with no focus (shown whenever the economy is not `off`).
 While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→
@@ -1037,25 +1038,29 @@ persists in localStorage (see Screen Framework → Data Coordination), so the ba
 render from the last payload on mount and update when the fetch lands rather
 than showing skeletons on every return from the player.
 
-A card reads top to bottom: the avatar with the name as a tag over its lower
-edge, the week bars, then the **rail** at the foot of the card. The home layout
-puts this panel under the suggestions, so the rail is the lowest thing on the
-touch screen and a child can reach it. The rail holds **bank silver** and a
-glyph for each row of the Gem Board's Move section the person has something in,
-drawn by the board's own `GemGlyph`: a day-count still in reach is a gem inside
-its ring of days (full strength while on track, faint when every day left is
-needed), and a gem earned, or a contest gem held, fills the slot.
-A row with nothing to show (out of reach, no lead) takes no room;
-silver and gems spread evenly across the rail (`hasGemToShow`). A contest
-gem is seen to move from one child to another. Games and School gems are on the
-board only. The data is the `standings` screen source,
-`GET /api/v1/earnings/standings` (`silver`, and `move` cut from the Gem Board
-itself), injected by FitnessApp when the layout uses `fitness:momentum`,
-persisted like `sessions` and refetched after a workout. People without a
-wallet get an empty rail of the same height; with the economy off, or the call
+A card reads top to bottom, with no slack between rows: the avatar with the
+name as a tag over its lower edge; **this week's rings** (ring icon + number,
+the largest figure on the card); the four week bars, which take all remaining
+height; then the **rail** at the foot. The home layout puts this panel under the
+suggestions, so the rail is the lowest thing on the touch screen and a child can
+reach it. The rail holds **bank silver** (the coin over the count) and one chip
+per area the person has EARNED gems in this week: the board's own gem
+(`GemGlyph`: solid area colour, area icon) over `×N` when N > 1, in Move ·
+School · Games order. Nothing in progress, leading or zero is ever drawn; a
+child with nothing earned shows the coin alone. The data is the `standings`
+screen source, `GET /api/v1/earnings/standings` (`silver`, and `gems` rolled up
+by area from the Gem Board itself), injected by FitnessApp when the layout uses
+`fitness:momentum`, persisted like `sessions` and refetched after a workout.
+People without a wallet get an empty rail; with the economy off, or the call
 failing, every rail is empty and the ring bars stand alone.
 
-Each bar is dated by its Monday as day then month (`19 Oct`), with no slash.
+The cards share four grid rows (`subgrid`), so every card's hero, bars and foot
+line up across the panel and the tallest foot sets the row. Sizes follow one
+person's column (`--col`: the cards row is the size container, divided by the
+head count the widget passes as `--cols`) with floors — hero 26px, coin and gem
+26px, counts 18–20px CSS — and when five columns cannot fit everything, the bars
+give up height first. The widget pads its own panel 10–12px
+(`.screen-widget:has(> .fitness-momentum)`), not the theme's 16px.
 
 ### Leaving the player → the session just finished
 

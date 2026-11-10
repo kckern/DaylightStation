@@ -12,12 +12,12 @@ const sessions = [{
     },
   },
 }];
-const MOVE = [
-  { id: 'ring-contests', label: 'Ring contests', color: '#1e88e5', cell: { state: 'leading', week: 0, streak: null, parts: [] } },
-  { id: 'moved-days', label: 'Moved 5 days', color: '#ff8800', cell: { state: 'pending', week: 0, streak: { have: 2, need: 5, left: 3, reach: 'on-track', ruleId: 'moved-days' }, parts: [] } },
-  { id: 'strong-days', label: '100+ rings on 3 days', color: '#8e44ad', cell: { state: 'earned', week: 1, streak: null, parts: [] } },
+const GEMS = [
+  { area: 'move', earned: 2, color: '#8e5bd0' },
+  { area: 'school', earned: 3, color: '#2e9e5b' },
+  { area: 'games', earned: 1, color: '#ff7a2f' },
 ];
-const STANDINGS = { mode: 'live', contestClosed: false, learners: [{ learnerId: 'user_1', learnerName: 'User_1', silver: 27, weekRings: 300, gem: 'leading', move: MOVE }] };
+const STANDINGS = { mode: 'live', contestClosed: false, learners: [{ learnerId: 'user_1', learnerName: 'User_1', silver: 27, weekRings: 300, gem: 'leading', gems: GEMS }] };
 let standings = STANDINGS;
 vi.mock("../../../../../../__capabilities/screen-host/browser/data/useScreenData.js", () => ({
   useScreenData: (key) => (key === 'standings' ? standings : { sessions, total: 1 }),
@@ -34,18 +34,45 @@ vi.mock("../../useFitnessScreen.js", () => ({
   }),
 }));
 
-import FitnessMomentum, { dayLabel, hasGemToShow } from "./FitnessMomentum.jsx";
+import FitnessMomentum from "./FitnessMomentum.jsx";
 
 describe('FitnessMomentum', () => {
   beforeEach(() => { standings = STANDINGS; });
 
-  it('gives a learner a rail with silver and one glyph per Move gem, as the board draws them', () => {
+  it('rail shows one chip per earned area with ×N', () => {
     const { container } = render(<FitnessMomentum />);
     const rail = container.querySelectorAll('.fitness-momentum__card')[0].querySelector('button.fitness-momentum__rail');
     expect(rail.querySelector('.fitness-momentum__silver').textContent).toContain('27');
-    const looks = [...rail.querySelectorAll('.fitness-momentum__gemslot')].map((slot) => `${slot.dataset.gem}:${slot.querySelector('.gem-glyph').dataset.look}`);
-    expect(looks).toEqual(['ring-contests:holding', 'moved-days:streak', 'strong-days:lit']);
-    expect(rail.getAttribute('aria-label')).toBe('Dad: 27 silver. Ring contests: leading. Moved 5 days: 2 of 5 days, on track. 100+ rings on 3 days: earned. Open the gem board');
+    const chips = [...rail.querySelectorAll('.fitness-momentum__chip')];
+    expect(chips.map((c) => c.dataset.area)).toEqual(['move', 'school', 'games']);
+    expect(chips.map((c) => c.querySelector('.fitness-momentum__times')?.textContent ?? '')).toEqual(['×2', '×3', '']);
+    // The board's own gem: the area's icon on a solid stone in the area colour.
+    expect(chips.map((c) => c.querySelector('.gem-glyph .area-icon').dataset.area)).toEqual(['move', 'school', 'games']);
+    for (const c of chips) expect(c.querySelector('.gem-glyph').dataset.look).toBe('lit');
+    expect(rail.getAttribute('aria-label')).toBe('Dad: 27 silver. Move: 2 gems this week. School: 3 gems this week. Games: 1 gem this week. Open the gem board');
+  });
+
+  it('a child with nothing earned shows silver only', () => {
+    standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], gems: [] }] };
+    const rail = render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail');
+    expect([...rail.children].map((el) => el.className)).toEqual(['fitness-momentum__silver']);
+    expect(rail.getAttribute('aria-label')).toBe('Dad: 27 silver. Open the gem board');
+    standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], gems: undefined }] };
+    const bare = render(<FitnessMomentum />).container.querySelectorAll('button.fitness-momentum__rail')[0];
+    expect(bare.querySelector('.fitness-momentum__chip')).toBeNull();
+  });
+
+  it('in-progress, leading and zero cells never render', () => {
+    // The rail reads only the earned roll-up: an old payload's per-cell list,
+    // a zero, a negative or an unknown area earns no chip.
+    standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0],
+      move: [{ id: 'ring-contests', label: 'Ring contests', color: '#8e5bd0', cell: { state: 'leading', week: 0, streak: null, parts: [] } }],
+      gems: [{ area: 'move', earned: 0, color: '#8e5bd0' }, { area: 'school', earned: -1, color: '#2e9e5b' }, { area: 'art', earned: 2, color: '#123456' }, { area: 'games', earned: 1, color: '#ff7a2f' }] }] };
+    const { container } = render(<FitnessMomentum />);
+    const rail = container.querySelector('button.fitness-momentum__rail');
+    expect([...rail.querySelectorAll('.fitness-momentum__chip')].map((c) => c.dataset.area)).toEqual(['games']);
+    expect(container.querySelector('.fitness-momentum__card .gem-glyph__word')).toBeNull();
+    expect(container.querySelector('.fitness-momentum__card .gem-glyph__ring')).toBeNull();
   });
 
   it('leaves someone without a wallet an empty rail, so the cards keep one height', () => {
@@ -55,35 +82,6 @@ describe('FitnessMomentum', () => {
     expect(card.querySelector('.fitness-momentum__rail--empty')).toBeTruthy();
   });
 
-  it('shows silver alone when the standings carry no Move gems', () => {
-    standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], move: undefined }] };
-    const rail = render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail');
-    expect(rail.textContent).toContain('27');
-    expect(rail.querySelector('.gem-glyph')).toBeNull();
-  });
-
-  it('gives no slot to a gem with nothing to show, and says nothing of it', () => {
-    const blank = (cell) => ({ ...MOVE[1], cell });
-    const quiet = [
-      { id: 'a', ...blank({ state: 'none', week: 0, streak: null, parts: [] }) },
-      { ...blank({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 1, reach: 'out', ruleId: 'moved-days' }, parts: [] }), id: 'b' },
-      { ...blank({ state: 'pending', week: 0, streak: { have: 2, need: 5, left: 1, reach: 'out', ruleId: 'moved-days' }, parts: [] }), id: 'c' },
-      { ...blank({ state: 'pending', week: 0, streak: null, parts: [] }), id: 'd' },
-      MOVE[2],
-    ];
-    for (const g of quiet.slice(0, 4)) expect(hasGemToShow(g.cell)).toBe(false);
-    // A count with no day done yet is an empty ring: no gem, however reachable.
-    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 6, reach: 'on-track' } })).toBe(false);
-    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 5, reach: 'tight' } })).toBe(false);
-    // ...and appears once a day is made.
-    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 1, need: 5, left: 4, reach: 'on-track' } })).toBe(true);
-    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 3, need: 5, left: 2, reach: 'tight' } })).toBe(true);
-    standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], move: quiet }] };
-    const rail = render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail');
-    expect([...rail.children].map((el) => el.className)).toEqual(['fitness-momentum__silver', 'fitness-momentum__gemslot']);
-    expect(rail.getAttribute('aria-label')).toBe('Dad: 27 silver. 100+ rings on 3 days: earned. Open the gem board');
-  });
-
   it('opens the Gem Board from the rail', () => {
     const { container } = render(<FitnessMomentum />);
     expect(document.querySelector('.gem-board')).toBeNull();
@@ -91,11 +89,21 @@ describe('FitnessMomentum', () => {
     expect(document.querySelector('.gem-board')).toBeTruthy();
   });
 
-  it('puts the name with the avatar and the rail under the bars', () => {
+  it('stacks avatar, this week\'s rings, the bars, then the rail', () => {
     const { container } = render(<FitnessMomentum />);
     const card = container.querySelectorAll('.fitness-momentum__card')[0];
     expect(card.querySelector('.fitness-momentum__who .fitness-momentum__name').textContent).toBe('Dad');
-    expect([...card.children].map((el) => el.className.split(' ')[0])).toEqual(['fitness-momentum__who', 'fitness-momentum__weeks', 'fitness-momentum__rail']);
+    expect([...card.children].map((el) => el.className.split(' ')[0])).toEqual(['fitness-momentum__who', 'fitness-momentum__hero', 'fitness-momentum__weeks', 'fitness-momentum__rail']);
+  });
+
+  it('heads each card with this week\'s rings, and draws no per-bar numbers or dates', () => {
+    const { container } = render(<FitnessMomentum />);
+    const [dad, other] = container.querySelectorAll('.fitness-momentum__card');
+    expect(dad.querySelector('.fitness-momentum__hero .ring-icon')).toBeTruthy();
+    expect(dad.querySelector('.fitness-momentum__hero').textContent).toBe('300');
+    expect(other.querySelector('.fitness-momentum__hero').textContent).toBe('0');
+    expect(container.querySelector('.fitness-momentum__weektop')).toBeNull();
+    expect(container.querySelector('.fitness-momentum__weeklabel')).toBeNull();
   });
 
   it('has no rail buttons when standings are missing or the economy is off', () => {
@@ -105,19 +113,10 @@ describe('FitnessMomentum', () => {
     expect(render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail')).toBeNull();
   });
 
-  it('dates each week as day then month, with no slash', () => {
-    expect(dayLabel(new Date(2026, 9, 19, 4).getTime())).toBe('19 Oct');
-    expect(dayLabel(new Date(2026, 10, 2, 4).getTime())).toBe('2 Nov');
-    expect(dayLabel(null)).toBe('');
-    const labels = [...render(<FitnessMomentum />).container.querySelectorAll('.fitness-momentum__weeklabel')].map((el) => el.textContent);
-    expect(labels.length).toBe(8);
-    for (const label of labels) expect(label).toMatch(/^\d{1,2} [A-Z][a-z]{2}$/);
-  });
-
-  it('labels the hard Monday window and renders one card per member', () => {
+  it('labels the week and renders one card per member', () => {
     const { container, getByText } = render(<FitnessMomentum />);
     expect(getByText(/Kern Family/)).toBeTruthy();
-    expect(getByText(/Monday–today/)).toBeTruthy();
+    expect(container.querySelector('.fitness-momentum__window').textContent).toBe('· this week');
     expect(container.querySelectorAll('.fitness-momentum__card')).toHaveLength(2);
   });
 
