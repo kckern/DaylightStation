@@ -35,8 +35,8 @@
  * provenance (taxonomy D12); `group` is the board section the row sits under
  * (`move`, `games`, `school`, or any slug). Display only: it never changes
  * what a rule pays. The FIRST rule of a board row decides the row's label,
- * group and colour; a later rule's `gem.label` / `gem.group` / `gem.color` in
- * the same row applies only to that rule's part colour.
+ * group and colour; on a later rule in the same row, `gem.color` colours that
+ * rule's part and `gem.label` / `gem.group` have no effect.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { CURRENCIES } from '../entities/Transaction.mjs';

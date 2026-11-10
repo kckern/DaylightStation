@@ -328,8 +328,14 @@ merges them; a provider that throws makes only its activities
 `indeterminate` (`economy.gems.evidence-unavailable`). The preview reads it once
 per week per minute and only when a rule of those kinds exists.
 
-Any rule may also carry `gem: {category, label, color}` — how its gems read on
-the [Gem Board](#gem-board). Display only; it never changes what a rule pays.
+Any rule may also carry `gem: {category, label, color, group}` — how its gems
+read on the [Gem Board](#gem-board): `category` is the board row (a lowercase
+slug; rules that share one share a row), `label` the row's name, `color` a
+`#rrggbb` gem colour, `group` the section the row sits under (`move`, `games`,
+`school`, or any slug). All four are optional. The first rule of a row decides
+the row's label, group and colour; on a later rule in the same row `color`
+colours that rule's part and `label` / `group` have no effect. Display only; it
+never changes what a rule pays.
 
 Rewards are a currency map (`{silver, gems}`; a bare number is silver). A rule that
 pays twice is two rules. Per-learner overrides live under `users.<id>`:
@@ -372,7 +378,7 @@ A line's silver is `round(count × silver × multiplier)` for the whole line.
 | GET `/api/v1/earnings/preview?week=` | the roster's week: `{windows, contestClosed, rulesRevision, learners[]}` |
 | GET `/api/v1/earnings/preview/:learnerId?week=` | one learner: `{totals, pending, lines[], work, evidence, multiplier, rulesRevision}` |
 | GET `/api/v1/earnings/rules` | `{ruleset, kinds}` |
-| GET `/api/v1/earnings/gems?week=` | the [Gem Board](#gem-board): `{mode, week, learners[], categories[], cells, totals}` |
+| GET `/api/v1/earnings/gems?week=` | the [Gem Board](#gem-board): `{mode, week, windows, today, contestClosed, rulesRevision, learners[], groups[], categories[], cells, totals}` |
 | PUT `/api/v1/school/teacher/economy/earn-rates/:learnerId` | `{actorId, pin, patch}` → the new ruleset (TeacherGate) |
 | PUT `/api/v1/school/teacher/economy/earn-rules` | `{actorId, pin, doc}` → the new ruleset (TeacherGate) |
 
@@ -383,67 +389,216 @@ edits rules in the **Coins** tab (`CoinsPanel`) and section (`CoinsRosterPanel`)
 
 ### Gem Board
 
-One view of every learner against every gem, for one week. Design:
+One view of every learner against every gem, for one week: one table, rows
+under section headings, a column per learner. Design:
 `ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md`.
 
-- **Rows** are gem categories: every rule that pays gems (or names a `gem`
-  block), grouped by `gem.category` (default the rule id), in rule order. Each
-  row has a `cadence` — `contest` for `ring-contest`, otherwise `weekly`
-  (`milestone` arrives with the milestone kinds) — and a colour: `gem.color`,
-  else by kind (ruby `week-met`, sapphire `ring-contest`, amethyst
-  `ring-days`, topaz `debrief-week`).
-- **Columns** are the roster, in roster order, never ranked.
-- **A cell** is `{state, progress, week, lifetime, note}`; `state` is the best
-  of the row's lines: `won`, `earned`, `leading`, `pending`, `unknown`, `none`,
-  `disabled`. `week` is gems earned this week; `lifetime` counts payout gem
-  entries by `ruleId`, less grown-up reversals (`lifetimeGemsByRule`).
-- **Totals** per learner: `week` is the gems they hold this week — earned, plus
-  the contest gem while they lead it, the same figure as the agenda card's gem
-  count — `earned` only the earned ones, and `lifetime` the wallet's gem balance.
-- Built by `GemBoardService` (`application/GemBoardService.mjs`) over the same
-  preview the payouts use, plus a ledger read per learner; the pure fold is
-  `domain/earnings/gemBoard.mjs`. Logged `economy.gems.board.read` (debug),
-  `economy.gems.lifetime-unavailable` (warn). Catalog `off` → an empty board
-  with `mode: 'off'`.
-- **Fresh reads.** The preview shares one achievement read a minute across polled
-  surfaces. The board passes `?fresh=1` (the overlay always does), which reads
-  now and replaces the shared copy — a race that just landed shows at once.
-- **The gem ceremony** (`GemCeremony.jsx`, `useGemCeremony.js`,
-  `gemCeremonyModel.js` beside the board): a surface remembers the board as it
-  last saw it (localStorage, per surface, per week) and celebrates each cell
-  that now holds a gem it did not — `earned`, `won`, or a contest lead just
-  taken (`leading`); a lead that becomes a win celebrates again, a lost lead
-  never does. A surface that has not looked this week learns silently, and a
-  reload never replays one.
-  - Ordering rule for every surface (never during a live run; the piano is stricter): see [the ceremony ordering rule](../gaming/realtime-kit.md#the-ceremony-ordering-rule).
-  - **Fitness** (`FitnessApp` global overlays): learns on load, then looks
-    (fresh) 1.5 s after `game-achievement-recorded` (a cycle race or a Skyline
-    Glider flight saved, `announceGameAchievement` in the [gaming real-time kit](../gaming/realtime-kit.md)) and after a workout ends;
-    shown after any coin ceremony, with the coin sound.
-  - **Piano kiosk** (Games mode): the ceremony queue lives above the routes
-    and looks with a fresh read (`?fresh=1`) each time the picker is shown, so
-    arriving back from a game counts as "a game just ended". Its
-    `game-achievement-recorded` listener is attached only while the picker is
-    showing, and no piano game fires that event today.
-    The card renders only on the picker, never over a live game, and a ceremony
-    interrupted by opening a game shows again on return. Coin cue from
-    `frontend/src/lib/economy/coinCeremonyAudio.js`, primed on the first gesture.
-  - **School Portal** (`SchoolApp`): while the panel rests at the keypad, a
-    minute poll and each return to the keypad; drawn over the board pane only,
-    never the keypad, with the coin cue.
-  - Events: `gem-ceremony.found`, `.shown`, `.dismissed` (`reason`),
-    `.look-failed`.
-- **Two panels.** Once any milestone row exists the overlay draws two grids
-  side by side — this week + contests (with the totals) and milestones (each
-  cell with its lifetime tally) — so every row fits 1280×800 unscrolled.
-- **The overlay** is `frontend/src/lib/economy/GemBoard/GemBoard.jsx`, shared by
-  the fitness ring chart (`FitnessMomentum`: each card's purse, and the
-  headline's **Gems** chip; the garage pads drive it through `useGamepadKeys`)
-  and the school agenda (the board header's **Gems** door and each card's gem
-  door). Tap outside, ×, Escape or idle closes it; ←/→ moves the highlighted
-  column; Enter toggles this week / last week. No failure marks: not earned is
-  a blank cell. Browser events `gem-board.open`, `gem-board.close`
-  (`reason`, `dwellMs`), `gem-board.week-step`, `gem-board.load-failed`.
+**Response** (`GET /api/v1/earnings/gems`):
+
+| Field | Holds |
+|---|---|
+| `mode` | the catalog mode; `off` → an empty board |
+| `week` | the school week's Monday |
+| `windows` | the week's windows, as the preview gives them (`windows.school.{from, to}`) |
+| `today` | the current study day |
+| `contestClosed` | whether the ring award week has closed |
+| `rulesRevision` | the ruleset revision the week was priced with |
+| `learners[]` | `{learnerId, name}`, in roster order, never ranked |
+| `groups[]` | `{id, label}`: the sections that have rows, in display order |
+| `categories[]` | the rows, in rule order |
+| `cells` | `cells[categoryId][learnerId]` |
+| `totals` | `totals[learnerId]` = `{week, earned, lifetime}` |
+
+**Sections.** `groups` lists Move (`move`), Games (`games`) and School
+(`school`), in that order, leaving out any with no rows. A rule's `gem.group`
+may name another slug; it follows those three, labelled by the slug with its
+first letter capitalised and hyphens as spaces.
+
+**Rows.** Every rule that pays gems, or carries a `gem` block, is on the board.
+Its row is `gem.category`, else the default row for its activity or kind, else
+the rule's own id. Rows keep the rules' order.
+
+| Default row | Label | Section | Rules folded in |
+|---|---|---|---|
+| `ring-contests` | Ring contests | move | kind `ring-contest`; activity `ring-improved` |
+| `racing` | Racing | games | `race`, `race-pb` |
+| `skyline-glider` | Skyline Glider | games | `glider-act`, `glider-bells` |
+| `piano` | Piano | school | `piano-practice`, `piano-rung` |
+| `flashcards` | Flashcards | school | `card-goal`, `cards-mastered` |
+| `reading` | Reading | school | `story-read`, `book-finished` |
+
+Some rules keep a row of their own and take only a default section:
+
+| Rule | Section |
+|---|---|
+| kind `ring-days` | move |
+| activity `rings-lifetime` | move |
+| activity `board-game-level` | games |
+| anything else | school |
+
+The first rule of a row decides the row's label, section, cadence and colour.
+The label is `gem.label`, else the default row's label (not when the rule named
+its own `gem.category`), else the rule's label. The section is `gem.group`,
+else the default above. The colour is `gem.color`, else the default row's fixed
+colour (only `ring-contests` has one, sapphire), else the rule's own colour: by
+activity (rose piano, turquoise flashcards, citrine reading, ruby
+`perfect-sheet`, fire opal racing, aquamarine Skyline Glider, diamond board
+games, amethyst rings) or by kind (ruby `week-met`, sapphire `ring-contest`,
+amethyst `ring-days`, topaz `debrief-week`), else sapphire.
+
+A rule whose own id equals a default row id (a rule called `reading` that sits
+in no default row) keeps that id for its own row, and the default merged row
+takes `<id>-all` (`reading-all`), wherever the two sit in the rules. An
+explicit `gem.category` is a literal row id and joins whichever row has it.
+
+| Category field | Holds |
+|---|---|
+| `id` | the row id |
+| `label` | the row's name |
+| `cadence` | `contest` (`ring-contest`, `activity-contest`), `milestone`, else `weekly`; the first rule's |
+| `group` | the section id |
+| `color` | the row's gem colour |
+| `parts[]` | one per rule in the row: `{ruleId, label, cadence, color}` |
+
+**A cell** is one learner in one row:
+
+| Cell field | Holds |
+|---|---|
+| `state` | the best of the row's lines: `won`, `earned`, `leading`, `pending`, `unknown`, `none`, `disabled` |
+| `progress` | `{have, need}` of the row's first pending line that has one, else null |
+| `week` | gems earned in the row this week |
+| `held` | `week`, plus a contest gem while they lead it |
+| `lifetime` | payout gem entries for the row's rules, less grown-up reversals (`lifetimeGemsByRule`); never under `week` |
+| `note` | the note of the line that set `state` |
+| `streak` | `{have, need, left, reach, ruleId}`: the pending day-count nearest done (highest `have / need`), else null |
+| `parts[]` | one per rule in the row, below |
+
+A cell can be `earned` and still carry a `streak` when its row folds two rules
+(a book finished, the reading days still running).
+
+| Part field | Holds |
+|---|---|
+| `ruleId`, `label`, `cadence`, `color` | the rule, as in the category's `parts` |
+| `state` | this rule's own state |
+| `week`, `lifetime` | this rule's gems this week and in all |
+| `progress` | `{have, need}` or null |
+| `left`, `reach` | set only while the part is `pending` with a `progress`; see below |
+| `days[]` | `{day, state}` with `done` or `short` (did some, under the mark); `ring-days` and `activity-days` only |
+| `items[]` | `{day, label}`: the milestone achievements paid this week |
+| `score` | `{mine, best}` for a contest: the learner's score against the roster's best (rings for `ring-contest`), else null |
+| `note` | the line's note |
+
+**Reach.** `left` is the study days the rule can still be worked on. The count
+starts at today or the week's first day, whichever is later, and runs through
+the rule's last day: Saturday (Monday + 5, when the ring award week closes) for
+`ring-days`, the school week's last day for `activity-days`. Both ends are
+clamped to the rule's `effective` dates. Today is included unless it already
+counted. With `short = need − have`:
+
+| `reach` | When |
+|---|---|
+| `on-track` | `short < left` |
+| `tight` | `short = left`: every day left is needed |
+| `out` | `short > left` |
+
+**Totals** per learner: `week` is the gems they hold this week — earned, plus
+the contest gem while they lead it, the same figure as the agenda card's gem
+count — `earned` only the earned ones, and `lifetime` the wallet's gem balance.
+
+**Building it.** `GemBoardService` (`application/GemBoardService.mjs`) reads the
+same preview the payouts use, plus the ledger per learner; the pure fold is
+`domain/earnings/gemBoard.mjs`. Logged `economy.gems.board.read` (debug),
+`economy.gems.lifetime-unavailable` (warn). Catalog `off` → an empty board with
+`mode: 'off'`. The preview shares one achievement read a minute across polled
+surfaces; `?fresh=1` (the overlay always passes it) reads now and replaces the
+shared copy, so a race that just landed shows at once.
+
+**The overlay** is `frontend/src/lib/economy/GemBoard/GemBoard.jsx`, shared by
+the fitness ring chart (`FitnessMomentum`: each card's purse, and the
+headline's **Gems** chip; the garage pads drive it through `useGamepadKeys`)
+and the school agenda (the board header's **Gems** door and each card's gem
+door). It draws the sections top to bottom, then a totals row (this week's
+count and "n in all"), with a This week / Last week switch in the header.
+
+Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
+
+| Look | When | Draws |
+|---|---|---|
+| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour; a `×n` badge when `week > 1`; the day ring too if a `streak` is still running |
+| `streak` | a `streak` whose `reach` is `on-track` or `tight` | a faint gem inside a ring of `need` segments, the first `have` in the gem's colour; when `tight` the unfilled segments are amber |
+| `out` | a `streak` whose `reach` is `out` | the ring alone, its done segments grey, no gem |
+| `holding` | `leading` | a dimmed gem inside a dashed circle |
+| `open` | `pending` with no day-count | a faint gem |
+| `unknown` | the evidence could not be read | a muted `?` |
+| `off` | `disabled` | a muted `–` |
+| `none` | anything else | a blank cell |
+
+A cell carries no numerals but the `×n` badge; counts and lifetime tallies live
+in the detail box. Nothing marks failure: a gem not earned is a blank cell and a
+week out of reach is a grey ring, never a cross. Each cell's `aria-label` says
+the same in words ("3 of 5 days, on track").
+
+**The detail box** (`GemDetail.jsx`). A cell with parts and any look but `none`
+is a button; it opens a card over the board titled with the learner and the
+row, one block per part that has something to say (a part that is `disabled`,
+or `none` with no days, items or lifetime, is skipped; if none is left the card
+reads "Not this week").
+
+| Part | Shows |
+|---|---|
+| day-count | the week Monday → Sunday as seven lettered days: counted days filled in the row's colour, short days outlined, today ringed, days ahead dimmed, an empty past day plain. Then one line: `Earned`, `2 of 4 days · 3 days left`, `· needs every day left` (tight), `· out of reach this week` (out) |
+| milestone | this week's items (`label · Tue`) or `None this week`, then `4 in all` when the lifetime is above zero |
+| contest | `Won`, `Leading so far` or `Not leading`, with `320 — best 320` when there is a score |
+| `unknown` | `Can’t tell yet` |
+
+| Input | Does |
+|---|---|
+| tap a cell | opens its detail |
+| ←/→ | moves the highlighted column |
+| ↑/↓ | moves a row cursor through the rows as drawn; unset until first pressed, and it wraps |
+| Enter | with a row cursor on an openable cell, opens the detail; otherwise toggles this week / last week. Closes an open detail |
+| Escape | closes an open detail, else the board |
+| tap outside, × | closes the detail when open, else the board |
+
+Arrows do nothing while the detail is open. Switching week closes the detail
+and clears the row cursor. A gamepad surface hands its presses in as the same
+keys (D-pad, A = Enter, B = Escape). The board closes itself when idle.
+Browser events: `gem-board.open`, `gem-board.close` (`reason`, `dwellMs`),
+`gem-board.week-step`, `gem-board.load-failed`, `gem-board.detail-open`
+(`rowId`, `learnerId`, `via`: `tap` | `key`), `gem-board.detail-close`
+(`reason`: `tap` | `back` | `key` | `week`).
+
+**The gem ceremony** (`GemCeremony.jsx`, `useGemCeremony.js`,
+`gemCeremonyModel.js` beside the board) follows rules, not rows: it reads each
+cell's `parts`, so two rules folded into one row celebrate separately. A
+surface keeps a snapshot in localStorage, per surface, per week:
+`{week, v: 2, parts: {learnerId: {ruleId: [state, week]}}}`. It celebrates each
+part that now holds a gem it did not — `earned`, `won`, or a contest lead just
+taken (`leading`); a lead that becomes a win celebrates again, a lost lead
+never does. An award is
+`{learnerId, name, categoryId, ruleId, label, color, cadence, kind, count}`,
+with the rule's own label, cadence and colour. A surface with no snapshot for
+this week, or one in an older shape, learns the board without celebrating, and
+a reload never replays an award.
+
+- Ordering rule for every surface (never during a live run; the piano is stricter): see [the ceremony ordering rule](../gaming/realtime-kit.md#the-ceremony-ordering-rule).
+- **Fitness** (`FitnessApp` global overlays): learns on load, then looks
+  (fresh) 1.5 s after `game-achievement-recorded` (a cycle race or a Skyline
+  Glider flight saved, `announceGameAchievement` in the [gaming real-time kit](../gaming/realtime-kit.md)) and after a workout ends;
+  shown after any coin ceremony, with the coin sound.
+- **Piano kiosk** (Games mode): the ceremony queue lives above the routes
+  and looks with a fresh read (`?fresh=1`) each time the picker is shown, so
+  arriving back from a game counts as "a game just ended". Its
+  `game-achievement-recorded` listener is attached only while the picker is
+  showing, and no piano game fires that event today.
+  The card renders only on the picker, never over a live game, and a ceremony
+  interrupted by opening a game shows again on return. Coin cue from
+  `frontend/src/lib/economy/coinCeremonyAudio.js`, primed on the first gesture.
+- **School Portal** (`SchoolApp`): while the panel rests at the keypad, a
+  minute poll and each return to the keypad; drawn over the board pane only,
+  never the keypad, with the coin cue.
+- Events: `gem-ceremony.found`, `.shown`, `.dismissed` (`reason`),
+  `.look-failed`.
 
 ## Payouts
 

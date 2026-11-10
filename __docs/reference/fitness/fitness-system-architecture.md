@@ -1028,8 +1028,9 @@ mis-bucketed home screen can be reconstructed from production logs.
 Each card's purse (bank silver + the week's gem) is a button that opens the
 shared Gem Board focused on that person, and the headline carries a **Gems**
 chip that opens it with no focus (shown whenever the economy is not `off`).
-While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→,
-A toggles the week, B closes). See the economy reference, "Gem Board".
+While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→
+moves the column and ↑/↓ a row cursor, A opens the cell under the cursor or,
+with no row picked, toggles the week, B closes the detail box, then the board). See the economy reference, "Gem Board".
 
 The widget computes from the home screen's `sessions` source, which FitnessApp
 persists in localStorage (see Screen Framework → Data Coordination), so the bars
