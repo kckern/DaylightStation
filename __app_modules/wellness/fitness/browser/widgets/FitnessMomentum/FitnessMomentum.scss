@@ -132,6 +132,9 @@
     font-size: min(0.82rem, 4.6cqw);
     .gem-glyph__times { background: #2a2c34; }
   }
+  // When any card in the row has a rail, a card without one keeps the same
+  // foot height, so every card's bars and date labels share one baseline.
+  &__cards:has(button.fitness-momentum__rail) &__rail--empty { height: 3.6rem; }
   &__rail:not(&__rail--empty):active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
   &__gems-chip {
     display: inline-flex;
