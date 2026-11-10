@@ -1,6 +1,6 @@
 /**
  * WorkoutCoinCeremony — after a workout, what the ride was worth: one card per
- * kid, "+N" with the silver coin and the new total ("→ 27 silver"), the shape
+ * kid (from the ledger entries minted, never a projection), "+N" with the silver coin and the new total ("→ 27 silver"), the shape
  * of School's coin ceremony. A ride that crossed no coin says how many rings
  * the next one is. Tap, A/Enter, or the clock dismisses it — exactly once.
  */
@@ -20,7 +20,7 @@ export function ceremonyDurationMs(cards) {
   return Math.min(10000, 4000 + 1500 * Math.max(0, (cards || 1) - 1));
 }
 
-export default function WorkoutCoinCeremony({ sessionId, learners = [], onDone }) {
+export default function WorkoutCoinCeremony({ sessionId, learners = [], txnIds = [], onDone }) {
   const log = useMemo(() => getLogger().child({ component: 'workout-coin-ceremony' }), []);
   const doneRef = useRef(false);
   const onDoneRef = useRef(onDone);
@@ -34,7 +34,7 @@ export default function WorkoutCoinCeremony({ sessionId, learners = [], onDone }
 
   useEffect(() => {
     const totalSilver = learners.reduce((s, l) => s + (l.gained?.silver || 0), 0);
-    log.info('fitness.coin_ceremony.shown', { sessionId, learners: learners.length, totalSilver });
+    log.info('fitness.coin_ceremony.shown', { sessionId, txnIds, learners: learners.length, totalSilver });
     learners.filter((l) => l.gained?.silver > 0).forEach(() => playRingCelebrationCue(COIN_SOUND));
     const timer = setTimeout(() => finish('timeout'), ceremonyDurationMs(learners.length));
     // Capture phase, consumed: the menu underneath also listens on window

@@ -1946,7 +1946,7 @@ const GEM_SOUND = { sound: 'school/_ux/coin.mp3', volume: 0.8 };
 const GlobalOverlays = () => {
   const fitnessCtx = useFitnessContext();
   useEffect(() => installRingCelebrationAudioUnlock(), []);
-  // After a finished workout: what the ride was worth (FitnessPlayer fires it).
+  // Silver the bank actually minted for a workout (ledger entries, not a projection).
   const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony();
   // A gem that just landed (a race of the week taken, an act completed, a ring
   // mark): looked for right after a race/flight saves or a workout ends, and
@@ -1974,9 +1974,10 @@ const GlobalOverlays = () => {
       <FitnessToast toast={fitnessCtx.fitnessToast} onDone={fitnessCtx.dismissFitnessToast} />
       {ceremony && (
         <WorkoutCoinCeremony
-          key={ceremony.sessionId}
+          key={ceremony.txnIds.join(',')}
           sessionId={ceremony.sessionId}
           learners={ceremony.learners}
+          txnIds={ceremony.txnIds}
           onDone={dismissCeremony}
         />
       )}

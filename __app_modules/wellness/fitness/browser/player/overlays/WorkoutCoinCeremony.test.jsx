@@ -33,6 +33,11 @@ describe('WorkoutCoinCeremony', () => {
     expect(cards[1].querySelector('.workout-coin-ceremony__gain')).toBeNull();
   });
 
+  it('logs the minted txnIds with the shown event', () => {
+    render(<WorkoutCoinCeremony sessionId="s1" txnIds={['t1', 't2']} learners={[L('learner-a', 3, 27)]} onDone={() => {}} />);
+    expect(logSpy.info).toHaveBeenCalledWith('fitness.coin_ceremony.shown', expect.objectContaining({ sessionId: 's1', txnIds: ['t1', 't2'], totalSilver: 3 }));
+  });
+
   it('plays the coin cue once per card with silver and logs shown', () => {
     render(<WorkoutCoinCeremony sessionId="s1" learners={[L('learner-a', 3, 27), L('learner-b', 0, 9)]} onDone={() => {}} />);
     expect(cue).toHaveBeenCalledTimes(1);
