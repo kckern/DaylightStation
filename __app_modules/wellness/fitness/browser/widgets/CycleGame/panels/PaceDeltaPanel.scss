@@ -1,0 +1,91 @@
+@use "../cgTokens" as t;
+
+// Solo-race pace readout. The largest text on the race screen: read from a
+// bike 2-3 m away. Behind is a warm amber, not the danger red: being behind
+// the rival is not an error. State is also carried by a word and an arrow.
+.cg-pace {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  box-sizing: border-box;
+  padding: 0.6rem 0.8rem;
+  background: t.$cg-panel;
+  border: 1px solid t.$cg-border;
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: t.$cg-display;
+  font-variant-numeric: tabular-nums;
+  color: t.$cg-text;
+  --cg-pace-color: #{t.$cg-muted};
+
+  &.is-ahead { --cg-pace-color: #{t.$cg-success}; }
+  &.is-behind { --cg-pace-color: #{t.$cg-warn}; }
+  &.is-level { --cg-pace-color: #{t.$cg-text}; }
+
+  &__main {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.2em 0.8rem;
+    color: var(--cg-pace-color);
+  }
+
+  &__headline {
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__direction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__arrow {
+    display: inline-flex;
+    width: 1.1em;
+    height: 1.1em;
+    svg { width: 100%; height: 100%; }
+  }
+
+  &__rival {
+    color: t.$cg-muted;
+    font-weight: 600;
+    font-size: 1.1rem;
+    text-align: center;
+  }
+
+  &--sm { .cg-pace__headline { font-size: 2.6rem; } .cg-pace__direction { font-size: 1.1rem; } }
+  &--md { .cg-pace__headline { font-size: 4rem; } .cg-pace__direction { font-size: 1.4rem; } }
+  &--lg { .cg-pace__headline { font-size: 6rem; } .cg-pace__direction { font-size: 2rem; } .cg-pace__rival { font-size: 1.4rem; } }
+
+  // One brief pulse when the state flips; not on every tick.
+  // Distinct keyframe names so a flip between states restarts the animation.
+  &.is-ahead { animation: cg-pace-flip-a 0.5s ease-out; }
+  &.is-behind { animation: cg-pace-flip-b 0.5s ease-out; }
+}
+
+@keyframes cg-pace-flip-a {
+  0% { transform: scale(0.97); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+@keyframes cg-pace-flip-b {
+  0% { transform: scale(0.97); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-pace { animation: none !important; }
+}

@@ -970,3 +970,31 @@ describe('CycleGameHome — race value stepper', () => {
     expect(v.dec().disabled).toBe(true);
   });
 });
+
+describe('CycleGameHome boost rule line', () => {
+  const rule = (props) => render(<CycleGameHome bikes={bikes} people={people} records={[]} {...props} />).queryByTestId('boost-rule');
+
+  it('shows the rule with formatted multipliers', () => {
+    const el = rule({ boostRange: { min: 0.8, max: 1.6 } });
+    expect(el.textContent).toBe('Harder effort goes further: your heart-rate zone multiplies your distance (\u00d70.8 to \u00d71.6).');
+    cleanup();
+    expect(rule({ boostRange: { min: 1, max: 2 } }).textContent).toContain('(\u00d71 to \u00d72)');
+    cleanup();
+    expect(rule({ boostRange: { min: 0.75, max: 1.25 } }).textContent).toContain('(\u00d70.8 to \u00d71.3)');
+  });
+
+  it('is hidden for null, missing, or equal min and max', () => {
+    expect(rule({ boostRange: null })).toBeNull();
+    cleanup();
+    expect(rule({})).toBeNull();
+    cleanup();
+    expect(rule({ boostRange: { min: 1, max: 1 } })).toBeNull();
+    cleanup();
+    expect(rule({ boostRange: { min: 2, max: 1 } })).toBeNull();
+  });
+
+  it('is unaffected by busy', () => {
+    expect(rule({ boostRange: { min: 1, max: 2 }, busy: true })).toBeTruthy();
+  });
+});
+

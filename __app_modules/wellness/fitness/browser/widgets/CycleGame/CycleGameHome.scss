@@ -146,6 +146,20 @@
 // ── Starting grid ────────────────────────────────────────────────────────
 .cgh-grid-section { display: flex; flex-direction: column; min-height: 0; }
 
+// One plain-text rule line in the grid section's footer. It lives inside the
+// section (which may shrink, min-height 0) and is capped at two lines, so it
+// spends the grid column's slack rather than growing the lobby.
+.cgh-boost-rule {
+  flex: 0 0 auto;
+  margin: 10px 0 0;
+  max-height: 2.8em;
+  overflow: hidden;
+  color: t.$cg-muted;
+  font-family: t.$cg-display;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
 .cgh-grid {
   position: relative;
   display: flex;

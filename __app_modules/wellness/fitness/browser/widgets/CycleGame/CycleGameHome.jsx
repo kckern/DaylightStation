@@ -24,6 +24,9 @@ const RECOVERED_NOTICE_DURATION_MS = 8000;
  * prop-driven; the container supplies data + handlers. The main panel is
  * center-aligned throughout.
  */
+// Multiplier text: at most one decimal, no trailing ".0" (0.8, 1.6, 2).
+const fmtMult = (n) => String(Math.round(n * 10) / 10);
+
 export default function CycleGameHome({
   raceType = null,
   onSelectRaceType,
@@ -50,6 +53,7 @@ export default function CycleGameHome({
   onRideFeatured = null,
   resolveName = (id) => id,
   recoveredNotice = null,
+  boostRange = null,
   busy = false
 }) {
   const [pickerBike, setPickerBike] = useState(null);
@@ -100,6 +104,9 @@ export default function CycleGameHome({
     ? `${silentNames.slice(0, -1).join(', ')} and ${silentNames[silentNames.length - 1]}`
     : silentNames[0];
   const silentVerb = silentNames.length > 1 ? 'are' : 'is';
+
+  const showBoostRule = !!boostRange && Number.isFinite(boostRange.min) && Number.isFinite(boostRange.max)
+    && boostRange.max > boostRange.min;
 
   const peopleById = useMemo(() => {
     const map = new Map();
@@ -180,6 +187,11 @@ export default function CycleGameHome({
                 <GhostSlot key={r.userId} rider={r} lane={bikes.length + i + 1} />
               ))}
             </div>
+          )}
+          {showBoostRule && (
+            <p className="cgh-boost-rule" data-testid="boost-rule">
+              {`Harder effort goes further: your heart-rate zone multiplies your distance (\u00d7${fmtMult(boostRange.min)} to \u00d7${fmtMult(boostRange.max)}).`}
+            </p>
           )}
         </section>
 
@@ -284,6 +296,8 @@ CycleGameHome.propTypes = {
   onRideFeatured: PropTypes.func,
   resolveName: PropTypes.func,
   recoveredNotice: PropTypes.string,
+  // Distance multiplier span from the heart-rate zones; shown as one rule line.
+  boostRange: PropTypes.shape({ min: PropTypes.number, max: PropTypes.number }),
   // A start is pending: the lobby stays up but every control is inert.
   busy: PropTypes.bool
 };

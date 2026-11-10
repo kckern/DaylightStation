@@ -138,3 +138,23 @@ export function ReadyTickIcon() {
     </svg>
   );
 }
+
+/** Up arrow: the rider is ahead of the rival. */
+export function ArrowUpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M12 20V4" />
+      <path d="m5 11 7-7 7 7" />
+    </svg>
+  );
+}
+
+/** Down arrow: the rider is behind the rival. */
+export function ArrowDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M12 4v16" />
+      <path d="m5 13 7 7 7-7" />
+    </svg>
+  );
+}
