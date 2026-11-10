@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
-import GemGlyph, { glyphLook, glyphWords } from './GemGlyph.jsx';
+import GemGlyph, { glyphLook, glyphWords, segmentPath } from './GemGlyph.jsx';
 
 afterEach(cleanup);
 const streak = (have, need, reach, left = 3) => ({ have, need, reach, left });
@@ -25,6 +25,31 @@ describe('GemGlyph', () => {
     expect(container.querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(1);
     expect(container.querySelector('.gem-glyph').dataset.look).toBe('streak');
     expect(container.textContent).toBe('');
+  });
+
+  it('a done segment carries the gem colour inline (a stylesheet rule would beat an attribute); out of reach it does not', () => {
+    const on = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 4, 'tight') }} color="rgb(43, 179, 163)" />).container;
+    const segs = [...on.querySelectorAll('.gem-glyph__seg')];
+    expect(segs.map((s) => s.style.stroke)).toEqual(['rgb(43, 179, 163)', 'rgb(43, 179, 163)', '', '']);
+    expect(segs.every((s) => !s.hasAttribute('stroke'))).toBe(true);
+    expect(on.querySelector('.gem-glyph__ring').classList.contains('is-tight')).toBe(true);
+    cleanup();
+    const out = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 5, 'out') }} color="rgb(43, 179, 163)" />).container;
+    expect([...out.querySelectorAll('.gem-glyph__seg')].map((s) => s.style.stroke)).toEqual(['', '', '', '', '']);
+    expect(out.querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(2);
+  });
+
+  it('leaves a clear gap between segments, and one day needed is still a near-full circle', () => {
+    const arc = (d) => { const [, x1, y1, , , , , large, , x2, y2] = d.split(' '); return { x1: +x1, y1: +y1, x2: +x2, y2: +y2, large }; };
+    const one = arc(segmentPath(0, 1));
+    expect(one.large).toBe('1');
+    expect(Math.hypot(one.x1 - one.x2, one.y1 - one.y2)).toBeLessThan(7); // the two ends sit 20° apart on r=17
+    // Seven days: the gap between neighbours (20° ≈ 5.9) is wider than the round caps (3.2) and each arc is still longer than it.
+    const a = arc(segmentPath(0, 7));
+    const b = arc(segmentPath(1, 7));
+    expect(Math.hypot(a.x2 - b.x1, a.y2 - b.y1)).toBeGreaterThan(5.5);
+    expect(Math.hypot(a.x1 - a.x2, a.y1 - a.y2)).toBeGreaterThan(8);
+    expect(a.large).toBe('0');
   });
 
   it('badges only a second gem, drops the gem when out of reach, dashes a held contest', () => {

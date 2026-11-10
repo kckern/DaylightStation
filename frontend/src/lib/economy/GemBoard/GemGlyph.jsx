@@ -35,7 +35,7 @@ export function glyphWords(cell) {
 }
 
 const R = 17;
-const GAP = 12; // degrees between segments
+const GAP = 20; // degrees between segments: wide enough that the round caps leave a visible break
 const point = (deg) => {
   const a = (deg - 90) * Math.PI / 180;
   return `${(20 + R * Math.cos(a)).toFixed(2)} ${(20 + R * Math.sin(a)).toFixed(2)}`;
@@ -53,9 +53,10 @@ function Ring({ streak, color }) {
   const need = Math.max(1, Math.floor(Number(streak.need) || 0));
   return (
     <svg className={`gem-glyph__ring${streak.reach === 'tight' ? ' is-tight' : ''}`} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+      {/* The colour goes inline: the stylesheet's stroke would beat an SVG attribute. */}
       {Array.from({ length: need }, (_, i) => {
         const done = i < streak.have;
-        return <path key={i} className={`gem-glyph__seg${done ? ' is-done' : ''}`} d={segmentPath(i, need)} stroke={done && !out ? color : undefined} />;
+        return <path key={i} className={`gem-glyph__seg${done ? ' is-done' : ''}`} d={segmentPath(i, need)} style={done && !out ? { stroke: color } : undefined} />;
       })}
     </svg>
   );

@@ -72,7 +72,8 @@
     &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.1); opacity: 1; }
   }
 
-  &__body { min-height: 0; &.is-loading { opacity: 0.6; } }
+  // Sized to fit unscrolled; scrolling is the fallback for more rows than planned for.
+  &__body { min-height: 0; overflow-y: auto; &.is-loading { opacity: 0.6; } }
   &__empty { padding: 3rem 1rem; text-align: center; font-size: 1.25rem; opacity: 0.75; }
 
 
@@ -110,7 +111,7 @@
 
   &__group-label {
     grid-column: 1 / -1;
-    padding: 0.7rem 0 0.25rem;
+    padding: 0.5rem 0 0.2rem;
     font-size: 0.85rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -123,7 +124,6 @@
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    padding: 0.3rem 0;
     font-size: 1.1rem;
     min-height: 2.9rem;
   }
@@ -145,7 +145,7 @@
   &__open, &__still { display: inline-flex; align-items: center; justify-content: center; }
   &__open {
     border: 0;
-    padding: 0.1rem;
+    padding: 0;
     border-radius: 50%;
     background: transparent;
     color: inherit;
@@ -207,7 +207,8 @@
 
   &__ring, &__hold { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; }
   &__seg { stroke: rgba(255, 255, 255, 0.16); stroke-width: 3.2; stroke-linecap: round; }
-  &__ring.is-tight &__seg:not(.is-done) { stroke: rgba(255, 255, 255, 0.45); }
+  // Tight: the days still needed read in the board's amber, not as a brighter (fuller-looking) grey.
+  &__ring.is-tight &__seg:not(.is-done) { stroke: rgba(255, 180, 76, 0.75); }
   &__hold circle { stroke: rgba(255, 255, 255, 0.5); stroke-width: 1.6; stroke-dasharray: 3 4; }
   &__muted { opacity: 0.4; font-size: 1.2rem; }
   &__times {
