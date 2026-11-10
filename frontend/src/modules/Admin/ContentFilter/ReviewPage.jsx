@@ -6,6 +6,10 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
 import { ReviewList } from './ReviewList.jsx';
+import { ReviewTimeline } from './ReviewTimeline.jsx';
+import { ReviewKeyBar } from './ReviewKeyBar.jsx';
+import { useReviewKeys } from './useReviewKeys.js';
+import { useReviewStation } from './useReviewStation.js';
 import { ReviewPlayer } from './ReviewPlayer.jsx';
 import { RowEditor } from './RowEditor.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
@@ -52,6 +56,9 @@ export function ReviewPage() {
     previewStore.jumpToCue({ in: found.in });
   }, [rowId, data, ratingKey]);
   useEffect(() => { logger.info('review.mounted', { ratingKey }); }, [ratingKey]);
+  // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
+  const station = useReviewStation({ ratingKey, data, reload, selected, select });
+  const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
   useEffect(() => {
     if (!waiting) return undefined;
     const id = setInterval(() => reload(), POLL_MS);
@@ -96,6 +103,9 @@ export function ReviewPage() {
           {data.job ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
           {!data.audit ? <Text size="sm" c="dimmed">No audit yet. Run the film from the library to see its parts.</Text> : null}
         </Group>
+        <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} />
+        <ReviewKeyBar row={row} tally={station.tally} canUndo={station.canUndo} redoOpen={redoOpen}
+          helpOpen={station.helpOpen} message={station.message} />
         <div className="cf-review">
           <Stack gap="sm" className="cf-review__side">
             <ReviewPlayer ratingKey={ratingKey} />
@@ -113,7 +123,7 @@ export function ReviewPage() {
             ) : null}
             {notice ? <Text size="sm" role="status">{notice}</Text> : null}
             <ReviewList rows={data.rows} reviewed={data.reviewed} total={data.total} audit={data.audit}
-              selectedId={row?.id ?? null} onSelect={select} picked={picked} onPick={pick} sentBack={sentBack} />
+              selectedId={row?.id ?? null} onSelect={station.pick} scope={station.scope} onScope={station.setScope} picked={picked} onPick={pick} sentBack={sentBack} />
           </Stack>
         </div>
       </Stack>

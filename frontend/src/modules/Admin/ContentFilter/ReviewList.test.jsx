@@ -76,4 +76,15 @@ describe('ReviewList', () => {
     expect(within(item('damn')).getByText('Sent back: refine')).toBeTruthy();
     expect(screen.getByText('Audit out of date')).toBeTruthy();
   });
+  it('shows a verdict badge per row and follows a scope given by the page', () => {
+    const withVerdict = rows.map((r) => (r.id === 'cue:w1' ? { ...r, reviewed: { by: 'p' }, verdict: { verdict: 'redo' } } : r));
+    const { rerender } = render(<MantineProvider><ReviewList rows={withVerdict} reviewed={2} total={3} audit={{ ok: true, fresh: true }} /></MantineProvider>);
+    expect(within(item('damn')).getByText('Redo')).toBeTruthy();
+    const onScope = vi.fn();
+    rerender(<MantineProvider><ReviewList rows={withVerdict} scope={{ kind: 'all', action: 'blur', needs: false, group: null }} onScope={onScope} audit={{ ok: true, fresh: true }} /></MantineProvider>);
+    expect(screen.queryByText('damn')).toBeNull();
+    expect(screen.getByText('Billboard')).toBeTruthy();
+    fireEvent.click(screen.getByRole('radio', { name: 'Scenes' }));
+    expect(onScope).toHaveBeenCalledWith({ kind: 'scenes', action: 'blur', needs: false, group: null });
+  });
 });

@@ -27,3 +27,24 @@
 .cf-review__pick { text-align: left; }
 .cf-review__time { font-variant-numeric: tabular-nums; }
 .cf-review__tick { color: var(--ds-success); }
+
+// Review station: timeline lanes and the key bar.
+.cf-timeline { display: flex; flex-direction: column; gap: var(--ds-space-1); }
+.cf-timeline__lane { display: flex; align-items: center; gap: var(--ds-space-2); }
+.cf-timeline__label { flex: 0 0 96px; font-size: 11px; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
+.cf-timeline__track { position: relative; flex: 1; height: 22px; background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); overflow: hidden; }
+.cf-timeline__mark { position: absolute; top: 3px; bottom: 3px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; background: var(--ds-text-muted); opacity: 0.75; }
+.cf-timeline__mark.is-mute { background: var(--ds-info); }
+.cf-timeline__mark.is-bleep { background: var(--ds-warning); }
+.cf-timeline__mark.is-blur { background: var(--ds-accent); }
+.cf-timeline__mark.is-skip { background: var(--ds-danger); }
+.cf-timeline__mark.has-verdict { opacity: 0.35; }
+.cf-timeline__mark.is-redo { opacity: 1; outline: 1px solid var(--ds-danger); }
+.cf-timeline__mark.is-cursor { opacity: 1; top: 0; bottom: 0; outline: 2px solid var(--ds-text-primary); z-index: 1; }
+.cf-keybar { display: flex; flex-direction: column; gap: var(--ds-space-1); position: relative; padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); }
+.cf-keybar__tally { font-variant-numeric: tabular-nums; }
+.cf-keybar__item { font-size: 12px; color: var(--ds-text-secondary); }
+.cf-keybar__key { display: inline-block; min-width: 20px; padding: 0 var(--ds-space-1); text-align: center; font-family: var(--ds-font-mono); font-size: 11px; color: var(--ds-text-primary); background: var(--ds-bg-elevated); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); }
+.cf-keybar__help { position: absolute; top: 100%; left: 0; z-index: var(--ds-z-dropdown); margin-top: var(--ds-space-1); padding: var(--ds-space-3); display: flex; flex-direction: column; gap: var(--ds-space-1); background: var(--ds-bg-overlay); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); box-shadow: var(--ds-shadow-elevated); max-width: 480px; }
+.cf-keybar__help-row { display: flex; gap: var(--ds-space-2); align-items: baseline; font-size: 12px; }
+.cf-keybar__help-row .cf-keybar__key { flex: 0 0 auto; min-width: 88px; }

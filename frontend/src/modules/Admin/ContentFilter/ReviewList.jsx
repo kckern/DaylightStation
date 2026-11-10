@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Badge, Button, Checkbox, Group, SegmentedControl, Select, Stack, Text, UnstyledButton } from '@mantine/core';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { effectChip } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
+import { ACTION_SCOPES, DEFAULT_SCOPE, KIND_SCOPES, scopeRows } from './reviewScope.js';
 
 /**
  * Every part the filter acts on in one film, as the household gets it (the latest audit's rows),
@@ -19,7 +20,7 @@ const GROUP_LABELS = {
 };
 /** A group key in words: the known ones by name, the rest with spaces. */
 export const groupLabel = (g) => GROUP_LABELS[g] || String(g || '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
-const KINDS = [{ label: 'All', value: 'all' }, { label: 'Words', value: 'words' }, { label: 'Picture', value: 'picture' }, { label: 'Scenes', value: 'scenes' }];
+const VERDICT_BADGE = { approve: ['Approved', 'green'], remove: ['Removed', 'gray'], ignore: ['Ignored', 'gray'], redo: ['Redo', 'orange'] };
 
 /** m:ss.s, tenths floored (a time code, not a rounded duration). */
 export function timecode(t) {
@@ -31,13 +32,14 @@ export function timecode(t) {
 }
 
 export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, selectedId = null, onSelect = () => {},
-  picked = null, onPick = null, sentBack = {} }) {
-  const [kind, setKind] = useState('all');
-  const [group, setGroup] = useState(null);
-  const [needs, setNeeds] = useState(false);
+  picked = null, onPick = null, sentBack = {}, scope: scopeProp = null, onScope = null }) {
+  // The page owns the scope (kind x action x needs x group) so the timeline and stepping share it;
+  // used on its own the list keeps its own.
+  const [own, setOwn] = useState(DEFAULT_SCOPE);
+  const scope = scopeProp || own;
+  const setScope = (patch) => (onScope ? onScope({ ...scope, ...patch }) : setOwn({ ...scope, ...patch }));
   const groups = useMemo(() => [...new Set(rows.map((r) => r.group).filter(Boolean))].sort(), [rows]);
-  const shown = rows.filter((r) => (kind === 'all' || r.kind === kind) && (!group || r.group === group)
-    && (!needs || !r.reviewed));
+  const shown = scopeRows(rows, scope);
   return (
     <Stack gap="xs" className="cf-review__list">
       <Group justify="space-between" wrap="wrap" gap="xs">
@@ -46,9 +48,10 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
           : audit && !audit.ok ? <Text size="sm" c="red">The audit has not passed</Text> : null}
       </Group>
       <Group gap="xs" wrap="wrap">
-        <SegmentedControl size="xs" data={KINDS} value={kind} onChange={setKind} aria-label="Kind" />
-        <Select size="xs" aria-label="Group" placeholder="All groups" clearable data={groups.map((g) => ({ value: g, label: groupLabel(g) }))} value={group} onChange={setGroup} />
-        <Checkbox size="xs" label="Needs review" checked={needs} onChange={(e) => setNeeds(e.currentTarget.checked)} />
+        <SegmentedControl size="xs" data={KIND_SCOPES} value={scope.kind} onChange={(kind) => setScope({ kind })} aria-label="Kind" />
+        <Select size="xs" aria-label="Action" allowDeselect={false} data={ACTION_SCOPES} value={scope.action} onChange={(action) => setScope({ action: action || 'all' })} />
+        <Select size="xs" aria-label="Group" placeholder="All groups" clearable data={groups.map((g) => ({ value: g, label: groupLabel(g) }))} value={scope.group} onChange={(group) => setScope({ group })} />
+        <Checkbox size="xs" label="Needs review" checked={scope.needs} onChange={(e) => setScope({ needs: e.currentTarget.checked })} />
       </Group>
       {!shown.length ? <Text size="sm" c="dimmed">Nothing here. Change the filters above.</Text> : shown.map((r) => (
         <div key={r.id} data-row-id={r.id} className={`cf-review__row${r.id === selectedId ? ' is-selected' : ''}`}>
@@ -59,6 +62,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                   <Checkbox size="xs" aria-label={`Select ${r.label}`} checked={!!picked?.has(r.id)} onChange={(e) => onPick(r.id, e.currentTarget.checked)} />
                 ) : null}
                 {r.reviewed ? <Text span aria-label="Reviewed" className="cf-review__tick">✓</Text> : null}
+                {r.verdict && VERDICT_BADGE[r.verdict.verdict] ? <Badge size="xs" variant="light" color={VERDICT_BADGE[r.verdict.verdict][1]}>{VERDICT_BADGE[r.verdict.verdict][0]}</Badge> : null}
                 <UnstyledButton onClick={() => { onSelect(r); previewStore.jumpToCue({ in: r.in }); }} aria-pressed={r.id === selectedId} className="cf-review__pick">
                   <Text fw={500} size="sm" span>{r.label}</Text>
                 </UnstyledButton>
