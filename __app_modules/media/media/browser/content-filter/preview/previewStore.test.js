@@ -113,4 +113,11 @@ describe('previewStore review-player additions', () => {
     previewStore.forceFilter(null);
     expect(previewStore.isForced('77')).toBe(false);
   });
+  it('clearPending drops a parked jump so the next player does not seek', () => {
+    previewStore.jumpToCue({ in: 50 });
+    previewStore.clearPending();
+    const seek = vi.fn();
+    previewStore.bind({ seek, play: vi.fn() });
+    expect(seek).not.toHaveBeenCalled();
+  });
 });

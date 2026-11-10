@@ -16,7 +16,7 @@ export function ReviewPlayer({ ratingKey }) {
   useState(() => { previewStore.forceFilter(ratingKey); return null; });
   useEffect(() => {
     previewStore.forceFilter(ratingKey);
-    return () => previewStore.forceFilter(null);
+    return () => { previewStore.forceFilter(null); previewStore.clearPending(); };
   }, [ratingKey]);
   const play = useMemo(() => ({ contentId: `plex:${ratingKey}`, resume: false }), [ratingKey]);
   return (

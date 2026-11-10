@@ -51,4 +51,12 @@ describe('Content filter review page', () => {
     at('/admin/content/filter/77/cue%3Agone');
     expect(screen.getByText("That filter isn't in this film any more")).toBeTruthy();
   });
+  it('leaving the film drops a jump parked before the player bound', () => {
+    previewStore.reset();
+    const { unmount } = at('/admin/content/filter/77/cue%3Aw1');
+    unmount();
+    const seek = vi.fn();
+    previewStore.bind({ seek, play: vi.fn() });
+    expect(seek).not.toHaveBeenCalled();
+  });
 });

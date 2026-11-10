@@ -94,6 +94,8 @@ export const previewStore = {
 
   seekTo(seconds) { if (Number.isFinite(seconds)) binding.seek(Math.max(0, seconds)); },
   jumpToCue(cue) { jumpTo(cue); },
+  /** Drop a jump parked before any player bound (host leaving the film). */
+  clearPending() { pendingJump = null; },
   replayLast() { jumpTo(snapshot.lastFired); },
   peek(id) { if (id != null) binding.peek(String(id)); },
   /** The bound player's position in seconds, or null. */
