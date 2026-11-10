@@ -19,7 +19,7 @@ const Key = ({ k, children }) => (
   <span className="cf-keybar__item"><kbd className="cf-keybar__key" data-key={k}>{k}</kbd> {children}</span>
 );
 
-export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 }, canUndo = false, redoOpen = false, helpOpen = false, message = null }) {
+export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 }, canUndo = false, redoOpen = false, helpOpen = false, message = null, bleepLevel = null }) {
   const tallyText = `${tally.done}/${tally.total}${tally.redo ? ` · ${tally.redo} redo` : ''}`;
   return (
     <div className="cf-keybar">
@@ -43,6 +43,7 @@ export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 
                 {canUndo ? <Key k="U">undo</Key> : null}
               </>
             ) : null}
+            {bleepLevel != null ? <Key k="[ ]">{`bleep ${Math.round(bleepLevel * 100)}%`}</Key> : null}
             <Key k="F">view</Key><Key k="?">all keys</Key>
           </>
         )}

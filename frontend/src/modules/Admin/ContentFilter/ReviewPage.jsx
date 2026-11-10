@@ -105,7 +105,7 @@ export function ReviewPage() {
         </Group>
         <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} />
         <ReviewKeyBar row={row} tally={station.tally} canUndo={station.canUndo} redoOpen={redoOpen}
-          helpOpen={station.helpOpen} message={station.message} />
+          helpOpen={station.helpOpen} message={station.message} bleepLevel={station.bleepLevel} />
         <div className="cf-review">
           <Stack gap="sm" className="cf-review__side">
             <ReviewPlayer ratingKey={ratingKey} />

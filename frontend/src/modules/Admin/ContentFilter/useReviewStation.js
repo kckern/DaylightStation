@@ -4,6 +4,7 @@ import { createAppLogger } from '../../../lib/ui/index.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, nextKind, rowAction, scopeRows, stepFrom } from './reviewScope.js';
 import { effectChoices } from './RowEditor.jsx';
+import { BLEEP_LEVEL_DEFAULT, clampBleepLevel } from '../../../../../shared/contracts/content-filter/filterSettings.mjs';
 
 /**
  * The review station's state machine: cursor, scope, verdicts, in-place action changes, undo,
@@ -14,6 +15,8 @@ const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
 const round3 = (v) => Math.round(v * 1000) / 1000;
 const SCENE_EFFECTS = new Set(['skip', 'blackout']);
+// A held [ or ] changes the level many times a second; the film's setting is written once it settles.
+const LEVEL_DEBOUNCE_MS = 400;
 
 export function useReviewStation({ ratingKey, data, reload, selected, select, runBusy = false }) {
   const rk = String(ratingKey);
@@ -184,6 +187,45 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
     previewStore.jumpToCue({ in: row.in });
   };
 
+  // Bleep level for this film: film ?? household ?? 0.25. The key moves a pending value at once
+  // (shown in the key bar); one debounced write saves it, then the player re-reads its profile and
+  // the cue replays so the reviewer hears the change.
+  const [pendingLevel, setPendingLevel] = useState(null);
+  const levelRef = useRef({ value: null, timer: null });
+  const savedLevel = data?.bleepLevel?.film ?? data?.bleepLevel?.profile ?? BLEEP_LEVEL_DEFAULT;
+  const bleepLevel = pendingLevel ?? savedLevel;
+  const saveLevel = useCallback(async () => {
+    const st = levelRef.current;
+    clearTimeout(st.timer); st.timer = null;
+    const value = st.value;
+    if (value == null) return;
+    try {
+      await DaylightAPI(`${API}/${encodeURIComponent(rk)}/settings`, { settings: { bleepLevel: value } }, 'PUT');
+      logger.info('content_filter.review.bleep_level', { rk, level: value });
+      await previewStore.refresh();
+      reload();
+      const r = latest.current.rows?.find((x) => x.id === latest.current.selectedId);
+      if (r) previewStore.jumpToCue({ in: r.in });
+    } catch (err) {
+      logger.warn('content_filter.review.bleep_level_failed', { rk, level: value, error: err.message });
+      setMessage(err.message || 'The bleep level did not save.');
+    } finally {
+      if (st.value === value) { st.value = null; setPendingLevel(null); }
+    }
+  }, [rk, reload]);
+  const changeBleepLevel = (delta) => {
+    const st = levelRef.current;
+    const from = st.value ?? latest.current.savedLevel;
+    const next = clampBleepLevel(from + delta);
+    st.value = next; setPendingLevel(next);
+    setMessage(`Bleep level ${Math.round(next * 100)}%`);
+    clearTimeout(st.timer);
+    st.timer = setTimeout(saveLevel, LEVEL_DEBOUNCE_MS);
+  };
+  latest.current.savedLevel = savedLevel;
+  // Leaving the film must not drop the last keypress.
+  useEffect(() => () => { if (levelRef.current.value != null) saveLevel(); }, [saveLevel]);
+
   const top = undoStack[undoStack.length - 1];
   const canUndo = Boolean(top && rows?.some((r) => r.id === top.rowId));
   const tally = useMemo(() => ({
@@ -194,10 +236,11 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
   const handlers = {
     next: () => step(1), prev: () => step(-1), replay, rework, verdict, undo, effect, widen,
     cycleKind: () => setScope({ ...scope, kind: nextKind(scope.kind) }),
+    bleepLevel: changeBleepLevel,
     help: () => setHelpOpen((v) => !v),
     escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
   };
-  return { scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, flagged: flagged.length, rework };
+  return { scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, bleepLevel, flagged: flagged.length, rework };
 }
 
 export default useReviewStation;

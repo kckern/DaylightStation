@@ -8,7 +8,7 @@
  * child ever sees. Design: ops:docs/superpowers/specs/2026-11-06-content-filter-scenes-design.md
  */
 import { trustedAxes, sceneEffect } from '../../../../../../../shared/contracts/content-filter/sceneEffect.mjs';
-import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, mergeSettings, LEVELS, LANGUAGE_VALUES, LANGUAGE_GROUPS } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
+import { mergeProfilePatch, applySettingsToProfile, settingsFromProfile, profilePatchFromSettings, mergeSettings, clampBleepLevel, LEVELS, LANGUAGE_VALUES, LANGUAGE_GROUPS } from '../../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { mapTime } from '../../../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { createTitleQueue } from '../titleQueue.mjs';
 
@@ -73,6 +73,10 @@ export class ContentFilterScenes {
       if (!LEVELS.includes(settings[k])) throw new Error(`unknown ${k} setting: ${settings[k]}`);
       out[k] = settings[k];
     }
+    if ('bleepLevel' in settings) {
+      if (settings.bleepLevel !== null && clampBleepLevel(settings.bleepLevel) == null) throw new Error(`unknown bleepLevel: ${settings.bleepLevel}`);
+      out.bleepLevel = settings.bleepLevel === null ? null : clampBleepLevel(settings.bleepLevel);
+    }
     return out;
   }
 
@@ -82,11 +86,22 @@ export class ContentFilterScenes {
     return this.#serial(ratingKey, async () => {
       const override = (await this.#repo.getOverride(ratingKey)) || { contentId: `plex:${ratingKey}` };
       // Partial settings merge over this film's current effective settings.
-      const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
-      const profilePatch = profilePatchFromSettings(mergeSettings(settingsFromProfile(effective), partial));
+      const { bleepLevel, ...rest } = partial;
+      // A level alone must not pin this film's other settings: only the level is written.
+      let profilePatch;
+      if (Object.keys(rest).length) {
+        const effective = mergeProfilePatch(await this.#repo.getProfile(profileName), override.profilePatch);
+        profilePatch = profilePatchFromSettings(mergeSettings(settingsFromProfile(effective), rest));
+      } else {
+        const { bleepLevel: _old, languageWords: _w, ...kept } = override.profilePatch || {};
+        profilePatch = kept;
+      }
+      const level = 'bleepLevel' in partial ? bleepLevel : override.profilePatch?.bleepLevel;
+      if (level != null) profilePatch.bleepLevel = level; else delete profilePatch.bleepLevel;
       // Settings are groups; this film's per-word rulings (Admin review) live beside them.
       if (override.profilePatch?.languageWords) profilePatch.languageWords = override.profilePatch.languageWords;
-      await this.#repo.saveOverride(ratingKey, { ...override, profilePatch });
+      const { profilePatch: _prev, ...others } = override;
+      await this.#repo.saveOverride(ratingKey, Object.keys(profilePatch).length ? { ...others, profilePatch } : others);
       this.#logger.info?.('content-filter.settings.title', { ratingKey, settings });
       return { profilePatch };
     });
@@ -112,6 +127,7 @@ export class ContentFilterScenes {
       if (!profile) return null;
       // Partial settings merge over the stored (unmerged) household profile, never a film's patch.
       const next = applySettingsToProfile(profile, mergeSettings(settingsFromProfile(profile), partial));
+      if (partial.bleepLevel === null) delete next.bleepLevel; // back to the built-in default
       await this.#repo.saveProfile(profileName, next);
       this.#logger.info?.('content-filter.settings.profile', { profile: profileName, settings });
       return { profile: next };

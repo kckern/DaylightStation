@@ -89,3 +89,22 @@ describe('SettingsPanel', () => {
     expect(screen.getByRole('button', { name: 'Reset this film' }).disabled).toBe(false);
   });
 });
+
+describe('SettingsPanel bleep volume', () => {
+  beforeEach(() => {
+    act(() => previewStore.reset());
+    DaylightAPI.mockReset();
+    vi.spyOn(previewStore, 'refresh').mockResolvedValue(undefined);
+    act(() => previewStore.publish({ ratingKey: '77', profile: { ...PROFILE, bleepLevel: 0.3 }, override: {} }));
+  });
+  it('shows the effective level and steps it for this film or everywhere', async () => {
+    DaylightAPI.mockResolvedValue({});
+    render(<SettingsPanel />);
+    expect(screen.getByTestId('bleep-level').textContent).toBe('30%');
+    fireEvent.click(screen.getByRole('button', { name: 'Louder bleep' }));
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/77/settings', { settings: { bleepLevel: 0.35 } }, 'PUT'));
+    fireEvent.click(screen.getByRole('button', { name: 'Everywhere' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Quieter bleep' }));
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/content-filter/profiles/family/settings', { settings: { bleepLevel: 0.25 } }, 'PUT'));
+  });
+});

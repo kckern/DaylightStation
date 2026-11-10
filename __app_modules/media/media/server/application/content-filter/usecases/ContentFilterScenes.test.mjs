@@ -23,6 +23,7 @@ function memRepo() {
     saveRefinedEdl: async (_r, e) => { state.refined = e; },
     getTranscript: async () => state.transcript,
     getProfile: async () => state.profile,
+    saveProfile: async (_n, p) => { state.profile = p; },
     getOverride: async () => state.override,
     saveOverride: async (_rk, o) => { state.override = o; },
   };
@@ -216,5 +217,26 @@ describe('ContentFilterScenes language groups (R9)', () => {
     expect(Object.keys(repo.state.override.profilePatch.categories).filter((k) => k.startsWith('language/'))).toHaveLength(5);
     await expect(uc.setTitleSettings({ ratingKey: '5', settings: { language: { rude: 'mute' } } })).rejects.toThrow(/language group/);
     await expect(uc.setTitleSettings({ ratingKey: '5', settings: { language: { slurs: 'loud' } } })).rejects.toThrow(/slurs/);
+  });
+});
+
+describe('bleep level settings', () => {
+  it('a film level stores only the level (no pinned categories), clamped, and null clears it', async () => {
+    const repo = memRepo();
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });
+    await uc.setTitleSettings({ ratingKey: '5', settings: { bleepLevel: 1.8 } });
+    expect(repo.state.override.profilePatch).toEqual({ bleepLevel: 1 });
+    await uc.setTitleSettings({ ratingKey: '5', settings: { language: { profanity: 'mute' } } });
+    expect(repo.state.override.profilePatch.bleepLevel).toBe(1);
+    await uc.setTitleSettings({ ratingKey: '5', settings: { bleepLevel: null } });
+    expect(repo.state.override.profilePatch.bleepLevel).toBeUndefined();
+    await expect(uc.setTitleSettings({ ratingKey: '5', settings: { bleepLevel: 'loud' } })).rejects.toThrow(/bleepLevel/);
+  });
+  it('the household level lands on the profile', async () => {
+    const repo = memRepo();
+    const uc = new ContentFilterScenes({ contentFilterRepository: repo, logger: quiet });
+    const { profile } = await uc.setProfileSettings({ profileName: 'family', settings: { bleepLevel: 0.4 } });
+    expect(profile.bleepLevel).toBe(0.4);
+    expect(repo.state.profile.bleepLevel).toBe(0.4);
   });
 });

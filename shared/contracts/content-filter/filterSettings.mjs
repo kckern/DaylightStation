@@ -14,6 +14,18 @@ export { LANGUAGE_GROUPS, LANGUAGE_DEFAULTS };
 export const LANGUAGE_VALUES = ['mute', 'bleep', 'off'];
 export const LEVELS = ['off', 'blur', 'blackout', 'skip'];
 
+/** Bleep tone loudness (0..1, before the media volume scales it). Film patch ?? profile ?? default. */
+export const BLEEP_LEVEL_DEFAULT = 0.25;
+/** A level clamped to 0..1 and rounded to 1%; null when it is not a finite number. */
+export function clampBleepLevel(v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  return Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
+}
+/** The level a (merged) profile plays at. */
+export function resolveBleepLevel(profile) {
+  return clampBleepLevel(profile?.bleepLevel) ?? BLEEP_LEVEL_DEFAULT;
+}
+
 /** Categories each level-setting owns, and the scene group it rules. */
 const GROUPS = {
   violence: { categories: ['violence_blood_gore/graphic', 'violence_blood_gore/gore'], parents: ['violence_blood_gore'], group: 'violence_blood_gore' },
@@ -66,7 +78,10 @@ export function profilePatchFromSettings(settings = {}) {
     for (const c of g.categories) categories[c] = { effect: level === 'off' ? 'off' : 'full-blur' };
     scenes[g.group] = sceneFor(level, key); // {} = explicitly none, so it overrides a base entry
   }
-  return { categories, scenes };
+  const out = { categories, scenes };
+  const level = clampBleepLevel(settings.bleepLevel);
+  if (level != null) out.bleepLevel = level;
+  return out;
 }
 
 export function settingsFromProfile(profile) {
@@ -89,11 +104,12 @@ export function settingsFromProfile(profile) {
 /** Overlay a patch ({ categories, scenes }) on a profile; the patch wins per key. Pure. */
 export function mergeProfilePatch(profile, patch) {
   if (!profile) return profile;
-  if (!patch || (!patch.categories && !patch.scenes && !patch.languageWords)) return profile;
+  if (!patch || (!patch.categories && !patch.scenes && !patch.languageWords && clampBleepLevel(patch.bleepLevel) == null)) return profile;
   return {
     ...profile,
     categories: { ...(profile.categories || {}), ...(patch.categories || {}) },
     scenes: { ...(profile.scenes || {}), ...(patch.scenes || {}) },
+    ...(clampBleepLevel(patch.bleepLevel) != null ? { bleepLevel: clampBleepLevel(patch.bleepLevel) } : {}),
     ...(patch.languageWords ? { languageWords: { ...(profile.languageWords || {}), ...patch.languageWords } } : {}),
   };
 }

@@ -95,3 +95,28 @@ describe('filterSettings', () => {
     expect(m.languageWords).toEqual({ damn: 'off', hell: 'bleep' });
   });
 });
+
+describe('bleepLevel', () => {
+  it('clamps to 0..1 and rejects non-numbers', async () => {
+    const { clampBleepLevel, BLEEP_LEVEL_DEFAULT, resolveBleepLevel } = await import('./filterSettings.mjs');
+    expect(BLEEP_LEVEL_DEFAULT).toBe(0.25);
+    expect(clampBleepLevel(1.7)).toBe(1);
+    expect(clampBleepLevel(-3)).toBe(0);
+    expect(clampBleepLevel(0.3000001)).toBe(0.3);
+    expect(clampBleepLevel('x')).toBeNull();
+    expect(clampBleepLevel(null)).toBeNull();
+    expect(resolveBleepLevel({ bleepLevel: 0.4 })).toBe(0.4);
+    expect(resolveBleepLevel({})).toBe(0.25);
+    expect(resolveBleepLevel(null)).toBe(0.25);
+  });
+  it('a film patch overrides the profile level; absent patch keeps it', () => {
+    const profile = { name: 'f', categories: {}, scenes: {}, bleepLevel: 0.5 };
+    expect(mergeProfilePatch(profile, { bleepLevel: 0.1 }).bleepLevel).toBe(0.1);
+    expect(mergeProfilePatch(profile, { categories: {} }).bleepLevel).toBe(0.5);
+    expect(mergeProfilePatch({ name: 'f' }, { bleepLevel: 0.1 }).bleepLevel).toBe(0.1);
+  });
+  it('applySettingsToProfile writes the household level and leaves it alone otherwise', () => {
+    expect(applySettingsToProfile({ name: 'f' }, { bleepLevel: 0.4 }).bleepLevel).toBe(0.4);
+    expect(applySettingsToProfile({ name: 'f', bleepLevel: 0.4 }, { violence: 'skip' }).bleepLevel).toBe(0.4);
+  });
+});

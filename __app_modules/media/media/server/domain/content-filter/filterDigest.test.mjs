@@ -20,3 +20,12 @@ describe('filterDigest and certification', () => {
     expect(filterDigest({ refined, override: {} })).toBe(filterDigest({ refined: { ...refined, certification: { level: 'parent', parent: { by: 'p' } } }, override: {} }));
   });
 });
+
+describe('filterDigest and bleep level', () => {
+  it('a bleep level change does not make the audit stale', () => {
+    const refined = { cues: [{ id: 'a' }] };
+    const o = (lvl) => ({ profilePatch: { languageWords: { x: 'mute' }, ...(lvl == null ? {} : { bleepLevel: lvl }) } });
+    expect(filterDigest({ refined, override: o(0.4) })).toBe(filterDigest({ refined, override: o(null) }));
+    expect(filterDigest({ refined, override: o(null) })).not.toBe(filterDigest({ refined, override: { profilePatch: { languageWords: { x: 'bleep' } } } }));
+  });
+});

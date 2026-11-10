@@ -112,3 +112,13 @@ describe('shared AudioContext', () => {
     expect(Ctor).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('bleep level', () => {
+  it('a level getter is read at each start, so a change applies to the next bleep', () => {
+    const ctx = fakeCtx(); let lvl = 0.5;
+    const tone = createBleepTone({ createContext: () => ctx, level: () => lvl });
+    tone.start(); tone.stop(); lvl = 0.1; tone.start();
+    const gains = ctx.createGain.mock.results.map((r) => r.value.gain.linearRampToValueAtTime.mock.calls[0][0]);
+    expect(gains[0]).toBeCloseTo(0.5); expect(gains[1]).toBeCloseTo(0.1);
+  });
+});

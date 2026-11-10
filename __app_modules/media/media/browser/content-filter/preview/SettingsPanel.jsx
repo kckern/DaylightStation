@@ -7,7 +7,7 @@
 import React, { useMemo, useState } from 'react';
 import { useFilterPreview } from './previewStore.js';
 import { useFilterWrite } from './useFilterWrite.js';
-import { settingsFromProfile } from '../../../../../../shared/contracts/content-filter/filterSettings.mjs';
+import { settingsFromProfile, resolveBleepLevel, clampBleepLevel } from '../../../../../../shared/contracts/content-filter/filterSettings.mjs';
 import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
 import { getChildLogger } from '../../../../../../frontend/src/lib/logging/singleton.js';
 
@@ -48,6 +48,16 @@ export default function SettingsPanel() {
       'content-filter.setting.changed', { ratingKey: rk, scope, setting: row.lang ? `language.${row.lang}` : row.key, value },
     );
   };
+  const level = resolveBleepLevel(snap.profile);
+  const stepLevel = (delta) => {
+    const next = clampBleepLevel(level + delta);
+    if (next === level) return;
+    const url = scope === 'film' ? `${base}/${encodeURIComponent(rk)}/settings` : `${base}/profiles/${PROFILE_NAME}/settings`;
+    return write(
+      () => DaylightAPI(url, { settings: { bleepLevel: next } }, 'PUT'),
+      'content-filter.setting.changed', { ratingKey: rk, scope, setting: 'bleepLevel', value: next },
+    );
+  };
   const reset = () => write(
     () => DaylightAPI(`${base}/${encodeURIComponent(rk)}/settings`, {}, 'DELETE'),
     'content-filter.setting.changed', { ratingKey: rk, scope: 'film', setting: 'all', value: 'reset' },
@@ -74,6 +84,14 @@ export default function SettingsPanel() {
           </div>
         </section>
       ))}
+      <section className="filter-rail__section">
+        <h4>Bleep volume</h4>
+        <div className="filter-rail__buttons" role="group" aria-label="Bleep volume">
+          <button type="button" className="filter-rail__btn" aria-label="Quieter bleep" disabled={busy} onClick={() => stepLevel(-0.05)}>-</button>
+          <span data-testid="bleep-level">{Math.round(level * 100)}%</span>
+          <button type="button" className="filter-rail__btn" aria-label="Louder bleep" disabled={busy} onClick={() => stepLevel(0.05)}>+</button>
+        </div>
+      </section>
       <section className="filter-rail__section">
         <button type="button" className="filter-rail__btn" disabled={busy || !hasFilmSettings} onClick={reset}>Reset this film</button>
         {error ? <div className="filter-rail__error" role="alert">{error}</div> : null}

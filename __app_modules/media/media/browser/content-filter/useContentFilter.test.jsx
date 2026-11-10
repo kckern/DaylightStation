@@ -674,3 +674,21 @@ describe('useContentFilter — preview: re-resolve, bypass, lastFired', () => {
     vi.useRealTimers();
   });
 });
+
+describe('bleep level at playback', () => {
+  it('the default SFX tone sounds at the profile level, read live', async () => {
+    vi.resetModules();
+    const gains = [];
+    const param = () => ({ value: 0, setValueAtTime() {}, cancelScheduledValues() {}, linearRampToValueAtTime: (v) => gains.push(v) });
+    vi.stubGlobal('AudioContext', function Ctx() {
+      return { state: 'running', currentTime: 1, destination: {}, createGain: () => ({ gain: param(), connect() {}, disconnect() {} }),
+        createOscillator: () => ({ frequency: param(), connect() {}, disconnect() {}, start() {}, stop() {} }) };
+    });
+    const { createSfxPlayer: make } = await import('./useContentFilter.js');
+    let level = 0.4;
+    const sfx = make({}, { level: () => level });
+    sfx.tone(); sfx.stop(); level = 0.1; sfx.tone();
+    expect(gains.filter((g) => g > 0)).toEqual([0.4, 0.1]);
+    vi.unstubAllGlobals();
+  });
+});

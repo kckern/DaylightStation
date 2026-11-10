@@ -319,6 +319,7 @@ export class ContentFilterReview {
       certification: { level: cert.level, ...(cert.blocking ? { blocking: cert.blocking } : {}) },
       audit: audit ? { ok: audit.ok, at: audit.at, fresh, running: auditing, failures: audit.failures || [] } : null,
       wordRulings: override.profilePatch?.languageWords || {},
+      bleepLevel: { film: override.profilePatch?.bleepLevel ?? null, profile: (await this.#repo.getProfile('family'))?.bleepLevel ?? null },
       rows, reviewed, total, redo,
       job: run ? { id: run.id, kind: run.kind, status: run.status, step: run.step, steps: run.steps, ...(run.cues ? { cues: run.cues } : {}) } : null,
       signOff: { ready: missing.length === 0, missing, parent: refined.certification?.parent || null },

@@ -210,3 +210,27 @@ describe('review station keys', () => {
     expect(notPrevented).toBe(true); btn.remove();
   });
 });
+
+describe('bleep level keys', () => {
+  const settingsPuts = () => calls.filter((c) => c.path.endsWith('/77/settings'));
+  it('] and [ step the per-film level by 0.05, one debounced write, replaying the cue', async () => {
+    payload = { ...three(), bleepLevel: { film: null, profile: 0.3 } };
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show();
+    press('ArrowRight');
+    jump.mockClear();
+    press(']'); press(']'); press('[');
+    expect(settingsPuts()).toHaveLength(0);
+    await waitFor(() => expect(settingsPuts()).toHaveLength(1));
+    expect(settingsPuts()[0]).toEqual({ path: 'api/v1/content-filter/77/settings', method: 'PUT', body: { settings: { bleepLevel: 0.35 } } });
+    expect(screen.getByRole('status').textContent).toMatch(/Bleep level 35%/);
+    await waitFor(() => expect(jump).toHaveBeenCalledWith({ in: 10 }));
+  });
+  it('starts from the film level, else the household level, else 0.25, and clamps', async () => {
+    payload = { ...three(), bleepLevel: { film: 0.98, profile: 0.3 } };
+    show();
+    press(']'); press(']');
+    await waitFor(() => expect(settingsPuts()).toHaveLength(1));
+    expect(settingsPuts()[0].body.settings.bleepLevel).toBe(1);
+  });
+});

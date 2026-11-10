@@ -23,10 +23,15 @@ function sharedContext() {
 // A context the browser may hand back to us after a gesture or an interruption.
 const RESUMABLE = new Set(['suspended', 'interrupted']);
 
+/** `level` is a number or a getter, read at each start so a setting change applies to the next bleep. */
 export function createBleepTone({ createContext = sharedContext, level = 0.25, rampSec = 0.008, onDegraded } = {}) {
   let ctx = null;
   let osc = null;
   let gain = null;
+  const levelNow = () => {
+    const l = typeof level === 'function' ? level() : level;
+    return Number.isFinite(l) ? Math.min(1, Math.max(0, l)) : 0.25;
+  };
 
   return {
     /** @param {{volume?: number}} [opts] media element volume (0..1) to scale the level by */
@@ -49,7 +54,7 @@ export function createBleepTone({ createContext = sharedContext, level = 0.25, r
         g = ctx.createGain();
         g.gain.setValueAtTime(0, t);
         const v = Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1;
-        g.gain.linearRampToValueAtTime(level * v, t + rampSec);
+        g.gain.linearRampToValueAtTime(levelNow() * v, t + rampSec);
         o = ctx.createOscillator();
         o.type = 'sine';
         o.frequency.setValueAtTime(BLEEP_HZ, t);

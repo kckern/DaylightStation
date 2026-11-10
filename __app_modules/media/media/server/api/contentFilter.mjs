@@ -31,7 +31,10 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       if (await jobs.busyWriting(key)) {
         return res.status(409).json({ error: 'A filter run is writing this film. Try again when it finishes.' });
       }
-      if (!NO_REAUDIT.test(req.path)) {
+      // The bleep tone's loudness is a playback setting: it changes nothing the audit checked.
+      const keys = Object.keys(req.body?.settings || {});
+      const levelOnly = req.path === '/settings' && req.method === 'PUT' && keys.length > 0 && keys.every((k) => k === 'bleepLevel');
+      if (!NO_REAUDIT.test(req.path) && !levelOnly) {
         res.on('finish', () => { if (res.statusCode < 300) jobs.audit(key).catch?.(() => {}); });
       }
       next();

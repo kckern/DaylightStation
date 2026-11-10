@@ -18,6 +18,7 @@ import { resolveEffectiveCues, cuesActiveAt } from "./contentFilter.js";
 import { getEffectHandler, EFFECT_KINDS, SKIP_EPSILON } from "./filterEffects.js";
 import { setSkipCardPaused } from "./skipCardState.js";
 import { createBleepTone } from "./bleepTone.js";
+import { resolveBleepLevel } from "../../../../../shared/contracts/content-filter/filterSettings.mjs";
 
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter' }));
@@ -38,7 +39,7 @@ const logBleepDegraded = (reason) =>
  * bleep. A named sound that cannot play falls back to the tone and is logged.
  * `tone` is injectable for tests.
  */
-export function createSfxPlayer(sounds, { tone = createBleepTone({ onDegraded: logBleepDegraded }) } = {}) {
+export function createSfxPlayer(sounds, { level, tone = createBleepTone({ onDegraded: logBleepDegraded, ...(level !== undefined ? { level } : {}) }) } = {}) {
   let audio = null;
   const stopAudio = () => { try { audio?.pause?.(); } catch (_) { /* ignore */ } audio = null; };
   const fallBack = (reason, opts) => { logBleepDegraded(reason); tone.start(opts); };
@@ -91,7 +92,11 @@ export function useContentFilter({ getMediaEl, transport, edl, profile, override
     () => (edl && profile ? resolveEffectiveCues({ edl, profile, override, part }) : []),
     [edl, profile, override, part]
   );
-  const defaultSfx = useMemo(() => createSfxPlayer(profile?.sounds), [profile?.sounds]);
+  // The household/film bleep level is read live, so a change applies to the next bleep without
+  // rebuilding the player (which would tear the filter down).
+  const bleepLevelRef = useRef(resolveBleepLevel(profile));
+  bleepLevelRef.current = resolveBleepLevel(profile);
+  const defaultSfx = useMemo(() => createSfxPlayer(profile?.sounds, { level: () => bleepLevelRef.current }), [profile?.sounds]);
   const sfxPlayer = sfx || defaultSfx;
 
   // Latest-value refs: callers may pass a fresh getMediaEl/transport each render.

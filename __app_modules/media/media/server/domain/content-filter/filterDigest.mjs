@@ -17,6 +17,11 @@ function stable(v) {
 /** @returns {string} sha1 hex */
 export function filterDigest({ refined, override }) {
   const { review: _review, ...rest } = override || {};
+  // Loudness of the bleep tone is a playback setting: it changes nothing the audit checked.
+  if (rest.profilePatch && 'bleepLevel' in rest.profilePatch) {
+    const { bleepLevel: _level, ...patch } = rest.profilePatch;
+    rest.profilePatch = patch;
+  }
   const { certification: _cert, ...edl } = refined || {};
   return createHash('sha1').update(stable({ refined: refined ? edl : null, override: rest })).digest('hex');
 }
