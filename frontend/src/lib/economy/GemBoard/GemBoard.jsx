@@ -366,19 +366,27 @@ export default function GemBoardOverlay({
     return false;
   }, [close, closeDetail, detail, focus, openDetail, poke, rowCursor, state.board, step, weekOffset]);
 
+  // Keys go through the latest handler, read at press time. Registering handleKey
+  // itself in an effect leaves a gap between a render (the board landing) and the
+  // effect that swaps the listener: a press in that gap met the previous closure,
+  // which saw no board and dropped the key.
+  const handleKeyRef = useRef(handleKey);
+  handleKeyRef.current = handleKey;
+  const pressKey = useCallback((key) => handleKeyRef.current(key), []);
+
   useEffect(() => {
     if (!keyRef) return undefined;
-    keyRef.current = open ? handleKey : null;
+    keyRef.current = open ? pressKey : null;
     return () => { keyRef.current = null; };
-  }, [keyRef, open, handleKey]);
+  }, [keyRef, open, pressKey]);
 
   useEffect(() => {
     if (!open) return undefined;
     // Capture phase, and swallowed: the board is on top, so its keys are its own.
-    const onKey = (e) => { if (handleKey(e.key)) { e.preventDefault(); e.stopPropagation(); } };
+    const onKey = (e) => { if (pressKey(e.key)) { e.preventDefault(); e.stopPropagation(); } };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [open, handleKey]);
+  }, [open, pressKey]);
 
   if (!open) return null;
   const { board, error, loading } = state;
