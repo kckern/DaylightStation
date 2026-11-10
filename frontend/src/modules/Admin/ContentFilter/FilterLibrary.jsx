@@ -105,7 +105,7 @@ export function FilterLibrary() {
         </Group>
         {meta ? (
           <Text size="xs" c="dimmed">
-            {`Index from ${meta.indexedAt ? String(meta.indexedAt).slice(0, 10) : 'unknown date'} · ${meta.total} titles · ${meta.unlinked} unlinked`}
+            {`${meta.indexedAt ? `Index from ${String(meta.indexedAt).slice(0, 10)}` : 'Index date unknown'} · ${meta.total} titles · ${meta.unlinked} unlinked`}
           </Text>
         ) : null}
         {notice ? <Text size="sm" role="alert">{notice}</Text> : null}

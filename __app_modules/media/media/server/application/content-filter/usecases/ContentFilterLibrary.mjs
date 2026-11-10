@@ -10,9 +10,11 @@ import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { countReviewed } from './ContentFilterReview.mjs';
 
 export const INDEX_TTL_MS = 10 * 60 * 1000;
+// A Plex failure is remembered briefly: a blip must not hide linkage for a whole TTL.
+const FAILED_LIVE_TTL_MS = 30 * 1000;
 
 export class ContentFilterLibrary {
-  #repo; #jobs; #digestOf; #now; #plex; #live = null; #liveAt = null; #index = null; #indexAt = 0; #facts = new Map();
+  #repo; #jobs; #digestOf; #now; #plex; #live = null; #liveAt = null; #liveP = null; #index = null; #indexAt = 0; #facts = new Map();
 
   constructor({ contentFilterRepository, jobs, digestOf, now = () => Date.now(), plex = null }) {
     if (!contentFilterRepository || !jobs || !digestOf) throw new Error('ContentFilterLibrary requires contentFilterRepository, jobs and digestOf');
@@ -42,7 +44,13 @@ export class ContentFilterLibrary {
   /** Map of live Plex movie ratingKey -> { title, year }, or null when Plex cannot be read. */
   async #liveMovies() {
     if (!this.#plex) return null;
-    if (this.#liveAt !== null && this.#now() - this.#liveAt <= INDEX_TTL_MS) return this.#live;
+    const ttl = this.#live ? INDEX_TTL_MS : FAILED_LIVE_TTL_MS;
+    if (this.#liveAt !== null && this.#now() - this.#liveAt <= ttl) return this.#live;
+    this.#liveP ??= this.#sweepLive().finally(() => { this.#liveP = null; });
+    return this.#liveP;
+  }
+
+  async #sweepLive() {
     const live = new Map();
     try {
       const sections = (await this.#plex.getLibrarySections())?.MediaContainer?.Directory || [];

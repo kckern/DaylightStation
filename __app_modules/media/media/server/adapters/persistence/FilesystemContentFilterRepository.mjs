@@ -115,7 +115,10 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
   /** When the match index file was last written (ISO), or null. */
   async getMatchIndexWrittenAt() {
     const filePath = buildContainedPath(this.#mediaDir, 'content-filter/plex-vidangel-map.yml');
-    try { return filePath && fileExists(filePath) ? new Date(fileMtimeMs(filePath)).toISOString() : null; } catch { return null; }
+    try {
+      const ms = filePath && fileExists(filePath) ? fileMtimeMs(filePath) : null;
+      return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+    } catch { return null; }
   }
 
   async getOverride(ratingKey) {

@@ -103,5 +103,20 @@ describe('ContentFilterLibrary', () => {
       const { lib } = withPlex(null);
       expect((await lib.list({})).films.every((f) => f.linked === null)).toBe(true);
     });
+
+    it('two simultaneous list() calls share one Plex sweep', async () => {
+      const plex = plexWith(['1']);
+      const { lib } = withPlex(plex);
+      await Promise.all([lib.list({}), lib.list({})]);
+      expect(plex.getLibrarySections).toHaveBeenCalledTimes(1);
+    });
+    it('a Plex failure is retried after 30 s, not 10 minutes', async () => {
+      const plex = plexWith(['1']);
+      plex.getLibrarySections.mockRejectedValueOnce(new Error('blip'));
+      const { lib, clock } = withPlex(plex);
+      expect((await lib.list({})).films[0].linked).toBeNull();
+      clock.t += 31 * 1000;
+      expect((await lib.list({})).films.find((f) => f.ratingKey === '1').linked).toBe(true);
+    });
   });
 });

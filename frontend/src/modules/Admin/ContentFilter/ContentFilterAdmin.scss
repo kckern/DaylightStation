@@ -13,7 +13,7 @@
 .cf-card__year { font-size: 11px; color: var(--ds-text-secondary); height: 1.2em; }
 .cf-card__meta { display: flex; gap: var(--ds-space-2); align-items: center; font-size: 11px; color: var(--ds-text-secondary); height: 18px; }
 .cf-card__run { font-size: 11px; line-height: 1.2; height: 2.4em; overflow: hidden; color: var(--ds-text-secondary); }
-.cf-card__run.is-failed { color: var(--ds-danger, #e03131); }
+.cf-card__run.is-failed { color: var(--ds-danger); }
 
 // Review page: player (and row tools) beside the list; stacked below 900 px.
 .cf-review { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--ds-space-4); align-items: start; }
