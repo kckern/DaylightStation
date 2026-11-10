@@ -312,13 +312,13 @@ defaults. Every write archives the replaced revision under
 | `section-day` | each day the subject was served ("a subject pays every day it's done") |
 | `section-week` | the week, once every day the subject was obligated reads served (or `excused: weekly_satisfied`) |
 | `day-met` | each green day (term grid `met`) |
-| `week-met` | a green week: every study day green AND the weekly row satisfied |
+| `week-met` | a green week: every study day green AND the weekly row satisfied. Pays from Friday on; a settled (past) day that is not green ends it at once (`none`, "Not green: <day>"), because a past day is judged only on evidence stamped before its window closed, so late work cannot turn it green. Today and later days stay open (`pending`); a past day not yet worked out is `indeterminate` |
 | `ring-threshold` | `rate: {rings, silver}` (silver per whole N rings) plus each threshold crossed |
 | `ring-contest` | most rings in the roster at award-week close; `tie: all\|split\|none` |
 | `ring-days` | once per award week, as soon as at least `min` rings (default 1) land on at least `days` study days (default 5). Counts **final** workouts only, summed per study day by start (4 am boundary); `pending` with `progress: {have, need}` while the award week runs, `none` once it closes short |
 | `activity-days` | once per school week, as soon as `match.activity` was done on at least `days` study days (default 4). Activities: `piano-practice` (a passed piano challenge), `card-goal` (the flashcard day goal reached), `story-read` (story time credited). `pending` with progress until the week is over |
 | `activity-contest` | the best score in the roster for `match.activity` that week; `tie` as `ring-contest`. Activities: `race` (the week's featured cycle course, from the race ladder) and `ring-improved` (this award week's rings minus the learner's average over the previous four). Leading until the activity's own close, then won; a score of 0 never leads. Paid as `prize` |
-| `milestone` | one per NEW achievement of `match.activity` dated inside the week, oldest first, up to `cap: {count}` per week. Activities: `race-pb`, `glider-act`, `glider-bells`, `board-game-level` (first win at an opponent level), `piano-rung`, `perfect-sheet`, `cards-mastered` (every 10 words), `book-finished`, `rings-lifetime`. A milestone dated before the rule's `effective.from` never pays, so history is not back-paid |
+| `milestone` | one per NEW achievement of `match.activity` dated inside the week, oldest first, up to `cap: {count}` per week. Activities: `race-pb`, `glider-act`, `glider-bells`, `board-game-level` (first win at an opponent level), `piano-rung`, `perfect-sheet` (rule retired 2026-11-10; provider kept, evidence still recorded), `cards-mastered` (every 10 words), `book-finished`, `rings-lifetime`. A milestone dated before the rule's `effective.from` never pays, so history is not back-paid |
 | `debrief-day` | each day whose school debrief meets `match.criterion`: `completed`, `substantive` (on time, rubric level at or above `rich_level`, not a day the AI never scored (`questioner: fallback`); a legacy day uses its old 1-10 score), `teachable` (level at or above `teachable_level`, not a `questioner: fallback` day; late counts) or `quiz-passed` (not a day whose questions fell back, `questionSource: fallback`; an AI-scored day with fallback questions keeps `substantive` and `teachable`) |
 | `debrief-week` | the week, once every owed debrief day is completed (late counts) or excused **and at least one is completed**: excused only keeps a day from blocking, so an all-excused week pays nothing ("No debriefs done this week"). Pending until Friday's grace closes. See [School debrief](../school/school-debrief.md) |
 
@@ -531,26 +531,27 @@ closes the line. Everything on the board is about the week shown: the
 response's lifetime counts are not drawn anywhere.
 
 Everything inside the panel is sized in `em` from one font size that follows
-the screen (`min(1.25vw, 2.3vh)`, clamped), so the same board fills the garage
+the screen (derived by `boardUnits` from `95vw / --gem-w` and `95vh / --gem-h`), so the same board fills the garage
 TV and fits a 1280×800 tablet with no separate layout.
 
-Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
+Each cell is one glyph (`GemGlyph.jsx`) and is exactly one of four things:
+a blank cell, a full gem, a full gem inside a ring of done days, or the word
+"leading". The first matching look wins:
 
 | Look | When | Draws |
 |---|---|---|
-| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour, filling the cell; a `×n` badge when `week > 1`; the day ring too if a `streak` is still in reach, the gem then sitting inside it |
-| `streak` | a `streak` whose `reach` is `on-track` or `tight` | a gem inside a ring of `need` segments, the first `have` in the ring's colour. `on-track`: the gem at full strength, the segments still to do faint and breathing slowly (still under `prefers-reduced-motion`). `tight`: the gem faint, the segments still to do amber |
-| `out` | a `streak` whose `reach` is `out` | nothing: a day-count that can no longer be made is gone (the detail box still says so) |
-| `holding` | `leading` | the gem in full, the same as `lit`: a contest gem sits with whoever leads and moves when the lead does |
-| `open` | `pending` with no day-count | a faint gem, filling the cell |
+| `lit` | `week > 0`, or `earned` / `won` | the full gem in the row's area colour with the area's icon on its face, filling the cell; a `×n` badge when `week > 1`; inside the ring too if a day-count is still in reach |
+| `streak` | a day-count with at least one day done whose `reach` is not `out` | the same full gem inside a ring of `need` segments: done days filled in the area colour, days to go a plain neutral outline. A day-count carries no words and no hue for status |
+| `holding` | `leading` | the word "leading": a contest lead draws no gem; it sits with whoever leads and moves when the lead does |
 | `unknown` | the evidence could not be read | a blank cell (the `aria-label` and the detail box still say `can’t tell yet`) |
 | `off` | `disabled` | a muted `–` |
-| `none` | anything else | a blank cell |
+| `none` | anything else, including a day-count not begun, one out of reach, and a gem still open | a blank cell |
 
 A gem with a ring around it is drawn smaller, inside it; a gem without one
-fills the cell. A cell carries no numerals but the `×n`
-badge; day counts and scores live in the detail box. Nothing marks failure: a gem not earned is a blank cell and a
-week out of reach is a blank cell, never a cross. Each cell's `aria-label` says
+fills the cell. Nothing on the board is partly transparent, animated or amber:
+a gem is never dimmed and status is never a hue. A cell carries no numerals but
+the `×n` badge; day counts and scores live in the detail box. Nothing marks
+failure: a gem not earned is a blank cell, never a cross. Each cell's `aria-label` says
 the same in words ("3 of 5 days, on track"; a lead held in a row that also
 counts days reads "leading, and 2 of 4 days, on track").
 
@@ -558,7 +559,7 @@ counts days reads "leading, and 2 of 4 days, on track").
 in the browser (`localStorage` `daylight.gemBoard.shape.v1`: the learners, the
 sections and the gem columns, no cells or totals; `boardShape`). The next
 opening on that screen draws the outline at once, at the board's full size,
-with a placeholder in every cell and empty totals (`aria-busy`, nothing to
+with a blank cell in every position and empty totals (`aria-busy`, nothing to
 press), and the gems fill in when the read lands, so the panel does not change
 size. A screen's first opening has no outline and says "Loading…". If the read
 brings more children or columns than the outline had, the board grows to fit
@@ -710,11 +711,13 @@ is the preview's current study day, `currentStudyDay()`).
     failing wallet omits that learner, `economy.workout-earnings.learner-failed`).
     Logged `economy.workout-earnings.query`.
   - `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
-    `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `move`:
-    the Gem Board's Move rows for that learner as `[{id, label, color, cell}]`,
-    each `cell` cut down to `state`, `week`, `streak` and its parts' colours,
-    which is what a home card needs to draw the board's glyph; empty, with
-    `economy.standings.move-gems-unavailable` logged, when the board cannot be
+    `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `gems`:
+    the gems that learner has EARNED this week, rolled up by area from every
+    Gem Board row as `[{area, earned, color}]` — `earned` is the sum of the
+    area's cells' `week` (paid or owed this week), `color` the area's own
+    (`GEM_AREAS`), in Move · School · Games order, only areas with
+    `earned > 0`; a lead, a running day-count or a zero is never in it. Empty,
+    with `economy.standings.gems-unavailable` logged, when the board cannot be
     read).
   All read-only, `no-store`; with the catalog `off` they return no learners.
 - **The fitness coin ceremony** (`useWorkoutCoinCeremony`) reads only `/paid`.

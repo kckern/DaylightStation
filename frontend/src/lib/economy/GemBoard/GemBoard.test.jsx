@@ -31,7 +31,7 @@ const BOARD = {
       b: { state: 'none', week: 0, streak: null, parts: [] },
     },
   },
-  totals: { a: { week: 3, lifetime: 9 }, b: { week: 0, lifetime: 4 } },
+  totals: { a: { week: 3, earned: 1, lifetime: 9 }, b: { week: 0, earned: 0, lifetime: 4 } },
 };
 
 afterEach(() => { cleanup(); vi.useRealTimers(); localStorage.clear(); });
@@ -51,7 +51,7 @@ describe('GemBoardGrid', () => {
     expect(container.textContent).not.toMatch(/\d\/\d/);
     expect(screen.getByLabelText('Ben, Moved 5 days: 3 of 5 days, on track')).toBeTruthy();
     expect(screen.getByLabelText('Ann, Reading: earned, and 1 of 4 days, on track')).toBeTruthy();
-    expect(screen.getByLabelText('Ann: 3 this week').textContent).toBe('3');
+    expect(screen.getByLabelText('Ann: 1 this week').textContent).toBe('1') // a lead is never counted: earned only;
     expect(container.textContent).not.toContain('in all'); // the week on the board, no running totals
     expect(container.querySelectorAll('.gem-board__head.is-focus')).toHaveLength(1);
   });

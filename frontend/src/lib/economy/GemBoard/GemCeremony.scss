@@ -43,7 +43,6 @@
   &__name { font-size: 1.5rem; font-weight: 800; }
   &__label { font-size: 1.15rem; opacity: 0.85; }
   &__kind { font-size: 1.25rem; font-weight: 700; color: #ffd166; }
-  &__card.is-leading &__kind { color: #8fd3ff; }
   &__more { font-size: 1.05rem; opacity: 0.75; }
 
   &--contained &__card { min-width: 9rem; padding: 0.9rem 1rem; }

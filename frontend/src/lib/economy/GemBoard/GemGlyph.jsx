@@ -17,7 +17,7 @@ import GemIcon from '@/lib/icons/GemIcon.jsx';
 import AreaIcon from './AreaIcon.jsx';
 
 const REACH_WORDS = { 'on-track': 'on track', tight: 'every day left', out: 'out of reach this week' };
-const STATE_WORDS = { won: 'won', earned: 'earned', leading: 'leading', pending: 'still in reach', unknown: 'can’t tell yet', none: 'not this week', disabled: 'off' };
+const STATE_WORDS = { won: 'won', earned: 'earned', leading: 'leading', pending: 'not yet', unknown: 'can’t tell yet', none: 'not this week', disabled: 'off' };
 
 /** A day-count the child has started and can still make: the only one drawn. */
 const runningStreak = (cell) => (cell?.streak && cell.streak.have > 0 && cell.streak.reach !== 'out' ? cell.streak : null);

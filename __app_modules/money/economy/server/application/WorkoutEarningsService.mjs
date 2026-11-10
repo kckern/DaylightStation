@@ -8,7 +8,7 @@
  *                minted) the bank has actually minted for the ride. A ceremony
  *                celebrates only what this returns.
  */
-import { ringAmount } from "../domain/earnings/index.mjs";
+import { ringAmount, AREA_ORDER, GEM_AREAS } from "../domain/earnings/index.mjs";
 import { PAID_KINDS } from "../domain/index.mjs";
 
 const ringLineOf = (learner) => (learner?.lines ?? []).find((l) => l?.kind === 'ring-threshold') ?? null;
@@ -50,14 +50,6 @@ export function workoutGain(line, sessionId) {
   return { rings: sessions[at].rings, gained, nextCoinIn: gained.silver > 0 ? null : ringsToNextCoin(line.priced, through) };
 }
 
-/** What a home card needs to draw one Gem Board cell: its state, gems, day ring and part colours. */
-const glanceOf = (cell) => ({
-  state: cell?.state ?? 'none',
-  week: cell?.week ?? 0,
-  streak: cell?.streak ?? null,
-  parts: (cell?.parts ?? []).map(({ ruleId, color }) => ({ ruleId, color })),
-});
-
 export class WorkoutEarningsService {
   #preview; #economy; #config; #gemBoard; #logger; #participants;
 
@@ -65,7 +57,7 @@ export class WorkoutEarningsService {
    * @param {object} deps
    * @param {(sessionId: string) => Promise<string[]|null>} [deps.participants] - who rode a
    *   session, from the saved session record; when it answers, only those learners are priced.
-   * @param {{board: Function}} [deps.gemBoard] - GemBoardService; without it the standings carry no Move gems.
+   * @param {{board: Function}} [deps.gemBoard] - GemBoardService; without it the standings carry no gems.
    */
   constructor({ preview, economy, config, participants = null, gemBoard = null, logger = console }) {
     if (!preview?.roster) throw new Error('WorkoutEarningsService requires preview');
@@ -75,20 +67,30 @@ export class WorkoutEarningsService {
   }
 
   /**
-   * The Gem Board's Move section, as `(learnerId) => [{id, label, color, cell}]`
-   * in board order. Read off the board itself, so a home card and the board
-   * cannot disagree. A board that cannot be read leaves every list empty.
+   * The gems each learner has EARNED this week, rolled up by area, as
+   * `(learnerId) => [{area, earned, color}]` in AREA_ORDER — `earned` is the sum of
+   * the area's cells' `week` (gems paid or owed this week). Only areas with
+   * something earned: a lead, a running day-count or a zero is not a gem.
+   * `color` is the area's own (GEM_AREAS), so no client keeps a copy of it.
+   * Read off the board itself, so a home card and the board cannot disagree.
+   * A board that cannot be read leaves every list empty.
    */
-  async #moveGems() {
+  async #earnedGems() {
     if (!this.#gemBoard?.board) return () => [];
     try {
       const board = await this.#gemBoard.board({ week: null });
-      const rows = (board?.categories ?? []).filter((row) => row.group === 'move');
-      return (learnerId) => rows.map((row) => ({
-        id: row.id, label: row.label, color: row.color, cell: glanceOf(board.cells?.[row.id]?.[learnerId]),
-      }));
+      const rows = board?.categories ?? [];
+      return (learnerId) => {
+        const by = new Map();
+        for (const row of rows) {
+          const area = row.area ?? row.group;
+          const week = Number(board.cells?.[row.id]?.[learnerId]?.week) || 0;
+          if (week > 0) by.set(area, (by.get(area) ?? 0) + week);
+        }
+        return AREA_ORDER.filter((area) => by.get(area) > 0).map((area) => ({ area, earned: by.get(area), color: GEM_AREAS[area].color }));
+      };
     } catch (err) {
-      this.#logger.warn?.('economy.standings.move-gems-unavailable', { error: err?.message ?? String(err) });
+      this.#logger.warn?.('economy.standings.gems-unavailable', { error: err?.message ?? String(err) });
       return () => [];
     }
   }
@@ -198,7 +200,7 @@ export class WorkoutEarningsService {
   async standings() {
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { mode, contestClosed: false, learners: [] };
-    const [roster, moveOf] = await Promise.all([this.#preview.roster({ week: null }), this.#moveGems()]);
+    const [roster, gemsOf] = await Promise.all([this.#preview.roster({ week: null }), this.#earnedGems()]);
     const learners = [];
     for (const learner of roster?.learners ?? []) {
       if (!this.#isUser(learner.learnerId)) continue;
@@ -206,7 +208,7 @@ export class WorkoutEarningsService {
         const wallet = await this.#economy.peekBalance(learner.learnerId);
         const contest = contestLineOf(learner);
         const gem = contest?.status === 'earned' ? 'won' : (contest?.leader === true ? 'leading' : null);
-        learners.push({ learnerId: learner.learnerId, learnerName: learner.learnerName ?? learner.learnerId, silver: wallet?.silver ?? 0, weekRings: ringLineOf(learner)?.count ?? 0, gem, move: moveOf(learner.learnerId) });
+        learners.push({ learnerId: learner.learnerId, learnerName: learner.learnerName ?? learner.learnerId, silver: wallet?.silver ?? 0, weekRings: ringLineOf(learner)?.count ?? 0, gem, gems: gemsOf(learner.learnerId) });
       } catch (err) {
         this.#logger.warn?.('economy.standings.learner-failed', { learnerId: learner.learnerId, error: err?.message ?? String(err) });
       }

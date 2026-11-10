@@ -29,14 +29,14 @@
  *
  * A rule that pays twice is two rules: there is no `bonus`.
  *
- * Any rule may carry `gem: {category?, label?, color?, group?}` — how its gems read on
+ * Any rule may carry `gem: {category?, label?, group?}` — how its gems read on
  * the Gem Board (ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md).
- * Rules that share a `category` share a board row; `color` is the gem's
- * provenance (taxonomy D12); `group` is the board section the row sits under
+ * Rules that share a `category` share a board row; a gem's colour comes from its
+ * area (`GEM_AREAS`), never the rule; `group` is the board section the row sits under
  * (`move`, `games`, `school`, or any slug). Display only: it never changes
  * what a rule pays. The FIRST rule of a board row decides the row's label,
- * group and colour; on a later rule in the same row, `gem.color` colours that
- * rule's part and `gem.label` / `gem.group` have no effect.
+ * group and area; on a later rule in the same row, `gem.label` / `gem.group`
+ * have no effect.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { CURRENCIES } from '../entities/Transaction.mjs';

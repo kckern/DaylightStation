@@ -9,7 +9,7 @@
  * (Move, School, Games), each with its name leaning over it; the child's gem
  * count for the week closes the line. A cell is one glyph (GemGlyph.jsx) and carries no
  * numerals but a ×n badge. No failure marks: a gem not earned is a blank
- * cell, a gem still in reach is a faint gem inside a ring of day segments,
+ * cell, a gem still in reach is a full gem inside a ring of done days,
  * an unreadable source a blank cell too.
  *
  * A cell with something behind it opens a detail box (GemDetail.jsx): which
@@ -190,7 +190,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
 
       {learners.map((l, li) => {
         const focus = l.learnerId === focusLearnerId ? ' is-focus' : '';
-        const week = board.totals?.[l.learnerId]?.week ?? 0;
+        const week = board.totals?.[l.learnerId]?.earned ?? 0;
         return (
           <div key={l.learnerId} className="gem-board__row" role="row">
             <div className={`gem-board__head${focus}`} role="rowheader" style={at(FIRST + li, 1)}>

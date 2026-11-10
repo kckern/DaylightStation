@@ -110,7 +110,7 @@ describe('GemGlyph', () => {
     // A row that folds a contest with a day-count: the ring is drawn, the lead is still said.
     expect(glyphLook({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('streak');
     expect(glyphWords({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('leading, and 2 of 4 days, on track');
-    expect(glyphWords({ state: 'pending', week: 0 })).toBe('still in reach');
+    expect(glyphWords({ state: 'pending', week: 0 })).toBe('not yet');
     expect(glyphWords({ state: 'none' })).toBe('not this week');
   });
 
