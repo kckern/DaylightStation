@@ -1058,7 +1058,7 @@ The cards share four grid rows (`subgrid`), so every card's hero, bars and foot
 line up across the panel and the tallest foot sets the row. Sizes follow one
 person's column (`--col`: the cards row is the size container, divided by the
 head count the widget passes as `--cols`) with floors — hero 26px, coin and gem
-26px, counts 18–20px CSS — and when five columns cannot fit everything, the bars
+26px, counts 20–28px CSS — and when five columns cannot fit everything, the bars
 give up height first. The widget pads its own panel 10–12px
 (`.screen-widget:has(> .fitness-momentum)`), not the theme's 16px.
 

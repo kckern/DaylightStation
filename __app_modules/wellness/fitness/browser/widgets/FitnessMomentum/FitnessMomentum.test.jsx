@@ -1,5 +1,6 @@
 import { render, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 const sessions = [{
   startTime: Date.now() - 3_600_000,
@@ -139,5 +140,14 @@ describe('FitnessMomentum', () => {
     expect(container.querySelector('.fitness-momentum__house-rings .ring-icon')).toBeTruthy();
     expect(container.querySelector('.fitness-momentum__weekbar[title="300 rings"]')).toBeTruthy();
     expect(container.textContent).not.toMatch(/min this week|last 7 days/);
+  });
+});
+
+describe('FitnessMomentum stylesheet', () => {
+  it('the week bars and chips are never partly transparent', () => {
+    const css = readFileSync(new URL('./FitnessMomentum.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+    const bars = css.slice(css.indexOf('&__weekbar {'), css.indexOf('&__rail {'));
+    expect(bars).toMatch(/&__weekbar/);
+    expect(bars).not.toMatch(/opacity\s*:/);
   });
 });

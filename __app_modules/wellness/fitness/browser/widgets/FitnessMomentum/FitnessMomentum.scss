@@ -158,12 +158,10 @@
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    background: rgba(255, 255, 255, 0.07);
+    background: #1d2429; // solid: a past week is a dimmer bar, never a see-through one
     border-radius: 4px 4px 0 0;
-    opacity: 0.55;
 
     &.is-current {
-      opacity: 1;
       background: rgba(103, 232, 249, 0.14);
       box-shadow: inset 0 0 0 2px rgba(103, 232, 249, 0.55);
     }
@@ -175,7 +173,9 @@
     border-radius: 4px 4px 0 0;
     overflow: hidden; // rounds the band stack's top corners; nothing to crop
     min-height: 2px;
+    filter: brightness(0.62); // past weeks: the same zone hues, darker and fully solid (static, never animated)
   }
+  &__weekbar.is-current &__weekfill { filter: none; }
   &__weekseg { width: 100%; display: block; }
 
   // The foot of the card: silver, then one chip per area with gems earned this
