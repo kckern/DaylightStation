@@ -12,7 +12,7 @@ const ringLine = (learnerId, sessions, extra = {}) => ({
 const contestLine = (learnerId, status, leader) => ({ ruleId: 'ring-contest', kind: 'ring-contest', status, leader, ref: `earn:${learnerId}:ring-contest:2026-10-19:on-time` });
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
-function make({ rosters = null, learners, balances = {}, history = {}, mode = 'live', contestClosed = false, failWallet = null }) {
+function make({ rosters = null, learners, balances = {}, history = {}, mode = 'live', contestClosed = false, failWallet = null, gemBoard = null }) {
   return new WorkoutEarningsService({
     preview: { async roster({ week } = {}) { return rosters ? rosters(week) : { contestClosed, learners }; } },
     economy: {
@@ -21,6 +21,7 @@ function make({ rosters = null, learners, balances = {}, history = {}, mode = 'l
       async getHistory(id) { return history[id] ?? []; },
     },
     config: { catalog: () => ({ mode }) },
+    gemBoard,
     logger: silent,
   });
 }
@@ -113,8 +114,8 @@ describe('WorkoutEarningsService.standings', () => {
     const svc = make({ learners, balances: { 'learner-a': { silver: 9, gold: 0, gems: 1 }, 'learner-b': { silver: 2, gold: 0, gems: 0 } } });
     const res = await svc.standings();
     expect(res).toEqual({ mode: 'live', contestClosed: false, learners: [
-      { learnerId: 'learner-a', learnerName: 'Learner A', silver: 9, weekRings: 400, gem: 'leading' },
-      { learnerId: 'learner-b', learnerName: 'Learner B', silver: 2, weekRings: 100, gem: null },
+      { learnerId: 'learner-a', learnerName: 'Learner A', silver: 9, weekRings: 400, gem: 'leading', move: [] },
+      { learnerId: 'learner-b', learnerName: 'Learner B', silver: 2, weekRings: 100, gem: null, move: [] },
     ] });
   });
 
@@ -122,6 +123,35 @@ describe('WorkoutEarningsService.standings', () => {
     const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [ringLine('learner-a', []), contestLine('learner-a', 'earned', true)] }];
     const res = await make({ learners, balances: { 'learner-a': { silver: 0, gold: 0, gems: 0 } }, contestClosed: true }).standings();
     expect(res.learners[0].gem).toBe('won');
+  });
+
+  it('carries each learner\'s Move cells from the Gem Board, in board order', async () => {
+    const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }];
+    const streak = { have: 2, need: 5, left: 3, reach: 'on-track', ruleId: 'moved-days' };
+    const gemBoard = { async board() { return {
+      categories: [
+        { id: 'ring-contests', label: 'Ring contests', group: 'move', color: '#1e88e5' },
+        { id: 'piano', label: 'Piano', group: 'school', color: '#111111' },
+        { id: 'moved-days', label: 'Moved 5 days', group: 'move', color: '#ff8800' },
+      ],
+      cells: {
+        'ring-contests': { 'learner-a': { state: 'leading', week: 0, held: 1, lifetime: 3, streak: null, parts: [{ ruleId: 'ring-contest', color: '#1e88e5', label: 'Most rings', score: { mine: 4 } }] } },
+        piano: { 'learner-a': { state: 'earned', week: 1, streak: null, parts: [] } },
+        'moved-days': { 'learner-a': { state: 'pending', week: 0, streak, parts: [{ ruleId: 'moved-days', color: '#ff8800', days: [] }] } },
+      },
+    }; } };
+    const res = await make({ learners, balances: { 'learner-a': { silver: 1, gold: 0, gems: 0 } }, gemBoard }).standings();
+    expect(res.learners[0].move).toEqual([
+      { id: 'ring-contests', label: 'Ring contests', color: '#1e88e5', cell: { state: 'leading', week: 0, streak: null, parts: [{ ruleId: 'ring-contest', color: '#1e88e5' }] } },
+      { id: 'moved-days', label: 'Moved 5 days', color: '#ff8800', cell: { state: 'pending', week: 0, streak, parts: [{ ruleId: 'moved-days', color: '#ff8800' }] } },
+    ]);
+  });
+
+  it('still reports silver when the Gem Board cannot be read', async () => {
+    const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }];
+    const gemBoard = { async board() { throw new Error('boom'); } };
+    const res = await make({ learners, balances: { 'learner-a': { silver: 4, gold: 0, gems: 0 } }, gemBoard }).standings();
+    expect(res.learners).toEqual([{ learnerId: 'learner-a', learnerName: 'Learner A', silver: 4, weekRings: 0, gem: null, move: [] }]);
   });
 });
 

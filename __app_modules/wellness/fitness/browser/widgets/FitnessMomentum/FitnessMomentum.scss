@@ -52,51 +52,80 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.9rem 0.6rem;
+    gap: 0.6rem;
+    padding: 0.8rem 0.6rem 0;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    min-height: 0;
   }
 
+  // Avatar with the name as a tag over its lower edge.
+  &__who {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
   &__avatar {
-    width: 3.25rem;
-    height: 3.25rem;
+    width: 4.5rem;
+    height: 4.5rem;
     border-radius: 50%;
     object-fit: cover;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    &--fallback { background: #3ddc84; color: #07210f; font-weight: 800; }
+    &--fallback { background: #3ddc84; color: #07210f; font-weight: 800; font-size: 1.4rem; }
   }
-  &__name { font-weight: 700; font-size: 1.1rem; }
-  // Name, then bank silver + the week's gem, on one row (a card without a
-  // purse keeps the same height).
-  &__namerow {
-    display: inline-flex;
+  &__name {
+    position: relative;
+    margin-top: -0.85rem;
+    padding: 0.1rem 0.7rem;
+    border-radius: 999px;
+    background: #23252d;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+    font-weight: 700;
+    font-size: 1.1rem;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  // The foot of the card: silver, then the Move gems there are to show, spread
+  // evenly across it. A button (it opens the Gem Board) as wide as the card,
+  // tall enough for a child's finger.
+  &__rail {
+    flex: none;
+    align-self: stretch;
+    display: flex;
     align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.6rem;
-  }
-  &__purse {
-    // A button (it opens the Gem Board) that still reads as plain text.
+    justify-content: space-between;
+    gap: 0.4rem;
+    height: 3.6rem;
+    margin: 0 -0.6rem;
+    padding: 0 0.8rem;
     border: 0;
-    margin: 0;
-    padding: 0.1rem 0.35rem;
-    border-radius: 6px;
-    background: transparent;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
     color: inherit;
     font-family: inherit;
     cursor: pointer;
+    &--empty { cursor: default; background: transparent; border-top-color: transparent; }
+  }
+  &__silver {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.35rem;
     font-weight: 700;
-    font-size: 1.1rem;
+    font-size: 1.35rem;
     font-variant-numeric: tabular-nums;
   }
-  &__gem { margin-left: 0.2rem; }
-  &__purse:active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
+  // The board's glyph is sized in em: this sets how large it is drawn here.
+  &__gemslot {
+    display: inline-flex;
+    font-size: 0.82rem;
+    .gem-glyph__times { background: #2a2c34; }
+  }
+  &__rail:not(&__rail--empty):active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
   &__gems-chip {
     display: inline-flex;
     align-items: center;
@@ -112,10 +141,9 @@
     cursor: pointer;
     align-self: center;
   }
-  &__gem.is-leading { opacity: 0.4; }
 
   // Monday-aligned weekly ring chart: same-scale vertical bars, oldest →
-  // newest, each with an M/d x-axis label. The current week is highlighted.
+  // newest, each with a '19 Oct' x-axis label. The current week is highlighted.
   &__weeks {
     flex: 1 1 auto;
     width: 100%;
@@ -123,9 +151,11 @@
     display: flex;
     align-items: stretch;
     justify-content: center;
-    gap: 0.35rem;
+    gap: 0.3rem;
   }
   &__weekcol {
+    // Wide enough for the date under it.
+    min-width: 2.9rem;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -135,14 +165,14 @@
   }
   // Ring-count top axis: one number above each bar, aligned along the top.
   &__weektop {
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     line-height: 1;
     opacity: 0.5;
     font-variant-numeric: tabular-nums;
     &.is-current { opacity: 1; color: #67e8f9; font-weight: 700; }
   }
   &__weekbar {
-    width: 1.5rem;
+    width: 2rem;
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
@@ -166,7 +196,7 @@
   }
   &__weekseg { width: 100%; display: block; }
   &__weeklabel {
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     line-height: 1;
     opacity: 0.5;
     font-variant-numeric: tabular-nums;

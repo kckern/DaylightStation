@@ -94,9 +94,9 @@ describe('activity-contest', () => {
       windows: { school: WEEK }, learners: [{ ...evaluate(rs, null, { contests: contests(closed, [{ learnerId: 'kid', score: 5 }]) }), learnerName: 'Kid' }],
     });
     const open = buildGemBoard({ ruleset: rs, week: week(false) });
-    expect(open.categories[0]).toMatchObject({ cadence: 'contest', color: '#ff7a2f' });
-    expect(open.cells.race.kid.state).toBe('leading');
+    expect(open.categories[0]).toMatchObject({ id: 'racing', label: 'Racing', group: 'games', cadence: 'contest', color: '#ff7a2f' });
+    expect(open.cells.racing.kid.state).toBe('leading');
     expect(open.totals.kid.week).toBe(1);
-    expect(buildGemBoard({ ruleset: rs, week: week(true) }).cells.race.kid).toMatchObject({ state: 'won', week: 1 });
+    expect(buildGemBoard({ ruleset: rs, week: week(true) }).cells.racing.kid).toMatchObject({ state: 'won', week: 1 });
   });
 });

@@ -7,7 +7,8 @@
  *     learns the board — the garage screen celebrates what happens in front of
  *     it, not the school day it missed. Without, it compares with its last
  *     look, so a child back at the Portal from a worksheet sees that sheet's
- *     gem. Either way a surface that has not looked this week learns silently
+ *     gem. Either way a surface that has not looked this week — or whose last
+ *     look was kept in the older per-row shape — learns without celebrating
  *     (a first load is not an achievement), and a reload never replays one;
  *   - on any of `events` (window CustomEvents a surface fires when something
  *     just landed: a race saved, a flight saved, a workout's coin ceremony
@@ -16,21 +17,27 @@
  *   - every `pollMs`, from the shared copy (a gem earned elsewhere — a
  *     worksheet graded, a book logged — reaches this screen within a minute or two).
  *
- * The last look is kept per surface in localStorage, so a celebration happens
- * once per screen. A batch found while one is showing waits its turn.
+ * The last look is kept per surface in localStorage, per rule (not per board
+ * row), so a celebration happens once per screen and survives a row rename. A batch found while one is showing waits its turn.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 import { fetchGemBoard } from './GemBoard.jsx';
 import { gemAwards, gemSnapshot } from './gemCeremonyModel.js';
 
-const keyFor = (surface) => `daylight.gemCeremony.${surface}`;
+// The per-rule snapshot has its own key, so it never meets a per-row one that
+// a bundle from before it left behind. That older key is removed on each write.
+const keyFor = (surface) => `daylight.gemCeremony.v2.${surface}`;
+const oldKeyFor = (surface) => `daylight.gemCeremony.${surface}`;
 
 function readSnapshot(surface) {
   try { return JSON.parse(localStorage.getItem(keyFor(surface)) || 'null'); } catch { return null; }
 }
 function writeSnapshot(surface, snapshot) {
-  try { localStorage.setItem(keyFor(surface), JSON.stringify(snapshot)); } catch { /* storage off: a repeat is the worst case */ }
+  try {
+    localStorage.setItem(keyFor(surface), JSON.stringify(snapshot));
+    localStorage.removeItem(oldKeyFor(surface));
+  } catch { /* storage off: a repeat is the worst case */ }
 }
 
 export function useGemCeremony({
@@ -49,15 +56,16 @@ export function useGemCeremony({
       const board = await loadRef.current(null, { fresh });
       if (!board || board.mode === 'off') return;
       if (silent) {
-        // Learn without celebrating — but keep a same-week snapshot's memory
-        // of gems already shown, so nothing is lost or replayed.
-        writeSnapshot(surface, gemSnapshot(board));
+        // Learn without celebrating: the board as it stands becomes the last
+        // look, so nothing on it replays. What it cannot read this time keeps
+        // what the stored look knew.
+        writeSnapshot(surface, gemSnapshot(board, readSnapshot(surface)));
         return;
       }
       const { awards, snapshot } = gemAwards(readSnapshot(surface), board);
       writeSnapshot(surface, snapshot);
       if (awards.length) {
-        log.info('gem-ceremony.found', { surface, reason, awards: awards.map((a) => `${a.learnerId}:${a.categoryId}:${a.kind}`) });
+        log.info('gem-ceremony.found', { surface, reason, awards: awards.map((a) => `${a.learnerId}:${a.ruleId}:${a.kind}`) });
         setQueue((q) => [...q, { id: `${Date.now()}-${q.length}`, awards }]);
       } else {
         log.debug('gem-ceremony.none', { surface, reason });

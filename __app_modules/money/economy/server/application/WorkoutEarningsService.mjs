@@ -50,19 +50,47 @@ export function workoutGain(line, sessionId) {
   return { rings: sessions[at].rings, gained, nextCoinIn: gained.silver > 0 ? null : ringsToNextCoin(line.priced, through) };
 }
 
+/** What a home card needs to draw one Gem Board cell: its state, gems, day ring and part colours. */
+const glanceOf = (cell) => ({
+  state: cell?.state ?? 'none',
+  week: cell?.week ?? 0,
+  streak: cell?.streak ?? null,
+  parts: (cell?.parts ?? []).map(({ ruleId, color }) => ({ ruleId, color })),
+});
+
 export class WorkoutEarningsService {
-  #preview; #economy; #config; #logger; #participants;
+  #preview; #economy; #config; #gemBoard; #logger; #participants;
 
   /**
    * @param {object} deps
    * @param {(sessionId: string) => Promise<string[]|null>} [deps.participants] - who rode a
    *   session, from the saved session record; when it answers, only those learners are priced.
+   * @param {{board: Function}} [deps.gemBoard] - GemBoardService; without it the standings carry no Move gems.
    */
-  constructor({ preview, economy, config, participants = null, logger = console }) {
+  constructor({ preview, economy, config, participants = null, gemBoard = null, logger = console }) {
     if (!preview?.roster) throw new Error('WorkoutEarningsService requires preview');
     if (!economy?.peekBalance || !economy?.getHistory) throw new Error('WorkoutEarningsService requires economy');
     if (!config?.catalog) throw new Error('WorkoutEarningsService requires config');
-    this.#preview = preview; this.#economy = economy; this.#config = config; this.#participants = participants; this.#logger = logger;
+    this.#preview = preview; this.#economy = economy; this.#config = config; this.#participants = participants; this.#gemBoard = gemBoard; this.#logger = logger;
+  }
+
+  /**
+   * The Gem Board's Move section, as `(learnerId) => [{id, label, color, cell}]`
+   * in board order. Read off the board itself, so a home card and the board
+   * cannot disagree. A board that cannot be read leaves every list empty.
+   */
+  async #moveGems() {
+    if (!this.#gemBoard?.board) return () => [];
+    try {
+      const board = await this.#gemBoard.board({ week: null });
+      const rows = (board?.categories ?? []).filter((row) => row.group === 'move');
+      return (learnerId) => rows.map((row) => ({
+        id: row.id, label: row.label, color: row.color, cell: glanceOf(board.cells?.[row.id]?.[learnerId]),
+      }));
+    } catch (err) {
+      this.#logger.warn?.('economy.standings.move-gems-unavailable', { error: err?.message ?? String(err) });
+      return () => [];
+    }
   }
 
   #isUser(id) { return typeof this.#economy.hasUser !== 'function' || this.#economy.hasUser(id); }
@@ -170,7 +198,7 @@ export class WorkoutEarningsService {
   async standings() {
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { mode, contestClosed: false, learners: [] };
-    const roster = await this.#preview.roster({ week: null });
+    const [roster, moveOf] = await Promise.all([this.#preview.roster({ week: null }), this.#moveGems()]);
     const learners = [];
     for (const learner of roster?.learners ?? []) {
       if (!this.#isUser(learner.learnerId)) continue;
@@ -178,7 +206,7 @@ export class WorkoutEarningsService {
         const wallet = await this.#economy.peekBalance(learner.learnerId);
         const contest = contestLineOf(learner);
         const gem = contest?.status === 'earned' ? 'won' : (contest?.leader === true ? 'leading' : null);
-        learners.push({ learnerId: learner.learnerId, learnerName: learner.learnerName ?? learner.learnerId, silver: wallet?.silver ?? 0, weekRings: ringLineOf(learner)?.count ?? 0, gem });
+        learners.push({ learnerId: learner.learnerId, learnerName: learner.learnerName ?? learner.learnerId, silver: wallet?.silver ?? 0, weekRings: ringLineOf(learner)?.count ?? 0, gem, move: moveOf(learner.learnerId) });
       } catch (err) {
         this.#logger.warn?.('economy.standings.learner-failed', { learnerId: learner.learnerId, error: err?.message ?? String(err) });
       }
