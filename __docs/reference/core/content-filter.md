@@ -144,7 +144,8 @@ overlay with no rect, gaps up to the resolver's 1 s bridge joined) lasting longe
 `treatments['full-blur'].maxSec` (default 5; `null` or `0` turns it off) becomes one blackout over
 the run's union, bridged gaps included. Shorter runs stay blurs; regional pieces do not count.
 A tracked cue in a category without `regional: true` resolves whole-frame, so it counts. An explicit
-household ruling is never second-guessed, except that a ruled `full-blur` counts like any other.
+household ruling is never second-guessed, except that a ruled whole-frame blur (`full-blur`, or
+`blur`/`pixelate`/`censor-bar` with no rect) counts like any other.
 Hiding only grows: a conversion never replaces a blur with less.
 
 Order inside `resolveEffectiveCues`: picture stacking, then the long-hide conversion, then stacking

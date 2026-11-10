@@ -653,6 +653,22 @@ describe('useContentFilter — preview: re-resolve, bypass, lastFired', () => {
     expect(bypass.has('s1')).toBe(false); // passed s1's out on the way
   });
 
+  it('logs a cue blackout with its cue ids and counts its seconds in the session summary', () => {
+    const el = makeFakeEl();
+    const e = { cues: [
+      { id: 'run@1', effect: 'blackout', category: 'x', in: 10, out: 16, firstPiece: true, cues: ['a', 'b'] },
+    ] };
+    const hook = renderHook(() => useContentFilter({ getMediaEl: () => el, transport: { seek: vi.fn() }, edl: e, profile: { categories: {} }, enabled: true }));
+    act(() => { el.currentTime = 11; el.fire('timeupdate'); });
+    const shown = mockLogger.info.mock.calls.find((c) => c[0] === 'content-filter.blackout.shown');
+    expect(shown[1]).toMatchObject({ cue: 'run@1', cues: ['a', 'b'] });
+    hook.unmount();
+    const sum = mockLogger.info.mock.calls.find((c) => c[0] === 'content-filter.session');
+    expect(sum[1].blackoutSec).toBeGreaterThanOrEqual(6);
+    expect(sum[1].blackoutSec).toBeCloseTo(shown[1].sec, 1);
+    expect(sum[1].blurAudioSec).toBe(sum[1].blackoutSec);
+  });
+
   it('lastFired is the most recently entered cue (skip-cards count, title-cards do not)', () => {
     vi.useFakeTimers();
     const el = makeFakeEl();
