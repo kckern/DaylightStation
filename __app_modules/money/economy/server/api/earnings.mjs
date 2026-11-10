@@ -13,6 +13,7 @@
  *   GET /preview/:learnerId?week=YYYY-MM-DD   → one learner's week
  *   GET /rules                                → { ruleset, kinds }
  *   GET /workout/:sessionId                   → one workout's ring silver per learner in it
+ *   GET /workout/:sessionId/paid              → what the bank actually minted for one workout, per learner (ledger entries; no projection)
  *   GET /standings                            → per learner: bank silver, week rings, gem
  *   GET /gems?week=YYYY-MM-DD[&fresh=1]       → the Gem Board: learners × gem categories
  *                                               (fresh: re-read achievements, skip the minute cache)
@@ -46,6 +47,11 @@ export function createEarningsRouter({ earningsPreview, earnRules, workoutEarnin
     res.status(503).json({ error: 'workout earnings unavailable' });
     return true;
   };
+
+  router.get('/workout/:sessionId/paid', asyncHandler(async (req, res) => {
+    if (!workoutEarnings?.paid || needWorkout(res)) { if (!res.headersSent) res.status(503).json({ error: 'workout earnings unavailable' }); return; }
+    res.set('Cache-Control', 'no-store').json(await workoutEarnings.paid(String(req.params.sessionId)));
+  }));
 
   router.get('/workout/:sessionId', asyncHandler(async (req, res) => {
     if (needWorkout(res)) return;

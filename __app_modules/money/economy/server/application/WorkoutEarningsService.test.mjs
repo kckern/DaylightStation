@@ -124,3 +124,38 @@ describe('WorkoutEarningsService.standings', () => {
     expect(res.learners[0].gem).toBe('won');
   });
 });
+
+describe('WorkoutEarningsService.paid', () => {
+  const payout = (id, delta, sessionId, rings, over = {}) => ({ id, kind: 'earn', currency: 'silver', delta, source: 'payout', at: '2026-10-20T10:00:00.000Z', ref: 'r', meta: { kind: 'ring-threshold', session: { id: sessionId, rings } }, ...over });
+  const learners = [
+    { learnerId: 'learner-a', learnerName: 'Learner A', lines: [ringLine('learner-a', [session('20261020100000', 1000, 180), session('20261020090000', 500, 50)])] },
+    { learnerId: 'learner-b', learnerName: 'Learner B', lines: [ringLine('learner-b', [session('20261020100000', 1000, 90)])] },
+    { learnerId: 'learner-c', learnerName: 'Learner C', lines: [ringLine('learner-c', [session('other', 1000, 90)])] },
+  ];
+  const balances = { 'learner-a': { silver: 7 }, 'learner-b': { silver: 0 }, 'learner-c': { silver: 1 } };
+  const history = {
+    'learner-a': [
+      payout('t2', 2, 'fs_20261020100000', 180),
+      payout('t1', 1, '20261020090000', 50),
+      payout('tg', 1, '20261020100000', 180, { currency: 'gems' }),
+      payout('tw', 5, '20261020100000', 180, { source: 'admin' }),
+      payout('tc', 3, '20261020100000', 180, { meta: { kind: 'ring-contest', session: { id: '20261020100000' } } }),
+    ],
+    'learner-b': [],
+  };
+
+  it('lists the ring payout entries of this workout only, per learner in it, with the wallet', async () => {
+    const res = await make({ learners, balances, history }).paid('20261020100000');
+    expect(res).toEqual({
+      sessionId: '20261020100000', mode: 'live',
+      learners: [
+        { learnerId: 'learner-a', learnerName: 'Learner A', entries: [{ txnId: 't2', silver: 2, at: '2026-10-20T10:00:00.000Z', rings: 180 }], wallet: { silver: 7 } },
+        { learnerId: 'learner-b', learnerName: 'Learner B', entries: [], wallet: { silver: 0 } },
+      ],
+    });
+  });
+
+  it('catalog off: mode off, no learners', async () => {
+    expect(await make({ learners, balances, history, mode: 'off' }).paid('20261020100000')).toEqual({ sessionId: '20261020100000', mode: 'off', learners: [] });
+  });
+});

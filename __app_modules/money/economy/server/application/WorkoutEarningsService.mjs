@@ -96,6 +96,42 @@ export class WorkoutEarningsService {
     return { sessionId, mode, learners };
   }
 
+  /**
+   * What the bank actually PAID for one workout: the ring-payout entries in
+   * each learner's ledger whose `meta.session.id` is this ride. Read-only, and
+   * the ceremony's truth: a promise (`workout()`) is not a payout.
+   * @returns {Promise<{sessionId: string, mode: string, learners: Array<{learnerId: string, learnerName: string, entries: Array<{txnId: string, silver: number, at: string, rings: number|null}>, wallet: {silver: number}}>}>}
+   */
+  async paid(sessionId) {
+    const mode = this.#config.catalog().mode;
+    if (mode === 'off') return { sessionId, mode, learners: [] };
+    const want = normalizeWorkoutSessionId(sessionId);
+    const roster = await this.#preview.roster({ week: null });
+    const learners = [];
+    for (const learner of roster?.learners ?? []) {
+      const ride = (ringLineOf(learner)?.sessions ?? []).find((s) => normalizeWorkoutSessionId(s?.sessionId) === want);
+      if (!ride || !this.#isUser(learner.learnerId)) continue;
+      try {
+        const since = Number.isFinite(ride.startMs) ? new Date(ride.startMs - 86_400_000).toISOString() : null;
+        const entries = [];
+        for (const t of await this.#economy.getHistory(learner.learnerId, { since })) {
+          if (t.source !== 'payout' || t.meta?.kind !== 'ring-threshold' || (t.currency ?? 'silver') !== 'silver') continue;
+          if (normalizeWorkoutSessionId(t.meta?.session?.id) !== want) continue;
+          entries.push({ txnId: t.id, silver: t.delta || 0, at: t.at, rings: Number.isFinite(t.meta.session.rings) ? t.meta.session.rings : null });
+        }
+        const wallet = await this.#economy.peekBalance(learner.learnerId);
+        learners.push({
+          learnerId: learner.learnerId, learnerName: learner.learnerName ?? learner.learnerId,
+          entries: entries.reverse(), wallet: { silver: wallet?.silver ?? 0 },
+        });
+      } catch (err) {
+        this.#logger.warn?.('economy.workout-paid.learner-failed', { sessionId, learnerId: learner.learnerId, error: err?.message ?? String(err) });
+      }
+    }
+    this.#logger.info?.('economy.workout-paid.query', { sessionId, learners: learners.length });
+    return { sessionId, mode, learners };
+  }
+
   async standings() {
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { mode, contestClosed: false, learners: [] };
