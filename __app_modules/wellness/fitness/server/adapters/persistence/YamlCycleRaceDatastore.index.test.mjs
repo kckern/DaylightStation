@@ -1,14 +1,21 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { YamlCycleRaceDatastore } from "./YamlCycleRaceDatastore.mjs";
 
 let tmpBase;
 let store;
-const makeStore = () => {
+const makeStore = (extra = {}) => {
   const configService = { getHouseholdPath: (rel) => path.join(tmpBase, rel) };
-  return new YamlCycleRaceDatastore({ configService });
+  return new YamlCycleRaceDatastore({ configService, ...extra });
+};
+const indexDir = () => path.join(tmpBase, 'fitness/log/cycle-races/_index');
+const dropIndex = () => fs.rmSync(indexDir(), { recursive: true, force: true });
+const makeLogger = () => {
+  const events = [];
+  const at = (level) => (event, data) => events.push({ level, event, data });
+  return { events, debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
 };
 
 const rec = (id, over = {}) => ({
@@ -137,5 +144,114 @@ describe('listIndexEntries', () => {
     await store.save(legacy, 'household');
     const [e] = await store.listIndexEntries('household');
     expect(e.course_id).toBeNull();
+  });
+});
+
+describe('index rebuild: yielding, concurrency, logging', () => {
+  const DAYS = ['20260601080000', '20260602080000', '20260603080000'];
+  const seedCold = async () => {
+    for (const id of DAYS) await store.save(rec(id), 'household');
+    dropIndex();
+  };
+
+  it('yields to the event loop between rebuilt days', async () => {
+    await seedCold();
+    let ticks = 0;
+    let listing = true;
+    const tick = () => { if (!listing) return; ticks += 1; setImmediate(tick); };
+    setImmediate(tick);
+    await store.listIndexEntries('household');
+    listing = false;
+    expect(ticks).toBeGreaterThanOrEqual(2); // other work ran while three days were rebuilt
+  });
+
+  it('two overlapping listings on a cold index read each day once and agree', async () => {
+    await seedCold();
+    const reads = vi.spyOn(store, 'findByDate');
+    const [a, b] = await Promise.all([store.listIndexEntries('household'), store.listIndexEntries('household')]);
+    expect(reads.mock.calls.map((c) => c[0]).sort()).toEqual(['2026-06-01', '2026-06-02', '2026-06-03']);
+    expect(a.map((e) => e.id)).toEqual(DAYS);
+    expect(b).toEqual(a);
+    const shard = JSON.parse(fs.readFileSync(path.join(indexDir(), '2026-06.json'), 'utf8'));
+    expect(Object.keys(shard.days).sort()).toEqual(['2026-06-01', '2026-06-02', '2026-06-03']);
+    expect(Object.values(shard.days).every((d) => d.races.length === 1)).toBe(true);
+  });
+
+  // A rebuild that has read day 1, then a save of day 1 the folder mtime does not
+  // show (in-place write, coarse-mtime filesystem): only save()'s own
+  // invalidation can tell the index the day changed.
+  const saveMidRebuild = async () => {
+    await seedCold();
+    const dayDir = path.join(tmpBase, 'fitness/log/cycle-races/2026-06-01');
+    const pinned = new Date('2026-06-01T12:00:00Z');
+    fs.utimesSync(dayDir, pinned, pinned);
+    const realFind = store.findByDate.bind(store);
+    let dayOneRead;
+    const dayOneWasRead = new Promise((resolve) => { dayOneRead = resolve; });
+    vi.spyOn(store, 'findByDate').mockImplementation(async (date, hid) => {
+      const records = await realFind(date, hid);
+      if (date === '2026-06-01') dayOneRead();
+      return records;
+    });
+    const inFlight = store.listIndexEntries('household');
+    await dayOneWasRead; // the rebuild now holds day 1's records, read before the save below
+    await store.save(rec('20260601080000', { incomplete: true }), 'household');
+    fs.utimesSync(dayDir, pinned, pinned);
+    return inFlight;
+  };
+  const dayOneIncomplete = (entries) => entries.find((e) => e.id === '20260601080000').incomplete;
+
+  it('a save landing mid-rebuild is in the listing asked for once that rebuild has finished', async () => {
+    await (await saveMidRebuild());
+    const next = await store.listIndexEntries('household');
+    expect(next.map((e) => e.id)).toEqual(DAYS);
+    expect(dayOneIncomplete(next)).toBe(true);
+    // and the stale row is not in the shard for a later process either
+    expect(dayOneIncomplete(await makeStore().listIndexEntries('household'))).toBe(true);
+  });
+
+  it('a save landing mid-rebuild is in a listing asked for while that rebuild is still running', async () => {
+    const inFlight = saveMidRebuild();
+    await new Promise(setImmediate); // into the rebuild, past the save
+    const next = await store.listIndexEntries('household');
+    await inFlight;
+    expect(next.map((e) => e.id)).toEqual(DAYS);
+    expect(dayOneIncomplete(next)).toBe(true);
+    expect(dayOneIncomplete(await makeStore().listIndexEntries('household'))).toBe(true);
+  });
+
+  it('logs a cold rebuild with its size and duration, and nothing on a warm read', async () => {
+    const logger = makeLogger();
+    store = makeStore({ logger });
+    await seedCold();
+    await store.listIndexEntries('household');
+    const rebuilt = logger.events.filter((e) => e.event === 'fitness.cycle_races.index.rebuilt');
+    expect(rebuilt).toHaveLength(1);
+    expect(rebuilt[0].level).toBe('info');
+    expect(rebuilt[0].data).toMatchObject({ days: 3, races: 3, reason: 'cold' });
+    expect(rebuilt[0].data.ms).toBeGreaterThanOrEqual(0);
+    await store.listIndexEntries('household');
+    expect(logger.events.filter((e) => e.event === 'fitness.cycle_races.index.rebuilt')).toHaveLength(1);
+  });
+
+  it("names the reason: 'version' for a shard of another index version, 'stale-day' for a changed day", async () => {
+    const logger = makeLogger();
+    store = makeStore({ logger });
+    await store.save(rec('20260601080000'), 'household');
+    await store.listIndexEntries('household');
+    const shardPath = path.join(indexDir(), '2026-06.json');
+    const shard = JSON.parse(fs.readFileSync(shardPath, 'utf8'));
+    fs.writeFileSync(shardPath, JSON.stringify({ ...shard, version: 2 }));
+    await store.listIndexEntries('household');
+    await store.save(rec('20260601090000'), 'household');
+    await store.listIndexEntries('household');
+    const reasons = logger.events.filter((e) => e.event === 'fitness.cycle_races.index.rebuilt').map((e) => e.data.reason);
+    expect(reasons).toEqual(['cold', 'version', 'stale-day']);
+  });
+
+  it('leaves no staging file beside a rewritten shard', async () => {
+    await seedCold();
+    await store.listIndexEntries('household');
+    expect(fs.readdirSync(indexDir())).toEqual(['2026-06.json']);
   });
 });

@@ -14,6 +14,19 @@ function fmtMs(s) {
   return `${m}:${String(total % 60).padStart(2, '0')}`;
 }
 
+// A rider's final distance and time, read the way the server's race index reads
+// them (indexEntryFromRecord in YamlCycleRaceDatastore.mjs): a rider who is a
+// valid pace rival as an index row must be one once their record is fetched.
+// Distance: a number or numeric string, as a finite number. Time: a finite
+// number only. Anything else is null (the index stores 0 for an unusable
+// distance; both read as "no distance").
+function finalDistance(raw) {
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+const finalTime = (raw) => (Number.isFinite(raw) ? raw : null);
+
 /**
  * Map one fetched race record to a ghost candidate. Each past race carries ALL
  * its participants, so racing a ghost replays the whole field. Goal vs score
@@ -57,8 +70,8 @@ export function mapRaceRecordToCandidate(rec, { getDisplayLabel = null, resolveG
         hrSeries: p.hr_series || null,
         rpmSeries: p.rpm_series || null,
         zoneSeries: p.zone_series || null,
-        finalDistanceM: p.final_distance_m ?? null,
-        finalTimeS: p.final_time_s ?? null,
+        finalDistanceM: finalDistance(p.final_distance_m),
+        finalTimeS: finalTime(p.final_time_s),
         placement: p.placement ?? null,
         // Was stopped (parked) when the race closed — their line ends short of the field's.
         stopped: !!p.stopped

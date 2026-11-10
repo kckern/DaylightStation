@@ -561,7 +561,9 @@ export function createFitnessRouter(config) {
   // The light listing a lone rider's pace rival is picked from: index rows only,
   // never race files or series (the ?winCondition listing below sends both).
   router.get('/cycle-races/rival-pool', asyncHandler(async (req, res) => {
-    if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
+    // Needs both the race service and its projections; its own message, so a
+    // 503 from here is told apart from the /cycle-races/:raceId one below.
+    if (!cycleRaceService || !cycleRaceApi) return res.status(503).json({ error: 'cycle race rival pool unavailable' });
     const { winCondition, goalM, timeCapS } = req.query;
     const householdId = req.query.household || defaultHouseholdId;
     try {

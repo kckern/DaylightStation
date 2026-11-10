@@ -33,6 +33,34 @@ describe('mapRaceRecordToCandidate', () => {
     expect(c.participants.find((p) => p.id === 'user_3').stopped).toBe(true);
     expect(c.participants.find((p) => p.id === 'dad').stopped).toBe(false);
   });
+  // The race index (indexEntryFromRecord) reads the same two fields; a rider must
+  // be a valid rival as a record exactly when they are one as an index row.
+  describe('final time and distance, read the way the race index reads them', () => {
+    const finals = (final_distance_m, final_time_s) => {
+      const c = mapRaceRecordToCandidate({ ...REC, participants: { 'rider-a': { display_name: 'Rider A', placement: 1, final_distance_m, final_time_s } } });
+      return { finalDistanceM: c.participants[0].finalDistanceM, finalTimeS: c.participants[0].finalTimeS };
+    };
+    it('keeps finite numbers', () => {
+      expect(finals(1500, 150.2)).toEqual({ finalDistanceM: 1500, finalTimeS: 150.2 });
+      expect(finals(0, 0)).toEqual({ finalDistanceM: 0, finalTimeS: 0 });
+    });
+    it('reads a numeric-string distance as its number', () => {
+      expect(finals('1500', 150).finalDistanceM).toBe(1500);
+      expect(finals('1480.5', null).finalDistanceM).toBe(1480.5);
+    });
+    it('reads a distance that is not a finite number as null', () => {
+      for (const v of [undefined, null, '', 'abc', NaN, Infinity, {}]) expect(finals(v, 150).finalDistanceM).toBeNull();
+    });
+    it('reads a time that is not a finite number as null (a string is not a time, as in the index)', () => {
+      for (const v of [undefined, null, '', '150', 'abc', NaN, Infinity]) expect(finals(1500, v).finalTimeS).toBeNull();
+    });
+    it('labels the score from the coerced values', () => {
+      const c = mapRaceRecordToCandidate({ race: { id: '20260630081500', win_condition: 'time', time_cap_s: 300 },
+        participants: { 'rider-a': { placement: 1, final_distance_m: '1500', final_time_s: null } } });
+      expect(c.scoreLabel).toBe(mapRaceRecordToCandidate({ race: { id: '20260630081500', win_condition: 'time', time_cap_s: 300 },
+        participants: { 'rider-a': { placement: 1, final_distance_m: 1500, final_time_s: null } } }).scoreLabel);
+    });
+  });
   it('returns null for a record with no participants', () => {
     expect(mapRaceRecordToCandidate({ race: { id: 'x' }, participants: {} })).toBeNull();
   });

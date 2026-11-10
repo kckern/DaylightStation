@@ -7,17 +7,20 @@
  */
 
 const WIN_CONDITIONS = ['distance', 'time'];
+// A length sent as a string: digits, optionally a point and more digits. Not
+// trimmed, so no padding, sign, exponent, hex or separators ('1e3', '0x10', ' 1500 ').
+const PLAIN_DECIMAL = /^\d+(\.\d+)?$/;
 
 /**
  * A rival-pool request as `{ winCondition, length }`, or null when it names no
  * usable race: an unknown race type, or a length (goalM for a distance race,
  * timeCapS for a time race) that is not a positive finite number. Lengths may
- * arrive as query strings.
+ * arrive as query strings, which must be plain decimal numbers ('1500', '1609.3').
  */
 export function parseRivalPoolQuery({ winCondition = null, goalM = null, timeCapS = null } = {}) {
   if (!WIN_CONDITIONS.includes(winCondition)) return null;
   const raw = winCondition === 'distance' ? goalM : timeCapS;
-  const isNumeric = typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '');
+  const isNumeric = typeof raw === 'number' || (typeof raw === 'string' && PLAIN_DECIMAL.test(raw));
   const length = isNumeric ? Number(raw) : NaN;
   if (!Number.isFinite(length) || length <= 0) return null;
   return { winCondition, length };

@@ -33,6 +33,22 @@ export class CycleRaceService {
   /** Every race's index row (id, local date, course, per-rider results) — the ladder's input. */
   listIndexEntries(householdId) { return this.datastore.listIndexEntries(householdId); }
 
+  /**
+   * Build the race index ahead of the first request that needs it (a cold
+   * rebuild parses every race file). Called once after boot by the fitness
+   * composition. Never rejects: a failure is logged and the index is built by
+   * the first reader instead.
+   */
+  async warmIndex(householdId) {
+    const t0 = Date.now();
+    try {
+      const entries = await this.datastore.listIndexEntries(householdId);
+      this.logger?.debug?.('fitness.cycle_races.index.warmed', { entries: entries.length, ms: Date.now() - t0 });
+    } catch (err) {
+      this.logger?.warn?.('fitness.cycle_races.index.warm_failed', { error: err?.message });
+    }
+  }
+
   async findGhostCandidates({ courseId = null, winCondition = null, goalM = null, timeCapS = null, householdId } = {}) {
     const dates = await this.datastore.listDates(householdId);
     const matches = [];

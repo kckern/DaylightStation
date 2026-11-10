@@ -35,6 +35,24 @@ describe('parseRivalPoolQuery', () => {
   );
 });
 
+describe('parseRivalPoolQuery: a string length is a plain decimal number', () => {
+  it.each(['0x10', '1e3', ' 1500 ', '1500 ', ' 1500', '+1500', '1,500', '1500.', '.5', '1.5.2', '0b11', '१५००'])(
+    'is null for the string length %j', (goalM) => {
+      expect(parseRivalPoolQuery({ winCondition: 'distance', goalM })).toBeNull();
+      expect(parseRivalPoolQuery({ winCondition: 'time', timeCapS: goalM })).toBeNull();
+    }
+  );
+  it('still reads whole and decimal strings, and positive numbers', () => {
+    expect(parseRivalPoolQuery({ winCondition: 'distance', goalM: '1500' })?.length).toBe(1500);
+    expect(parseRivalPoolQuery({ winCondition: 'distance', goalM: '0.5' })?.length).toBe(0.5);
+    expect(parseRivalPoolQuery({ winCondition: 'time', timeCapS: '0300' })?.length).toBe(300);
+    expect(parseRivalPoolQuery({ winCondition: 'time', timeCapS: 300.5 })?.length).toBe(300.5);
+  });
+  it('is null for a number that is not finite and positive', () => {
+    for (const v of [0, -1, NaN, Infinity]) expect(parseRivalPoolQuery({ winCondition: 'distance', goalM: v })).toBeNull();
+  });
+});
+
 describe('rivalPoolEntries', () => {
   it('keeps rows of the same race type and exact length, in the shape the client picks from', () => {
     const entries = [
