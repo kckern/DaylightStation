@@ -116,7 +116,10 @@ function Avatar({ id, name }) {
  */
 export function hasGemToShow(cell) {
   const look = glyphLook(cell);
-  return look === 'lit' || look === 'holding' || look === 'streak';
+  // A day-count with no day done yet is an empty ring: nothing earned, nothing
+  // under way, so it takes no slot until its first day is made.
+  if (look === 'streak') return Number(cell.streak?.have) > 0;
+  return look === 'lit' || look === 'holding';
 }
 
 /**

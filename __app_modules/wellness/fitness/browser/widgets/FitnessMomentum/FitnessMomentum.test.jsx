@@ -72,8 +72,11 @@ describe('FitnessMomentum', () => {
       MOVE[2],
     ];
     for (const g of quiet.slice(0, 4)) expect(hasGemToShow(g.cell)).toBe(false);
-    // A count with no days in yet is shown while it can still be made.
-    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 6, reach: 'on-track' } })).toBe(true);
+    // A count with no day done yet is an empty ring: no gem, however reachable.
+    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 6, reach: 'on-track' } })).toBe(false);
+    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 5, reach: 'tight' } })).toBe(false);
+    // ...and appears once a day is made.
+    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 1, need: 5, left: 4, reach: 'on-track' } })).toBe(true);
     expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 3, need: 5, left: 2, reach: 'tight' } })).toBe(true);
     standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], move: quiet }] };
     const rail = render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail');
