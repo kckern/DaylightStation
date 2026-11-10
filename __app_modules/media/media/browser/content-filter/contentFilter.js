@@ -144,6 +144,23 @@ function widenCue(eff, treatments) {
   return eff;
 }
 
+/**
+ * A "hide picture" piece: black over the span with a title card for its first seconds. The same
+ * shape the scene path builds, so the one renderer draws both. `cardSec` defaults to the profile's
+ * `treatments.blackout.cardSec`, else the skip-card hold, else 2.5.
+ */
+export function hidePiece(src, { in: from, out: to }, { text, cardSec, firstPiece } = {}, treatments) {
+  return {
+    ...src,
+    effect: 'blackout',
+    in: from,
+    out: to,
+    text: text ?? treatments?.blackout?.text ?? 'Picture hidden.',
+    cardSec: cardSec ?? treatments?.blackout?.cardSec ?? treatments?.['skip-card']?.holdSec ?? 2.5,
+    firstPiece: firstPiece !== false,
+  };
+}
+
 function mergeParams(target, ...sources) {
   for (const src of sources) {
     if (!src) continue;
@@ -354,6 +371,17 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
       groups.get(subject).push({ eff, measured, groupEffect });
       continue;
     }
+    // "Hide picture" on one filter: a black picture with a title card, sound untouched. It is
+    // never regional and plays whole-frame; only the first piece of a segmented cue carries the card.
+    if (eff.effect === 'blackout') {
+      const treatments = profile?.treatments;
+      const text = eff.card ?? treatments?.blackout?.text ?? 'Picture hidden.';
+      expandMeasured(eff, measured).forEach((piece, i) => {
+        out.push(hidePiece(piece, { in: piece.in, out: piece.out }, { text, firstPiece: i === 0 }, treatments));
+      });
+      logger().sampled('content-filter.blackout.cue', { id: cue.id, category: cue.category }, { maxPerMinute: 10, aggregate: true });
+      continue;
+    }
     for (const piece of expandMeasured(eff, measured)) out.push(widenCue(piece, profile?.treatments));
   }
   for (const [subject, members] of groups) {
@@ -510,7 +538,11 @@ function resolveSubject(subject, members, treatments) {
   const keepRect = !regions && REGIONAL.has(effect) && members.every((m) => m.eff.effect === effect);
   if (!keepRect) delete base.rect;
   if (members.some((m) => !PRECISE.has(m.eff.precision))) base.precision = 'second-approx';
-  return expandMeasured(base, { segments: union.length > 1 ? union : undefined, regions });
+  const pieces = expandMeasured(base, { segments: union.length > 1 ? union : undefined, regions });
+  // A group that plays blackout (a member asked for it) draws the same card a lone blackout does.
+  if (effect !== 'blackout') return pieces;
+  const text = members.map((m) => m.eff.card).find(Boolean) ?? treatments?.blackout?.text ?? 'Picture hidden.';
+  return pieces.map((p, i) => hidePiece(p, { in: p.in, out: p.out }, { text, firstPiece: i === 0 }, treatments));
 }
 
 /** A region track that saw its subject at least once (an all-gap track hides nothing regionally). */

@@ -1187,3 +1187,40 @@ describe('picture-effect precedence (no stacked blurs)', () => {
     expect(picture(out)).toHaveLength(1);
   });
 });
+
+describe('hide picture as a per-filter treatment', () => {
+  const profile = { categories: { 'violence/gore': { effect: 'blackout' }, language: { effect: 'mute' } } };
+  const gore = (over = {}) => ({ id: 'g1', type: 'blur', kind: 'shown', category: 'violence/gore', label: 'gore', in: 100, out: 110, precision: 'ms', ...over });
+  const run = (cues, override, prof = profile) => resolveEffectiveCues({ edl: { cues }, profile: prof, override });
+  it('a blackout cue resolves with a card', () => {
+    const out = run([gore()]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ effect: 'blackout', text: 'Picture hidden.', firstPiece: true, cardSec: 2.5 });
+  });
+  it('takes the profile treatment text and card seconds', () => {
+    const out = run([gore()], undefined, { ...profile, treatments: { blackout: { text: 'Hidden.', cardSec: 3 } } });
+    expect(out[0]).toMatchObject({ text: 'Hidden.', cardSec: 3 });
+    const sk = run([gore()], undefined, { ...profile, treatments: { 'skip-card': { holdSec: 4 } } });
+    expect(sk[0].cardSec).toBe(4);
+  });
+  it('an approved card text wins', () => {
+    const out = run([gore()], { cueOverrides: { g1: { card: { text: 'Hidden for a moment.', approvedBy: 'parent' } } } });
+    expect(out[0].text).toBe('Hidden for a moment.');
+  });
+  it('a segmented blackout cue cards once', () => {
+    const out = run([gore()], { cueOverrides: { g1: { in: 100, out: 110, precision: 'ms', segments: [{ in: 100, out: 103 }, { in: 106, out: 110 }] } } });
+    expect(out.map((c) => c.firstPiece)).toEqual([true, false]);
+    expect(out.every((c) => c.effect === 'blackout')).toBe(true);
+  });
+  it('audio cues under a blackout still play', () => {
+    const word = { id: 'w', type: 'mute', category: 'language/profanity/damn', label: 'damn', in: 104, out: 104.4, precision: 'ms' };
+    const alone = run([word]).find((c) => c.id === 'w');
+    const under = run([gore(), word]).find((c) => c.id === 'w');
+    expect(under).toEqual(alone);
+    expect(under.effect).toBe('mute');
+  });
+  it('a human-chosen blackout on a spoken cue still fits to mute (channel rule unchanged)', () => {
+    const said = { id: 's', type: 'mute', kind: 'said', category: 'language/profanity/damn', label: 'damn', in: 5, out: 5.4, precision: 'ms' };
+    expect(run([said], { cueOverrides: { s: { effect: 'blackout' } } })[0].effect).toBe('mute');
+  });
+});
