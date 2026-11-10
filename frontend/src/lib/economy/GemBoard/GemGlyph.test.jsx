@@ -73,7 +73,7 @@ describe('GemGlyph', () => {
     expect(bare.querySelector('.gem-glyph__seg.is-done').style.stroke).toBe('rgb(7, 7, 7)');
   });
 
-  it('badges only a second gem, drops the gem when out of reach, dashes a held contest', () => {
+  it('badges only a second gem, drops the gem when out of reach, draws a held contest gem in full, leaves an unreadable cell blank', () => {
     expect(render(<GemGlyph cell={{ state: 'earned', week: 1 }} color="#fff" />).container.textContent).toBe('');
     cleanup();
     expect(render(<GemGlyph cell={{ state: 'earned', week: 3 }} color="#fff" />).container.textContent).toBe('×3');
@@ -83,7 +83,13 @@ describe('GemGlyph', () => {
     expect(out.querySelectorAll('.gem-glyph__seg')).toHaveLength(5);
     cleanup();
     const held = render(<GemGlyph cell={{ state: 'leading', week: 0 }} color="#fff" />).container;
-    expect(held.querySelector('.gem-glyph__hold')).toBeTruthy();
+    // A held contest gem is a full gem with nothing around it: it moves with the lead.
+    expect(held.querySelector('.gem-icon')).toBeTruthy();
+    expect(held.querySelector('.gem-glyph').hasAttribute('data-ringed')).toBe(false);
+    expect(held.querySelector('svg:not(.gem-icon)')).toBeNull();
+    cleanup();
+    // Evidence that could not be read leaves the cell blank: no question mark.
+    expect(render(<GemGlyph cell={{ state: 'unknown', week: 0 }} color="#fff" />).container.textContent).toBe('');
   });
 
   it('says it in words for a screen reader', () => {

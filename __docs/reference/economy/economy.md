@@ -536,14 +536,14 @@ Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
 | `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour, filling the cell; a `×n` badge when `week > 1`; the day ring too if a `streak` is still running (its done segments grey when that streak is `out`) |
 | `streak` | a `streak` whose `reach` is `on-track` or `tight` | a faint gem inside a ring of `need` segments, the first `have` in the ring's colour; when `tight` the unfilled segments are amber |
 | `out` | a `streak` whose `reach` is `out` | the ring alone, its done segments grey, no gem |
-| `holding` | `leading` | a dimmed gem inside a dashed circle |
+| `holding` | `leading` | the gem in full, the same as `lit`: a contest gem sits with whoever leads and moves when the lead does |
 | `open` | `pending` with no day-count | a faint gem, filling the cell |
-| `unknown` | the evidence could not be read | a muted `?` |
+| `unknown` | the evidence could not be read | a blank cell (the `aria-label` and the detail box still say `can’t tell yet`) |
 | `off` | `disabled` | a muted `–` |
 | `none` | anything else | a blank cell |
 
-A gem with a ring or a holding circle around it is drawn smaller, inside it; a
-gem with neither fills the cell. A cell carries no numerals but the `×n`
+A gem with a ring around it is drawn smaller, inside it; a gem without one
+fills the cell. A cell carries no numerals but the `×n`
 badge; day counts and scores live in the detail box. Nothing marks failure: a gem not earned is a blank cell and a
 week out of reach is a grey ring, never a cross. Each cell's `aria-label` says
 the same in words ("3 of 5 days, on track"; a lead held in a row that also

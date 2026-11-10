@@ -1,7 +1,9 @@
 /**
- * GemGlyph — one Gem Board cell at a glance: a gem, a ring of day segments
- * around it while a day-count is still running, a dashed circle around a
- * contest gem that is only held for now. No numerals but a ×n badge.
+ * GemGlyph — one Gem Board cell at a glance: a gem, and a ring of day segments
+ * around it while a day-count is still running. A contest gem held for now is
+ * drawn as a full gem: it sits with whoever leads and moves when the lead
+ * does. A cell whose evidence could not be read is left blank. No numerals
+ * but a ×n badge.
  *
  * The ring is drawn in the colour of the rule whose days it counts (the
  * streak's own part), which in a merged row need not be the row's colour.
@@ -73,15 +75,13 @@ export default function GemGlyph({ cell, color }) {
   const ringColor = (streak && cell.parts?.find((p) => p.ruleId === streak.ruleId)?.color) || color;
   const ring = streak ? <Ring streak={streak} color={ringColor} /> : null;
   let inner = null;
-  // A gem with nothing drawn around it fills the cell; inside a ring or a holding circle it sits within it.
-  const ringed = Boolean(ring) || look === 'holding';
+  // A gem with no ring around it fills the cell; inside a ring it sits within it.
+  const ringed = Boolean(ring);
   if (look === 'lit' || look === 'streak' || look === 'open' || look === 'holding') inner = <GemIcon className="gem-glyph__gem" color={color} size={ringed ? '1.55em' : '2.5em'} />;
-  else if (look === 'unknown') inner = <span className="gem-glyph__muted">?</span>;
   else if (look === 'off') inner = <span className="gem-glyph__muted">–</span>;
   return (
     <span className="gem-glyph" data-look={look} data-ringed={ringed ? '' : undefined}>
       {ring}
-      {look === 'holding' && <svg className="gem-glyph__hold" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><circle cx="20" cy="20" r={R} /></svg>}
       {inner}
       {look === 'lit' && cell.week > 1 && <span className="gem-glyph__times">×{cell.week}</span>}
     </span>

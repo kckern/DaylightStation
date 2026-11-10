@@ -10,7 +10,7 @@
  * count for the week closes the line. A cell is one glyph (GemGlyph.jsx) and carries no
  * numerals but a ×n badge. No failure marks: a gem not earned is a blank
  * cell, a gem still in reach is a faint gem inside a ring of day segments,
- * an unreadable source a muted "?".
+ * an unreadable source a blank cell too.
  *
  * A cell with something behind it opens a detail box (GemDetail.jsx): which
  * days counted, which milestones were paid, how a contest stands.
