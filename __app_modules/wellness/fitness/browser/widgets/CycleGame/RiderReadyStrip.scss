@@ -24,6 +24,8 @@
   // from the bikes just like the race screen, so it carries the same 1.1rem
   // floor as the racing panels.
   &__name { font-weight: 700; font-size: 1.1rem; color: #eef2f8; } // was 1rem
+  // Strapless handicap ("No strap · ×0.8"): a fact to know, not an alarm.
+  &__strap { font-weight: 600; font-size: 1.1rem; color: #a79fc4; white-space: nowrap; } // $cg-muted
   &__rpm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 1.25rem; color: #eef2f8; line-height: 1; }
   &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: 1.1rem; } // was 0.7rem
 

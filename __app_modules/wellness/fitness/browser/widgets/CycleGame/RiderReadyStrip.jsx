@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
+import { formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import "./RiderReadyStrip.scss";
 
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
@@ -18,6 +19,10 @@ const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
  * strip reflects the WHOLE field the race will run with. It has no sensor (it
  * runs on its own recorded clock), so it gets a ghost-treated avatar and a fixed
  * "AUTO" chip instead of live rpm/status.
+ *
+ * A live rider with no heart-rate strap rides at the strapless multiplier; the
+ * container passes it as `noStrapMultiplier` and the chip says so under the
+ * name ("No strap · ×0.8"), so the handicap is known before the race.
  */
 export default function RiderReadyStrip({ riders = [] }) {
   if (!Array.isArray(riders) || riders.length === 0) return null;
@@ -47,6 +52,11 @@ export default function RiderReadyStrip({ riders = [] }) {
               />
             </span>
             <span className="cg-ready-rider__name">{r.name}</span>
+            {!r.isGhost && Number.isFinite(r.noStrapMultiplier) && (
+              <span className="cg-ready-rider__strap" data-testid={`ready-rider-strap-${r.id}`}>
+                {`No strap · ×${formatMultiplier(r.noStrapMultiplier)}`}
+              </span>
+            )}
             {r.isGhost ? (
               <span className="cg-ready-rider__auto" data-testid={`ready-rider-auto-${r.id}`}>AUTO</span>
             ) : (
@@ -76,6 +86,7 @@ RiderReadyStrip.propTypes = {
     heartRate: PropTypes.number,
     zoneColor: PropTypes.string,
     sensorLive: PropTypes.bool,
-    isGhost: PropTypes.bool
+    isGhost: PropTypes.bool,
+    noStrapMultiplier: PropTypes.number
   }))
 };

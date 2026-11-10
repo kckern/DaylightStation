@@ -268,7 +268,12 @@ The lobby is a pure presentational component; all state and handlers live in
    state when the container supplies `sensorLive` on the bike: **Ready** (small
    tick) when the cadence sensor is reporting, **No signal** (amber, icon plus
    word, class `is-no-signal`) when it is not; unknown state shows nothing, as
-   does an unclaimed slot.
+   does an unclaimed slot. Under the grid, **one line states the scoring rule**
+   (`data-testid="boost-rule"`): "Harder effort goes further: your heart-rate
+   zone multiplies your distance (×{min} to ×{max})." The container feeds the
+   range as `boostRange` (`boostState.boostRange(zones, hrless_multiplier)`: the
+   lowest to highest multiplier, the strapless one included); the line is hidden
+   when every multiplier is the same.
 4. **Rider picker** (modal) — people grouped into **Household / Family / Guests**
    tabs; each tile shows avatar, name, and a "live" badge for an active HR strap.
    Built-in **Guest (Adult)** / **Guest (Kid)** lead the Guests tab. `Escape` closes.
@@ -737,8 +742,10 @@ avatar card and rank badge carry `is-parked` (dimmed), and the badge reads
   panel map.
 - **SpeedoRow** — one `CycleSpeedometer` per rider on a single line; gauge size is
   computed from the injected `zoneBox` (`gaugeRowSize`, fit-across-width capped by
-  height), never self-measured. Caps: `maxGauge`/`minGauge` 360/220 for ≤ 3 riders,
-  280/96 for ≥ 4. Each gauge's **background is tinted** with a dark wash of its
+  height, minus `CHROME_BELOW_GAUGE_PX` for the boost row and odometer), never
+  self-measured. Caps: `maxGauge`/`minGauge` 360/140 in solo and sidebar modes,
+  280/96 in wide mode. In solo mode it holds the live rider's gauge only, with
+  `ranked={false}` (no leader medal, no placement). Each gauge's **background is tinted** with a dark wash of its
   rider's lane colour (≈ 20 % over the deep-indigo backdrop).
 
 ### 9.6 Rider colours (`lineColors.js`)
@@ -775,7 +782,10 @@ riders; a 7th+ reuses a hue.
   (green) when the bike's cadence sensor is reporting, **⚠ NO SIGNAL** (amber)
   when it is not. The container sets `sensorLive` on each chip from
   `session.getEquipmentCadence(bikeId)?.connected` for the bike the rider was
-  staged on; cadence never changes the state. Ghost chips read **AUTO**. The
+  staged on; cadence never changes the state. Ghost chips read **AUTO**. A live
+  rider with **no heart rate** reads **"No strap · ×{hrless}"** under their name
+  (the container sets `noStrapMultiplier` to `hrless_multiplier`), so the
+  strapless handicap is known before the race. The
   chips are the riders **staged for this race** (fixed when the race is built)
   plus its ghosts, not whoever holds a bike at that moment: a claim changed while
   Start was waiting on its lookup does not put a rider on the strip who is not
@@ -800,6 +810,13 @@ pauses the race**.
 | A rider enters `noSensor` | *"{name} — no sensor · Their bike never reported. Check the sensor."* (`nosensor`, amber) | `cycle_game.rider_no_sensor` (WARN) |
 | A no-sensor rider starts moving | none | `cycle_game.rider_sensor_recovered` (INFO) |
 | Riders land in `overtime` | one summary *"Race closed — N riders still riding"* (`overtime`) | `cycle_game.rider_overtime` per rider (INFO) |
+| A live rider's heart-rate zone changes and the multiplier goes **up** | *"{name}: {zone} ×{mult}"* (`boost`, success green, good news) | `cycle_game.boost_change` (DEBUG) |
+| A live rider's zone changes and the multiplier goes down or stays | none | `cycle_game.boost_change` (DEBUG) |
+
+The first zone reading of a race only seeds the comparison (no toast, no log),
+and a distance-race finisher (parked at the line, no zone) is left out. A strap
+that starts reporting mid-race is a change from no zone (the strapless
+multiplier) to the zone, so it raises the toast when that multiplier is higher.
 
 `cycle_game.cadence_change` logs every sensor connect/drop transition. There is
 no DNF toast, no DNF log, no penalty lifecycle (rolling start, §10) and no
@@ -849,8 +866,23 @@ with the `cg-ghost` treatment.
   (e.g. 250 tricycle, 120 default) — wired per-rider via `riderLive.maxRpm`.
 - **Tick spacing scales** (`tickStepsFor`) so a 250 dial isn't crowded; **bands
   scale proportionally** (`scaleBands`) so a real sprint is the top red tier.
-- **Multiplier badge** (×2, ×3, ×5…) shows when the zone multiplier > 1, pinned
-  top-right of the avatar.
+- **Rpm is the large number, km/h the small one** (the rider controls rpm), both
+  in the free lower hemisphere (`speedometerOverlayLayout`: rpm hero on top,
+  speed sub-line under it).
+- **Boost meter** (replaces the old multiplier badge, which sat on the dial's
+  top-right label): a row **below the gauge**, outside the dial, so it can never
+  cover a tick label. A chip in the zone colour reads `{zone} ×{mult}`, a thin
+  bar fills to the zone progress (hidden when progress is unknown, e.g. a
+  ghost), and the next step reads muted at the right (`{next} ×{mult}`, absent
+  at the top zone). With no heart rate it reads `No heart-rate strap ×{hrless}`
+  with no bar. Multipliers print with at most one decimal and no trailing `.0`
+  (`boostState.formatMultiplier`). The container builds it per rider as
+  `riderLive[id].boost = boostState({ zoneId, zones, hrlessMultiplier, progress })`
+  (ghosts: the replayed zone, `progress: null`); no `boost` (the recap) means no
+  row. The row has a fixed 40 px height and is counted in
+  `layoutSizing.CHROME_BELOW_GAUGE_PX` (odometer 68 + boost row 40 + gap 10 =
+  118), which sets the gauge floors (sidebar/solo band `minmax(260px, …)` →
+  min gauge 140; wide band `minmax(220px, …)` → min gauge 96).
 - **Overlay states** (one at a time, in the same slot):
   - **FINISHED** — 🏁 + placement for a rider over the line in a distance race.
   - **PARKED · Pedal to rejoin** — `parked` (idle past the park window). Calm,
@@ -1260,6 +1292,10 @@ by `raceId` (+ `elapsedS` where relevant).
   `cycle_game.rider_dnf`, `penalty_entered`, `penalty_awaiting_stop`,
   `penalty_cleared`, and the `falseStarters` field of `race_started`; the
   `hotStartPenaltyS` field of `cycle_game.config` is gone too.
+- **`cycle_game.boost_change`** (DEBUG) — a live rider's heart-rate zone
+  changed, either direction: `{ raceId, userId, from, to, mult, elapsedS }`
+  (`from`/`to` are zone ids, `null` for no strap; `mult` is the new
+  multiplier). An upward change also raises the `boost` toast (§11).
 - **`cycle_game.drama_event`** (DEBUG) — every edge `deriveRaceSnapshot` fires
   (`LEAD_CHANGE`, `RIDER_FINISHED`, `PHOTO_FINISH`, `FINAL_LAP`,
   `LAPPING_IMMINENT`): `{ raceId, type, riderIds, elapsedS }`.
@@ -1387,7 +1423,10 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   `RaceLayoutManager` (solo/sidebar/wide zones), `DistanceChart` (whole-race x
   axis, even ticks, rival trace, solo linear),
   `SplitsChart` (sticky/live-order/final), `PovGrid`, `OvalTrack`, `SpeedoRow`,
-  `CycleSpeedometer`, `CountdownStoplight` (ALL3→RED→YELLOW→GREEN), `RaceResults`
+  `CycleSpeedometer` (boost row outside the dial, every dial label present, rpm
+  hero), `CycleGameContainer.boost.test.jsx` (boost per gauge, the lobby rule
+  range, the ready strip's strap note, the boost toast up only and
+  `boost_change` both ways), `CountdownStoplight` (ALL3→RED→YELLOW→GREEN), `RaceResults`
   (exit button, count-up under `animate={false}`, "Stopped at"), `RaceMenu`
   (guard time, focus, Escape), `RiderReadyStrip` (READY / NO SIGNAL / AUTO),
   `StandingsTower` (`parkedRows`), `CycleGameContainer.raceMenu.test.jsx` (the

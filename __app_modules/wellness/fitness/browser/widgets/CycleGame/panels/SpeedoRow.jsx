@@ -37,7 +37,6 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             speedKmh={live.speedKmh}
             cadenceBands={cadenceBands}
             distanceMeters={riders[id].cumulativeDistanceM}
-            multiplier={live.multiplier}
             avatar={{
               name: riders[id].displayName,
               src: live.avatarSrc,
@@ -55,6 +54,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             sensorLost={!!live.sensorLost}
             parked={!!live.parked}
             noSensor={!!live.noSensor}
+            boost={live.boost || null}
             size={speedoSize}
           />
         );

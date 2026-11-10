@@ -22,6 +22,7 @@ import { buildAutoStartCourse } from "../../lib/cycleGame/autoStartCourse.js";
 import { effectiveLapLength } from "../../lib/cycleGame/effectiveLapLength.js";
 import { deriveRaceSnapshot } from "../../lib/cycleGame/deriveRaceSnapshot.js";
 import { dramaEventToasts } from "../../lib/cycleGame/dramaEventCopy.js";
+import { boostState, boostRange, formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import CycleGameHome from "./CycleGameHome.jsx";
 import CountdownStoplight from "./CountdownStoplight.jsx";
@@ -412,6 +413,10 @@ export default function CycleGameContainer({ onMount } = {}) {
   // closing, or a forced finish) while still riding — see CycleRaceController's
   // `overtime` set. Never a parked or no-sensor rider.
   const prevOvertimeRef = useRef(new Set());
+  // Last seen heart-rate zone + multiplier per live rider, for the boost
+  // toast (up only) and the boost_change log (both directions). Seeded by the
+  // first reading of a race, which raises nothing.
+  const prevBoostRef = useRef(new Map());
   // Telemetry: track prior tick state so transitions (not steady state) are what
   // gets logged — cadence connect/drop, phase, and a monotonic tick index for
   // the per-tick firehose.
@@ -524,6 +529,18 @@ export default function CycleGameContainer({ onMount } = {}) {
       icon: <RaceFlagIcon />,
       title: `Race closed — ${n} rider${n === 1 ? '' : 's'} still riding`
     };
+    setEventToast((cur) => {
+      if (cur) { toastQueueRef.current.push(toast); return cur; }
+      return toast;
+    });
+  }, []);
+
+  // Boost toast: a live rider's heart-rate zone went UP, so each stroke now
+  // counts for more. One positive toast; a downward change raises nothing.
+  const recordBoostToast = useCallback((displayName, zoneId) => {
+    const b = boostState({ zoneId, zones: zonesRef.current, hrlessMultiplier: hrlessMultiplierRef.current });
+    const id = (eventIdRef.current += 1);
+    const toast = { id, variant: 'boost', icon: <SpeedIcon />, title: `${displayName}: ${b.label} ×${formatMultiplier(b.mult)}` };
     setEventToast((cur) => {
       if (cur) { toastQueueRef.current.push(toast); return cur; }
       return toast;
@@ -688,7 +705,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         rpm,
         heartRate: Number.isFinite(vitals.heartRate) ? vitals.heartRate : null,
         zoneColor: vitals.zoneColor || null,
-        sensorLive
+        sensorLive,
+        // No heart rate: they ride at the strapless multiplier; the strip
+        // says so before the race.
+        noStrapMultiplier: Number.isFinite(vitals.heartRate) && vitals.heartRate > 0 ? null : hrlessMultiplier
       };
     }).concat(raceGhostRosterRiders.map((r) => ({
       id: r.userId,
@@ -700,8 +720,12 @@ export default function CycleGameContainer({ onMount } = {}) {
       isGhost: true
     }))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [raceRiders, session, getUserVitals, resolveDisplayName, assignVersion, raceGhostRosterRiders]
+    [raceRiders, session, getUserVitals, resolveDisplayName, assignVersion, raceGhostRosterRiders, hrlessMultiplier]
   );
+
+  // The lobby's one-line boost rule: the lowest to highest multiplier a rider
+  // can have, the strapless one included.
+  const lobbyBoostRange = useMemo(() => boostRange(zones, hrlessMultiplier), [zones, hrlessMultiplier]);
 
   // Keep on-board RPM and sensor state live during staging + countdown so the
   // strip reacts quickly when a bike starts (or stops) reporting.
@@ -915,6 +939,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     prevParkedRef.current = new Map();
     prevNoSensorRef.current = new Set();
     prevOvertimeRef.current = new Set();
+    prevBoostRef.current = new Map();
     prevCadenceRef.current = new Map();
     rpmHistoryRef.current = new Map();
     gapTicksRef.current = new Map();
@@ -1538,6 +1563,28 @@ export default function CycleGameContainer({ onMount } = {}) {
       if (newOvertime.length > 0) recordOvertimeEvent(newOvertime);
       prevOvertimeRef.current = overtimeSet;
 
+      // Boost: a live rider's heart-rate zone changed. Logged both ways
+      // (debug); a change that raises the multiplier gets one toast. The
+      // first reading of the race only seeds the map. A finisher in a
+      // distance race is parked at the line with no zone and is left out.
+      Object.entries(state.engineState?.riders || {}).forEach(([userId, r]) => {
+        if (r.isGhost || r.finishTimeS != null) return;
+        const zoneId = r.zoneId ?? null;
+        const mult = zoneMultiplierFor(zoneId, zonesRef.current, hrlessMultiplierRef.current);
+        const prev = prevBoostRef.current.get(userId);
+        prevBoostRef.current.set(userId, { zoneId, mult });
+        if (!prev || prev.zoneId === zoneId) return;
+        log.debug('cycle_game.boost_change', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          from: prev.zoneId,
+          to: zoneId,
+          mult,
+          elapsedS: tickElapsedS
+        });
+        if (mult > prev.mult) recordBoostToast(r.displayName || userId, zoneId);
+      });
+
       const elapsedS = state.engineState?.elapsedS ?? null;
 
       // ── Per-tick firehose (debug) — one event per second, riders as an array,
@@ -2134,6 +2181,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           resolveName={resolveDisplayName}
           recoveredNotice={recoveredNotice}
           busy={startPending}
+          boostRange={lobbyBoostRange}
         />
         {recapCandidate && (
           <RaceRecap candidate={recapCandidate} onClose={closeRecap} />
@@ -2232,6 +2280,12 @@ export default function CycleGameContainer({ onMount } = {}) {
           : ((Number.isFinite(vitals.heartRate) && vitals.heartRate > 0) ? (vitals.zoneColor || null) : null),
         zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
         multiplier: mult,
+        // The boost meter under the gauge (zone, multiplier, progress to the
+        // next zone). A ghost replays its zone, with no progress.
+        boost: boostState({
+          zoneId, zones, hrlessMultiplier,
+          progress: isGhostRider ? null : (vitals.progress ?? null)
+        }),
         finished: isFinished,
         // Live rank for EVERY rider (not gated on isFinished) — engine.standings()
         // ranks unfinished riders by distance every tick too, and the standings

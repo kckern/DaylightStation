@@ -29,7 +29,7 @@
   // centreline until their badges overlap. 33% ≈ 410px at 1080p, the width the
   // POV had in the top row before it and the tower traded places.
   &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) minmax(220px, 33%); grid-template-rows: 1fr; gap: 8px; }
-  .race-layout__wide-main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(200px, 42%); gap: 8px; }
+  .race-layout__wide-main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(220px, 42%); gap: 8px; }
   .race-layout__wide-main--no-speedo { grid-template-rows: 1fr; }
   .race-layout__top3 { display: grid; min-height: 0; grid-template-columns: 2fr 1fr; gap: 8px; }
 

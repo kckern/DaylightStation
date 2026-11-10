@@ -4,7 +4,8 @@ import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from "../../lib/cycleGame/speedometerGeometry.js";
 import { createTickLerp } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
-import { AVATAR_RATIO, OVERLAY_FONT_RATIO, multiplierChipBox } from "../../lib/cycleGame/speedometerOverlayLayout.js";
+import { AVATAR_RATIO, OVERLAY_FONT_RATIO } from "../../lib/cycleGame/speedometerOverlayLayout.js";
+import { formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { RaceFlagIcon, MedalIcon } from "./home/icons.jsx";
 import "./CycleSpeedometer.scss";
 
@@ -22,9 +23,9 @@ function ordinal(n) {
 
 export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, speedKmh = 0, cadenceBands = [], tickStep, labelStep,
-  avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
+  avatar = {}, distanceMeters = 0, riderColor = null, size = 220, className = '',
   isGhost = false, finished = false, placement = null, isLeader = false,
-  sensorLost = false, parked = false, noSensor = false, riderId = null
+  sensorLost = false, parked = false, noSensor = false, riderId = null, boost = null
 }) {
   // Tick spacing scales with the gauge max (a fixed 10/30 crowds a 250 dial);
   // explicit tickStep/labelStep props still override when provided.
@@ -49,21 +50,17 @@ export default function CycleSpeedometer({
     return { bands: arcs, activeBandId: active?.id ?? null };
   }, [effectiveBands, maxRpm, rpm]);
   const needleDeg = needleAngleDeg(rpm, maxRpm);
-  const showBadge = Number.isFinite(multiplier) && multiplier > 1;
-  const badgeColor = multiplierColor || avatar.zoneColor || '#e67e22';
 
   const px = typeof size === 'number' ? size : 220;
   // Overlay typography scales with the gauge (audit UX §3.1-3.2): the gauge
   // wrapper's font-size is a fixed fraction of its own pixel size, so every
-  // em-sized overlay child (rpm sub-line, speed hero) grows/shrinks in lockstep
+  // em-sized overlay child (rpm hero, speed sub-line) grows/shrinks in lockstep
   // with the dial instead of colliding at small sizes or looking lost at large
-  // ones. The avatar keeps its existing ratio; the multiplier PILL is sized
-  // independent of the avatar (min-px floor + gauge-ratio growth) specifically
-  // so its text stays legible at the smallest gauge — see multiplierChipBox in
-  // speedometerOverlayLayout.js (2026-07-02 legibility fix).
+  // ones. The avatar keeps its existing ratio.
   const overlayFontPx = px * OVERLAY_FONT_RATIO;
   const avatarPx = Math.round(px * AVATAR_RATIO);
-  const multiplierChip = useMemo(() => multiplierChipBox(px), [px]);
+  const boostProgress = boost && boost.hasStrap && Number.isFinite(boost.progress)
+    ? Math.min(1, Math.max(0, boost.progress)) : null;
 
   // ── Motion clock: glide the needle between 1 Hz ticks ──
   // The needle is a DATA-driven position (rpm → angle). React renders the
@@ -186,48 +183,55 @@ export default function CycleSpeedometer({
           />
         </div>
 
-        {showBadge && (
-          /* Legible PILL, not a dot (2026-07-02 fix — the prior circular badge,
-             capped at 30% of the avatar, shrank to an unreadable ~11px at the
-             wide-mode floor). Positioned top-right of the GAUGE (not anchored to
-             the avatar), sized independently so "×1.4" stays readable at every
-             gauge size — see multiplierChipBox. */
-          <div
-            className="cycle-speedometer__multiplier"
-            data-testid="cycle-speedometer-multiplier"
-            aria-label={`multiplier ×${Number(multiplier).toFixed(1)}`}
-            style={{
-              background: badgeColor,
-              left: multiplierChip.x, top: multiplierChip.y,
-              width: multiplierChip.width, height: multiplierChip.height
-            }}
-          >
-            ×{Number(multiplier).toFixed(multiplier % 1 === 0 ? 0 : 1)}
-          </div>
-        )}
-
-        {/* Speed + rpm now live TOGETHER in the free lower hemisphere (audit UX
+        {/* Rpm + speed live TOGETHER in the free lower hemisphere (audit UX
             §3.1-3.2) — the dial's ticks/labels only ever occupy the top half
             (rpmToAngle sweeps 9 o'clock through 12 to 3 o'clock), so this block
-            can never collide with the 12-o'clock mid-scale tick label the way the
-            old fixed `top: 8%` rpm readout did. Speed is the hero; rpm is a
-            sub-line beneath it — a lost sensor (broadcast gap that's run past the
-            hold+decay window — see rpmDuringGap/gapTicksRef) swaps that sub-line
-            for a "SENSOR" chip instead of a frozen/decayed number that would
-            otherwise look like real telemetry. */}
+            can never collide with a tick label. Rpm is the hero (the rider
+            controls it); km/h is the sub-line beneath it. A lost sensor
+            (broadcast gap past the hold+decay window — see rpmDuringGap /
+            gapTicksRef) swaps the rpm digits for a "SENSOR" chip instead of a
+            frozen/decayed number that would look like real telemetry. */}
         <div className="cycle-speedometer__lower-readout">
-          <div className="cycle-speedometer__speed" data-testid="cycle-speedometer-speed">
-            {Math.round(Number.isFinite(speedKmh) ? speedKmh : 0)}<span className="cycle-speedometer__speed-unit"> km/h</span>
-          </div>
-          <div className="cycle-speedometer__rpm" data-testid="cycle-speedometer-rpm">
+          <div className="cycle-speedometer__rpm cycle-speedometer__readout--hero" data-testid="cycle-speedometer-rpm">
             {sensorLost ? (
               <span className="cycle-speedometer__sensor-lost-chip" data-testid="cycle-speedometer-sensor-lost">SENSOR</span>
             ) : (
               <>{Math.round(Number.isFinite(rpm) ? rpm : 0)}<span className="cycle-speedometer__rpm-unit"> rpm</span></>
             )}
           </div>
+          <div className="cycle-speedometer__speed cycle-speedometer__readout--sub" data-testid="cycle-speedometer-speed">
+            {Math.round(Number.isFinite(speedKmh) ? speedKmh : 0)}<span className="cycle-speedometer__speed-unit"> km/h</span>
+          </div>
         </div>
       </div>
+
+      {/* Boost meter: how the heart-rate zone multiplies distance. BELOW the
+          gauge, outside the dial, so it can never cover a tick label (the old
+          ×1.2 badge sat on the 120). Chip in the zone colour, a thin bar to the
+          next zone, the next step muted at the right. No strap: the handicap
+          multiplier, no bar. */}
+      {boost && (
+        <div className={`cycle-speedometer__boost${boost.hasStrap ? '' : ' cycle-speedometer__boost--no-strap'}`}
+          data-testid="cycle-speedometer-boost" style={{ width: px, ...(avatar.zoneColor ? { '--cg-boost-color': avatar.zoneColor } : {}) }}>
+          <div className="cycle-speedometer__boost-line">
+            <span className="cycle-speedometer__boost-chip" data-testid="cycle-speedometer-boost-chip">
+              <span className="cycle-speedometer__boost-label">{boost.label}</span>
+              {` ×${formatMultiplier(boost.mult)}`}
+            </span>
+            {boost.hasStrap && boost.next && (
+              <span className="cycle-speedometer__boost-next" data-testid="cycle-speedometer-boost-next">
+                {`${boost.next.label} ×${formatMultiplier(boost.next.mult)}`}
+              </span>
+            )}
+          </div>
+          {boostProgress != null && (
+            <div className="cycle-speedometer__boost-bar" data-testid="cycle-speedometer-boost-bar">
+              <span className="cycle-speedometer__boost-fill" data-testid="cycle-speedometer-boost-fill"
+                style={{ width: `${Math.round(boostProgress * 100)}%` }} />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="cycle-speedometer__odometer" data-testid="cycle-speedometer-odometer">
         {isLeader && !finished && (
@@ -255,8 +259,6 @@ CycleSpeedometer.propTypes = {
     heartRate: PropTypes.number, zoneId: PropTypes.string, zoneColor: PropTypes.string, progress: PropTypes.number
   }),
   distanceMeters: PropTypes.number,
-  multiplier: PropTypes.number,
-  multiplierColor: PropTypes.string,
   riderColor: PropTypes.string,
   size: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   className: PropTypes.string,
@@ -267,5 +269,10 @@ CycleSpeedometer.propTypes = {
   sensorLost: PropTypes.bool,
   parked: PropTypes.bool,
   noSensor: PropTypes.bool,
-  riderId: PropTypes.string
+  riderId: PropTypes.string,
+  /** boostState(): { hasStrap, label, mult, progress, next }. Absent → no boost row. */
+  boost: PropTypes.shape({
+    hasStrap: PropTypes.bool, label: PropTypes.string, mult: PropTypes.number,
+    progress: PropTypes.number, next: PropTypes.shape({ label: PropTypes.string, mult: PropTypes.number })
+  })
 };

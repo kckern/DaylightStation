@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boostState, boostRange } from './boostState.js';
+import { boostState, boostRange, formatMultiplier } from './boostState.js';
 
 const zones = [
   { id: 'cool', name: 'Cool', distance_multiplier: 0.8 }, { id: 'active', name: 'Active', distance_multiplier: 1 },
@@ -72,5 +72,19 @@ describe('boostRange', () => {
   });
   it('non-finite strapless falls back to 1; bad zone multipliers are ignored', () => {
     expect(boostRange([{ id: 'a', distance_multiplier: 1.3 }, { id: 'b' }, null], NaN)).toEqual({ min: 1, max: 1.3 });
+  });
+});
+
+describe('formatMultiplier', () => {
+  it('prints at most one decimal with no trailing .0', () => {
+    expect(formatMultiplier(1)).toBe('1');
+    expect(formatMultiplier(1.2)).toBe('1.2');
+    expect(formatMultiplier(1.25)).toBe('1.3');
+    expect(formatMultiplier(0.8)).toBe('0.8');
+    expect(formatMultiplier(2.0)).toBe('2');
+  });
+  it('a non-number prints as 1', () => {
+    expect(formatMultiplier(null)).toBe('1');
+    expect(formatMultiplier(NaN)).toBe('1');
   });
 });

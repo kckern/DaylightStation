@@ -11,6 +11,7 @@ import VolumeModal from "./home/VolumeModal.jsx";
 import HighScores from "./home/HighScores.jsx";
 import HistoryTable from "./home/HistoryTable.jsx";
 import FeaturedCourseCard from "./home/FeaturedCourseCard.jsx";
+import { formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import "./CycleGameHome.scss";
 
 // How long the "recovered your interrupted race" banner stays up before it
@@ -25,7 +26,6 @@ const RECOVERED_NOTICE_DURATION_MS = 8000;
  * center-aligned throughout.
  */
 // Multiplier text: at most one decimal, no trailing ".0" (0.8, 1.6, 2).
-const fmtMult = (n) => String(Math.round(n * 10) / 10);
 
 export default function CycleGameHome({
   raceType = null,
@@ -190,7 +190,7 @@ export default function CycleGameHome({
           )}
           {showBoostRule && (
             <p className="cgh-boost-rule" data-testid="boost-rule">
-              {`Harder effort goes further: your heart-rate zone multiplies your distance (\u00d7${fmtMult(boostRange.min)} to \u00d7${fmtMult(boostRange.max)}).`}
+              {`Harder effort goes further: your heart-rate zone multiplies your distance (\u00d7${formatMultiplier(boostRange.min)} to \u00d7${formatMultiplier(boostRange.max)}).`}
             </p>
           )}
         </section>
