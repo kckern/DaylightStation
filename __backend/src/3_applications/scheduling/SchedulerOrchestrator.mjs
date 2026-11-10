@@ -266,6 +266,7 @@ export class SchedulerOrchestrator {
 
     // Anchor the next run on the scheduled slot when the tick landed early, so the
     // slot we just ran can never be computed as the next one (double-run).
+    // Defensive: needsToRun compares ms, so runDueJobs never reaches this early branch today.
     let anchor = now;
     if (!manual) {
       const slot = Date.parse(state.nextRun);

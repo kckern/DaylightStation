@@ -499,9 +499,11 @@ export class TransactionCategorizationService {
    * Get list of transactions needing categorization
    *
    * @param {Object[]} transactions - Transactions to check
+   * @param {string} [householdId] - Household ID (for loading the settled map)
    * @returns {Object[]} Transactions needing categorization
    */
-  getUncategorized(transactions) {
+  getUncategorized(transactions, householdId) {
+    this.#ensureSettled(householdId);
     return transactions.filter(txn => this.#needsCategorization(txn));
   }
 

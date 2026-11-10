@@ -394,6 +394,12 @@ describe('TransactionCategorizationService', () => {
       expect(result.skipped).toHaveLength(1);
     });
 
+    it('getUncategorized on a fresh instance excludes a settled row', () => {
+      mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue({ '245703143': 'Direct Deposit' });
+      mockFinanceStore.saveCategorizationSettled = vi.fn();
+      expect(service.getUncategorized(directDeposit())).toEqual([]);
+    });
+
     it('saves the map after settling a new row', async () => {
       mockFinanceStore.getCategorizationSettled = vi.fn().mockReturnValue(null);
       mockFinanceStore.saveCategorizationSettled = vi.fn();

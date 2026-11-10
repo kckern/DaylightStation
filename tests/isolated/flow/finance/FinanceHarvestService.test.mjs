@@ -275,6 +275,19 @@ describe('FinanceHarvestService', () => {
         expect(mockFinanceStore.saveTransactions).not.toHaveBeenCalled();
       });
 
+      it('treats duplicate-id rows given in swapped order as unchanged', async () => {
+        const dup = [
+          { id: 7, date: '2026-01-02', description: 'Transfer', amount: -50, accountId: 1 },
+          { id: 7, date: '2026-01-02', description: 'Transfer', amount: 50, accountId: 2 }
+        ];
+        mockTransactionSource.getTransactions.mockResolvedValue(dup);
+        mockFinanceStore.getTransactions.mockReturnValue([dup[1], dup[0]].map(t => ({ ...t })));
+        const result = await service.harvest(undefined, { skipCategorization: true });
+
+        expect(mockFinanceStore.saveTransactions).not.toHaveBeenCalled();
+        expect(result.details.budgetPeriods[0].changed).toBe(false);
+      });
+
       it('saves when nothing is stored yet', async () => {
         mockFinanceStore.getTransactions.mockReturnValue(null);
         const result = await service.harvest(undefined, { skipCategorization: true });
@@ -307,6 +320,19 @@ describe('FinanceHarvestService', () => {
         expect(mockCompilationService.compile).toHaveBeenCalledTimes(1);
         expect(rb).toBe(ra);
         expect(mockLogger.info).toHaveBeenCalledWith('harvest.joined', { householdId: 'default' });
+      });
+
+      it('harvest(undefined) and harvest("default") share one flight', async () => {
+        const gate = deferred();
+        mockTransactionSource.getTransactions.mockImplementation(async () => { await gate.promise; return mockTransactions; });
+
+        const a = service.harvest(undefined);
+        const b = service.harvest('default');
+        gate.release();
+        const [ra, rb] = await Promise.all([a, b]);
+
+        expect(mockTransactionSource.getTransactions).toHaveBeenCalledTimes(2);
+        expect(rb).toBe(ra);
       });
 
       it('a failed in-flight harvest rejects both callers, and the next call starts fresh', async () => {

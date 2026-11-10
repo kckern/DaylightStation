@@ -79,14 +79,16 @@ export class FinanceHarvestService {
   harvest(householdId, options = {}) {
     // Single-flight per household: a manual refresh during the hourly sync
     // joins the run already in progress (its options are ignored).
-    const running = this.#inFlight.get(householdId);
+    // Keyed on the resolved household: undefined and 'default' name the same data.
+    const key = householdId ?? 'default';
+    const running = this.#inFlight.get(key);
     if (running) {
       this.#log('info', 'harvest.joined', { householdId });
       return running;
     }
     const run = this.#runHarvest(householdId, options)
-      .finally(() => this.#inFlight.delete(householdId));
-    this.#inFlight.set(householdId, run);
+      .finally(() => this.#inFlight.delete(key));
+    this.#inFlight.set(key, run);
     return run;
   }
 
@@ -387,12 +389,14 @@ export class FinanceHarvestService {
 
   #sameTransactions(a, b) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-    const byId = (x, y) => String(x?.id).localeCompare(String(y?.id));
     // Sorted keys: a YAML round trip may reorder fields without changing a row.
     const canon = (_k, v) => (v && typeof v === 'object' && !Array.isArray(v)
       ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]]))
       : v);
-    return JSON.stringify([...a].sort(byId), canon) === JSON.stringify([...b].sort(byId), canon);
+    // Rows are ordered by canonical JSON (not id): ids repeat (a transfer between two
+    // tracked accounts is returned once per account), so id alone leaves order ambiguous.
+    const rows = (list) => list.map(r => JSON.stringify(r, canon)).sort();
+    return JSON.stringify(rows(a)) === JSON.stringify(rows(b));
   }
 
   #toDateString(date) {

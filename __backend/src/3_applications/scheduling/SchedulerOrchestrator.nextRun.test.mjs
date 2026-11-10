@@ -37,6 +37,13 @@ describe('SchedulerOrchestrator next run', () => {
     expect(saved[0]).toBe(format(new Date('2026-11-09T09:30:00.000Z')));
     expect(logger.debug).not.toHaveBeenCalled();
   });
+  it('a run starting exactly at its slot schedules the following slot', async () => {
+    const { orchestrator, job, saved, logger } = build();
+    const state = new JobState({ jobId: 'budget', nextRun: '2026-11-09T07:30:00.000Z' });
+    await orchestrator.runJob(job, state, false, new Date('2026-11-09T07:30:00.000Z'));
+    expect(saved[0]).toBe(format(new Date('2026-11-09T08:30:00.000Z')));
+    expect(logger.debug).not.toHaveBeenCalled();
+  });
   it('a manual trigger leaves the schedule anchored on now', async () => {
     const { orchestrator, job, saved } = build();
     const state = new JobState({ jobId: 'budget', nextRun: '2026-11-09T08:30:00.000Z' });
