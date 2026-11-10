@@ -2,10 +2,10 @@
  * The coin ceremony's pure parts: its config, how a "coins just added" is
  * told from a refresh, and the queue that shows one pop at a time.
  *
- * WHAT IS CELEBRATED is the board's coin column: this week's silver (the
- * earnings preview), the figure the household calls "coins". It is NOT the
- * bank balance (owner ruling, 2026-10-21). A rise is the same learner's
- * silver going up between two NETWORK reads of the same week.
+ * WHAT IS CELEBRATED is silver actually minted: the wallet's silver (the
+ * ledger). It is NOT the week's projection (owner ruling 2026-11-09, "Ledger
+ * too", superseding 2026-10-21): a projected-but-unminted amount is no rise.
+ * A rise is the same learner's wallet silver going up between two NETWORK reads.
  *
  * Not celebrated: the cache seed and the first read after mount (both are
  * baselines), a change of week, a drop, no change, and anyone off the roster.

@@ -2,7 +2,7 @@
  * CoinCeremony: "+N silver" for one child, over the status board when their
  * coin column rises. A self-dismissing toast, the shape of the fitness ring
  * celebration (`FitnessToast.jsx`, `kind: 'ring-celebration'`): +N large, the
- * week's new total smaller (the coin column's figure, not the bank), who
+ * new total smaller (the wallet's minted silver), who
  * earned it (face and name), and the standard silver coin.
  *
  * It sits over the BOARD PANE only (absolutely positioned inside
@@ -51,7 +51,7 @@ export default function CoinCeremony({ toast, durationMs = 3500, onDone }) {
   return (
     <div className="school-coin-ceremony" data-testid="coin-ceremony">
       <div className="school-coin-ceremony__live" role="status" aria-live="polite">
-        {`${kid.name} earned ${gained} silver. ${total} this week.`}
+        {`${kid.name} earned ${gained} silver. ${total} silver in the bank.`}
       </div>
       <button
         type="button"
@@ -61,7 +61,7 @@ export default function CoinCeremony({ toast, durationMs = 3500, onDone }) {
       >
         <CoinIcon className="school-coin-ceremony__coin" metal="silver" />
         <span className="school-coin-ceremony__gained" aria-hidden="true">{`+${gained}`}</span>
-        <span className="school-coin-ceremony__total" aria-hidden="true">{`${total} this week`}</span>
+        <span className="school-coin-ceremony__total" aria-hidden="true">{`${total} silver`}</span>
         <span className="school-coin-ceremony__who" aria-hidden="true">
           <ProfileAvatar id={kid.id} name={kid.name} size={192} />
           <span className="school-coin-ceremony__name">{kid.name}</span>

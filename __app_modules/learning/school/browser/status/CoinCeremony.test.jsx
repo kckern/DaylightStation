@@ -17,10 +17,10 @@ describe('CoinCeremony', () => {
     render(<CoinCeremony toast={toast()} onDone={vi.fn()} />);
     const pop = screen.getByTestId('coin-ceremony');
     expect(within(pop).getByText('+3')).toHaveClass('school-coin-ceremony__gained');
-    expect(within(pop).getByText('15 this week')).toHaveClass('school-coin-ceremony__total');
+    expect(within(pop).getByText('15 silver')).toHaveClass('school-coin-ceremony__total');
     expect(within(pop).getByText('Alpha')).toHaveClass('school-coin-ceremony__name');
     expect(pop.querySelector('svg.coin-icon[data-metal="silver"]')).toBeTruthy();
-    expect(within(pop).getByRole('status').textContent).toBe('Alpha earned 3 silver. 15 this week.');
+    expect(within(pop).getByRole('status').textContent).toBe('Alpha earned 3 silver. 15 silver in the bank.');
     // It never takes focus from the keypad.
     expect(document.activeElement).toBe(document.body);
   });
