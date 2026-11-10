@@ -17,11 +17,24 @@ export const DEVICE_HEADER = 'x-daylight-device';
 // client sends the bare name. Both mean the same device.
 const bareDevice = (raw) => String(raw).trim().replace(/^fleet:/, '');
 
+// POSTs the Portal sends WITHOUT a person acting. Presence must mean a person.
+const IGNORED_PREFIXES = [
+  '/card-ladder/test/', // a grown-up's test sitting (the /test door is a path; its bodies carry no `mode`)
+  '/reading/',          // reading-session acks/ends are fired by the screen itself
+];
+const IGNORED_SUFFIXES = [
+  '/heartbeat',         // flashcard (30s) and media-lesson playhead timers, no human action
+];
+// Deliberately NOT ignored: remote-launch `POST /sessions` - a grown-up sending
+// work to the school room implies a child is about to be there.
+const isSelfDriven = (path = '') =>
+  IGNORED_PREFIXES.some((p) => path.startsWith(p)) || IGNORED_SUFFIXES.some((x) => path.endsWith(x));
+
 export function createPresenceMiddleware({ presenceHook, loadConfig, logger = null } = {}) {
   return function presenceMiddleware(req, res, next) {
     next();
     try {
-      if (!presenceHook || req.method !== 'POST') return;
+      if (!presenceHook || req.method !== 'POST' || isSelfDriven(req.path)) return;
       const raw = req.get?.(DEVICE_HEADER) ?? req.headers?.[DEVICE_HEADER] ?? req.body?.deviceId;
       if (!raw) return;
       const device = bareDevice(raw);

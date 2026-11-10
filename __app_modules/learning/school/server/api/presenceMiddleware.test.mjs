@@ -43,6 +43,12 @@ describe('presenceMiddleware', () => {
   it('does not fire when devices is absent', async () => {
     expect((await run({ headers: { 'X-Daylight-Device': 'portal' }, cfg: { presence_hook: { script: 'x' } } })).fire).not.toHaveBeenCalled();
   });
+  it.each(['/card-ladder/test/open', '/flashcards/x/heartbeat', '/reading/session/ack'])('does not fire for self-driven %s', async (path) => {
+    expect((await run({ headers: { 'X-Daylight-Device': 'portal' }, path })).fire).not.toHaveBeenCalled();
+  });
+  it('still fires for remote-launch /sessions', async () => {
+    expect((await run({ headers: { 'X-Daylight-Device': 'portal' }, path: '/sessions' })).fire).toHaveBeenCalledTimes(1);
+  });
   it('a rejecting fire leaves next called once and nothing thrown', async () => {
     const fire = vi.fn().mockRejectedValue(new Error('ha down'));
     const { next } = await run({ headers: { 'X-Daylight-Device': 'portal' }, fire });
