@@ -680,7 +680,12 @@ is the preview's current study day, `currentStudyDay()`).
   `GET /api/v1/earnings/workout/:sessionId` (learners in that session only;
   one failing wallet omits that learner, `economy.workout-earnings.learner-failed`)
   and `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
-  `gem: 'leading' | 'won' | null` from the `ring-contest` line). Both read-only,
+  `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `move`: the
+  Gem Board's Move rows for that learner as `[{id, label, color, cell}]`, each
+  `cell` cut down to `state`, `week`, `streak` and its parts' colours, which is
+  what a home card needs to draw the board's glyph; empty, with
+  `economy.standings.move-gems-unavailable` logged, when the board cannot be
+  read). Both read-only,
   `no-store`; with the catalog `off` they return no learners. Logged
   `economy.workout-earnings.query`.
 - A corrupt shard throws `CORRUPT_LEDGER` inside `mint` and nothing is written;

@@ -1025,8 +1025,8 @@ total. The top-right household total uses the canonical `RingIcon`. The sampled
 `momentum.render` event includes `householdRings` and `weekStartMs` so a stale or
 mis-bucketed home screen can be reconstructed from production logs.
 
-Each card's purse (bank silver + the week's gem) is a button that opens the
-shared Gem Board focused on that person, and the headline carries a **Gems**
+Each card's rail (bank silver + the week's Move gems) is a button that opens
+the shared Gem Board focused on that person, and the headline carries a **Gems**
 chip that opens it with no focus (shown whenever the economy is not `off`).
 While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→
 moves the column and ↑/↓ a row cursor, A opens the cell under the cursor or,
@@ -1037,15 +1037,23 @@ persists in localStorage (see Screen Framework → Data Coordination), so the ba
 render from the last payload on mount and update when the fetch lands rather
 than showing skeletons on every return from the player.
 
-Each person's card also shows their **bank silver** and, for the ring-contest
-holder, the week's **gem** — the bank's sapphire, faded (`.is-leading`,
-opacity 0.4) while they only lead it, full once Saturday noon makes it theirs;
-silver and gem share the name's row so every card keeps one height. The data is the
-`standings` screen source, `GET /api/v1/earnings/standings`, injected by
-FitnessApp when the layout uses `fitness:momentum`, persisted like `sessions`
-and refetched after a workout. People without a wallet get no coin; with the
-economy off, or the call failing, the coin column is hidden and the ring bars
-stand alone.
+A card reads top to bottom: the avatar with the name as a tag over its lower
+edge, the week bars, then the **rail** at the foot of the card. The home layout
+puts this panel under the suggestions, so the rail is the lowest thing on the
+touch screen and a child can reach it. The rail holds **bank silver** and one
+glyph for each row of the Gem Board's Move section, drawn by the board's own
+`GemGlyph`: a ring of day segments while a day-count is running, a full gem
+once it is earned or while a contest gem is held, nothing in a slot that has
+nothing this week. Slots keep the board's order on every card, so a contest
+gem is seen to move from one child to another. Games and School gems are on the
+board only. The data is the `standings` screen source,
+`GET /api/v1/earnings/standings` (`silver`, and `move` cut from the Gem Board
+itself), injected by FitnessApp when the layout uses `fitness:momentum`,
+persisted like `sessions` and refetched after a workout. People without a
+wallet get an empty rail of the same height; with the economy off, or the call
+failing, every rail is empty and the ring bars stand alone.
+
+Each bar is dated by its Monday as day then month (`19 Oct`), with no slash.
 
 ### Leaving the player → the session just finished
 

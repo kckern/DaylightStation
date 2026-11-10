@@ -177,14 +177,6 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       listUsers: () => economyApi.configProjection.users(),
       logger: rootLogger.child({ module: 'economy-week-close' }),
     });
-    // What one workout was worth (the fitness coin ceremony) and the week's
-    // standings (the fitness home cards). Read-only over the same preview.
-    const workoutEarnings = new WorkoutEarningsService({
-      preview: earningsPreview,
-      economy: economyApi.economyService,
-      config: economyApi.configProjection,
-      logger: rootLogger.child({ module: 'economy-workout-earnings' }),
-    });
     // The Gem Board (fitness ring chart, school agenda): learners × gems.
     const gemBoard = new GemBoardService({
       preview: earningsPreview,
@@ -192,6 +184,16 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       economy: economyApi.economyService,
       config: economyApi.configProjection,
       logger: rootLogger.child({ module: 'economy-gem-board' }),
+    });
+    // What one workout was worth (the fitness coin ceremony) and the week's
+    // standings (the fitness home cards, with their Move gems off the board).
+    // Read-only over the same preview.
+    const workoutEarnings = new WorkoutEarningsService({
+      preview: earningsPreview,
+      economy: economyApi.economyService,
+      config: economyApi.configProjection,
+      gemBoard,
+      logger: rootLogger.child({ module: 'economy-workout-earnings' }),
     });
     const router = createEarningsRouter({
       earningsPreview,
