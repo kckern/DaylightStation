@@ -6,7 +6,9 @@
  *
  * Only LIVE performances count — ghost participants are replays of an already-
  * counted ride, so they're skipped (matches the only-live-riders rule used in
- * the ghost roster). Pure + injection-free for unit testing.
+ * the ghost roster). A race a rider ended early (`incomplete`) never counts either:
+ * its duration is whatever the rider chose, so its average speed is not a record.
+ * Pure + injection-free for unit testing.
  */
 import { relativeDay, compactTime } from "./recordRow.js";
 import { kmh } from "./speed.js";
@@ -26,6 +28,7 @@ export function buildHighScores(candidates = [], todayYmd) {
   let sprint = null;    // fastest under 5 min  { value(km/h), raceId, holderName, holderAvatar, day, timeOfDay }
   let endurance = null; // fastest 5 min and over
   (Array.isArray(candidates) ? candidates : []).forEach((c) => {
+    if (c?.incomplete) return; // ended early — saved, but never a record
     const capS = Number.isFinite(c.timeCapS) ? c.timeCapS : null;
     (c.participants || []).forEach((p) => {
       if (p.isGhost) return; // replays don't set new records

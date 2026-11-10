@@ -59,7 +59,9 @@ export function mapRaceRecordToCandidate(rec, { getDisplayLabel = null, resolveG
         zoneSeries: p.zone_series || null,
         finalDistanceM: p.final_distance_m ?? null,
         finalTimeS: p.final_time_s ?? null,
-        placement: p.placement ?? null
+        placement: p.placement ?? null,
+        // Was stopped (parked) when the race closed — their line ends short of the field's.
+        stopped: !!p.stopped
       };
     })
     .sort((a, b) => (a.placement || 99) - (b.placement || 99));
@@ -82,6 +84,8 @@ export function mapRaceRecordToCandidate(rec, { getDisplayLabel = null, resolveG
     goalM: race.goal_m ?? null,
     timeCapS: race.time_cap_s ?? null,
     intervalSeconds: race.interval_seconds || 1,
+    // Ended early by a rider: stays in history, never counts for records.
+    incomplete: !!race.incomplete,
     participants,
     winnerName: winner.displayName,
     // goal = what the race was set to; score = the winner's achieved metric

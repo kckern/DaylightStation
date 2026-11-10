@@ -23,6 +23,16 @@ describe('mapRaceRecordToCandidate', () => {
     expect(c.goalKind).toBe('distance');
     expect(c.scoreKind).toBe('time');
   });
+  it('carries the incomplete flag onto the candidate (false when the record has none)', () => {
+    expect(mapRaceRecordToCandidate(REC).incomplete).toBe(false);
+    const c = mapRaceRecordToCandidate({ ...REC, race: { ...REC.race, incomplete: true } });
+    expect(c.incomplete).toBe(true);
+  });
+  it('carries stopped from the record participant onto the candidate participant', () => {
+    const c = mapRaceRecordToCandidate({ ...REC, participants: { ...REC.participants, user_3: { ...REC.participants.user_3, stopped: true } } });
+    expect(c.participants.find((p) => p.id === 'user_3').stopped).toBe(true);
+    expect(c.participants.find((p) => p.id === 'dad').stopped).toBe(false);
+  });
   it('returns null for a record with no participants', () => {
     expect(mapRaceRecordToCandidate({ race: { id: 'x' }, participants: {} })).toBeNull();
   });

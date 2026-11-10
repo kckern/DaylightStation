@@ -70,9 +70,15 @@ export function resolveFeaturedCourse(cycleGameConfig, isoWeekNumber) {
   return list[((n % list.length) + list.length) % list.length];
 }
 
-/** course_id equality, or legacy fallback on (win_condition, goal). */
+/**
+ * course_id equality, or legacy fallback on (win_condition, goal). An entry
+ * flagged `incomplete` (a rider ended the race early) never matches any course,
+ * so it can never reach the ladder, the all-time record or a personal best.
+ * Index rows written before the flag existed have no `incomplete` key and count.
+ */
 export function raceMatchesCourse(entry, course) {
   if (!entry || !course) return false;
+  if (entry.incomplete) return false;
   if (entry.course_id && entry.course_id === course.id) return true;
   if (entry.win_condition !== course.win_condition) return false;
   return course.win_condition === 'distance'

@@ -77,12 +77,13 @@ export function actBells(act) {
  * (id + win condition + goal), walked in raceId (start-time) order; a rider's
  * strictly better result than their prior best on that course is a PB. Their
  * first ever valid result sets the bar and is not a PB. Lobby races
- * (course_id null) and ghosts never count.
+ * (course_id null), ghosts and races a rider ended early (`incomplete`) never
+ * count — an incomplete ride neither is a PB nor sets the bar.
  * @returns {Array<{learnerId, courseId, raceId, date}>}
  */
 export function findPersonalBests(entries, learnerIds) {
   const wanted = new Set(learnerIds);
-  const rows = (entries ?? []).filter((e) => e?.id && e.course_id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const rows = (entries ?? []).filter((e) => e?.id && e.course_id && !e.incomplete).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const best = new Map();
   const out = [];
   for (const e of rows) {

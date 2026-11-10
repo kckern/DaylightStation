@@ -639,6 +639,7 @@ race:
   interval_seconds: 1
   background_plex_id: null
   course_id: null           # featured-course id for ladder rides; null for lobby races
+  # incomplete: true        # only on a race a rider ended early; key absent otherwise
 participants:
   <userId>:
     display_name: "User_3"
@@ -650,7 +651,25 @@ participants:
     hr_series: "<RLE>"
     rpm_series: "<RLE>"
     zone_series: "<RLE>"
+    # stopped: true            # only on a rider who was stopped (parked) when the race closed
 ```
+
+Two optional flags, both written only when true (the key is absent otherwise, so
+every record saved before they existed reads as a normal, complete race):
+
+- **`race.incomplete`** — `buildRaceRecord` sets it when called with
+  `meta.endedEarly`: a rider ended the race before its win condition closed it.
+  The ride is saved and stays in history, but it **never counts** for the weekly
+  ladder, the all-time record, personal bests, the `race-pb` gem or the lobby
+  high scores (§16). Its duration is whatever the rider chose, so neither its
+  time nor its distance is comparable to a full run of the course.
+- **participant `stopped`** — set for each userId in `meta.stopped`: the rider
+  was parked when the race closed. Independent of `incomplete` (a race can run to
+  its normal close with a stopped rider in it).
+
+`mapRaceRecordToCandidate` carries both onto the ghost candidate
+(`candidate.incomplete`, `participant.stopped`, each a plain boolean), and
+`buildHighScores` skips an `incomplete` candidate outright.
 
 ### Storage
 
@@ -760,6 +779,11 @@ resolves.
   multi-rider race counts every live participant independently.
 - **Eligibility:** ghosts (`ghost:*` participant ids) never qualify. Guests do —
   the ladder has no household-only restriction.
+- **Incomplete races never count.** An index row with `incomplete: true` (§15)
+  matches **no** course — `raceMatchesCourse` rejects it before the `course_id`
+  and legacy checks — so it is absent from the standings, from `attempts`, from
+  the all-time record and from personal bests. A row with no `incomplete` key
+  (a shard written before the flag existed) is a complete race.
 - **Ties:** the earlier attempt (smaller/earlier raceId) holds the rung.
 - **All-time record:** the same matching/ranking rules over full history, no week
   window.
@@ -801,6 +825,11 @@ maintains: `household[-{id}]/history/fitness/cycle-races/_index/{YYYY-MM}.json`.
 Shards are **disposable** — deleting one just forces a rebuild (per-day mtime
 check) on the next read; nothing else depends on their presence.
 
+Each row carries `incomplete` (boolean, from `race.incomplete`) beside
+`course_id`. Rows in shards written before the field existed lack the key, which
+reads as complete — correct, since no record from that time can be incomplete —
+so the flag needed no index version bump.
+
 ### Gems (economy achievement evidence)
 
 `application/measures/fitnessAchievementProvider.mjs` feeds the economy's
@@ -809,8 +838,9 @@ the ISO week of the school week's Monday), roster riders only, scored
 higher-better: `1e6 / seconds` on a distance course, metres on a time course;
 closed once the week is over. `race-pb` walks the index rows in raceId order per
 course definition (id + win condition + goal): a strictly better result than the
-rider's prior best is a PB, their first ride of a course is not. Lobby races and
-ghosts never count. It is dated by the study day of `race.date` via
+rider's prior best is a PB, their first ride of a course is not. Lobby races,
+ghosts and incomplete races never count (an incomplete ride neither is a PB nor
+sets the bar a later ride must beat). It is dated by the study day of `race.date` via
 `raceEpochMs()` (the record is fetched for each candidate) and keyed
 `<courseId>:<raceId>`.
 

@@ -61,6 +61,18 @@ describe('listIndexEntries', () => {
     expect(entries).toHaveLength(1);
   });
 
+  it('an ended-early record indexes as incomplete; a normal one as not', async () => {
+    await store.save(rec('20260630080000', { incomplete: true }), 'household');
+    await store.save(rec('20260630090000'), 'household');
+    const entries = await store.listIndexEntries('household');
+    const byId = Object.fromEntries(entries.map((e) => [e.id, e]));
+    expect(byId['20260630080000'].incomplete).toBe(true);
+    expect(byId['20260630090000'].incomplete).toBe(false);
+    // and the flag survives the shard round-trip (second read is served from the shard)
+    const again = await store.listIndexEntries('household');
+    expect(again.find((e) => e.id === '20260630080000').incomplete).toBe(true);
+  });
+
   it('legacy records without course_id index as course_id null', async () => {
     const legacy = rec('20260630080000');
     delete legacy.race.course_id;

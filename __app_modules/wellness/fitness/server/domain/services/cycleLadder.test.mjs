@@ -12,6 +12,7 @@ const entry = (id, date, parts, over = {}) => ({
   win_condition: ('win_condition' in over) ? over.win_condition : 'distance',
   goal_m: ('goal_m' in over) ? over.goal_m : 1500,
   time_cap_s: ('time_cap_s' in over) ? over.time_cap_s : null,
+  ...('incomplete' in over ? { incomplete: over.incomplete } : {}),
   participants: parts
 });
 const p = (userId, timeS, distM = 1500, over = {}) => ({
@@ -65,6 +66,44 @@ describe('raceMatchesCourse', () => {
     expect(raceMatchesCourse(legacy, COURSE_D)).toBe(true);
     expect(raceMatchesCourse(entry('x', '2026-06-30', [], { course_id: null, goal_m: 2500 }), COURSE_D)).toBe(false);
     expect(raceMatchesCourse(entry('x', '2026-06-30', [], { course_id: null, win_condition: 'time', time_cap_s: 300, goal_m: null }), COURSE_T)).toBe(true);
+  });
+});
+
+describe('incomplete (ended-early) entries never count', () => {
+  const W = { weekStart: '2026-06-29', weekEnd: '2026-07-06' };
+  it('an incomplete entry never matches a course, by id or by legacy fallback', () => {
+    expect(raceMatchesCourse(entry('x', '2026-06-30', [], { incomplete: true }), COURSE_D)).toBe(false);
+    expect(raceMatchesCourse(entry('x', '2026-06-30', [], { course_id: null, incomplete: true }), COURSE_D)).toBe(false);
+  });
+  it('an entry with no incomplete field (pre-existing index shard) or incomplete:false still matches', () => {
+    expect(raceMatchesCourse(entry('x', '2026-06-30', []), COURSE_D)).toBe(true);
+    expect(raceMatchesCourse(entry('x', '2026-06-30', [], { incomplete: false }), COURSE_D)).toBe(true);
+  });
+  it('is left out of the ladder standings, the attempt count and the all-time record', () => {
+    const entries = [
+      entry('20260629080000', '2026-06-29', [p('dad', 150)]),
+      entry('20260630080000', '2026-06-30', [p('dad', 90), p('user_3', 95)], { incomplete: true })
+    ];
+    const l = computeLadder({ course: COURSE_D, entries, ...W });
+    expect(l.standings).toEqual([{ userId: 'dad', bestValue: 150, raceId: '20260629080000', attempts: 1 }]);
+    expect(l.allTimeRecord.raceId).toBe('20260629080000');
+  });
+  it('is left out of a time-course ladder, where any distance would otherwise qualify', () => {
+    const over = { course_id: 'endurance-5min', win_condition: 'time', time_cap_s: 300, goal_m: null };
+    const entries = [
+      entry('20260629080000', '2026-06-29', [p('dad', null, 2100)], over),
+      entry('20260630080000', '2026-06-30', [p('dad', null, 2600)], { ...over, incomplete: true })
+    ];
+    const l = computeLadder({ course: COURSE_T, entries, ...W });
+    expect(l.standings.map((s) => s.bestValue)).toEqual([2100]);
+  });
+  it('is never a personal best', () => {
+    const entries = [
+      entry('20260620080000', '2026-06-20', [p('user_3', 190)]),
+      entry('20260630080000', '2026-06-30', [p('user_3', 100)], { incomplete: true })
+    ];
+    expect(computePersonalBest({ entries, course: COURSE_D, userId: 'user_3' }).best.raceId).toBe('20260620080000');
+    expect(computePersonalBest({ entries: [entries[1]], course: COURSE_D, userId: 'user_3' }).best).toBeNull();
   });
 });
 

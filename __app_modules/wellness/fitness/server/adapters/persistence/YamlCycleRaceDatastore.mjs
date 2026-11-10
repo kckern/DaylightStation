@@ -28,6 +28,8 @@ export function indexEntryFromRecord(record, date) {
     win_condition: race.win_condition || 'distance',
     goal_m: race.goal_m ?? null,
     time_cap_s: race.time_cap_s ?? null,
+    // Ended early by a rider — the ladder and personal bests skip these rows.
+    incomplete: !!race.incomplete,
     participants: Object.entries(record?.participants || {}).map(([userId, p]) => ({
       userId,
       isGhost: String(userId).startsWith('ghost:'),

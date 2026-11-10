@@ -48,6 +48,18 @@ describe('buildHighScores', () => {
     expect(sprint.raceId).toBe('A');
   });
 
+  it('ignores incomplete races (an ended-early ride never sets a record)', () => {
+    const incomplete = { raceId: 'B', incomplete: true, participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/m', finalDistanceM: 99999, finalTimeS: 100 }] };
+    expect(buildHighScores([incomplete])).toEqual([]);
+    const hs = buildHighScores([
+      { raceId: 'A', participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/m', finalDistanceM: 1000, finalTimeS: 100 }] }, // 36.0 km/h
+      incomplete
+    ]);
+    const sprint = hs.find((h) => h.key === 'sprint');
+    expect(sprint.valueLabel).toBe('36 km/h');
+    expect(sprint.raceId).toBe('A');
+  });
+
   it('returns an empty list when there is no live data', () => {
     expect(buildHighScores([])).toEqual([]);
     expect(buildHighScores([{ raceId: 'A', participants: [] }])).toEqual([]);
