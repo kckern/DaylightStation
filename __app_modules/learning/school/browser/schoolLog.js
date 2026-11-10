@@ -41,6 +41,7 @@ export const schoolLog = {
   // log the code itself, only that one was typed.
   selfService: (detail, data) => emit('selfservice', detail, data),
   selfServiceError: (detail, data) => emit('selfservice', detail, data, 'error'), // resolve.failed | act.failed
+  selfServiceDebug: (detail, data) => emit('selfservice', detail, data, 'debug'), // keypad.reject-complete
   // The scan ceremony (Slice D self-service): every scan outcome the locked
   // panel acknowledges on screen. `detail` is the event name off the `omr`
   // topic (scan-graded | scan-review | scan-unresolved | scan-refused |

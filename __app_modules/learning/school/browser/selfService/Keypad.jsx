@@ -265,6 +265,7 @@ export default function Keypad({
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
     const at = (ms, fn) => timersRef.current.push(setTimeout(fn, ms));
+    schoolLog.selfService('keypad.reject-start', {});
     // Set synchronously: the red row is the answer, and it must be on screen in
     // the same frame the response lands, not one shake later.
     setReject({ phase: 'shake', shown: 0 });
@@ -280,7 +281,11 @@ export default function Keypad({
       at(t, () => setReject({ phase: 'wipe', shown }));
       t += WIPE_MS;
     }
-    at(t, () => setReject(null));
+    at(t, () => {
+      // Ran to its natural end (a key cancelling it clears these timers first).
+      schoolLog.selfServiceDebug('keypad.reject-complete', {});
+      setReject(null);
+    });
   }, [length]);
 
   /**
@@ -312,11 +317,12 @@ export default function Keypad({
       schoolLog.selfService('keypad.stray-press', { key: 'digit' });
       return;
     }
+    if (reject) schoolLog.selfService('keypad.reject-cancelled', { byKey: 'digit' });
     stopReject();
     if (entry.length === 0) onEntryStartRef.current?.();
     setEntry((current) => (current.length >= length ? current : current + digit));
     schoolLog.selfService('keypad.digit-pressed', {});
-  }, [entry.length, isStray, length, stopReject]);
+  }, [entry.length, isStray, length, reject, stopReject]);
 
   /**
    * Clear wipes the entry; Clear on an ALREADY-EMPTY entry refreshes the panel.
@@ -345,10 +351,16 @@ export default function Keypad({
       schoolLog.selfService('keypad.stray-press', { key: 'backspace' });
       return;
     }
+    if (reject) schoolLog.selfService('keypad.reject-cancelled', { byKey: 'backspace' });
     stopReject();
     setEntry((c) => c.slice(0, -1));
     schoolLog.selfService('keypad.backspace', {});
-  }, [isStray, stopReject]);
+  }, [isStray, reject, stopReject]);
+
+  const handleRetry = useCallback(() => {
+    schoolLog.selfService('keypad.retry', {});
+    if (onRetry) onRetry();
+  }, [onRetry]);
 
   const submit = useCallback(async () => {
     if (busy || entry.length !== length) {
@@ -582,7 +594,7 @@ export default function Keypad({
             type="button"
             className="school-selfservice__retry"
             disabled={busy}
-            {...tap(onRetry)}
+            {...tap(handleRetry)}
           >
             Try again
           </button>
