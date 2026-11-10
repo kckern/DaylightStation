@@ -52,6 +52,27 @@ describe('GemGlyph', () => {
     expect(a.large).toBe('0');
   });
 
+  it('a lit cell whose day-count is out of reach still shows the days done: the ring itself says out', () => {
+    const { container } = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 5, 'out') }} color="rgb(43, 179, 163)" />);
+    expect(container.querySelector('.gem-glyph').dataset.look).toBe('lit');
+    expect(container.querySelector('.gem-glyph__ring').classList.contains('is-out')).toBe(true);
+    expect(container.querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(2);
+    expect([...container.querySelectorAll('.gem-glyph__seg')].every((s) => s.style.stroke === '')).toBe(true);
+    cleanup();
+    const on = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 5, 'on-track') }} color="rgb(43, 179, 163)" />).container;
+    expect(on.querySelector('.gem-glyph__ring').classList.contains('is-out')).toBe(false);
+  });
+
+  it('the ring takes the colour of the rule whose days it counts, else the row’s', () => {
+    const parts = [{ ruleId: 'book-finished', color: 'rgb(9, 9, 9)' }, { ruleId: 'reader-week', color: 'rgb(1, 2, 3)' }];
+    const cell = { state: 'earned', week: 1, streak: { ...streak(1, 4, 'on-track'), ruleId: 'reader-week' }, parts };
+    const own = render(<GemGlyph cell={cell} color="rgb(7, 7, 7)" />).container;
+    expect(own.querySelector('.gem-glyph__seg.is-done').style.stroke).toBe('rgb(1, 2, 3)');
+    cleanup();
+    const bare = render(<GemGlyph cell={{ ...cell, parts: [{ ruleId: 'reader-week' }] }} color="rgb(7, 7, 7)" />).container;
+    expect(bare.querySelector('.gem-glyph__seg.is-done').style.stroke).toBe('rgb(7, 7, 7)');
+  });
+
   it('badges only a second gem, drops the gem when out of reach, dashes a held contest', () => {
     expect(render(<GemGlyph cell={{ state: 'earned', week: 1 }} color="#fff" />).container.textContent).toBe('');
     cleanup();
@@ -72,6 +93,9 @@ describe('GemGlyph', () => {
     expect(glyphWords({ state: 'earned', week: 2 })).toBe('earned, 2 gems');
     expect(glyphWords({ state: 'earned', week: 1, streak: streak(2, 4, 'on-track') })).toBe('earned, and 2 of 4 days, on track');
     expect(glyphWords({ state: 'leading', week: 0 })).toBe('leading');
+    // A row that folds a contest with a day-count: the ring is drawn, the lead is still said.
+    expect(glyphLook({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('streak');
+    expect(glyphWords({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('leading, and 2 of 4 days, on track');
     expect(glyphWords({ state: 'pending', week: 0 })).toBe('still in reach');
     expect(glyphWords({ state: 'none' })).toBe('not this week');
   });

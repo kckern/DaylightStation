@@ -483,6 +483,7 @@ A cell can be `earned` and still carry a `streak` when its row folds two rules
 | `week`, `lifetime` | this rule's gems this week and in all |
 | `progress` | `{have, need}` or null |
 | `left`, `reach` | set only while the part is `pending` with a `progress`; see below |
+| `lastDay` | the last day a day-count rule can be worked on (the end `left` is counted to); null for other kinds and for a rule with no line this week |
 | `days[]` | `{day, state}` with `done` or `short` (did some, under the mark); `ring-days` and `activity-days` only |
 | `items[]` | `{day, label}`: the milestone achievements paid this week |
 | `score` | `{mine, best}` for a contest: the learner's score against the roster's best (rings for `ring-contest`), else null |
@@ -492,8 +493,8 @@ A cell can be `earned` and still carry a `streak` when its row folds two rules
 starts at today or the week's first day, whichever is later, and runs through
 the rule's last day: Saturday (Monday + 5, when the ring award week closes) for
 `ring-days`, the school week's last day for `activity-days`. Both ends are
-clamped to the rule's `effective` dates. Today is included unless it already
-counted. With `short = need − have`:
+clamped to the rule's `effective` dates; the clamped end is the part's
+`lastDay`. Today is included unless it already counted. With `short = need − have`:
 
 | `reach` | When |
 |---|---|
@@ -524,8 +525,8 @@ Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
 
 | Look | When | Draws |
 |---|---|---|
-| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour; a `×n` badge when `week > 1`; the day ring too if a `streak` is still running |
-| `streak` | a `streak` whose `reach` is `on-track` or `tight` | a faint gem inside a ring of `need` segments, the first `have` in the gem's colour; when `tight` the unfilled segments are amber |
+| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour; a `×n` badge when `week > 1`; the day ring too if a `streak` is still running (its done segments grey when that streak is `out`) |
+| `streak` | a `streak` whose `reach` is `on-track` or `tight` | a faint gem inside a ring of `need` segments, the first `have` in the ring's colour; when `tight` the unfilled segments are amber |
 | `out` | a `streak` whose `reach` is `out` | the ring alone, its done segments grey, no gem |
 | `holding` | `leading` | a dimmed gem inside a dashed circle |
 | `open` | `pending` with no day-count | a faint gem |
@@ -536,17 +537,27 @@ Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
 A cell carries no numerals but the `×n` badge; counts and lifetime tallies live
 in the detail box. Nothing marks failure: a gem not earned is a blank cell and a
 week out of reach is a grey ring, never a cross. Each cell's `aria-label` says
-the same in words ("3 of 5 days, on track").
+the same in words ("3 of 5 days, on track"; a lead held in a row that also
+counts days reads "leading, and 2 of 4 days, on track").
 
-**The detail box** (`GemDetail.jsx`). A cell with parts and any look but `none`
-is a button; it opens a card over the board titled with the learner and the
-row, one block per part that has something to say (a part that is `disabled`,
-or `none` with no days, items or lifetime, is skipped; if none is left the card
-reads "Not this week").
+The ring takes the colour of the rule whose days it counts: the part named by
+`streak.ruleId`, else the row's colour. The detail box's day strip uses the
+same part colour, so the two always match.
+
+**The detail box** (`GemDetail.jsx`). A cell is a button when its detail would
+have something to say, however it looks at a glance: at least one part that is
+not `disabled` and is either in a state other than `none` or has days, items,
+a lifetime count or a score (`detailParts`, the one rule the board and the box
+share). So a blank-looking cell still opens for a contest score that is not
+the lead, a day-count that fell short, or a milestone row with gems from
+earlier weeks; a cell whose rules are all off, or with nothing at all, does
+not. The card sits over the board, titled with the learner and the row, one
+block per such part. Each block is headed by its rule's label, except when the
+card shows a single part named like the row.
 
 | Part | Shows |
 |---|---|
-| day-count | the week Monday → Sunday as seven lettered days: counted days filled in the row's colour, short days outlined, today ringed, days ahead dimmed, an empty past day plain. Then one line: `Earned`, `2 of 4 days · 3 days left`, `· needs every day left` (tight), `· out of reach this week` (out) |
+| day-count | the week Monday → Sunday as seven lettered days: counted days filled in the part's colour, short days outlined, today ringed, days ahead dimmed, days after the part's `lastDay` closed (fainter, no outline: Sunday for a `ring-days` rule), an empty past day plain. Then one line: `Earned`, `2 of 4 days · 3 days left`, `· needs every day left` (tight), `· out of reach this week` (out) |
 | milestone | this week's items (`label · Tue`) or `None this week`, then `4 in all` when the lifetime is above zero |
 | contest | `Won`, `Leading so far` or `Not leading`, with `320 — best 320` when there is a score |
 | `unknown` | `Can’t tell yet` |
@@ -555,13 +566,19 @@ reads "Not this week").
 |---|---|
 | tap a cell | opens its detail |
 | ←/→ | moves the highlighted column |
-| ↑/↓ | moves a row cursor through the rows as drawn; unset until first pressed, and it wraps |
+| ↑/↓ | moves a row cursor through the rows as drawn; unset until first pressed (down lands on the first row, up on the last). Up from the first row or down from the last puts it away again, which gives Enter back to the week switch |
 | Enter | with a row cursor on an openable cell, opens the detail; otherwise toggles this week / last week. Closes an open detail |
 | Escape | closes an open detail, else the board |
 | tap outside, × | closes the detail when open, else the board |
 
 Arrows do nothing while the detail is open. Switching week closes the detail
-and clears the row cursor. A gamepad surface hands its presses in as the same
+and clears the row cursor. Last week is asked for by this week's Monday, so
+its button is disabled, and Enter does nothing, until the first read lands.
+Closing the board drops the loaded board, the detail and the cursor.
+
+While the detail is open, focus sits on its close button and the grid behind
+it is `inert`; closing it returns focus to the cell it was opened from. The
+board is the one `aria-modal` dialog; the detail is a named dialog inside it. A gamepad surface hands its presses in as the same
 keys (D-pad, A = Enter, B = Escape). The board closes itself when idle.
 Browser events: `gem-board.open`, `gem-board.close` (`reason`, `dwellMs`),
 `gem-board.week-step`, `gem-board.load-failed`, `gem-board.detail-open`
@@ -571,15 +588,19 @@ Browser events: `gem-board.open`, `gem-board.close` (`reason`, `dwellMs`),
 **The gem ceremony** (`GemCeremony.jsx`, `useGemCeremony.js`,
 `gemCeremonyModel.js` beside the board) follows rules, not rows: it reads each
 cell's `parts`, so two rules folded into one row celebrate separately. A
-surface keeps a snapshot in localStorage, per surface, per week:
-`{week, v: 2, parts: {learnerId: {ruleId: [state, week]}}}`. It celebrates each
+surface keeps a snapshot in localStorage under
+`daylight.gemCeremony.v2.<surface>`, per week:
+`{week, v: 2, parts: {learnerId: {ruleId: [state, week]}}}`. Each write also
+removes the earlier key `daylight.gemCeremony.<surface>`. It celebrates each
 part that now holds a gem it did not — `earned`, `won`, or a contest lead just
 taken (`leading`); a lead that becomes a win celebrates again, a lost lead
 never does. An award is
 `{learnerId, name, categoryId, ruleId, label, color, cadence, kind, count}`,
 with the rule's own label, cadence and colour. A surface with no snapshot for
-this week, or one in an older shape, learns the board without celebrating, and
-a reload never replays an award.
+this week learns the board without celebrating, and a reload never replays an
+award. A part the board cannot read on one look (`unknown`) keeps the entry
+the snapshot already had for it, so a gem that reads again on the next look is
+not celebrated a second time.
 
 - Ordering rule for every surface (never during a live run; the piano is stricter): see [the ceremony ordering rule](../gaming/realtime-kit.md#the-ceremony-ordering-rule).
 - **Fitness** (`FitnessApp` global overlays): learns on load, then looks
@@ -597,8 +618,8 @@ a reload never replays an award.
 - **School Portal** (`SchoolApp`): while the panel rests at the keypad, a
   minute poll and each return to the keypad; drawn over the board pane only,
   never the keypad, with the coin cue.
-- Events: `gem-ceremony.found`, `.shown`, `.dismissed` (`reason`),
-  `.look-failed`.
+- Events: `gem-ceremony.found`, `.none` (debug: a look that found nothing
+  new), `.shown`, `.dismissed` (`reason`), `.look-failed`.
 
 ## Payouts
 

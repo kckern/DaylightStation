@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import GemDetail, { weekDays, streakLine } from './GemDetail.jsx';
+import GemDetail, { weekDays, streakLine, detailParts } from './GemDetail.jsx';
 
 afterEach(cleanup);
 const WINDOWS = { school: { from: '2026-11-02', to: '2026-11-08' } };
@@ -31,7 +31,10 @@ describe('GemDetail', () => {
     ] };
     const onClose = vi.fn();
     const { container } = render(<GemDetail row={row} learner={ann} cell={cell} windows={WINDOWS} today="2026-11-04" onClose={onClose} />);
-    expect(screen.getByRole('dialog', { name: 'Ann, Reading' })).toBeTruthy();
+    const dialog = screen.getByRole('dialog', { name: 'Ann, Reading' });
+    expect(dialog.hasAttribute('aria-modal')).toBe(false); // the board around it is the one modal
+    expect(document.activeElement).toBe(screen.getByLabelText('Close'));
+    expect([...container.querySelectorAll('.gem-detail__part-label')].map((n) => n.textContent)).toEqual(['Story time 4 days', 'Book finished']);
     const days = [...container.querySelectorAll('.gem-detail__day')];
     expect(days).toHaveLength(7);
     expect(days.map((d) => d.className.replace('gem-detail__day', '').trim())).toEqual(['', 'is-done', 'is-today', 'is-ahead', 'is-ahead', 'is-ahead', 'is-ahead']);
@@ -89,5 +92,47 @@ describe('GemDetail', () => {
     expect(container.textContent).toContain('3 in all');
     fireEvent.click(container.querySelector('.gem-detail__backdrop'));
     expect(onClose).toHaveBeenCalledWith('tap');
+  });
+
+  it('picks the parts with something to say: the same rule decides which cells open', () => {
+    const p = (extra) => ({ ...base, ruleId: 'r', label: 'R', cadence: 'weekly', ...extra });
+    expect(detailParts({ parts: [p({ state: 'disabled', lifetime: 3 })] })).toEqual([]);
+    expect(detailParts({ parts: [p({})] })).toEqual([]);
+    expect(detailParts({ parts: [] })).toEqual([]);
+    expect(detailParts(undefined)).toEqual([]);
+    expect(detailParts({ parts: [p({ cadence: 'contest', score: { mine: 3, best: 9 } })] })).toHaveLength(1);
+    expect(detailParts({ parts: [p({ days: [{ day: '2026-11-02', state: 'short' }] })] })).toHaveLength(1);
+    expect(detailParts({ parts: [p({ cadence: 'milestone', lifetime: 2 })] })).toHaveLength(1);
+    expect(detailParts({ parts: [p({ state: 'unknown' }), p({ ruleId: 'q' })] }).map((x) => x.ruleId)).toEqual(['r']);
+  });
+
+  it('days after the rule’s last day are closed, not ahead; with no last day named they stay ahead', () => {
+    const run = { ...base, ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly', state: 'pending', progress: { have: 1, need: 5 }, left: 3, reach: 'out', days: [{ day: '2026-11-03', state: 'done' }] };
+    const classes = (part, today = '2026-11-04') => {
+      const { container } = render(<GemDetail row={row} learner={ann} cell={{ state: 'pending', week: 0, parts: [part] }} windows={WINDOWS} today={today} onClose={() => {}} />);
+      const out = [...container.querySelectorAll('.gem-detail__day')].map((d) => d.className.replace('gem-detail__day', '').trim());
+      cleanup();
+      return out;
+    };
+    expect(classes({ ...run, lastDay: '2026-11-07' })).toEqual(['', 'is-done', 'is-today', 'is-ahead', 'is-ahead', 'is-ahead', 'is-closed']);
+    expect(classes({ ...run, lastDay: null })).toEqual(['', 'is-done', 'is-today', 'is-ahead', 'is-ahead', 'is-ahead', 'is-ahead']);
+    expect(classes(run)).toEqual(['', 'is-done', 'is-today', 'is-ahead', 'is-ahead', 'is-ahead', 'is-ahead']);
+    // Sunday itself: closed, and still today.
+    expect(classes({ ...run, lastDay: '2026-11-07' }, '2026-11-08')[6]).toBe('is-today is-closed');
+  });
+
+  it('a row that is one rule under the same name prints the name once', () => {
+    const one = { ...base, ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly', state: 'earned', week: 1 };
+    const moved = { id: 'exercise', label: 'Moved 5 days', color: '#8e5bd0' };
+    const same = render(<GemDetail row={moved} learner={ann} cell={{ state: 'earned', week: 1, parts: [one] }} windows={WINDOWS} today="2026-11-04" onClose={() => {}} />);
+    expect(same.container.querySelector('.gem-detail__part-label')).toBeNull();
+    expect(same.container.textContent).toContain('Earned');
+    cleanup();
+    const other = render(<GemDetail row={row} learner={ann} cell={{ state: 'earned', week: 1, parts: [one] }} windows={WINDOWS} today="2026-11-04" onClose={() => {}} />);
+    expect(other.container.querySelector('.gem-detail__part-label').textContent).toBe('Moved 5 days');
+    cleanup();
+    // Two parts shown: both keep their heading even when one shares the row's name.
+    const two = render(<GemDetail row={moved} learner={ann} cell={{ state: 'earned', week: 1, parts: [one, { ...one, ruleId: 'x', label: 'Other' }] }} windows={WINDOWS} today="2026-11-04" onClose={() => {}} />);
+    expect(two.container.querySelectorAll('.gem-detail__part-label')).toHaveLength(2);
   });
 });

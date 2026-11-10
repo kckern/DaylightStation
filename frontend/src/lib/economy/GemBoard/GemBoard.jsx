@@ -15,9 +15,9 @@
  * days counted, which milestones were paid, how a contest stands.
  *
  * Input: tap (a cell opens its detail), Escape (closes the detail, then the
- * board), ←/→ (move the highlighted column), ↑/↓ (move a row cursor), Enter
- * (open the cell under the cursor; with no cursor, or nothing to open there,
- * toggle this week / last week). A surface with a gamepad hands its button
+ * board), ←/→ (move the highlighted column), ↑/↓ (move a row cursor; past
+ * either end it is put away again), Enter (open the cell under the cursor;
+ * with no cursor, or nothing to open there, toggle this week / last week). A surface with a gamepad hands its button
  * presses in through `keyRef` (the fitness screen does) — this file reads no
  * gamepad itself. Closes on its own after `idleMs` without input.
  */
@@ -25,7 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
 import GemGlyph, { glyphLook, glyphWords } from './GemGlyph.jsx';
-import GemDetail from './GemDetail.jsx';
+import GemDetail, { detailParts } from './GemDetail.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './GemBoard.scss';
 
@@ -54,8 +54,8 @@ function Avatar({ id, name }) {
   return <img className="gem-board__avatar" src={`/api/v1/static/img/users/${id}`} alt="" onError={() => setFailed(true)} />;
 }
 
-/** A cell has a detail box to open when it shows anything and carries its parts. */
-const cellOpenable = (cell) => (cell?.parts?.length ?? 0) > 0 && glyphLook(cell) !== 'none';
+/** A cell opens when its detail box would have something to say, however blank the cell looks. */
+const cellOpenable = (cell) => detailParts(cell).length > 0;
 
 /** One child's cell in one gem row. Exported for tests. */
 export function GemCell({ cell, color, name, rowLabel, onOpen = null, cursor = false }) {
@@ -113,7 +113,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
             <div key={row.id} className="gem-board__row" role="row">
               <div className="gem-board__row-label" role="rowheader"><span>{row.label}</span></div>
               {learners.map((l) => (
-                <div key={l.learnerId} className={`gem-board__col${focusClass(l.learnerId)}`}>
+                <div key={l.learnerId} className={`gem-board__col${focusClass(l.learnerId)}`} data-row={row.id} data-learner={l.learnerId}>
                   <GemCell
                     cell={board.cells?.[row.id]?.[l.learnerId]}
                     color={row.color}
@@ -169,6 +169,8 @@ export default function GemBoardOverlay({
   const openedAt = useRef(0);
   const thisWeek = useRef(null); // the current week's Monday, once the first read lands
   const idle = useRef(null);
+  const panelRef = useRef(null);
+  const wasPicked = useRef(null);
 
   const close = useCallback((reason) => {
     logger().info('gem-board.close', { surface, reason, dwellMs: Date.now() - openedAt.current });
@@ -180,9 +182,18 @@ export default function GemBoardOverlay({
     if (idleMs > 0) idle.current = setTimeout(() => close('timeout'), idleMs);
   }, [close, idleMs]);
 
-  // Opening: reset to this week, log, arm the idle timer.
+  // Opening: reset to this week, log, arm the idle timer. Closing: drop the
+  // board, the detail and the cursor, so a reopen starts from nothing.
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) {
+      setPicked(null);
+      setRowCursor(null);
+      setWeekOffset(0);
+      setState({ board: null, error: null, loading: false });
+      thisWeek.current = null;
+      wasPicked.current = null;
+      return undefined;
+    }
     openedAt.current = Date.now();
     setWeekOffset(0);
     setFocus(focusLearnerId);
@@ -236,8 +247,20 @@ export default function GemBoardOverlay({
     setPicked(null);
   }, [picked, poke, surface]);
 
+  // Focus goes back to the cell a detail was opened from, once the grid can take it again.
+  useEffect(() => {
+    const from = wasPicked.current;
+    wasPicked.current = picked;
+    if (picked || !from) return;
+    const col = [...(panelRef.current?.querySelectorAll('.gem-board__col') ?? [])]
+      .find((el) => el.dataset.row === from.rowId && el.dataset.learner === from.learnerId);
+    col?.querySelector('.gem-board__open')?.focus();
+  }, [picked]);
+
   const step = useCallback((offset) => {
     poke();
+    // Last week is asked for by this week's Monday: not before the first read has landed.
+    if (offset !== 0 && !thisWeek.current) return;
     if (picked) closeDetail('week');
     setRowCursor(null);
     setWeekOffset(offset);
@@ -265,8 +288,9 @@ export default function GemBoardOverlay({
       if (!rows.length) return false;
       setRowCursor((cur) => {
         const at = rows.indexOf(cur);
-        const next = key === 'ArrowUp' ? (at <= 0 ? rows.length - 1 : at - 1) : (at < 0 || at >= rows.length - 1 ? 0 : at + 1);
-        return rows[next];
+        if (at < 0) return key === 'ArrowUp' ? rows[rows.length - 1] : rows[0];
+        // Past either end the cursor is put away, so Enter is the week switch again.
+        return rows[key === 'ArrowUp' ? at - 1 : at + 1] ?? null;
       });
       // A cursor needs a column: with none highlighted yet, take the first child.
       if (ids.length) setFocus((cur) => (ids.includes(cur) ? cur : ids[0]));
@@ -302,12 +326,12 @@ export default function GemBoardOverlay({
   const body = (
     <div className={`gem-board gem-board--${surface}`} role="dialog" aria-modal="true" aria-label="Gem board" onPointerDown={poke}>
       <div className="gem-board__backdrop" onClick={() => close('tap')} />
-      <div className="gem-board__panel">
+      <div className="gem-board__panel" ref={panelRef}>
         <div className="gem-board__header">
           <GemIcon size="1.4em" />
           <span className="gem-board__title">Gems</span>
           <div className="gem-board__weeks" role="group" aria-label="Week">
-            <button type="button" className={`gem-board__week${weekOffset === -1 ? ' is-on' : ''}`} onClick={() => step(-1)}>Last week</button>
+            <button type="button" className={`gem-board__week${weekOffset === -1 ? ' is-on' : ''}`} disabled={!thisWeek.current} onClick={() => step(-1)}>Last week</button>
             <button type="button" className={`gem-board__week${weekOffset === 0 ? ' is-on' : ''}`} onClick={() => step(0)}>This week</button>
           </div>
           <button type="button" className="gem-board__close" aria-label="Close" onClick={() => close('tap')}>×</button>
@@ -316,7 +340,7 @@ export default function GemBoardOverlay({
         {!board && !error && <div className="gem-board__empty">Loading…</div>}
         {board && board.mode === 'off' && <div className="gem-board__empty">Gems are switched off.</div>}
         {board && board.mode !== 'off' && (
-          <div className={`gem-board__body${loading ? ' is-loading' : ''}`}>
+          <div className={`gem-board__body${loading ? ' is-loading' : ''}`} inert={detail ? '' : undefined}>
             <GemBoardGrid board={board} focusLearnerId={focus} cursorRowId={rowCursor} onOpen={(rowId, learnerId) => openDetail(rowId, learnerId, 'tap')} />
           </div>
         )}

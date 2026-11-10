@@ -301,6 +301,20 @@ describe('cell parts, streak and reach', () => {
     expect(from.cells.reading.kid.streak).toMatchObject({ left: 3, reach: 'on-track' }); // Fri–Sun
   });
 
+  it('a day-count part names its last day: Saturday for ring days, the week\'s end or the rule\'s own for the rest; other kinds none', () => {
+    const b = board('2026-11-04', { rings: 0, ringDays: [], achievements: achievements({ 'story-read': ['2026-11-02', '2026-11-03', '2026-11-04'] }, { 'book-finished': [] }) });
+    expect(b.cells['moved-days'].kid.parts[0].lastDay).toBe('2026-11-07');
+    expect(b.cells.reading.kid.parts.map((p) => [p.ruleId, p.lastDay])).toEqual([['reader-week', '2026-11-08'], ['book-finished', null]]);
+    // Still named once the part is earned, so the strip closes the same days.
+    const done = board('2026-11-06', { rings: 0, ringDays: [], achievements: achievements({ 'story-read': ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05'] }) });
+    expect(done.cells.reading.kid.parts[0]).toMatchObject({ state: 'earned', lastDay: '2026-11-08' });
+    const ending = ruleset([{ id: 'reader-week', kind: 'activity-days', match: { activity: 'story-read' }, days: 2, reward: { gems: 1 }, effective: { to: '2026-11-04' } }]);
+    const until = boardFor(ending, '2026-11-03', evaluate(ending, { achievements: achievements({ 'story-read': [] }) }, { today: '2026-11-03' }).lines);
+    expect(until.cells.reading.kid.parts[0].lastDay).toBe('2026-11-04');
+    // A rule with no line this week has no last day to name.
+    expect(boardFor(rs, '2026-11-04', []).cells.reading.kid.parts[0].lastDay).toBeNull();
+  });
+
   it('after the window there is no day left', () => {
     // Not reachable through the evaluator (a past week is never pending): a hand-built line.
     const stale = [{ ruleId: 'reader-week', kind: 'activity-days', status: 'pending', amount: { silver: 0, gems: 0 }, progress: { have: 2, need: 4 }, evidence: [], note: null }];

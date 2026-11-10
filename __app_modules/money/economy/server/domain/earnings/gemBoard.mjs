@@ -25,7 +25,8 @@
  *   disabled  the rule is off for this learner
  *
  * A cell also carries `parts`, one per rule in the row (its own state, this
- * week's and lifetime gems, its colour, the days that counted, the milestone
+ * week's and lifetime gems, its colour, the days that counted, `lastDay` (the
+ * last day a day-count can be worked on, else null), the milestone
  * items paid, a contest `score: {mine, best}`), and `streak`: the pending day-count nearest done, as
  * `{have, need, left, reach, ruleId}`. `left` is the study days still usable
  * (from today or the week's first day, whichever is later, to the rule's last
@@ -201,16 +202,18 @@ function partOf(meta, line, lifetime, week, ringBest) {
     ? { mine: line.count, best: ringBest?.[line.ruleId] ?? null }
     : null;
   const progress = line?.progress ?? null;
+  // The span a day-count can be worked on; its end is the part's `lastDay`.
+  const span = DAY_COUNT_KINDS.has(line?.kind) ? workingDays(line, week?.windows) : null;
   let left = null;
   let reach = null;
   if (state === 'pending' && progress) {
-    left = daysLeft(week?.today, workingDays(line, week?.windows), days.filter((d) => d.state === 'done').map((d) => d.day));
+    left = daysLeft(week?.today, span ?? workingDays(line, week?.windows), days.filter((d) => d.state === 'done').map((d) => d.day));
     reach = reachOf(progress, left);
   }
   const earned = line?.status === 'earned' ? line.amount?.gems ?? 0 : 0;
   return {
     ...meta, state, week: earned, lifetime: Math.max(lifetime ?? 0, earned),
-    progress, left, reach, days, items,
+    progress, left, reach, lastDay: span?.to ?? null, days, items,
     score: scored ? { mine: scored.score, best: scored.best ?? null } : ringScore,
     note: line?.note ?? null,
   };

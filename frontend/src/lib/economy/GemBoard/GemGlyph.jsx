@@ -2,6 +2,9 @@
  * GemGlyph — one Gem Board cell at a glance: a gem, a ring of day segments
  * around it while a day-count is still running, a dashed circle around a
  * contest gem that is only held for now. No numerals but a ×n badge.
+ *
+ * The ring is drawn in the colour of the rule whose days it counts (the
+ * streak's own part), which in a merged row need not be the row's colour.
  */
 import GemIcon from '@/lib/icons/GemIcon.jsx';
 
@@ -31,7 +34,9 @@ export function glyphWords(cell) {
     const won = state === 'won' ? 'won' : 'earned';
     return `${won}${gems}${run ? `, and ${run}` : ''}`;
   }
-  return run ?? STATE_WORDS[state] ?? state;
+  // A lead held in a row that also counts days: the ring is what is drawn, the lead is still said.
+  if (run) return state === 'leading' ? `leading, and ${run}` : run;
+  return STATE_WORDS[state] ?? state;
 }
 
 const R = 17;
@@ -52,7 +57,7 @@ function Ring({ streak, color }) {
   const out = streak.reach === 'out';
   const need = Math.max(1, Math.floor(Number(streak.need) || 0));
   return (
-    <svg className={`gem-glyph__ring${streak.reach === 'tight' ? ' is-tight' : ''}`} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <svg className={`gem-glyph__ring${streak.reach === 'tight' ? ' is-tight' : ''}${out ? ' is-out' : ''}`} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
       {/* The colour goes inline: the stylesheet's stroke would beat an SVG attribute. */}
       {Array.from({ length: need }, (_, i) => {
         const done = i < streak.have;
@@ -64,7 +69,9 @@ function Ring({ streak, color }) {
 
 export default function GemGlyph({ cell, color }) {
   const look = glyphLook(cell);
-  const ring = cell?.streak && look !== 'holding' ? <Ring streak={cell.streak} color={color} /> : null;
+  const streak = cell?.streak ?? null;
+  const ringColor = (streak && cell.parts?.find((p) => p.ruleId === streak.ruleId)?.color) || color;
+  const ring = streak ? <Ring streak={streak} color={ringColor} /> : null;
   let inner = null;
   if (look === 'lit' || look === 'streak' || look === 'open' || look === 'holding') inner = <GemIcon className="gem-glyph__gem" color={color} size="1.5em" />;
   else if (look === 'unknown') inner = <span className="gem-glyph__muted">?</span>;

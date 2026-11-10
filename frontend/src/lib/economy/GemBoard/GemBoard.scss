@@ -57,6 +57,7 @@
     opacity: 0.7;
     cursor: pointer;
     &.is-on { background: rgba(255, 255, 255, 0.16); opacity: 1; font-weight: 700; }
+    &:disabled { opacity: 0.35; cursor: default; }
   }
   &__close {
     border: 0;
@@ -225,7 +226,8 @@
 
   &[data-look="streak"] &__gem, &[data-look="open"] &__gem { opacity: 0.28; }
   &[data-look="holding"] &__gem { opacity: 0.6; }
-  &[data-look="out"] &__seg.is-done { stroke: rgba(255, 255, 255, 0.34); }
+  // Out of reach: the days done stay readable, in grey, whether or not the cell is lit.
+  &__ring.is-out &__seg.is-done { stroke: rgba(255, 255, 255, 0.34); }
 }
 
 // The box a cell opens: one block per rule in the row. Fills the panel.
@@ -296,6 +298,8 @@
     opacity: 0.6;
     &.is-done { color: #171a24; font-weight: 700; opacity: 1; }
     &.is-short { opacity: 1; }
+    // After the rule's last day: not a day to come, so fainter and without an outline.
+    &.is-closed { opacity: 0.28; border-color: transparent; }
     &.is-today { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75); opacity: 1; }
     &.is-ahead { opacity: 0.45; }
   }

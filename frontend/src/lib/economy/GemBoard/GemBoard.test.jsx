@@ -63,6 +63,31 @@ describe('GemBoardGrid', () => {
     expect(container.querySelector('.gem-board__cell[data-look="none"] button')).toBeNull();
   });
 
+  it('a cell opens when its detail would have something to say, however blank it looks; nothing to say, no button', () => {
+    const cells = {
+      ...BOARD.cells,
+      // Not leading, but scored: blank at a glance, a score behind it.
+      'ring-contests': { ...BOARD.cells['ring-contests'], b: { state: 'none', week: 0, streak: null, parts: [part('ring-contest', 'Most rings this week', 'contest', { score: { mine: 120, best: 320 } })] } },
+      // A day-count that fell short, and a row whose only rule is off.
+      exercise: { ...BOARD.cells.exercise, a: { state: 'none', week: 0, streak: null, parts: [part('moved-days', 'Moved 5 days', 'weekly', { days: [{ day: '2026-11-02', state: 'done' }] })] } },
+      'green-week': { a: { state: 'disabled', week: 0, streak: null, parts: [part('green-week', 'Green week', 'weekly', { state: 'disabled', lifetime: 2 })] }, b: { state: 'none', week: 0, streak: null, parts: [part('green-week', 'Green week', 'weekly')] } },
+      // Books finished before, none this week.
+      reading: { ...BOARD.cells.reading, b: { state: 'none', week: 0, streak: null, parts: [part('reader-week', 'Story time 4 days', 'weekly'), part('book-finished', 'Book finished', 'milestone', { lifetime: 3 })] } },
+    };
+    const onOpen = vi.fn();
+    const { container } = render(<GemBoardGrid board={{ ...BOARD, cells }} onOpen={onOpen} />);
+    const button = (label) => screen.getByLabelText(label).closest('button');
+    for (const label of ['Ben, Ring contests: not this week', 'Ann, Moved 5 days: not this week', 'Ben, Reading: not this week']) {
+      expect(button(label)).toBeTruthy();
+      expect(button(label).querySelector('.gem-glyph')).toBeTruthy(); // the same box as any other cell
+    }
+    fireEvent.click(button('Ben, Reading: not this week'));
+    expect(onOpen).toHaveBeenCalledWith('reading', 'b');
+    expect(button('Ann, Green week: off')).toBeNull();
+    expect(button('Ben, Green week: not this week')).toBeNull();
+    expect(container.querySelectorAll('.gem-board__cell[data-look="none"] button')).toHaveLength(3);
+  });
+
   it('marks the cursor cell, lists row ids in display order, and says so when there is nothing to show', () => {
     const { container } = render(<GemBoardGrid board={BOARD} focusLearnerId="a" cursorRowId="reading" />);
     const cursors = container.querySelectorAll('.gem-board__cell.is-cursor');
@@ -150,7 +175,7 @@ describe('GemBoardOverlay', () => {
     expect(load).toHaveBeenCalledTimes(3);
   });
 
-  it('with the detail open Enter closes it and arrows do nothing; up from no cursor lands on the last row and wraps', async () => {
+  it('with the detail open Enter closes it and arrows do nothing; the row cursor leaves at either end, so Enter reaches the week switch again', async () => {
     const load = vi.fn(() => Promise.resolve(BOARD));
     render(<GemBoardOverlay open onClose={() => {}} surface="fitness" focusLearnerId="a" load={load} idleMs={0} />);
     await screen.findByLabelText('Ben, Moved 5 days: 3 of 5 days, on track');
@@ -165,8 +190,74 @@ describe('GemBoardOverlay', () => {
     fireEvent.keyDown(document, { key: 'Enter' });
     expect(screen.queryByRole('dialog', { name: 'Ann, Reading' })).toBeNull();
     expect(load).toHaveBeenCalledTimes(1);
-    fireEvent.keyDown(document, { key: 'ArrowDown' }); // wraps to the first row
+    fireEvent.keyDown(document, { key: 'ArrowDown' }); // past the last row: no cursor
+    expect(cursor()).toBeUndefined();
+    fireEvent.keyDown(document, { key: 'ArrowDown' }); // from none, down lands on the first row
     expect(cursor()).toBe('Ann, Moved 5 days: earned, 2 gems');
+    fireEvent.keyDown(document, { key: 'ArrowUp' }); // above the first row: no cursor
+    expect(cursor()).toBeUndefined();
+    fireEvent.keyDown(document, { key: 'Enter' }); // no cursor: the week switch
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  });
+
+  it('a reopened board never paints the last session’s board or detail', async () => {
+    let release;
+    const load = vi.fn(() => Promise.resolve(BOARD));
+    const props = { onClose: () => {}, surface: 'school', focusLearnerId: 'b', idleMs: 0 };
+    const { rerender } = render(<GemBoardOverlay open load={load} {...props} />);
+    fireEvent.click(await screen.findByLabelText('Ben, Moved 5 days: 3 of 5 days, on track'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    fireEvent.click(screen.getByLabelText('Ben, Moved 5 days: 3 of 5 days, on track'));
+    rerender(<GemBoardOverlay open={false} load={load} {...props} />);
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
+    rerender(<GemBoardOverlay open load={slow} {...props} />);
+    expect(screen.getByText('Loading…')).toBeTruthy();
+    expect(document.querySelector('.gem-board__grid')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Ben, Moved 5 days' })).toBeNull();
+    await act(async () => { release(); });
+    expect(document.querySelector('.gem-board__grid')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Ben, Moved 5 days' })).toBeNull();
+    expect(document.querySelectorAll('.gem-board__cell.is-cursor')).toHaveLength(0);
+  });
+
+  it('Last week waits for this week’s first read: the button is off and Enter does nothing until it lands', async () => {
+    let release;
+    const load = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
+    render(<GemBoardOverlay open onClose={() => {}} surface="fitness" load={load} idleMs={0} />);
+    const last = screen.getByText('Last week');
+    expect(last.disabled).toBe(true);
+    fireEvent.keyDown(document, { key: 'Enter' });
+    fireEvent.click(last);
+    await act(async () => { await Promise.resolve(); });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(last.classList.contains('is-on')).toBe(false);
+    await act(async () => { release(); });
+    expect(last.disabled).toBe(false);
+    fireEvent.keyDown(document, { key: 'Enter' });
+    await waitFor(() => expect(load).toHaveBeenLastCalledWith('2026-10-26'));
+  });
+
+  it('the detail takes focus and gives it back to its cell; the grid behind it is inert meanwhile', async () => {
+    render(<GemBoardOverlay open onClose={() => {}} surface="school" load={() => Promise.resolve(BOARD)} idleMs={0} />);
+    const cell = await screen.findByLabelText('Ben, Moved 5 days: 3 of 5 days, on track');
+    const body = document.querySelector('.gem-board__body');
+    expect(body.hasAttribute('inert')).toBe(false);
+    fireEvent.click(cell);
+    const dialog = screen.getByRole('dialog', { name: 'Ben, Moved 5 days' });
+    expect(document.activeElement).toBe(dialog.querySelector('.gem-detail__close'));
+    expect(body.hasAttribute('inert')).toBe(true);
+    expect(dialog.closest('[inert]')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(body.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(cell);
+    // Opened from the pad: focus still comes back to the cell under the cursor.
+    fireEvent.keyDown(document, { key: 'ArrowRight' }); // Ann
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(screen.getByRole('dialog', { name: 'Ann, Moved 5 days' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(document.activeElement).toBe(screen.getByLabelText('Ann, Moved 5 days: earned, 2 gems'));
   });
 
   it('switching week closes the detail and clears the row cursor; a cell with nothing to open leaves Enter switching week', async () => {
