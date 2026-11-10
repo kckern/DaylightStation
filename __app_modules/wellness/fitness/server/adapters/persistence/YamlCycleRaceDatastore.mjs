@@ -16,7 +16,10 @@ import {
 } from '#system/utils/FileIO.mjs';
 
 const INDEX_DIR_NAME = '_index';
-const INDEX_VERSION = 1;
+// Bump whenever the row shape changes: a shard whose version differs is discarded
+// and rebuilt from the race files, so a row written without a newer field is
+// never trusted. v2 added `incomplete`.
+const INDEX_VERSION = 2;
 
 /** One index row per race — everything the ladder needs, nothing more. */
 export function indexEntryFromRecord(record, date) {

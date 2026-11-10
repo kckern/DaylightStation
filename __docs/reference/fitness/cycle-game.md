@@ -673,7 +673,7 @@ every record saved before they existed reads as a normal, complete race):
 
 ### Storage
 
-`household[-{id}]/history/fitness/cycle-races/{YYYY-MM-DD}/{raceId}.yml`. The
+`household[-{id}]/fitness/log/cycle-races/{YYYY-MM-DD}/{raceId}.yml`. The
 `{YYYY-MM-DD}` folder is **sliced from the raceId** (so folder and id can never
 disagree), built from **local** time — there is **no UTC foldering bug**.
 
@@ -821,14 +821,18 @@ resolves.
 ### Index shards
 
 The ladder reads from the same self-healing index the datastore already
-maintains: `household[-{id}]/history/fitness/cycle-races/_index/{YYYY-MM}.json`.
+maintains: `household[-{id}]/fitness/log/cycle-races/_index/{YYYY-MM}.json`.
 Shards are **disposable** — deleting one just forces a rebuild (per-day mtime
 check) on the next read; nothing else depends on their presence.
 
-Each row carries `incomplete` (boolean, from `race.incomplete`) beside
-`course_id`. Rows in shards written before the field existed lack the key, which
-reads as complete — correct, since no record from that time can be incomplete —
-so the flag needed no index version bump.
+Each row carries `incomplete` (boolean, from `race.incomplete`) after
+`time_cap_s`, ahead of `participants`. Adding it took the shard format to
+**version 2**. A shard whose `version` differs from the running build's is
+discarded whole and rebuilt from the race files, so a row written without the
+field is never trusted. The same rule runs in both directions: a build that
+still writes version 1 discards a version 2 shard and rewrites it as version 1.
+Two builds of different ages sharing one data tree therefore stay correct, at
+the cost of a full rebuild each time the other one has written last.
 
 ### Gems (economy achievement evidence)
 

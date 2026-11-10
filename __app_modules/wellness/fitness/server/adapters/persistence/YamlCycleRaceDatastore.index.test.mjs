@@ -73,6 +73,33 @@ describe('listIndexEntries', () => {
     expect(again.find((e) => e.id === '20260630080000').incomplete).toBe(true);
   });
 
+  it('re-saving the same race id as incomplete replaces its index row', async () => {
+    await store.save(rec('20260630080000'), 'household');
+    const [before] = await store.listIndexEntries('household'); // shard now holds the complete row
+    expect(before.incomplete).toBe(false);
+    await store.save(rec('20260630080000', { incomplete: true }), 'household');
+    const entries = await store.listIndexEntries('household');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].incomplete).toBe(true);
+  });
+
+  it('a shard written by an older index version is not trusted, even when its day mtime matches', async () => {
+    await store.save(rec('20260630080000', { incomplete: true }), 'household');
+    await store.listIndexEntries('household'); // build the shard (day mtime recorded)
+    const shardPath = path.join(tmpBase, 'fitness/log/cycle-races/_index/2026-06.json');
+    // Rewrite it the way pre-flag code would have: version 1, row without `incomplete`.
+    const shard = JSON.parse(fs.readFileSync(shardPath, 'utf8'));
+    shard.version = 1;
+    for (const day of Object.values(shard.days)) for (const row of day.races) delete row.incomplete;
+    fs.writeFileSync(shardPath, JSON.stringify(shard));
+
+    const [e] = await store.listIndexEntries('household');
+    expect(e.incomplete).toBe(true); // rebuilt from the record, not served from the old row
+    const rewritten = JSON.parse(fs.readFileSync(shardPath, 'utf8'));
+    expect(rewritten.version).toBe(2);
+    expect(rewritten.days['2026-06-30'].races[0].incomplete).toBe(true);
+  });
+
   it('legacy records without course_id index as course_id null', async () => {
     const legacy = rec('20260630080000');
     delete legacy.race.course_id;

@@ -60,6 +60,17 @@ describe('buildHighScores', () => {
     expect(sprint.raceId).toBe('A');
   });
 
+  it('ignores an incomplete time race, whose riders have no finish time and fall back to the cap', () => {
+    // Ended 60 s into a 5-min race: 900 m over the 300 s cap would read as a 5 min+ record.
+    const endedEarly = { raceId: 'T', timeCapS: 300, incomplete: true, participants: [
+      { id: 'user_3', displayName: 'User_3', avatarSrc: '/m', finalDistanceM: 900 },
+      { id: 'user_2', displayName: 'User_2', avatarSrc: '/f', finalDistanceM: 400, finalTimeS: null }
+    ] };
+    expect(buildHighScores([endedEarly])).toEqual([]);
+    // the same fixture without the flag does count — so the flag is what excludes it
+    expect(buildHighScores([{ ...endedEarly, incomplete: false }]).map((h) => h.key)).toEqual(['endurance']);
+  });
+
   it('returns an empty list when there is no live data', () => {
     expect(buildHighScores([])).toEqual([]);
     expect(buildHighScores([{ raceId: 'A', participants: [] }])).toEqual([]);
