@@ -11,7 +11,7 @@ import "./RaceTypePicker.scss";
  * the ghost picker; the chosen recording determines its own config, shown as a
  * summary in place of the value step.
  */
-export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRaceValue, ghost, onPickGhost, onClearGhost }) {
+export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRaceValue, ghost, onPickGhost, onClearGhost, disabled = false }) {
   const hasGhost = !!ghost;
   const isDistance = !hasGhost && raceType === 'distance';
   const isTime = !hasGhost && raceType === 'time';
@@ -39,6 +39,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
           className={`cgh-tile${isDistance ? ' is-selected' : ''}`}
           data-testid="course-distance"
           aria-pressed={isDistance}
+          disabled={disabled}
           onClick={() => onSelectRaceType?.('distance')}
         >
           <DistanceIcon />
@@ -52,6 +53,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
           className={`cgh-tile${isTime ? ' is-selected' : ''}`}
           data-testid="course-time"
           aria-pressed={isTime}
+          disabled={disabled}
           onClick={() => onSelectRaceType?.('time')}
         >
           <TimeIcon />
@@ -65,6 +67,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
           className={`cgh-tile cgh-tile--ghost${hasGhost ? ' is-selected' : ''}`}
           data-testid="course-ghost"
           aria-pressed={hasGhost}
+          disabled={disabled}
           onClick={() => onPickGhost?.()}
         >
           <GhostIcon />
@@ -85,8 +88,8 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
               <span className="cgh-ghost-summary__vs">vs {ghost.displayName}</span>
               <span className="cgh-ghost-summary__meta">{ghostSummary}</span>
             </span>
-            <button type="button" className="cgh-ghost-summary__btn" onClick={() => onPickGhost?.()}>Change</button>
-            <button type="button" className="cgh-ghost-summary__btn cgh-ghost-summary__btn--clear" onClick={() => onClearGhost?.()}>Remove</button>
+            <button type="button" className="cgh-ghost-summary__btn" disabled={disabled} onClick={() => onPickGhost?.()}>Change</button>
+            <button type="button" className="cgh-ghost-summary__btn cgh-ghost-summary__btn--clear" disabled={disabled} onClick={() => onClearGhost?.()}>Remove</button>
           </div>
         ) : raceType ? (
           <div className="cgh-value" data-testid="cgh-value" key={raceType}>
@@ -101,6 +104,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
                     type="button"
                     data-testid={`tier-${t.key}`}
                     className={`cgh-preset cgh-preset--tier${value === t.value ? ' is-selected' : ''}`}
+                    disabled={disabled}
                     onClick={() => onSetRaceValue?.(t.value)}
                   >
                     <span className="cgh-preset__name">{t.label}</span>
@@ -113,7 +117,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
                   type="button"
                   className="cgh-stepper__btn"
                   aria-label="decrease"
-                  disabled={value <= minValue}
+                  disabled={disabled || value <= minValue}
                   onClick={() => onSetRaceValue?.(Math.max(minValue, value - step))}
                 >
                   −
@@ -123,6 +127,7 @@ export function RaceTypePicker({ raceType, onSelectRaceType, raceValue, onSetRac
                   type="button"
                   className="cgh-stepper__btn"
                   aria-label="increase"
+                  disabled={disabled}
                   onClick={() => onSetRaceValue?.(value + step)}
                 >
                   +
@@ -147,7 +152,9 @@ RaceTypePicker.propTypes = {
   onSetRaceValue: PropTypes.func,
   ghost: PropTypes.object,
   onPickGhost: PropTypes.func,
-  onClearGhost: PropTypes.func
+  onClearGhost: PropTypes.func,
+  // The lobby is frozen (a start is pending): every control is inert.
+  disabled: PropTypes.bool
 };
 
 export default RaceTypePicker;

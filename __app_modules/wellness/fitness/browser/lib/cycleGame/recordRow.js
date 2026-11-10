@@ -5,6 +5,7 @@
  * (distance for distance races, the clock for time races).
  */
 import { kmh, kmhLabel, participantDurationS } from "./speed.js";
+import { formatDistance } from "./formatDistance.js";
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -58,7 +59,11 @@ export function buildRecordRow(g, todayYmd) {
     others: participants.filter((p) => p !== winner).map((p) => ({ id: p.id, displayName: p.displayName, avatarSrc: p.avatarSrc, isGhost: !!p.isGhost })),
     // The lead rider's average pace — the one figure comparable across any race length.
     // null when the race recorded no movement, so the table shows a clean placeholder.
-    speedLabel: speed > 0 ? kmhLabel(winner.finalDistanceM, durationS) : null,
+    // A lead rider with no duration (a distance race they did not finish) has
+    // no pace, so the cell shows how far they got instead of a blank.
+    speedLabel: speed > 0
+      ? kmhLabel(winner.finalDistanceM, durationS)
+      : (winner.finalDistanceM > 0 ? formatDistance(winner.finalDistanceM) : null),
     // The course's defining target (distance goal or time cap) + its kind for an icon.
     raceLabel: g.goalLabel,
     raceKind: g.winCondition === 'time' ? 'time' : 'distance',

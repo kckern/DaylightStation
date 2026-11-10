@@ -24,6 +24,49 @@ const isWinCondition = (v) => v === 'distance' || v === 'time';
 const toLength = (v) => (v == null ? NaN : Number(v));
 
 /**
+ * The races a pace rival may come from: same win condition and exact length,
+ * not ended early, not the synthetic par race. Exact match on a real length:
+ * a request with no length (or an unknown race type) has an empty pool.
+ * pickPaceRival chooses from exactly this list, so its length is the honest
+ * "how many rides were considered" figure.
+ *
+ * @param {object} [args] same shape as pickPaceRival's
+ * @returns {Array} the matching candidates, in input order
+ */
+export function paceRivalPool({ candidates = [], winCondition = 'distance', goalM = null, timeCapS = null } = {}) {
+  const isDistance = winCondition === 'distance';
+  const wantLength = toLength(isDistance ? goalM : timeCapS);
+  if (!isWinCondition(winCondition) || !isPositive(wantLength)) return [];
+  return (Array.isArray(candidates) ? candidates : []).filter((c) => c && !c.incomplete
+    && c.raceId !== PAR_ID && c.winCondition === winCondition
+    && toLength(isDistance ? c.goalM : c.timeCapS) === wantLength);
+}
+
+/**
+ * Two candidate lists as one, each race once. A race in both keeps the copy
+ * from `primary` (race ids compare as strings). Used to add the server's
+ * full-history list to what the lobby already loaded.
+ *
+ * @param {Array} primary
+ * @param {Array} extra
+ * @returns {Array}
+ */
+export function mergeRaceCandidates(primary, extra) {
+  const out = [];
+  const seen = new Set();
+  [primary, extra].forEach((list) => {
+    (Array.isArray(list) ? list : []).forEach((c) => {
+      if (!c) return;
+      const id = String(c.raceId);
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push(c);
+    });
+  });
+  return out;
+}
+
+/**
  * Choose the pace rival for a lone rider.
  *
  * Only rides that count are considered: same win condition and same length, a
@@ -42,13 +85,7 @@ const toLength = (v) => (v == null ? NaN : Number(v));
  */
 export function pickPaceRival({ candidates = [], riderId = null, winCondition = 'distance', goalM = null, timeCapS = null } = {}) {
   const isDistance = winCondition === 'distance';
-  // Exact match on a real length: no length (or an unknown race type) means par.
-  const wantLength = toLength(isDistance ? goalM : timeCapS);
-  if (!isWinCondition(winCondition) || !isPositive(wantLength)) {
-    return { kind: 'par', raceId: null, participantId: PAR_ID };
-  }
-  const sameRace = (c) => c && !c.incomplete && c.raceId !== PAR_ID && c.winCondition === winCondition
-    && toLength(isDistance ? c.goalM : c.timeCapS) === wantLength;
+  const pool = paceRivalPool({ candidates, winCondition, goalM, timeCapS });
   const valid = (pt) => pt && !pt.stopped && !pt.isGhost && !resolveParticipantIdentity(pt.id).isGhost
     && (isDistance ? isPositive(pt.finalTimeS) : isPositive(pt.finalDistanceM));
   // Lower is better: finish time for distance races, negated distance for time races.
@@ -58,7 +95,7 @@ export function pickPaceRival({ candidates = [], riderId = null, winCondition = 
 
   let self = null;
   let house = null;
-  (Array.isArray(candidates) ? candidates : []).filter(sameRace).forEach((c) => {
+  pool.forEach((c) => {
     (c.participants || []).filter(valid).forEach((pt) => {
       const entry = { raceId: c.raceId, participantId: pt.id, score: score(pt) };
       if (beats(entry, house)) house = entry;
@@ -122,4 +159,4 @@ export function buildParRecord({ winCondition = 'distance', goalM = null, timeCa
   };
 }
 
-export default { pickPaceRival, buildParRecord };
+export default { pickPaceRival, paceRivalPool, mergeRaceCandidates, buildParRecord };

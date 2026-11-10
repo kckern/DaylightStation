@@ -10,7 +10,7 @@ import "./BikeSlot.scss";
  * hero; an assigned rider's avatar overlaps the bottom-right quadrant as a
  * secondary circle. Clicking the slot (empty OR filled) opens the rider picker.
  */
-export function BikeSlot({ bike, person, onPick, lane }) {
+export function BikeSlot({ bike, person, onPick, lane, disabled = false }) {
   const filled = !!person;
   const rpm = Number.isFinite(bike.rpm) ? bike.rpm : 0;
   const spinDuration = rpm > 0 ? `${(60 / rpm).toFixed(2)}s` : '0s';
@@ -20,6 +20,7 @@ export function BikeSlot({ bike, person, onPick, lane }) {
       <button
         type="button"
         className="cgh-slot__main"
+        disabled={disabled}
         onClick={() => onPick?.(bike)}
         aria-label={filled ? `Change rider for ${bike.name}` : `Assign rider to ${bike.name}`}
       >
@@ -64,6 +65,7 @@ BikeSlot.propTypes = {
   bike: PropTypes.object.isRequired,
   person: PropTypes.object,
   onPick: PropTypes.func,
+  disabled: PropTypes.bool,
   lane: PropTypes.number
 };
 

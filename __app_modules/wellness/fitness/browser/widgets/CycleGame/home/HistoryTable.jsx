@@ -7,7 +7,7 @@ import "./HistoryTable.scss";
  * so each calendar day is printed once as a sticky group header and each row
  * shows only its clock time.
  */
-export function HistoryTable({ records = [], onSelectRecord }) {
+export function HistoryTable({ records = [], onSelectRecord, disabled = false }) {
   if (records.length === 0) {
     return <div className="cgh-empty">No races yet</div>;
   }
@@ -31,8 +31,9 @@ export function HistoryTable({ records = [], onSelectRecord }) {
             type="button"
             className="cgh-record__btn"
             data-testid={`record-${rec.raceId}`}
+            disabled={disabled}
             onClick={() => onSelectRecord?.(rec.raceId)}
-            aria-label={`${rec.winnerName || 'Winner'} — ${rec.speedLabel || '—'}, ${rec.raceLabel || 'race'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
+            aria-label={`${rec.winnerName || 'Lead rider'} — ${rec.speedLabel || '—'}, ${rec.raceLabel || 'race'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
           >
             <span className="cgh-record__riders">
               <span className="cgh-record__avatars">
@@ -75,7 +76,8 @@ export function HistoryTable({ records = [], onSelectRecord }) {
 
 HistoryTable.propTypes = {
   records: PropTypes.array,
-  onSelectRecord: PropTypes.func
+  onSelectRecord: PropTypes.func,
+  disabled: PropTypes.bool
 };
 
 export default HistoryTable;

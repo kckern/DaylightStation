@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickPaceRival, buildParRecord, PAR_RPM } from './paceRival.js';
+import { pickPaceRival, buildParRecord, PAR_RPM, mergeRaceCandidates, paceRivalPool } from './paceRival.js';
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from './ghostCandidate.js';
 import { SessionSerializerV3 } from '../../hooks/fitness/SessionSerializerV3.js';
 
@@ -336,5 +336,55 @@ describe('buildParRecord', () => {
     expect(rec.race.goal_m).toBe(100);
     expect(rec.participants.par.final_distance_m).toBe(100);
     expect(buildParRecord({ winCondition: 'time', timeCapS: '60' }).race.time_cap_s).toBe(60);
+  });
+});
+
+describe('mergeRaceCandidates', () => {
+  it('appends races the first list does not have, keeping the first copy of a shared race', () => {
+    const local = [cand('r1', 'distance', 1500, [p('rider-a', 460, 1500)], { tag: 'local' })];
+    const server = [
+      cand('r1', 'distance', 1500, [p('rider-a', 460, 1500)], { tag: 'server' }),
+      cand('r0', 'distance', 1500, [p('rider-a', 400, 1500)], { tag: 'server' })
+    ];
+    const merged = mergeRaceCandidates(local, server);
+    expect(merged.map((c) => [c.raceId, c.tag])).toEqual([['r1', 'local'], ['r0', 'server']]);
+  });
+
+  it('matches race ids as strings and skips empty entries and non-arrays', () => {
+    const merged = mergeRaceCandidates([cand(20260101, 'distance', 100, [])], [null, cand('20260101', 'distance', 100, []), undefined]);
+    expect(merged).toHaveLength(1);
+    expect(mergeRaceCandidates(null, undefined)).toEqual([]);
+  });
+});
+
+describe('paceRivalPool', () => {
+  const want = { winCondition: 'distance', goalM: 1500 };
+  it('is the races pickPaceRival chooses from: same type and exact length, not incomplete, not par', () => {
+    const pool = paceRivalPool({ ...want, candidates: [
+      cand('r1', 'distance', 1500, [p('rider-a', 460, 1500)]),
+      cand('r2', 'distance', 1000, [p('rider-a', 300, 1000)]),
+      cand('r3', 'time', 1500, [p('rider-a', null, 900)]),
+      cand('r4', 'distance', 1500, [p('rider-a', 300, 1500)], { incomplete: true }),
+      cand('par', 'distance', 1500, [p('par', 300, 1500)]),
+      null
+    ] });
+    expect(pool.map((c) => c.raceId)).toEqual(['r1']);
+  });
+
+  it('is empty for a request with no real length or an unknown race type', () => {
+    const candidates = [cand('r1', 'distance', 1500, [p('rider-a', 460, 1500)])];
+    expect(paceRivalPool({ candidates, winCondition: 'distance', goalM: null })).toEqual([]);
+    expect(paceRivalPool({ candidates, winCondition: 'sprint', goalM: 1500 })).toEqual([]);
+  });
+
+  it('an incomplete or stopped ride found in a merged list is never the pick', () => {
+    const merged = mergeRaceCandidates(
+      [cand('r1', 'distance', 1500, [p('rider-a', 460, 1500)])],
+      [
+        cand('r0', 'distance', 1500, [p('rider-a', 300, 1500)], { incomplete: true }),
+        cand('r00', 'distance', 1500, [{ ...p('rider-a', 310, 1500), stopped: true }])
+      ]
+    );
+    expect(pickPaceRival({ ...want, riderId: 'rider-a', candidates: merged })).toEqual({ kind: 'self', raceId: 'r1', participantId: 'rider-a' });
   });
 });

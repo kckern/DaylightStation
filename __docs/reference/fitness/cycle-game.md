@@ -249,6 +249,19 @@ The lobby is a pure presentational component; all state and handlers live in
    **Recap**. Empty state: "No races yet."
 7. **Volume** — touch +/- with a readout.
 8. **Start** — disabled until `canStart`; checkered-flag icon.
+9. **Starting…** — a lone rider's Start first looks up their rival (§5), which
+   can take up to 1.5 s. Until the race launches the lobby stays on screen but
+   is frozen (`busy` prop, `aria-busy="true"` on the root): the Start button
+   reads **"Starting…"** and is disabled, and the race-type tiles, presets,
+   stepper, ghost controls, bike slots, featured "Ride it", history rows,
+   high-score cards and volume button are all disabled. A picker that was
+   already open stays mounted but cannot commit a change.
+
+**One race per start.** `startRace` returns whether it accepted the start. It
+refuses (logging `cycle_game.start_ignored`) unless the lobby is idle and no
+other start is pending. "Ride it" checks the same before and after its own
+fetches, and writes its ladder ghost into the lobby only once its start was
+accepted.
 
 ---
 
@@ -266,32 +279,28 @@ featured-course button passes its ladder rival, or `null` when it has none)
 beats the lobby's hand-picked ghost. If there is no such ghost and **exactly
 one** live rider is claimed, a pace rival is armed for that race:
 
-| Kind | Who | Where it is looked for |
-|---|---|---|
-| `self` | The rider's own best ride at this win condition and exact length | The server's personal best (all saved races) where the server can answer, then the lobby's loaded history |
-| `household` | The best such ride by anyone | The lobby's loaded history only |
-| `par` | A constant-speed rider, id `ghost:par:par`, named "Par" | Built on the spot when nothing above qualifies, or the picked ride has no distance series to replay |
+| Kind | Who |
+|---|---|
+| `self` | The rider's own best ride at this win condition and exact length |
+| `household` | Failing that, the best such ride by anyone |
+| `par` | Failing that (or if the picked ride has no distance series to replay), a constant-speed rider, id `ghost:par:par`, named "Par" |
 
-- **Loaded history is short.** The lobby loads the five most recent race days.
-  A household best older than that is not found, and the rider gets par (or a
-  slower, newer ride) instead. Household best has no server lookup.
-- **Own best from the server.** The lobby asks
-  `GET /cycle-races/personal-bests?userId=&courseId=` (§16) and, if it names a
-  race the lobby has not loaded, fetches that record. That endpoint is keyed by
-  course id, so it is asked only when the race is a featured-course ride, or a
-  lobby race whose type and exact length equal a featured course (from
-  `featured_courses` or the loaded ladder). For any other length "own best"
-  comes from loaded history alone. The server's best excludes replays and races
-  flagged `incomplete`; the fetched record must also match this race's type and
-  length and hold a distance series for that rider, or it is not used.
-- **The lookup never holds up or fails a start.** `startRace` waits at most
-  1500 ms. No best on record, an HTTP or network error, an unusable record or a
-  timeout all fall back to the loaded-history pick. While it waits the lobby
-  stays up and further Start presses are ignored (`cycle_game.start_ignored`);
-  if the game is closed in that time nothing starts. Every other start (two or
-  more riders, a chosen ghost, a length the server cannot answer for) is
-  synchronous.
-- **What counts, in loaded history:** the record is not flagged `incomplete`
+- **One lookup, over the full history.** The lobby loads only the five most
+  recent race days, so on Start the container asks the server for every saved
+  race of this exact type and length
+  (`GET /cycle-races?winCondition=&goalM=` or `&timeCapS=`, §15), maps the
+  records to candidates, merges them with the loaded history (each race once;
+  the loaded copy wins) and runs `pickPaceRival` over the merged list. There is
+  one selection rule, in `paceRival.js`, for both lists.
+- **The lookup never holds up or fails a start.** It has 1500 ms in total. On a
+  timeout (the request is aborted), an HTTP or network error, the pick runs over
+  the loaded history alone. A featured-course ride that already spent time
+  fetching its ladder rival gets only what is left of the same 1500 ms, and no
+  lookup at all once it is spent.
+- **The lobby is frozen while it waits** (§4). If the game is closed in that
+  time the request is aborted and nothing starts. Starts that need no rival (two
+  or more riders, a chosen ghost) launch synchronously with no request.
+- **What counts:** the record is not flagged `incomplete`
   (§15), the rider was live (not a replay), was not stopped when the race
   closed, and for a distance race finished. Best is the lowest finish time
   (distance) or the furthest distance (time). The length compared is the final
@@ -955,16 +964,19 @@ by `raceId` (+ `elapsedS` where relevant).
   | `kind` | What was armed: `self`, `household`, `par`, or `none` (no rival could be built) |
   | `requestedKind` | What selection asked for. `requestedKind: 'self'` with `kind: 'par'` means the rider's best ride could not be replayed |
   | `sourceRaceId`, `participantId` | The ride replayed; `sourceRaceId` is `null` for par |
-  | `source` | Where the armed rival came from: `server-pb`, `history` (the lobby's loaded history) or `par` |
-  | `candidates` | Races in the lobby's loaded history when Start was pressed (the pool the local pick chose from) |
-  | `historyLoaded` | Whether a lobby history load had completed when Start was pressed. `false` with `kind: 'par'` means par was armed blind |
-  | `serverLookup` | The personal-best lookup: `skipped` (the server cannot answer for this race), `used`, `none` (no best on record), `unusable`, `error`, `timeout` |
+  | `source` | Where the armed rival came from: `server-history` (picked from the merged list after the server answered), `history` (the lobby's loaded history alone) or `par` |
+  | `candidates` | Races of this type and length the pick chose from (the merged list when the server answered, else loaded history) |
+  | `historyLoaded` | Whether a lobby history load had completed when Start was pressed |
+  | `serverLookup` | The full-history request: `used`, `error`, `timeout`, or `skipped` (a featured ride had already spent the budget) |
 
-- **`cycle_game.pace_rival_lookup`** (DEBUG) when the lookup starts;
-  **`cycle_game.pace_rival_lookup_failed`** (WARN) on `error` or `timeout`;
-  **`cycle_game.start_ignored`** (INFO, `reason: 'start_pending' | 'left_lobby'`)
-  for a Start press dropped while a lookup was pending, or a lookup that came
-  back after the lobby was left.
+- **`cycle_game.pace_rival_lookup`** (DEBUG) when the request starts;
+  **`cycle_game.pace_rival_lookup_failed`** (WARN) on `error` or `timeout`.
+- **`cycle_game.start_ignored`** (INFO) — a start that was dropped:
+  `{ reason, control }`. `reason` is `not_idle` (a race is already staged or
+  running) or `start_pending` (another start is waiting on its rival lookup);
+  `control` is `lobby.start-button`, `featured` or `sim.autostart`.
+- **`cycle_game.start_failed`** (ERROR) — launching threw after the rival lookup;
+  the lobby is unfrozen.
 - **Firehose (DEBUG, off by default)** — `cycle_game.tick`: one event/second with a
   per-rider array `{ rpm, cadenceConnected, hr, zoneId, multiplier, distanceM,
   penalized, finished }`, read from post-resolution engine state.

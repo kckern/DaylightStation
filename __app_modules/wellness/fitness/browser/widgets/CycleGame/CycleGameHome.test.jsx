@@ -564,3 +564,115 @@ describe('CycleGameHome', () => {
     expect(queryByTestId('cycle-recovered-banner')).toBeNull();
   });
 });
+
+describe('CycleGameHome — busy (a start is pending)', () => {
+  const record = { raceId: '20260101100000', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a', others: [],
+    speedLabel: '30 km/h', raceLabel: '1.00 km', raceKind: 'distance', whenDay: 'Today', whenTime: '6:12p' };
+  const highScore = { key: 'furthest', raceId: '20260101100000', label: 'Furthest', valueLabel: '1.00 km', holderName: 'User_3' };
+  const ladder = { course: { id: 'course-3k', name: 'Course', win_condition: 'distance', goal_m: 3000 }, standings: [] };
+  const handlers = () => ({
+    onSelectRaceType: vi.fn(), onSetRaceValue: vi.fn(), onAssign: vi.fn(), onUnassign: vi.fn(),
+    onSelectRecord: vi.fn(), onSelectGhost: vi.fn(), onClearGhost: vi.fn(), onSetMasterVolume: vi.fn(),
+    onStart: vi.fn(), onRideFeatured: vi.fn()
+  });
+  const renderHome = (props = {}) => {
+    const h = handlers();
+    const view = render(
+      <CycleGameHome bikes={bikes} people={people} records={[record]} highScores={[highScore]} featured={ladder}
+        raceType="distance" raceValue={1000} canStart {...h} {...props} />
+    );
+    return { ...view, h };
+  };
+
+  it('is not busy by default: Start reads "Start race" and works', () => {
+    const { getByTestId, h } = renderHome();
+    expect(getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('false');
+    expect(getByTestId('cycle-game-start').textContent).toContain('Start race');
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(h.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the lobby aria-busy and the Start button reads "Starting…" and is disabled', () => {
+    const { getByTestId, h } = renderHome({ busy: true });
+    expect(getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('true');
+    const start = getByTestId('cycle-game-start');
+    expect(start.textContent).toContain('Starting…');
+    expect(start.disabled).toBe(true);
+    fireEvent.click(start);
+    expect(h.onStart).not.toHaveBeenCalled();
+  });
+
+  it('race-type tiles, presets and the stepper are inert', () => {
+    const { getByTestId, container, queryByTestId, h } = renderHome({ busy: true });
+    ['course-distance', 'course-time', 'course-ghost', 'tier-sprint', 'tier-long'].forEach((id) => {
+      expect(getByTestId(id).disabled).toBe(true);
+      fireEvent.click(getByTestId(id));
+    });
+    container.querySelectorAll('[data-testid="cgh-value"] button').forEach((b) => {
+      expect(b.disabled).toBe(true);
+      fireEvent.click(b);
+    });
+    expect(h.onSelectRaceType).not.toHaveBeenCalled();
+    expect(h.onSetRaceValue).not.toHaveBeenCalled();
+    expect(queryByTestId('ghost-picker')).toBeNull();
+  });
+
+  it('a selected ghost cannot be changed or removed', () => {
+    const ghost = { sourceRaceId: 'r1', winCondition: 'distance', goalM: 1000, displayName: 'User_3', riders: [] };
+    const { getByTestId, queryByTestId, h } = renderHome({ busy: true, ghost });
+    getByTestId('cgh-ghost-summary').querySelectorAll('button').forEach((b) => {
+      expect(b.disabled).toBe(true);
+      fireEvent.click(b);
+    });
+    expect(h.onClearGhost).not.toHaveBeenCalled();
+    expect(queryByTestId('ghost-picker')).toBeNull();
+  });
+
+  it('bike slots do not open the rider picker', () => {
+    const { getByTestId, queryByTestId } = renderHome({ busy: true });
+    ['bike-cycle_ace', 'bike-tricycle'].forEach((id) => {
+      const btn = getByTestId(id).querySelector('button');
+      expect(btn.disabled).toBe(true);
+      fireEvent.click(btn);
+    });
+    expect(queryByTestId('rider-picker')).toBeNull();
+  });
+
+  it('the featured "Ride it" button is inert', () => {
+    const { getByTestId, h } = renderHome({ busy: true });
+    expect(getByTestId('featured-ride').disabled).toBe(true);
+    fireEvent.click(getByTestId('featured-ride'));
+    expect(h.onRideFeatured).not.toHaveBeenCalled();
+  });
+
+  it('history rows and high-score cards do not open a recap', () => {
+    const { getByTestId, h } = renderHome({ busy: true });
+    ['record-20260101100000', 'highscore-furthest'].forEach((id) => {
+      expect(getByTestId(id).disabled).toBe(true);
+      fireEvent.click(getByTestId(id));
+    });
+    expect(h.onSelectRecord).not.toHaveBeenCalled();
+  });
+
+  it('the volume button does not open the volume modal', () => {
+    const { getByTestId, queryByTestId } = renderHome({ busy: true });
+    expect(getByTestId('cycle-game-volume-open').disabled).toBe(true);
+    fireEvent.click(getByTestId('cycle-game-volume-open'));
+    expect(queryByTestId('cycle-game-volume-modal')).toBeNull();
+  });
+
+  it('a picker that was already open stays mounted but cannot commit a change', () => {
+    const { getByTestId, rerender, h } = renderHome();
+    fireEvent.click(getByTestId('bike-tricycle').querySelector('button'));
+    const picker = document.querySelector('.cgh-picker');
+    expect(picker).toBeTruthy();
+    rerender(
+      <CycleGameHome bikes={bikes} people={people} records={[record]} highScores={[highScore]} featured={ladder}
+        raceType="distance" raceValue={1000} canStart {...h} busy />
+    );
+    expect(document.querySelector('.cgh-picker')).toBeTruthy();
+    document.querySelectorAll('.cgh-picker button').forEach((b) => fireEvent.click(b));
+    expect(h.onAssign).not.toHaveBeenCalled();
+    expect(h.onUnassign).not.toHaveBeenCalled();
+  });
+});

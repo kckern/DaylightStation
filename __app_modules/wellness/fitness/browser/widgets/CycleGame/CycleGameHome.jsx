@@ -49,7 +49,8 @@ export default function CycleGameHome({
   featured = null,
   onRideFeatured = null,
   resolveName = (id) => id,
-  recoveredNotice = null
+  recoveredNotice = null,
+  busy = false
 }) {
   const [pickerBike, setPickerBike] = useState(null);
   const [showGhostPicker, setShowGhostPicker] = useState(false);
@@ -71,18 +72,23 @@ export default function CycleGameHome({
     return map;
   }, [people]);
 
+  // busy = a start is pending (the container is choosing the rival). The lobby
+  // stays mounted but frozen: every control is disabled, and a picker that was
+  // already open can no longer commit anything.
   const handleAssign = (bikeId, userId) => {
+    if (busy) return;
     onAssign?.(bikeId, userId);
     setPickerBike(null);
   };
 
   const handleClear = (bikeId) => {
+    if (busy) return;
     onUnassign?.(bikeId);
     setPickerBike(null);
   };
 
   return (
-    <div className="cycle-game-home" data-testid="cycle-game-home">
+    <div className={`cycle-game-home${busy ? ' is-busy' : ''}`} data-testid="cycle-game-home" aria-busy={busy ? 'true' : 'false'}>
       {noticeVisible && recoveredNotice && (
         <div className="cgh-recovered-banner" data-testid="cycle-recovered-banner" role="status" aria-live="polite">
           {recoveredNotice}
@@ -92,6 +98,7 @@ export default function CycleGameHome({
         type="button"
         className={`cgh-volume-fab cgh-volume-fab--corner${masterMuted ? ' is-muted' : ''}`}
         data-testid="cycle-game-volume-open"
+        disabled={busy}
         aria-label={masterMuted ? 'Volume — muted' : `Volume — ${Math.round((masterVolume ?? 0) * 100)}%`}
         onClick={() => { uiLog().debug('cycle_game.ui.volume_open', {}); setShowVolume(true); }}
       >
@@ -112,6 +119,7 @@ export default function CycleGameHome({
           ghost={ghost}
           onPickGhost={() => { uiLog().info('cycle_game.ui.ghost_picker_open', {}); setShowGhostPicker(true); }}
           onClearGhost={onClearGhost}
+          disabled={busy}
         />
 
         <section className="cgh-grid-section">
@@ -125,6 +133,7 @@ export default function CycleGameHome({
                   key={bike.id}
                   bike={bike}
                   lane={i + 1}
+                  disabled={busy}
                   person={bike.rider ? peopleById.get(bike.rider) || { id: bike.rider, name: bike.rider } : null}
                   onPick={(b) => { uiLog().info('cycle_game.ui.rider_picker_open', { equipmentId: b.id, currentRider: b.rider || null }); setPickerBike(b); }}
                 />
@@ -144,11 +153,11 @@ export default function CycleGameHome({
             type="button"
             className="cycle-game-home__start"
             data-testid="cycle-game-start"
-            disabled={!canStart}
+            disabled={!canStart || busy}
             onClick={() => onStart?.()}
           >
             <RaceFlagIcon />
-            Start race
+            {busy ? 'Starting…' : 'Start race'}
           </button>
         </div>
       </div>
@@ -157,12 +166,12 @@ export default function CycleGameHome({
         {/* Weekly ladder lives in the records rail — NEVER in the main column,
             where its height displaced the picker/grid/start on the fixed-height
             (unscrollable) garage touchscreen and made the lobby unusable. */}
-        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} />
+        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} disabled={busy} />
 
-        <HighScores highScores={highScores} onSelectRecord={onSelectRecord} />
+        <HighScores highScores={highScores} onSelectRecord={onSelectRecord} disabled={busy} />
 
         <div className="cgh-section-label">History</div>
-        <HistoryTable records={records} onSelectRecord={onSelectRecord} />
+        <HistoryTable records={records} onSelectRecord={onSelectRecord} disabled={busy} />
       </aside>
 
       {pickerBike && (
@@ -180,8 +189,8 @@ export default function CycleGameHome({
         <GhostPicker
           candidates={ghostCandidates}
           currentGhost={ghost}
-          onSelect={(g) => { onSelectGhost?.(g); setShowGhostPicker(false); }}
-          onClear={() => { onClearGhost?.(); }}
+          onSelect={(g) => { if (busy) return; onSelectGhost?.(g); setShowGhostPicker(false); }}
+          onClear={() => { if (busy) return; onClearGhost?.(); }}
           onClose={() => { uiLog().debug('cycle_game.ui.ghost_picker_close', {}); setShowGhostPicker(false); }}
         />
       )}
@@ -190,7 +199,7 @@ export default function CycleGameHome({
         <VolumeModal
           volume={masterVolume}
           muted={masterMuted}
-          onSetVolume={onSetMasterVolume}
+          onSetVolume={busy ? undefined : onSetMasterVolume}
           onClose={() => { uiLog().debug('cycle_game.ui.volume_close', {}); setShowVolume(false); }}
         />
       )}
@@ -227,5 +236,7 @@ CycleGameHome.propTypes = {
   featured: PropTypes.object,
   onRideFeatured: PropTypes.func,
   resolveName: PropTypes.func,
-  recoveredNotice: PropTypes.string
+  recoveredNotice: PropTypes.string,
+  // A start is pending: the lobby stays up but every control is inert.
+  busy: PropTypes.bool
 };

@@ -83,6 +83,21 @@ describe('buildRecordRow', () => {
     expect(r.raceLabel).toBe('1:00');
     expect(r.raceKind).toBe('time');
   });
+  it('a lead rider with no finish time in a distance race shows the distance they covered', () => {
+    // Lost to a rival and the race closed before they reached the goal.
+    const r = buildRecordRow({ ...base, winCondition: 'distance', goalLabel: '1.00 km', timeCapS: null,
+      participants: [
+        { id: 'ghost:par:par', displayName: 'Par 👻', avatarSrc: '/p', isGhost: true, finalDistanceM: 1000, finalTimeS: 200 },
+        { id: 'user_2', displayName: 'User_2', avatarSrc: '/b', isGhost: false, finalDistanceM: 640, finalTimeS: null }
+      ] }, '2026-06-03');
+    expect(r.winnerId).toBe('user_2');
+    expect(r.speedLabel).toBe('640 m');
+  });
+  it('a lead rider who never moved still has no result', () => {
+    const r = buildRecordRow({ ...base, winCondition: 'distance', goalLabel: '1.00 km', timeCapS: null,
+      participants: [{ id: 'user_2', displayName: 'User_2', avatarSrc: '/b', finalDistanceM: 0, finalTimeS: null }] }, '2026-06-03');
+    expect(r.speedLabel).toBeNull();
+  });
   it('handles a solo field (no others)', () => {
     const r = buildRecordRow({ ...base, participants: [base.participants[0]],
       winCondition: 'time', timeCapS: 60, goalLabel: '1:00' }, '2026-06-03');
