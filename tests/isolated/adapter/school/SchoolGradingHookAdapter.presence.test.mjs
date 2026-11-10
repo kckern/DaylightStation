@@ -72,4 +72,26 @@ describe('hook adapter cooldown + presence variables', () => {
     adapter.reset();
     expect(logs.some((l) => l.event === 'school.presence_hook.reset')).toBe(true);
   });
+
+  it('concurrent fires with a pending call yield one callService; a failure releases the window', async () => {
+    let release;
+    const calls = [];
+    const gateway = {
+      callService: (d, sv, data) => { calls.push(data); return new Promise((res) => { release = res; }); },
+    };
+    const adapter = new SchoolGradingHookAdapter({
+      gateway, logger: {}, configKey: 'presence_hook', now: () => 1_000_000,
+      loadSchoolConfig: () => ({ presence_hook: { script: 'script.school_presence', cooldownMinutes: 5 } }),
+    });
+    const first = adapter.fire(EV);
+    const second = await adapter.fire(EV);
+    expect(second).toEqual({ ok: true, skipped: true, reason: 'cooldown' });
+    expect(calls).toHaveLength(1);
+    release({ ok: false, error: 'ha down' });
+    await first;
+    const third = adapter.fire(EV);
+    expect(calls).toHaveLength(2);
+    release({ ok: true });
+    await third;
+  });
 });

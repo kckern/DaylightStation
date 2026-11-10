@@ -159,6 +159,13 @@ export class SchoolGradingHookAdapter {
         try { variables.student = (await this.#resolveStudent(variables.learner_id)) ?? variables.learner_id; } catch { /* identifier remains useful */ }
       }
 
+      // Arm the window BEFORE the await so concurrent fires (card-ladder POSTs
+      // arrive ~1/s) are deduplicated; restored below if the call fails.
+      // The window is per adapter instance, i.e. household-wide: one child's
+      // tap covers a sibling's within the window.
+      const priorCooldownUntil = this.#cooldownUntil;
+      if (cooldownMs > 0) this.#cooldownUntil = now + cooldownMs;
+
       try {
         const result = await this.#gateway.callService('script', service, variables);
         // The real gateway (`HomeAssistantAdapter#callService`) never throws
@@ -178,7 +185,6 @@ export class SchoolGradingHookAdapter {
           });
         }
         this.failureCount = 0;
-        if (cooldownMs > 0) this.#cooldownUntil = now + cooldownMs;
         this.metrics.firedCount++;
         this.metrics.lastFiredAt = new Date(now).toISOString();
         this.metrics.resultHistogram[variables.result] =
@@ -188,6 +194,7 @@ export class SchoolGradingHookAdapter {
         });
         return { ok: true };
       } catch (error) {
+        if (cooldownMs > 0) this.#cooldownUntil = priorCooldownUntil;
         this.failureCount++;
         this.metrics.failureCount++;
         if (this.failureCount >= MAX_FAILURES) {
