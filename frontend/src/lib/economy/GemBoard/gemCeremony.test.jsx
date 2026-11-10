@@ -17,12 +17,13 @@ const cell = (state, week = 0) => ({ state, week });
 const NONE = { 'race-champion': { a: cell('none'), b: cell('none') }, 'perfect-sheet': { a: cell('none'), b: cell('none') } };
 
 describe('gemAwards', () => {
-  it('a lead just taken is an award; holding it is not', () => {
+  it('a lead just taken is NOT an award (not a gem yet); a win is', () => {
     const before = gemSnapshot(board(NONE));
     const after = board({ ...NONE, 'race-champion': { a: cell('leading'), b: cell('none') } });
     const { awards, snapshot } = gemAwards(before, after);
-    expect(awards).toEqual([{ learnerId: 'a', name: 'Ann', categoryId: 'race-champion', ruleId: 'race-champion', label: 'Race of the week', color: '#ff7a2f', cadence: 'contest', kind: 'leading', count: 0 }]);
-    expect(gemAwards(snapshot, after).awards).toEqual([]);
+    expect(awards).toEqual([]);
+    const won = board({ ...NONE, 'race-champion': { a: cell('won', 1), b: cell('none') } });
+    expect(gemAwards(snapshot, won).awards).toEqual([{ learnerId: 'a', name: 'Ann', categoryId: 'race-champion', ruleId: 'race-champion', label: 'Race of the week', color: '#ff7a2f', cadence: 'contest', kind: 'won', count: 1 }]);
   });
 
   it('a lead that becomes a win is celebrated again; a count that grows celebrates the new ones', () => {
@@ -37,7 +38,7 @@ describe('gemAwards', () => {
     expect(gemAwards(gemSnapshot(board(NONE, '2026-10-26')), after).awards).toEqual([]);
     expect(gemAwards(gemSnapshot(board(NONE)), { ...after, mode: 'off' }).awards).toEqual([]);
     const lost = gemSnapshot(board({ ...NONE, 'race-champion': { a: cell('leading'), b: cell('none') } }));
-    expect(gemAwards(lost, board({ ...NONE, 'race-champion': { a: cell('none'), b: cell('leading') } })).awards.map((x) => x.learnerId)).toEqual(['b']);
+    expect(gemAwards(lost, board({ ...NONE, 'race-champion': { a: cell('none'), b: cell('leading') } })).awards.map((x) => x.learnerId)).toEqual([]);
   });
 });
 
@@ -86,19 +87,19 @@ describe('gemAwards by rule', () => {
     });
   });
 
-  it('a lead taken in a row its other rule already earned is celebrated', () => {
+  it('a lead taken in a row its other rule already earned is not celebrated', () => {
     const before = gemSnapshot(merged(rows({ racing: racing('none', 1) })));
     const after = merged(rows({ racing: racing('leading', 1) }));
     expect(after.cells.racing.a).toMatchObject({ state: 'earned', week: 1 }); // the cell itself did not move
     const { awards, snapshot } = gemAwards(before, after);
-    expect(awards).toEqual([{ learnerId: 'a', name: 'Ann', categoryId: 'racing', ruleId: 'race-champion', label: 'Race of the week', color: '#ff7a2f', cadence: 'contest', kind: 'leading', count: 0 }]);
+    expect(awards).toEqual([]);
     expect(gemAwards(snapshot, after).awards).toEqual([]);
   });
 
-  it('a second contest lead in one row is celebrated though the cell was already leading', () => {
+  it('a second contest lead in one row is not celebrated either', () => {
     const before = gemSnapshot(merged(rows({ rings: rings('leading', 'none') })));
     const { awards } = gemAwards(before, merged(rows({ rings: rings('leading', 'leading') })));
-    expect(awards.map((x) => [x.categoryId, x.ruleId, x.label, x.kind, x.color])).toEqual([['ring-contests', 'ring-improved', 'Most improved', 'leading', '#8e5bd0']]);
+    expect(awards.map((x) => [x.categoryId, x.ruleId, x.label, x.kind, x.color])).toEqual([]);
   });
 
   it('a snapshot in the old per-row shape is learned without celebrating, and a per-rule one comes out', () => {
@@ -131,8 +132,6 @@ describe('gemAwards by rule', () => {
     const after = merged(rows({ rings: won, racing: racing('leading', 1), reading: reading(1, 1) }, { rings: rings('none', 'leading'), racing: racing('none') }));
     expect(gemAwards(before, after).awards.map((x) => [x.categoryId, x.learnerId, x.ruleId, x.kind, x.count])).toEqual([
       ['ring-contests', 'a', 'ring-contest', 'won', 1],
-      ['ring-contests', 'b', 'ring-improved', 'leading', 0],
-      ['racing', 'a', 'race-champion', 'leading', 0],
       ['racing', 'a', 'race-pb', 'earned', 1],
       ['reading', 'a', 'reader-week', 'earned', 1],
       ['reading', 'a', 'book-finished', 'earned', 1],
@@ -190,7 +189,7 @@ describe('useGemCeremony', () => {
     render(<Probe surface="t1" events={['race-saved']} learnOnMount load={load} settleMs={10} />);
     await flush();
     expect(screen.getByTestId('probe').dataset.n).toBe('0');
-    current = board({ ...NONE, 'race-champion': { a: cell('leading'), b: cell('none') } });
+    current = board({ ...NONE, 'race-champion': { a: cell('won', 1), b: cell('none') } });
     act(() => { window.dispatchEvent(new CustomEvent('race-saved')); vi.advanceTimersByTime(11); });
     await flush();
     expect(load).toHaveBeenLastCalledWith(null, { fresh: true });
@@ -257,7 +256,7 @@ describe('useGemCeremony', () => {
 describe('GemCeremony', () => {
   afterEach(() => { cleanup(); vi.useRealTimers(); });
   const awards = [
-    { learnerId: 'a', name: 'Ann', categoryId: 'race-champion', label: 'Race of the week', color: '#ff7a2f', kind: 'leading', count: 0 },
+    { learnerId: 'a', name: 'Ann', categoryId: 'race-champion', label: 'Race of the week', color: '#ff7a2f', kind: 'won', count: 1 },
     { learnerId: 'b', name: 'Ben', categoryId: 'perfect-sheet', label: 'Perfect worksheet', color: '#2e9e5b', kind: 'earned', count: 2 },
   ];
   it('one card per award, plays its cue once, and dismisses once on tap or the clock', () => {
@@ -265,7 +264,7 @@ describe('GemCeremony', () => {
     const onShow = vi.fn();
     const onDone = vi.fn();
     render(<GemCeremony awards={awards} surface="t" onShow={onShow} onDone={onDone} />);
-    expect(screen.getByText('Took the lead!')).toBeTruthy();
+    expect(screen.getByText('Won it!')).toBeTruthy();
     expect(screen.getByText('Gem earned! ×2')).toBeTruthy();
     expect(onShow).toHaveBeenCalledTimes(1);
     fireEvent.pointerDown(screen.getByTestId('gem-ceremony'));

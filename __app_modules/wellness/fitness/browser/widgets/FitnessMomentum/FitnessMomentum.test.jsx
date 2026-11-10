@@ -146,8 +146,7 @@ describe('FitnessMomentum', () => {
 describe('FitnessMomentum stylesheet', () => {
   it('the week bars and chips are never partly transparent', () => {
     const css = readFileSync(new URL('./FitnessMomentum.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
-    const bars = css.slice(css.indexOf('&__weekbar {'), css.indexOf('&__rail {'));
-    expect(bars).toMatch(/&__weekbar/);
-    expect(bars).not.toMatch(/opacity\s*:/);
+    expect(css).toMatch(/&__weekbar/);
+    for (const m of css.matchAll(/opacity\s*:\s*([^;}]+)/g)) expect(Number(m[1])).toBeGreaterThanOrEqual(1);
   });
 });

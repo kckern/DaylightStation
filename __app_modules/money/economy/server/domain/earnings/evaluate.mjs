@@ -117,7 +117,8 @@ function weekMet(rule, facts, ctx) {
     return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'Week not worked out yet' };
   }
   const notGreen = schoolDays.filter((d) => d.state !== 'met');
-  const closedNotGreen = notGreen.filter((d) => ctx.today != null && !ctx.isOpen(d.day));
+  const settled = (d) => (ctx.today == null ? ctx.weekdaysCovered : !ctx.isOpen(d.day));
+  const closedNotGreen = notGreen.filter(settled);
   // A past day is SETTLED: the term grid replays it seeing only evidence
   // stamped before its window closed (term-grid.md "How a past day is
   // judged"), so late work cannot turn it green. A missed settled day ends

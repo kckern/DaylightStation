@@ -203,6 +203,15 @@ describe('evaluateEarnings — school kinds', () => {
     expect(line(out, 'green-week').note).toBe('Not green: 2026-09-21');
   });
 
+  it('with no today (a closed week) a non-green day ends green week, not pending', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'none'], ['2026-09-25', 'met'], ['2026-09-26', 'met']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: false },
+    }, { today: null });
+    expect(line(out, 'green-week')).toMatchObject({ status: 'none', note: 'Not green: 2026-09-24' });
+  });
+
   it('an unsettled red day (today) keeps green week pending', () => {
     const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
     const out = evaluate(rs, {
