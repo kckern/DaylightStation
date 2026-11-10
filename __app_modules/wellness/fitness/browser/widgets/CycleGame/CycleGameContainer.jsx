@@ -13,6 +13,7 @@ import { buildHighScores } from "../../lib/cycleGame/highScores.js";
 import { buildRecordRow } from "../../lib/cycleGame/recordRow.js";
 import { resolveParticipantIdentity } from "../../lib/cycleGame/participantIdentity.js";
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from "../../lib/cycleGame/ghostCandidate.js";
+import { pickPaceRival, buildParRecord, PAR_ID, DEFAULT_PAR_SPEED_KMH } from "../../lib/cycleGame/paceRival.js";
 import { courseStartOverride, pickRival, ladderDelta } from "../../lib/cycleGame/ladder.js";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from "../../lib/cycleGame/equipmentRpm.js";
@@ -42,6 +43,63 @@ const DRAMA_ICON = {
   'final-lap': <RaceFlagIcon />,
   lapping: <GhostIcon />,
 };
+
+// The competitors a ghost adds to a race: its whole recorded field.
+function ghostFieldRiders(g) {
+  if (!g || !Array.isArray(g.riders)) return [];
+  return g.riders.map((r) => ({
+    userId: r.userId,
+    displayName: r.displayName,
+    // The recording equipment — drives the gauge's maxRpm and the synth-rpm
+    // wheel size. Distance still replays from the recorded series (the ghost
+    // branch in the engine), so this never double-applies wheel physics.
+    equipmentId: r.equipmentId || null,
+    wheelCircumferenceM: 0,
+    ghostSeries: r.ghostSeries,
+    ghostHrSeries: r.ghostHrSeries,
+    ghostRpmSeries: r.ghostRpmSeries,
+    ghostZoneSeries: r.ghostZoneSeries,
+    ghostIntervalS: r.ghostIntervalS
+  }));
+}
+
+// A ghost's riders as the pre-race surfaces show them (name + real avatar).
+function ghostRosterOf(g) {
+  return (g?.riders || []).map((r) => ({
+    userId: r.userId,
+    displayName: r.displayName,
+    avatarSrc: resolveParticipantIdentity(r.userId, r.displayName).avatarSrc
+  }));
+}
+
+/**
+ * Arm the automatic pace rival for a lone rider who chose no ghost: their own
+ * best at this race type and length, else the household's best, else par. Only
+ * the picked rider is replayed (not the whole field of that race), and the
+ * rival is named after them. A pick that cannot be replayed falls back to par;
+ * if par cannot be built either the race runs without a rival (kind 'none').
+ *
+ * @returns {{ ghost: object|null, kind: 'self'|'household'|'par'|'none',
+ *   requestedKind: 'self'|'household'|'par', sourceRaceId: string|null, participantId: string|null }}
+ */
+function armPaceRival({ candidates, riderId, winCondition, goalM, timeCapS, parSpeedKmh }) {
+  const pick = pickPaceRival({ candidates, riderId, winCondition, goalM, timeCapS });
+  if (pick.kind !== 'par') {
+    const source = candidates.find((c) => c.raceId === pick.raceId);
+    const pt = (source?.participants || []).find((x) => x.id === pick.participantId);
+    const built = pt
+      ? buildGhostFromCandidate({ ...source, participants: [pt], winnerName: pt.displayName })
+      : null;
+    if (built) {
+      return { ghost: built.ghost, kind: pick.kind, requestedKind: pick.kind, sourceRaceId: pick.raceId, participantId: pick.participantId };
+    }
+  }
+  const parRecord = buildParRecord({ winCondition, goalM, timeCapS, speedKmh: parSpeedKmh });
+  const built = parRecord ? buildGhostFromCandidate(mapRaceRecordToCandidate(parRecord)) : null;
+  return built
+    ? { ghost: built.ghost, kind: 'par', requestedKind: pick.kind, sourceRaceId: null, participantId: PAR_ID }
+    : { ghost: null, kind: 'none', requestedKind: pick.kind, sourceRaceId: null, participantId: null };
+}
 
 const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
@@ -187,6 +245,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Race history + ghost selection (declared early — buildRiders/startRace read them).
   const [pastRaces, setPastRaces] = useState([]); // recent saved race records
   const [ghost, setGhost] = useState(null); // selected ghost competitor (locks config)
+  // The ghost actually racing THIS race: the hand-picked/ladder ghost, or the
+  // automatic pace rival, or null. Set by startRace for the staging/countdown
+  // rider strip only. The lobby never reads it, so an automatic rival neither
+  // locks the race type/value nor carries into the next race.
+  const [raceGhost, setRaceGhost] = useState(null);
 
   // Use the canonical relational name resolver: getDisplayLabel applies the
   // household nickname ("Dad"/"Mom") when 2+ HR riders are present, else the
@@ -214,6 +277,11 @@ export default function CycleGameContainer({ onMount } = {}) {
     : 60;
   // How long the results board holds before auto-returning to the lobby.
   const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 20;
+  // Speed of the "par" pace rival a lone rider races when nobody has ridden
+  // this race type and length before.
+  const parSpeedKmh = Number.isFinite(cycleGameConfig?.par_speed_kmh) && cycleGameConfig.par_speed_kmh > 0
+    ? cycleGameConfig.par_speed_kmh
+    : DEFAULT_PAR_SPEED_KMH;
 
   // Resolve the currently-claimed riders (bikes with a getEquipmentRider claim).
   // ghostOverride lets a caller (e.g. onRideFeatured) supply an explicit ghost
@@ -245,25 +313,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
     });
     // A selected ghost replays its whole recorded field as competitors.
-    if (g && Array.isArray(g.riders)) {
-      g.riders.forEach((r) => {
-        riders.push({
-          userId: r.userId,
-          displayName: r.displayName,
-          // The recording equipment — drives the gauge's maxRpm and the synth-rpm
-          // wheel size. Distance still replays from the recorded series (the ghost
-          // branch in the engine), so this never double-applies wheel physics.
-          equipmentId: r.equipmentId || null,
-          wheelCircumferenceM: 0,
-          ghostSeries: r.ghostSeries,
-          ghostHrSeries: r.ghostHrSeries,
-          ghostRpmSeries: r.ghostRpmSeries,
-          ghostZoneSeries: r.ghostZoneSeries,
-          ghostIntervalS: r.ghostIntervalS
-        });
-      });
-    }
-    return riders;
+    return riders.concat(ghostFieldRiders(g));
   }, [bikes, session, resolveDisplayName, ghost, log]);
 
   // ── lifecycle state ──────────────────────────────────────────────────────
@@ -551,17 +601,13 @@ export default function CycleGameContainer({ onMount } = {}) {
   // the race screen mounted. Shared by the starting grid (GhostSlot) and the
   // ready strip below, so both surfaces show the SAME ghost roster the race
   // will actually run with.
-  const ghostRosterRiders = useMemo(
-    () => (ghost?.riders || []).map((r) => ({
-      userId: r.userId,
-      displayName: r.displayName,
-      avatarSrc: resolveParticipantIdentity(r.userId, r.displayName).avatarSrc,
-    })),
-    [ghost]
-  );
+  const ghostRosterRiders = useMemo(() => ghostRosterOf(ghost), [ghost]);
+  // The same, for the ghost racing THIS race (staging + countdown strip). Unlike
+  // the lobby roster above it includes the automatic pace rival.
+  const raceGhostRosterRiders = useMemo(() => ghostRosterOf(raceGhost), [raceGhost]);
 
   // On-board riders for the pre-race compliance strip (staging + countdown): the
-  // claimed bikes with their LIVE rpm, PLUS any selected ghost riders (always
+  // claimed bikes with their LIVE rpm, PLUS the ghost riders in this race (always
   // "READY" — a ghost never earns a hot-start penalty, it just runs on its own
   // recorded clock). `compliant = !(rpm > 0)` mirrors exactly the controller's
   // green-light test, so the strip predicts the penalty. assignVersion drives
@@ -583,7 +629,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         zoneColor: vitals.zoneColor || null,
         compliant: !(rpm > 0)
       };
-    }).filter(Boolean).concat(ghostRosterRiders.map((r) => ({
+    }).filter(Boolean).concat(raceGhostRosterRiders.map((r) => ({
       id: r.userId,
       name: r.displayName,
       avatarSrc: r.avatarSrc,
@@ -594,7 +640,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       isGhost: true
     }))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bikes, session, getUserVitals, resolveDisplayName, assignVersion, ghostRosterRiders]
+    [bikes, session, getUserVitals, resolveDisplayName, assignVersion, raceGhostRosterRiders]
   );
 
   // True when no on-board rider is pedalling — the gate for leaving staging.
@@ -766,11 +812,30 @@ export default function CycleGameContainer({ onMount } = {}) {
       goal_m: goalM,
       time_cap_s: timeCapS
     };
-    const riders = buildRiders(ghostOverride);
-    if (riders.length === 0) {
+    // The ghost that would race: an explicit override (the featured-course
+    // button passes its ladder rival, or null for "none") beats the lobby's
+    // hand-picked ghost.
+    const chosenGhost = (ghostOverride !== undefined ? ghostOverride : ghost) || null;
+    const liveRiders = buildRiders(null);
+    if (liveRiders.length === 0) {
       log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
       return;
     }
+    // A lone rider with no ghost always gets someone to chase: their own best at
+    // this race type and length, else the household's best, else par. It is armed
+    // for this race only (never through `ghost` state), so it does not lock the
+    // lobby or persist. Two or more riders race each other: no rival, no event.
+    const paceRival = !chosenGhost && liveRiders.length === 1
+      ? armPaceRival({
+        candidates: ghostCandidates, riderId: liveRiders[0].userId,
+        winCondition: type, goalM, timeCapS, parSpeedKmh
+      })
+      : null;
+    const armedGhost = chosenGhost || paceRival?.ghost || null;
+    // 'ghost' = hand-picked or ladder rival; null = nobody to chase.
+    const rivalKind = chosenGhost ? 'ghost' : (paceRival?.ghost ? paceRival.kind : null);
+    const riders = liveRiders.concat(ghostFieldRiders(armedGhost));
+    setRaceGhost(armedGhost);
     const cfgLap = Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0;
     const lapLengthM = effectiveLapLength({ lapLengthM: cfgLap, winCondition: type, goalM });
     const cfg = buildRaceConfigFromCourse(course, {
@@ -805,8 +870,20 @@ export default function CycleGameContainer({ onMount } = {}) {
       backgroundPlexId: cfg.backgroundPlexId,
       lapLengthM,
       // Real course identity only — 'custom'/'ghost' lobby races persist null.
-      courseId: ov?.id ?? null
+      courseId: ov?.id ?? null,
+      // Who the field is chasing: 'self' | 'household' | 'par' (automatic pace
+      // rival), 'ghost' (hand-picked or ladder rival), null (no rival).
+      rivalKind
     };
+    if (paceRival) {
+      log.info('cycle_game.pace_rival', {
+        raceId,
+        kind: paceRival.kind,
+        sourceRaceId: paceRival.sourceRaceId,
+        participantId: paceRival.participantId,
+        requestedKind: paceRival.requestedKind
+      });
+    }
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
     prevDnfRef.current = new Set();
@@ -851,6 +928,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         countdown: !!sx.countdown, finish: !!sx.finish, end: !!sx.end, racing: !!sx.racing?.dir
       },
       backgroundPlexId: cfg.backgroundPlexId ?? null,
+      rivalKind,
       riders: riders.map((r) => ({
         userId: r.userId,
         isGhost: Array.isArray(r.ghostSeries) && r.ghostSeries.length > 0,
@@ -881,7 +959,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     } else {
       applySnapshot(controller.startCountdown());
     }
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, raceMercyAfterWinnerS, applySnapshot, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, ghostCandidates, parSpeedKmh, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, raceMercyAfterWinnerS, applySnapshot, log]);
 
   // Keep stable refs to the latest startRace + phase so the sim control hook
   // (registered once) always reads current values.

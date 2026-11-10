@@ -20,6 +20,7 @@ vi.mock("../../nav/usePersistentVolume.js", () => ({
 
 import CycleGameContainer from "./CycleGameContainer.jsx";
 import { DEFAULT_WHEEL_CIRCUMFERENCE_M } from "../../lib/cycleGame/distanceModel.js";
+import { SessionSerializerV3 } from "../../hooks/fitness/SessionSerializerV3.js";
 
 function makeCtx(overrides = {}) {
   const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
@@ -160,5 +161,188 @@ describe('CycleGameContainer — governance suspension', () => {
 
     act(() => { view.unmount(); });
     expect(suspendSpy).toHaveBeenCalledWith(false);
+  });
+});
+
+// ── automatic pace rival ─────────────────────────────────────────────────
+// A lone rider with no ghost gets a rival: own best at this type + length,
+// else the household best, else a constant par pace.
+const GOAL_M = 3000; // makeCtx's distance_goal_default_m
+
+function raceRecord(id, participants, race = {}) {
+  return {
+    version: 1,
+    race: { id, win_condition: 'distance', goal_m: GOAL_M, interval_seconds: 1, ...race },
+    participants: Object.fromEntries(Object.entries(participants).map(([userId, p], i) => [userId, {
+      display_name: userId,
+      final_distance_m: GOAL_M,
+      final_time_s: p.timeS,
+      placement: i + 1,
+      distance_series: p.noSeries ? null : SessionSerializerV3.encodeSeries([GOAL_M / 2, GOAL_M])
+    }]))
+  };
+}
+
+// Answers the lobby's history load (dates, then one day's races) and the ladder.
+function historyFetch(races) {
+  return vi.fn((url) => {
+    if (typeof url === 'string' && url.includes('ladder')) return Promise.resolve({ ok: false, status: 404 });
+    if (typeof url === 'string' && url.includes('?date=')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ races }) });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ dates: ['2026-01-01'] }) });
+  });
+}
+
+function soloCtx(riders = { cycle_ace: 'user_1' }) {
+  const base = makeCtx();
+  return {
+    ...base,
+    fitnessSessionInstance: { ...base.fitnessSessionInstance, getEquipmentRider: (id) => riders[id] || null }
+  };
+}
+
+async function renderLobby(races) {
+  global.fetch = historyFetch(races);
+  const view = render(<CycleGameContainer />);
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => { await Promise.resolve(); });
+  expect(logSpy.info).toHaveBeenCalledWith('cycle_game.history_loaded', expect.objectContaining({ races: races.length }));
+  return view;
+}
+
+function startDistanceRace({ getByTestId }) {
+  act(() => { fireEvent.click(getByTestId('course-distance')); });
+  act(() => { fireEvent.click(getByTestId('cycle-game-start')); });
+}
+
+const configLogs = () => logSpy.info.mock.calls.filter(([e]) => e === 'cycle_game.config').map(([, d]) => d);
+const paceRivalLogs = () => logSpy.info.mock.calls.filter(([e]) => e === 'cycle_game.pace_rival').map(([, d]) => d);
+const ghostIds = (cfg) => cfg.riders.filter((r) => r.isGhost).map((r) => r.userId);
+
+describe('CycleGameContainer — automatic pace rival', () => {
+  beforeEach(() => {
+    mockCtx = soloCtx();
+    Object.values(logSpy).forEach((fn) => fn.mockClear());
+  });
+
+  it("a lone rider with no ghost races their own best at this type and length", async () => {
+    const view = await renderLobby([
+      raceRecord('20260101100000', { user_1: { timeS: 400 } }),
+      raceRecord('20260101110000', { user_1: { timeS: 300 }, user_2: { timeS: 200 } }),
+      raceRecord('20260101120000', { user_1: { timeS: 100 } }, { goal_m: 1000 }) // other length: ignored
+    ]);
+    startDistanceRace(view);
+    const [cfg] = configLogs();
+    expect(ghostIds(cfg)).toEqual(['ghost:20260101110000:user_1']);
+    expect(cfg.rivalKind).toBe('self');
+    expect(paceRivalLogs()).toEqual([{
+      raceId: cfg.raceId, kind: 'self', requestedKind: 'self',
+      sourceRaceId: '20260101110000', participantId: 'user_1'
+    }]);
+  });
+
+  it('falls to the household best when the rider has no ride of their own', async () => {
+    const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })]);
+    startDistanceRace(view);
+    const [cfg] = configLogs();
+    expect(ghostIds(cfg)).toEqual(['ghost:20260101100000:user_2']);
+    expect(cfg.rivalKind).toBe('household');
+    expect(paceRivalLogs()).toEqual([expect.objectContaining({ kind: 'household', sourceRaceId: '20260101100000', participantId: 'user_2' })]);
+  });
+
+  it('falls to a par pace when there is no history', async () => {
+    const view = await renderLobby([]);
+    startDistanceRace(view);
+    const [cfg] = configLogs();
+    expect(ghostIds(cfg)).toEqual(['ghost:par:par']);
+    expect(cfg.rivalKind).toBe('par');
+    expect(paceRivalLogs()).toEqual([{
+      raceId: cfg.raceId, kind: 'par', requestedKind: 'par', sourceRaceId: null, participantId: 'par'
+    }]);
+  });
+
+  it('falls back to par when the picked ride has nothing to replay', async () => {
+    const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300, noSeries: true } })]);
+    startDistanceRace(view);
+    const [cfg] = configLogs();
+    expect(ghostIds(cfg)).toEqual(['ghost:par:par']);
+    expect(cfg.rivalKind).toBe('par');
+    expect(paceRivalLogs()).toEqual([expect.objectContaining({ kind: 'par', requestedKind: 'self', sourceRaceId: null })]);
+  });
+
+  it('two claimed riders race each other: no rival, no pace_rival event', async () => {
+    mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+    const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300 } })]);
+    startDistanceRace(view);
+    const [cfg] = configLogs();
+    expect(ghostIds(cfg)).toEqual([]);
+    expect(cfg.rivalKind).toBeNull();
+    expect(paceRivalLogs()).toEqual([]);
+  });
+
+  it('a hand-picked ghost races alone: no automatic rival is added', async () => {
+    const view = await renderLobby([
+      raceRecord('20260101100000', { user_2: { timeS: 400 } }),
+      raceRecord('20260101110000', { user_1: { timeS: 300 } }) // would be the automatic pick
+    ]);
+    act(() => { fireEvent.click(view.getByTestId('course-ghost')); });
+    act(() => { fireEvent.click(view.getByTestId('ghost-20260101100000')); }); // focus
+    act(() => { fireEvent.click(view.getByTestId('ghost-20260101100000')); }); // commit
+    expect(view.getByTestId('cgh-ghost-summary')).toBeTruthy();
+    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    const [cfg] = configLogs();
+    expect(ghostIds(cfg)).toEqual(['ghost:20260101100000:user_2']);
+    expect(cfg.rivalKind).toBe('ghost');
+    expect(paceRivalLogs()).toEqual([]);
+  });
+
+  it('shows the automatic rival in the pre-race rider strip', async () => {
+    const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300 } })]);
+    startDistanceRace(view);
+    expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+    expect(view.getByTestId('ready-rider-user_1')).toBeTruthy();
+    expect(view.getByTestId('ready-rider-ghost:20260101100000:user_1').className).toContain('is-ghost');
+  });
+
+  it('a par rival, which records distance only, still moves its gauge mid-race', async () => {
+    vi.useFakeTimers();
+    let nowMs = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+    try {
+      const view = await renderLobby([]);
+      startDistanceRace(view);
+      act(() => { vi.advanceTimersByTime(3000); }); // 3-2-1 countdown
+      act(() => { vi.advanceTimersByTime(800); });  // green-light hold
+      nowMs = 5000;
+      act(() => { vi.advanceTimersByTime(1000); }); // five race ticks
+      const gauges = view.getAllByTestId('cycle-speedometer-rpm').map((el) => parseInt(el.textContent, 10));
+      expect(gauges).toHaveLength(2);
+      // 18 km/h on the default 2.1 m wheel, synthesized from speed (no rpm series).
+      expect(gauges).toContain(143);
+      expect(gauges.every((rpm) => rpm > 0)).toBe(true);
+    } finally {
+      nowSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not lock the lobby to the automatic rival, and arms a fresh one next race', async () => {
+    const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300 } })]);
+    startDistanceRace(view);
+    act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
+    await act(async () => { await Promise.resolve(); });
+    expect(view.getByTestId('cycle-game-home')).toBeTruthy();
+    expect(view.queryByTestId('cgh-ghost-summary')).toBeNull();
+    expect(view.queryByTestId('ghost-slot-ghost:20260101100000:user_1')).toBeNull();
+    expect(view.getByTestId('cgh-value')).toBeTruthy(); // the value stepper is still editable
+    // A time race next: the distance rival must not carry over.
+    act(() => { fireEvent.click(view.getByTestId('course-time')); });
+    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    const cfgs = configLogs();
+    expect(cfgs).toHaveLength(2);
+    expect(cfgs[1].winCondition).toBe('time');
+    expect(ghostIds(cfgs[1])).toEqual(['ghost:par:par']);
+    expect(paceRivalLogs().map((l) => l.kind)).toEqual(['self', 'par']);
   });
 });

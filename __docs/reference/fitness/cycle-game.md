@@ -26,9 +26,12 @@ can later be replayed as ghosts.
 
 ### Use cases
 
-- **Solo time-trial** — one rider, no comparator. Pace against the clock/goal.
-- **Solo vs. ghost** — one human chasing a recorded past performance (the ghost
-  counts as a competitor).
+- **Solo ride** — one rider and no ghost chosen. The game adds an **automatic
+  pace rival** so there is always someone to chase: the rider's own best at this
+  race type and length, else the household's best, else a constant "par" pace
+  (§5).
+- **Solo vs. ghost** — one human chasing a recorded past performance they picked
+  (the ghost counts as a competitor, and no pace rival is added).
 - **Group race** — 2–6 riders (humans and/or ghosts), distance or time.
 - **Re-race a field** — selecting a ghost replays that race's recorded field as
   competitors; a **roster step** lets you pick *which* of those ghosts to include
@@ -253,6 +256,47 @@ ghost is selected, append its (roster-filtered) participants as additional rider
 carrying `ghostSeries / ghostHrSeries / ghostRpmSeries / ghostZoneSeries /
 ghostIntervalS` and `equipmentId: null`.
 
+**Automatic pace rival** (`startRace` → `armPaceRival`, selection in
+`lib/cycleGame/paceRival.js`). `startRace` first works out the ghost that would
+race: an explicit override (the featured-course button passes its ladder rival,
+or `null` when it has none) beats the lobby's hand-picked ghost. If there is no
+such ghost and **exactly one** live rider is claimed, a pace rival is armed for
+that race:
+
+| Kind | Who | When |
+|---|---|---|
+| `self` | The rider's own best ride | They have a counting ride at this win condition and exact length |
+| `household` | The best ride by anyone | Nobody's own ride qualifies, but someone's does |
+| `par` | A constant-speed rider, id `ghost:par:par`, named "Par" | No qualifying ride, or the picked ride has no distance series to replay |
+
+- "Counting" means the race was not ended early, the rider was live (not a
+  replay), was not stopped when the race closed, and for a distance race
+  finished. Best is the lowest finish time (distance) or the furthest distance
+  (time). The length compared is the final one `startRace` resolves, after any
+  course override and the config defaults.
+- Only the picked rider is replayed, not the rest of that race's field, and the
+  rival is named after that rider.
+- The par rider covers `par_speed_kmh` (§6) every second and finishes a distance
+  race exactly on the goal. Its recording has distance only: no heart rate, zone
+  or cadence. The race screen synthesizes its gauge needle from speed, as it does
+  for any ghost recorded before cadence was saved, so the needle reads the
+  cadence that speed would need on the default wheel with no zone boost (143 rpm
+  at 18 km/h). It has no avatar image: surfaces with a fallback show the generic
+  face, and the gauge and POV marker show no picture.
+- If par cannot be built either (the race has no usable length), the race starts
+  with no rival and the event below reports `kind: 'none'`.
+- A hand-picked ghost or a ladder rival always wins: no pace rival is added. Two
+  or more live riders race each other: no pace rival, and no `pace_rival` event.
+- The rival is armed for one race only. It never goes through the lobby's
+  selected-ghost state, so it does not lock the race type or value and is chosen
+  afresh next race. It is not previewed in the lobby; it first appears as an
+  "AUTO" chip in the staging and countdown rider strip (§10), which shows the
+  ghosts actually racing rather than the lobby selection.
+- The kind armed is kept on the race meta as `rivalKind`: `self`, `household`,
+  `par`, `ghost` (hand-picked or ladder rival) or `null` (no rival). It is also
+  in the `cycle_game.config` event.
+- Each arming logs `cycle_game.pace_rival` (§18).
+
 - **Claiming a rider to a bike** is external to React: `session.setEquipmentRider`
   (mirrors the hardware rider-select button). Emits `cycle_game.rider_assigned` /
   `rider_unassigned`.
@@ -302,6 +346,7 @@ restart to take effect.
 | `hot_start_penalty_s` | 0 | No longer read by the controller, which has no penalty box. The key is retired in a later change |
 | `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
 | `results_dwell_s` | 20 | Results auto-return countdown before returning to the lobby |
+| `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive; anything else uses the default |
 | `default_background` | null | Ambient background Plex id for the race screen |
 | `music_volume` | 0.55 | Background music level (0–1) |
 | `sounds` | {} | SFX + music playlist URLs |
@@ -876,7 +921,15 @@ by `raceId` (+ `elapsedS` where relevant).
   series point-counts), `staged` / `staging` / `race_started` / `race_finished` /
   `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_dnf`,
   `penalty_entered` / `penalty_awaiting_stop` / `penalty_cleared`, `cadence_change`,
-  `finish_forced`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`.
+  `finish_forced`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`,
+  `pace_rival`.
+- **`cycle_game.pace_rival`** (INFO) — once per race start in which a lone rider
+  had no ghost (§5): `{ raceId, kind, sourceRaceId, participantId, requestedKind }`.
+  `kind` is what was armed (`self` | `household` | `par` | `none`);
+  `requestedKind` is what selection asked for, so `requestedKind: 'self'` with
+  `kind: 'par'` means the rider's best ride could not be replayed. `sourceRaceId`
+  is `null` for par. Not emitted when a ghost was chosen or two or more riders
+  are racing.
 - **Firehose (DEBUG, off by default)** — `cycle_game.tick`: one event/second with a
   per-rider array `{ rpm, cadenceConnected, hr, zoneId, multiplier, distanceM,
   penalized, finished }`, read from post-resolution engine state.
