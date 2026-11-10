@@ -34,7 +34,9 @@
  * Rules that share a `category` share a board row; `color` is the gem's
  * provenance (taxonomy D12); `group` is the board section the row sits under
  * (`move`, `games`, `school`, or any slug). Display only: it never changes
- * what a rule pays.
+ * what a rule pays. The FIRST rule of a board row decides the row's label,
+ * group and colour; a later rule's `gem.label` / `gem.group` / `gem.color` in
+ * the same row applies only to that rule's part colour.
  */
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { CURRENCIES } from '../entities/Transaction.mjs';
@@ -159,11 +161,11 @@ function normalizeGem(gem, field) {
   if (typeof gem !== 'object' || Array.isArray(gem)) fail(`${field} must be {category, label, color, group}`, field);
   const out = {};
   if (gem.category != null) {
-    if (!ID.test(gem.category)) fail(`${field}.category must be a lowercase slug`, `${field}.category`);
+    if (typeof gem.category !== 'string' || !ID.test(gem.category)) fail(`${field}.category must be a lowercase slug`, `${field}.category`);
     out.category = gem.category;
   }
   if (gem.group != null) {
-    if (!ID.test(gem.group)) fail(`${field}.group must be a lowercase slug`, `${field}.group`);
+    if (typeof gem.group !== 'string' || !ID.test(gem.group)) fail(`${field}.group must be a lowercase slug`, `${field}.group`);
     out.group = gem.group;
   }
   if (gem.label != null) {

@@ -53,6 +53,9 @@ describe('gem metadata', () => {
     expect(rs.rules[0].gem).toEqual({ category: 'school', label: 'School', color: '#aabbcc' });
     expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { color: 'red' } }])).toThrow(/colour/);
     expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { category: 'Not A Slug' } }])).toThrow(/category/);
+    // Not a string at all: refused here, not later when the board labels a section.
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { group: 5 } }])).toThrow(/group/);
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { category: 5 } }])).toThrow(/category/);
   });
 
   it('rows are the rules that pay gems (or name a gem), grouped by category, in rule order', () => {
@@ -64,13 +67,13 @@ describe('gem metadata', () => {
       { id: 'strong', kind: 'ring-days', days: 4, min: 100, reward: { gems: 1 }, gem: { category: 'exercise' } },
     ]);
     expect(gemCategories(rs)).toEqual([
-      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', color: '#d6304a', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly' }] },
+      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', color: '#d6304a', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly', color: '#d6304a' }] },
       {
         id: 'exercise', label: 'Exercise', cadence: 'weekly', group: 'move', color: '#8e5bd0', ruleIds: ['moved', 'strong'],
-        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly' }],
+        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly', color: '#8e5bd0' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly', color: '#8e5bd0' }],
       },
       // The ring contest's default row: it shares `ring-contests` with the most-improved contest.
-      { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#1e88e5', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest' }] },
+      { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#1e88e5', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest', color: '#1e88e5' }] },
     ]);
   });
 });
@@ -118,6 +121,15 @@ describe('buildGemBoard', () => {
     expect(board.totals.b).toEqual({ week: 0, earned: 0, lifetime: 0 });
   });
 
+  it('the ring contest part carries the score: their rings and the roster best', () => {
+    const board = buildGemBoard({ ruleset: rs, week });
+    expect(board.cells['ring-contests'].a.parts[0]).toMatchObject({ ruleId: 'contest', state: 'leading', score: { mine: 300, best: 300 } });
+    expect(board.cells['ring-contests'].b.parts[0]).toMatchObject({ state: 'none', score: { mine: 40, best: 300 } });
+    // Rings unreadable: no score, never a zero.
+    const blind = { ...week, learners: [learner('a', { rings: null, ringDays: null }, { standings: null })] };
+    expect(buildGemBoard({ ruleset: rs, week: blind }).cells['ring-contests'].a.parts[0]).toMatchObject({ state: 'unknown', score: null });
+  });
+
   it('a decided contest reads won', () => {
     const closed = { ...week, contestClosed: true, learners: [learner('a', { rings: 300, ringDays: [] }, { standings, contestClosed: true })] };
     expect(buildGemBoard({ ruleset: rs, week: closed }).cells['ring-contests'].a).toMatchObject({ state: 'won', week: 1 });
@@ -157,8 +169,8 @@ describe('row defaults and groups', () => {
       ['board-game-level', 'Board game level', 'games'],
     ]);
     expect(rows[0].parts).toEqual([
-      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' },
-      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' },
+      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly', color: '#f2c94c' },
+      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', color: '#f2c94c' },
     ]);
     expect(rows[0].cadence).toBe('weekly'); // the first rule's, as before
   });
@@ -174,6 +186,58 @@ describe('row defaults and groups', () => {
     ]);
     expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { group: 'Not A Slug' } }])).toThrow(/group/);
   });
+
+  describe('a rule whose own id is a default row id', () => {
+    const lesson = { id: 'reading', label: 'Reading lesson week', kind: 'section-week', match: { subject: 'reading' }, reward: { gems: 1 } };
+    const stories = { id: 'reader-week', label: 'Story time 4 days', kind: 'activity-days', match: { activity: 'story-read' }, days: 4, reward: { gems: 1 } };
+    const books = { id: 'book-finished', label: 'Book finished', kind: 'milestone', match: { activity: 'book-finished' }, reward: { gems: 1 } };
+    const shape = (rules) => gemCategories(ruleset(rules)).map((r) => [r.id, r.label, r.ruleIds]);
+
+    it('keeps its own row; the default merged row moves to `<id>-all`, whichever comes first', () => {
+      expect(shape([lesson, stories, books])).toEqual([
+        ['reading', 'Reading lesson week', ['reading']],
+        ['reading-all', 'Reading', ['reader-week', 'book-finished']],
+      ]);
+      expect(shape([stories, lesson, books])).toEqual([
+        ['reading-all', 'Reading', ['reader-week', 'book-finished']],
+        ['reading', 'Reading lesson week', ['reading']],
+      ]);
+    });
+
+    it('an explicit gem.category is a literal id: it joins the row with that id', () => {
+      const piano = { id: 'keys', label: 'Keys', kind: 'day-met', reward: 1, gem: { category: 'reading' } };
+      expect(shape([stories, piano])).toEqual([['reading', 'Reading', ['reader-week', 'keys']]]);
+      expect(shape([lesson, stories, piano])).toEqual([
+        ['reading', 'Reading lesson week', ['reading', 'keys']],
+        ['reading-all', 'Reading', ['reader-week']],
+      ]);
+    });
+  });
+
+  describe('colour', () => {
+    const most = { id: 'ring-contest', label: 'Most rings this week', kind: 'ring-contest', tie: 'all', reward: { gems: 1 } };
+    const improved = { id: 'most-improved', label: 'Most improved rings', kind: 'activity-contest', match: { activity: 'ring-improved' }, tie: 'all', reward: { gems: 1 } };
+    const contests = (rules) => gemCategories(ruleset(rules)).find((r) => r.id === 'ring-contests');
+
+    it('the ring contests row is sapphire whichever rule comes first; each part keeps its own colour', () => {
+      expect(contests([most, improved])).toMatchObject({ color: '#1e88e5', parts: [{ ruleId: 'ring-contest', color: '#1e88e5' }, { ruleId: 'most-improved', color: '#8e5bd0' }] });
+      expect(contests([improved, most])).toMatchObject({ color: '#1e88e5', parts: [{ ruleId: 'most-improved', color: '#8e5bd0' }, { ruleId: 'ring-contest', color: '#1e88e5' }] });
+    });
+
+    it('gem.color on a row\'s first rule wins over the default row colour; on a later rule it colours only that part', () => {
+      expect(contests([{ ...improved, gem: { color: '#112233' } }, most])).toMatchObject({ color: '#112233', parts: [{ color: '#112233' }, { color: '#1e88e5' }] });
+      expect(contests([most, { ...improved, gem: { color: '#112233' } }])).toMatchObject({ color: '#1e88e5', parts: [{ color: '#1e88e5' }, { color: '#112233' }] });
+    });
+  });
+
+  it('a custom group sits after the known ones, labelled from its slug', () => {
+    const custom = ruleset([
+      { id: 'reader-week', label: 'Story time 4 days', kind: 'activity-days', match: { activity: 'story-read' }, days: 4, reward: { gems: 1 }, gem: { category: 'story-time', group: 'bed-time' } },
+      { id: 'moved-days', label: 'Moved 5 days', kind: 'ring-days', days: 5, reward: { gems: 1 } },
+    ]);
+    expect(buildGemBoard({ ruleset: custom, week: { windows: { school: WEEK }, learners: [] } }).groups)
+      .toEqual([{ id: 'move', label: 'Move' }, { id: 'bed-time', label: 'Bed time' }]);
+  });
 });
 
 describe('cell parts, streak and reach', () => {
@@ -183,14 +247,12 @@ describe('cell parts, streak and reach', () => {
     { id: 'book-finished', label: 'Book finished', kind: 'milestone', match: { activity: 'book-finished' }, reward: { gems: 1 } },
     { id: 'moved-days', label: 'Moved 5 days', kind: 'ring-days', days: 5, reward: { gems: 1 } },
   ]);
-  const board = (today, facts) => {
-    const out = evaluate(rs, facts, { today });
-    return buildGemBoard({
-      ruleset: rs,
-      week: { windows: { school: WEEK, rings: RINGS_WEEK }, today, contestClosed: false, learners: [{ learnerId: 'kid', learnerName: 'Kid', lines: out.lines }] },
-      lifetime: { kid: { byRule: { 'book-finished': 4 }, total: 9 } },
-    });
-  };
+  const boardFor = (rules, today, lines) => buildGemBoard({
+    ruleset: rules,
+    week: { windows: { school: WEEK, rings: RINGS_WEEK }, today, contestClosed: false, learners: [{ learnerId: 'kid', learnerName: 'Kid', lines }] },
+    lifetime: { kid: { byRule: { 'book-finished': 4 }, total: 9 } },
+  });
+  const board = (today, facts) => boardFor(rs, today, evaluate(rs, facts, { today }).lines);
   const achievements = (days, milestones = {}) => ({ days, milestones, unavailable: [] });
 
   it('a merged cell lists each rule as a part, with its days and items', () => {
@@ -218,9 +280,36 @@ describe('cell parts, streak and reach', () => {
       rings: 40, ringDays: [{ day: '2026-11-04', rings: 40 }],
       achievements: achievements({ 'story-read': ['2026-11-04'] }),
     });
-    expect(b.cells.reading.kid.streak).toMatchObject({ have: 1, left: 4 });      // Thu–Sun
-    expect(b.cells['moved-days'].kid.streak).toMatchObject({ have: 1, need: 5, left: 3, reach: 'out' }); // Thu–Sat
+    expect(b.cells.reading.kid.streak).toMatchObject({ have: 1, left: 4 });      // Wed–Sun, today already counted
+    expect(b.cells['moved-days'].kid.streak).toMatchObject({ have: 1, need: 5, left: 3, reach: 'out' }); // Wed–Sat, today already counted
     expect(b.cells['moved-days'].kid.parts[0].days).toEqual([{ day: '2026-11-04', state: 'done' }]);
+  });
+
+  it('days left never start before the week does', () => {
+    const b = board('2026-10-31', { rings: 0, ringDays: [], achievements: achievements({ 'story-read': [] }) });
+    expect(b.cells.reading.kid.streak).toMatchObject({ have: 0, need: 4, left: 7, reach: 'on-track' });
+    expect(b.cells['moved-days'].kid.streak).toMatchObject({ left: 6 }); // Mon–Sat
+  });
+
+  it('days left stop at the rule\'s own dates', () => {
+    const ending = ruleset([{ id: 'reader-week', kind: 'activity-days', match: { activity: 'story-read' }, days: 2, reward: { gems: 1 }, effective: { to: '2026-11-04' } }]);
+    const facts = { achievements: achievements({ 'story-read': [] }) };
+    const until = boardFor(ending, '2026-11-03', evaluate(ending, facts, { today: '2026-11-03' }).lines);
+    expect(until.cells.reading.kid.streak).toMatchObject({ have: 0, need: 2, left: 2, reach: 'tight' });
+    const starting = ruleset([{ id: 'reader-week', kind: 'activity-days', match: { activity: 'story-read' }, days: 2, reward: { gems: 1 }, effective: { from: '2026-11-06' } }]);
+    const from = boardFor(starting, '2026-11-03', evaluate(starting, facts, { today: '2026-11-03' }).lines);
+    expect(from.cells.reading.kid.streak).toMatchObject({ left: 3, reach: 'on-track' }); // Fri–Sun
+  });
+
+  it('after the window there is no day left', () => {
+    // Not reachable through the evaluator (a past week is never pending): a hand-built line.
+    const stale = [{ ruleId: 'reader-week', kind: 'activity-days', status: 'pending', amount: { silver: 0, gems: 0 }, progress: { have: 2, need: 4 }, evidence: [], note: null }];
+    expect(boardFor(rs, '2026-11-10', stale).cells.reading.kid.streak).toMatchObject({ have: 2, need: 4, left: 0, reach: 'out' });
+  });
+
+  it('ring days on the Saturday itself, not yet moved: one day left', () => {
+    const b = board('2026-11-07', { rings: 0, ringDays: [], achievements: achievements({ 'story-read': [] }) });
+    expect(b.cells['moved-days'].kid.streak).toMatchObject({ have: 0, need: 5, left: 1, reach: 'out' });
   });
 
   it('no streak once earned, and none for a cell with nothing pending', () => {
@@ -234,5 +323,13 @@ describe('cell parts, streak and reach', () => {
     });
     expect(done.cells.reading.kid).toMatchObject({ state: 'earned', week: 1, streak: null });
     expect(done.cells.reading.kid.parts[0]).toMatchObject({ state: 'earned', left: null, reach: null });
+    // Nothing pending: the stories could not be read and no book was finished.
+    const blank = board('2026-11-04', {
+      rings: null, ringDays: null,
+      achievements: { days: {}, milestones: { 'book-finished': [] }, unavailable: ['story-read'] },
+    });
+    expect(blank.cells.reading.kid.parts.map((p) => p.state)).toEqual(['unknown', 'none']);
+    expect(blank.cells.reading.kid).toMatchObject({ state: 'unknown', streak: null });
+    expect(blank.cells['moved-days'].kid).toMatchObject({ state: 'unknown', streak: null });
   });
 });

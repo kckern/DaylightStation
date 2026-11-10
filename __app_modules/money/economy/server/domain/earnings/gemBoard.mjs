@@ -25,10 +25,11 @@
  *   disabled  the rule is off for this learner
  *
  * A cell also carries `parts`, one per rule in the row (its own state, this
- * week's and lifetime gems, the days that counted, the milestone items paid,
- * a contest score), and `streak`: the pending day-count nearest done, as
+ * week's and lifetime gems, its colour, the days that counted, the milestone
+ * items paid, a contest `score: {mine, best}`), and `streak`: the pending day-count nearest done, as
  * `{have, need, left, reach, ruleId}`. `left` is the study days still usable
- * (today included unless it already counted) and `reach` says whether the
+ * (from today or the week's first day, whichever is later, to the rule's last
+ * day, inside its `effective` dates; today is out once it counted) and `reach` says whether the
  * rest fits: `on-track`, `tight` (every day left is needed) or `out`. A cell
  * can be `earned` and still carry a streak when its row folds two rules.
  */
@@ -68,13 +69,14 @@ export const GEM_GROUPS = Object.freeze([
 ]);
 const DEFAULT_GROUP = 'school';
 
-const defaultRow = (category, label, group) => Object.freeze({ category, label, group });
+const defaultRow = (category, label, group, color) => Object.freeze({ category, label, group, color });
 const PIANO = defaultRow('piano', 'Piano', 'school');
 const FLASHCARDS = defaultRow('flashcards', 'Flashcards', 'school');
 const READING = defaultRow('reading', 'Reading', 'school');
 const RACING = defaultRow('racing', 'Racing', 'games');
 const GLIDER = defaultRow('skyline-glider', 'Skyline Glider', 'games');
-const RING_CONTESTS = defaultRow('ring-contests', 'Ring contests', 'move');
+// Two rules of different provenance share this row: its colour is fixed, not the first rule's.
+const RING_CONTESTS = defaultRow('ring-contests', 'Ring contests', 'move', '#1e88e5');
 /** Where a rule sits on the board when its `gem` block does not say. */
 const ROW_BY_ACTIVITY = Object.freeze({
   'piano-practice': PIANO, 'piano-rung': PIANO,
@@ -91,21 +93,34 @@ const ROW_BY_KIND = Object.freeze({
   'ring-days': Object.freeze({ group: 'move' }),
 });
 
+const onBoard = (rule) => Boolean(rule.gem) || paysGems(rule);
+const fallbackRow = (rule) => ROW_BY_ACTIVITY[rule.match?.activity] ?? ROW_BY_KIND[rule.kind] ?? {};
+const ruleColor = (rule) => rule.gem?.color ?? GEM_ACTIVITY_COLORS[rule.match?.activity] ?? GEM_KIND_COLORS[rule.kind] ?? DEFAULT_COLOR;
+
 /**
  * The board's rows, in rule order:
- * `[{id, label, cadence, group, color, ruleIds, parts: [{ruleId, label, cadence}]}]`.
- * A merged row takes its label, cadence, group and colour from its first rule.
+ * `[{id, label, cadence, group, color, ruleIds, parts: [{ruleId, label, cadence, color}]}]`.
+ * A merged row takes its label, cadence, group and colour from its first
+ * rule; each part keeps its own rule's colour.
+ *
+ * A rule may be NAMED like a default row (`reading`, a school subject's week).
+ * That rule keeps its own row; the default merged row then takes `<id>-all`,
+ * wherever the two sit in the rules. An explicit `gem.category` is a literal
+ * row id and joins whichever row has it.
  */
 export function gemCategories(ruleset) {
+  const rules = (ruleset?.rules ?? []).filter(onBoard);
+  // Row ids that belong to a rule under its own name.
+  const ownIds = new Set(rules.filter((r) => !r.gem?.category && !fallbackRow(r).category).map((r) => r.id));
   const rows = new Map();
-  for (const rule of ruleset?.rules ?? []) {
-    if (!rule.gem && !paysGems(rule)) continue;
-    const fallback = ROW_BY_ACTIVITY[rule.match?.activity] ?? ROW_BY_KIND[rule.kind] ?? {};
+  for (const rule of rules) {
+    const fallback = fallbackRow(rule);
     // A named category is the household's own row: the default label is not its label.
-    const usesDefaultRow = !rule.gem?.category && fallback.category;
-    const id = rule.gem?.category ?? fallback.category ?? rule.id;
+    const usesDefaultRow = !rule.gem?.category && Boolean(fallback.category);
+    const defaultId = usesDefaultRow && ownIds.has(fallback.category) ? `${fallback.category}-all` : fallback.category;
+    const id = rule.gem?.category ?? defaultId ?? rule.id;
     const cadence = CADENCE[rule.kind] ?? 'weekly';
-    const part = { ruleId: rule.id, label: rule.label ?? rule.id, cadence };
+    const part = { ruleId: rule.id, label: rule.label ?? rule.id, cadence, color: ruleColor(rule) };
     const existing = rows.get(id);
     if (existing) { existing.ruleIds.push(rule.id); existing.parts.push(part); continue; }
     rows.set(id, {
@@ -113,7 +128,7 @@ export function gemCategories(ruleset) {
       label: rule.gem?.label ?? (usesDefaultRow ? fallback.label : null) ?? rule.label ?? rule.id,
       cadence,
       group: rule.gem?.group ?? fallback.group ?? DEFAULT_GROUP,
-      color: rule.gem?.color ?? GEM_ACTIVITY_COLORS[rule.match?.activity] ?? GEM_KIND_COLORS[rule.kind] ?? DEFAULT_COLOR,
+      color: rule.gem?.color ?? (usesDefaultRow ? fallback.color : null) ?? part.color,
       ruleIds: [rule.id],
       parts: [part],
     });
@@ -139,18 +154,27 @@ const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * DA
 const COUNTED = new Set(['done', 'moved']);
 const DAY_COUNT_KINDS = new Set(['ring-days', 'activity-days']);
 
-/** The last study day a day-count rule can still be worked on. */
-function lastDayFor(kind, windows) {
+const later = (a, b) => (a && b ? (a > b ? a : b) : a ?? b ?? null);
+const earlier = (a, b) => (a && b ? (a < b ? a : b) : a ?? b ?? null);
+
+/**
+ * The study days a day-count rule can be worked on: the week, cut to the
+ * rule's own `effective` dates. Ring days close Saturday with the award week.
+ */
+function workingDays(line, windows) {
   const school = windows?.school;
   if (!school?.from || !school?.to) return null;
-  return kind === 'ring-days' ? addDays(school.from, 5) : school.to; // rings close Saturday
+  const weekEnd = line.kind === 'ring-days' ? addDays(school.from, 5) : school.to;
+  return { from: later(school.from, line.effective?.from), to: earlier(weekEnd, line.effective?.to) };
 }
 
 /** Study days still usable, today included unless it already counted. */
-function daysLeft(today, lastDay, countedDays) {
-  if (!today || !lastDay || today > lastDay) return 0;
-  const span = Math.round((Date.parse(lastDay) - Date.parse(today)) / DAY_MS) + 1;
-  return countedDays.includes(today) ? span - 1 : span;
+function daysLeft(today, span, countedDays) {
+  if (!today || !span) return 0;
+  const start = later(today, span.from);
+  if (start > span.to) return 0;
+  const days = Math.round((Date.parse(span.to) - Date.parse(start)) / DAY_MS) + 1;
+  return start === today && countedDays.includes(today) ? days - 1 : days;
 }
 
 function reachOf(progress, left) {
@@ -160,7 +184,7 @@ function reachOf(progress, left) {
 }
 
 /** One rule's share of a cell: what the detail box shows. */
-function partOf(meta, line, lifetime, week) {
+function partOf(meta, line, lifetime, week, ringBest) {
   const state = line ? lineState(line) : 'none';
   const evidence = line?.evidence ?? [];
   // Days only for the day-count rules: other kinds' evidence carries school
@@ -171,23 +195,28 @@ function partOf(meta, line, lifetime, week) {
   const items = evidence.filter((e) => e.key != null && e.state === 'paid')
     .map((e) => ({ day: e.day, label: e.label ?? null }));
   const scored = evidence.find((e) => Number.isFinite(e.score));
+  // The ring contest keeps no evidence: its line's count is the learner's
+  // award-week rings (when they could be read), and the best is the roster's.
+  const ringScore = line?.kind === 'ring-contest' && line.status !== 'indeterminate' && Number.isFinite(line.count)
+    ? { mine: line.count, best: ringBest?.[line.ruleId] ?? null }
+    : null;
   const progress = line?.progress ?? null;
   let left = null;
   let reach = null;
   if (state === 'pending' && progress) {
-    left = daysLeft(week?.today, lastDayFor(line.kind, week?.windows), days.filter((d) => d.state === 'done').map((d) => d.day));
+    left = daysLeft(week?.today, workingDays(line, week?.windows), days.filter((d) => d.state === 'done').map((d) => d.day));
     reach = reachOf(progress, left);
   }
   const earned = line?.status === 'earned' ? line.amount?.gems ?? 0 : 0;
   return {
     ...meta, state, week: earned, lifetime: Math.max(lifetime ?? 0, earned),
     progress, left, reach, days, items,
-    score: scored ? { mine: scored.score, best: scored.best ?? null } : null,
+    score: scored ? { mine: scored.score, best: scored.best ?? null } : ringScore,
     note: line?.note ?? null,
   };
 }
 
-function cell(row, learner, lifetimeByRule, week) {
+function cell(row, learner, lifetimeByRule, week, ringBest) {
   const lines = (learner.lines ?? []).filter((l) => row.ruleIds.includes(l.ruleId));
   let state = null;
   let weekGems = 0;
@@ -204,7 +233,7 @@ function cell(row, learner, lifetimeByRule, week) {
   }
   const lifetime = row.ruleIds.reduce((sum, id) => sum + (lifetimeByRule?.[id] ?? 0), 0);
   const parts = row.parts.map((meta) => partOf(
-    meta, lines.find((l) => l.ruleId === meta.ruleId), lifetimeByRule?.[meta.ruleId], week,
+    meta, lines.find((l) => l.ruleId === meta.ruleId), lifetimeByRule?.[meta.ruleId], week, ringBest,
   ));
   // The ring: the pending day-count nearest done.
   const running = parts.filter((p) => p.state === 'pending' && p.progress)
@@ -213,6 +242,22 @@ function cell(row, learner, lifetimeByRule, week) {
     ? { have: running.progress.have, need: running.progress.need, left: running.left, reach: running.reach, ruleId: running.ruleId }
     : null;
   return { state: state ?? 'none', progress, week: weekGems, held, lifetime: Math.max(lifetime, weekGems), note, streak, parts };
+}
+
+/**
+ * The most rings anyone holds in each ring contest, by rule id — read off the
+ * roster's own lines (every learner's `count`), so a part can show "mine of
+ * best". Absent while nobody has a ring.
+ */
+function ringContestBest(learners) {
+  const best = {};
+  for (const learner of learners ?? []) {
+    for (const line of learner.lines ?? []) {
+      if (line.kind !== 'ring-contest' || line.status === 'indeterminate' || !(line.count > 0)) continue;
+      best[line.ruleId] = Math.max(best[line.ruleId] ?? 0, line.count);
+    }
+  }
+  return best;
 }
 
 /** The sections that have rows: the known ones in order, then any the config named. */
@@ -235,11 +280,12 @@ function boardGroups(rows) {
 export function buildGemBoard({ ruleset, week, lifetime = {}, mode = 'live' }) {
   const rows = gemCategories(ruleset);
   const learners = (week?.learners ?? []).map((l) => ({ learnerId: l.learnerId, name: l.learnerName ?? l.learnerId }));
+  const ringBest = ringContestBest(week?.learners);
   const cells = {};
   for (const row of rows) {
     cells[row.id] = {};
     for (const learner of week?.learners ?? []) {
-      cells[row.id][learner.learnerId] = cell(row, learner, lifetime[learner.learnerId]?.byRule, week);
+      cells[row.id][learner.learnerId] = cell(row, learner, lifetime[learner.learnerId]?.byRule, week, ringBest);
     }
   }
   const totals = {};
