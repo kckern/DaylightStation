@@ -533,9 +533,9 @@ Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
 
 | Look | When | Draws |
 |---|---|---|
-| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour, filling the cell; a `×n` badge when `week > 1`; the day ring too if a `streak` is still running (its done segments grey when that streak is `out`) |
-| `streak` | a `streak` whose `reach` is `on-track` or `tight` | a faint gem inside a ring of `need` segments, the first `have` in the ring's colour; when `tight` the unfilled segments are amber |
-| `out` | a `streak` whose `reach` is `out` | the ring alone, its done segments grey, no gem |
+| `lit` | `week > 0`, or `earned` / `won` | the gem in the row's colour, filling the cell; a `×n` badge when `week > 1`; the day ring too if a `streak` is still in reach, the gem then sitting inside it |
+| `streak` | a `streak` whose `reach` is `on-track` or `tight` | a gem inside a ring of `need` segments, the first `have` in the ring's colour. `on-track`: the gem at full strength, the segments still to do faint and breathing slowly (still under `prefers-reduced-motion`). `tight`: the gem faint, the segments still to do amber |
+| `out` | a `streak` whose `reach` is `out` | nothing: a day-count that can no longer be made is gone (the detail box still says so) |
 | `holding` | `leading` | the gem in full, the same as `lit`: a contest gem sits with whoever leads and moves when the lead does |
 | `open` | `pending` with no day-count | a faint gem, filling the cell |
 | `unknown` | the evidence could not be read | a blank cell (the `aria-label` and the detail box still say `can’t tell yet`) |
@@ -545,7 +545,7 @@ Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
 A gem with a ring around it is drawn smaller, inside it; a gem without one
 fills the cell. A cell carries no numerals but the `×n`
 badge; day counts and scores live in the detail box. Nothing marks failure: a gem not earned is a blank cell and a
-week out of reach is a grey ring, never a cross. Each cell's `aria-label` says
+week out of reach is a blank cell, never a cross. Each cell's `aria-label` says
 the same in words ("3 of 5 days, on track"; a lead held in a row that also
 counts days reads "leading, and 2 of 4 days, on track").
 

@@ -1,9 +1,15 @@
 /**
  * GemGlyph — one Gem Board cell at a glance: a gem, and a ring of day segments
- * around it while a day-count is still running. A contest gem held for now is
- * drawn as a full gem: it sits with whoever leads and moves when the lead
- * does. A cell whose evidence could not be read is left blank. No numerals
- * but a ×n badge.
+ * around it while a day-count is still running. A day-count is drawn by where
+ * the child stands, since it can only be finished late in the week:
+ *   on track     the gem at full strength inside its ring; the days still to
+ *                do are faint and breathe slowly ("not yet")
+ *   tight        the gem faint; the days still to do in amber
+ *   out of reach nothing at all
+ *   done         the ring goes and the gem fills the cell
+ * A contest gem held for now is drawn as a full gem: it sits with whoever
+ * leads and moves when the lead does. A cell whose evidence could not be read
+ * is left blank. No numerals but a ×n badge.
  *
  * The ring is drawn in the colour of the rule whose days it counts (the
  * streak's own part), which in a merged row need not be the row's colour.
@@ -56,14 +62,13 @@ export function segmentPath(i, n) {
 }
 
 function Ring({ streak, color }) {
-  const out = streak.reach === 'out';
   const need = Math.max(1, Math.floor(Number(streak.need) || 0));
   return (
-    <svg className={`gem-glyph__ring${streak.reach === 'tight' ? ' is-tight' : ''}${out ? ' is-out' : ''}`} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <svg className={`gem-glyph__ring${streak.reach === 'tight' ? ' is-tight' : ''}`} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
       {/* The colour goes inline: the stylesheet's stroke would beat an SVG attribute. */}
       {Array.from({ length: need }, (_, i) => {
         const done = i < streak.have;
-        return <path key={i} className={`gem-glyph__seg${done ? ' is-done' : ''}`} d={segmentPath(i, need)} style={done && !out ? { stroke: color } : undefined} />;
+        return <path key={i} className={`gem-glyph__seg${done ? ' is-done' : ''}`} d={segmentPath(i, need)} style={done ? { stroke: color } : undefined} />;
       })}
     </svg>
   );
@@ -71,7 +76,8 @@ function Ring({ streak, color }) {
 
 export default function GemGlyph({ cell, color }) {
   const look = glyphLook(cell);
-  const streak = cell?.streak ?? null;
+  // A day-count that can no longer be made this week has no ring: it is gone.
+  const streak = cell?.streak && cell.streak.reach !== 'out' ? cell.streak : null;
   const ringColor = (streak && cell.parts?.find((p) => p.ruleId === streak.ruleId)?.color) || color;
   const ring = streak ? <Ring streak={streak} color={ringColor} /> : null;
   let inner = null;
@@ -80,7 +86,7 @@ export default function GemGlyph({ cell, color }) {
   if (look === 'lit' || look === 'streak' || look === 'open' || look === 'holding') inner = <GemIcon className="gem-glyph__gem" color={color} size={ringed ? '1.55em' : '2.5em'} />;
   else if (look === 'off') inner = <span className="gem-glyph__muted">–</span>;
   return (
-    <span className="gem-glyph" data-look={look} data-ringed={ringed ? '' : undefined}>
+    <span className="gem-glyph" data-look={look} data-ringed={ringed ? '' : undefined} data-reach={streak?.reach ?? undefined}>
       {ring}
       {inner}
       {look === 'lit' && cell.week > 1 && <span className="gem-glyph__times">×{cell.week}</span>}

@@ -231,8 +231,21 @@
   }
 
   &[data-look="streak"] &__gem, &[data-look="open"] &__gem { opacity: 0.28; }
-  // Out of reach: the days done stay readable, in grey, whether or not the cell is lit.
-  &__ring.is-out &__seg.is-done { stroke: rgba(255, 255, 255, 0.34); }
+  // On track: the gem is as good as theirs, so it is drawn at full strength,
+  // and the days still to do breathe slowly to say "not yet".
+  &[data-look="streak"][data-reach="on-track"] &__gem { opacity: 1; }
+  &[data-reach="on-track"] &__seg:not(.is-done) {
+    animation: gem-glyph-todo calc(var(--ds-motion-base, 200ms) * 8) ease-in-out infinite alternate;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &[data-reach="on-track"] &__seg:not(.is-done) { animation: none; }
+  }
+}
+
+// Opacity only: cheap on the kiosk browsers.
+@keyframes gem-glyph-todo {
+  from { opacity: 1; }
+  to { opacity: 0.3; }
 }
 
 // The box a cell opens, over the board: the cell's own glyph large, then one

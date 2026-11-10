@@ -66,12 +66,15 @@ describe('FitnessMomentum', () => {
     const blank = (cell) => ({ ...MOVE[1], cell });
     const quiet = [
       { id: 'a', ...blank({ state: 'none', week: 0, streak: null, parts: [] }) },
-      { ...blank({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 5, reach: 'on-track', ruleId: 'moved-days' }, parts: [] }), id: 'b' },
+      { ...blank({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 1, reach: 'out', ruleId: 'moved-days' }, parts: [] }), id: 'b' },
       { ...blank({ state: 'pending', week: 0, streak: { have: 2, need: 5, left: 1, reach: 'out', ruleId: 'moved-days' }, parts: [] }), id: 'c' },
       { ...blank({ state: 'pending', week: 0, streak: null, parts: [] }), id: 'd' },
       MOVE[2],
     ];
     for (const g of quiet.slice(0, 4)) expect(hasGemToShow(g.cell)).toBe(false);
+    // A count with no days in yet is shown while it can still be made.
+    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 6, reach: 'on-track' } })).toBe(true);
+    expect(hasGemToShow({ state: 'pending', week: 0, streak: { have: 3, need: 5, left: 2, reach: 'tight' } })).toBe(true);
     standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], move: quiet }] };
     const rail = render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail');
     expect([...rail.children].map((el) => el.className)).toEqual(['fitness-momentum__silver', 'fitness-momentum__gemslot']);

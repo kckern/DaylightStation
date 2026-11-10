@@ -109,19 +109,20 @@ function Avatar({ id, name }) {
 }
 
 /**
- * Is there a gem to show on the rail? One earned or held, or a day-count with
- * at least one day in. A count not yet started, or out of reach, has nothing
- * to show and takes no room.
+ * Is there a gem to show on the rail? One earned or held, or a day-count
+ * still in reach (the glyph draws it full while on track, faint when tight).
+ * A count out of reach, or a contest not led, has nothing to show and takes
+ * no room.
  */
 export function hasGemToShow(cell) {
   const look = glyphLook(cell);
-  return look === 'lit' || look === 'holding' || (look === 'streak' && (cell.streak?.have ?? 0) > 0);
+  return look === 'lit' || look === 'holding' || look === 'streak';
 }
 
 /**
  * The foot of a card: bank silver, then a glyph for each Move gem the person
- * has or is on the way to, as the Gem Board draws it (a day ring while a count
- * is running, a full gem once earned or held). Silver and gems spread across
+ * has or is on the way to, as the Gem Board draws it (inside a day ring while a
+ * count is running, filling the slot once earned or held). Silver and gems spread across
  * the rail, however many there are. One button, opening the board on this
  * person. Someone without a wallet gets an empty rail, so every card keeps
  * one height.

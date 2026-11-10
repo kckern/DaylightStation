@@ -27,16 +27,31 @@ describe('GemGlyph', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('a done segment carries the gem colour inline (a stylesheet rule would beat an attribute); out of reach it does not', () => {
+  it('a done segment carries the gem colour inline (a stylesheet rule would beat an attribute)', () => {
     const on = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 4, 'tight') }} color="rgb(43, 179, 163)" />).container;
     const segs = [...on.querySelectorAll('.gem-glyph__seg')];
     expect(segs.map((s) => s.style.stroke)).toEqual(['rgb(43, 179, 163)', 'rgb(43, 179, 163)', '', '']);
     expect(segs.every((s) => !s.hasAttribute('stroke'))).toBe(true);
     expect(on.querySelector('.gem-glyph__ring').classList.contains('is-tight')).toBe(true);
+  });
+
+  it('says where a running day-count stands, so on track can be drawn in full and tight faint', () => {
+    const on = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(0, 5, 'on-track') }} color="#fff" />).container;
+    expect(on.querySelector('.gem-glyph').dataset.reach).toBe('on-track');
+    expect(on.querySelector('.gem-icon')).toBeTruthy();
+    expect(on.querySelectorAll('.gem-glyph__seg:not(.is-done)')).toHaveLength(5);
     cleanup();
-    const out = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 5, 'out') }} color="rgb(43, 179, 163)" />).container;
-    expect([...out.querySelectorAll('.gem-glyph__seg')].map((s) => s.style.stroke)).toEqual(['', '', '', '', '']);
-    expect(out.querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(2);
+    const tight = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(3, 5, 'tight') }} color="#fff" />).container;
+    expect(tight.querySelector('.gem-glyph').dataset.reach).toBe('tight');
+    cleanup();
+    expect(render(<GemGlyph cell={{ state: 'earned', week: 1 }} color="#fff" />).container.querySelector('.gem-glyph').hasAttribute('data-reach')).toBe(false);
+  });
+
+  it('draws nothing for a day-count that is out of reach', () => {
+    const out = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 5, 'out') }} color="#fff" />).container;
+    expect(out.querySelector('.gem-glyph').dataset.look).toBe('out');
+    expect(out.querySelector('svg')).toBeNull();
+    expect(out.textContent).toBe('');
   });
 
   it('leaves a clear gap between segments, and one day needed is still a near-full circle', () => {
@@ -52,15 +67,14 @@ describe('GemGlyph', () => {
     expect(a.large).toBe('0');
   });
 
-  it('a lit cell whose day-count is out of reach still shows the days done: the ring itself says out', () => {
+  it('a lit cell whose other day-count is out of reach is a full gem with no ring', () => {
     const { container } = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 5, 'out') }} color="rgb(43, 179, 163)" />);
     expect(container.querySelector('.gem-glyph').dataset.look).toBe('lit');
-    expect(container.querySelector('.gem-glyph__ring').classList.contains('is-out')).toBe(true);
-    expect(container.querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(2);
-    expect([...container.querySelectorAll('.gem-glyph__seg')].every((s) => s.style.stroke === '')).toBe(true);
+    expect(container.querySelector('.gem-glyph__ring')).toBeNull();
+    expect(container.querySelector('.gem-glyph').hasAttribute('data-ringed')).toBe(false);
     cleanup();
     const on = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 5, 'on-track') }} color="rgb(43, 179, 163)" />).container;
-    expect(on.querySelector('.gem-glyph__ring').classList.contains('is-out')).toBe(false);
+    expect(on.querySelector('.gem-glyph__ring')).toBeTruthy();
   });
 
   it('the ring takes the colour of the rule whose days it counts, else the row’s', () => {
@@ -73,14 +87,10 @@ describe('GemGlyph', () => {
     expect(bare.querySelector('.gem-glyph__seg.is-done').style.stroke).toBe('rgb(7, 7, 7)');
   });
 
-  it('badges only a second gem, drops the gem when out of reach, draws a held contest gem in full, leaves an unreadable cell blank', () => {
+  it('badges only a second gem, draws a held contest gem in full, leaves an unreadable cell blank', () => {
     expect(render(<GemGlyph cell={{ state: 'earned', week: 1 }} color="#fff" />).container.textContent).toBe('');
     cleanup();
     expect(render(<GemGlyph cell={{ state: 'earned', week: 3 }} color="#fff" />).container.textContent).toBe('×3');
-    cleanup();
-    const out = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(1, 5, 'out') }} color="#fff" />).container;
-    expect(out.querySelector('.gem-icon')).toBeNull();
-    expect(out.querySelectorAll('.gem-glyph__seg')).toHaveLength(5);
     cleanup();
     const held = render(<GemGlyph cell={{ state: 'leading', week: 0 }} color="#fff" />).container;
     // A held contest gem is a full gem with nothing around it: it moves with the lead.

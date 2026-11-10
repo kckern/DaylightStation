@@ -1042,9 +1042,10 @@ edge, the week bars, then the **rail** at the foot of the card. The home layout
 puts this panel under the suggestions, so the rail is the lowest thing on the
 touch screen and a child can reach it. The rail holds **bank silver** and a
 glyph for each row of the Gem Board's Move section the person has something in,
-drawn by the board's own `GemGlyph`: a ring of day segments once a day-count
-has a day in it, a full gem once it is earned or while a contest gem is held.
-A row with nothing to show (no days yet, out of reach, no lead) takes no room;
+drawn by the board's own `GemGlyph`: a day-count still in reach is a gem inside
+its ring of days (full strength while on track, faint when every day left is
+needed), and a gem earned, or a contest gem held, fills the slot.
+A row with nothing to show (out of reach, no lead) takes no room;
 silver and gems spread evenly across the rail (`hasGemToShow`). A contest
 gem is seen to move from one child to another. Games and School gems are on the
 board only. The data is the `standings` screen source,
