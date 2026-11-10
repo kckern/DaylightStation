@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { continuousWindow, gridUnit, gridValues, pickAxisTicks } from "./chartZoom.js";
+import { continuousWindow, gridUnit, gridValues, pickAxisTicks, evenTicks } from "./chartZoom.js";
 
 describe('continuousWindow', () => {
   it('holds at the base window while the data is small', () => {
@@ -65,4 +65,28 @@ describe('pickAxisTicks', () => {
     expect(pickAxisTicks([], 3)).toEqual([]);
     expect(pickAxisTicks(undefined, 3)).toEqual([]);
   });
+});
+
+describe('evenTicks', () => {
+  it('three evenly spaced labels including both ends', () => {
+    expect(evenTicks(0, 300, 3)).toEqual([0, 150, 300]);
+    expect(evenTicks(0, 450, 4)).toEqual([0, 150, 300, 450]);
+  });
+  it('count of 1 returns [min]', () => expect(evenTicks(5, 10, 1)).toEqual([5]));
+  it('count below 1 or non-finite returns []', () => {
+    for (const c of [0, -2, NaN, Infinity, undefined, null]) expect(evenTicks(0, 10, c)).toEqual([]);
+  });
+  it('max < min still spaces evenly in the given order', () => {
+    expect(evenTicks(300, 0, 3)).toEqual([300, 150, 0]);
+  });
+  it('has no float noise', () => {
+    const t = evenTicks(0, 1, 4);
+    [0, 1 / 3, 2 / 3, 1].forEach((v, i) => expect(Math.abs(t[i] - v)).toBeLessThan(1e-9));
+    expect(evenTicks(0, 0.3, 4)).toEqual([0, 0.1, 0.2, 0.3]);
+  });
+  it('non-finite bounds yield []', () => {
+    expect(evenTicks(NaN, 10, 3)).toEqual([]);
+    expect(evenTicks(0, Infinity, 3)).toEqual([]);
+  });
+  it('fractional counts are floored', () => expect(evenTicks(0, 10, 3.9)).toEqual([0, 5, 10]));
 });

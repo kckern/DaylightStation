@@ -63,3 +63,16 @@ export default {
   columnTemplateFor, fitScale, gaugeRowSize, CHROME_BELOW_GAUGE_PX,
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
 };
+
+/**
+ * Race screen layout mode. Missing, negative or NaN counts are treated as 0.
+ * @param {{liveCount?:number, fieldSize?:number}} [args]
+ * @returns {'solo'|'wide'|'sidebar'} solo: one live rider with at most one rival; wide: 4+ on the road; else sidebar
+ */
+export function raceLayoutMode({ liveCount = 0, fieldSize = 0 } = {}) {
+  const clean = (n) => (Number.isFinite(n) && n > 0 ? n : 0);
+  const live = clean(liveCount);
+  const field = clean(fieldSize);
+  if (live === 1 && field <= 2) return 'solo';
+  return field >= 4 ? 'wide' : 'sidebar';
+}

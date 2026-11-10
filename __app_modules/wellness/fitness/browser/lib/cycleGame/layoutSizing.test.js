@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  columnTemplateFor, fitScale, gaugeRowSize, CHROME_BELOW_GAUGE_PX,
+  columnTemplateFor, fitScale, gaugeRowSize, raceLayoutMode, CHROME_BELOW_GAUGE_PX,
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
 } from "./layoutSizing.js";
 
@@ -83,5 +83,26 @@ describe('gaugeRowSize — band-height invariant (audit UX §3.3)', () => {
         expect(gauge + CHROME_BELOW_GAUGE_PX).toBeLessThanOrEqual(zoneH);
       }
     }
+  });
+});
+
+describe('raceLayoutMode', () => {
+  it.each([
+    [{ liveCount: 1, fieldSize: 1 }, 'solo'], [{ liveCount: 1, fieldSize: 2 }, 'solo'],
+    [{ liveCount: 1, fieldSize: 3 }, 'sidebar'], [{ liveCount: 2, fieldSize: 2 }, 'sidebar'],
+    [{ liveCount: 2, fieldSize: 4 }, 'wide'], [{ liveCount: 0, fieldSize: 2 }, 'sidebar']
+  ])('raceLayoutMode(%o) → %s', (input, mode) => expect(raceLayoutMode(input)).toBe(mode));
+
+  it('missing input is zero riders: sidebar', () => {
+    expect(raceLayoutMode()).toBe('sidebar');
+    expect(raceLayoutMode({})).toBe('sidebar');
+  });
+  it('negative or NaN counts are treated as 0', () => {
+    expect(raceLayoutMode({ liveCount: -1, fieldSize: -5 })).toBe('sidebar');
+    expect(raceLayoutMode({ liveCount: NaN, fieldSize: NaN })).toBe('sidebar');
+    expect(raceLayoutMode({ liveCount: NaN, fieldSize: 4 })).toBe('wide');
+    expect(raceLayoutMode({ liveCount: 1, fieldSize: NaN })).toBe('solo');
+    expect(raceLayoutMode({ liveCount: 1, fieldSize: -2 })).toBe('solo');
+    expect(raceLayoutMode({ liveCount: undefined, fieldSize: undefined })).toBe('sidebar');
   });
 });

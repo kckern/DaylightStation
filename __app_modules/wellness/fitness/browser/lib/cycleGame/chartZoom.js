@@ -53,4 +53,19 @@ export function pickAxisTicks(values, maxCount = 3) {
   return dedupe(out);
 }
 
-export default { continuousWindow, gridUnit, gridValues, pickAxisTicks };
+/**
+ * Evenly spaced axis labels including both ends (no float noise past ~1e-12).
+ * @param {number} min first tick
+ * @param {number} max last tick (may be below min; order is kept)
+ * @param {number} count number of ticks, floored; 1 gives [min]
+ * @returns {number[]} ticks; [] when count < 1 or any input is non-finite
+ */
+export function evenTicks(min, max, count) {
+  const n = Math.floor(count);
+  if (!Number.isFinite(n) || n < 1 || !Number.isFinite(min) || !Number.isFinite(max)) return [];
+  if (n === 1) return [min];
+  const step = (max - min) / (n - 1);
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? max : Math.round((min + i * step) * 1e9) / 1e9));
+}
+
+export default { continuousWindow, gridUnit, gridValues, pickAxisTicks, evenTicks };
