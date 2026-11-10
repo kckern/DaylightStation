@@ -14,6 +14,7 @@ import { useSeekState, useZoomState } from "./hooks/index.js";
 import FitnessPlayerFooterSeekThumbnail from "./FitnessPlayerFooterSeekThumbnail.jsx";
 import ProgressFrame from "./ProgressFrame.jsx";
 import { getDaylightLogger } from '@/lib/logging/singleton.js';
+import { originTileImage } from '../episodeQueueItem.js';
 import "./FitnessPlayerFooterSeekThumbnails.scss";
 
 const logger = getDaylightLogger({ context: { component: 'SeekThumbnails' } });
@@ -243,7 +244,8 @@ const FitnessPlayerFooterSeekThumbnails = ({
   const renderedThumbnails = useMemo(() => {
     if (!currentItem) return null;
 
-    const posterSrc = currentItem?.seasonImage || currentItem?.image;
+    // The item's own season/show art (see episodeQueueItem.js), never its launch context's.
+    const posterSrc = originTileImage(currentItem) || undefined;
     const plexObj = {
       plex: currentItem.plex || currentItem.id,
       id: currentItem.id,
@@ -412,6 +414,7 @@ FitnessPlayerFooterSeekThumbnails.propTypes = {
   onZoomReset: PropTypes.shape({ current: PropTypes.func }),
   currentItem: PropTypes.shape({
     seasonImage: PropTypes.string,
+    showImage: PropTypes.string,
     image: PropTypes.string,
     plex: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),

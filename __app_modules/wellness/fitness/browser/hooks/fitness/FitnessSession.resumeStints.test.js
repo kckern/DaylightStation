@@ -91,17 +91,18 @@ describe('FitnessSession resume — stints, counters and live keys', () => {
     session.reset();
   });
 
-  it('restores zone trust only for a reload of the same wearer within the hour', () => {
+  it('restores zone trust only for a reload of the same wearer within 30 minutes', () => {
     expect(resumed().zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
-    // One rule with the mid-session dropout resume: 60 minutes (bug #5).
+    // A reload vouches for 30 min (ZONE_TRUST_RELOAD_WINDOW_MS, 2026-11-10);
+    // a mid-session dropout keeps its hour (bug #5).
     const gap = (min) => resumed((p) => ({ ...p, endTime: Date.now() - min * 60 * 1000 }));
-    const tenMin = gap(10); const fiftyNine = gap(59); const sixtyOne = gap(61);
+    const tenMin = gap(10); const twentyNine = gap(29); const thirtyOne = gap(31);
     expect(tenMin.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
-    expect(fiftyNine.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
-    expect(sixtyOne.zoneProfileStore.getTrustedUserIds()).toEqual([]);
+    expect(twentyNine.zoneProfileStore.getTrustedUserIds()).toEqual(['kid-a']);
+    expect(thirtyOne.zoneProfileStore.getTrustedUserIds()).toEqual([]);
     const moved = resumed((p) => ({ ...p, metadata: { zone_trust: { version: 1, riders: [{ userId: 'kid-a', deviceIds: ['D9'] }] } } }));
     expect(moved.zoneProfileStore.getTrustedUserIds()).toEqual([]);
-    [tenMin, fiftyNine, sixtyOne, moved].forEach((s) => s.reset());
+    [tenMin, twentyNine, thirtyOne, moved].forEach((s) => s.reset());
   });
 
   it('v1 trust (no evidence) commits the first reading flagged resumed, so it can never be a Fire ceremony', () => {

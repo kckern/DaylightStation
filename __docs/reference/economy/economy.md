@@ -534,6 +534,17 @@ Everything inside the panel is sized in `em` from one font size that follows
 the screen (`min(1.25vw, 2.3vh)`, clamped), so the same board fills the garage
 TV and fits a 1280×800 tablet with no separate layout.
 
+**The highlighted child** (the child the board was opened for, or the one ↑/↓
+moved to) has one bar behind the whole line (`.gem-board__lane`), drawn the
+same in the outline and on the loaded board. The bar reaches `--gem-lane-out`
+(0.5em) past the grid on both sides, the same clearance it has above and below
+the avatar. The grid sits in a scroll box (`.gem-board__body`), and a scroll
+box cuts its contents at its padding edge, so the body is widened by the same
+amount on each side (a negative margin with equal padding, into the panel's
+own side padding). The grid does not move and the bar's rounded ends are drawn
+whole. `--gem-lane-out` has to stay below the panel's side padding (1em), or
+the panel's own `overflow: hidden` cuts the bar instead.
+
 Each cell is one glyph (`GemGlyph.jsx`). The first matching look wins:
 
 | Look | When | Draws |

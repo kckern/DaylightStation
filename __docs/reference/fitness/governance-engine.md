@@ -83,7 +83,7 @@ Authoritative accepted zone state for each user:
 - Derives raw zones from HR and the validated personal ladder.
 - Publishes `zoneTrusted: false` and a null `currentZoneId` until a real, accepted Cool reading establishes a baseline, or the rider resumes from recent trusted evidence. A synthetic/default Cool, null/zero HR, or a discarded startup packet cannot qualify.
 - FitnessSession supplies every rider's own `zoneReadingEligible` state on every shared synchronization, including synchronization triggered by another rider or a timeline tick. With multiple straps, this flag belongs to the actual lowest-HR sample selected by UserManager, including its originating device; an accepted higher packet cannot authorize another strap's discarded Cool. Scoring uses that same eligible canonical HR. Display HR remains available while untrusted.
-- A session reset, wearer change, or confirmed HR loss clears trust, smoothing and the zone entry immediately. A confirmed loss alone keeps the rider's last confirmed trusted reading as resume evidence: within 60 minutes, on the same strap, an eligible reading within 25 BPM of it (or two consistent readings 1s apart) resumes the zone of the current reading, with a `resumed: true` entry that never celebrates. A new session or a first attach without evidence still requires Cool. Kiosk reloads use the same rule: `zone_trust` v2 persists each rider's evidence and the reload seeds it (v1 files restore trust directly within the same 60 minutes). Both identities reset synchronously at correction/handover, including cached profile maps, pending HR provenance and unfinished scoring intervals; historical totals remain intact. A brief same-wearer gap within the existing five-second HR-loss grace preserves trust and the committed zone; it stops ring accrual immediately.
+- A session reset, wearer change, or confirmed HR loss clears trust, smoothing and the zone entry immediately. A confirmed loss alone keeps the rider's last confirmed trusted reading as resume evidence: within 60 minutes, on the same strap, an eligible reading within 25 BPM of it (or two consistent readings 1s apart) resumes the zone of the current reading, with a `resumed: true` entry that never celebrates. A new session or a first attach without evidence still requires Cool. Kiosk reloads use the same rule with a 30-minute window: the kiosk keeps each rider's evidence in its own browser storage (`zoneTrustLocalStore.js`) and seeds it on boot, so a reload that starts a fresh session still vouches for riders who were already working out; a reload that resumes the previous session also seeds `zone_trust` v2 evidence (v1 files restore trust directly within the same 30 minutes), newer reading winning. See governance-system-architecture.md, "Resume after a kiosk reload". Both identities reset synchronously at correction/handover, including cached profile maps, pending HR provenance and unfinished scoring intervals; historical totals remain intact. A brief same-wearer gap within the existing five-second HR-loss grace preserves trust and the committed zone; it stops ring accrual immediately.
 - After trust, an upward zone change needs two separate samples spanning at least one second; then the five-second cooldown, three-second continuous stability and five-BPM exit margin apply. Before the store, DeviceManager holds any reading 25 BPM or more from the strap's previous one within two seconds until the next packet confirms it (`fitness.hr.spike_held` / `_confirmed` / `_rejected`, unthrottled, with raw packet fields). The garage bridge applies the same gate at the source (`satellites/fitness-controller/src/hrSpikeGate.mjs`, logged as `fitness.ant.hr_spike_*` to the log store). Repeated identical HR must still advance the state machine and interrupt pending transitions; stateful profiles are never memoized.
 - `getProfile(userId)` and `getZoneState(userId)` expose `zoneTrusted` and `zoneEntry`. `isZoneTrusted(userId)` provides a cheap credit check without cloning a full profile.
 - Roster/governance, display-map enrichment and TreasureBox respect the authoritative lack of an earned zone. Neither a roster fallback nor global thresholds may supply credit around the trust gate.
@@ -290,6 +290,28 @@ Tap (or Enter/Space) to assign an active HR participant. The picker also exposes
 “Release mat”; holding the card is a shortcut to the same confirmation. Release
 preserves all totals and temporarily disengages continuous mat governance. The
 next physical step re-engages it; this is not a whole-session opt-out.
+
+Card layout (`player/panels/RealtimeCards/StepMatCard.jsx`): a rounded-square
+face on the left, then two rows. Row one is the equipment name and a state pill
+(dot plus label); row two is SPM as the large primary number with session steps
+and session stomps as labelled totals on the right. The four states are
+Stepping (green), Dormant (grey), Ready (blue) and Sensor unavailable (yellow);
+the state colours the pill and the face border. The card does not dim as a
+whole when nobody is stepping: only the SPM number recedes, so totals and
+state stay readable.
+
+The face shows the rider who claimed the mat. Unclaimed, it shows the photo
+config declares for the mat (`image:` on the equipment entry) or, with none
+declared, the drawn step-mat glyph (`shared/EquipmentGlyph.jsx`, a mat with two
+footprints). A photo that fails to load falls back to the same glyph. The
+fullscreen tile (`StepMatVitalsTile`) follows the same rule. The face is square
+on both surfaces because circles there mean heart rate and RPM.
+
+Equipment with no picture of its own falls back to a neutral dumbbell mark
+(`GENERIC_EQUIPMENT_FALLBACK_SRC`, an inline SVG data URI in the same file),
+used by the roster, RPM, vibration and fullscreen-vitals avatars. The generic
+image on the media mount is a bicycle, so it is not used as a fallback outside
+the cycle game, whose equipment is bikes.
 
 The realtime card is resilient to a stale fitness equipment catalog. Because the
 backend pressure-mat adapter has already validated relay events, `FitnessSession`

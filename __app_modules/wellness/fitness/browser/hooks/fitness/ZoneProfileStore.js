@@ -173,15 +173,22 @@ export class ZoneProfileStore {
    * reload): their next eligible reading from the same strap resumes the
    * zone once it is plausible against this evidence.
    */
-  seedTrustEvidence(userId, evidence) {
-    if (userId == null || !evidence || !Number.isFinite(evidence.at) || !Number.isFinite(evidence.heartRate)) return;
+  seedTrustEvidence(userId, evidence, { windowMs = null } = {}) {
+    if (userId == null || !evidence || !Number.isFinite(evidence.at) || !Number.isFinite(evidence.heartRate)) return false;
+    // Two sources can seed the same rider (the kiosk's own storage and a
+    // resumed session's metadata): the newer reading wins.
+    const current = this._trustEvidence.get(userId);
+    if (current && Number.isFinite(current.at) && current.at >= evidence.at) return false;
     this._trustEvidence.set(userId, {
       deviceId: evidence.deviceId != null ? String(evidence.deviceId) : null,
       zoneId: evidence.zoneId ?? null,
       heartRate: evidence.heartRate,
-      at: evidence.at
+      at: evidence.at,
+      // A reload vouches for a shorter span than a water break does.
+      ...(Number.isFinite(windowMs) && windowMs > 0 ? { windowMs } : {})
     });
     this._signature = null;
+    return true;
   }
 
   isZoneTrusted(userId) {
@@ -412,7 +419,10 @@ export class ZoneProfileStore {
     // committed zone agrees with. A spike held by confirmation never qualifies.
     if (zoneTrusted && eligible && stabilized.zoneId && stabilized.zoneId === rawZoneId) {
       this._trustEvidence.set(userId, {
-        deviceId: readingDeviceId, zoneId: stabilized.zoneId, heartRate, at: now()
+        deviceId: readingDeviceId, zoneId: stabilized.zoneId, heartRate, at: now(),
+        // A simulated reading drives zones but must never vouch for a rider
+        // after a reload (zoneTrustLocalStore skips it).
+        ...(readingSimulated ? { simulated: true } : {})
       });
     }
     const previous = this._profiles.get(userId);
@@ -496,7 +506,9 @@ export class ZoneProfileStore {
       });
       return null;
     };
-    if (ageMs > ZONE_TRUST_RESUME_WINDOW_MS) {
+    // Evidence seeded by a reload carries its own (shorter) window.
+    const windowMs = Number.isFinite(evidence.windowMs) ? evidence.windowMs : ZONE_TRUST_RESUME_WINDOW_MS;
+    if (ageMs > windowMs) {
       this._trustEvidence.delete(userId);
       return refuse('evidence-expired');
     }

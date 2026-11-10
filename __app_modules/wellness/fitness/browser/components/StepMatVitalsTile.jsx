@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { StepMatGlyph } from "../shared/EquipmentGlyph.jsx";
 import "./StepMatVitalsTile.scss";
 
 /**
@@ -13,11 +14,14 @@ import "./StepMatVitalsTile.scss";
  * be withdrawn if it cannot be made to separate hard landings from ordinary
  * steps — passing null drops the cell and leaves a clean steps-only tile,
  * rather than showing a number nobody trusts.
+ *
+ * The face shows `avatarSrc` (the rider who claimed the mat, or a declared
+ * equipment photo). With no source, or when the image fails, it draws the
+ * step-mat glyph — never the generic equipment picture.
  */
 const StepMatVitalsTile = ({
   name,
   avatarSrc,
-  fallbackSrc,
   stepsPerMinute,
   sessionSteps,
   sessionStomps = null,
@@ -27,6 +31,9 @@ const StepMatVitalsTile = ({
   const rate = Number.isFinite(stepsPerMinute) ? Math.round(stepsPerMinute) : 0;
   const steps = Number.isFinite(sessionSteps) ? sessionSteps : 0;
   const stomps = Number.isFinite(sessionStomps) ? sessionStomps : null;
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [avatarSrc]);
+  const showImage = Boolean(avatarSrc) && !imageFailed;
 
   const label = stomps === null
     ? `${name}: ${rate} steps per minute, ${steps} steps`
@@ -39,16 +46,16 @@ const StepMatVitalsTile = ({
       aria-label={label}
     >
       <div className="step-mat-tile__face">
-        <img
-          className="step-mat-tile__avatar"
-          src={avatarSrc}
-          alt=""
-          onError={(event) => {
-            if (fallbackSrc && event.currentTarget.src !== fallbackSrc) {
-              event.currentTarget.src = fallbackSrc;
-            }
-          }}
-        />
+        {showImage ? (
+          <img
+            className="step-mat-tile__avatar"
+            src={avatarSrc}
+            alt=""
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <StepMatGlyph className="step-mat-tile__glyph" />
+        )}
         <div className="step-mat-tile__rate">
           <span className="step-mat-tile__rate-value">{rate}</span>
           <span className="step-mat-tile__rate-unit">SPM</span>
@@ -73,7 +80,6 @@ const StepMatVitalsTile = ({
 StepMatVitalsTile.propTypes = {
   name: PropTypes.string,
   avatarSrc: PropTypes.string,
-  fallbackSrc: PropTypes.string,
   stepsPerMinute: PropTypes.number,
   sessionSteps: PropTypes.number,
   sessionStomps: PropTypes.number,

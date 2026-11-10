@@ -28,14 +28,19 @@ import { MetricsRecorder } from "./MetricsRecorder.js";
 import { ParticipantRoster } from "./ParticipantRoster.js";
 import { TimelineRecorder } from "./TimelineRecorder.js";
 import { PersistenceManager } from "./PersistenceManager.js";
+import {
+  ZONE_TRUST_RELOAD_WINDOW_MS, ZONE_TRUST_SAVE_INTERVAL_MS,
+  buildEntry, filterFresh, loadEntry, saveEntry
+} from "./zoneTrustLocalStore.js";
 import { isDeviceLive, releaseStaleAssignment } from "./staleAssignment.js";
 
 // Pre-timeline events older than this at session start are stale (see flush in ensureStarted).
 const PENDING_EVENT_MAX_AGE_MS = 60 * 1000;
-// A kiosk reload this short keeps the riders' zone trust — the same window a
-// mid-session reading loss resumes within (ZoneProfileStore), so both paths
-// apply one rule. A declared handover still wipes trust at once.
-export const ZONE_TRUST_RESUME_GRACE_MS = ZONE_TRUST_RESUME_WINDOW_MS;
+// A kiosk reload keeps a rider's zone trust when their last trusted reading is
+// at most this old (30 min). A mid-session reading loss (a water break) keeps
+// the longer ZONE_TRUST_RESUME_WINDOW_MS; a reload is where a kid arriving hot
+// could slip in, so it vouches for less. A declared handover still wipes trust.
+export const ZONE_TRUST_RESUME_GRACE_MS = ZONE_TRUST_RELOAD_WINDOW_MS;
 // Packet sources that are not real hardware. The backend rebroadcasts
 // simulator traffic to every client, so the garage kiosk ingests it too.
 const SIMULATED_SOURCES = new Set(['fitness-simulator']);
@@ -176,8 +181,17 @@ function parseSessionClock(value) {
 }
 
 export class FitnessSession {
-  constructor(getTimeoutsFn = getFitnessTimeouts) {
+  /**
+   * @param {Function} [getTimeoutsFn]
+   * @param {{ zoneTrustStorage?: Storage|null }} [options] zoneTrustStorage: where
+   *   the kiosk keeps each rider's last trusted reading across a page reload
+   *   (zoneTrustLocalStore). Null (the default, and every test) turns it off.
+   */
+  constructor(getTimeoutsFn = getFitnessTimeouts, { zoneTrustStorage = null } = {}) {
     this._getTimeouts = getTimeoutsFn;
+    this._zoneTrustStorage = zoneTrustStorage;
+    this._zoneTrustSavedAt = 0;
+    this._zoneTrustSaveSignature = null;
     this.sessionId = null;
     this.startTime = null;
     this.endTime = null;
@@ -360,6 +374,63 @@ export class FitnessSession {
     };
     this._telemetryTickInterval = 12;
     this._lastTelemetrySnapshotTick = -1;
+
+    this._seedLocalZoneTrust();
+    this._onPageHide = () => this.saveLocalZoneTrust({ force: true, reason: 'pagehide' });
+    if (this._zoneTrustStorage && typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('pagehide', this._onPageHide);
+    }
+  }
+
+  /**
+   * A reload vouches for riders who were already working out here: every
+   * rider whose last trusted reading (kept in this kiosk's storage) is at most
+   * ZONE_TRUST_RELOAD_WINDOW_MS old is seeded as resume evidence. Nothing is
+   * shown until that rider's next reading passes the same strap + plausibility
+   * checks a water break uses.
+   * @private
+   */
+  _seedLocalZoneTrust() {
+    if (!this._zoneTrustStorage) return;
+    const loaded = loadEntry(this._zoneTrustStorage);
+    if (!loaded.ok) {
+      getLogger().info('fitness.zone_trust.not_restored', { via: 'local', reason: 'storage-unavailable' });
+      return;
+    }
+    if (!loaded.entry) return;
+    const { fresh, stale } = filterFresh(loaded.entry, Date.now(), ZONE_TRUST_RELOAD_WINDOW_MS);
+    for (const r of stale) {
+      getLogger().info('fitness.zone_trust.not_restored', { via: 'local', userId: r.userId, reason: 'evidence-too-old', ageMs: r.ageMs });
+    }
+    for (const r of fresh) {
+      const seeded = this.zoneProfileStore?.seedTrustEvidence?.(r.userId, r.evidence, { windowMs: ZONE_TRUST_RELOAD_WINDOW_MS });
+      if (seeded) {
+        getLogger().info('fitness.zone_trust.restored', {
+          via: 'local', userId: r.userId, ageMs: r.ageMs, deviceId: r.evidence.deviceId, zoneId: r.evidence.zoneId
+        });
+      }
+    }
+  }
+
+  /**
+   * Write each rider's last trusted reading to this kiosk's storage. Throttled
+   * to one write per ZONE_TRUST_SAVE_INTERVAL_MS, and skipped when nothing
+   * changed; `force` (page hide) writes at once.
+   */
+  saveLocalZoneTrust({ force = false, reason = 'sync' } = {}) {
+    if (!this._zoneTrustStorage || !this.zoneProfileStore) return false;
+    const nowMs = Date.now();
+    if (!force && nowMs - this._zoneTrustSavedAt < ZONE_TRUST_SAVE_INTERVAL_MS) return false;
+    const store = this.zoneProfileStore;
+    const riders = (store.getEvidenceUserIds?.() || []).map((userId) => ({ userId, evidence: store.getTrustEvidence?.(userId) }));
+    const entry = buildEntry(riders, nowMs);
+    const signature = JSON.stringify(entry.riders);
+    if (!force && signature === this._zoneTrustSaveSignature) return false;
+    this._zoneTrustSavedAt = nowMs;
+    const ok = saveEntry(this._zoneTrustStorage, entry);
+    if (ok) this._zoneTrustSaveSignature = signature;
+    getLogger().sampled('fitness.zone_trust.local_saved', { ok, reason, riders: entry.riders.length }, { maxPerMinute: 2 });
+    return ok;
   }
 
   /**
@@ -512,6 +583,7 @@ export class FitnessSession {
         // it); it only marks the reading so no Fire ceremony comes of it.
         zoneReadingSimulated: this.isSimulatedDevice(user.currentData?.heartRateDeviceId)
       })));
+      this.saveLocalZoneTrust();
       return changed;
     } catch (err) {
       getLogger().error('fitness.zone_profile_store.sync_failed', {
@@ -1951,7 +2023,7 @@ export class FitnessSession {
       if (evidence) {
         // Same rule as a water break: the next eligible reading from that
         // strap resumes the zone once it is plausible against the evidence.
-        this.zoneProfileStore?.seedTrustEvidence?.(userId, evidence);
+        this.zoneProfileStore?.seedTrustEvidence?.(userId, evidence, { windowMs: ZONE_TRUST_RESUME_GRACE_MS });
         getLogger().info('fitness.zone_trust.restored', { userId, gapMs, ageMs, via: 'evidence' });
         continue;
       }
@@ -3169,6 +3241,9 @@ export class FitnessSession {
    * Unlike reset() which prepares for session reuse, destroy() nullifies all references for GC
    */
   destroy() {
+    if (this._onPageHide && typeof window !== 'undefined' && window.removeEventListener) {
+      window.removeEventListener('pagehide', this._onPageHide);
+    }
     // First do standard reset
     this.reset();
     

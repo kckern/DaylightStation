@@ -12,6 +12,7 @@ import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { calculateRpmProgress, getRpmZoneColor } from "./rpmUtils.mjs";
 import "./RpmDeviceAvatar.scss";
+import { GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../../shared/EquipmentGlyph.jsx";
 
 const GAUGE_RADIUS = 47;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
@@ -79,7 +80,7 @@ const RpmDeviceAvatar = ({
       return;
     }
     e.target.dataset.fallback = '1';
-    e.target.src = DaylightMediaPath('/static/img/equipment/equipment');
+    e.target.src = GENERIC_EQUIPMENT_FALLBACK_SRC;
   };
 
   return (

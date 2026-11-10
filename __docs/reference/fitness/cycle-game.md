@@ -1062,12 +1062,11 @@ resolves.
   course manually, since matching is by `course_id`, not by entry point.
 - **Ride It** builds the race through the normal `buildRaceConfigFromCourse` path
   (which sets `course_id` for free) and **pre-arms a rival ghost**:
-  - the rider directly assigned to the first bike, if **ranked** on the ladder →
-    the rider **one rung above** becomes the ghost;
-  - if that rider is the **leader** → their own **all-time personal best**
+  - the rival is the **week's high score**: for the rider directly assigned to
+    the first bike, ranked or not (or when no rider is assigned yet), the
+    ladder **leader's** best race this week becomes the ghost;
+  - if that rider **is** the leader → their own **all-time personal best**
     (via the personal-bests endpoint) becomes the ghost;
-  - if **unranked** (or no rider assigned yet) → the **tail** (lowest-ranked)
-    rider becomes the ghost;
   - no ladder data at all → no ghost; the race proceeds plain.
   The lookup never holds up or fails Ride It. The lobby freezes at the press
   (§4), and the personal-best and race-record requests share one 1500 ms budget
