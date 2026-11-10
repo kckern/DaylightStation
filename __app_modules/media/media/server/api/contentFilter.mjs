@@ -89,16 +89,20 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
       if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
       res.json((await jobs.record(ratingKey)) || { ratingKey, runs: [] });
     }));
-    // POST /:ratingKey/jobs { kind: make|send-back|stage, cues?, stage? } -> 202 { run }
+    // POST /:ratingKey/jobs { kind: make|send-back|stage, cues?, stage?, reasons?: {rowId: reason} } -> 202 { run }
     router.post('/:ratingKey/jobs', asyncHandler(async (req, res) => {
       const ratingKey = String(req.params.ratingKey).replace(/[^0-9]/g, '');
       if (!ratingKey) return res.status(400).json({ error: 'invalid ratingKey' });
-      const { kind = 'make', cues = null, stage = null } = req.body || {};
+      const { kind = 'make', cues = null, stage = null, reasons = null } = req.body || {};
       if (cues != null && !(Array.isArray(cues) && cues.every((c) => /^[A-Za-z0-9_-]+$/.test(String(c))))) {
         return res.status(400).json({ error: 'cues must be cue ids' });
       }
+      if (reasons != null && !(typeof reasons === 'object' && !Array.isArray(reasons)
+        && Object.entries(reasons).every(([k, v]) => /^[A-Za-z0-9_:-]+$/.test(k) && /^[a-z]+$/.test(String(v))))) {
+        return res.status(400).json({ error: 'reasons must map row ids to a reason' });
+      }
       try {
-        const run = await jobs.enqueue({ ratingKey, kind, cues, stage, by: req.body?.by || 'admin' });
+        const run = await jobs.enqueue({ ratingKey, kind, cues, stage, reasons, by: req.body?.by || 'admin' });
         res.status(202).json({ run });
       } catch (error) {
         if (error.status === 409 || error.status === 400) return res.status(error.status).json({ error: error.message });

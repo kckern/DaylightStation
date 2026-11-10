@@ -57,7 +57,7 @@ export function ReviewPage() {
   }, [rowId, data, ratingKey]);
   useEffect(() => { logger.info('review.mounted', { ratingKey }); }, [ratingKey]);
   // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
-  const station = useReviewStation({ ratingKey, data, reload, selected, select });
+  const station = useReviewStation({ ratingKey, data, reload, selected, select, runBusy: running });
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
   useEffect(() => {
     if (!waiting) return undefined;
@@ -112,6 +112,12 @@ export function ReviewPage() {
             {row ? <RowEditor key={row.id} ratingKey={ratingKey} row={row} onChanged={reload} busyText={busyText}
               auditFresh={!!data.audit?.fresh} wordRulings={data.wordRulings || {}} />
               : <Text size="sm" c="dimmed">Pick a part in the list to change how it is handled.</Text>}
+            {station.flagged ? (
+              <Button size="xs" color="orange" variant="light" disabled={Boolean(busyText)} onClick={station.rework}
+                title={busyText ? `${busyText}. Rework is available when it finishes.` : 'Send the rows marked redo back through the pipeline (Shift+D)'}>
+                Rework {station.flagged} flagged
+              </Button>
+            ) : null}
             <SignOffPanel ratingKey={ratingKey} signOff={data.signOff} onChanged={reload} busyText={busyText} />
           </Stack>
           <Stack gap="xs">

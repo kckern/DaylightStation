@@ -24,6 +24,14 @@ const make = (o = {}) => new ContentFilterJobs({
 });
 
 describe('ContentFilterJobs', () => {
+  it('stores redo reasons on the send-back run record and logs them', async () => {
+    const jobs = make();
+    const run = await jobs.enqueue({ ratingKey: '1', kind: 'send-back', cues: ['a'], reasons: { 'cue:a': 'edges' }, by: 'owner' });
+    expect(run.reasons).toEqual({ 'cue:a': 'edges' });
+    expect((await jobs.record('1')).runs[0]).toMatchObject({ cues: ['a'], reasons: { 'cue:a': 'edges' } });
+    await jobs.idle();
+  });
+
   it('a make run walks the steps in order and skips export when the EDL exists', async () => {
     const cli = fakeCli(); const jobs = make({ cli });
     await jobs.enqueue({ ratingKey: '1', kind: 'make', by: 'owner' });

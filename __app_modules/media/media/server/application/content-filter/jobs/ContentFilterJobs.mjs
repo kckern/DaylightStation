@@ -58,7 +58,7 @@ export class ContentFilterJobs {
     } finally { release(); }
   }
 
-  async enqueue({ ratingKey, kind, cues = null, stage = null, by = null }) {
+  async enqueue({ ratingKey, kind, cues = null, stage = null, reasons = null, by = null }) {
     const rk = String(ratingKey);
     if (!['make', 'send-back', 'stage'].includes(kind)) throw Object.assign(new Error(`Unknown run kind: ${kind}`), { status: 400 });
     if (kind === 'stage' && !STAGES.includes(stage)) throw Object.assign(new Error(`Unknown stage: ${stage}`), { status: 400 });
@@ -67,11 +67,11 @@ export class ContentFilterJobs {
       if (rec.runs.some((r) => OPEN.has(r.status))) throw new JobConflict();
       const at = this.#now().toISOString();
       const r = { id: `${at.replace(/\D/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 6)}`, kind,
-        ...(cues ? { cues } : {}), ...(stage ? { stage } : {}), status: 'queued', step: null, steps: [], requestedBy: by, queuedAt: at };
+        ...(cues ? { cues } : {}), ...(stage ? { stage } : {}), ...(reasons && Object.keys(reasons).length ? { reasons } : {}), status: 'queued', step: null, steps: [], requestedBy: by, queuedAt: at };
       rec.runs.push(r);
       return r;
     });
-    this.#logger.info?.('content-filter.job.queued', { ratingKey: rk, runId: run.id, kind, stage, cues: cues?.length ?? null, by });
+    this.#logger.info?.('content-filter.job.queued', { ratingKey: rk, runId: run.id, kind, stage, cues: cues?.length ?? null, reasons: reasons ? Object.keys(reasons).length : 0, by });
     // Audit and card drafts need no Python: they run here at once, whoever executes heavy runs.
     if (kind === 'stage' && LIGHT_STAGES.has(stage)) {
       this.runNext(rk).catch((e) => this.#logger.warn?.('content-filter.job.crashed', { ratingKey: rk, error: e.message }));

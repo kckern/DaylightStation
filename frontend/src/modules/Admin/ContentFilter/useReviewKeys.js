@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
  * (frontend/src/lib/hooks/useHotkey.js, whose single-key/no-shift grammar cannot say Shift+Tab or ?).
  *
  * handlers: next, prev, replay, verdict(verdict, reason), undo, cycleKind, effect(key), widen,
- * help(), escape() -> true when it closed something, bleepLevel(delta) (Task 6; optional).
+ * rework(), help(), escape() -> true when it closed something, bleepLevel(delta) (Task 6; optional).
  */
 const NON_TEXT_INPUT = new Set(['radio', 'checkbox', 'button', 'range', 'submit', 'reset', 'image', 'file', 'color']);
 const REASONS = { 1: 'edges', 2: 'category', 3: 'action', 4: 'timing' };
@@ -65,6 +65,7 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
       if (lower === 'a') return take(() => h.verdict?.('approve', undefined));
       if (lower === 'r') return take(() => h.verdict?.('remove', undefined));
       if (lower === 'i') return take(() => h.verdict?.('ignore', undefined));
+      if (lower === 'd' && e.shiftKey) return take(h.rework);
       if (lower === 'd') return take(() => openRedo(true));
       if (lower === 'u') return take(h.undo);
       if (lower === 'f') return take(h.cycleKind);

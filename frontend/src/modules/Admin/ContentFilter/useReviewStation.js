@@ -15,7 +15,7 @@ const API = 'api/v1/content-filter';
 const round3 = (v) => Math.round(v * 1000) / 1000;
 const SCENE_EFFECTS = new Set(['skip', 'blackout']);
 
-export function useReviewStation({ ratingKey, data, reload, selected, select }) {
+export function useReviewStation({ ratingKey, data, reload, selected, select, runBusy = false }) {
   const rk = String(ratingKey);
   const rows = data?.rows;
   const [scope, setScopeState] = useState(DEFAULT_SCOPE);
@@ -160,6 +160,24 @@ export function useReviewStation({ ratingKey, data, reload, selected, select }) 
     go(target, 'key');
   });
 
+  // Rework: send every row marked redo back as one targeted run. Cue/subject rows go through
+  // send-back with their member cue ids; scene rows have no cues, so they re-run the scenes stage.
+  const flagged = useMemo(() => (rows || []).filter((r) => r.verdict?.verdict === 'redo'), [rows]);
+  const rework = () => {
+    if (!flagged.length) { setMessage('Nothing is flagged for redo.'); return; }
+    if (runBusy) { setMessage('A run is already open for this film.'); return; }
+    guarded('rework', async () => {
+      const cues = [...new Set(flagged.flatMap((r) => (r.kind === 'scenes' ? [] : (r.members ?? (String(r.id).startsWith('cue:') ? [r.peekId] : [])))))];
+      const reasons = Object.fromEntries(flagged.filter((r) => r.verdict.reason).map((r) => [r.id, r.verdict.reason]));
+      const body = cues.length ? { kind: 'send-back', cues, reasons } : { kind: 'stage', stage: 'scenes', reasons };
+      await DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, body, 'POST');
+      logger.info('content_filter.review.rework', { rk, rows: flagged.length, cues: cues.length, kind: body.kind, reasons: Object.keys(reasons).length });
+      const sceneRows = flagged.filter((r) => r.kind === 'scenes').length;
+      setMessage(cues.length && sceneRows ? `Sent ${flagged.length - sceneRows} back. ${sceneRows} scene part${sceneRows === 1 ? '' : 's'} stay flagged for the next run.` : `Sent ${flagged.length} back to the pipeline.`);
+      reload();
+    });
+  };
+
   const replay = () => {
     if (!row) return;
     arrived.current.replays += 1;
@@ -174,12 +192,12 @@ export function useReviewStation({ ratingKey, data, reload, selected, select }) 
   }), [rows]);
 
   const handlers = {
-    next: () => step(1), prev: () => step(-1), replay, verdict, undo, effect, widen,
+    next: () => step(1), prev: () => step(-1), replay, rework, verdict, undo, effect, widen,
     cycleKind: () => setScope({ ...scope, kind: nextKind(scope.kind) }),
     help: () => setHelpOpen((v) => !v),
     escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
   };
-  return { scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally };
+  return { scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, flagged: flagged.length, rework };
 }
 
 export default useReviewStation;

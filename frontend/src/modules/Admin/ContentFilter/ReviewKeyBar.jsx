@@ -9,7 +9,7 @@ const REDO_REASONS = [['1', 'edges'], ['2', 'category'], ['3', 'action'], ['4', 
 const KEYMAP = [
   ['→ / Tab', 'Next part'], ['← / Shift+Tab', 'Previous part'], ['Space', 'Replay this part'],
   ['A', 'Approve (fine as it is)'], ['R', 'Remove (false positive)'], ['I', 'Ignore (no opinion)'],
-  ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'],
+  ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'], ['Shift+D', 'Rework every row flagged redo'],
   ['F', 'Cycle the kind: all, words, picture, scenes'], ['M / P', 'Words: mute / bleep'],
   ['B / K', 'Picture: blur / skip. Scenes: hide picture / skip'], ['W', 'Widen 0.5 s each edge'],
   ['[ / ]', 'Bleep level down / up'], ['?', 'This list'], ['Esc', 'Close'],
