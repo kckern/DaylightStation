@@ -121,22 +121,16 @@ describe('GemGlyph', () => {
     expect(c.textContent).toBe('');
   });
 
-  it("a 1-day tight streak draws one filled segment, plain outline for the rest and the 'every day' tag, no amber class", () => {
-    const { container } = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(1, 5, 'tight', 4) }} color="rgb(142, 91, 208)" area="move" tag />);
+  it('a 1-day tight streak draws one filled segment and plain outline for the rest — no tag, no amber class', () => {
+    const { container } = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(1, 5, 'tight', 4) }} color="rgb(142, 91, 208)" area="move" />);
     const segs = [...container.querySelectorAll('.gem-glyph__seg')];
     expect(segs).toHaveLength(5);
     expect(segs.filter((x) => x.classList.contains('is-done'))).toHaveLength(1);
     expect(segs[0].style.stroke).toBe('rgb(142, 91, 208)');
     expect(segs.slice(1).every((x) => x.style.stroke === '')).toBe(true);
-    expect(container.querySelector('.gem-glyph__tag').textContent).toBe('every day');
-    expect(container.querySelector('.gem-icon')).toBeTruthy(); // the full gem inside the ring
-    expect(container.querySelector('.is-tight, [class*="amber"]')).toBeNull();
-    cleanup();
-    // Without the board's tag request (overview, detail) there is no tag.
-    expect(render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(1, 5, 'tight', 4) }} color="#fff" area="move" />).container.querySelector('.gem-glyph__tag')).toBeNull();
-    cleanup();
-    // On track carries no tag even on the board.
-    expect(render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(1, 5, 'on-track', 4) }} color="#fff" area="move" tag />).container.querySelector('.gem-glyph__tag')).toBeNull();
+    expect(container.querySelector('.gem-icon')).toBeTruthy();
+    expect(container.querySelector('.is-tight, [class*="amber"], [class*="tag"]')).toBeNull();
+    expect(container.textContent).toBe('');
   });
 
   it('a leading cell draws no gem; the board shows "leading"', () => {
@@ -160,6 +154,7 @@ describe('GemGlyph', () => {
     const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8');
     const glyphCss = css.slice(css.indexOf('.gem-glyph {'), css.indexOf('// The box a cell opens'));
     expect(glyphCss).not.toMatch(/opacity/);
+    expect(glyphCss).not.toMatch(/every-day|__tag|data-tagged/);
     expect(glyphCss).not.toMatch(/255,\s*180,\s*76|#ffb44c|amber/i);
   });
 });

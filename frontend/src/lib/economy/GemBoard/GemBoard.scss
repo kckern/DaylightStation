@@ -18,17 +18,18 @@
   }
 
   &__panel {
-    --gem-col: 4.3em;  // one gem column
-    --gem-gap: 0.7em;  // between sections
+    --gem-col: 4.4em;  // one gem column
+    --gem-gap: 0.8em;  // between sections
     --gem-line: 4.6em; // one child's line
     position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.4em;
-    font-size: clamp(12px, min(1.25vw, 2.3vh), 28px);
+    // The font size that makes the board fill the screen: set from the board's own size in em.
+    font-size: clamp(12px, min(calc(95vw / var(--gem-w, 58)), calc(95vh / var(--gem-h, 34))), 40px);
     max-width: 97vw;
-    max-height: 96vh;
-    padding: 1em 1.3em 1.3em;
+    max-height: 97vh;
+    padding: 0.8em 1em 1em;
     box-sizing: border-box;
     border-radius: 1em;
     background: #171a24;
@@ -85,10 +86,9 @@
   // Lines: the leaning column names, the section names, then one per child.
   &__grid {
     display: grid;
-    grid-template-rows: 7.6em 1.9em;
+    grid-template-rows: 2.7em 2em;
     grid-auto-rows: var(--gem-line);
-    // Room for the last column's name, which leans out past the totals.
-    padding-right: 1.5em;
+    padding-right: 0;
   }
   &__row { display: contents; }
 
@@ -106,28 +106,27 @@
     align-items: center;
     gap: 0.4em;
     padding: 0 0.6em;
-    font-size: 1.15em;
+    font-size: 1.3em;
     font-weight: 700;
     color: var(--ds-text-high, #e8eef3);
-    .area-icon { flex: none; width: 1.5em; height: 1.5em; }
+    .area-icon { flex: none; width: 1.4em; height: 1.4em; }
     &[data-group="move"] .area-icon { color: #a97ae6; }
     &[data-group="school"] .area-icon { color: #3fc27a; }
     &[data-group="games"] .area-icon { color: #ff9a5c; }
   }
 
-  // A column's name: starts over the column's middle and leans up to the right.
+  // A column's name: level, centred over its column, wrapping to two lines.
   &__cat {
-    position: relative;
-    > span {
-      position: absolute;
-      left: 50%;
-      bottom: 0.45em;
-      transform-origin: 0 100%;
-      transform: translateX(0.35em) rotate(-40deg);
-      white-space: nowrap;
-      font-size: 1.02em;
-      line-height: 1;
-    }
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 0.1em 0.3em;
+    text-align: center;
+    font-size: 1em;
+    font-weight: 700;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+    color: var(--ds-text-high, #e8eef3);
   }
 
   // The highlighted child: one bar across the whole line.
@@ -148,8 +147,8 @@
   }
   &__avatar {
     flex: none;
-    width: 3em;
-    height: 3em;
+    width: 3.6em;
+    height: 3.6em;
     border-radius: 50%;
     object-fit: cover;
     background: rgba(255, 255, 255, 0.1);
@@ -160,7 +159,7 @@
       font-weight: 700;
     }
   }
-  &__name { font-size: 1.25em; font-weight: 700; white-space: nowrap; }
+  &__name { font-size: 1.6em; font-weight: 700; white-space: nowrap; }
 
   &__col { position: relative; }
   // A hairline between one child's line and the next, inside the sections only.
@@ -200,8 +199,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.9em;
-    opacity: 0.6;
+    font-size: 1em;
+    font-weight: 700;
+    color: var(--ds-text-mid, #94a3b8);
     white-space: nowrap;
   }
   &__total {
@@ -209,8 +209,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 2.2em;
-    font-size: 2em;
+    min-width: 2.6em;
+    font-size: 2.5em;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -224,8 +224,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3.3em;
-  height: 3.3em;
+  width: 3.8em;
+  height: 3.8em;
 
   &__ring { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; }
   &__seg { stroke: var(--ds-text-low, #6b7785); stroke-width: 2.4; stroke-linecap: round; }
@@ -246,20 +246,6 @@
 
   // A contest lead: no gem, the word at the size of the row labels.
   &__word { font-size: 1.05em; font-weight: 700; color: var(--ds-text-high, #e8eef3); white-space: nowrap; }
-  // A day-count that needs every day left: words, not a colour.
-  &[data-tagged] { margin-top: -1.1em; }
-  &__tag {
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-top: 0.05em;
-    font-size: 1.05em;
-    font-weight: 700;
-    line-height: 1;
-    white-space: nowrap;
-    color: var(--ds-text-high, #e8eef3);
-  }
   &__muted { color: var(--ds-text-low, #6b7785); font-size: 1.5em; }
   &__times {
     position: absolute;

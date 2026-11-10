@@ -129,12 +129,12 @@ describe('GemBoardGrid — areas', () => {
     expect(boardRowIds(AREAS)).toEqual(['exercise', 'reading', 'racing']);
   });
 
-  it('honest cells: a full gem with ×3 and its icon, a ringed tight gem with the tag, a blank 0-day cell, "leading" in words', () => {
+  it('honest cells: a full gem with ×3 and its icon, a ringed tight gem with no tag, a blank 0-day cell, "leading" in words', () => {
     const { container } = render(<GemBoardGrid board={AREAS} />);
     const cell = (row, who) => container.querySelector(`.gem-board__col[data-row="${row}"][data-learner="${who}"] .gem-board__cell`);
     expect(cell('exercise', 'a').querySelector('.area-icon[data-area="move"]')).toBeTruthy();
     expect(cell('exercise', 'a').textContent).toBe('×3');
-    expect(cell('exercise', 'b').querySelector('.gem-glyph__tag').textContent).toBe('every day');
+    expect(cell('exercise', 'b').textContent).toBe('');
     expect(cell('exercise', 'b').querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(1);
     expect(cell('reading', 'b').querySelector('svg')).toBeNull();
     expect(cell('racing', 'a').textContent).toBe('leading');

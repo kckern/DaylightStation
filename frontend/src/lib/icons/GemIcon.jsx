@@ -10,7 +10,7 @@
  * No document-level ids, no gradients, so instances can repeat freely.
  */
 import { useId } from 'react';
-import { relight } from './iconColor.js';
+import { relight, hexToHsl } from './iconColor.js';
 
 // Facets from the source, with each original fill's lightness. Saturation is
 // eased on the palest facets so a saturated ruby still has white-ish glints.
@@ -28,11 +28,24 @@ const FACETS = [
   { d: 'M83.77 68.26l-19.83 49.01l-19.83-49.01z', l: 0.94, s: 0.6 },
 ];
 
+/**
+ * `solid` keeps every facet the colour's own hue at its full saturation, lit
+ * only a little either way (never toward white), so the stone reads as that
+ * colour at a glance. The default is the jewel look other surfaces use.
+ */
+function facetFill(color, facet, solid) {
+  if (!solid) return relight(color, facet.l, facet.s ?? null);
+  const base = hexToHsl(color);
+  if (!base) return color;
+  return relight(color, Math.min(0.74, Math.max(0.24, base.l + (facet.l - 0.74) * 0.6)), base.s);
+}
+
 export default function GemIcon({
   size = '1em',
   color = '#1e88e5',
   label = null,
   className = '',
+  solid = false,
 }) {
   const titleId = `gem-${useId().replace(/[^a-zA-Z0-9]/g, '')}-title`;
   return (
@@ -48,7 +61,7 @@ export default function GemIcon({
     >
       {label && <title id={titleId}>{label}</title>}
       {FACETS.map((f, i) => (
-        <path key={i} d={f.d} fill={relight(color, f.l, f.s ?? null)} />
+        <path key={i} d={f.d} fill={facetFill(color, f, solid)} />
       ))}
     </svg>
   );

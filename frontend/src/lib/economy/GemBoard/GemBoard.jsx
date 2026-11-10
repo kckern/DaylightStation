@@ -50,6 +50,16 @@ export async function fetchGemBoard(week = null, { fresh = true } = {}) {
   return res.json();
 }
 
+/** The board's size in em (width, height), so the panel can pick the font size that fills the screen. */
+const COL_EM = 4.4;
+export function boardUnits(board) {
+  const sections = boardSections(board);
+  const cols = sections.reduce((n, g) => n + g.rows.length, 0);
+  const kids = board?.learners?.length ?? 0;
+  if (!cols || !kids) return { w: 58, h: 34 };
+  return { w: 15 + cols * COL_EM + sections.length * 0.8, h: 9.4 + kids * 4.6 };
+}
+
 const SHAPE_KEY = 'daylight.gemBoard.shape.v1';
 
 /**
@@ -98,7 +108,7 @@ const cellOpenable = (cell) => detailParts(cell).length > 0;
 export function GemCell({ cell, color, area = null, name, rowLabel, onOpen = null, cursor = false }) {
   const look = glyphLook(cell);
   const label = `${name}, ${rowLabel}: ${glyphWords(cell)}`;
-  const glyph = <GemGlyph cell={cell} color={color} area={area} tag />;
+  const glyph = <GemGlyph cell={cell} color={color} area={area} />;
   const openable = onOpen && cellOpenable(cell);
   return (
     <div className={`gem-board__cell${cursor ? ' is-cursor' : ''}`} role="cell" data-look={look} data-state={cell?.state ?? 'none'}>
@@ -398,10 +408,11 @@ export default function GemBoardOverlay({
 
   if (!open) return null;
   const { board, error, loading } = state;
+  const units = boardUnits(board && board.mode !== 'off' ? board : shape);
   const body = (
     <div className={`gem-board gem-board--${surface}`} role="dialog" aria-modal="true" aria-label="Gem board" onPointerDown={poke}>
       <div className="gem-board__backdrop" onClick={() => close('tap')} />
-      <div className="gem-board__panel" ref={panelRef}>
+      <div className="gem-board__panel" ref={panelRef} style={{ '--gem-w': units.w, '--gem-h': units.h }}>
         <div className="gem-board__header">
           <GemIcon size="1.4em" />
           <span className="gem-board__title">Gems</span>

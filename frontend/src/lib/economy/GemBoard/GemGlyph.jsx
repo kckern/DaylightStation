@@ -7,8 +7,8 @@
  *            area colour and whose days to go are a plain neutral outline
  *   words    a contest lead draws no gem: the cell says "leading"
  * A gem is never dimmed and status is never a hue: nothing here is partly
- * transparent, nothing is amber. A day-count that needs every day left may
- * carry the words "every day" (the board asks for the tag; nowhere else does).
+ * transparent, nothing is amber, and a day-count carries no words: its ring
+ * of done days is all it says.
  *
  * The ring is drawn in the colour of the rule whose days it counts (the
  * streak's own part), which in a merged row is still the row's area colour.
@@ -80,7 +80,7 @@ function Ring({ streak, color }) {
 function Stone({ color, area, size }) {
   return (
     <span className="gem-glyph__stone" style={{ width: size, height: size }}>
-      <GemIcon className="gem-glyph__gem" color={color} size={size} />
+      <GemIcon className="gem-glyph__gem" color={color} size={size} solid />
       {area && <AreaIcon area={area} className="gem-glyph__area" />}
     </span>
   );
@@ -91,9 +91,8 @@ function Stone({ color, area, size }) {
  * @param {object} props.cell
  * @param {string} props.color - the row's area colour
  * @param {string} [props.area] - the row's area (`move` | `school` | `games`): its icon is drawn on the gem
- * @param {boolean} [props.tag] - say "every day" under a day-count that needs every day left (the board only)
  */
-export default function GemGlyph({ cell, color, area = null, tag = false }) {
+export default function GemGlyph({ cell, color, area = null }) {
   const look = glyphLook(cell);
   const streak = runningStreak(cell);
   const ringColor = (streak && cell.parts?.find((p) => p.ruleId === streak.ruleId)?.color) || color;
@@ -101,16 +100,14 @@ export default function GemGlyph({ cell, color, area = null, tag = false }) {
   // A gem with no ring around it fills the cell; inside a ring it sits within it.
   const ringed = Boolean(ring);
   let inner = null;
-  if (look === 'lit' || look === 'streak') inner = <Stone color={color} area={area} size={ringed ? '2.3em' : '2.8em'} />;
+  if (look === 'lit' || look === 'streak') inner = <Stone color={color} area={area} size={ringed ? '2.6em' : '3.2em'} />;
   else if (look === 'holding') inner = <span className="gem-glyph__word">leading</span>;
   else if (look === 'off') inner = <span className="gem-glyph__muted">–</span>;
-  const tagged = tag && ringed && streak.reach === 'tight';
   return (
-    <span className="gem-glyph" data-look={look} data-ringed={ringed ? '' : undefined} data-reach={streak?.reach ?? undefined} data-tagged={tagged ? '' : undefined}>
+    <span className="gem-glyph" data-look={look} data-ringed={ringed ? '' : undefined} data-reach={streak?.reach ?? undefined}>
       {ring}
       {inner}
       {look === 'lit' && cell.week > 1 && <span className="gem-glyph__times">×{cell.week}</span>}
-      {tagged && <span className="gem-glyph__tag">every day</span>}
     </span>
   );
 }
