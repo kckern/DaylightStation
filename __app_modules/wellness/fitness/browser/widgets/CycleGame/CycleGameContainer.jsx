@@ -72,33 +72,93 @@ function ghostRosterOf(g) {
   }));
 }
 
+// A one-rider ghost replaying just `pt` out of a past race, named after them.
+function ghostOfParticipant(candidate, pt) {
+  return buildGhostFromCandidate({ ...candidate, participants: [pt], winnerName: pt.displayName });
+}
+
 /**
- * Arm the automatic pace rival for a lone rider who chose no ghost: their own
+ * Arm the automatic pace rival from what the lobby has loaded: the rider's own
  * best at this race type and length, else the household's best, else par. Only
  * the picked rider is replayed (not the whole field of that race), and the
  * rival is named after them. A pick that cannot be replayed falls back to par;
  * if par cannot be built either the race runs without a rival (kind 'none').
+ * `source` says where the armed rival came from ('par' also when par failed).
  *
  * @returns {{ ghost: object|null, kind: 'self'|'household'|'par'|'none',
- *   requestedKind: 'self'|'household'|'par', sourceRaceId: string|null, participantId: string|null }}
+ *   requestedKind: 'self'|'household'|'par', sourceRaceId: string|null,
+ *   participantId: string|null, source: 'history'|'par' }}
  */
 function armPaceRival({ candidates, riderId, winCondition, goalM, timeCapS, parSpeedKmh }) {
   const pick = pickPaceRival({ candidates, riderId, winCondition, goalM, timeCapS });
   if (pick.kind !== 'par') {
     const source = candidates.find((c) => c.raceId === pick.raceId);
     const pt = (source?.participants || []).find((x) => x.id === pick.participantId);
-    const built = pt
-      ? buildGhostFromCandidate({ ...source, participants: [pt], winnerName: pt.displayName })
-      : null;
+    const built = pt ? ghostOfParticipant(source, pt) : null;
     if (built) {
-      return { ghost: built.ghost, kind: pick.kind, requestedKind: pick.kind, sourceRaceId: pick.raceId, participantId: pick.participantId };
+      return {
+        ghost: built.ghost, kind: pick.kind, requestedKind: pick.kind,
+        sourceRaceId: pick.raceId, participantId: pick.participantId, source: 'history'
+      };
     }
   }
   const parRecord = buildParRecord({ winCondition, goalM, timeCapS, speedKmh: parSpeedKmh });
   const built = parRecord ? buildGhostFromCandidate(mapRaceRecordToCandidate(parRecord)) : null;
   return built
-    ? { ghost: built.ghost, kind: 'par', requestedKind: pick.kind, sourceRaceId: null, participantId: PAR_ID }
-    : { ghost: null, kind: 'none', requestedKind: pick.kind, sourceRaceId: null, participantId: null };
+    ? { ghost: built.ghost, kind: 'par', requestedKind: pick.kind, sourceRaceId: null, participantId: PAR_ID, source: 'par' }
+    : { ghost: null, kind: 'none', requestedKind: pick.kind, sourceRaceId: null, participantId: null, source: 'par' };
+}
+
+// How long Start may wait on the server for the rider's personal best before
+// the race starts with whatever the lobby has loaded.
+const PACE_RIVAL_LOOKUP_MS = 1500;
+
+/**
+ * The course id to ask the server's personal-best endpoint about, or null when
+ * it cannot answer for this race. The endpoint is keyed by course id only: it
+ * knows a race type + length solely through a configured featured course. So a
+ * featured-course ride uses its own id, and a lobby race qualifies only when its
+ * type and exact length equal a known featured course (the server then also
+ * counts un-tagged lobby rides of that type and length).
+ */
+function personalBestCourseId({ override, courses, winCondition, goalM, timeCapS }) {
+  if (override?.id) return override.id;
+  const want = Number(winCondition === 'time' ? timeCapS : goalM);
+  if (!(want > 0)) return null;
+  const hit = (courses || []).find((c) => c && c.id && c.win_condition === winCondition
+    && Number(winCondition === 'time' ? c.time_cap_s : c.goal_m) === want);
+  return hit ? hit.id : null;
+}
+
+/**
+ * Ask the server for the rider's all-time best on a course and turn it into a
+ * one-rider ghost. Unlike the lobby's loaded history (the most recent race
+ * days), the server sees every saved race. Resolves `{ outcome: 'used', ghost,
+ * sourceRaceId, participantId }`, `{ outcome: 'none' }` (no best on record) or
+ * `{ outcome: 'unusable' }` (the ride named is not this race type and length,
+ * was ended early, or has nothing to replay). Rejects on a network/HTTP failure.
+ */
+async function serverBestRival({ riderId, courseId, winCondition, goalM, timeCapS, candidates, mapRecord, signal }) {
+  const base = '/api/v1/fitness/cycle-races';
+  const pbResp = await fetch(`${base}/personal-bests?userId=${encodeURIComponent(riderId)}&courseId=${encodeURIComponent(courseId)}`, { signal });
+  if (!pbResp.ok) throw new Error(`personal-bests ${pbResp.status}`);
+  const raceId = (await pbResp.json())?.best?.raceId || null;
+  if (!raceId) return { outcome: 'none' };
+  // Already loaded by the lobby? Then there is nothing more to fetch.
+  let candidate = candidates.find((c) => String(c.raceId) === String(raceId)) || null;
+  if (!candidate) {
+    const raceResp = await fetch(`${base}/${encodeURIComponent(raceId)}`, { signal });
+    if (!raceResp.ok) throw new Error(`race ${raceResp.status}`);
+    candidate = mapRecord((await raceResp.json())?.race);
+  }
+  const isTime = winCondition === 'time';
+  const sameRace = candidate && !candidate.incomplete && candidate.winCondition === winCondition
+    && Number(isTime ? candidate.timeCapS : candidate.goalM) === Number(isTime ? timeCapS : goalM);
+  const pt = sameRace ? candidate.participants.find((x) => !x.isGhost && x.id === riderId) : null;
+  const built = pt ? ghostOfParticipant(candidate, pt) : null;
+  return built
+    ? { outcome: 'used', ghost: built.ghost, sourceRaceId: candidate.raceId, participantId: pt.id }
+    : { outcome: 'unusable' };
 }
 
 const RACE_TICK_MS = 1000;
@@ -250,6 +310,14 @@ export default function CycleGameContainer({ onMount } = {}) {
   // rider strip only. The lobby never reads it, so an automatic rival neither
   // locks the race type/value nor carries into the next race.
   const [raceGhost, setRaceGhost] = useState(null);
+  // True once a lobby history load has completed (the pace-rival log reports it,
+  // so "par because nobody has ridden this" is told apart from "par because the
+  // history had not arrived yet").
+  const historyLoadedRef = useRef(false);
+  // The Start press waiting on the server's personal-best lookup, if any. While
+  // set, further Start presses are ignored; unmount clears it so a late answer
+  // starts nothing.
+  const startPendingRef = useRef(null);
 
   // Use the canonical relational name resolver: getDisplayLabel applies the
   // household nickname ("Dad"/"Mom") when 2+ HR riders are present, else the
@@ -685,6 +753,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         const all = perDay.flat();
         if (!cancelled) {
           setPastRaces(all);
+          historyLoadedRef.current = true;
           log.info('cycle_game.history_loaded', { dates: recent.length, races: all.length });
         }
       } catch (err) {
@@ -787,50 +856,12 @@ export default function CycleGameContainer({ onMount } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  const startRace = useCallback((override = null, ghostOverride = undefined) => {
-    setRecoveredNotice(null); // a fresh race supersedes any "recovered your last race" notice
-    const ov = override && override.win_condition ? override : null;
-    log.info('cycle_game.start_pressed', {
-      raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
-      hasGhost: !!ghost,
-      control: ov ? 'sim.autostart' : 'lobby.start-button'
-    });
-    // The race "course" is derived from the chosen type + value. Default the
-    // value from config when none was picked (so the E2E — which only clicks a
-    // race type then Start — still works).
-    // A selected ghost is authoritative for the win condition + goal.
-    const type = ov ? ov.win_condition : (ghost ? ghost.winCondition : (raceType || 'distance'));
-    const goalM = type === 'distance'
-      ? (ov ? ov.goal_m : (ghost ? ghost.goalM : (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM)))
-      : null;
-    const timeCapS = type === 'time'
-      ? (ov ? ov.time_cap_s : (ghost ? ghost.timeCapS : (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS)))
-      : null;
-    const course = {
-      id: ghost ? 'ghost' : 'custom',
-      win_condition: type,
-      goal_m: goalM,
-      time_cap_s: timeCapS
-    };
-    // The ghost that would race: an explicit override (the featured-course
-    // button passes its ladder rival, or null for "none") beats the lobby's
-    // hand-picked ghost.
-    const chosenGhost = (ghostOverride !== undefined ? ghostOverride : ghost) || null;
-    const liveRiders = buildRiders(null);
-    if (liveRiders.length === 0) {
-      log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
-      return;
-    }
-    // A lone rider with no ghost always gets someone to chase: their own best at
-    // this race type and length, else the household's best, else par. It is armed
-    // for this race only (never through `ghost` state), so it does not lock the
-    // lobby or persist. Two or more riders race each other: no rival, no event.
-    const paceRival = !chosenGhost && liveRiders.length === 1
-      ? armPaceRival({
-        candidates: ghostCandidates, riderId: liveRiders[0].userId,
-        winCondition: type, goalM, timeCapS, parSpeedKmh
-      })
-      : null;
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // Build and stage the race from a resolved plan (see startRace, which decides
+  // the field). `paceRival` is the automatic rival for a lone rider, or null.
+  const launchRace = useCallback(({ ov, type, goalM, timeCapS, course, liveRiders, chosenGhost }, paceRival) => {
     const armedGhost = chosenGhost || paceRival?.ghost || null;
     // 'ghost' = hand-picked or ladder rival; null = nobody to chase.
     const rivalKind = chosenGhost ? 'ghost' : (paceRival?.ghost ? paceRival.kind : null);
@@ -879,9 +910,13 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.info('cycle_game.pace_rival', {
         raceId,
         kind: paceRival.kind,
+        requestedKind: paceRival.requestedKind,
         sourceRaceId: paceRival.sourceRaceId,
         participantId: paceRival.participantId,
-        requestedKind: paceRival.requestedKind
+        source: paceRival.source,
+        candidates: paceRival.candidates,
+        historyLoaded: paceRival.historyLoaded,
+        serverLookup: paceRival.serverLookup
       });
     }
     startCountdownRef.current = cfg.startCountdownS;
@@ -959,14 +994,133 @@ export default function CycleGameContainer({ onMount } = {}) {
     } else {
       applySnapshot(controller.startCountdown());
     }
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, ghostCandidates, parSpeedKmh, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, raceMercyAfterWinnerS, applySnapshot, log]);
+  }, [stagingBufferMs, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, raceMercyAfterWinnerS, applySnapshot, log]);
 
-  // Keep stable refs to the latest startRace + phase so the sim control hook
-  // (registered once) always reads current values.
+  // Start pressed. Decides the field, then launches. Synchronous except in one
+  // case: a lone rider with no ghost, on a race the server can name a personal
+  // best for, waits up to PACE_RIVAL_LOOKUP_MS for that best (see below).
+  const startRace = useCallback((override = null, ghostOverride = undefined) => {
+    if (startPendingRef.current) {
+      log.info('cycle_game.start_ignored', { reason: 'start_pending' });
+      return;
+    }
+    setRecoveredNotice(null); // a fresh race supersedes any "recovered your last race" notice
+    const ov = override && override.win_condition ? override : null;
+    log.info('cycle_game.start_pressed', {
+      raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
+      hasGhost: !!ghost,
+      control: ov ? 'sim.autostart' : 'lobby.start-button'
+    });
+    // The race "course" is derived from the chosen type + value. Default the
+    // value from config when none was picked (so the E2E — which only clicks a
+    // race type then Start — still works).
+    // A selected ghost is authoritative for the win condition + goal.
+    const type = ov ? ov.win_condition : (ghost ? ghost.winCondition : (raceType || 'distance'));
+    const goalM = type === 'distance'
+      ? (ov ? ov.goal_m : (ghost ? ghost.goalM : (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM)))
+      : null;
+    const timeCapS = type === 'time'
+      ? (ov ? ov.time_cap_s : (ghost ? ghost.timeCapS : (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS)))
+      : null;
+    const course = {
+      id: ghost ? 'ghost' : 'custom',
+      win_condition: type,
+      goal_m: goalM,
+      time_cap_s: timeCapS
+    };
+    // The ghost that would race: an explicit override (the featured-course
+    // button passes its ladder rival, or null for "none") beats the lobby's
+    // hand-picked ghost.
+    const chosenGhost = (ghostOverride !== undefined ? ghostOverride : ghost) || null;
+    const liveRiders = buildRiders(null);
+    // The field is live riders plus the ghost's: a ghost-only race (a featured
+    // ride with nobody on a bike) is a race.
+    if (liveRiders.length + ghostFieldRiders(chosenGhost).length === 0) {
+      log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
+      return;
+    }
+    const plan = { ov, type, goalM, timeCapS, course, liveRiders, chosenGhost };
+    // A lone rider with no ghost always gets someone to chase: their own best at
+    // this race type and length, else the household's best, else par. It is armed
+    // for this race only (never through `ghost` state), so it does not lock the
+    // lobby or persist. Two or more riders race each other: no rival, no event.
+    if (chosenGhost || liveRiders.length !== 1) {
+      launchRace(plan, null);
+      return;
+    }
+    const riderId = liveRiders[0].userId;
+    // What the local pick had to work with, as of this press.
+    const facts = { candidates: ghostCandidates.length, historyLoaded: historyLoadedRef.current };
+    const localRival = (serverLookup) => ({
+      ...armPaceRival({ candidates: ghostCandidates, riderId, winCondition: type, goalM, timeCapS, parSpeedKmh }),
+      ...facts,
+      serverLookup
+    });
+    // "Own best" should not stop at the few race days the lobby loads, so ask
+    // the server where it can answer (see personalBestCourseId).
+    const courseId = personalBestCourseId({
+      override: ov,
+      courses: [
+        ...(Array.isArray(cycleGameConfig?.featured_courses) ? cycleGameConfig.featured_courses : []),
+        featuredLadder?.course
+      ],
+      winCondition: type, goalM, timeCapS
+    });
+    if (!courseId) {
+      launchRace(plan, localRival('skipped'));
+      return;
+    }
+    // The lookup may never delay the start past the deadline and may never fail
+    // it: no best, an error or a timeout all fall back to the local pick.
+    const abort = typeof AbortController === 'function' ? new AbortController() : null;
+    const pending = { abort, phase: phaseRef.current };
+    startPendingRef.current = pending;
+    log.debug('cycle_game.pace_rival_lookup', { riderId, courseId, timeoutMs: PACE_RIVAL_LOOKUP_MS });
+    let timer = null;
+    const deadline = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ outcome: 'timeout' }), PACE_RIVAL_LOOKUP_MS);
+    });
+    const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
+    const lookup = serverBestRival({
+      riderId, courseId, winCondition: type, goalM, timeCapS,
+      candidates: ghostCandidates,
+      mapRecord: (rec) => mapRaceRecordToCandidate(rec, { getDisplayLabel, resolveGaugeMaxRpm }),
+      signal: abort?.signal
+    }).catch((err) => ({ outcome: 'error', error: err?.message || String(err) }));
+    Promise.race([lookup, deadline]).then((res) => {
+      clearTimeout(timer);
+      // Unmounted (or superseded) while waiting: start nothing.
+      if (startPendingRef.current !== pending) return;
+      startPendingRef.current = null;
+      if (res.outcome === 'timeout') abort?.abort();
+      if (res.outcome === 'error' || res.outcome === 'timeout') {
+        log.warn('cycle_game.pace_rival_lookup_failed', { riderId, courseId, outcome: res.outcome, error: res.error ?? null });
+      }
+      // The screen moved on while we waited (no longer where Start was pressed).
+      if (phaseRef.current !== pending.phase) {
+        log.info('cycle_game.start_ignored', { reason: 'left_lobby' });
+        return;
+      }
+      launchRace(plan, res.outcome === 'used'
+        ? {
+          ghost: res.ghost, kind: 'self', requestedKind: 'self',
+          sourceRaceId: res.sourceRaceId, participantId: res.participantId,
+          source: 'server-pb', ...facts, serverLookup: 'used'
+        }
+        : localRival(res.outcome));
+    });
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, ghost, buildRiders, ghostCandidates, parSpeedKmh, cycleGameConfig, featuredLadder, bikeById, getDisplayLabel, launchRace, log]);
+
+  // A Start still waiting on the personal-best lookup dies with the component.
+  useEffect(() => () => {
+    startPendingRef.current?.abort?.abort();
+    startPendingRef.current = null;
+  }, []);
+
+  // Keep a stable ref to the latest startRace so the sim control hook
+  // (registered once) always reads current values. (phaseRef is above.)
   const startRaceRef = useRef(startRace);
   useEffect(() => { startRaceRef.current = startRace; }, [startRace]);
-  const phaseRef = useRef(phase);
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
 
   // Sim-panel seam: expose a programmatic race start so the simulation popup's
   // "Cycle Game Race" preset can launch a real race. Riders are assigned

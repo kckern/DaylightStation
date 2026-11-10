@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/react';
+import { render, cleanup, waitFor, fireEvent } from '@testing-library/react';
 
 // jsdom has no WebGL: mock the three.js stack + camera-controls so the component
 // mounts and we can assert the React-owned avatar overlay (the contract tests cover).
@@ -139,5 +139,17 @@ describe('PovGrid (three.js shell)', () => {
     const ghost = [...markers].find((m) => m.className.includes('is-ghost'));
     expect(ghost).toBeTruthy();
     expect(ghost.className).toContain('cg-ghost');
+  });
+
+  it('falls back to the generic face when a marker has no avatar image (the par rival)', () => {
+    cleanup();
+    const riders = { 'ghost:par:par': { displayName: 'Par', cumulativeDistanceM: 90, isGhost: true } };
+    const { container } = render(
+      <PovGrid riderIds={['ghost:par:par']} riders={riders}
+        riderLive={{ 'ghost:par:par': { avatarSrc: '/api/v1/static/img/users/par' } }} />
+    );
+    const img = container.querySelector('.cg-pov__marker img');
+    fireEvent.error(img);
+    expect(img.getAttribute('src')).toBe('/api/v1/static/img/users/user');
   });
 });

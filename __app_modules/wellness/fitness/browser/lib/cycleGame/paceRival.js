@@ -11,6 +11,8 @@ export const PAR_ID = 'par';
 /** Par speed when none is configured (or the configured one is unusable). */
 export const DEFAULT_PAR_SPEED_KMH = 18;
 
+/** Par's cadence, so its gauge reads a believable pace (not one derived from speed). */
+export const PAR_RPM = 80;
 /** Slowest par speed: anything positive but slower is raised to this. */
 export const MIN_PAR_SPEED_KMH = 3;
 /** Longest par series (one sample per second): four hours. */
@@ -113,7 +115,8 @@ export function buildParRecord({ winCondition = 'distance', goalM = null, timeCa
         final_distance_m: series[seconds - 1],
         final_time_s: isDistance ? seconds : null,
         placement: 1,
-        distance_series: SessionSerializerV3.encodeSeries(series)
+        distance_series: SessionSerializerV3.encodeSeries(series),
+        rpm_series: SessionSerializerV3.encodeSeries(series.map(() => PAR_RPM))
       }
     }
   };

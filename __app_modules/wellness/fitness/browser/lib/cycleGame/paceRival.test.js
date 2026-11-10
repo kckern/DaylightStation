@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickPaceRival, buildParRecord } from './paceRival.js';
+import { pickPaceRival, buildParRecord, PAR_RPM } from './paceRival.js';
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from './ghostCandidate.js';
 import { SessionSerializerV3 } from '../../hooks/fitness/SessionSerializerV3.js';
 
@@ -171,6 +171,17 @@ describe('pickPaceRival', () => {
 });
 
 describe('buildParRecord', () => {
+  it('gives par a constant 80 rpm cadence, one sample per distance sample', () => {
+    expect(PAR_RPM).toBe(80);
+    const rec = buildParRecord({ winCondition: 'distance', goalM: 100, speedKmh: 18 });
+    const rpm = SessionSerializerV3.decodeSeries(rec.participants.par.rpm_series);
+    const dist = SessionSerializerV3.decodeSeries(rec.participants.par.distance_series);
+    expect(rpm).toHaveLength(dist.length);
+    expect(rpm.every((v) => v === 80)).toBe(true);
+    const built = buildGhostFromCandidate(mapRaceRecordToCandidate(rec));
+    expect(built.riders[0].ghostRpmSeries).toEqual(rpm);
+  });
+
   it('builds a distance record that reaches the goal at the par speed', () => {
     const rec = buildParRecord({ winCondition: 'distance', goalM: 100, speedKmh: 18 }); // 5 m/s
     expect(rec.race).toMatchObject({ id: 'par', win_condition: 'distance', goal_m: 100 });
@@ -258,9 +269,9 @@ describe('buildParRecord', () => {
     expect(rider).toMatchObject({ userId: 'ghost:par:par', equipmentId: null, ghostIntervalS: 1 });
     expect(rider.ghostSeries).toHaveLength(20);
     expect(rider.ghostSeries[19]).toBe(100);
-    // No recorded HR / cadence / zone: empty arrays, not undefined.
+    // No recorded HR / zone: empty arrays, not undefined. Cadence is a constant.
     expect(rider.ghostHrSeries).toEqual([]);
-    expect(rider.ghostRpmSeries).toEqual([]);
+    expect(rider.ghostRpmSeries).toEqual(Array(20).fill(80));
     expect(rider.ghostZoneSeries).toEqual([]);
   });
 

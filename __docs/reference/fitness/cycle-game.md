@@ -238,9 +238,13 @@ The lobby is a pure presentational component; all state and handlers live in
    the rest of the ghost pipeline is unchanged.
 6. **History** — recent saved races as a compact columnar table (winner, goal-marked
    metric columns, when), most-recent-first; row model from
-   `recordRow.buildRecordRow`. The winner is shown as the **winner's avatar** with
-   small **runner-up crescents** (overlapping mini-avatars) and a `+N` overflow —
-   there is no crown emoji in the History list. Ghost participants resolve to the
+   `recordRow.buildRecordRow`. Each row **leads with the top-placed live rider**,
+   not with whoever crossed first: a solo ride lost to a pace rival or a picked
+   ghost reads as that rider's ride, with their pace. Everyone else, ghosts
+   included, follows in placement order as small **crescents** (overlapping
+   mini-avatars) with a `+N` overflow. Only a ghost-only race leads with a ghost.
+   (The ghost picker is different: there the recording's winner is the headline.)
+   There is no crown emoji in the History list. Ghost participants resolve to the
    real rider's face/name via `participantIdentity`. Tapping a row opens the
    **Recap**. Empty state: "No races yet."
 7. **Volume** — touch +/- with a readout.
@@ -256,37 +260,55 @@ ghost is selected, append its (roster-filtered) participants as additional rider
 carrying `ghostSeries / ghostHrSeries / ghostRpmSeries / ghostZoneSeries /
 ghostIntervalS` and `equipmentId: null`.
 
-**Automatic pace rival** (`startRace` → `armPaceRival`, selection in
-`lib/cycleGame/paceRival.js`). `startRace` first works out the ghost that would
-race: an explicit override (the featured-course button passes its ladder rival,
-or `null` when it has none) beats the lobby's hand-picked ghost. If there is no
-such ghost and **exactly one** live rider is claimed, a pace rival is armed for
-that race:
+**Automatic pace rival** (`startRace`; selection in `lib/cycleGame/paceRival.js`).
+`startRace` first works out the ghost that would race: an explicit override (the
+featured-course button passes its ladder rival, or `null` when it has none)
+beats the lobby's hand-picked ghost. If there is no such ghost and **exactly
+one** live rider is claimed, a pace rival is armed for that race:
 
-| Kind | Who | When |
+| Kind | Who | Where it is looked for |
 |---|---|---|
-| `self` | The rider's own best ride | They have a counting ride at this win condition and exact length |
-| `household` | The best ride by anyone | Nobody's own ride qualifies, but someone's does |
-| `par` | A constant-speed rider, id `ghost:par:par`, named "Par" | No qualifying ride, or the picked ride has no distance series to replay |
+| `self` | The rider's own best ride at this win condition and exact length | The server's personal best (all saved races) where the server can answer, then the lobby's loaded history |
+| `household` | The best such ride by anyone | The lobby's loaded history only |
+| `par` | A constant-speed rider, id `ghost:par:par`, named "Par" | Built on the spot when nothing above qualifies, or the picked ride has no distance series to replay |
 
-- "Counting" means the race was not ended early, the rider was live (not a
-  replay), was not stopped when the race closed, and for a distance race
-  finished. Best is the lowest finish time (distance) or the furthest distance
-  (time). The length compared is the final one `startRace` resolves, after any
-  course override and the config defaults.
+- **Loaded history is short.** The lobby loads the five most recent race days.
+  A household best older than that is not found, and the rider gets par (or a
+  slower, newer ride) instead. Household best has no server lookup.
+- **Own best from the server.** The lobby asks
+  `GET /cycle-races/personal-bests?userId=&courseId=` (§16) and, if it names a
+  race the lobby has not loaded, fetches that record. That endpoint is keyed by
+  course id, so it is asked only when the race is a featured-course ride, or a
+  lobby race whose type and exact length equal a featured course (from
+  `featured_courses` or the loaded ladder). For any other length "own best"
+  comes from loaded history alone. The server's best excludes replays and races
+  flagged `incomplete`; the fetched record must also match this race's type and
+  length and hold a distance series for that rider, or it is not used.
+- **The lookup never holds up or fails a start.** `startRace` waits at most
+  1500 ms. No best on record, an HTTP or network error, an unusable record or a
+  timeout all fall back to the loaded-history pick. While it waits the lobby
+  stays up and further Start presses are ignored (`cycle_game.start_ignored`);
+  if the game is closed in that time nothing starts. Every other start (two or
+  more riders, a chosen ghost, a length the server cannot answer for) is
+  synchronous.
+- **What counts, in loaded history:** the record is not flagged `incomplete`
+  (§15), the rider was live (not a replay), was not stopped when the race
+  closed, and for a distance race finished. Best is the lowest finish time
+  (distance) or the furthest distance (time). The length compared is the final
+  one `startRace` resolves, after any course override and the config defaults.
 - Only the picked rider is replayed, not the rest of that race's field, and the
   rival is named after that rider.
 - The par rider covers `par_speed_kmh` (§6) every second and finishes a distance
-  race exactly on the goal. Its recording has distance only: no heart rate, zone
-  or cadence. The race screen synthesizes its gauge needle from speed, as it does
-  for any ghost recorded before cadence was saved, so the needle reads the
-  cadence that speed would need on the default wheel with no zone boost (143 rpm
-  at 18 km/h). It has no avatar image: surfaces with a fallback show the generic
-  face, and the gauge and POV marker show no picture.
-- If par cannot be built either (the race has no usable length), the race starts
-  with no rival and the event below reports `kind: 'none'`.
+  race exactly on the goal. It carries a constant 80 rpm cadence series
+  (`PAR_RPM`) so its gauge reads a steady 80, and no heart rate or zone. It has
+  no avatar image; every surface falls back to the generic face.
+- If par cannot be built either (no usable length, or a race longer than par's
+  four-hour series cap), the race starts with no rival and the event reports
+  `kind: 'none'`.
 - A hand-picked ghost or a ladder rival always wins: no pace rival is added. Two
   or more live riders race each other: no pace rival, and no `pace_rival` event.
+  A ghost with no live rider at all (a featured ride with nobody on a bike) is a
+  ghost-only race and starts.
 - The rival is armed for one race only. It never goes through the lobby's
   selected-ghost state, so it does not lock the race type or value and is chosen
   afresh next race. It is not previewed in the lobby; it first appears as an
@@ -346,7 +368,7 @@ restart to take effect.
 | `hot_start_penalty_s` | 0 | No longer read by the controller, which has no penalty box. The key is retired in a later change |
 | `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
 | `results_dwell_s` | 20 | Results auto-return countdown before returning to the lobby |
-| `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive; anything else uses the default |
+| `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive, or the default is used; a positive value below 3 km/h is raised to 3 |
 | `default_background` | null | Ambient background Plex id for the race screen |
 | `music_volume` | 0.55 | Background music level (0–1) |
 | `sounds` | {} | SFX + music playlist URLs |
@@ -924,12 +946,25 @@ by `raceId` (+ `elapsedS` where relevant).
   `finish_forced`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`,
   `pace_rival`.
 - **`cycle_game.pace_rival`** (INFO) — once per race start in which a lone rider
-  had no ghost (§5): `{ raceId, kind, sourceRaceId, participantId, requestedKind }`.
-  `kind` is what was armed (`self` | `household` | `par` | `none`);
-  `requestedKind` is what selection asked for, so `requestedKind: 'self'` with
-  `kind: 'par'` means the rider's best ride could not be replayed. `sourceRaceId`
-  is `null` for par. Not emitted when a ghost was chosen or two or more riders
+  had no ghost (§5). Not emitted when a ghost was chosen or two or more riders
   are racing.
+
+  | Field | Meaning |
+  |---|---|
+  | `raceId` | The race being started |
+  | `kind` | What was armed: `self`, `household`, `par`, or `none` (no rival could be built) |
+  | `requestedKind` | What selection asked for. `requestedKind: 'self'` with `kind: 'par'` means the rider's best ride could not be replayed |
+  | `sourceRaceId`, `participantId` | The ride replayed; `sourceRaceId` is `null` for par |
+  | `source` | Where the armed rival came from: `server-pb`, `history` (the lobby's loaded history) or `par` |
+  | `candidates` | Races in the lobby's loaded history when Start was pressed (the pool the local pick chose from) |
+  | `historyLoaded` | Whether a lobby history load had completed when Start was pressed. `false` with `kind: 'par'` means par was armed blind |
+  | `serverLookup` | The personal-best lookup: `skipped` (the server cannot answer for this race), `used`, `none` (no best on record), `unusable`, `error`, `timeout` |
+
+- **`cycle_game.pace_rival_lookup`** (DEBUG) when the lookup starts;
+  **`cycle_game.pace_rival_lookup_failed`** (WARN) on `error` or `timeout`;
+  **`cycle_game.start_ignored`** (INFO, `reason: 'start_pending' | 'left_lobby'`)
+  for a Start press dropped while a lookup was pending, or a lookup that came
+  back after the lobby was left.
 - **Firehose (DEBUG, off by default)** — `cycle_game.tick`: one event/second with a
   per-rider array `{ rpm, cadenceConnected, hr, zoneId, multiplier, distanceM,
   penalized, finished }`, read from post-resolution engine state.

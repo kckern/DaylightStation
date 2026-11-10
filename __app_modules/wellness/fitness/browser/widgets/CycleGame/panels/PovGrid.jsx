@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../../components/CircularUserAvatar.jsx";
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
+import { FALLBACK_AVATAR } from "../home/constants.js";
 import { tickFraction } from "../../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import { povWorld, povBadges, resolveBadgeStack } from "../../../lib/cycleGame/povWorld.js";
 import { povFollowCam, horizonChipState } from "../../../lib/cycleGame/povFollowCam.js";
@@ -543,7 +544,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           return (
             <div key={id} className={`cg-pov__marker${isGhost ? ' is-ghost cg-ghost' : ''}`} data-testid="pov-marker"
               ref={(el) => { markerEls.current[id] = el; }} style={{ '--cg-pov-color': color }}>
-              <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc}
+              <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc} fallbackSrc={FALLBACK_AVATAR}
                 heartRate={live.heartRate} zoneId={live.zoneId} zoneColor={live.zoneColor || color}
                 size={88} showGauge={false} showIndicator={false} />
             </div>

@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import CycleSpeedometer from "../CycleSpeedometer.jsx";
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
 import { gaugeRowSize } from "../../../lib/cycleGame/layoutSizing.js";
+import { FALLBACK_AVATAR } from "../home/constants.js";
 
 const SPEEDO_GAP = 28; // keep in sync with .cycle-race-screen__speedos gap
 
@@ -38,6 +39,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             avatar={{
               name: riders[id].displayName,
               src: live.avatarSrc,
+              fallbackSrc: FALLBACK_AVATAR,
               heartRate: live.heartRate,
               zoneId: live.zoneId,
               zoneColor: live.zoneColor || LINE_COLORS[idx % LINE_COLORS.length],
