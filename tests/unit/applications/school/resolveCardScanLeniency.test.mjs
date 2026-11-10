@@ -170,16 +170,20 @@ describe('ResolveCardScan — bounded eraser-leniency (spec §5.4, 2026-08-22 po
     // credited slot; row 3 — an equally eligible eraser signature — falls
     // through to the review queue exactly as an ordinary ambiguous row does.
     expect(byRow[2]).toMatchObject({ status: 'correct', leniency: 'eraser' });
-    expect(byRow[3]).toMatchObject({ status: 'ambiguous', given: ['A', 'C'], earned: 0 });
+    // NEIGHBOUR BLEED (added after this fixture): this dense fixture's rows
+    // 3, 4 and 6 each have exactly one mark the rows beside them do not
+    // explain, so they now resolve to that letter (all wrong, key = Alpha)
+    // instead of staying ambiguous. They are graded, never eraser-credited.
+    expect(byRow[3]).toMatchObject({
+      status: 'incorrect', given: ['A', 'C'], resolvedLetter: 'C', bleed: 'neighbour', earned: 0,
+    });
     expect(byRow[3].leniency).toBeUndefined();
-    // Every other never-eligible shape (3+ marks, every-choice coverage,
-    // both-wrong) stays ambiguous too — never silently zeroed, never
-    // silently promoted.
-    expect(byRow[4]).toMatchObject({ status: 'ambiguous', given: ['A', 'B', 'D'] });
+    expect(byRow[4]).toMatchObject({ status: 'incorrect', given: ['A', 'B', 'D'], bleed: 'neighbour' });
+    // Row 5 (every-choice coverage) has two candidates -> undecidable, stays ambiguous.
     expect(byRow[5]).toMatchObject({ status: 'ambiguous', given: ['A', 'B'] });
-    expect(byRow[6]).toMatchObject({ status: 'ambiguous', given: ['B', 'C'] });
+    expect(byRow[6]).toMatchObject({ status: 'incorrect', given: ['B', 'C'], bleed: 'neighbour' });
     expect(card.totalPoints).toBe(6);
-    // row1 (1) + row2 promoted (1) = 2; rows 3-6 all still ambiguous (0 each).
+    // row1 (1) + row2 promoted (1) = 2; rows 3, 4, 6 incorrect, row 5 ambiguous.
     expect(card.earnedPoints).toBe(2);
   });
 
@@ -198,7 +202,9 @@ describe('ResolveCardScan — bounded eraser-leniency (spec §5.4, 2026-08-22 po
     // The SAME eraser-signature marks that earn row 2 full credit on a
     // worksheet stay ambiguous on a quiz — no row anywhere on the card
     // carries a `leniency` marker.
-    expect(card.results.filter((row) => row.status === 'ambiguous')).toHaveLength(5);
+    // (Neighbour bleed, a separate rule, resolves rows 3, 4 and 6 of this
+    // dense fixture; rows 2 and 5 are undecidable and stay ambiguous.)
+    expect(card.results.filter((row) => row.status === 'ambiguous')).toHaveLength(2);
     expect(card.results.some((row) => row.leniency)).toBe(false);
     const row2 = card.results.find((row) => row.row === 2);
     expect(row2).toMatchObject({ status: 'ambiguous', given: ['B', 'D'], earned: 0 });
@@ -346,5 +352,109 @@ describe('RecordCardScanOutcome — leniency verdict (spec §5.4)', () => {
     expect(row1Verdict).toMatchObject({ verdict: 'correct', gradedBy: 'engine' });
     expect(row1Verdict.leniency).toBeUndefined();
     expect(row2Verdict).toMatchObject({ verdict: 'correct', gradedBy: 'engine-leniency', leniency: 'eraser' });
+  });
+});
+
+describe('ResolveCardScan — neighbour bleed + configurable tolerance/fallback', () => {
+  const CH = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'];
+  // The spec sheet shifted down by 19 (spec rows 20-26 -> rows 1-7), plus two
+  // filler rows. 9 rows -> default cap = 1.
+  const bleedBlocks = () => [
+    mcQuestion('q1', 1, { choices: CH, answer: 'Epsilon' }),
+    mcQuestion('q2', 2, { choices: CH, answer: 'Alpha' }),
+    mcQuestion('q3', 3, { choices: CH, answer: 'Beta' }),
+    mcQuestion('q4', 4, { choices: CH, answer: 'Beta' }),
+    mcQuestion('q5', 5, { choices: CH, answer: 'Beta' }),
+    mcQuestion('q6', 6, { choices: CH, answer: 'Gamma' }),
+    mcQuestion('q7', 7, { choices: CH, answer: 'Gamma' }),
+    mcQuestion('q8', 8, { choices: CH, answer: 'Alpha' }),
+    mcQuestion('q9', 9, { choices: CH, answer: 'Beta' }),
+  ];
+  const bleedAnswers = {
+    1: 'E', 2: ['A', 'C', 'E'], 3: ['B', 'C', 'E'], 4: ['B', 'E'], 5: ['B', 'E'], 6: ['B', 'C'], 7: 'C', 8: ['A', 'D'], 9: 'B',
+  };
+
+  async function run({ archetype = 'worksheet', options = {}, blocks = bleedBlocks(), answers = bleedAnswers } = {}) {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc(`bleed-${Math.random().toString(36).slice(2)}`, blocks, { archetype });
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true, learnerId: 'test-learner' },
+    });
+    const logger = {
+      info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
+    };
+    const useCase = new ResolveCardScan({
+      allocationStore, repository, logger, ...options,
+    });
+    const result = await useCase.execute({ testId: allocation.cardId, answers });
+    const card = result.results[0];
+    return { card, byRow: Object.fromEntries(card.results.map((r) => [r.row, r])), logger };
+  }
+
+  it('resolves the bleed row, spends the default eraser budget on the next row, holds the rest (today)', async () => {
+    const { byRow, logger } = await run({ options: { ambiguousFallback: 'review' } });
+    expect(byRow[2]).toMatchObject({
+      status: 'correct', earned: 1, bleed: 'neighbour', resolvedLetter: 'A', given: ['A', 'C', 'E'],
+    });
+    expect(byRow[2].leniency).toBeUndefined();
+    expect(byRow[3].status).toBe('ambiguous'); // three marks, undecidable
+    expect(byRow[4]).toMatchObject({ status: 'correct', leniency: 'eraser' });
+    expect(byRow[5].status).toBe('ambiguous');
+    expect(byRow[6].status).toBe('ambiguous');
+    expect(logger.info).toHaveBeenCalledWith('school.print.scan-bleed-resolved', expect.objectContaining({
+      row: 2, resolvedLetter: 'A', neighbours: { above: ['E'], below: ['B', 'C', 'E'] },
+    }));
+  });
+
+  it('leniencyRowsPerCredit: 1 eraser-credits every two-mark row with a correct mark', async () => {
+    const { byRow } = await run({ options: { leniencyRowsPerCredit: 1 } });
+    for (const r of [4, 5, 6, 8]) expect(byRow[r]).toMatchObject({ status: 'correct', leniency: 'eraser' });
+    expect(byRow[2].bleed).toBe('neighbour');
+  });
+
+  it("ambiguousFallback: 'incorrect' scores leftovers incorrect with ambiguous:true, no ambiguous status", async () => {
+    const { card, byRow, logger } = await run({ options: { ambiguousFallback: 'incorrect' } });
+    for (const r of [3, 5, 6, 8]) {
+      expect(byRow[r]).toMatchObject({ status: 'incorrect', ambiguous: true, earned: 0 });
+    }
+    expect(card.results.some((r) => r.status === 'ambiguous')).toBe(false);
+    expect(logger.info).toHaveBeenCalledWith('school.print.scan-ambiguous-scored', expect.objectContaining({ row: 5, fallback: 'incorrect' }));
+  });
+
+  it("budget spent + unexplained ['A','D'] row: review holds it, incorrect scores it", async () => {
+    const held = await run({ options: { ambiguousFallback: 'review' } });
+    expect(held.byRow[8].status).toBe('ambiguous');
+    const scored = await run({ options: { ambiguousFallback: 'incorrect' } });
+    expect(scored.byRow[8]).toMatchObject({ status: 'incorrect', ambiguous: true });
+  });
+
+  it('a quiz still resolves bleed rows while eraser leniency stays off', async () => {
+    const { byRow } = await run({ archetype: 'quiz' });
+    expect(byRow[2]).toMatchObject({ status: 'correct', bleed: 'neighbour' });
+    expect(byRow[4].status).toBe('ambiguous');
+    expect(byRow[4].leniency).toBeUndefined();
+  });
+
+  it('never touches a multi_select row', async () => {
+    const msQuestion = (itemId, number, { choices, answers }) => ({
+      type: 'question', itemId, number, blocks: [richText(`Prompt for ${itemId}`)], choices, answers, omr: true,
+    });
+    const blocks = [
+      mcQuestion('q1', 1, { choices: CH, answer: 'Alpha' }),
+      msQuestion('q2', 2, { choices: ['Red', 'Green', 'Blue', 'Yellow'], answers: ['Red', 'Blue', 'Yellow'] }),
+      mcQuestion('q3', 3, { choices: CH, answer: 'Alpha' }),
+    ];
+    const { byRow } = await run({
+      blocks, answers: { 1: ['A', 'C'], 2: ['A', 'C', 'D'], 3: ['C', 'E'] },
+    });
+    expect(byRow[2]).toMatchObject({ itemType: 'multi_select', status: 'correct' });
+    expect(byRow[2].bleed).toBeUndefined();
+  });
+
+  it('invalid config falls back to defaults with a warning', async () => {
+    const { byRow, logger } = await run({ options: { leniencyRowsPerCredit: 0, ambiguousFallback: 'bogus' } });
+    expect(byRow[5].status).toBe('ambiguous');
+    expect(logger.warn).toHaveBeenCalledTimes(2);
   });
 });

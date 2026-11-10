@@ -620,9 +620,9 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
 
     it('a double-mark on a SINGLE-SELECT row (multiple_choice) reports ambiguous, never a wrong-answer grade — the exact opposite of multi_select above, from the SAME scan call, and never poisons the other rows', async () => {
       const { cardId, resolver } = await setUpGradingScan();
-      const scanned = await resolver.execute({ testId: cardId, answers: { 1: ['A', 'B'], 2: 'A', 3: ['A', 'C'] } });
+      const scanned = await resolver.execute({ testId: cardId, answers: { 1: ['B', 'C'], 2: 'A', 3: ['A', 'C'] } });
       const byRow = new Map(scanned.results[0].results.map((r) => [r.row, r]));
-      expect(byRow.get(1)).toMatchObject({ status: 'ambiguous', earned: 0, given: ['A', 'B'] });
+      expect(byRow.get(1)).toMatchObject({ status: 'ambiguous', earned: 0, given: ['B', 'C'] });
       expect(byRow.get(2)).toMatchObject({ status: 'correct' });
       expect(byRow.get(3)).toMatchObject({ status: 'correct' });
     });

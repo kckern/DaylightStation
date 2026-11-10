@@ -1046,6 +1046,10 @@ export async function createSchoolLifecycle({
     banks: createYamlBankReader({ dataDir }),
     heldScanStore: heldCardScans,
     protectionMode: cfg.answer_sheets?.scan_protection?.mode ?? 'off',
+    // school.yml scan.*: absent -> defaults ('review', 5); invalid values are
+    // warned about and defaulted inside ResolveCardScan.
+    ambiguousFallback: cfg.scan?.ambiguousFallback ?? 'review',
+    leniencyRowsPerCredit: cfg.scan?.leniencyRowsPerCredit ?? 5,
     logger,
   });
   const reviewHeldCardScan = new ReviewHeldCardScan({

@@ -42,6 +42,7 @@ import { OMR_REFEED_CONFIRM_MS, UNSALVABLE_REFUSALS, omrAlignmentError, sameOmrR
 import { omrKeyAlignmentSuspect } from "../../domain/omrKeyAlignment.mjs";
 import { reduceSession } from "../../domain/sessions/sessionEvents.mjs";
 import { creditsAsEraser, leniencyCap } from "../../domain/documents/ambiguityLeniency.mjs";
+import { resolveNeighbourBleed } from "../../domain/documents/neighbourBleed.mjs";
 import {
   CODE_LETTERS, GATE_SATISFIED, GATE_BLANK, GATE_WRONG, GATE_EXHAUSTED,
 } from "../../domain/companionCode.mjs";
@@ -306,9 +307,9 @@ function correctLetterFor(item) {
  * never has its shape perturbed by this pass at all.
  */
 function applyLeniency({
-  results, archetype, rowContext, logger,
+  results, archetype, rowContext, logger, rowsPerCredit,
 }) {
-  let budget = leniencyCap({ archetype, rowCount: results.length });
+  let budget = leniencyCap({ archetype, rowCount: results.length, rowsPerCredit });
   if (budget <= 0) return results;
 
   const promotedRows = new Set();
@@ -479,6 +480,7 @@ function gradeRow(item, given, points) {
 
 export class ResolveCardScan {
   #allocationStore; #repository; #banks; #logger; #heldScanStore; #protectionMode; #baselineStore; #sessions;
+  #ambiguousFallback; #leniencyRowsPerCredit;
 
   /**
    * @param {object} deps
@@ -503,6 +505,7 @@ export class ResolveCardScan {
   constructor({
     allocationStore, repository, banks = null, heldScanStore = null,
     protectionMode = 'off', logger = console, baselineStore = null, sessions = null,
+    ambiguousFallback = 'review', leniencyRowsPerCredit = 5,
   } = {}) {
     if (!allocationStore) throw new Error('ResolveCardScan requires allocationStore');
     if (!repository) throw new Error('ResolveCardScan requires repository');
@@ -517,6 +520,20 @@ export class ResolveCardScan {
     this.#heldScanStore = heldScanStore;
     this.#protectionMode = protectionMode;
     this.#logger = logger;
+    // school.yml scan.ambiguousFallback: 'review' (hold the row for a grown-up,
+    // today's behaviour) | 'incorrect' (score a still-ambiguous row incorrect,
+    // no review). Anything else falls back to 'review' with a warning.
+    if (ambiguousFallback !== 'review' && ambiguousFallback !== 'incorrect') {
+      logger?.warn?.('school.print.scan-config-invalid', { key: 'ambiguousFallback', value: ambiguousFallback, using: 'review' });
+      ambiguousFallback = 'review';
+    }
+    this.#ambiguousFallback = ambiguousFallback;
+    // school.yml scan.leniencyRowsPerCredit: integer >= 1, else 5 with a warning.
+    if (!Number.isInteger(leniencyRowsPerCredit) || leniencyRowsPerCredit < 1) {
+      logger?.warn?.('school.print.scan-config-invalid', { key: 'leniencyRowsPerCredit', value: leniencyRowsPerCredit, using: 5 });
+      leniencyRowsPerCredit = 5;
+    }
+    this.#leniencyRowsPerCredit = leniencyRowsPerCredit;
   }
 
   /**
@@ -1158,7 +1175,26 @@ export class ResolveCardScan {
           });
         }
         const points = pointsForRow(prepared, planned.blockPath);
-        const graded = gradeRow(item, answers[planned.row], points);
+        // Neighbour bleed (single-answer items only): resolve BEFORE gradeRow
+        // so gradeRow stays pure. The resolved row is graded as if the one
+        // unexplained letter had been given; the raw marks stay in `given`
+        // for audit and the letter is carried as `resolvedLetter`.
+        const rawGiven = answers[planned.row];
+        let graded;
+        if ((item.type === 'multiple_choice' || item.type === 'true_false') && Array.isArray(rawGiven)) {
+          const bleed = resolveNeighbourBleed({ row: planned.row, answers });
+          if (bleed) {
+            graded = {
+              ...gradeRow(item, bleed.letter, points),
+              given: rawGiven, resolvedLetter: bleed.letter, bleed: 'neighbour',
+            };
+            this.#logger?.info?.('school.print.scan-bleed-resolved', {
+              itemId, row: planned.row, given: rawGiven, resolvedLetter: bleed.letter,
+              neighbours: { above: bleed.above, below: bleed.below },
+            });
+          }
+        }
+        graded ??= gradeRow(item, rawGiven, points);
         if (graded.status === 'ambiguous') {
           rowContext.set(planned.row, { item, choiceCount: planned.choiceCount });
         }
@@ -1218,9 +1254,23 @@ export class ResolveCardScan {
     // accident would leave the budget wrong, and rule 3 (marks covering every
     // choice never earn credit) would misread a legitimate all-five `ABCDE`
     // finish code besides. Keeping it out of the pass entirely settles both.
-    const rowResults = applyLeniency({
+    const leniencyResults = applyLeniency({
       results: questionRows, archetype: prepared.archetype, rowContext, logger: this.#logger,
+      rowsPerCredit: this.#leniencyRowsPerCredit,
     });
+    // Configured fallback for rows STILL ambiguous after bleed + leniency:
+    // 'incorrect' scores them (ambiguous: true marks the audit trail) so they
+    // reach neither the review queue nor the "needs a grown-up" slip, both of
+    // which are driven by status === 'ambiguous'.
+    const rowResults = this.#ambiguousFallback === 'incorrect'
+      ? leniencyResults.map((row) => {
+        if (row.status !== 'ambiguous') return row;
+        this.#logger?.info?.('school.print.scan-ambiguous-scored', {
+          itemId: row.itemId, row: row.row, given: row.given, fallback: 'incorrect',
+        });
+        return { ...row, status: 'incorrect', earned: 0, ambiguous: true };
+      })
+      : leniencyResults;
 
     // Content-aware row-shift check (never a prior scan — that is
     // omrAlignmentError's job). Runs over fully-marked, multiple_choice rows

@@ -47,11 +47,13 @@ export function creditsAsEraser({ item, given, correctLetter } = {}) {
  * `quiz`, `infopage`, or anything unrecognised) is strict — cap 0, no
  * promotion ever runs.
  */
-export function leniencyCap({ archetype, rowCount } = {}) {
+export function leniencyCap({ archetype, rowCount, rowsPerCredit = 5 } = {}) {
   if (!LENIENT_ARCHETYPES.has(archetype)) return 0;
   const rows = Number(rowCount) || 0;
   if (rows <= 0) return 0;
-  return Math.max(1, Math.floor(rows / 5));
+  // `rowsPerCredit` comes from school.yml scan.leniencyRowsPerCredit.
+  const per = Number.isInteger(rowsPerCredit) && rowsPerCredit >= 1 ? rowsPerCredit : 5;
+  return Math.max(1, Math.floor(rows / per));
 }
 
 export default { creditsAsEraser, leniencyCap };
