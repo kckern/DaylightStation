@@ -193,6 +193,43 @@ describe('evaluateEarnings — school kinds', () => {
     expect(line(out, 'green-week').note).toMatch(/2026-09-21.*2026-09-24/);
   });
 
+  it('a settled red Monday ends green week on Tuesday', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'none'], ['2026-09-22', 'none']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-22' });
+    expect(line(out, 'green-week')).toMatchObject({ status: 'none' });
+    expect(line(out, 'green-week').note).toBe('Not green: 2026-09-21');
+  });
+
+  it('an unsettled red day (today) keeps green week pending', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'none']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-22' });
+    expect(line(out, 'green-week').status).toBe('pending');
+  });
+
+  it('a past day not worked out yet never ends green week early', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'unknown', 'pending'], ['2026-09-22', 'met']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-23' });
+    expect(line(out, 'green-week').status).toBe('indeterminate');
+  });
+
+  it('all green so far stays pending mid-week', () => {
+    const rs = ruleset([{ id: 'green-week', kind: 'week-met', reward: 5 }]);
+    const out = evaluate(rs, {
+      days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'none']]),
+      week: { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true },
+    }, { today: '2026-09-23' });
+    expect(line(out, 'green-week').status).toBe('pending');
+  });
+
   it('a week cannot pay before its Friday: all-green-so-far on a Wednesday is pending', () => {
     const rs = ruleset([
       { id: 'green-week', kind: 'week-met', reward: 5 },
