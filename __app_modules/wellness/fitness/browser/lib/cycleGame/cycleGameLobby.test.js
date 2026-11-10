@@ -36,6 +36,11 @@ describe('buildRaceConfigFromCourse', () => {
     const cfg = buildRaceConfigFromCourse({}, {});
     expect(cfg.raceMercyAfterWinnerS).toBe(0);
   });
+  // Rolling start: there is no penalty box, so the retired key is not carried.
+  it('carries no hot-start penalty, even when one is passed', () => {
+    const cfg = buildRaceConfigFromCourse({}, { hotStartPenaltyS: 5 });
+    expect(cfg).not.toHaveProperty('hotStartPenaltyS');
+  });
 });
 
 describe('formatClock', () => {

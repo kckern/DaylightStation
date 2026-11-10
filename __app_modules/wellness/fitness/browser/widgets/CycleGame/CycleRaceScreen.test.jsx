@@ -55,9 +55,9 @@ describe('CycleRaceScreen', () => {
     const { container } = render(<CycleRaceScreen {...props} />);
     expect(container.querySelectorAll('[data-testid="race-line"]').length).toBe(2);
   });
-  it('starts a penalty-boxed late starter\'s line to the right of the origin (no flat zero line)', () => {
+  it('starts a late starter\'s line to the right of the origin (no flat zero line)', () => {
     const riders = {
-      // boxed for the first 2 ticks (distance 0), then accelerates away
+      // still for the first 2 ticks (distance 0), then accelerates away
       boxed: { userId: 'boxed', displayName: 'Boxed', cumulativeDistanceM: 300, distanceSeries: [0, 0, 150, 300], isGhost: false }
     };
     const { container } = render(
@@ -70,7 +70,7 @@ describe('CycleRaceScreen', () => {
     // line must NOT begin at the origin (x=0).
     expect(firstX).toBeGreaterThan(0);
   });
-  it('draws no line for a rider who never left the penalty box (all-zero series)', () => {
+  it('draws no line for a rider who never moved (all-zero series)', () => {
     const riders = {
       stuck: { userId: 'stuck', displayName: 'Stuck', cumulativeDistanceM: 0, distanceSeries: [0, 0, 0], isGhost: false }
     };
@@ -89,36 +89,17 @@ describe('CycleRaceScreen', () => {
   });
   it('renders an officiating-event marker per event on the chart', () => {
     const events = [
-      { id: 1, type: 'dnf', riderId: 'user_2', seriesIndex: 2, distanceM: 900 },
-      { id: 2, type: 'penalty', riderId: 'user_3', seriesIndex: 0, distanceM: 0 }
+      { id: 1, type: 'dnf', riderId: 'user_2', seriesIndex: 2, distanceM: 900 }
     ];
     const { getAllByTestId, getByTestId } = render(<CycleRaceScreen {...props} events={events} />);
     expect(getByTestId('race-event-markers')).toBeTruthy();
-    expect(getAllByTestId(/^race-event-marker-/)).toHaveLength(2);
+    expect(getAllByTestId(/^race-event-marker-/)).toHaveLength(1);
     expect(getByTestId('race-event-marker-dnf')).toBeTruthy();
-    expect(getByTestId('race-event-marker-penalty')).toBeTruthy();
   });
   it('ignores events for riders not on the chart', () => {
     const events = [{ id: 1, type: 'dnf', riderId: 'ghost-nobody', seriesIndex: 1, distanceM: 100 }];
     const { queryByTestId } = render(<CycleRaceScreen {...props} events={events} />);
     expect(queryByTestId('race-event-markers')).toBeNull();
-  });
-  it('shows a false-start banner naming penalized riders', () => {
-    const penalized = {
-      ...props,
-      riderLive: {
-        user_3: { ...props.riderLive.user_3 },
-        user_2: { ...props.riderLive.user_2, penalized: true }
-      }
-    };
-    const { getByTestId, queryByTestId, rerender } = render(<CycleRaceScreen {...penalized} />);
-    const banner = getByTestId('cycle-race-penalty-banner');
-    expect(banner.textContent.toUpperCase()).toContain('FALSE START');
-    expect(banner.textContent).toContain('User_2');
-    expect(banner.textContent).not.toContain('User_3');
-    // clears once nobody is penalized
-    rerender(<CycleRaceScreen {...props} />);
-    expect(queryByTestId('cycle-race-penalty-banner')).toBeNull();
   });
   it('hides the speedometer row when showSpeedos is false', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };

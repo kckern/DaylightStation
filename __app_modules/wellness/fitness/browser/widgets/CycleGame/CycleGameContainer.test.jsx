@@ -1116,6 +1116,46 @@ describe('CycleGameContainer — automatic pace rival', () => {
       // Pedalling before the green light, read from the bike user_1 was staged on.
       expect(view.getByTestId('ready-rider-user_1').className).not.toContain('is-ghost');
       expect(view.getByTestId('ready-rider-user_1').textContent).toContain('77');
+      // Rolling start: pedalling is allowed and the chip says so.
+      expect(view.getByTestId('ready-rider-user_1').textContent).toContain('READY');
+    });
+
+    // Rolling start: the buffer elapsing is the only gate. A rider already
+    // pedalling does not hold the race on the "to your bikes" screen.
+    it('staging reaches the countdown when the buffer elapses, while a rider is pedalling', async () => {
+      const claims = { cycle_ace: 'user_1' };
+      mockCtx = soloCtx(claims, { staging_buffer_ms: 5000 });
+      mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 80, connected: true });
+      const view = await renderLobby([], { pool: never });
+      act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      await act(async () => { vi.advanceTimersByTime(1500); });
+      await flush();
+      expect(view.getByTestId('cycle-game-staging')).toBeTruthy();
+      expect(view.getByTestId('cycle-game-staging').textContent).toContain('Pedal when you see green.');
+      for (let i = 0; i < 6; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await act(async () => { vi.advanceTimersByTime(1000); });
+      }
+      expect(view.queryByTestId('cycle-game-staging')).toBeNull();
+      expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+      expect(view.queryByTestId('staging-waiting')).toBeNull();
+    });
+
+    it('shows NO SIGNAL for a staged rider whose bike is not reporting', async () => {
+      const claims = { cycle_ace: 'user_1' };
+      mockCtx = soloCtx(claims, { staging_buffer_ms: 5000 });
+      mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 0, connected: false });
+      const view = await renderLobby([], { pool: never });
+      act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      // The lobby's sensor check warns first; start anyway.
+      act(() => { fireEvent.click(view.getByTestId('sensor-warning-start')); });
+      await act(async () => { vi.advanceTimersByTime(1500); });
+      await flush();
+      const chip = view.getByTestId('ready-rider-user_1');
+      expect(chip.textContent).toContain('NO SIGNAL');
+      expect(chip.textContent).not.toContain('READY');
     });
   });
 

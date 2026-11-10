@@ -13,7 +13,6 @@ import PovGrid from "./panels/PovGrid.jsx";
 import StandingsTower from "./panels/StandingsTower.jsx";
 import SpeedoRow from "./panels/SpeedoRow.jsx";
 import RaceLayoutManager from "./RaceLayoutManager.jsx";
-import { NoEntryIcon } from "./home/icons.jsx";
 import "./CycleRaceScreen.scss";
 
 /**
@@ -35,12 +34,6 @@ export default function CycleRaceScreen({
   const riderIds = Object.keys(riders);
 
   const clockSeconds = winCondition === 'time' ? Math.max(0, timeCapS - elapsedS) : elapsedS;
-
-  // False-start banner: who is currently serving a hot-start penalty (meter
-  // locked because they were pedalling at the green light).
-  const penalizedNames = riderIds
-    .filter((id) => (riderLive[id] || {}).penalized)
-    .map((id) => riders[id].displayName || id);
 
   const maxDistance = winCondition === 'distance'
     ? goalM
@@ -108,15 +101,6 @@ export default function CycleRaceScreen({
       )}
       <div className="cycle-race-screen__vignette" aria-hidden="true" />
 
-      {penalizedNames.length > 0 && (
-        <div className="cycle-race-screen__penalty-banner" data-testid="cycle-race-penalty-banner" role="alert">
-          <span className="cycle-race-screen__penalty-icon" aria-hidden="true"><NoEntryIcon /></span>
-          <span className="cycle-race-screen__penalty-text">
-            False start — {penalizedNames.join(', ')} jumped the gun (meter locked)
-          </span>
-        </div>
-      )}
-
       <RaceLayoutManager panels={panels} fieldSize={fieldSize} />
     </div>
   );
@@ -135,7 +119,7 @@ CycleRaceScreen.propTypes = {
   lapLengthM: PropTypes.number,
   events: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.number,
-    type: PropTypes.oneOf(['dnf', 'penalty']),
+    type: PropTypes.oneOf(['dnf']),
     riderId: PropTypes.string,
     seriesIndex: PropTypes.number,
     distanceM: PropTypes.number

@@ -111,8 +111,7 @@
   &__rpm-unit { color: cg.$cg-faint; font-weight: 500; font-size: max(0.75em, 1.1rem); font-style: normal; }
   // SENSOR chip — replaces the rpm digits in the same slot when the sensor gap
   // has run past the hold+decay window (gapTicksRef ≥ SENSOR_LOST_GAP_TICKS).
-  // Warm/danger red, matching the penalty overlay's palette, so it reads as
-  // "something's wrong" the same way a false-start does. Same T10-carried MUST
+  // Warm/danger red so it reads as "something's wrong". Same T10-carried MUST
   // as __rpm above — explicit floor so "SENSOR" never renders below 17.6px
   // even though it inherits __rpm's (also-floored) computed size.
   &__sensor-lost-chip {
@@ -163,46 +162,4 @@
   &__finished-label {
     color: cg.$cg-text; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.18em; text-transform: uppercase; // was 0.7rem
   }
-
-  // FALSE START — a rider pedalling at the green light. Their meter is locked
-  // (no distance) for the penalty window; the gauge still shows real RPM so they
-  // can see pedalling isn't counting. Red is the danger semantic — kept.
-  &--penalized &__needle { stroke: cg.$cg-danger; filter: drop-shadow(0 0 4px rgba(cg.$cg-danger, 0.8)); }
-  &__penalty {
-    position: absolute; inset: 0; z-index: 21;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 1px; pointer-events: none;
-    background: radial-gradient(circle at center, rgba(60, 6, 6, 0.78) 0%, rgba(40, 4, 4, 0.32) 70%, transparent 100%);
-    animation: cg-penalty-pulse 0.6s ease-in-out infinite;
-  }
-  // SVG glyph (audit UX §6.3 — ⛔ emoji → the shared NoEntryIcon).
-  &__penalty-icon {
-    display: flex; line-height: 1; color: cg.$cg-danger;
-    svg { width: 1.7rem; height: 1.7rem; display: block; }
-  }
-  &__penalty-title { color: cg.$cg-danger; font-weight: 900; font-size: 1.15rem; line-height: 1; text-transform: uppercase; letter-spacing: 0.04em; }
-  &__penalty-sub { color: #ffd0d0; font-weight: 700; font-size: 1.1rem; letter-spacing: 0.14em; text-transform: uppercase; } // was 0.66rem
-  // Draining countdown bar — fill width = remaining/total, so it empties as the
-  // mandatory window runs down.
-  &__penalty-bar {
-    margin-top: 5px; width: 64%; height: 6px; border-radius: 999px;
-    background: rgba(cg.$cg-danger, 0.22); overflow: hidden;
-  }
-  &__penalty-fill {
-    display: block; height: 100%; border-radius: 999px;
-    background: cg.$cg-danger; box-shadow: 0 0 8px rgba(cg.$cg-danger, 0.8);
-    transition: width 0.25s linear;
-  }
-  // Timer served, still pedalling — the gate is now "return to RPM 0".
-  &__penalty-stop {
-    color: #fff; font-weight: 900; font-size: 1.1rem; letter-spacing: 0.1em; text-transform: uppercase; // was 0.78rem
-    margin-top: 3px; padding: 2px 8px; border-radius: 6px;
-    background: rgba(255, 60, 60, 0.32); border: 1px solid rgba(255, 120, 120, 0.7);
-    animation: cg-penalty-pulse 0.5s ease-in-out infinite;
-  }
-}
-
-@keyframes cg-penalty-pulse {
-  0%, 100% { opacity: 0.92; }
-  50% { opacity: 1; }
 }

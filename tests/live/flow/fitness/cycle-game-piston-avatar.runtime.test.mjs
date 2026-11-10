@@ -60,7 +60,7 @@ test.describe('Cycle Game — POV marker avatar + grid', () => {
       phase = await phaseOf(page);
     }
     expect(phase).toBe('racing');
-    // Hold across the first tick (no self-inflicted false start), then drive.
+    // Hold across the first tick, then drive.
     for (const id of bikeIds) await setRpm(page, id, 0);
     await page.waitForTimeout(1400);
 
@@ -68,14 +68,13 @@ test.describe('Cycle Game — POV marker avatar + grid', () => {
     await expect(page.getByTestId('race-pov')).toBeVisible({ timeout: 15000 });
 
     // Drive until the leader has real distance so markers are well placed.
-    const stopEquipment = (id) => page.evaluate((e) => window.__fitnessSimController.stopEquipment(e), id);
     for (let i = 0; i < 18; i++) {
       const rs = await raceState(page);
       const riders = rs?.riders || [];
       for (let k = 0; k < bikeIds.length; k++) {
         const id = bikeIds[k];
         const r = riders.find((x) => x.equipmentId === id);
-        if (r?.boxed) await stopEquipment(id); else await setRpm(page, id, 90 + k * 6);
+        await setRpm(page, id, r?.finished ? 0 : 90 + k * 6);
       }
       const maxD = Math.max(0, ...riders.map((r) => r.distanceM || 0));
       if (maxD > 25) break;

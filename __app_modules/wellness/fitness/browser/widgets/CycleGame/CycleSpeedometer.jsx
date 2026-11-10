@@ -5,7 +5,7 @@ import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from "../../lib/cycleGame/speedometerGeometry.js";
 import { createTickLerp } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import { AVATAR_RATIO, OVERLAY_FONT_RATIO, multiplierChipBox } from "../../lib/cycleGame/speedometerOverlayLayout.js";
-import { NoEntryIcon, RaceFlagIcon, MedalIcon } from "./home/icons.jsx";
+import { RaceFlagIcon, MedalIcon } from "./home/icons.jsx";
 import "./CycleSpeedometer.scss";
 
 const VIEWBOX = 200;
@@ -23,8 +23,8 @@ function ordinal(n) {
 export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, speedKmh = 0, cadenceBands = [], tickStep, labelStep,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
-  isGhost = false, finished = false, placement = null, penalized = false, isLeader = false,
-  penaltyRemainingS = null, penaltyTotalS = null, penaltyAwaitingStop = false, sensorLost = false
+  isGhost = false, finished = false, placement = null, isLeader = false,
+  sensorLost = false
 }) {
   // Tick spacing scales with the gauge max (a fixed 10/30 crowds a 250 dial);
   // explicit tickStep/labelStep props still override when provided.
@@ -117,32 +117,8 @@ export default function CycleSpeedometer({
   }, [needleDeg, distM]);
 
   return (
-    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${penalized ? ' cycle-speedometer--penalized' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
+    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
       <div className="cycle-speedometer__gauge" style={{ width: px, height: px, fontSize: overlayFontPx }}>
-        {penalized && !finished && (
-          <div className="cycle-speedometer__penalty" data-testid="cycle-speedometer-penalty">
-            <span className="cycle-speedometer__penalty-icon" aria-hidden="true"><NoEntryIcon /></span>
-            <span className="cycle-speedometer__penalty-title">False start</span>
-            {penaltyAwaitingStop ? (
-              // Timer served — they just need to stop pedalling to clear the box.
-              <span className="cycle-speedometer__penalty-stop">Stop pedaling to clear</span>
-            ) : (
-              <>
-                <span className="cycle-speedometer__penalty-sub">
-                  Penalty box · {Math.ceil(Number.isFinite(penaltyRemainingS) ? penaltyRemainingS : 0)}s
-                </span>
-                {Number.isFinite(penaltyTotalS) && penaltyTotalS > 0 && (
-                  <span className="cycle-speedometer__penalty-bar" data-testid="cycle-speedometer-penalty-bar">
-                    <span
-                      className="cycle-speedometer__penalty-fill"
-                      style={{ width: `${Math.max(0, Math.min(100, (penaltyRemainingS / penaltyTotalS) * 100))}%` }}
-                    />
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-        )}
         {finished && (
           <div className="cycle-speedometer__finished" data-testid="cycle-speedometer-finished">
             <span className="cycle-speedometer__finished-flag" aria-hidden="true"><RaceFlagIcon /></span>
@@ -286,10 +262,6 @@ CycleSpeedometer.propTypes = {
   isGhost: PropTypes.bool,
   finished: PropTypes.bool,
   placement: PropTypes.number,
-  penalized: PropTypes.bool,
   isLeader: PropTypes.bool,
-  penaltyRemainingS: PropTypes.number,
-  penaltyTotalS: PropTypes.number,
-  penaltyAwaitingStop: PropTypes.bool,
   sensorLost: PropTypes.bool
 };

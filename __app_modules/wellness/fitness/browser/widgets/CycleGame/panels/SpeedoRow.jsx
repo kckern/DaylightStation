@@ -50,10 +50,6 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             finished={!!live.finished}
             placement={live.placement}
             isLeader={!!live.isLeader}
-            penalized={!!live.penalized}
-            penaltyRemainingS={live.penaltyRemainingS}
-            penaltyTotalS={live.penaltyTotalS}
-            penaltyAwaitingStop={!!live.penaltyAwaitingStop}
             sensorLost={!!live.sensorLost}
             size={speedoSize}
           />

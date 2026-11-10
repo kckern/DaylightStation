@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
-import { StopSignIcon, TimeIcon, RaceFlagIcon } from "../home/icons.jsx";
+import { StopSignIcon, RaceFlagIcon } from "../home/icons.jsx";
 import { plotStartIndex } from "../../../lib/cycleGame/chartTrim.js";
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from "./useFitGuard.js";
@@ -23,7 +23,7 @@ const MAX_PLOT_POINTS = 600; // decimate longer series to bound per-tick geometr
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
 
 // Officiating-event marker icons (audit UX §6.3 — 🛑/⏱️ emoji → icon set).
-const EVENT_GLYPH = { dnf: StopSignIcon, penalty: TimeIcon };
+const EVENT_GLYPH = { dnf: StopSignIcon };
 
 // ── SVG plot geometry (fixed viewBox) ──────────────────────────────────────
 const W = 600, H = 200;
@@ -268,7 +268,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     };
   });
 
-  // Officiating-event markers (DNF / penalty), re-projected onto their lane point.
+  // Officiating-event markers (DNF), re-projected onto their lane point.
   // t/d are the FIXED historical datum (a past event never moves); only the
   // window is eased, so the per-frame writer re-derives position from these
   // via mapPoint(t, d, winF) directly — no prev/cur lerp needed on the datum.
@@ -638,7 +638,7 @@ DistanceChart.propTypes = {
   goalM: PropTypes.number,
   events: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.number,
-    type: PropTypes.oneOf(['dnf', 'penalty']),
+    type: PropTypes.oneOf(['dnf']),
     riderId: PropTypes.string,
     seriesIndex: PropTypes.number,
     distanceM: PropTypes.number

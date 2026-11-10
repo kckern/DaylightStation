@@ -77,31 +77,6 @@ describe('CycleSpeedometer', () => {
     const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
     expect(queryByTestId('cycle-speedometer-finished')).toBeNull();
   });
-  it('shows a FALSE START penalty overlay when penalized', () => {
-    const { getByTestId, container } = render(<CycleSpeedometer {...baseProps} penalized />);
-    expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('FALSE START');
-    expect(container.querySelector('.cycle-speedometer--penalized')).not.toBeNull();
-  });
-  it('does not show the penalty overlay when not penalized', () => {
-    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
-    expect(queryByTestId('cycle-speedometer-penalty')).toBeNull();
-  });
-  it('shows a draining countdown bar with seconds remaining while serving the timer', () => {
-    const { getByTestId } = render(
-      <CycleSpeedometer {...baseProps} penalized penaltyRemainingS={6} penaltyTotalS={10} penaltyAwaitingStop={false} />
-    );
-    const bar = getByTestId('cycle-speedometer-penalty-bar');
-    // fill reflects remaining/total (6/10 = 60%)
-    expect(bar.querySelector('.cycle-speedometer__penalty-fill').style.width).toBe('60%');
-    expect(getByTestId('cycle-speedometer-penalty').textContent).toContain('6');
-  });
-  it('swaps to a STOP PEDALING cue once the timer is served but the rider is still pedalling', () => {
-    const { getByTestId, queryByTestId } = render(
-      <CycleSpeedometer {...baseProps} penalized penaltyRemainingS={0} penaltyTotalS={10} penaltyAwaitingStop />
-    );
-    expect(queryByTestId('cycle-speedometer-penalty-bar')).toBeNull();
-    expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('STOP PEDALING');
-  });
   it('renders the leader medal in the odometer only when isLeader is true', () => {
     const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
     expect(queryByTestId('cycle-speedometer-leader-medal')).toBeNull();

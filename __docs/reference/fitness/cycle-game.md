@@ -87,7 +87,7 @@ Race screen + fixed layout ─────────────────�
 Results / recap / events ───────────────────────────────────────────────────────
   widgets/CycleGame/RaceResults.jsx             final standings + splits + auto-exit + Exit
   widgets/CycleGame/RaceRecap.jsx               replay a saved race
-  widgets/CycleGame/CycleEventToast.jsx         transient DNF/penalty toast
+  widgets/CycleGame/CycleEventToast.jsx         transient officiating/drama toast
   lib/cycleGame/raceRecord.js                   buildRaceRecord (persist shape),
                                                 raceOutcomeMeta (incomplete / stopped)
   lib/cycleGame/raceCheckpoint.js               mid-race checkpoint + how a recovered
@@ -152,8 +152,8 @@ React phases in `applySnapshot()`.
 | React phase | Controller phase(s) | Rendered | Enter trigger | Exit trigger |
 |---|---|---|---|---|
 | `idle` | — / `cancelled` | `CycleGameHome` (lobby) + history load | mount; back-to-home; **Discard race** | Start (when `canStart`) |
-| `staging` | `staged` | `RiderReadyStrip` ("to your bikes") + `RaceMenu` (no End item) | Start, if `staging_buffer_ms > 0` | buffer elapsed **and** all riders at RPM 0 (see §10); or **Discard race** |
-| `countdown` | `staged`→`countdown` | `CountdownStoplight` + `RiderReadyStrip` + `RaceMenu` (no End item) | staging gate clears (or Start if buffer 0) | countdown reaches the green light; or **Discard race** |
+| `staging` | `staged` | `RiderReadyStrip` ("to your bikes") + `RaceMenu` (no End item) | Start, if `staging_buffer_ms > 0` | buffer elapsed (rolling start, §10); or **Discard race** |
+| `countdown` | `staged`→`countdown` | `CountdownStoplight` + `RiderReadyStrip` + `RaceMenu` (no End item) | staging buffer elapses (or Start if buffer 0) | countdown reaches the green light; or **Discard race** |
 | `go` | `racing` | `CountdownStoplight` (GREEN) — engine already live; no race menu | green light | brief hold (`GO_HOLD_MS` ≈ 800 ms) |
 | `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` + `RaceMenu` | go-hold ends | distance: every live rider finished or in overtime (parked and no-sensor riders stop holding it open once a live rider has finished); time: the cap; either: every live unfinished rider away for `allParkedEndS` (15 s); or the race menu's **End race here** (→ `results`) or **Discard race** (→ `idle`) |
 | `results` | `finished`→`results` | `RaceResults` | engine `finished` | manual **Exit** or auto-dwell countdown → `idle` |
@@ -453,7 +453,7 @@ restart to take effect.
 | `hrless_multiplier` | 1 | Distance multiplier for a rider with no HR strap |
 | `race_idle_dnf_s` | 20 | The park window: seconds of zero RPM (after a rider has started) before they are parked. Parked riders resume on their next pedal stroke. Reaches the controller as `raceIdleDnfS`; the controller prefers `parkIdleS` when both are given |
 | `race_start_grace_s` | 30 | Seconds a rider may report zero RPM **before their first movement** before they are parked as a no-show. More generous than `race_idle_dnf_s` to cover magnetless cadence sensors (e.g. the tricycle's COOSPO BK467) that take ~20s to lock onto rotation from a dead stop |
-| `hot_start_penalty_s` | 0 | No longer read by the controller, which has no penalty box. The key is retired in a later change |
+| `hot_start_penalty_s` | — | **Retired.** The start is rolling and there is no penalty box; nothing reads this key (the container, the lobby config builder and the controller all ignore it). Safe to delete from the YAML |
 | `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
 | `results_dwell_s` | 20 | Results auto-return countdown before returning to the lobby |
 | `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive, or the default is used; a positive value below 3 km/h is raised to 3 |
@@ -538,8 +538,11 @@ always empty and remain only until their last readers are removed.
   window (`parkIdleS`, else `race_idle_dnf_s`). A rider who has finished is never
   parked. Idle time is counted in ticks, so the threshold is exact at any tick
   interval.
-- **No penalty box:** pedalling counts from the first racing tick.
-  `markFalseStarters()` no longer exists and `hotStartPenaltyS` is ignored.
+- **Rolling start, no penalty box:** pedalling before green counts for
+  nothing (the engine does not exist yet) and is never punished; pedalling counts
+  from the first racing tick. There is no false-start tracking anywhere: the
+  controller has no `markFalseStarters()`, and neither the container nor
+  `buildRaceConfigFromCourse` passes a hot-start penalty.
 - **Mercy window:** in a distance race with `raceMercyAfterWinnerS > 0`, the race
   closes that many seconds after the first **live** rider finishes. Riders still
   riding land in `overtime`; parked and no-sensor riders stay where they are. A
@@ -622,9 +625,9 @@ Climbing gradient lanes toward the goal, over a decimating, transform-aware
 - **Leading-edge interpolation:** the engine ticks at 1 Hz, so each lane's newest
   point glides from its previous position to the current one over the interval via a
   rAF clock, instead of snapping.
-- **Officiating-event markers** (DNF/penalty) are re-projected onto the lane where
+- **Officiating-event markers** (DNF) are re-projected onto the lane where
   they fired (`xFor(seriesIndex)`, `yFor(distanceM)`); a lane **starts at first
-  movement** (`chartTrim.plotStartIndex`), so a penalty-boxed late starter emerges
+  movement** (`chartTrim.plotStartIndex`), so a late starter emerges
   to the right of the origin instead of drawing a flat zero line.
 
 ### 9.3 SplitsChart
@@ -687,44 +690,49 @@ riders; a 7th+ reuses a hue.
 
 ---
 
-## 10. Countdown, staging gate & ready strip
+## 10. Countdown, rolling start & ready strip
 
-- **Staging gate.** The "to your bikes" screen holds until **both** the
-  `staging_buffer_ms` has elapsed **and** every rider is at **RPM 0** — you can't
-  progress to the stoplight with the cranks still turning. When the buffer elapses
-  but bikes are still moving, the progress bar is replaced by a **diagonal-striped
-  indeterminate "waiting" bar** until everything stops.
+- **Rolling start.** The "to your bikes" screen advances to the stoplight the
+  moment `staging_buffer_ms` elapses, whatever the cranks are doing. Pedalling
+  before green is allowed and simply counts for nothing until green (the engine
+  goes live on GREEN, §3). There is no "stop pedalling" gate, no waiting bar and
+  no false start. The staging hint reads **"Pedal when you see green."**
 - **`CountdownStoplight`** (presentational): the sequence is **ALL3 → RED → YELLOW →
   GREEN** — earlier beats flash all three lamps ("get set"), then the last three
   beats are red, yellow, and green-at-GO (so yellow never holds for two beats). The
   **container** plays the per-tick beep and the GO sound; the engine goes live on
   **GREEN** (§3).
 - **`RiderReadyStrip`** (staging + countdown): one chip per rider — avatar, name,
-  live RPM, and compliance: **READY ✓** when not pedalling, **WAIT ⚠** (amber,
-  pulsing) when pedalling early. Anyone still "WAIT" *before* green earns a false
-  start. The chips are the riders **staged for this race** (fixed when the race
-  is built, each with the live RPM of the bike they were staged on) plus its
-  ghosts, not whoever holds a bike at that moment: a claim changed while Start
-  was waiting on its lookup does not put a rider on the strip who is not racing.
+  live RPM, and the bike's sensor state, in word + icon + colour: **✓ READY**
+  (green) when the bike's cadence sensor is reporting, **⚠ NO SIGNAL** (amber)
+  when it is not. The container sets `sensorLive` on each chip from
+  `session.getEquipmentCadence(bikeId)?.connected` for the bike the rider was
+  staged on; cadence never changes the state. Ghost chips read **AUTO**. The
+  chips are the riders **staged for this race** (fixed when the race is built)
+  plus its ghosts, not whoever holds a bike at that moment: a claim changed while
+  Start was waiting on its lookup does not put a rider on the strip who is not
+  racing.
+- **Lobby bikes.** Each entry of the lobby's `bikes` list carries the same
+  `sensorLive` flag (the bike's sensor is reporting right now), which the lobby's
+  sensor check reads (§4).
 
 ---
 
-## 11. Officiating events (DNF / penalty)
+## 11. Officiating events
 
-When a rider newly DNFs or is newly penalized, the container records an event
-`{ id, type: 'dnf'|'penalty', riderId, displayName, seriesIndex, distanceM }` into
+When a rider newly DNFs, the container records an event
+`{ id, type: 'dnf', riderId, displayName, seriesIndex, distanceM }` into
 `raceEvents` and enqueues a **toast**:
 
-- **`CycleEventToast`** — a single-slot, non-blocking toast (🛑 DNF / ⏱️ penalty)
+- **`CycleEventToast`** — a single-slot, non-blocking toast
   auto-dismissing after ~4 s (or on click). Extra events queue. **Never pauses the
   race.**
 - **Chart markers** — `raceEvents` is threaded into `DistanceChart`, which
   re-projects each event onto the rider's lane as a persistent glyph chip. *(These
   live in `DistanceChart` because that's where the chart's coordinate projection
   lives.)*
-- Logs: `cycle_game.rider_dnf`; the penalty lifecycle logs `penalty_entered` →
-  `penalty_awaiting_stop` → `penalty_cleared`; and `cycle_game.cadence_change` on
-  every sensor connect/drop transition.
+- Logs: `cycle_game.rider_dnf`, and `cycle_game.cadence_change` on every sensor
+  connect/drop transition. There is no penalty lifecycle (rolling start, §10).
 
 ---
 
@@ -734,8 +742,7 @@ When a rider newly DNFs or is newly penalized, the container records an event
   (slide-into-podium, rows fly/fade in, metrics count up — the count-up is disabled
   under `prefers-reduced-motion`, and tests pass `animate={false}`), the full
   **lap-by-lap splits table** is shown (`SplitsChart final`), 🥇🥈🥉 medals (numeric
-  for 4+), the winner gets a 👑 and a larger avatar, DNF rows show "DNF", and a ⏱️
-  badge marks false starts. The board **auto-returns to the lobby** after
+  for 4+), the winner gets a 👑 and a larger avatar, and DNF rows show "DNF". The board **auto-returns to the lobby** after
   `results_dwell_s` with a visible countdown, and a manual **Exit** button leaves
   immediately. Metric is finish-time (distance race) or distance covered (time race).
 - **`RaceRecap`** — full-screen modal that replays a saved race by feeding
@@ -765,10 +772,8 @@ with the `cg-ghost` treatment.
   scale proportionally** (`scaleBands`) so a real sprint is the top red tier.
 - **Multiplier badge** (×2, ×3, ×5…) shows when the zone multiplier > 1, pinned
   top-right of the avatar.
-- **Overlay states:** **FINISHED** (🏁 + placement, gauge parked) and the **PENALTY
-  BOX** (⛔ FALSE START) — real (red) needle, a draining countdown bar
-  (`penaltyRemainingS / penaltyTotalS`), and a pulsing **"STOP PEDALING TO CLEAR"**
-  once the timer is served but they're still pedalling (`penaltyAwaitingStop`).
+- **Overlay states:** **FINISHED** (🏁 + placement, gauge parked). There is no
+  penalty overlay (rolling start, §10).
 - **Avatar compositor layer.** `.cycle-speedometer__avatar { transform: translateZ(0);
   will-change }` so the needle's per-tick repaint doesn't flicker the overlaid avatar.
 
@@ -1109,8 +1114,7 @@ by `raceId` (+ `elapsedS` where relevant).
 - **Spine (INFO, always on)** — `phase_transition` (`{from,to}`), `config` (full
   effective config + zone multipliers, once at start), `ghost_rider` (per-ghost
   series point-counts), `staged` / `staging` / `race_started` / `race_finished` /
-  `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_dnf`,
-  `penalty_entered` / `penalty_awaiting_stop` / `penalty_cleared`, `cadence_change`,
+  `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_dnf`, `cadence_change`,
   `ended_early`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`,
   `pace_rival`.
 - **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
@@ -1183,7 +1187,7 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   `hr_series`; ghosts recorded in between have HR + distance but no RPM → the needle
   sits at 0. Not a bug, not backfillable. (Recap always shows 0 RPM by design.)
 - **Config is read at startup.** Changing `cycle_game` config (incl. courses, zones,
-  `lap_length_m`, penalties, `results_dwell_s`) requires a **container restart**.
+  `lap_length_m`, `results_dwell_s`) requires a **container restart**.
 - **Lap panels are config-gated.** Splits and the standings tower's "Lap N" header
   only appear when the **effective** lap length > 0 (per-course override or app
   config, via `effectiveLapLength`). With laps off, the splits panel still shows a
@@ -1195,8 +1199,8 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   10–20 s dropouts don't flatline the bike. A simultaneous 1-tick gap on *all* sensors
   can still blip; `rpmDuringGap` bridges longer gaps.
 - **Race starts on GREEN.** The engine goes live at the green light, ~0.8 s before
-  the race screen appears. Pedalling counts from the first racing tick; the
-  controller has no false-start detection or penalty box (§8).
+  the race screen appears. The start is rolling: pedalling before green counts for
+  nothing and is never punished, and counts from the first racing tick (§8, §10).
 - **Synthwave lane palette, capped at 6.** Rider colours avoid the HR-zone hues and
   the reserved chrome (cyan/magenta); a 7th+ rider reuses a hue.
 - **`date` metadata is UTC, the folder is local.** Harmless — nothing files by `date`
@@ -1211,8 +1215,6 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   screen (`.race-layout` + slot `height:100%`) or its absolute SVG collapses to 0.
 - **Don't size a panel from its own measured height** in an `auto`-height grid track —
   that's a measure→resize→measure thrash (it bit `SpeedoRow`). Size from width.
-- **Penalty box ≠ a fixed timer.** A boxed rider isn't released until they return to
-  RPM 0 *after* the timer — keep pedalling and they stay boxed (`awaitingStop`).
 - **History list shows the winner avatar, not a crown.** The 👑 is only on the
   `RaceResults` board; the History table uses the winner's avatar + runner-up
   crescents (`recordRow.buildRecordRow`).
@@ -1231,7 +1233,7 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   the mercy window, the all-away close, `finishNow` setting `endedEarly`),
   `raceCheckpoint` (race state round-trip, `checkpointOutcome`).
 - **Components (vitest + @testing-library):** `CycleRaceScreen` (clock, speedometers,
-  lanes, penalty banner, event markers, `showSpeedos`, `zoneBox` forwarding),
+  lanes, event markers, `showSpeedos`, `zoneBox` forwarding),
   `RaceLayoutManager` (mode by field size, splits-before-chart), `DistanceChart`,
   `SplitsChart` (sticky/live-order/final), `PovGrid`, `OvalTrack`, `SpeedoRow`,
   `CycleSpeedometer`, `CountdownStoplight` (ALL3→RED→YELLOW→GREEN), `RaceResults`

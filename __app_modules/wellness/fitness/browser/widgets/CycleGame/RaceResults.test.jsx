@@ -42,14 +42,7 @@ describe('RaceResults', () => {
     expect(row.textContent).toContain('DNF');
     expect(row.textContent).not.toContain('OT');
   });
-  it('flags penalized riders with a badge and a false-start legend', () => {
-    const { getByTestId } = render(
-      <RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} penalized={['user_2']} />
-    );
-    expect(getByTestId('result-row-user_2').textContent).toContain('⏱️');
-    expect(getByTestId('race-results-legend').textContent).toContain('False start');
-  });
-  it('renders no legend when there are no DNF or penalty events', () => {
+  it('renders no legend when there are no DNF or overtime riders', () => {
     const { queryByTestId } = render(<RaceResults standings={standings} riders={riders} winCondition="distance" dnf={[]} />);
     expect(queryByTestId('race-results-legend')).toBeNull();
   });
