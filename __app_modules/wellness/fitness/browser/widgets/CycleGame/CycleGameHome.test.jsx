@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent, act } from '@testing-library/react';
+import { render, fireEvent, act, cleanup } from '@testing-library/react';
 import CycleGameHome from "./CycleGameHome.jsx";
 
 const bikes = [
@@ -674,5 +674,105 @@ describe('CycleGameHome — busy (a start is pending)', () => {
     document.querySelectorAll('.cgh-picker button').forEach((b) => fireEvent.click(b));
     expect(h.onAssign).not.toHaveBeenCalled();
     expect(h.onUnassign).not.toHaveBeenCalled();
+  });
+
+  // Each picker is opened first, then the lobby turns busy: the open picker
+  // stays on screen and every way it could commit a change does nothing.
+  describe('pickers that were already open when the lobby turned busy', () => {
+    const candidate = {
+      raceId: '20260605110000', day: '2026-06-05', timeOfDay: '11:00 am',
+      participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/x', isGhost: false }],
+      winnerName: 'User_3', goalKind: 'distance', goalLabel: '1 km', scoreKind: 'time', scoreLabel: '2:00'
+    };
+    const currentGhost = { sourceRaceId: 'r1', winCondition: 'distance', goalM: 1000, displayName: 'User_3', riders: [] };
+    const home = (h, extra = {}) => (
+      <CycleGameHome bikes={bikes} people={people} records={[record]} highScores={[highScore]} featured={ladder}
+        raceType="distance" raceValue={1000} canStart ghostCandidates={[candidate]} {...h} {...extra} />
+    );
+
+    it('an open rider picker cannot assign a rider', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('bike-tricycle').querySelector('button'));
+      rerender(home(h, { busy: true }));
+      fireEvent.click(getByTestId('assign-user_2'));
+      expect(h.onAssign).not.toHaveBeenCalled();
+      expect(getByTestId('rider-picker')).toBeTruthy(); // still open: nothing was committed
+    });
+
+    it('an open rider picker cannot clear the rider', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('bike-cycle_ace').querySelector('button'));
+      rerender(home(h, { busy: true }));
+      fireEvent.click(getByTestId('rider-clear'));
+      expect(h.onUnassign).not.toHaveBeenCalled();
+      expect(getByTestId('rider-picker')).toBeTruthy();
+    });
+
+    it('an open ghost picker cannot select a ghost', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('course-ghost'));
+      fireEvent.click(getByTestId('ghost-20260605110000')); // focus
+      rerender(home(h, { busy: true }));
+      fireEvent.click(getByTestId('ghost-20260605110000')); // would commit
+      expect(h.onSelectGhost).not.toHaveBeenCalled();
+      expect(getByTestId('ghost-picker')).toBeTruthy();
+    });
+
+    it('an open ghost picker cannot remove the ghost', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h, { ghost: currentGhost }));
+      fireEvent.click(getByTestId('cgh-ghost-summary').querySelector('button')); // "change" opens the picker
+      expect(getByTestId('ghost-picker')).toBeTruthy();
+      rerender(home(h, { ghost: currentGhost, busy: true }));
+      fireEvent.click(getByTestId('ghost-clear'));
+      expect(h.onClearGhost).not.toHaveBeenCalled();
+    });
+
+    it('an open volume modal cannot set the volume', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('cycle-game-volume-open'));
+      const press = () => getByTestId('cycle-game-volume').querySelectorAll('button').forEach((b) => fireEvent.click(b));
+      press();
+      expect(h.onSetMasterVolume).toHaveBeenCalled(); // the buttons do work when the lobby is live
+      h.onSetMasterVolume.mockClear();
+      rerender(home(h, { busy: true }));
+      press();
+      expect(h.onSetMasterVolume).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('CycleGameHome — history row labels', () => {
+  const row = (over = {}) => ({ raceId: '20260101100000', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a', others: [],
+    speedLabel: '30 km/h', speedKind: 'speed', raceLabel: '1.00 km', raceKind: 'distance', whenDay: 'Today', whenTime: '6:12p', ...over });
+  const renderRow = (over) => render(<CycleGameHome bikes={bikes} people={people} records={[row(over)]} />)
+    .getByTestId('record-20260101100000');
+
+  it('names the row after its lead rider, or "Lead rider" when the record has no name', () => {
+    expect(renderRow().getAttribute('aria-label')).toBe('User_3 — 30 km/h, 1.00 km, Today 6:12p');
+    cleanup();
+    expect(renderRow({ winnerName: undefined }).getAttribute('aria-label')).toBe('Lead rider — 30 km/h, 1.00 km, Today 6:12p');
+  });
+
+  it('a pace is shown as a plain speed', () => {
+    const cell = renderRow().querySelector('[data-col="speed"]');
+    expect(cell.textContent).toBe('30 km/h');
+    expect(cell.getAttribute('data-kind')).toBe('speed');
+    expect(cell.getAttribute('aria-label')).toBeNull();
+    expect(cell.getAttribute('title')).toBeNull();
+  });
+
+  it('a distance in the Speed column says it is the distance ridden, not a speed', () => {
+    const btn = renderRow({ speedLabel: '640 m', speedKind: 'distance' });
+    const cell = btn.querySelector('[data-col="speed"]');
+    expect(cell.textContent).toBe('640 m'); // the value keeps its unit
+    expect(cell.getAttribute('data-kind')).toBe('distance');
+    expect(cell.getAttribute('aria-label')).toBe('640 m ridden, did not finish');
+    expect(cell.getAttribute('title')).toBe('Distance ridden (did not finish)');
+    expect(btn.getAttribute('aria-label')).toBe('User_3 — 640 m ridden, did not finish, 1.00 km, Today 6:12p');
   });
 });

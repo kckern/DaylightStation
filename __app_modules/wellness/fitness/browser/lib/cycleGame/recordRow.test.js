@@ -92,6 +92,14 @@ describe('buildRecordRow', () => {
       ] }, '2026-06-03');
     expect(r.winnerId).toBe('user_2');
     expect(r.speedLabel).toBe('640 m');
+    expect(r.speedKind).toBe('distance'); // the table must not present it as a speed
+  });
+  it('says what the result cell holds: a speed, a distance ridden, or nothing', () => {
+    const one = (p) => buildRecordRow({ ...base, winCondition: 'distance', goalLabel: '1.00 km', timeCapS: null,
+      participants: [{ id: 'user_2', displayName: 'User_2', avatarSrc: '/b', ...p }] }, '2026-06-03');
+    expect(one({ finalDistanceM: 1000, finalTimeS: 120 })).toMatchObject({ speedLabel: '30 km/h', speedKind: 'speed' });
+    expect(one({ finalDistanceM: 640, finalTimeS: null })).toMatchObject({ speedLabel: '640 m', speedKind: 'distance' });
+    expect(one({ finalDistanceM: 0, finalTimeS: null })).toMatchObject({ speedLabel: null, speedKind: null });
   });
   it('a lead rider who never moved still has no result', () => {
     const r = buildRecordRow({ ...base, winCondition: 'distance', goalLabel: '1.00 km', timeCapS: null,

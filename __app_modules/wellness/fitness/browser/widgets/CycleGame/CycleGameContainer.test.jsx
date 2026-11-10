@@ -196,8 +196,9 @@ const never = () => new Promise(() => {});
 // A response the test settles by hand.
 function deferred() {
   let resolve;
-  const promise = new Promise((r) => { resolve = r; });
-  return { promise, resolve };
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
 }
 
 // Answers everything the container asks: the lobby's history load (dates, then
@@ -206,10 +207,12 @@ function deferred() {
 //   ladder: the /ladder body (default: 404, no featured course)
 //   pool:   (url, opts) => Response promise for /rival-pool?winCondition=… (default: no rows)
 //   byId:   { raceId: record | (url, opts) => Response promise } for /cycle-races/<raceId>
+//   pb:     (url, opts) => Response promise for /personal-bests (default: no best)
 // The heavy ?winCondition= listing (full records) answers empty: nothing should ask.
-function historyFetch(races, { ladder = null, pool = null, byId = {} } = {}) {
+function historyFetch(races, { ladder = null, pool = null, byId = {}, pb = null } = {}) {
   return vi.fn((url, opts) => {
     const u = String(url);
+    if (u.includes('/personal-bests')) return pb ? pb(u, opts) : json({ best: null });
     if (u.includes('/ladder')) return ladder ? json(ladder) : notFound();
     if (u.includes('/rival-pool')) return pool ? pool(u, opts) : json({ entries: [] });
     if (u.includes('winCondition=')) return json({ races: [] });
@@ -259,6 +262,10 @@ const logsOf = (level, event) => logSpy[level].mock.calls.filter(([e]) => e === 
 const configLogs = () => logsOf('info', 'cycle_game.config');
 const paceRivalLogs = () => logsOf('info', 'cycle_game.pace_rival');
 const ignoredLogs = () => logsOf('info', 'cycle_game.start_ignored');
+const featuredFailLogs = () => logsOf('warn', 'cycle_game.featured_rival_lookup_failed');
+const rideFeaturedLogs = () => logsOf('info', 'cycle_game.ride_featured');
+const stagedLogs = () => logsOf('info', 'cycle_game.staged');
+const isFrozen = (view) => view.getByTestId('cycle-game-home').getAttribute('aria-busy') === 'true';
 const ghostIds = (cfg) => cfg.riders.filter((r) => r.isGhost).map((r) => r.userId);
 const callsTo = (test) => global.fetch.mock.calls.filter(([u]) => test(String(u)));
 const poolCalls = () => callsTo((u) => u.includes('/cycle-races/rival-pool?'));
@@ -698,27 +705,165 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
     });
 
-    it('"Ride it" whose rival arrives after another race has launched changes nothing', async () => {
+    it('freezes the lobby while it fetches its rival; a Start in that time is ignored and the featured ride races', async () => {
       mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
       const slow = deferred();
       const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: () => slow.promise } });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); }); // waiting on the rival's record
-      await flush(2);
       act(() => { fireEvent.click(view.getByTestId('course-time')); });
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); }); // two riders: launches at once
-      expect(configLogs()).toHaveLength(1);
+      expect(isFrozen(view)).toBe(false);
+      act(() => { fireEvent.click(view.getByTestId('featured-ride')); }); // waiting on the rival's record
+      // Frozen at once, before anything has answered.
+      expect(isFrozen(view)).toBe(true);
+      expect(view.getByTestId('cycle-game-start').textContent).toContain('Starting…');
+      expect(view.getByTestId('cycle-game-start').disabled).toBe(true);
+      expect(view.getByTestId('featured-ride').disabled).toBe(true);
+      await flush(2);
+      // The Start button is dead, and a start from any other control is refused.
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      let accepted;
+      act(() => { accepted = window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 }); });
+      expect(accepted).toBe(false);
+      expect(ignoredLogs()).toEqual([{ reason: 'start_pending', control: 'sim.autostart' }]);
+      expect(configLogs()).toEqual([]);
       slow.resolve({ ok: true, json: () => Promise.resolve({ race: rivalRecord }) });
       await flush();
-      // Still the one time race between the two live riders.
+      // The one race is the featured course with its ladder rival.
       expect(configLogs()).toHaveLength(1);
-      expect(configLogs()[0]).toMatchObject({ winCondition: 'time', rivalKind: null });
-      expect(ignoredLogs()).toEqual([{ reason: 'not_idle', control: 'featured' }]);
-      expect(logsOf('info', 'cycle_game.ride_featured')).toEqual([]);
-      // And the lobby was not left locked to the ladder ghost.
+      expect(configLogs()[0]).toMatchObject({ winCondition: 'distance', goalM: GOAL_M, rivalKind: 'ghost' });
+      expect(configLogs()[0].riders.map((r) => r.userId)).toEqual(['user_1', 'user_2', `ghost:${RIVAL_RACE}:user_2`]);
+      expect(rideFeaturedLogs()).toEqual([expect.objectContaining({ courseId: COURSE.id, ghostArmed: true })]);
+      expect(featuredFailLogs()).toEqual([]);
+      // Back in the lobby it is live again.
       act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
       await flush(3);
+      expect(isFrozen(view)).toBe(false);
+      expect(view.getByTestId('cycle-game-start').textContent).toContain('Start race');
+    });
+
+    it('a second "Ride it" tap in the same tick is ignored: one fetch, one race', async () => {
+      const view = await renderLobby([], { ladder, byId });
+      act(() => {
+        fireEvent.click(view.getByTestId('featured-ride'));
+        fireEvent.click(view.getByTestId('featured-ride'));
+      });
+      await flush();
+      expect(ignoredLogs()).toEqual([{ reason: 'start_pending', control: 'featured' }]);
+      expect(recordCalls()).toHaveLength(1);
+      expect(configLogs()).toHaveLength(1);
+      expect(rideFeaturedLogs()).toHaveLength(1);
+    });
+
+    it('"Ride it" in the same tick as a Start that already launched is ignored', async () => {
+      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      const view = await renderLobby([], { ladder, byId });
+      act(() => { fireEvent.click(view.getByTestId('course-time')); });
+      act(() => {
+        fireEvent.click(view.getByTestId('cycle-game-start')); // two riders: launches at once
+        fireEvent.click(view.getByTestId('featured-ride'));
+      });
+      await flush();
+      expect(ignoredLogs()).toEqual([{ reason: 'not_idle', control: 'featured' }]);
+      expect(recordCalls()).toEqual([]);
+      expect(configLogs()).toHaveLength(1);
+      expect(configLogs()[0]).toMatchObject({ winCondition: 'time', rivalKind: null });
+      expect(rideFeaturedLogs()).toEqual([]);
+    });
+
+    it('"Ride it" in the same tick as a Start that is waiting on its lookup is ignored', async () => {
+      const view = await renderLobby([], { ladder, byId, pool: never });
+      act(() => { fireEvent.click(view.getByTestId('course-time')); });
+      act(() => {
+        fireEvent.click(view.getByTestId('cycle-game-start')); // one rider: waits on the rival pool
+        fireEvent.click(view.getByTestId('featured-ride'));
+      });
+      await flush();
+      expect(ignoredLogs()).toEqual([{ reason: 'start_pending', control: 'featured' }]);
+      expect(recordCalls()).toEqual([]);
+      expect(rideFeaturedLogs()).toEqual([]);
+    });
+
+    it('a featured start that is dropped (nobody to race) writes nothing: no ride_featured, no ghost lock, lobby live', async () => {
+      mockCtx = soloCtx({}); // nobody on a bike, and the ladder rival's record is gone
+      const view = await renderLobby([], { ladder, byId: {} });
+      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      await flush();
+      expect(logSpy.warn).toHaveBeenCalledWith('cycle_game.staged', expect.objectContaining({ error: 'no_riders' }));
+      expect(configLogs()).toEqual([]);
+      expect(rideFeaturedLogs()).toEqual([]);
       expect(view.queryByTestId('cgh-ghost-summary')).toBeNull();
-      expect(view.queryByTestId(`ghost-slot-ghost:${RIVAL_RACE}:user_2`)).toBeNull();
+      expect(isFrozen(view)).toBe(false);
+      expect(view.getByTestId('featured-ride').disabled).toBe(false);
+    });
+
+    it('starts at once without the ladder rival when its record cannot be had, with the pace rival from loaded history only', async () => {
+      const mine = raceRecord('20260101110000', { user_1: { timeS: 300 } });
+      const view = await renderLobby([mine], { ladder, byId: {}, pool: poolOf(raceRecord(OLD_RACE, { user_1: { timeS: 100 } })) });
+      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      await flush();
+      const [cfg] = configLogs();
+      expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1', 'ghost:20260101110000:user_1']);
+      expect(cfg.rivalKind).toBe('self');
+      expect(featuredFailLogs()).toEqual([{
+        courseId: COURSE.id, stage: 'record', reason: 'error', error: `cycle-races/${RIVAL_RACE} 404`, lookupMs: expect.any(Number)
+      }]);
+      // No second lookup: the rival pool is not asked.
+      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'self', source: 'history', serverLookup: 'skipped', lookupMs: 0 });
+      expect(poolCalls()).toEqual([]);
+      expect(rideFeaturedLogs()).toEqual([expect.objectContaining({ courseId: COURSE.id, ghostArmed: false })]);
+      expect(view.queryByTestId('cgh-ghost-summary')).toBeNull();
+    });
+
+    it('a ladder rival whose record has nothing to replay counts as a failed lookup', async () => {
+      const empty = raceRecord(RIVAL_RACE, { user_2: { timeS: 250, noSeries: true } });
+      const view = await renderLobby([], { ladder, byId: recordsById(empty) });
+      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      await flush();
+      expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'record', reason: 'error', error: 'record not replayable' })]);
+      expect(configLogs()[0]).toMatchObject({ rivalKind: 'par' });
+      expect(paceRivalLogs()[0]).toMatchObject({ serverLookup: 'skipped' });
+    });
+
+    it("the ladder leader's personal best failing is a failed lookup at the personal-best stage", async () => {
+      const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
+      const view = await renderLobby([], { ladder: lead, byId, pb: () => Promise.resolve({ ok: false, status: 500 }) });
+      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      await flush();
+      expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'personal-best', reason: 'error', error: 'personal-bests 500' })]);
+      expect(recordCalls()).toEqual([]);
+      expect(configLogs()[0]).toMatchObject({ rivalKind: 'par' });
+    });
+
+    it('never leaves the lobby frozen if launching the featured race throws: logs start_failed', async () => {
+      const view = await renderLobby([], { ladder, byId });
+      const boom = new Error('boom');
+      logSpy.info.mockImplementation((event) => { if (event === 'cycle_game.config') throw boom; });
+      try {
+        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        await flush();
+      } finally {
+        logSpy.info.mockImplementation(() => {});
+      }
+      expect(logSpy.error).toHaveBeenCalledWith('cycle_game.start_failed', { control: 'featured', error: 'boom' });
+      expect(isFrozen(view)).toBe(false);
+      expect(rideFeaturedLogs()).toEqual([]);
+      expect(view.queryByTestId('cgh-ghost-summary')).toBeNull();
+    });
+
+    it('aborts its fetch and starts nothing if the game is closed while it waits', async () => {
+      const slow = deferred();
+      const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: () => slow.promise } });
+      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      await flush(2);
+      const { signal } = recordCalls()[0][1];
+      expect(signal.aborted).toBe(false);
+      act(() => { view.unmount(); });
+      expect(signal.aborted).toBe(true);
+      slow.reject(new Error('The operation was aborted.')); // what an aborted fetch does
+      await flush();
+      expect(configLogs()).toEqual([]);
+      expect(rideFeaturedLogs()).toEqual([]);
+      expect(logsOf('info', 'cycle_game.start_pressed')).toEqual([]);
+      expect(featuredFailLogs()).toEqual([]); // closing the game is not a failed lookup
     });
 
     describe('timing', () => {
@@ -744,31 +889,232 @@ describe('CycleGameContainer — automatic pace rival', () => {
         expect(view.queryByTestId('cgh-ghost-summary')).toBeNull();
       });
 
-      it('a featured ride whose own rival lookup failed shares the one 1500 ms budget', async () => {
-        // The rival's record 404s after 1000 ms; the history list never answers.
-        const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(1000, { ok: false, status: 404 }) }, pool: never });
+      it('a hung rival fetch freezes the lobby at once and the race starts at 1500 ms without the ladder rival', async () => {
+        const mine = raceRecord('20260101110000', { user_1: { timeS: 300 } });
+        const hung = deferred();
+        const view = await renderLobby([mine], { ladder, byId: { [RIVAL_RACE]: () => hung.promise }, pool: never });
+        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        expect(isFrozen(view)).toBe(true);
+        expect(view.getByTestId('cycle-game-start').textContent).toContain('Starting…');
+        expect(view.getByTestId('featured-ride').disabled).toBe(true);
+        await act(async () => { vi.advanceTimersByTime(1499); });
+        await flush();
+        expect(configLogs()).toEqual([]);
+        expect(isFrozen(view)).toBe(true);
+        await act(async () => { vi.advanceTimersByTime(1); });
+        await flush();
+        // 1500 ms after the press: the featured course, with the pace rival from loaded history.
+        expect(configLogs()).toHaveLength(1);
+        expect(configLogs()[0]).toMatchObject({ winCondition: 'distance', goalM: GOAL_M, rivalKind: 'self' });
+        expect(configLogs()[0].riders.map((r) => r.userId)).toEqual(['user_1', 'ghost:20260101110000:user_1']);
+        expect(featuredFailLogs()).toEqual([{ courseId: COURSE.id, stage: 'record', reason: 'timeout', error: null, lookupMs: 1500 }]);
+        expect(recordCalls()[0][1].signal.aborted).toBe(true);
+        expect(paceRivalLogs()[0]).toMatchObject({ kind: 'self', source: 'history', serverLookup: 'skipped' });
+        expect(poolCalls()).toEqual([]); // no second budget
+        expect(rideFeaturedLogs()).toEqual([expect.objectContaining({ ghostArmed: false })]);
+        expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+        // The record arriving late changes nothing.
+        hung.resolve({ ok: true, json: () => Promise.resolve({ race: rivalRecord }) });
+        await flush();
+        expect(configLogs()).toHaveLength(1);
+        expect(view.queryByTestId(`ready-rider-ghost:${RIVAL_RACE}:user_2`)).toBeNull();
+      });
+
+      it("a hung personal-best fetch (the ladder leader's ride) is bounded the same way", async () => {
+        const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
+        const hung = deferred();
+        const view = await renderLobby([], { ladder: lead, byId, pb: () => hung.promise });
+        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        await act(async () => { vi.advanceTimersByTime(1500); });
+        await flush();
+        expect(configLogs()).toHaveLength(1);
+        expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'personal-best', reason: 'timeout', lookupMs: 1500 })]);
+        // The answer arriving late fetches no record and changes nothing.
+        hung.resolve({ ok: true, json: () => Promise.resolve({ best: { raceId: RIVAL_RACE } }) });
+        await flush();
+        expect(recordCalls()).toEqual([]);
+        expect(configLogs()).toHaveLength(1);
+      });
+
+      it('a featured ride with no ladder rival to arm shares the one 1500 ms budget with the pace-rival lookup', async () => {
+        // The leader has no personal best on record (answered after 1000 ms); the rival pool never answers.
+        const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
+        const view = await renderLobby([], { ladder: lead, byId, pb: after(1000, { ok: true, json: () => Promise.resolve({ best: null }) }), pool: never });
         act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await act(async () => { vi.advanceTimersByTime(1000); });
         await flush();
         expect(configLogs()).toEqual([]);
+        expect(isFrozen(view)).toBe(true); // the freeze carries over into the pace-rival lookup
+        expect(poolCalls()).toHaveLength(1);
         await act(async () => { vi.advanceTimersByTime(499); });
         await flush();
         expect(configLogs()).toEqual([]);
         await act(async () => { vi.advanceTimersByTime(1); });
         await flush();
         expect(configLogs()).toHaveLength(1); // 1500 ms after the press, not 2500
-        expect(paceRivalLogs()[0]).toMatchObject({ kind: 'par', serverLookup: 'timeout' });
+        expect(paceRivalLogs()[0]).toMatchObject({ kind: 'par', serverLookup: 'timeout', lookupMs: 500 });
+        expect(featuredFailLogs()).toEqual([]); // nothing failed: there was no rival to fetch
       });
 
-      it('and skips the history lookup outright once that budget is spent', async () => {
-        const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(2000, { ok: false, status: 404 }) }, pool: never });
+      it('a rival record that fails after 1000 ms starts the race then, with no pace-rival lookup', async () => {
+        const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(1000, { ok: false, status: 404 }) }, pool: never });
         act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
-        await act(async () => { vi.advanceTimersByTime(2000); });
+        await act(async () => { vi.advanceTimersByTime(999); });
+        await flush();
+        expect(configLogs()).toEqual([]);
+        await act(async () => { vi.advanceTimersByTime(1); });
         await flush();
         expect(configLogs()).toHaveLength(1);
+        expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'record', reason: 'error', lookupMs: 1000 })]);
         expect(paceRivalLogs()[0]).toMatchObject({ kind: 'par', source: 'par', serverLookup: 'skipped', lookupMs: 0, recordFetched: false });
         expect(poolCalls()).toEqual([]);
       });
+    });
+  });
+
+  describe('start guards', () => {
+    it('two Start presses in the same tick produce one race', async () => {
+      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      const view = await renderLobby([]);
+      act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+      act(() => {
+        fireEvent.click(view.getByTestId('cycle-game-start'));
+        fireEvent.click(view.getByTestId('cycle-game-start'));
+      });
+      expect(configLogs()).toHaveLength(1);
+      expect(ignoredLogs()).toEqual([{ reason: 'not_idle', control: 'lobby.start-button' }]);
+    });
+
+    it('a start with nobody to race reports that it was not accepted', async () => {
+      mockCtx = soloCtx({});
+      await renderLobby([]);
+      let accepted;
+      act(() => { accepted = window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 }); });
+      expect(accepted).toBe(false);
+      expect(logSpy.warn).toHaveBeenCalledWith('cycle_game.staged', expect.objectContaining({ error: 'no_riders' }));
+      expect(configLogs()).toEqual([]);
+    });
+
+    it('a start that is waiting on its rival lookup reports that it was accepted', async () => {
+      const view = await renderLobby([], { pool: never });
+      let accepted;
+      act(() => { accepted = window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 }); });
+      expect(accepted).toBe(true);
+      expect(configLogs()).toEqual([]); // still waiting
+      expect(isFrozen(view)).toBe(true);
+    });
+
+    it('a second start arriving while one is waiting on its lookup is refused', async () => {
+      await renderLobby([], { pool: never });
+      let first;
+      let second;
+      act(() => {
+        first = window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 });
+        second = window.__cycleGameControl.startRace({ winCondition: 'distance', value: 500 });
+      });
+      expect([first, second]).toEqual([true, false]);
+      expect(ignoredLogs()).toEqual([{ reason: 'start_pending', control: 'sim.autostart' }]);
+      expect(logsOf('info', 'cycle_game.start_pressed')).toHaveLength(1);
+      expect(poolCalls()).toHaveLength(1);
+    });
+
+    it('a start invoked after the game has closed does nothing', async () => {
+      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      const view = await renderLobby([]);
+      const control = window.__cycleGameControl; // a caller still holding the handle
+      act(() => { view.unmount(); });
+      let accepted;
+      act(() => { accepted = control.startRace({ winCondition: 'time', value: 60 }); });
+      expect(accepted).toBe(false);
+      expect(logsOf('info', 'cycle_game.start_pressed')).toEqual([]);
+      expect(configLogs()).toEqual([]);
+      expect(ignoredLogs()).toEqual([]);
+    });
+
+    it('a race launched and cancelled in the same tick leaves the lobby startable', async () => {
+      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      const view = await renderLobby([]);
+      act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+      // Both in one batch: the phase state goes idle → countdown → idle without a
+      // render in between, so nothing but the cancel itself can reset the guard.
+      act(() => {
+        window.__cycleGameControl.startRace({ winCondition: 'distance', value: 500 });
+        window.__cycleGameControl.cancel();
+      });
+      expect(stagedLogs()).toHaveLength(1);
+      expect(logsOf('info', 'cycle_game.cancelled')).toHaveLength(1);
+      expect(view.getByTestId('cycle-game-home')).toBeTruthy();
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      expect(ignoredLogs()).toEqual([]);
+      expect(stagedLogs()).toHaveLength(2);
+      expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+    });
+
+    it('a launch that throws halfway leaves no half-built race: start_failed, nothing staged, and Start works again', async () => {
+      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+      const view = await renderLobby([]);
+      act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+      // The config event is logged after the controller and race meta are set.
+      logSpy.info.mockImplementation((event) => { if (event === 'cycle_game.config') throw new Error('boom'); });
+      let accepted;
+      try {
+        act(() => { accepted = window.__cycleGameControl.startRace({ winCondition: 'distance', value: 500 }); });
+      } finally {
+        logSpy.info.mockImplementation(() => {});
+      }
+      expect(accepted).toBe(false);
+      expect(logSpy.error).toHaveBeenCalledWith('cycle_game.start_failed', { control: 'sim.autostart', error: 'boom' });
+      expect(window.__cycleGameControl.getRaceState()).toBeNull(); // no controller left behind
+      expect(window.__cycleGameControl.getPhase()).toBe('idle');
+      expect(view.getByTestId('cycle-game-home')).toBeTruthy();
+      expect(stagedLogs()).toEqual([]);
+      // The lobby still starts a race, and it is saved under its own id (no stale meta).
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      expect(stagedLogs()).toHaveLength(1);
+      expect(window.__cycleGameControl.getRaceState()).not.toBeNull();
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
+      expect(logsOf('info', 'cycle_game.cancelled')).toEqual([expect.objectContaining({ raceId: configLogs()[1].raceId })]);
+    });
+  });
+
+  describe('the pre-race rider strip shows the riders staged for this race', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('a bike claimed by someone else while Start was waiting does not change who is shown', async () => {
+      const claims = { cycle_ace: 'user_1' };
+      mockCtx = soloCtx(claims);
+      const view = await renderLobby([], { pool: never });
+      act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      // Written to the session outside React (hardware rider-select, the simulator).
+      claims.cycle_ace = 'user_2';
+      claims.tricycle = 'user_1';
+      await act(async () => { vi.advanceTimersByTime(1500); });
+      await flush();
+      const [cfg] = configLogs();
+      expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1', 'ghost:par:par']); // the press-time field
+      expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+      expect(view.getByTestId('ready-rider-user_1')).toBeTruthy();
+      expect(view.queryByTestId('ready-rider-user_2')).toBeNull();
+      // And it stays that way as the strip refreshes.
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(view.queryByTestId('ready-rider-user_2')).toBeNull();
+    });
+
+    it("shows the staged rider's live cadence from the bike they were staged on", async () => {
+      const claims = { cycle_ace: 'user_1' };
+      mockCtx = soloCtx(claims, { staging_buffer_ms: 5000 });
+      mockCtx.fitnessSessionInstance.getEquipmentCadence = (id) => ({ rpm: id === 'cycle_ace' ? 77 : 0, connected: true });
+      const view = await renderLobby([], { pool: never });
+      act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      await act(async () => { vi.advanceTimersByTime(1500); });
+      await flush();
+      expect(view.getByTestId('cycle-game-staging')).toBeTruthy();
+      // Pedalling before the green light, read from the bike user_1 was staged on.
+      expect(view.getByTestId('ready-rider-user_1').className).not.toContain('is-ghost');
+      expect(view.getByTestId('ready-rider-user_1').textContent).toContain('77');
     });
   });
 

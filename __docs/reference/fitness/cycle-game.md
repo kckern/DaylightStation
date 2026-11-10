@@ -245,7 +245,12 @@ The lobby is a pure presentational component; all state and handlers live in
    metric columns, when), most-recent-first; row model from
    `recordRow.buildRecordRow`. Each row **leads with the top-placed live rider**,
    not with whoever crossed first: a solo ride lost to a pace rival or a picked
-   ghost reads as that rider's ride, with their pace. Everyone else, ghosts
+   ghost reads as that rider's ride, with their pace. A lead rider who did not
+   finish a distance race has no pace, so the Speed cell holds how far they got
+   instead: the value keeps its unit ("640 m"), and the cell (`data-kind="distance"`)
+   and the row's accessible label say "640 m ridden, did not finish" so it is
+   never read as a speed (`speedKind` on the row model: `speed`, `distance` or
+   `null`). Everyone else, ghosts
    included, follows in placement order as small **crescents** (overlapping
    mini-avatars) with a `+N` overflow. Only a ghost-only race leads with a ghost.
    (The ghost picker is different: there the recording's winner is the headline.)
@@ -254,8 +259,10 @@ The lobby is a pure presentational component; all state and handlers live in
    **Recap**. Empty state: "No races yet."
 7. **Volume** — touch +/- with a readout.
 8. **Start** — disabled until `canStart`; checkered-flag icon.
-9. **Starting…** — a lone rider's Start first looks up their rival (§5), which
-   can take up to 1.5 s. Until the race launches the lobby stays on screen but
+9. **Starting…** — a lone rider's Start first looks up their rival (§5), and
+   "Ride it" first fetches its ladder rival (§16); either can take up to 1.5 s
+   (the two share that one budget on a featured ride). From the press until the
+   race launches the lobby stays on screen but
    is frozen (`busy` prop, `aria-busy="true"` on the root): the Start button
    reads **"Starting…"** and is disabled, and the race-type tiles, presets,
    stepper, ghost controls, bike slots, featured "Ride it", history rows,
@@ -264,9 +271,19 @@ The lobby is a pure presentational component; all state and handlers live in
 
 **One race per start.** `startRace` returns whether it accepted the start. It
 refuses (logging `cycle_game.start_ignored`) unless the lobby is idle and no
-other start is pending. "Ride it" checks the same before and after its own
-fetches, and writes its ladder ghost into the lobby only once its start was
-accepted.
+other start is pending, and returns `false` when there is nobody to race or
+launching failed (`cycle_game.start_failed`). "Ride it" checks the same before
+its own fetches and holds the pending slot (and the freeze) through them, so a
+repeat tap, a Start press or a simulator start in that time is ignored. It
+writes its ladder ghost into the lobby only once its start was accepted.
+
+A launch is all or nothing: if building the race throws partway, the controller
+and race meta are cleared and the lobby is back to idle and unfrozen. Cancel and
+the results exit reset the start guard themselves, not only through a re-render,
+so a race launched and cancelled in one batch leaves Start usable.
+
+`window.__cycleGameControl` (the simulator seam) exposes `startRace`, `cancel`
+(the same as the on-screen Cancel), `getPhase` and `getRaceState`.
 
 ---
 
@@ -309,9 +326,15 @@ one** live rider is claimed, a pace rival is armed for that race:
   aborted), an HTTP or network error on either request, or a fetched record
   that cannot be replayed (missing, no series for that rider, or not holding
   that rider), the pick runs over the loaded history alone, and falls to par
-  when that has no counting ride either. A featured-course ride that already
-  spent time fetching its ladder rival gets only what is left of the same
-  1500 ms, and no lookup at all once it is spent.
+  when that has no counting ride either.
+- **No start waits more than 1500 ms, on any path.** "Ride it" fetches its
+  ladder rival first (§16) under the same budget, measured from the press, with
+  the lobby frozen from the press. If that succeeds the ladder rival races and
+  there is no pace rival. If the ladder has nobody to chase, a lone rider's
+  pace-rival lookup gets what is left of the 1500 ms. If the ladder rival's
+  fetch times out or fails, the course starts without it and the pace rival is
+  picked from loaded history only: no second request, no second wait
+  (`serverLookup: 'skipped'`).
 - The heavy listing (`GET /cycle-races?winCondition=…`, which returns full
   records with every series) is no longer requested by the game.
 - **The lobby is frozen while it waits** (§4). If the game is closed in that
@@ -640,7 +663,10 @@ riders; a 7th+ reuses a hue.
 - **`RiderReadyStrip`** (staging + countdown): one chip per rider — avatar, name,
   live RPM, and compliance: **READY ✓** when not pedalling, **WAIT ⚠** (amber,
   pulsing) when pedalling early. Anyone still "WAIT" *before* green earns a false
-  start.
+  start. The chips are the riders **staged for this race** (fixed when the race
+  is built, each with the live RPM of the bike they were staged on) plus its
+  ghosts, not whoever holds a bike at that moment: a claim changed while Start
+  was waiting on its lookup does not put a rider on the strip who is not racing.
 
 ---
 
@@ -933,8 +959,13 @@ resolves.
   - if **unranked** (or no rider assigned yet) → the **tail** (lowest-ranked)
     rider becomes the ghost;
   - no ladder data at all → no ghost; the race proceeds plain.
-  Ghost lookups are best-effort: any fetch failure just starts the race without a
-  ghost, never blocking Ride It. The ghost is armed through the same
+  The lookup never holds up or fails Ride It. The lobby freezes at the press
+  (§4), and the personal-best and race-record requests share one 1500 ms budget
+  and one abort signal. On a timeout, an HTTP or network error, or a record
+  with nothing to replay, the course starts without the ladder ghost and
+  `cycle_game.featured_rival_lookup_failed` is logged (§18); a lone rider then
+  gets the automatic pace rival from loaded history only (§5). If the game is
+  closed while it waits, the request is aborted and nothing starts. The ghost is armed through the same
   record-to-candidate / candidate-to-ghost pipeline the Ghost Picker uses (§17),
   not a separate mechanism.
 - **Results ladder-movement callout.** After a race whose `course_id` matches the
@@ -1039,10 +1070,16 @@ by `raceId` (+ `elapsedS` where relevant).
   returned), `ms`.
 - **`cycle_game.start_ignored`** (INFO) — a start that was dropped:
   `{ reason, control }`. `reason` is `not_idle` (a race is already staged or
-  running) or `start_pending` (another start is waiting on its rival lookup);
+  running) or `start_pending` (another start is waiting on its rival lookup, or
+  "Ride it" on its ladder rival);
   `control` is `lobby.start-button`, `featured` or `sim.autostart`.
-- **`cycle_game.start_failed`** (ERROR) — launching threw after the rival lookup;
-  the lobby is unfrozen.
+- **`cycle_game.start_failed`** (ERROR) — building the race threw, on any start
+  path: `{ control, error }`. Nothing is left staged and the lobby is unfrozen.
+- **`cycle_game.featured_rival_lookup_failed`** (WARN) — "Ride it" could not arm
+  its ladder rival and started the course without it:
+  `{ courseId, stage, reason, error, lookupMs }`. `stage` is `personal-best` or
+  `record` (which request it was in); `reason` is `timeout` or `error`
+  (`error` holds the message, else `null`).
 - **Firehose (DEBUG, off by default)** — `cycle_game.tick`: one event/second with a
   per-rider array `{ rpm, cadenceConnected, hr, zoneId, multiplier, distanceM,
   penalized, finished }`, read from post-resolution engine state.

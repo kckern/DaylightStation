@@ -64,6 +64,9 @@ export function buildRecordRow(g, todayYmd) {
     speedLabel: speed > 0
       ? kmhLabel(winner.finalDistanceM, durationS)
       : (winner.finalDistanceM > 0 ? formatDistance(winner.finalDistanceM) : null),
+    // What speedLabel holds, so the table never presents a distance as a speed:
+    // 'speed' (km/h), 'distance' (how far a rider who did not finish got), or null.
+    speedKind: speed > 0 ? 'speed' : (winner.finalDistanceM > 0 ? 'distance' : null),
     // The course's defining target (distance goal or time cap) + its kind for an icon.
     raceLabel: g.goalLabel,
     raceKind: g.winCondition === 'time' ? 'time' : 'distance',
