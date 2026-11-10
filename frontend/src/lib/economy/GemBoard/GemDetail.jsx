@@ -149,7 +149,7 @@ export default function GemDetail({ row, learner, cell, windows, today, onClose 
       <div className="gem-detail__backdrop" onClick={() => onClose?.('tap')} />
       <div className="gem-detail__card" style={{ '--gem': row.color }}>
         <div className="gem-detail__head">
-          <span className="gem-detail__glyph"><GemGlyph cell={cell} color={row.color} /></span>
+          <span className="gem-detail__glyph"><GemGlyph cell={cell} color={row.color} area={row.area ?? row.group} /></span>
           <div className="gem-detail__title">
             <span className="gem-detail__row">{row.label}</span>
             <span className="gem-detail__who">{learner.name}</span>

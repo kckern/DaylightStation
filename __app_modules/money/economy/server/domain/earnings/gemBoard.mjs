@@ -57,8 +57,8 @@ const paysGems = (rule) => (rule.reward?.gems ?? 0) > 0
 /** The board's sections, in display order. A rule may name another with `gem.group`. */
 export const GEM_GROUPS = Object.freeze([
   Object.freeze({ id: 'move', label: 'Move' }),
-  Object.freeze({ id: 'games', label: 'Games' }),
   Object.freeze({ id: 'school', label: 'School' }),
+  Object.freeze({ id: 'games', label: 'Games' }),
 ]);
 const DEFAULT_GROUP = 'school';
 

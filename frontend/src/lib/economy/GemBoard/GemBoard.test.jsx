@@ -103,6 +103,45 @@ describe('GemBoardGrid', () => {
   });
 });
 
+describe('GemBoardGrid — areas', () => {
+  // The server may send the sections in any order; the board always reads Move, School, Games.
+  const AREAS = {
+    ...BOARD,
+    groups: [{ id: 'move', label: 'Move' }, { id: 'games', label: 'Games' }, { id: 'school', label: 'School' }],
+    categories: [
+      { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', area: 'move', color: '#8e5bd0', parts: [] },
+      { id: 'racing', label: 'Racing', cadence: 'contest', group: 'games', area: 'games', color: '#ff7a2f', parts: [] },
+      { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', area: 'school', color: '#2e9e5b', parts: [] },
+    ],
+    cells: {
+      exercise: { a: { state: 'earned', week: 3, streak: null, parts: [] }, b: { state: 'pending', week: 0, streak: { have: 1, need: 5, left: 4, reach: 'tight', ruleId: 'moved-days' }, parts: [] } },
+      racing: { a: { state: 'leading', week: 0, streak: null, parts: [] }, b: { state: 'none', week: 0, streak: null, parts: [] } },
+      reading: { a: { state: 'earned', week: 1, streak: null, parts: [] }, b: { state: 'pending', week: 0, streak: { have: 0, need: 4, left: 4, reach: 'tight', ruleId: 'reader-week' }, parts: [] } },
+    },
+  };
+
+  it('rows sit under Move, School, Games headers in that order, each header with its icon', () => {
+    const { container } = render(<GemBoardGrid board={AREAS} />);
+    const heads = [...container.querySelectorAll('.gem-board__group-label')];
+    expect(heads.map((n) => n.textContent)).toEqual(['Move', 'School', 'Games']);
+    expect(heads.map((n) => n.querySelector('.area-icon')?.dataset.area)).toEqual(['move', 'school', 'games']);
+    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Reading', 'Racing']);
+    expect(boardRowIds(AREAS)).toEqual(['exercise', 'reading', 'racing']);
+  });
+
+  it('honest cells: a full gem with ×3 and its icon, a ringed tight gem with the tag, a blank 0-day cell, "leading" in words', () => {
+    const { container } = render(<GemBoardGrid board={AREAS} />);
+    const cell = (row, who) => container.querySelector(`.gem-board__col[data-row="${row}"][data-learner="${who}"] .gem-board__cell`);
+    expect(cell('exercise', 'a').querySelector('.area-icon[data-area="move"]')).toBeTruthy();
+    expect(cell('exercise', 'a').textContent).toBe('×3');
+    expect(cell('exercise', 'b').querySelector('.gem-glyph__tag').textContent).toBe('every day');
+    expect(cell('exercise', 'b').querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(1);
+    expect(cell('reading', 'b').querySelector('svg')).toBeNull();
+    expect(cell('racing', 'a').textContent).toBe('leading');
+    expect(cell('racing', 'a').querySelector('.gem-icon')).toBeNull();
+  });
+});
+
 describe('GemBoardOverlay', () => {
   const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
@@ -320,5 +359,28 @@ describe('GemBoardOverlay', () => {
     render(<GemBoardOverlay open load={load} onClose={() => {}} surface="fitness" idleMs={0} />);
     await screen.findByText('Gems are switched off.');
     expect(readBoardShape()).toBeNull();
+  });
+
+  it('arrow keys move through rows in the grouped order, not the server’s', async () => {
+    const board = {
+      ...BOARD,
+      groups: [{ id: 'move', label: 'Move' }, { id: 'games', label: 'Games' }, { id: 'school', label: 'School' }],
+      categories: [
+        { id: 'exercise', label: 'Moved 5 days', group: 'move', area: 'move', color: '#8e5bd0', parts: [] },
+        { id: 'racing', label: 'Racing', group: 'games', area: 'games', color: '#ff7a2f', parts: [] },
+        { id: 'reading', label: 'Reading', group: 'school', area: 'school', color: '#2e9e5b', parts: [] },
+      ],
+      cells: {
+        exercise: { a: { state: 'none', week: 0, streak: null, parts: [] } },
+        racing: { a: { state: 'none', week: 0, streak: null, parts: [] } },
+        reading: { a: { state: 'none', week: 0, streak: null, parts: [] } },
+      },
+    };
+    render(<GemBoardOverlay open surface="fitness" focusLearnerId="a" load={async () => board} onClose={() => {}} />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const cursorRow = () => document.querySelector('.gem-board__cell.is-cursor')?.closest('.gem-board__col')?.dataset.row;
+    const seen = [];
+    for (let i = 0; i < 3; i++) { fireEvent.keyDown(document, { key: 'ArrowRight' }); seen.push(cursorRow()); }
+    expect(seen).toEqual(['exercise', 'reading', 'racing']);
   });
 });

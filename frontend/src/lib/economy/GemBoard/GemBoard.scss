@@ -79,7 +79,7 @@
   }
 
   // Sized to fit unscrolled; scrolling is the fallback for more children or gems than planned for.
-  &__body { min-height: 0; overflow: auto; &.is-loading { opacity: 0.6; } }
+  &__body { min-height: 0; overflow: auto; }
   &__empty { padding: 3em 4em; text-align: center; font-size: 1.25em; opacity: 0.75; }
 
   // Lines: the leaning column names, the section names, then one per child.
@@ -96,21 +96,23 @@
   &__band {
     border-radius: 0.7em;
     background: rgba(255, 255, 255, 0.045);
-    &[data-group="move"] { background: rgba(255, 180, 76, 0.09); }
-    &[data-group="games"] { background: rgba(96, 170, 255, 0.09); }
-    &[data-group="school"] { background: rgba(110, 214, 150, 0.08); }
+    &[data-group="move"] { background: rgba(142, 91, 208, 0.16); }
+    &[data-group="school"] { background: rgba(46, 158, 91, 0.14); }
+    &[data-group="games"] { background: rgba(255, 122, 47, 0.13); }
   }
   &__group-label {
     position: relative;
     display: flex;
     align-items: center;
-    padding: 0 0.8em;
-    font-size: 1.05em;
+    gap: 0.4em;
+    padding: 0 0.6em;
+    font-size: 1.15em;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.85);
-    &[data-group="move"] { color: #ffb44c; }
-    &[data-group="games"] { color: #7db8ff; }
-    &[data-group="school"] { color: #7fdca4; }
+    color: var(--ds-text-high, #e8eef3);
+    .area-icon { flex: none; width: 1.5em; height: 1.5em; }
+    &[data-group="move"] .area-icon { color: #a97ae6; }
+    &[data-group="school"] .area-icon { color: #3fc27a; }
+    &[data-group="games"] .area-icon { color: #ff9a5c; }
   }
 
   // A column's name: starts over the column's middle and leans up to the right.
@@ -181,7 +183,7 @@
     cursor: pointer;
     &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.1); outline: none; }
   }
-  &__cell.is-cursor &__open, &__cell.is-cursor &__still { box-shadow: 0 0 0 0.16em rgba(255, 180, 76, 0.95); }
+  &__cell.is-cursor &__open, &__cell.is-cursor &__still { box-shadow: 0 0 0 0.16em var(--ds-text-high, #e8eef3); }
 
   // A cell of the outline drawn while the board is being read.
   &__ghost {
@@ -189,7 +191,7 @@
     height: 2.2em;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.07);
-    animation: gem-glyph-todo calc(var(--ds-motion-base, 200ms) * 5) ease-in-out infinite alternate;
+    animation: gem-board-ghost calc(var(--ds-motion-base, 200ms) * 5) ease-in-out infinite alternate;
     @media (prefers-reduced-motion: reduce) { animation: none; }
   }
 
@@ -214,7 +216,9 @@
   }
 }
 
-// One cell's glyph: a gem that fills the box, or a smaller one inside a day ring.
+// One cell's glyph: a full gem that fills the box, or a slightly smaller one
+// inside a day ring. Nothing here is ever partly transparent and nothing is a
+// status hue: a day is done (area colour) or still to go (plain outline).
 .gem-glyph {
   position: relative;
   display: inline-flex;
@@ -224,10 +228,39 @@
   height: 3.3em;
 
   &__ring { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; }
-  &__seg { stroke: rgba(255, 255, 255, 0.16); stroke-width: 3.4; stroke-linecap: round; }
-  // Tight: the days still needed read in the board's amber, not as a brighter (fuller-looking) grey.
-  &__ring.is-tight &__seg:not(.is-done) { stroke: rgba(255, 180, 76, 0.75); }
-  &__muted { opacity: 0.4; font-size: 1.5em; }
+  &__seg { stroke: var(--ds-text-low, #6b7785); stroke-width: 2.4; stroke-linecap: round; }
+  &__seg.is-done { stroke-width: 3.8; }
+
+  // The gem with its area's icon on the face of the stone.
+  &__stone { position: relative; display: inline-flex; }
+  &__area {
+    position: absolute;
+    left: 23%;
+    top: 13%;
+    width: 54%;
+    height: 54%;
+    color: #1a1226;
+    // A pale halo so the dark figure reads on every facet, light or deep.
+    filter: drop-shadow(0 0 0.06em rgba(255, 255, 255, 0.9));
+  }
+
+  // A contest lead: no gem, the word at the size of the row labels.
+  &__word { font-size: 1.05em; font-weight: 700; color: var(--ds-text-high, #e8eef3); white-space: nowrap; }
+  // A day-count that needs every day left: words, not a colour.
+  &[data-tagged] { margin-top: -1.1em; }
+  &__tag {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 0.05em;
+    font-size: 1.05em;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--ds-text-high, #e8eef3);
+  }
+  &__muted { color: var(--ds-text-low, #6b7785); font-size: 1.5em; }
   &__times {
     position: absolute;
     right: -0.2em;
@@ -239,23 +272,6 @@
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
-
-  &[data-look="streak"] &__gem, &[data-look="open"] &__gem { opacity: 0.28; }
-  // On track: the gem is as good as theirs, so it is drawn at full strength,
-  // and the days still to do breathe slowly to say "not yet".
-  &[data-look="streak"][data-reach="on-track"] &__gem { opacity: 1; }
-  &[data-reach="on-track"] &__seg:not(.is-done) {
-    animation: gem-glyph-todo calc(var(--ds-motion-base, 200ms) * 8) ease-in-out infinite alternate;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    &[data-reach="on-track"] &__seg:not(.is-done) { animation: none; }
-  }
-}
-
-// Opacity only: cheap on the kiosk browsers.
-@keyframes gem-glyph-todo {
-  from { opacity: 1; }
-  to { opacity: 0.3; }
 }
 
 // The box a cell opens, over the board: the cell's own glyph large, then one
@@ -328,7 +344,6 @@
   &__part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
   &__part-label { font-size: 1.1em; font-weight: 700; }
   &__line { font-size: 1em; opacity: 0.8; text-align: right; }
-  &__part[data-reach="tight"] &__line { color: #ffb44c; opacity: 1; }
   &__part[data-state="earned"] &__line, &__part[data-state="won"] &__line, &__part[data-state="leading"] &__line { opacity: 1; font-weight: 700; }
 
   &__items {
@@ -373,4 +388,10 @@
     &.is-today { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75); opacity: 1; }
     &.is-ahead { opacity: 0.45; }
   }
+}
+
+// The placeholder cells of the outline drawn while the board is read (not gems).
+@keyframes gem-board-ghost {
+  from { background: rgba(255, 255, 255, 0.07); }
+  to { background: rgba(255, 255, 255, 0.14); }
 }

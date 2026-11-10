@@ -6,7 +6,7 @@
  *
  * One line per child, in roster order — never ranked. The columns are the gem
  * rows the response names in `categories`, gathered under its `groups`
- * (Move, Games, School), each with its name leaning over it; the child's gem
+ * (Move, School, Games), each with its name leaning over it; the child's gem
  * count for the week closes the line. A cell is one glyph (GemGlyph.jsx) and carries no
  * numerals but a ×n badge. No failure marks: a gem not earned is a blank
  * cell, a gem still in reach is a faint gem inside a ring of day segments,
@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
 import GemGlyph, { glyphLook, glyphWords } from './GemGlyph.jsx';
+import AreaIcon, { AREAS } from './AreaIcon.jsx';
 import GemDetail, { detailParts } from './GemDetail.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './GemBoard.scss';
@@ -62,7 +63,7 @@ export function boardShape(board) {
   return {
     learners: board.learners.map(({ learnerId, name }) => ({ learnerId, name })),
     groups: (board.groups ?? []).map(({ id, label }) => ({ id, label })),
-    categories: board.categories.map(({ id, label, group, color }) => ({ id, label, group, color })),
+    categories: board.categories.map(({ id, label, group, area, color }) => ({ id, label, group, area, color })),
   };
 }
 
@@ -94,10 +95,10 @@ function Avatar({ id, name }) {
 const cellOpenable = (cell) => detailParts(cell).length > 0;
 
 /** One child's cell in one gem row. Exported for tests. */
-export function GemCell({ cell, color, name, rowLabel, onOpen = null, cursor = false }) {
+export function GemCell({ cell, color, area = null, name, rowLabel, onOpen = null, cursor = false }) {
   const look = glyphLook(cell);
   const label = `${name}, ${rowLabel}: ${glyphWords(cell)}`;
-  const glyph = <GemGlyph cell={cell} color={color} />;
+  const glyph = <GemGlyph cell={cell} color={color} area={area} tag />;
   const openable = onOpen && cellOpenable(cell);
   return (
     <div className={`gem-board__cell${cursor ? ' is-cursor' : ''}`} role="cell" data-look={look} data-state={cell?.state ?? 'none'}>
@@ -108,9 +109,15 @@ export function GemCell({ cell, color, name, rowLabel, onOpen = null, cursor = f
   );
 }
 
-/** The board's sections in display order, each with its rows; empty sections dropped. */
+/**
+ * The board's sections in display order — Move, School, Games, then any other
+ * section a rule names — each with its rows; empty sections dropped.
+ */
+const areaRank = (id) => { const at = AREAS.indexOf(id); return at < 0 ? AREAS.length : at; };
 const boardSections = (board) => (board?.groups ?? [])
-  .map((g) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.group === g.id) }))
+  .map((g, i) => ({ g, i }))
+  .sort((x, y) => areaRank(x.g.id) - areaRank(y.g.id) || x.i - y.i)
+  .map(({ g }) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.group === g.id) }))
   .filter((g) => g.rows.length);
 
 /** Gem row ids in the order their columns are drawn (for the overlay's left / right keys). */
@@ -166,7 +173,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
       </div>
       <div className="gem-board__row" role="row">
         {layout.placed.map((g) => (
-          <div key={g.id} className="gem-board__group-label" role="columnheader" aria-colspan={g.rows.length} data-group={g.id} style={at(2, g.start, g.end)}>{g.label}</div>
+          <div key={g.id} className="gem-board__group-label" role="columnheader" aria-colspan={g.rows.length} data-group={g.id} style={at(2, g.start, g.end)}><AreaIcon area={g.id} />{g.label}</div>
         ))}
         <div className="gem-board__total-label" role="columnheader" style={at(2, layout.totalCol)}>This week</div>
       </div>
@@ -185,6 +192,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
                 {pending ? <div className="gem-board__cell" role="cell"><span className="gem-board__ghost" aria-hidden="true" /></div> : <GemCell
                   cell={board.cells?.[row.id]?.[l.learnerId]}
                   color={row.color}
+                  area={row.area ?? row.group}
                   name={l.name}
                   rowLabel={row.label}
                   onOpen={onOpen ? () => onOpen(row.id, l.learnerId) : null}
