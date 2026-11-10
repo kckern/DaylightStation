@@ -1947,7 +1947,12 @@ const GlobalOverlays = () => {
   const fitnessCtx = useFitnessContext();
   useEffect(() => installRingCelebrationAudioUnlock(), []);
   // Silver the bank actually minted for a workout (ledger entries, not a projection).
-  const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony();
+  // It waits (parked, unstamped) while a video or a game is on screen, so it
+  // never pops over another rider's live run; it plays when they are done.
+  const location = useLocation();
+  const runOnScreen = Boolean(fitnessCtx?.fitnessPlayQueue?.length)
+    || /\/fitness\/(play|games)\//.test(location?.pathname || '');
+  const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony({ hold: runOnScreen });
   // A gem that just landed (a race of the week taken, an act completed, a ring
   // mark): looked for right after a race/flight saves or a workout ends, and
   // shown after any coin ceremony. The garage celebrates what happens in front

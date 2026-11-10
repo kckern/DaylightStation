@@ -9,7 +9,7 @@ vi.mock('@/lib/api.mjs', () => ({ DaylightMediaPath: (p) => p }));
 
 import WorkoutCoinCeremony, { ceremonyDurationMs } from './WorkoutCoinCeremony.jsx';
 
-const L = (id, silver, total, extra = {}) => ({ learnerId: id, learnerName: id.toUpperCase(), rings: 240, gained: { silver, gems: 0 }, total: { silver: total }, nextCoinIn: silver ? null : 23, ...extra });
+const L = (id, silver, total, extra = {}) => ({ learnerId: id, learnerName: id.toUpperCase(), rings: 0, gained: { silver, gems: 0 }, total: { silver: total }, nextCoinIn: null, ...extra });
 
 describe('WorkoutCoinCeremony', () => {
   beforeEach(() => { vi.useFakeTimers(); cue.mockClear(); logSpy.info.mockClear(); });
@@ -21,16 +21,14 @@ describe('WorkoutCoinCeremony', () => {
     expect(ceremonyDurationMs(9)).toBe(10000);
   });
 
-  it('shows +N and the new total per learner, and a rings-to-next line for zero', () => {
-    const { container } = render(<WorkoutCoinCeremony sessionId="s1" learners={[L('learner-a', 3, 27), L('learner-b', 0, 9)]} onDone={() => {}} />);
+  it('shows +N and the new total per learner, a card each', () => {
+    const { container } = render(<WorkoutCoinCeremony sessionId="s1" learners={[L('learner-a', 3, 27), L('learner-b', 1, 9)]} onDone={() => {}} />);
     const cards = container.querySelectorAll('.workout-coin-ceremony__card');
     expect(cards).toHaveLength(2);
     expect(cards[0].textContent).toContain('+3');
     expect(cards[0].textContent).toContain('27 silver');
-    // Two short lines, not one long wrapping sentence.
-    expect(cards[1].querySelector('.workout-coin-ceremony__rings').textContent).toBe('240 rings');
-    expect(cards[1].querySelector('.workout-coin-ceremony__next').textContent).toBe('23 more to the next coin');
-    expect(cards[1].querySelector('.workout-coin-ceremony__gain')).toBeNull();
+    expect(cards[1].textContent).toContain('+1');
+    expect(container.querySelector('.workout-coin-ceremony__rings')).toBeNull();
   });
 
   it('logs the minted txnIds with the shown event', () => {
@@ -38,10 +36,10 @@ describe('WorkoutCoinCeremony', () => {
     expect(logSpy.info).toHaveBeenCalledWith('fitness.coin_ceremony.shown', expect.objectContaining({ sessionId: 's1', txnIds: ['t1', 't2'], totalSilver: 3 }));
   });
 
-  it('plays the coin cue once per card with silver and logs shown', () => {
-    render(<WorkoutCoinCeremony sessionId="s1" learners={[L('learner-a', 3, 27), L('learner-b', 0, 9)]} onDone={() => {}} />);
-    expect(cue).toHaveBeenCalledTimes(1);
-    expect(logSpy.info).toHaveBeenCalledWith('fitness.coin_ceremony.shown', expect.objectContaining({ sessionId: 's1', learners: 2, totalSilver: 3 }));
+  it('plays the coin cue once per card and logs shown', () => {
+    render(<WorkoutCoinCeremony sessionId="s1" learners={[L('learner-a', 3, 27), L('learner-b', 1, 9)]} onDone={() => {}} />);
+    expect(cue).toHaveBeenCalledTimes(2);
+    expect(logSpy.info).toHaveBeenCalledWith('fitness.coin_ceremony.shown', expect.objectContaining({ sessionId: 's1', learners: 2, totalSilver: 4 }));
   });
 
   it('shows a gem when the ride paid one', () => {

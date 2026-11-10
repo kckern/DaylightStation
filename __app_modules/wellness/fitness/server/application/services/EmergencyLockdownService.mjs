@@ -1,13 +1,16 @@
+import { endedPayloadFor } from './sessionEndedPayload.mjs';
+
 /** Application workflow for emergency authorization, lockdown, and session finalization. */
 export class EmergencyLockdownService {
   constructor({ access = null, trigger = null, release = null, state = null,
-    sessions = null, timelapse = null, clock = { now: () => Date.now() }, logger = console } = {}) {
+    sessions = null, timelapse = null, publications = null, clock = { now: () => Date.now() }, logger = console } = {}) {
     this.access = access;
     this.trigger = trigger;
     this.releaseLockdown = release;
     this.state = state;
     this.sessions = sessions;
     this.timelapse = timelapse;
+    this.publications = publications;
     this.clock = clock;
     this.logger = logger;
   }
@@ -50,13 +53,25 @@ export class EmergencyLockdownService {
       for (const session of active) {
         const sessionId = session.sessionId?.toString();
         if (!sessionId) continue;
-        await this.sessions.endSession(sessionId, householdId, this.clock.now());
+        const ended = await this.sessions.endSession(sessionId, householdId, this.clock.now());
+        this.publishEnded(ended, sessionId);
         this.logger.info?.('emergency.session_finalized', { sessionId, lockedBy });
         if (this.timelapse) Promise.resolve(this.timelapse.execute({ sessionId, householdId }))
           .then((result) => this.logger.info?.('fitness.timelapse.trigger_done', { sessionId, status: result?.status, via: 'emergency' }))
           .catch((error) => this.logger.error?.('fitness.timelapse.trigger_failed', { sessionId, error: error?.message, via: 'emergency' }));
       }
     }).catch((error) => this.logger.error?.('emergency.session_finalize_failed', { error: error?.message, lockedBy }));
+  }
+
+  /** Tell the bus the workout ended (ring payouts settle now, not at the hourly reconcile). Never throws. */
+  publishEnded(session, sessionId) {
+    if (!this.publications?.ended) return;
+    try {
+      const payload = endedPayloadFor(session, sessionId);
+      if (payload) this.publications.ended(payload);
+    } catch (error) {
+      this.logger.warn?.('fitness.sessions.ended-publish-failed', { sessionId, error: error?.message, via: 'emergency' });
+    }
   }
 
   abort() {

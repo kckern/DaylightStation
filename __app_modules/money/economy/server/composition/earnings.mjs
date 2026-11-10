@@ -91,7 +91,7 @@ export function cachedSheetRewards({ weeks, config, logger = console }) {
   };
 }
 
-export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders = [],previewCacheNow = () => Date.now()}) {
+export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders = [],sessionParticipants = null,previewCacheNow = () => Date.now()}) {
     const { EarningsPreviewService } = await import("../application/EarningsPreviewService.mjs");
     const { SchoolEarningEvidence } = await import("../adapters/school/SchoolEarningEvidence.mjs");
     const { createEarningsRouter } = await import("../api/earnings.mjs");
@@ -183,6 +183,8 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       preview: earningsPreview,
       economy: economyApi.economyService,
       config: economyApi.configProjection,
+      // Who rode a workout, from its saved session record (null = price the roster).
+      participants: sessionParticipants,
       logger: rootLogger.child({ module: 'economy-workout-earnings' }),
     });
     // The Gem Board (fitness ring chart, school agenda): learners × gems.

@@ -1,3 +1,5 @@
+import { endedPayloadFor } from './sessionEndedPayload.mjs';
+
 /** Cohesive session queries/workflows used by the HTTP surface. */
 export class FitnessSessionOperations {
   constructor({
@@ -32,15 +34,9 @@ export class FitnessSessionOperations {
   publishEnded(session, fallbackId) {
     if (!this.publications?.ended) return;
     try {
-      const rawEnd = session?.endTime;
-      const endMs = typeof rawEnd === 'number' ? rawEnd : (rawEnd ? Date.parse(rawEnd) : NaN);
-      if (!Number.isFinite(endMs)) return;
-      const sessionId = String(session?.sessionId?.toString?.() ?? session?.sessionId ?? fallbackId ?? '');
-      const rawStart = session?.startTime;
-      const startMs = typeof rawStart === 'number' ? rawStart : (rawStart ? Date.parse(rawStart) : NaN);
-      const learnerIds = Object.keys(session?.participants ?? {});
-      if (!sessionId || !learnerIds.length) return;
-      this.publications.ended({ sessionId, learnerIds, endMs, startMs, finalized: session.finalized === true });
+      const payload = endedPayloadFor(session, fallbackId);
+      if (!payload) return;
+      this.publications.ended(payload);
     } catch (error) {
       this.logger.warn?.('fitness.sessions.ended-publish-failed', { sessionId: fallbackId, error: error?.message });
     }

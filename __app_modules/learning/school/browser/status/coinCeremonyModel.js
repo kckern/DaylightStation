@@ -8,7 +8,7 @@
  * A rise is earning entries not seen in the previous NETWORK read (`observeMinted`).
  *
  * Not celebrated: the cache seed and the first read after mount (both are
- * baselines), a change of week, a drop, no change, and anyone off the roster.
+ * baselines), a drop, no change, entries already seen, and anyone off the roster.
  *
  * Modelled on the fitness ring celebrations (`ringCelebrations.js`): a burst
  * window lets a payout run's several reads become one pop, and a pop already

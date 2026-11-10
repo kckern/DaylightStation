@@ -391,6 +391,7 @@ export function createFitnessApiRouter(config) {
     memos: voiceMemoOperations,
     logger,
   });
+  const fitnessSessionPublications = new FitnessSessionPublications({ eventBus });
   const emergencyOperations = new EmergencyLockdownService({
     access: emergencyAccessService,
     trigger: triggerEmergencyLockdown,
@@ -398,6 +399,7 @@ export function createFitnessApiRouter(config) {
     state: getLockdownState,
     sessions: fitnessServices.sessionService,
     timelapse: generateSessionTimelapse,
+    publications: fitnessSessionPublications,
     logger,
   });
   new FitnessCoinsRelay({ eventBus, logger }).start();
@@ -407,7 +409,7 @@ export function createFitnessApiRouter(config) {
     timelapse: generateSessionTimelapse,
     renderReceipt: createReceiptCanvas,
     config: fitnessConfigService,
-    publications: new FitnessSessionPublications({ eventBus }),
+    publications: fitnessSessionPublications,
     onSessionsChanged: (change) => {
       suggestionsSnapshot.invalidate(`session-${change?.operation ?? 'changed'}`);
       return onSessionsChanged?.(change);

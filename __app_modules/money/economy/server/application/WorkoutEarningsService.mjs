@@ -1,13 +1,12 @@
 /**
  * What one workout was worth, and where the week stands — read-only.
  *
- * The bank trails a workout by up to ~90 min (PayoutService mints a ring step
- * only once its session is final, on the hourly reconcile), so a post-workout
- * ceremony cannot read the ledger for "what did I just earn". It prices the
- * ride the way the payout will: the ring line's sessions in end order, this
- * one counted even before it is final, each step at the week's running total
- * (`ringAmount`). The total is the wallet plus the ring silver still owed, so
- * it is what the bank will hold once the payouts land.
+ * Two reads, kept apart:
+ *   `workout()`  the PROJECTION: the ride priced the way the payout will, at the
+ *                week's running total. For previews; never a ceremony's source.
+ *   `paid()`     the PAYOUT: the ring entries (silver, and gems the same step
+ *                minted) the bank has actually minted for the ride. A ceremony
+ *                celebrates only what this returns.
  */
 import { ringAmount } from "../domain/earnings/index.mjs";
 import { PAID_KINDS } from "../domain/index.mjs";
@@ -52,13 +51,18 @@ export function workoutGain(line, sessionId) {
 }
 
 export class WorkoutEarningsService {
-  #preview; #economy; #config; #logger;
+  #preview; #economy; #config; #logger; #participants;
 
-  constructor({ preview, economy, config, logger = console }) {
+  /**
+   * @param {object} deps
+   * @param {(sessionId: string) => Promise<string[]|null>} [deps.participants] - who rode a
+   *   session, from the saved session record; when it answers, only those learners are priced.
+   */
+  constructor({ preview, economy, config, participants = null, logger = console }) {
     if (!preview?.roster) throw new Error('WorkoutEarningsService requires preview');
     if (!economy?.peekBalance || !economy?.getHistory) throw new Error('WorkoutEarningsService requires economy');
     if (!config?.catalog) throw new Error('WorkoutEarningsService requires config');
-    this.#preview = preview; this.#economy = economy; this.#config = config; this.#logger = logger;
+    this.#preview = preview; this.#economy = economy; this.#config = config; this.#participants = participants; this.#logger = logger;
   }
 
   #isUser(id) { return typeof this.#economy.hasUser !== 'function' || this.#economy.hasUser(id); }
@@ -100,18 +104,33 @@ export class WorkoutEarningsService {
    * What the bank actually PAID for one workout: the ring-payout entries in
    * each learner's ledger whose `meta.session.id` is this ride. Read-only, and
    * the ceremony's truth: a promise (`workout()`) is not a payout.
-   * @returns {Promise<{sessionId: string, mode: string, learners: Array<{learnerId: string, learnerName: string, entries: Array<{txnId: string, silver: number, at: string, rings: number|null}>, wallet: {silver: number}}>}>}
+   * @returns {Promise<{sessionId: string, mode: string, learners: Array<{learnerId: string, learnerName: string, entries: Array<{txnId: string, silver: number, gems: number, at: string, rings: number|null}>, wallet: {silver: number}}>}>}
    */
   async paid(sessionId) {
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { sessionId, mode, learners: [] };
     const want = normalizeWorkoutSessionId(sessionId);
+    // Who rode comes from the session record; pricing the whole roster is the fallback.
+    let riders = null;
+    try {
+      const ids = await this.#participants?.(sessionId);
+      if (Array.isArray(ids) && ids.length) riders = ids.map(String);
+    } catch (err) {
+      this.#logger.warn?.('economy.workout-paid.participants-failed', { sessionId, error: err?.message ?? String(err) });
+    }
+    const priceWeek = async (week) => {
+      if (!riders) return this.#preview.roster({ week });
+      const priced = await Promise.all(riders.map(async (learnerId) => {
+        try { return await this.#preview.preview({ learnerId, week }); } catch { return null; }
+      }));
+      return { today: this.#preview.currentStudyDay?.() ?? null, learners: priced.filter(Boolean) };
+    };
     // The ride's own award week: this one, or (a ride that started before the
     // Monday rollover and turned final after it) the one before.
     const hasRide = (r) => (r?.learners ?? []).some((l) => (ringLineOf(l)?.sessions ?? []).some((s) => normalizeWorkoutSessionId(s?.sessionId) === want));
-    let roster = await this.#preview.roster({ week: null });
+    let roster = await priceWeek(null);
     if (!hasRide(roster) && /^\d{4}-\d{2}-\d{2}$/.test(roster?.today ?? '')) {
-      const before = await this.#preview.roster({ week: new Date(Date.parse(`${roster.today}T00:00:00.000Z`) - 7 * 86_400_000).toISOString().slice(0, 10) });
+      const before = await priceWeek(new Date(Date.parse(`${roster.today}T00:00:00.000Z`) - 7 * 86_400_000).toISOString().slice(0, 10));
       if (hasRide(before)) roster = before;
     }
     const learners = [];
@@ -120,12 +139,21 @@ export class WorkoutEarningsService {
       if (!ride || !this.#isUser(learner.learnerId)) continue;
       try {
         const since = Number.isFinite(ride.startMs) ? new Date(ride.startMs - 86_400_000).toISOString() : null;
-        const entries = [];
+        // One entry per payout step: its silver, plus the gems the same step
+        // minted (a `:gems` payout carrying the same ring count). A step that
+        // paid only gems is an entry of its own.
+        const steps = new Map();
         for (const t of await this.#economy.getHistory(learner.learnerId, { since })) {
-          if (t.source !== 'payout' || t.meta?.kind !== 'ring-threshold' || (t.currency ?? 'silver') !== 'silver') continue;
+          const currency = t.currency ?? 'silver';
+          if (t.source !== 'payout' || t.meta?.kind !== 'ring-threshold' || (currency !== 'silver' && currency !== 'gems')) continue;
           if (normalizeWorkoutSessionId(t.meta?.session?.id) !== want) continue;
-          entries.push({ txnId: t.id, silver: t.delta || 0, at: t.at, rings: Number.isFinite(t.meta.session.rings) ? t.meta.session.rings : null });
+          const key = Number.isFinite(t.meta?.count) ? `count:${t.meta.count}` : `txn:${t.id}`;
+          const step = steps.get(key) ?? { txnId: null, silver: 0, gems: 0, at: t.at, rings: Number.isFinite(t.meta.session.rings) ? t.meta.session.rings : null, gemTxnId: null };
+          if (currency === 'silver') { step.txnId = t.id; step.silver += t.delta || 0; step.at = t.at; }
+          else { step.gemTxnId = t.id; step.gems += t.delta || 0; }
+          steps.set(key, step);
         }
+        const entries = [...steps.values()].map(({ gemTxnId, ...e }) => ({ ...e, txnId: e.txnId ?? gemTxnId }));
         const wallet = await this.#economy.peekBalance(learner.learnerId);
         learners.push({
           learnerId: learner.learnerId, learnerName: learner.learnerName ?? learner.learnerId,

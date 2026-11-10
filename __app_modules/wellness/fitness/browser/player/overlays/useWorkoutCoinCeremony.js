@@ -13,8 +13,16 @@
  *   - `coins-changed` arrives for a learner (that learner's recent sessions).
  *
  * Each minted entry plays once per screen: its txnId is remembered in
- * localStorage (entries older than 7 days are ignored and pruned). A first
- * load is NOT silent — an unseen payout is exactly what this screen is for.
+ * localStorage (entries older than 7 days are ignored and pruned) the moment
+ * its ceremony is put on display — never while it is only queued, so a reload
+ * (or a dark screen) before it shows leaves it unseen. A ceremony never takes
+ * the screen while `hold` is true (a video or a game is on): it stays parked
+ * and plays when the hold drops.
+ *
+ * The very first load in a browser (no seen record at all, or storage that
+ * throws) BASELINES: every entry already minted is stamped seen and nothing
+ * shows, so a fresh deploy or a new browser does not replay a week of payouts.
+ * Every later load plays a payout minted while the screen was off.
  * Two learners paid in one look share one ceremony, a card each.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -22,7 +30,7 @@ import { DaylightAPI } from '@/lib/api.mjs';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import getLogger from '@/lib/logging/Logger.js';
 
-export function __resetShownForTest() { shownThisPage.clear(); }
+export function __resetShownForTest() { shownThisPage.clear(); pendingIds.clear(); skippedLogged = false; }
 
 export const WORKOUT_FINISHED_EVENT = 'fitness-workout-finished';
 const SEEN_KEY = 'fitness.coinCeremony.seen';
@@ -31,6 +39,15 @@ const SETTLE_MS = 1200;
 
 // Entries shown this page life: the fallback when localStorage is unusable.
 const shownThisPage = new Set();
+// Entries queued for display but not yet shown: dedupes overlapping looks
+// without marking them seen.
+const pendingIds = new Set();
+let skippedLogged = false;
+
+/** True when this browser has never recorded a seen set (or cannot read one). */
+function isFirstRun() {
+  try { return localStorage.getItem(SEEN_KEY) === null; } catch { return true; }
+}
 
 function readSeen() {
   try {
@@ -46,10 +63,35 @@ function writeSeen(seen) {
   } catch { /* storage unavailable: a repeat ceremony is the worst case */ }
 }
 
-/** Unseen, recent, positive ring-payout entries from `/paid` bodies, grouped per learner. */
+function markSeen(txnIds) {
+  if (!txnIds?.length) return;
+  const stamp = {};
+  for (const id of txnIds) { shownThisPage.add(id); pendingIds.delete(id); stamp[id] = Date.now(); }
+  writeSeen({ ...readSeen(), ...stamp });
+}
+
+/** Baseline: stamp every recent minted entry seen without showing anything. */
+function baselineEntries(bodies) {
+  const floor = Date.now() - MAX_AGE_MS;
+  const txnIds = [];
+  for (const body of bodies) {
+    if (!body || body.mode === 'off') continue;
+    for (const l of body.learners || []) {
+      for (const e of l?.entries || []) {
+        const at = Date.parse(e?.at);
+        if (e?.txnId && Number.isFinite(at) && at >= floor) txnIds.push(e.txnId);
+      }
+    }
+  }
+  markSeen(txnIds);
+  return txnIds;
+}
+
+/** Unseen, recent ring-payout entries (silver and/or gems) from `/paid` bodies, grouped per learner. */
 function collectUnseen(bodies, learnerFilter) {
   const seen = readSeen();
   for (const id of shownThisPage) seen[id] = Date.now();
+  for (const id of pendingIds) seen[id] = Date.now();
   const floor = Date.now() - MAX_AGE_MS;
   const byLearner = new Map();
   const stamps = {};
@@ -60,12 +102,13 @@ function collectUnseen(bodies, learnerFilter) {
       if (!l?.learnerId || (learnerFilter && !learnerFilter.has(l.learnerId))) continue;
       for (const e of l.entries || []) {
         const at = Date.parse(e?.at);
-        if (!e?.txnId || !(e.silver > 0) || !Number.isFinite(at) || at < floor) continue;
+        if (!e?.txnId || !(e.silver > 0 || e.gems > 0) || !Number.isFinite(at) || at < floor) continue;
         if (seen[e.txnId] != null || stamps[e.txnId] != null) continue;
         stamps[e.txnId] = at;
         sessionId = sessionId ?? String(body.sessionId);
-        const card = byLearner.get(l.learnerId) || { learnerId: l.learnerId, learnerName: l.learnerName || l.learnerId, rings: 0, gained: { silver: 0, gems: 0 }, total: { silver: 0 }, nextCoinIn: null, txnIds: [] };
-        card.gained.silver += e.silver;
+        const card = byLearner.get(l.learnerId) || { learnerId: l.learnerId, learnerName: l.learnerName || l.learnerId, gained: { silver: 0, gems: 0 }, total: { silver: 0 }, txnIds: [] };
+        card.gained.silver += e.silver > 0 ? e.silver : 0;
+        card.gained.gems += e.gems > 0 ? e.gems : 0;
         card.txnIds.push(e.txnId);
         card.total.silver = l.wallet?.silver ?? card.total.silver;
         byLearner.set(l.learnerId, card);
@@ -73,9 +116,9 @@ function collectUnseen(bodies, learnerFilter) {
     }
   }
   if (!byLearner.size) return null;
-  // Remembered before anything awaits: a second look can never replay these.
-  for (const id of Object.keys(stamps)) shownThisPage.add(id);
-  writeSeen({ ...seen, ...stamps });
+  // Queued, not seen: an overlapping look cannot double-queue these, but they
+  // are only stamped seen once their ceremony is on display.
+  for (const id of Object.keys(stamps)) pendingIds.add(id);
   const learners = [...byLearner.values()];
   return { sessionId, learners, txnIds: learners.flatMap((l) => l.txnIds) };
 }
@@ -91,13 +134,13 @@ export async function announceWorkoutFinished({ sessionId, redirect, session }) 
   window.dispatchEvent(new CustomEvent(WORKOUT_FINISHED_EVENT, { detail: { sessionId: String(sessionId) } }));
 }
 
-export function useWorkoutCoinCeremony() {
+export function useWorkoutCoinCeremony({ hold = false } = {}) {
   const log = useMemo(() => getLogger().child({ component: 'workout-coin-ceremony' }), []);
   const [queue, setQueue] = useState([]);
   const chain = useRef(Promise.resolve());
 
   // One look at a time, so two triggers close together cannot both claim an entry.
-  const look = useCallback((reason, { sessionIds = null, since = '2d', limit = 5, learnerIds = null } = {}) => {
+  const look = useCallback((reason, { sessionIds = null, since = '2d', limit = 5, learnerIds = null, baseline = false } = {}) => {
     chain.current = chain.current.then(async () => {
       try {
         let ids = sessionIds;
@@ -108,7 +151,17 @@ export function useWorkoutCoinCeremony() {
         const bodies = [];
         for (const id of ids) {
           try { bodies.push(await DaylightAPI(`/api/v1/earnings/workout/${id}/paid`)); }
-          catch (err) { log.info('fitness.coin_ceremony.skipped', { sessionId: id, reason: 'fetch-failed', error: err?.message }); }
+          catch (err) {
+            // First failure per page life is worth an info line; the rest are noise.
+            const level = skippedLogged ? 'debug' : 'info';
+            skippedLogged = true;
+            log[level]('fitness.coin_ceremony.skipped', { sessionId: id, reason: 'fetch-failed', error: err?.message });
+          }
+        }
+        if (baseline) {
+          const txnIds = baselineEntries(bodies);
+          log.info('fitness.coin_ceremony.baselined', { txnIds });
+          return;
         }
         const found = collectUnseen(bodies, learnerIds);
         if (!found) { log.debug('fitness.coin_ceremony.none-minted', { reason, sessions: ids.length }); return; }
@@ -120,7 +173,8 @@ export function useWorkoutCoinCeremony() {
     return chain.current;
   }, [log]);
 
-  useEffect(() => { look('mount', { since: '7d', limit: 8 }); }, [look]);
+  // First run per browser baselines; later loads play what was minted while off.
+  useEffect(() => { look('mount', { since: '2d', limit: 5, baseline: isFirstRun() }); }, [look]);
 
   useEffect(() => {
     const onFinished = (event) => {
@@ -146,6 +200,10 @@ export function useWorkoutCoinCeremony() {
     }, SETTLE_MS);
   }, [look]);
 
+  // A held screen (video / game on) keeps the queue parked; nothing is stamped.
+  const ceremony = hold ? null : (queue[0] ?? null);
+  useEffect(() => { if (ceremony) markSeen(ceremony.txnIds); }, [ceremony]);
+
   const dismiss = useCallback(() => setQueue((q) => q.slice(1)), []);
-  return { ceremony: queue[0] ?? null, dismiss };
+  return { ceremony, dismiss };
 }

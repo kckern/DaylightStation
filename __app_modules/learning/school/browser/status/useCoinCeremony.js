@@ -6,7 +6,7 @@
  * module scope, not in the component, because the board unmounts whenever a
  * code, runner, section or bank screen is open, and the coins a child earns
  * there must still pop when the board comes back. Only a reload clears it
- * (and a change of week still never pops). Rules live in `coinCeremonyModel.js`; this
+ * (a week boundary is no special case: only new minted entries pop). Rules live in `coinCeremonyModel.js`; this
  * hook owns the timers, the roster lookup and the sound (once per pop).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

@@ -2962,7 +2962,12 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     });
   });
   try {
-    economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders});
+    economyEarnings = await createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders,
+      sessionParticipants: async (sessionId) => {
+        const id = String(sessionId ?? '').replace(/^fs_/, '');
+        const session = await fitnessServices.sessionService.getSession(id, householdId, { decodeTimeline: false });
+        return Object.keys(session?.participants ?? {});
+      }});
   } catch (error) {
     rootLogger.error('economy.earnings.unavailable', { error: error.message });
   }
