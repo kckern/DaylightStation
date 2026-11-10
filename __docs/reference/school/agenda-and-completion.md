@@ -292,18 +292,25 @@ soon". The screen has its own idle exit. Log events are `economy.bank.*`
 
 ## The coin ceremony
 
-When a child's coin figure rises, a short "+N" pop appears over the board.
+When a child is paid (a minted earning lands in their bank), a short "+N" pop appears over the board.
 
-**What is celebrated.** The coin column's weekly silver (the earnings preview),
-not the bank balance. The pop reads `+N` large, `<total> this week` smaller, the
-child's face and name, and the standard silver `CoinIcon`.
+**What is celebrated.** Silver actually minted, read from the learner's bank
+history (the ledger), not the week's projection and not a bare balance (owner
+ruling 2026-11-09, superseding 2026-10-21). The pop reads `+N` large,
+`<total> silver` smaller, the child's face and name, and the standard silver
+`CoinIcon`. The coin column's projected figure still moves with the week, but
+never triggers a pop.
 
-**What counts as a rise.** The same learner's silver going up between two
-network reads of the same week (`coinCeremonyModel.observeEarnings`). Not
-celebrated: the board-cache seed and the first network read per learner since
-the page loaded (both are baselines, so a reload never replays an old rise); a
-change of week; a drop;
-no change; a learner off the roster. A learner missing from one read keeps their
+**What counts as a rise.** Earning entries in `GET /api/v1/economy/users/:id/bank`
+`history` that no earlier network read held (`coinCeremonyModel.observeMinted`;
+the one predicate is `earnedSilver`: a silver gain whose line `source` is
+`payout`, `earn` or `prize`). `+N` is the sum of those entries. A deposit, a
+correction (adjust), a pass refund, a conversion, a spend or a gold entry moves
+the balance but is never news, and a spend landing between two reads does not
+hide a mint. A mint arrives as `coins-changed`, so one mint is one pop. Not
+celebrated: a projected-but-unminted amount; the first network read per learner
+since the page loaded (a baseline, so a reload never replays an old pop); a
+learner off the roster. A learner missing from one read keeps their
 baseline. The baseline advances even while the ceremony is disabled. It lives
 for the life of the page, not the board: the board unmounts while a code, runner,
 section or bank screen is open, and coins earned there pop when the board comes

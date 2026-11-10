@@ -111,6 +111,9 @@ export class PayoutService {
    */
   currentStudyDay() { return this.#preview.currentStudyDay(); }
 
+  /** The study day an instant falls in (null when the preview cannot say). */
+  studyDayFor(ms) { return this.#preview.studyDayFor?.(ms) ?? null; }
+
   // Per call, so a config reload (dry-run → live) applies without a restart.
   #mode() { return this.#config.catalog().mode; }
 
@@ -136,17 +139,18 @@ export class PayoutService {
 
   /**
    * One learner's week. `week` is any study day in it; null is the preview's
-   * own current study day (4 am boundary). A preview or ledger failure throws.
+   * own current study day (4 am boundary). `fresh` bypasses the preview's
+   * 60 s achievement cache (a workout that just became final must be seen now). A preview or ledger failure throws.
    * @returns {Promise<{minted: object[], skipped: number, held: number, mode: string, wouldMint?: object[], reason?: string}>}
    */
-  async settle({ learnerId, week = null }) {
+  async settle({ learnerId, week = null, fresh = false }) {
     const mode = this.#mode();
     if (mode === 'off') {
       this.#logger.debug?.('economy.payout.off', { learnerId });
       return { minted: [], skipped: 0, held: 0, mode };
     }
     if (!this.#isUser(learnerId)) return { minted: [], skipped: 0, held: 0, mode, reason: 'not-a-user' };
-    const result = await this.#preview.preview({ learnerId, week });
+    const result = await this.#preview.preview({ learnerId, week, ...(fresh ? { fresh: true } : {}) });
     return this.#pay(learnerId, result, mode);
   }
 

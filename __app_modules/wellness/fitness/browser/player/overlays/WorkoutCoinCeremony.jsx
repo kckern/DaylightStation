@@ -1,8 +1,9 @@
 /**
  * WorkoutCoinCeremony — after a workout, what the ride was worth: one card per
- * kid, "+N" with the silver coin and the new total ("→ 27 silver"), the shape
- * of School's coin ceremony. A ride that crossed no coin says how many rings
- * the next one is. Tap, A/Enter, or the clock dismisses it — exactly once.
+ * kid paid (from the ledger entries minted, never a projection): "+N" with the
+ * silver coin, any minted gems, and the new total ("→ 27 silver"), the shape of
+ * School's coin ceremony. A kid with nothing minted gets no card at all. Tap,
+ * A/Enter, or the clock dismisses it — exactly once.
  */
 import React, { useEffect, useMemo, useRef } from 'react';
 import CoinIcon from '@/lib/icons/CoinIcon.jsx';
@@ -20,7 +21,7 @@ export function ceremonyDurationMs(cards) {
   return Math.min(10000, 4000 + 1500 * Math.max(0, (cards || 1) - 1));
 }
 
-export default function WorkoutCoinCeremony({ sessionId, learners = [], onDone }) {
+export default function WorkoutCoinCeremony({ sessionId, learners = [], txnIds = [], onDone }) {
   const log = useMemo(() => getLogger().child({ component: 'workout-coin-ceremony' }), []);
   const doneRef = useRef(false);
   const onDoneRef = useRef(onDone);
@@ -34,8 +35,8 @@ export default function WorkoutCoinCeremony({ sessionId, learners = [], onDone }
 
   useEffect(() => {
     const totalSilver = learners.reduce((s, l) => s + (l.gained?.silver || 0), 0);
-    log.info('fitness.coin_ceremony.shown', { sessionId, learners: learners.length, totalSilver });
-    learners.filter((l) => l.gained?.silver > 0).forEach(() => playRingCelebrationCue(COIN_SOUND));
+    log.info('fitness.coin_ceremony.shown', { sessionId, txnIds, learners: learners.length, totalSilver });
+    learners.filter((l) => l.gained?.silver > 0 || l.gained?.gems > 0).forEach(() => playRingCelebrationCue(COIN_SOUND));
     const timer = setTimeout(() => finish('timeout'), ceremonyDurationMs(learners.length));
     // Capture phase, consumed: the menu underneath also listens on window
     // (Escape pops it, Enter activates the focused tile).
@@ -61,26 +62,19 @@ export default function WorkoutCoinCeremony({ sessionId, learners = [], onDone }
           <div key={l.learnerId} className="workout-coin-ceremony__card">
             <img className="workout-coin-ceremony__avatar" src={DaylightMediaPath(`/static/img/users/${l.learnerId}`)} alt="" />
             <div className="workout-coin-ceremony__name">{l.learnerName}</div>
-            {l.gained?.silver > 0 ? (
-              <>
-                <div className="workout-coin-ceremony__gain">
-                  <CoinIcon metal="silver" size="1em" label="silver" />
-                  <span>+{l.gained.silver}</span>
-                </div>
-                {l.gained.gems > 0 ? (
-                  <div className="workout-coin-ceremony__gems">
-                    <GemIcon className="workout-coin-ceremony__gem" size="1.2em" />
-                    {`+${l.gained.gems} gem${l.gained.gems > 1 ? 's' : ''}`}
-                  </div>
-                ) : null}
-                <div className="workout-coin-ceremony__total">→ {l.total?.silver ?? 0} silver</div>
-              </>
-            ) : (
-              <>
-                <div className="workout-coin-ceremony__rings">{l.rings} rings</div>
-                {l.nextCoinIn ? <div className="workout-coin-ceremony__next">{l.nextCoinIn} more to the next coin</div> : null}
-              </>
-            )}
+            {l.gained.silver > 0 ? (
+              <div className="workout-coin-ceremony__gain">
+                <CoinIcon metal="silver" size="1em" label="silver" />
+                <span>+{l.gained.silver}</span>
+              </div>
+            ) : null}
+            {l.gained.gems > 0 ? (
+              <div className="workout-coin-ceremony__gems">
+                <GemIcon className="workout-coin-ceremony__gem" size="1.2em" />
+                {`+${l.gained.gems} gem${l.gained.gems > 1 ? 's' : ''}`}
+              </div>
+            ) : null}
+            <div className="workout-coin-ceremony__total">→ {l.total?.silver ?? 0} silver</div>
           </div>
         ))}
       </div>

@@ -20,6 +20,8 @@ import { TemporaryImagePrintGateway } from "../../../../personal/gratitude/serve
 import { YamlRecapSnapshotStore } from "../adapters/persistence/YamlRecapSnapshotStore.mjs";
 import { YamlFitnessSchoolAttemptStore } from "../adapters/persistence/YamlFitnessSchoolAttemptStore.mjs";
 import { FitnessSchoolPublications } from "../adapters/eventbus/FitnessSchoolPublications.mjs";
+import { FitnessCoinsRelay } from "../adapters/eventbus/FitnessCoinsRelay.mjs";
+import { FitnessSessionPublications } from "../adapters/eventbus/FitnessSessionPublications.mjs";
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
 import { createFitnessRouter } from "../api/fitness.mjs";
 import { ContentQueryService } from "../../../../../__capabilities/content-catalog/server/application/ContentQueryService.mjs";
@@ -389,6 +391,7 @@ export function createFitnessApiRouter(config) {
     memos: voiceMemoOperations,
     logger,
   });
+  const fitnessSessionPublications = new FitnessSessionPublications({ eventBus });
   const emergencyOperations = new EmergencyLockdownService({
     access: emergencyAccessService,
     trigger: triggerEmergencyLockdown,
@@ -396,14 +399,17 @@ export function createFitnessApiRouter(config) {
     state: getLockdownState,
     sessions: fitnessServices.sessionService,
     timelapse: generateSessionTimelapse,
+    publications: fitnessSessionPublications,
     logger,
   });
+  new FitnessCoinsRelay({ eventBus, logger }).start();
   const fitnessSessionOperations = new FitnessSessionOperations({
     sessions: fitnessServices.sessionService,
     grouping: fitnessServices.sessionGroupingService,
     timelapse: generateSessionTimelapse,
     renderReceipt: createReceiptCanvas,
     config: fitnessConfigService,
+    publications: fitnessSessionPublications,
     onSessionsChanged: (change) => {
       suggestionsSnapshot.invalidate(`session-${change?.operation ?? 'changed'}`);
       return onSessionsChanged?.(change);

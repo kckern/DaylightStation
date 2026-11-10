@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { WorkoutEarningsService, workoutGain } from './WorkoutEarningsService.mjs';
 
 const PRICED = { rate: { rings: 100, silver: 1 }, thresholds: [{ at: 250, reward: { silver: 2, gems: 0 } }, { at: 500, reward: { silver: 3, gems: 1 } }], multiplier: 1 };
@@ -12,9 +12,9 @@ const ringLine = (learnerId, sessions, extra = {}) => ({
 const contestLine = (learnerId, status, leader) => ({ ruleId: 'ring-contest', kind: 'ring-contest', status, leader, ref: `earn:${learnerId}:ring-contest:2026-10-19:on-time` });
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
-function make({ learners, balances = {}, history = {}, mode = 'live', contestClosed = false, failWallet = null, gemBoard = null }) {
+function make({ rosters = null, learners, balances = {}, history = {}, mode = 'live', contestClosed = false, failWallet = null, gemBoard = null }) {
   return new WorkoutEarningsService({
-    preview: { async roster() { return { contestClosed, learners }; } },
+    preview: { async roster({ week } = {}) { return rosters ? rosters(week) : { contestClosed, learners }; } },
     economy: {
       hasUser: (id) => id in balances,
       async peekBalance(id) { if (id === failWallet) throw new Error('boom'); return balances[id]; },
@@ -152,5 +152,88 @@ describe('WorkoutEarningsService.standings', () => {
     const gemBoard = { async board() { throw new Error('boom'); } };
     const res = await make({ learners, balances: { 'learner-a': { silver: 4, gold: 0, gems: 0 } }, gemBoard }).standings();
     expect(res.learners).toEqual([{ learnerId: 'learner-a', learnerName: 'Learner A', silver: 4, weekRings: 0, gem: null, move: [] }]);
+  });
+});
+
+describe('WorkoutEarningsService.paid', () => {
+  const payout = (id, delta, sessionId, rings, over = {}) => ({ id, kind: 'earn', currency: 'silver', delta, source: 'payout', at: '2026-10-20T10:00:00.000Z', ref: 'r', meta: { kind: 'ring-threshold', count: rings, session: { id: sessionId, rings } }, ...over });
+  const learners = [
+    { learnerId: 'learner-a', learnerName: 'Learner A', lines: [ringLine('learner-a', [session('20261020100000', 1000, 180), session('20261020090000', 500, 50)])] },
+    { learnerId: 'learner-b', learnerName: 'Learner B', lines: [ringLine('learner-b', [session('20261020100000', 1000, 90)])] },
+    { learnerId: 'learner-c', learnerName: 'Learner C', lines: [ringLine('learner-c', [session('other', 1000, 90)])] },
+  ];
+  const balances = { 'learner-a': { silver: 7 }, 'learner-b': { silver: 0 }, 'learner-c': { silver: 1 } };
+  const history = {
+    'learner-a': [
+      payout('t2', 2, 'fs_20261020100000', 180),
+      payout('t1', 1, '20261020090000', 50),
+      payout('tg', 1, '20261020100000', 180, { currency: 'gems' }),
+      payout('tw', 5, '20261020100000', 180, { source: 'admin' }),
+      payout('tc', 3, '20261020100000', 180, { meta: { kind: 'ring-contest', session: { id: '20261020100000' } } }),
+    ],
+    'learner-b': [],
+  };
+
+  it('lists the ring payout entries of this workout only, per learner in it, with the wallet', async () => {
+    const res = await make({ learners, balances, history }).paid('20261020100000');
+    expect(res).toEqual({
+      sessionId: '20261020100000', mode: 'live',
+      learners: [
+        { learnerId: 'learner-a', learnerName: 'Learner A', entries: [{ txnId: 't2', silver: 2, gems: 1, at: '2026-10-20T10:00:00.000Z', rings: 180 }], wallet: { silver: 7 } },
+        { learnerId: 'learner-b', learnerName: 'Learner B', entries: [], wallet: { silver: 0 } },
+      ],
+    });
+  });
+
+  it('a step that paid only gems is an entry of its own, silver 0', async () => {
+    const res = await make({ learners, balances, history: { 'learner-a': [payout('tg9', 2, '20261020100000', 180, { currency: 'gems' })] } }).paid('20261020100000');
+    expect(res.learners[0].entries).toEqual([{ txnId: 'tg9', silver: 0, gems: 2, at: '2026-10-20T10:00:00.000Z', rings: 180 }]);
+  });
+
+  it('resolves riders from the session record and prices only them', async () => {
+    const preview = vi.fn(async ({ learnerId }) => learners.find((l) => l.learnerId === learnerId));
+    const roster = vi.fn(async () => ({ learners }));
+    const svc = new WorkoutEarningsService({
+      preview: { roster, preview, currentStudyDay: () => '2026-10-20' },
+      economy: { hasUser: () => true, peekBalance: async (id) => balances[id], getHistory: async (id) => history[id] ?? [] },
+      config: { catalog: () => ({ mode: 'live' }) },
+      participants: async () => ['learner-a'],
+      logger: silent,
+    });
+    const res = await svc.paid('20261020100000');
+    expect(roster).not.toHaveBeenCalled();
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(res.learners.map((l) => l.learnerId)).toEqual(['learner-a']);
+    expect(res.learners[0].entries.map((e) => e.txnId)).toEqual(['t2']);
+  });
+
+  it('falls back to the roster when the session record cannot say', async () => {
+    const roster = vi.fn(async () => ({ learners }));
+    const svc = new WorkoutEarningsService({
+      preview: { roster },
+      economy: { hasUser: () => true, peekBalance: async (id) => balances[id], getHistory: async (id) => history[id] ?? [] },
+      config: { catalog: () => ({ mode: 'live' }) },
+      participants: async () => { throw new Error('gone'); },
+      logger: silent,
+    });
+    const res = await svc.paid('20261020100000');
+    expect(roster).toHaveBeenCalledTimes(1);
+    expect(res.learners.map((l) => l.learnerId)).toEqual(['learner-a', 'learner-b']);
+  });
+
+  it('catalog off: mode off, no learners', async () => {
+    expect(await make({ learners, balances, history, mode: 'off' }).paid('20261020100000')).toEqual({ sessionId: '20261020100000', mode: 'off', learners: [] });
+  });
+
+  it('a ride from last award week (final after the Monday rollover) is found there', async () => {
+    const lastWeek = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [ringLine('learner-a', [session('20260927200000', 1000, 120)])] }];
+    const seen = [];
+    const svc = make({
+      balances, history: { 'learner-a': [payout('t1', 1, '20260927200000', 120)] },
+      rosters: (week) => { seen.push(week); return week ? { today: '2026-09-28', learners: lastWeek } : { today: '2026-09-28', learners: [] }; },
+    });
+    const res = await svc.paid('20260927200000');
+    expect(seen).toEqual([null, '2026-09-21']);
+    expect(res.learners.map((l) => [l.learnerId, l.entries.map((e) => e.txnId)])).toEqual([['learner-a', ['t1']]]);
   });
 });

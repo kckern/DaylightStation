@@ -91,7 +91,7 @@ export function cachedSheetRewards({ weeks, config, logger = console }) {
   };
 }
 
-export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders = [],previewCacheNow = () => Date.now()}) {
+export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,fitnessRings,schoolLearnerDirectory,measuresTimezone,rootLogger,achievementProviders = [],sessionParticipants = null,previewCacheNow = () => Date.now()}) {
     const { EarningsPreviewService } = await import("../application/EarningsPreviewService.mjs");
     const { SchoolEarningEvidence } = await import("../adapters/school/SchoolEarningEvidence.mjs");
     const { createEarningsRouter } = await import("../api/earnings.mjs");
@@ -192,6 +192,8 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
       preview: earningsPreview,
       economy: economyApi.economyService,
       config: economyApi.configProjection,
+      // Who rode a workout, from its saved session record (null = price the roster).
+      participants: sessionParticipants,
       gemBoard,
       logger: rootLogger.child({ module: 'economy-workout-earnings' }),
     });
@@ -214,6 +216,10 @@ const PAYOUT_TOPICS = new Map([
   ['piano.lesson.completed', null],
   ['school', new Set(['story-read', 'program-day-bypass-changed'])],
 ]);
+// A workout becomes final the instant it is ended by hand, or this long after
+// its end if nobody does (the resume window plus a margin).
+const FITNESS_ENDED_TOPIC = 'fitness.session.ended';
+const WORKOUT_FINAL_AFTER_MS = 30 * 60 * 1000 + 5_000;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // Monday, Tuesday, Wednesday: last week is still re-priced (late grades).
 const GRACE_WEEKDAYS = new Set([1, 2, 3]);
@@ -241,6 +247,12 @@ const weekday = (day) => new Date(`${day}T00:00:00.000Z`).getUTCDay();
  *              the ring contest at Saturday noon. (The scheduler runs a task
  *              at most once per clock hour, so the cron is hourly.)
  *
+ *   fitness    `fitness.session.ended` ({sessionId, learnerIds, endMs, finalized}):
+ *              a finalized workout settles its learners now (`fresh`, past the
+ *              achievement cache); an unfinalized one settles once at
+ *              endMs + 30 min + 5 s, when it becomes final by the resume
+ *              window. A second `ended` for the session replaces the timer.
+ *
  * Disabled (`enabled: false`, the same gate as the scheduler) it subscribes to
  * nothing and registers nothing. Enabled, it always subscribes, so a reload
  * from `off` to `dry-run`/`live` needs no restart; while the catalog reads
@@ -251,6 +263,7 @@ const weekday = (day) => new Date(`${day}T00:00:00.000Z`).getUTCDay();
  * @param {import('../application/PayoutService.mjs').PayoutService} deps.payoutService
  * @param {{catalog: () => {mode: string}}} deps.config
  * @param {boolean} [deps.enabled=true]
+ * @param {() => number} [deps.now] clock for the workout-final timer
  * @param {{subscribe: (topic: string, fn: Function) => Function|void}|null} [deps.eventBus]
  * @param {{registerTask: (key: string, cron: string, fn: Function) => void}|null} [deps.scheduler]
  * @returns {{stop: () => void}} stop() unsubscribes and drops pending debounced
@@ -258,7 +271,7 @@ const weekday = (day) => new Date(`${day}T00:00:00.000Z`).getUTCDay();
  *   has no unregister) keeps calling a task that now returns at once.
  */
 export function startEconomyPayouts({ payoutService, config, enabled = true, eventBus = null, scheduler = null, logger = console,
-  debounceMs = 2_000, timers = { setTimeout, clearTimeout } }) {
+  debounceMs = 2_000, timers = { setTimeout, clearTimeout }, now = Date.now }) {
   if (!enabled) {
     logger.info?.('economy.payout.disabled', { reason: 'scheduler disabled (production or ENABLE_CRON only)' });
     return { stop() {} };
@@ -309,8 +322,72 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
       fail(null, err);
     }
   };
+  // A workout becoming final pays now, not at the next hourly reconcile.
+  // `fresh` skips the 60 s achievement cache so the just-final session counts.
+  const pendingWorkouts = new Map();
+  // The award week is the ride's own: one that started before the Monday
+  // rollover is priced into the week it belongs to, however late it turns final.
+  const weekOfRide = (startMs) => {
+    if (!Number.isFinite(startMs)) return null;
+    const named = payoutService.studyDayFor?.(startMs);
+    if (!DAY.test(named ?? '')) return null;
+    return mondayOf(named) !== mondayOf(today()) ? mondayOf(named) : null;
+  };
+  // Re-saves of a finalized session repeat the same fact; settle it once a minute at most.
+  const recentFinal = new Map();
+  const settleWorkout = (learnerIds, startMs) => {
+    let week = null;
+    try { week = weekOfRide(startMs); } catch (err) { fail(null, err); }
+    for (const learnerId of learnerIds) {
+      Promise.resolve()
+        .then(() => payoutService.settle({ learnerId, week, fresh: true }))
+        .catch((err) => fail(learnerId, err));
+    }
+  };
+  const onWorkoutEnded = (payload) => {
+    try {
+      if (stopped) return;
+      const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+      const learners = [...new Set((Array.isArray(payload?.learnerIds) ? payload.learnerIds : [])
+        .filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()))];
+      if (!sessionId || !learners.length || off()) return;
+      // One pending settle per session: a later `ended` replaces it.
+      timers.clearTimeout(pendingWorkouts.get(sessionId));
+      pendingWorkouts.delete(sessionId);
+      if (payload.finalized === true) {
+        const memo = `${sessionId}|${payload.endMs ?? ''}`;
+        const at = now();
+        for (const [k, t] of recentFinal) if (at - t > 60_000) recentFinal.delete(k);
+        if (recentFinal.has(memo)) return;
+        recentFinal.set(memo, at);
+        logger.info?.('economy.payout.fitness-trigger', { sessionId, learners, reason: 'finalized' });
+        settleWorkout(learners, payload.startMs);
+        return;
+      }
+      const endMs = Number.isFinite(payload.endMs) ? payload.endMs : now();
+      const delay = Math.max(0, endMs + WORKOUT_FINAL_AFTER_MS - now());
+      const timer = timers.setTimeout(() => {
+        pendingWorkouts.delete(sessionId);
+        if (stopped) return;
+        try {
+          if (off()) return;
+          logger.info?.('economy.payout.fitness-trigger', { sessionId, learners, reason: 'window' });
+          settleWorkout(learners, payload.startMs);
+        } catch (err) {
+          fail(null, err);
+        }
+      }, delay);
+      timer?.unref?.();
+      pendingWorkouts.set(sessionId, timer);
+    } catch (err) {
+      fail(null, err);
+    }
+  };
   const unsubscribers = eventBus?.subscribe
-    ? [...PAYOUT_TOPICS].map(([topic, kinds]) => eventBus.subscribe(topic, onEvent(kinds)))
+    ? [
+      ...[...PAYOUT_TOPICS].map(([topic, kinds]) => eventBus.subscribe(topic, onEvent(kinds))),
+      eventBus.subscribe(FITNESS_ENDED_TOPIC, onWorkoutEnded),
+    ]
     : [];
   scheduler?.registerTask?.('economy:payout-reconcile', '0 * * * *', async () => {
     if (stopped) return;
@@ -341,6 +418,8 @@ export function startEconomyPayouts({ payoutService, config, enabled = true, eve
       unsubscribers.forEach((unsubscribe) => { if (typeof unsubscribe === 'function') unsubscribe(); });
       for (const timer of pending.values()) timers.clearTimeout(timer);
       pending.clear();
+      for (const timer of pendingWorkouts.values()) timers.clearTimeout(timer);
+      pendingWorkouts.clear();
     },
   };
 }

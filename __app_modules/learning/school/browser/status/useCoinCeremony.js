@@ -6,17 +6,17 @@
  * module scope, not in the component, because the board unmounts whenever a
  * code, runner, section or bank screen is open, and the coins a child earns
  * there must still pop when the board comes back. Only a reload clears it
- * (and a change of week still never pops). Rules live in `coinCeremonyModel.js`; this
+ * (a week boundary is no special case: only new minted entries pop). Rules live in `coinCeremonyModel.js`; this
  * hook owns the timers, the roster lookup and the sound (once per pop).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { schoolLog } from "../schoolLog.js";
 import {
-  normalizeCoinCeremonyConfig, observeEarnings, emptyQueue, enqueueRise, promote, finish, nextPromoteIn,
+  normalizeCoinCeremonyConfig, observeMinted, emptyQueue, enqueueRise, promote, finish, nextPromoteIn,
 } from "./coinCeremonyModel.js";
 import { playCoinCue, installCoinCueUnlock } from "../../../../../frontend/src/lib/economy/coinCeremonyAudio.js";
 
-// Per-learner baseline ({ silver, from, to }), shared by every mount of the
+// Per-learner baseline (earning entry ids already accounted for), shared by every mount of the
 // board for the life of the page.
 let baseline = {};
 
@@ -30,7 +30,7 @@ export function useCoinCeremony({ kids = [], config = null } = {}) {
   const observe = useCallback((byLearner) => {
     // Always advance the baseline, even when disabled, so turning the
     // ceremony on later never replays an old rise.
-    const { seen, rises } = observeEarnings(baseline, byLearner, rosterIds);
+    const { seen, rises } = observeMinted(baseline, byLearner, rosterIds);
     baseline = seen;
     if (!cfg.enabled || !rises.length) return;
     const now = Date.now();

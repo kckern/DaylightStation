@@ -20,7 +20,8 @@ pass), and metered arcade play. The pieces:
 1. **Earn rules** price a week of evidence (graded school work, green days, piano
    lessons, rings). The **earnings preview** evaluates them and writes nothing.
 2. **PayoutService** mints what the preview says was earned into an
-   append-only **ledger**, on school and piano events and an hourly reconcile.
+   append-only **ledger**, on school and piano events, `fitness.session.ended`
+   (a workout ending) and an hourly failsafe reconcile.
 3. **WeekCloseService** converts each earner's unspent silver to gold on Sunday
    night. Gold and gems are kept for good.
 4. **Passes** spend silver or gold on one unit of a privilege. Economy owns the
@@ -669,25 +670,45 @@ is the preview's current study day, `currentStudyDay()`).
   `meta.session = { id, title, startMs, rings }`; a workout that crosses no
   new silver step writes nothing and its rings roll into the next entry; a
   week already paid at live rates is not paid twice. A running workout waits
-  for a later hourly reconcile, so the bank trails the board by up to about
-  90 minutes after a workout ends.
-- **What a workout was worth, before the bank has it.** `WorkoutEarningsService`
-  (`application/WorkoutEarningsService.mjs`) prices one ride with the same steps
-  as the payout — the ring line's sessions in end order, this one counted even
-  before it is final — so the fitness coin ceremony's "+N" matches the entry
-  that lands later. Its `total` is the wallet plus the ring silver still owed
-  under the line's ref, i.e. what the bank will hold once the payouts land.
-  `GET /api/v1/earnings/workout/:sessionId` (learners in that session only;
-  one failing wallet omits that learner, `economy.workout-earnings.learner-failed`)
-  and `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
-  `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `move`: the
-  Gem Board's Move rows for that learner as `[{id, label, color, cell}]`, each
-  `cell` cut down to `state`, `week`, `streak` and its parts' colours, which is
-  what a home card needs to draw the board's glyph; empty, with
-  `economy.standings.move-gems-unavailable` logged, when the board cannot be
-  read). Both read-only,
-  `no-store`; with the catalog `off` they return no learners. Logged
-  `economy.workout-earnings.query`.
+  until it is final, which is immediate on an explicit End (or an emergency
+  lockdown) and otherwise 30 minutes and 5 seconds after its last activity
+  (the `fitness.session.ended` trigger, below); the hourly reconcile is the
+  failsafe if that event is missed.
+- **What a workout paid, and what it would be worth.** `WorkoutEarningsService`
+  (`application/WorkoutEarningsService.mjs`) has two reads, kept apart:
+  - `GET /api/v1/earnings/workout/:sessionId/paid` is what ceremonies celebrate.
+    For each learner who rode, it returns the ring-payout entries the economy
+    actually minted for that session (ledger entries with `source: 'payout'`,
+    `meta.kind: 'ring-threshold'` and this `meta.session.id`) as
+    `entries: [{ txnId, silver, gems, at, rings }]`, oldest first, plus the
+    learner's `wallet.silver`. A step's silver and the gems the same step minted
+    (its `:gems` payout, same ring count) arrive as one entry; a step that paid
+    only gems is an entry with `silver: 0`. Who rode comes from the saved session
+    record (`participants`), falling back to pricing the whole roster. A ride that
+    minted nothing yet returns an empty `entries`: **ceremonies correspond to
+    payouts, not promises**, so nothing shows until the payout lands and its
+    `coins-changed` arrives. Logged `economy.workout-paid.query`; a failing
+    wallet omits that learner (`economy.workout-paid.learner-failed`).
+  - `GET /api/v1/earnings/workout/:sessionId` is the **projection**: the ride
+    priced with the same steps as the payout, this one counted even before it is
+    final, with a `total` of wallet plus ring silver still owed. It is for
+    previews and is not read by any ceremony (learners in that session only; one
+    failing wallet omits that learner, `economy.workout-earnings.learner-failed`).
+    Logged `economy.workout-earnings.query`.
+  - `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
+    `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `move`:
+    the Gem Board's Move rows for that learner as `[{id, label, color, cell}]`,
+    each `cell` cut down to `state`, `week`, `streak` and its parts' colours,
+    which is what a home card needs to draw the board's glyph; empty, with
+    `economy.standings.move-gems-unavailable` logged, when the board cannot be
+    read).
+  All read-only, `no-store`; with the catalog `off` they return no learners.
+- **The fitness coin ceremony** (`useWorkoutCoinCeremony`) reads only `/paid`.
+  It looks when the screen loads (last 2 days, 5 sessions), when a workout closes,
+  and on `coins-changed`; each minted `txnId` plays once per browser. The first
+  load in a browser baselines (stamps what is already minted, shows nothing,
+  `fitness.coin_ceremony.baselined`). A ceremony is stamped seen when it goes on
+  display, and waits (unstamped) while a video or a game is on screen.
 - A corrupt shard throws `CORRUPT_LEDGER` inside `mint` and nothing is written;
   the payout logs it at `error`.
 - A learner on the roster who is not a household user (no wallet) logs
@@ -697,7 +718,7 @@ is the preview's current study day, `currentStudyDay()`).
 
 ### Triggers
 
-`startEconomyPayouts` (`composition/earnings.mjs`) wires two triggers onto one
+`startEconomyPayouts` (`composition/earnings.mjs`) wires its triggers onto one
 path:
 
 - **Events.** `school.session.outcome-recorded` (`{learnerId, studyDay?}`) and
@@ -707,6 +728,13 @@ path:
   first settle or a grade correction names it, never a resettle such as a
   retried close or a late sign-off. A study day in the current week shares the
   current week's debounce.
+- **Workout ended.** `fitness.session.ended` (`{sessionId, learnerIds, endMs,
+  startMs, finalized}`, published by the fitness session end/save paths and the
+  emergency lockdown): a finalized workout settles its learners now (past the
+  achievement cache); an unfinalized one settles once at `endMs` + 30 minutes
+  + 5 s, when the resume window has passed. A second `ended` for the session
+  replaces the timer. Logged `economy.payout.fitness-trigger { sessionId,
+  learners, reason: 'finalized' | 'window' }`.
 - **Hourly reconcile.** `economy:payout-reconcile` (`0 * * * *`) settles every
   learner for the current week. It catches what no event announces: day-met and
   week-met lines turn true as days close, and the ring contest at Saturday noon.

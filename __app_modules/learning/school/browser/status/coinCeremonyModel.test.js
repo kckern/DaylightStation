@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  COIN_CEREMONY_DEFAULTS, normalizeCoinCeremonyConfig, observeEarnings,
+  COIN_CEREMONY_DEFAULTS, normalizeCoinCeremonyConfig, observeMinted,
   emptyQueue, enqueueRise, promote, finish, nextPromoteIn,
 } from './coinCeremonyModel.js';
 
-const WEEK = { from: '2026-10-19', to: '2026-10-25' };
-const fig = (silver, week = WEEK) => ({ silver, gems: 0, ...week });
 const ROSTER = new Set(['test-learner', 'test-learner-2']);
 const rise = (learnerId, gained, total) => ({ learnerId, gained, total });
 
@@ -27,30 +25,39 @@ describe('normalizeCoinCeremonyConfig', () => {
   });
 });
 
-describe('observeEarnings', () => {
-  it('the first read of a learner is a baseline, never a rise', () => {
-    const { seen, rises } = observeEarnings({}, { 'test-learner': fig(12) }, ROSTER);
+const line = (id, source, delta, currency = 'silver') => ({ ids: [id], source, legs: [{ currency, delta }] });
+const read = (silver, ...lines) => ({ silver, lines });
+
+describe('observeMinted', () => {
+  it('the first read per learner is a baseline, even with earnings in it', () => {
+    const { seen, rises } = observeMinted({}, { 'test-learner': read(12, line('t1', 'payout', 3)), stranger: read(1, line('x', 'payout', 1)) }, ROSTER);
     expect(rises).toEqual([]);
-    expect(seen['test-learner']).toEqual({ silver: 12, from: WEEK.from, to: WEEK.to });
+    expect(seen['test-learner']).toEqual(['t1']);
+    expect(seen.stranger).toBeUndefined();
   });
-  it('a rise in the same week is news: how much, and the new total', () => {
-    const first = observeEarnings({}, { 'test-learner': fig(12) }, ROSTER).seen;
-    expect(observeEarnings(first, { 'test-learner': fig(15) }, ROSTER).rises).toEqual([rise('test-learner', 3, 15)]);
+  it('a new payout is a rise of exactly the minted silver; the same read again is not', () => {
+    const first = observeMinted({}, { 'test-learner': read(12, line('t1', 'payout', 3)) }, ROSTER).seen;
+    const r = observeMinted(first, { 'test-learner': read(15, line('t2', 'payout', 3), line('t1', 'payout', 3)) }, ROSTER);
+    expect(r.rises).toEqual([rise('test-learner', 3, 15)]);
+    expect(observeMinted(r.seen, { 'test-learner': read(15, line('t2', 'payout', 3), line('t1', 'payout', 3)) }, ROSTER).rises).toEqual([]);
   });
-  it('a new week, a drop, no change, or a learner off the roster is not', () => {
-    const first = observeEarnings({}, { 'test-learner': fig(12), stranger: fig(1) }, ROSTER).seen;
-    expect(first.stranger).toBeUndefined();
-    const next = { from: '2026-10-26', to: '2026-11-01' };
-    const rolled = observeEarnings(first, { 'test-learner': fig(30, next) }, ROSTER);
-    expect(rolled.rises).toEqual([]);
-    expect(observeEarnings(rolled.seen, { 'test-learner': fig(25, next) }, ROSTER).rises).toEqual([]);
-    expect(observeEarnings(rolled.seen, { 'test-learner': fig(30, next) }, ROSTER).rises).toEqual([]);
-    expect(observeEarnings(first, { stranger: fig(9) }, ROSTER).rises).toEqual([]);
+  it('a deposit, correction, refund, conversion, spend, gold or a drop is never a rise', () => {
+    const first = observeMinted({}, { 'test-learner': read(12) }, ROSTER).seen;
+    const lines = [
+      line('d', 'deposit', 5), line('c', 'correction', 2), line('r', 'refund', 4), line('v', 'conversion', 6),
+      line('s', 'spend', -3), line('g', 'payout', 2, 'gold'),
+    ];
+    expect(observeMinted(first, { 'test-learner': read(30, ...lines) }, ROSTER).rises).toEqual([]);
   });
-  it('a learner missing from a read keeps their baseline', () => {
-    const first = observeEarnings({}, { 'test-learner': fig(12) }, ROSTER).seen;
-    const gap = observeEarnings(first, {}, ROSTER).seen;
-    expect(observeEarnings(gap, { 'test-learner': fig(14) }, ROSTER).rises).toEqual([rise('test-learner', 2, 14)]);
+  it('a spend and a mint between two reads still pops the minted amount', () => {
+    const first = observeMinted({}, { 'test-learner': read(12) }, ROSTER).seen;
+    const r = observeMinted(first, { 'test-learner': read(11, line('s', 'spend', -4), line('e', 'earn', 3)) }, ROSTER);
+    expect(r.rises).toEqual([rise('test-learner', 3, 11)]);
+  });
+  it('a learner missing from one read keeps their baseline', () => {
+    const first = observeMinted({}, { 'test-learner': read(12, line('t1', 'payout', 3)) }, ROSTER).seen;
+    const gap = observeMinted(first, {}, ROSTER).seen;
+    expect(observeMinted(gap, { 'test-learner': read(14, line('t2', 'prize', 2), line('t1', 'payout', 3)) }, ROSTER).rises).toEqual([rise('test-learner', 2, 14)]);
   });
 });
 
@@ -80,32 +87,5 @@ describe('the ceremony queue', () => {
     q = promote(finish(q, 1), 10, 0);
     expect(q.showing).toEqual({ id: 2, learnerId: 'test-learner-2', gained: 5, total: 9, revision: 0 });
     expect(finish(q, 99)).toBe(q);
-  });
-});
-
-describe('observeEarnings: first paint and week rollover (extra guards)', () => {
-  it('a baseline seeded from the cache, then the first network read in a later week, is not a rise', () => {
-    const cacheSeed = observeEarnings({}, { 'test-learner': fig(12) }, ROSTER).seen;
-    const next = { from: '2026-10-26', to: '2026-11-01' };
-    // Rollover: silver is lower or higher than the seed; either way not news.
-    expect(observeEarnings(cacheSeed, { 'test-learner': fig(40, next) }, ROSTER).rises).toEqual([]);
-    expect(observeEarnings(cacheSeed, { 'test-learner': fig(2, next) }, ROSTER).rises).toEqual([]);
-  });
-  it('after a rollover the new week is the baseline: a later rise in it counts', () => {
-    const first = observeEarnings({}, { 'test-learner': fig(12) }, ROSTER).seen;
-    const next = { from: '2026-10-26', to: '2026-11-01' };
-    const rolled = observeEarnings(first, { 'test-learner': fig(30, next) }, ROSTER).seen;
-    expect(rolled['test-learner']).toEqual({ silver: 30, from: next.from, to: next.to });
-    expect(observeEarnings(rolled, { 'test-learner': fig(33, next) }, ROSTER).rises).toEqual([rise('test-learner', 3, 33)]);
-  });
-  it('a change of only one week boundary is also a rollover', () => {
-    const first = observeEarnings({}, { 'test-learner': fig(12) }, ROSTER).seen;
-    expect(observeEarnings(first, { 'test-learner': fig(20, { from: WEEK.from, to: '2026-10-26' }) }, ROSTER).rises).toEqual([]);
-  });
-  it('a figure without a finite silver is skipped and keeps the baseline', () => {
-    const first = observeEarnings({}, { 'test-learner': fig(12) }, ROSTER).seen;
-    const r = observeEarnings(first, { 'test-learner': { ...WEEK } }, ROSTER);
-    expect(r.rises).toEqual([]);
-    expect(r.seen['test-learner'].silver).toBe(12);
   });
 });

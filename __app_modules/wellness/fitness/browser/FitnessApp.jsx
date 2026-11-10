@@ -56,7 +56,7 @@ import WorkoutCoinCeremony from "./player/overlays/WorkoutCoinCeremony.jsx";
 import GemCeremony from '@/lib/economy/GemBoard/GemCeremony.jsx';
 import { useGemCeremony } from '@/lib/economy/GemBoard/useGemCeremony.js';
 import { GAME_ACHIEVEMENT_RECORDED_EVENT } from "../../../../__capabilities/gaming/browser/platform/realtime/index.js";
-import { useWorkoutCoinCeremony, WORKOUT_FINISHED_EVENT } from "./player/overlays/useWorkoutCoinCeremony.js";
+import { useWorkoutCoinCeremony, isRunOnScreen, WORKOUT_FINISHED_EVENT } from "./player/overlays/useWorkoutCoinCeremony.js";
 
 registerBuiltinWidgets();
 
@@ -1627,7 +1627,7 @@ const FitnessApp = () => {
           kioskMode={kioskUI}
         >
           <IdentityProvider>
-          <GlobalOverlays />
+          <GlobalOverlays moduleLive={currentView === 'module' && Boolean(activeModule)} />
           <PressureMatEventBridge logger={logger} />
           <FitnessFleetPublisher />
           <FitnessAudienceDeclarer />
@@ -1943,11 +1943,15 @@ const PressureMatEventBridge = ({ logger }) => {
 const GEM_EVENTS = [GAME_ACHIEVEMENT_RECORDED_EVENT, WORKOUT_FINISHED_EVENT];
 const GEM_SOUND = { sound: 'school/_ux/coin.mp3', volume: 0.8 };
 
-const GlobalOverlays = () => {
+const GlobalOverlays = ({ moduleLive = false }) => {
   const fitnessCtx = useFitnessContext();
   useEffect(() => installRingCelebrationAudioUnlock(), []);
-  // After a finished workout: what the ride was worth (FitnessPlayer fires it).
-  const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony();
+  // Silver the bank actually minted for a workout (ledger entries, not a projection).
+  // It waits (parked, unstamped) while a video or a game is on screen, so it
+  // never pops over another rider's live run; it plays when they are done.
+  const location = useLocation();
+  const runOnScreen = isRunOnScreen({ moduleLive, queueLength: fitnessCtx?.fitnessPlayQueue?.length || 0, pathname: location?.pathname });
+  const { ceremony, dismiss: dismissCeremony } = useWorkoutCoinCeremony({ hold: runOnScreen });
   // A gem that just landed (a race of the week taken, an act completed, a ring
   // mark): looked for right after a race/flight saves or a workout ends, and
   // shown after any coin ceremony. The garage celebrates what happens in front
@@ -1974,9 +1978,10 @@ const GlobalOverlays = () => {
       <FitnessToast toast={fitnessCtx.fitnessToast} onDone={fitnessCtx.dismissFitnessToast} />
       {ceremony && (
         <WorkoutCoinCeremony
-          key={ceremony.sessionId}
+          key={ceremony.txnIds.join(',')}
           sessionId={ceremony.sessionId}
           learners={ceremony.learners}
+          txnIds={ceremony.txnIds}
           onDone={dismissCeremony}
         />
       )}
