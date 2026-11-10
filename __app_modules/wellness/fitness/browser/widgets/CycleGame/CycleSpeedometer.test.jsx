@@ -73,6 +73,14 @@ describe('CycleSpeedometer', () => {
     expect(badge.textContent).toContain('1st');
     expect(container.querySelector('.cycle-speedometer--finished')).not.toBeNull();
   });
+  // Solo layout: no placement is passed. The overlay says Finished once,
+  // with no ordinal.
+  it('a finish with no placement reads "Finished" once, with no ordinal', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} finished placement={null} />);
+    const badge = getByTestId('cycle-speedometer-finished');
+    expect(badge.textContent.match(/Finished/g)).toHaveLength(1);
+    expect(badge.textContent).not.toMatch(/\d(st|nd|rd|th)/);
+  });
   it('does not show the FINISHED badge while still racing', () => {
     const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
     expect(queryByTestId('cycle-speedometer-finished')).toBeNull();

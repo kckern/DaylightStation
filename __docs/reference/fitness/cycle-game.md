@@ -67,17 +67,21 @@ Simulation ───────────────────────
 
 Race screen + fixed layout ──────────────────────────────────────────────────────
   widgets/CycleGame/CycleRaceScreen.jsx         screen shell: builds panel factories
-  widgets/CycleGame/RaceLayoutManager.jsx       fixed layout by field size → zones
+  widgets/CycleGame/RaceLayoutManager.jsx       fixed layout by mode (solo/sidebar/wide) → zones
+  widgets/CycleGame/panels/PaceDeltaPanel.jsx   solo: seconds ahead/behind the rival
   widgets/CycleGame/panels/PanelSlot.jsx        per-zone mount (stable render prop)
   widgets/CycleGame/panels/SpeedoRow.jsx        bottom gauges row (per-rider colour tint)
   widgets/CycleGame/panels/DistanceChart.jsx    climbing lanes + goal line + terminus tags
-  widgets/CycleGame/panels/SplitsChart.jsx      compact per-lap splits (live order early)
+  widgets/CycleGame/panels/SplitsChart.jsx      per-lap splits (results board)
   widgets/CycleGame/panels/PovGrid.jsx          vertical Tron-style POV distance grid
   widgets/CycleGame/panels/OvalTrack.jsx        avatars circling a whole-race oval
   widgets/CycleGame/CycleSpeedometer.jsx        a single gauge
   lib/cycleGame/speedometerGeometry.js          gauge ticks/bands/needle geometry
                                                 (tickStepsFor, scaleBands)
-  lib/cycleGame/chartZoom.js                    nextZoomLevel — stepped zoom window (X+Y)
+  lib/cycleGame/chartZoom.js                    continuousWindow + evenTicks (chart axes)
+  lib/cycleGame/layoutSizing.js                 raceLayoutMode, gaugeRowSize
+  lib/cycleGame/paceDelta.js                    rider vs the rival's recording (gap s / m)
+  lib/cycleGame/rivalTrace.js                   the rival's whole recording as chart samples
   lib/cycleGame/povWorld.js                     POV road world model (marks, gates, riders)
   lib/cycleGame/povFollowCam.js                 POV camera framing/damping
   lib/cycleGame/ovalTrackModel.js               ovalProgressFor / ovalPoint
@@ -577,17 +581,18 @@ cooldown-to-stop drops to 0. This only applies during an active race.
 ## 9. The race screen & fixed layout
 
 `CycleRaceScreen` is **pure**: it builds a map of panel factories from the current
-engine state and hands `{ panels, fieldSize }` to `RaceLayoutManager`, which picks
-one of **two fixed layouts by field size**. There is no per-tick director — the
-layout is deterministic, so panels never reshuffle mid-race. The race **clock lives
-inside the distance chart's header**; the **false-start banner** is fixed chrome
-above the grid.
+engine state, picks the layout `mode` with `layoutSizing.raceLayoutMode({ liveCount,
+fieldSize })` (live = non-ghost riders) and hands `{ panels, mode }` to
+`RaceLayoutManager`. There is no per-tick director — the layout is deterministic,
+so panels never reshuffle mid-race. The race **clock lives inside the distance
+chart's header**.
 
 ```
 engine getState()
-  → CycleRaceScreen (5 panel factories)
-  → RaceLayoutManager (fixed by fieldSize)
-  → panels: SpeedoRow · DistanceChart · SplitsChart · PovGrid · StandingsTower
+  → CycleRaceScreen (panel factories + raceLayoutMode)
+  → RaceLayoutManager (fixed by mode: solo · sidebar · wide)
+  → panels: DistanceChart · PovGrid · SpeedoRow ·
+            StandingsTower (sidebar, wide) | PaceDeltaPanel (solo)
 ```
 
 **One distance per rider.** Every printed distance for a rider (odometer,
@@ -596,25 +601,51 @@ chart tag, chart header, standings tower, POV badge) is the engine's
 `data-distance-readout="<riderId>"`. Motion may interpolate positions (chart
 tips, POV avatars, the needle); printed numbers never interpolate.
 
-### 9.1 The two layouts (`RaceLayoutManager`)
+### 9.1 The three layouts (`RaceLayoutManager`)
 
-`wide = fieldSize >= 4`. Each zone renders its panel through a `PanelSlot` (a stable
-`render` prop, so a panel never remounts per tick), and every zone is
-`overflow:hidden` (clipped) so panels and the chart's zoom animation never bleed
-across cells. The **distance chart is never far-left** — laps/splits sit to its left
-in both modes.
+`raceLayoutMode`: **solo** when there is exactly one live rider and the field is
+at most two (the rider and their pace rival); otherwise **wide** at four or more
+on the road, else **sidebar**. Each zone renders its panel through a `PanelSlot`
+(a stable `render` prop, so a panel never remounts per tick), every zone is
+`overflow:hidden`, and every grid track has an explicit size, so nothing
+collapses and no zone is left empty.
 
-- **Sidebar mode (≤ 3 riders):** a main column — top row **splits │ distance chart**
-  over a full-width **speedometer** band — beside a right **sidebar**: the **POV
-  grid** (top ~70%) over the **standings tower** (bottom ~30%) — the tower
-  REPLACES the old lap oval's slot; the oval's lap strip folds into the tower's
-  own header row instead.
-- **Wide mode (≥ 4 riders):** a top row of three equal columns — **splits │ chart │
-  POV** — over a full-width **speedometer** band, plus the **standings tower**
-  docked as a right-edge column spanning the full height (audit UX §4.2 — wide
-  mode used to lose all rank/lap info; it never does now). No oval.
+- **Solo (one live rider + their rival):** a main column (72% of the width)
+  with the **distance chart** across the top (55fr of the height) over a band
+  (45fr, never below 260 px) holding the live rider's **speedometer** (2fr, left)
+  and the **pace-delta panel** (3fr, the rest); the **POV road** is a right
+  column at 28% of the width. There is **no standings tower** and nothing ranks
+  or leads: the chart header drops "Leader …", chart tags and the POV badge show
+  each rider's own distance with no ordinal, and the gauge has no leader medal
+  and no placement on its finish overlay. The rival has no gauge; it is on the
+  chart (its replayed lane, tag and whole-race trace, §9.2), on the road and in
+  the pace panel.
+- **Sidebar (two or three on the road, or one rider in a bigger field):** a main
+  column — the **distance chart** over a full-width **speedometer** band — beside
+  a right **sidebar**: the **POV grid** (top ~70%) over the **standings tower**
+  (bottom ~30%; the tower's header carries the lap strip).
+- **Wide (four or more):** a top row of **chart (2×) │ standings tower** over a
+  full-width **speedometer** band, plus the **POV grid** docked as a right-edge
+  column spanning the full height.
 
-`showSpeedos={false}` omits the speedo factory (its zone renders empty).
+`showSpeedos={false}` omits the speedo factory and its grid track; in solo the
+band then holds the pace panel alone. The recap passes `soloLayout={false}`, so a
+replay of one rider and their rival stays on the sidebar layout (standings and a
+gauge per participant; a 12 s replay reads better as standings than as a pace
+gap).
+
+**Pace-delta panel (solo).** `paceDelta({ riderDistanceM, elapsedS, rivalSeries,
+intervalS })` compares the rider with the rival's **whole recording**: the engine
+exposes it on a ghost's state as `ghostRecordedSeries` (series[i] = metres at
+(i + 1) × `ghostIntervalS`), because `distanceSeries` is only the part replayed so
+far and the rival may reach the rider's distance later in the recording. The
+interval is the recording's (`ghostIntervalS`), not the race tick. The headline
+is seconds ahead/behind ("4 s ahead"), metres once the rider is past the end of
+the recording; a finished rider's gap freezes at their finish time. The rival is
+worded from `rivalKind` (passed by the container from `raceMetaRef.current.rivalKind`):
+"vs your best", "vs {name}'s best", "vs par pace", or "vs {name}" for a
+hand-picked ghost, with the ghost glyph stripped from the name. A parked or
+no-sensor rider keeps the panel (the rival keeps moving away).
 
 ### 9.2 DistanceChart
 
@@ -624,13 +655,27 @@ Climbing gradient lanes toward the goal, over a decimating, transform-aware
 - **Goal line** (distance races) is drawn at `yFor(goalM)` **inside the zoomable
   group**, so it tracks the live zoom window — a rider who reaches the goal visually
   meets the dotted line.
-- **Y scaling** auto-picks log vs linear (sticky via a ref). The log curve is shaped
-  to **expand the top** (leaders) and compress the bottom, so close gaps between the
-  front riders read clearly.
-- **Stepped zoom-out camera** (`chartZoom.nextZoomLevel`): the X (time) and Y
-  (distance) windows each double in 2× steps when data hits ~90% of the window; the
-  pull-back is a ~400 ms eased transform applied with a snap-then-ease trick (set the
-  new scale with `transition:none`, then ease to 1× next frame).
+- **X axis.** A **time race shows the whole race** (`0 … timeCapS`) from the first
+  frame, so the rider sees how much is left. A **distance race** has no fixed end
+  time: its time window grows continuously (`chartZoom.continuousWindow`, data at
+  ~85% of the window, never a 2× step) and the window bounds ease between ticks.
+- **Y axis.** Fixed `0 … goalM` in a distance race (goal line at the top). A time
+  race auto-zooms continuously to fit the leader, never below the solo rival's
+  distance at `timeCapS`. A time race with two or more un-parked riders bunched
+  together flips to a leader-anchored log scale ("Zoomed on leaders" chip), with
+  hysteresis and a ~400 ms crossfade. **Solo stays linear**: the log scale is
+  anchored on the leader and would bend the rival's trace.
+- **Even axis ticks** (`chartZoom.evenTicks`): five gridlines per axis evenly
+  spaced over the window with both ends included, and a label on every other
+  one (0, middle, end): a 5-minute time race reads 0:00 · 2:30 · 5:00.
+- **Rival trace (solo).** The rival's whole recording (`ghostRecordedSeries`) is
+  drawn as a dotted line in its lane colour under every lane
+  (`data-testid="rival-trace"`, built by `rivalTrace.rivalTraceSamples`), so the
+  rider sees where the rival will be. In a time race it spans the whole x axis;
+  in a distance race it runs to the window edge and ends on the goal line at the
+  rival's finish time. It is re-sampled each frame under the eased window, so it
+  drifts with the lanes. The rival's replayed lane and tag still mark where it
+  is now.
 - **Leading-edge interpolation:** the engine ticks at 1 Hz, so each lane's newest
   point glides from its previous position to the current one over the interval via a
   rAF clock, instead of snapping.
@@ -645,12 +690,11 @@ Climbing gradient lanes toward the goal, over a decimating, transform-aware
 
 ### 9.3 SplitsChart
 
-A compact per-lap split table (laps × riders) sized to hold many laps. It
-**auto-scrolls to the newest lap**, keeps a **sticky header** and a **pinned
-current-lap row**. **Before any lap completes** it shows a **live order** instead of
-dead space: riders sorted by distance with the gap-to-leader in metres. On the
-results screen it renders in `final` mode (no live current-lap row). Laps-gated:
-nothing shows when `lapLengthM` is 0.
+Not on the live race screen. A compact per-lap split table (laps × riders) used
+by the results board (`final` mode). It **auto-scrolls to the newest lap**, keeps
+a **sticky header**, and before any lap completes shows a **live order**: riders
+sorted by distance with the gap-to-leader in metres. Laps-gated: nothing shows
+when `lapLengthM` is 0.
 
 ### 9.4 PovGrid
 
@@ -1291,10 +1335,9 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   sits at 0. Not a bug, not backfillable. (Recap always shows 0 RPM by design.)
 - **Config is read at startup.** Changing `cycle_game` config (incl. courses, zones,
   `lap_length_m`, `results_dwell_s`) requires a **container restart**.
-- **Lap panels are config-gated.** Splits and the standings tower's "Lap N" header
-  only appear when the **effective** lap length > 0 (per-course override or app
-  config, via `effectiveLapLength`). With laps off, the splits panel still shows a
-  live order.
+- **Lap panels are config-gated.** Splits (results board) and the standings
+  tower's "Lap N" header only appear when the **effective** lap length > 0
+  (per-course override or app config, via `effectiveLapLength`).
 - **`lap_length_m` default is 400, with a whole-race shortcut.** A distance race
   whose goal is shorter than the lap runs as a single lap (`effectiveLapLength`).
 - **Multi-sensor cadence is the fastest live sensor.** A bike with `cadence: [a, b]`
@@ -1329,7 +1372,8 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
 - **Pure logic (vitest):** `lapModel`, `distanceModel`, `CycleRaceEngine` (incl. lap
   splits), `effectiveLapLength`, `cycleGameLobby`, `raceRecord`, `formatDistance`,
   `equipmentRpm` (gauge limits, abuse clamp, `rpmDuringGap` hold-vs-cooldown),
-  `chartTrim` (`plotStartIndex`), `chartZoom` (`nextZoomLevel`), `povWorld`/`povFollowCam`,
+  `chartTrim` (`plotStartIndex`), `chartZoom` (`continuousWindow`, `evenTicks`),
+  `paceDelta`, `rivalTrace`, `layoutSizing` (`raceLayoutMode`), `povWorld`/`povFollowCam`,
   `ovalTrackModel`, `participantIdentity` (ghost→source), `recordRow`,
   `lineColors` (no HR-zone/chrome clash), `speedometerGeometry` (`tickStepsFor`,
   `scaleBands`), `CycleRaceController` (parking and resuming, no-sensor riders,
@@ -1338,7 +1382,10 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
 - **Components (vitest + @testing-library):** `CycleRaceScreen` (clock, speedometers,
   lanes, a parked rider worded "Parked" with no DNF / False start anywhere,
   `showSpeedos`, `zoneBox` forwarding),
-  `RaceLayoutManager` (mode by field size, splits-before-chart), `DistanceChart`,
+  `CycleRaceScreen.solo.test.jsx` (solo layout, hand-computed pace gap, no
+  rank/leader text, rival gauge absent, recap stays sidebar),
+  `RaceLayoutManager` (solo/sidebar/wide zones), `DistanceChart` (whole-race x
+  axis, even ticks, rival trace, solo linear),
   `SplitsChart` (sticky/live-order/final), `PovGrid`, `OvalTrack`, `SpeedoRow`,
   `CycleSpeedometer`, `CountdownStoplight` (ALL3→RED→YELLOW→GREEN), `RaceResults`
   (exit button, count-up under `animate={false}`, "Stopped at"), `RaceMenu`

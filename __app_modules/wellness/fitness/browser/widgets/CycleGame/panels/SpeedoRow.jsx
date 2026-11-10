@@ -8,12 +8,13 @@ import { FALLBACK_AVATAR } from "../home/constants.js";
 const SPEEDO_GAP = 28; // keep in sync with .cycle-race-screen__speedos gap
 
 /**
- * Bottom row of CycleSpeedometers — one gauge per rider on a single line. The
+ * Bottom row of CycleSpeedometers — one gauge per rider on a single line
+ * (the solo layout passes the live rider only, `ranked={false}`). The
  * gauge size is computed PURELY from the zone box the layout measured
  * (`zoneBox`), so there's no self-measuring ResizeObserver loop. Falls back to a
  * reasonable size before the first measurement.
  */
-export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, zoneBox, maxGauge = 280, minGauge = 96 }) {
+export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, zoneBox, maxGauge = 280, minGauge = 96, ranked = true }) {
   const speedoSize = gaugeRowSize({
     zoneW: zoneBox?.width || 0,
     zoneH: zoneBox?.height || 0,
@@ -49,8 +50,8 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
             riderColor={LINE_COLORS[idx % LINE_COLORS.length]}
             isGhost={!!riders[id].isGhost}
             finished={!!live.finished}
-            placement={live.placement}
-            isLeader={!!live.isLeader}
+            placement={ranked ? live.placement : null}
+            isLeader={ranked && !!live.isLeader}
             sensorLost={!!live.sensorLost}
             parked={!!live.parked}
             noSensor={!!live.noSensor}
@@ -69,5 +70,7 @@ SpeedoRow.propTypes = {
   cadenceBands: PropTypes.array,
   zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number }),
   maxGauge: PropTypes.number,
-  minGauge: PropTypes.number
+  minGauge: PropTypes.number,
+  /** false in the solo layout: no placement on the finish overlay, no leader medal. */
+  ranked: PropTypes.bool
 };

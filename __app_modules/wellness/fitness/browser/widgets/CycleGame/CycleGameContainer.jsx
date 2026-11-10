@@ -2267,6 +2267,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           riders={riders}
           riderLive={riderLive}
           cadenceBands={cadenceBands}
+          rivalKind={raceMetaRef.current?.rivalKind ?? null}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
           lapLengthM={effectiveLapLength({
             lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,

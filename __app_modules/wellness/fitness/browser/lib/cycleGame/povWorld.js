@@ -83,13 +83,16 @@ export function displayDist(m, anchorM) {
  * distance race finishes everyone at the same distance, so only finish TIME
  * differentiates finishers — T9 review). Pure — unit-tested.
  *
+ * `ranked: false` (the solo layout) drops the rank: every badge is the
+ * rider's own distance.
+ *
  * `prefix` + `metric` split `gapText` so the panel can print the metric as its
  * own element; `ownDistance` is true when that metric is the rider's own
  * distance (the shared `data-distance-readout` contract).
  *
  * @returns {{ [id]: { rank, ordinal, gapText, prefix, metric, ownDistance, text } }}
  */
-export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondition = 'distance' }) {
+export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondition = 'distance', ranked = true }) {
   const rows = riderIds.map((id) => {
     const rider = riders[id] || {};
     const live = riderLive[id] || {};
@@ -106,6 +109,19 @@ export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondi
       finished: !!live.finished || Number.isFinite(rider.finishTimeS),
     };
   });
+  if (!ranked) {
+    // Solo layout: one live rider and a rival. Nobody is ranked; every badge
+    // is the rider's own distance (with the parked / no-signal word if away).
+    const out = {};
+    rows.forEach((r) => {
+      const prefix = r.stopped ? 'Stopped at ' : r.parked ? `${r.noSensor ? 'No signal' : 'Parked'} · ` : '';
+      const metric = formatDistance(r.distanceM);
+      out[r.id] = {
+        rank: null, ordinal: '', gapText: `${prefix}${metric}`, prefix, metric, ownDistance: true, text: `${prefix}${metric}`
+      };
+    });
+    return out;
+  }
   const byPlacement = (a, b) => (a.placement ?? 999) - (b.placement ?? 999);
   const byDistanceDesc = (a, b) => b.distanceM - a.distanceM;
   const active = rows

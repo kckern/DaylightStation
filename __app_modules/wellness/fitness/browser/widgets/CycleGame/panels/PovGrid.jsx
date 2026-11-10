@@ -123,7 +123,7 @@ const clamp = (lo, hi, v) => Math.max(lo, Math.min(hi, v));
  * the pure povWorld / povFollowCam modules. three + camera-controls are
  * dynamic-imported so they only load when the POV mounts. See PovGrid.README.md.
  */
-export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM = 0, finishM = null, winCondition = 'distance' }) {
+export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM = 0, finishM = null, winCondition = 'distance', ranked = true }) {
   const distOf = (id) => Math.max(0, riders[id]?.cumulativeDistanceM || 0);
   // Start-line lineup (audit C5): EVERY rider (incl. ghosts and not-yet-moved
   // riders waiting at z=0) renders from mount, so the screen is never empty at
@@ -137,7 +137,8 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
   const colorOf = (id) => LINE_COLORS[riderIds.indexOf(id) % LINE_COLORS.length];
   // Fixed-screen-size rank + gap-to-next badge per card, mirroring the standings
   // tower (T8) off the SAME live `standings()` placement the container forwards.
-  const badges = povBadges({ riderIds, riders, riderLive, winCondition });
+  // Solo (`ranked={false}`): each badge is the rider's own distance, no rank.
+  const badges = povBadges({ riderIds, riders, riderLive, winCondition, ranked });
 
   const rootRef = useRef(null);
   const glMountRef = useRef(null);
@@ -587,4 +588,5 @@ PovGrid.propTypes = {
   lapLengthM: PropTypes.number,
   finishM: PropTypes.number,
   winCondition: PropTypes.string,
+  ranked: PropTypes.bool,
 };

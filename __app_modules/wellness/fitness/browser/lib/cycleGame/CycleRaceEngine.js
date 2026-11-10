@@ -49,6 +49,10 @@ export class CycleRaceEngine {
         isGhost,
         // Prepend an implicit (t=0 → 0m) sample so interpolation is exact.
         ghostArr: isGhost ? [0, ...r.ghostSeries.map((d) => Number(d) || 0)] : null,
+        // The WHOLE recording (distanceSeries is only the part replayed so
+        // far), frozen once so getState hands out the same array every tick.
+        // The solo pace panel and the chart's rival trace read it.
+        ghostRecordedSeries: isGhost ? Object.freeze(r.ghostSeries.map((d) => Number(d) || 0)) : null,
         // Step-replayed metrics (HR / RPM / zone): same cadence as recording,
         // sampled nearest. Zone values are strings, so no numeric coercion here.
         ghostHrArr: isGhost && Array.isArray(r.ghostHrSeries) ? r.ghostHrSeries.slice() : null,
@@ -210,6 +214,10 @@ export class CycleRaceEngine {
         zoneId: r.zoneId ?? null,
         finishTimeS: r.finishTimeS,
         isGhost: !!r.isGhost,
+        // Ghost only: the full recorded distance series (series[i] = metres at
+        // (i + 1) × ghostIntervalS) and the interval it was recorded at.
+        ghostRecordedSeries: r.isGhost ? r.ghostRecordedSeries : null,
+        ghostIntervalS: r.isGhost ? r.ghostIntervalS : null,
         speedKmh: this._speedKmh(r),
         // False only for ghosts whose source record predates rpm_series — the
         // view can synthesize a display cadence instead of parking the needle.

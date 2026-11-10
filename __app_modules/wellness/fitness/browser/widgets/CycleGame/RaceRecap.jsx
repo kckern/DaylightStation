@@ -127,6 +127,9 @@ export default function RaceRecap({ candidate, onClose }) {
           riders={riders}
           riderLive={riderLive}
           showSpeedos
+          // A recap of one rider and their rival stays on the sidebar layout:
+          // a 12 s replay reads as standings, and every participant keeps a gauge.
+          soloLayout={false}
         />
       </div>
 

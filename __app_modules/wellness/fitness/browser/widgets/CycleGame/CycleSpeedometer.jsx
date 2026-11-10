@@ -123,9 +123,9 @@ export default function CycleSpeedometer({
         {finished && (
           <div className="cycle-speedometer__finished" data-testid="cycle-speedometer-finished">
             <span className="cycle-speedometer__finished-flag" aria-hidden="true"><RaceFlagIcon /></span>
-            <span className="cycle-speedometer__finished-place">
-              {Number.isFinite(placement) ? ordinal(placement) : 'Finished'}
-            </span>
+            {Number.isFinite(placement) && (
+              <span className="cycle-speedometer__finished-place">{ordinal(placement)}</span>
+            )}
             <span className="cycle-speedometer__finished-label">Finished</span>
           </div>
         )}
