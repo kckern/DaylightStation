@@ -4,7 +4,7 @@
  * Read-only: turns the durable human review history
  * (household/content-filter/review-history/<rk>.yml) into correction statistics, so the machine
  * (Jev / deterministic) certification can be refined from what people keep correcting.
- * Counts the NET verdict per row (an `undo` cancels the verdict it follows), not raw entries.
+ * Counts the NET verdict per row (an `undo` clears the row's mark), not raw entries.
  */
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import path from 'path';
@@ -21,6 +21,7 @@ const DAY = 86400000;
 /** "30d" | "12h" | ISO date -> epoch ms cutoff (null = no cutoff). */
 export function parseSince(since, now = Date.now()) {
   if (since == null || since === true || since === '') return null;
+  if (/^\d+$/.test(String(since).trim())) throw new Error(`Bad --since: ${since} (a bare number is ambiguous; use 30d, 12h or a date)`);
   const m = /^(\d+)\s*([dh])$/i.exec(String(since));
   if (m) return now - Number(m[1]) * (m[2].toLowerCase() === 'd' ? DAY : 3600000);
   const t = Date.parse(String(since));
@@ -28,16 +29,17 @@ export function parseSince(since, now = Date.now()) {
   return t;
 }
 
-/** The latest non-undone entry per row: an `undo` pops the verdict before it. */
+/**
+ * The row's verdict as the server holds it: one mark per row, a later verdict overwrites, and an
+ * `undo` deletes the mark outright (no verdict until a new one is recorded).
+ */
 export function netVerdicts(entries) {
-  const stacks = new Map();
+  const net = new Map();
   for (const e of entries || []) {
     if (!e || !e.rowId) continue;
-    const s = stacks.get(e.rowId) || [];
-    if (e.verdict === 'undo') s.pop(); else if (e.verdict) s.push(e);
-    stacks.set(e.rowId, s);
+    if (e.verdict === 'undo') net.delete(e.rowId); else if (e.verdict) net.set(e.rowId, e);
   }
-  return [...stacks.values()].map((s) => s[s.length - 1]).filter(Boolean);
+  return [...net.values()];
 }
 
 const median = (xs) => {

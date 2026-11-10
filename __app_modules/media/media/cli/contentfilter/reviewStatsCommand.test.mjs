@@ -16,6 +16,13 @@ beforeEach(() => { dir = mkdtempSync(path.join(tmpdir(), 'rstats-')); });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('netVerdicts', () => {
+  it('an undo clears the row entirely (one mark per row on the server); a later verdict starts fresh', () => {
+    const net = netVerdicts([
+      e('p', 'remove', '2026-11-09T10:00:00Z'), e('p', 'approve', '2026-11-09T10:01:00Z'), e('p', 'undo', '2026-11-09T10:02:00Z'),
+      e('q', 'approve', '2026-11-09T10:00:00Z'), e('q', 'undo', '2026-11-09T10:01:00Z'), e('q', 'remove', '2026-11-09T10:02:00Z'),
+    ]);
+    expect(net.map((x) => `${x.rowId}:${x.verdict}`)).toEqual(['q:remove']);
+  });
   it('an undo cancels the verdict it follows; a re-verdict replaces', () => {
     const net = netVerdicts([
       e('a', 'approve', '2026-11-09T10:00:00Z'), e('a', 'undo', '2026-11-09T10:01:00Z'),
@@ -32,6 +39,7 @@ describe('parseSince', () => {
     expect(parseSince('2h', NOW)).toBe(NOW - 7200000);
     expect(parseSince('2026-11-01', NOW)).toBe(Date.parse('2026-11-01'));
     expect(() => parseSince('soon', NOW)).toThrow();
+    expect(() => parseSince('30', NOW)).toThrow(/bare number/);
   });
 });
 

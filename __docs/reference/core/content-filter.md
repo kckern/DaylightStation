@@ -789,10 +789,9 @@ first. The page plays the film in the Media Player with the filter forced on
 Per row: effect (only what fits the channel, R1), this film's ruling for a word
 (`PUT /:rk/words/:word`, `profilePatch.languageWords`, shown as the current choice) or its whole
 group (settings; per-word rulings survive it), the card (draft, edit, approve, withdraw), a hand
-nudge, send back, and mark reviewed (only while the audit is current). Rows can be selected for one
+nudge, send back, and a verdict (only while the audit is current). Rows can be selected for one
 multi-row send-back; rows in a queued or running send-back read "Sent back: <step>". Play with and
-without the effect always works, even while a run writes the film. "Needs review" lists the rows
-not reviewed yet. The sign-off names up to three words whose mute no longer covers them, and tells a
+without the effect always works, even while a run writes the film. The sign-off names up to three words whose mute no longer covers them, and tells a
 running audit ("still running") from a stale one ("out of date. Run Stage again → Audit."). A PUT
 with a nudge and an unknown effect is refused before anything is saved. The library re-reads its
 title index every 10 minutes.
@@ -817,23 +816,65 @@ title index every 10 minutes.
   applied (re-enable, restore `from`). Every verdict and undo appends to `household/content-filter/review-history/<rk>.yml`
   (append-only, via the repository) and logs `content_filter.review.verdict.recorded`. A moved span drops the verdict.
 
+#### Review station
+
+The page is a keyboard station: it owns the keys (one capture-phase listener, so they work while the
+video has focus; they never fire inside text inputs or an open dialog) and a key bar under the player
+shows the keys that apply to the current row, the verdict tally (`done/total`, redo count) and the bleep
+level. `?` opens the whole keymap, Esc closes it.
+
+- **Cursor and scope.** Moving the cursor (key, click, timeline, auto-advance) seeks to 4 s before the
+  row and plays. One scope drives the list, the timeline and cursor stepping: kind (All / Words /
+  Picture / Scenes) × action (All / Blur / Skip / Bleep / Mute) × "needs review". `F` cycles the kind.
+  Stepping does not wrap: at the end it says "That is the last part in this view."
+- **Auto-advance.** A saved verdict moves to the next row without a verdict in the current scope
+  (reading the scope as it is when the save lands, and leaving a cursor the reviewer moved meanwhile).
+  At the end it stops: "All N in this view reviewed", or "End of this view. N still open above."
+- **Keys.** `→` / `Tab` next; `←` / `Shift+Tab` previous; `Space` replay; `A` approve; `R` remove;
+  `I` ignore; `D` redo, then `1` edges, `2` category, `3` action, `4` timing or `Enter` for no reason;
+  `U` undo the last verdict; `F` cycle kind; `W` widen 0.5 s each edge; `[` / `]` bleep level
+  down / up 0.05; `Shift+D` rework every row flagged redo; `?` keymap; `Esc` close. Action keys by kind:
+  words `M` mute, `P` bleep; picture `B` blur, `K` skip; scenes `K` skip, `B` blackout. An action key
+  applies the effect through the existing `PUT /:rk/cues/:id` / `/scenes/:id` and records an `approve`
+  carrying `change: { from, to }`. `W` works on single-part rows (a scene, or a group of one cue); a
+  multi-cue group says "Widen one part at a time."
+- **Verdict semantics.** `approve` = fine as it is; `ignore` = no opinion and counts as done; `remove`
+  disables the cue or scene (a false positive; it is terminal once the re-audit lands, because the row
+  leaves the audit); `redo` = rework, with an optional reason. Undo (`U`, or `DELETE`) drops the verdict
+  and reverts what it applied, including merged in-place changes (the effect or edges go back to `from`,
+  a removed row is re-enabled). A verdict whose row's span later moves is dropped and the row returns to
+  unreviewed.
+- **Permalinks.** Every filter has one: `/admin/content/filter/<ratingKey>/<rowId>` selects and seeks
+  that row (an unknown id says "That filter isn't in this film any more"); selecting a row updates the
+  URL in place.
+- **Timeline.** Under the player, a review timeline shows the rows in the current scope (it follows the
+  kind and action filters) with the cursor; clicking a row seeks to it.
+- **Rework.** `Shift+D` queues one run for only the rows flagged redo: a send-back of their cues, or the
+  scenes stage when only scene rows are flagged (scene rows stay flagged when mixed with cues). Each
+  row's redo reason is stored on the run.
+- **Bleep level.** The bleep tone volume, effective = film setting, else household profile `bleepLevel`,
+  else 0.25 (clamped 0 to 1). `[` / `]` change the film's level by 0.05; a debounced write saves it to
+  the film's settings, the player re-reads its profile and the cue replays. Applied at playback, no
+  re-render.
+
 ### Review history and `review-stats`
 
 The history file is the durable record of human judgement: `household/content-filter/review-history/<rk>.yml`,
 `entries: [...]`, append-only (nothing rewrites or drops an entry, so it survives a re-audit that clears the
 live marks). Each entry carries `at`, `by`, `rowId`, the row snapshot (`kind`, `category`, `modality`, `effect`,
 `span`), `verdict`, `reason`, `change`, `dwellMs`, `replays`, `machine: { stage, unsure, handFixed }` and
-`film: { stage }`. An `undo` entry cancels the verdict before it.
+`film: { stage }`. The server holds one mark per row (a later verdict overwrites it); an `undo` entry
+means the mark was deleted, so the row has no verdict until a new one is recorded.
 
 `contentfilter review-stats [--since 30d|12h|<date>] [--rk <id>] [--json]` is read-only and reports, over the
-NET verdict per row (latest verdict not undone, not raw entries): verdict counts by kind, category, effect and
+NET verdict per row (the latest verdict, none if an undo came after it; not raw entries): verdict counts by kind, category, effect and
 machine stage; remove rate by machine stage and by `unsure` reason (where the machine's certification is wrong
 most); the action-change matrix (`bleep -> mute`, `blur -> skip`, `edges`); redo reasons; median dwell. Use it to
 tighten machine certification where humans keep removing or changing the same kind of row.
 
-The review station's keymap and verdict lifecycle are described under Review above. The bleep level is the
-profile setting `bleepLevel` (default 0.25, clamp 0-1) with a per-film override in film settings; effective =
-film ?? profile ?? 0.25, applied at playback.
+Caveats: history is append-only, so a verdict on a row whose span later moved (a re-audit after a nudge)
+still counts here even though the live mark was dropped. `--since` takes `Nd`, `Nh` or an ISO date; a bare
+number is rejected. The keymap, verdict lifecycle and bleep level are under Review station above.
 
 ## QA and current limitations
 
