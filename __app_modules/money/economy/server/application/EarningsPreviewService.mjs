@@ -69,12 +69,12 @@ export class EarningsPreviewService {
     return studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone, boundaryHour: this.#boundaryHour });
   }
 
-  /** One learner's week. `week` is any study day inside it (default: today's). */
-  async preview({ learnerId, week = null } = {}) {
+  /** One learner's week. `week` is any study day inside it (default: today's). `fresh` skips the minute-old achievement cache. */
+  async preview({ learnerId, week = null, fresh = false } = {}) {
     const roster = await this.#roster();
     const learner = roster.find((l) => l.id === learnerId);
     if (!learner) throw new EntityNotFoundError('learner', learnerId);
-    const ctx = await this.#context(week, roster);
+    const ctx = await this.#context(week, roster, { fresh });
     return this.#price(learner, ctx);
   }
 

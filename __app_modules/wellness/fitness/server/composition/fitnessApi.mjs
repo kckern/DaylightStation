@@ -20,6 +20,7 @@ import { TemporaryImagePrintGateway } from "../../../../personal/gratitude/serve
 import { YamlRecapSnapshotStore } from "../adapters/persistence/YamlRecapSnapshotStore.mjs";
 import { YamlFitnessSchoolAttemptStore } from "../adapters/persistence/YamlFitnessSchoolAttemptStore.mjs";
 import { FitnessSchoolPublications } from "../adapters/eventbus/FitnessSchoolPublications.mjs";
+import { FitnessSessionPublications } from "../adapters/eventbus/FitnessSessionPublications.mjs";
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
 import { createFitnessRouter } from "../api/fitness.mjs";
 import { ContentQueryService } from "../../../../../__capabilities/content-catalog/server/application/ContentQueryService.mjs";
@@ -404,6 +405,7 @@ export function createFitnessApiRouter(config) {
     timelapse: generateSessionTimelapse,
     renderReceipt: createReceiptCanvas,
     config: fitnessConfigService,
+    publications: new FitnessSessionPublications({ eventBus }),
     onSessionsChanged: (change) => {
       suggestionsSnapshot.invalidate(`session-${change?.operation ?? 'changed'}`);
       return onSessionsChanged?.(change);

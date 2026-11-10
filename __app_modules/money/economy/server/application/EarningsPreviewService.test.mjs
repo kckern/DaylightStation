@@ -143,3 +143,24 @@ describe('EarningsPreviewService.roster', () => {
     expect(out.windows.school).toEqual({ from: '2026-09-21', to: '2026-09-27' });
   });
 });
+
+describe('EarningsPreviewService.preview fresh', () => {
+  it('reuses the minute-old achievement read unless fresh', async () => {
+    let reads = 0;
+    const service = new EarningsPreviewService({
+      rules: { get: async () => validateRuleset({ revision: 1, rules: [{ id: 'ad', kind: 'activity-days', match: { activity: 'piano-practice' }, reward: 1 }] }) },
+      schoolEvidence: { async schoolWeek() { return { sectionDays: [], days: [], week: { weekId: '2026-09-21', state: 'open', open: true }, units: [] }; } },
+      ringEvidence: { async standings({ learnerIds }) { return learnerIds.map((learnerId) => ({ learnerId, rings: 0 })); } },
+      achievementEvidence: { async week() { reads += 1; return {}; } },
+      learners: async () => [{ id: 'learner-a', name: 'Learner A' }],
+      clock: () => new Date('2026-09-26T17:00:00.000Z'),
+      timezone: TZ,
+      logger: silent,
+    });
+    await service.preview({ learnerId: 'learner-a' });
+    await service.preview({ learnerId: 'learner-a' });
+    expect(reads).toBe(1);
+    await service.preview({ learnerId: 'learner-a', fresh: true });
+    expect(reads).toBe(2);
+  });
+});

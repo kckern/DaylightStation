@@ -35,6 +35,9 @@ function fakeBus() {
 const WEDNESDAY = '2026-09-30';
 const FRIDAY = '2026-10-02';
 
+const T0 = 1_800_000_000_000;
+const WINDOW = 30 * 60 * 1000 + 5000;
+
 function setup({ mode = 'live', settle = async () => ({}), settleAll = async () => ({}), now = WEDNESDAY, enabled = true } = {}) {
   const state = { mode };
   const clock = fakeTimers();
@@ -45,16 +48,77 @@ function setup({ mode = 'live', settle = async () => ({}), settleAll = async () 
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const wiring = startEconomyPayouts({
     payoutService, config: { catalog: () => ({ mode: state.mode }) }, eventBus: bus, scheduler, logger, enabled,
-    debounceMs: 30_000, timers: clock.timers,
+    debounceMs: 30_000, timers: clock.timers, now: () => T0,
   });
   return { state, clock, bus, tasks, scheduler, payoutService, logger, wiring };
 }
+
+describe('startEconomyPayouts: a workout becoming final', () => {
+  const ended = (over = {}) => ({ sessionId: '20261109120000', learnerIds: ['test-learner', 'test-learner-b'], endMs: T0, finalized: true, ...over });
+
+  it('a finalized end settles every learner now, fresh', async () => {
+    const { bus, payoutService, clock, logger } = setup();
+    bus.emit('fitness.session.ended', ended());
+    await clock.advance(0);
+    expect(payoutService.settle.mock.calls.map(([a]) => a)).toEqual([
+      { learnerId: 'test-learner', week: null, fresh: true },
+      { learnerId: 'test-learner-b', week: null, fresh: true },
+    ]);
+    expect(logger.info).toHaveBeenCalledWith('economy.payout.fitness-trigger', { sessionId: '20261109120000', learners: ['test-learner', 'test-learner-b'], reason: 'finalized' });
+  });
+
+  it('an unfinalized end settles once, at endMs + 30 min + 5 s', async () => {
+    const { bus, payoutService, clock, logger } = setup();
+    bus.emit('fitness.session.ended', ended({ finalized: false }));
+    await clock.advance(WINDOW - 1);
+    expect(payoutService.settle).not.toHaveBeenCalled();
+    await clock.advance(1);
+    expect(payoutService.settle).toHaveBeenCalledTimes(2);
+    expect(payoutService.settle.mock.calls[0][0]).toMatchObject({ fresh: true });
+    expect(logger.info).toHaveBeenCalledWith('economy.payout.fitness-trigger', expect.objectContaining({ reason: 'window' }));
+  });
+
+  it('a second end for the same session replaces the pending timer', async () => {
+    const { bus, payoutService, clock } = setup();
+    bus.emit('fitness.session.ended', ended({ finalized: false }));
+    bus.emit('fitness.session.ended', ended({ finalized: false, learnerIds: ['test-learner'] }));
+    expect(clock.pending()).toBe(1);
+    await clock.advance(WINDOW);
+    expect(payoutService.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('a finalized end cancels the pending window settle', async () => {
+    const { bus, payoutService, clock } = setup();
+    bus.emit('fitness.session.ended', ended({ finalized: false }));
+    bus.emit('fitness.session.ended', ended({ learnerIds: ['test-learner'] }));
+    await clock.advance(WINDOW);
+    expect(payoutService.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('catalog off: nothing settles, nothing is scheduled', async () => {
+    const { bus, payoutService, clock } = setup({ mode: 'off' });
+    bus.emit('fitness.session.ended', ended());
+    bus.emit('fitness.session.ended', ended({ sessionId: 'x', finalized: false }));
+    await clock.advance(WINDOW);
+    expect(payoutService.settle).not.toHaveBeenCalled();
+    expect(clock.pending()).toBe(0);
+  });
+
+  it('stop() drops a pending window settle', async () => {
+    const { bus, payoutService, clock, wiring } = setup();
+    bus.emit('fitness.session.ended', ended({ finalized: false }));
+    wiring.stop();
+    await clock.advance(WINDOW);
+    expect(payoutService.settle).not.toHaveBeenCalled();
+  });
+});
 
 describe('startEconomyPayouts', () => {
   it('subscribes to school outcomes, day completion, piano lessons and story reads, and registers the hourly reconcile', () => {
     const { bus, scheduler } = setup();
     expect(bus.topics()).toEqual([
       'school.session.outcome-recorded', 'school.completion.state-observed', 'piano.lesson.completed', 'school',
+      'fitness.session.ended',
     ]);
     expect(scheduler.registerTask).toHaveBeenCalledWith('economy:payout-reconcile', '0 * * * *', expect.any(Function));
   });

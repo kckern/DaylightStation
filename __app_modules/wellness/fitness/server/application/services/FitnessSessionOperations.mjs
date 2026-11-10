@@ -2,7 +2,7 @@
 export class FitnessSessionOperations {
   constructor({
     sessions, grouping = null, timelapse = null, renderReceipt = null,
-    config = null, onSessionsChanged = null, logger = console,
+    config = null, onSessionsChanged = null, publications = null, logger = console,
   }) {
     this.sessions = sessions;
     this.grouping = grouping;
@@ -10,6 +10,7 @@ export class FitnessSessionOperations {
     this.renderReceipt = renderReceipt;
     this.config = config;
     this.onSessionsChanged = onSessionsChanged;
+    this.publications = publications;
     this.logger = logger;
   }
 
@@ -21,6 +22,25 @@ export class FitnessSessionOperations {
       });
     } catch (error) {
       this.logger.warn?.('fitness.sessions.state-gates-refresh-failed', { error: error?.message });
+    }
+  }
+
+  /**
+   * Tell the bus a workout has ended, so ring payouts need not wait for the
+   * hourly reconcile. Never fails the write that already committed.
+   */
+  publishEnded(session, fallbackId) {
+    if (!this.publications?.ended) return;
+    try {
+      const rawEnd = session?.endTime;
+      const endMs = typeof rawEnd === 'number' ? rawEnd : (rawEnd ? Date.parse(rawEnd) : NaN);
+      if (!Number.isFinite(endMs)) return;
+      const sessionId = String(session?.sessionId?.toString?.() ?? session?.sessionId ?? fallbackId ?? '');
+      const learnerIds = Object.keys(session?.participants ?? {});
+      if (!sessionId || !learnerIds.length) return;
+      this.publications.ended({ sessionId, learnerIds, endMs, finalized: session.finalized === true });
+    } catch (error) {
+      this.logger.warn?.('fitness.sessions.ended-publish-failed', { sessionId: fallbackId, error: error?.message });
     }
   }
 
@@ -54,6 +74,7 @@ export class FitnessSessionOperations {
   async end(sessionId, householdId, endTime) {
     const session = await this.sessions.endSession(sessionId, householdId, endTime);
     this.notifySessionsChanged({ operation: 'ended', sessionId, householdId });
+    this.publishEnded(session, sessionId);
     this.logger.info?.('fitness.sessions.finalized', { sessionId, endTime, durationMs: session.durationMs });
     if (this.timelapse) Promise.resolve(this.timelapse.execute({
       sessionId: session.sessionId?.toString() || sessionId, householdId,
@@ -78,6 +99,7 @@ export class FitnessSessionOperations {
     }
     const value = await this.sessions.saveSessionWithReceipt(sessionData, householdId);
     this.notifySessionsChanged({ operation: 'saved', sessionId: sessionData?.sessionId ?? null, householdId });
+    this.publishEnded(value?.session, sessionData?.sessionId);
     return { kind: 'saved', ...value };
   }
 }

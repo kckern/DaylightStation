@@ -50,8 +50,8 @@ const setup = ({ mode = 'live', weeks = null, rosterError = null } = {}) => {
     logger: log.logger,
   });
   const preview = {
-    async preview({ learnerId, week }) {
-      state.previews.push({ learnerId, week });
+    async preview({ learnerId, week, fresh }) {
+      state.previews.push({ learnerId, week, ...(fresh ? { fresh } : {}) });
       if (!state.weeks[learnerId]) throw new Error(`no learner ${learnerId}`);
       return state.weeks[learnerId];
     },
@@ -77,6 +77,13 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
 describe('PayoutService.settle', () => {
+  it('threads fresh to the preview so a just-final workout skips the achievement cache', async () => {
+    const { payout, state } = setup();
+    await payout.settle({ learnerId: 'learner-a', fresh: true });
+    await payout.settle({ learnerId: 'learner-a' });
+    expect(state.previews).toEqual([{ learnerId: 'learner-a', week: null, fresh: true }, { learnerId: 'learner-a', week: null }]);
+  });
+
   it('live: mints each earned line once; a second settle mints nothing', async () => {
     const { payout, ledger } = setup();
     const first = await payout.settle({ learnerId: 'learner-a', week: '2026-09-24' });

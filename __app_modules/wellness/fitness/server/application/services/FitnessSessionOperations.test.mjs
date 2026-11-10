@@ -27,3 +27,33 @@ describe('FitnessSessionOperations State Gates refresh seam', () => {
       .resolves.toMatchObject({ kind: 'saved', sessionId: 's1' });
   });
 });
+
+describe('FitnessSessionOperations ended publication', () => {
+  const session = (over = {}) => ({ sessionId: { toString: () => '20261109120000' }, endTime: 5000, finalized: true, participants: { 'test-learner': { rings: 3 } }, ...over });
+
+  it('end publishes fitness.session.ended, finalized', async () => {
+    const ended = vi.fn();
+    const sessions = { endSession: vi.fn(async () => session()) };
+    await new FitnessSessionOperations({ sessions, publications: { ended } }).end('20261109120000', 'home', 5000);
+    expect(ended).toHaveBeenCalledWith({ sessionId: '20261109120000', learnerIds: ['test-learner'], endMs: 5000, finalized: true });
+  });
+
+  it('save publishes an ended, unfinalized session; a running one publishes nothing', async () => {
+    const ended = vi.fn();
+    const saved = { value: { session: session({ finalized: false }) } };
+    const sessions = { saveSessionWithReceipt: vi.fn(async () => saved.value) };
+    const ops = new FitnessSessionOperations({ sessions, publications: { ended } });
+    await ops.save({ sessionData: { sessionId: 's' }, householdId: 'home' });
+    expect(ended).toHaveBeenCalledWith(expect.objectContaining({ finalized: false, endMs: 5000 }));
+    ended.mockClear();
+    saved.value = { session: session({ endTime: null }) };
+    await ops.save({ sessionData: { sessionId: 's' }, householdId: 'home' });
+    expect(ended).not.toHaveBeenCalled();
+  });
+
+  it('a throwing publisher never fails the write', async () => {
+    const sessions = { endSession: vi.fn(async () => session()) };
+    const ops = new FitnessSessionOperations({ sessions, publications: { ended: () => { throw new Error('bus'); } }, logger: { warn: vi.fn(), info: vi.fn() } });
+    await expect(ops.end('s', 'home', 5000)).resolves.toBeTruthy();
+  });
+});
