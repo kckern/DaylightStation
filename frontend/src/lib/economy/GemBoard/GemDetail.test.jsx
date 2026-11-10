@@ -5,7 +5,7 @@ import GemDetail, { weekDays, streakLine, detailParts } from './GemDetail.jsx';
 afterEach(cleanup);
 const WINDOWS = { school: { from: '2026-11-02', to: '2026-11-08' } };
 const base = { state: 'none', week: 0, lifetime: 0, progress: null, left: null, reach: null, days: [], items: [], score: null, note: null };
-const row = { id: 'reading', label: 'Reading', color: '#f2c94c' };
+const row = { id: 'reading', label: 'Reading', color: '#2e9e5b' };
 const ann = { learnerId: 'a', name: 'Ann' };
 
 describe('GemDetail', () => {

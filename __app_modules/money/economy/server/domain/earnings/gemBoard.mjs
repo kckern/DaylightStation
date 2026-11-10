@@ -35,25 +35,17 @@
  * can be `earned` and still carry a streak when its row folds two rules.
  */
 
-/** Gem colour by rule kind when a rule names none — provenance (taxonomy D12). */
-export const GEM_KIND_COLORS = Object.freeze({
-  'week-met': '#d6304a',     // ruby: a green school week
-  'ring-contest': '#1e88e5', // sapphire: the ring contest
-  'ring-days': '#8e5bd0',    // amethyst: exercise
-  'debrief-week': '#e0a030', // topaz: the debrief week
+/**
+ * The three areas a gem can belong to. A gem's colour and icon come ONLY from
+ * its area, so on an unlabeled overview its look always means the same thing.
+ * Order everywhere: Move, School, Games.
+ */
+export const GEM_AREAS = Object.freeze({
+  move: Object.freeze({ label: 'Move', color: '#8e5bd0', icon: 'move' }),       // amethyst
+  school: Object.freeze({ label: 'School', color: '#2e9e5b', icon: 'school' }), // emerald
+  games: Object.freeze({ label: 'Games', color: '#ff7a2f', icon: 'games' }),    // fire opal
 });
-/** …and by the activity an achievement rule names. */
-export const GEM_ACTIVITY_COLORS = Object.freeze({
-  'piano-practice': '#e0457b', 'piano-rung': '#e0457b',          // rose: piano
-  'card-goal': '#2bb3a3', 'cards-mastered': '#2bb3a3',          // turquoise: flashcards
-  'story-read': '#f2c94c', 'book-finished': '#f2c94c',          // citrine: reading
-  'perfect-sheet': '#d6304a',                                    // ruby: schoolwork
-  race: '#ff7a2f', 'race-pb': '#ff7a2f',                          // fire opal: cycling
-  'glider-act': '#4fc3f7', 'glider-bells': '#4fc3f7',            // aquamarine: Skyline Glider
-  'board-game-level': '#9e9e9e',                                  // diamond: board games
-  'ring-improved': '#8e5bd0', 'rings-lifetime': '#8e5bd0',        // amethyst: exercise
-});
-const DEFAULT_COLOR = '#1e88e5';
+export const AREA_ORDER = Object.freeze(['move', 'school', 'games']);
 
 const CADENCE = Object.freeze({ 'ring-contest': 'contest', 'activity-contest': 'contest', milestone: 'milestone' });
 const CONTEST_KINDS = new Set(['ring-contest', 'activity-contest']);
@@ -65,19 +57,18 @@ const paysGems = (rule) => (rule.reward?.gems ?? 0) > 0
 /** The board's sections, in display order. A rule may name another with `gem.group`. */
 export const GEM_GROUPS = Object.freeze([
   Object.freeze({ id: 'move', label: 'Move' }),
-  Object.freeze({ id: 'games', label: 'Games' }),
   Object.freeze({ id: 'school', label: 'School' }),
+  Object.freeze({ id: 'games', label: 'Games' }),
 ]);
 const DEFAULT_GROUP = 'school';
 
-const defaultRow = (category, label, group, color) => Object.freeze({ category, label, group, color });
+const defaultRow = (category, label, group) => Object.freeze({ category, label, group });
 const PIANO = defaultRow('piano', 'Piano', 'school');
 const FLASHCARDS = defaultRow('flashcards', 'Flashcards', 'school');
 const READING = defaultRow('reading', 'Reading', 'school');
 const RACING = defaultRow('racing', 'Racing', 'games');
 const GLIDER = defaultRow('skyline-glider', 'Skyline Glider', 'games');
-// Two rules of different provenance share this row: its colour is fixed, not the first rule's.
-const RING_CONTESTS = defaultRow('ring-contests', 'Ring contests', 'move', '#1e88e5');
+const RING_CONTESTS = defaultRow('ring-contests', 'Ring contests', 'move');
 /** Where a rule sits on the board when its `gem` block does not say. */
 const ROW_BY_ACTIVITY = Object.freeze({
   'piano-practice': PIANO, 'piano-rung': PIANO,
@@ -96,13 +87,15 @@ const ROW_BY_KIND = Object.freeze({
 
 const onBoard = (rule) => Boolean(rule.gem) || paysGems(rule);
 const fallbackRow = (rule) => ROW_BY_ACTIVITY[rule.match?.activity] ?? ROW_BY_KIND[rule.kind] ?? {};
-const ruleColor = (rule) => rule.gem?.color ?? GEM_ACTIVITY_COLORS[rule.match?.activity] ?? GEM_KIND_COLORS[rule.kind] ?? DEFAULT_COLOR;
+/** A rule's group (see `gem.group`, else the default row's, else School) is its area; a custom slug falls to School. */
+const ruleGroup = (rule) => rule.gem?.group ?? fallbackRow(rule).group ?? DEFAULT_GROUP;
+const areaOf = (group) => (Object.hasOwn(GEM_AREAS, group) ? group : DEFAULT_GROUP);
 
 /**
  * The board's rows, in rule order:
- * `[{id, label, cadence, group, color, ruleIds, parts: [{ruleId, label, cadence, color}]}]`.
- * A merged row takes its label, cadence, group and colour from its first
- * rule; each part keeps its own rule's colour.
+ * `[{id, label, cadence, group, area, color, ruleIds, parts: [{ruleId, label, cadence, area, color}]}]`.
+ * A merged row takes its label, cadence, group and area from its first rule;
+ * its colour, and every part's, is the area's (`GEM_AREAS`) — never a rule's.
  *
  * A rule may be NAMED like a default row (`reading`, a school subject's week).
  * That rule keeps its own row; the default merged row then takes `<id>-all`,
@@ -121,15 +114,17 @@ export function gemCategories(ruleset) {
     const defaultId = usesDefaultRow && ownIds.has(fallback.category) ? `${fallback.category}-all` : fallback.category;
     const id = rule.gem?.category ?? defaultId ?? rule.id;
     const cadence = CADENCE[rule.kind] ?? 'weekly';
-    const part = { ruleId: rule.id, label: rule.label ?? rule.id, cadence, color: ruleColor(rule) };
     const existing = rows.get(id);
+    const area = existing?.area ?? areaOf(ruleGroup(rule));
+    const part = { ruleId: rule.id, label: rule.label ?? rule.id, cadence, area, color: GEM_AREAS[area].color };
     if (existing) { existing.ruleIds.push(rule.id); existing.parts.push(part); continue; }
     rows.set(id, {
       id,
       label: rule.gem?.label ?? (usesDefaultRow ? fallback.label : null) ?? rule.label ?? rule.id,
       cadence,
-      group: rule.gem?.group ?? fallback.group ?? DEFAULT_GROUP,
-      color: rule.gem?.color ?? (usesDefaultRow ? fallback.color : null) ?? part.color,
+      group: ruleGroup(rule),
+      area,
+      color: part.color,
       ruleIds: [rule.id],
       parts: [part],
     });

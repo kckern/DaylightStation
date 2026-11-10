@@ -18,17 +18,18 @@
   }
 
   &__panel {
-    --gem-col: 4.3em;  // one gem column
-    --gem-gap: 0.7em;  // between sections
+    --gem-col: 4.4em;  // one gem column
+    --gem-gap: 0.8em;  // between sections
     --gem-line: 4.6em; // one child's line
     position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.4em;
-    font-size: clamp(12px, min(1.25vw, 2.3vh), 28px);
+    // The font size that makes the board fill the screen: set from the board's own size in em.
+    font-size: clamp(12px, min(calc(95vw / var(--gem-w, 58)), calc(95vh / var(--gem-h, 34))), 40px);
     max-width: 97vw;
-    max-height: 96vh;
-    padding: 1em 1.3em 1.3em;
+    max-height: 97vh;
+    padding: 0.8em 1em 1em;
     box-sizing: border-box;
     border-radius: 1em;
     background: #171a24;
@@ -58,10 +59,10 @@
     background: transparent;
     color: inherit;
     font: inherit;
-    opacity: 0.7;
+    color: var(--ds-text-mid, #94a3b8);
     cursor: pointer;
-    &.is-on { background: rgba(255, 255, 255, 0.16); opacity: 1; font-weight: 700; }
-    &:disabled { opacity: 0.35; cursor: default; }
+    &.is-on { background: rgba(255, 255, 255, 0.16); color: var(--ds-text-high, #e8eef3); font-weight: 700; }
+    &:disabled { color: #3a4452; cursor: default; }
   }
   &__close {
     border: 0;
@@ -74,21 +75,20 @@
     height: 1.4em;
     border-radius: 50%;
     cursor: pointer;
-    opacity: 0.75;
-    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.1); opacity: 1; }
+    color: var(--ds-text-mid, #94a3b8);
+    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.1); color: var(--ds-text-high, #e8eef3); }
   }
 
   // Sized to fit unscrolled; scrolling is the fallback for more children or gems than planned for.
-  &__body { min-height: 0; overflow: auto; &.is-loading { opacity: 0.6; } }
-  &__empty { padding: 3em 4em; text-align: center; font-size: 1.25em; opacity: 0.75; }
+  &__body { min-height: 0; overflow: auto; }
+  &__empty { padding: 3em 4em; text-align: center; font-size: 1.25em; color: var(--ds-text-mid, #94a3b8); }
 
   // Lines: the leaning column names, the section names, then one per child.
   &__grid {
     display: grid;
-    grid-template-rows: 7.6em 1.9em;
+    grid-template-rows: 2.7em 2em;
     grid-auto-rows: var(--gem-line);
-    // Room for the last column's name, which leans out past the totals.
-    padding-right: 1.5em;
+    padding-right: 0;
   }
   &__row { display: contents; }
 
@@ -96,36 +96,37 @@
   &__band {
     border-radius: 0.7em;
     background: rgba(255, 255, 255, 0.045);
-    &[data-group="move"] { background: rgba(255, 180, 76, 0.09); }
-    &[data-group="games"] { background: rgba(96, 170, 255, 0.09); }
-    &[data-group="school"] { background: rgba(110, 214, 150, 0.08); }
+    &[data-group="move"] { background: rgba(142, 91, 208, 0.16); }
+    &[data-group="school"] { background: rgba(46, 158, 91, 0.14); }
+    &[data-group="games"] { background: rgba(255, 122, 47, 0.13); }
   }
   &__group-label {
     position: relative;
     display: flex;
     align-items: center;
-    padding: 0 0.8em;
-    font-size: 1.05em;
+    gap: 0.4em;
+    padding: 0 0.6em;
+    font-size: 1.3em;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.85);
-    &[data-group="move"] { color: #ffb44c; }
-    &[data-group="games"] { color: #7db8ff; }
-    &[data-group="school"] { color: #7fdca4; }
+    color: var(--ds-text-high, #e8eef3);
+    .area-icon { flex: none; width: 1.4em; height: 1.4em; }
+    &[data-group="move"] .area-icon { color: #a97ae6; }
+    &[data-group="school"] .area-icon { color: #3fc27a; }
+    &[data-group="games"] .area-icon { color: #ff9a5c; }
   }
 
-  // A column's name: starts over the column's middle and leans up to the right.
+  // A column's name: level, centred over its column, wrapping to two lines.
   &__cat {
-    position: relative;
-    > span {
-      position: absolute;
-      left: 50%;
-      bottom: 0.45em;
-      transform-origin: 0 100%;
-      transform: translateX(0.35em) rotate(-40deg);
-      white-space: nowrap;
-      font-size: 1.02em;
-      line-height: 1;
-    }
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 0.1em 0.3em;
+    text-align: center;
+    font-size: 1em;
+    font-weight: 700;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+    color: var(--ds-text-high, #e8eef3);
   }
 
   // The highlighted child: one bar across the whole line.
@@ -146,8 +147,8 @@
   }
   &__avatar {
     flex: none;
-    width: 3em;
-    height: 3em;
+    width: 3.6em;
+    height: 3.6em;
     border-radius: 50%;
     object-fit: cover;
     background: rgba(255, 255, 255, 0.1);
@@ -158,7 +159,7 @@
       font-weight: 700;
     }
   }
-  &__name { font-size: 1.25em; font-weight: 700; white-space: nowrap; }
+  &__name { font-size: 1.6em; font-weight: 700; white-space: nowrap; }
 
   &__col { position: relative; }
   // A hairline between one child's line and the next, inside the sections only.
@@ -181,25 +182,16 @@
     cursor: pointer;
     &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.1); outline: none; }
   }
-  &__cell.is-cursor &__open, &__cell.is-cursor &__still { box-shadow: 0 0 0 0.16em rgba(255, 180, 76, 0.95); }
-
-  // A cell of the outline drawn while the board is being read.
-  &__ghost {
-    width: 2.2em;
-    height: 2.2em;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.07);
-    animation: gem-glyph-todo calc(var(--ds-motion-base, 200ms) * 5) ease-in-out infinite alternate;
-    @media (prefers-reduced-motion: reduce) { animation: none; }
-  }
+  &__cell.is-cursor &__open, &__cell.is-cursor &__still { box-shadow: 0 0 0 0.16em var(--ds-text-high, #e8eef3); }
 
   &__total-label {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.9em;
-    opacity: 0.6;
+    font-size: 1em;
+    font-weight: 700;
+    color: var(--ds-text-mid, #94a3b8);
     white-space: nowrap;
   }
   &__total {
@@ -207,27 +199,44 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 2.2em;
-    font-size: 2em;
+    min-width: 2.6em;
+    font-size: 2.5em;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 }
 
-// One cell's glyph: a gem that fills the box, or a smaller one inside a day ring.
+// One cell's glyph: a full gem that fills the box, or a slightly smaller one
+// inside a day ring. Nothing here is ever partly transparent and nothing is a
+// status hue: a day is done (area colour) or still to go (plain outline).
 .gem-glyph {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3.3em;
-  height: 3.3em;
+  width: 3.8em;
+  height: 3.8em;
 
   &__ring { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; }
-  &__seg { stroke: rgba(255, 255, 255, 0.16); stroke-width: 3.4; stroke-linecap: round; }
-  // Tight: the days still needed read in the board's amber, not as a brighter (fuller-looking) grey.
-  &__ring.is-tight &__seg:not(.is-done) { stroke: rgba(255, 180, 76, 0.75); }
-  &__muted { opacity: 0.4; font-size: 1.5em; }
+  &__seg { stroke: var(--ds-text-low, #6b7785); stroke-width: 2.4; stroke-linecap: round; }
+  &__seg.is-done { stroke-width: 3.8; }
+
+  // The gem with its area's icon on the face of the stone.
+  &__stone { position: relative; display: inline-flex; }
+  &__area {
+    position: absolute;
+    left: 23%;
+    top: 13%;
+    width: 54%;
+    height: 54%;
+    color: #1a1226;
+    // A pale halo so the dark figure reads on every facet, light or deep.
+    filter: drop-shadow(0 0 0.06em rgba(255, 255, 255, 0.9));
+  }
+
+  // A contest lead: no gem, the word at the size of the row labels.
+  &__word { font-size: 1.05em; font-weight: 700; color: var(--ds-text-high, #e8eef3); white-space: nowrap; }
+  &__muted { color: var(--ds-text-low, #6b7785); font-size: 1.5em; }
   &__times {
     position: absolute;
     right: -0.2em;
@@ -239,23 +248,6 @@
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
-
-  &[data-look="streak"] &__gem, &[data-look="open"] &__gem { opacity: 0.28; }
-  // On track: the gem is as good as theirs, so it is drawn at full strength,
-  // and the days still to do breathe slowly to say "not yet".
-  &[data-look="streak"][data-reach="on-track"] &__gem { opacity: 1; }
-  &[data-reach="on-track"] &__seg:not(.is-done) {
-    animation: gem-glyph-todo calc(var(--ds-motion-base, 200ms) * 8) ease-in-out infinite alternate;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    &[data-reach="on-track"] &__seg:not(.is-done) { animation: none; }
-  }
-}
-
-// Opacity only: cheap on the kiosk browsers.
-@keyframes gem-glyph-todo {
-  from { opacity: 1; }
-  to { opacity: 0.3; }
 }
 
 // The box a cell opens, over the board: the cell's own glyph large, then one
@@ -299,7 +291,7 @@
   &__glyph .gem-glyph__times { background: transparent; }
   &__title { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
   &__row { font-size: 1.6em; font-weight: 700; }
-  &__who { font-size: 1.1em; opacity: 0.8; }
+  &__who { font-size: 1.1em; color: var(--ds-text-mid, #94a3b8); }
   &__close {
     margin-left: auto;
     align-self: flex-start;
@@ -314,8 +306,8 @@
     height: 1.4em;
     border-radius: 50%;
     cursor: pointer;
-    opacity: 0.75;
-    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.14); opacity: 1; }
+    color: var(--ds-text-mid, #94a3b8);
+    &:hover, &:focus-visible { background: rgba(255, 255, 255, 0.14); color: var(--ds-text-high, #e8eef3); }
   }
 
   &__part {
@@ -327,9 +319,8 @@
   }
   &__part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
   &__part-label { font-size: 1.1em; font-weight: 700; }
-  &__line { font-size: 1em; opacity: 0.8; text-align: right; }
-  &__part[data-reach="tight"] &__line { color: #ffb44c; opacity: 1; }
-  &__part[data-state="earned"] &__line, &__part[data-state="won"] &__line, &__part[data-state="leading"] &__line { opacity: 1; font-weight: 700; }
+  &__line { font-size: 1em; color: var(--ds-text-mid, #94a3b8); text-align: right; }
+  &__part[data-state="earned"] &__line, &__part[data-state="won"] &__line, &__part[data-state="leading"] &__line { color: var(--ds-text-high, #e8eef3); font-weight: 700; }
 
   &__items {
     margin: 0;
@@ -340,11 +331,11 @@
     gap: 0.3em;
     li { display: flex; justify-content: space-between; gap: 1em; font-size: 1.05em; }
   }
-  &__when { opacity: 0.6; }
+  &__when { color: var(--ds-text-low, #6b7785); }
 
   &__score { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 0.6em; row-gap: 0.4em; }
   &__score-mine { font-size: 1.9em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-  &__score-best { opacity: 0.65; font-variant-numeric: tabular-nums; }
+  &__score-best { color: var(--ds-text-mid, #94a3b8); font-variant-numeric: tabular-nums; }
   &__score-bar {
     grid-column: 1 / -1;
     height: 0.45em;
@@ -363,14 +354,16 @@
     height: 2.3em;
     box-sizing: border-box;
     border-radius: 0.55em;
-    border: 2px solid rgba(255, 255, 255, 0.16);
+    border: 2px solid var(--ds-text-low, #6b7785);
     font-size: 0.95em;
-    opacity: 0.6;
-    &.is-done { color: #171a24; font-weight: 700; opacity: 1; }
-    &.is-short { opacity: 1; }
-    // After the rule's last day: not a day to come, so fainter and without an outline.
-    &.is-closed { opacity: 0.28; border-color: transparent; }
-    &.is-today { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75); opacity: 1; }
-    &.is-ahead { opacity: 0.45; }
+    color: var(--ds-text-mid, #94a3b8);
+    // Solid shades, never see-through: a day to come is a step darker than a day gone by,
+    // and a day after the rule's last is darker still and has no outline.
+    &.is-done { color: #171a24; font-weight: 700; }
+    &.is-short { color: var(--ds-text-high, #e8eef3); }
+    &.is-ahead { color: var(--ds-text-low, #6b7785); border-color: #3a4452; }
+    &.is-closed { color: #3a4452; border-color: transparent; }
+    &.is-today { box-shadow: 0 0 0 2px var(--ds-text-high, #e8eef3); color: var(--ds-text-high, #e8eef3); }
+    &.is-done.is-today { color: #171a24; }
   }
 }
