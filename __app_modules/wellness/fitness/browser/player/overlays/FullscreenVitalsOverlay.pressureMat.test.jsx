@@ -69,7 +69,7 @@ describe('FullscreenVitalsOverlay — pressure mat group', () => {
     expect(container.querySelector('.fullscreen-vitals-overlay')).toBeNull();
   });
 
-  it('uses the claimed rider avatar, falling back to the equipment image when unclaimed', () => {
+  it('uses the claimed rider avatar, and draws the step-mat glyph when unclaimed', () => {
     mockContext.mockReturnValue(contextWith({ step_mat: matSnapshot() }));
     const { container, rerender } = render(<FullscreenVitalsOverlay visible />);
     expect(container.querySelector('.step-mat-tile__avatar').getAttribute('src'))
@@ -80,6 +80,19 @@ describe('FullscreenVitalsOverlay — pressure mat group', () => {
       { fitnessSessionInstance: { getEquipmentUser: () => null } }
     ));
     rerender(<FullscreenVitalsOverlay visible />);
+    expect(container.querySelector('.step-mat-tile__avatar')).toBeNull();
+    expect(container.querySelector('.step-mat-tile [data-glyph="step-mat"]')).toBeTruthy();
+  });
+
+  it('shows a declared equipment photo for an unclaimed mat', () => {
+    mockContext.mockReturnValue(contextWith(
+      { step_mat: matSnapshot() },
+      {
+        equipment: [{ id: 'step_mat', name: 'Step Mat', type: 'pressure_mat', image: 'mat.jpg' }],
+        fitnessSessionInstance: { getEquipmentUser: () => null },
+      }
+    ));
+    const { container } = render(<FullscreenVitalsOverlay visible />);
     expect(container.querySelector('.step-mat-tile__avatar').getAttribute('src'))
       .toBe('/static/img/equipment/step_mat');
   });

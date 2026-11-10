@@ -13,6 +13,7 @@ import PropTypes from 'prop-types';
 import VibrationActivityAvatar from "./VibrationActivityAvatar.jsx";
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import "./VibrationCard.scss";
+import { GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../../shared/EquipmentGlyph.jsx";
 
 // Equipment type to icon mapping
 const EQUIPMENT_ICONS = {
@@ -93,7 +94,7 @@ export function VibrationCard({
           snapshot={trackerSnapshot}
           avatarSrc={DaylightMediaPath(`/static/img/equipment/${equipmentId}`)}
           avatarAlt={`${deviceName} equipment`}
-          fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
+          fallbackSrc={GENERIC_EQUIPMENT_FALLBACK_SRC}
           showIntensityRing={avatarConfig.showIntensityRing}
           showActivityBar={avatarConfig.showActivityBar}
           showTimer={avatarConfig.showTimer}

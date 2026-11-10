@@ -18,6 +18,7 @@ import { committedZoneId } from "../../lib/committedZone.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
+import { GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../shared/EquipmentGlyph.jsx";
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
 
@@ -667,7 +668,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 imageClassName="rpm-device-image"
                 spinnerStyle={{ borderColor }}
                 valueStyle={{ background: CONFIG.rpm.overlayBg }}
-                fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
+                fallbackSrc={GENERIC_EQUIPMENT_FALLBACK_SRC}
               />
             );
           })}
@@ -983,7 +984,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                               return;
                             }
                             e.target.dataset.fallback = '1';
-                            e.target.src = DaylightMediaPath('/static/img/equipment/equipment');
+                            e.target.src = GENERIC_EQUIPMENT_FALLBACK_SRC;
                           }}
                         />
                       )}

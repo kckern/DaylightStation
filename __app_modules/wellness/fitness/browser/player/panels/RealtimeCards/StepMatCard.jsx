@@ -3,12 +3,46 @@ import ReactDOM from 'react-dom';
 import PropTypes from 'prop-types';
 import { BaseRealtimeCard } from "./BaseRealtimeCard.jsx";
 import getLogger from '@/lib/logging/Logger.js';
+import { DaylightMediaPath } from '@/lib/api.mjs';
+import { StepMatGlyph, GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../../shared/EquipmentGlyph.jsx";
 import "./StepMatCard.scss";
 import "../../overlays/CycleRiderSwapModal.scss";
 
-const avatarFor = (userId) => userId
-  ? `/api/v1/static/img/users/${userId}`
-  : '/api/v1/static/img/equipment/equipment';
+// Rider photos in the picker; a rider with no photo gets the neutral equipment
+// mark rather than a picture of some other device.
+const avatarFor = (userId) => (userId
+  ? DaylightMediaPath(`/static/img/users/${userId}`)
+  : GENERIC_EQUIPMENT_FALLBACK_SRC);
+
+const STATES = {
+  offline: 'Sensor unavailable',
+  stepping: 'Stepping',
+  dormant: 'Dormant',
+  ready: 'Ready',
+};
+
+const count = (value) => (Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0);
+
+/**
+ * The card's face: the rider who claimed the mat, else a photo config declares
+ * for the mat (`image:`), else the drawn step-mat glyph. A photo that fails to
+ * load falls back to the glyph too.
+ */
+function MatFace({ src, state }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
+  return (
+    <div className="step-mat-card__face" data-state={state}>
+      {src && !failed ? (
+        <img className="step-mat-card__photo" src={src} alt="" onError={() => setFailed(true)} />
+      ) : (
+        <StepMatGlyph className="step-mat-card__glyph" />
+      )}
+    </div>
+  );
+}
+
+MatFace.propTypes = { src: PropTypes.string, state: PropTypes.string };
 
 function UserPicker({ open, participants, currentUserId, onAssign, onClose, onRelease }) {
   const panelRef = useRef(null);
@@ -116,9 +150,17 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
   };
   const closePicker = React.useCallback(() => setPickerOpen(false), []);
 
-  const status = !snapshot.online ? 'Sensor unavailable'
-    : snapshot.active ? 'Stepping'
-      : snapshot.engaged ? 'Dormant' : 'Ready';
+  const state = !snapshot.online ? 'offline'
+    : snapshot.active ? 'stepping'
+      : snapshot.engaged ? 'dormant' : 'ready';
+  const status = STATES[state];
+  const rate = count(snapshot.stepsPerMinute);
+  const steps = count(snapshot.sessionSteps);
+  const stomps = count(snapshot.sessionStomps);
+  const equipmentId = equipment?.id || snapshot.equipmentId;
+  const faceSrc = assignedUserId
+    ? DaylightMediaPath(`/static/img/users/${assignedUserId}`)
+    : (equipment?.image ? DaylightMediaPath(`/static/img/equipment/${equipmentId}`) : null);
 
   return (
     <>
@@ -126,19 +168,24 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
         <BaseRealtimeCard
           device={device}
           deviceName={name}
-          className="step-mat-card"
+          className={`step-mat-card step-mat-card--${state}`}
           isInactive={!snapshot.active}
           isClickable
           onClick={openPicker}
-          imageSrc={avatarFor(assignedUserId)}
-          imageAlt={assignedUserId || name}
-          imageFallback="/api/v1/static/img/equipment/equipment"
-          ariaLabel={`${name}: ${Math.round(snapshot.stepsPerMinute)} steps per minute, ${snapshot.sessionSteps} steps, ${snapshot.sessionStomps} stomps. Tap to assign; hold to release mat.`}
+          avatar={<MatFace src={faceSrc} state={state} />}
+          ariaLabel={`${name}: ${rate} steps per minute, ${steps} steps, ${stomps} stomps. ${status}. Tap to assign; hold to release mat.`}
         >
-          <div className="step-mat-card__rate"><strong>{Math.round(snapshot.stepsPerMinute)}</strong> SPM <span>{status}</span></div>
+          <div className="step-mat-card__state" data-state={state}>
+            <span className="step-mat-card__state-dot" aria-hidden="true" />
+            {status}
+          </div>
+          <div className="step-mat-card__rate">
+            <strong>{rate}</strong>
+            <span>SPM</span>
+          </div>
           <div className="step-mat-card__totals">
-            <span><strong>{snapshot.sessionSteps}</strong> steps</span>
-            <span><strong>{snapshot.sessionStomps}</strong> stomps</span>
+            <span className="step-mat-card__stat"><strong>{steps}</strong><em>steps</em></span>
+            <span className="step-mat-card__stat"><strong>{stomps}</strong><em>stomps</em></span>
           </div>
         </BaseRealtimeCard>
       </div>

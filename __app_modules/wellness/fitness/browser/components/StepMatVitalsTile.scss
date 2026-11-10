@@ -35,6 +35,16 @@
     display: block;
   }
 
+  // Drawn mat (no rider photo): sits in the upper part of the face, clear of
+  // the rate strip along the bottom edge.
+  &__glyph {
+    display: block;
+    width: 62%;
+    height: 62%;
+    margin: 3% auto 0;
+    color: var(--step-mat-accent);
+  }
+
   // Rate reads as the primary number, so it sits over the avatar rather than
   // competing with the totals strip below.
   &__rate {
