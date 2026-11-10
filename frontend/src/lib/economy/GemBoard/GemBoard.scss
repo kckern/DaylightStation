@@ -183,6 +183,16 @@
   }
   &__cell.is-cursor &__open, &__cell.is-cursor &__still { box-shadow: 0 0 0 0.16em rgba(255, 180, 76, 0.95); }
 
+  // A cell of the outline drawn while the board is being read.
+  &__ghost {
+    width: 2.2em;
+    height: 2.2em;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.07);
+    animation: gem-glyph-todo calc(var(--ds-motion-base, 200ms) * 5) ease-in-out infinite alternate;
+    @media (prefers-reduced-motion: reduce) { animation: none; }
+  }
+
   &__total-label {
     position: relative;
     display: flex;

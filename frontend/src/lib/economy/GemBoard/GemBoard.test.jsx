@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react';
-import GemBoardOverlay, { GemBoardGrid, boardRowIds } from './GemBoard.jsx';
+import GemBoardOverlay, { GemBoardGrid, boardRowIds, boardShape, readBoardShape } from './GemBoard.jsx';
 
 const part = (ruleId, label, cadence, extra = {}) => ({ ruleId, label, cadence, state: 'none', week: 0, lifetime: 0, progress: null, left: null, reach: null, days: [], items: [], score: null, note: null, ...extra });
 const BOARD = {
@@ -34,7 +34,7 @@ const BOARD = {
   totals: { a: { week: 3, lifetime: 9 }, b: { week: 0, lifetime: 4 } },
 };
 
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); localStorage.clear(); });
 
 describe('GemBoardGrid', () => {
   it('one table: a line per child in roster order, gem columns under their section in section order, no numerals at a glance', () => {
@@ -214,10 +214,12 @@ describe('GemBoardOverlay', () => {
     rerender(<GemBoardOverlay open={false} load={load} {...props} />);
     const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
     rerender(<GemBoardOverlay open load={slow} {...props} />);
-    expect(screen.getByText('Loading…')).toBeTruthy();
-    expect(document.querySelector('.gem-board__grid')).toBeNull();
+    // Only the outline is up: no gem of the last session's board.
+    expect(document.querySelector('.gem-board__grid.is-pending')).toBeTruthy();
+    expect(document.querySelector('.gem-glyph')).toBeNull();
     expect(screen.queryByRole('dialog', { name: 'Ben, Moved 5 days' })).toBeNull();
     await act(async () => { release(); });
+    expect(document.querySelector('.gem-board__grid.is-pending')).toBeNull();
     expect(document.querySelector('.gem-board__grid')).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: 'Ben, Moved 5 days' })).toBeNull();
     expect(document.querySelectorAll('.gem-board__cell.is-cursor')).toHaveLength(0);
@@ -275,5 +277,48 @@ describe('GemBoardOverlay', () => {
     await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
     expect(document.querySelectorAll('.gem-board__cell.is-cursor')).toHaveLength(0);
     expect(screen.queryByRole('dialog', { name: 'Ben, Reading' })).toBeNull();
+  });
+
+  it('first opening on a screen says Loading; the board read leaves its outline behind', async () => {
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    expect(screen.getByText('Loading…')).toBeTruthy();
+    expect(readBoardShape()).toBeNull();
+    await act(async () => { release(); });
+    expect(readBoardShape()).toEqual(boardShape(BOARD));
+    expect(JSON.stringify(readBoardShape())).not.toMatch(/cells|totals|state/);
+  });
+
+  it('a later opening draws the kept outline at full size while the read is out: same lines and columns, no gems, no totals', async () => {
+    localStorage.setItem('daylight.gemBoard.shape.v1', JSON.stringify(boardShape(BOARD)));
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    expect(screen.queryByText('Loading…')).toBeNull();
+    const grid = document.querySelector('.gem-board__grid');
+    expect(grid.getAttribute('aria-busy')).toBe('true');
+    const outline = { columns: grid.style.gridTemplateColumns, names: [...grid.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...grid.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) };
+    expect(grid.querySelectorAll('.gem-board__ghost')).toHaveLength(8);
+    expect(grid.querySelector('.gem-glyph')).toBeNull();
+    expect(grid.querySelector('button')).toBeNull();
+    expect([...grid.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['', '']);
+    await act(async () => { release(); });
+    const loaded = document.querySelector('.gem-board__grid');
+    expect(loaded.hasAttribute('aria-busy')).toBe(false);
+    expect(loaded.querySelector('.gem-board__ghost')).toBeNull();
+    expect({ columns: loaded.style.gridTemplateColumns, names: [...loaded.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...loaded.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) }).toEqual(outline);
+  });
+
+  it('a kept outline that cannot be read, or a board that is off, is no outline', async () => {
+    localStorage.setItem('daylight.gemBoard.shape.v1', '{not json');
+    expect(readBoardShape()).toBeNull();
+    localStorage.setItem('daylight.gemBoard.shape.v1', JSON.stringify({ learners: [], groups: [], categories: [] }));
+    expect(readBoardShape()).toBeNull();
+    expect(boardShape({ mode: 'off', learners: [], categories: [] })).toBeNull();
+    const load = vi.fn(() => Promise.resolve({ mode: 'off', week: null, learners: [], categories: [], cells: {}, totals: {} }));
+    render(<GemBoardOverlay open load={load} onClose={() => {}} surface="fitness" idleMs={0} />);
+    await screen.findByText('Gems are switched off.');
+    expect(readBoardShape()).toBeNull();
   });
 });

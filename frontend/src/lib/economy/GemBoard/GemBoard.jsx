@@ -49,6 +49,40 @@ export async function fetchGemBoard(week = null, { fresh = true } = {}) {
   return res.json();
 }
 
+const SHAPE_KEY = 'daylight.gemBoard.shape.v1';
+
+/**
+ * The board's outline (who is on it and which gem columns, in which sections)
+ * with nothing in it. It is kept from one opening to the next so the board can
+ * be drawn at its full size while the read is still out, and the panel does
+ * not jump when the answer lands.
+ */
+export function boardShape(board) {
+  if (!board || board.mode === 'off' || !board.learners?.length || !board.categories?.length) return null;
+  return {
+    learners: board.learners.map(({ learnerId, name }) => ({ learnerId, name })),
+    groups: (board.groups ?? []).map(({ id, label }) => ({ id, label })),
+    categories: board.categories.map(({ id, label, group, color }) => ({ id, label, group, color })),
+  };
+}
+
+/** The outline kept from the last board read on this screen, or null (first run, storage off, bad entry). */
+export function readBoardShape() {
+  try {
+    const shape = JSON.parse(localStorage.getItem(SHAPE_KEY) ?? 'null');
+    return Array.isArray(shape?.learners) && Array.isArray(shape?.groups) && Array.isArray(shape?.categories)
+      && shape.learners.length && shape.categories.length ? shape : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveBoardShape(board) {
+  const shape = boardShape(board);
+  if (!shape) return;
+  try { localStorage.setItem(SHAPE_KEY, JSON.stringify(shape)); } catch { /* storage off or full: the next opening starts unsized */ }
+}
+
 function Avatar({ id, name }) {
   const [failed, setFailed] = useState(false);
   const initials = (name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
@@ -91,8 +125,10 @@ export const boardRowIds = (board) => boardSections(board).flatMap((g) => g.rows
  * @param {string|null} [props.focusLearnerId] - the highlighted child (a line)
  * @param {string|null} [props.cursorRowId] - with the focused child, the one cell under the cursor
  * @param {((rowId: string, learnerId: string) => void)|null} [props.onOpen] - makes cells with detail into buttons
+ * @param {boolean} [props.pending] - `board` is only an outline (`boardShape`): the names and columns
+ *   are drawn at full size, every cell is a placeholder and the totals are empty
  */
-export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null }) {
+export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null, pending = false }) {
   const learners = board?.learners ?? [];
   const sections = useMemo(() => boardSections(board), [board]);
   // Tracks: names | gap, a section's columns | … | gap, totals. Lines: column names, section names, one per child.
@@ -116,7 +152,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
   }
   const focusAt = learners.findIndex((l) => l.learnerId === focusLearnerId);
   return (
-    <div className="gem-board__grid" role="table" aria-label="Gems by child" style={{ gridTemplateColumns: layout.columns }}>
+    <div className={`gem-board__grid${pending ? ' is-pending' : ''}`} role="table" aria-label="Gems by child" aria-busy={pending ? 'true' : undefined} style={{ gridTemplateColumns: layout.columns }}>
       {layout.placed.map((g) => (
         <div key={g.id} className="gem-board__band" data-group={g.id} aria-hidden="true" style={{ gridRow: `2 / ${FIRST + learners.length}`, gridColumn: `${g.start} / ${g.end}` }} />
       ))}
@@ -146,17 +182,19 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
             </div>
             {layout.placed.map((g) => g.rows.map((row, i) => (
               <div key={row.id} className={`gem-board__col${focus}`} data-row={row.id} data-learner={l.learnerId} style={at(FIRST + li, g.start + i)}>
-                <GemCell
+                {pending ? <div className="gem-board__cell" role="cell"><span className="gem-board__ghost" aria-hidden="true" /></div> : <GemCell
                   cell={board.cells?.[row.id]?.[l.learnerId]}
                   color={row.color}
                   name={l.name}
                   rowLabel={row.label}
                   onOpen={onOpen ? () => onOpen(row.id, l.learnerId) : null}
                   cursor={row.id === cursorRowId && l.learnerId === focusLearnerId}
-                />
+                />}
               </div>
             )))}
-            <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} this week`} style={at(FIRST + li, layout.totalCol)}>{week}</div>
+            {pending
+              ? <div className="gem-board__total" role="cell" style={at(FIRST + li, layout.totalCol)} />
+              : <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} this week`} style={at(FIRST + li, layout.totalCol)}>{week}</div>}
           </div>
         );
       })}
@@ -189,6 +227,8 @@ export default function GemBoardOverlay({
   const idle = useRef(null);
   const panelRef = useRef(null);
   const wasPicked = useRef(null);
+  // The last board's outline, read as the overlay opens: what to draw until this opening's read lands.
+  const shape = useMemo(() => (open ? readBoardShape() : null), [open]);
 
   const close = useCallback((reason) => {
     logger().info('gem-board.close', { surface, reason, dwellMs: Date.now() - openedAt.current });
@@ -233,6 +273,7 @@ export default function GemBoardOverlay({
       .then((board) => {
         if (!live) return;
         if (weekOffset === 0 && board?.week) thisWeek.current = board.week;
+        if (weekOffset === 0) saveBoardShape(board);
         setState({ board, error: null, loading: false });
       })
       .catch((err) => {
@@ -355,7 +396,12 @@ export default function GemBoardOverlay({
           <button type="button" className="gem-board__close" aria-label="Close" onClick={() => close('tap')}>×</button>
         </div>
         {error && !board && <div className="gem-board__empty">Can’t load the gems right now.</div>}
-        {!board && !error && <div className="gem-board__empty">Loading…</div>}
+        {!board && !error && !shape && <div className="gem-board__empty">Loading…</div>}
+        {!board && !error && shape && (
+          <div className="gem-board__body" inert="">
+            <GemBoardGrid board={shape} focusLearnerId={focus} pending />
+          </div>
+        )}
         {board && board.mode === 'off' && <div className="gem-board__empty">Gems are switched off.</div>}
         {board && board.mode !== 'off' && (
           <div className={`gem-board__body${loading ? ' is-loading' : ''}`} inert={detail ? '' : undefined}>

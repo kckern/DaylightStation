@@ -550,6 +550,16 @@ week out of reach is a blank cell, never a cross. Each cell's `aria-label` says
 the same in words ("3 of 5 days, on track"; a lead held in a row that also
 counts days reads "leading, and 2 of 4 days, on track").
 
+**Opening without a jump.** Each read of this week's board leaves its outline
+in the browser (`localStorage` `daylight.gemBoard.shape.v1`: the learners, the
+sections and the gem columns, no cells or totals; `boardShape`). The next
+opening on that screen draws the outline at once, at the board's full size,
+with a placeholder in every cell and empty totals (`aria-busy`, nothing to
+press), and the gems fill in when the read lands, so the panel does not change
+size. A screen's first opening has no outline and says "Loading…". If the read
+brings more children or columns than the outline had, the board grows to fit
+and the new outline is kept. An outline that cannot be read is ignored.
+
 The ring takes the colour of the rule whose days it counts: the part named by
 `streak.ruleId`, else the row's colour. The detail box's day strip uses the
 same part colour, so the two always match.
