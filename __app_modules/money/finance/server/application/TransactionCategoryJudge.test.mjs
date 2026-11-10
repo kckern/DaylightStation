@@ -26,6 +26,24 @@ describe('TransactionCategoryJudge', () => {
     expect(verdict.ms).toBeGreaterThanOrEqual(0);
   });
 
+  it('gives each option its household description; undescribed tags stay self-explanatory', async () => {
+    const gateway = gatewayAnswering({ type: 'choice', choice: 'Payroll', confidence: 0.9, probabilities: {} });
+    await new TransactionCategoryJudge({ decisionGateway: gateway, logger: makeLogger() })
+      .judge(txn, TAGS, { Payroll: 'Net pay and PTO lines from a paycheck', Income: '  ' });
+
+    const [, questions] = gateway.evaluate.mock.calls[0];
+    expect(questions.category.options).toEqual({
+      Groceries: null, Fuel: null, Income: null, Payroll: 'Net pay and PTO lines from a paycheck', Shopping: null,
+    });
+  });
+
+  it('tells the model the bank type is not a budget category', async () => {
+    const gateway = gatewayAnswering({ type: 'choice', choice: 'Fuel', confidence: 0.9, probabilities: {} });
+    await new TransactionCategoryJudge({ decisionGateway: gateway, logger: makeLogger() }).judge(txn, TAGS);
+    const [, questions] = gateway.evaluate.mock.calls[0];
+    expect(questions.category.instructions).toMatch(/not a budget category/);
+  });
+
   it('returns null when no decision model is configured', async () => {
     expect(await new TransactionCategoryJudge().judge(txn, TAGS)).toBeNull();
     const noop = { isConfigured: () => false, evaluate: vi.fn() };

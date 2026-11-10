@@ -88,7 +88,7 @@ export class TransactionCategorizationService {
       return { processed: [], failed: [], skipped: transactions };
     }
 
-    const { validTags, chat: chatTemplate, descriptionRules } = config;
+    const { validTags, chat: chatTemplate, descriptionRules, tagDescriptions } = config;
     const policy = this.#jevPolicy(config);
 
     // Apply deterministic description rules before AI categorization
@@ -111,7 +111,7 @@ export class TransactionCategorizationService {
 
     for (const txn of needsProcessing) {
       try {
-        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'apply' });
+        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'apply', tagDescriptions });
 
         if (result.success) {
           // Update transaction in external system
@@ -242,7 +242,7 @@ export class TransactionCategorizationService {
       return { suggestions: [], failed: [] };
     }
 
-    const { validTags, chat: chatTemplate, descriptionRules } = config;
+    const { validTags, chat: chatTemplate, descriptionRules, tagDescriptions } = config;
     const policy = this.#jevPolicy(config);
 
     // Simulate each rule on a copy, so the LLM step sees exactly the rows (and
@@ -267,7 +267,7 @@ export class TransactionCategorizationService {
 
     for (const txn of needsProcessing) {
       try {
-        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'preview' });
+        const result = await this.#categorizeTransaction(txn, validTags, chatTemplate, { policy, path: 'preview', tagDescriptions });
 
         if (result.success) {
           suggestions.push({
@@ -417,13 +417,13 @@ export class TransactionCategorizationService {
    *
    * @returns {Promise<Object>} { success, friendlyName, category, categoryVia, memo, originalDescription } on success; { success, reason, originalDescription } with success set to false otherwise
    */
-  async #categorizeTransaction(transaction, validTags, chatTemplate, { policy, path }) {
+  async #categorizeTransaction(transaction, validTags, chatTemplate, { policy, path, tagDescriptions }) {
     const { description, id } = transaction;
     const jevPending = policy.mode === 'off'
       ? Promise.resolve(null)
       // judge() is written never to reject; the catch keeps an unobserved
       // rejection (while the LLM is awaited) from crashing the process if it ever does.
-      : this.#categoryJudge.judge(transaction, validTags).catch(() => null);
+      : this.#categoryJudge.judge(transaction, validTags, tagDescriptions).catch(() => null);
     const llm = await this.#askLlm(transaction, validTags, chatTemplate);
     const jev = await jevPending;
     const outcome = this.#decide(llm, jev, validTags, policy, description);

@@ -454,6 +454,21 @@ describe('TransactionCategorizationService', () => {
       });
     });
 
+    it('hands Jev the configured tagDescriptions as option descriptions', async () => {
+      mockFinanceStore.getCategorizationConfig.mockReturnValue({
+        ...mockCategorizationConfig,
+        tagDescriptions: { Transfer: 'Money moved between our own accounts' },
+      });
+      mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
+      jevSays('Shopping', 0.95);
+
+      await service.categorize(walmart());
+
+      const [, questions] = decisionGateway.evaluate.mock.calls[0];
+      expect(questions.category.options.Transfer).toBe('Money moved between our own accounts');
+      expect(questions.category.options.Groceries).toBeNull();
+    });
+
     it('logs both picks and keeps the LLM category on the apply path', async () => {
       mockAIGateway.chatStructured.mockResolvedValue({ category: 'Groceries', friendlyName: 'Walmart' });
       jevSays('Shopping', 0.95);

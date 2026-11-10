@@ -86,6 +86,7 @@ description-rule renames are never added to the settled map.
 | `chat` | LLM message template. A system message containing `__VALID_TAGS__` gets the JSON list of tags substituted in; the transaction description is appended as the user message. |
 | `descriptionRules` | `[{ pattern, rename, tag? }]`, applied before the LLM (see Pipeline). |
 | `jev` | **Optional.** Omit it and Jev runs in shadow with floor 0.8. |
+| `tagDescriptions` | **Optional.** `{ <tag>: <how this household uses it> }`. Given to Jev as the description of each choice option; tags without one are offered bare. The LLM does not see them. |
 
 ```yaml
 jev:
@@ -116,17 +117,24 @@ reports `{ validTags, jev }`.
 ## 3. The Jev question
 
 One `choice` question per transaction, over the deduped `validTags` (at least
-two are needed, otherwise the judge returns no opinion):
+two are needed, otherwise the judge returns no opinion). Each option carries
+its `tagDescriptions` entry, or `null` when it has none:
 
 ```js
 choice(
   'Which budget category does this bank transaction belong to? '
   + '`description` is the raw bank or card description; it may carry payment-processor noise such as "Pwp", "Sq *", '
   + '"Privacycom" or reference numbers. `type` is how the bank classed it (expense, income, transfer, refund, '
-  + 'dividend, investment sale), `amount` is the absolute amount, and `account` is the account it posted to.',
-  validTags,
+  + 'dividend, investment sale); it is not a budget category, so choose by what the money was for. '
+  + '`amount` is the absolute amount, and `account` is the account it posted to. Where a category has a '
+  + 'description, it says how this household uses that category.',
+  { Groceries: 'Supermarkets and grocery stores …', Fuel: null, … },
 )
 ```
+
+Without descriptions Jev reads the tag names literally: on 2026-11-06 it
+answered **Transfer** at confidence 1.00 for a $50 "ORC Regional Transit"
+payment the bank booked as a transfer (the LLM said Transportation).
 
 State (`TransactionCategoryJudge.stateFor(txn)`):
 
@@ -200,7 +208,7 @@ the finance `gpt.yml`. No restart. Roll back with `mode: shadow`.
 ### Replay CLI
 
 ```bash
-node cli/finance-jev-replay.cli.mjs [--period YYYY-MM-DD] [--limit 200] [--floor 0.8] [--household <id>]
+node cli/finance-jev-replay.cli.mjs [--period YYYY-MM-DD] [--limit 200] [--floor 0.8] [--household <id>] [--descriptions <file.yml>]
 ```
 
 Runs the same judge over a budget period's already-tagged transactions (rows
@@ -230,9 +238,33 @@ differ, the replay measured a different model than prod runs.
   which is easier than the raw descriptions Jev sees live. Treat replay
   agreement as an upper bound and confirm it with prod shadow.
 
-**Baseline: none yet.** No replay has been run against live Jev, so there are
-no baseline numbers. Record the first run here (date, period, `--limit`,
-`--floor`, and the summary).
+`--descriptions` takes a YAML map `tag: description` and uses it in place of
+`gpt.yml` `tagDescriptions`, so a draft can be measured before it goes live.
+The summary's `described` counts the `validTags` that had a description.
+
+**Baselines (2026-11-09, `jev-1.14.0`, `--limit 200 --floor 0.8`).** Prod
+shadow runs the same model.
+
+| Period | Descriptions | agreement | agreementAtFloor | coverage |
+|---|---|---|---|---|
+| 2026-04-01 | none | 0.52 | 0.62 | 0.61 |
+| 2026-04-01 | draft (40 tags) | 0.71 | 0.76 | 0.78 |
+| 2025-04-01 (holdout) | none | 0.56 | 0.66 | 0.68 |
+| 2025-04-01 (holdout) | draft (40 tags) | 0.66 | 0.75 | 0.78 |
+
+The draft was written from 2026 usage; 2025 is the holdout. Neither run meets
+the promotion bar. Most remaining disagreements are not Jev errors:
+
+- **Housewares ↔ Shopping** are deliberately fungible (the day-to-day
+  rebalancer swings Amazon buys between them).
+- **Fidelity Cash Sweep** was tagged Investments in the 2025 year and Transfer
+  in 2026; the label changed, not the transaction.
+- **Paycheck lines** (Income, Payroll, Taxes, Tax, Medical, the payroll
+  Transfer) are uploaded by payroll sync with fixed categories and never reach
+  the live categorizer, but the replay samples them.
+
+So replay agreement understates Jev on the rows the live path actually asks
+about. A replay filter that skips payroll-sync rows would measure those rows on their own.
 
 ---
 

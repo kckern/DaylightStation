@@ -17,8 +17,10 @@
  * Exit codes (cli/_output.mjs): 0 ok, 1 unexpected failure, 2 usage, 3 config
  * (no Jev key, no validTags, no period), 4 every judgement failed (bad key, Jev down).
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import yaml from 'js-yaml';
 import { TransactionCategoryJudge } from "../server/application/TransactionCategoryJudge.mjs";
 import { runWithOrigin } from '#system/runtime/aiContext.mjs';
 import { EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_CONFIG, EXIT_BACKEND, printError } from "../../../../cli/_output.mjs";
@@ -27,7 +29,8 @@ const USAGE = 'Usage: node cli/finance-jev-replay.cli.mjs [--period YYYY-MM-DD] 
   + '  --period     budget period (default: the latest one with transactions)\n'
   + '  --limit      max tagged transactions to judge (default 200)\n'
   + '  --floor      confidence floor for coverage / agreementAtFloor (default 0.8)\n'
-  + '  --household  household id (default: the configured default)\n';
+  + '  --household  household id (default: the configured default)\n'
+  + '  --descriptions  YAML map tag -> description to try instead of gpt.yml tagDescriptions\n';
 
 class UsageError extends Error {}
 class ConfigError extends Error {}
@@ -64,13 +67,13 @@ export function summarize(rows, floor) {
   };
 }
 
-export async function runReplay({ transactions, validTags, judge, floor = 0.8, limit = 200 }) {
+export async function runReplay({ transactions, validTags, judge, floor = 0.8, limit = 200, tagDescriptions = null }) {
   const sample = transactions
     .filter(t => t.tagNames?.length === 1 && validTags.includes(t.tagNames[0]))
     .slice(0, limit);
   const rows = [];
   for (const txn of sample) {
-    const verdict = await judge.judge(txn, validTags);
+    const verdict = await judge.judge(txn, validTags, tagDescriptions);
     rows.push({
       id: txn.id, tag: txn.tagNames[0],
       jevCategory: verdict?.category ?? null, confidence: verdict?.confidence ?? null, cjk: verdict?.cjk ?? false,
@@ -81,7 +84,7 @@ export async function runReplay({ transactions, validTags, judge, floor = 0.8, l
 }
 
 export function parseArgs(argv) {
-  const options = { period: null, limit: 200, floor: 0.8, household: null, help: false };
+  const options = { period: null, limit: 200, floor: 0.8, household: null, descriptions: null, help: false };
   const value = (flag, i) => {
     const next = argv[i + 1];
     if (next === undefined || next.startsWith('--')) throw new UsageError(`${flag} needs a value`);
@@ -104,11 +107,22 @@ export function parseArgs(argv) {
       }
     } else if (flag === '--household') {
       options.household = value(flag, i); i += 1;
+    } else if (flag === '--descriptions') {
+      options.descriptions = value(flag, i); i += 1;
     } else {
       throw new UsageError(`Unknown option: ${flag}`);
     }
   }
   return options;
+}
+
+/** A `--descriptions` file: YAML map of tag -> description. */
+function readDescriptions(file) {
+  const parsed = yaml.load(fs.readFileSync(file, 'utf8'));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ConfigError(`--descriptions ${file} is not a YAML map of tag -> description`);
+  }
+  return parsed;
 }
 
 /** The real runtime: config, a read-only view of the finance store, and a Jev gateway factory. */
@@ -165,7 +179,7 @@ async function run(argv, { loadRuntime = loadRealRuntime, stdout = process.stdou
     if (!apiKey) throw new ConfigError('No Jev key: system auth jev.api_key is not set, so nothing can be judged');
 
     const householdId = options.household || configService.getDefaultHouseholdId();
-    const { validTags } = store.getCategorizationConfig(householdId) || {};
+    const { validTags, tagDescriptions: configured } = store.getCategorizationConfig(householdId) || {};
     if (!validTags?.length) throw new ConfigError(`No categorization config (validTags) for household ${householdId}`);
     const period = options.period || store.listBudgetPeriods(householdId).at(-1);
     if (!period) throw new ConfigError(`No budget period with transactions for household ${householdId}`);
@@ -181,13 +195,15 @@ async function run(argv, { loadRuntime = loadRealRuntime, stdout = process.stdou
       child() { return logger; },
     };
     const judge = new TransactionCategoryJudge({ decisionGateway: createDecisionGateway({ apiKey, logger }), logger });
-    const summary = await runReplay({ transactions, validTags, judge, floor: options.floor, limit: options.limit });
+    const tagDescriptions = options.descriptions ? readDescriptions(options.descriptions) : (configured || null);
+    const summary = await runReplay({ transactions, validTags, judge, floor: options.floor, limit: options.limit, tagDescriptions });
 
     if (summary.total > 0 && summary.judged === 0) {
       printError(stderr, { error: `No transaction was judged (${summary.total} tried)`, householdId, period, judgeErrors });
       return EXIT_BACKEND;
     }
-    stdout.write(`${JSON.stringify({ householdId, period, floor: options.floor, ...summary, judgeErrors }, null, 2)}\n`);
+    const described = Object.keys(tagDescriptions || {}).filter((tag) => validTags.includes(tag)).length;
+    stdout.write(`${JSON.stringify({ householdId, period, floor: options.floor, described, ...summary, judgeErrors }, null, 2)}\n`);
     return EXIT_OK;
   } catch (error) {
     printError(stderr, { error: error.message });
