@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ContentFilterReview, ReviewError } from './ContentFilterReview.mjs';
+import { resolveEffectiveCues } from '../../../../browser/content-filter/contentFilter.js';
+import { reviewRows } from '../../../../cli/contentfilter/reviewRows.mjs';
 
 const ref = { workId: 1, tagSetId: 2 };
 const base = () => ({
@@ -298,5 +300,56 @@ describe('ContentFilterReview verdicts: review round 2', () => {
     const s = base(); delete s.refined.scenes;
     const { review } = setup({ state: s, audit: { ok: true, digest: 'D', rows: rows() } });
     await expect(review.setVerdict('9', 'scene:sc1', { verdict: 'remove', span: [310, 370] })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// Audit rows are padded by the player's own widenCue, so the re-audited span after a change is
+// not the span the change reported. These run the real resolver -> reviewRows.
+describe('ContentFilterReview: a mark survives the padding of the re-audit', () => {
+  const edl = { timebase: { clock: 'vidangel' }, cues: [{ id: 'va1', category: 'violence/graphic', type: 'skip', in: 100, out: 104, precision: 'frame', label: 'fight' }] };
+  const profile = { categories: { 'violence/graphic': { effect: 'blur' } } };
+  const sync = { scale: 1, offsetSec: 0 };
+  const rowsFor = (cueOverrides) => {
+    const override = { sync, cueOverrides };
+    return reviewRows({ cues: resolveEffectiveCues({ edl, profile, override }), refined: edl, override });
+  };
+  const start = () => {
+    const audit = { ok: true, digest: 'D', rows: rowsFor({}) };
+    const { review, state } = setup({ audit });
+    state.refined = { ...edl, certification: { level: 'machine', machine: { at: 'x' } }, scenes: [] };
+    state.override = { sync, cueOverrides: {} };
+    return { audit, review, state, row: audit.rows[0] };
+  };
+  const record = (review, row, change) => review.setVerdict('9', 'cue:va1', { verdict: 'approve', change, span: [row.in, row.out] });
+
+  it('blur -> skip (the pads differ per effect)', async () => {
+    const { audit, review, row } = start();
+    expect(row.effect).toBe('full-blur');
+    await record(review, row, { from: 'full-blur', to: 'skip' });
+    audit.rows = rowsFor({ va1: { effect: 'skip' } });
+    expect(audit.rows[0].effect).toBe('skip');
+    expect(audit.rows[0].in).not.toBe(row.in);
+    expect((await review.get({ ratingKey: '9' })).reviewed).toBe(1);
+  });
+  it('widen +0.5 s each edge (a hand nudge is padded again)', async () => {
+    const { audit, review, row } = start();
+    const to = { in: row.in - 0.5, out: row.out + 0.5 };
+    await record(review, row, { from: { in: row.in, out: row.out }, to });
+    audit.rows = rowsFor({ va1: { startMs: Math.round(to.in * 1000), endMs: Math.round(to.out * 1000) } });
+    expect(Math.abs(audit.rows[0].in - to.in)).toBeGreaterThan(0.001);
+    expect((await review.get({ ratingKey: '9' })).reviewed).toBe(1);
+  });
+  it('a row re-timed by more than the tolerance, or to another effect, reopens', async () => {
+    const { audit, review, row } = start();
+    const to = { in: row.in - 0.5, out: row.out + 0.5 };
+    await record(review, row, { from: { in: row.in, out: row.out }, to });
+    audit.rows = [{ ...row, in: to.in - 1, out: to.out }];
+    expect((await review.get({ ratingKey: '9' })).reviewed).toBe(0);
+    const b = start();
+    await record(b.review, b.row, { from: 'full-blur', to: 'skip' });
+    b.audit.rows = [{ ...b.row, effect: 'mute', in: b.row.in - 0.25 }];
+    expect((await b.review.get({ ratingKey: '9' })).reviewed).toBe(0);
+    b.audit.rows = [{ ...b.row, effect: 'skip', in: b.row.in - 5 }];
+    expect((await b.review.get({ ratingKey: '9' })).reviewed).toBe(0);
   });
 });

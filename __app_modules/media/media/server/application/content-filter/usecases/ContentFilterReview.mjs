@@ -21,15 +21,26 @@ const REDO_REASONS = new Set(['edges', 'category', 'action', 'timing', 'other'])
 const WORD_VALUES = new Set(['off', 'mute', 'bleep']);
 const sameSpan = (a, b) => Array.isArray(a) && Array.isArray(b) && Math.abs(a[0] - b[0]) <= SPAN_EPS && Math.abs(a[1] - b[1]) <= SPAN_EPS;
 /**
- * A mark holds while its row still sits where the mark was made, or where the mark's own recorded
- * change put it (an edge nudge shifts the re-audited row; change sides are local seconds, like spans).
+ * A mark holds while its row still sits where the mark was made. With a recorded `change` it also
+ * holds when the re-audited row sits where that change put it: audit spans are padded per effect
+ * by the player's widenCue (skip 400/250 ms, full-blur 150/250 ms, a hand nudge is padded again),
+ * so the row's edges differ from the change's by the pads. Tolerance: 0.5 s when the change set
+ * edges, 2 s for an effect-only change; the row's effect must equal the change's when it set one.
+ * Change sides are local seconds, like spans. A mark with no change keeps the exact rule.
  */
+const EDGE_TOL = 0.5;
+const EFFECT_TOL = 2;
 function markHolds(m, r) {
   const span = [r.in, r.out];
   if (sameSpan(m.span, span)) return true;
   const to = m.change?.to;
-  if (!to || typeof to !== 'object' || !Array.isArray(m.span)) return false;
-  return sameSpan([to.in ?? m.span[0], to.out ?? m.span[1]], span);
+  if (to == null || !Array.isArray(m.span)) return false;
+  const side = typeof to === 'object' ? to : { effect: to };
+  if (side.effect != null && side.effect !== 'profile' && r.effect != null && side.effect !== r.effect) return false;
+  const edges = side.in != null || side.out != null;
+  const tol = edges ? EDGE_TOL : EFFECT_TOL;
+  const want = [side.in ?? m.span[0], side.out ?? m.span[1]];
+  return Math.abs(want[0] - r.in) <= tol && Math.abs(want[1] - r.out) <= tol;
 }
 const ms3 = (t) => Math.round(t * 1000) / 1000;
 
