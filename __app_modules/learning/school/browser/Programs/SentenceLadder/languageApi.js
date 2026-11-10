@@ -16,6 +16,7 @@
  * statuses, durations and byte counts only.
  */
 import languageLog from "./languageLog.js";
+import { schoolDeviceHeaders } from "../../schoolDevice.js";
 
 const BASE = '/api/v1/school/sentence-ladder';
 const GRANT_HEADER = 'X-School-Study-Grant';
@@ -38,7 +39,7 @@ function clock() {
  *  with it — one `context.runId` query then returns both sides of a session. */
 function withRun(headers = {}) {
   const runId = languageLog.currentRun();
-  return runId ? { ...headers, [RUN_HEADER]: runId } : headers;
+  return schoolDeviceHeaders(runId ? { ...headers, [RUN_HEADER]: runId } : headers);
 }
 
 /** One place decides how a settled response is reported, so `recording` and

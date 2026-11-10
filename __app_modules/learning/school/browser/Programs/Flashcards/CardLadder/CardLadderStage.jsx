@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppThemeProvider } from "../../../../../../../frontend/src/lib/ui/index.js";
 import { schoolApi } from "../../../schoolApi.js";
+import { schoolDeviceHeaders } from "../../../schoolDevice.js";
 import { cardLadderLog } from "./cardLadderLog.js";
 
 /**
@@ -14,7 +15,7 @@ export default function CardLadderStage({ children }) {
     let live = true;
     (async () => {
       try {
-        const stage = await fetch('/api/v1/school/card-ladder/stage').then((r) => r.json());
+        const stage = await fetch('/api/v1/school/card-ladder/stage', { headers: schoolDeviceHeaders() }).then((r) => r.json());
         const { ok, data } = stage?.screen ? await schoolApi.screenSchoolConfig(stage.screen) : { ok: false };
         const res = ok ? data?.resolution : null;
         if (!res?.width || !res?.height) throw new Error('no resolution');

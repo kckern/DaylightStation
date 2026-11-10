@@ -116,6 +116,8 @@ export function createSchoolRouter({
   milestoneStatuses = null,
   setMilestones = null,
   recordEnrichment = null,
+  // Express middleware mounted first: human use of the Portal reports presence.
+  presenceMiddleware = null,
   logger = console,
 }) {
   // School error CLASSES arrive via the factory. A router may not import
@@ -127,6 +129,7 @@ export function createSchoolRouter({
   const { GuestForbiddenError, SessionGoneError } = schoolErrors;
   const { ValidationError, EntityNotFoundError, DomainInvariantError } = coreErrors;
   const router = express.Router();
+  if (presenceMiddleware) router.use(presenceMiddleware);
   const cookieValue = (req, name) => {
     const raw = req.get('cookie') ?? '';
     for (const part of raw.split(';')) {

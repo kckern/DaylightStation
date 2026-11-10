@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { schoolApi } from "./schoolApi.js";
+import { setSchoolDeviceId } from "./schoolDevice.js";
 
 beforeEach(() => vi.unstubAllGlobals());
 afterEach(() => vi.useRealTimers());
@@ -383,5 +384,25 @@ describe('schoolApi bank strip', () => {
     expect(url).toBe('/api/v1/school/self-service/learners/kid1/print-next');
     expect(opts.method).toBe('POST');
     expect(JSON.parse(opts.body)).toEqual({ deviceId: 'portal' });
+  });
+});
+
+describe('schoolApi device header', () => {
+  afterEach(() => setSchoolDeviceId(null));
+  const headersOf = (call) => call[1].headers;
+
+  it('carries X-Daylight-Device on a POST and a GET when a device is set', async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    setSchoolDeviceId('portal');
+    await schoolApi.banks();
+    await schoolApi.selfServiceResolve('1', 'portal');
+    expect(global.fetch.mock.calls).toHaveLength(2);
+    for (const c of global.fetch.mock.calls) expect(headersOf(c)['X-Daylight-Device']).toBe('portal');
+  });
+
+  it('sends no header without a device', async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    await schoolApi.banks();
+    expect(headersOf(global.fetch.mock.calls[0])['X-Daylight-Device']).toBeUndefined();
   });
 });

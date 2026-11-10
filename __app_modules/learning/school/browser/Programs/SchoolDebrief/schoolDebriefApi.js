@@ -1,12 +1,13 @@
 /** /api/v1/school/debrief client. Status-aware and never throws. */
 import { schoolDebriefLog } from "./schoolDebriefLog.js";
+import { schoolDeviceHeaders } from "../../schoolDevice.js";
 
 const enc = encodeURIComponent;
 export function createSchoolDebriefApi({ learnerId, grant }) {
   const BASE = `/api/v1/school/debrief/${enc(learnerId)}/day`;
   async function call(day, path, { method = 'GET', body, raw = false, contentType = null } = {}) {
     try {
-      const init = { method, credentials: 'same-origin', headers: { 'X-School-Debrief-Grant': grant } };
+      const init = { method, credentials: 'same-origin', headers: schoolDeviceHeaders({ 'X-School-Debrief-Grant': grant }) };
       if (body !== undefined) {
         if (raw) { init.body = body; if (contentType) init.headers['Content-Type'] = contentType; }
         else { init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json'; }

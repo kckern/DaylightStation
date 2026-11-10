@@ -3,6 +3,8 @@
  * must distinguish 403 (guest/assigned), 410 (session gone), and 500 (attempt
  * unrecorded — spec §8), and DaylightAPI hides status codes. Never throws.
  */
+import { schoolDeviceHeaders, getSchoolDeviceId } from "./schoolDevice.js";
+
 const BASE = '/api/v1/school';
 
 // Identical GETs already on the wire, by path. Panels mount side by side and
@@ -31,8 +33,8 @@ function structuredCloneSafe(value) {
 async function send(path, body, method, headers = {}) {
   try {
     const opts = body === undefined
-      ? { method: method || 'GET', credentials: 'same-origin', headers }
-      : { method: method || 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) };
+      ? { method: method || 'GET', credentials: 'same-origin', headers: schoolDeviceHeaders(headers) }
+      : { method: method || 'POST', credentials: 'same-origin', headers: schoolDeviceHeaders({ 'Content-Type': 'application/json', ...headers }), body: JSON.stringify(body) };
     const r = await fetch(BASE + path, opts);
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
@@ -51,7 +53,7 @@ async function reqAbsolute(path, { timeoutMs = null } = {}) {
   const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     const r = await fetch(path, {
-      method: 'GET', credentials: 'same-origin', ...(controller ? { signal: controller.signal } : {}),
+      method: 'GET', credentials: 'same-origin', ...(getSchoolDeviceId() ? { headers: schoolDeviceHeaders() } : {}), ...(controller ? { signal: controller.signal } : {}),
     });
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };

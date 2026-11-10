@@ -682,7 +682,17 @@ try {
   const { createProgressReportPdfRenderer } = await import("../rendering/reports/ProgressReportRenderer.mjs");
   const { createCertificatePdfRenderer } = await import("../rendering/reports/CertificateRenderer.mjs");
 
+  // Presence: mounted first on the school router. Null without HA.
+  const { createPresenceMiddleware } = await import("../api/presenceMiddleware.mjs");
+  const presenceMiddleware = presenceHook
+    ? createPresenceMiddleware({
+      presenceHook,
+      loadConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+      logger: rootLogger.child({ module: 'school-presence' }),
+    })
+    : null;
   v1Routers.school = createSchoolRouter(createSchoolApiServices({
+    presenceMiddleware,
     schoolErrors,
     openBankAtPanel,
     schoolService,

@@ -205,6 +205,7 @@ function schoolUrlBase() {
   return null;
 }
 import { screenIdFromUrlBase, parseSchoolPath, schoolPathFor, isPanelSurface, deviceIdFor } from "./schoolPathModel.js";
+import { setSchoolDeviceId } from "./schoolDevice.js";
 
 /**
  * Turning the diagnostics up, from outside the code.
@@ -237,6 +238,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
   const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
+  // Set synchronously (idempotent) so children's first effects already carry it.
+  useMemo(() => setSchoolDeviceId(deviceIdFor(screenId)), [screenId]);
+  useEffect(() => () => setSchoolDeviceId(null), []);
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
   // Whether the open reading shelf is ASKING for a barcode right now (see

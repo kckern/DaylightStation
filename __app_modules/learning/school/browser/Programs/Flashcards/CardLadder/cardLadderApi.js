@@ -4,6 +4,7 @@
  * the program must tell 403 from 404 from 0.
  */
 import { cardLadderLog } from "./cardLadderLog.js";
+import { schoolDeviceHeaders } from "../../../schoolDevice.js";
 
 const enc = encodeURIComponent;
 
@@ -13,7 +14,7 @@ export function createCardLadderApi({ test = false } = {}) {
   async function call(path, { method = 'GET', body, raw = false, contentType = null } = {}) {
     const startedAt = Date.now();
     try {
-      const init = { method, credentials: 'same-origin', headers: {} };
+      const init = { method, credentials: 'same-origin', headers: schoolDeviceHeaders() };
       if (body !== undefined) {
         if (raw) {
           init.body = body;
