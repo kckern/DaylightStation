@@ -242,3 +242,40 @@ describe('ContentFilterReview verdicts: review round 1', () => {
     expect(state.history).toBeUndefined();
   });
 });
+
+describe('ContentFilterReview verdicts: review round 2', () => {
+  const rows = () => [
+    { id: 'cue:va1', kind: 'words', category: 'language/x', modality: 'heard', in: 110.2, out: 110.6, effect: 'mute', unsure: [], members: ['va1'] },
+    { id: 'scene:sc1', kind: 'scenes', in: 310, out: 370, effect: 'skip', unsure: [], members: [] },
+  ];
+  const va1 = [110.2, 110.6];
+  it.each([['effect then widen', 0], ['widen then effect', 1]])('%s: undo restores both the original effect and the original edges', async (_n, order) => {
+    const warns = [];
+    const { review, state } = setup({ audit: { ok: true, digest: 'D', rows: rows() } });
+    state.override.cueOverrides = { va1: { effect: 'mute', startMs: 100100, endMs: 100700 } };
+    const eff = { from: 'mute', to: 'bleep' };
+    const edge = { from: { in: 110.1, out: 110.7 }, to: { in: 110, out: 110.8 } };
+    const steps = order === 0 ? [eff, edge] : [edge, eff];
+    for (const c of steps) await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: c, span: va1 });
+    state.override.cueOverrides.va1 = { effect: 'bleep', startMs: 100000, endMs: 100800 };
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
+    expect(state.override.cueOverrides.va1).toEqual({ effect: 'mute', startMs: 100100, endMs: 100700 });
+    void warns;
+  });
+  it('warns when an edge restore is skipped (partial edges)', async () => {
+    const warn = vi.fn();
+    const s = base();
+    const repo = { getEdl: async () => s.raw, getRefinedEdl: async () => s.refined, saveRefinedEdl: async () => {}, getOverride: async () => s.override,
+      saveOverride: async (_k, o) => { s.override = o; }, appendReviewHistory: async () => {}, getProfile: async () => ({}) };
+    const jobs = { record: async () => ({ runs: [], audit: { ok: true, digest: 'D', rows: rows() } }), isAuditing: () => false };
+    const review = new ContentFilterReview({ contentFilterRepository: repo, jobs, digestOf: async () => 'D', logger: { info() {}, warn }, clock: () => new Date('2026-11-08T00:00:00Z') });
+    await review.setVerdict('9', 'cue:va1', { verdict: 'approve', change: { from: { in: 110.1 }, to: { in: 110, out: 110.8 } }, span: va1 });
+    await review.clearVerdict({ ratingKey: '9', rowId: 'cue:va1' });
+    expect(warn).toHaveBeenCalledWith('content-filter.review.undo.edges-skipped', expect.objectContaining({ rowId: 'cue:va1' }));
+  });
+  it('a scene target on a refined EDL with no scenes array is a 404, not a TypeError', async () => {
+    const s = base(); delete s.refined.scenes;
+    const { review } = setup({ state: s, audit: { ok: true, digest: 'D', rows: rows() } });
+    await expect(review.setVerdict('9', 'scene:sc1', { verdict: 'remove', span: [310, 370] })).rejects.toMatchObject({ status: 404 });
+  });
+});

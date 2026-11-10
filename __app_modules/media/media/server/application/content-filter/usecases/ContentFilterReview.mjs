@@ -128,7 +128,7 @@ export class ContentFilterReview {
    * Undo what a verdict applied: re-enable cues it disabled; restore the effect and/or edges a
    * recorded change left behind (edges only for a single-target row — a subject nudges per cue).
    */
-  static #revert(override, mark, { refined = null } = {}) {
+  static #revert(override, mark, { refined = null, warn = () => {} } = {}) {
     let out = override;
     const touch = (key, id, fn) => {
       const all = { ...(out[key] || {}) }; const next = { ...(all[id] || {}) };
@@ -143,11 +143,12 @@ export class ContentFilterReview {
       for (const id of ids) {
         touch(key, id, (n) => {
           if ('effect' in f) ContentFilterReview.#restoreEffect(n, f.effect, key);
-          if (ids.length === 1 && ('in' in f || 'out' in f)) {
+          if ('in' in f || 'out' in f) {
+            if (ids.length !== 1) { warn('content-filter.review.undo.edges-skipped', { id, reason: 'multi-member row' }); return; }
             if (f.in == null && f.out == null) { delete n.startMs; delete n.endMs; return; }
             const item = (key === 'cueOverrides' ? refined?.cues : refined?.scenes)?.find((x) => x.id === id);
             if (!item) return;
-            try { Object.assign(n, ContentFilterReview.#toVa({ in: f.in, out: f.out }, item, out.sync)); } catch { /* prior edges unmappable: leave the nudge */ }
+            try { Object.assign(n, ContentFilterReview.#toVa({ in: f.in, out: f.out }, item, out.sync)); } catch (e) { warn('content-filter.review.undo.edges-skipped', { id, reason: e.message }); }
           }
         });
       }
@@ -176,7 +177,7 @@ export class ContentFilterReview {
       const target = ContentFilterReview.#targets(row, rowId);
       const hasChange = !!change && typeof change === 'object';
       if (verdict === 'remove' || hasChange) {
-        const known = new Set((target.key === 'sceneOverrides' ? refined.scenes : refined.cues || []).map((x) => String(x.id)));
+        const known = new Set(((target.key === 'sceneOverrides' ? refined.scenes : refined.cues) || []).map((x) => String(x.id)));
         const bad = target.ids.find((id) => !known.has(id));
         if (bad) throw new ReviewError(`Unknown ${target.key === 'sceneOverrides' ? 'scene' : 'cue'}: ${bad}`, 404);
       }
@@ -184,7 +185,11 @@ export class ContentFilterReview {
       const mark = { by: String(by || 'admin'), at: this.#clock().toISOString(), span: [ms3(row.in), ms3(row.out)], verdict };
       if (reason) mark.reason = reason;
       if (hasChange) {
-        mark.change = { from: prior?.change ? prior.change.from : (change.from ?? null), to: change.to ?? null };
+        const S = ContentFilterReview.#side;
+        // Per field: the earliest `from` (what to restore) and the latest `to`.
+        mark.change = prior?.change
+          ? { from: { ...S(change.from), ...S(prior.change.from) }, to: { ...S(prior.change.to), ...S(change.to) } }
+          : { from: change.from ?? null, to: change.to ?? null };
         mark.targets = target;
       } else if (prior?.change) { mark.change = prior.change; mark.targets = prior.targets; }
       let next = override;
@@ -239,7 +244,7 @@ export class ContentFilterReview {
       let next = { ...override, review };
       if (mark) {
         const refined = await this.#film(ratingKey).then((f) => f.refined, () => null);
-        next = ContentFilterReview.#revert(next, mark, { refined });
+        next = ContentFilterReview.#revert(next, mark, { refined, warn: (e, d) => this.#logger.warn?.(e, { ratingKey, rowId, ...d }) });
       }
       await this.#repo.saveOverride(ratingKey, next);
       if (mark) {
