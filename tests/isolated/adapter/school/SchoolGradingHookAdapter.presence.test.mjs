@@ -94,4 +94,45 @@ describe('hook adapter cooldown + presence variables', () => {
     release({ ok: true });
     await third;
   });
+
+  it('cooldown skip uses the rate-limited logger at maxPerMinute 2 when available, debug otherwise', async () => {
+    const sampled = [];
+    const debug = [];
+    const mk = (logger) => new SchoolGradingHookAdapter({
+      gateway: { callService: async () => ({ ok: true }) }, logger, configKey: 'presence_hook', now: () => 1_000_000,
+      loadSchoolConfig: () => ({ presence_hook: { script: 'script.school_presence', cooldownMinutes: 5 } }),
+    });
+    const a = mk({ sampled: (e, d, o) => sampled.push({ e, d, o }), debug: (e, d) => debug.push({ e, d }) });
+    await a.fire(EV);
+    await a.fire(EV);
+    expect(sampled).toHaveLength(1);
+    expect(sampled[0].e).toBe('school.presence_hook.skipped');
+    expect(sampled[0].d).toMatchObject({ reason: 'cooldown' });
+    expect(sampled[0].o).toEqual({ maxPerMinute: 2, aggregate: true });
+    expect(debug).toHaveLength(0);
+
+    const b = mk({ debug: (e, d) => debug.push({ e, d }) });
+    await b.fire(EV);
+    await b.fire(EV);
+    expect(debug).toHaveLength(1);
+    expect(debug[0].d).toMatchObject({ reason: 'cooldown' });
+  });
+
+  it('two fires carrying learner_id dedupe even while resolveStudent is slow', async () => {
+    let releaseLookup;
+    const calls = [];
+    const adapter = new SchoolGradingHookAdapter({
+      gateway: { callService: async (d, sv, data) => { calls.push(data); return { ok: true }; } },
+      logger: {}, configKey: 'presence_hook', now: () => 1_000_000,
+      resolveStudent: () => new Promise((res) => { releaseLookup = res; }),
+      loadSchoolConfig: () => ({ presence_hook: { script: 'script.school_presence', cooldownMinutes: 5 } }),
+    });
+    const first = adapter.fire({ ...EV, learnerId: 'kid1' });
+    const second = await adapter.fire({ ...EV, learnerId: 'kid1' });
+    expect(second).toEqual({ ok: true, skipped: true, reason: 'cooldown' });
+    releaseLookup('Kid One');
+    await first;
+    expect(calls).toHaveLength(1);
+    expect(calls[0].student).toBe('Kid One');
+  });
 });

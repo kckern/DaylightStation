@@ -145,9 +145,15 @@ export class SchoolGradingHookAdapter {
       const cooldownMs = Math.max(0, Number(block?.cooldownMinutes) || 0) * 60000;
       if (cooldownMs > 0 && this.#cooldownUntil > now) {
         this.metrics.skippedCooldown++;
-        this.#logger.debug?.(`${this.#eventPrefix}.skipped`, {
-          reason: 'cooldown', remainingMs: this.#cooldownUntil - now,
-        });
+        // Rate-limited at info so operators can see it in the log store
+        // (debug never ships) without a ~1/s card-ladder flood. Loggers
+        // without `sampled` fall back to debug.
+        const skipData = { reason: 'cooldown', remainingMs: this.#cooldownUntil - now };
+        if (typeof this.#logger.sampled === 'function') {
+          this.#logger.sampled(`${this.#eventPrefix}.skipped`, skipData, { maxPerMinute: 2, aggregate: true });
+        } else {
+          this.#logger.debug?.(`${this.#eventPrefix}.skipped`, skipData);
+        }
         return { ok: true, skipped: true, reason: 'cooldown' };
       }
 
@@ -155,16 +161,17 @@ export class SchoolGradingHookAdapter {
       // A bare `school_graded` is used as the service name as-is.
       const service = script.startsWith('script.') ? script.slice('script.'.length) : script;
       const variables = toVariables(outcome);
-      if (this.#resolveStudent && variables.learner_id && !outcome?.student) {
-        try { variables.student = (await this.#resolveStudent(variables.learner_id)) ?? variables.learner_id; } catch { /* identifier remains useful */ }
-      }
-
-      // Arm the window BEFORE the await so concurrent fires (card-ladder POSTs
-      // arrive ~1/s) are deduplicated; restored below if the call fails.
+      // Arm the window BEFORE any await (the student lookup included) so
+      // concurrent fires (card-ladder POSTs arrive ~1/s) are deduplicated;
+      // restored below if the call fails.
       // The window is per adapter instance, i.e. household-wide: one child's
       // tap covers a sibling's within the window.
       const priorCooldownUntil = this.#cooldownUntil;
       if (cooldownMs > 0) this.#cooldownUntil = now + cooldownMs;
+
+      if (this.#resolveStudent && variables.learner_id && !outcome?.student) {
+        try { variables.student = (await this.#resolveStudent(variables.learner_id)) ?? variables.learner_id; } catch { /* identifier remains useful */ }
+      }
 
       try {
         const result = await this.#gateway.callService('script', service, variables);

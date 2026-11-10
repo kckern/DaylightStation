@@ -72,7 +72,7 @@ piano_lesson_hook:
 presence_hook:
   script: script.school_presence   # absent = off
   cooldownMinutes: 5               # one HA call per window, shared by all sources; 0 = every event
-  devices: [portal]                # request device ids that mean "a person is in the study"
+  devices: [portal]                # SCREEN ids (/screen/<id>) that mean "a person is in the study"; not hardware device ids
 ```
 
 **Presence of `script` is the entire enable switch.** There is no separate
@@ -212,11 +212,13 @@ backward through the OMR pipeline trace in
 
 | Layer | Path |
 |---|---|
-| Adapter (fires the HA service call, owns the circuit breaker) | `__backend/src/1_adapters/school/SchoolGradingHookAdapter.mjs` |
-| Wiring — `grading_hook` instance | `__backend/src/app.mjs` (search `gradingHook = new SchoolGradingHookAdapter`) |
-| Wiring — `piano_lesson_hook` instance | `__backend/src/app.mjs` (search `pianoLessonHook = new SchoolGradingHookAdapter`) |
-| Caller (OMR scan outcome → hook) | `__backend/src/5_composition/modules/schoolPrintScanConsumer.mjs` |
-| Caller (piano lesson completion → hook) | `__backend/src/3_applications/school/PianoLessonCeremonyBridge.mjs` |
+| Adapter (fires the HA service call, owns the circuit breaker, cooldown) | `__app_modules/learning/school/server/adapters/SchoolGradingHookAdapter.mjs` |
+| Wiring — the three hook instances (`grading_hook`, `piano_lesson_hook`, `presence_hook`) | `__app_modules/learning/school/server/composition/lifecycle-runtime.mjs` |
+| Caller (OMR scan outcome → hook; also the `omr` presence source) | `__app_modules/learning/school/server/application/workflows/SchoolPrintScanConsumer.mjs` |
+| Caller (piano lesson completion → hook) | `__app_modules/learning/school/server/application/PianoLessonCeremonyBridge.mjs` |
+| Presence source: `card` (print-agenda taps) | `__app_modules/learning/school/server/application/workflows/LearnerCardActions.mjs` |
+| Presence source: `portal` (Express middleware on the school router) | `__app_modules/learning/school/server/api/presenceMiddleware.mjs` |
+| Portal device id (set once, sent as `X-Daylight-Device`) | `__app_modules/learning/school/browser/schoolDevice.js` |
 | Generic HA CLI (state/list/resolve/toggle/call-service) | `cli/commands/ha.mjs`, invoked as `node cli/dscli.mjs ha ...` |
 | Config | `data/household/school/school.yml` → `grading_hook:` / `piano_lesson_hook:` |
 | Phone copy (title, body, tag, channel) | `__backend/src/2_domains/school/notifications/schoolPush.mjs`, composed by the two callers above |
@@ -241,7 +243,10 @@ never on the print/grade/request path, same circuit breaker.
   event-bus topic (e.g. `omr`, `omr-study`), not the reader id.
 - `portal`: Express middleware on the school router. Any POST whose
   `X-Daylight-Device` header (or body `deviceId`; a `fleet:` prefix is
-  stripped) is listed in `devices`. GETs never fire. The browser sets the id
+  stripped) is listed in `devices`. That id is the SCREEN id
+  (`deviceIdFor` returns it; the Portal is `/screen/<id>`), not a hardware
+  device id. `devices` is read from the boot-cached config snapshot: restart
+  (or reload household config) after editing `school.yml`. GETs never fire. The browser sets the id
   once (SchoolShell, `browser/schoolDevice.js`) and every school API client
   sends the header.
 
@@ -261,7 +266,7 @@ in memory, so a restart clears it.
 | Event | Meaning |
 |---|---|
 | `school.presence_hook.fired` | HA call succeeded |
-| `school.presence_hook.skipped` (`not_configured` / `backoff` / `cooldown`) | No `script` set / breaker open / inside the window |
+| `school.presence_hook.skipped` (`not_configured` / `backoff` / `cooldown`) | No `script` set / breaker open / inside the window. `cooldown` skips are rate-limited (2/min + aggregate); `not_configured` is debug-only |
 | `school.presence_hook.failed`, `.circuit_open`, `.reset` | As §4 |
 
 **"The lights didn't come on" checklist:**
@@ -275,7 +280,10 @@ curl -s {env.log_store_url}/select/logsql/query \
    `school.yml`, and has the container restarted since it was added
    (boot-cached)? For `portal`, does the request carry the device header?
    A Portal running a stale bundle sends no header until it is reloaded.
-2. `skipped` with `cooldown`: a recent event already fired; expected.
+2. `skipped` with `cooldown`: a recent event already fired; expected. This
+   line is rate-limited (at most 2 a minute, then an aggregate line), so it
+   may be absent even when skips happened. The other tell is a `.fired`
+   within the last `cooldownMinutes`.
 3. `skipped` with `backoff`, or `failed` / `circuit_open`: HA is flaky; see §4.
 4. `fired` but the lights stayed off: the fault is inside the HA script;
    test it with `node cli/dscli.mjs ha state script.school_presence`.

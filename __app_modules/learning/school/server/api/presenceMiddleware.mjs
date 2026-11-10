@@ -7,8 +7,9 @@
  * alter a response.
  *
  * Fires only for a POST (GETs are board refreshes, polls, posters), from a
- * device named in `presence_hook.devices` (read per request, so edits to
- * school.yml apply without a restart), and not for a grown-up's test sitting
+ * device named in `presence_hook.devices` (read on each request from the
+ * config snapshot, which is boot-cached: restart or reload after editing
+ * school.yml), and not for a grown-up's test sitting
  * (`mode: 'test'`).
  */
 export const DEVICE_HEADER = 'x-daylight-device';
