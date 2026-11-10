@@ -30,7 +30,7 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
   const arrived = useRef({ id: null, at: Date.now(), replays: 0 });
   const via = useRef('click');
   const latest = useRef({});
-  latest.current = { rows, selectedId: selected?.id ?? null, scoped: null };
+  latest.current = { rk, rows, selectedId: selected?.id ?? null, scoped: null };
 
   const scoped = useMemo(() => scopeRows(rows, scope), [rows, scope]);
   latest.current.scoped = scoped;
@@ -203,10 +203,13 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
       await DaylightAPI(`${API}/${encodeURIComponent(rk)}/settings`, { settings: { bleepLevel: value } }, 'PUT');
       logger.info('content_filter.review.bleep_level', { rk, level: value });
       await previewStore.refresh();
+      // A flush from a film we have left saved the old film's setting; the page now shows another.
+      if (latest.current.rk !== rk) return;
       reload();
       const r = latest.current.rows?.find((x) => x.id === latest.current.selectedId);
       if (r) previewStore.jumpToCue({ in: r.in });
     } catch (err) {
+      if (latest.current.rk !== rk) return;
       logger.warn('content_filter.review.bleep_level_failed', { rk, level: value, error: err.message });
       setMessage(err.message || 'The bleep level did not save.');
     } finally {
@@ -224,7 +227,12 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
   };
   latest.current.savedLevel = savedLevel;
   // Leaving the film must not drop the last keypress.
-  useEffect(() => () => { if (levelRef.current.value != null) saveLevel(); }, [saveLevel]);
+  useEffect(() => () => {
+    const st = levelRef.current;
+    if (st.value == null) return;
+    saveLevel(); // reads the value synchronously, so the pending level can be released at once
+    st.value = null; setPendingLevel(null);
+  }, [saveLevel]);
 
   const top = undoStack[undoStack.length - 1];
   const canUndo = Boolean(top && rows?.some((r) => r.id === top.rowId));

@@ -29,3 +29,12 @@ describe('filterDigest and bleep level', () => {
     expect(filterDigest({ refined, override: o(null) })).not.toBe(filterDigest({ refined, override: { profilePatch: { languageWords: { x: 'bleep' } } } }));
   });
 });
+
+describe('filterDigest empty patch normalisation', () => {
+  it('no override === only a bleepLevel patch === after clearing it', () => {
+    const refined = { cues: [{ id: 'a' }] };
+    const none = filterDigest({ refined, override: {} });
+    expect(filterDigest({ refined, override: { profilePatch: { bleepLevel: 0.4 } } })).toBe(none);
+    expect(filterDigest({ refined, override: { profilePatch: {} } })).toBe(none);
+  });
+});
