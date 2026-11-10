@@ -1,60 +1,78 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
-import GemBoardOverlay, { GemBoardGrid, GemBoardPanels } from './GemBoard.jsx';
+import GemBoardOverlay, { GemBoardGrid, boardRowIds } from './GemBoard.jsx';
 
+const part = (ruleId, label, cadence, extra = {}) => ({ ruleId, label, cadence, state: 'none', week: 0, lifetime: 0, progress: null, left: null, reach: null, days: [], items: [], score: null, note: null, ...extra });
 const BOARD = {
   mode: 'live',
   week: '2026-11-02',
+  today: '2026-11-04',
+  windows: { school: { from: '2026-11-02', to: '2026-11-08' } },
   learners: [{ learnerId: 'a', name: 'Ann' }, { learnerId: 'b', name: 'Ben' }],
+  groups: [{ id: 'move', label: 'Move' }, { id: 'school', label: 'School' }],
   categories: [
-    { id: 'green-week', label: 'Green week', cadence: 'weekly', color: '#d6304a' },
-    { id: 'exercise', label: 'Exercise', cadence: 'weekly', color: '#8e5bd0' },
-    { id: 'ring-contest', label: 'Most rings', cadence: 'contest', color: '#1e88e5' },
+    { id: 'green-week', label: 'Green week', cadence: 'weekly', group: 'school', color: '#d6304a', parts: [{ ruleId: 'green-week', label: 'Green week', cadence: 'weekly' }] },
+    { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', color: '#8e5bd0', parts: [{ ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly' }] },
+    { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#1e88e5', parts: [{ ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest' }] },
+    { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', color: '#f2c94c', parts: [{ ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' }, { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' }] },
   ],
   cells: {
-    'green-week': { a: { state: 'unknown', week: 0 }, b: { state: 'none', week: 0 } },
-    exercise: { a: { state: 'earned', week: 2 }, b: { state: 'pending', week: 0, progress: { have: 3, need: 5 } } },
-    'ring-contest': { a: { state: 'leading', week: 0 }, b: { state: 'none', week: 0 } },
+    'green-week': { a: { state: 'unknown', week: 0, streak: null, parts: [] }, b: { state: 'none', week: 0, streak: null, parts: [] } },
+    exercise: {
+      a: { state: 'earned', week: 2, streak: null, parts: [part('moved-days', 'Moved 5 days', 'weekly', { state: 'earned', week: 2 })] },
+      b: { state: 'pending', week: 0, streak: { have: 3, need: 5, left: 3, reach: 'on-track', ruleId: 'moved-days' }, parts: [part('moved-days', 'Moved 5 days', 'weekly', { state: 'pending', progress: { have: 3, need: 5 }, left: 3, reach: 'on-track', days: [{ day: '2026-11-02', state: 'done' }, { day: '2026-11-03', state: 'done' }, { day: '2026-11-04', state: 'done' }] })] },
+    },
+    'ring-contests': { a: { state: 'leading', week: 0, streak: null, parts: [part('ring-contest', 'Most rings this week', 'contest', { state: 'leading', score: { mine: 320, best: 320 } })] }, b: { state: 'none', week: 0, streak: null, parts: [] } },
+    reading: {
+      a: { state: 'earned', week: 1, streak: { have: 1, need: 4, left: 4, reach: 'on-track', ruleId: 'reader-week' }, parts: [
+        part('reader-week', 'Story time 4 days', 'weekly', { state: 'pending', progress: { have: 1, need: 4 }, left: 4, reach: 'on-track', days: [{ day: '2026-11-03', state: 'done' }] }),
+        part('book-finished', 'Book finished', 'milestone', { state: 'earned', week: 1, lifetime: 4, items: [{ day: '2026-11-03', label: 'Frog and Toad' }] }),
+      ] },
+      b: { state: 'none', week: 0, streak: null, parts: [] },
+    },
   },
-  totals: { a: { week: 2, lifetime: 9 }, b: { week: 0, lifetime: 4 } },
+  totals: { a: { week: 3, lifetime: 9 }, b: { week: 0, lifetime: 4 } },
 };
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('GemBoardGrid', () => {
-  it('columns in roster order, rows grouped by cadence, no failure marks', () => {
+  it('one table: roster columns, rows under their section in section order, no numerals at a glance', () => {
     const { container } = render(<GemBoardGrid board={BOARD} focusLearnerId="b" />);
+    expect(container.querySelectorAll('.gem-board__grid')).toHaveLength(1);
     expect([...container.querySelectorAll('.gem-board__name')].map((n) => n.textContent)).toEqual(['Ann', 'Ben']);
-    expect([...container.querySelectorAll('.gem-board__group-label')].map((n) => n.textContent)).toEqual(['This week', 'Contests']);
-    const states = [...container.querySelectorAll('.gem-board__cell')].map((c) => c.dataset.state);
-    expect(states).toEqual(['unknown', 'none', 'earned', 'pending', 'leading', 'none']);
-    // Not earned is a blank cell, not a cross.
-    expect(container.querySelector('.gem-board__cell.is-none').textContent).toBe('');
-    expect(container.querySelector('.gem-board__cell.is-earned').textContent).toBe('×2');
-    expect(container.querySelector('.gem-board__cell.is-pending').textContent).toBe('3/5');
-    expect(screen.getByLabelText('Ben, Exercise: still in reach, 3 of 5')).toBeTruthy();
-    expect(screen.getByLabelText('Ann: 2 this week, 9 in all')).toBeTruthy();
+    expect([...container.querySelectorAll('.gem-board__group-label')].map((n) => n.textContent)).toEqual(['Move', 'School']);
+    expect([...container.querySelectorAll('.gem-board__row-label')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Ring contests', 'Green week', 'Reading', 'Gems']);
+    const looks = [...container.querySelectorAll('.gem-board__cell')].map((c) => c.dataset.look);
+    expect(looks).toEqual(['lit', 'streak', 'holding', 'none', 'unknown', 'none', 'lit', 'none']);
+    // The row label carries no gem; an empty cell is blank; fractions are gone.
+    expect(container.querySelector('.gem-board__row-label .gem-icon')).toBeNull();
+    expect(container.querySelector('.gem-board__cell[data-look="none"]').textContent).toBe('');
+    expect(container.textContent).not.toMatch(/\d\/\d/);
+    expect(screen.getByLabelText('Ben, Moved 5 days: 3 of 5 days, on track')).toBeTruthy();
+    expect(screen.getByLabelText('Ann, Reading: earned, and 1 of 4 days, on track')).toBeTruthy();
+    expect(screen.getByLabelText('Ann: 3 this week, 9 in all')).toBeTruthy();
     expect(container.querySelectorAll('.gem-board__head.is-focus')).toHaveLength(1);
   });
-});
 
-describe('GemBoardPanels', () => {
-  it('one grid without milestones; two once milestones exist, the milestone side with tallies and no totals', () => {
-    const one = render(<GemBoardPanels board={BOARD} />);
-    expect(one.container.querySelectorAll('.gem-board__grid')).toHaveLength(1);
+  it('a cell with something to show is a button that opens its detail; an empty one is not', () => {
+    const onOpen = vi.fn();
+    const { container } = render(<GemBoardGrid board={BOARD} onOpen={onOpen} />);
+    fireEvent.click(screen.getByLabelText('Ben, Moved 5 days: 3 of 5 days, on track'));
+    expect(onOpen).toHaveBeenCalledWith('exercise', 'b');
+    expect(container.querySelector('.gem-board__cell[data-look="none"] button')).toBeNull();
+  });
+
+  it('marks the cursor cell, lists row ids in display order, and says so when there is nothing to show', () => {
+    const { container } = render(<GemBoardGrid board={BOARD} focusLearnerId="a" cursorRowId="reading" />);
+    const cursors = container.querySelectorAll('.gem-board__cell.is-cursor');
+    expect(cursors).toHaveLength(1);
+    expect(cursors[0].querySelector('[aria-label]').getAttribute('aria-label')).toBe('Ann, Reading: earned, and 1 of 4 days, on track');
+    expect(boardRowIds(BOARD)).toEqual(['exercise', 'ring-contests', 'green-week', 'reading']);
+    expect(boardRowIds(null)).toEqual([]);
     cleanup();
-    const withMilestones = {
-      ...BOARD,
-      categories: [...BOARD.categories, { id: 'glider', label: 'Skyline Glider', cadence: 'milestone', color: '#4fc3f7' }],
-      cells: { ...BOARD.cells, glider: { a: { state: 'earned', week: 1, lifetime: 6 }, b: { state: 'none', week: 0, lifetime: 2 } } },
-    };
-    const { container } = render(<GemBoardPanels board={withMilestones} />);
-    const grids = container.querySelectorAll('.gem-board__grid');
-    expect(grids).toHaveLength(2);
-    expect([...grids[1].querySelectorAll('.gem-board__group-label')].map((n) => n.textContent)).toEqual(['Milestones']);
-    expect([...grids[1].querySelectorAll('.gem-board__tally')].map((n) => n.textContent)).toEqual(['6', '2']);
-    expect(grids[0].querySelector('.gem-board__row--totals')).toBeTruthy();
-    expect(grids[1].querySelector('.gem-board__row--totals')).toBeNull();
+    render(<GemBoardGrid board={{ ...BOARD, groups: [] }} />);
+    expect(screen.getByText('No gems to show yet.')).toBeTruthy();
   });
 });
 
@@ -67,6 +85,8 @@ describe('GemBoardOverlay', () => {
     render(<GemBoardOverlay open surface="fitness" load={load} onClose={onClose} />);
     await flush();
     expect(load).toHaveBeenLastCalledWith(null);
+    expect(document.querySelectorAll('.gem-board__grid')).toHaveLength(1);
+    expect([...document.querySelectorAll('.gem-board__group-label')].map((n) => n.textContent)).toEqual(['Move', 'School']);
     fireEvent.click(screen.getByText('Last week'));
     await flush();
     expect(load).toHaveBeenLastCalledWith('2026-10-26');

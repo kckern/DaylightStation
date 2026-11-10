@@ -4,10 +4,12 @@
  * chart and the school agenda. Design:
  * ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md §5.
  *
- * Columns are the children in roster order — never ranked. Rows are gem
- * categories under three quiet headings (this week, contests, milestones).
- * No failure marks: a gem not earned is a blank cell, a gem still in reach
- * is a faint gem with its progress, an unreadable source a muted "?".
+ * Columns are the children in roster order — never ranked. One table: rows
+ * are gem categories under the sections the response names in `groups`
+ * (Move, Games, School). A cell is one glyph (GemGlyph.jsx) and carries no
+ * numerals but a ×n badge. No failure marks: a gem not earned is a blank
+ * cell, a gem still in reach is a faint gem inside a ring of day segments,
+ * an unreadable source a muted "?".
  *
  * Input: tap, Escape (closes), ←/→ (move the highlighted column), Enter
  * (toggle this week / last week). A surface with a gamepad hands its button
@@ -17,17 +19,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
+import GemGlyph, { glyphLook, glyphWords } from './GemGlyph.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import './GemBoard.scss';
 
 let _logger;
 const logger = () => (_logger ||= getLogger().child({ component: 'gem-board' }));
-
-const GROUPS = [
-  { cadence: 'weekly', label: 'This week' },
-  { cadence: 'contest', label: 'Contests' },
-  { cadence: 'milestone', label: 'Milestones' },
-];
 
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
@@ -51,57 +48,44 @@ function Avatar({ id, name }) {
   return <img className="gem-board__avatar" src={`/api/v1/static/img/users/${id}`} alt="" onError={() => setFailed(true)} />;
 }
 
-const CELL_LABEL = {
-  won: 'won', earned: 'earned', leading: 'leading', pending: 'still in reach', unknown: 'can’t tell yet', none: 'not this week', disabled: 'off',
-};
-
 /** One child's cell in one gem row. Exported for tests. */
-export function GemCell({ cell, color, name, rowLabel, cadence = 'weekly' }) {
-  const state = cell?.state ?? 'none';
-  const label = `${name}, ${rowLabel}: ${CELL_LABEL[state] ?? state}${cell?.progress ? `, ${cell.progress.have} of ${cell.progress.need}` : ''}`;
-  let body = null;
-  if (state === 'won' || state === 'earned') {
-    body = (
-      <>
-        <GemIcon className="gem-board__gem" color={color} size="1.9em" />
-        {cell.week > 1 && <span className="gem-board__times">×{cell.week}</span>}
-      </>
-    );
-  } else if (state === 'leading') {
-    body = <GemIcon className="gem-board__gem is-leading" color={color} size="1.9em" />;
-  } else if (state === 'pending') {
-    body = (
-      <>
-        <GemIcon className="gem-board__gem is-pending" color={color} size="1.5em" />
-        {cell.progress && <span className="gem-board__progress">{cell.progress.have}/{cell.progress.need}</span>}
-      </>
-    );
-  } else if (state === 'unknown') {
-    body = <span className="gem-board__muted">?</span>;
-  } else if (state === 'disabled') {
-    body = <span className="gem-board__muted">–</span>;
-  }
-  // A milestone row keeps its tally: how many of these the child has ever earned.
-  const tally = cadence === 'milestone' && cell?.lifetime > 0
-    ? <span className="gem-board__tally" aria-hidden="true">{cell.lifetime}</span>
-    : null;
-  return <div className={`gem-board__cell is-${state}`} role="cell" aria-label={label} data-state={state}>{body}{tally}</div>;
+export function GemCell({ cell, color, name, rowLabel, onOpen = null, cursor = false }) {
+  const look = glyphLook(cell);
+  const label = `${name}, ${rowLabel}: ${glyphWords(cell)}`;
+  const glyph = <GemGlyph cell={cell} color={color} />;
+  const openable = onOpen && (cell?.parts?.length ?? 0) > 0 && look !== 'none';
+  return (
+    <div className={`gem-board__cell${cursor ? ' is-cursor' : ''}`} role="cell" data-look={look} data-state={cell?.state ?? 'none'}>
+      {openable
+        ? <button type="button" className="gem-board__open" aria-label={label} onClick={onOpen}>{glyph}</button>
+        : <span className="gem-board__still" role="img" aria-label={label}>{glyph}</span>}
+    </div>
+  );
 }
+
+/** The board's sections in display order, each with its rows; empty sections dropped. */
+const boardSections = (board) => (board?.groups ?? [])
+  .map((g) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.group === g.id) }))
+  .filter((g) => g.rows.length);
+
+/** Row ids top to bottom, as drawn (for the overlay's up / down keys). */
+export const boardRowIds = (board) => boardSections(board).flatMap((g) => g.rows.map((c) => c.id));
 
 /**
  * The board itself, from a `/earnings/gems` response. Pure display: no fetch.
- * @param {{board: object, focusLearnerId?: string|null}} props
+ * @param {object} props
+ * @param {object} props.board
+ * @param {string|null} [props.focusLearnerId] - the highlighted column
+ * @param {string|null} [props.cursorRowId] - with the focus column, the one cell under the cursor
+ * @param {((rowId: string, learnerId: string) => void)|null} [props.onOpen] - makes cells with detail into buttons
  */
-export function GemBoardGrid({ board, focusLearnerId = null, cadences = null, totals = true }) {
+export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null }) {
   const learners = board?.learners ?? [];
-  const groups = useMemo(() => GROUPS
-    .filter((g) => !cadences || cadences.includes(g.cadence))
-    .map((g) => ({ ...g, rows: (board?.categories ?? []).filter((c) => c.cadence === g.cadence) }))
-    .filter((g) => g.rows.length), [board, cadences]);
+  const sections = useMemo(() => boardSections(board), [board]);
   const columns = `minmax(9rem, 1.7fr) repeat(${Math.max(learners.length, 1)}, minmax(0, 1fr))`;
   const focusClass = (id) => (id === focusLearnerId ? ' is-focus' : '');
 
-  if (!learners.length || !groups.length) {
+  if (!learners.length || !sections.length) {
     return <div className="gem-board__empty">No gems to show yet.</div>;
   }
   return (
@@ -113,25 +97,29 @@ export function GemBoardGrid({ board, focusLearnerId = null, cadences = null, to
           <span className="gem-board__name">{l.name}</span>
         </div>
       ))}
-      {groups.map((group) => (
-        <div key={group.cadence} className="gem-board__group" role="rowgroup">
+      {sections.map((group) => (
+        <div key={group.id} className="gem-board__group" role="rowgroup">
           <div className="gem-board__group-label" role="row"><span role="rowheader">{group.label}</span></div>
           {group.rows.map((row) => (
             <div key={row.id} className="gem-board__row" role="row">
-              <div className="gem-board__row-label" role="rowheader">
-                <GemIcon color={row.color} size="1.1em" />
-                <span>{row.label}</span>
-              </div>
+              <div className="gem-board__row-label" role="rowheader"><span>{row.label}</span></div>
               {learners.map((l) => (
                 <div key={l.learnerId} className={`gem-board__col${focusClass(l.learnerId)}`}>
-                  <GemCell cell={board.cells?.[row.id]?.[l.learnerId]} color={row.color} name={l.name} rowLabel={row.label} cadence={row.cadence} />
+                  <GemCell
+                    cell={board.cells?.[row.id]?.[l.learnerId]}
+                    color={row.color}
+                    name={l.name}
+                    rowLabel={row.label}
+                    onOpen={onOpen ? () => onOpen(row.id, l.learnerId) : null}
+                    cursor={row.id === cursorRowId && l.learnerId === focusLearnerId}
+                  />
                 </div>
               ))}
             </div>
           ))}
         </div>
       ))}
-      {totals && <div className="gem-board__row gem-board__row--totals" role="row">
+      <div className="gem-board__row gem-board__row--totals" role="row">
         <div className="gem-board__row-label" role="rowheader"><span>Gems</span></div>
         {learners.map((l) => {
           const t = board.totals?.[l.learnerId] ?? { week: 0, lifetime: 0 };
@@ -144,27 +132,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cadences = null, to
             </div>
           );
         })}
-      </div>}
-    </div>
-  );
-}
-
-const WEEK_CADENCES = ['weekly', 'contest'];
-const MILESTONE_CADENCES = ['milestone'];
-
-/**
- * The whole board: one grid, or — once milestones exist — two side by side
- * (this week + contests with the totals; milestones with their tallies), so
- * every row fits the Portal's 800 px without scrolling.
- */
-export function GemBoardPanels({ board, focusLearnerId = null }) {
-  const split = (board?.categories ?? []).some((c) => c.cadence === 'milestone')
-    && (board?.categories ?? []).some((c) => c.cadence !== 'milestone');
-  if (!split) return <GemBoardGrid board={board} focusLearnerId={focusLearnerId} />;
-  return (
-    <div className="gem-board__panels">
-      <GemBoardGrid board={board} focusLearnerId={focusLearnerId} cadences={WEEK_CADENCES} />
-      <GemBoardGrid board={board} focusLearnerId={focusLearnerId} cadences={MILESTONE_CADENCES} totals={false} />
+      </div>
     </div>
   );
 }
@@ -289,7 +257,7 @@ export default function GemBoardOverlay({
         {board && board.mode === 'off' && <div className="gem-board__empty">Gems are switched off.</div>}
         {board && board.mode !== 'off' && (
           <div className={`gem-board__body${loading ? ' is-loading' : ''}`}>
-            <GemBoardPanels board={board} focusLearnerId={focus} />
+            <GemBoardGrid board={board} focusLearnerId={focus} />
           </div>
         )}
       </div>
