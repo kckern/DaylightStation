@@ -3,4 +3,4 @@ export {
 } from "./ruleset.mjs";
 export { evaluateEarnings, earningRef, ringAmount } from "./evaluate.mjs";
 export { sheetReward } from "./sheetReward.mjs";
-export { buildGemBoard, gemCategories, lifetimeGemsByRule, GEM_GROUPS, GEM_KIND_COLORS, GEM_ACTIVITY_COLORS } from "./gemBoard.mjs";
+export { buildGemBoard, gemCategories, lifetimeGemsByRule, GEM_GROUPS, GEM_AREAS, AREA_ORDER } from "./gemBoard.mjs";

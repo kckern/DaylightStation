@@ -48,10 +48,11 @@ describe('ring-days rules', () => {
 });
 
 describe('gem metadata', () => {
-  it('normalizes a gem block and refuses a bad colour or category', () => {
-    const rs = ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { category: 'school', label: ' School ', color: '#AABBCC' } }]);
-    expect(rs.rules[0].gem).toEqual({ category: 'school', label: 'School', color: '#aabbcc' });
-    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { color: 'red' } }])).toThrow(/colour/);
+  it('normalizes a gem block and refuses a colour or bad category', () => {
+    const rs = ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { category: 'school', label: ' School ' } }]);
+    expect(rs.rules[0].gem).toEqual({ category: 'school', label: 'School' });
+    // A rule never carries its own colour: the area decides.
+    expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { color: '#aabbcc' } }])).toThrow(/"x".*colour comes from the area/);
     expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { category: 'Not A Slug' } }])).toThrow(/category/);
     // Not a string at all: refused here, not later when the board labels a section.
     expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { group: 5 } }])).toThrow(/group/);
@@ -67,13 +68,13 @@ describe('gem metadata', () => {
       { id: 'strong', kind: 'ring-days', days: 4, min: 100, reward: { gems: 1 }, gem: { category: 'exercise' } },
     ]);
     expect(gemCategories(rs)).toEqual([
-      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', color: '#d6304a', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly', color: '#d6304a' }] },
+      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', area: 'school', color: '#2e9e5b', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly', area: 'school', color: '#2e9e5b' }] },
       {
-        id: 'exercise', label: 'Exercise', cadence: 'weekly', group: 'move', color: '#8e5bd0', ruleIds: ['moved', 'strong'],
-        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly', color: '#8e5bd0' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly', color: '#8e5bd0' }],
+        id: 'exercise', label: 'Exercise', cadence: 'weekly', group: 'move', area: 'move', color: '#8e5bd0', ruleIds: ['moved', 'strong'],
+        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly', area: 'move', color: '#8e5bd0' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly', area: 'move', color: '#8e5bd0' }],
       },
       // The ring contest's default row: it shares `ring-contests` with the most-improved contest.
-      { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#1e88e5', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest', color: '#1e88e5' }] },
+      { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', area: 'move', color: '#8e5bd0', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest', area: 'move', color: '#8e5bd0' }] },
     ]);
   });
 });
@@ -169,8 +170,8 @@ describe('row defaults and groups', () => {
       ['board-game-level', 'Board game level', 'games'],
     ]);
     expect(rows[0].parts).toEqual([
-      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly', color: '#f2c94c' },
-      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', color: '#f2c94c' },
+      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly', area: 'school', color: '#2e9e5b' },
+      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', area: 'school', color: '#2e9e5b' },
     ]);
     expect(rows[0].cadence).toBe('weekly'); // the first rule's, as before
   });
@@ -219,14 +220,27 @@ describe('row defaults and groups', () => {
     const improved = { id: 'most-improved', label: 'Most improved rings', kind: 'activity-contest', match: { activity: 'ring-improved' }, tie: 'all', reward: { gems: 1 } };
     const contests = (rules) => gemCategories(ruleset(rules)).find((r) => r.id === 'ring-contests');
 
-    it('the ring contests row is sapphire whichever rule comes first; each part keeps its own colour', () => {
-      expect(contests([most, improved])).toMatchObject({ color: '#1e88e5', parts: [{ ruleId: 'ring-contest', color: '#1e88e5' }, { ruleId: 'most-improved', color: '#8e5bd0' }] });
-      expect(contests([improved, most])).toMatchObject({ color: '#1e88e5', parts: [{ ruleId: 'most-improved', color: '#8e5bd0' }, { ruleId: 'ring-contest', color: '#1e88e5' }] });
+    it('every row and part takes its area colour, whichever rule comes first', () => {
+      const move = { color: '#8e5bd0', area: 'move' };
+      expect(contests([most, improved])).toMatchObject({ ...move, parts: [{ ruleId: 'ring-contest', ...move }, { ruleId: 'most-improved', ...move }] });
+      expect(contests([improved, most])).toMatchObject({ ...move, parts: [{ ruleId: 'most-improved', ...move }, { ruleId: 'ring-contest', ...move }] });
     });
 
-    it('gem.color on a row\'s first rule wins over the default row colour; on a later rule it colours only that part', () => {
-      expect(contests([{ ...improved, gem: { color: '#112233' } }, most])).toMatchObject({ color: '#112233', parts: [{ color: '#112233' }, { color: '#1e88e5' }] });
-      expect(contests([most, { ...improved, gem: { color: '#112233' } }])).toMatchObject({ color: '#1e88e5', parts: [{ color: '#1e88e5' }, { color: '#112233' }] });
+    it('move, school and games rules take #8e5bd0, #2e9e5b and #ff7a2f', () => {
+      const rows = gemCategories(ruleset([
+        most, improved,
+        { id: 'card-keeper', label: 'Cards', kind: 'activity-days', match: { activity: 'card-goal' }, days: 4, reward: { gems: 1 } },
+        { id: 'race-pb', label: 'Race PB', kind: 'milestone', match: { activity: 'race-pb' }, reward: { gems: 1 } },
+      ]));
+      expect(rows.map((r) => [r.id, r.area, r.color])).toEqual([
+        ['ring-contests', 'move', '#8e5bd0'], ['flashcards', 'school', '#2e9e5b'], ['racing', 'games', '#ff7a2f'],
+      ]);
+      for (const row of rows) for (const part of row.parts) expect([part.area, part.color]).toEqual([row.area, row.color]);
+    });
+
+    it('a custom group still takes a registry area (school)', () => {
+      const [row] = gemCategories(ruleset([{ id: 'reader-week', kind: 'activity-days', match: { activity: 'story-read' }, days: 4, reward: { gems: 1 }, gem: { group: 'bed-time' } }]));
+      expect([row.group, row.area, row.color]).toEqual(['bed-time', 'school', '#2e9e5b']);
     });
   });
 

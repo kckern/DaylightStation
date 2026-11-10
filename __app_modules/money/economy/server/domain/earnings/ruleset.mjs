@@ -54,7 +54,6 @@ const SECTION_KINDS = new Set(['section-day', 'section-week']);
 const TIES = new Set(['all', 'split', 'none']);
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const HEX = /^#[0-9a-fA-F]{6}$/;
 const MAX_MULTIPLIER = 10;
 
 /**
@@ -152,13 +151,13 @@ function normalizeEffective(effective, field) {
 }
 
 /**
- * `{category?, label?, color?, group?}` — the rule's row on the Gem Board.
+ * `{category?, label?, group?}` — the rule's row on the Gem Board.
  * `group` is the board section the row sits under (`move`, `games`, `school`,
  * or any slug).
  */
-function normalizeGem(gem, field) {
+function normalizeGem(gem, field, ruleId) {
   if (gem == null) return null;
-  if (typeof gem !== 'object' || Array.isArray(gem)) fail(`${field} must be {category, label, color, group}`, field);
+  if (typeof gem !== 'object' || Array.isArray(gem)) fail(`${field} must be {category, label, group}`, field);
   const out = {};
   if (gem.category != null) {
     if (typeof gem.category !== 'string' || !ID.test(gem.category)) fail(`${field}.category must be a lowercase slug`, `${field}.category`);
@@ -172,10 +171,7 @@ function normalizeGem(gem, field) {
     if (typeof gem.label !== 'string' || !gem.label.trim()) fail(`${field}.label must be a string`, `${field}.label`);
     out.label = gem.label.trim();
   }
-  if (gem.color != null) {
-    if (typeof gem.color !== 'string' || !HEX.test(gem.color)) fail(`${field}.color must be a #rrggbb colour`, `${field}.color`);
-    out.color = gem.color.toLowerCase();
-  }
+  if (gem.color != null) fail(`rule "${ruleId}": ${field}.color is not allowed — a gem's colour comes from the area (move, school, games)`, `${field}.color`);
   return Object.keys(out).length ? out : null;
 }
 
@@ -198,7 +194,7 @@ function normalizeRule(rule, i) {
   };
   const effective = normalizeEffective(rule.effective, `${field}.effective`);
   if (effective) out.effective = effective;
-  const gem = normalizeGem(rule.gem, `${field}.gem`);
+  const gem = normalizeGem(rule.gem, `${field}.gem`, rule.id);
   if (gem) out.gem = gem;
   if (rule.kind === 'ring-threshold') {
     out.rate = normalizeRate(rule.rate, `${field}.rate`);

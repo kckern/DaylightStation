@@ -329,13 +329,13 @@ merges them; a provider that throws makes only its activities
 `indeterminate` (`economy.gems.evidence-unavailable`). The preview reads it once
 per week per minute and only when a rule of those kinds exists.
 
-Any rule may also carry `gem: {category, label, color, group}` — how its gems
+Any rule may also carry `gem: {category, label, group}` — how its gems
 read on the [Gem Board](#gem-board): `category` is the board row (a lowercase
-slug; rules that share one share a row), `label` the row's name, `color` a
-`#rrggbb` gem colour, `group` the section the row sits under (`move`, `games`,
-`school`, or any slug). All four are optional. The first rule of a row decides
-the row's label, group and colour; on a later rule in the same row `color`
-colours that rule's part and `label` / `group` have no effect. Display only; it
+slug; rules that share one share a row), `label` the row's name, `group` the
+section the row sits under (`move`, `games`, `school`, or any slug). All three
+are optional. The first rule of a row decides the row's label and group; on a
+later rule in the same row `label` / `group` have no effect. A `gem.color` is
+rejected: a gem's colour comes from its area (below). Display only; it
 never changes what a rule pays.
 
 Rewards are a currency map (`{silver, gems}`; a bare number is silver). A rule that
@@ -437,15 +437,18 @@ Some rules keep a row of their own and take only a default section:
 | activity `board-game-level` | games |
 | anything else | school |
 
-The first rule of a row decides the row's label, section, cadence and colour.
+The first rule of a row decides the row's label, section, cadence and area.
 The label is `gem.label`, else the default row's label (not when the rule named
 its own `gem.category`), else the rule's label. The section is `gem.group`,
-else the default above. The colour is `gem.color`, else the default row's fixed
-colour (only `ring-contests` has one, sapphire), else the rule's own colour: by
-activity (rose piano, turquoise flashcards, citrine reading, ruby
-`perfect-sheet`, fire opal racing, aquamarine Skyline Glider, diamond board
-games, amethyst rings) or by kind (ruby `week-met`, sapphire `ring-contest`,
-amethyst `ring-days`, topaz `debrief-week`), else sapphire.
+else the default above.
+
+**Area and colour.** A row's `area` is its section when that is `move`,
+`school` or `games` (a custom section slug falls to `school`). A gem's colour
+comes ONLY from its area, `GEM_AREAS` in `earnings/gemBoard.mjs` (order
+`AREA_ORDER`: Move, School, Games): `move` amethyst `#8e5bd0`, `school`
+emerald `#2e9e5b`, `games` fire opal `#ff7a2f`, each with an `icon` key of the
+same name. Every row and every part carries that area and colour, so the look
+of a gem always means the same thing on an unlabeled overview.
 
 A rule whose own id equals a default row id (a rule called `reading` that sits
 in no default row) keeps that id for its own row, and the default merged row
@@ -458,8 +461,9 @@ explicit `gem.category` is a literal row id and joins whichever row has it.
 | `label` | the row's name |
 | `cadence` | `contest` (`ring-contest`, `activity-contest`), `milestone`, else `weekly`; the first rule's |
 | `group` | the section id |
-| `color` | the row's gem colour |
-| `parts[]` | one per rule in the row: `{ruleId, label, cadence, color}` |
+| `area` | `move`, `school` or `games` |
+| `color` | the area's gem colour |
+| `parts[]` | one per rule in the row: `{ruleId, label, cadence, area, color}`, the row's area and colour |
 
 **A cell** is one learner in one row:
 

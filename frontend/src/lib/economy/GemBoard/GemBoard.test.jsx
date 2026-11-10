@@ -11,10 +11,10 @@ const BOARD = {
   learners: [{ learnerId: 'a', name: 'Ann' }, { learnerId: 'b', name: 'Ben' }],
   groups: [{ id: 'move', label: 'Move' }, { id: 'school', label: 'School' }],
   categories: [
-    { id: 'green-week', label: 'Green week', cadence: 'weekly', group: 'school', color: '#d6304a', parts: [{ ruleId: 'green-week', label: 'Green week', cadence: 'weekly' }] },
+    { id: 'green-week', label: 'Green week', cadence: 'weekly', group: 'school', color: '#2e9e5b', parts: [{ ruleId: 'green-week', label: 'Green week', cadence: 'weekly' }] },
     { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', color: '#8e5bd0', parts: [{ ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly' }] },
-    { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#1e88e5', parts: [{ ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest' }] },
-    { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', color: '#f2c94c', parts: [{ ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' }, { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' }] },
+    { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#8e5bd0', parts: [{ ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest' }] },
+    { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', color: '#2e9e5b', parts: [{ ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' }, { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' }] },
   ],
   cells: {
     'green-week': { a: { state: 'unknown', week: 0, streak: null, parts: [] }, b: { state: 'none', week: 0, streak: null, parts: [] } },
