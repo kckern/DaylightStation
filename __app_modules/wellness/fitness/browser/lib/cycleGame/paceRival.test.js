@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickPaceRival, buildParRecord, PAR_ID, DEFAULT_PAR_SPEED_KMH } from './paceRival.js';
+import { pickPaceRival, buildParRecord } from './paceRival.js';
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from './ghostCandidate.js';
 import { SessionSerializerV3 } from '../../hooks/fitness/SessionSerializerV3.js';
 
@@ -126,6 +126,48 @@ describe('pickPaceRival', () => {
     const r = pickPaceRival({ candidates: [mapRaceRecordToCandidate(record)], riderId: 'rider-a', winCondition: 'distance', goalM: 300 });
     expect(r).toEqual({ kind: 'self', raceId: '20261102080000', participantId: 'rider-a' });
   });
+
+  it('breaks a time-race tie on distance with the most recent race', () => {
+    const req = { riderId: 'rider-a', winCondition: 'time', timeCapS: 300 };
+    const older = cand('20261101080000', 'time', 300, [p('rider-a', null, 1348)]);
+    const newer = cand('20261105080000', 'time', 300, [p('rider-a', null, 1348)]);
+    expect(pickPaceRival({ ...req, candidates: [older, newer] })).toEqual({ kind: 'self', raceId: '20261105080000', participantId: 'rider-a' });
+    expect(pickPaceRival({ ...req, candidates: [newer, older] })).toEqual({ kind: 'self', raceId: '20261105080000', participantId: 'rider-a' });
+  });
+
+  it('skips null entries inside candidates', () => {
+    const r = pickPaceRival({ ...want, candidates: [null, undefined, cand('r1', 'distance', 1500, [null, p('rider-a', 440, 1500)]), null] });
+    expect(r).toEqual({ kind: 'self', raceId: 'r1', participantId: 'rider-a' });
+  });
+
+  it('a request with no real length returns par, never a candidate whose own length is null', () => {
+    const noLenDistance = cand('r1', 'distance', null, [p('rider-a', 440, 1500)]);
+    const noLenTime = cand('r2', 'time', null, [p('rider-a', null, 1348)]);
+    const candidates = [noLenDistance, noLenTime];
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'distance', goalM: null, candidates })).toEqual(PAR);
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'distance', candidates })).toEqual(PAR);
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'time', timeCapS: null, candidates })).toEqual(PAR);
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'distance', goalM: 0, candidates: [cand('r3', 'distance', 0, [p('rider-a', 440, 1500)])] })).toEqual(PAR);
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'distance', goalM: NaN, candidates: [cand('r4', 'distance', NaN, [p('rider-a', 440, 1500)])] })).toEqual(PAR);
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'time', timeCapS: Infinity, candidates: [cand('r5', 'time', Infinity, [p('rider-a', null, 1348)])] })).toEqual(PAR);
+  });
+
+  it('compares lengths as numbers, without fuzzy matching', () => {
+    const numeric = [cand('r1', 'distance', 1500, [p('rider-a', 440, 1500)])];
+    const stringy = [cand('r1', 'distance', '1500', [p('rider-a', 440, 1500)])];
+    const self = { kind: 'self', raceId: 'r1', participantId: 'rider-a' };
+    expect(pickPaceRival({ ...want, goalM: '1500', candidates: numeric })).toEqual(self);
+    expect(pickPaceRival({ ...want, candidates: stringy })).toEqual(self);
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'time', timeCapS: '300', candidates: [cand('r1', 'time', 300, [p('rider-a', null, 1348)])] })).toEqual(self);
+    expect(pickPaceRival({ ...want, goalM: 1500.0000001, candidates: numeric })).toEqual(PAR);
+    expect(pickPaceRival({ ...want, candidates: [cand('r1', 'distance', 1500.0000001, [p('rider-a', 440, 1500)])] })).toEqual(PAR);
+  });
+
+  it('an unknown win condition returns par', () => {
+    const odd = { raceId: 'r1', winCondition: 'laps', goalM: 1500, timeCapS: 1500, participants: [p('rider-a', 440, 1500)] };
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: 'laps', goalM: 1500, timeCapS: 1500, candidates: [odd] })).toEqual(PAR);
+    expect(pickPaceRival({ riderId: 'rider-a', winCondition: null, goalM: 1500, candidates: [{ ...odd, winCondition: null }] })).toEqual(PAR);
+  });
 });
 
 describe('buildParRecord', () => {
@@ -142,12 +184,6 @@ describe('buildParRecord', () => {
     expect(rec.participants.par.final_distance_m).toBe(300);
     expect(rec.participants.par.final_time_s).toBeNull();
     expect(SessionSerializerV3.decodeSeries(rec.participants.par.distance_series)).toHaveLength(60);
-  });
-
-  it('exports the par id and default speed it uses', () => {
-    expect(PAR_ID).toBe('par');
-    expect(DEFAULT_PAR_SPEED_KMH).toBe(18);
-    expect(buildParRecord({ winCondition: 'distance', goalM: 100 }).participants.par.final_time_s).toBe(20);
   });
 
   it('ends exactly on a goal that is not a multiple of the per-second distance', () => {
@@ -231,5 +267,63 @@ describe('buildParRecord', () => {
   it('the par candidate is never itself picked as a rival', () => {
     const c = mapRaceRecordToCandidate(buildParRecord({ winCondition: 'distance', goalM: 100 }));
     expect(pickPaceRival({ candidates: [c], riderId: 'rider-a', winCondition: 'distance', goalM: 100 })).toEqual(PAR);
+  });
+
+  it('clamps a crawling par speed to a 3 km/h floor', () => {
+    // 3 km/h = 0.8333 m/s, so 100 m takes 120 s.
+    [0.001, 1, 2.999].forEach((speedKmh) => {
+      const rec = buildParRecord({ winCondition: 'distance', goalM: 100, speedKmh });
+      expect(rec.participants.par.final_time_s).toBe(120);
+      expect(SessionSerializerV3.decodeSeries(rec.participants.par.distance_series)).toHaveLength(120);
+    });
+    // 3 itself and anything above it are used as given.
+    expect(buildParRecord({ winCondition: 'distance', goalM: 100, speedKmh: 3 }).participants.par.final_time_s).toBe(120);
+    expect(buildParRecord({ winCondition: 'distance', goalM: 100, speedKmh: 6 }).participants.par.final_time_s).toBe(60);
+  });
+
+  it('returns null when the series would run past four hours', () => {
+    expect(buildParRecord({ winCondition: 'distance', goalM: 1e6, speedKmh: 0.001 })).toBeNull();
+    expect(buildParRecord({ winCondition: 'time', timeCapS: 14401 })).toBeNull();
+    expect(buildParRecord({ winCondition: 'time', timeCapS: 1e12 })).toBeNull();
+    // Exactly four hours is still allowed: 72 km at 18 km/h, or a 14400 s cap.
+    const dist = buildParRecord({ winCondition: 'distance', goalM: 72000, speedKmh: 18 });
+    expect(dist.participants.par.final_time_s).toBe(14400);
+    expect(buildParRecord({ winCondition: 'distance', goalM: 72001, speedKmh: 18 })).toBeNull();
+    const time = buildParRecord({ winCondition: 'time', timeCapS: 14400 });
+    expect(SessionSerializerV3.decodeSeries(time.participants.par.distance_series)).toHaveLength(14400);
+  });
+
+  it('returns null for a win condition that is neither distance nor time', () => {
+    expect(buildParRecord({ winCondition: 'laps', goalM: 100, timeCapS: 60 })).toBeNull();
+    expect(buildParRecord({ winCondition: null, goalM: 100, timeCapS: 60 })).toBeNull();
+    expect(buildParRecord({ winCondition: '', goalM: 100, timeCapS: 60 })).toBeNull();
+  });
+
+  it('pins the last sample of a non-integer time cap to speed x cap', () => {
+    const rec = buildParRecord({ winCondition: 'time', timeCapS: 60.5, speedKmh: 18 });
+    const series = SessionSerializerV3.decodeSeries(rec.participants.par.distance_series);
+    expect(series).toHaveLength(61);
+    expect(series[59]).toBe(300);
+    expect(series[60]).toBe(302.5);
+    expect(rec.participants.par.final_distance_m).toBe(302.5);
+    expect(rec.participants.par.final_time_s).toBeNull();
+    expect(rec.race.time_cap_s).toBe(60.5);
+  });
+
+  it('a long time-race series is strictly increasing', () => {
+    [3, 18, 17.3].forEach((speedKmh) => {
+      const rec = buildParRecord({ winCondition: 'time', timeCapS: 14400, speedKmh });
+      const series = SessionSerializerV3.decodeSeries(rec.participants.par.distance_series);
+      expect(series).toHaveLength(14400);
+      expect(series.every((d, i) => i === 0 || d > series[i - 1])).toBe(true);
+      expect(series[0]).toBeGreaterThan(0);
+    });
+  });
+
+  it('accepts a numeric-string length and writes it back as a number', () => {
+    const rec = buildParRecord({ winCondition: 'distance', goalM: '100' });
+    expect(rec.race.goal_m).toBe(100);
+    expect(rec.participants.par.final_distance_m).toBe(100);
+    expect(buildParRecord({ winCondition: 'time', timeCapS: '60' }).race.time_cap_s).toBe(60);
   });
 });

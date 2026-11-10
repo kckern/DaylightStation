@@ -11,7 +11,15 @@ export const PAR_ID = 'par';
 /** Par speed when none is configured (or the configured one is unusable). */
 export const DEFAULT_PAR_SPEED_KMH = 18;
 
+/** Slowest par speed: anything positive but slower is raised to this. */
+export const MIN_PAR_SPEED_KMH = 3;
+/** Longest par series (one sample per second): four hours. */
+export const MAX_PAR_SAMPLES = 4 * 60 * 60;
+
 const isPositive = (v) => Number.isFinite(v) && v > 0;
+const isWinCondition = (v) => v === 'distance' || v === 'time';
+// A race length as a number ('1500' → 1500). null / undefined are never a length.
+const toLength = (v) => (v == null ? NaN : Number(v));
 
 /**
  * Choose the pace rival for a lone rider.
@@ -32,8 +40,13 @@ const isPositive = (v) => Number.isFinite(v) && v > 0;
  */
 export function pickPaceRival({ candidates = [], riderId = null, winCondition = 'distance', goalM = null, timeCapS = null } = {}) {
   const isDistance = winCondition === 'distance';
+  // Exact match on a real length: no length (or an unknown race type) means par.
+  const wantLength = toLength(isDistance ? goalM : timeCapS);
+  if (!isWinCondition(winCondition) || !isPositive(wantLength)) {
+    return { kind: 'par', raceId: null, participantId: PAR_ID };
+  }
   const sameRace = (c) => c && !c.incomplete && c.raceId !== PAR_ID && c.winCondition === winCondition
-    && (isDistance ? c.goalM === goalM : c.timeCapS === timeCapS);
+    && toLength(isDistance ? c.goalM : c.timeCapS) === wantLength;
   const valid = (pt) => pt && !pt.stopped && !pt.isGhost && !resolveParticipantIdentity(pt.id).isGhost
     && (isDistance ? isPositive(pt.finalTimeS) : isPositive(pt.finalDistanceM));
   // Lower is better: finish time for distance races, negated distance for time races.
@@ -61,30 +74,38 @@ export function pickPaceRival({ candidates = [], riderId = null, winCondition = 
  * shape, so it can go through mapRaceRecordToCandidate like any fetched race.
  * One distance sample per second; sample i is the distance at (i + 1) seconds,
  * which is how the race engine replays a ghost series. A distance race ends
- * exactly on the goal. Returns null when the race has no usable length.
+ * exactly on the goal; a time race ends exactly on speed x cap. Returns null
+ * when the race type is unknown, the race has no usable length, or the series
+ * would run past four hours.
  *
  * @param {object} [args]
  * @param {'distance'|'time'} [args.winCondition]
  * @param {number|null} [args.goalM]
  * @param {number|null} [args.timeCapS]
- * @param {number} [args.speedKmh] par speed; anything not finite and positive uses 18
+ * @param {number} [args.speedKmh] par speed; anything not finite and positive
+ *   uses 18, and anything slower than 3 uses 3
  * @returns {object|null} `{ version, race, participants: { par } }`
  */
 export function buildParRecord({ winCondition = 'distance', goalM = null, timeCapS = null, speedKmh = DEFAULT_PAR_SPEED_KMH } = {}) {
+  if (!isWinCondition(winCondition)) return null;
   const isDistance = winCondition === 'distance';
-  if (!isPositive(isDistance ? goalM : timeCapS)) return null;
-  const mps = (isPositive(speedKmh) ? speedKmh : DEFAULT_PAR_SPEED_KMH) / 3.6;
+  const length = toLength(isDistance ? goalM : timeCapS);
+  if (!isPositive(length)) return null;
+  const kmh = isPositive(speedKmh) ? Math.max(MIN_PAR_SPEED_KMH, speedKmh) : DEFAULT_PAR_SPEED_KMH;
+  const mps = kmh / 3.6;
   // The epsilon keeps float noise (300 / 2.9999999999999996) from adding a second.
-  const seconds = isDistance ? Math.ceil(goalM / mps - 1e-9) : Math.ceil(timeCapS);
-  if (seconds < 1) return null;
-  const cap = isDistance ? goalM : Infinity;
-  const series = Array.from({ length: seconds }, (_, i) => Math.min(cap, Math.round(mps * (i + 1) * 10) / 10));
-  if (isDistance) series[seconds - 1] = goalM;
+  const seconds = isDistance ? Math.ceil(length / mps - 1e-9) : Math.ceil(length);
+  if (seconds < 1 || seconds > MAX_PAR_SAMPLES) return null;
+  const at = (t) => Math.round(mps * t * 10) / 10;
+  const series = Array.from({ length: seconds }, (_, i) => at(i + 1));
+  // The last sample lands exactly on the end of the race: the goal, or the
+  // distance covered at the cap (which may fall inside the last second).
+  series[seconds - 1] = isDistance ? length : at(length);
   return {
     version: 1,
     race: {
       id: PAR_ID, win_condition: winCondition, interval_seconds: 1,
-      ...(isDistance ? { goal_m: goalM } : { time_cap_s: timeCapS })
+      ...(isDistance ? { goal_m: length } : { time_cap_s: length })
     },
     participants: {
       [PAR_ID]: {
