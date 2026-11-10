@@ -197,7 +197,7 @@ describe('resolveEffectiveCues with refined data', () => {
       { in: 211.5, grid: 6, cells: [4, 5] },
       { in: 213, cells: [] },
     ] } } };
-    const cues = resolveEffectiveCues({ edl, profile: { categories: { 'sex/sign': { effect: 'blur' } } }, override });
+    const cues = resolveEffectiveCues({ edl, profile: { categories: { 'sex/sign': { effect: 'blur', regional: true } } }, override });
     expect(cues.map((c) => c.id)).toEqual(['s@0', 's@1']);
     expect(cues[0].rect).toEqual({ x: 0, y: 0, w: 0.333, h: 0.333 });
     expect(cues[1].rect).toEqual({ x: 4 / 6, y: 0, w: 2 / 6, h: 1 / 6 });
@@ -413,7 +413,7 @@ describe('channel-matched effects (R1, R2)', () => {
     in: 100, out: 125, precision: 'frame', segments: [{ in: 100, out: 110 }, { in: 115, out: 125 }], regions,
   };
   const refined = (cues) => ({ timebase: { clock: 'vidangel' }, cues });
-  const profile = { categories: { language: { effect: 'bleep' } } };
+  const profile = { categories: { language: { effect: 'bleep', regional: true } } };
 
   it('a shown cue with a track under profile bleep becomes regional blur, no audio effect', () => {
     const out = resolveEffectiveCues({ edl: refined([billboard]), profile, override: { sync: { offsetSec: 0, scale: 1 } } });
@@ -424,7 +424,7 @@ describe('channel-matched effects (R1, R2)', () => {
   it('a coarse-edge cue with a track (refined EDL) gets regional blur over its synced coarse window', () => {
     const coarse = { id: 'va9', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A theater is visible', in: 100, out: 125, precision: 'second-approx',
       regions: [{ in: 100, grid: 6, cells: [4], box: { x: 0.5, y: 0.2, w: 0.2, h: 0.2 } }, { in: 125, cells: [] }], refine: { v: 1, edges: 'coarse' } };
-    const out = resolveEffectiveCues({ edl: refined([coarse]), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync: { offsetSec: 8, scale: 1 } } });
+    const out = resolveEffectiveCues({ edl: refined([coarse]), profile: { categories: { sex_any: { effect: 'blur', regional: true } } }, override: { sync: { offsetSec: 8, scale: 1 } } });
     expect(out.length).toBeGreaterThanOrEqual(1);
     expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
     // coarse edges: the window takes the full-blur pads (150 ms lead), so the track is held to 107.85
@@ -473,7 +473,7 @@ describe('same-subject cues resolve to one effect (R6)', () => {
   const track = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => ({ in: a + i, grid: 6, cells: [8, 9], box: { x: 0.3, y: 0.2, w: 0.3, h: 0.2 } })).concat([{ in: b + 1, cells: [] }]);
   const tag = (id, a, b, over = {}) => ({ id, type: 'skip', category: 'language/language_sexual/other_sexual', label: `tag ${id}`, in: a, out: b, precision: 'frame', subject: 'subject-billboard', ...over });
   const refined = (cues) => ({ timebase: { clock: 'vidangel' }, cues });
-  const profile = { categories: { language: { effect: 'bleep' }, sex_any: { effect: 'blur' } } };
+  const profile = { categories: { language: { effect: 'bleep', regional: true }, sex_any: { effect: 'blur', regional: true } } };
   const sync = { offsetSec: 0, scale: 1 };
   // BTTF billboard: four tags on one shot, one carries the 6x6 track, categories mixed.
   const bttf = () => [
@@ -524,7 +524,7 @@ describe('same-subject cues resolve to one effect (R6)', () => {
   });
   it('a said word inside the union still mutes independently', () => {
     const cues = [...bttf(), { id: 'w', type: 'mute', category: 'language/profanity/damn', label: 'damn', in: 110, out: 110.4, precision: 'ms', subject: 'subject-billboard' }];
-    const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { language: { effect: 'mute' }, sex_any: { effect: 'blur' } } }, override: { sync } });
+    const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { language: { effect: 'mute', regional: true }, sex_any: { effect: 'blur', regional: true } } }, override: { sync } });
     expect(out.find((c) => c.id === 'w')).toMatchObject({ effect: 'mute' });
     expect(out.filter((c) => c.effect === 'blur').length).toBeGreaterThan(0);
   });
@@ -791,7 +791,7 @@ describe('final review fixes', () => {
     // Coarse cue 100-125; Jev saw the subject 104-118, with an unsure keyframe at 108.
     const coarse = () => ({ id: 'va1', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A theater marquee is visible', in: 100, out: 125, precision: 'second-approx',
       regions: [key(104), key(106), { in: 108, cells: [] }, key(110), key(114), { in: 118, cells: [] }], refine: { v: 1, edges: 'coarse', kind: 'visual' } });
-    const profile = { categories: { sex_any: { effect: 'blur' } } };
+    const profile = { categories: { sex_any: { effect: 'blur', regional: true } } };
 
     it('every instant of the cue window is covered (never less than the untracked full-blur)', () => {
       const out = resolveEffectiveCues({ edl: refined([coarse()]), profile, override: { sync } });
@@ -817,36 +817,36 @@ describe('final review fixes', () => {
     const s = { id: 's', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A sign', in: 105, out: 120, precision: 'frame', subject: 'S', regions: tracked };
 
     it('full-blur member + tracked blur member -> regional heavy blur over the union, never full-frame', () => {
-      const out = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'full-blur' }, sex_any: { effect: 'blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'full-blur', regional: true }, sex_any: { effect: 'blur', regional: true } } }, override: { sync } });
       expect(out.length).toBeGreaterThan(0);
       expect(out.every((c) => c.effect === 'blur' && c.rect && c.heavy)).toBe(true);
       expect(new Set(out.map((c) => String(c.id).split('@')[0]))).toEqual(new Set(['S']));
       expectCovered(out, 100, 120);
     });
     it('a full-blur lead with a track is regional (heavy)', () => {
-      const out = resolveEffectiveCues({ edl: refined([{ ...n, regions: tracked }, s]), profile: { categories: { sex: { effect: 'full-blur' }, sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined([{ ...n, regions: tracked }, s]), profile: { categories: { sex: { effect: 'full-blur', regional: true }, sex_any: { effect: 'full-blur', regional: true } } }, override: { sync } });
       expect(out.length).toBeGreaterThan(0);
       expect(out.every((c) => c.effect === 'blur' && c.rect && c.heavy)).toBe(true);
     });
     it('blur members with a track stay regional blur, not heavy', () => {
-      const out = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'blur' }, sex_any: { effect: 'blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'blur', regional: true }, sex_any: { effect: 'blur', regional: true } } }, override: { sync } });
       expect(out.length).toBeGreaterThan(0);
       expect(out.every((c) => c.effect === 'blur' && !c.heavy)).toBe(true);
       expectCovered(out, 100, 120);
     });
     it('censor-bar beats blur and full-blur on a track and follows it; blackout beats everything', () => {
-      const cb = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'censor-bar' }, sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      const cb = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'censor-bar', regional: true }, sex_any: { effect: 'full-blur', regional: true } } }, override: { sync } });
       expect(cb.length).toBeGreaterThan(0);
       expect(cb.every((c) => c.effect === 'censor-bar')).toBe(true);
       expect(cb.some((c) => c.rect)).toBe(true);
-      const bo = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'blur' }, sex_any: { effect: 'blackout' } } }, override: { sync } });
+      const bo = resolveEffectiveCues({ edl: refined([n, s]), profile: { categories: { sex: { effect: 'blur', regional: true }, sex_any: { effect: 'blackout', regional: true } } }, override: { sync } });
       expect(bo.length).toBeGreaterThan(0);
       expect(bo.every((c) => c.effect === 'blackout')).toBe(true);
       expectCovered(bo, 100, 120);
     });
     it('a track with no sighting is not usable: the group stays full-frame full-blur', () => {
       const blind = [{ in: 105, cells: [] }, { in: 110, cells: [] }, { in: 121, cells: [] }];
-      const out = resolveEffectiveCues({ edl: refined([n, { ...s, regions: blind }]), profile: { categories: { sex: { effect: 'full-blur' }, sex_any: { effect: 'blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined([n, { ...s, regions: blind }]), profile: { categories: { sex: { effect: 'full-blur', regional: true }, sex_any: { effect: 'blur', regional: true } } }, override: { sync } });
       expect(out).toHaveLength(1);
       expect(out[0]).toMatchObject({ effect: 'full-blur', id: 'S' });
       expect(out[0].rect).toBeUndefined();
@@ -857,7 +857,7 @@ describe('final review fixes', () => {
     const tracked = Array.from({ length: 11 }, (_, i) => key(100 + i)).concat([{ in: 111, cells: [] }]);
     const cue = { id: 'v', type: 'skip', category: 'sex_any/sexually_suggestive', label: 'A sign', in: 100, out: 111, precision: 'frame', regions: tracked, refine: { v: 1, kind: 'visual' } };
     it('profile full-blur on a tracked cue: regional heavy blur pieces only', () => {
-      const out = resolveEffectiveCues({ edl: refined([cue]), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined([cue]), profile: { categories: { sex_any: { effect: 'full-blur', regional: true } } }, override: { sync } });
       expect(out.length).toBeGreaterThan(5);
       expect(out.every((c) => c.effect === 'blur' && c.heavy && c.rect)).toBe(true);
     });
@@ -865,6 +865,31 @@ describe('final review fixes', () => {
       const out = resolveEffectiveCues({ edl: refined([cue]), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync, cueOverrides: { v: { effect: 'full-blur' } } } });
       expect(out.length).toBeGreaterThan(5);
       expect(out.every((c) => c.effect === 'blur' && c.heavy && c.rect)).toBe(true);
+    });
+    it('tracked shown cue in a category without regional resolves whole-frame', () => {
+      const out = resolveEffectiveCues({ edl: refined([cue]), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      expect(out).toHaveLength(1);
+      expect(out[0].effect).toBe('full-blur');
+      expect(out[0].rect).toBeUndefined();
+      expect(out[0].regions).toBeUndefined();
+    });
+    it('tracked shown cue in a regional category stays regional', () => {
+      const gore = { id: 'g', type: 'skip', category: 'violence_blood_gore/gore', label: 'Gore', in: 100, out: 111, precision: 'frame', regions: tracked, refine: { v: 1, kind: 'visual' } };
+      const out = resolveEffectiveCues({ edl: refined([gore]), profile: { categories: { 'violence_blood_gore/gore': { effect: 'full-blur', regional: true } } }, override: { sync } });
+      expect(out.length).toBeGreaterThan(5);
+      expect(out.every((c) => c.effect === 'blur' && c.heavy === true && c.rect)).toBe(true);
+    });
+    it('a human-ruled blur stays regional', () => {
+      const out = resolveEffectiveCues({ edl: refined([cue]), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync, cueOverrides: { v: { effect: 'blur' } } } });
+      expect(out.length).toBeGreaterThan(5);
+      expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
+    });
+    it('a subject group without regional permission resolves whole-frame', () => {
+      const a = { ...cue, id: 'a', subject: 'S' };
+      const b = { ...cue, id: 'b', subject: 'S', in: 102, out: 108 };
+      const out = resolveEffectiveCues({ edl: refined([a, b]), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      expect(out.length).toBeGreaterThan(0);
+      expect(out.every((c) => c.effect === 'full-blur' && !c.rect && !c.regions)).toBe(true);
     });
     it('untracked, full-blur stays full-frame', () => {
       const { regions: _r, ...bare } = cue;
@@ -886,7 +911,7 @@ describe('final review fixes', () => {
       { id: 'va3388989', type: 'skip', category: 'language/language_sexual/other_sexual', label: 'A crude word is visible', in: 668, out: 677, precision: 'second-approx', subject: 'subject-va3388987' },
       { id: 'va3388990', type: 'skip', category: 'language/language_sexual/other_sexual', label: 'A crude word is visible', in: 673, out: 676, precision: 'second-approx', subject: 'subject-va3388987' },
     ];
-    const profile = { categories: { 'sex_any/sexually_suggestive': { effect: 'full-blur' }, language: { effect: 'bleep' } } };
+    const profile = { categories: { 'sex_any/sexually_suggestive': { effect: 'full-blur', regional: true }, language: { effect: 'bleep', regional: true } } };
     const out = () => resolveEffectiveCues({ edl: refined(cues()), profile, override: { sync } });
 
     it('regional heavy blur pieces only over the shared track; no full-frame piece, no audio effect', () => {
@@ -913,7 +938,7 @@ describe('final review fixes', () => {
     it('one empty keyframe (<= 1 s) between two sightings holds the box spanning both, not the whole picture', () => {
       const regions = [key(100, { box: A }), key(100.5, { box: A }), { in: 101, cells: [] }, key(101.5, { box: B }), key(102, { box: B }), { in: 102.5, cells: [] }];
       const cues = [{ id: 't', type: 'skip', category: 'sex_any/x', label: 't', in: 100, out: 102.5, precision: 'frame', subject: 'S', regions }];
-      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'full-blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'full-blur', regional: true } } }, override: { sync } });
       expectCovered(out, 100, 102.5);
       expect(out.every((c) => c.effect === 'blur' && c.rect)).toBe(true);
       const miss = out.find((c) => c.in <= 101.2 && c.out > 101.2);
@@ -929,7 +954,7 @@ describe('final review fixes', () => {
     it('a segment that starts a hair before its first sighting holds that box back over the sliver', () => {
       const regions = [key(100, { box: A }), key(102, { box: A }), key(104, { box: A }), { in: 105, cells: [] }, key(108, { box: B }), key(110, { box: B }), key(112, { box: B }), { in: 115, cells: [] }];
       const cues = [{ id: 't', type: 'skip', category: 'sex_any/x', label: 't', in: 100, out: 115, precision: 'frame', subject: 'S', regions, segments: [{ in: 100, out: 105 }, { in: 107.98, out: 115 }] }];
-      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'blur', regional: true } } }, override: { sync } });
       expectCovered(out, 100, 105); expectCovered(out, 107.98, 115);
       expect(out.every((c) => c.rect)).toBe(true);
     });
@@ -942,7 +967,7 @@ describe('final review fixes', () => {
         { id: 'a', type: 'skip', category: 'sex_any/x', label: 'a', in: 100, out: 110, precision: 'frame', subject: 'S' },
         { id: 'b', type: 'skip', category: 'violence/y', label: 'b', in: 105, out: 115, precision: 'frame', subject: 'S' },
       ];
-      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'censor-bar', rect }, violence: { effect: 'pixelate' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'censor-bar', regional: true, rect }, violence: { effect: 'pixelate', regional: true } } }, override: { sync } });
       expect(out).toHaveLength(1);
       expect(out[0].effect).toBe('censor-bar');
       expect(out[0].rect).toBeUndefined(); // b's pixelate covered the whole frame; a bar in a's rect would hide less
@@ -954,7 +979,7 @@ describe('final review fixes', () => {
         { id: 'a', type: 'skip', category: 'sex_any/x', label: 'a', in: 100, out: 110, precision: 'frame', subject: 'S' },
         { id: 'b', type: 'skip', category: 'violence/y', label: 'b', in: 105, out: 115, precision: 'frame', subject: 'S' },
       ];
-      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'censor-bar', rect }, violence: { effect: 'blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'censor-bar', regional: true, rect }, violence: { effect: 'blur', regional: true } } }, override: { sync } });
       expect(out).toHaveLength(1);
       expect(out[0].effect).toBe('full-blur');
       expect(out[0].rect).toBeUndefined();
@@ -965,7 +990,7 @@ describe('final review fixes', () => {
         { id: 't', type: 'skip', category: 'sex_any/x', label: 't', in: 100, out: 106, precision: 'frame', subject: 'S', regions: tr },
         { id: 'p', type: 'skip', category: 'sex_any/x', label: 'p', in: 106, out: 106, precision: 'second-approx', subject: 'S' },
       ];
-      const profile = { categories: { sex_any: { effect: 'blur' } } };
+      const profile = { categories: { sex_any: { effect: 'blur', regional: true } } };
       const out = resolveEffectiveCues({ edl: refined(cues), profile, override: { sync } });
       expect(out.every((c) => c.effect === 'blur')).toBe(true);
       const solo = resolveEffectiveCues({ edl: refined([{ ...cues[1], subject: undefined }]), profile, override: { sync } });
@@ -1006,7 +1031,7 @@ describe('final review fixes', () => {
         { id: 'u', type: 'skip', category: 'sex_any/x', label: 'u', in: 107, out: 111, precision: 'frame', subject: 'S' },
         { id: 'v', type: 'skip', category: 'sex_any/x', label: 'v', in: 95, out: 125, precision: 'frame', subject: 'S' },
       ];
-      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'blur' } } }, override: { sync } });
+      const out = resolveEffectiveCues({ edl: refined(cues), profile: { categories: { sex_any: { effect: 'blur', regional: true } } }, override: { sync } });
       expect(out.every((c) => c.effect === 'blur')).toBe(true);
       expectCovered(out, 95, 125);
     });
@@ -1096,7 +1121,7 @@ describe('picture-effect precedence (no stacked blurs)', () => {
   const sync = { offsetSec: 0, scale: 1 };
   const zero = { pad: { in: 0, out: 0 }, minSec: 0 };
   const profile = {
-    categories: { sex_any: { effect: 'full-blur' }, violence: { effect: 'blur' }, language: { effect: 'mute' } },
+    categories: { sex_any: { effect: 'full-blur', regional: true }, violence: { effect: 'blur' }, language: { effect: 'mute' } },
     treatments: { 'full-blur': zero, blur: zero, mute: zero },
   };
   const shown = (id, a, b, over = {}) => ({ id, type: 'skip', category: 'sex_any/sexually_suggestive', in: a, out: b, precision: 'frame', ...over });

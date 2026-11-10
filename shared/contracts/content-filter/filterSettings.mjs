@@ -101,13 +101,22 @@ export function settingsFromProfile(profile) {
   return out;
 }
 
+/** Per-category merge: a patch rule overlays the base rule field by field (keeps `regional`). */
+function mergeCategoryRules(base = {}, patch = {}) {
+  const out = { ...(base || {}) };
+  for (const [k, v] of Object.entries(patch || {})) {
+    out[k] = v && typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object' ? { ...out[k], ...v } : v;
+  }
+  return out;
+}
+
 /** Overlay a patch ({ categories, scenes }) on a profile; the patch wins per key. Pure. */
 export function mergeProfilePatch(profile, patch) {
   if (!profile) return profile;
   if (!patch || (!patch.categories && !patch.scenes && !patch.languageWords && clampBleepLevel(patch.bleepLevel) == null)) return profile;
   return {
     ...profile,
-    categories: { ...(profile.categories || {}), ...(patch.categories || {}) },
+    categories: mergeCategoryRules(profile.categories, patch.categories),
     scenes: { ...(profile.scenes || {}), ...(patch.scenes || {}) },
     ...(clampBleepLevel(patch.bleepLevel) != null ? { bleepLevel: clampBleepLevel(patch.bleepLevel) } : {}),
     ...(patch.languageWords ? { languageWords: { ...(profile.languageWords || {}), ...patch.languageWords } } : {}),

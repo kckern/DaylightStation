@@ -207,6 +207,9 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
       || (!hasProfileRules ? (wordList && cue.effect ? { effect: cue.effect } : cue.type ? { effect: cue.type } : null) : null);
     if (!rule) continue;
 
+    // A box that follows something around the frame draws the eye to it: regional blur is for
+    // categories the profile marks `regional`, a human ruling, or a profile with no rules at all.
+    const regionalOk = !!explicit || !hasProfileRules || rule.regional === true;
     const eff = { ...cue, effect: rule.effect };
     let measured = ov;
     const coarseEdges = (cue.refine?.edges ?? ov.refine?.edges) === 'coarse';
@@ -266,12 +269,18 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
     const kind = cue.kind ?? cue.refine?.kind ?? ov.refine?.kind;
     const modality = cueModality({ ...cue, ...(kind ? { kind } : {}) });
     const typed = !!(cue.type || kind);
-    const fitted = typed ? fitEffectToChannel(eff.effect, modality, { hasRegions: hasSighting(measured?.regions) }) : eff.effect;
+    const fitted = typed ? fitEffectToChannel(eff.effect, modality, { hasRegions: hasSighting(measured?.regions) && regionalOk }) : eff.effect;
+    if (!regionalOk && (hasSighting(measured?.regions) || hasSighting(eff.regions))) {
+      logger().sampled('content-filter.regional.withheld', { id: cue.id, category: cue.category }, { maxPerMinute: 10, aggregate: true });
+      // The track is not followed: the cue plays whole-frame and carries no track.
+      delete eff.regions;
+      if (measured?.regions) measured = { ...measured, regions: undefined };
+    }
     // R6: what this cue asks of its group when the group has a track: blur (audio effects fit to
     // it), full-blur, or a stronger effect as it is. The group decides what becomes regional.
     const groupEffect = !typed ? eff.effect
       : (modality === 'shown' && eff.effect === 'full-blur') ? 'full-blur'
-        : fitEffectToChannel(eff.effect, modality, { hasRegions: true });
+        : fitEffectToChannel(eff.effect, modality, { hasRegions: regionalOk });
     if (fitted !== eff.effect) {
       logger().sampled('content-filter.effect.adjusted', { id: cue.id, from: eff.effect, to: fitted, modality, source: explicit ? 'override' : 'profile' }, { maxPerMinute: 10, aggregate: true });
       if (eff.effect === 'full-blur' && fitted === 'blur') eff.heavy = true;
@@ -340,7 +349,7 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
     // survive driver granularity. Runs after sync so pads are in local time.
     // R6: shown cues of one subject resolve together, after the loop, to a single effect.
     const subject = ov.subject ?? cue.subject;
-    if (subject && modality === 'shown' && OVERLAY.has(eff.effect)) {
+    if (subject && modality === 'shown' && regionalOk && OVERLAY.has(eff.effect)) {
       if (!groups.has(subject)) groups.set(subject, []);
       groups.get(subject).push({ eff, measured, groupEffect });
       continue;
