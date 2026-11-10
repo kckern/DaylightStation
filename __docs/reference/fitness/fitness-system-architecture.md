@@ -1040,11 +1040,12 @@ than showing skeletons on every return from the player.
 A card reads top to bottom: the avatar with the name as a tag over its lower
 edge, the week bars, then the **rail** at the foot of the card. The home layout
 puts this panel under the suggestions, so the rail is the lowest thing on the
-touch screen and a child can reach it. The rail holds **bank silver** and one
-glyph for each row of the Gem Board's Move section, drawn by the board's own
-`GemGlyph`: a ring of day segments while a day-count is running, a full gem
-once it is earned or while a contest gem is held, nothing in a slot that has
-nothing this week. Slots keep the board's order on every card, so a contest
+touch screen and a child can reach it. The rail holds **bank silver** and a
+glyph for each row of the Gem Board's Move section the person has something in,
+drawn by the board's own `GemGlyph`: a ring of day segments once a day-count
+has a day in it, a full gem once it is earned or while a contest gem is held.
+A row with nothing to show (no days yet, out of reach, no lead) takes no room;
+silver and gems spread evenly across the rail (`hasGemToShow`). A contest
 gem is seen to move from one child to another. Games and School gems are on the
 board only. The data is the `standings` screen source,
 `GET /api/v1/earnings/standings` (`silver`, and `move` cut from the Gem Board

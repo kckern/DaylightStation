@@ -12,7 +12,7 @@ import { resolveUserDisplayName } from "../../hooks/fitness/DisplayNameResolver.
 import RingIcon from '@/lib/icons/RingIcon.jsx';
 import CoinIcon from '@/lib/icons/CoinIcon.jsx';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
-import GemGlyph, { glyphWords } from '@/lib/economy/GemBoard/GemGlyph.jsx';
+import GemGlyph, { glyphLook, glyphWords } from '@/lib/economy/GemBoard/GemGlyph.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import GemBoardOverlay from '@/lib/economy/GemBoard/GemBoard.jsx';
 import { useGamepadKeys } from "../../lib/useGamepadKeys.js";
@@ -109,14 +109,26 @@ function Avatar({ id, name }) {
 }
 
 /**
- * The foot of a card: bank silver, then one glyph per Move gem as the Gem
- * Board draws it (a day ring while a count is running, a full gem once earned
- * or held). One button, opening the board on this person. Someone without a
- * wallet gets an empty rail, so every card keeps one height.
+ * Is there a gem to show on the rail? One earned or held, or a day-count with
+ * at least one day in. A count not yet started, or out of reach, has nothing
+ * to show and takes no room.
+ */
+export function hasGemToShow(cell) {
+  const look = glyphLook(cell);
+  return look === 'lit' || look === 'holding' || (look === 'streak' && (cell.streak?.have ?? 0) > 0);
+}
+
+/**
+ * The foot of a card: bank silver, then a glyph for each Move gem the person
+ * has or is on the way to, as the Gem Board draws it (a day ring while a count
+ * is running, a full gem once earned or held). Silver and gems spread across
+ * the rail, however many there are. One button, opening the board on this
+ * person. Someone without a wallet gets an empty rail, so every card keeps
+ * one height.
  */
 function Rail({ purse, name, onOpen }) {
   if (!purse) return <span className="fitness-momentum__rail fitness-momentum__rail--empty" aria-hidden="true" />;
-  const gems = purse.move ?? [];
+  const gems = (purse.move ?? []).filter((g) => hasGemToShow(g.cell));
   const words = [`${name}: ${purse.silver} silver`, ...gems.map((g) => `${g.label}: ${glyphWords(g.cell)}`)].join('. ');
   return (
     <button type="button" className="fitness-momentum__rail" aria-label={`${words}. Open the gem board`} onClick={onOpen}>
@@ -124,15 +136,11 @@ function Rail({ purse, name, onOpen }) {
         <CoinIcon metal="silver" size="1.25em" label="silver" />
         <span>{purse.silver}</span>
       </span>
-      {gems.length > 0 && (
-        <span className="fitness-momentum__gems">
-          {gems.map((g) => (
-            <span key={g.id} className="fitness-momentum__gemslot" data-gem={g.id}>
-              <GemGlyph cell={g.cell} color={g.color} />
-            </span>
-          ))}
+      {gems.map((g) => (
+        <span key={g.id} className="fitness-momentum__gemslot" data-gem={g.id}>
+          <GemGlyph cell={g.cell} color={g.color} />
         </span>
-      )}
+      ))}
     </button>
   );
 }

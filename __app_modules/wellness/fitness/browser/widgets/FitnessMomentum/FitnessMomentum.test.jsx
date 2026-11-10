@@ -34,7 +34,7 @@ vi.mock("../../useFitnessScreen.js", () => ({
   }),
 }));
 
-import FitnessMomentum, { dayLabel } from "./FitnessMomentum.jsx";
+import FitnessMomentum, { dayLabel, hasGemToShow } from "./FitnessMomentum.jsx";
 
 describe('FitnessMomentum', () => {
   beforeEach(() => { standings = STANDINGS; });
@@ -59,8 +59,23 @@ describe('FitnessMomentum', () => {
     standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], move: undefined }] };
     const rail = render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail');
     expect(rail.textContent).toContain('27');
-    expect(rail.querySelector('.fitness-momentum__gems')).toBeNull();
     expect(rail.querySelector('.gem-glyph')).toBeNull();
+  });
+
+  it('gives no slot to a gem with nothing to show, and says nothing of it', () => {
+    const blank = (cell) => ({ ...MOVE[1], cell });
+    const quiet = [
+      { id: 'a', ...blank({ state: 'none', week: 0, streak: null, parts: [] }) },
+      { ...blank({ state: 'pending', week: 0, streak: { have: 0, need: 5, left: 5, reach: 'on-track', ruleId: 'moved-days' }, parts: [] }), id: 'b' },
+      { ...blank({ state: 'pending', week: 0, streak: { have: 2, need: 5, left: 1, reach: 'out', ruleId: 'moved-days' }, parts: [] }), id: 'c' },
+      { ...blank({ state: 'pending', week: 0, streak: null, parts: [] }), id: 'd' },
+      MOVE[2],
+    ];
+    for (const g of quiet.slice(0, 4)) expect(hasGemToShow(g.cell)).toBe(false);
+    standings = { ...STANDINGS, learners: [{ ...STANDINGS.learners[0], move: quiet }] };
+    const rail = render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail');
+    expect([...rail.children].map((el) => el.className)).toEqual(['fitness-momentum__silver', 'fitness-momentum__gemslot']);
+    expect(rail.getAttribute('aria-label')).toBe('Dad: 27 silver. 100+ rings on 3 days: earned. Open the gem board');
   });
 
   it('opens the Gem Board from the rail', () => {

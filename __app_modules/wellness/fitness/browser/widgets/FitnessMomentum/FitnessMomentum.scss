@@ -90,8 +90,9 @@
     white-space: nowrap;
   }
 
-  // The foot of the card: silver, then the week's Move gems. A button (it
-  // opens the Gem Board) as wide as the card, tall enough for a child's finger.
+  // The foot of the card: silver, then the Move gems there are to show, spread
+  // evenly across it. A button (it opens the Gem Board) as wide as the card,
+  // tall enough for a child's finger.
   &__rail {
     flex: none;
     align-self: stretch;
@@ -118,7 +119,6 @@
     font-size: 1.35rem;
     font-variant-numeric: tabular-nums;
   }
-  &__gems { display: inline-flex; align-items: center; gap: 0.25rem; }
   // The board's glyph is sized in em: this sets how large it is drawn here.
   &__gemslot {
     display: inline-flex;
