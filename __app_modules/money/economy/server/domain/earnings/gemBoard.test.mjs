@@ -175,3 +175,64 @@ describe('row defaults and groups', () => {
     expect(() => ruleset([{ id: 'x', kind: 'day-met', reward: 1, gem: { group: 'Not A Slug' } }])).toThrow(/group/);
   });
 });
+
+describe('cell parts, streak and reach', () => {
+  // Week 2026-11-02 (Mon) … 2026-11-08 (Sun); ring-days close Saturday 2026-11-07.
+  const rs = ruleset([
+    { id: 'reader-week', label: 'Story time 4 days', kind: 'activity-days', match: { activity: 'story-read' }, days: 4, reward: { gems: 1 } },
+    { id: 'book-finished', label: 'Book finished', kind: 'milestone', match: { activity: 'book-finished' }, reward: { gems: 1 } },
+    { id: 'moved-days', label: 'Moved 5 days', kind: 'ring-days', days: 5, reward: { gems: 1 } },
+  ]);
+  const board = (today, facts) => {
+    const out = evaluate(rs, facts, { today });
+    return buildGemBoard({
+      ruleset: rs,
+      week: { windows: { school: WEEK, rings: RINGS_WEEK }, today, contestClosed: false, learners: [{ learnerId: 'kid', learnerName: 'Kid', lines: out.lines }] },
+      lifetime: { kid: { byRule: { 'book-finished': 4 }, total: 9 } },
+    });
+  };
+  const achievements = (days, milestones = {}) => ({ days, milestones, unavailable: [] });
+
+  it('a merged cell lists each rule as a part, with its days and items', () => {
+    const b = board('2026-11-04', {
+      rings: 0, ringDays: [],
+      achievements: achievements({ 'story-read': ['2026-11-02', '2026-11-03'] }, { 'book-finished': [{ key: 'b1', day: '2026-11-03', label: 'Frog and Toad' }] }),
+    });
+    const cell = b.cells.reading.kid;
+    expect(cell).toMatchObject({ state: 'earned', week: 1, streak: { have: 2, need: 4, left: 5, reach: 'on-track', ruleId: 'reader-week' } });
+    expect(cell.parts.map((p) => [p.ruleId, p.state])).toEqual([['reader-week', 'pending'], ['book-finished', 'earned']]);
+    expect(cell.parts[0].days).toEqual([{ day: '2026-11-02', state: 'done' }, { day: '2026-11-03', state: 'done' }]);
+    expect(cell.parts[1]).toMatchObject({ week: 1, lifetime: 4, items: [{ day: '2026-11-03', label: 'Frog and Toad' }] });
+  });
+
+  it('reach: tight when every day left is needed, out when there are too few', () => {
+    const two = achievements({ 'story-read': ['2026-11-02', '2026-11-03'] });
+    // Saturday, not yet done today: Sat + Sun left, 2 short.
+    expect(board('2026-11-07', { rings: 0, ringDays: [], achievements: two }).cells.reading.kid.streak).toMatchObject({ left: 2, reach: 'tight' });
+    // Sunday: one day left, 2 short.
+    expect(board('2026-11-08', { rings: 0, ringDays: [], achievements: two }).cells.reading.kid.streak).toMatchObject({ left: 1, reach: 'out' });
+  });
+
+  it('today does not count as left once it is done, and ring days stop at Saturday', () => {
+    const b = board('2026-11-04', {
+      rings: 40, ringDays: [{ day: '2026-11-04', rings: 40 }],
+      achievements: achievements({ 'story-read': ['2026-11-04'] }),
+    });
+    expect(b.cells.reading.kid.streak).toMatchObject({ have: 1, left: 4 });      // Thu–Sun
+    expect(b.cells['moved-days'].kid.streak).toMatchObject({ have: 1, need: 5, left: 3, reach: 'out' }); // Thu–Sat
+    expect(b.cells['moved-days'].kid.parts[0].days).toEqual([{ day: '2026-11-04', state: 'done' }]);
+  });
+
+  it('no streak once earned, and none for a cell with nothing pending', () => {
+    const b = board('2026-11-04', { rings: 0, ringDays: [], achievements: achievements({ 'story-read': [] }) });
+    expect(b.cells.reading.kid.streak).toMatchObject({ have: 0, need: 4 });
+    expect(b.groups.map((g) => g.id)).toEqual(['move', 'school']);
+    // Earned: the part is no longer running, so the cell has no streak.
+    const done = board('2026-11-06', {
+      rings: 0, ringDays: [],
+      achievements: achievements({ 'story-read': ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05'] }),
+    });
+    expect(done.cells.reading.kid).toMatchObject({ state: 'earned', week: 1, streak: null });
+    expect(done.cells.reading.kid.parts[0]).toMatchObject({ state: 'earned', left: null, reach: null });
+  });
+});
