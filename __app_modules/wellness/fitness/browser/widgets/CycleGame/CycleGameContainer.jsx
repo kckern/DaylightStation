@@ -13,7 +13,7 @@ import { buildHighScores } from "../../lib/cycleGame/highScores.js";
 import { buildRecordRow } from "../../lib/cycleGame/recordRow.js";
 import { resolveParticipantIdentity } from "../../lib/cycleGame/participantIdentity.js";
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from "../../lib/cycleGame/ghostCandidate.js";
-import { pickPaceRival, paceRivalPool, mergeRaceCandidates, buildParRecord, PAR_ID, DEFAULT_PAR_SPEED_KMH } from "../../lib/cycleGame/paceRival.js";
+import { pickPaceRival, paceRivalPool, mergeRaceCandidates, rivalPoolCandidates, buildParRecord, PAR_ID, DEFAULT_PAR_SPEED_KMH } from "../../lib/cycleGame/paceRival.js";
 import { courseStartOverride, pickRival, ladderDelta } from "../../lib/cycleGame/ladder.js";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from "../../lib/cycleGame/equipmentRpm.js";
@@ -115,17 +115,31 @@ function armPaceRival({ candidates, riderId, winCondition, goalM, timeCapS, parS
 const PACE_RIVAL_LOOKUP_MS = 1500;
 
 /**
- * Every saved race of one win condition and exact length, as candidates. The
- * lobby loads only the most recent race days; this is the full history, so a
- * best ride from long ago is still found. Rejects on a network/HTTP failure.
- * No filtering here: what counts is decided by pickPaceRival alone.
+ * Every saved race of one win condition and exact length, as candidates made
+ * from the server's light index rows: results only, no series. The lobby loads
+ * only the most recent race days; this is the full history, so a best ride
+ * from long ago is still found. Rejects on a network/HTTP failure. What counts
+ * is decided by pickPaceRival alone; a pick from these rows needs its record
+ * (fetchRaceRecord) before it can be replayed.
  */
-async function fetchRacesOfLength({ winCondition, goalM, timeCapS, mapRecord, signal }) {
+async function fetchRivalPool({ winCondition, goalM, timeCapS, signal }) {
   const length = winCondition === 'time' ? `timeCapS=${encodeURIComponent(timeCapS)}` : `goalM=${encodeURIComponent(goalM)}`;
-  const resp = await fetch(`/api/v1/fitness/cycle-races?winCondition=${encodeURIComponent(winCondition)}&${length}`, { signal });
-  if (!resp.ok) throw new Error(`cycle-races ${resp.status}`);
-  const { races = [] } = await resp.json();
-  return (Array.isArray(races) ? races : []).map(mapRecord).filter(Boolean);
+  const resp = await fetch(`/api/v1/fitness/cycle-races/rival-pool?winCondition=${encodeURIComponent(winCondition)}&${length}`, { signal });
+  if (!resp.ok) throw new Error(`rival-pool ${resp.status}`);
+  const body = await resp.json();
+  return rivalPoolCandidates(body?.entries);
+}
+
+/**
+ * One saved race record (`{ race, participants }`), or null when the answer
+ * holds none. Rejects on a network/HTTP failure.
+ */
+async function fetchRaceRecord(raceId, { signal = null } = {}) {
+  const url = `/api/v1/fitness/cycle-races/${encodeURIComponent(raceId)}`;
+  const resp = await (signal ? fetch(url, { signal }) : fetch(url));
+  if (!resp.ok) throw new Error(`cycle-races/${raceId} ${resp.status}`);
+  const body = await resp.json();
+  return body?.race ?? null;
 }
 
 const RACE_TICK_MS = 1000;
@@ -886,7 +900,9 @@ export default function CycleGameContainer({ onMount } = {}) {
         source: paceRival.source,
         candidates: paceRival.candidates,
         historyLoaded: paceRival.historyLoaded,
-        serverLookup: paceRival.serverLookup
+        serverLookup: paceRival.serverLookup,
+        lookupMs: paceRival.lookupMs,
+        recordFetched: paceRival.recordFetched
       });
     }
     startCountdownRef.current = cfg.startCountdownS;
@@ -973,8 +989,8 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Start pressed. Decides the field, then launches. Returns whether the start
   // was accepted (false = dropped: a race is already under way, another start is
   // pending, or there is nobody to race). A lone rider with no ghost waits up to
-  // `lookupBudgetMs` for the server's full history before launching; every other
-  // start launches synchronously. `control` names the caller in the logs.
+  // `lookupBudgetMs` for the server's rival pool (and the one record it picks)
+  // before launching; every other start launches synchronously. `control` names the caller in the logs.
   const startRace = useCallback((override = null, ghostOverride = undefined, { lookupBudgetMs = PACE_RIVAL_LOOKUP_MS, control = null } = {}) => {
     const ov = override && override.win_condition ? override : null;
     const controlName = control || (ov ? 'sim.autostart' : 'lobby.start-button');
@@ -1035,15 +1051,19 @@ export default function CycleGameContainer({ onMount } = {}) {
     const race = { winCondition: type, goalM, timeCapS };
     const historyLoaded = historyLoadedRef.current; // as of this press
     // One selection rule (pickPaceRival) over whichever list we end up with.
-    // `candidates` reports how many races of this type + length it chose from.
-    const rivalFrom = (candidates, fromServer, serverLookup) => {
+    // `candidates` reports how many races of this type + length it chose from;
+    // `lookupMs` how long the server lookup took and `recordFetched` whether it
+    // had to fetch a record (the pick was not in the loaded history).
+    const rivalFrom = (candidates, fromServer, serverLookup, { lookupMs = 0, recordFetched = false } = {}) => {
       const rival = armPaceRival({ candidates, riderId, ...race, parSpeedKmh });
       return {
         ...rival,
         source: rival.source === 'history' && fromServer ? 'server-history' : rival.source,
         candidates: paceRivalPool({ candidates, ...race }).length,
         historyLoaded,
-        serverLookup
+        serverLookup,
+        lookupMs,
+        recordFetched
       };
     };
     // The caller already spent the budget (a featured ride whose own rival
@@ -1052,9 +1072,11 @@ export default function CycleGameContainer({ onMount } = {}) {
       launchRace(plan, rivalFrom(ghostCandidates, false, 'skipped'));
       return true;
     }
-    // Search the full history: every race of this type and length, merged with
-    // what the lobby loaded. It may never delay the start past the budget and
-    // may never fail it: an error or a timeout falls back to the loaded history.
+    // Search the full history: the server's light rows of every race of this
+    // type and length, merged with what the lobby loaded. If the pick is a race
+    // the lobby has not loaded, its one record is fetched so it can be replayed.
+    // None of it may delay the start past the budget or fail it: an error, a
+    // timeout or a record that cannot be replayed falls back to the loaded history.
     const abort = typeof AbortController === 'function' ? new AbortController() : null;
     const pending = { abort };
     startPendingRef.current = pending;
@@ -1065,14 +1087,32 @@ export default function CycleGameContainer({ onMount } = {}) {
       timer = setTimeout(() => resolve({ outcome: 'timeout' }), lookupBudgetMs);
     });
     const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
-    const lookup = fetchRacesOfLength({
-      ...race,
-      mapRecord: (rec) => mapRaceRecordToCandidate(rec, { getDisplayLabel, resolveGaugeMaxRpm }),
-      signal: abort?.signal
-    }).then(
-      (serverCandidates) => ({ outcome: 'used', serverCandidates }),
-      (err) => ({ outcome: 'error', error: err?.message || String(err) })
-    );
+    const startedAt = Date.now();
+    // How far the lookup got, readable by the timeout path too.
+    const progress = { stage: 'pool', sourceRaceId: null, recordFetched: false };
+    const signal = abort?.signal ?? null;
+    const lookup = (async () => {
+      const rows = await fetchRivalPool({ ...race, signal });
+      // Timed out or unmounted while the pool was on its way: fetch nothing more.
+      if (signal?.aborted) throw new Error('aborted');
+      const merged = mergeRaceCandidates(ghostCandidates, rows);
+      const pick = pickPaceRival({ candidates: merged, riderId, ...race });
+      const isLoaded = ghostCandidates.some((c) => c && String(c.raceId) === String(pick.raceId));
+      if (pick.kind === 'par' || isLoaded) return { outcome: 'used', candidates: merged };
+      // The pick is a row with no series: fetch that one race so it can be replayed.
+      progress.stage = 'record';
+      progress.sourceRaceId = pick.raceId;
+      progress.recordFetched = true;
+      const record = await fetchRaceRecord(pick.raceId, { signal });
+      const fetched = mapRaceRecordToCandidate(record, { getDisplayLabel, resolveGaugeMaxRpm });
+      const candidates = mergeRaceCandidates(ghostCandidates.concat(fetched ? [fetched] : []), rows);
+      // Usable only if the same rule, run over the record, arms that same ride.
+      const armed = armPaceRival({ candidates, riderId, ...race, parSpeedKmh });
+      if (String(armed.sourceRaceId) !== String(pick.raceId) || armed.participantId !== pick.participantId) {
+        throw new Error('record not replayable');
+      }
+      return { outcome: 'used', candidates };
+    })().catch((err) => ({ outcome: 'error', error: err?.message || String(err) }));
     const settle = () => {
       if (startPendingRef.current !== pending) return false; // unmounted while waiting
       startPendingRef.current = null;
@@ -1083,8 +1123,12 @@ export default function CycleGameContainer({ onMount } = {}) {
       clearTimeout(timer);
       if (res.outcome === 'timeout') abort?.abort();
       if (!settle()) return;
+      const lookupStats = { lookupMs: Date.now() - startedAt, recordFetched: progress.recordFetched };
       if (res.outcome !== 'used') {
-        log.warn('cycle_game.pace_rival_lookup_failed', { riderId, ...race, outcome: res.outcome, error: res.error ?? null });
+        log.warn('cycle_game.pace_rival_lookup_failed', {
+          riderId, ...race, outcome: res.outcome, stage: progress.stage, sourceRaceId: progress.sourceRaceId,
+          error: res.error ?? null, lookupMs: lookupStats.lookupMs
+        });
       }
       // The lobby is frozen while we wait, so this is belt and braces.
       if (phaseRef.current !== 'idle') {
@@ -1092,8 +1136,8 @@ export default function CycleGameContainer({ onMount } = {}) {
         return;
       }
       launchRace(plan, res.outcome === 'used'
-        ? rivalFrom(mergeRaceCandidates(ghostCandidates, res.serverCandidates), true, 'used')
-        : rivalFrom(ghostCandidates, false, res.outcome));
+        ? rivalFrom(res.candidates, true, 'used', lookupStats)
+        : rivalFrom(ghostCandidates, false, res.outcome, lookupStats));
     }).catch((err) => {
       // A throw while launching must not become an unhandled rejection, nor
       // leave the lobby frozen.
@@ -1895,14 +1939,11 @@ export default function CycleGameContainer({ onMount } = {}) {
     let ghostOverride = null;
     if (rivalRaceId) {
       try {
-        const resp = await fetch(`/api/v1/fitness/cycle-races/${encodeURIComponent(rivalRaceId)}`);
-        if (resp.ok) {
-          const { race } = await resp.json();
-          const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
-          const candidate = mapRaceRecordToCandidate(race, { getDisplayLabel, resolveGaugeMaxRpm });
-          const built = candidate ? buildGhostFromCandidate(candidate) : null;
-          if (built) ghostOverride = built.ghost;
-        }
+        const race = await fetchRaceRecord(rivalRaceId);
+        const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
+        const candidate = mapRaceRecordToCandidate(race, { getDisplayLabel, resolveGaugeMaxRpm });
+        const built = candidate ? buildGhostFromCandidate(candidate) : null;
+        if (built) ghostOverride = built.ghost;
       } catch { /* ghost is optional — never block the start */ }
     }
     if (!startable()) return;

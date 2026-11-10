@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickPaceRival, buildParRecord, PAR_RPM, mergeRaceCandidates, paceRivalPool } from './paceRival.js';
+import { pickPaceRival, buildParRecord, PAR_RPM, mergeRaceCandidates, paceRivalPool, rivalPoolCandidates } from './paceRival.js';
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from './ghostCandidate.js';
 import { SessionSerializerV3 } from '../../hooks/fitness/SessionSerializerV3.js';
 
@@ -386,5 +386,66 @@ describe('paceRivalPool', () => {
       ]
     );
     expect(pickPaceRival({ ...want, riderId: 'rider-a', candidates: merged })).toEqual({ kind: 'self', raceId: 'r1', participantId: 'rider-a' });
+  });
+});
+
+describe('rivalPoolCandidates (the server\'s light rows as candidates)', () => {
+  const want = { riderId: 'rider-a', winCondition: 'distance', goalM: 1500 };
+  const entry = (raceId, parts, over = {}) => ({ raceId, date: '2026-01-01', winCondition: 'distance', goalM: 1500, participants: parts, ...over });
+  const part = (id, finalTimeS, over = {}) => ({ id, isGhost: false, stopped: false, finalTimeS, finalDistanceM: 1500, placement: 1, ...over });
+
+  it('maps an entry to the fields pickPaceRival reads, with no series', () => {
+    expect(rivalPoolCandidates([entry('20250101100000', [part('rider-a', 300)])])).toEqual([{
+      raceId: '20250101100000', date: '2026-01-01', winCondition: 'distance', goalM: 1500, timeCapS: null,
+      incomplete: false,
+      participants: [{ id: 'rider-a', isGhost: false, stopped: false, finalTimeS: 300, finalDistanceM: 1500, placement: 1 }]
+    }]);
+    const [time] = rivalPoolCandidates([{ raceId: '20250101100000', date: '2026-01-01', winCondition: 'time', timeCapS: 300, participants: [] }]);
+    expect(time).toMatchObject({ winCondition: 'time', goalM: null, timeCapS: 300, participants: [] });
+  });
+
+  it('goes through the one selection rule: own best, then household best, ties to the most recent race', () => {
+    const rows = rivalPoolCandidates([
+      entry('20250101100000', [part('rider-a', 300), part('rider-b', 250)]),
+      entry('20250102100000', [part('rider-a', 300)]),
+      entry('20250103100000', [part('rider-a', 320)])
+    ]);
+    expect(pickPaceRival({ ...want, candidates: rows })).toEqual({ kind: 'self', raceId: '20250102100000', participantId: 'rider-a' });
+    expect(pickPaceRival({ ...want, riderId: 'rider-c', candidates: rows })).toEqual({ kind: 'household', raceId: '20250101100000', participantId: 'rider-b' });
+  });
+
+  it('a ghost or a stopped rider in a row is never the pick, by flag or by id', () => {
+    const rows = rivalPoolCandidates([
+      entry('20250101100000', [part('rider-a', 100, { stopped: true })]),
+      entry('20250102100000', [part('ghost:20240101100000:rider-a', 110, { isGhost: true })]),
+      entry('20250103100000', [part('ghost:20240101100000:rider-a', 120, { isGhost: false })])
+    ]);
+    expect(pickPaceRival({ ...want, candidates: rows })).toEqual(PAR);
+    expect(paceRivalPool({ ...want, candidates: rows })).toHaveLength(3); // still races considered
+  });
+
+  it('merged after the loaded history, the loaded copy of a race wins (it has the series)', () => {
+    const loaded = [cand('20250101100000', 'distance', 1500, [{ ...p('rider-a', 300, 1500), distanceSeries: 'series' }])];
+    const merged = mergeRaceCandidates(loaded, rivalPoolCandidates([
+      entry('20250101100000', [part('rider-a', 300)]),
+      entry('20240101100000', [part('rider-a', 280)])
+    ]));
+    expect(merged.map((c) => c.raceId)).toEqual(['20250101100000', '20240101100000']);
+    expect(merged[0]).toBe(loaded[0]);
+    expect(pickPaceRival({ ...want, candidates: merged })).toMatchObject({ kind: 'self', raceId: '20240101100000' });
+  });
+
+  it('drops what is not a row and tolerates a row with no participants', () => {
+    expect(rivalPoolCandidates(null)).toEqual([]);
+    expect(rivalPoolCandidates({ entries: [] })).toEqual([]);
+    const out = rivalPoolCandidates([null, 'x', { winCondition: 'distance', goalM: 1500 }, entry('20250101100000', undefined)]);
+    expect(out.map((c) => c.raceId)).toEqual(['20250101100000']);
+    expect(out[0].participants).toEqual([]);
+  });
+
+  it('keeps an incomplete flag if a row carries one (the server leaves those races out)', () => {
+    const rows = rivalPoolCandidates([entry('20250101100000', [part('rider-a', 100)], { incomplete: true })]);
+    expect(rows[0].incomplete).toBe(true);
+    expect(pickPaceRival({ ...want, candidates: rows })).toEqual(PAR);
   });
 });

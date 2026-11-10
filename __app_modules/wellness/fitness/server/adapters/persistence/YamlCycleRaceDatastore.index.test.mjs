@@ -37,8 +37,8 @@ describe('listIndexEntries', () => {
     expect(e).toMatchObject({ id: '20260630080000', date: '2026-06-30', course_id: 'sprint-1500m',
       win_condition: 'distance', goal_m: 1500 });
     expect(e.participants).toEqual([
-      { userId: 'dad', isGhost: false, final_time_s: 150.2, final_distance_m: 1500, placement: 1 },
-      { userId: 'ghost:20260601080000:dad', isGhost: true, final_time_s: null, final_distance_m: 1480, placement: 2 }
+      { userId: 'dad', isGhost: false, stopped: false, final_time_s: 150.2, final_distance_m: 1500, placement: 1 },
+      { userId: 'ghost:20260601080000:dad', isGhost: true, stopped: false, final_time_s: null, final_distance_m: 1480, placement: 2 }
     ]);
   });
 
@@ -96,8 +96,39 @@ describe('listIndexEntries', () => {
     const [e] = await store.listIndexEntries('household');
     expect(e.incomplete).toBe(true); // rebuilt from the record, not served from the old row
     const rewritten = JSON.parse(fs.readFileSync(shardPath, 'utf8'));
-    expect(rewritten.version).toBe(2);
+    expect(rewritten.version).toBe(3);
     expect(rewritten.days['2026-06-30'].races[0].incomplete).toBe(true);
+  });
+
+  it("a rider's stopped flag is indexed and survives the shard round-trip", async () => {
+    const r = rec('20260630080000');
+    r.participants.rider_a = { display_name: 'Rider A', final_distance_m: 900, final_time_s: null, placement: 3, stopped: true };
+    await store.save(r, 'household');
+    const stoppedOf = (entries) => Object.fromEntries(entries[0].participants.map((p) => [p.userId, p.stopped]));
+    const want = { dad: false, 'ghost:20260601080000:dad': false, rider_a: true };
+    expect(stoppedOf(await store.listIndexEntries('household'))).toEqual(want); // built from the record
+    expect(stoppedOf(await store.listIndexEntries('household'))).toEqual(want); // served from the shard
+    const shard = JSON.parse(fs.readFileSync(path.join(tmpBase, 'fitness/log/cycle-races/_index/2026-06.json'), 'utf8'));
+    expect(shard.days['2026-06-30'].races[0].participants.find((p) => p.userId === 'rider_a').stopped).toBe(true);
+  });
+
+  it('a version 2 shard (rows without `stopped`) is rebuilt as version 3', async () => {
+    const r = rec('20260630080000');
+    r.participants.dad.stopped = true;
+    await store.save(r, 'household');
+    await store.listIndexEntries('household'); // build the shard (day mtime recorded)
+    const shardPath = path.join(tmpBase, 'fitness/log/cycle-races/_index/2026-06.json');
+    // Rewrite it the way version 2 code wrote it: no `stopped` on any participant.
+    const shard = JSON.parse(fs.readFileSync(shardPath, 'utf8'));
+    shard.version = 2;
+    for (const day of Object.values(shard.days)) for (const row of day.races) for (const p of row.participants) delete p.stopped;
+    fs.writeFileSync(shardPath, JSON.stringify(shard));
+
+    const [e] = await store.listIndexEntries('household');
+    expect(e.participants.find((p) => p.userId === 'dad').stopped).toBe(true); // from the record, not the old row
+    const rewritten = JSON.parse(fs.readFileSync(shardPath, 'utf8'));
+    expect(rewritten.version).toBe(3);
+    expect(rewritten.days['2026-06-30'].races[0].participants.find((p) => p.userId === 'dad').stopped).toBe(true);
   });
 
   it('legacy records without course_id index as course_id null', async () => {

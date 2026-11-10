@@ -94,9 +94,14 @@ Persistence (backend) ───────────────────�
   1_adapters/persistence/yaml/YamlCycleRaceDatastore.mjs   YAML read/write +
                                                             _index/{YYYY-MM}.json shards
   3_applications/fitness/services/CycleRaceService.mjs      save/get/list/ghosts/
-                                                            ladder/personal-bests
+                                                            ladder/personal-bests/
+                                                            rival pool
   4_api/v1/routers/fitness.mjs                              /cycle-races routes incl.
-                                                            ladder + personal-bests
+                                                            ladder + personal-bests +
+                                                            rival-pool
+  2_domains/fitness/services/cycleRivalPool.mjs             pure rival-pool domain:
+                                                            request parsing, index rows
+                                                            → pool entries
   2_domains/fitness/services/cycleLadder.mjs                pure ladder domain: week
                                                             window, ISO week, course
                                                             rotation, matching, ranking
@@ -285,23 +290,35 @@ one** live rider is claimed, a pace rival is armed for that race:
 | `household` | Failing that, the best such ride by anyone |
 | `par` | Failing that (or if the picked ride has no distance series to replay), a constant-speed rider, id `ghost:par:par`, named "Par" |
 
-- **One lookup, over the full history.** The lobby loads only the five most
-  recent race days, so on Start the container asks the server for every saved
-  race of this exact type and length
-  (`GET /cycle-races?winCondition=&goalM=` or `&timeCapS=`, §15), maps the
-  records to candidates, merges them with the loaded history (each race once;
-  the loaded copy wins) and runs `pickPaceRival` over the merged list. There is
+- **One lookup, over the full history, in two light steps.** The lobby loads
+  only the five most recent race days, so on Start the container asks the
+  server for the **rival pool**: one light row per saved race of this exact type
+  and length (`GET /cycle-races/rival-pool?winCondition=&goalM=` or
+  `&timeCapS=`, §15). The rows come from the race index (§16) and hold results
+  only, no series. `rivalPoolCandidates` turns them into candidates, they are
+  merged with the loaded history (each race once; the loaded copy wins, because
+  it has the series) and `pickPaceRival` runs over the merged list. There is
   one selection rule, in `paceRival.js`, for both lists.
-- **The lookup never holds up or fails a start.** It has 1500 ms in total. On a
-  timeout (the request is aborted), an HTTP or network error, the pick runs over
-  the loaded history alone. A featured-course ride that already spent time
-  fetching its ladder rival gets only what is left of the same 1500 ms, and no
-  lookup at all once it is spent.
+- **At most one record is fetched.** If the pick is a race the lobby already
+  loaded, it is replayed from that copy and nothing more is requested. If not,
+  that one race is fetched (`GET /cycle-races/:raceId`) and mapped like any
+  other record. The record is used only if the same rule, run again with it in
+  the list, arms the same rider of the same race.
+- **The lookup never holds up or fails a start.** Both requests share 1500 ms
+  in total and one abort signal. On a timeout (the request in flight is
+  aborted), an HTTP or network error on either request, or a fetched record
+  that cannot be replayed (missing, no series for that rider, or not holding
+  that rider), the pick runs over the loaded history alone, and falls to par
+  when that has no counting ride either. A featured-course ride that already
+  spent time fetching its ladder rival gets only what is left of the same
+  1500 ms, and no lookup at all once it is spent.
+- The heavy listing (`GET /cycle-races?winCondition=…`, which returns full
+  records with every series) is no longer requested by the game.
 - **The lobby is frozen while it waits** (§4). If the game is closed in that
   time the request is aborted and nothing starts. Starts that need no rival (two
   or more riders, a chosen ghost) launch synchronously with no request.
 - **What counts:** the record is not flagged `incomplete`
-  (§15), the rider was live (not a replay), was not stopped when the race
+  (§15; the server leaves those races out of the pool), the rider was live (not a replay), was not stopped when the race
   closed, and for a distance race finished. Best is the lowest finish time
   (distance) or the furthest distance (time). The length compared is the final
   one `startRace` resolves, after any course override and the config defaults.
@@ -760,17 +777,51 @@ disagree), built from **local** time — there is **no UTC foldering bug**.
 | `POST /cycle-races` | save `{ record, household? }` → `{ ok, raceId, file }` |
 | `GET /cycle-races/ladder?week=YYYY-Www` | this week's (or a specified week's) featured-course ladder — see §16 |
 | `GET /cycle-races/personal-bests?userId=&courseId=` | a rider's all-time PB on a course — see §16 |
+| `GET /cycle-races/rival-pool?winCondition=distance\|time&goalM=` (or `&timeCapS=`) | light index rows of one race type and exact length, for the pace rival — see below |
 | `GET /cycle-races/:raceId` | one race |
 | `GET /cycle-races?date=YYYY-MM-DD` | races on a day |
-| `GET /cycle-races?courseId=… \| winCondition=…&goalM/timeCapS=…` | ghost candidates |
+| `GET /cycle-races?courseId=… \| winCondition=…&goalM/timeCapS=…` | ghost candidates: full records with series, read from every race file. No longer requested by the game (the pace rival uses `rival-pool`) |
 | `GET /cycle-races` | list date folders |
 
 `CycleRaceService` is a thin wrapper over `YamlCycleRaceDatastore`
 (`save / get / listByDate / listDates / findGhostCandidates`), plus the ladder /
-personal-best queries described next. Wired in `bootstrap.mjs`.
+personal-best queries described next and the rival pool. Wired in `bootstrap.mjs`.
 
-> `ladder` and `personal-bests` are registered **before** `/:raceId` in the router —
-> otherwise Express would swallow them as a raceId lookup.
+> `ladder`, `personal-bests` and `rival-pool` are registered **before** `/:raceId`
+> in the router — otherwise Express would swallow them as a raceId lookup.
+
+**`GET /cycle-races/rival-pool`** — the listing a lone rider's pace rival is
+picked from (§5). `winCondition` is required (`distance` or `time`), with
+`goalM` for a distance race or `timeCapS` for a time race; `household` is
+optional. A missing or unknown `winCondition`, or a length that is not a
+positive number, is a `400`
+(`{ error: 'winCondition (distance|time) and a positive goalM or timeCapS required' }`).
+It reads the index shards only (§16): no race file is opened unless a day's
+rows have to be rebuilt. Response:
+
+```json
+{
+  "entries": [
+    {
+      "raceId": "20260629080000",
+      "date": "2026-06-29",
+      "winCondition": "distance",
+      "goalM": 1500,
+      "participants": [
+        { "id": "rider-a", "isGhost": false, "stopped": false,
+          "finalTimeS": 148.2, "finalDistanceM": 1500, "placement": 1 }
+      ]
+    }
+  ]
+}
+```
+
+A time race carries `timeCapS` in place of `goalM`. Rows match on the win
+condition and the length compared as a number; rows flagged `incomplete` are
+left out. Ghost and stopped riders stay in, flagged, so the client's one
+selection rule decides and its `candidates` count is the number of races
+considered. Nothing is ranked on the server. The filter and mapping are
+`parseRivalPoolQuery` / `rivalPoolEntries` in `cycleRivalPool.mjs`.
 
 ---
 
@@ -896,8 +947,8 @@ resolves.
 
 ### Index shards
 
-The ladder reads from the same self-healing index the datastore already
-maintains: `household[-{id}]/fitness/log/cycle-races/_index/{YYYY-MM}.json`.
+The ladder, personal bests and the pace-rival pool (§15) read from the same
+self-healing index the datastore already maintains: `household[-{id}]/fitness/log/cycle-races/_index/{YYYY-MM}.json`.
 Shards are **disposable** — deleting one just forces a rebuild (per-day mtime
 check) on the next read; nothing else depends on their presence.
 
@@ -905,8 +956,16 @@ Each row carries `incomplete` (boolean, from `race.incomplete`) after
 `time_cap_s`, ahead of `participants`. Adding it took the shard format to
 **version 2**. A shard whose `version` differs from the running build's is
 discarded whole and rebuilt from the race files, so a row written without the
-field is never trusted. The same rule runs in both directions: a build that
-still writes version 1 discards a version 2 shard and rewrites it as version 1.
+field is never trusted.
+
+Each participant in a row carries `stopped` (boolean, from the record's
+participant `stopped`: parked when the race closed) after `isGhost`. The pace
+rival never replays such a ride; the ladder ignores the flag. Adding it took
+the shard format to **version 3**, so the first index read by a build with it
+rebuilds every shard from the race files once.
+
+The version rule runs in both directions: a build that writes an older version
+discards a newer shard and rewrites it in its own format.
 Two builds of different ages sharing one data tree therefore stay correct, at
 the cost of a full rebuild each time the other one has written last.
 
@@ -964,13 +1023,20 @@ by `raceId` (+ `elapsedS` where relevant).
   | `kind` | What was armed: `self`, `household`, `par`, or `none` (no rival could be built) |
   | `requestedKind` | What selection asked for. `requestedKind: 'self'` with `kind: 'par'` means the rider's best ride could not be replayed |
   | `sourceRaceId`, `participantId` | The ride replayed; `sourceRaceId` is `null` for par |
-  | `source` | Where the armed rival came from: `server-history` (picked from the merged list after the server answered), `history` (the lobby's loaded history alone) or `par` |
+  | `source` | Where the armed rival came from: `server-history` (picked from the merged list after the server answered, whether replayed from a loaded race or a fetched record), `history` (the lobby's loaded history alone) or `par` |
   | `candidates` | Races of this type and length the pick chose from (the merged list when the server answered, else loaded history) |
   | `historyLoaded` | Whether a lobby history load had completed when Start was pressed |
-  | `serverLookup` | The full-history request: `used`, `error`, `timeout`, or `skipped` (a featured ride had already spent the budget) |
+  | `serverLookup` | The server lookup (rival pool, then the picked record if one was needed): `used`, `error`, `timeout`, or `skipped` (a featured ride had already spent the budget) |
+  | `lookupMs` | How long the server lookup took, from Start to its answer, error or timeout. `0` when `skipped` |
+  | `recordFetched` | `true` when the pick was not in the loaded history, so its record was requested (also `true` when that request then failed or timed out) |
 
 - **`cycle_game.pace_rival_lookup`** (DEBUG) when the request starts;
-  **`cycle_game.pace_rival_lookup_failed`** (WARN) on `error` or `timeout`.
+  **`cycle_game.pace_rival_lookup_failed`** (WARN) on `error` or `timeout`, with
+  `outcome`, `stage` (`pool` or `record`: which request it was in),
+  `sourceRaceId` (the record being fetched, else `null`), `error` and `lookupMs`.
+- Backend: **`fitness.cycle_races.rival_pool.computed`** (DEBUG) per pool
+  request: `winCondition`, `length`, `entries` (index rows read), `pool` (rows
+  returned), `ms`.
 - **`cycle_game.start_ignored`** (INFO) — a start that was dropped:
   `{ reason, control }`. `reason` is `not_idle` (a race is already staged or
   running) or `start_pending` (another start is waiting on its rival lookup);

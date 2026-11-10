@@ -18,10 +18,10 @@ import {
 const INDEX_DIR_NAME = '_index';
 // Bump whenever the row shape changes: a shard whose version differs is discarded
 // and rebuilt from the race files, so a row written without a newer field is
-// never trusted. v2 added `incomplete`.
-const INDEX_VERSION = 2;
+// never trusted. v2 added `incomplete`; v3 added each participant's `stopped`.
+const INDEX_VERSION = 3;
 
-/** One index row per race — everything the ladder needs, nothing more. */
+/** One index row per race: what the ladder and the pace-rival pool need, nothing more. */
 export function indexEntryFromRecord(record, date) {
   const race = record?.race || {};
   return {
@@ -36,6 +36,8 @@ export function indexEntryFromRecord(record, date) {
     participants: Object.entries(record?.participants || {}).map(([userId, p]) => ({
       userId,
       isGhost: String(userId).startsWith('ghost:'),
+      // Parked when the race closed: never a pace rival (the ladder ignores it).
+      stopped: !!p?.stopped,
       final_time_s: Number.isFinite(p?.final_time_s) ? p.final_time_s : null,
       final_distance_m: Number(p?.final_distance_m) || 0,
       placement: p?.placement ?? null

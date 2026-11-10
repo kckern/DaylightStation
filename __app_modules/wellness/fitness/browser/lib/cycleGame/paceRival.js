@@ -45,7 +45,8 @@ export function paceRivalPool({ candidates = [], winCondition = 'distance', goal
 /**
  * Two candidate lists as one, each race once. A race in both keeps the copy
  * from `primary` (race ids compare as strings). Used to add the server's
- * full-history list to what the lobby already loaded.
+ * rival-pool rows to what the lobby already loaded: the loaded copy wins
+ * because it carries the series.
  *
  * @param {Array} primary
  * @param {Array} extra
@@ -64,6 +65,40 @@ export function mergeRaceCandidates(primary, extra) {
     });
   });
   return out;
+}
+
+/**
+ * The server's rival-pool entries (GET /cycle-races/rival-pool: light index
+ * rows, no series) as candidates pickPaceRival can read, so the one selection
+ * rule applies to them too. A candidate made here cannot be replayed: once one
+ * is picked, its full record is fetched and mapped with mapRaceRecordToCandidate.
+ * Anything that is not a row with a race id is dropped.
+ *
+ * @param {Array} entries `[{ raceId, date, winCondition, goalM | timeCapS,
+ *   participants: [{ id, isGhost, stopped, finalTimeS, finalDistanceM, placement }] }]`
+ * @returns {Array} candidates with only the fields the selection reads
+ */
+export function rivalPoolCandidates(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((e) => e && typeof e === 'object' && e.raceId != null)
+    .map((e) => ({
+      raceId: e.raceId,
+      date: e.date ?? null,
+      winCondition: e.winCondition,
+      goalM: e.goalM ?? null,
+      timeCapS: e.timeCapS ?? null,
+      incomplete: !!e.incomplete,
+      participants: (Array.isArray(e.participants) ? e.participants : [])
+        .filter((pt) => pt && pt.id != null)
+        .map((pt) => ({
+          id: pt.id,
+          isGhost: !!pt.isGhost,
+          stopped: !!pt.stopped,
+          finalTimeS: pt.finalTimeS ?? null,
+          finalDistanceM: pt.finalDistanceM ?? null,
+          placement: pt.placement ?? null
+        }))
+    }));
 }
 
 /**
@@ -159,4 +194,4 @@ export function buildParRecord({ winCondition = 'distance', goalM = null, timeCa
   };
 }
 
-export default { pickPaceRival, paceRivalPool, mergeRaceCandidates, buildParRecord };
+export default { pickPaceRival, paceRivalPool, mergeRaceCandidates, rivalPoolCandidates, buildParRecord };

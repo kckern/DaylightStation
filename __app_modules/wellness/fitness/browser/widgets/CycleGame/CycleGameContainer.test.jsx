@@ -167,8 +167,10 @@ describe('CycleGameContainer — governance suspension', () => {
 // ── automatic pace rival ─────────────────────────────────────────────────
 // A lone rider with no ghost gets a rival: own best at this type + length, else
 // the household best, else a constant par pace. The pick runs over the server's
-// full list of races at this type + length merged with the lobby's loaded
-// history; if the server does not answer in 1500 ms, over loaded history alone.
+// rival pool (light rows of every race at this type + length, no series) merged
+// with the lobby's loaded history; a pick the lobby has not loaded is fetched as
+// one record. If the server does not answer in 1500 ms, or that record cannot be
+// replayed, the pick is from loaded history alone.
 const GOAL_M = 3000; // makeCtx's distance_goal_default_m
 const COURSE = { id: 'course-3k', win_condition: 'distance', goal_m: GOAL_M };
 const OLD_RACE = '20250505100000'; // older than anything the lobby loads
@@ -199,21 +201,23 @@ function deferred() {
 }
 
 // Answers everything the container asks: the lobby's history load (dates, then
-// one day's races), the ladder, single-race reads and the full-history list of
-// races at one type + length.
+// one day's races), the ladder, single-race reads and the rival pool of one race
+// type + length.
 //   ladder: the /ladder body (default: 404, no featured course)
-//   list:   (url, opts) => Response promise for ?winCondition=… (default: no races)
-//   byId:   { raceId: record | (url) => Response promise } for /cycle-races/<raceId>
-function historyFetch(races, { ladder = null, list = null, byId = {} } = {}) {
+//   pool:   (url, opts) => Response promise for /rival-pool?winCondition=… (default: no rows)
+//   byId:   { raceId: record | (url, opts) => Response promise } for /cycle-races/<raceId>
+// The heavy ?winCondition= listing (full records) answers empty: nothing should ask.
+function historyFetch(races, { ladder = null, pool = null, byId = {} } = {}) {
   return vi.fn((url, opts) => {
     const u = String(url);
     if (u.includes('/ladder')) return ladder ? json(ladder) : notFound();
-    if (u.includes('winCondition=')) return list ? list(u, opts) : json({ races: [] });
+    if (u.includes('/rival-pool')) return pool ? pool(u, opts) : json({ entries: [] });
+    if (u.includes('winCondition=')) return json({ races: [] });
     if (u.includes('?date=')) return json({ races });
     const one = u.match(/\/cycle-races\/(\d+)$/);
     if (one) {
       const hit = byId[one[1]];
-      if (typeof hit === 'function') return hit(u);
+      if (typeof hit === 'function') return hit(u, opts);
       return hit ? json({ race: hit }) : notFound();
     }
     return json({ dates: ['2026-01-01'] });
@@ -256,7 +260,29 @@ const configLogs = () => logsOf('info', 'cycle_game.config');
 const paceRivalLogs = () => logsOf('info', 'cycle_game.pace_rival');
 const ignoredLogs = () => logsOf('info', 'cycle_game.start_ignored');
 const ghostIds = (cfg) => cfg.riders.filter((r) => r.isGhost).map((r) => r.userId);
-const listCalls = () => global.fetch.mock.calls.filter(([u]) => String(u).includes('winCondition='));
+const callsTo = (test) => global.fetch.mock.calls.filter(([u]) => test(String(u)));
+const poolCalls = () => callsTo((u) => u.includes('/cycle-races/rival-pool?'));
+const recordCalls = () => callsTo((u) => /\/cycle-races\/\d+$/.test(u));
+// The heavy listing of full records at one type + length: the rival never uses it.
+const heavyListCalls = () => callsTo((u) => u.includes('/cycle-races?winCondition='));
+// A saved record as the server's rival-pool entry (an index row: results, no series).
+function poolEntry(rec) {
+  const { race } = rec;
+  return {
+    raceId: race.id,
+    date: `${race.id.slice(0, 4)}-${race.id.slice(4, 6)}-${race.id.slice(6, 8)}`,
+    winCondition: race.win_condition,
+    ...(race.win_condition === 'time' ? { timeCapS: race.time_cap_s } : { goalM: race.goal_m }),
+    participants: Object.entries(rec.participants).map(([id, pt]) => ({
+      id, isGhost: id.startsWith('ghost:'), stopped: !!pt.stopped,
+      finalTimeS: pt.final_time_s ?? null, finalDistanceM: pt.final_distance_m, placement: pt.placement
+    }))
+  };
+}
+// The pool the server would answer for these saved records: ended-early races left out.
+const poolOf = (...records) => () => json({ entries: records.filter((r) => !r.race.incomplete).map(poolEntry) });
+// The record reads (/cycle-races/<raceId>) the server would answer for these records.
+const recordsById = (...records) => Object.fromEntries(records.map((r) => [r.race.id, r]));
 
 describe('CycleGameContainer — automatic pace rival', () => {
   beforeEach(() => {
@@ -264,7 +290,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     Object.values(logSpy).forEach((fn) => fn.mockClear());
   });
 
-  describe('picking from the loaded history (the server list adds nothing)', () => {
+  describe('picking from the loaded history (the server pool adds nothing)', () => {
     it("a lone rider with no ghost races their own best at this type and length", async () => {
       const view = await renderLobby([
         raceRecord('20260101100000', { user_1: { timeS: 400 } }),
@@ -278,11 +304,15 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(paceRivalLogs()).toEqual([{
         raceId: cfg.raceId, kind: 'self', requestedKind: 'self',
         sourceRaceId: '20260101110000', participantId: 'user_1',
-        source: 'server-history', candidates: 2, historyLoaded: true, serverLookup: 'used'
+        source: 'server-history', candidates: 2, historyLoaded: true, serverLookup: 'used',
+        lookupMs: expect.any(Number), recordFetched: false
       }]);
-      // One request, for exactly this race type and length.
-      expect(listCalls()).toHaveLength(1);
-      expect(String(listCalls()[0][0])).toContain(`winCondition=distance&goalM=${GOAL_M}`);
+      // One request, for exactly this race type and length: the light pool, never
+      // the heavy listing, and no record (the pick is already loaded).
+      expect(poolCalls()).toHaveLength(1);
+      expect(String(poolCalls()[0][0])).toBe(`/api/v1/fitness/cycle-races/rival-pool?winCondition=distance&goalM=${GOAL_M}`);
+      expect(heavyListCalls()).toEqual([]);
+      expect(recordCalls()).toEqual([]);
     });
 
     it('falls to the household best when the rider has no ride of their own', async () => {
@@ -304,7 +334,8 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(cfg.rivalKind).toBe('par');
       expect(paceRivalLogs()).toEqual([{
         raceId: cfg.raceId, kind: 'par', requestedKind: 'par', sourceRaceId: null, participantId: 'par',
-        source: 'par', candidates: 0, historyLoaded: true, serverLookup: 'used'
+        source: 'par', candidates: 0, historyLoaded: true, serverLookup: 'used',
+        lookupMs: expect.any(Number), recordFetched: false
       }]);
     });
 
@@ -329,7 +360,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(paceRivalLogs()).toEqual([expect.objectContaining({
         kind: 'none', requestedKind: 'par', sourceRaceId: null, participantId: null
       })]);
-      expect(String(listCalls()[0][0])).toContain('winCondition=time&timeCapS=18000');
+      expect(String(poolCalls()[0][0])).toContain('/rival-pool?winCondition=time&timeCapS=18000');
     });
   });
 
@@ -342,7 +373,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     expect(ghostIds(cfg)).toEqual([]);
     expect(cfg.rivalKind).toBeNull();
     expect(paceRivalLogs()).toEqual([]);
-    expect(listCalls()).toEqual([]);
+    expect(poolCalls()).toEqual([]);
   });
 
   it('a hand-picked ghost races alone at once: no automatic rival is added', async () => {
@@ -359,14 +390,15 @@ describe('CycleGameContainer — automatic pace rival', () => {
     expect(ghostIds(cfg)).toEqual(['ghost:20260101100000:user_2']);
     expect(cfg.rivalKind).toBe('ghost');
     expect(paceRivalLogs()).toEqual([]);
-    expect(listCalls()).toEqual([]);
+    expect(poolCalls()).toEqual([]);
   });
 
   describe('searching the full history on the server', () => {
-    it("finds the rider's best when it is older than the loaded history", async () => {
+    it("finds the rider's best when it is older than the loaded history, and fetches that one record", async () => {
       const old = raceRecord(OLD_RACE, { user_2: { timeS: 200 }, user_1: { timeS: 240 } });
+      const other = raceRecord('20250404100000', { user_1: { timeS: 260 } });
       const view = await renderLobby([raceRecord('20260101110000', { user_1: { timeS: 300 } })],
-        { list: () => json({ races: [old] }) });
+        { pool: poolOf(old, other), byId: recordsById(old, other) });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
       act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       expect(configLogs()).toEqual([]); // waiting on the server
@@ -376,50 +408,120 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(cfg.rivalKind).toBe('self');
       expect(paceRivalLogs()).toEqual([{
         raceId: cfg.raceId, kind: 'self', requestedKind: 'self', sourceRaceId: OLD_RACE, participantId: 'user_1',
-        source: 'server-history', candidates: 2, historyLoaded: true, serverLookup: 'used'
+        source: 'server-history', candidates: 3, historyLoaded: true, serverLookup: 'used',
+        lookupMs: expect.any(Number), recordFetched: true
       }]);
       expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+      // The picked race's record, and no other; the heavy listing is not used.
+      expect(recordCalls().map(([u]) => String(u))).toEqual([`/api/v1/fitness/cycle-races/${OLD_RACE}`]);
+      expect(heavyListCalls()).toEqual([]);
+      // Both requests can be aborted by the one start.
+      expect(recordCalls()[0][1].signal).toBe(poolCalls()[0][1].signal);
     });
 
     it('finds the household best there when the rider has never ridden this race', async () => {
       const old = raceRecord(OLD_RACE, { user_2: { timeS: 200 } });
-      const view = await renderLobby([], { list: () => json({ races: [old] }) });
+      const view = await renderLobby([], { pool: poolOf(old), byId: recordsById(old) });
       await startRaceOf(view);
       expect(ghostIds(configLogs()[0])).toEqual([`ghost:${OLD_RACE}:user_2`]);
-      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'household', source: 'server-history', candidates: 1, serverLookup: 'used' });
+      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'household', source: 'server-history', candidates: 1, serverLookup: 'used', recordFetched: true });
     });
 
-    it('a race in both lists is considered once', async () => {
+    it('a race in both lists is considered once, and replayed from the loaded copy: no record is fetched', async () => {
       const shared = raceRecord('20260101110000', { user_1: { timeS: 300 } });
-      const view = await renderLobby([shared], { list: () => json({ races: [shared] }) });
+      const slower = raceRecord(OLD_RACE, { user_1: { timeS: 340 } });
+      const view = await renderLobby([shared], { pool: poolOf(shared, slower), byId: recordsById(shared, slower) });
       await startRaceOf(view);
-      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'self', candidates: 1 });
+      expect(ghostIds(configLogs()[0])).toEqual(['ghost:20260101110000:user_1']);
+      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'self', sourceRaceId: '20260101110000', candidates: 2, serverLookup: 'used', recordFetched: false });
+      expect(recordCalls()).toEqual([]);
     });
 
     it("never picks the rider's ride from a race ended early, or one they were stopped in", async () => {
       const endedEarly = raceRecord('20250101100000', { user_1: { timeS: 100 } }, { incomplete: true });
       const stopped = raceRecord('20250102100000', { user_1: { timeS: 120, stopped: true } });
       const honest = raceRecord('20250103100000', { user_1: { timeS: 280 } });
-      const view = await renderLobby([], { list: () => json({ races: [endedEarly, stopped, honest] }) });
+      // The ended-early race is known to the lobby; the server's pool leaves it out.
+      const view = await renderLobby([endedEarly], { pool: poolOf(endedEarly, stopped, honest), byId: recordsById(endedEarly, stopped, honest) });
       await startRaceOf(view);
       expect(ghostIds(configLogs()[0])).toEqual(['ghost:20250103100000:user_1']);
       // The ended-early race is out of the pool; the stopped ride is in a counted race.
       expect(paceRivalLogs()[0]).toMatchObject({ kind: 'self', sourceRaceId: '20250103100000', candidates: 2 });
+      expect(recordCalls().map(([u]) => String(u))).toEqual(['/api/v1/fitness/cycle-races/20250103100000']);
     });
 
     it('falls back to loaded history when the request fails', async () => {
       const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })],
-        { list: () => Promise.reject(new Error('offline')) });
+        { pool: () => Promise.reject(new Error('offline')) });
       await startRaceOf(view);
       expect(ghostIds(configLogs()[0])).toEqual(['ghost:20260101100000:user_2']);
-      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'household', source: 'history', candidates: 1, serverLookup: 'error' });
-      expect(logSpy.warn).toHaveBeenCalledWith('cycle_game.pace_rival_lookup_failed', expect.objectContaining({ outcome: 'error', error: 'offline' }));
+      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'household', source: 'history', candidates: 1, serverLookup: 'error', recordFetched: false });
+      expect(logSpy.warn).toHaveBeenCalledWith('cycle_game.pace_rival_lookup_failed', expect.objectContaining({ outcome: 'error', stage: 'pool', error: 'offline' }));
     });
 
-    it('falls back to loaded history on an HTTP error', async () => {
-      const view = await renderLobby([], { list: () => Promise.resolve({ ok: false, status: 503 }) });
+    it.each([400, 500, 503])('falls back to loaded history when the pool answers HTTP %i', async (status) => {
+      const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })],
+        { pool: () => Promise.resolve({ ok: false, status }) });
+      await startRaceOf(view);
+      expect(ghostIds(configLogs()[0])).toEqual(['ghost:20260101100000:user_2']);
+      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'household', source: 'history', candidates: 1, serverLookup: 'error', recordFetched: false });
+      expect(logSpy.warn).toHaveBeenCalledWith('cycle_game.pace_rival_lookup_failed',
+        expect.objectContaining({ outcome: 'error', stage: 'pool', error: `rival-pool ${status}` }));
+      expect(recordCalls()).toEqual([]);
+    });
+
+    it('falls to par on a pool HTTP error when the lobby has nothing either', async () => {
+      const view = await renderLobby([], { pool: () => Promise.resolve({ ok: false, status: 503 }) });
       await startRaceOf(view);
       expect(paceRivalLogs()[0]).toMatchObject({ kind: 'par', source: 'par', serverLookup: 'error' });
+    });
+
+    it('treats a pool answer with no entries list as an empty pool', async () => {
+      const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })], { pool: () => json({}) });
+      await startRaceOf(view);
+      expect(paceRivalLogs()[0]).toMatchObject({ kind: 'household', candidates: 1, serverLookup: 'used', recordFetched: false });
+    });
+
+    describe('when the picked record cannot be had', () => {
+      const old = raceRecord(OLD_RACE, { user_1: { timeS: 240 } });
+      const loaded = raceRecord('20260101110000', { user_1: { timeS: 300 } });
+      const failures = {
+        'is missing (404)': { byId: {}, error: `cycle-races/${OLD_RACE} 404` },
+        'request fails': { byId: { [OLD_RACE]: () => Promise.reject(new Error('offline')) }, error: 'offline' },
+        'has no series to replay for that rider': {
+          byId: recordsById(raceRecord(OLD_RACE, { user_1: { timeS: 240, noSeries: true } })), error: 'record not replayable'
+        },
+        'does not hold that rider': { byId: recordsById(raceRecord(OLD_RACE, { user_2: { timeS: 240 } })), error: 'record not replayable' },
+        'is not a record': { byId: { [OLD_RACE]: () => json({}) }, error: 'record not replayable' }
+      };
+
+      it.each(Object.keys(failures))("falls back to the rider's best in loaded history when the record %s", async (name) => {
+        const { byId, error } = failures[name];
+        const view = await renderLobby([loaded], { pool: poolOf(old, loaded), byId });
+        await startRaceOf(view);
+        const [cfg] = configLogs();
+        expect(ghostIds(cfg)).toEqual(['ghost:20260101110000:user_1']);
+        expect(cfg.rivalKind).toBe('self');
+        expect(paceRivalLogs()).toEqual([{
+          raceId: cfg.raceId, kind: 'self', requestedKind: 'self', sourceRaceId: '20260101110000', participantId: 'user_1',
+          source: 'history', candidates: 1, historyLoaded: true, serverLookup: 'error',
+          lookupMs: expect.any(Number), recordFetched: true
+        }]);
+        expect(logSpy.warn).toHaveBeenCalledWith('cycle_game.pace_rival_lookup_failed',
+          expect.objectContaining({ outcome: 'error', stage: 'record', sourceRaceId: OLD_RACE, error }));
+        expect(recordCalls()).toHaveLength(1);
+        expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+      });
+
+      it('falls to par when loaded history has no ride either', async () => {
+        const view = await renderLobby([], { pool: poolOf(old), byId: {} });
+        await startRaceOf(view);
+        const [cfg] = configLogs();
+        expect(ghostIds(cfg)).toEqual(['ghost:par:par']);
+        expect(paceRivalLogs()[0]).toMatchObject({
+          kind: 'par', requestedKind: 'par', source: 'par', candidates: 0, serverLookup: 'error', recordFetched: true
+        });
+      });
     });
 
     describe('with a server that is slow or silent', () => {
@@ -429,7 +531,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       it('waits 1500 ms, then starts with the local pick; a late answer changes nothing', async () => {
         const late = deferred();
         const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })],
-          { list: () => late.promise });
+          { pool: () => late.promise });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
         act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         await act(async () => { vi.advanceTimersByTime(1499); });
@@ -438,18 +540,48 @@ describe('CycleGameContainer — automatic pace rival', () => {
         await act(async () => { vi.advanceTimersByTime(1); });
         await flush();
         expect(ghostIds(configLogs()[0])).toEqual(['ghost:20260101100000:user_2']);
-        expect(paceRivalLogs()[0]).toMatchObject({ kind: 'household', source: 'history', serverLookup: 'timeout' });
+        expect(paceRivalLogs()[0]).toMatchObject({
+          kind: 'household', source: 'history', serverLookup: 'timeout', lookupMs: 1500, recordFetched: false
+        });
         expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
         // The request was aborted at the deadline …
-        expect(listCalls()[0][1].signal.aborted).toBe(true);
+        expect(poolCalls()[0][1].signal.aborted).toBe(true);
         // … and if its answer arrives anyway, the running race is untouched.
         const infoBefore = logSpy.info.mock.calls.length;
-        late.resolve({ ok: true, json: () => Promise.resolve({ races: [raceRecord(OLD_RACE, { user_1: { timeS: 100 } })] }) });
+        late.resolve({ ok: true, json: () => Promise.resolve({ entries: [poolEntry(raceRecord(OLD_RACE, { user_1: { timeS: 100 } }))] }) });
         await flush();
+        expect(recordCalls()).toEqual([]); // no record is fetched for a start that has gone
         expect(configLogs()).toHaveLength(1);
         expect(paceRivalLogs()).toHaveLength(1);
         expect(logSpy.info.mock.calls.length).toBe(infoBefore);
         expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
+        expect(view.getByTestId('ready-rider-ghost:20260101100000:user_2')).toBeTruthy();
+      });
+
+      it('the record fetch shares the 1500 ms: a record that never arrives is aborted and the local pick races', async () => {
+        const old = raceRecord(OLD_RACE, { user_1: { timeS: 240 } });
+        const lateRecord = deferred();
+        const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })],
+          { pool: poolOf(old), byId: { [OLD_RACE]: () => lateRecord.promise } });
+        act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        await flush(); // the pool has answered; the record is being fetched
+        expect(recordCalls()).toHaveLength(1);
+        await act(async () => { vi.advanceTimersByTime(1499); });
+        await flush();
+        expect(configLogs()).toEqual([]);
+        await act(async () => { vi.advanceTimersByTime(1); });
+        await flush();
+        expect(ghostIds(configLogs()[0])).toEqual(['ghost:20260101100000:user_2']);
+        expect(paceRivalLogs()[0]).toMatchObject({
+          kind: 'household', source: 'history', candidates: 1, serverLookup: 'timeout', lookupMs: 1500, recordFetched: true
+        });
+        expect(recordCalls()[0][1].signal.aborted).toBe(true);
+        // A late record changes nothing.
+        lateRecord.resolve({ ok: true, json: () => Promise.resolve({ race: old }) });
+        await flush();
+        expect(configLogs()).toHaveLength(1);
+        expect(paceRivalLogs()).toHaveLength(1);
         expect(view.getByTestId('ready-rider-ghost:20260101100000:user_2')).toBeTruthy();
       });
 
@@ -466,7 +598,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       });
 
       it('freezes the lobby and says "Starting…" while it waits; a second Start press is dropped', async () => {
-        const view = await renderLobby([], { list: never });
+        const view = await renderLobby([], { pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
         expect(view.getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('false');
         act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
@@ -484,7 +616,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       });
 
       it('a race-type change attempted while it waits neither alters the race nor sticks to the lobby', async () => {
-        const view = await renderLobby([], { list: never });
+        const view = await renderLobby([], { pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
         act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         act(() => { fireEvent.click(view.getByTestId('course-time')); });
@@ -505,10 +637,10 @@ describe('CycleGameContainer — automatic pace rival', () => {
       });
 
       it('aborts the lookup and starts nothing if the game is closed first', async () => {
-        const view = await renderLobby([], { list: never });
+        const view = await renderLobby([], { pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
         act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
-        const { signal } = listCalls()[0][1];
+        const { signal } = poolCalls()[0][1];
         expect(signal.aborted).toBe(false);
         act(() => { view.unmount(); });
         expect(signal.aborted).toBe(true);
@@ -520,7 +652,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
       it('never leaves an unhandled rejection if launching throws: logs start_failed and unfreezes', async () => {
         // Make the launch itself throw, after the lookup has answered.
-        const view = await renderLobby([], { list: () => json({ races: [] }) });
+        const view = await renderLobby([], { pool: () => json({ entries: [] }) });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
         const boom = new Error('boom');
         logSpy.info.mockImplementation((event) => { if (event === 'cycle_game.config') throw boom; });
@@ -550,7 +682,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1', `ghost:${RIVAL_RACE}:user_2`]);
       expect(cfg.rivalKind).toBe('ghost');
       expect(paceRivalLogs()).toEqual([]);
-      expect(listCalls()).toEqual([]);
+      expect(poolCalls()).toEqual([]);
     });
 
     it('with no bike claimed it still starts, as a ghost-only race', async () => {
@@ -596,7 +728,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       const after = (ms, response) => () => new Promise((resolve) => { setTimeout(() => resolve(response), ms); });
 
       it('Start (lookup pending) then "Ride it": one race, the field from the first press, lobby ghost untouched', async () => {
-        const view = await renderLobby([], { ladder, byId, list: never });
+        const view = await renderLobby([], { ladder, byId, pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-time')); });
         act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
@@ -614,7 +746,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
       it('a featured ride whose own rival lookup failed shares the one 1500 ms budget', async () => {
         // The rival's record 404s after 1000 ms; the history list never answers.
-        const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(1000, { ok: false, status: 404 }) }, list: never });
+        const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(1000, { ok: false, status: 404 }) }, pool: never });
         act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await act(async () => { vi.advanceTimersByTime(1000); });
         await flush();
@@ -629,13 +761,13 @@ describe('CycleGameContainer — automatic pace rival', () => {
       });
 
       it('and skips the history lookup outright once that budget is spent', async () => {
-        const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(2000, { ok: false, status: 404 }) }, list: never });
+        const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(2000, { ok: false, status: 404 }) }, pool: never });
         act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await act(async () => { vi.advanceTimersByTime(2000); });
         await flush();
         expect(configLogs()).toHaveLength(1);
-        expect(paceRivalLogs()[0]).toMatchObject({ kind: 'par', source: 'par', serverLookup: 'skipped' });
-        expect(listCalls()).toEqual([]);
+        expect(paceRivalLogs()[0]).toMatchObject({ kind: 'par', source: 'par', serverLookup: 'skipped', lookupMs: 0, recordFetched: false });
+        expect(poolCalls()).toEqual([]);
       });
     });
   });

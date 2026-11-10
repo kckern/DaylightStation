@@ -2,12 +2,14 @@ import {
   currentWeekWindow, isoWeekOf, parseIsoWeekParam,
   resolveFeaturedCourse, computeLadder, computePersonalBest
 } from "../../domain/services/cycleLadder.mjs";
+import { parseRivalPoolQuery, rivalPoolEntries } from "../../domain/services/cycleRivalPool.mjs";
 
 /**
  * CycleRaceService - application service for cycle-game races.
  * Thin orchestration over YamlCycleRaceDatastore: save/get/list + ghost-candidate
  * lookup (filtered by course, or by win-condition+goal for custom races), plus
- * weekly-ladder and personal-best queries built on the pure cycleLadder domain module.
+ * weekly-ladder and personal-best queries built on the pure cycleLadder domain module,
+ * and the pace-rival pool (cycleRivalPool) read from the same index.
  */
 export class CycleRaceService {
   constructor({ datastore, logger = null } = {}) {
@@ -46,6 +48,28 @@ export class CycleRaceService {
       }
     }
     return matches;
+  }
+
+  /**
+   * The light listing a lone rider's pace rival is chosen from: index rows of
+   * one race type and exact length, not ended early. Reads the index only (no
+   * race file on a warm index), unlike findGhostCandidates. Throws
+   * BAD_RIVAL_POOL_QUERY for an unknown race type or an unusable length.
+   */
+  async getRivalPool({ winCondition = null, goalM = null, timeCapS = null, householdId } = {}) {
+    const query = parseRivalPoolQuery({ winCondition, goalM, timeCapS });
+    if (!query) {
+      const err = new Error('invalid rival pool query');
+      err.code = 'BAD_RIVAL_POOL_QUERY';
+      throw err;
+    }
+    const t0 = Date.now();
+    const entries = await this.datastore.listIndexEntries(householdId);
+    const pool = rivalPoolEntries({ entries, ...query });
+    this.logger?.debug?.('fitness.cycle_races.rival_pool.computed', {
+      winCondition: query.winCondition, length: query.length, entries: entries.length, pool: pool.length, ms: Date.now() - t0
+    });
+    return pool;
   }
 
   /** Weekly ladder for the featured course. null = no featured courses configured. */

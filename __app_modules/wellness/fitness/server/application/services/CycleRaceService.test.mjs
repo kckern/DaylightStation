@@ -59,3 +59,44 @@ describe('ladder + personal bests', () => {
     expect(noCfg.best?.bestValue).toBe(140);
   });
 });
+
+describe('rival pool', () => {
+  const ROWS = [
+    { id: '20260101100000', date: '2026-01-01', course_id: null, win_condition: 'distance', goal_m: 3000, time_cap_s: null, incomplete: false,
+      participants: [{ userId: 'rider-a', isGhost: false, stopped: false, final_time_s: 300, final_distance_m: 3000, placement: 1 }] },
+    { id: '20260102100000', date: '2026-01-02', course_id: null, win_condition: 'distance', goal_m: 3000, time_cap_s: null, incomplete: true,
+      participants: [{ userId: 'rider-a', isGhost: false, stopped: false, final_time_s: 100, final_distance_m: 3000, placement: 1 }] },
+    { id: '20260103100000', date: '2026-01-03', course_id: null, win_condition: 'time', goal_m: null, time_cap_s: 300, incomplete: false,
+      participants: [{ userId: 'rider-b', isGhost: false, stopped: true, final_time_s: null, final_distance_m: 2100, placement: 1 }] }
+  ];
+  const makeSvc = (calls = []) => new CycleRaceService({ datastore: {
+    listIndexEntries: async (householdId) => { calls.push(householdId); return ROWS.map((e) => ({ ...e })); },
+    findByDate: async () => { throw new Error('race files must not be read'); },
+    listDates: async () => { throw new Error('race folders must not be listed'); }
+  } });
+
+  it('lists the index rows of one race type and exact length, from the index alone', async () => {
+    const calls = [];
+    const pool = await makeSvc(calls).getRivalPool({ winCondition: 'distance', goalM: '3000', householdId: 'household' });
+    expect(pool).toEqual([{
+      raceId: '20260101100000', date: '2026-01-01', winCondition: 'distance', goalM: 3000,
+      participants: [{ id: 'rider-a', isGhost: false, stopped: false, finalTimeS: 300, finalDistanceM: 3000, placement: 1 }]
+    }]);
+    expect(calls).toEqual(['household']);
+  });
+
+  it('lists a time race by its cap', async () => {
+    const pool = await makeSvc().getRivalPool({ winCondition: 'time', timeCapS: 300, householdId: 'household' });
+    expect(pool.map((e) => e.raceId)).toEqual(['20260103100000']);
+    expect(pool[0].participants[0].stopped).toBe(true);
+  });
+
+  it('throws BAD_RIVAL_POOL_QUERY for an unknown race type or an unusable length, without reading the index', async () => {
+    const calls = [];
+    const svc = makeSvc(calls);
+    await expect(svc.getRivalPool({ winCondition: 'sprint', goalM: 3000 })).rejects.toMatchObject({ code: 'BAD_RIVAL_POOL_QUERY' });
+    await expect(svc.getRivalPool({ winCondition: 'distance', goalM: 'abc' })).rejects.toMatchObject({ code: 'BAD_RIVAL_POOL_QUERY' });
+    await expect(svc.getRivalPool({ winCondition: 'time', timeCapS: 0 })).rejects.toMatchObject({ code: 'BAD_RIVAL_POOL_QUERY' });
+    expect(calls).toEqual([]);
+  });
+});
