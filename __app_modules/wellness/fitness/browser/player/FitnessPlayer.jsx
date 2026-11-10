@@ -45,6 +45,7 @@ import { computeStudyDims } from "./studyLayout.js";
 import { computeAllowLoadingOverlayFullscreen } from "./loadingOverlayFullscreenGate.js";
 import { useScreenDataRefetch } from "../../../../../__capabilities/screen-host/browser/data.mjs";
 import useLoopWindow from "./hooks/useLoopWindow.js";
+import { originTileImage, browseContainerIdOf } from "./episodeQueueItem.js";
 import StudyControls from "./footer/StudyControls.jsx";
 
 // Helper function to generate Plex thumbnail URLs for specific timestamps
@@ -1345,7 +1346,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     const hasMemos = Array.isArray(voiceMemos) && voiceMemos.length > 0;
     const metPromptThreshold = Boolean(sessionStartTime)
       && ((Date.now() - sessionStartTime) / 1000 > promptThreshold);
-    const browseShowId = currentItem?.showId || currentItem?.grandparentId || null;
+    // Back to the screen it was launched from (a playlist included), which is
+    // the launch context, not necessarily the episode's own show.
+    const browseShowId = browseContainerIdOf(currentItem);
     const returnToShow = !metPromptThreshold && !hasMemos && Boolean(browseShowId);
 
     const redirect = resolvePostEpisodeRedirect({
@@ -1750,7 +1753,8 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       const isActive = idx === activeIndex;
       const isPast = idx < activeIndex;
       const classes = ["seek-button-container"]; if (isOrigin) classes.push('origin'); if (isPast) classes.push('past'); if (isActive) classes.push('active');
-      const originSrc = isOrigin ? (currentItem.seasonImage || currentItem.image || generateThumbnailUrl(plexObj, pos)) : null;
+      // First tile: the item's own season/show art, never the launch context's.
+      const originSrc = isOrigin ? (originTileImage(currentItem) || generateThumbnailUrl(plexObj, pos)) : null;
       const imgSrc = isOrigin ? originSrc : generateThumbnailUrl(plexObj, pos);
       return (
         <div className={classes.join(' ')} key={`seek-${idx}`} data-pos={pos}>

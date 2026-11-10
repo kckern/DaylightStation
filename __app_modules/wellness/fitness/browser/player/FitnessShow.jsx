@@ -5,6 +5,7 @@ import "./FitnessShow.scss";
 import { useFitness } from "../context/FitnessContext.jsx";
 import moment from 'moment';
 import { buildVirtualSeasons } from "../lib/playlistVirtualSeasons.js";
+import { buildEpisodeQueueItem, gridGroupIdOf } from "./episodeQueueItem.js";
 import { formatFitnessDate } from "../lib/dateFormatter.js";
 import { useIdentity } from "../identity/useIdentity.js";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
@@ -285,11 +286,13 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       // sort episodes by rating DESC so the top-starred ones appear first.
       if (response.info?.type === 'playlist') {
         const pageSize = plexConfig?.playlist_episodes_per_season || 20;
-        const { parents, items: taggedItems } = buildVirtualSeasons(response.items || [], pageSize, {
+        const { groups, items: taggedItems } = buildVirtualSeasons(response.items || [], pageSize, {
           resolveShowImage: (gpId) => ContentDisplayUrl(gpId),
           sortByRating: true
         });
-        response.parents = parents;
+        // Pages are grid groups. `response.parents` stays the API's real
+        // seasons map: an item's season/show identity is its own, not the page's.
+        response.groups = groups;
         response.items = taggedItems;
         // Use playlist image for show display
         if (!response.image && response.info?.image) {
@@ -602,51 +605,27 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
 
       const { resolvedSeconds, normalizedProgress } = deriveResumeMeta(episode);
 
-      // Resolve season and show titles for logging
-      const seasonObj = seasons && seasons.find(s => s.id === episode.parentId);
-      const seasonTitle = seasonObj ? (seasonObj.title || seasonObj.name || seasonObj.rawName) : undefined;
-      const showTitle = info?.title;
-
-      // Create the queue item with all available information
-      // Get season image from parentsMap (has proper season thumbnails) or fall back to episode parentId
-      const parentData = parentsMap && episode.parentId ? parentsMap[episode.parentId] : null;
-      const seasonImageUrl = parentData?.thumbnail
-        ? normalizeImageUrl(parentData.thumbnail)
-        : (episode.parentId ? ContentDisplayUrl(episode.parentId) : undefined);
-
-      const candidateId = plexId || episode.id || `episode-${Date.now()}`;
-      const queueItem = {
-        id: candidateId,
-        contentId: plexId
-          ? `plex:${plexId}`
-          : (typeof candidateId === 'string' && /^[a-z]+:/i.test(candidateId) ? candidateId : null),
-        plex: plexId, // Ensure plex ID is passed for downstream components
-        source: plexId ? 'plex' : (episode.source || null),
-        show: showTitle,
-        season: seasonTitle,
-        title: episode.label,
-        grandparentTitle: String(episode.grandparentTitle || showTitle || ''),
-        grandparentId: episode.grandparentId || showId,
-        summary: episode.summary || null,
+      // Identity (season/show art and titles) comes from the episode's own
+      // metadata; the screen it was launched from rides along as launchContext.
+      const queueItem = buildEpisodeQueueItem({
+        episode,
+        container: { id: showId, info },
+        parents: parentsMap,
+        groups: groupsMap,
+        plexId,
         mediaUrl: episodeUrl,
-        duration: episode.duration,
-        thumbId: episode.thumbId, // Pass thumbId directly to FitnessPlayer
-        image: episode.thumbId ? ContentDisplayUrl(episode.thumbId) : episode.image,
-        parentId: episode.parentId,
-        parentImage: seasonImageUrl,
-        seasonImage: seasonImageUrl, // Alias for footer seek thumbnails
+        resumeSeconds: resolvedSeconds,
+        watchProgress: normalizedProgress,
         labels: deriveEpisodeLabels(episode),
-        type: episode.type || 'episode',
-        showId,
-        seconds: resolvedSeconds,
-        watchSeconds: resolvedSeconds || undefined,
-        watchProgress: Number.isFinite(normalizedProgress) ? normalizedProgress : undefined,
         // After a matched governance_bypass unlock, mark the queue item so the player
         // skips governance for this launch. FitnessPlayer honors this per-item flag via
         // `currentItem.nogovern` → shouldBypassGovernance (alongside the sticky ?nogovern
         // prop and the in-player runtime bypass). Wired in T4.3.
-        nogovern: governanceBypassed || undefined
-      };
+        nogovern: governanceBypassed,
+        displayUrl: ContentDisplayUrl,
+        normalizeUrl: normalizeImageUrl,
+      });
+      const candidateId = queueItem.id;
 
       // Ground-truth the governance-bypass seam: record whether this launch carries
       // the per-item nogovern flag (set by a granted governance_bypass unlock). If a
@@ -655,7 +634,12 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       getLogger().child({ component: 'FitnessShow' }).info('fitness.show.launch_episode', {
         episode: candidateId,
         governanceBypassed,
-        nogovern: Boolean(queueItem.nogovern)
+        nogovern: Boolean(queueItem.nogovern),
+        show: queueItem.grandparentId ?? null,
+        season: queueItem.parentId ?? null,
+        launchedFrom: queueItem.launchContext
+          ? { type: queueItem.launchContext.type, id: queueItem.launchContext.id, groupId: queueItem.launchContext.groupId ?? null }
+          : null
       });
 
       // Update the selected episode for the UI
@@ -750,7 +734,9 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     });
   };
 
-  const { info, items = [], parents: parentsMap = null } = showData || {};
+  const { info, items = [], parents: parentsMap = null, groups: groupsMap = null } = showData || {};
+  // What the season tabs group by: a playlist's pages, else the real seasons.
+  const gridGroups = groupsMap || parentsMap;
 
   const resumableLabels = useMemo(() => {
     const labels = plexConfig?.resumable_labels;
@@ -849,15 +835,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   // Derive seasons from parentsMap (backend groups object) with fallback to per-episode fields
   const seasons = useMemo(() => {
     // Preferred: parentsMap provided by API (canonical fields)
-    if (parentsMap && typeof parentsMap === 'object' && Object.keys(parentsMap).length) {
-      const arr = Object.entries(parentsMap).map(([id, g]) => {
+    if (gridGroups && typeof gridGroups === 'object' && Object.keys(gridGroups).length) {
+      const arr = Object.entries(gridGroups).map(([id, g]) => {
         // Convert to string for comparison since Object.entries returns string keys
         // but episode.parentId may be a number from the API
-        const count = items.filter(ep => String(ep.parentId) === id).length;
+        const count = items.filter(ep => String(gridGroupIdOf(ep)) === id).length;
         // Use canonical field names: index, title, thumbnail
         const number = (g.index != null && !Number.isNaN(parseInt(g.index))) ? parseInt(g.index) : undefined;
         const nameRaw = g.title;
-        const image = g.thumbnail || (items.find(ep => String(ep.parentId) === id)?.image);
+        const image = g.thumbnail || (items.find(ep => String(gridGroupIdOf(ep)) === id)?.image);
         const description = g.summary || null;
         return {
           id,
@@ -908,15 +894,15 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
       name: (Number.isFinite(s.number) && s.number > 0) ? `Season ${s.number}` : (s.rawName || 'Season')
     }));
     return arr;
-  }, [items, parentsMap]);
+  }, [items, gridGroups]);
 
   // Compute set of locked episode IDs for sequential shows (linear across all seasons)
   const lockedEpisodeIds = useMemo(() => {
     if (!isSequential) return new Set();
     // Sort all items by season number then itemIndex to get global order
     const sorted = [...items].sort((a, b) => {
-      const sa = seasons.find(s => String(s.id) === String(a.parentId));
-      const sb = seasons.find(s => String(s.id) === String(b.parentId));
+      const sa = seasons.find(s => String(s.id) === String(gridGroupIdOf(a)));
+      const sb = seasons.find(s => String(s.id) === String(gridGroupIdOf(b)));
       const sn = (sa?.number ?? 0) - (sb?.number ?? 0);
       if (sn !== 0) return sn;
       const ai = Number.isFinite(a.itemIndex) ? a.itemIndex : Infinity;
@@ -972,14 +958,14 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
 
     const isSeasonComplete = (season) => {
       if (!season) return false;
-      const seasonEpisodes = items.filter((ep) => String(ep.parentId) === String(season.id));
+      const seasonEpisodes = items.filter((ep) => String(gridGroupIdOf(ep)) === String(season.id));
       if (!seasonEpisodes.length) return false;
       return seasonEpisodes.every(isEpisodeWatched);
     };
 
     const findFirstIncompleteAfter = (startIndex = 0) => {
       const slice = seasons.slice(startIndex);
-      return slice.find((season) => items.some((ep) => String(ep.parentId) === String(season.id) && !isEpisodeWatched(ep)));
+      return slice.find((season) => items.some((ep) => String(gridGroupIdOf(ep)) === String(season.id) && !isEpisodeWatched(ep)));
     };
 
     const desiredSeasonId = (() => {
@@ -1053,7 +1039,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   // Keep selected episode in sync with filter
   useEffect(() => {
     const filtered = seasons.length > 1 && activeSeasonId
-      ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
+      ? items.filter(ep => String(gridGroupIdOf(ep)) === String(activeSeasonId))
       : items;
     if (!filtered.length) return;
     if (!selectedEpisode || !filtered.some(ep => episodeKey(ep) === episodeKey(selectedEpisode))) {
@@ -1109,7 +1095,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
 
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)
-      ? items.filter(ep => String(ep.parentId) === String(activeSeasonId))
+      ? items.filter(ep => String(gridGroupIdOf(ep)) === String(activeSeasonId))
       : items;
     // Sort by itemIndex ascending when available
     return [...list].sort((a, b) => {
@@ -1127,7 +1113,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
   // playlist's current page of 20 included).
   const panelSeasonEpisodes = useMemo(() => {
     if (!panelEpisode) return [];
-    const same = filteredItems.filter((ep) => String(ep.parentId) === String(panelEpisode.parentId));
+    const same = filteredItems.filter((ep) => String(gridGroupIdOf(ep)) === String(gridGroupIdOf(panelEpisode)));
     return same.length ? same : filteredItems;
   }, [filteredItems, panelEpisode]);
   const playFromPanel = (episode, mode) => {
@@ -1375,7 +1361,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
           {!(selectedInfo && infoType === 'season') && panelEpisode && (
             <EpisodePanel
               episode={panelEpisode}
-              showTitle={panelEpisode.grandparentTitle && String(panelEpisode.parentId || '').startsWith('virtual-')
+              showTitle={panelEpisode.grandparentTitle && panelEpisode.groupId != null
                 ? panelEpisode.grandparentTitle
                 : info?.title}
               seasonName={seasonNameOf((parentsMap && parentsMap[panelEpisode.parentId]) || seasons.find((x) => x.id === panelEpisode.parentId) || {})}
@@ -1435,7 +1421,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
               <div className="episodes-container">
                 {/* Group episodes by season, render in sorted season order */}
                 {seasons.map((s) => {
-                  const seasonEpisodes = filteredItems.filter(ep => String(ep.parentId) === String(s.id));
+                  const seasonEpisodes = filteredItems.filter(ep => String(gridGroupIdOf(ep)) === String(s.id));
                   if (!seasonEpisodes.length) return null;
                   Number.isFinite(s.number) && s.number > 0 ? `Season ${s.number}` : (s.rawName || s.name || 'Season');
                   return (
@@ -1606,7 +1592,7 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
                       seasonTitle: s.rawName || s.name || null
                     });
                     setActiveSeasonId(s.id);
-                    const episodeCount = items.filter(ep => String(ep.parentId) === String(s.id)).length;
+                    const episodeCount = items.filter(ep => String(gridGroupIdOf(ep)) === String(s.id)).length;
                     const hasRealDescription = !!(s.description && s.description.trim());
                     setSelectedInfo({
                       ...s,

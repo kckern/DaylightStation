@@ -21,16 +21,24 @@ export function sortPlaylistByRating(items) {
  * Build virtual season groups from a flat playlist item list.
  * Used by FitnessShow to paginate playlists that have no real seasons.
  *
+ * A page is a GRID GROUP, not a parent. Each item keeps its own `parentId` /
+ * `parentTitle` / `parentIndex` (its real season) and `grandparentId` (its real
+ * show); the page it was sorted into travels separately as `groupId` /
+ * `groupIndex`. A page's thumbnail is one show's poster picked to decorate the
+ * tab — it says nothing about the other items on that page and must never be
+ * used as an item's season or show art.
+ * See __docs/reference/fitness/item-identity-vs-launch-context.md.
+ *
  * @param {Object[]} items - Flat array of playlist items
  * @param {number} pageSize - Number of items per virtual season
  * @param {Object} [options] - Optional configuration
  * @param {function} [options.resolveShowImage] - (grandparentId) => imageUrl
  * @param {boolean} [options.sortByRating] - Sort items by rating DESC before chunking
- * @returns {{ parents: Object, items: Object[] }} Virtual parents map and items with parentId assigned
+ * @returns {{ groups: Object, items: Object[] }} Virtual page map and items tagged with groupId
  */
 export function buildVirtualSeasons(items, pageSize, options = {}) {
   if (!items || items.length === 0) {
-    return { parents: {}, items: [] };
+    return { groups: {}, items: [] };
   }
 
   const { resolveShowImage, sortByRating = false } = options;
@@ -61,7 +69,7 @@ export function buildVirtualSeasons(items, pageSize, options = {}) {
     return fallback && resolveShowImage ? resolveShowImage(fallback.grandparentId) : null;
   });
 
-  const parents = {};
+  const groups = {};
   const tagged = working.map((item, i) => {
     const pageNum = Math.floor(i / pageSize);
     const seasonNum = pageNum + 1; // Start at 1 so season 0 sort-to-end logic doesn't apply
@@ -69,8 +77,8 @@ export function buildVirtualSeasons(items, pageSize, options = {}) {
     const start = pageNum * pageSize + 1;
     const end = Math.min(start + pageSize - 1, working.length);
 
-    if (!parents[virtualId]) {
-      parents[virtualId] = {
+    if (!groups[virtualId]) {
+      groups[virtualId] = {
         index: seasonNum,
         title: `${start}\u2013${end}`,
         thumbnail: seasonThumbnails[pageNum] || null
@@ -82,8 +90,9 @@ export function buildVirtualSeasons(items, pageSize, options = {}) {
     const epTitle = item.label || item.title;
     const prefixedLabel = showName ? `${showName}\u2014${epTitle}` : epTitle;
 
-    return { ...item, label: prefixedLabel, parentId: virtualId, parentIndex: seasonNum };
+    // `itemLabel` keeps the item's own label; `label` is the grid caption.
+    return { ...item, label: prefixedLabel, itemLabel: epTitle, groupId: virtualId, groupIndex: seasonNum };
   });
 
-  return { parents, items: tagged };
+  return { groups, items: tagged };
 }
