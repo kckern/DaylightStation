@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint } from "./raceCheckpoint.js";
+import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint, checkpointRaceState, checkpointOutcome } from "./raceCheckpoint.js";
 
 // Minimal sessionStorage-shaped in-memory stub — injected so the lib stays
 // storage-agnostic and these tests don't depend on jsdom's real implementation.
@@ -79,5 +79,57 @@ describe('raceCheckpoint', () => {
   it('swallows a removeItem error and never throws', () => {
     store.removeItem = vi.fn(() => { throw new Error('boom'); });
     expect(() => clearCheckpoint(store)).not.toThrow();
+  });
+});
+
+describe('raceCheckpoint — race state carried for recovery', () => {
+  let store;
+  beforeEach(() => { store = makeStore(); });
+  const raceState = { parked: ['user_1'], noSensor: ['user_2'], endedEarly: false, finished: false };
+
+  it('round-trips the race state (parked, noSensor, endedEarly, finished)', () => {
+    writeCheckpoint(store, { raceMeta, engineState, raceState, savedAt: 1000 });
+    expect(readFreshCheckpoint(store, 1000).raceState).toEqual(raceState);
+  });
+
+  it('a checkpoint written without race state reads back with none', () => {
+    writeCheckpoint(store, { raceMeta, engineState, savedAt: 1000 });
+    expect(readFreshCheckpoint(store, 1000).raceState).toBeUndefined();
+  });
+
+  it('normalizes a malformed race state instead of rejecting the checkpoint', () => {
+    store.setItem('cycleGame.checkpoint', JSON.stringify({
+      raceMeta, engineState, savedAt: 1000, raceState: { parked: 'user_1', noSensor: [7, 'user_2'], endedEarly: 'yes', finished: 1 }
+    }));
+    expect(readFreshCheckpoint(store, 1000).raceState)
+      .toEqual({ parked: [], noSensor: ['user_2'], endedEarly: false, finished: false });
+  });
+
+  it('checkpointRaceState reads parked, noSensor, endedEarly and finished off the controller state', () => {
+    expect(checkpointRaceState({ phase: 'racing', parked: ['user_1'], noSensor: [], endedEarly: false, overtime: ['user_2'] }))
+      .toEqual({ parked: ['user_1'], noSensor: [], endedEarly: false, finished: false });
+    expect(checkpointRaceState({ phase: 'finished', parked: [], noSensor: ['user_2'], endedEarly: true }))
+      .toEqual({ parked: [], noSensor: ['user_2'], endedEarly: true, finished: true });
+    expect(checkpointRaceState({ phase: 'results' }).finished).toBe(true);
+    expect(checkpointRaceState(undefined)).toEqual({ parked: [], noSensor: [], endedEarly: false, finished: false });
+  });
+
+  describe('checkpointOutcome (what a recovered record is saved as)', () => {
+    it('a race still running when the page died is ended early; its stopped riders are kept', () => {
+      expect(checkpointOutcome({ raceState }))
+        .toEqual({ endedEarly: true, stopped: ['user_1', 'user_2'] });
+    });
+    it('a race that had finished on its own is complete', () => {
+      expect(checkpointOutcome({ raceState: { ...raceState, finished: true } }))
+        .toEqual({ endedEarly: false, stopped: ['user_1', 'user_2'] });
+    });
+    it('a race ended from the menu stays ended early', () => {
+      expect(checkpointOutcome({ raceState: { parked: [], noSensor: [], endedEarly: true, finished: true } }))
+        .toEqual({ endedEarly: true, stopped: [] });
+    });
+    it('a checkpoint with no race state (written by an older build) is ended early', () => {
+      expect(checkpointOutcome({ raceMeta, engineState })).toEqual({ endedEarly: true, stopped: [] });
+      expect(checkpointOutcome(null)).toEqual({ endedEarly: true, stopped: [] });
+    });
   });
 });

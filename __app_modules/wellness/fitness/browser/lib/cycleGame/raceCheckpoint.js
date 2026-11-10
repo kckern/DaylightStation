@@ -4,6 +4,11 @@
 // a fresh checkpoint is finalized into a saved race record instead of being
 // silently lost.
 //
+// Alongside the engine state the checkpoint carries `raceState`, the part of
+// the controller's state that decides how the record is saved: who was stopped
+// (`parked`, `noSensor`), whether the race was ended from the menu
+// (`endedEarly`) and whether it had finished at all (`finished`).
+//
 // Pure — storage is injected (sessionStorage-shaped: getItem/setItem/removeItem)
 // so this is unit-testable without a DOM, and never logs (the caller owns
 // telemetry; see CycleGameContainer's cycle_game.race_recovered).
@@ -16,10 +21,10 @@ const DEFAULT_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
  * unavailable, circular data) — a failed checkpoint write must never break
  * the race in progress.
  */
-export function writeCheckpoint(store, { raceMeta, engineState, savedAt } = {}) {
+export function writeCheckpoint(store, { raceMeta, engineState, raceState, savedAt } = {}) {
   if (!store) return;
   try {
-    store.setItem(CHECKPOINT_KEY, JSON.stringify({ raceMeta, engineState, savedAt }));
+    store.setItem(CHECKPOINT_KEY, JSON.stringify({ raceMeta, engineState, raceState, savedAt }));
   } catch {
     // quota exceeded / storage unavailable — best-effort only, never throw.
   }
@@ -45,12 +50,53 @@ export function readFreshCheckpoint(store, nowMs, maxAgeMs = DEFAULT_MAX_AGE_MS)
   } catch {
     return null;
   }
-  const { raceMeta, engineState, savedAt } = parsed || {};
+  const { raceMeta, engineState, raceState, savedAt } = parsed || {};
   if (!raceMeta || !raceMeta.raceId) return null;
   if (!engineState || !engineState.riders) return null;
   if (!Number.isFinite(savedAt)) return null;
   if (nowMs - savedAt > maxAgeMs) return null;
-  return { raceMeta, engineState, savedAt };
+  return {
+    raceMeta,
+    engineState,
+    savedAt,
+    // Absent on a checkpoint written before race state was carried.
+    ...(raceState && typeof raceState === 'object' ? { raceState: normalizeRaceState(raceState) } : {})
+  };
+}
+
+const idList = (v) => (Array.isArray(v) ? v.filter((id) => typeof id === 'string') : []);
+
+function normalizeRaceState(raw) {
+  return {
+    parked: idList(raw.parked),
+    noSensor: idList(raw.noSensor),
+    endedEarly: raw.endedEarly === true,
+    finished: raw.finished === true
+  };
+}
+
+/** The race state to checkpoint, from the controller's getState(). */
+export function checkpointRaceState(controllerState) {
+  return {
+    ...normalizeRaceState(controllerState || {}),
+    finished: controllerState?.phase === 'finished' || controllerState?.phase === 'results'
+  };
+}
+
+/**
+ * How a recovered checkpoint is saved (the outcome part of buildRaceRecord's
+ * meta). A checkpoint is only ever recovered when its race never landed a save,
+ * so the ride was interrupted and is saved as ended early. The one exception is
+ * a checkpoint that says the race had finished on its own (`finished` and not
+ * `endedEarly`): that race ran to its end and only the save was lost, so it
+ * counts. A checkpoint with no race state cannot show that and is ended early.
+ */
+export function checkpointOutcome(checkpoint) {
+  const rs = checkpoint?.raceState ? normalizeRaceState(checkpoint.raceState) : null;
+  return {
+    endedEarly: !(rs && rs.finished && !rs.endedEarly),
+    stopped: rs ? [...new Set([...rs.parked, ...rs.noSensor])] : []
+  };
 }
 
 /** Remove the checkpoint, if any. Swallows storage errors. */
@@ -63,4 +109,4 @@ export function clearCheckpoint(store) {
   }
 }
 
-export default { writeCheckpoint, readFreshCheckpoint, clearCheckpoint };
+export default { writeCheckpoint, readFreshCheckpoint, clearCheckpoint, checkpointRaceState, checkpointOutcome };

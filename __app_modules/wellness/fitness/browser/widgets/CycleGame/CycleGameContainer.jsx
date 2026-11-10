@@ -4,7 +4,7 @@ import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from "../../lib/cycleGame/CycleRaceController.js";
 import { buildRaceConfigFromCourse, formatClock as fmtClock } from "../../lib/cycleGame/cycleGameLobby.js";
-import { buildRaceRecord } from "../../lib/cycleGame/raceRecord.js";
+import { buildRaceRecord, raceOutcomeMeta } from "../../lib/cycleGame/raceRecord.js";
 import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta, resolveWheelCircumferenceM } from "../../lib/cycleGame/distanceModel.js";
 import { playSound } from "../../lib/cycleGame/playSound.js";
 import { saveRaceRecord } from "../../lib/cycleGame/saveRaceRecord.js";
@@ -17,7 +17,7 @@ import { pickPaceRival, paceRivalPool, mergeRaceCandidates, rivalPoolCandidates,
 import { courseStartOverride, pickRival, ladderDelta } from "../../lib/cycleGame/ladder.js";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from "../../lib/cycleGame/equipmentRpm.js";
-import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint } from "../../lib/cycleGame/raceCheckpoint.js";
+import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint, checkpointRaceState, checkpointOutcome } from "../../lib/cycleGame/raceCheckpoint.js";
 import { buildAutoStartCourse } from "../../lib/cycleGame/autoStartCourse.js";
 import { effectiveLapLength } from "../../lib/cycleGame/effectiveLapLength.js";
 import { deriveRaceSnapshot } from "../../lib/cycleGame/deriveRaceSnapshot.js";
@@ -25,6 +25,7 @@ import { dramaEventToasts } from "../../lib/cycleGame/dramaEventCopy.js";
 import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import CycleGameHome from "./CycleGameHome.jsx";
 import CountdownStoplight from "./CountdownStoplight.jsx";
+import RaceMenu from "./RaceMenu.jsx";
 import RiderReadyStrip from "./RiderReadyStrip.jsx";
 import CycleRaceScreen from "./CycleRaceScreen.jsx";
 import CycleEventToast from "./CycleEventToast.jsx";
@@ -109,6 +110,10 @@ function armPaceRival({ candidates, riderId, winCondition, goalM, timeCapS, parS
     ? { ghost: built.ghost, kind: 'par', requestedKind: pick.kind, sourceRaceId: null, participantId: PAR_ID, source: 'par' }
     : { ghost: null, kind: 'none', requestedKind: pick.kind, sourceRaceId: null, participantId: null, source: 'par' };
 }
+
+// The one line the results board shows for a ride ended from the race menu, in
+// place of any ladder-movement callout (it rides the same notes slot).
+const ENDED_EARLY_NOTE = 'Ended early: saved to history, not counted for records or the ladder.';
 
 // The whole budget for finding a rival on the server, per Start press. Past
 // it the race starts with whatever the lobby has loaded.
@@ -1575,6 +1580,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         writeCheckpoint(window.sessionStorage, {
           raceMeta: raceMetaRef.current,
           engineState: state.engineState,
+          raceState: checkpointRaceState(state),
           savedAt: Date.now()
         });
       }
@@ -1626,6 +1632,15 @@ export default function CycleGameContainer({ onMount } = {}) {
 
       if (state.phase === 'finished') {
         const finalState = controller.showResults();
+        // The race is over: checkpoint its FINAL state, marked finished. If the
+        // save below never lands, recovery saves this as the complete race it
+        // was instead of an older mid-race snapshot.
+        writeCheckpoint(window.sessionStorage, {
+          raceMeta: raceMetaRef.current,
+          engineState: finalState.engineState,
+          raceState: checkpointRaceState(finalState),
+          savedAt: Date.now()
+        });
         const standings = finalState.engineState?.standings || [];
         log.debug('cycle_game.sfx', { cue: 'finish', attempted: playSound(soundsRef.current?.finish, { volume: masterRef.current }) }); // null = silent
         log.info('cycle_game.race_finished', {
@@ -1692,7 +1707,8 @@ export default function CycleGameContainer({ onMount } = {}) {
       if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
       const controller = controllerRef.current;
       const meta = raceMetaRef.current;
-      const engineState = controller?.getState?.()?.engineState;
+      const controllerState = controller?.getState?.();
+      const engineState = controllerState?.engineState;
       if (!controller || !meta || !engineState) return;
       // Same zero-distance rule as the save effect and recovery path — never
       // beacon a junk "0 m" record from a pagehide during the go hold.
@@ -1700,7 +1716,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         .reduce((sum, r) => sum + (Number(r?.cumulativeDistanceM) || 0), 0);
       if (totalDistanceM <= 0) return;
       try {
-        const record = buildRaceRecord(engineState, meta);
+        // This listener only exists while the engine is live, so the ride is
+        // being cut off mid-race: saved as ended early, whatever the controller
+        // says, with whoever is stopped right now.
+        const record = buildRaceRecord(engineState, { ...meta, ...raceOutcomeMeta(controllerState, { interrupted: true }) });
         const blob = new Blob([JSON.stringify({ record })], { type: 'application/json' });
         navigator.sendBeacon('/api/v1/fitness/cycle-races', blob);
       } catch {
@@ -1718,7 +1737,8 @@ export default function CycleGameContainer({ onMount } = {}) {
     savedRef.current = true;
     const controller = controllerRef.current;
     const meta = raceMetaRef.current;
-    const engineState = controller?.getState()?.engineState;
+    const controllerState = controller?.getState();
+    const engineState = controllerState?.engineState;
     if (!engineState || !meta) {
       log.warn('cycle_game.race_saved', { raceId: meta?.raceId || null, ok: false, error: 'no_state' });
       return;
@@ -1731,7 +1751,10 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.info('cycle_game.race_saved', { raceId: meta.raceId, ok: false, skipped: 'zero_distance' });
       return;
     }
-    const record = buildRaceRecord(engineState, meta);
+    // Outcome flags from the controller: who was stopped at the close (every
+    // save), and whether the race was ended from the race menu.
+    const record = buildRaceRecord(engineState, { ...meta, ...raceOutcomeMeta(controllerState) });
+    const incomplete = record.race.incomplete === true;
     (async () => {
       try {
         // Retry transient failures (flaky kiosk WiFi) with backoff; a dropped
@@ -1751,7 +1774,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         // The race just saved may have shuffled this week's featured-course
         // ladder — refetch and diff against the pre-race snapshot to surface
         // "2nd this week — 0:04 behind Dad"-style callouts on the results board.
-        if (ok && meta.courseId && meta.courseId === ladderBeforeRef.current?.course?.id) {
+        // An ended-early ride counts for nothing, so there is no ladder movement
+        // to congratulate: say plainly what happened to it instead.
+        if (ok && incomplete) setLadderNotes([ENDED_EARLY_NOTE]);
+        if (ok && !incomplete && meta.courseId && meta.courseId === ladderBeforeRef.current?.course?.id) {
           try {
             const after = await fetchLadder();
             if (after?.course?.id === meta.courseId) {
@@ -1821,13 +1847,17 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.info('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, skipped: 'zero_distance' });
       return;
     }
-    const record = buildRaceRecord(engineState, raceMeta);
+    // A recovered race is an interrupted ride and is saved as ended early —
+    // unless the checkpoint says it had finished on its own and only the save
+    // was lost (see checkpointOutcome).
+    const record = buildRaceRecord(engineState, { ...raceMeta, ...checkpointOutcome(checkpoint) });
     (async () => {
       try {
         const result = await saveRaceRecord({ record });
         log.info('cycle_game.race_recovered', {
           raceId: raceMeta.raceId,
           ok: result.ok,
+          incomplete: record.race.incomplete === true,
           ...(result.ok ? {} : { error: result.error })
         });
         if (result.ok) {
@@ -2047,17 +2077,27 @@ export default function CycleGameContainer({ onMount } = {}) {
     masterVol.setVolume?.(v);
   }, [masterVol, log]);
 
-  // Operator-driven finish: forfeit any unfinished riders, finalize standings,
-  // and roll to results so the race saves (unlike cancel, which discards it).
+  // "End race here" (race menu): close the race where it stands and roll to
+  // results so it saves — as an incomplete ride (the controller marks it
+  // endedEarly), unlike discard, which saves nothing.
   const onFinishRace = useCallback(() => {
     const controller = controllerRef.current;
     if (!controller) return;
-    log.info('cycle_game.finish_forced', {
+    log.info('cycle_game.ended_early', {
       raceId: raceMetaRef.current?.raceId,
-      elapsedS: controller.getState()?.engineState?.elapsedS ?? null
+      elapsedS: controller.getState()?.engineState?.elapsedS ?? null,
+      control: 'race-menu.end'
     });
     controller.finishNow();
-    applySnapshot(controller.showResults());
+    const finalState = controller.showResults();
+    // Checkpoint the ended race until its save lands (the save clears it).
+    writeCheckpoint(window.sessionStorage, {
+      raceMeta: raceMetaRef.current,
+      engineState: finalState.engineState,
+      raceState: checkpointRaceState(finalState),
+      savedAt: Date.now()
+    });
+    applySnapshot(finalState);
   }, [applySnapshot, log]);
 
   const onCancel = useCallback(() => {
@@ -2065,7 +2105,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     const raceId = raceMetaRef.current?.raceId || null;
     if (goHoldTimerRef.current) { clearTimeout(goHoldTimerRef.current); goHoldTimerRef.current = null; }
     if (controller) controller.cancel();
-    log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'cancel-button' });
+    log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'race-menu.discard' });
     clearCheckpoint(window.sessionStorage); // an intentionally-cancelled race is not "crashed" — nothing to recover
     returnToLobby();
   }, [log, phase, returnToLobby]);
@@ -2150,9 +2190,7 @@ export default function CycleGameContainer({ onMount } = {}) {
             {waitingForStop ? 'Waiting for all bikes to stop…' : 'Don’t pedal until the light turns green.'}
           </div>
         </div>
-        <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
-          Cancel
-        </button>
+        <RaceMenu canEnd={false} onDiscard={onCancel} />
       </div>
     );
   }
@@ -2167,11 +2205,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         <div className="cycle-game-countdown-riders">
           <RiderReadyStrip riders={stagingRiders} />
         </div>
-        {phase === 'countdown' && (
-          <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
-            Cancel
-          </button>
-        )}
+        {phase === 'countdown' && <RaceMenu canEnd={false} onDiscard={onCancel} />}
       </div>
     );
   }
@@ -2282,12 +2316,7 @@ export default function CycleGameContainer({ onMount } = {}) {
           events={raceEvents}
         />
         <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
-        <button type="button" data-testid="cycle-game-finish" className="cycle-game-container__finish" onClick={onFinishRace}>
-          Finish race
-        </button>
-        <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
-          Cancel
-        </button>
+        <RaceMenu onEnd={onFinishRace} onDiscard={onCancel} />
       </div>
     );
   }

@@ -48,6 +48,9 @@ Lobby + lifecycle ────────────────────�
   widgets/CycleGame/CycleGameContainer.jsx     orchestrator: phases, riders,
                                                courses, ghosts, ticking, saving
   widgets/CycleGame/CycleGameHome.jsx          the lobby (selection + start + GhostPicker)
+  widgets/CycleGame/RaceMenu.jsx               the one stop control (staging, countdown,
+                                               racing): Keep racing / End race here /
+                                               Discard race
   widgets/CycleGame/RiderReadyStrip.jsx        staging/countdown compliance strip
   widgets/CycleGame/CountdownStoplight.jsx     ALL3·RED·YELLOW·GREEN stoplight (presentational)
 
@@ -85,7 +88,10 @@ Results / recap / events ──────────────────�
   widgets/CycleGame/RaceResults.jsx             final standings + splits + auto-exit + Exit
   widgets/CycleGame/RaceRecap.jsx               replay a saved race
   widgets/CycleGame/CycleEventToast.jsx         transient DNF/penalty toast
-  lib/cycleGame/raceRecord.js                   buildRaceRecord (persist shape)
+  lib/cycleGame/raceRecord.js                   buildRaceRecord (persist shape),
+                                                raceOutcomeMeta (incomplete / stopped)
+  lib/cycleGame/raceCheckpoint.js               mid-race checkpoint + how a recovered
+                                                race is saved (checkpointOutcome)
   lib/cycleGame/recordRow.js                    buildRecordRow — History-table row model
   lib/cycleGame/participantIdentity.js          resolve ghost:<id> → real face/name
   lib/cycleGame/playSound.js                    one-shot SFX helper
@@ -99,7 +105,8 @@ Persistence (backend) ───────────────────�
   4_api/v1/routers/fitness.mjs                              /cycle-races routes incl.
                                                             ladder + personal-bests +
                                                             rival-pool
-  2_domains/fitness/services/cycleRivalPool.mjs             pure rival-pool domain:
+  __app_modules/wellness/fitness/server/domain/services/cycleRivalPool.mjs
+                                                            pure rival-pool domain:
                                                             request parsing, index rows
                                                             → pool entries
   2_domains/fitness/services/cycleLadder.mjs                pure ladder domain: week
@@ -138,16 +145,17 @@ React phases in `applySnapshot()`.
    (standings)   all done /  green   ALL3·RED·       │
                  time cap   (engine  YELLOW·GREEN     │
                             live)                     │
-   Cancel from staging/countdown/racing ─────────► idle
+   Race menu → Discard race (staging/countdown/racing) ─► idle
+   Race menu → End race here (racing only) ─────────────► results
 ```
 
 | React phase | Controller phase(s) | Rendered | Enter trigger | Exit trigger |
 |---|---|---|---|---|
-| `idle` | — / `cancelled` | `CycleGameHome` (lobby) + history load | mount; back-to-home; cancel | Start (when `canStart`) |
-| `staging` | `staged` | `RiderReadyStrip` ("to your bikes") | Start, if `staging_buffer_ms > 0` | buffer elapsed **and** all riders at RPM 0 (see §10) |
-| `countdown` | `staged`→`countdown` | `CountdownStoplight` + `RiderReadyStrip` | staging gate clears (or Start if buffer 0) | countdown reaches the green light |
-| `go` | `racing` | `CountdownStoplight` (GREEN) — engine already live | green light | brief hold (`GO_HOLD_MS` ≈ 800 ms) |
-| `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` | go-hold ends | distance: every live rider finished or in overtime (parked and no-sensor riders stop holding it open once a live rider has finished); time: the cap; either: every live unfinished rider away for `allParkedEndS` (15 s); or operator **Finish race** |
+| `idle` | — / `cancelled` | `CycleGameHome` (lobby) + history load | mount; back-to-home; **Discard race** | Start (when `canStart`) |
+| `staging` | `staged` | `RiderReadyStrip` ("to your bikes") + `RaceMenu` (no End item) | Start, if `staging_buffer_ms > 0` | buffer elapsed **and** all riders at RPM 0 (see §10); or **Discard race** |
+| `countdown` | `staged`→`countdown` | `CountdownStoplight` + `RiderReadyStrip` + `RaceMenu` (no End item) | staging gate clears (or Start if buffer 0) | countdown reaches the green light; or **Discard race** |
+| `go` | `racing` | `CountdownStoplight` (GREEN) — engine already live; no race menu | green light | brief hold (`GO_HOLD_MS` ≈ 800 ms) |
+| `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` + `RaceMenu` | go-hold ends | distance: every live rider finished or in overtime (parked and no-sensor riders stop holding it open once a live rider has finished); time: the cap; either: every live unfinished rider away for `allParkedEndS` (15 s); or the race menu's **End race here** (→ `results`) or **Discard race** (→ `idle`) |
 | `results` | `finished`→`results` | `RaceResults` | engine `finished` | manual **Exit** or auto-dwell countdown → `idle` |
 
 ### A dead sensor is not a lazy child
@@ -208,10 +216,22 @@ identify a person, still are.
 - **The engine goes live at GREEN**, ~0.8 s **before** the race screen appears —
   so the race technically starts on the green light. The `go` phase holds the green
   stoplight for that beat; then the screen switches to `CycleRaceScreen`.
-- **Cancel** (`onCancel`): `controller.cancel()` → `cancelled` → `idle`. Emits
-  `cycle_game.cancelled`. Discards the race.
-- **Finish race** (`onFinishRace`): `controller.finishNow()` → `results`. Forfeits
-  unfinished riders (DNF) and **saves**. Emits `cycle_game.finish_forced`.
+- **The race menu (`RaceMenu`) is the only stop control.** One low-contrast corner
+  button, mounted as a direct child of `.cycle-game-container` in staging,
+  countdown and racing (not in the lobby, the `go` hold or results). It opens a
+  sheet with **Keep racing**, **End race here** (racing only) and **Discard
+  race**; the race keeps running underneath. The two destructive items ignore
+  taps for `RACE_MENU_GUARD_MS` (600 ms) after the sheet opens, so nothing ends
+  or discards a race in one tap. Each phase renders its own menu, so a sheet
+  that is open when the phase changes closes (logged with `reason: 'unmount'`).
+- **Discard race** (`onCancel`): `controller.cancel()` → `cancelled` → `idle`.
+  Emits `cycle_game.cancelled` (`control: 'race-menu.discard'`). Nothing is
+  saved and the crash checkpoint is cleared.
+- **End race here** (`onFinishRace`): `controller.finishNow()` → `results`.
+  Riders still riding go to `overtime` with their real distance, parked and
+  no-sensor riders stay as they are, and the controller sets `endedEarly`. The
+  ride is **saved as incomplete** (§15): it stays in history and counts for
+  nothing. Emits `cycle_game.ended_early`.
 - **`canStart`** = a race type is chosen **and** ≥ 1 rider is claimed to a bike.
 
 ---
@@ -283,7 +303,7 @@ the results exit reset the start guard themselves, not only through a re-render,
 so a race launched and cancelled in one batch leaves Start usable.
 
 `window.__cycleGameControl` (the simulator seam) exposes `startRace`, `cancel`
-(the same as the on-screen Cancel), `getPhase` and `getRaceState`.
+(the same as the race menu's Discard race), `getPhase` and `getRaceState`.
 
 ---
 
@@ -703,9 +723,12 @@ When a rider newly DNFs or is newly penalized, the container records an event
   synthesized rider state into `CycleRaceScreen` over ~12 s regardless of race
   length, with play/pause + scrub, then the final standings. **RPM is always 0 in
   recap.**
-- **Finish race vs Cancel.** During racing the container shows **"Finish race"**
-  (forfeits unfinished riders as DNF and **saves**) alongside **Cancel** (discards
-  the race entirely).
+- **Ending vs discarding.** The race menu (§3) offers **End race here** (saves
+  the ride as incomplete and shows this board) and **Discard race** (saves
+  nothing, back to the lobby). The board of an ended-early ride carries no
+  ladder-movement callout (§16); once the save has landed, the notes slot shows
+  one line instead: "Ended early: saved to history, not counted for records or
+  the ladder." There is no race menu on the results board.
 
 ---
 
@@ -785,6 +808,30 @@ every record saved before they existed reads as a normal, complete race):
 - **participant `stopped`** — set for each userId in `meta.stopped`: the rider
   was parked when the race closed. Independent of `incomplete` (a race can run to
   its normal close with a stopped rider in it).
+
+**Who sets them.** The container builds both from the controller's `getState()`
+at the moment of saving (`raceOutcomeMeta`): `stopped` is `parked` ∪ `noSensor`,
+on every save; `endedEarly` is the controller's flag, which only the race menu's
+**End race here** sets. The three places a record is built:
+
+| Save | `incomplete` | `stopped` |
+|---|---|---|
+| Results (the normal save) | only if the race was ended from the menu | `parked` ∪ `noSensor` at the close |
+| `pagehide` beacon (page closing mid-race) | always: the ride is being cut off | `parked` ∪ `noSensor` at that moment |
+| Crash recovery (checkpoint found on the next mount) | yes, unless the checkpoint says the race had finished on its own | the checkpoint's `parked` ∪ `noSensor` |
+
+**Crash checkpoint.** While racing, every 5th tick writes
+`{ raceMeta, engineState, raceState, savedAt }` to `sessionStorage`
+(`raceCheckpoint.js`); `raceState` is `{ parked, noSensor, endedEarly, finished }`.
+A last checkpoint with `finished: true` is written when the race ends (on its
+own or from the menu) and is cleared when the save lands or the race is
+discarded. A checkpoint still there on the next mount (under 30 minutes old,
+some distance covered) is saved by `checkpointOutcome`'s rule: a recovered race
+is an interrupted ride, so `incomplete`, except when `finished` is true and
+`endedEarly` is false, which means the race ran to its end and only its save was
+lost. A checkpoint with no `raceState` (written by an older build) cannot show
+that and is saved `incomplete`. `cycle_game.race_recovered` carries the result
+as `incomplete`.
 
 `mapRaceRecordToCandidate` carries both onto the ghost candidate
 (`candidate.incomplete`, `participant.stopped`, each a plain boolean), and
@@ -973,8 +1020,10 @@ resolves.
   refetched and diffed per live (non-ghost) rider against that snapshot. Each
   mover gets a one-line note on the results board — a lead ("Ladder lead this
   week!") or a rank + gap to the rung above ("2nd this week — 0:04 behind Dad").
-  A refetch/diff failure is logged and silently skipped; it never blocks the
-  results board.
+  A refetch/diff failure is logged and skipped; it never blocks the results
+  board. A ride ended from the race menu (saved `incomplete`, §15) gets no
+  callout and no refetch: the notes slot shows the ended-early line instead
+  (§12).
 
 ### Index shards
 
@@ -1025,7 +1074,8 @@ sets the bar a later ride must beat). It is dated by the study day of `race.date
    to include (default all). `onSelectGhost` decodes the chosen participants' series,
    builds `ghost:<raceId>:<id>` riders, and **locks** the race type/value.
 4. **Replay** — the engine interpolates distance and nearest-samples HR/RPM/zone
-   each tick; ghosts never DNF and are never penalized.
+   each tick; ghosts are never parked, never in overtime, and never hold a race
+   open (§8).
 
 ---
 
@@ -1042,8 +1092,21 @@ by `raceId` (+ `elapsedS` where relevant).
   series point-counts), `staged` / `staging` / `race_started` / `race_finished` /
   `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_dnf`,
   `penalty_entered` / `penalty_awaiting_stop` / `penalty_cleared`, `cadence_change`,
-  `finish_forced`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`,
+  `ended_early`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`,
   `pace_rival`.
+- **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
+  and will be saved as incomplete: `{ raceId, elapsedS, control: 'race-menu.end' }`.
+  It replaces `cycle_game.finish_forced`, which is no longer emitted.
+  **`cycle_game.cancelled`** carries `control: 'race-menu.discard'` (the
+  simulator seam's `cancel` logs the same).
+- **Race menu UI** (component `cycle-race-menu`) — `cycle_game.ui.race_menu_open`
+  (INFO, `{ canEnd }`); `cycle_game.ui.race_menu_close` (DEBUG, `{ reason }`:
+  `keep`, `end`, `discard`, `scrim`, `escape`, `timeout` or `unmount`);
+  `cycle_game.ui.race_menu_guarded_tap` (DEBUG, `{ item }`: a tap on `end`,
+  `discard` or the `scrim` inside the guard time, ignored);
+  `cycle_game.ui.race_menu_handler_failed` (ERROR, `{ item, error }`).
+- **`cycle_game.race_recovered`** (INFO) — a checkpointed race was saved on
+  mount: `{ raceId, ok, incomplete }` (or `skipped: 'zero_distance'`).
 - **`cycle_game.pace_rival`** (INFO) — once per race start in which a lone rider
   had no ghost (§5). Not emitted when a ghost was chosen or two or more riders
   are racing.
@@ -1113,8 +1176,8 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   10–20 s dropouts don't flatline the bike. A simultaneous 1-tick gap on *all* sensors
   can still blip; `rpmDuringGap` bridges longer gaps.
 - **Race starts on GREEN.** The engine goes live at the green light, ~0.8 s before
-  the race screen appears. A false start is only pre-green pedalling
-  (`markFalseStarters`); pedalling *on* green is legal.
+  the race screen appears. Pedalling counts from the first racing tick; the
+  controller has no false-start detection or penalty box (§8).
 - **Synthwave lane palette, capped at 6.** Rider colours avoid the HR-zone hues and
   the reserved chrome (cyan/magenta); a 7th+ rider reuses a hue.
 - **`date` metadata is UTC, the folder is local.** Harmless — nothing files by `date`
@@ -1145,13 +1208,17 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
   `chartTrim` (`plotStartIndex`), `chartZoom` (`nextZoomLevel`), `povWorld`/`povFollowCam`,
   `ovalTrackModel`, `participantIdentity` (ghost→source), `recordRow`,
   `lineColors` (no HR-zone/chrome clash), `speedometerGeometry` (`tickStepsFor`,
-  `scaleBands`), `CycleRaceController` (penalty box RPM-0 exit, `finishNow` forfeit).
+  `scaleBands`), `CycleRaceController` (parking and resuming, no-sensor riders,
+  the mercy window, the all-away close, `finishNow` setting `endedEarly`),
+  `raceCheckpoint` (race state round-trip, `checkpointOutcome`).
 - **Components (vitest + @testing-library):** `CycleRaceScreen` (clock, speedometers,
   lanes, penalty banner, event markers, `showSpeedos`, `zoneBox` forwarding),
   `RaceLayoutManager` (mode by field size, splits-before-chart), `DistanceChart`,
   `SplitsChart` (sticky/live-order/final), `PovGrid`, `OvalTrack`, `SpeedoRow`,
   `CycleSpeedometer`, `CountdownStoplight` (ALL3→RED→YELLOW→GREEN), `RaceResults`
-  (exit button, count-up under `animate={false}`).
+  (exit button, count-up under `animate={false}`), `RaceMenu` (guard time, focus,
+  Escape), and `CycleGameContainer.raceMenu.test.jsx` (the menu in each phase,
+  what each save records, the ended-early results line).
 - **Live (Playwright):** `tests/live/flow/fitness/cycle-game-*.runtime.test.mjs`
   drive the simulator through full lifecycles via `FitnessSimHelper`
   (`launchCycleGame`, `setEquipmentRider`, `setRpm`).

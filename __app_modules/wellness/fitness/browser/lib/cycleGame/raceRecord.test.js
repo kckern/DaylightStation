@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRaceRecord } from "./raceRecord.js";
+import { buildRaceRecord, raceOutcomeMeta } from "./raceRecord.js";
 import { SessionSerializerV3 } from "../../hooks/fitness/SessionSerializerV3.js";
 
 const state = {
@@ -91,5 +91,32 @@ describe('buildRaceRecord', () => {
       winCondition: 'distance', goalM: 1500, intervalSeconds: 1 };
     expect(buildRaceRecord(state, { ...base, courseId: 'sprint-1500m' }).race.course_id).toBe('sprint-1500m');
     expect(buildRaceRecord(state, base).race.course_id).toBeNull();
+  });
+});
+
+describe('raceOutcomeMeta (controller state → the outcome flags of the saved record)', () => {
+  it('a normal finish with nobody stopped: not ended early, nobody stopped', () => {
+    expect(raceOutcomeMeta({ parked: [], noSensor: [], endedEarly: false })).toEqual({ endedEarly: false, stopped: [] });
+  });
+  it('stopped is parked plus no-sensor riders, each once', () => {
+    expect(raceOutcomeMeta({ parked: ['rider-a'], noSensor: ['rider-b', 'rider-a'], endedEarly: false }))
+      .toEqual({ endedEarly: false, stopped: ['rider-a', 'rider-b'] });
+  });
+  it('ended early when the controller says so', () => {
+    expect(raceOutcomeMeta({ parked: [], noSensor: [], endedEarly: true }).endedEarly).toBe(true);
+  });
+  it('an interrupted save is ended early whatever the controller says', () => {
+    expect(raceOutcomeMeta({ parked: ['rider-a'], endedEarly: false }, { interrupted: true }))
+      .toEqual({ endedEarly: true, stopped: ['rider-a'] });
+  });
+  it('tolerates a missing or malformed state', () => {
+    expect(raceOutcomeMeta(undefined)).toEqual({ endedEarly: false, stopped: [] });
+    expect(raceOutcomeMeta({ parked: 'rider-a', noSensor: null })).toEqual({ endedEarly: false, stopped: [] });
+  });
+  it('feeds buildRaceRecord: incomplete on the race, stopped on the rider', () => {
+    const rec = buildRaceRecord(state, { ...meta, ...raceOutcomeMeta({ parked: ['user_2'], noSensor: [], endedEarly: true }) });
+    expect(rec.race.incomplete).toBe(true);
+    expect(rec.participants.user_2.stopped).toBe(true);
+    expect(rec.participants.user_3.stopped).toBeUndefined();
   });
 });

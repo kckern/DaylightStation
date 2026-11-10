@@ -45,4 +45,19 @@ export function buildRaceRecord(state, meta = {}) {
   return { version: 1, race, participants };
 }
 
+const idList = (v) => (Array.isArray(v) ? v.filter((id) => typeof id === 'string') : []);
+
+/**
+ * The outcome part of buildRaceRecord's meta, read off the race controller's
+ * getState() at the moment of saving:
+ *   stopped    — parked ∪ noSensor (every save, a normal finish included)
+ *   endedEarly — the controller's own flag (race ended from the race menu), or
+ *                `interrupted`: the save is of a race that was cut off (page
+ *                closing mid-race), which is an ended-early ride by definition.
+ */
+export function raceOutcomeMeta(controllerState, { interrupted = false } = {}) {
+  const stopped = [...new Set([...idList(controllerState?.parked), ...idList(controllerState?.noSensor)])];
+  return { endedEarly: interrupted || controllerState?.endedEarly === true, stopped };
+}
+
 export default buildRaceRecord;

@@ -19,6 +19,7 @@ vi.mock("../../nav/usePersistentVolume.js", () => ({
 }));
 
 import CycleGameContainer from "./CycleGameContainer.jsx";
+import { discardRace } from "./raceMenuTestHelpers.js";
 import { DEFAULT_WHEEL_CIRCUMFERENCE_M } from "../../lib/cycleGame/distanceModel.js";
 import { SessionSerializerV3 } from "../../hooks/fitness/SessionSerializerV3.js";
 
@@ -75,8 +76,8 @@ describe('CycleGameContainer (smoke)', () => {
     expect(getByTestId('course-distance')).toBeTruthy();
     expect(getByTestId('course-time')).toBeTruthy();
     expect(getByTestId('cycle-game-start')).toBeTruthy();
-    // Cancel must NOT appear on the home/idle screen.
-    expect(queryByTestId('cycle-game-cancel')).toBeNull();
+    // The race menu must NOT appear on the home/idle screen.
+    expect(queryByTestId('race-menu-open')).toBeNull();
     expect(logSpy.info).toHaveBeenCalledWith('cycle_game.home', expect.objectContaining({ riderCount: 2 }));
   });
 
@@ -634,7 +635,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         expect(configLogs()[0]).toMatchObject({ winCondition: 'distance', goalM: GOAL_M });
         expect(logsOf('info', 'cycle_game.race_type_selected')).toHaveLength(1);
         expect(logsOf('info', 'cycle_game.race_value_set')).toEqual([]);
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
+        discardRace(view);
         await flush(3);
         // Back in the lobby: unfrozen, and still set to the distance race.
         expect(view.getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('false');
@@ -734,7 +735,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(rideFeaturedLogs()).toEqual([expect.objectContaining({ courseId: COURSE.id, ghostArmed: true })]);
       expect(featuredFailLogs()).toEqual([]);
       // Back in the lobby it is live again.
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
+      discardRace(view);
       await flush(3);
       expect(isFrozen(view)).toBe(false);
       expect(view.getByTestId('cycle-game-start').textContent).toContain('Start race');
@@ -884,7 +885,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         expect(configLogs()[0]).toMatchObject({ winCondition: 'time', rivalKind: 'par' });
         expect(ghostIds(configLogs()[0])).toEqual(['ghost:par:par']);
         expect(logsOf('info', 'cycle_game.ride_featured')).toEqual([]);
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
+        discardRace(view);
         await flush(3);
         expect(view.queryByTestId('cgh-ghost-summary')).toBeNull();
       });
@@ -1072,7 +1073,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       expect(stagedLogs()).toHaveLength(1);
       expect(window.__cycleGameControl.getRaceState()).not.toBeNull();
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
+      discardRace(view);
       expect(logsOf('info', 'cycle_game.cancelled')).toEqual([expect.objectContaining({ raceId: configLogs()[1].raceId })]);
     });
   });
@@ -1196,7 +1197,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
   it('never writes the automatic rival to the lobby ghost selection, and arms a fresh one next race', async () => {
     const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300 } })]);
     await startRaceOf(view);
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-cancel')); });
+    discardRace(view);
     await flush(3);
     // Back in the lobby with nothing touched: a ghost in lobby state would show
     // as the "vs …" summary (replacing the value stepper) and as a phantom lane.

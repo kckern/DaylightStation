@@ -299,11 +299,11 @@ describe('CycleGameHome', () => {
     expect(onStart).toHaveBeenCalled();
   });
 
-  it('does NOT render a cancel control on the home screen', () => {
+  it('does NOT render a race menu (the stop control) on the home screen', () => {
     const { queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
     );
-    expect(queryByTestId('cycle-game-cancel')).toBeNull();
+    expect(queryByTestId('race-menu-open')).toBeNull();
   });
 
   it('shows "No races yet" when records are empty, and a History row when present', () => {
