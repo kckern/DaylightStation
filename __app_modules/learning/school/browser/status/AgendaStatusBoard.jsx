@@ -57,11 +57,12 @@
  * board is always one tap away.
  *
  * THE COIN CEREMONY (2026-10-21; ledger ruling 2026-11-09). When a child's
- * MINTED silver (the wallet, not the week's projection) rises between two
- * network reads, a short "+N" pop with their face and the new total appears over the board pane (never the
- * keypad) and the coin cue plays (`useCoinCeremony`, `coinCeremonyModel.js`).
- * It is the one moving thing, and it is transient. The cards themselves still
- * do not move.
+ * bank history gains MINTED EARNING entries (payouts and earn-rule mints, not
+ * deposits, corrections, refunds, conversions or spends) that an earlier
+ * network read did not hold, a short "+N" pop with their face and the new
+ * silver total appears over the board pane (never the keypad) and the coin
+ * cue plays (`useCoinCeremony`, `coinCeremonyModel.js`). It is the one moving
+ * thing, and it is transient. The cards themselves still do not move.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
@@ -395,9 +396,10 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // it prices. Settles independently of the plans, like the rings.
   const [earnings, setEarnings] = useState(() => seed?.earnings ?? {});
   const [gold, setGold] = useState(() => seed?.gold ?? {});
-  // THE COIN CEREMONY: fed by the wallet's MINTED silver (ledger), read over
-  // the network in `refreshCoins` only, never by the cache seed or the week's
-  // projection, so a reload never replays a pop. Called through a ref
+  // THE COIN CEREMONY: fed by the EARNING entries in each learner's bank
+  // history (the ledger), read over the network in `refreshCoins` only, never
+  // by the cache seed, the week's projection or a bare balance, so a reload
+  // never replays a pop and a deposit never celebrates. Called through a ref
   // so `refreshCoins` keeps its identity (its identity drives the first-read
   // effect).
   const ceremony = useCoinCeremony({ kids, config: coinCeremony });
@@ -504,8 +506,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
   // baseline, and the next read would pop the same rise twice.
   const earningsSentRef = useRef(0);
   const earningsAppliedRef = useRef(0);
-  const walletSentRef = useRef({});
-  const walletAppliedRef = useRef({});
+  const bankSentRef = useRef({});
+  const bankAppliedRef = useRef({});
   const refreshCoins = useCallback(() => {
     if (schoolApi.earningsRoster) {
       // One roster read prices everyone. Fired alongside the plans, never
@@ -529,23 +531,33 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           schoolLog.selfServiceError?.('status-board.earnings-failed', { error: error?.message });
         });
     }
+    // The ceremony's feed: each learner's bank history, whose EARNING entries
+    // (`earnedSilver`) are what was minted. Reads can land out of order; one
+    // older than the last applied is dropped (it would reset the baseline and
+    // pop the same entries twice).
+    if (schoolApi.economyBank) {
+      for (const kid of kids) {
+        const bankSeq = (bankSentRef.current[kid.id] ?? 0) + 1;
+        bankSentRef.current[kid.id] = bankSeq;
+        Promise.resolve(schoolApi.economyBank(kid.id))
+          .then((res) => {
+            if (!aliveRef.current || !res?.ok || !Array.isArray(res.data?.history)) return;
+            if (bankSeq < (bankAppliedRef.current[kid.id] ?? 0)) return;
+            bankAppliedRef.current[kid.id] = bankSeq;
+            observeCoinsRef.current({ [kid.id]: { lines: res.data.history, silver: res.data.balances?.silver ?? null } });
+          })
+          .catch((error) => {
+            schoolLog.selfServiceError?.('status-board.bank-failed', { learnerId: kid.id, error: error?.message });
+          });
+      }
+    }
     if (!schoolApi.wallet) return;
     // One wallet per learner; each lands (or fails) on its own and a failure
     // keeps that learner's figure.
     for (const kid of kids) {
-      const walletSeq = (walletSentRef.current[kid.id] ?? 0) + 1;
-      walletSentRef.current[kid.id] = walletSeq;
       Promise.resolve(schoolApi.wallet(kid.id))
         .then((res) => {
           if (!aliveRef.current) return;
-          // Minted silver for the ceremony. Reads can land out of order; one
-          // older than the last applied is dropped (it would reset the
-          // baseline and pop the same rise twice).
-          const minted = res?.ok ? res.data?.balance : undefined;
-          if (Number.isFinite(minted) && walletSeq >= (walletAppliedRef.current[kid.id] ?? 0)) {
-            walletAppliedRef.current[kid.id] = walletSeq;
-            observeCoinsRef.current({ [kid.id]: { silver: minted } });
-          }
           if (res && !res.ok) {
             schoolLog.selfServiceError?.('status-board.wallet-failed', { learnerId: kid.id, status: res.status ?? null });
             return;

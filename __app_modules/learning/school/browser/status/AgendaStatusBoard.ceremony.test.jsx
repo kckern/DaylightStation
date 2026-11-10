@@ -27,10 +27,25 @@ const priced = (learnerId, silver, week = WEEK) => ({
 const roster = (...learners) => ({ ok: true, status: 200, data: { windows: { school: WEEK }, learners } });
 // No burst wait in these tests: the window is pinned in coinCeremonyModel.test.js.
 const NOW = { coalesceWindowMs: 0 };
-// The ceremony watches the wallet's MINTED silver; the card's figure is the
-// week's projection. `mint` sets what the bank holds.
+// The ceremony watches EARNING entries in the bank history; the card's figure
+// is the week's projection. `mint` sets what the bank holds: a higher silver
+// than before records a payout entry for the difference, a lower one is a
+// spend (no entry). `deposit` raises the balance with a non-earning line.
 const bank = {};
-const mint = (map) => Object.assign(bank, map);
+let seq = 0;
+const lineOf = (source, delta, id = null) => ({ ids: [id ?? `txn-${++seq}`], source, kind: source, legs: [{ currency: 'silver', delta }], text: `${delta} silver`, at: '2026-10-21T10:00:00Z' });
+const mint = (map) => {
+  for (const [id, n] of Object.entries(map)) {
+    const cur = bank[id] ?? { silver: n, lines: [] };
+    if (n > cur.silver) cur.lines.unshift(lineOf('payout', n - cur.silver));
+    cur.silver = n;
+    bank[id] = cur;
+  }
+};
+const deposit = (id, n) => { bank[id].lines.unshift(lineOf('deposit', n)); bank[id].silver += n; };
+const bankRead = (id) => (id in bank
+  ? { ok: true, status: 200, data: { history: bank[id].lines, balances: { silver: bank[id].silver, gold: 0 } } }
+  : { ok: false, status: 0, data: null });
 const silverShown = (n) => screen.queryByRole('img', { name: `${n} silver earned this week` });
 const poke = async (learnerId = 'test-learner') => {
   await act(async () => h.ws.filter((x) => x.topic === 'school').at(-1).cb({ event: 'story-read', learnerId, studyDay: DAY }));
@@ -47,7 +62,9 @@ beforeEach(() => {
   h.unlocks.length = 0;
   vi.clearAllMocks();
   for (const k of Object.keys(bank)) delete bank[k];
-  schoolApi.wallet.mockImplementation(async (id) => (id in bank ? { ok: true, status: 200, data: { balance: bank[id], balances: { gold: 0 } } } : { ok: false, status: 0, data: null }));
+  seq = 0;
+  schoolApi.economyBank.mockImplementation(async (id) => bankRead(id));
+  schoolApi.wallet.mockResolvedValue({ ok: false, status: 0, data: null });
   schoolApi.stateGates.mockResolvedValue({ ok: false, status: 0, data: null });
   schoolApi.teacherDay.mockResolvedValue({ ok: true, status: 200, data: { learners: [] } });
   schoolApi.agendaPreview.mockResolvedValue({ ok: true, status: 200, data: { sections: [{ subject: 'math', next: { unitId: 'math.01' } }], entries: [{ unitId: 'math.01', subject: 'math' }] } });
@@ -106,7 +123,7 @@ describe('the coin ceremony on the board', () => {
     await settle();
     mint({ 'test-learner': 8 });
     await poke();
-    await waitFor(() => expect(schoolApi.wallet.mock.calls.length).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(schoolApi.economyBank.mock.calls.length).toBeGreaterThanOrEqual(3));
     await settle();
     expect(screen.queryByTestId('coin-ceremony')).toBeNull();
     expect(h.cues).toHaveLength(0);
@@ -174,7 +191,7 @@ describe('the coin ceremony on the board', () => {
 
   it('a stale done (a tap during the exit window) does not skip the next child', async () => {
     const KIDS3 = [...KIDS, { id: 'test-learner-3', name: 'Gamma' }];
-    const fig = (silver) => ({ silver, gems: 0, ...WEEK });
+    const fig = (n) => ({ silver: n, lines: Array.from({ length: n - 1 }, (_, i) => lineOf('payout', 1, `p${i}`)) });
     const { result } = renderHook(() => useCoinCeremony({ kids: KIDS3, config: NOW }));
     act(() => result.current.observe({ 'test-learner': fig(1), 'test-learner-2': fig(1), 'test-learner-3': fig(1) }));
     act(() => result.current.observe({ 'test-learner': fig(2), 'test-learner-2': fig(2), 'test-learner-3': fig(2) }));
@@ -187,31 +204,61 @@ describe('the coin ceremony on the board', () => {
     expect(result.current.toast?.kid.id).toBe('test-learner-2');
   });
 
-  it('wallet reads that land out of order: the older one is dropped, so one pop', async () => {
+  it('bank reads that land out of order: the older one is dropped, so one pop', async () => {
     schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12))); mint({ 'test-learner': 12 });
     render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
     await waitFor(() => expect(silverShown(12)).toBeTruthy());
     await settle();
     let resolveA; let resolveB;
     const held = [];
-    const base = schoolApi.wallet.getMockImplementation();
-    schoolApi.wallet.mockImplementation((id) => (id === 'test-learner' && held.length < 2
+    schoolApi.economyBank.mockImplementation((id) => (id === 'test-learner' && held.length < 2
       ? new Promise((r) => { held.push(r); if (held.length === 1) resolveA = r; else resolveB = r; })
-      : base(id)));
-    const wallet = (n) => ({ ok: true, status: 200, data: { balance: n, balances: { gold: 0 } } });
+      : Promise.resolve(bankRead(id))));
     await poke('test-learner');
     await poke('test-learner');
     await waitFor(() => { expect(resolveA).toBeTypeOf('function'); expect(resolveB).toBeTypeOf('function'); });
-    await act(async () => { resolveB(wallet(15)); });
-    await screen.findByTestId('coin-ceremony');
-    await act(async () => { resolveA(wallet(12)); });
-    await settle();
-    // A later read at 15 is no news: the stale 12 never became the baseline.
+    const older = bankRead('test-learner');
     mint({ 'test-learner': 15 });
+    const newer = bankRead('test-learner');
+    await act(async () => { resolveB(newer); });
+    await screen.findByTestId('coin-ceremony');
+    // The older read lands last: dropped, it must not reset the baseline.
+    await act(async () => { resolveA({ ...older, data: { ...older.data, history: older.data.history.slice(1) } }); });
+    await settle();
     await poke();
     await settle();
     expect(h.cues).toHaveLength(1);
     expect(within(screen.getByTestId('coin-ceremony')).getByText('+3')).toBeTruthy();
+  });
+
+  it('a deposit raises the balance but does not pop; a later mint pops only the minted silver', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12))); mint({ 'test-learner': 12 });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
+    await waitFor(() => expect(silverShown(12)).toBeTruthy());
+    await settle();
+    deposit('test-learner', 20);
+    await poke();
+    await waitFor(() => expect(schoolApi.economyBank.mock.calls.length).toBeGreaterThanOrEqual(3));
+    await settle();
+    expect(screen.queryByTestId('coin-ceremony')).toBeNull();
+    mint({ 'test-learner': 34 });
+    await poke();
+    const pop = await screen.findByTestId('coin-ceremony');
+    expect(within(pop).getByText('+2')).toBeTruthy();
+    expect(within(pop).getByText('34 silver')).toBeTruthy();
+    expect(h.cues).toHaveLength(1);
+  });
+
+  it('a spend and a mint between two reads pops the minted amount', async () => {
+    schoolApi.earningsRoster.mockResolvedValue(roster(priced('test-learner', 12))); mint({ 'test-learner': 12 });
+    render(<AgendaStatusBoard kids={KIDS} day={DAY} coinCeremony={NOW} />);
+    await waitFor(() => expect(silverShown(12)).toBeTruthy());
+    await settle();
+    mint({ 'test-learner': 8 });
+    mint({ 'test-learner': 11 });
+    await poke();
+    const pop = await screen.findByTestId('coin-ceremony');
+    expect(within(pop).getByText('+3')).toBeTruthy();
   });
 
   it('a same-week reload (seed equals the first read) then a rise pops once', async () => {

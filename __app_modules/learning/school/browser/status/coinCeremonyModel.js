@@ -2,10 +2,10 @@
  * The coin ceremony's pure parts: its config, how a "coins just added" is
  * told from a refresh, and the queue that shows one pop at a time.
  *
- * WHAT IS CELEBRATED is silver actually minted: the wallet's silver (the
- * ledger). It is NOT the week's projection (owner ruling 2026-11-09, "Ledger
+ * WHAT IS CELEBRATED is silver actually minted: earning entries in the
+ * bank history (the ledger). It is NOT the week's projection (owner ruling 2026-11-09, "Ledger
  * too", superseding 2026-10-21): a projected-but-unminted amount is no rise.
- * A rise is the same learner's wallet silver going up between two NETWORK reads.
+ * A rise is earning entries not seen in the previous NETWORK read (`observeMinted`).
  *
  * Not celebrated: the cache seed and the first read after mount (both are
  * baselines), a change of week, a drop, no change, and anyone off the roster.
@@ -49,23 +49,46 @@ export function normalizeCoinCeremonyConfig(raw) {
 }
 
 /**
- * Compare a fresh `earningsByLearner` read with the last one seen.
- * `seen` is `{ [learnerId]: { silver, from, to } }`, the last NETWORK read
- * per learner. A learner absent from this read keeps their entry.
+ * Which bank-history lines are EARNINGS, the only thing the ceremony
+ * celebrates. A line is `historyLines`' shape (`{ ids, source, legs, ... }`),
+ * `source` being `entrySource`: 'payout' (a PayoutService mint), 'earn' and
+ * 'prize' count; 'refund' (pass refund), 'deposit', 'correction' (adjust),
+ * 'conversion', 'spend' and 'withdraw' do not. Silver only, and only a gain.
  */
-export function observeEarnings(seen, byLearner, rosterIds = null) {
+export const EARNING_SOURCES = Object.freeze(new Set(['payout', 'earn', 'prize']));
+export function earnedSilver(line) {
+  if (!line || !EARNING_SOURCES.has(line.source)) return 0;
+  const leg = Array.isArray(line.legs) ? line.legs[0] : null;
+  if (!leg || (leg.currency ?? 'silver') !== 'silver' || !(leg.delta > 0)) return 0;
+  return leg.delta;
+}
+
+const SEEN_IDS_CAP = 200;
+
+/**
+ * Compare a fresh bank read with what this page has already seen.
+ * `byLearner` is `{ [learnerId]: { lines, silver } }` (history lines and the
+ * wallet's silver after them); `seen` is `{ [learnerId]: string[] }`, the
+ * earning entry ids already accounted for. A rise is the sum of earning
+ * entries NOT yet seen, so a balance moved by a deposit, correction, refund,
+ * conversion or spend is never news, and a spend landing between two reads
+ * does not hide a mint. The first read per learner is a baseline. A learner
+ * absent from this read keeps their entry.
+ */
+export function observeMinted(seen, byLearner, rosterIds = null) {
   const next = { ...(seen ?? {}) };
   const rises = [];
-  for (const [learnerId, figure] of Object.entries(byLearner ?? {})) {
+  for (const [learnerId, read] of Object.entries(byLearner ?? {})) {
     if (rosterIds && !rosterIds.has(learnerId)) continue;
-    if (!Number.isFinite(figure?.silver)) continue;
+    if (!Array.isArray(read?.lines)) continue;
+    const earned = read.lines.filter((l) => earnedSilver(l) > 0 && l.ids?.[0] != null);
     const before = next[learnerId];
-    const now = { silver: figure.silver, from: figure.from ?? null, to: figure.to ?? null };
-    next[learnerId] = now;
+    const known = new Set(before ?? []);
+    const fresh = earned.filter((l) => !known.has(String(l.ids[0])));
+    next[learnerId] = [...new Set([...earned.map((l) => String(l.ids[0])), ...(before ?? [])])].slice(0, SEEN_IDS_CAP);
     if (!before) continue;
-    if (before.from !== now.from || before.to !== now.to) continue;
-    const gained = now.silver - before.silver;
-    if (gained > 0) rises.push({ learnerId, gained, total: now.silver });
+    const gained = fresh.reduce((sum, l) => sum + earnedSilver(l), 0);
+    if (gained > 0) rises.push({ learnerId, gained, total: Number.isFinite(read.silver) ? read.silver : null });
   }
   return { seen: next, rises };
 }

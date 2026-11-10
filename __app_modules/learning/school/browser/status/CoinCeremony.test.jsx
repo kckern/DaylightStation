@@ -13,7 +13,7 @@ describe('CoinCeremony', () => {
     expect(screen.queryByTestId('coin-ceremony')).toBeNull();
   });
 
-  it('+N large, the week total smaller, the face, the name and the silver coin', () => {
+  it('+N large, the silver total smaller, the face, the name and the silver coin', () => {
     render(<CoinCeremony toast={toast()} onDone={vi.fn()} />);
     const pop = screen.getByTestId('coin-ceremony');
     expect(within(pop).getByText('+3')).toHaveClass('school-coin-ceremony__gained');

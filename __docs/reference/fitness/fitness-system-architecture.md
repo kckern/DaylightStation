@@ -1082,7 +1082,8 @@ kid from that kid's own unseen entries: "+N" silver and the wallet total
 Enter/Space/Escape (consumed in the capture phase) or the clock (4 s + 1.5 s per
 extra card, max 10 s) dismisses it. localStorage `fitness.coinCeremony.seen`
 keeps each shown entry's txnId; entries older than 7 days are ignored, a first
-load is not silent, and a reload never replays. Logs:
+load is not silent, and a reload never replays (with unusable storage, an
+in-memory set covers the page's life). Logs:
 `fitness.coin_ceremony.shown {sessionId, txnIds, learners, totalSilver}`,
 `.dismissed {reason}`, `.skipped {reason: fetch-failed}`, `.none-minted` (debug).
 

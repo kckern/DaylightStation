@@ -22,10 +22,15 @@ import { DaylightAPI } from '@/lib/api.mjs';
 import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import getLogger from '@/lib/logging/Logger.js';
 
+export function __resetShownForTest() { shownThisPage.clear(); }
+
 export const WORKOUT_FINISHED_EVENT = 'fitness-workout-finished';
 const SEEN_KEY = 'fitness.coinCeremony.seen';
 const MAX_AGE_MS = 7 * 86_400_000;
 const SETTLE_MS = 1200;
+
+// Entries shown this page life: the fallback when localStorage is unusable.
+const shownThisPage = new Set();
 
 function readSeen() {
   try {
@@ -44,6 +49,7 @@ function writeSeen(seen) {
 /** Unseen, recent, positive ring-payout entries from `/paid` bodies, grouped per learner. */
 function collectUnseen(bodies, learnerFilter) {
   const seen = readSeen();
+  for (const id of shownThisPage) seen[id] = Date.now();
   const floor = Date.now() - MAX_AGE_MS;
   const byLearner = new Map();
   const stamps = {};
@@ -68,6 +74,7 @@ function collectUnseen(bodies, learnerFilter) {
   }
   if (!byLearner.size) return null;
   // Remembered before anything awaits: a second look can never replay these.
+  for (const id of Object.keys(stamps)) shownThisPage.add(id);
   writeSeen({ ...seen, ...stamps });
   const learners = [...byLearner.values()];
   return { sessionId, learners, txnIds: learners.flatMap((l) => l.txnIds) };

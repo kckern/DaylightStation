@@ -1,6 +1,6 @@
 /**
- * CoinCeremony: "+N silver" for one child, over the status board when their
- * coin column rises. A self-dismissing toast, the shape of the fitness ring
+ * CoinCeremony: "+N silver" for one child, over the status board when they are
+ * paid (minted earning entries). A self-dismissing toast, the shape of the fitness ring
  * celebration (`FitnessToast.jsx`, `kind: 'ring-celebration'`): +N large, the
  * new total smaller (the wallet's minted silver), who
  * earned it (face and name), and the standard silver coin.

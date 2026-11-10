@@ -8,7 +8,7 @@ vi.mock('@/hooks/useWebSocket.js', () => ({ useWebSocketSubscription: (_f, cb) =
 const logSpy = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => logSpy }) }));
 
-import { useWorkoutCoinCeremony, WORKOUT_FINISHED_EVENT, announceWorkoutFinished } from './useWorkoutCoinCeremony.js';
+import { useWorkoutCoinCeremony, WORKOUT_FINISHED_EVENT, announceWorkoutFinished, __resetShownForTest } from './useWorkoutCoinCeremony.js';
 
 const fire = (sessionId) => act(async () => { window.dispatchEvent(new CustomEvent(WORKOUT_FINISHED_EVENT, { detail: { sessionId } })); });
 const iso = (msAgo = 60_000) => new Date(Date.now() - msAgo).toISOString();
@@ -32,7 +32,7 @@ const mount = async () => {
 };
 
 describe('useWorkoutCoinCeremony', () => {
-  beforeEach(() => { api.mockReset(); localStorage.clear(); logSpy.info.mockClear(); wsHandler = null; sessions = ['s1']; paid = {}; serve(); });
+  beforeEach(() => { api.mockReset(); localStorage.clear(); __resetShownForTest(); logSpy.info.mockClear(); wsHandler = null; sessions = ['s1']; paid = {}; serve(); });
   afterEach(() => vi.useRealTimers());
 
   it('plays an unseen minted payout on load, from the ledger entries and wallet', async () => {
@@ -81,6 +81,20 @@ describe('useWorkoutCoinCeremony', () => {
       await fire('s1');
       await waitFor(() => expect(result.current.ceremony?.txnIds).toEqual(['t9']));
     } finally { spy.mockRestore(); }
+  });
+
+  it('with unusable storage, two triggers still make a single ceremony', async () => {
+    paid.s1 = [learner('learner-a', [entry('t1', 2, 5000)], 9)];
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied'); });
+    try {
+      const { result } = await mount();
+      await waitFor(() => expect(result.current.ceremony).not.toBeNull());
+      act(() => result.current.dismiss());
+      await fire('s1');
+      await fire('s1');
+      expect(result.current.ceremony).toBeNull();
+    } finally { get.mockRestore(); set.mockRestore(); }
   });
 
   it('coins-changed for a learner fetches their recent sessions and shows only unseen entries', async () => {
