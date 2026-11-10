@@ -350,6 +350,36 @@ describe('GemBoardOverlay', () => {
     expect({ columns: loaded.style.gridTemplateColumns, names: [...loaded.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...loaded.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) }).toEqual(outline);
   });
 
+  it('the highlighted child’s bar sits on that child’s line inside the scrolling body: in the outline, on the board, and when the highlight moves', async () => {
+    localStorage.setItem('daylight.gemBoard.shape.v1', JSON.stringify(boardShape(BOARD)));
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
+    const keyRef = { current: null };
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" focusLearnerId="b" keyRef={keyRef} idleMs={0} />);
+    // The bar spans every column of one line; the body is the box that leaves room for its ends (GemBoard.scss).
+    const lane = () => {
+      const all = document.querySelectorAll('.gem-board__body > .gem-board__grid > .gem-board__lane');
+      expect(all).toHaveLength(1);
+      return { row: all[0].style.gridRow, column: all[0].style.gridColumn };
+    };
+    expect(document.querySelector('.gem-board__grid.is-pending')).toBeTruthy();
+    expect(lane()).toEqual({ row: '4', column: '1 / -1' }); // Ben, the last line, picked before the read lands
+    await act(async () => { release(); });
+    expect(document.querySelector('.gem-board__grid.is-pending')).toBeNull();
+    expect(lane()).toEqual({ row: '4', column: '1 / -1' });
+    act(() => { keyRef.current('ArrowUp'); });
+    expect(lane()).toEqual({ row: '3', column: '1 / -1' }); // Ann, the first line
+  });
+
+  it('no child highlighted, no bar: until an arrow picks one', async () => {
+    const keyRef = { current: null };
+    render(<GemBoardOverlay open load={async () => BOARD} onClose={() => {}} surface="fitness" keyRef={keyRef} idleMs={0} />);
+    await flush();
+    expect(document.querySelector('.gem-board__lane')).toBeNull();
+    act(() => { keyRef.current('ArrowDown'); });
+    expect(document.querySelector('.gem-board__body > .gem-board__grid > .gem-board__lane').style.gridRow).toBe('3');
+  });
+
   it('a kept outline that cannot be read, or a board that is off, is no outline', async () => {
     localStorage.setItem('daylight.gemBoard.shape.v1', '{not json');
     expect(readBoardShape()).toBeNull();

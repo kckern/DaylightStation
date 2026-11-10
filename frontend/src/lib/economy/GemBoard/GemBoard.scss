@@ -21,6 +21,7 @@
     --gem-col: 4.4em;  // one gem column
     --gem-gap: 0.8em;  // between sections
     --gem-line: 4.6em; // one child's line
+    --gem-lane-out: 0.5em; // how far the highlighted child's bar reaches past the grid, each side
     position: relative;
     display: flex;
     flex-direction: column;
@@ -80,7 +81,16 @@
   }
 
   // Sized to fit unscrolled; scrolling is the fallback for more children or gems than planned for.
-  &__body { min-height: 0; overflow: auto; }
+  // A scroll box cuts its contents at its padding edge, and the highlighted child's bar
+  // (&__lane) reaches --gem-lane-out past the grid on both sides. So the box is that much
+  // wider than the grid each side, into the panel's own padding: the bar is drawn whole
+  // and the grid stays where it was. Keep --gem-lane-out below the panel's side padding.
+  &__body {
+    min-height: 0;
+    overflow: auto;
+    margin: 0 calc(-1 * var(--gem-lane-out));
+    padding: 0 var(--gem-lane-out);
+  }
   &__empty { padding: 3em 4em; text-align: center; font-size: 1.25em; color: var(--ds-text-mid, #94a3b8); }
 
   // Lines: the leaning column names, the section names, then one per child.
@@ -129,9 +139,11 @@
     color: var(--ds-text-high, #e8eef3);
   }
 
-  // The highlighted child: one bar across the whole line.
+  // The highlighted child: one bar across the whole line, reaching past the grid on both
+  // sides by as much as it clears the avatar above and below (line 4.6em, avatar 3.6em).
+  // &__body makes the room for that reach; without it the bar's ends are cut square.
   &__lane {
-    margin: 0 -0.5em;
+    margin: 0 calc(-1 * var(--gem-lane-out));
     border-radius: 0.7em;
     background: rgba(255, 255, 255, 0.08);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
