@@ -25,18 +25,18 @@ describe('ReviewList', () => {
     expect(screen.getByText('1 of 3 reviewed')).toBeTruthy();
   });
   it('"Play with effect" jumps to the row; "Play without" peeks the subject', () => {
-    const jump = vi.spyOn(previewStore, 'jumpToCue'); const peek = vi.spyOn(previewStore, 'peek');
-    show();
+    const peek = vi.spyOn(previewStore, 'peek'); const onSelect = vi.fn();
+    show({ onSelect });
     fireEvent.click(within(item('damn')).getByRole('button', { name: 'Play with effect' }));
-    expect(jump).toHaveBeenCalledWith({ in: 70.25 });
+    expect(onSelect).toHaveBeenCalledWith(rows[0]); // the page's cursor move does the seek
     fireEvent.click(within(item('Billboard')).getByRole('button', { name: 'Play without' }));
+    expect(onSelect).toHaveBeenLastCalledWith(rows[1], { seek: false });
     expect(peek).toHaveBeenCalledWith('subject-b1');
   });
-  it('clicking a row title seeks to the row and selects it', () => {
-    const jump = vi.spyOn(previewStore, 'jumpToCue'); const onSelect = vi.fn();
+  it('clicking a row title selects it (the page seeks)', () => {
+    const onSelect = vi.fn();
     show({ onSelect });
     fireEvent.click(within(item('damn')).getByText('damn'));
-    expect(jump).toHaveBeenCalledWith({ in: 70.25 });
     expect(onSelect).toHaveBeenCalledWith(rows[0]);
   });
   it('kind and "needs review" filters narrow the rows', () => {

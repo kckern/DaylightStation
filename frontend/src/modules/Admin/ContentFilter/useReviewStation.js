@@ -22,13 +22,15 @@ export function useReviewStation({ ratingKey, data, reload, selected, select }) 
   const [message, setMessage] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
+  const [saving, setSaving] = useState(false);
   const busy = useRef(false);
   const arrived = useRef({ id: null, at: Date.now(), replays: 0 });
   const via = useRef('click');
   const latest = useRef({});
-  latest.current = { rows, selectedId: selected?.id ?? null };
+  latest.current = { rows, selectedId: selected?.id ?? null, scoped: null };
 
   const scoped = useMemo(() => scopeRows(rows, scope), [rows, scope]);
+  latest.current.scoped = scoped;
   const row = rows?.find((r) => r.id === selected?.id) || null;
 
   // Dwell and replays count per cursor stay; a permalink or a click arrives here too.
@@ -62,7 +64,13 @@ export function useReviewStation({ ratingKey, data, reload, selected, select }) 
     select(r);
     previewStore.jumpToCue({ in: r.in });
   }, [select]);
-  const pick = useCallback((r) => { via.current = 'click'; setMessage(null); select(r); }, [select]);
+  // Every cursor move seeks to in - PREVIEW_LEAD_SEC (jumpToCue): click, timeline, keys, auto-advance.
+  const pick = useCallback((r, { seek = true } = {}) => {
+    via.current = 'click'; setMessage(null); select(r);
+    if (seek) previewStore.jumpToCue({ in: r.in });
+  }, [select]);
+  // A different film starts a fresh undo history.
+  useEffect(() => { setUndoStack([]); }, [rk]);
 
   const setScope = useCallback((next) => {
     setScopeState(next);
@@ -75,20 +83,23 @@ export function useReviewStation({ ratingKey, data, reload, selected, select }) 
     if (next) go(next, 'key'); else setMessage(dir > 0 ? 'That is the last part in this view.' : 'That is the first part in this view.');
   };
 
+  // Runs when a save lands: read the CURRENT scope/rows, and leave a cursor the user moved meanwhile.
   const advance = (from) => {
-    const next = stepFrom(scoped, from.id, 1, { onlyOpen: true });
+    if (latest.current.selectedId !== from.id) return;
+    const list = latest.current.scoped || [];
+    const next = stepFrom(list, from.id, 1, { onlyOpen: true });
     if (next) { go(next, 'auto'); return; }
-    const open = scoped.filter((r) => r.id !== from.id && !hasVerdict(r)).length;
-    setMessage(open ? `End of this view. ${open} still open above.` : `All ${scoped.length} in this view reviewed.`);
+    const open = list.filter((r) => r.id !== from.id && !hasVerdict(r)).length;
+    setMessage(open ? `End of this view. ${open} still open above.` : `All ${list.length} in this view reviewed.`);
   };
 
   const guarded = async (key, fn) => {
     if (busy.current) return;
-    busy.current = true;
+    busy.current = true; setSaving(true);
     try { await fn(); } catch (err) {
       logger.warn('content_filter.review.action_failed', { rk, rowId: selected?.id, key, error: err.message });
       setMessage(err.message || 'That did not work.');
-    } finally { busy.current = false; }
+    } finally { busy.current = false; setSaving(false); }
   };
 
   const record = async (r, verdict, { reason, change } = {}) => {
@@ -168,7 +179,7 @@ export function useReviewStation({ ratingKey, data, reload, selected, select }) 
     help: () => setHelpOpen((v) => !v),
     escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
   };
-  return { scope, setScope, scoped, row, pick, handlers, message, helpOpen, canUndo, tally };
+  return { scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally };
 }
 
 export default useReviewStation;

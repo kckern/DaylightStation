@@ -173,4 +173,40 @@ describe('review station keys', () => {
     expect(selected()).toBe('cue:w2');
     expect(log.debug).toHaveBeenCalledWith('content_filter.review.cursor', expect.objectContaining({ rowId: 'cue:w2', via: 'click' }));
   });
+  it('a timeline click moves the cursor AND seeks (once)', () => {
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show(); fireEvent.click(document.querySelector('[data-lane="film"] [data-mark="cue:w2"]'));
+    expect(selected()).toBe('cue:w2');
+    expect(jump).toHaveBeenCalledTimes(1); expect(jump).toHaveBeenCalledWith({ in: 20 });
+  });
+  it('a list click seeks exactly once', () => {
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show(); fireEvent.click(screen.getByText('bravo'));
+    expect(jump).toHaveBeenCalledTimes(1);
+  });
+  it('does not drag the cursor back when the user moved while a verdict was saving', async () => {
+    let release; failNext = null;
+    show(); press('ArrowRight');
+    const gate = new Promise((r) => { release = r; });
+    const orig = calls.push.bind(calls);
+    calls.push = (c) => { orig(c); return 0; };
+    // hold the PUT open via a slow response
+    failNext = () => false;
+    press('a'); fireEvent.click(screen.getByText('poster')); // user jumps to the picture row at once
+    release();
+    await gate;
+    await waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(selected()).toBe('subject:p1');
+  });
+  it('keys are ignored inside a modal dialog, and a focused button keeps Space', () => {
+    show();
+    const dlg = document.createElement('div'); dlg.setAttribute('role', 'dialog');
+    const inner = document.createElement('div'); inner.tabIndex = 0; dlg.appendChild(inner); document.body.appendChild(dlg); inner.focus();
+    fireEvent.keyDown(inner, { key: 'ArrowRight' });
+    expect(selected()).toBeNull(); dlg.remove();
+    const btn = document.createElement('button'); document.body.appendChild(btn); btn.focus();
+    const notPrevented = fireEvent.keyDown(btn, { key: ' ' });
+    expect(notPrevented).toBe(true); btn.remove();
+  });
 });

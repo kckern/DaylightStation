@@ -41,7 +41,11 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
       const h = ref.current;
       const { key } = e;
       const lower = key.length === 1 ? key.toLowerCase() : key;
-      if (key !== 'Escape' && isTypingTarget(document.activeElement)) return;
+      const active = document.activeElement;
+      if (key !== 'Escape' && isTypingTarget(active)) return;
+      // A modal owns the keyboard; a focused button keeps Space/Enter to press itself.
+      if (key !== 'Escape' && (active?.closest?.('[role=dialog]') || e.target?.closest?.('[role=dialog]'))) return;
+      if ((key === ' ' || key === 'Enter') && (active?.tagName === 'BUTTON' || active?.tagName === 'A' || active?.getAttribute?.('role') === 'button')) return;
       const take = (fn) => { e.preventDefault(); e.stopPropagation(); fn?.(); };
       if (e.repeat && !REPEATABLE.has(key)) { if (redoRef.current || key === ' ' || /^[a-z0-9?[\]]$/.test(lower)) take(); return; }
 

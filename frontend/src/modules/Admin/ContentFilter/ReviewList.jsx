@@ -63,7 +63,7 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
                 ) : null}
                 {r.reviewed ? <Text span aria-label="Reviewed" className="cf-review__tick">✓</Text> : null}
                 {r.verdict && VERDICT_BADGE[r.verdict.verdict] ? <Badge size="xs" variant="light" color={VERDICT_BADGE[r.verdict.verdict][1]}>{VERDICT_BADGE[r.verdict.verdict][0]}</Badge> : null}
-                <UnstyledButton onClick={() => { onSelect(r); previewStore.jumpToCue({ in: r.in }); }} aria-pressed={r.id === selectedId} className="cf-review__pick">
+                <UnstyledButton onClick={() => onSelect(r)} aria-pressed={r.id === selectedId} className="cf-review__pick">
                   <Text fw={500} size="sm" span>{r.label}</Text>
                 </UnstyledButton>
                 <Text size="xs" c="dimmed">{[r.group && groupLabel(r.group), MODALITY[r.modality]].filter(Boolean).join(', ')}</Text>
@@ -78,8 +78,8 @@ export function ReviewList({ rows = [], reviewed = 0, total = 0, audit = null, s
               {r.card ? <Text size="xs" c="dimmed">{r.card.approved ? 'Card: ' : 'Draft card: '}{r.card.text}</Text> : null}
             </Stack>
             <Stack gap={4}>
-              <Button size="compact-xs" variant="light" onClick={() => { onSelect(r); previewStore.jumpToCue({ in: r.in }); }}>Play with effect</Button>
-              <Button size="compact-xs" variant="subtle" onClick={() => { onSelect(r); previewStore.peek(r.peekId); }}>Play without</Button>
+              <Button size="compact-xs" variant="light" onClick={() => onSelect(r)}>Play with effect</Button>
+              <Button size="compact-xs" variant="subtle" onClick={() => { onSelect(r, { seek: false }); previewStore.peek(r.peekId); }}>Play without</Button>
             </Stack>
           </Group>
         </div>
