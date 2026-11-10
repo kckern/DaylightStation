@@ -48,6 +48,9 @@ export class IContentFilterRepository {
     throw new Error('IContentFilterRepository.getMatchIndex not implemented');
   }
 
+  /** When the match index file was last written (ISO string), or null. */
+  async getMatchIndexWrittenAt() { return null; }
+
   async getOverride(_ratingKey) {
     throw new Error('IContentFilterRepository.getOverride not implemented');
   }

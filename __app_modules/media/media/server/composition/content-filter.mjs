@@ -24,7 +24,7 @@ export async function createContentFilterRuntime({ configService, rootLogger, ai
   contentFilterScenes = new ContentFilterScenes({ contentFilterRepository, aiGateway, logger, titleQueue });
   const plexClient = contentRegistry?.get?.('plex')?.client || null;
   const contentFilterReview = new ContentFilterReview({ contentFilterRepository, jobs, digestOf, logger, titleQueue });
-  const contentFilterLibrary = new ContentFilterLibrary({ contentFilterRepository, jobs, digestOf });
+  const contentFilterLibrary = new ContentFilterLibrary({ contentFilterRepository, jobs, digestOf, plex: plexClient });
   // A landed audit drops review marks whose row moved or went away.
   jobs.onAudit(async (rk) => { await contentFilterReview.pruneMarks(rk); contentFilterLibrary.invalidate(rk); });
   jobs.onSettled(({ ratingKey }) => contentFilterLibrary.invalidate(ratingKey));

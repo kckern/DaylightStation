@@ -1,7 +1,10 @@
 /**
  * The Admin library (spec "Build it"): every matched movie with VidAngel tags, plus every title
  * with a household override, each with its stage. Per-film facts are cached in memory and
- * invalidated when a run settles, an audit lands or the film is written. Plex is never called.
+ * invalidated when a run settles, an audit lands or the film is written. Plex is asked only which
+ * movie keys are live (movie sections, never shows), once per INDEX_TTL_MS: the match index is a
+ * snapshot, and a media reorg re-keys titles, so a film can be in the index and gone from Plex
+ * (`linked: false`). Plex unreachable means `linked: null`; the list never fails for it.
  */
 import { filmStage } from '../../../domain/content-filter/filmStage.mjs';
 import { countReviewed } from './ContentFilterReview.mjs';
@@ -9,16 +12,16 @@ import { countReviewed } from './ContentFilterReview.mjs';
 export const INDEX_TTL_MS = 10 * 60 * 1000;
 
 export class ContentFilterLibrary {
-  #repo; #jobs; #digestOf; #now; #index = null; #indexAt = 0; #facts = new Map();
+  #repo; #jobs; #digestOf; #now; #plex; #live = null; #liveAt = null; #index = null; #indexAt = 0; #facts = new Map();
 
-  constructor({ contentFilterRepository, jobs, digestOf, now = () => Date.now() }) {
+  constructor({ contentFilterRepository, jobs, digestOf, now = () => Date.now(), plex = null }) {
     if (!contentFilterRepository || !jobs || !digestOf) throw new Error('ContentFilterLibrary requires contentFilterRepository, jobs and digestOf');
-    this.#repo = contentFilterRepository; this.#jobs = jobs; this.#digestOf = digestOf; this.#now = now;
+    this.#repo = contentFilterRepository; this.#jobs = jobs; this.#digestOf = digestOf; this.#now = now; this.#plex = plex;
   }
 
   /** Forget one film's facts (or everything, with no key: the index too). */
   invalidate(ratingKey) {
-    if (ratingKey == null) { this.#index = null; this.#facts.clear(); return; }
+    if (ratingKey == null) { this.#index = null; this.#live = null; this.#liveAt = null; this.#facts.clear(); return; }
     this.#facts.delete(String(ratingKey));
   }
 
@@ -34,6 +37,25 @@ export class ContentFilterLibrary {
     this.#index = out;
     this.#indexAt = this.#now();
     return out;
+  }
+
+  /** Map of live Plex movie ratingKey -> { title, year }, or null when Plex cannot be read. */
+  async #liveMovies() {
+    if (!this.#plex) return null;
+    if (this.#liveAt !== null && this.#now() - this.#liveAt <= INDEX_TTL_MS) return this.#live;
+    const live = new Map();
+    try {
+      const sections = (await this.#plex.getLibrarySections())?.MediaContainer?.Directory || [];
+      for (const sec of sections.filter((d) => d.type === 'movie')) {
+        const items = (await this.#plex.getContainer(`/library/sections/${sec.key}/all`))?.MediaContainer?.Metadata || [];
+        for (const it of items) live.set(String(it.ratingKey), { title: it.title ?? null, year: it.year ?? null });
+      }
+      this.#live = live;
+    } catch {
+      this.#live = null;
+    }
+    this.#liveAt = this.#now();
+    return this.#live;
   }
 
   async #film(rk, indexTitle) {
@@ -68,15 +90,27 @@ export class ContentFilterLibrary {
 
   async list({ stage = null, q = null } = {}) {
     const needle = q ? String(q).toLowerCase() : null;
+    const live = await this.#liveMovies();
+    const titles = await this.#titles();
     const films = [];
-    for (const [rk, title] of await this.#titles()) {
-      const f = await this.#film(rk, title);
+    let unlinked = 0;
+    for (const [rk, title] of titles) {
+      const base = await this.#film(rk, title);
+      const item = live?.get(rk) ?? null;
+      const linked = live ? live.has(rk) : null;
+      if (linked === false) unlinked += 1;
+      const f = { ...base, title: base.title ?? item?.title ?? null, year: base.year ?? item?.year ?? null,
+        linked, thumb: linked ? `/api/v1/proxy/plex/library/metadata/${rk}/thumb?w=120&h=180` : null };
       if (stage && f.stage !== stage) continue;
       if (needle && !String(f.title || '').toLowerCase().includes(needle)) continue;
       films.push(f);
     }
     films.sort((a, b) => String(a.title ?? '').localeCompare(String(b.title ?? '')));
-    return { films, worker: typeof this.#jobs.workerStatus === 'function' ? this.#jobs.workerStatus() : null };
+    const indexedAt = typeof this.#repo.getMatchIndexWrittenAt === 'function' ? await this.#repo.getMatchIndexWrittenAt() : null;
+    return {
+      films, worker: typeof this.#jobs.workerStatus === 'function' ? this.#jobs.workerStatus() : null,
+      meta: { indexedAt: indexedAt ?? null, total: titles.size, unlinked },
+    };
   }
 }
 

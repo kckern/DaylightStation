@@ -60,4 +60,48 @@ describe('ContentFilterLibrary', () => {
     await lib.list({});
     expect(repo.getMatchIndex).toHaveBeenCalledTimes(2);
   });
+
+  describe('Plex linkage', () => {
+    const plexWith = (keys) => ({
+      getLibrarySections: vi.fn(async () => ({ MediaContainer: { Directory: [{ key: '1', type: 'movie' }, { key: '2', type: 'show' }] } })),
+      getContainer: vi.fn(async (k) => (k === '/library/sections/1/all'
+        ? { MediaContainer: { Metadata: keys.map((rk) => ({ ratingKey: rk, title: `Live ${rk}`, year: 2001 })) } }
+        : (() => { throw new Error('shows must not be read'); })())),
+    });
+    const withPlex = (plex) => {
+      const { repo, jobs, clock } = setup();
+      repo.getMatchIndexWrittenAt = async () => '2026-06-30T00:00:00.000Z';
+      return { repo, clock, lib: new ContentFilterLibrary({ contentFilterRepository: repo, jobs, digestOf: async () => 'D', now: () => clock.t, plex }) };
+    };
+    it('marks linked and unlinked films, adds a thumb and fills a missing year/title from Plex', async () => {
+      const { lib } = withPlex(plexWith(['1', '9']));
+      const { films, meta } = await lib.list({});
+      const by = Object.fromEntries(films.map((f) => [f.ratingKey, f]));
+      expect(by['1']).toMatchObject({ linked: true, thumb: '/api/v1/proxy/plex/library/metadata/1/thumb?w=120&h=180' });
+      expect(by['2']).toMatchObject({ linked: false, thumb: null });
+      expect(by['9']).toMatchObject({ linked: true, title: 'Zed' });
+      expect(by['2'].year).toBeNull();
+      expect(meta).toEqual({ indexedAt: '2026-06-30T00:00:00.000Z', total: 3, unlinked: 1 });
+    });
+    it('Plex down gives linked: null for every film and never fails the list', async () => {
+      const plex = { getLibrarySections: vi.fn(async () => { throw new Error('down'); }), getContainer: vi.fn() };
+      const { lib } = withPlex(plex);
+      const { films, meta } = await lib.list({});
+      expect(films.every((f) => f.linked === null && f.thumb === null)).toBe(true);
+      expect(meta.unlinked).toBe(0);
+    });
+    it('reads the live keys once per TTL', async () => {
+      const plex = plexWith(['1']);
+      const { lib, clock } = withPlex(plex);
+      await lib.list({}); await lib.list({});
+      expect(plex.getLibrarySections).toHaveBeenCalledTimes(1);
+      clock.t += 10 * 60 * 1000 + 1;
+      await lib.list({});
+      expect(plex.getLibrarySections).toHaveBeenCalledTimes(2);
+    });
+    it('without a plex client linked is null', async () => {
+      const { lib } = withPlex(null);
+      expect((await lib.list({})).films.every((f) => f.linked === null)).toBe(true);
+    });
+  });
 });

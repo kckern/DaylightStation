@@ -1,6 +1,7 @@
 import {
   buildContainedPath,
   fileExists,
+  fileMtimeMs,
   listFiles,
   listYamlFiles,
   readFile,
@@ -109,6 +110,12 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
 
   async getMatchIndex() {
     return this.#readYaml(this.#mediaDir, 'content-filter/plex-vidangel-map.yml');
+  }
+
+  /** When the match index file was last written (ISO), or null. */
+  async getMatchIndexWrittenAt() {
+    const filePath = buildContainedPath(this.#mediaDir, 'content-filter/plex-vidangel-map.yml');
+    try { return filePath && fileExists(filePath) ? new Date(fileMtimeMs(filePath)).toISOString() : null; } catch { return null; }
   }
 
   async getOverride(ratingKey) {

@@ -719,6 +719,20 @@ refined EDL and the override, review marks excluded). A failed or interrupted ru
 film (step and error), not a stage. Facts are cached in memory and dropped when a run settles, an
 audit lands or the film is written.
 
+Plex is asked for one thing: which movie keys are live (movie library sections only, never
+shows), once per 10 minutes. The match index is a snapshot, and a media reorg re-keys titles, so a
+film can be indexed yet gone from Plex. The response carries per-film `linked` (`true`, `false`
+when the key is no longer in Plex, `null` when Plex could not be read; the list never fails for
+it), `thumb` (the Plex poster through the proxy, only when linked), a `year`/`title` filled from
+Plex when the EDL lacks them, and `meta: { indexedAt, total, unlinked }`.
+
+The Admin library is compact 2:3 poster cards grouped by readiness in an accordion: Ready tonight
+(parent + machine), Audited, Scenes built, Refined, Running, Rough. Ready tonight, Audited and
+Running start open; open state is kept in `localStorage`. An unlinked film is dimmed with a glyph and
+its Make filter button disabled. A title search flattens the groups into one grid with stage chips.
+The stage vocabulary is `STAGES`/`STAGE_LABELS` from `filmStage.mjs`, re-exported to the browser by
+`adminWorkspace.mjs`.
+
 ### Pipeline runs
 
 `POST /:rk/jobs { kind: make | send-back | stage, cues?, stage? }` queues a run (202; 409 when the
