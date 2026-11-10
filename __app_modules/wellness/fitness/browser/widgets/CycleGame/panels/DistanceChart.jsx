@@ -243,6 +243,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     null
   );
   const leaderDistM = leaderId != null ? (riders[leaderId].cumulativeDistanceM || 0) : 0;
+  // The header's "Leader …" is the furthest rider overall (parked or not) —
+  // printed from that rider's own engine distance so it matches their other readouts.
+  const headerLeaderId = riderIds.reduce(
+    (best, id) => (best == null || (riders[id].cumulativeDistanceM || 0) > (riders[best].cumulativeDistanceM || 0) ? id : best),
+    null
+  );
 
   // ── Terminus tags: avatar + gap-behind-leader (leader shows total) ──────────
   // Position comes from layoutTags (shared with the per-frame remap below);
@@ -266,7 +272,8 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     const parked = isParked(id);
     const ident = resolveParticipantIdentity(riders[id].userId || id, riders[id].displayName);
     const avatarSrc = (riderLive[id] || {}).avatarSrc || riders[id].avatarSrc || ident.avatarSrc || FALLBACK_AVATAR;
-    const gapText = (isLeader || parked)
+    const showsOwnDistance = isLeader || parked;
+    const gapText = showsOwnDistance
       ? formatDistance(distanceM)
       : `−${formatDistance(Math.max(0, leaderDistM - distanceM))}`;
     return {
@@ -274,7 +281,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
       color: LINE_COLORS[idx % LINE_COLORS.length],
       isGhost: !!riders[id].isGhost,
       parked,
-      avatarSrc, distanceM, displayName: riders[id].displayName, gapText, isLeader
+      avatarSrc, distanceM, displayName: riders[id].displayName, gapText, isLeader, showsOwnDistance
     };
   });
 
@@ -442,7 +449,11 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         <span className="cg-chart__clock-label">{winCondition === 'time' ? 'Time left' : 'Elapsed'}</span>
         <span className="cg-chart__clock" data-testid="race-clock">{formatClock(clockSeconds)}</span>
         <span className="cg-chart__goal">
-          {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `Leader ${formatDistance(maxDistanceM)}`}
+          {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : (
+            <>Leader <span data-distance-readout={headerLeaderId ?? undefined}>
+              {formatDistance(headerLeaderId != null ? riders[headerLeaderId].cumulativeDistanceM : maxDistanceM)}
+            </span></>
+          )}
         </span>
         {/* Lives in the header, not the plot overlay — the plot's top-right corner
             is exactly where a leader's terminus tag sits in log mode (leader gap=0
@@ -581,7 +592,8 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
                 onError={(e) => { if (e.currentTarget.src !== FALLBACK_AVATAR) e.currentTarget.src = FALLBACK_AVATAR; }}
               />
             </span>
-            <span className="cycle-race-screen__tag-gap" data-testid="chart-tag-gap">{t.gapText}</span>
+            <span className="cycle-race-screen__tag-gap" data-testid="chart-tag-gap"
+              data-distance-readout={t.showsOwnDistance ? t.id : undefined}>{t.gapText}</span>
           </div>
         ))}
       </div>

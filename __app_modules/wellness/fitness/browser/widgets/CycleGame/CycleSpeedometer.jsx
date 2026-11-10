@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
@@ -24,7 +24,7 @@ export default function CycleSpeedometer({
   rpm = 0, maxRpm = 120, speedKmh = 0, cadenceBands = [], tickStep, labelStep,
   avatar = {}, distanceMeters = 0, multiplier = 1, multiplierColor, riderColor = null, size = 220, className = '',
   isGhost = false, finished = false, placement = null, isLeader = false,
-  sensorLost = false, parked = false, noSensor = false
+  sensorLost = false, parked = false, noSensor = false, riderId = null
 }) {
   // Tick spacing scales with the gauge max (a fixed 10/30 crowds a 250 dial);
   // explicit tickStep/labelStep props still override when provided.
@@ -65,20 +65,23 @@ export default function CycleSpeedometer({
   const avatarPx = Math.round(px * AVATAR_RATIO);
   const multiplierChip = useMemo(() => multiplierChipBox(px), [px]);
 
-  // ── Motion clock: glide the needle + count the odometer between 1 Hz ticks ──
-  // Both are DATA-driven positions (rpm → needle angle, cumulative distance →
-  // odometer). React renders the CURRENT-tick value (so a no-rAF env shows the exact
-  // datum); the shared linear clock only ADJUSTS them from the previous tick toward
-  // the current one, imperatively — no per-frame React render, no CSS transition (the
-  // needle's 0.18s ease was one of the five desynced motion clocks).
+  // ── Motion clock: glide the needle between 1 Hz ticks ──
+  // The needle is a DATA-driven position (rpm → angle). React renders the
+  // CURRENT-tick value (so a no-rAF env shows the exact datum); the shared linear
+  // clock only ADJUSTS it from the previous tick toward the current one,
+  // imperatively — no per-frame React render, no CSS transition.
+  //
+  // The odometer is a PRINTED number, so it does not glide: it prints the
+  // engine's current distance through formatDistance, exactly like the chart tag,
+  // chart header, standings tower and POV badge. (It used to count up from the
+  // previous tick, so mid-tick it read up to one tick behind every other readout:
+  // 454 m on the gauge beside 457 m everywhere else.)
   const distM = Number.isFinite(distanceMeters) ? distanceMeters : 0;
   const needleRef = useRef(null);
-  const odoValRef = useRef(null);
   const clockRef = useRef(null);
   if (!clockRef.current) clockRef.current = createTickLerp({ intervalMs: 1000 });
-  const motionRef = useRef({ prevDeg: needleDeg, curDeg: needleDeg, prevDist: distM, curDist: distM });
+  const motionRef = useRef({ prevDeg: needleDeg, curDeg: needleDeg });
   const prevDegRef = useRef(needleDeg);
-  const prevDistRef = useRef(distM);
 
   useEffect(() => {
     const clock = clockRef.current;
@@ -88,33 +91,16 @@ export default function CycleSpeedometer({
         const deg = m.prevDeg + (m.curDeg - m.prevDeg) * f;
         needleRef.current.style.transform = `rotate(${deg}deg)`;
       }
-      if (odoValRef.current) {
-        const d = m.prevDist + (m.curDist - m.prevDist) * f;
-        odoValRef.current.textContent = formatDistance(d);
-      }
     });
     return () => { unsub(); clock.stop(); };
   }, []);
 
-  // The odometer <span> is childless in JSX (React does NOT own its text) so the clock
-  // can rewrite its textContent every frame without fighting React's reconciler over a
-  // detached text node. This layout effect establishes the CURRENT-tick value
-  // synchronously each render (so a no-rAF env — and the very first paint — shows the
-  // exact distance); the clock's rAF then counts it up from the previous tick.
-  useLayoutEffect(() => {
-    if (odoValRef.current) odoValRef.current.textContent = formatDistance(distM);
-  }, [distM]);
-
-  // A new tick: snapshot prev→cur and re-arm the clock so both glide to the new datum.
+  // A new tick: snapshot prev→cur and re-arm the clock so the needle glides.
   useEffect(() => {
-    motionRef.current = {
-      prevDeg: prevDegRef.current, curDeg: needleDeg,
-      prevDist: prevDistRef.current, curDist: distM,
-    };
+    motionRef.current = { prevDeg: prevDegRef.current, curDeg: needleDeg };
     prevDegRef.current = needleDeg;
-    prevDistRef.current = distM;
     clockRef.current.onTick(null);
-  }, [needleDeg, distM]);
+  }, [needleDeg]);
 
   // Away from the pedals (never for a finisher). The overlay sits in the
   // FINISHED overlay's slot. A rider whose sensor never reported, or whose
@@ -249,9 +235,9 @@ export default function CycleSpeedometer({
             <MedalIcon />
           </span>
         )}
-        {/* Childless — its text is owned by the motion clock (odometer count-up), with a
-            synchronous baseline set in useLayoutEffect above. */}
-        <span ref={odoValRef} className="cycle-speedometer__odometer-value" />
+        <span className="cycle-speedometer__odometer-value" data-distance-readout={riderId ?? undefined}>
+          {formatDistance(distM)}
+        </span>
       </div>
     </div>
   );
@@ -280,5 +266,6 @@ CycleSpeedometer.propTypes = {
   isLeader: PropTypes.bool,
   sensorLost: PropTypes.bool,
   parked: PropTypes.bool,
-  noSensor: PropTypes.bool
+  noSensor: PropTypes.bool,
+  riderId: PropTypes.string
 };

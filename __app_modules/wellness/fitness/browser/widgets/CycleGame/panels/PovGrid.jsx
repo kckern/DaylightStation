@@ -563,7 +563,12 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           <div key={id} className={`cg-pov__badge${riders[id]?.isGhost ? ' is-ghost' : ''}${isParked(id) ? ' is-parked' : ''}`} data-testid="pov-badge"
             data-rider={id} ref={(el) => { badgeEls.current[id] = el; }}
             style={{ '--cg-pov-color': colorOf(id), opacity: 0 }}>
-            {badges[id]?.text || ''}
+            {badges[id] ? (
+              <>
+                {badges[id].ordinal ? `${badges[id].ordinal} · ` : ''}{badges[id].prefix}
+                <span data-distance-readout={badges[id].ownDistance ? id : undefined}>{badges[id].metric}</span>
+              </>
+            ) : ''}
           </div>
         ))}
       </div>

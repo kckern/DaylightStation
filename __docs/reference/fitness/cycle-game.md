@@ -590,6 +590,12 @@ engine getState()
   → panels: SpeedoRow · DistanceChart · SplitsChart · PovGrid · StandingsTower
 ```
 
+**One distance per rider.** Every printed distance for a rider (odometer,
+chart tag, chart header, standings tower, POV badge) is the engine's
+`cumulativeDistanceM` for that tick through `formatDistance`, and carries
+`data-distance-readout="<riderId>"`. Motion may interpolate positions (chart
+tips, POV avatars, the needle); printed numbers never interpolate.
+
 ### 9.1 The two layouts (`RaceLayoutManager`)
 
 `wide = fieldSize >= 4`. Each zone renders its panel through a `PanelSlot` (a stable
@@ -813,6 +819,9 @@ with the `cg-ghost` treatment.
   where it agrees; it never shows under PARKED, because PARKED is only chosen
   when the sensor is not lost. A finisher never shows an away overlay. There is
   no penalty overlay (rolling start, §10).
+- **The odometer prints, it does not count.** It shows the engine's
+  `cumulativeDistanceM` through `formatDistance`, the same value and formatter
+  as every other distance readout (§9). Only the needle glides between ticks.
 - **Avatar compositor layer.** `.cycle-speedometer__avatar { transform: translateZ(0);
   will-change }` so the needle's per-tick repaint doesn't flicker the overlaid avatar.
 

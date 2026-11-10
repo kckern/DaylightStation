@@ -30,6 +30,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
         return (
           <CycleSpeedometer
             key={id}
+            riderId={id}
             rpm={live.rpm}
             maxRpm={live.maxRpm}
             speedKmh={live.speedKmh}
