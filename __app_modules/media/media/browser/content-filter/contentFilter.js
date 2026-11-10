@@ -16,6 +16,7 @@
 import { mapSpan, mapTime, snapToFrames } from '../../../../../shared/contracts/content-filter/syncMap.mjs';
 import { cueModality, fitEffectToChannel, isWordLabel } from '../../../../../shared/contracts/content-filter/cueModality.mjs';
 import { languageGroupOf, languageWordOf, groupOfTerm } from '../../../../../shared/contracts/content-filter/languageGroups.mjs';
+import { convertLongHides } from './longHide.js';
 import { getChildLogger } from '../../../../../frontend/src/lib/logging/singleton.js';
 import { HIDE_RANK, SCENE_AXES, trustedAxes, sceneEffect } from '../../../../../shared/contracts/content-filter/sceneEffect.mjs';
 
@@ -392,7 +393,16 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
   }
   // Picture effects never stack: the strongest wins each instant (before scenes take over their own cues).
   // `stackGuard: false` is for the stacked-moments scan only; the player always runs the pass.
-  if (stackGuard) resolvePictureStacking(out);
+  // A long whole-frame blur becomes a carded black picture over the sound; the second pass then
+  // drops regional pieces now under it and trims the blackout around any skip. Scenes come last.
+  if (stackGuard) {
+    resolvePictureStacking(out);
+    const long = convertLongHides(out, profile?.treatments);
+    if (long.runs > 0) {
+      logger().sampled('content-filter.long-hide.converted', long, { maxPerMinute: 10, aggregate: true, level: 'debug' });
+      resolvePictureStacking(out);
+    }
+  }
   const sceneSummary = applyScenes(out, { edl, profile, override, sync, refinedEdl });
   sizeTones(out);
   out.sort((a, b) => a.in - b.in || a.out - b.out);
@@ -411,7 +421,9 @@ export function resolveEffectiveCues({ edl, profile, override, part = null, stac
  * between effects of one rank (full-blur > rectless blur; pixelate = censor-bar).
  */
 const PICTURE = new Set([...OVERLAY, 'skip', 'skip-card']);
-const wholeFrame = (c) => !(REGIONAL.has(c.effect) && c.rect);
+/** A piece that hides the whole frame: a `full-blur`, or an overlay with no rect. Regional pieces are not. */
+export function isWholeFrame(c) { return !(REGIONAL.has(c.effect) && c.rect); }
+const wholeFrame = isWholeFrame;
 const pictureRank = (c) => (REGIONAL.has(c.effect) && wholeFrame(c) ? 2 : HIDE_RANK[c.effect]);
 const comparePicture = (a, b) => (pictureRank(a) - pictureRank(b)) || ((STRENGTH[a.effect] ?? 0) - (STRENGTH[b.effect] ?? 0));
 const STACK_EPS = 1e-6;
@@ -553,7 +565,7 @@ const hasSighting = (regions) => Array.isArray(regions) && regions.some((k) => !
 const isTrackGap = (k) => !k.whole && !(k.cells && k.cells.length);
 // A miss this short between two sightings is a keyframe Jev did not see the subject in, not the
 // subject leaving: the box spanning both sightings is held over it.
-const BRIDGE_SEC = 1;
+export const BRIDGE_SEC = 1;
 // A whole-frame piece this short at a cut (frame snapping) is held under the next box instead.
 const SLIVER_SEC = 0.1;
 const keyRect = (k) => k.box || cellsRect(k.grid, k.cells);

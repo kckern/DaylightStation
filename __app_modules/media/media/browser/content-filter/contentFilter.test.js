@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { hidePiece, resolveEffect, resolveEffectiveCues, cuesActiveAt, pictureOverlaps } from "./contentFilter.js";
+import { hidePiece, resolveEffect, resolveEffectiveCues as resolveWithLongHides, cuesActiveAt, pictureOverlaps } from "./contentFilter.js";
 import { filterSummary } from './filterSummary.js';
+
+// Most suites here exercise effect resolution and stacking over long cues. The long-hide
+// conversion (a whole-frame blur past maxSec becomes a carded blackout) has its own suite in
+// longHide.test.js, so these run with it off unless a profile sets its own maxSec.
+const resolveEffectiveCues = (args = {}) => {
+  const profile = args.profile;
+  if (!profile || profile.treatments?.['full-blur']?.maxSec !== undefined) return resolveWithLongHides(args);
+  const treatments = { ...profile.treatments, 'full-blur': { ...profile.treatments?.['full-blur'], maxSec: 0 } };
+  return resolveWithLongHides({ ...args, profile: { ...profile, treatments } });
+};
 
 describe('resolveEffect', () => {
   it('matches the longest category prefix and returns the effect + params', () => {
