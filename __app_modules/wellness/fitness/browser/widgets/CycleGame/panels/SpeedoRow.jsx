@@ -2,10 +2,9 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import CycleSpeedometer from "../CycleSpeedometer.jsx";
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
-import { gaugeRowSize } from "../../../lib/cycleGame/layoutSizing.js";
+import { gaugeRowSize, SPEEDO_GAP_PX } from "../../../lib/cycleGame/layoutSizing.js";
 import { FALLBACK_AVATAR } from "../home/constants.js";
 
-const SPEEDO_GAP = 28; // keep in sync with .cycle-race-screen__speedos gap
 
 /**
  * Bottom row of CycleSpeedometers — one gauge per rider on a single line
@@ -19,7 +18,7 @@ export default function SpeedoRow({ riderIds, riders, riderLive, cadenceBands, z
     zoneW: zoneBox?.width || 0,
     zoneH: zoneBox?.height || 0,
     count: riderIds.length,
-    gap: SPEEDO_GAP,
+    gap: SPEEDO_GAP_PX, // .cycle-race-screen__speedos gap
     max: maxGauge,
     min: minGauge
   });

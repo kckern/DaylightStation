@@ -203,6 +203,20 @@ function twoOneParked() {
     },
   };
 }
+function twoRiders() {
+  const t = 180;
+  return {
+    winCondition: 'distance', goalM: 1500, timeCapS: 300, elapsedS: t, lapLengthM: 0, cadenceBands: BANDS,
+    riders: {
+      user_1: rider('user_1', 'Rider A', series(t, 902)),
+      user_2: rider('user_2', 'Rider B', series(t, 840, { wobble: 0.2 })),
+    },
+    riderLive: {
+      user_1: withAvatar('user_1', live({ rpm: 90, speedKmh: 27.8, placement: 1, isLeader: true, ...zoneLive('hot', 0.5) })),
+      user_2: withAvatar('user_2', live({ rpm: 84, speedKmh: 25.9, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 2 })),
+    },
+  };
+}
 function fourRiders() {
   const t = 200;
   return {
@@ -216,12 +230,18 @@ function fourRiders() {
     riderLive: {
       user_1: withAvatar('user_1', live({ rpm: 92, speedKmh: 28.9, placement: 1, isLeader: true, ...zoneLive('hot', 0.6) })),
       user_2: withAvatar('user_2', live({ rpm: 88, speedKmh: 26.1, placement: 2, ...zoneLive('warm', 0.8) })),
-      user_3: withAvatar('user_3', live({ rpm: 76, speedKmh: 21.2, placement: 3, ...zoneLive('active', 0.3) })),
+      user_3: withAvatar('user_3', live({ rpm: 76, speedKmh: 21.2, placement: 3, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP })),
       user_4: withAvatar('user_4', live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 4, parked: true, noSensor: true })),
     },
   };
 }
 function sixRiders() { return manyRiders(6); }
+// Rider A has crossed the line (rpm forced to 0 upstream): the gauge's FINISHED plate.
+function fourOneFinished() {
+  const s = fourRiders();
+  s.riderLive.user_1 = { ...s.riderLive.user_1, rpm: 0, speedKmh: 0, finished: true, placement: 1 };
+  return s;
+}
 function fiveRiders() { return manyRiders(5); }
 // Four riders bunched within 15 m of each other: the road panel's worst case for badges.
 function fourBunched() { return bunched([960, 955, 950, 946]); }
@@ -248,7 +268,9 @@ function manyRiders(count) {
     riders[id] = rider(id, `Rider ${String.fromCharCode(64 + n)}`, series(t, dist[i], lastParked && i === 5 ? { stopAfter: 28 } : { wobble: 0.1 + i * 0.02 }));
     riderLive[id] = withAvatar(`user_${n}`, lastParked && i === 5
       ? live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 6, parked: true, noSensor: true })
-      : live({ rpm: 90 - i * 3, speedKmh: 28 - i, placement: i + 1, isLeader: i === 0, ...zoneLive(['hot', 'warm', 'warm', 'active', 'active'][i], 0.5) }));
+      : i === 4
+        ? live({ rpm: 90 - i * 3, speedKmh: 28 - i, placement: i + 1, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP })
+        : live({ rpm: 90 - i * 3, speedKmh: 28 - i, placement: i + 1, isLeader: i === 0, ...zoneLive(['hot', 'warm', 'warm', 'active', 'active'][i], 0.5) }));
   });
   return { winCondition: 'distance', goalM: 1500, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS, riders, riderLive };
 }
@@ -400,11 +422,13 @@ export const SCENES = {
   'race-solo-par-no-strap': raceScene(soloParNoStrap),
   'race-solo-parked': raceScene(soloParked),
   'race-two-riders-one-parked': raceScene(twoOneParked),
+  'race-two-riders': raceScene(twoRiders),
   'race-three-riders': raceScene(() => manyRiders(3)),
   'race-four-riders': raceScene(fourRiders),
   'race-five-riders': raceScene(fiveRiders),
   'race-six-riders': raceScene(sixRiders),
   'race-four-bunched': raceScene(fourBunched),
+  'race-four-one-finished': raceScene(fourOneFinished),
   'race-six-bunched': raceScene(sixBunched),
   'race-menu-open': raceScene(soloTime),
   'race-toast-parked': toastScene(twoOneParked, { id: 1, variant: 'parked', icon: null, title: 'Rider B is parked', subtitle: 'Pedal to rejoin' }),

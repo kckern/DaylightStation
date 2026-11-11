@@ -122,8 +122,9 @@ describe('CycleGameContainer — boost meter', () => {
       act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
     }
   };
-  const boostOf = (view, i) => view.getAllByTestId('cycle-speedometer-rpm')[i]
-    .closest('.cycle-speedometer').querySelector('[data-testid="cycle-speedometer-boost"]');
+  // The rider's whole gauge column: the multiplier tag sits on the dial's base,
+  // the progress row below it.
+  const boostOf = (view, i) => view.getAllByTestId('cycle-speedometer-rpm')[i].closest('.cycle-speedometer');
   const toastText = (view) => view.queryByTestId('cycle-event-toast')?.textContent || '';
 
   it('the lobby shows no boost rule line (removed 2026-11-10; the gauges carry the boost)', () => {
@@ -148,7 +149,7 @@ describe('CycleGameContainer — boost meter', () => {
     expect(warm.querySelector('[data-testid="cycle-speedometer-boost-fill"]').style.width).toBe('50%');
   });
 
-  it('a rider with no heart rate reads the short form "No strap ×0.8" on a small gauge', () => {
+  it('a rider with no heart rate reads "No strap ×0.8"', () => {
     vitals.user_2 = { name: 'User_2', heartRate: null, zoneId: null };
     mockCtx = makeCtx();
     const view = render(<CycleGameContainer />);
@@ -156,7 +157,7 @@ describe('CycleGameContainer — boost meter', () => {
     toRacing();
     tick(1);
     expect(boostOf(view, 1).querySelector('[data-testid="cycle-speedometer-boost-chip"]').textContent)
-      .toBe('No strap ×0.8'); // jsdom measures nothing, so the gauge falls back to a small size
+      .toBe('No strap ×0.8');
   });
 
   it('the ready strip shows the strapless handicap under a rider with no heart rate', () => {

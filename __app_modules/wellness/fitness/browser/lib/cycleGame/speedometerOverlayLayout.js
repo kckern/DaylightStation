@@ -1,7 +1,8 @@
-// Pure geometry for the speedometer's HTML overlay children — the avatar and
-// the rpm/speed readout stacked in the lower hemisphere. (The multiplier badge
-// that used to sit top-right covered the dial's top tick label; the boost
-// meter replaced it, BELOW the gauge, outside this box entirely.)
+// Pure geometry for the speedometer's HTML overlay children — the avatar, the
+// one-line rpm · km/h readout in the lower hemisphere, and the zone multiplier
+// tag straddling the dial's base. (The multiplier badge that once sat
+// top-right covered the dial's top tick label; nothing overlays the top
+// hemisphere but the centred avatar.)
 // Deliberately kept SEPARATE from speedometerGeometry.js (the SVG dial/band/
 // tick math) per the T10 remit: fix the overlay-vs-dial collision without
 // touching the dial geometry lib beyond what the rpm-label move needs.
@@ -29,23 +30,29 @@ export const AVATAR_RATIO = 0.36;
 // from, so typography grows/shrinks in lockstep with the dial.
 export const OVERLAY_FONT_RATIO = 0.16;
 
-// Lower-hemisphere readout block (rpm hero over the km/h sub-line, stacked). Top
-// ratio clears the avatar's bottom edge (0.5 + AVATAR_RATIO/2 = 0.7) with a
-// margin; heights are in em (of OVERLAY_FONT_RATIO) so the whole block scales
-// with the gauge exactly like the font it's built from.
-export const READOUT_TOP_RATIO = 0.73;
-export const RPM_HEIGHT_EM = 1.0;
-export const SPEED_HEIGHT_EM = 0.55;
+// Lower-hemisphere readout: rpm (hero) and km/h on ONE line. Its top clears
+// the avatar's bottom edge (0.5 + AVATAR_RATIO/2 = 0.68); its height is in em
+// of OVERLAY_FONT_RATIO, so it scales with the gauge like the font it uses.
+export const READOUT_TOP_RATIO = 0.69;
+export const READOUT_HEIGHT_EM = 1.0;
+
+// The zone multiplier tag ("Warm ×1.2", "No strap ×0.8"): one line of fixed,
+// legible text (cg-type(2)) on a solid plate, straddling the dial's base. It
+// hangs TAG_OVERHANG_PX below the gauge box, which is what keeps it clear of
+// the readout at the 140 px floor; the band budget counts that overhang
+// (layoutSizing.CHROME_BELOW_GAUGE_PX).
+export const TAG_HEIGHT_PX = 28;
+export const TAG_OVERHANG_PX = 10;
 
 /**
- * computeOverlayBoxes(gaugePx) — pure, no DOM. Returns axis-aligned bounding
- * boxes (px, relative to the gauge's own top-left corner) for the gauge itself
- * and each HTML overlay child, using the ratios above.
+ * computeOverlayBoxes(gaugePx) — pure, no DOM. Axis-aligned boxes (px,
+ * relative to the gauge's top-left) for the gauge and each overlay child.
+ * The tag's width depends on its text, so its box spans the gauge width (the
+ * strictest case for overlap checks).
  */
 export function computeOverlayBoxes(gaugePx) {
   const px = Number.isFinite(gaugePx) && gaugePx > 0 ? gaugePx : 0;
   const fontPx = px * OVERLAY_FONT_RATIO;
-
   const avatarSize = px * AVATAR_RATIO;
   const avatar = {
     x: (0.5 - AVATAR_RATIO / 2) * px,
@@ -53,21 +60,9 @@ export function computeOverlayBoxes(gaugePx) {
     width: avatarSize,
     height: avatarSize
   };
-
-  const rpm = {
-    x: 0,
-    y: READOUT_TOP_RATIO * px,
-    width: px,
-    height: RPM_HEIGHT_EM * fontPx
-  };
-  const speed = {
-    x: 0,
-    y: rpm.y + rpm.height,
-    width: px,
-    height: SPEED_HEIGHT_EM * fontPx
-  };
-
-  return { gauge: { x: 0, y: 0, width: px, height: px }, avatar, rpm, speed };
+  const readout = { x: 0, y: READOUT_TOP_RATIO * px, width: px, height: READOUT_HEIGHT_EM * fontPx };
+  const tag = { x: 0, y: px + TAG_OVERHANG_PX - TAG_HEIGHT_PX, width: px, height: TAG_HEIGHT_PX };
+  return { gauge: { x: 0, y: 0, width: px, height: px }, avatar, readout, tag };
 }
 
 /** True if two axis-aligned boxes overlap (touching edges do NOT count). */
@@ -86,6 +81,6 @@ export function boxWithin(box, bounds) {
 
 export default {
   AVATAR_RATIO, OVERLAY_FONT_RATIO,
-  READOUT_TOP_RATIO, SPEED_HEIGHT_EM, RPM_HEIGHT_EM,
+  READOUT_TOP_RATIO, READOUT_HEIGHT_EM, TAG_HEIGHT_PX, TAG_OVERHANG_PX,
   computeOverlayBoxes, boxesIntersect, boxWithin
 };

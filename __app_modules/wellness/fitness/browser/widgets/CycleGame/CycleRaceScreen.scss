@@ -136,7 +136,7 @@
     position: relative; z-index: 1;
     flex: 0 0 44%;
     min-height: 0;
-    display: flex; gap: 28px; justify-content: center; align-items: center;
+    display: flex; gap: 16px; justify-content: center; align-items: center; // layoutSizing.SPEEDO_GAP_PX
     flex-wrap: nowrap;
     overflow: hidden;
   }

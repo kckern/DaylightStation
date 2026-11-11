@@ -1,3 +1,5 @@
+import { TAG_OVERHANG_PX } from './speedometerOverlayLayout.js';
+
 // Pure layout sizing math for the race screen.
 //
 // columnTemplateFor: a panel's sizeHint → its relative weight in the top grid
@@ -22,25 +24,27 @@ export function fitScale(content = {}, zone = {}) {
   return Math.min(1, zw / cw, zh / ch);
 }
 
-// Honest budget for the chrome BELOW the dial. The odometer pill + its gap to
-// the gauge (ODOMETER_CHROME_PX) — audit UX §3.3 found the old `zoneH - 50` estimate under-budgeted the
-// real ~56-66px the odometer pill actually occupies, so the speedo band bled
-// into the zone above it (the zone was `overflow: visible`, which papered over
-// the shortfall by letting the overflow show instead of clipping it — RaceLayoutManager.scss
-// now sets `overflow: hidden` on that zone, so an under-budget here would clip
-// the odometer instead of merely bleeding; this constant must stay honest).
-export const ODOMETER_CHROME_PX = 68;
-// The boost meter row between the gauge and the odometer: its fixed CSS height
-// (CycleSpeedometer.scss .cycle-speedometer__boost) and one more column gap.
-export const BOOST_ROW_PX = 40;
-export const SPEEDO_STACK_GAP_PX = 10; // .cycle-speedometer { gap }
-export const CHROME_BELOW_GAUGE_PX = ODOMETER_CHROME_PX + BOOST_ROW_PX + SPEEDO_STACK_GAP_PX;
+// Honest budget for the chrome BELOW the dial (RaceLayoutManager.scss sets
+// overflow: hidden on the band, so an under-budget clips the odometer). The
+// gauge is the column's hero, so this is kept small: the multiplier tag's
+// overhang below the dial, a one-line zone bar row, and the odometer pill,
+// with a stack gap between each.
+// The odometer pill: cg-type(3) text, 4 px padding, 1 px border (measured on
+// the harness at the kiosk size).
+export const ODOMETER_CHROME_PX = 42;
+// The zone progress row (bar + next step) between the gauge and the odometer:
+// its fixed CSS height (CycleSpeedometer.scss .cycle-speedometer__boost).
+export const BOOST_ROW_PX = 22;
+export const SPEEDO_STACK_GAP_PX = 6; // .cycle-speedometer { gap }
+export const CHROME_BELOW_GAUGE_PX = TAG_OVERHANG_PX + BOOST_ROW_PX + ODOMETER_CHROME_PX + 2 * SPEEDO_STACK_GAP_PX;
+// Horizontal gap between gauges in the row (.cycle-race-screen__speedos gap).
+export const SPEEDO_GAP_PX = 16;
 
 // gaugeRowSize: the per-gauge pixel size for the speedo row, derived from the
 // zone box the LAYOUT measured (not the row's own content height — that
 // self-measuring is the thrash loop). Fits N gauges across the width minus gaps,
 // capped by the available height, clamped to [min, max].
-export function gaugeRowSize({ zoneW = 0, zoneH = 0, count = 1, gap = 28, min = 96, max = 280 } = {}) {
+export function gaugeRowSize({ zoneW = 0, zoneH = 0, count = 1, gap = SPEEDO_GAP_PX, min = 96, max = 280 } = {}) {
   const n = Math.max(1, count);
   const byWidth = (zoneW - gap * (n - 1)) / n;
   const byHeight = zoneH - CHROME_BELOW_GAUGE_PX;
@@ -56,7 +60,7 @@ export function gaugeRowSize({ zoneW = 0, zoneH = 0, count = 1, gap = 28, min = 
 // `layoutSizing.test.js` "band never exceeds its grid row" invariant).
 //
 // Sidebar mode (≤3 riders) and the solo band: the speedo row is
-// `minmax(260px, …)`. floor = 260 - 118 = 142; keep a small margin → 140.
+// `minmax(260px, …)`. 260 - CHROME_BELOW_GAUGE_PX (86) = 174 ≥ the 140 floor.
 export const SPEEDO_MIN_GAUGE_SIDEBAR = 140;
 export const SPEEDO_MAX_GAUGE_SIDEBAR = 360;
 // Wide mode (≥4 riders): the gauge is sized from the WIDTH (band width minus
@@ -76,7 +80,7 @@ export const SPEEDO_ZONE_PAD_X = 16;
  * RaceLayoutManager.scss reserves and what SpeedoRow then measures.
  * @param {{width:number, count:number, gap?:number}} args width = the race layout's width
  */
-export function wideGaugeSize({ width = 0, count = 1, gap = 28 } = {}) {
+export function wideGaugeSize({ width = 0, count = 1, gap = SPEEDO_GAP_PX } = {}) {
   const n = Math.max(1, count);
   const raw = Math.floor((width - SPEEDO_ZONE_PAD_X - gap * (n - 1)) / n);
   return Math.max(SPEEDO_MIN_GAUGE_WIDE, Math.min(SPEEDO_MAX_GAUGE_WIDE, Number.isFinite(raw) ? raw : SPEEDO_MIN_GAUGE_WIDE));
@@ -84,7 +88,7 @@ export function wideGaugeSize({ width = 0, count = 1, gap = 28 } = {}) {
 
 export default {
   columnTemplateFor, fitScale, gaugeRowSize, wideGaugeSize, CHROME_BELOW_GAUGE_PX,
-  ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX,
+  ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX, SPEEDO_GAP_PX,
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
 };
 

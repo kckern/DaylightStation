@@ -692,11 +692,13 @@ collapses and no zone is left empty.
 - **Wide (four or more):** a top row of **chart (2×) │ standings tower │ POV grid**
   over a **speedometer** band that spans the full width. Each gauge is sized
   from the band's **width ÷ rider count** (`layoutSizing.wideGaugeSize`: clamp
-  150-280 px) and the band is exactly that tall plus its chrome (gauge + 118 +
-  16 px, at most 46% of the height). CSS does the same sum with container units
+  150-280 px, 16 px gaps) and the band is exactly that tall plus its chrome
+  (gauge + 86 + 16 px, at most 50% of the height; the sidebar and solo speedo
+  rows take up to 54%). CSS does the same sum with container units
   against `.race-layout-host` and `--cg-speedo-n` (set from `speedoCount`), so
   there is no measure-resize loop. On the garage kiosk (1301x745 content) that is
-  ~190 px gauges for six riders and ~187 px for four or five, every gauge on
+  ~191 px gauges for six riders, ~247 px for four and ~270 px for one to three
+  (2026-11-11; they were ~181/187/176), every gauge on
   screen and every tower row visible. (2026-11-10: a fixed 220 px floor put six
   gauges past both edges and cut the tower's 6th row.)
 
@@ -816,9 +818,9 @@ avatar card and rank badge carry `is-parked` (dimmed), and the badge reads
   panel map.
 - **SpeedoRow** — one `CycleSpeedometer` per rider on a single line; gauge size is
   computed from the injected `zoneBox` (`gaugeRowSize`, fit-across-width capped by
-  height, minus `CHROME_BELOW_GAUGE_PX` for the boost row and odometer), never
-  self-measured. Caps: `maxGauge`/`minGauge` 360/140 in solo and sidebar modes,
-  280/220 in wide mode. In solo mode it holds the live rider's gauge only, with
+  height, minus `CHROME_BELOW_GAUGE_PX` for the tag overhang, zone bar row and
+  odometer), never self-measured. Caps: `maxGauge`/`minGauge` 360/140 in solo
+  and sidebar modes, 280/150 in wide mode. Gauges sit `SPEEDO_GAP_PX` (16) apart. In solo mode it holds the live rider's gauge only, with
   `ranked={false}` (no leader medal, no placement). Each gauge's **background is tinted** with a dark wash of its
   rider's lane colour (≈ 20 % over the deep-indigo backdrop).
 
@@ -1008,30 +1010,41 @@ with the `cg-ghost` treatment.
   (e.g. 250 tricycle, 120 default) — wired per-rider via `riderLive.maxRpm`.
 - **Tick spacing scales** (`tickStepsFor`) so a 250 dial isn't crowded; **bands
   scale proportionally** (`scaleBands`) so a real sprint is the top red tier.
-- **Rpm is the large number, km/h the small one** (the rider controls rpm), both
-  in the free lower hemisphere (`speedometerOverlayLayout`: rpm hero on top,
-  speed sub-line under it).
-- **Boost meter** (replaces the old multiplier badge, which sat on the dial's
-  top-right label): a row **below the gauge**, outside the dial, so it can never
-  cover a tick label. A chip in the zone colour reads `{zone} ×{mult}`, a thin
-  bar fills to the zone progress (hidden when progress is unknown, e.g. a
-  ghost), and the next step reads muted at the right (`{next} ×{mult}`, absent
-  at the top zone). With no heart rate it reads `No heart-rate strap ×{hrless}`
-  with no bar. The no-strap label degrades by gauge width, decided from the size
-  passed to the component (never measured): the full `No heart-rate strap` from
-  260 px up (`boostState.BOOST_FULL_LABEL_PX`), `No strap` below it, so the chip
-  never truncates mid-word. Multipliers print with at most one decimal and no trailing `.0`
-  (`boostState.formatMultiplier`). The container builds it per rider as
+- **The gauge is the column's hero** (owner, 2026-11-11: "the speedometer is too
+  small, the chips are too big"). Everything else in the column is one line.
+- **Rpm is the large number, km/h the small one** (the rider controls rpm), on
+  **one line** in the free lower hemisphere (`speedometerOverlayLayout`:
+  `READOUT_TOP_RATIO` 0.69, under the avatar, below every tick label).
+- **Multiplier tag** (replaces the old multiplier badge, which sat on the dial's
+  top-right label): one solid line **straddling the dial's base**
+  (`TAG_HEIGHT_PX` 28, hanging `TAG_OVERHANG_PX` 10 below the gauge box, so it
+  stays clear of the readout at the 140 px floor). In the zone colour with dark
+  text it reads `{zone} ×{mult}`; with no heart rate it is the same tag on a
+  neutral plate reading `No strap ×{hrless}` at every gauge size
+  (`boostState.boostChipLabel`), never a wider pill or an extra line.
+  Multipliers print with at most one decimal and no trailing `.0`
+  (`boostState.formatMultiplier`).
+- **Zone progress row** under the gauge: a solid bar filling to the zone
+  progress (hidden when progress is unknown, e.g. a ghost) and, on a gauge of
+  220 px or more, the next step beside it (`{next} ×{mult}`, absent at the top
+  zone). Empty for a strapless rider, so every column's odometer lines up. The
+  container builds the boost per rider as
   `riderLive[id].boost = boostState({ zoneId, zones, hrlessMultiplier, progress })`
   (ghosts: the replayed zone, `progress: null`); no `boost` (the recap) means no
-  row. The row has a fixed 40 px height and is counted in
-  `layoutSizing.CHROME_BELOW_GAUGE_PX` (odometer 68 + boost row 40 + gap 10 =
-  118), which sets the gauge floors (sidebar/solo band `minmax(260px, …)` →
-  min gauge 140; wide band sized from the width → min gauge 150).
+  tag and no row. `layoutSizing.CHROME_BELOW_GAUGE_PX` = tag overhang 10 + row
+  22 + odometer 42 + 2 × 6 gap = 86 (was 118), which sets the gauge floors
+  (sidebar/solo band `minmax(260px, …)` → min gauge 140; wide band sized from
+  the width → min gauge 150).
+- **Nothing fades.** Inactive cadence bands are their colour mixed solid into the
+  dial (no opacity, no pulse); FINISHED / PARKED / NO SIGNAL sit on a solid
+  plate across the dial instead of dimming it. The PARKED/NO SIGNAL plate ends
+  where the readout starts, so the live rpm stays readable under it; a
+  finisher's readout (rpm forced to 0) steps aside under the taller FINISHED
+  plate. The leader medal sits inside the odometer pill.
 - **Overlay states** (one at a time, in the same slot):
   - **FINISHED** — 🏁 + placement for a rider over the line in a distance race.
   - **PARKED · Pedal to rejoin** — `parked` (idle past the park window). Calm,
-    not an alarm; the gauge dims.
+    not an alarm.
   - **NO SIGNAL · Check the sensor** — `noSensor`, **or** `parked` while the
     `sensorLost` chip is up. A rider whose sensor has dropped may be pedalling
     the whole time, so they are told to check the sensor, never to pedal.
