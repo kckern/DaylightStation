@@ -23,6 +23,13 @@ vi.mock("../../nav/usePersistentVolume.js", () => ({
 
 import CycleGameContainer from "./CycleGameContainer.jsx";
 
+// "Race my best" is opt-in (2026-11-10): these tests are about the rival, so
+// they switch it on first, the way a rider would in the lobby.
+const optInRival = (v) => {
+  const sw = v.queryByTestId('race-my-best');
+  if (sw && sw.getAttribute('aria-checked') !== 'true') act(() => { fireEvent.click(sw); });
+};
+
 const RACE_TICK_MS = 1000;
 const GO_HOLD_MS = 800;
 const START_COUNTDOWN_S = 3;
@@ -122,7 +129,7 @@ describe('CycleGameContainer — race beats', () => {
   const start = async (view, type, tier) => {
     act(() => { fireEvent.click(view.getByTestId(`course-${type}`)); });
     act(() => { fireEvent.click(view.getByTestId(`tier-${tier}`)); });
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     const anyway = view.queryByTestId('sensor-warning-start');
     if (anyway) act(() => { fireEvent.click(anyway); });
     // A lone rider's rival lookup answers on promises.
@@ -212,7 +219,7 @@ describe('CycleGameContainer — race beats', () => {
     const view = render(<CycleGameContainer />);
     act(() => { fireEvent.click(view.getByTestId('course-time')); });
     act(() => { fireEvent.click(view.getByTestId('tier-short')); });
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     act(() => { vi.advanceTimersByTime(1000 * START_COUNTDOWN_S); });
     act(() => { vi.advanceTimersByTime(GO_HOLD_MS); });
     nowMs = 1000;
@@ -231,7 +238,7 @@ describe('CycleGameContainer — race beats', () => {
     const view = render(<CycleGameContainer />);
     act(() => { fireEvent.click(view.getByTestId('course-time')); });
     act(() => { fireEvent.click(view.getByTestId('tier-flash')); }); // 60 s: halfway at 30 s
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     act(() => { vi.advanceTimersByTime(1000 * START_COUNTDOWN_S); });
     act(() => { vi.advanceTimersByTime(GO_HOLD_MS); });
     nowMs = 1000;

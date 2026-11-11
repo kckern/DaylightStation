@@ -1,16 +1,19 @@
 @use "./cgTokens" as cg;
 
-// Results board for the 1920x1080 garage TV, read from a bike 2-3 m away.
+// Results board for the garage kiosk (1920x1080 panel at DPR 1.39: a 1381x777
+// CSS viewport, so every rem here renders 1.39x larger than it reads in a
+// 1920-wide browser). Sized back to the pre-2026-11-10 board on the owner's
+// call: the "TV-sized" pass made everything too big at the end of a race.
 // FIT RULE: the board is exactly one viewport tall (height: 100vh, no page scroll).
 // The list region is the flexible part (flex: 1 1 auto; min-height: 0; overflow: hidden);
 // title, banners, notes and the button row are flex: 0 0 auto, so the buttons can never
 // be pushed off screen. From 5 rows the component adds .race-results--dense and rows
 // compact; the splits table is only rendered up to 3 rows.
-// Type floor: names 1.6rem, metrics 1.9rem, secondary lines 1.1rem; nothing under 1rem.
+// Type: names 1.2rem (winner 1.5rem), metrics 1.3rem (winner 1.7rem), secondary 1rem.
 
 .race-results {
   color: cg.$cg-text;
-  padding: 28px 24px 32px;
+  padding: 22px 24px;
   text-align: center;
   width: 100%;
   box-sizing: border-box;
@@ -23,7 +26,7 @@
 
   > * { flex: 0 0 auto; }
 
-  &__eyebrow { @include cg.cg-eyebrow; font-size: cg.cg-type(2); animation: cg-rr-in 0.4s ease both; }
+  &__eyebrow { @include cg.cg-eyebrow; font-size: 1rem; animation: cg-rr-in 0.4s ease both; }
   // Save-failure banner: unmistakable, never blocks the podium.
   &__save-failed {
     margin: 0 auto 8px;
@@ -31,32 +34,30 @@
     border: 1px solid rgba(cg.$cg-danger, 0.5);
     border-radius: 8px;
     font-family: cg.$cg-display;
-    font-size: cg.cg-type(1);
+    font-size: 1rem;
     color: cg.$cg-danger;
     animation: cg-rr-in 0.4s ease both;
   }
   &__title {
     font-family: cg.$cg-display;
-    font-size: cg.cg-type(5); font-weight: 800; letter-spacing: 0.02em;
-    margin: 0 0 10px;
+    font-size: 2.4rem; font-weight: 800; letter-spacing: 0.02em;
+    margin: 0 0 8px;
     animation: cg-rr-in 0.45s ease both;
   }
 
   // "You beat your best by 12 s" — one sentence above the list.
   &__versus {
     font-family: cg.$cg-display; font-weight: 700;
-    font-size: cg.cg-type(3); color: cg.$cg-gold;
-    margin: 0 0 10px;
+    font-size: 1.3rem; color: cg.$cg-gold;
+    margin: 0 0 8px;
     animation: cg-rr-in 0.5s ease both;
   }
 
   &__list {
     list-style: none; margin: 0 auto; padding: 0;
-    width: min(1100px, 86vw);
-    display: flex; flex-direction: column; gap: 12px;
-    // Shrinks (never grows): the title, rows and buttons read as ONE block that
-    // the board centres, instead of the rows floating mid-way down a tall gap.
-    flex: 0 1 auto; min-height: 0; overflow: hidden;
+    width: min(760px, 86vw);
+    display: flex; flex-direction: column; gap: 10px;
+    flex: 1 1 auto; min-height: 0; overflow: hidden;
     justify-content: center;
   }
   &__row {
@@ -65,34 +66,34 @@
   }
 
   &__place {
-    display: flex; align-items: center; gap: 22px;
+    display: flex; align-items: center; gap: 16px;
     box-sizing: border-box;
-    min-height: 92px;
+    min-height: 64px;
     background: linear-gradient(180deg, cg.$cg-panel, cg.$cg-bg-2);
     border: 1px solid cg.$cg-border;
-    border-radius: 16px;
-    padding: 12px 28px;
+    border-radius: 12px;
+    padding: 8px 18px;
   }
   &__placement {
-    flex: 0 0 auto; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
     color: cg.$cg-muted;
     svg { width: 100%; height: 100%; display: block; }
   }
   &__avatar { flex-shrink: 0; display: flex; }
   &__name {
     flex: 1; min-width: 0; text-align: left; font-family: cg.$cg-display;
-    font-size: cg.cg-type(3); font-weight: 700; letter-spacing: 0.01em;
-    display: flex; align-items: center; gap: 12px;
+    font-size: 1.2rem; font-weight: 700; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 8px;
   }
   &__name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__ghost-mark { flex: 0 0 auto; display: inline-flex; width: 1.5rem; height: 1.5rem; color: cg.$cg-muted; svg { width: 100%; height: 100%; } }
+  &__ghost-mark { flex: 0 0 auto; display: inline-flex; width: 1.1rem; height: 1.1rem; color: cg.$cg-muted; svg { width: 100%; height: 100%; } }
   &__crown {
-    flex: 0 0 auto; display: inline-flex; width: 2rem; height: 2rem; color: cg.$cg-gold;
+    flex: 0 0 auto; display: inline-flex; width: 1.4rem; height: 1.4rem; color: cg.$cg-gold;
     filter: drop-shadow(0 0 8px rgba(255, 213, 74, 0.8)) drop-shadow(0 2px 4px rgba(0,0,0,0.5));
     svg { width: 100%; height: 100%; }
   }
   &__metric {
-    font-family: cg.$cg-display; font-size: cg.cg-type(3); font-weight: 700;
+    font-family: cg.$cg-display; font-size: 1.3rem; font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: cg.$cg-cyan; white-space: nowrap;
     text-shadow: 0 0 8px rgba(33, 230, 255, 0.4);
@@ -104,7 +105,7 @@
     padding: 0.05em 0.55em;
     border-radius: 999px;
     font-family: cg.$cg-display;
-    font-size: cg.cg-type(2);
+    font-size: 0.85rem;
     font-weight: 800;
     letter-spacing: 0.04em;
     vertical-align: middle;
@@ -115,9 +116,9 @@
 
   // History comparison, one line under the rider's row.
   &__compare {
-    display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px 22px;
-    padding: 6px 28px 0 calc(28px + 52px + 22px);
-    font-family: cg.$cg-display; font-size: cg.cg-type(2); line-height: 1.2; color: cg.$cg-muted;
+    display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 4px 18px;
+    padding: 4px 18px 0 calc(18px + 36px + 16px);
+    font-family: cg.$cg-display; font-size: 1rem; line-height: 1.2; color: cg.$cg-muted;
     .is-emphasis { color: cg.$cg-gold; font-weight: 800; }
   }
 
@@ -129,32 +130,32 @@
   // Winner: visibly larger, magenta spotlight.
   &__row.is-winner {
     .race-results__place {
-      min-height: 120px;
+      min-height: 84px;
       border-color: rgba(255, 45, 149, 0.6);
       background: linear-gradient(180deg, rgba(255, 45, 149, 0.16), cg.$cg-bg-2);
       box-shadow: 0 0 0 1px rgba(255, 45, 149, 0.4), 0 0 32px rgba(255, 45, 149, 0.35), 0 8px 26px rgba(0, 0, 0, 0.5);
     }
-    .race-results__placement { width: 68px; height: 68px; }
-    .race-results__name { font-size: cg.cg-type(4); text-shadow: 0 0 14px rgba(255, 45, 149, 0.5); }
-    .race-results__crown { width: 2.6rem; height: 2.6rem; }
-    .race-results__metric { color: cg.$cg-gold; font-size: cg.cg-type(4); }
-    .race-results__compare { padding-left: calc(28px + 68px + 22px); }
+    .race-results__placement { width: 46px; height: 46px; }
+    .race-results__name { font-size: 1.5rem; text-shadow: 0 0 14px rgba(255, 45, 149, 0.5); }
+    .race-results__crown { width: 1.7rem; height: 1.7rem; }
+    .race-results__metric { color: cg.$cg-gold; font-size: 1.7rem; }
+    .race-results__compare { padding-left: calc(18px + 46px + 16px); }
   }
 
   // Dense: 5+ rows. Compact the cards so six rows plus comparison lines fit.
   &--dense {
     gap: 2px;
-    .race-results__title { font-size: cg.cg-type(4); margin-bottom: 12px; }
-    .race-results__list { gap: 6px; }
-    .race-results__place { min-height: 84px; padding: 6px 22px; gap: 18px; }
-    .race-results__placement { width: 44px; height: 44px; }
-    .race-results__compare { padding-top: 3px; padding-left: calc(22px + 44px + 18px); }
+    .race-results__title { font-size: 2rem; margin-bottom: 4px; }
+    .race-results__list { gap: 5px; }
+    .race-results__place { min-height: 52px; padding: 4px 16px; gap: 14px; }
+    .race-results__placement { width: 30px; height: 30px; }
+    .race-results__compare { padding-top: 2px; padding-left: calc(16px + 30px + 14px); }
     .race-results__row.is-winner {
-      .race-results__place { min-height: 100px; }
-      .race-results__placement { width: 56px; height: 56px; }
-      .race-results__name { font-size: cg.cg-type(4); }
-      .race-results__metric { font-size: cg.cg-type(4); }
-      .race-results__compare { padding-left: calc(22px + 56px + 18px); }
+      .race-results__place { min-height: 66px; }
+      .race-results__placement { width: 38px; height: 38px; }
+      .race-results__name { font-size: 1.35rem; }
+      .race-results__metric { font-size: 1.5rem; }
+      .race-results__compare { padding-left: calc(16px + 38px + 14px); }
     }
   }
 
@@ -162,7 +163,7 @@
   &__ladder {
     margin: 10px auto 0;
     display: flex; flex-direction: column; gap: 4px;
-    font-size: cg.cg-type(2);
+    font-size: 1.05rem;
   }
   &__ladder-note {
     font-family: cg.$cg-display; font-weight: 700;
@@ -171,7 +172,7 @@
 
   // Lap splits (rendered only up to 3 rows): owns its own scroll, capped by viewport.
   &__splits {
-    width: min(1100px, 86vw); margin: 12px auto 0;
+    width: min(760px, 86vw); margin: 12px auto 0;
     flex: 0 1 auto; min-height: 0; max-height: 28vh;
     border: 1px solid cg.$cg-border; border-radius: 12px;
     background: rgba(0, 0, 0, 0.28); overflow: hidden;
@@ -184,24 +185,24 @@
     display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; justify-content: center;
   }
   &__rematch {
-    min-width: 280px; min-height: 72px; padding: 0 56px;
-    border: 0; border-radius: 18px; cursor: pointer;
+    min-width: 200px; min-height: 52px; padding: 0 36px;
+    border: 0; border-radius: 14px; cursor: pointer;
     background: cg.$cg-magenta; color: #fff;
-    font-family: cg.$cg-display; font-weight: 800; font-size: cg.cg-type(4); letter-spacing: 0.04em;
+    font-family: cg.$cg-display; font-weight: 800; font-size: 1.4rem; letter-spacing: 0.04em;
     box-shadow: 0 0 28px rgba(255, 45, 149, 0.5), 0 6px 18px rgba(0, 0, 0, 0.5);
     transition: transform 0.12s ease, box-shadow 0.12s ease;
     &:active { transform: scale(0.97); }
   }
   &__exit {
-    min-height: 56px; padding: 0 28px;
+    min-height: 44px; padding: 0 22px;
     background: transparent; border: 0; border-radius: 12px; cursor: pointer;
-    color: cg.$cg-muted; font-family: cg.$cg-display; font-weight: 700; font-size: cg.cg-type(2);
+    color: cg.$cg-muted; font-family: cg.$cg-display; font-weight: 700; font-size: 1.1rem;
     text-decoration: underline; text-underline-offset: 0.25em;
     &:hover { color: cg.$cg-text; }
   }
   &__countdown {
     flex: 0 0 auto;
-    font-family: cg.$cg-display; font-size: cg.cg-type(2); font-weight: 600;
+    font-family: cg.$cg-display; font-size: 1rem; font-weight: 600;
     font-variant-numeric: tabular-nums; color: cg.$cg-muted;
   }
 
@@ -213,7 +214,7 @@
   }
   &__legend-item {
     display: flex; align-items: baseline; gap: 12px;
-    font-family: cg.$cg-display; font-size: cg.cg-type(1); color: cg.$cg-muted;
+    font-family: cg.$cg-display; font-size: 1rem; color: cg.$cg-muted;
     dt { flex: 0 0 auto; min-width: 2.6em; font-weight: 800; color: cg.$cg-text; letter-spacing: 0.04em; }
     dd { margin: 0; }
   }
@@ -229,7 +230,7 @@
   100% { opacity: 1; transform: translateX(0) scale(1); }
 }
 
-@include cg.cg-reduced-motion {
+@media (prefers-reduced-motion: reduce) {
   .race-results,
   .race-results__eyebrow, .race-results__title, .race-results__versus, .race-results__row,
   .race-results__save-failed, .race-results__splits, .race-results__legend,

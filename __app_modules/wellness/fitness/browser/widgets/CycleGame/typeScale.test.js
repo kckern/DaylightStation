@@ -15,6 +15,13 @@ function walk(dir) {
 }
 const scssFiles = walk(here);
 
+// The lobby (CycleGameHome + home/) and the results board are sized in their own
+// pre-2026-11-10 rem values, not the race screen's read-from-the-bike scale: the
+// owner had both reverted after the scale made them too big on the 1381x777
+// kiosk. The race screen stays on the scale.
+const OFF_SCALE = (f) => /[\\/]home[\\/]/.test(f)
+  || /(CycleGameHome|RaceResults|RaceRecap)\.scss$/.test(f);
+
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
 /** Literal px/rem sizes left in `font-size` (or `font:`) declarations after removing the allowed forms. */
@@ -38,7 +45,13 @@ describe('type scale guard', () => {
     expect(scssFiles.length).toBeGreaterThan(20);
   });
 
-  for (const file of scssFiles.filter((f) => !f.endsWith('_cgTokens.scss'))) {
+  it('exempts only the lobby and the results board', () => {
+    const exempt = scssFiles.filter(OFF_SCALE).map((f) => path.relative(here, f)).sort();
+    expect(exempt.every((f) => f.startsWith('home') || /^(CycleGameHome|RaceResults|RaceRecap)\.scss$/.test(f))).toBe(true);
+    expect(exempt).toContain('RaceResults.scss');
+  });
+
+  for (const file of scssFiles.filter((f) => !f.endsWith('_cgTokens.scss') && !OFF_SCALE(f))) {
     it(`${path.relative(here, file)} has no literal font-size`, () => {
       expect(fontSizeViolations(fs.readFileSync(file, 'utf8'))).toEqual([]);
     });

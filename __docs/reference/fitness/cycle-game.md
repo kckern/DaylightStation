@@ -26,10 +26,10 @@ can later be replayed as ghosts.
 
 ### Use cases
 
-- **Solo ride** — one rider and no ghost chosen. The game adds an **automatic
-  pace rival** so there is always someone to chase: the rider's own best at this
-  race type and length, else the household's best, else a constant "par" pace
-  (§5).
+- **Solo ride** — one rider and no ghost chosen. No rival unless the rider
+  switches on **"Race my best"** beside Start (off by default). Switched on, the
+  game adds a **pace rival**: the rider's own best at this race type and length,
+  else the household's best, else a constant "par" pace (§5).
 - **Solo vs. ghost** — one human chasing a recorded past performance they picked
   (the ghost counts as a competitor, and no pace rival is added).
 - **Group race** — 2–6 riders (humans and/or ghosts), distance or time.
@@ -383,11 +383,22 @@ ghost is selected, append its (roster-filtered) participants as additional rider
 carrying `ghostSeries / ghostHrSeries / ghostRpmSeries / ghostZoneSeries /
 ghostIntervalS` and `equipmentId: null`.
 
-**Automatic pace rival** (`startRace`; selection in `lib/cycleGame/paceRival.js`).
+**Pace rival — opt-in** (`startRace`; selection in `lib/cycleGame/paceRival.js`).
+A rival the rider did not hand-pick in the Ghost picker joins a race **only**
+when the lobby's **"Race my best"** switch (`data-testid="race-my-best"`,
+`role="switch"`, container state `raceMyBest`) is on. It is **off by default**,
+shown beside Start only with no hand-picked ghost and at most one rider, and
+pressing it again before Start removes the rival (`cycle_game.race_my_best_set`).
+Off, a lone rider's Start launches at once with no lookup and logs
+`cycle_game.pace_rival_skipped {reason: 'not_opted_in'}` (DEBUG); "Ride it"
+starts the course with no ladder rival and no fetch (§16). (2026-11-10: a rival
+was added to a plain Distance race with no way to opt out.)
+
 `startRace` first works out the ghost that would race: an explicit override (the
 featured-course button passes its ladder rival, or `null` when it has none)
-beats the lobby's hand-picked ghost. If there is no such ghost and **exactly
-one** live rider is claimed, a pace rival is armed for that race:
+beats the lobby's hand-picked ghost. If there is no such ghost, **exactly one**
+live rider is claimed and "Race my best" is on, a pace rival is armed for that
+race:
 
 | Kind | Who |
 |---|---|
@@ -1278,7 +1289,10 @@ resolves.
   failure hides the card and logs a `warn` — riders can still race the featured
   course manually, since matching is by `course_id`, not by entry point.
 - **Ride It** builds the race through the normal `buildRaceConfigFromCourse` path
-  (which sets `course_id` for free) and **pre-arms a rival ghost**:
+  (which sets `course_id` for free). With "Race my best" off (the default) the
+  course starts with just the riders on the bikes: no rival, no fetch,
+  `cycle_game.ride_featured {rivalKind: 'none', raceMyBest: false}`. With it on,
+  it **pre-arms a rival ghost**:
   - the rival is the **week's high score**: for the rider directly assigned to
     the first bike, ranked or not (or when no rider is assigned yet), the
     ladder **leader's** best race this week becomes the ghost;
@@ -1458,6 +1472,10 @@ by `raceId` (+ `elapsedS` where relevant).
   `cycle_game.ui.race_menu_handler_failed` (ERROR, `{ item, error }`).
 - **`cycle_game.race_recovered`** (INFO) — a checkpointed race was saved on
   mount: `{ raceId, ok, incomplete }` (or `skipped: 'zero_distance'`).
+- **`cycle_game.race_my_best_set`** (INFO) — the lobby's "Race my best" switch
+  was pressed: `{ on, control: 'lobby.race-my-best' }`.
+- **`cycle_game.pace_rival_skipped`** (DEBUG) — a lone rider started with "Race my
+  best" off, so no rival was looked up: `{ reason: 'not_opted_in', control }`.
 - **`cycle_game.pace_rival`** (INFO) — once per race start in which a lone rider
   had no ghost (§5). Not emitted when a ghost was chosen or two or more riders
   are racing.
@@ -1662,7 +1680,31 @@ Three levels, cheapest first.
 
 ## Legibility from the bike
 
-Race, staging, countdown and results text is sized for a viewer 2 to 3 m from the
+**The kiosk viewport is 1381x777 CSS px** (a 1920x1080 panel at DPR 1.39), so a
+rem renders 1.39x larger there than in a 1920-wide browser. Render checks use that
+size: `VIEWPORT=1301x745 DPR=1.39` (the content area beside the app's nav rail).
+
+**Lobby and results board are NOT on the read-from-the-bike scale.** On
+2026-11-10 the owner had the legibility pass reverted for both (the lobby's rail
+had grown to 36 rem and squashed the starting grid; everything on the results
+board was too big). The lobby is back to its earlier rem sizes and a 260 px rail;
+the results board keeps its structure (Rematch, comparisons, versus line, medals)
+at the earlier compact sizes (names 1.2 rem, winner 1.5 rem, list at most 760 px
+wide). `typeScale.test.js` exempts `home/`, `CycleGameHome.scss`,
+`RaceResults.scss` and `RaceRecap.scss`. The rest of this section applies to the
+race, staging and countdown screens only.
+
+**The starting grid gets its space first.** A bike/ghost slot is a fixed card:
+`width: 136px; aspect-ratio: 3 / 4; flex: none`, with a fixed 96 px square device
+circle. Six fit the kiosk's main column (6 x 136 + 5 x 16 = 896 of ~965 px). The
+grid section and row are `flex: none`; the race-type cards, the value row, the
+boost line and the rail adapt around the grid, and the main column scrolls as a
+last resort, never the grid. Guarded by `CycleGameHome.raceMyBest.test.jsx` and
+the harness gate `gridTilesBroken` (every slot inside the viewport, the row and
+the main column, at its 3:4 shape) in the `lobby-garage-five` / `lobby-garage-six`
+scenes (Distance picked, "how far" row open — the state that broke).
+
+Race, staging and countdown text is sized for a viewer 2 to 3 m from the
 screen, from the type scale in `_cgTokens.scss` (`cg-type(N)`; `typeScale.test.js`
 forbids literal sizes). Text a rider reads while pedalling is at least step 2
 (20 px): dial numerals, the boost row, the tower header, names and metrics, chart
@@ -1670,7 +1712,7 @@ axes and lane tags, POV badges, ready-strip chips, toast subtitles, results
 comparison lines. Step 3 (25.6 px) or more for the race clock label, toast
 titles, rider names on the tower and results rows, and the odometer. Step 1
 (16 px) is kept for text nobody reads mid-race: legend lines and the race menu's
-sub-copy. The screenshot harness fails a race, staging, countdown or results
+sub-copy. The screenshot harness fails a race, staging or countdown
 scene whose smallest visible text (`raceTextMinPx`, skipping `data-secondary`
 elements and the allow-listed secondary classes) is under 20 px.
 
@@ -1685,21 +1727,8 @@ Minimums above the step-2 floor, each gated per scene by the harness:
   and must fit on one line. In the wide layout the tower takes two fifths of the
   chart/tower pair so "No signal · 120 m" fits on one line beside a name. Gate:
   `towerHeaderPx` at least 25.6, no wrap or clip of the header or any metric.
-- The lobby records rail (this week's course, high scores, history) is step 2 for
-  everything read as content; the title and record values are step 3. Only the
-  all-caps eyebrows (section labels, column headers, day headers) stay at step 1,
-  marked `data-secondary`. The rail is 36 rem wide. History shows only the rows
-  that fit whole, most recent first (`fitHistoryRows` hides the rest and any day
-  header left without a row); it never scrolls and never clips a row.
-- The whole lobby is 20 px or more except eyebrow labels: the main column (subtitle,
-  race-type tiles and hints, presets and their sub-labels, bike slots, boost-rule
-  line, sensor warning, recovered-race banner, Start) and the rider, ghost and
-  volume modals are step 2 or above. Eyebrows ("Race type", "How long?", "Starting
-  grid", modal headings) stay at step 1 and carry `data-secondary`. In the ghost
-  picker only the winner's avatar carries a metric, as a pill under the circle.
-  Gate: `lobbyTextMinPx` at least 20 across `[data-testid="cycle-game-home"]` in every
-  `lobby-*` scene, including `lobby-rider-picker`, `lobby-ghost-picker`,
-  `lobby-ghost-roster` and `lobby-volume`; no clipped rail element.
+- The lobby carries no text floor (see above); the 260 px records rail scrolls
+  its history list.
 
 The away overlay ("NO SIGNAL / Check the sensor", "PARKED / Pedal to rejoin")
 sits on two lines and hides the dial numerals while it is up, at every gauge size.

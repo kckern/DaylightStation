@@ -333,6 +333,18 @@ export const SCENES = {
       <CycleGameHome {...homeBase}
         bikes={[{ id: 'bike-1', name: 'Bike 1', rider: 'user_1', rpm: 0, sensorLive: false, iconSrc: BIKE('bike-1') }]} />
     </Container>) },
+  // The garage at 19:29 on 2026-11-10: Distance picked (the "how far" row
+  // open), five bikes, one rider. Every grid tile must stay whole.
+  'lobby-garage-five': { render: () => (
+    <Container>
+      <CycleGameHome {...homeBase} raceType="distance" raceValue={300} onToggleRaceMyBest={noop}
+        bikes={Array.from({ length: 5 }, (_, i) => ({ id: `bike-${i + 1}`, name: `Bike ${i + 1}`, rider: i === 2 ? 'user_1' : null, rpm: i === 2 ? 62 : 0, sensorLive: i === 2, iconSrc: BIKE(`bike-${i + 1}`) }))} />
+    </Container>) },
+  'lobby-garage-six': { render: () => (
+    <Container>
+      <CycleGameHome {...homeBase} raceType="distance" raceValue={300}
+        bikes={Array.from({ length: 6 }, (_, i) => ({ id: `bike-${i + 1}`, name: `Bike ${i + 1}`, rider: i < 3 ? ['user_1', 'user_2', 'user_3'][i] : null, rpm: i < 3 ? 62 : 0, sensorLive: i < 3, iconSrc: BIKE(`bike-${i + 1}`) }))} />
+    </Container>) },
   'lobby-busy': { render: () => (
     <Container>
       <CycleGameHome {...homeBase} busy

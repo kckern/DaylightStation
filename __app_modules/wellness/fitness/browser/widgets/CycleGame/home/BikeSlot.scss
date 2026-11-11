@@ -8,10 +8,16 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  // Shrinkable, so a full starting grid stays on ONE line (see .cgh-grid).
-  // The floor is the 96px device circle plus this slot's own padding.
-  flex: 0 1 150px;
-  min-width: 116px;
+  // The starting grid is the point of the lobby (which bikes exist, who is on
+  // each): a slot is a FIXED-size card that never shrinks, crops or squashes.
+  // Fixed width + aspect ratio; six fit side by side in the kiosk's main
+  // column (6 x 136 + 5 x 16 = 896 px of ~965 at 1381x777). The rest of the
+  // lobby yields around the grid, never the reverse (2026-11-10: the grid was
+  // squashed to half-moons when the race-type cards and rail grew).
+  flex: none;
+  width: 136px;
+  aspect-ratio: 3 / 4;
+  box-sizing: border-box;
   padding: 16px 10px;
   background: t.$cg-panel;
   border: 1px solid t.$cg-border;
@@ -29,7 +35,7 @@
     position: absolute;
     top: 6px;
     left: 10px;
-    font-size: t.cg-type(2);
+    font-size: 0.8rem;
     color: t.$cg-faint;
     text-shadow: none;
     z-index: 2;
@@ -41,7 +47,7 @@
     color: t.$cg-cyan;
     border-radius: 999px;
     padding: 2px 10px;
-    font-size: t.cg-type(2);
+    font-size: 0.7rem;
     text-align: center;
   }
 
@@ -64,8 +70,10 @@
   // (was the button before the hit target was expanded to the whole slot).
   &__device-wrap {
     position: relative;
+    flex: none;
     width: 96px;
     height: 96px;
+    aspect-ratio: 1;
   }
 
   // RpmDeviceAvatar instance — bind its class names to the shared mixins so it
@@ -94,7 +102,7 @@
       // soften the hard top edge of the shade
       background: linear-gradient(180deg, transparent, var(--rpm-overlay-bg) 38%);
     }
-    .rpm-value-overlay .rpm-value { font-size: t.cg-type(2); transition: transform 0.18s ease; }
+    .rpm-value { font-size: 1.2rem; transition: transform 0.18s ease; }
   }
   &__main:hover &__device {
     border-color: t.$cg-cyan;
@@ -111,12 +119,10 @@
     position: absolute;
     right: -4px;
     bottom: -4px;
-    width: 56px;
-    height: 56px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     background: t.$cg-panel;
-    .avatar-core .hr-value-overlay { height: 34%; }
-    .avatar-core .hr-value-overlay .hr-value { font-size: t.cg-type(2); }
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   }
 
@@ -125,7 +131,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: t.cg-type(2);
+    font-size: 0.82rem;
     font-weight: 600;
     color: t.$cg-cyan;
     text-align: center;
@@ -136,7 +142,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: t.cg-type(2);
+    font-size: 0.78rem;
     font-weight: 700;
     svg { width: 14px; height: 14px; flex-shrink: 0; }
     &--none { color: t.$cg-warn; }
@@ -149,7 +155,7 @@
 
   &__rider-name {
     min-height: 16px;
-    font-size: t.cg-type(2);
+    font-size: 0.82rem;
     font-weight: 600;
     color: t.$cg-cyan;
     text-align: center;

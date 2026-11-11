@@ -55,6 +55,9 @@ test.describe('Cycle Game — solo rider and the pace rival', () => {
     const bike = assigns[0].equipmentId;
     await page.waitForFunction(() => window.__cycleGameControl?.ready === true, null, { timeout: 15000 });
 
+    // A rival is opt-in: switch on "Race my best" the way a rider would.
+    await page.getByTestId('race-my-best').click();
+    await expect(page.getByTestId('race-my-best')).toHaveAttribute('aria-checked', 'true');
     // No ghost is picked: the seam starts a plain course.
     expect(await page.evaluate(() => window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 })),
       'the start was accepted').toBe(true);

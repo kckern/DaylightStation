@@ -21,6 +21,13 @@ import { RACE_MENU_GUARD_MS } from "./RaceMenu.jsx";
 import { discardRace, endRaceHere } from "./raceMenuTestHelpers.js";
 import { SessionSerializerV3 } from "../../hooks/fitness/SessionSerializerV3.js";
 
+// "Race my best" is opt-in (2026-11-10): these tests are about the rival, so
+// they switch it on first, the way a rider would in the lobby.
+const optInRival = (v) => {
+  const sw = v.queryByTestId('race-my-best');
+  if (sw && sw.getAttribute('aria-checked') !== 'true') act(() => { fireEvent.click(sw); });
+};
+
 const CHECKPOINT_KEY = 'cycleGame.checkpoint';
 const RACE_TICK_MS = 1000;
 const GO_HOLD_MS = 800;
@@ -128,7 +135,7 @@ describe('CycleGameContainer — the race menu is the one way to stop a race', (
   const startDistanceRace = (view, { tier = null } = {}) => {
     act(() => { fireEvent.click(view.getByTestId('course-distance')); });
     if (tier) act(() => { fireEvent.click(view.getByTestId(`tier-${tier}`)); });
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
   };
   // Countdown to the green light (the `go` hold).
   const toGo = () => { act(() => { vi.advanceTimersByTime(1000 * START_COUNTDOWN_S); }); };
@@ -218,7 +225,7 @@ describe('CycleGameContainer — the race menu is the one way to stop a race', (
       expect(logsOf('info', 'cycle_game.cancelled')).toEqual([
         expect.objectContaining({ fromPhase: 'racing', control: 'race-menu.discard' })
       ]);
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       expect(logsOf('info', 'cycle_game.staged')).toHaveLength(2);
       expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
     });
@@ -437,7 +444,7 @@ describe('CycleGameContainer — the race menu is the one way to stop a race', (
       global.fetch = makeFetch({ ladder, ladderAfter, byId: { [RIVAL_RACE]: rivalRecord } });
       const view = render(<CycleGameContainer />);
       await flush();
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
       expect(logsOf('info', 'cycle_game.ride_featured')).toEqual([expect.objectContaining({ courseId: COURSE.id, ghostArmed: true })]);
       return view;

@@ -45,7 +45,7 @@
   &__title {
     margin: 0;
     font-family: t.$cg-display;
-    font-size: t.cg-type(3);
+    font-size: 1.9rem;
     font-weight: 800;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -55,7 +55,7 @@
   &__subtitle {
     margin: 0;
     color: t.$cg-muted;
-    font-size: t.cg-type(2);
+    font-size: 0.95rem;
   }
 
   &__actions {
@@ -78,7 +78,7 @@
     border-radius: 12px;
     padding: 14px 34px;
     font-family: t.$cg-display;
-    font-size: t.cg-type(2);
+    font-size: 1.05rem;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -105,7 +105,7 @@
   &__records {
     position: relative;
     z-index: 1;
-    width: 36rem; // fits the 4-column history grid at the 20 px step-2 size
+    width: 260px;
     flex-shrink: 0;
     background: t.$cg-panel;
     border: 1px solid t.$cg-border;
@@ -139,12 +139,17 @@
 
 .cgh-empty {
   color: t.$cg-faint;
-  font-size: t.cg-type(2);
+  font-size: 0.92rem;
   padding: 6px 0;
 }
 
 // ── Starting grid ────────────────────────────────────────────────────────
-.cgh-grid-section { display: flex; flex-direction: column; min-height: 0; }
+.cgh-grid-section {
+  display: flex;
+  flex-direction: column;
+  // The grid takes its full height first and never yields it (see BikeSlot.scss).
+  flex: none;
+}
 
 // One plain-text rule line in the grid section's footer. It lives inside the
 // section (which may shrink, min-height 0) and is capped at two lines, so it
@@ -156,8 +161,35 @@
   overflow: hidden;
   color: t.$cg-muted;
   font-family: t.$cg-display;
-  font-size: t.cg-type(2);
+  font-size: 1rem;
   line-height: 1.35;
+}
+
+// "Race my best": the opt-in rival switch beside Start. Off by default; on, a
+// lone rider races their own best (or the ladder rival on "Ride it").
+.cgh-race-my-best {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 14px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px dashed rgba(255, 255, 255, 0.28);
+  background: transparent;
+  color: t.$cg-muted;
+  font-family: t.$cg-display;
+  font-size: 0.95rem;
+  font-weight: 700;
+  > svg { width: 20px; height: 20px; flex-shrink: 0; }
+  &.is-on {
+    border-style: solid;
+    border-color: t.$cg-lane-3;
+    color: t.$cg-text;
+    background: rgba(176, 114, 255, 0.22);
+  }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 .cgh-grid {
@@ -169,6 +201,7 @@
   // bike alongside a ghost lane did exactly that (2026-09-07). Slots shrink to
   // fit instead; an extreme roster scrolls sideways rather than stealing height.
   flex-wrap: nowrap;
+  flex: none;
   justify-content: center;
   justify-content: safe center; // don't clip the leading slot once it overflows
   gap: 16px;
@@ -233,7 +266,7 @@
   background: t.$cg-panel-2;
   color: t.$cg-text;
   font-family: t.$cg-display;
-  font-size: t.cg-type(2);
+  font-size: 1.15rem;
   font-weight: 600;
   box-shadow: 0 0 14px rgba(33, 230, 255, 0.25);
   animation: cgh-notice-in 0.3s ease both;
@@ -266,7 +299,7 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 
   > svg { width: 22px; height: 22px; flex-shrink: 0; color: t.$cg-warn; }
-  &__text { font-size: t.cg-type(2); font-weight: 600; }
+  &__text { font-size: 0.95rem; font-weight: 600; }
   &__btn {
     appearance: none;
     cursor: pointer;
@@ -276,13 +309,13 @@
     border: 1px solid t.$cg-border;
     background: t.$cg-panel;
     color: t.$cg-text;
-    font-size: t.cg-type(2);
+    font-size: 0.9rem;
     font-weight: 700;
     &--go { border-color: t.$cg-warn; color: t.$cg-warn; }
     &:active { transform: scale(0.97); }
   }
 }
-@include t.cg-reduced-motion {
+@media (prefers-reduced-motion: reduce) {
   .cgh-sensor-warning__btn:active { transform: none; }
 }
 

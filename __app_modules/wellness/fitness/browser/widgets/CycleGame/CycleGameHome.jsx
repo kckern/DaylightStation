@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { uiLog } from "./home/uiLog.js";
-import { RaceFlagIcon, VolumeIcon, SensorWarnIcon } from "./home/icons.jsx";
+import { RaceFlagIcon, VolumeIcon, SensorWarnIcon, GhostIcon } from "./home/icons.jsx";
 import RaceTypePicker from "./home/RaceTypePicker.jsx";
 import BikeSlot from "./home/BikeSlot.jsx";
 import GhostSlot from "./home/GhostSlot.jsx";
@@ -54,6 +54,8 @@ export default function CycleGameHome({
   resolveName = (id) => id,
   recoveredNotice = null,
   boostRange = null,
+  raceMyBest = false,
+  onToggleRaceMyBest = null,
   busy = false
 }) {
   const [pickerBike, setPickerBike] = useState(null);
@@ -107,6 +109,11 @@ export default function CycleGameHome({
 
   const showBoostRule = !!boostRange && Number.isFinite(boostRange.min) && Number.isFinite(boostRange.max)
     && boostRange.max > boostRange.min;
+
+  // "Race my best" is opt-in and only means something without a hand-picked
+  // ghost and with at most one rider (two or more race each other).
+  const claimedCount = bikes.filter((b) => b.rider).length;
+  const showRaceMyBest = typeof onToggleRaceMyBest === 'function' && !ghost && claimedCount <= 1;
 
   const peopleById = useMemo(() => {
     const map = new Map();
@@ -208,6 +215,20 @@ export default function CycleGameHome({
                 onClick={handleStartAnyway}>Start anyway</button>
             </div>
           )}
+          {showRaceMyBest && (
+            <button
+              type="button"
+              className={`cgh-race-my-best${raceMyBest ? ' is-on' : ''}`}
+              data-testid="race-my-best"
+              role="switch"
+              aria-checked={raceMyBest ? 'true' : 'false'}
+              disabled={busy}
+              onClick={() => { if (!busy) onToggleRaceMyBest(); }}
+            >
+              <GhostIcon />
+              {raceMyBest ? 'Racing my best' : 'Race my best'}
+            </button>
+          )}
           <button
             type="button"
             className="cycle-game-home__start"
@@ -298,6 +319,9 @@ CycleGameHome.propTypes = {
   recoveredNotice: PropTypes.string,
   // Distance multiplier span from the heart-rate zones; shown as one rule line.
   boostRange: PropTypes.shape({ min: PropTypes.number, max: PropTypes.number }),
+  // Opt-in rival (own best / ladder rival); off unless the rider switches it on.
+  raceMyBest: PropTypes.bool,
+  onToggleRaceMyBest: PropTypes.func,
   // A start is pending: the lobby stays up but every control is inert.
   busy: PropTypes.bool
 };

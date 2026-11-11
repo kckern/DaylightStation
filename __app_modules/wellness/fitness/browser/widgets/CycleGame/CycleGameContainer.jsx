@@ -366,6 +366,12 @@ export default function CycleGameContainer({ onMount } = {}) {
   // rider strip only. The lobby never reads it, so an automatic rival neither
   // locks the race type/value nor carries into the next race.
   const [raceGhost, setRaceGhost] = useState(null);
+  // "Race my best" (lobby toggle, OFF by default): the only way a rival the
+  // rider did not hand-pick in the Ghost picker joins a race — the automatic
+  // pace rival for a lone rider, or the ladder rival on "Ride it". Off, a plain
+  // Distance/Time race is just the riders on the bikes (2026-11-10: a rival was
+  // added to a plain Distance race with no way to opt out).
+  const [raceMyBest, setRaceMyBest] = useState(false);
   // The live riders staged for THIS race (`{ userId, equipmentId }`), fixed when
   // the race is built. The staging/countdown strip shows these, not whoever
   // holds a bike right now: a claim that changed while Start was waiting on its
@@ -1254,11 +1260,16 @@ export default function CycleGameContainer({ onMount } = {}) {
         return false;
       }
     };
-    // A lone rider with no ghost always gets someone to chase: their own best at
-    // this race type and length, else the household's best, else par. It is armed
-    // for this race only (never through `ghost` state), so it does not lock the
+    // A lone rider with no ghost who switched on "Race my best" gets someone to
+    // chase: their own best at this race type and length, else the household's
+    // best, else par. Off (the default), the race has no rival. It is armed for
+    // this race only (never through `ghost` state), so it does not lock the
     // lobby or persist. Two or more riders race each other: no rival, no event.
     if (chosenGhost || liveRiders.length !== 1) return launch(null);
+    if (!raceMyBest) {
+      log.debug('cycle_game.pace_rival_skipped', { reason: 'not_opted_in', control: controlName });
+      return launch(null);
+    }
     const riderId = liveRiders[0].userId;
     const race = { winCondition: type, goalM, timeCapS };
     const historyLoaded = historyLoadedRef.current; // as of this press
@@ -1348,7 +1359,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       }, res.outcome === 'used' ? res.candidates : ghostCandidates);
     });
     return true;
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, ghost, buildRiders, ghostCandidates, parSpeedKmh, bikeById, getDisplayLabel, launchRace, log]);
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, ghost, raceMyBest, buildRiders, ghostCandidates, parSpeedKmh, bikeById, getDisplayLabel, launchRace, log]);
 
   // A Start still waiting on the rival lookup dies with the component.
   useEffect(() => {
@@ -2243,6 +2254,18 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.info('cycle_game.start_ignored', { reason: busyReason, control: 'featured' });
       return;
     }
+    // No rival unless the rider switched on "Race my best": the course starts
+    // with just the riders on the bikes.
+    if (!raceMyBest) {
+      const accepted = startRace(courseStartOverride(course), null, { control: 'featured' });
+      if (!accepted) return;
+      ladderBeforeRef.current = ladder;
+      log.info('cycle_game.ride_featured', {
+        courseId: course.id, rider: bikes.map((b) => session?.getEquipmentRider?.(b.id)).find(Boolean) || null,
+        rivalKind: 'none', rivalRaceId: null, ghostArmed: false, raceMyBest: false
+      });
+      return;
+    }
     const abort = typeof AbortController === 'function' ? new AbortController() : null;
     const signal = abort?.signal ?? null;
     const pending = { abort };
@@ -2303,9 +2326,14 @@ export default function CycleGameContainer({ onMount } = {}) {
     ladderBeforeRef.current = ladder;
     log.info('cycle_game.ride_featured', {
       courseId: course.id, rider: firstRider, rivalKind: rival.kind,
-      rivalRaceId: progress.rivalRaceId || null, ghostArmed: !!ghostOverride
+      rivalRaceId: progress.rivalRaceId || null, ghostArmed: !!ghostOverride, raceMyBest: true
     });
-  }, [featuredLadder, bikes, session, bikeById, getDisplayLabel, startRace, log]);
+  }, [featuredLadder, raceMyBest, bikes, session, bikeById, getDisplayLabel, startRace, log]);
+
+  const onToggleRaceMyBest = useCallback(() => {
+    setRaceMyBest((on) => !on);
+    log.info('cycle_game.race_my_best_set', { on: !raceMyBest, control: 'lobby.race-my-best' });
+  }, [raceMyBest, log]);
 
   const onSetRaceValue = useCallback((value) => {
     if (ghost) return; // ghost locks the value
@@ -2495,6 +2523,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           recoveredNotice={recoveredNotice}
           busy={startPending}
           boostRange={lobbyBoostRange}
+          raceMyBest={raceMyBest}
+          onToggleRaceMyBest={onToggleRaceMyBest}
         />
         {recapCandidate && (
           <RaceRecap candidate={recapCandidate} onClose={closeRecap} />

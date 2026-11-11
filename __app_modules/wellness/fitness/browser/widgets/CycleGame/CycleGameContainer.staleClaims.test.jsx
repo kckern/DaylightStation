@@ -23,6 +23,13 @@ vi.mock("../../nav/usePersistentVolume.js", () => ({
 
 import CycleGameContainer from "./CycleGameContainer.jsx";
 
+// "Race my best" is opt-in (2026-11-10): these tests are about the rival, so
+// they switch it on first, the way a rider would in the lobby.
+const optInRival = (v) => {
+  const sw = v.queryByTestId('race-my-best');
+  if (sw && sw.getAttribute('aria-checked') !== 'true') act(() => { fireEvent.click(sw); });
+};
+
 const MIN = 60 * 1000;
 const START_COUNTDOWN_S = 3;
 const GO_HOLD_MS = 800;
@@ -153,7 +160,7 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
     idleFor(30); // exactly 30 min idle: not yet stale
     act(() => { vi.advanceTimersByTime(59 * 1000); });
     act(() => { fireEvent.click(view.getByTestId('course-time')); });
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     const anyway = view.queryByTestId('sensor-warning-start');
     if (anyway) act(() => { fireEvent.click(anyway); });
     expect(view.getByTestId('cycle-game-start').textContent).toContain('Starting');
@@ -168,7 +175,7 @@ describe('CycleGameContainer — stale rider claims clear themselves', () => {
     idleFor(29);
     act(() => { fireEvent.click(view.getByTestId('course-time')); });
     act(() => { fireEvent.click(view.getByTestId('tier-flash')); }); // 60 s
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     const anyway = view.queryByTestId('sensor-warning-start');
     if (anyway) act(() => { fireEvent.click(anyway); });
     act(() => { vi.advanceTimersByTime(1000 * START_COUNTDOWN_S); });

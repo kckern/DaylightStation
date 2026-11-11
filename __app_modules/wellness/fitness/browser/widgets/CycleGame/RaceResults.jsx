@@ -99,7 +99,7 @@ function ResultRow({ s, riders, winCondition, stoppedSet, overtimeSet, index, an
         <span className="race-results__placement"><MedalIcon place={s.placement} /></span>
         <span className={`race-results__avatar${isGhost ? ' cg-ghost' : ''}`}>
           <CircularUserAvatar name={name} avatarSrc={avatarSrc} fallbackSrc={FALLBACK_AVATAR}
-            size={isWinner ? 84 : 64} showGauge={false} showIndicator={false} />
+            size={isWinner ? 64 : 50} showGauge={false} showIndicator={false} />
         </span>
         <span className="race-results__name">
           <span className="race-results__name-text">{name}</span>

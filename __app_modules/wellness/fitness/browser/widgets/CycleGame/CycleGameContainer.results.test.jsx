@@ -24,6 +24,13 @@ import CycleGameContainer from "./CycleGameContainer.jsx";
 import { endRaceHere } from "./raceMenuTestHelpers.js";
 import { SessionSerializerV3 } from "../../hooks/fitness/SessionSerializerV3.js";
 
+// "Race my best" is opt-in (2026-11-10): these tests are about the rival, so
+// they switch it on first, the way a rider would in the lobby.
+const optInRival = (v) => {
+  const sw = v.queryByTestId('race-my-best');
+  if (sw && sw.getAttribute('aria-checked') !== 'true') act(() => { fireEvent.click(sw); });
+};
+
 const RACE_TICK_MS = 1000;
 const GO_HOLD_MS = 800;
 const START_COUNTDOWN_S = 3;
@@ -172,7 +179,7 @@ describe('CycleGameContainer — results that reward and restart', () => {
     act(() => { fireEvent.click(view.getByTestId(`tier-${tier}`)); });
   };
   const pressStart = async (view) => {
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     await flush(); // a lone rider's rival lookup
   };
   // Countdown, the green-light hold, then one race tick per act until the
@@ -383,7 +390,7 @@ describe('CycleGameContainer — results that reward and restart', () => {
 
       const rideFeatured = async (ladderAfter) => {
         const view = await renderLobby({ ladder, ladderAfter, byId: { [RIVAL_RACE]: rivalRecord } });
-        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await flush();
         expect(logsOf('info', 'cycle_game.ride_featured')).toHaveLength(1);
         await raceToResults(view);

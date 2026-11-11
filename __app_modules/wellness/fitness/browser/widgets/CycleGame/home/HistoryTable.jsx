@@ -1,4 +1,4 @@
-import React, { Fragment, useLayoutEffect, useRef } from 'react';
+import React, { Fragment } from 'react';
 import PropTypes from 'prop-types';
 import "./HistoryTable.scss";
 
@@ -7,52 +7,13 @@ import "./HistoryTable.scss";
  * so each calendar day is printed once as a sticky group header and each row
  * shows only its clock time.
  */
-/**
- * Hides, most recent first, every row (and day header) that does not fit whole in `box`,
- * so the unscrollable lobby never shows a half-clipped row. A box with no height (jsdom,
- * not laid out) hides nothing. Returns how many rows were hidden.
- */
-export function fitHistoryRows(box, list) {
-  const items = [...list.children];
-  items.forEach((li) => { li.style.display = ''; });
-  const limit = box.getBoundingClientRect().bottom;
-  if (!(box.getBoundingClientRect().height > 0)) return 0;
-  let cut = false; let hidden = 0;
-  items.forEach((li) => {
-    const isRow = li.classList.contains('cgh-record');
-    if (!cut && li.getBoundingClientRect().bottom > limit + 0.5) cut = true;
-    if (cut) { li.style.display = 'none'; if (isRow) hidden += 1; }
-  });
-  // A day header with no visible row under it is dropped too.
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    const li = items[i];
-    if (li.classList.contains('cgh-records__day') && li.style.display !== 'none') {
-      const next = items[i + 1];
-      if (!next || next.style.display === 'none' || !next.classList.contains('cgh-record')) li.style.display = 'none';
-    }
-  }
-  return hidden;
-}
-
 export function HistoryTable({ records = [], onSelectRecord, disabled = false }) {
-  const boxRef = useRef(null);
-  const listRef = useRef(null);
-  useLayoutEffect(() => {
-    const box = boxRef.current; const list = listRef.current;
-    if (!box || !list) return undefined;
-    const run = () => { const n = fitHistoryRows(box, list); box.dataset.hiddenRows = String(n); };
-    run();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(run); ro.observe(box);
-    return () => ro.disconnect();
-  }, [records]);
   if (records.length === 0) {
     return <div className="cgh-empty">No races yet</div>;
   }
   return (
-    <div className="cgh-history" ref={boxRef} data-testid="history-box">
-    <ol className="cgh-records cgh-records--table" ref={listRef}>
-      <li className="cgh-records__head" aria-hidden="true" data-secondary>
+    <ol className="cgh-records cgh-records--table">
+      <li className="cgh-records__head" aria-hidden="true">
         <span>Riders</span><span>Speed</span><span>Race</span><span>When</span>
       </li>
       {records.map((rec, i) => {
@@ -67,7 +28,7 @@ export function HistoryTable({ records = [], onSelectRecord, disabled = false })
         return (
         <Fragment key={`${rec.raceId || i}`}>
           {showDay && rec.whenDay && (
-            <li className="cgh-records__day" aria-hidden="true" data-secondary>{rec.whenDay}</li>
+            <li className="cgh-records__day" aria-hidden="true">{rec.whenDay}</li>
           )}
           <li className="cgh-record">
           <button
@@ -120,7 +81,6 @@ export function HistoryTable({ records = [], onSelectRecord, disabled = false })
         );
       })}
     </ol>
-    </div>
   );
 }
 

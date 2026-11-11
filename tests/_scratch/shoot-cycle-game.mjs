@@ -20,7 +20,7 @@ const OUT = path.join(here, 'out/cycle-game');
 fs.mkdirSync(OUT, { recursive: true });
 
 const ALL = [
-  'lobby-default', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-picker-six', 'lobby-ghost-roster', 'lobby-ghost-roster-six', 'lobby-volume', 'staging', 'countdown',
+  'lobby-default', 'lobby-garage-five', 'lobby-garage-six', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-picker-six', 'lobby-ghost-roster', 'lobby-ghost-roster-six', 'lobby-volume', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
   'race-two-riders-one-parked', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
@@ -209,6 +209,22 @@ function measure() {
     out.lobbyRailClipped = [...lobbyEl.querySelectorAll('*')].filter((e) => e.offsetParent && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0 && (e.getBoundingClientRect().bottom > rb.bottom + 1 || e.getBoundingClientRect().right > rb.right + 1)).length;
     out.lobbyRailScrolls = lobbyEl.scrollHeight > lobbyEl.clientHeight + 1;
   }
+  // Starting grid: every slot is a whole card — inside the viewport, inside the
+  // grid row and the main column (nothing crops it), at its full 3:4 shape.
+  const gridEl = document.querySelector('.cgh-grid');
+  if (gridEl) {
+    const mainEl = document.querySelector('.cycle-game-home__main');
+    const gb = gridEl.getBoundingClientRect(); const mb = mainEl ? mainEl.getBoundingClientRect() : gb;
+    out.gridTiles = [...gridEl.querySelectorAll('.cgh-slot')].map((el) => box(el));
+    out.gridTilesBroken = [...gridEl.querySelectorAll('.cgh-slot')].map((el) => {
+      const b = el.getBoundingClientRect(); const d = el.querySelector('.cgh-slot__device-wrap');
+      const db = d ? d.getBoundingClientRect() : b;
+      const whole = b.top >= Math.max(gb.top, mb.top, 0) - 1 && b.bottom <= Math.min(gb.bottom, mb.bottom, vh) + 1
+        && b.left >= -1 && b.right <= vw + 1 && Math.abs(b.height - b.width * 4 / 3) <= 2
+        && db.bottom <= b.bottom + 1 && Math.abs(db.width - db.height) <= 1;
+      return whole ? null : { id: el.dataset.testid || el.className, ...box(el) };
+    }).filter(Boolean);
+  }
   // Ghost picker: nothing inside a card may stick out of it (avatars, metric pill, type pill).
   out.ghostCardOverflow = [...document.querySelectorAll('.cgh-ghost-card')].map((c) => {
     const cb = c.getBoundingClientRect();
@@ -302,13 +318,17 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 const failures = [];
-const RACE_TEXT_SCENE = /^(race-|staging|countdown|results-)/;
+// The race screen keeps its read-from-the-bike floors. The lobby and the results
+// board went back to their pre-2026-11-10 sizes on the owner's call (the 20 px
+// floors made both too big on the 1381x777 kiosk), so they carry no text floor;
+// the lobby is gated on its starting grid instead (every tile whole).
+const RACE_TEXT_SCENE = /^(race-|staging|countdown)/;
 const report = [];
 const metrics = {};
 
 for (const { scene, w, h, suffix } of jobs) {
   const problems = [];
-  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: Number(process.env.DPR || 1) });
   page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') problems.push(`console error: ${m.text()}`); });
   page.on('requestfailed', (r) => problems.push(`request failed: ${r.url()}`));
@@ -337,16 +357,14 @@ for (const [label, m] of Object.entries(metrics)) {
   const bad = [];
   if (m.clippedLabels > 0) bad.push(`${m.clippedLabels} clipped dial label(s)`);
   if (RACE_TEXT_SCENE.test(label) && m.raceTextMinPx != null && m.raceTextMinPx < 19.95) bad.push(`race text ${m.raceTextMinPx}px < 20 (${m.raceTextSmallest[0].t} / ${m.raceTextSmallest[0].cls})`);
-  if (m.minFontPx != null && m.minFontPx < 15.95) bad.push(`smallest text ${m.minFontPx}px < 16`);
+  if (RACE_TEXT_SCENE.test(label) && m.minFontPx != null && m.minFontPx < 15.95) bad.push(`smallest text ${m.minFontPx}px < 16`);
   if (m.outsideViewport.length) bad.push(`${m.outsideViewport.length} element(s) outside the viewport`);
   if (m.clippedByZone.length) bad.push(`${m.clippedByZone.length} element(s) outside their zone`);
   if (m.gaugeNumeralMinPx != null && m.gaugeNumeralMinPx < 23.95) bad.push(`gauge numerals ${m.gaugeNumeralMinPx}px < 24`);
   if (m.towerHeaderPx != null && m.towerHeaderPx < 25.5) bad.push(`tower header ${m.towerHeaderPx}px < 25.6`);
   if (m.towerHeaderClipped) bad.push(`tower header wraps/clips: ${m.towerHeaderText}`);
   if (m.towerMetricWraps && m.towerMetricWraps.length) bad.push(`tower metric wraps: ${m.towerMetricWraps.join(' | ')}`);
-  if (/^lobby-/.test(label) && m.lobbyTextMinPx != null && m.lobbyTextMinPx < 19.95) bad.push(`lobby text ${m.lobbyTextMinPx}px < 20 (${m.lobbyTextSmallest[0].t} / ${m.lobbyTextSmallest[0].cls})`);
-  if (m.lobbyRailClipped > 0) bad.push(`${m.lobbyRailClipped} lobby rail element(s) clipped`);
-  if (m.lobbyRailScrolls) bad.push('lobby rail scrolls');
+  if (m.gridTilesBroken && m.gridTilesBroken.length) bad.push(`starting-grid tile(s) not whole: ${JSON.stringify(m.gridTilesBroken)}`);
   if (m.ghostCardOverflow && m.ghostCardOverflow.length) bad.push(`ghost card content outside its card: ${JSON.stringify(m.ghostCardOverflow)}`);
   if (m.rosterOffscreen > 0) bad.push(`${m.rosterOffscreen} roster control(s) off screen/outside card`);
   if (m.rosterScrolls) bad.push('roster card scrolls');

@@ -58,6 +58,11 @@ export default async (env = {}) => {
   const aliasList = [
     { find: /^@\/lib\/logging\/Logger\.js$/, replacement: path.join(here, 'stubs/logger.js') },
     ...Object.entries(appAlias).map(([find, replacement]) => ({ find, replacement })),
+    // The race road imports these from __app_modules, whose nearest node_modules
+    // (the repo root) may not carry them; the frontend's always does.
+    { find: /^three$/, replacement: path.join(repoRoot, 'frontend/node_modules/three/build/three.module.js') },
+    { find: /^three\/(.*)$/, replacement: path.join(repoRoot, 'frontend/node_modules/three/$1') },
+    { find: /^camera-controls$/, replacement: path.join(repoRoot, 'frontend/node_modules/camera-controls/dist/camera-controls.module.js') },
   ];
   return {
     root: here,

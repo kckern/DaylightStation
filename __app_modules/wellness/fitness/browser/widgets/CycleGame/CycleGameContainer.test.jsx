@@ -23,6 +23,13 @@ import { discardRace } from "./raceMenuTestHelpers.js";
 import { DEFAULT_WHEEL_CIRCUMFERENCE_M } from "../../lib/cycleGame/distanceModel.js";
 import { SessionSerializerV3 } from "../../hooks/fitness/SessionSerializerV3.js";
 
+// "Race my best" is opt-in (2026-11-10): these tests are about the rival, so
+// they switch it on first, the way a rider would in the lobby.
+const optInRival = (v) => {
+  const sw = v.queryByTestId('race-my-best');
+  if (sw && sw.getAttribute('aria-checked') !== 'true') act(() => { fireEvent.click(sw); });
+};
+
 function makeCtx(overrides = {}) {
   const riders = { cycle_ace: 'user_1', tricycle: 'user_2' };
   const vitals = {
@@ -255,7 +262,7 @@ async function renderLobby(races, fetchOpts) {
 // Click a race type, press Start, and let the rival lookup settle.
 async function startRaceOf(view, type = 'distance') {
   act(() => { fireEvent.click(view.getByTestId(`course-${type}`)); });
-  act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+  optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
   await flush();
 }
 
@@ -291,6 +298,68 @@ function poolEntry(rec) {
 const poolOf = (...records) => () => json({ entries: records.filter((r) => !r.race.incomplete).map(poolEntry) });
 // The record reads (/cycle-races/<raceId>) the server would answer for these records.
 const recordsById = (...records) => Object.fromEntries(records.map((r) => [r.race.id, r]));
+
+describe('CycleGameContainer — a rival is opt-in ("Race my best", off by default)', () => {
+  beforeEach(() => {
+    mockCtx = soloCtx();
+    Object.values(logSpy).forEach((fn) => fn.mockClear());
+  });
+
+  it('a lone rider on a plain Distance race gets no rival: no lookup, no pace_rival event', async () => {
+    const view = await renderLobby([raceRecord('20260101110000', { user_1: { timeS: 300 } })]);
+    expect(view.getByTestId('race-my-best').getAttribute('aria-checked')).toBe('false');
+    act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    await flush();
+    const [cfg] = configLogs();
+    expect(cfg.rivalKind).toBeNull();
+    expect(ghostIds(cfg)).toEqual([]);
+    expect(paceRivalLogs()).toEqual([]);
+    expect(poolCalls()).toEqual([]);
+    expect(logSpy.debug).toHaveBeenCalledWith('cycle_game.pace_rival_skipped', expect.objectContaining({ reason: 'not_opted_in' }));
+  });
+
+  it('switching it on and off again before Start removes the rival', async () => {
+    const view = await renderLobby([raceRecord('20260101110000', { user_1: { timeS: 300 } })]);
+    act(() => { fireEvent.click(view.getByTestId('race-my-best')); });
+    expect(view.getByTestId('race-my-best').getAttribute('aria-checked')).toBe('true');
+    act(() => { fireEvent.click(view.getByTestId('race-my-best')); });
+    expect(view.getByTestId('race-my-best').getAttribute('aria-checked')).toBe('false');
+    expect(logsOf('info', 'cycle_game.race_my_best_set')).toEqual([
+      { on: true, control: 'lobby.race-my-best' }, { on: false, control: 'lobby.race-my-best' }
+    ]);
+    act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    await flush();
+    expect(configLogs()[0].rivalKind).toBeNull();
+    expect(paceRivalLogs()).toEqual([]);
+  });
+
+  it('switched on, the lone rider races their own best', async () => {
+    const view = await renderLobby([raceRecord('20260101110000', { user_1: { timeS: 300 } })]);
+    act(() => { fireEvent.click(view.getByTestId('race-my-best')); });
+    act(() => { fireEvent.click(view.getByTestId('course-distance')); });
+    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    await flush();
+    expect(configLogs()[0].rivalKind).toBe('self');
+    expect(paceRivalLogs()).toHaveLength(1);
+  });
+
+  it('"Ride it" without the switch starts the course with no ladder rival and fetches nothing', async () => {
+    const RIVAL_RACE = '20251201100000';
+    const ladder = { course: COURSE, standings: [{ userId: 'user_2', raceId: RIVAL_RACE, bestValue: 250 }] };
+    const byId = { [RIVAL_RACE]: raceRecord(RIVAL_RACE, { user_2: { timeS: 250 } }) };
+    const view = await renderLobby([], { ladder, byId });
+    act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+    await flush();
+    const [cfg] = configLogs();
+    expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1']);
+    expect(cfg.rivalKind).toBeNull();
+    expect(recordCalls()).toEqual([]);
+    expect(poolCalls()).toEqual([]);
+    expect(rideFeaturedLogs()).toEqual([expect.objectContaining({ rivalKind: 'none', ghostArmed: false, raceMyBest: false })]);
+  });
+});
 
 describe('CycleGameContainer — automatic pace rival', () => {
   beforeEach(() => {
@@ -376,7 +445,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
     const view = await renderLobby([raceRecord('20260101100000', { user_1: { timeS: 300 } })]);
     act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     const [cfg] = configLogs(); // synchronous: nothing to wait for
     expect(ghostIds(cfg)).toEqual([]);
     expect(cfg.rivalKind).toBeNull();
@@ -393,7 +462,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     act(() => { fireEvent.click(view.getByTestId('ghost-20260101100000')); }); // focus
     act(() => { fireEvent.click(view.getByTestId('ghost-20260101100000')); }); // commit
     expect(view.getByTestId('cgh-ghost-summary')).toBeTruthy();
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     const [cfg] = configLogs();
     expect(ghostIds(cfg)).toEqual(['ghost:20260101100000:user_2']);
     expect(cfg.rivalKind).toBe('ghost');
@@ -408,7 +477,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       const view = await renderLobby([raceRecord('20260101110000', { user_1: { timeS: 300 } })],
         { pool: poolOf(old, other), byId: recordsById(old, other) });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       expect(configLogs()).toEqual([]); // waiting on the server
       await flush();
       const [cfg] = configLogs();
@@ -541,7 +610,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })],
           { pool: () => late.promise });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         await act(async () => { vi.advanceTimersByTime(1499); });
         expect(configLogs()).toEqual([]);
         expect(view.getByTestId('cycle-game-home')).toBeTruthy();
@@ -572,7 +641,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         const view = await renderLobby([raceRecord('20260101100000', { user_2: { timeS: 300 } })],
           { pool: poolOf(old), byId: { [OLD_RACE]: () => lateRecord.promise } });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         await flush(); // the pool has answered; the record is being fetched
         expect(recordCalls()).toHaveLength(1);
         await act(async () => { vi.advanceTimersByTime(1499); });
@@ -597,7 +666,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         global.fetch = vi.fn(never); // nothing ever answers
         const view = render(<CycleGameContainer />);
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         await act(async () => { vi.advanceTimersByTime(1500); });
         await flush();
         expect(paceRivalLogs()).toEqual([expect.objectContaining({
@@ -609,7 +678,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         const view = await renderLobby([], { pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
         expect(view.getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('false');
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         const start = view.getByTestId('cycle-game-start');
         expect(view.getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('true');
         expect(start.textContent).toContain('Starting…');
@@ -626,7 +695,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       it('a race-type change attempted while it waits neither alters the race nor sticks to the lobby', async () => {
         const view = await renderLobby([], { pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         act(() => { fireEvent.click(view.getByTestId('course-time')); });
         act(() => { fireEvent.click(view.getByTestId('tier-flash')); });
         await act(async () => { vi.advanceTimersByTime(1500); });
@@ -647,7 +716,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       it('aborts the lookup and starts nothing if the game is closed first', async () => {
         const view = await renderLobby([], { pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
         const { signal } = poolCalls()[0][1];
         expect(signal.aborted).toBe(false);
         act(() => { view.unmount(); });
@@ -665,7 +734,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         const boom = new Error('boom');
         logSpy.info.mockImplementation((event) => { if (event === 'cycle_game.config') throw boom; });
         try {
-          act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+          optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
           await flush();
         } finally {
           logSpy.info.mockImplementation(() => {});
@@ -684,7 +753,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
     it("a ladder rival is the rider's rival: rivalKind 'ghost', no automatic rival", async () => {
       const view = await renderLobby([raceRecord('20260101110000', { user_1: { timeS: 300 } })], { ladder, byId });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
       const [cfg] = configLogs();
       expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1', `ghost:${RIVAL_RACE}:user_2`]);
@@ -696,7 +765,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     it('with no bike claimed it still starts, as a ghost-only race', async () => {
       mockCtx = soloCtx({});
       const view = await renderLobby([], { ladder, byId });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
       expect(logSpy.warn).not.toHaveBeenCalledWith('cycle_game.staged', expect.objectContaining({ error: 'no_riders' }));
       const [cfg] = configLogs();
@@ -707,12 +776,11 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('freezes the lobby while it fetches its rival; a Start in that time is ignored and the featured ride races', async () => {
-      mockCtx = soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
       const slow = deferred();
       const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: () => slow.promise } });
       act(() => { fireEvent.click(view.getByTestId('course-time')); });
       expect(isFrozen(view)).toBe(false);
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); }); // waiting on the rival's record
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); }); // waiting on the rival's record
       // Frozen at once, before anything has answered.
       expect(isFrozen(view)).toBe(true);
       expect(view.getByTestId('cycle-game-start').textContent).toContain('Starting…');
@@ -720,7 +788,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(view.getByTestId('featured-ride').disabled).toBe(true);
       await flush(2);
       // The Start button is dead, and a start from any other control is refused.
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       let accepted;
       act(() => { accepted = window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 }); });
       expect(accepted).toBe(false);
@@ -731,7 +799,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       // The one race is the featured course with its ladder rival.
       expect(configLogs()).toHaveLength(1);
       expect(configLogs()[0]).toMatchObject({ winCondition: 'distance', goalM: GOAL_M, rivalKind: 'ghost' });
-      expect(configLogs()[0].riders.map((r) => r.userId)).toEqual(['user_1', 'user_2', `ghost:${RIVAL_RACE}:user_2`]);
+      expect(configLogs()[0].riders.map((r) => r.userId)).toEqual(['user_1', `ghost:${RIVAL_RACE}:user_2`]);
       expect(rideFeaturedLogs()).toEqual([expect.objectContaining({ courseId: COURSE.id, ghostArmed: true })]);
       expect(featuredFailLogs()).toEqual([]);
       // Back in the lobby it is live again.
@@ -743,6 +811,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
     it('a second "Ride it" tap in the same tick is ignored: one fetch, one race', async () => {
       const view = await renderLobby([], { ladder, byId });
+      optInRival(view);
       act(() => {
         fireEvent.click(view.getByTestId('featured-ride'));
         fireEvent.click(view.getByTestId('featured-ride'));
@@ -773,6 +842,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     it('"Ride it" in the same tick as a Start that is waiting on its lookup is ignored', async () => {
       const view = await renderLobby([], { ladder, byId, pool: never });
       act(() => { fireEvent.click(view.getByTestId('course-time')); });
+      optInRival(view);
       act(() => {
         fireEvent.click(view.getByTestId('cycle-game-start')); // one rider: waits on the rival pool
         fireEvent.click(view.getByTestId('featured-ride'));
@@ -786,7 +856,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     it('a featured start that is dropped (nobody to race) writes nothing: no ride_featured, no ghost lock, lobby live', async () => {
       mockCtx = soloCtx({}); // nobody on a bike, and the ladder rival's record is gone
       const view = await renderLobby([], { ladder, byId: {} });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
       expect(logSpy.warn).toHaveBeenCalledWith('cycle_game.staged', expect.objectContaining({ error: 'no_riders' }));
       expect(configLogs()).toEqual([]);
@@ -799,7 +869,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     it('starts at once without the ladder rival when its record cannot be had, with the pace rival from loaded history only', async () => {
       const mine = raceRecord('20260101110000', { user_1: { timeS: 300 } });
       const view = await renderLobby([mine], { ladder, byId: {}, pool: poolOf(raceRecord(OLD_RACE, { user_1: { timeS: 100 } })) });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
       const [cfg] = configLogs();
       expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1', 'ghost:20260101110000:user_1']);
@@ -817,7 +887,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     it('a ladder rival whose record has nothing to replay counts as a failed lookup', async () => {
       const empty = raceRecord(RIVAL_RACE, { user_2: { timeS: 250, noSeries: true } });
       const view = await renderLobby([], { ladder, byId: recordsById(empty) });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
       expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'record', reason: 'error', error: 'record not replayable' })]);
       expect(configLogs()[0]).toMatchObject({ rivalKind: 'par' });
@@ -827,7 +897,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     it("the ladder leader's personal best failing is a failed lookup at the personal-best stage", async () => {
       const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
       const view = await renderLobby([], { ladder: lead, byId, pb: () => Promise.resolve({ ok: false, status: 500 }) });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
       expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'personal-best', reason: 'error', error: 'personal-bests 500' })]);
       expect(recordCalls()).toEqual([]);
@@ -839,7 +909,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       const boom = new Error('boom');
       logSpy.info.mockImplementation((event) => { if (event === 'cycle_game.config') throw boom; });
       try {
-        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await flush();
       } finally {
         logSpy.info.mockImplementation(() => {});
@@ -853,7 +923,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     it('aborts its fetch and starts nothing if the game is closed while it waits', async () => {
       const slow = deferred();
       const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: () => slow.promise } });
-      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush(2);
       const { signal } = recordCalls()[0][1];
       expect(signal.aborted).toBe(false);
@@ -876,8 +946,8 @@ describe('CycleGameContainer — automatic pace rival', () => {
       it('Start (lookup pending) then "Ride it": one race, the field from the first press, lobby ghost untouched', async () => {
         const view = await renderLobby([], { ladder, byId, pool: never });
         act(() => { fireEvent.click(view.getByTestId('course-time')); });
-        act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
-        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await flush();
         await act(async () => { vi.advanceTimersByTime(1500); });
         await flush();
@@ -894,7 +964,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         const mine = raceRecord('20260101110000', { user_1: { timeS: 300 } });
         const hung = deferred();
         const view = await renderLobby([mine], { ladder, byId: { [RIVAL_RACE]: () => hung.promise }, pool: never });
-        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         expect(isFrozen(view)).toBe(true);
         expect(view.getByTestId('cycle-game-start').textContent).toContain('Starting…');
         expect(view.getByTestId('featured-ride').disabled).toBe(true);
@@ -925,7 +995,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
         const hung = deferred();
         const view = await renderLobby([], { ladder: lead, byId, pb: () => hung.promise });
-        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await act(async () => { vi.advanceTimersByTime(1500); });
         await flush();
         expect(configLogs()).toHaveLength(1);
@@ -941,7 +1011,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
         // The leader has no personal best on record (answered after 1000 ms); the rival pool never answers.
         const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
         const view = await renderLobby([], { ladder: lead, byId, pb: after(1000, { ok: true, json: () => Promise.resolve({ best: null }) }), pool: never });
-        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await act(async () => { vi.advanceTimersByTime(1000); });
         await flush();
         expect(configLogs()).toEqual([]);
@@ -959,7 +1029,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
       it('a rival record that fails after 1000 ms starts the race then, with no pace-rival lookup', async () => {
         const view = await renderLobby([], { ladder, byId: { [RIVAL_RACE]: after(1000, { ok: false, status: 404 }) }, pool: never });
-        act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
         await act(async () => { vi.advanceTimersByTime(999); });
         await flush();
         expect(configLogs()).toEqual([]);
@@ -998,6 +1068,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
 
     it('a start that is waiting on its rival lookup reports that it was accepted', async () => {
       const view = await renderLobby([], { pool: never });
+      optInRival(view);
       let accepted;
       act(() => { accepted = window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 }); });
       expect(accepted).toBe(true);
@@ -1006,7 +1077,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     });
 
     it('a second start arriving while one is waiting on its lookup is refused', async () => {
-      await renderLobby([], { pool: never });
+      optInRival(await renderLobby([], { pool: never }));
       let first;
       let second;
       act(() => {
@@ -1045,7 +1116,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(stagedLogs()).toHaveLength(1);
       expect(logsOf('info', 'cycle_game.cancelled')).toHaveLength(1);
       expect(view.getByTestId('cycle-game-home')).toBeTruthy();
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       expect(ignoredLogs()).toEqual([]);
       expect(stagedLogs()).toHaveLength(2);
       expect(view.getByTestId('countdown-stoplight')).toBeTruthy();
@@ -1070,7 +1141,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(view.getByTestId('cycle-game-home')).toBeTruthy();
       expect(stagedLogs()).toEqual([]);
       // The lobby still starts a race, and it is saved under its own id (no stale meta).
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       expect(stagedLogs()).toHaveLength(1);
       expect(window.__cycleGameControl.getRaceState()).not.toBeNull();
       discardRace(view);
@@ -1087,7 +1158,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       mockCtx = soloCtx(claims);
       const view = await renderLobby([], { pool: never });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       // Written to the session outside React (hardware rider-select, the simulator).
       claims.cycle_ace = 'user_2';
       claims.tricycle = 'user_1';
@@ -1109,7 +1180,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       mockCtx.fitnessSessionInstance.getEquipmentCadence = (id) => ({ rpm: id === 'cycle_ace' ? 77 : 0, connected: true });
       const view = await renderLobby([], { pool: never });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       await act(async () => { vi.advanceTimersByTime(1500); });
       await flush();
       expect(view.getByTestId('cycle-game-staging')).toBeTruthy();
@@ -1128,7 +1199,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 80, connected: true });
       const view = await renderLobby([], { pool: never });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       await act(async () => { vi.advanceTimersByTime(1500); });
       await flush();
       expect(view.getByTestId('cycle-game-staging')).toBeTruthy();
@@ -1148,7 +1219,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
       mockCtx.fitnessSessionInstance.getEquipmentCadence = () => ({ rpm: 0, connected: false });
       const view = await renderLobby([], { pool: never });
       act(() => { fireEvent.click(view.getByTestId('course-distance')); });
-      act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+      optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
       // The lobby's sensor check warns first; start anyway.
       act(() => { fireEvent.click(view.getByTestId('sensor-warning-start')); });
       await act(async () => { vi.advanceTimersByTime(1500); });
@@ -1249,7 +1320,7 @@ describe('CycleGameContainer — automatic pace rival', () => {
     expect(view.queryByTestId('ghost-slot-ghost:20260101100000:user_1')).toBeNull();
     expect(view.getByTestId('cgh-value')).toBeTruthy();
     // Start again without touching the race type (selecting one clears a ghost).
-    act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
+    optInRival(view); act(() => { fireEvent.click(view.getByTestId('cycle-game-start')); });
     await flush();
     const presses = logsOf('info', 'cycle_game.start_pressed');
     expect(presses).toHaveLength(2);
