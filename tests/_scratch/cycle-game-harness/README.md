@@ -26,3 +26,9 @@ Stop the server when done (`lsof -i :5199` should print nothing).
 
 Scene fixtures live in `scenes.jsx`. A scene is ready when `<body>` gets
 `data-harness-ready`.
+
+`VIEWPORT=1810x1040` forces one size for every shot (the script otherwise also
+shoots the solo race scenes and `results-six-riders` at 1810x1040 as
+`<scene>@kiosk.png`). `tests/_scratch/out/cycle-game/metrics.json` holds
+per-scene layout metrics (gauge vs zone, clipped dial labels, smallest text,
+overlaps, results button boxes).

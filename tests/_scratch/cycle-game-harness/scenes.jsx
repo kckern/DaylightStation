@@ -9,7 +9,6 @@ import CycleRaceScreen from '../../../__app_modules/wellness/fitness/browser/wid
 import RaceMenu from '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/RaceMenu.jsx';
 import CycleEventToast from '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/CycleEventToast.jsx';
 import RaceResults from '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/RaceResults.jsx';
-import PaceDeltaPanel from '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/panels/PaceDeltaPanel.jsx';
 import '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/CycleGameContainer.scss';
 
 void W;
@@ -57,7 +56,7 @@ const HIGH_SCORES = [
 
 const FEATURED = {
   course: { id: 'sprint-1500m', label: 'Sprint 1500', win_condition: 'distance', goal_m: 1500 },
-  week: { start: '2026-06-29', end: '2099-01-01' },
+  week: { start: '2026-06-29', end: new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10) },
   standings: [
     { userId: 'user_1', bestValue: 150, raceId: 'r1', attempts: 2 },
     { userId: 'user_3', bestValue: 190.4, raceId: 'r2', attempts: 1 },
@@ -98,26 +97,96 @@ const rider = (id, name, seriesArr, extra = {}) => ({
 });
 const live = (extra = {}) => ({
   rpm: 84, speedKmh: 24.5, heartRate: 146, zoneId: 'warm', zoneColor: '#f1c40f', zoneProgress: 0.45,
-  multiplier: 1.2, finished: false, placement: 1, isLeader: false, maxRpm: 120, parked: false,
+  finished: false, placement: 1, isLeader: false, maxRpm: 120, parked: false,
   noSensor: false, overtime: false, sensorLost: false, ...extra,
 });
 const withAvatar = (id, o) => ({ avatarSrc: AV(id), ...o });
 
 // ── race fixtures ───────────────────────────────────────────────────────────
-function soloRival() {
-  const t = 128;
-  const ghostId = 'ghost:race-1:user_1';
+const ZONE = {
+  active: { label: 'Active', mult: 1.0, color: '#2ecc71' },
+  warm: { label: 'Warm', mult: 1.2, color: '#f1c40f' },
+  hot: { label: 'Hot', mult: 1.4, color: '#e67e22' },
+  fire: { label: 'Fire', mult: 1.6, color: '#e74c3c' },
+};
+const NEXT = { active: 'warm', warm: 'hot', hot: 'fire', fire: null };
+// Same shape as boostState() returns.
+const boost = (zone, progress) => ({
+  hasStrap: true, label: ZONE[zone].label, mult: ZONE[zone].mult, progress,
+  next: NEXT[zone] ? { label: ZONE[NEXT[zone]].label, mult: ZONE[NEXT[zone]].mult } : null,
+});
+const NO_STRAP = { hasStrap: false, label: 'No heart-rate strap', mult: 0.8, progress: null, next: null };
+const zoneLive = (zone, progress, extra = {}) => ({
+  heartRate: { active: 118, warm: 146, hot: 162, fire: 176 }[zone], zoneId: zone, zoneColor: ZONE[zone].color,
+  zoneProgress: progress, boost: boost(zone, progress), ...extra,
+});
+
+// A rival recording: cumulative metres, one sample per intervalS, from a
+// distance-at-time function. `replayed` is the per-second part already ridden.
+function recording(fn, totalS, intervalS = 5) {
+  const out = [];
+  for (let t = intervalS; t <= totalS + 1e-9; t += intervalS) out.push(Math.round(fn(t) * 10) / 10);
+  return out;
+}
+function ghostRider(id, name, fn, totalS, elapsedS, intervalS = 5) {
+  const replayed = [0];
+  for (let t = 1; t <= elapsedS; t += 1) replayed.push(Math.round(fn(t) * 10) / 10);
   return {
-    winCondition: 'time', goalM: 3000, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS,
-    riders: {
-      user_1: rider('user_1', 'Rider A', series(t, 457)),
-      [ghostId]: rider(ghostId, 'Rider A (best)', series(t, 430, { wobble: 0.2 }), { isGhost: true }),
-    },
+    userId: id, displayName: name, cumulativeDistanceM: replayed[replayed.length - 1], distanceSeries: replayed,
+    finishTimeS: null, isGhost: true, ghostRecordedSeries: recording(fn, totalS, intervalS), ghostIntervalS: intervalS,
+  };
+}
+const ghostLive = (src, extra = {}) => ({
+  rpm: 78, speedKmh: 12.3, avatarSrc: AV(src), heartRate: 141, zoneId: 'warm', zoneColor: ZONE.warm.color,
+  zoneProgress: null, finished: false, placement: 2, isLeader: false, maxRpm: 120, parked: false, noSensor: false,
+  boost: null, ...extra,
+});
+
+function soloTime() {
+  const t = 128;
+  const gid = 'ghost:race-1:user_1';
+  const fn = (x) => 457 * (x / 134); // reaches 457 m at 134 s: 6 s behind the rider
+  return {
+    winCondition: 'time', goalM: 3000, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS, rivalKind: 'self',
+    riders: { user_1: rider('user_1', 'Rider A', series(t, 457)), [gid]: ghostRider(gid, 'Rider A 👻', fn, 300, t) },
     riderLive: {
-      user_1: withAvatar('user_1', live({ rpm: 86, speedKmh: 14.6, heartRate: 146, zoneId: 'warm', multiplier: 1.2, placement: 1, isLeader: true })),
-      [ghostId]: withAvatar('user_1', live({ rpm: 80, speedKmh: 13.4, heartRate: 141, zoneId: 'warm', zoneColor: '#f1c40f', multiplier: 1.2, placement: 2, zoneProgress: null })),
+      user_1: withAvatar('user_1', live({ rpm: 86, speedKmh: 14.6, placement: 1, isLeader: true, ...zoneLive('warm', 0.4) })),
+      [gid]: ghostLive('user_1', { speedKmh: 12.3 }),
     },
   };
+}
+function soloDistanceBehind() {
+  const t = 210;
+  const gid = 'ghost:race-2:user_2';
+  // Reaches 820 m at 201 s (9 s ahead of the rider now), then 680 m more by 400 s.
+  const fn = (x) => (x <= 201 ? 820 * (x / 201) : 820 + (680 * (x - 201)) / 199);
+  const me = rider('user_1', 'Rider A', series(t, 820));
+  return {
+    winCondition: 'distance', goalM: 1500, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS, rivalKind: 'household',
+    riders: { user_1: me, [gid]: ghostRider(gid, 'Rider B 👻', fn, 400, t) },
+    riderLive: {
+      user_1: withAvatar('user_1', live({ rpm: 88, speedKmh: 14.0, placement: 2, ...zoneLive('warm', 0.7) })),
+      [gid]: ghostLive('user_2', { speedKmh: 14.8, placement: 1, isLeader: true }),
+    },
+  };
+}
+function soloParNoStrap() {
+  const t = 90;
+  const gid = 'ghost:par:par';
+  const fn = (x) => 2.4 * x;
+  return {
+    winCondition: 'time', goalM: 3000, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS, rivalKind: 'par',
+    riders: { user_1: rider('user_1', 'Rider A', series(t, 250)), [gid]: ghostRider(gid, 'Par', fn, 300, t) },
+    riderLive: {
+      user_1: withAvatar('user_1', live({ rpm: 74, speedKmh: 12.0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 1, isLeader: true })),
+      [gid]: ghostLive('par', { speedKmh: 8.6, heartRate: null, zoneId: null }),
+    },
+  };
+}
+function soloParked() {
+  const s = soloTime();
+  s.riderLive.user_1 = { ...s.riderLive.user_1, rpm: 0, speedKmh: 0, parked: true };
+  return s;
 }
 function twoOneParked() {
   const t = 180;
@@ -128,8 +197,8 @@ function twoOneParked() {
       user_2: rider('user_2', 'Rider B', series(t, 310, { stopAfter: 70 })),
     },
     riderLive: {
-      user_1: withAvatar('user_1', live({ rpm: 90, speedKmh: 27.8, heartRate: 158, zoneId: 'hot', zoneColor: '#e67e22', multiplier: 1.4, placement: 1, isLeader: true })),
-      user_2: withAvatar('user_2', live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, multiplier: 1, placement: 2, parked: true })),
+      user_1: withAvatar('user_1', live({ rpm: 90, speedKmh: 27.8, placement: 1, isLeader: true, ...zoneLive('hot', 0.5) })),
+      user_2: withAvatar('user_2', live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 2, parked: true })),
     },
   };
 }
@@ -144,25 +213,42 @@ function fourRiders() {
       user_4: rider('user_4', 'Rider D', series(t, 120, { stopAfter: 28 })),
     },
     riderLive: {
-      user_1: withAvatar('user_1', live({ rpm: 92, speedKmh: 28.9, heartRate: 162, zoneId: 'hot', zoneColor: '#e67e22', multiplier: 1.4, placement: 1, isLeader: true })),
-      user_2: withAvatar('user_2', live({ rpm: 88, speedKmh: 26.1, heartRate: 150, zoneId: 'warm', multiplier: 1.2, placement: 2 })),
-      user_3: withAvatar('user_3', live({ rpm: 76, speedKmh: 21.2, heartRate: 128, zoneId: 'active', zoneColor: '#2ecc71', multiplier: 1, placement: 3 })),
-      user_4: withAvatar('user_4', live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, multiplier: 1, placement: 4, parked: true, noSensor: true })),
+      user_1: withAvatar('user_1', live({ rpm: 92, speedKmh: 28.9, placement: 1, isLeader: true, ...zoneLive('hot', 0.6) })),
+      user_2: withAvatar('user_2', live({ rpm: 88, speedKmh: 26.1, placement: 2, ...zoneLive('warm', 0.8) })),
+      user_3: withAvatar('user_3', live({ rpm: 76, speedKmh: 21.2, placement: 3, ...zoneLive('active', 0.3) })),
+      user_4: withAvatar('user_4', live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 4, parked: true, noSensor: true })),
     },
   };
 }
-
 const RaceScreen = (p) => <CycleRaceScreen {...p} />;
 
 // ── results fixtures ────────────────────────────────────────────────────────
 const ENDED_EARLY_NOTE = 'Ended early: saved to history, not counted for records or the ladder.';
+const NAME = (n) => ({ displayName: `Rider ${n}` });
+// Mounted exactly as CycleGameContainer's results branch does (the last `return`
+// in render): RaceResults followed by its own "Back to home" button.
+const ResultsPhase = (props) => (
+  <Container>
+    <RaceResults onExit={noop} {...props} />
+    <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={noop}>
+      Back to home
+    </button>
+  </Container>
+);
 
 // ── staging fixtures ────────────────────────────────────────────────────────
 const STAGING_RIDERS = [
   { id: 'user_1', name: 'Rider A', avatarSrc: AV('user_1'), rpm: 62, sensorLive: true, heartRate: 118, zoneColor: '#2ecc71' },
-  { id: 'user_2', name: 'Rider B', avatarSrc: AV('user_2'), rpm: 0, sensorLive: false },
+  { id: 'user_2', name: 'Rider B', avatarSrc: AV('user_2'), rpm: 0, sensorLive: false, noStrapMultiplier: 0.8 },
   { id: 'ghost:race-1:user_3', name: 'Rider C', avatarSrc: AV('user_3'), isGhost: true },
 ];
+
+const raceScene = (fx, extra = null) => ({ render: () => (
+  <Container><RaceScreen {...fx()} />{extra}<RaceMenu onEnd={noop} onDiscard={noop} /></Container>) });
+const toastScene = (fx, toast) => ({ render: () => (
+  <Container><RaceScreen {...fx()} />
+    <CycleEventToast toast={toast} onDone={noop} durationMs={BIG} />
+    <RaceMenu onEnd={noop} onDiscard={noop} /></Container>) });
 
 export const SCENES = {
   'lobby-default': { render: () => (
@@ -207,44 +293,51 @@ export const SCENES = {
       </div>
       <RaceMenu canEnd={false} onDiscard={noop} />
     </Container>) },
-  'race-solo-rival': { render: () => (<Container><RaceScreen {...soloRival()} /><RaceMenu onEnd={noop} onDiscard={noop} /></Container>) },
-  'race-two-riders-one-parked': { render: () => (<Container><RaceScreen {...twoOneParked()} /><RaceMenu onEnd={noop} onDiscard={noop} /></Container>) },
-  'race-four-riders': { render: () => (<Container><RaceScreen {...fourRiders()} /><RaceMenu onEnd={noop} onDiscard={noop} /></Container>) },
-  'race-menu-open': { render: () => (<Container><RaceScreen {...soloRival()} /><RaceMenu onEnd={noop} onDiscard={noop} /></Container>) },
-  'race-toast-parked': { render: () => (
-    <Container>
-      <RaceScreen {...twoOneParked()} />
-      <CycleEventToast toast={{ id: 1, variant: 'parked', icon: null, title: 'Rider B is parked', subtitle: 'Pedal to rejoin' }} onDone={noop} durationMs={BIG} />
-      <RaceMenu onEnd={noop} onDiscard={noop} />
-    </Container>) },
-  'results-normal': { render: () => (
-    <Container>
-      <RaceResults winCondition="distance" lapLengthM={400} elapsedS={331} secondsLeft={24} onExit={noop}
-        standings={[
-          { userId: 'user_1', placement: 1, finishTimeS: 301, distanceM: 2500 },
-          { userId: 'user_2', placement: 2, finishTimeS: 318, distanceM: 2500 },
-          { userId: 'user_3', placement: 3, finishTimeS: 331, distanceM: 2500 },
-        ]}
-        riders={{ user_1: { displayName: 'Rider A' }, user_2: { displayName: 'Rider B' }, user_3: { displayName: 'Rider C' } }} />
-      <button type="button" className="cycle-game-container__start">Back to home</button>
-    </Container>) },
+  'race-solo-time': raceScene(soloTime),
+  'race-solo-distance-behind': raceScene(soloDistanceBehind),
+  'race-solo-par-no-strap': raceScene(soloParNoStrap),
+  'race-solo-parked': raceScene(soloParked),
+  'race-two-riders-one-parked': raceScene(twoOneParked),
+  'race-four-riders': raceScene(fourRiders),
+  'race-menu-open': raceScene(soloTime),
+  'race-toast-parked': toastScene(twoOneParked, { id: 1, variant: 'parked', icon: null, title: 'Rider B is parked', subtitle: 'Pedal to rejoin' }),
+  'race-toast-boost': toastScene(soloTime, { id: 2, variant: 'boost', icon: null, title: 'Rider A: Hot \u00d71.4' }),
+  'results-solo-new-best': { render: () => (
+    <ResultsPhase winCondition="time" lapLengthM={400} elapsedS={300} secondsLeft={38} onRematch={noop}
+      rivalId="ghost:race-1:user_1" rivalLabel="your best"
+      standings={[
+        { userId: 'user_1', placement: 1, finishTimeS: null, distanceM: 1032 },
+        { userId: 'ghost:race-1:user_1', placement: 2, finishTimeS: null, distanceM: 1010 },
+      ]}
+      riders={{ user_1: NAME('A'), 'ghost:race-1:user_1': { displayName: 'Rider A \u{1F47B}', isGhost: true } }}
+      comparisons={{ user_1: { isBest: true, vsBest: -22, vsLast: -40, better: true } }} />) },
+  'results-three-riders': { render: () => (
+    <ResultsPhase winCondition="distance" lapLengthM={400} elapsedS={331} secondsLeft={38} onRematch={noop}
+      standings={[
+        { userId: 'user_1', placement: 1, finishTimeS: 301, distanceM: 2500 },
+        { userId: 'user_2', placement: 2, finishTimeS: 318, distanceM: 2500 },
+        { userId: 'user_3', placement: 3, finishTimeS: 331, distanceM: 2500 },
+      ]}
+      riders={{ user_1: NAME('A'), user_2: NAME('B'), user_3: NAME('C') }}
+      comparisons={{ user_2: { isBest: false, vsBest: 14, vsLast: -6, better: false } }} />) },
+  'results-six-riders': { render: () => (
+    <ResultsPhase winCondition="distance" lapLengthM={400} elapsedS={420} secondsLeft={38} onRematch={noop}
+      stopped={['user_5']} overtime={['user_6']}
+      standings={[
+        { userId: 'user_1', placement: 1, finishTimeS: 301, distanceM: 2500 },
+        { userId: 'user_2', placement: 2, finishTimeS: 318, distanceM: 2500 },
+        { userId: 'user_3', placement: 3, finishTimeS: 331, distanceM: 2500 },
+        { userId: 'user_4', placement: 4, finishTimeS: 352, distanceM: 2500 },
+        { userId: 'user_5', placement: 5, finishTimeS: null, distanceM: 1410 },
+        { userId: 'user_6', placement: 6, finishTimeS: null, distanceM: 2210 },
+      ]}
+      riders={{ user_1: NAME('A'), user_2: NAME('B'), user_3: NAME('C'), user_4: NAME('D'), user_5: NAME('E'), user_6: NAME('F') }} />) },
   'results-stopped-and-ended-early': { render: () => (
-    <Container>
-      <RaceResults winCondition="time" lapLengthM={400} elapsedS={212} secondsLeft={24} onExit={noop}
-        stopped={['user_2']} ladderNotes={[ENDED_EARLY_NOTE]}
-        standings={[
-          { userId: 'user_1', placement: 1, finishTimeS: null, distanceM: 1480 },
-          { userId: 'user_2', placement: 2, finishTimeS: null, distanceM: 412 },
-        ]}
-        riders={{ user_1: { displayName: 'Rider A' }, user_2: { displayName: 'Rider B' } }} />
-      <button type="button" className="cycle-game-container__start">Back to home</button>
-    </Container>) },
+    <ResultsPhase winCondition="time" lapLengthM={400} elapsedS={212} secondsLeft={38} onRematch={noop}
+      stopped={['user_2']} ladderNotes={[ENDED_EARLY_NOTE]}
+      standings={[
+        { userId: 'user_1', placement: 1, finishTimeS: null, distanceM: 1480 },
+        { userId: 'user_2', placement: 2, finishTimeS: null, distanceM: 412 },
+      ]}
+      riders={{ user_1: NAME('A'), user_2: NAME('B') }} />) },
 };
-
-const paceBox = (props) => ({ render: () => (
-  <div style={{ width: 700, height: 320, border: '1px dashed #445', margin: 40, position: 'relative' }}>
-    <PaceDeltaPanel rivalName="Rider A" rivalKind="self" zoneBox={{ width: 700, height: 320 }} {...props} />
-  </div>) });
-SCENES['pace-delta-ahead'] = paceBox({ delta: { gapM: 22, gapS: 6.2, ahead: true } });
-SCENES['pace-delta-behind'] = paceBox({ delta: { gapM: -31, gapS: -9.1, ahead: false } });
-SCENES['pace-delta-null'] = paceBox({ delta: null });
