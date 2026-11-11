@@ -290,8 +290,16 @@ describe('evaluateEarnings — school kinds', () => {
       sectionDays: sections('scripture', [...scriptureMonFri, ['2026-09-26', 'served']]),
       week,
     });
-    expect(line(done, 'scripture').status).toBe('earned');
+    // Green Week pays Saturday; the weekly Scripture coin counts all seven
+    // days, so with Saturday scripture asked it waits for Sunday.
+    expect(line(done, 'scripture').status).toBe('pending');
     expect(line(done, 'green-week').status).toBe('earned');
+    const sunday = evaluate(rs, {
+      days: days([...monFri, ['2026-09-26', 'met'], ['2026-09-27', 'met']]),
+      sectionDays: sections('scripture', [...scriptureMonFri, ['2026-09-26', 'served'], ['2026-09-27', 'served']]),
+      week,
+    }, { today: '2026-09-27' });
+    expect(line(sunday, 'scripture').status).toBe('earned');
   });
 
   it('a day the grid has not worked out yet: section-day says so, section-week cannot pay on it', () => {

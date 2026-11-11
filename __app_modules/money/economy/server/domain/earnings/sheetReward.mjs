@@ -20,7 +20,8 @@
  *                 nothing). Matched on subject only, as the evaluator does
  *   section-week  the week's price, only when today is the last thing left:
  *                 Friday or later, every earlier day served or excused, today
- *                 obligated, nothing after it, the line still pending.
+ *                 obligated (never a Saturday: Sunday still counts), nothing
+ *                 after it, the line still pending.
  *                 Subject only
  *   day-met, week-met, ring-threshold, ring-contest
  *                 never: they pay for a day, a week or rings, not a sheet
@@ -88,6 +89,9 @@ function sectionWeek(line, week) {
   if (!evidence.filter((e) => e.day < week.today).every((e) => ADDS_UP.has(e.state))) return null;
   const todays = evidence.filter((e) => e.day === week.today);
   if (todays.length !== 1 || todays[0].state !== 'obligated') return null;
+  // A subject owed on Saturday is owed on Sunday too (weekend scripture), and
+  // the weekly coin counts all seven days: a Saturday sheet never finishes it.
+  if (week.today === addDays(monday, 5)) return null;
   return oneMore(line);
 }
 

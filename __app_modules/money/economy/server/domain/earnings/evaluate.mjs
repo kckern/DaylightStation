@@ -81,6 +81,20 @@ function sectionWeek(rule, facts, ctx) {
     return { status: 'pending', count: 0, amount: ZERO, evidence, note: missed.length ? `Still to do: ${todo.join(', ')}` : 'The week is still going' };
   }
   if (missedClosed.length) return { status: 'none', count: 0, amount: ZERO, evidence, note: `Not done: ${missedClosed.map((f) => f.day).join(', ')}` };
+  // ALL SEVEN DAYS COUNT where the subject meets on the weekend (weekend
+  // scripture): a Saturday that asked for it (served or owed) means Sunday
+  // will too, so the coin waits for Sunday instead of paying on Saturday.
+  // A weekend the subject does not meet (excused) pays on Saturday as before.
+  const weekId = facts.week?.weekId ?? ctx.schoolDates?.from ?? null;
+  if (weekId) {
+    const saturday = addDays(weekId, 5);
+    const sunday = addDays(weekId, 6);
+    const weekendAsks = matched.some((f) => (f.day === saturday || f.day === sunday) && f.state !== 'excused');
+    const sundayFact = matched.find((f) => f.day === sunday) ?? null;
+    if (weekendAsks && ctx.isOpen(sunday) && (!sundayFact || sundayFact.state !== 'served')) {
+      return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to do: Sunday' };
+    }
+  }
   if (ctx.unknownDays(rule).length) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'A day is not worked out yet' };
   if (missedOpen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to do today' };
   if (served.length) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
@@ -107,9 +121,16 @@ function dayMet(rule, facts, ctx) {
  */
 function greenWeekProgress(rule, facts, ctx) {
   const from = facts.week?.weekId ?? ctx.schoolDates?.from ?? null;
-  const days = new Set(from ? [0, 1, 2, 3, 4].map((i) => addDays(from, i)).filter((d) => inEffect(rule.effective, d)) : []);
+  // A weekday the household calendar excuses (a stay-home day, a holiday, a
+  // trip) is not a Green Week day, even before the grid has reached it.
+  const excused = new Set(facts.week?.excusedDays ?? []);
+  const days = new Set(from ? [0, 1, 2, 3, 4].map((i) => addDays(from, i))
+    .filter((d) => inEffect(rule.effective, d) && !excused.has(d)) : []);
   for (const d of facts.days) {
     if (!inEffect(rule.effective, d.day)) continue;
+    // `greenWeek: false` — a weekend, or a tier day off — never counts
+    // toward or against the gem.
+    if (d.greenWeek === false) { days.delete(d.day); continue; }
     if (d.state === 'exempt') days.delete(d.day); else days.add(d.day);
   }
   const have = facts.days.filter((d) => days.has(d.day) && d.state === 'met').length;
@@ -127,7 +148,11 @@ function greenWeekProgress(rule, facts, ctx) {
 function weekMet(rule, facts, ctx) {
   const week = facts.week;
   if (!week) return { status: 'indeterminate', count: 0, amount: ZERO, evidence: [], note: 'No week verdict' };
-  const schoolDays = facts.days.filter((d) => inEffect(rule.effective, d.day) && d.state !== 'exempt').sort(byDay);
+  // Green Week is the five weekday school days: a weekend (now a scripture
+  // day for some learners) and a day-off tier day never count toward or
+  // against it (`greenWeek: false`, set by the school evidence adapter).
+  const schoolDays = facts.days.filter((d) => inEffect(rule.effective, d.day) && d.state !== 'exempt'
+    && d.greenWeek !== false).sort(byDay);
   const evidence = [
     ...schoolDays.map((d) => ({ day: d.day, state: d.state, reason: d.reason ?? null })),
     { week: week.weekId, state: week.state, reason: week.reason ?? null },

@@ -310,9 +310,9 @@ defaults. Every write archives the replaced revision under
 |---|---|
 | `unit` | each graded work session matching `match: {subject, courseId, unitId (prefix)}` |
 | `section-day` | each day the subject was served ("a subject pays every day it's done") |
-| `section-week` | the week, once every day the subject was obligated reads served (or `excused: weekly_satisfied`) |
+| `section-week` | the week, once every day the subject was obligated reads served (or `excused: weekly_satisfied`). All seven days count: where the subject meets on the weekend (weekend scripture), a missed Saturday or Sunday loses the coin, and on Saturday payday the line waits for Sunday ("Still to do: Sunday"); a subject excused on the weekend pays Saturday as before |
 | `day-met` | each green day (term grid `met`) |
-| `week-met` | a green week: every study day green AND the weekly row satisfied. Pays from Friday on; a settled (past) day that is not green ends it at once (`none`, "Not green: <day>"), because a past day is judged only on evidence stamped before its window closed, so late work cannot turn it green. Today and later days stay open (`pending`); a past day not yet worked out is `indeterminate` |
+| `week-met` | a green week: every weekday school day green AND the weekly row satisfied. Weekends and [day-off tier](../school/day-off-tiers.md) days (stay-home, enrichment, major-holiday, away) never count toward or against it; a `normal`-tier break counts. Pays from Friday on; a settled (past) day that is not green ends it at once (`none`, "Not green: <day>"), because a past day is judged only on evidence stamped before its window closed, so late work cannot turn it green. Today and later days stay open (`pending`); a past day not yet worked out is `indeterminate` |
 | `ring-threshold` | `rate: {rings, silver}` (silver per whole N rings) plus each threshold crossed |
 | `ring-contest` | most rings in the roster at award-week close; `tie: all\|split\|none` |
 | `ring-days` | once per award week, as soon as at least `min` rings (default 1) land on at least `days` study days (default 5). Counts **final** workouts only, summed per study day by start (4 am boundary); `pending` with `progress: {have, need}` while the award week runs, `none` once it closes short |
@@ -508,11 +508,12 @@ A cell can be `earned` and still carry a `streak` when its row folds two rules
 
 **Green week and debrief week are day-counts.** `week-met` and `debrief-week`
 lines carry `progress` like the other day-counts, so the board draws them as a
-segmented gem in a ring. Green week: one segment per study day Monday to
-Friday inside the rule's dates, plus any other day the term grid has as a study
-day, less every day it marks `exempt` (a holiday drops out once the grid has
-reached it; a future holiday still counts until then); a segment fills when the
-day is `met`. Debrief week: one segment per owed day, less `excused` days; a
+segmented gem in a ring. Green week: one segment per weekday (Monday to
+Friday) inside the rule's dates, less every weekday a day-off tier excuses
+(`week.excusedDays` from the school evidence, future days included, so a
+Thanksgiving Thursday drops out on Monday) and every day the grid marks
+`exempt`; weekend days (`greenWeek: false` on the day facts) never count. A
+segment fills when the day is `met`. Debrief week: one segment per owed day, less `excused` days; a
 segment fills when that day's debrief is `completed` (late counts). Both earn
 only as before (green week also needs the term grid's week row `met` or
 `exempt`), and both go `none` — a blank cell — as soon as a settled day is not
@@ -1230,9 +1231,9 @@ built from `economyApi` (`composition/economyApi.mjs`).
     (another sheet adds nothing), and for an elective, a faulted day or no row
     today.
   - `section-week` (subject only): the week's price only when this sheet
-    finishes the week: Friday or later, the line `pending`, every earlier day
-    served or excused, today obligated, nothing obligated after today, no day
-    unworked.
+    finishes the week: Friday or later (never Saturday, since Sunday still
+    counts), the line `pending`, every earlier day served or excused, today
+    obligated, nothing obligated after today, no day unworked.
   - `unit` (subject, unit-id prefix, course, as `matchesUnit`): the per-unit
     price while the rule's `effective` dates include today. A unit rule keyed
     by `courseId` is null: the sheet does not carry its course.

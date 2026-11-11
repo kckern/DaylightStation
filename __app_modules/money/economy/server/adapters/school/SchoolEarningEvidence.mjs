@@ -3,9 +3,13 @@
  * (`#apps/economy/ports/IEarningEvidenceSource.mjs` — ISchoolEarningEvidence).
  *
  * One learner's school week as facts, in the term grid's own vocabulary:
- *   days         each study day's verdict (met | partial | none | exempt | unknown)
+ *   days         each study day's verdict (met | partial | none | exempt | unknown),
+ *                with `greenWeek`: whether the day counts toward Green Week
+ *                (a weekday the household calendar does not excuse)
  *   sectionDays  each day's per-subject state (served | obligated | excused | faulted)
  *   week         the week row (Monday id), with `open` while the week is under way
+ *                and `excusedDays`: the week's weekdays a day-off tier excuses,
+ *                future ones included
  *   units        the week's graded work sessions, with subject/course from the curriculum
  *
  * Reads only the application services School already has (term verdicts, the
@@ -14,6 +18,7 @@
  * keeps future payout refs stable when it is.
  */
 import { ISchoolEarningEvidence } from "../../application/ports/IEarningEvidenceSource.mjs";
+import { dayOffTier, EXCUSING_TIERS, isoWeekday } from "../../../../../learning/school/server/study-calendar.mjs";
 
 const ON_TIME = 'on-time';
 
@@ -23,6 +28,7 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
   #unitInfo;
   #debriefs;
   #logger;
+  #householdSchedule;
 
   /**
    * @param {object} deps
@@ -31,7 +37,7 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
    * @param {{week: (args: {learnerId: string, week: {from, to}}) => Promise<object[]|null>}} [deps.debriefs] - after-school debrief facts (null = not enrolled)
    * @param {(unitId: string) => Promise<{subject?: string, courseId?: string}|null>} [deps.unitInfo]
    */
-  constructor({ termVerdicts, sessions, unitInfo = null, debriefs = null, logger = console }) {
+  constructor({ termVerdicts, sessions, unitInfo = null, debriefs = null, householdSchedule = null, logger = console }) {
     super();
     if (!termVerdicts?.read) throw new Error('SchoolEarningEvidence requires termVerdicts');
     if (!sessions?.execute) throw new Error('SchoolEarningEvidence requires sessions');
@@ -40,6 +46,14 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
     this.#unitInfo = unitInfo;
     this.#debriefs = debriefs;
     this.#logger = logger;
+    this.#householdSchedule = householdSchedule;
+  }
+
+  /** A weekday no day-off tier excuses: a Green Week day. */
+  #greenWeekDay(day) {
+    if (isoWeekday(day) > 5) return false;
+    const off = this.#householdSchedule ? dayOffTier(day, this.#householdSchedule) : null;
+    return !(off && EXCUSING_TIERS.includes(off.tier));
   }
 
   async schoolWeek({ learnerId, week }) {
@@ -53,12 +67,17 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
       return { sectionDays: [], days: [], week: null, units: [], debriefs: [], coverage: 'outside-term' };
     }
     const rows = (term?.days ?? []).filter((d) => inWeek(d.studyDay));
-    const days = rows.map((d) => ({ day: d.studyDay, state: d.state, reason: d.reason ?? null, timeliness: ON_TIME }));
+    const days = rows.map((d) => ({
+      day: d.studyDay, state: d.state, reason: d.reason ?? null, greenWeek: this.#greenWeekDay(d.studyDay), timeliness: ON_TIME,
+    }));
+    const weekdays = [0, 1, 2, 3, 4].map((i) => new Date(Date.parse(`${week.from}T00:00:00.000Z`) + i * 86_400_000)
+      .toISOString().slice(0, 10));
+    const excusedDays = weekdays.filter((day) => !this.#greenWeekDay(day));
     const sectionDays = rows.flatMap((d) => (d.sections ?? []).map((s) => ({
       day: d.studyDay, subject: s.subject, state: s.state, reason: s.reason ?? null, timeliness: ON_TIME,
     })));
     const row = (term?.weeks ?? []).find((w) => w.weekId === week.from) ?? null;
-    const weekFact = row ? { weekId: row.weekId, state: row.state, reason: row.reason ?? null, open: row.open === true } : null;
+    const weekFact = row ? { weekId: row.weekId, state: row.state, reason: row.reason ?? null, open: row.open === true, excusedDays } : null;
     return { sectionDays, days, week: weekFact, units: await this.#units(learnerId, inWeek), debriefs: await this.#debriefRows(learnerId, week), coverage: 'ok' };
   }
 

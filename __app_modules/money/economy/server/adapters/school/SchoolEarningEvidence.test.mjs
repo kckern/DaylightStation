@@ -41,7 +41,21 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
     expect(out.days.map((d) => [d.day, d.state])).toEqual([['2026-09-21', 'met'], ['2026-09-22', 'partial'], ['2026-09-26', 'exempt']]);
     expect(out.sectionDays).toContainEqual({ day: '2026-09-22', subject: 'scripture', state: 'excused', reason: 'weekly_satisfied', timeliness: 'on-time' });
     expect(out.sectionDays.filter((s) => s.subject === 'language').map((s) => s.day)).toEqual(['2026-09-21', '2026-09-22', '2026-09-26']);
-    expect(out.week).toEqual({ weekId: '2026-09-21', state: 'partial', reason: null, open: true });
+    expect(out.week).toEqual({ weekId: '2026-09-21', state: 'partial', reason: null, open: true, excusedDays: [] });
+  });
+
+  it('marks weekend and tier days off out of Green Week, future weekdays included', async () => {
+    const evidence = new SchoolEarningEvidence({
+      termVerdicts: termVerdicts(TERM), sessions: sessions([]), logger: silent,
+      householdSchedule: { except: [
+        { from: '2026-09-22', to: '2026-09-22', label: 'Stay-home day', tier: 'stay-home' },
+        { from: '2026-09-24', to: '2026-09-24', label: 'Named school day', tier: 'normal' },
+        { from: '2026-09-25', to: '2026-09-25', label: 'Trip' },
+      ] },
+    });
+    const out = await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK });
+    expect(out.days.map((d) => [d.day, d.greenWeek])).toEqual([['2026-09-21', true], ['2026-09-22', false], ['2026-09-26', false]]);
+    expect(out.week.excusedDays).toEqual(['2026-09-22', '2026-09-25']);
   });
 
   it('units are the week\'s graded sessions, with subject and course from the curriculum', async () => {

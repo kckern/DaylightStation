@@ -169,10 +169,12 @@ describe('sheetReward', () => {
       const rows = [['2026-09-21', 'served'], ['2026-09-22', 'served'], ['2026-09-25', 'served'], [SATURDAY, satState]];
       return week(rs, { days: days(rows.map(([d]) => [d, 'met'])), sectionDays: sections('scripture', rows) }, { today: SATURDAY });
     };
+    // Saturday with a Saturday obligation still open: the weekly Scripture
+    // coin counts all seven days, so Sunday is still to come — this sheet
+    // does not finish the week, and the line waits rather than paying.
     expect(sat('obligated').lines[0].status).toBe('pending');
-    expect(sheetReward({ week: sat('obligated'), unit, mode: 'live' })).toEqual({ silver: 5, gems: 0 });
-    // Saturday with everything served: the line is earned, not pending — nothing to add.
-    expect(sat('served').lines[0].status).toBe('earned');
+    expect(sheetReward({ week: sat('obligated'), unit, mode: 'live' })).toBeNull();
+    expect(sat('served').lines[0].status).toBe('pending');
     expect(sheetReward({ week: sat('served'), unit, mode: 'live' })).toBeNull();
     // Not pending (a faulted day makes it indeterminate): null even on Friday.
     const faulted = week(rs, {
