@@ -23,6 +23,7 @@ import { effectiveLapLength } from "../../lib/cycleGame/effectiveLapLength.js";
 import { deriveRaceSnapshot } from "../../lib/cycleGame/deriveRaceSnapshot.js";
 import { dramaEventToasts } from "../../lib/cycleGame/dramaEventCopy.js";
 import { boostState, boostRange, formatMultiplier } from "../../lib/cycleGame/boostState.js";
+import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
 import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import CycleGameHome from "./CycleGameHome.jsx";
 import CountdownStoplight from "./CountdownStoplight.jsx";
@@ -438,8 +439,12 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Edge-detection for the sensor-lost telemetry (mirrors prevCadenceRef).
   const prevSensorLostRef = useRef(new Set());
   const eventIdRef = useRef(0);
-  // Single-slot, self-dismissing event toast + a queue for events that pile up.
+  // Single-slot, self-dismissing event toast + a queue for events that pile up
+  // (toastQueue.js: entries `{ toast, atMs }`; stale news is dropped, a newer
+  // toast of the same kind replaces a queued one). The ref mirrors the slot so
+  // showToast decides synchronously, outside a state updater.
   const [eventToast, setEventToast] = useState(null);
+  const eventToastRef = useRef(null);
   const toastQueueRef = useRef([]);
   // Edge-triggered drama events (audit C2 — deriveRaceSnapshot was fully built
   // + tested but never called from the live tick). Chained snapshot-to-
@@ -489,10 +494,47 @@ export default function CycleGameContainer({ onMount } = {}) {
     });
   }, [phase, log]);
 
-  // Pop the finished toast and immediately show the next queued one (if any).
-  const onEventToastDone = useCallback(() => {
-    setEventToast(toastQueueRef.current.shift() || null);
+  // Every toast goes through here: shown now when the slot is free, otherwise
+  // queued. Entries a push or a take leaves out of the queue are logged as
+  // dropped (`replaced` by a newer toast of the same kind, `stale` past
+  // TOAST_MAX_AGE_MS, `resolved` when what it announced is over).
+  const logDropped = useCallback((entries, reason, nowMs) => {
+    entries.forEach((e) => log.debug('cycle_game.event_toast.dropped', {
+      variant: e.toast?.variant ?? null, ageMs: nowMs - e.atMs, reason
+    }));
+  }, [log]);
+  const setSlot = useCallback((toast) => {
+    eventToastRef.current = toast;
+    setEventToast(toast);
   }, []);
+  const showToast = useCallback((toast) => {
+    const id = (eventIdRef.current += 1);
+    const t = { ...toast, id };
+    if (!eventToastRef.current) { setSlot(t); return; }
+    const nowMs = Date.now();
+    const before = toastQueueRef.current;
+    const after = pushToast(before, t, nowMs);
+    logDropped(before.filter((e) => !after.includes(e)), 'replaced', nowMs);
+    toastQueueRef.current = after;
+  }, [setSlot, logDropped]);
+  // Withdraw queued toasts that no longer hold (e.g. a park notice for a rider
+  // who has already resumed). The toast on screen is left to run out.
+  const dropQueuedToasts = useCallback((match) => {
+    const nowMs = Date.now();
+    const gone = toastQueueRef.current.filter((e) => match(e.toast));
+    if (!gone.length) return;
+    toastQueueRef.current = toastQueueRef.current.filter((e) => !gone.includes(e));
+    logDropped(gone, 'resolved', nowMs);
+  }, [logDropped]);
+  // The toast on screen ran out: show the next one that is still fresh.
+  const onEventToastDone = useCallback(() => {
+    const nowMs = Date.now();
+    const before = toastQueueRef.current;
+    const { toast, queue } = nextToast(before, nowMs);
+    logDropped(before.filter((e) => e.toast !== toast && !queue.includes(e)), 'stale', nowMs);
+    toastQueueRef.current = queue;
+    setSlot(toast);
+  }, [setSlot, logDropped]);
 
   // A rider's away toast (single-slot; queue overflow). Parked is calm: they
   // stopped pedalling and come back on their next stroke, so it says how to
@@ -504,16 +546,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   const recordRiderToast = useCallback((type, userId, state) => {
     const rider = state.engineState?.riders?.[userId] || {};
     const displayName = rider.displayName || userId;
-    const id = (eventIdRef.current += 1);
-    const toast = type === 'nosensor'
-      ? { id, variant: 'nosensor', icon: <StopSignIcon />, title: `${displayName} — no sensor`, subtitle: 'Their bike never reported. Check the sensor.' }
-      : { id, variant: 'parked', icon: null, title: `${displayName} is parked`, subtitle: 'Pedal to rejoin' };
-    // Show now if the slot is free, otherwise queue behind the current toast.
-    setEventToast((cur) => {
-      if (cur) { toastQueueRef.current.push(toast); return cur; }
-      return toast;
-    });
-  }, []);
+    // `userId` lets a resume withdraw a park notice that has not been shown yet.
+    showToast(type === 'nosensor'
+      ? { variant: 'nosensor', userId, icon: <StopSignIcon />, title: `${displayName} — no sensor`, subtitle: 'Their bike never reported. Check the sensor.' }
+      : { variant: 'parked', userId, icon: null, title: `${displayName} is parked`, subtitle: 'Pedal to rejoin' });
+  }, [showToast]);
 
   // Race-closed toast: the mercy-kill window (or a forced finish) can cut several
   // stragglers in the SAME tick — one summary toast, not a stack of per-rider
@@ -521,31 +558,20 @@ export default function CycleGameContainer({ onMount } = {}) {
   // failed" (audit game-design #7 — the riders it names are still credited their
   // real distance in the results).
   const recordOvertimeEvent = useCallback((userIds) => {
-    const id = (eventIdRef.current += 1);
     const n = userIds.length;
-    const toast = {
-      id,
+    showToast({
       variant: 'overtime',
       icon: <RaceFlagIcon />,
       title: `Race closed — ${n} rider${n === 1 ? '' : 's'} still riding`
-    };
-    setEventToast((cur) => {
-      if (cur) { toastQueueRef.current.push(toast); return cur; }
-      return toast;
     });
-  }, []);
+  }, [showToast]);
 
   // Boost toast: a live rider's heart-rate zone went UP, so each stroke now
   // counts for more. One positive toast; a downward change raises nothing.
   const recordBoostToast = useCallback((displayName, zoneId) => {
     const b = boostState({ zoneId, zones: zonesRef.current, hrlessMultiplier: hrlessMultiplierRef.current });
-    const id = (eventIdRef.current += 1);
-    const toast = { id, variant: 'boost', icon: <SpeedIcon />, title: `${displayName}: ${b.label} ×${formatMultiplier(b.mult)}` };
-    setEventToast((cur) => {
-      if (cur) { toastQueueRef.current.push(toast); return cur; }
-      return toast;
-    });
-  }, []);
+    showToast({ variant: 'boost', icon: <SpeedIcon />, title: `${displayName}: ${b.label} ×${formatMultiplier(b.mult)}` });
+  }, [showToast]);
 
   // Drama-event ceremony copy (audit C2 — "the highest fun-per-line fix in
   // the codebase"): the event→copy mapping is pure (dramaEventCopy.js,
@@ -562,14 +588,9 @@ export default function CycleGameContainer({ onMount } = {}) {
       elapsedS: event.firedAtClock ?? null
     });
     dramaEventToasts(event, snapshot, riders).forEach((t) => {
-      const id = (eventIdRef.current += 1);
-      const toast = { id, icon: DRAMA_ICON[t.variant] || null, ...t };
-      setEventToast((cur) => {
-        if (cur) { toastQueueRef.current.push(toast); return cur; }
-        return toast;
-      });
+      showToast({ icon: DRAMA_ICON[t.variant] || null, ...t });
     });
-  }, [log]);
+  }, [log, showToast]);
 
   // People to choose from on the home screen: the registered users, mapped to
   // the avatar/HR shape the lobby renders. Users with an active heart rate are
@@ -948,7 +969,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     tickCountRef.current = 0;
     setSaveFailed(false);
     setLadderNotes([]);
-    setEventToast(null);
+    setSlot(null);
     toastQueueRef.current = [];
 
     const controller = new CycleRaceController(cfg);
@@ -1010,7 +1031,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // as left right now, so a second start in this same tick is refused. (Last,
     // so a throw above leaves the lobby startable.)
     phaseRef.current = 'launching';
-  }, [stagingBufferMs, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, raceMercyAfterWinnerS, applySnapshot, log]);
+  }, [stagingBufferMs, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, raceMercyAfterWinnerS, applySnapshot, setSlot, log]);
 
   // Back to the lobby with no race in hand. phaseRef is set here as well as by
   // the [phase] effect: when a launch and this run in one batch the phase state
@@ -1509,6 +1530,8 @@ export default function CycleGameContainer({ onMount } = {}) {
         if (parkedSet.has(userId)) return;
         const parkedAtS = prevParkedRef.current.get(userId);
         prevParkedRef.current.delete(userId);
+        // Back before their park notice reached the screen: it no longer holds.
+        dropQueuedToasts((t) => t.variant === 'parked' && t.userId === userId);
         log.info('cycle_game.rider_resumed', {
           raceId: raceMetaRef.current?.raceId,
           userId,
@@ -1712,7 +1735,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
     // interval is set up ONCE for the whole go→racing span and never starved by
     // context churn or torn down by the go→racing phase edge.
-  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent]);
+  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent, dropQueuedToasts]);
 
   // ── pagehide best-effort save (audit C1) ─────────────────────────────────
   // A reload/crash may not give the periodic checkpoint a chance to run again
@@ -2329,7 +2352,7 @@ export default function CycleGameContainer({ onMount } = {}) {
             goalM: engineState.goalM ?? raceMetaRef.current?.goalM ?? null
           })}
         />
-        <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
+        <CycleEventToast toast={eventToast} onDone={onEventToastDone} durationMs={toastDurationMs(eventToast?.variant)} />
         <RaceMenu onEnd={onFinishRace} onDiscard={onCancel} />
       </div>
     );

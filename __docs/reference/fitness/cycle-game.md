@@ -799,9 +799,26 @@ riders; a 7th+ reuses a hue.
 ## 11. Officiating events
 
 The tick diffs the controller's sets each second and raises edge events. Toasts
-go through **`CycleEventToast`** — a single-slot, non-blocking toast
-auto-dismissing after ~4 s (or on click); extra events queue and it **never
-pauses the race**.
+go through **`CycleEventToast`** — a single-slot, non-blocking toast that
+auto-dismisses (or goes on click) and **never pauses the race**.
+
+**Toasts never arrive late.** Every push goes through one container callback,
+`showToast`, over the pure queue in `lib/cycleGame/toastQueue.js`:
+
+- A free slot shows the toast at once; otherwise it is queued with the time it
+  was raised.
+- A newer toast of the same variant **replaces** a queued one (ten lead
+  changes in a burst show the first and then only the latest).
+- When the slot frees, a queued toast older than `TOAST_MAX_AGE_MS` (6 s) is
+  **dropped**, never shown late.
+- Milestones (`TOAST_KEEP_VARIANTS`: `finished`, `photo-finish`, `overtime`,
+  `nosensor`, `final-lap`) are kept however long they waited, are never
+  replaced, and stay up 4 s (`toastDurationMs`); everything else stays up 3 s.
+- `parked` is not a milestone: a park notice that arrives late may be wrong.
+  When a rider resumes, any park notice for them still in the queue is
+  withdrawn (the one already on screen runs out).
+- Every drop logs `cycle_game.event_toast.dropped` (DEBUG, `{ variant, ageMs,
+  reason }`, reason `stale` | `replaced` | `resolved`).
 
 | Edge | Toast (variant) | Log |
 |---|---|---|
@@ -1299,6 +1316,10 @@ by `raceId` (+ `elapsedS` where relevant).
 - **`cycle_game.drama_event`** (DEBUG) — every edge `deriveRaceSnapshot` fires
   (`LEAD_CHANGE`, `RIDER_FINISHED`, `PHOTO_FINISH`, `FINAL_LAP`,
   `LAPPING_IMMINENT`): `{ raceId, type, riderIds, elapsedS }`.
+- **`cycle_game.event_toast.dropped`** (DEBUG) — a queued toast that was
+  never shown: `{ variant, ageMs, reason }`; `reason` is `stale` (waited past
+  6 s), `replaced` (a newer toast of the same variant) or `resolved` (a park
+  notice for a rider who resumed first). See §11.
 - **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
   and will be saved as incomplete: `{ raceId, elapsedS, control: 'race-menu.end' }`.
   It replaces `cycle_game.finish_forced`, which is no longer emitted.
