@@ -19,6 +19,9 @@ function riderMetric(candidate, p) {
     ? formatDistance(p.finalDistanceM || 0)
     : fmtClock(p.finalTimeS);
 }
+// Avatars a card shows before collapsing the rest into a "+N" chip (the row
+// never wraps and must leave room for the time and the race-type pill).
+export const GHOST_CARD_MAX_AVATARS = 4;
 import { useEscapeToClose } from "./useEscapeToClose.js";
 import { uiLog } from "./uiLog.js";
 import "./picker.scss";
@@ -121,7 +124,7 @@ export function GhostPicker({ candidates = [], currentGhost = null, onSelect, on
                       >
                         <span className="cgh-ghost-card__time">{c.timeOfDay}</span>
                         <span className="cgh-ghost-card__riders">
-                          {riders.slice(0, 6).map((p, idx) => (
+                          {riders.slice(0, GHOST_CARD_MAX_AVATARS).map((p, idx) => (
                             <span
                               key={p.id}
                               className="cgh-ghost-card__rider"
@@ -140,8 +143,8 @@ export function GhostPicker({ candidates = [], currentGhost = null, onSelect, on
                               </span>
                             </span>
                           ))}
-                          {riders.length > 6 && (
-                            <span className="cgh-ghost-card__more">+{riders.length - 6}</span>
+                          {riders.length > GHOST_CARD_MAX_AVATARS && (
+                            <span className="cgh-ghost-card__more" data-testid="ghost-more">+{riders.length - GHOST_CARD_MAX_AVATARS}</span>
                           )}
                         </span>
                         <span className={`cgh-ghost-card__type cgh-ghost-card__type--${c.winCondition === 'time' ? 'time' : 'dist'}`}>

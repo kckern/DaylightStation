@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/react';
-import { GhostPicker } from "./GhostPicker.jsx";
+import { GhostPicker, GHOST_CARD_MAX_AVATARS } from "./GhostPicker.jsx";
 
 const soloRace = {
   raceId: 'R1',
@@ -48,5 +48,29 @@ describe('GhostPicker single-rider skip', () => {
     fireEvent.click(card); // focus
     fireEvent.click(card); // second click — should open roster, NOT call onSelect
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe('GhostPicker six-rider race', () => {
+  const six = {
+    raceId: 'R6', day: '2026-06-06', timeOfDay: '10:00', goalLabel: 'Six race', winCondition: 'distance',
+    participants: [1, 2, 3, 4, 5, 6].map((n) => ({ id: `user_${n}`, displayName: `Rider ${n}`, isGhost: false, avatarSrc: '', finalTimeS: 600 + n }))
+  };
+
+  it('shows the first avatars plus a +N chip for the rest', () => {
+    cleanup();
+    const { getByTestId } = render(<GhostPicker candidates={[six]} onSelect={() => {}} onClear={() => {}} onClose={() => {}} />);
+    const card = getByTestId('ghost-R6');
+    expect(card.querySelectorAll('.cgh-ghost-card__avatar')).toHaveLength(GHOST_CARD_MAX_AVATARS);
+    expect(getByTestId('ghost-more').textContent).toBe(`+${6 - GHOST_CARD_MAX_AVATARS}`);
+  });
+
+  it('lists all six riders in the roster', () => {
+    cleanup();
+    const { getByTestId, getAllByTestId } = render(<GhostPicker candidates={[six]} onSelect={() => {}} onClear={() => {}} onClose={() => {}} />);
+    const card = getByTestId('ghost-R6');
+    fireEvent.click(card);
+    fireEvent.click(card);
+    expect(getAllByTestId('ghost-roster-item')).toHaveLength(6);
   });
 });

@@ -295,7 +295,17 @@ const TWO_BIKES = [
 const lobbyModal = (extra = {}) => ({ render: () => (
   <Container><CycleGameHome {...homeBase} ghostCandidates={GHOST_CANDIDATES} bikes={TWO_BIKES} {...extra} /></Container>) });
 
+// A past race with six riders (the widest card the picker has to fit).
+const SIX_NAMES = ['A', 'B', 'C', 'D', 'E', 'F'];
+const SIX_RACE = {
+  raceId: 'R6', day: '2026-06-06', timeOfDay: '10:15', winCondition: 'distance', goalLabel: 'Race',
+  participants: SIX_NAMES.map((n, i) => ({ id: `user_${i + 1}`, displayName: `Rider ${n}`, isGhost: false, avatarSrc: AV(`user_${i + 1}`), finalDistanceM: 3000 - i * 240, finalTimeS: 600 + i * 40 })),
+};
+const lobbySix = () => lobbyModal({ ghostCandidates: [...GHOST_CANDIDATES, SIX_RACE] });
+
 export const SCENES = {
+  'lobby-ghost-picker-six': lobbySix(),
+  'lobby-ghost-roster-six': lobbySix(),
   'lobby-rider-picker': lobbyModal(),
   'lobby-ghost-picker': lobbyModal(),
   'lobby-ghost-roster': lobbyModal(),
