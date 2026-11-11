@@ -18,6 +18,10 @@ export function useChessInputController({
   onSquare,
   onTakeback,
   onRestart,
+  // Returns true when something else owns the octave right now (the resign
+  // sheet's "keep playing"), so it neither cancels a selection nor arms a
+  // takeback behind the question.
+  interceptEscape = null,
   logger,
   doubleWindowMs,
   cursorTickMs,
@@ -34,6 +38,8 @@ export function useChessInputController({
   liveSchemeRef.current = liveScheme;
   const legalMapRef = useRef({ fen: game.game.fen, map: legalMap });
   legalMapRef.current = { fen: game.game.fen, map: legalMap };
+  const interceptEscapeRef = useRef(interceptEscape);
+  interceptEscapeRef.current = interceptEscape;
   const armedAtRef = useRef(armedAt);
   armedAtRef.current = armedAt;
   const anyNotesHeld = heldNotes.length > 0;
@@ -85,7 +91,9 @@ export function useChessInputController({
         setCursor(null);
         const current = gameRef.current;
         const at = Date.now();
-        if (current.status?.game_over) {
+        if (interceptEscapeRef.current?.()) {
+          setArmedAt(0);
+        } else if (current.status?.game_over) {
           onRestart();
         } else if (current.origin) {
           cancelSelection();

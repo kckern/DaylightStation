@@ -103,4 +103,41 @@ describe('useChessAddressingProgress', () => {
     rerender({ game: { ...baseGame, history: [] }, gameId: 'game-2', logger });
     expect(record).not.toHaveBeenCalled();
   });
+  it('a resumed game landing on the board is a restore, not a hundred fresh addresses', () => {
+    // chess-1794439407456, 2026-11-11: the board mounted empty, the resumed
+    // 199-ply game arrived in one render, and every one of the player's ~100
+    // historical moves was recorded as a fresh, instant, correct address. The
+    // ladder promoted five rungs in 40 ms (8 -> 13, `addressing.rung-changed`
+    // x5), re-dealt the board mid-game, and the child's next chords no longer
+    // named anything (`chess.rejected unrecognised_chord` x6).
+    const restored = Array.from({ length: 199 }, (_, index) => ({
+      from: 'a1', to: 'a2', san: `m${index + 1}`, color: index % 2 === 0 ? 'w' : 'b',
+    }));
+    const { rerender } = renderHook(
+      ({ game }) => useChessAddressingProgress({
+        game, gameId: 'game-1', playerColor: 'w', userId: 'learner4', config: {}, client: {}, logger,
+      }),
+      { initialProps: { game: baseGame } },
+    );
+    record.mockClear();
+    logger.info.mockClear();
+
+    rerender({ game: { ...baseGame, history: restored, status: { game_over: false, turn: 'b' }, turn: 'b' } });
+
+    expect(record).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalledWith('chess.move', expect.anything());
+    expect(logger.info).toHaveBeenCalledWith('chess.history-restored', expect.objectContaining({ from: 0, to: 199, gameId: 'game-1' }));
+
+    // ...and the game carries on normally from there.
+    rerender({
+      game: {
+        ...baseGame,
+        history: [...restored, { from: 'b1', to: 'a1', san: 'Ka1', color: 'b' }, { from: 'c5', to: 'd4', san: 'Bd4+', color: 'w' }],
+        status: { game_over: false, turn: 'b' },
+        turn: 'b',
+      },
+    });
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith('chess.move', expect.objectContaining({ san: 'Bd4+', ply: 201 }));
+  });
 });

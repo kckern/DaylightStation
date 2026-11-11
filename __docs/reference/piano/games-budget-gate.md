@@ -12,7 +12,10 @@ for how an attempt is graded.
 
 Completed Chess, Checkers, and Connect Four matches also write an idempotent
 study-day counter at `household/history/piano-board-game-days/{date}.yml`.
-Win, loss, and draw count equally; abandoned games do not. A rematch waits for
+Win, loss, and draw count equally — a draw by any rule (stalemate, insufficient
+material, fifty-move rule, threefold repetition) ends the game and is filed exactly
+like a decisive result. Abandoned games do not count: left, restarted, or resigned
+through Chess's mid-game New game sheet. A rematch waits for
 the completion receipt, preventing the next PianoChallenge from reading a stale
 count. The current value is exposed at
 `GET /api/v1/piano/users/:userId/board-game-day`.

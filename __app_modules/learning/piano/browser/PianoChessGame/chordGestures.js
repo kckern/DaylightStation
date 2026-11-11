@@ -12,7 +12,7 @@ import { isOctave } from './chordCursor.js';
  */
 
 /** How many adjacent semitones each request takes. */
-export const GESTURE_SIZES = Object.freeze({ hint: 3, best: 4, replay: 5 });
+export const GESTURE_SIZES = Object.freeze({ hint: 3, best: 4, replay: 5, newgame: 6 });
 
 /** Distinct pitch classes, ascending. */
 function pitchClasses(notes) {
@@ -50,6 +50,11 @@ export function recognizeGesture(heldNotes) {
   // three and four are — no square's chord voices an unbroken semitone run, so
   // this can never collide with move input.
   if (classes.length === GESTURE_SIZES.replay) return 'replay';
+  // Six adjacent semitones: "I want out of this game". The way out has to be
+  // playable from the keys — a child at the piano may not reach for the screen,
+  // and on 2026-11-11 one sat in a game he could neither win nor leave. Asks
+  // first (see useChessResignControl); never a move, for the same reason.
+  if (classes.length === GESTURE_SIZES.newgame) return 'newgame';
   return null;
 }
 

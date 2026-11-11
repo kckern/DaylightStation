@@ -102,8 +102,8 @@
 }
 
 .chess-result__again {
-  margin-block-start: 0.5rem;
-  padding: 0.55rem 1.6rem;
+  min-height: var(--pg-tap, 3rem);
+  padding: 0.55rem 1rem;
   border: 1px solid var(--chess-result-accent);
   border-radius: var(--r-sm, 8px);
   background: none;
@@ -116,6 +116,40 @@
   &:focus-visible {
     background: color-mix(in srgb, var(--chess-result-accent) 16%, transparent);
   }
+}
+
+.chess-result__actions {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  margin-block-start: 0.5rem;
+}
+
+.chess-result__actions > * {
+  flex: 1 1 0;
+  white-space: nowrap;
+}
+
+/* "Draw — not enough pieces" on ONE line: the reason is part of the verdict,
+   and a verdict that wraps reads as two statements. Sized to the longest
+   reason at the card's width rather than left to wrap. */
+.chess-result--draw .chess-result__headline {
+  font-size: 1.6rem;
+  white-space: nowrap;
+}
+
+/* The way off the card, beside the way into the next game: same size, quieter
+   voice, so "New game" stays the one thing the eye lands on. */
+.chess-result__done {
+  min-height: var(--pg-tap, 3rem);
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-sm, 8px);
+  background: none;
+  color: var(--pc-ivory, #f1f1f4);
+  font: inherit;
+  font-size: var(--t-body, 1rem);
+  cursor: pointer;
 }
 
 .chess-result__hint {

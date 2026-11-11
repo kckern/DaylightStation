@@ -259,7 +259,21 @@ export function useChessAuthority({
     return start({ fresh: true, nextSeed });
   }, [indexKey, start]);
 
-  return { session, ready: Boolean(session), move, takeback, reset, resumeInfo };
+  /**
+   * Close the live session and forget it on this screen, WITHOUT starting
+   * another. For a resign under an armed match gate: the gate remounts the
+   * game, and the remount must not find this session indexed and hand the
+   * resigned board straight back.
+   */
+  const abandon = useCallback(async () => {
+    if (sessionRef.current) {
+      try { await authorityRef.current.close(sessionRef.current.header.session_id); }
+      catch { /* terminal already, or close raced — forgetting it is what matters */ }
+    }
+    localStorage.removeItem(indexKey);
+  }, [indexKey]);
+
+  return { session, ready: Boolean(session), move, takeback, reset, abandon, resumeInfo };
 }
 
 export default useChessAuthority;

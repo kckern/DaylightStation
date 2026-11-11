@@ -1,6 +1,7 @@
 import BoardGameResult from '../game-platform/host/BoardGameResult.jsx';
 import { formatThink } from './chessClock.js';
 import { standingLines } from './chessStandingLines.js';
+import { drawHeadline } from './chessOutcome.js';
 import './ChessResult.scss';
 
 /**
@@ -50,14 +51,23 @@ function Confetti() {
 function outcomeLine(outcome, result, opponentName) {
   if (outcome === 'checkmate') return result === 'win' ? `Checkmate — ${opponentName} is trapped.` : 'Checkmate.';
   if (outcome === 'stalemate') return 'Stalemate — no legal move, and no check.';
-  if (outcome === 'insufficient_material') return 'Neither side has enough left to mate.';
+  if (outcome === 'insufficient_material') return 'Neither side has enough pieces left to checkmate.';
   if (outcome === 'fifty_move_rule') return 'Fifty moves without a capture or a pawn move.';
   if (outcome === 'threefold_repetition') return 'The same position, three times over.';
   return 'Game over.';
 }
 
+/**
+ * A draw says WHY in its headline. "Draw" alone, on a board that still has
+ * pieces on it, reads like the game gave up — the reason is the whole answer
+ * to "why did it stop?".
+ */
+export function resultHeadline(result, outcome) {
+  return result === 'draw' ? drawHeadline(outcome) : null;
+}
+
 export function ChessResult({
-  result, outcome, opponent, level, record, timing = null, ladder = null, speech = null, onPlayAgain,
+  result, outcome, opponent, level, record, timing = null, ladder = null, speech = null, onPlayAgain, onDone = null,
 }) {
   const name = opponent?.name || 'your opponent';
   const promoted = ladder?.promoted === true;
@@ -86,6 +96,9 @@ export function ChessResult({
     metrics={metrics}
     notes={notes}
     onPlayAgain={onPlayAgain}
+    headline={resultHeadline(result, outcome)}
+    playAgainLabel="New game"
+    onDone={onDone}
     classPrefix="chess-result"
     decoration={result === 'win' ? <Confetti /> : null}
   />;

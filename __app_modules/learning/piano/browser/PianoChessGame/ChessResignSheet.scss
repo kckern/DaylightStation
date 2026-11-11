@@ -1,0 +1,54 @@
+/* The resign question, over the board. See ChessResignSheet.jsx. */
+.chess-resign {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.chess-resign__card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(26rem, calc(100% - 2rem));
+  padding: 1.5rem 1.75rem;
+  border: 1px solid var(--piano-border, #34343f);
+  border-block-start: 3px solid var(--pc-brass, #5fe39a);
+  border-radius: var(--r-lg, 16px);
+  background: var(--piano-surface, #1f1f26);
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
+  text-align: center;
+}
+
+.chess-resign__title {
+  margin: 0;
+  font-size: var(--t-display, 2rem);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--pc-ivory, #f1f1f4);
+}
+
+.chess-resign__body {
+  margin: 0;
+  font-size: var(--t-body, 1rem);
+  color: var(--pc-ivory, #f1f1f4);
+  text-wrap: balance;
+}
+
+.chess-resign__actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.chess-resign__actions > * {
+  flex: 1 1 0;
+}
+
+.chess-resign__keys {
+  margin: 0;
+  font-size: var(--t-cap, 0.85rem);
+  color: var(--pc-ivory-dim, #9a9aa6);
+  text-wrap: balance;
+}

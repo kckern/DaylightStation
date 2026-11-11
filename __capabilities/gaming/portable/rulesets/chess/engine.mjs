@@ -59,7 +59,7 @@ function engineFromFen(fen) {
 }
 
 /** Replays a game record so history-dependent draw rules can see the whole game. */
-function engineFromGame(game) {
+function replayGame(game) {
   const engine = engineFromFen(game?.initial_fen);
   if (!engine) return null;
   for (const san of game?.moves || []) {
@@ -70,6 +70,63 @@ function engineFromGame(game) {
     }
   }
   return engine;
+}
+
+/**
+ * REPLAYED ENGINES, KEPT FOR THE NEXT CALL.
+ *
+ * The game layer re-plays the whole move list on every question, because a
+ * record is plain data and chess.js is not. That is O(n) per call, and the
+ * callers are themselves loops: the board's commit asks twice per ply, the
+ * kernel's journal replay asks for every revision, and the piano board's
+ * projection of the authority's state asked for every prefix of the game.
+ * At ply 200 (chess-1794439407456, 2026-11-11) that was ~10 s per board
+ * update on the server and 30–66 s long tasks on the kiosk tablet — the
+ * board froze after every move, the opponent's 8 s timeout fired from inside
+ * the freeze, and the child left a game he could not move in.
+ *
+ * Calls arrive in game order, so the engine that answered for a record is
+ * exactly the engine the NEXT move needs. It is cached under the record's
+ * content (records are cloned freely — structuredClone in the kernel, spreads
+ * in React state — so identity would never hit), handed out for read-only
+ * questions, and TAKEN (removed) by the one caller that mutates it, which puts
+ * it back under the new record's key. A miss replays from scratch, so the
+ * cache can only ever make an answer faster, never different.
+ */
+const REPLAY_CACHE_LIMIT = 8;
+const replayCache = new Map();
+
+function gameKey(game) {
+  if (typeof game?.initial_fen !== 'string' || !Array.isArray(game?.moves)) return null;
+  return `${game.initial_fen}\n${game.moves.join(' ')}`;
+}
+
+function rememberEngine(key, engine) {
+  if (!key || !engine) return;
+  replayCache.delete(key);
+  replayCache.set(key, engine);
+  while (replayCache.size > REPLAY_CACHE_LIMIT) replayCache.delete(replayCache.keys().next().value);
+}
+
+/** An engine for reading only. Never mutate it: it may be shared. */
+function engineFromGame(game) {
+  const key = gameKey(game);
+  const cached = key ? replayCache.get(key) : null;
+  if (cached) return cached;
+  const engine = replayGame(game);
+  rememberEngine(key, engine);
+  return engine;
+}
+
+/** An engine the caller owns and may mutate; it leaves the cache. */
+function takeEngineForGame(game) {
+  const key = gameKey(game);
+  const cached = key ? replayCache.get(key) : null;
+  if (cached) {
+    replayCache.delete(key);
+    return cached;
+  }
+  return replayGame(game);
 }
 
 export function isValidFen(fen) {
@@ -170,21 +227,21 @@ export function createGame({ fen = INITIAL_FEN } = {}) {
 
 /** Applies one move to a game record, preserving history for repetition rules. */
 export function playMove(game, move) {
-  const engine = engineFromGame(game);
-  if (!engine) return { game, move: null, error: gamingError('invalid_game', 'Game record could not be replayed') };
   const normalized = normalizeMove(move);
   if (!normalized) return { game, move: null, error: gamingError('invalid_move_input', 'Move must be SAN or { from, to }') };
+  const engine = takeEngineForGame(game);
+  if (!engine) return { game, move: null, error: gamingError('invalid_game', 'Game record could not be replayed') };
   let played;
   try {
     played = engine.move(normalized);
   } catch {
+    // chess.js refuses before it mutates, so the engine still answers for `game`.
+    rememberEngine(gameKey(game), engine);
     return { game, move: null, error: gamingError('illegal_move', 'Move is not legal in this position', { move: normalized }) };
   }
-  return {
-    game: { initial_fen: game.initial_fen, fen: engine.fen(), moves: [...game.moves, played.san] },
-    move: serializeMove(played),
-    error: null,
-  };
+  const next = { initial_fen: game.initial_fen, fen: engine.fen(), moves: [...game.moves, played.san] };
+  rememberEngine(gameKey(next), engine);
+  return { game: next, move: serializeMove(played), error: null };
 }
 
 /** Full status including threefold repetition, which needs the move history. */
@@ -204,7 +261,8 @@ export function undoMove(game) {
 }
 
 export function gameToPgn(game, headers = {}) {
-  const engine = engineFromGame(game);
+  // Headers mutate the engine, so this one is never the shared cached copy.
+  const engine = replayGame(game);
   if (!engine) return null;
   for (const [key, value] of Object.entries(headers)) engine.setHeader(key, String(value));
   return engine.pgn();

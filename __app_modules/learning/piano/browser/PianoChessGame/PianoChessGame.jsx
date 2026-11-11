@@ -58,6 +58,9 @@ import { useChessSessionIdentity } from './useChessSessionIdentity.js';
 import { useChessSessionResources } from './useChessSessionResources.js';
 import { useChessHelpController } from './useChessHelpController.js';
 import { useChessInputController } from './useChessInputController.js';
+import { useChessResignControl } from './useChessResignControl.js';
+import { useSettledGesture } from './useSettledGesture.js';
+import ChessResignSheet from './ChessResignSheet.jsx';
 import './PianoChessGame.scss';
 
 import {
@@ -146,6 +149,9 @@ export function PianoChessGame({
   // Starting position override. A test seam like `seed`: the game-record test
   // needs a mate-in-one board, and production callers never pass it.
   fen = null,
+  // The host's "leave this game" (Games.jsx / PianoVisualizer pass it). The
+  // result card's Done button calls it; absent, the card offers New game only.
+  onDeactivate = null,
 }) {
   const {
     lockedUser,
@@ -165,6 +171,7 @@ export function PianoChessGame({
     move: commitChessMove,
     takeback: commitChessTakeback,
     reset: resetChessAuthority,
+    abandon: abandonChessAuthority,
   } = useChessAuthority({
     userId: authorityUserId, initialFen: fen ?? INITIAL_FEN, seed: gameSeed, playerColor,
   });
@@ -528,8 +535,12 @@ export function PianoChessGame({
     playCue(last?.captured ? 'capture' : 'move');
   }, []);
 
+  // Read through a ref: the resign sheet is declared further down, and while it
+  // is up a chord is an answer to its question, never a move.
+  const resignOpenRef = useRef(false);
   const handleSquare = useCallback((square) => {
     if (!chessAuthorityReady) return;
+    if (resignOpenRef.current) return;
     // The clock reads move timestamps rather than running its own counter, so
     // "now" is stamped at the moment the move lands and everything downstream —
     // the clock face, the archived think times, the post-game timing analysis —
@@ -630,6 +641,7 @@ export function PianoChessGame({
     finishedRecord,
     ladderOutcome,
     endTiming,
+    archiveResignedGame,
   } = useChessPersistenceLifecycle({
     game,
     gameId,
@@ -710,6 +722,41 @@ export function PianoChessGame({
     logger().info('restarted');
   }, [addressingPolicy, beginNextGame, fen, playerColor, projectAuthority, resetChessAuthority, resetHelp, resetOpponent, scheme, shuffleEachTurnProp]);
 
+  /**
+   * Give this game up and start another.
+   *
+   * Filed as `resigned` FIRST, while the outgoing game is still the live one —
+   * the server closes a resigned game for good, so it can never be handed back
+   * on the next launch the way a game that was merely left is. Then the same
+   * boundary every other new game crosses: an armed match gate owns it (and
+   * the screen forgets the resigned session so the gate's remount cannot
+   * resume it); otherwise the board restarts itself.
+   */
+  const resign = useCallback(async (source) => {
+    const current = gameRef.current;
+    if (current.status?.game_over) return;
+    logger().info('chess.game.resigned', { gameId, plies: current.history.length, source });
+    archiveResignedGame();
+    const gate = matchGateRef.current;
+    if (gate?.armed) {
+      try { await abandonChessAuthority(); }
+      catch (error) { logger().warn('authority-abandon-failed', { error: error.message }); }
+      gate.requestRematch();
+      return;
+    }
+    await restart();
+  }, [abandonChessAuthority, archiveResignedGame, gameId, restart]);
+
+  // A DRAW IS SAID OUT LOUD, once per game: which rule ended it is the first
+  // question about a board that still has pieces on it.
+  const drawLoggedRef = useRef(null);
+  useEffect(() => {
+    const status = game.status;
+    if (!status?.game_over || status.outcome === 'checkmate' || drawLoggedRef.current === gameId) return;
+    drawLoggedRef.current = gameId;
+    logger().info('chess.game.draw', { gameId, reason: status.outcome, plies: game.history.length });
+  }, [game.history.length, game.status, gameId]);
+
   // "Play again" is a button, and the office screen has no finger for it. Any
   // fresh key restarts; the keys still down from the mating move do not count,
   // so the result stays on screen long enough to read.
@@ -774,6 +821,18 @@ export function PianoChessGame({
     });
   }, [addTakeback, commitChessTakeback, helpUsedRef, projectAuthority]);
 
+  const settledGesture = useSettledGesture(gesture);
+  const resignControl = useChessResignControl({
+    gesture: settledGesture,
+    enabled: !game.status?.game_over,
+    onConfirm: resign,
+    logger: logger(),
+    gameId,
+  });
+  resignOpenRef.current = resignControl.open;
+  const cancelResign = resignControl.cancel;
+  const interceptEscape = useCallback(() => cancelResign('keys'), [cancelResign]);
+
   const { cursor, armed, takebackArmed } = useChessInputController({
     gameId,
     game,
@@ -785,6 +844,7 @@ export function PianoChessGame({
     onSquare: handleSquare,
     onTakeback: attemptTakeback,
     onRestart: restart,
+    interceptEscape,
     logger: logger(),
     doubleWindowMs: DOUBLE_WINDOW_MS,
     cursorTickMs: CURSOR_TICK_MS,
@@ -1006,6 +1066,18 @@ export function PianoChessGame({
                   Play again
                 </GameButton>
               )}
+              {/* THE WAY OUT OF A GAME IN PROGRESS. Always on screen while a
+                  game is live, and it only ever ASKS — see ChessResignSheet. */}
+              {!game.status?.game_over && (
+                <GameButton
+                  variant="ghost"
+                  className="piano-chess__resign"
+                  onClick={() => resignControl.show('touch')}
+                  aria-haspopup="dialog"
+                >
+                  New game
+                </GameButton>
+              )}
               {settingsTrigger}
             </>
           )}
@@ -1160,6 +1232,14 @@ export function PianoChessGame({
                 }),
                 active: takebackArmed,
                 muted: !takebackCheck.allowed,
+              },
+              {
+                id: 'newgame',
+                pressed: [0, 1, 2, 3, 4, 5],
+                title: 'New game',
+                note: 'asks first',
+                active: resignControl.open,
+                muted: !!game.status?.game_over,
               },
             ]}
           />
@@ -1373,7 +1453,13 @@ export function PianoChessGame({
         />
       ) : null}
 
-      result={game.status?.game_over && finishedRecord ? (
+      result={resignControl.open && !game.status?.game_over ? (
+        <ChessResignSheet
+          plies={game.history.length}
+          onConfirm={() => resignControl.confirm('touch')}
+          onCancel={() => resignControl.cancel('touch')}
+        />
+      ) : game.status?.game_over && finishedRecord ? (
         <ChessResult
           result={finishedRecord.result}
           outcome={game.status.outcome}
@@ -1384,6 +1470,7 @@ export function PianoChessGame({
           ladder={ladderOutcome}
           speech={opponentSpeech}
           onPlayAgain={restart}
+          onDone={onDeactivate}
         />
       ) : null}
     >

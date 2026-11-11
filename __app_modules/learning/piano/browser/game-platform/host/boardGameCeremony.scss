@@ -13,5 +13,8 @@
 .pg-result__metrics dt { color:var(--piano-muted,#9a9aa6); }
 .pg-result__metrics dd { margin:0; }
 .pg-result__again { width:100%; margin-top:1rem; padding:.75rem; border:0; border-radius:var(--r-md,12px); background:var(--pg-brass); color:var(--pg-brass-ink); font:inherit; font-weight:700; }
+.pg-result__actions { display:flex; gap:.6rem; }
+.pg-result__actions > * { flex:1 1 0; }
+.pg-result__done { margin-top:1rem; padding:.75rem; border:1px solid var(--piano-border,#34343f); border-radius:var(--r-md,12px); background:none; color:var(--piano-fg,#fff); font:inherit; font-weight:700; }
 .pg-result__hint { margin:.4rem 0 0; text-align:center; font-size:.85rem; }
 @media (prefers-reduced-motion:reduce) { .pg-opening,.pg-result { animation:none; } }

@@ -68,4 +68,8 @@ describe('the replay gesture', () => {
   it('ignores octave doubling, as the other gestures do', () => {
     expect(recognizeGesture([60, 61, 62, 63, 64, 72])).toBe('replay');
   });
+  it('reads six adjacent semitones as "start a new game" — never a square', () => {
+    expect(recognizeGesture([60, 61, 62, 63, 64, 65])).toBe('newgame');
+    expect(recognizeGesture([46, 47, 48, 49, 50, 51])).toBe('newgame');
+  });
 });

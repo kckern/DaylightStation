@@ -101,7 +101,7 @@ export function run(options, { now = new Date(), log = console.log } = {}) {
   const before = normalizeSlot(fs.existsSync(slotFile) ? YAML.parse(fs.readFileSync(slotFile, 'utf8')) : emptySlot());
   const startedAt = Date.parse(record.started_at) || 0;
   const newer = archived.filter((other) => other.game_id !== game
-    && !other.completed && other.ended_by !== 'restarted' && other.ended_by !== 'game_over'
+    && !other.completed && other.ended_by !== 'restarted' && other.ended_by !== 'resigned' && other.ended_by !== 'game_over'
     && (Date.parse(other.started_at) || 0) > startedAt && playedMoves(other).length > 0);
   const { slot, superseded } = pinGame(before, record, now, newer);
 

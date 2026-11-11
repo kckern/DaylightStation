@@ -57,7 +57,9 @@ export function isPrefixLine(shorter, longer) {
 /** What state does this record put its game in? */
 export function stateForRecord(record) {
   if (record?.completed || record?.ended_by === 'game_over') return STATE.FINISHED;
-  if (record?.ended_by === 'restarted') return STATE.ABANDONED;
+  // Restarting and resigning both end the game where it stands; only leaving
+  // (`left`) keeps it for later.
+  if (record?.ended_by === 'restarted' || record?.ended_by === 'resigned') return STATE.ABANDONED;
   return STATE.OPEN;
 }
 

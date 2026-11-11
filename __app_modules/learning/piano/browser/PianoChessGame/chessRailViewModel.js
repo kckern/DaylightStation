@@ -1,6 +1,7 @@
 import { onboardingCopy, onboardingStep, shouldOnboard } from './chessOnboarding.js';
 import { opponentMood, opponentStatus } from './opponentViewModel.js';
 import { REJECTION_MESSAGES, isPlayerTurn } from './chessGameState.js';
+import { drawHeadline } from './chessOutcome.js';
 
 const PIECE_NAMES = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
@@ -9,7 +10,7 @@ export function promptFor(state, rejection, hoveredChord = null, reading = false
     if (state.status.outcome === 'checkmate') {
       return state.status.winner === state.playerColor ? 'Checkmate. You win.' : 'Checkmate. Your opponent wins.';
     }
-    return `Draw — ${state.status.outcome.replace(/_/g, ' ')}.`;
+    return `${drawHeadline(state.status.outcome)}.`;
   }
   if (rejection) return REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.';
   if (takebackArmed) return 'Play the octave again to take your move back.';

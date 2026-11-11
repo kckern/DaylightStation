@@ -77,6 +77,15 @@ describe('recordIntoSlot', () => {
     const restarted = put(left, rec('g', { ended_by: 'restarted' }), hoursAgo(0.5));
     expect(selectResumable(restarted, { now: NOW })).toBeNull();
   });
+  it('resigning closes a game for good — a stuck position never comes back on the next launch', () => {
+    // 2026-11-11: the same unfinished 200-ply game was handed back on every
+    // launch for two days; the child had no way to end it but walking away,
+    // and walking away (`left`) keeps a game resumable by design.
+    const left = put(emptySlot(), rec('g', { ended_by: 'left' }), hoursAgo(1));
+    const resigned = put(left, rec('g', { ended_by: 'resigned' }), hoursAgo(0.5));
+    expect(resigned.games.g.state).toBe(STATE.ABANDONED);
+    expect(selectResumable(resigned, { now: NOW })).toBeNull();
+  });
   it('a resumed continuation under a new id supersedes its earlier self, so abandoning it does not resurface the old one', () => {
     let slot = put(emptySlot(), rec('a'), hoursAgo(10));
     slot = put(slot, rec('b', { moves: [mv(1, 'e2', 'e4'), mv(2, 'e7', 'e5'), mv(3, 'g1', 'f3')] }), hoursAgo(1));

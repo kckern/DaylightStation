@@ -192,6 +192,24 @@ export function useChessPersistenceLifecycle({
     });
   }, [archiveOneGame]);
 
+  /**
+   * The player gave this game up. Filed now, from the live game, as
+   * `ended_by: 'resigned'` — the server closes a resigned game for good, where
+   * `left` keeps it resumable. That difference is the whole point: on
+   * 2026-11-11 the only exit from a stuck 200-ply game was walking away, and
+   * walking away handed the same game back on the next launch.
+   */
+  const archiveResignedGame = useCallback(() => {
+    const active = lifecycleRef.current;
+    const watched = watchedRef.current;
+    archiveOneGame({
+      lifecycle: active,
+      inputs: archiveInputsRef.current,
+      watchedPlies: active && watched.gameId === active.gameId ? watched.plies : -1,
+      endedBy: 'resigned',
+    });
+  }, [archiveOneGame]);
+
   // THE SERVER'S COPY OF A GAME IN PROGRESS. localStorage on one tablet is not a
   // save slot: on 2026-10-09 a won position was lost to a six-hour idle rule
   // because the checkpoint was the only copy. Every committed ply refreshes the
@@ -423,6 +441,7 @@ export function useChessPersistenceLifecycle({
     finishedRecord: finishedState.gameId === gameId ? finishedState.value : null,
     ladderOutcome: ladderState.gameId === gameId ? ladderState.value : null,
     endTiming,
+    archiveResignedGame,
   };
 }
 

@@ -6,6 +6,10 @@ const HEADLINE = { win: 'You win', loss: 'You lose', draw: 'Draw' };
 export default function BoardGameResult({
   result, opponent, level, speech = null, promoted = false, promotedLine = null, message = null,
   metrics = null, notes = null, onPlayAgain, classPrefix = null, decoration = null,
+  // Optional, so checkers and Connect Four keep their card exactly as it was.
+  // `headline` replaces the one-word verdict (chess says WHY a draw is a draw);
+  // `onDone` adds a second way off the card — leave the game, not just replay it.
+  headline = null, playAgainLabel = 'Play again', onDone = null, doneLabel = 'Done',
 }) {
   // Each game says advancement in its own words. Chess is a tournament — you go
   // through to the next round, nothing is unlocked — so it supplies the
@@ -17,7 +21,7 @@ export default function BoardGameResult({
       {decoration}
       <div className={`pg-result__card${classPrefix ? ` ${classPrefix}__card` : ''}`}>
         {opponent && <OpponentPanel opponent={opponent} level={level} size="lg" speech={speech} />}
-        <p className={`pg-result__headline${classPrefix ? ` ${classPrefix}__headline` : ''}`}>{HEADLINE[result] || 'Game over'}</p>
+        <p className={`pg-result__headline${classPrefix ? ` ${classPrefix}__headline` : ''}`}>{headline || HEADLINE[result] || 'Game over'}</p>
         {message && <p className={`pg-result__message${classPrefix ? ` ${classPrefix}__outcome` : ''}`}>{message}</p>}
         {promoted && (
           <p className={`pg-result__promoted${classPrefix ? ` ${classPrefix}__promoted` : ''}`}>
@@ -37,7 +41,12 @@ export default function BoardGameResult({
             </div>
           ))}</dl>
         )}
-        <button type="button" className={`pg-result__again${classPrefix ? ` ${classPrefix}__again` : ''}`} onClick={onPlayAgain}>Play again</button>
+        <div className={`pg-result__actions${classPrefix ? ` ${classPrefix}__actions` : ''}`}>
+          <button type="button" className={`pg-result__again${classPrefix ? ` ${classPrefix}__again` : ''}`} onClick={onPlayAgain}>{playAgainLabel}</button>
+          {onDone && (
+            <button type="button" className={`pg-result__done${classPrefix ? ` ${classPrefix}__done` : ''}`} onClick={onDone}>{doneLabel}</button>
+          )}
+        </div>
         <p className={`pg-result__hint${classPrefix ? ` ${classPrefix}__hint` : ''}`}>or play any octave</p>
       </div>
     </div>

@@ -108,13 +108,38 @@ identical for both; only the rim labels change.
 ### At the end
 
 25. **How did that go?** Facts, not a score: moves played, hints asked for, best moves asked for.
-26. **Again.** One target.
+26. **Again, or done.** The result card offers **New game** and, where the host can take the
+    player back (`onDeactivate`), **Done**. Any octave also starts the next game.
+27. **Why did it stop?** A draw names its rule in the headline — `Draw — stalemate`,
+    `Draw — not enough pieces`, `Draw — 50-move rule`, `Draw — same position 3 times`
+    (`chessOutcome.js`, shared with the rail prompt). Logged once per game as
+    `chess.game.draw {gameId, reason, plies}`.
+
+### Getting out of a game
+
+28. **I want a new game, now.** Always answerable, from both inputs, and always with a confirm
+    step. The left rail carries a **New game** button for the whole of a live game; at the keys,
+    **six adjacent semitones** (`'newgame'` in `chordGestures.js`, a gesture card "New game · asks
+    first") asks the same question. The sheet ("Start a new game?") is answered by its two
+    buttons, or at the keys: six keys again confirms, an octave keeps playing (the octave is
+    intercepted, so it neither cancels a selection nor arms a takeback behind the question).
+    While the sheet is up a chord is never a move. Confirming files the game as
+    `ended_by: resigned` (`chess.game.resigned {gameId, plies, source}`), which the server closes
+    for good, then crosses the same boundary as every new game: under an armed match gate the
+    screen forgets the session (`useChessAuthority.abandon`) and hands the boundary to the gate;
+    otherwise the board restarts itself. A resigned game is not a win, loss or draw and does not
+    count toward the ladder or the day's board-game count.
+
+    Why: on 2026-11-11 (`chess-1794439407456`) a child reached king, bishop and knight against a
+    bare king at ply 200 — not a draw by any rule, and not a mate he could find. Nothing on the
+    screen or under his hands could end it; leaving kept it resumable, so the same game had come
+    back on every launch for two days.
 
 ### The operator's stories
 
-27. **Change the difficulty, the cue loudness, or the addressing vocabulary** without leaving the
+29. **Change the difficulty, the cue loudness, or the addressing vocabulary** without leaving the
     game, in discrete tap targets, saved to the player's own layer.
-28. **Get out.** The way back to the games picker is always on screen.
+30. **Get out.** The way back to the games picker is always on screen.
 
 ## Where the stories are answered
 
@@ -193,7 +218,8 @@ piano's local calendar day. One file is written per game, named
 The filename makes a directory listing useful without opening YAML; `levelunknown` is
 used honestly for an old/incomplete game where effective-opponent telemetry was never resolved.
 An abandoned game is named `quit_quit`; its YAML retains the event detail in `ended_by` — `left`
-for a game the player walked away from, `restarted` for one they started another game on top of.
+for a game the player walked away from, `restarted` for one they started another game on top of,
+`resigned` for one they gave up through the New game sheet.
 It is the only per-game record. A player's ladder (`apps/chess/ladder.yml`) and rivalry memory
 (`apps/chess/rivalries.yml`) are derived from finished games, and the archive answers the question
 neither can: *how is this child actually doing, over months?*
@@ -406,6 +432,7 @@ The archive writer (`POST /history`) files into the same slot:
 | `left`, `in_progress` | open | yes |
 | `game_over` (completed) | finished | never |
 | `restarted` (Play again / new game) | abandoned | never |
+| `resigned` (the mid-game New game sheet) | abandoned | never |
 | a continuation of it (same line, new id) | the earlier id becomes superseded | no |
 
 Terminal states are sticky: a late progress save cannot resurrect a finished or
@@ -753,3 +780,31 @@ caller cannot forget it.
 ## Board sizing
 
 InstrumentBoardStage owns the grid tracks and stretches its primary slot. Chess sizes the board against that slot with container units, reserving its axis strips. Do not restore chess-specific auto center tracks or centered grid alignment: size containment makes that combination collapse the primary slot and hide the board. The browser regression in `tests/live/flow/piano/piano-chess-board-geometry.runtime.test.mjs` measures the actual styles at three screen sizes.
+
+## Long games stay responsive
+
+The game layer of the chess engine (`__capabilities/gaming/portable/rulesets/chess/engine.mjs`)
+answers from a plain record (`initial_fen` + SAN list), so every `playMove` / `describeGame`
+re-plays the record into chess.js. Callers loop over those calls — the board commits twice per
+ply, the kernel re-plays its journal per revision, and `projectChessAuthorityState` re-plays the
+authority's history — so without help the cost per board update is quadratic in the game's
+length. At ply 200 that measured ~10 s per projection on the server and 30–66 s long tasks on the
+kiosk tablet (`piano.jank.snapshot frameMs.max`): the board froze after every move, the
+opponent's 8 s request timeout (`chess.move.timeout`) fired from inside the freeze and the local
+fallback answered instead, and chords played into the freeze landed against a stale board.
+
+The engine therefore keeps a small cache of replayed chess.js engines keyed by record content
+(records are cloned freely, so identity never hits). Read-only questions share the cached
+engine; `playMove` takes it out, plays the move and files it under the new record's key, so a
+game played in order costs one chess.js move per ply. A miss re-plays from scratch, so the cache
+can only make an answer faster, never different. `chessLongGame.test.js` pins the budget with the
+real 200-ply game as a fixture.
+
+A resumed game also arrives on the board in one render. `useChessAddressingProgress` treats more
+than two plies landing at once (`MAX_LIVE_PLIES_PER_UPDATE`) as a restore: one
+`chess.history-restored {from, to}` line, no per-move `chess.move` logs and no addressing-ladder
+samples. Before this, every historical move counted as a fresh instant correct address, and a
+199-ply resume promoted the addressing ladder five rungs in 40 ms (`addressing.rung-changed`
+8→13), re-dealing the board mid-game so the child's next chords named nothing
+(`chess.rejected unrecognised_chord`).
+

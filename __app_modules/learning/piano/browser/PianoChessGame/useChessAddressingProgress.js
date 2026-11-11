@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { useAddressingLadder } from '../game-platform/addressing/useAddressingLadder.js';
 
+/**
+ * The most plies live play can land in one render: the player's move and the
+ * opponent's answer. More than that arriving at once is a game being RESTORED
+ * onto the board (a resume from the checkpoint or the server copy), not played
+ * on it. On 2026-11-11 a 199-ply resume was read as ~100 fresh, instant, correct
+ * addresses: the ladder promoted five rungs in 40 ms, re-dealt the board
+ * mid-game, and the child's next chords named nothing.
+ */
+export const MAX_LIVE_PLIES_PER_UPDATE = 2;
+
 /** Record the separate skill of addressing a chess square from the piano. */
 export function useChessAddressingProgress({ game, gameId, playerColor, userId, config, client, logger }) {
   const { startTurn, record } = useAddressingLadder({
@@ -36,6 +46,13 @@ export function useChessAddressingProgress({ game, gameId, playerColor, userId, 
     }
     const added = game.history.slice(cursor.length);
     historyCursorRef.current = { gameId, length: game.history.length, playerTurn: isPlayerTurn };
+    if (added.length > MAX_LIVE_PLIES_PER_UPDATE) {
+      // Played somewhere else, at some other time: nothing here measures how
+      // the player addresses squares NOW, and one line says what arrived.
+      logger.info('chess.history-restored', { from: cursor.length, to: game.history.length, gameId });
+      if (isPlayerTurn) startTurn();
+      return;
+    }
     added.forEach((move, index) => {
       const ply = cursor.length + index + 1;
       if (move?.color === playerColor) record({ ok: true });

@@ -1202,7 +1202,7 @@ describe('the game record', () => {
 
     // Play again must reset the once-only guard AND the tallies — without it
     // the second game never records, and help would carry over between games.
-    fireEvent.click(screen.getByRole('button', { name: /play again/i }));
+    fireEvent.click(screen.getByRole('button', { name: /new game/i }));
     await boardReady(); // a new game waits for its own config read
 
     // Game 2: ask for the best move, but the server never produces one.
