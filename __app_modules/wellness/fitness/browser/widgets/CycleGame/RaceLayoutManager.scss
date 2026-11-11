@@ -30,7 +30,18 @@
   // 220 px SPEEDO_MIN_GAUGE_WIDE floor. The POV column is 33% (the rank badges are
   // fixed screen size and don't scale with the column, so a narrow road bunches
   // badges).
-  &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(350px, 38%); gap: 8px; }
+  // The band's height follows the gauge, and the gauge follows the WIDTH
+  // (container units, so no measure-resize loop): gauge = clamp(150px,
+  // (width - 16px padding - 28px gaps x (n-1)) / n, 280px), band = gauge + 118px
+  // chrome (CHROME_BELOW_GAUGE_PX) + 16px padding, never more than 46% of the
+  // height. Mirrors layoutSizing.wideGaugeSize. 2026-11-10: a fixed 220 px floor
+  // pushed six gauges off both edges of the 1381x777 kiosk and starved the tower.
+  &--wide {
+    --cg-wide-gauge: clamp(150px, calc((100cqw - 16px - 28px * (var(--cg-speedo-n, 4) - 1)) / var(--cg-speedo-n, 4)), 280px);
+    display: grid; height: 100%; grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) min(calc(var(--cg-wide-gauge) + 118px + 16px), 46%);
+    gap: 8px;
+  }
   &--wide.race-layout--no-speedo { grid-template-rows: minmax(0, 1fr); }
   .race-layout__wide-top { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(220px, 33%); gap: 8px; }
   .race-layout__top3 { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; }
@@ -48,4 +59,13 @@
   .race-layout__solo-band { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px; }
   // No gauge (a caller passing showSpeedos=false): the pace panel takes the band.
   .race-layout__solo-band--no-speedo { grid-template-columns: minmax(0, 1fr); }
+}
+
+// Size container for the wide layout's band math (see &--wide above). It takes
+// the place .race-layout has in its flex parent.
+.race-layout-host {
+  container-type: inline-size;
+  width: 100%; flex: 1 1 auto; min-height: 0; height: 100%;
+  display: flex; flex-direction: column;
+  box-sizing: border-box;
 }

@@ -132,8 +132,8 @@ describe('dial labels stay inside the gauge box', () => {
           expect(b.x + b.width).toBeLessThanOrEqual(200);
           expect(b.y + b.height).toBeLessThanOrEqual(200);
         }
-        // renders at no less than 16 screen px
-        expect((fs * gaugePx) / 200).toBeGreaterThanOrEqual(16 - 1e-9);
+        // renders at no less than 16 screen px (the 96 px legacy floor is 10.6 px)
+        expect((fs * gaugePx) / 200).toBeGreaterThanOrEqual(Math.min(16, gaugePx * 0.1) - 1e-9);
       });
     }
   }
@@ -147,7 +147,7 @@ describe('dial numerals are readable from the bike', () => {
     expect((labelFontUnits(320) * 320) / 200 / 320).toBeLessThan(0.1);
   });
   for (const maxRpm of [120, 180, 250]) {
-    for (const gaugePx of [243, 309, 320]) {
+    for (const gaugePx of [150, 181, 190, 220, 243, 309, 320]) {
       it(`max ${maxRpm} at ${gaugePx}px: inside the box, clear of the avatar disc and of each other`, () => {
         const fs = labelFontUnits(gaugePx);
         const { tickStep, labelStep } = tickStepsFor(maxRpm);

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   columnTemplateFor, fitScale, gaugeRowSize, raceLayoutMode, CHROME_BELOW_GAUGE_PX,
   ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX,
-  SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
+  SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE,
+  wideGaugeSize, SPEEDO_ZONE_PAD_X, SPEEDO_ZONE_PAD_Y
 } from "./layoutSizing.js";
 
 describe('columnTemplateFor', () => {
@@ -74,8 +75,8 @@ describe('gaugeRowSize — band-height invariant (audit UX §3.3)', () => {
     }
   });
 
-  it('wide mode (≥4 riders, up to 6): gauge + chrome never exceeds the band (floor: minmax(350px, …))', () => {
-    for (const zoneH of [350, 400, 500]) {
+  it('wide mode (≥4 riders, up to 6): gauge + chrome never exceeds the band', () => {
+    for (const zoneH of [268, 350, 400, 500]) {
       for (let count = 4; count <= 6; count++) {
         const gauge = gaugeRowSize({
           zoneW: ZONE_WIDTH, zoneH, count, gap: 28,
@@ -127,26 +128,37 @@ describe('raceLayoutMode', () => {
   });
 });
 
-// Five and six riders: the speedo band spans the full width in wide mode, so the
-// gauges stay readable from the bike (they were ~175 px when the band shared the
-// main column with the road). Zone boxes are what RaceLayoutManager measures for
-// the band at the two garage sizes: width minus the zone's 8 px side padding,
-// height = max(350, 38% of the layout) minus the 6 + 10 px zone padding.
-describe('wide mode gauges with five and six riders', () => {
-  const BOXES = {
-    '1810x1040': { zoneW: 1810 - 16, zoneH: Math.max(350, Math.round((1040 - 8) * 0.38)) - 16 },
-    '1920x1080': { zoneW: 1920 - 16, zoneH: Math.max(350, Math.round((1080 - 8) * 0.38)) - 16 }
-  };
-  for (const [name, box] of Object.entries(BOXES)) {
-    for (const count of [5, 6]) {
-      it(`${count} riders at ${name} get at least 220 px`, () => {
-        const gauge = gaugeRowSize({ ...box, count, gap: 28, min: SPEEDO_MIN_GAUGE_WIDE, max: SPEEDO_MAX_GAUGE_WIDE });
-        expect(gauge).toBeGreaterThanOrEqual(220);
-        expect(gauge + CHROME_BELOW_GAUGE_PX).toBeLessThanOrEqual(box.zoneH + 16);
+// Wide mode sizes each gauge from the band WIDTH / rider count (wideGaugeSize,
+// mirrored in RaceLayoutManager.scss with container units) and the band's height
+// follows. 2026-11-10: a fixed 220 px floor put six gauges past both edges of the
+// garage kiosk, whose content box is 1301x745 CSS px (1381x777 at DPR 1.39).
+describe('wide mode gauges fit across the band', () => {
+  const SIZES = { kiosk: { w: 1301, h: 745 }, '1920x1080': { w: 1920, h: 1080 } };
+  for (const [name, { w, h }] of Object.entries(SIZES)) {
+    for (const count of [4, 5, 6]) {
+      it(`${count} riders at ${name}: every gauge fits across, the band leaves the top row most of the height`, () => {
+        const gauge = wideGaugeSize({ width: w, count, gap: 28 });
+        expect(count * gauge + 28 * (count - 1) + SPEEDO_ZONE_PAD_X).toBeLessThanOrEqual(w);
+        const band = Math.min(gauge + CHROME_BELOW_GAUGE_PX + SPEEDO_ZONE_PAD_Y, h * 0.46);
+        // What SpeedoRow then measures yields the same gauge (no height clamp below it).
+        expect(gaugeRowSize({ zoneW: w - SPEEDO_ZONE_PAD_X, zoneH: band - SPEEDO_ZONE_PAD_Y, count, gap: 28,
+          min: SPEEDO_MIN_GAUGE_WIDE, max: SPEEDO_MAX_GAUGE_WIDE })).toBeLessThanOrEqual(gauge);
+        expect(h - band).toBeGreaterThanOrEqual(h * 0.54);
       });
     }
   }
-  it('the wide floor is itself at least 220 px', () => {
-    expect(SPEEDO_MIN_GAUGE_WIDE).toBeGreaterThanOrEqual(220);
+  it('six riders on the kiosk get ~190 px gauges, above the 150 px floor', () => {
+    expect(wideGaugeSize({ width: 1301, count: 6 })).toBe(190);
+    expect(SPEEDO_MIN_GAUGE_WIDE).toBe(150);
+  });
+  it('the wide-mode CSS mirrors wideGaugeSize', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const url = await import('node:url');
+    const here = path.dirname(url.fileURLToPath(import.meta.url));
+    const css = fs.readFileSync(path.join(here, '../../widgets/CycleGame/RaceLayoutManager.scss'), 'utf8');
+    expect(css).toMatch(/clamp\(150px, calc\(\(100cqw - 16px - 28px \* \(var\(--cg-speedo-n, 4\) - 1\)\) \/ var\(--cg-speedo-n, 4\)\), 280px\)/);
+    expect(css).toMatch(/calc\(var\(--cg-wide-gauge\) \+ 118px \+ 16px\)/);
+    expect(css).toMatch(/\.race-layout-host \{\s*container-type: inline-size;/);
   });
 });

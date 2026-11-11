@@ -379,6 +379,7 @@ export const SCENES = {
   'race-solo-par-no-strap': raceScene(soloParNoStrap),
   'race-solo-parked': raceScene(soloParked),
   'race-two-riders-one-parked': raceScene(twoOneParked),
+  'race-three-riders': raceScene(() => manyRiders(3)),
   'race-four-riders': raceScene(fourRiders),
   'race-five-riders': raceScene(fiveRiders),
   'race-six-riders': raceScene(sixRiders),

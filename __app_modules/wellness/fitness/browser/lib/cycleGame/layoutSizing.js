@@ -59,14 +59,31 @@ export function gaugeRowSize({ zoneW = 0, zoneH = 0, count = 1, gap = 28, min = 
 // `minmax(260px, …)`. floor = 260 - 118 = 142; keep a small margin → 140.
 export const SPEEDO_MIN_GAUGE_SIDEBAR = 140;
 export const SPEEDO_MAX_GAUGE_SIDEBAR = 360;
-// Wide mode (≥4 riders): the full-width speedo band row is `minmax(350px, 38%)`
-// (RaceLayoutManager.scss). floor = 350 - 118 = 232; 220 clears it, and it is the
-// smallest gauge the away overlay and the boost chip are designed for.
-export const SPEEDO_MIN_GAUGE_WIDE = 220;
+// Wide mode (≥4 riders): the gauge is sized from the WIDTH (band width minus
+// gaps, divided by the rider count) and the band's height follows it
+// (RaceLayoutManager.scss, `--cg-speedo-n`). A fixed 220 px floor put six gauges
+// (6 x 220 + gaps = 1460 px) past both edges of the 1381x777 garage kiosk
+// (2026-11-10); 150 px is the floor, the same scale the sidebar runs at.
+export const SPEEDO_MIN_GAUGE_WIDE = 150;
 export const SPEEDO_MAX_GAUGE_WIDE = 280;
+// Vertical padding of the speedo zone (.race-layout__zone--speedo: 6 + 10) and
+// horizontal padding (8 + 8): the band height CSS adds these to gauge + chrome.
+export const SPEEDO_ZONE_PAD_Y = 16;
+export const SPEEDO_ZONE_PAD_X = 16;
+
+/**
+ * Wide-mode gauge size from the band width alone (no height loop): what
+ * RaceLayoutManager.scss reserves and what SpeedoRow then measures.
+ * @param {{width:number, count:number, gap?:number}} args width = the race layout's width
+ */
+export function wideGaugeSize({ width = 0, count = 1, gap = 28 } = {}) {
+  const n = Math.max(1, count);
+  const raw = Math.floor((width - SPEEDO_ZONE_PAD_X - gap * (n - 1)) / n);
+  return Math.max(SPEEDO_MIN_GAUGE_WIDE, Math.min(SPEEDO_MAX_GAUGE_WIDE, Number.isFinite(raw) ? raw : SPEEDO_MIN_GAUGE_WIDE));
+}
 
 export default {
-  columnTemplateFor, fitScale, gaugeRowSize, CHROME_BELOW_GAUGE_PX,
+  columnTemplateFor, fitScale, gaugeRowSize, wideGaugeSize, CHROME_BELOW_GAUGE_PX,
   ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX,
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
 };
