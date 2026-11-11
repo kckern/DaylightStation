@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { povWorld, laneX, displayGap, displayDist, povBadges, resolveBadgeStack, markShadowedByGate } from "./povWorld.js";
+import { povWorld, laneX, displayGap, displayDist, povBadges, resolveBadgeStack, markShadowedByGate, layoutBadgeBands } from "./povWorld.js";
 
 const mk = (id, idx, prev, cur, isGhost = false) => ({ id, idx, prev, cur, isGhost });
 
@@ -373,5 +373,66 @@ describe('markShadowedByGate', () => {
     expect(markShadowedByGate({ z: -800.2 }, gates)).toBe(true);
     expect(markShadowedByGate({ z: -790 }, gates)).toBe(false);
     expect(markShadowedByGate({ z: -800 }, [])).toBe(false);
+  });
+});
+
+describe('layoutBadgeBands', () => {
+  const box = (id, x, y, rank, dist = 10) => ({ id, x, y, w: 150, h: 30, dist, rank });
+  const yOf = (out, id) => out.placed.find((p) => p.id === id).y;
+  const overlaps = (a, b) => Math.abs(a.x - b.x) < 150 && a.y < b.y + 30 && a.y + 30 > b.y;
+
+  it('stacks a bunched band in rank order, leader on top, with no overlap', () => {
+    // natural spots are in the WRONG order (rank 4 highest on screen)
+    const boxes = [box('d', 200, 100, 4, 5), box('c', 205, 103, 3, 6), box('b', 210, 106, 2, 7), box('a', 215, 109, 1, 8)];
+    const out = layoutBadgeBands({ boxes, panel: { w: 400, h: 600 } });
+    const rows = out.placed.map((p) => ({ ...p })).sort((p, q) => p.y - q.y).map((p) => p.id);
+    expect(out.hidden).toEqual(['d']);
+    expect(rows).toEqual(['a', 'b', 'c']);
+    expect(out.mores).toHaveLength(1);
+    expect(out.mores[0].count).toBe(1);
+    const all = [...out.placed.map((p) => ({ x: p.x, y: p.y })), { x: out.mores[0].x, y: out.mores[0].y }];
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(overlaps(all[i], all[j])).toBe(false);
+  });
+  it('shows up to three badges with no +N', () => {
+    const out = layoutBadgeBands({ boxes: [box('a', 100, 100, 1), box('b', 110, 100, 2), box('c', 120, 100, 3)] });
+    expect(out.mores).toHaveLength(0);
+    expect(out.hidden).toEqual([]);
+    expect(yOf(out, 'a')).toBeLessThan(yOf(out, 'b'));
+    expect(yOf(out, 'b')).toBeLessThan(yOf(out, 'c'));
+  });
+  it('collapses all the rest into one +N', () => {
+    const boxes = [1, 2, 3, 4, 5, 6].map((r) => box(`r${r}`, 100 + r, 100, r));
+    const out = layoutBadgeBands({ boxes });
+    expect(out.placed).toHaveLength(3);
+    expect(out.hidden).toEqual(['r4', 'r5', 'r6']);
+    expect(out.mores).toEqual([expect.objectContaining({ count: 3 })]);
+  });
+  it('leaves badges that do not collide where they are', () => {
+    const out = layoutBadgeBands({ boxes: [box('a', 50, 100, 1), box('b', 300, 100, 2)] });
+    expect(yOf(out, 'a')).toBe(100);
+    expect(yOf(out, 'b')).toBe(100);
+  });
+  it('keeps a band off other riders cards and the pinned chip', () => {
+    const out = layoutBadgeBands({
+      boxes: [box('a', 100, 100, 1), box('b', 110, 100, 2)],
+      cards: [{ x: 105, y: 90, w: 88, h: 88 }], fixed: [{ x: 105, y: 180, w: 200, h: 30 }],
+    });
+    for (const p of out.placed) {
+      expect(p.y >= 178 + 3 || p.y + 30 <= 90).toBe(true);
+      expect(p.y < 180 + 30 + 3 && p.y + 30 + 3 > 180).toBe(false);
+    }
+  });
+  it('keeps the band inside the panel', () => {
+    const out = layoutBadgeBands({ boxes: [box('a', 5, 580, 1), box('b', 395, 590, 2), box('c', 10, 590, 3)], panel: { w: 400, h: 600 } });
+    for (const p of out.placed) {
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y + 30).toBeLessThanOrEqual(600);
+      expect(p.x - 75).toBeGreaterThanOrEqual(0);
+      expect(p.x + 75).toBeLessThanOrEqual(400);
+    }
+  });
+  it('sorts riders without a rank after ranked ones', () => {
+    const out = layoutBadgeBands({ boxes: [box('x', 100, 100, null, 3), box('a', 100, 100, 1, 9)] });
+    expect(yOf(out, 'a')).toBeLessThan(yOf(out, 'x'));
   });
 });

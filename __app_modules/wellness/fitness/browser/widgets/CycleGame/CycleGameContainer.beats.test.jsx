@@ -59,7 +59,7 @@ function makeCtx(riders, cycleGameConfig = {}) {
       start_countdown_s: START_COUNTDOWN_S,
       staging_buffer_ms: 0,
       music_volume: 0.5,
-      sounds: { countdown: '/sfx/beep.mp3', end: '/sfx/end.mp3', racing: { dir: '/music', tracks: 1 } },
+      sounds: { final_seconds: '/sfx/beep.mp3', end: '/sfx/end.mp3', racing: { dir: '/music', tracks: 1 } },
       cadence_zones: [{ id: 'cruising', name: 'Cruising', min: 40, color: '#2ecc71' }],
       ...cycleGameConfig
     },
@@ -149,6 +149,15 @@ describe('CycleGameContainer — race beats', () => {
   const clock = (view) => view.getByTestId('race-clock');
   const racingTrack = () => audios.find((a) => String(a.src).startsWith('/music/'));
   const beeps = () => audios.filter((a) => a.src === '/sfx/beep.mp3').length;
+
+  it('a configured sounds.countdown alone does not beep in the final seconds', async () => {
+    mockCtx = makeCtx({ cycle_ace: 'user_1' }, { sounds: { countdown: '/sfx/beep.mp3', end: '/sfx/end.mp3', racing: { dir: '/music', tracks: 1 } } });
+    const view = render(<CycleGameContainer />);
+    await start(view, 'time', 'short');
+    const beepsBeforeRace = beeps(); // the stoplight beeps
+    ticksUntil(view, 179);
+    expect(beeps()).toBe(beepsBeforeRace);
+  });
 
   it('a 180 s solo time race: one halfway toast with the gap to the rival, splits, the last minute, the final ten seconds', async () => {
     mockCtx = makeCtx({ cycle_ace: 'user_1' });

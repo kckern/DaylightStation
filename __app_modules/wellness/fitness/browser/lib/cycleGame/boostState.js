@@ -2,6 +2,23 @@ const finiteOr = (n, fallback) => (typeof n === 'number' && Number.isFinite(n) ?
 const zoneMult = (z) => finiteOr(z.distance_multiplier, 1);
 const title = (z) => z.name || String(z.id).replace(/^./, (c) => c.toUpperCase());
 
+/** Gauge width (px) from which the no-strap chip reads in full; narrower gauges get the short form. */
+export const BOOST_FULL_LABEL_PX = 260;
+export const BOOST_SHORT_NO_STRAP = 'No strap';
+
+/**
+ * The chip's label for a gauge `gaugePx` wide. Only the no-strap label is long enough to
+ * truncate, so only it has a short form. Decided from the size the component is given, never by measuring.
+ * @param {{hasStrap?:boolean, label?:string}} boost boostState() output
+ * @param {number} gaugePx
+ * @returns {string}
+ */
+export function boostChipLabel(boost, gaugePx) {
+  if (!boost) return '';
+  if (boost.hasStrap) return boost.label;
+  return Number.isFinite(gaugePx) && gaugePx >= BOOST_FULL_LABEL_PX ? boost.label : BOOST_SHORT_NO_STRAP;
+}
+
 /**
  * What the rider's heart-rate zone is doing to their distance, in display terms. Pure.
  * Zones are sorted by distance_multiplier ascending before lookup; input is not mutated.

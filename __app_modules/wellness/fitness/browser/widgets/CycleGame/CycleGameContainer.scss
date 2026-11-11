@@ -49,7 +49,7 @@
       animation: cg-staging-drain linear forwards;
     }
   }
-  &__hint { color: cg.$cg-muted; font-size: cg.cg-type(1); }
+  &__hint { color: cg.$cg-muted; font-size: cg.cg-type(2); }
 }
 
 @keyframes cg-staging-drain {

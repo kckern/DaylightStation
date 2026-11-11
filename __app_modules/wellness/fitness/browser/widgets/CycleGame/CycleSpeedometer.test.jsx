@@ -62,10 +62,12 @@ describe('CycleSpeedometer', () => {
     expect(getByTestId('cycle-speedometer-boost-next').textContent).toBe('Hot ×1.4');
     expect(row.className).not.toContain('no-strap');
   });
-  it('no strap: the handicap multiplier and no bar or next step', () => {
-    const { getByTestId, queryByTestId } = render(
-      <CycleSpeedometer {...baseProps} boost={{ hasStrap: false, label: 'No heart-rate strap', mult: 0.8, progress: null, next: null }} />
-    );
+  it('no strap: the handicap multiplier and no bar or next step; full label on a wide gauge, short on a small one', () => {
+    const noStrap = { hasStrap: false, label: 'No heart-rate strap', mult: 0.8, progress: null, next: null };
+    const small = render(<CycleSpeedometer {...baseProps} size={220} boost={noStrap} />);
+    expect(small.getByTestId('cycle-speedometer-boost-chip').textContent).toBe('No strap ×0.8');
+    small.unmount();
+    const { getByTestId, queryByTestId } = render(<CycleSpeedometer {...baseProps} size={260} boost={noStrap} />);
     expect(getByTestId('cycle-speedometer-boost-chip').textContent).toBe('No heart-rate strap ×0.8');
     expect(queryByTestId('cycle-speedometer-boost-bar')).toBeNull();
     expect(queryByTestId('cycle-speedometer-boost-next')).toBeNull();

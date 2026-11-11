@@ -23,9 +23,9 @@ Slot.propTypes = { id: PropTypes.string, panels: PropTypes.object, testid: PropT
  *  - sidebar: main panel (chart fills the row, speedos band) + right sidebar
  *    (POV grid top ~70%, standings tower bottom ~30% — the tower REPLACES the
  *    oval's slot; the oval's lap strip folds into the tower's own header row).
- *  - wide (4+ on the road): top row of chart (2×) | standings tower,
- *    speedometers full-width below, plus the POV grid docked as a right-edge
- *    column spanning the full height (audit UX §4.2).
+ *  - wide (4+ on the road): top row of chart (2x) | standings tower | POV road,
+ *    and the speedometers across the FULL width below all three, in a band tall
+ *    enough that six gauges stay at least 220 px (layoutSizing.SPEEDO_MIN_GAUGE_WIDE).
  */
 export default function RaceLayoutManager({ panels = {}, mode = 'sidebar' }) {
   // The speedometer band is only present in a live race; recap/playback omits it
@@ -55,14 +55,14 @@ export default function RaceLayoutManager({ panels = {}, mode = 'sidebar' }) {
   if (mode === 'wide') {
     return (
       <div className={`race-layout race-layout--wide${noSpeedo}`} data-testid="race-layout" data-mode="wide">
-        <div className={`race-layout__wide-main${hasSpeedo ? '' : ' race-layout__wide-main--no-speedo'}`}>
+        <div className="race-layout__wide-top">
           <div className="race-layout__top3">
             {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
             {p('standingsTower', 'zone-tower', 'race-layout__zone--tower')}
           </div>
-          {hasSpeedo && p('speedoRow', 'zone-speedo', 'race-layout__zone--speedo')}
+          {p('povGrid', 'zone-pov', 'race-layout__zone--pov')}
         </div>
-        {p('povGrid', 'zone-pov', 'race-layout__zone--pov')}
+        {hasSpeedo && p('speedoRow', 'zone-speedo', 'race-layout__zone--speedo')}
       </div>
     );
   }

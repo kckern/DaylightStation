@@ -58,7 +58,7 @@ export const LABEL_LINE_H = 1.2;
 export const LABEL_RING_GAP = 4;
 
 /** Font size (SVG user units) that renders at `screenPx` on a gauge `gaugePx` wide with a 200-unit viewBox. */
-export function labelFontUnits(gaugePx, viewBox = 200, minScreenPx = 16, ratio = 0.075) {
+export function labelFontUnits(gaugePx, viewBox = 200, minScreenPx = 20, ratio = 0.075) {
   const px = Number.isFinite(gaugePx) && gaugePx > 0 ? gaugePx : viewBox;
   const screen = Math.max(minScreenPx, px * ratio);
   return (screen * viewBox) / px;

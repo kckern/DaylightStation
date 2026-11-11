@@ -24,7 +24,7 @@
     display: flex;
     align-items: baseline;
     gap: 0.4rem;
-    font-size: t.cg-type(1);
+    font-size: t.cg-type(2);
     font-weight: 700;
     color: t.$cg-muted;
     padding-bottom: 0.4rem;
@@ -96,7 +96,7 @@
   }
 
   &__name {
-    font-size: t.cg-type(2);
+    font-size: t.cg-type(3);
     font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
@@ -123,7 +123,7 @@
   }
 
   &__ot-tag {
-    font-size: t.cg-type(1);
+    font-size: t.cg-type(2);
     font-weight: 800;
     color: t.$cg-warn;
     letter-spacing: 0.04em;

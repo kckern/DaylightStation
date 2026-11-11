@@ -148,7 +148,7 @@ describe('CycleGameContainer — boost meter', () => {
     expect(warm.querySelector('[data-testid="cycle-speedometer-boost-fill"]').style.width).toBe('50%');
   });
 
-  it('a rider with no heart rate reads "No heart-rate strap ×0.8" on the gauge', () => {
+  it('a rider with no heart rate reads the short form "No strap ×0.8" on a small gauge', () => {
     vitals.user_2 = { name: 'User_2', heartRate: null, zoneId: null };
     mockCtx = makeCtx();
     const view = render(<CycleGameContainer />);
@@ -156,7 +156,7 @@ describe('CycleGameContainer — boost meter', () => {
     toRacing();
     tick(1);
     expect(boostOf(view, 1).querySelector('[data-testid="cycle-speedometer-boost-chip"]').textContent)
-      .toBe('No heart-rate strap ×0.8');
+      .toBe('No strap ×0.8'); // jsdom measures nothing, so the gauge falls back to a small size
   });
 
   it('the ready strip shows the strapless handicap under a rider with no heart rate', () => {

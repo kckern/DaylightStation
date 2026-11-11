@@ -522,7 +522,7 @@ restart to take effect.
 | `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive, or the default is used; a positive value below 3 km/h is raised to 3 |
 | `default_background` | null | Ambient background Plex id for the race screen |
 | `music_volume` | 0.55 | Background music level (0–1) |
-| `sounds` | {} | One-shot cues `start`, `go`, `countdown`, `finish`; music `lobby`, `ready` (falls back to `lobby`), `end`; `racing` is `{ dir, ... }`, a folder of tracks picked at random. A cue that is not named plays nothing: the countdown and finish sounds are silent unless the household config names them |
+| `sounds` | {} | One-shot cues `start`, `go`, `countdown` (stoplight beat), `final_seconds` (the beep in the last ten seconds of a time race), `finish` (finish-line cue); music `lobby`, `ready` (falls back to `lobby`), `end`; `racing` is `{ dir, ... }`, a folder of tracks picked at random. A cue that is not named plays nothing. `countdown` and `finish` are optional and the household leaves them unset on purpose: the start jingle and the results outro already mark those moments |
 
 > **Distance/time *tiers* are frontend constants** in `CycleGameHome`, not config.
 > The *defaults* above are config.
@@ -679,9 +679,11 @@ collapses and no zone is left empty.
   column — the **distance chart** over a full-width **speedometer** band — beside
   a right **sidebar**: the **POV grid** (top ~70%) over the **standings tower**
   (bottom ~30%; the tower's header carries the lap strip).
-- **Wide (four or more):** a top row of **chart (2×) │ standings tower** over a
-  full-width **speedometer** band, plus the **POV grid** docked as a right-edge
-  column spanning the full height.
+- **Wide (four or more):** a top row of **chart (2×) │ standings tower │ POV grid**
+  over a **speedometer** band that spans the full width (`minmax(350px, 38%)`),
+  so five and six gauges stay at least 220 px (about 245 to 260 px at the garage
+  content size) instead of the ~175 px they got when the band shared a column
+  with the road.
 
 `showSpeedos={false}` omits the speedo factory and its grid track; in solo the
 band then holds the pace panel alone. The recap passes `soloLayout={false}`, so a
@@ -794,7 +796,7 @@ avatar card and rank badge carry `is-parked` (dimmed), and the badge reads
   computed from the injected `zoneBox` (`gaugeRowSize`, fit-across-width capped by
   height, minus `CHROME_BELOW_GAUGE_PX` for the boost row and odometer), never
   self-measured. Caps: `maxGauge`/`minGauge` 360/140 in solo and sidebar modes,
-  280/96 in wide mode. In solo mode it holds the live rider's gauge only, with
+  280/220 in wide mode. In solo mode it holds the live rider's gauge only, with
   `ranked={false}` (no leader medal, no placement). Each gauge's **background is tinted** with a dark wash of its
   rider's lane colour (≈ 20 % over the deep-indigo backdrop).
 
@@ -903,7 +905,7 @@ played or logged.
 | `SPLIT` | each whole minute, once, unless a bigger beat fired that tick | *"2:00"* + the gap (`split`); **no toast** without a rival | |
 | `LAST_MINUTE` | 60 s left in a time race of 3 min or more, once | *"One minute left"* (`last-minute`) | starts the finale |
 | `LAST_STRETCH` | the leader at 90% of a distance race, once | *"Last stretch"* (`last-stretch`) | starts the finale |
-| `FINAL_SECONDS` | each of the last 10 s of a time race | none | `sounds.countdown` beep each second; the chart clock gets `is-final` (hero size, warm, pulsing; no pulse under reduced motion) |
+| `FINAL_SECONDS` | each of the last 10 s of a time race | none | `sounds.final_seconds` beep each second (silent when unset); the chart clock gets `is-final` (hero size, warm, pulsing; no pulse under reduced motion) |
 
 The beat toasts share a neutral accent. **Finale:** from `LAST_MINUTE` or
 `LAST_STRETCH` until the race ends the race screen root carries `is-finale`
@@ -993,14 +995,17 @@ with the `cg-ghost` treatment.
   bar fills to the zone progress (hidden when progress is unknown, e.g. a
   ghost), and the next step reads muted at the right (`{next} ×{mult}`, absent
   at the top zone). With no heart rate it reads `No heart-rate strap ×{hrless}`
-  with no bar. Multipliers print with at most one decimal and no trailing `.0`
+  with no bar. The no-strap label degrades by gauge width, decided from the size
+  passed to the component (never measured): the full `No heart-rate strap` from
+  260 px up (`boostState.BOOST_FULL_LABEL_PX`), `No strap` below it, so the chip
+  never truncates mid-word. Multipliers print with at most one decimal and no trailing `.0`
   (`boostState.formatMultiplier`). The container builds it per rider as
   `riderLive[id].boost = boostState({ zoneId, zones, hrlessMultiplier, progress })`
   (ghosts: the replayed zone, `progress: null`); no `boost` (the recap) means no
   row. The row has a fixed 40 px height and is counted in
   `layoutSizing.CHROME_BELOW_GAUGE_PX` (odometer 68 + boost row 40 + gap 10 =
   118), which sets the gauge floors (sidebar/solo band `minmax(260px, …)` →
-  min gauge 140; wide band `minmax(220px, …)` → min gauge 96).
+  min gauge 140; wide band `minmax(350px, …)` → min gauge 220).
 - **Overlay states** (one at a time, in the same slot):
   - **FINISHED** — 🏁 + placement for a rider over the line in a distance race.
   - **PARKED · Pedal to rejoin** — `parked` (idle past the park window). Calm,
@@ -1033,7 +1038,8 @@ master volume.
   0, except in a race's **finale** (last minute / last stretch, §11), where it
   is 0.15 (15% of master) until the race ends or is discarded.
 - **Final seconds:** each of the last ten seconds of a time race plays
-  `sounds.countdown` (the same cue the stoplight uses; silent when unset).
+  `sounds.final_seconds` (its own key, so it can be enabled without bringing back
+  the stoplight beeps; silent when unset).
 
 ---
 
@@ -1648,5 +1654,34 @@ Three levels, cheapest first.
 - **Two builds with different index versions must not share one data tree.**
   Each rebuilds the other's shards on every alternation.
 - **Kiosks need a reload** to pick up the new frontend.
-- **Countdown and finish sounds play only if the household `sounds` config names
-  them** (`countdown`, `finish`; see §6). Nothing is wrong when they are silent.
+- **Optional sounds.** `countdown`, `final_seconds` and `finish` (see §6) play only
+  if the household `sounds` config names them. The household leaves `countdown`
+  and `finish` unset on purpose, so silence there is not a fault.
+
+## Legibility from the bike
+
+Race, staging, countdown and results text is sized for a viewer 2 to 3 m from the
+screen, from the type scale in `_cgTokens.scss` (`cg-type(N)`; `typeScale.test.js`
+forbids literal sizes). Text a rider reads while pedalling is at least step 2
+(20 px): dial numerals, the boost row, the tower header, names and metrics, chart
+axes and lane tags, POV badges, ready-strip chips, toast subtitles, results
+comparison lines. Step 3 (25.6 px) or more for the race clock label, toast
+titles, rider names on the tower and results rows, and the odometer. Step 1
+(16 px) is kept for text nobody reads mid-race: legend lines and the race menu's
+sub-copy. The screenshot harness fails a race, staging, countdown or results
+scene whose smallest visible text (`raceTextMinPx`, skipping `data-secondary`
+elements and the allow-listed secondary classes) is under 20 px.
+
+The away overlay ("NO SIGNAL / Check the sensor", "PARKED / Pedal to rejoin")
+sits on two lines and hides the dial numerals while it is up, at every gauge size.
+
+### Crowded road panel
+
+The POV panel lays out rank badges by screen band (`povWorld.layoutBadgeBands`).
+Riders whose badges would collide form a band shown as one column in rank order,
+leader on top. A band shows at most three badges; the rest collapse into one `+N`
+badge. A band sits below its riders' cards, clear of every other card and of the
+pinned horizon chip, and inside the panel (lifted above the cards when it will
+not fit below them). The "LEADER +N m" chip is anchored to the panel's top edge
+with an arrow and follows `horizonChipState` (shown once the true gap passes
+120 m, with hysteresis).

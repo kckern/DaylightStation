@@ -5,7 +5,7 @@ import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { buildTicks, labelFontUnits, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from "../../lib/cycleGame/speedometerGeometry.js";
 import { createTickLerp } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import { AVATAR_RATIO, OVERLAY_FONT_RATIO } from "../../lib/cycleGame/speedometerOverlayLayout.js";
-import { formatMultiplier } from "../../lib/cycleGame/boostState.js";
+import { formatMultiplier, boostChipLabel } from "../../lib/cycleGame/boostState.js";
 import { RaceFlagIcon, MedalIcon } from "./home/icons.jsx";
 import "./CycleSpeedometer.scss";
 
@@ -221,7 +221,7 @@ export default function CycleSpeedometer({
           data-testid="cycle-speedometer-boost" style={{ width: px, ...(avatar.zoneColor ? { '--cg-boost-color': avatar.zoneColor } : {}) }}>
           <div className="cycle-speedometer__boost-line">
             <span className="cycle-speedometer__boost-chip" data-testid="cycle-speedometer-boost-chip">
-              <span className="cycle-speedometer__boost-label">{boost.label}</span>
+              <span className="cycle-speedometer__boost-label">{boostChipLabel(boost, px)}</span>
               {' '}
               <span className="cycle-speedometer__boost-mult" data-testid="cycle-speedometer-boost-mult">{`×${formatMultiplier(boost.mult)}`}</span>
             </span>

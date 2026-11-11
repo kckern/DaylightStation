@@ -92,7 +92,7 @@ export function MedalIcon({ place }) {
         <path d="M7.5 2h3.2l1.3 4.6L10.2 9 7.5 2Zm9 0h-3.2L12 6.6 13.8 9 16.5 2Z" fill="currentColor" opacity="0.55" />
         <circle cx="12" cy="15" r="7" fill={fills[place]} stroke="rgba(0,0,0,0.35)" strokeWidth="1" />
         <circle cx="12" cy="15" r="5" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
-        <text x="12" y="18.4" textAnchor="middle" fontSize="9" fontWeight="800" fill="rgba(0,0,0,0.65)" fontFamily="inherit">{place}</text>
+        <text x="12" y="18.4" textAnchor="middle" fontSize="11" fontWeight="800" fill="rgba(0,0,0,0.65)" fontFamily="inherit">{place}</text>
       </svg>
     );
   }

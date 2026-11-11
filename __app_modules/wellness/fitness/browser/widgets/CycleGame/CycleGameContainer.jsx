@@ -1126,7 +1126,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       cadenceBands: (Array.isArray(cadenceBands) ? cadenceBands : []).map((b) => ({ id: b.id, min: b.min })),
       sounds: {
         lobby: !!sx.lobby, ready: !!sx.ready, start: !!sx.start, go: !!sx.go,
-        countdown: !!sx.countdown, finish: !!sx.finish, end: !!sx.end, racing: !!sx.racing?.dir
+        countdown: !!sx.countdown, final_seconds: !!sx.final_seconds, finish: !!sx.finish, end: !!sx.end, racing: !!sx.racing?.dir
       },
       backgroundPlexId: cfg.backgroundPlexId ?? null,
       rivalKind,
@@ -1503,7 +1503,8 @@ export default function CycleGameContainer({ onMount } = {}) {
     beats.forEach((beat) => {
       const isFinal = beat === 'FINAL_SECONDS';
       if (isFinal) {
-        playSound(soundsRef.current?.countdown, { volume: masterRef.current }); // null = silent
+        // Its own key: `sounds.countdown` is the stoplight cue, which a household may leave unset on purpose.
+        playSound(soundsRef.current?.final_seconds, { volume: masterRef.current }); // unset = silent
         if (finalSecondsLoggedRef.current) return; // logged once, when it starts
         finalSecondsLoggedRef.current = true;
       }

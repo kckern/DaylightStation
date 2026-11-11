@@ -22,12 +22,12 @@ fs.mkdirSync(OUT, { recursive: true });
 const ALL = [
   'lobby-default', 'lobby-no-signal', 'lobby-busy', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
-  'race-two-riders-one-parked', 'race-four-riders', 'race-six-riders', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
+  'race-two-riders-one-parked', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
 ];
 // Real garage content size: the app's navigation rail and margins take the rest of 1920x1080.
 const KIOSK = { w: 1810, h: 1040 };
-const KIOSK_SCENES = ['race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked', 'results-six-riders'];
+const KIOSK_SCENES = ['race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'results-six-riders'];
 const scenes = process.env.SCENES ? process.env.SCENES.split(',').map((s) => s.trim()) : ALL;
 const forced = /^(\d+)x(\d+)$/.exec(process.env.VIEWPORT || '');
 const jobs = [];
@@ -145,6 +145,15 @@ function measure() {
   }
   out.clippedLabels = out.gauges.reduce((n, g) => n + g.labels.filter((l) => l.outSvg > 0.5 || (l.outZone != null && l.outZone > 0.5)).length, 0);
   out.minFontPx = fonts.length ? fonts[0].px : null;
+  // Smallest text a rider must read from the bike: everything on screen except elements
+  // tagged data-secondary (or inside one) and the allow-listed secondary classes.
+  const SECONDARY = ['.cg-chart__legend', '.cg-race-menu__sub', '.cg-tower__legend', '.race-results__legend'];
+  const raceFonts = textEls.filter((el) => !el.closest('[data-secondary]') && !SECONDARY.some((sel) => el.closest(sel)))
+    .map((el) => ({ t: el.textContent.trim().slice(0, 28), px: r2(screenPx(el)), cls: String(el.getAttribute('class') || el.tagName).slice(0, 48) }))
+    .sort((a, b) => a.px - b.px);
+  out.raceTextMinPx = raceFonts.length ? raceFonts[0].px : null;
+  out.raceTextSmallest = raceFonts.slice(0, 6);
+  out.raceTextBelow20 = raceFonts.filter((f) => f.px < 19.95).slice(0, 40);
   out.outOfBounds = out.outsideViewport.length + out.clippedByZone.length;
   out.towerRanks = [...document.querySelectorAll('[data-testid="tower-rank"]')].map((el) => ({
     t: el.textContent, sw: el.scrollWidth, cw: el.clientWidth,
@@ -196,6 +205,7 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 const failures = [];
+const RACE_TEXT_SCENE = /^(race-|staging|countdown|results-)/;
 const report = [];
 const metrics = {};
 
@@ -229,12 +239,13 @@ await browser.close();
 for (const [label, m] of Object.entries(metrics)) {
   const bad = [];
   if (m.clippedLabels > 0) bad.push(`${m.clippedLabels} clipped dial label(s)`);
+  if (RACE_TEXT_SCENE.test(label) && m.raceTextMinPx != null && m.raceTextMinPx < 19.95) bad.push(`race text ${m.raceTextMinPx}px < 20 (${m.raceTextSmallest[0].t} / ${m.raceTextSmallest[0].cls})`);
   if (m.minFontPx != null && m.minFontPx < 15.95) bad.push(`smallest text ${m.minFontPx}px < 16`);
   if (m.outsideViewport.length) bad.push(`${m.outsideViewport.length} element(s) outside the viewport`);
   if (m.clippedByZone.length) bad.push(`${m.clippedByZone.length} element(s) outside their zone`);
   if (m.towerRankOverflow > 0) bad.push('tower rank overflow');
   if (m.toastCoversClock) bad.push('toast covers clock/menu/pace');
-  const line = `${label}: clipped=${m.clippedLabels} minFont=${m.minFontPx} oob=${m.outOfBounds}${m.toast ? ` toastCovers=${!!m.toastCoversClock}` : ''}`;
+  const line = `${label}: clipped=${m.clippedLabels} minFont=${m.minFontPx} raceTextMin=${m.raceTextMinPx} gauge=${m.gauges && m.gauges.length ? Math.min(...m.gauges.map((g) => g.gaugePx)) : '-'} oob=${m.outOfBounds}${m.toast ? ` toastCovers=${!!m.toastCoversClock}` : ''}`;
   console.log(line);
   if (bad.length) failures.push({ scene: label, problems: bad });
 }
