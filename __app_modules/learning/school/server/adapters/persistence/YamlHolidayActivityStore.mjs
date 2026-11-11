@@ -14,7 +14,7 @@ import path from 'path';
 import { isDeepStrictEqual } from 'node:util';
 import jsyaml from 'js-yaml';
 import { readTextFromPath, writeFileAtomic, fileExists, renameFile } from '#system/utils/FileIO.mjs';
-import { SUBJECT_IDS } from "../../domain/curriculum/unitValidation.mjs";
+import { SUBJECT_IDS, isPlaceholderUnit } from "../../domain/curriculum/unitValidation.mjs";
 
 const SHELF = 'holiday-activities';
 const UNIT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -56,11 +56,13 @@ export class YamlHolidayActivityStore {
       schema: 'school.unit/v1', unitId,
       provenance: { source: 'Household holiday activity', reviewState: 'approved' },
     };
-    const hasContent = ['bank', 'document', 'media', 'review', 'program', 'launch', 'activity']
-      .some((key) => base[key] !== undefined && base[key] !== null);
     const next = { ...base, unitId, title, subject, onDays };
-    if (description) next.description = description; else delete next.description;
-    if (!hasContent) next.placeholder = true;
+    const instructions = typeof description === 'string' ? description.trim() : '';
+    if (instructions) next.description = instructions; else delete next.description;
+    // Placeholder = no instructions (`isPlaceholderUnit`, the validator's own
+    // rule): written instructions make the activity a real assignment that
+    // counts toward the day.
+    if (isPlaceholderUnit(next)) next.placeholder = true; else delete next.placeholder;
     return next;
   }
 

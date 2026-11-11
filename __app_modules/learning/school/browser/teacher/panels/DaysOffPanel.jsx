@@ -36,6 +36,17 @@ function TierChip({ tier }) {
   return <span className="teacher-daysoff__tier" data-tier={tier}>{TIER_LABELS[tier] ?? tier}</span>;
 }
 
+// Owner rule: an activity with instructions is a real assignment that counts
+// toward the day; with none it is a placeholder (named, excused). Said in
+// words, solid colours — never a faded "draft" look.
+function ActivityStatus({ counts }) {
+  return (
+    <span className="teacher-daysoff__status" data-counts={counts ? 'yes' : 'no'}>
+      {counts ? 'Counts' : 'Placeholder — add instructions to make it count'}
+    </span>
+  );
+}
+
 function BreakRow({ brk, activity }) {
   return (
     <li className="teacher-daysoff__row">
@@ -44,6 +55,7 @@ function BreakRow({ brk, activity }) {
       <TierChip tier={brk.tier ?? 'away'} />
       {brk.replaces && <span className="teacher-daysoff__note">replaces {brk.replaces}</span>}
       {activity?.title && <span className="teacher-daysoff__note">{activity.title}</span>}
+      {activity && activity.editable !== false && <ActivityStatus counts={activity.placeholder === false} />}
     </li>
   );
 }
@@ -216,6 +228,7 @@ export default function DaysOffPanel({ kids = [] }) {
                     <label className="teacher-daysoff__wide">Instructions
                       <textarea aria-label={`Activity instructions for ${brk.label || 'new break'}`} rows={3} value={brk.activity?.instructions ?? ''} onChange={(e) => patchActivity(brk.key, { instructions: e.target.value })} />
                     </label>
+                    <ActivityStatus counts={Boolean((brk.activity?.instructions ?? '').trim())} />
                     {!brk.assignment && kids.length > 0 && (
                       <div className="teacher-daysoff__who" role="group" aria-label="Who does it">
                         <span>Who does it</span>

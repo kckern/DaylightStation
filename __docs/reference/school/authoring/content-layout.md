@@ -94,7 +94,15 @@ enrichment day swaps a subject.
 no `bank`/`document`/`media`/`activity` yet. It never displaces the lesson beside
 it; the agenda offers it by name only when its section has nothing real to offer,
 and then excuses the section (`excused / placeholder`), so a holiday works before
-its activity exists. Remove `placeholder` and add the content when it is written.
+its activity exists.
+
+**Placeholder = no instructions.** A date-bound unit with no content and no
+`description` is a placeholder whether or not it carries the flag; one whose
+`description` (its instructions) is non-empty is a real assignment that counts
+toward the day, even with no content and even if the file still says
+`placeholder: true`. A unit with content keeps an explicit flag only while it
+has no description. Stub text in `description` counts as instructions — leave it
+out to keep a stub. See [Day-off tiers](../day-off-tiers.md#date-bound-units-and-placeholders).
 
 ## Compact course packages (v2)
 

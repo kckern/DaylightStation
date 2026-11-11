@@ -148,9 +148,11 @@ describe('SetHouseholdCalendar', () => {
     const unit = YAML.parse(fs.readFileSync(unitFile('science', 'holiday-science-fair'), 'utf8'));
     expect(unit).toMatchObject({
       unitId: 'holiday-science-fair', subject: 'science', title: 'Build a volcano', description: 'Follow the kit.',
-      onDays: [{ from: '2026-12-07', to: '2026-12-08' }], placeholder: true,
+      onDays: [{ from: '2026-12-07', to: '2026-12-08' }],
       provenance: { reviewState: 'approved' },
     });
+    // Instructions make it a real assignment that counts.
+    expect(unit).not.toHaveProperty('placeholder');
     expect(assignments.plans.kid.units).toEqual(['holiday-thanksgiving', 'holiday-science-fair']);
     expect(assignments.plans.kid.courses).toEqual([{ courseId: 'c' }]);
     await uc.execute({
@@ -159,6 +161,29 @@ describe('SetHouseholdCalendar', () => {
       assignTo: ['kid'], editedBy: 'grownup', baseRevision: rev(),
     });
     expect(assignments.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an activity with blank instructions a placeholder, and makes it real once written', async () => {
+    await uc.execute({
+      except: [PAST, THANKS],
+      activities: [{ unitId: 'holiday-thanksgiving', title: 'Gratitude list', instructions: '   ' }],
+      editedBy: 'grownup', baseRevision: rev(),
+    });
+    const first = YAML.parse(fs.readFileSync(unitFile('scripture', 'holiday-thanksgiving'), 'utf8'));
+    expect(first.placeholder).toBe(true);
+    expect(first).not.toHaveProperty('description');
+    const get = new GetHouseholdCalendar({ store, activities, curriculum, programIds: () => [], timezone: 'America/Los_Angeles', clock: () => NOW });
+    expect((await get.execute()).activities['holiday-thanksgiving'].placeholder).toBe(true);
+  });
+
+  it('reads a hand-edited activity with instructions as counting, whatever its stale flag says', async () => {
+    fs.writeFileSync(unitFile('scripture', 'holiday-thanksgiving'), YAML.stringify({
+      schema: 'school.unit/v1', unitId: 'holiday-thanksgiving', title: 'Gratitude', subject: 'scripture',
+      description: 'Write five things.', onDays: ['2026-11-26'], placeholder: true, objectives: [],
+      provenance: { source: 'Household', reviewState: 'approved' },
+    }));
+    const get = new GetHouseholdCalendar({ store, activities, curriculum, programIds: () => [], timezone: 'America/Los_Angeles', clock: () => NOW });
+    expect((await get.execute()).activities['holiday-thanksgiving']).toMatchObject({ placeholder: false, instructions: 'Write five things.' });
   });
 
   it('rewrites a placeholder activity text, keeping a backup of the old file', async () => {
@@ -170,8 +195,9 @@ describe('SetHouseholdCalendar', () => {
     const shelf = path.dirname(unitFile('scripture', 'holiday-thanksgiving'));
     expect(fs.readdirSync(shelf).sort()).toEqual(['holiday-thanksgiving.yml', 'holiday-thanksgiving.yml.bak-20261111T180000Z']);
     expect(YAML.parse(fs.readFileSync(unitFile('scripture', 'holiday-thanksgiving'), 'utf8'))).toMatchObject({
-      title: 'Gratitude list', description: 'Write five things.', onDays: ['2026-11-26'], placeholder: true,
+      title: 'Gratitude list', description: 'Write five things.', onDays: ['2026-11-26'],
     });
+    expect(YAML.parse(fs.readFileSync(unitFile('scripture', 'holiday-thanksgiving'), 'utf8'))).not.toHaveProperty('placeholder');
   });
 
   it('refuses an activity no break names, and one authored in a course', async () => {

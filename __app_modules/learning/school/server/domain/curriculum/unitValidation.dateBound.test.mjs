@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateUnit } from "./unitValidation.mjs";
+import { validateUnit, isPlaceholderUnit } from "./unitValidation.mjs";
 
 const base = {
   schema: 'school.unit/v1', unitId: 'chapter-two', title: 'Chapter Two', subject: 'science',
@@ -34,6 +34,40 @@ describe('date-bound and placeholder units', () => {
     const { bank: _bank, ...noContent } = base;
     expect(validateUnit({ ...noContent, onDays: ['2026-11-26'], placeholder: true }, sets).errors).toEqual([]);
     expect(validateUnit({ ...noContent, placeholder: true }, sets).errors.join()).toMatch(/onDays/);
+  });
+
+  // Owner rule (2026-11-11): a date-bound activity with instructions is a real
+  // assignment that counts; with none it is a placeholder. One rule for the
+  // panel's writes and for hand-edited files.
+  it('makes a date-bound unit with instructions a real, counting unit — even if the file still says placeholder', () => {
+    const { bank: _bank, ...noContent } = base;
+    for (const flag of [{}, { placeholder: true }]) {
+      const { errors, unit } = validateUnit({ ...noContent, onDays: ['2026-11-26'], description: 'Write five things.', ...flag }, sets);
+      expect(errors).toEqual([]);
+      expect(unit).not.toHaveProperty('placeholder');
+    }
+  });
+
+  it('makes a date-bound unit with no content and no instructions a placeholder, flag or not', () => {
+    const { bank: _bank, ...noContent } = base;
+    const { errors, unit } = validateUnit({ ...noContent, onDays: ['2026-11-26'] }, sets);
+    expect(errors).toEqual([]);
+    expect(unit.placeholder).toBe(true);
+    expect(validateUnit({ ...noContent, onDays: ['2026-11-26'], placeholder: false }, sets).unit.placeholder).toBe(true);
+  });
+
+  it('still refuses an undated unit with only instructions', () => {
+    const { bank: _bank, ...noContent } = base;
+    expect(validateUnit({ ...noContent, description: 'Do a thing.' }, sets).errors.join()).toMatch(/must reference/);
+  });
+
+  it('isPlaceholderUnit: placeholder = no instructions (trimmed)', () => {
+    const { bank: _bank, ...noContent } = base;
+    const dated = { ...noContent, onDays: ['2026-11-26'] };
+    expect(isPlaceholderUnit(dated)).toBe(true);
+    expect(isPlaceholderUnit({ ...dated, description: '   ' })).toBe(true);
+    expect(isPlaceholderUnit({ ...dated, description: 'Go.', placeholder: true })).toBe(false);
+    expect(isPlaceholderUnit({ ...base, onDays: ['2026-11-26'] })).toBe(false);
   });
 
   it('omits both fields from an ordinary unit', () => {

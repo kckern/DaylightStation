@@ -95,7 +95,7 @@ unitId: holiday-thanksgiving
 title: Thanksgiving activity
 subject: scripture
 onDays: ['2026-11-26']
-placeholder: true          # remove once the activity is written
+placeholder: true          # no instructions yet; see below
 objectives: []
 provenance: { source: Household, reviewState: approved }
 ```
@@ -109,13 +109,26 @@ provenance: { source: Household, reviewState: approved }
   that is the swap; on a major holiday with a scripture-subject activity, the
   activity is the day's scripture item and the weekday lesson it displaced stays
   in the plan as backlog.
-- `placeholder: true` lets the unit stand with no bank, document or media yet.
-  A placeholder never displaces the lesson beside it and is offered only when
+- **Placeholder = no instructions.** A date-bound unit whose `description`
+  (its instructions) is empty after trimming, and which has no bank, document,
+  media, review, program, launch or activity, is a placeholder whatever its
+  `placeholder` flag says. One with instructions is a **real assignment that
+  counts toward the day**, content or not, even if a hand-edited file still
+  says `placeholder: true`. (A unit with real content keeps an explicit
+  `placeholder: true` only while it has no instructions.) The validator, the
+  console's writes and the console's read all use the same rule
+  (`isPlaceholderUnit` in `domain/curriculum/unitValidation.mjs`).
+- A placeholder never displaces the lesson beside it and is offered only when
   its section has nothing real to offer, in which case the section is
   `excused · placeholder`. So a holiday works before its activity is written: on
   Thanksgiving the scripture lesson is still asked while its scripture-subject
-  activity is a stub. Add the content and drop the flag when it is written; from
-  then on it displaces as above.
+  activity is a stub. Once it has instructions it displaces as above and is owed.
+  An instructions-only activity has nothing to scan or submit: a grown-up marks
+  it done with an attestation ("I verify this was done"), which the planner
+  honours as a pass.
+- Stub text is instructions. A description such as "A placeholder until it is
+  written" makes the unit count; leave the description out (or blank the
+  instructions in the panel) to keep it a placeholder.
 
 See [content layout](./authoring/content-layout.md#date-bound-and-placeholder-units).
 
@@ -189,8 +202,11 @@ From the teacher console: **Operations → Days off** (see
    *Holiday* write the activity's title and instructions and tick who does it.
    The panel writes the date-bound unit at
    `content/school/<subject>/holiday-activities/units/holiday-<name>.yml`
-   (`onDays` = the break's dates, `placeholder: true`) and names it in the
-   break's `assignment`.
+   (`onDays` = the break's dates) and names it in the break's `assignment`.
+   With instructions the activity counts; with none it is written
+   `placeholder: true`. The panel says which next to the activity — **Counts**
+   or **Placeholder — add instructions to make it count** — in the list and
+   while editing.
 3. **Save.** The change is live at once — no restart. A save is refused when
    `school.yml` changed since the panel loaded it, when it would change what a
    day before today meant, or when a keep-list change would re-judge yesterday.
@@ -211,9 +227,9 @@ and confirm `dayOff` and the kept sections.
 
 ### What a written activity is
 
-The panel writes the activity's title and instructions (`description`) but
-keeps `placeholder: true`: an activity with no bank, document or media has
-nothing a child can complete, so the validator requires the flag, and the day
-works as described under *Date-bound units and placeholders* above. Giving it
-real content (a bank, a document) and dropping the flag is still an authoring
-step.
+An activity counts as soon as its instructions are non-empty: the panel writes
+the title and instructions (`description`) and drops `placeholder`. It is owed
+on its day like any lesson (on a major holiday it is the day's scripture item),
+and a grown-up attests it done. An activity saved with blank instructions stays
+`placeholder: true` and the day works as described under *Date-bound units and
+placeholders* above. Giving it a bank or document is still an authoring step.

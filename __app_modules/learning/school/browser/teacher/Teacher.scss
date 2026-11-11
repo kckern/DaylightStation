@@ -3426,6 +3426,17 @@
     color: #fff;
     background: #6b6255;
   }
+  &__status {
+    display: inline-block;
+    align-self: flex-start;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+  &__status[data-counts='yes'] { background: #2f6e3a; color: #fff; }
+  &__status[data-counts='no'] { background: #f6e3b4; border-color: #b8862b; color: #4a3510; }
   &__tier[data-tier='stay-home'] { background: #6f4fa8; }
   &__tier[data-tier='enrichment'] { background: #2f7d6d; }
   &__tier[data-tier='major-holiday'] { background: #a3472f; }

@@ -656,17 +656,19 @@ export function validateUnit(raw, sets = {}) {
   // PLACEHOLDER: the holiday is on the calendar before its activity is
   // written. The agenda names it but never owes it, so the day still works.
   // Only a date-bound unit may be a stub: an undated stub would sit in the
-  // catalog forever with nothing to do.
-  let placeholder = false;
-  if (isPresent(raw.placeholder)) {
-    if (typeof raw.placeholder !== 'boolean') errors.push('placeholder must be a boolean');
-    else placeholder = raw.placeholder;
-  }
-  if (placeholder && !isPresent(raw.onDays)) errors.push('a placeholder unit must be date-bound (onDays)');
+  // catalog forever with nothing to do. Whether it IS a stub is decided by
+  // `isPlaceholderUnit` (placeholder = no instructions), not by the flag alone,
+  // so a hand-edited file follows the same rule as a teacher-console save.
+  if (isPresent(raw.placeholder) && typeof raw.placeholder !== 'boolean') errors.push('placeholder must be a boolean');
+  if (raw.placeholder === true && !isPresent(raw.onDays)) errors.push('a placeholder unit must be date-bound (onDays)');
+  const placeholder = isPresent(raw.onDays) && isPlaceholderUnit(raw);
+  // A date-bound activity with written instructions is a real assignment that
+  // counts toward the day, content or not; a grown-up attests it done.
+  const instructionsOnly = isPresent(raw.onDays) && isNonEmptyString(raw.description);
 
   // Presence, not resolvability: a dangling reference is already reported, and
   // reporting it twice would read as two separate authoring mistakes.
-  if (!placeholder && ![...REFERENCE_FIELDS, 'program', 'launch', 'activity'].some((field) => isPresent(raw[field]))) {
+  if (!placeholder && !instructionsOnly && !hasUnitContent(raw)) {
     errors.push('unit must reference at least one of bank, document, media, review, program, launch, activity');
   }
 
@@ -731,6 +733,26 @@ export function validateUnit(raw, sets = {}) {
       provenance: raw.provenance,
     },
   };
+}
+
+const CONTENT_FIELDS = Object.freeze([...REFERENCE_FIELDS, 'program', 'launch', 'activity']);
+function hasUnitContent(raw) {
+  return CONTENT_FIELDS.some((field) => isPresent(raw?.[field]));
+}
+
+/**
+ * Is this (raw) date-bound unit a placeholder? Owner rule 2026-11-11: an
+ * activity with instructions (`description`, trimmed) is a real assignment
+ * that counts toward the day; one with none is a placeholder (named, excused).
+ * A unit with no content and no instructions is a placeholder whatever its
+ * flag says; a unit with content keeps an explicit `placeholder: true` only
+ * while it has no instructions. The single rule for the validator, the
+ * holiday-activity store's writes and the teacher console's read.
+ */
+export function isPlaceholderUnit(raw) {
+  if (!isPlainObject(raw)) return false;
+  if (isNonEmptyString(raw.description)) return false;
+  return !hasUnitContent(raw) || raw.placeholder === true;
 }
 
 /** `onDays`: a non-empty list of `YYYY-MM-DD` or `{from, to}` (inclusive), normalized to spans. */

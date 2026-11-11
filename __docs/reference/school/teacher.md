@@ -982,8 +982,11 @@ their dates, name and kind of day (*School day*, *Stay home*, *Enrichment*,
   of day as five buttons, and for an enrichment day the subject it replaces. An
   enrichment or holiday break carries its **activity** — a title and
   instructions written into its date-bound unit (the placeholder file is
-  rewritten, the old text kept beside it as `.bak-<stamp>`). A new activity
-  asks **Who does it**; the ticked children get it in their standalone work.
+  rewritten, the old text kept beside it as `.bak-<stamp>`). An activity with
+  instructions **counts** toward the day; one with blank instructions is a
+  placeholder, and the panel says so next to it (**Counts** / **Placeholder —
+  add instructions to make it count**). A new activity asks **Who does it**;
+  the ticked children get it in their standalone work.
 - **Add an away trip** is one step: dates and a name.
 - **What a day off keeps…** edits the keep-list per tier, from today on.
 

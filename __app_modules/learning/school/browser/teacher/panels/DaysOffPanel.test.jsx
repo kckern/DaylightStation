@@ -116,6 +116,24 @@ describe('DaysOffPanel', () => {
     ]);
   });
 
+  it('says in words whether an activity counts: placeholder until it has instructions', async () => {
+    render(<DaysOffPanel kids={KIDS} />);
+    expect(await screen.findByText('Placeholder — add instructions to make it count')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit days off' }));
+    expect(screen.getByText('Placeholder — add instructions to make it count')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Activity instructions for Thanksgiving'), { target: { value: '   ' } });
+    expect(screen.queryByText('Counts')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Activity instructions for Thanksgiving'), { target: { value: 'Write five things.' } });
+    expect(screen.getByText('Counts')).toBeInTheDocument();
+    expect(screen.queryByText('Placeholder — add instructions to make it count')).toBeNull();
+  });
+
+  it('shows a written activity as counting in the list', async () => {
+    schoolApi.calendar.mockResolvedValue(ok({ ...MODEL, activities: { 'holiday-thanksgiving': { ...MODEL.activities['holiday-thanksgiving'], instructions: 'Write five things.', placeholder: false } } }));
+    render(<DaysOffPanel kids={KIDS} />);
+    expect(await screen.findByText('Counts')).toBeInTheDocument();
+  });
+
   it('a keep-list edit sends every tier list', async () => {
     render(<DaysOffPanel kids={KIDS} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit days off' }));

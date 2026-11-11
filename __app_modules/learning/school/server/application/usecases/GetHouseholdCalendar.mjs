@@ -6,7 +6,7 @@
  */
 import { DAY_OFF_TIERS } from "../../domain/schoolCalendar.mjs";
 import { readDayOffPolicy } from "../../domain/dayOffPolicy.mjs";
-import { SUBJECT_IDS } from "../../domain/curriculum/unitValidation.mjs";
+import { SUBJECT_IDS, isPlaceholderUnit } from "../../domain/curriculum/unitValidation.mjs";
 import { studyDayForInstant } from "../../domain/studyDay.mjs";
 
 export class GetHouseholdCalendar {
@@ -29,7 +29,7 @@ export class GetHouseholdCalendar {
       activities[span.assignment] = found
         ? {
           unitId: span.assignment, subject: found.subject, title: found.raw?.title ?? '',
-          instructions: found.raw?.description ?? '', placeholder: found.raw?.placeholder === true, editable: true,
+          instructions: found.raw?.description ?? '', placeholder: isPlaceholderUnit(found.raw), editable: true,
         }
         // Not on a holiday shelf: authored in a course (read-only here), or
         // not written yet (the panel creates it on save).
