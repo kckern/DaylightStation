@@ -92,7 +92,8 @@ export function ReviewPage() {
 
   if (loading && !data) return <LoadingState label="review" rows={6} />;
   if (error) return <ErrorState error={error} onRetry={reload} label="Review" />;
-  const row = data.rows.find((r) => r.id === selected?.id) || null;
+  if (data.match === 'unmatched') return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
+  const row =data.rows.find((r) => r.id === selected?.id) || null;
   const busyText = running ? `Running: ${data.job.step || 'starting'}` : null;
   return (
     <SectionCard title={data.title || `Film ${ratingKey}`}
@@ -132,6 +133,22 @@ export function ReviewPage() {
               selectedId={row?.id ?? null} onSelect={station.pick} scope={station.scope} onScope={station.setScope} picked={picked} onPick={pick} sentBack={sentBack} />
           </Stack>
         </div>
+      </Stack>
+    </SectionCard>
+  );
+}
+
+/** A film the library could not match to Plex: say why; there is no file to review against. */
+function UnmatchedFilm({ ratingKey, data }) {
+  useEffect(() => { logger.info('review.unmatched', { ratingKey, reason: data.unmatched?.reason ?? null }); }, [ratingKey, data.unmatched?.reason]);
+  const name = data.title || `Film ${ratingKey}`;
+  return (
+    <SectionCard title={data.year ? `${name} (${data.year})` : name}
+      actions={<Anchor component={Link} to="/admin/content/filter" size="sm">All films</Anchor>}>
+      <Stack gap="xs">
+        <Text size="sm">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}.`}</Text>
+        <Text size="sm" c="dimmed">This film can't be reviewed against a file, and it can't be run, until Plex has this film
+          under the same title and year. Then run <code>contentfilter map</code> to match it.</Text>
       </Stack>
     </SectionCard>
   );

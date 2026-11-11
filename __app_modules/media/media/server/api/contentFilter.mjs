@@ -51,7 +51,7 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     next();
   });
 
-  // GET /library?stage=&q= -> { films: [{ ratingKey, title, year, stage, job, reviewed }] } (Admin library)
+  // GET /library?stage=&q= -> { films: [{ ratingKey, title, year, stage, job, reviewed, match, unmatched, runtimeWarning }], meta } (Admin library)
   if (contentFilterLibrary) {
     router.get('/library', asyncHandler(async (req, res) => {
       const stage = req.query.stage ? String(req.query.stage) : null;
@@ -104,6 +104,11 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
         && Object.keys(reasons).length <= 500
         && Object.entries(reasons).every(([k, v]) => /^[A-Za-z0-9_:-]+$/.test(k) && /^[a-z]+$/.test(String(v))))) {
         return res.status(400).json({ error: 'reasons must map row ids to a reason' });
+      }
+      // A film not matched to Plex has no file to filter against: never queue it.
+      const verdict = contentFilterLibrary?.matchOf ? await contentFilterLibrary.matchOf(ratingKey) : null;
+      if (verdict?.match === 'unmatched') {
+        return res.status(409).json({ error: `This film is not matched to Plex: ${verdict.unmatched?.text || 'no Plex film'}.` });
       }
       try {
         const run = await jobs.enqueue({ ratingKey, kind, cues, stage, reasons, by: req.body?.by || 'admin' });
@@ -266,7 +271,10 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     const key = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
     const ROW = /^(cue|scene|subject):[A-Za-z0-9_-]+$/;
     // GET /:rk/review -> { title, certification, audit, rows, reviewed, total, job, signOff }
+    // A film not matched to Plex: { title, year, match: 'unmatched', unmatched: { reason, text } } instead.
     router.get('/:ratingKey/review', asyncHandler(async (req, res) => {
+      const verdict = contentFilterLibrary?.matchOf ? await contentFilterLibrary.matchOf(key(req)) : null;
+      if (verdict?.match === 'unmatched') return res.json({ title: verdict.title, year: verdict.year, match: 'unmatched', unmatched: verdict.unmatched });
       try { res.json(await contentFilterReview.get({ ratingKey: key(req) })); } catch (e) { send(res, e); }
     }));
     // PUT /:rk/review/:rowId { span, by, verdict?, reason?, change?, dwellMs?, replays? } -> { mark }

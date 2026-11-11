@@ -81,7 +81,7 @@ describe('ContentFilterLibrary', () => {
       expect(by['2']).toMatchObject({ linked: false, thumb: null });
       expect(by['9']).toMatchObject({ linked: true, title: 'Zed' });
       expect(by['2'].year).toBeNull();
-      expect(meta).toEqual({ indexedAt: '2026-06-30T00:00:00.000Z', total: 3, unlinked: 1 });
+      expect(meta).toEqual({ indexedAt: '2026-06-30T00:00:00.000Z', total: 3, unlinked: 1, verified: 2, unmatched: 1 });
     });
     it('Plex down gives linked: null for every film and never fails the list', async () => {
       const plex = { getLibrarySections: vi.fn(async () => { throw new Error('down'); }), getContainer: vi.fn() };
@@ -117,6 +117,75 @@ describe('ContentFilterLibrary', () => {
       expect((await lib.list({})).films[0].linked).toBeNull();
       clock.t += 31 * 1000;
       expect((await lib.list({})).films.find((f) => f.ratingKey === '1').linked).toBe(true);
+    });
+  });
+
+  describe('Plex match (title + year)', () => {
+    const live = (items) => ({
+      getLibrarySections: vi.fn(async () => ({ MediaContainer: { Directory: [{ key: '1', type: 'movie' }] } })),
+      getContainer: vi.fn(async () => ({ MediaContainer: { Metadata: items } })),
+    });
+    const build = ({ map, unmatched = {}, edls, items, overrides = [] }) => {
+      const repo = {
+        getMatchIndex: vi.fn(async () => ({ map, unmatched })),
+        listOverrides: vi.fn(async () => overrides),
+        getEdl: vi.fn(async (rk) => edls[rk] || null),
+        getRefinedEdl: vi.fn(async () => null),
+        getOverride: vi.fn(async () => null),
+      };
+      const jobs = { record: vi.fn(async () => null) };
+      return new ContentFilterLibrary({ contentFilterRepository: repo, jobs, digestOf: async () => 'D', plex: items ? live(items) : null });
+    };
+    const m = (title, id) => ({ title, plexType: 'movie', vidangel: { id, slug: 's', tagCount: 9 } });
+    const e = (title, year, workId, runtime = 6000) => ({ title, year, runtimeUnalteredSec: runtime, sourceRef: { workId, tagSetId: 1 } });
+
+    it('verified when the live film is within a year; a year-off key is unmatched naming the Plex year, with no poster', async () => {
+      const lib = build({
+        map: { 'plex:1': m('Gladiator', 11), 'plex:2': m('Casino Royale', 12) },
+        edls: { 1: e('Gladiator', 2000, 11), 2: e('Casino Royale', 2006, 12) },
+        items: [{ ratingKey: '1', title: 'Gladiator', year: 2000, duration: 6000 * 1000 }, { ratingKey: '2', title: 'Casino Royale', year: 1954, duration: 6000 * 1000 }],
+      });
+      const { films, meta } = await lib.list({});
+      const by = Object.fromEntries(films.map((f) => [f.ratingKey, f]));
+      expect(by['1']).toMatchObject({ match: 'verified', unmatched: null, runtimeWarning: null });
+      expect(by['2']).toMatchObject({ match: 'unmatched', unmatched: { reason: 'year-mismatch', text: 'Plex has the 1954 film' }, thumb: null, linked: true });
+      expect(meta).toMatchObject({ total: 2, verified: 1, unmatched: 1 });
+    });
+    it('a runtime more than 5 minutes off stays verified with a warning', async () => {
+      const lib = build({ map: { 'plex:1': m('Almost Famous', 11) }, edls: { 1: e('Almost Famous', 2000, 11, 124 * 60) },
+        items: [{ ratingKey: '1', title: 'Almost Famous', year: 2000, duration: 162 * 60 * 1000 }] });
+      expect((await lib.list({})).films[0]).toMatchObject({ match: 'verified', runtimeWarning: { edlMin: 124, plexMin: 162 } });
+    });
+    it('the index\'s unmatched entries are listed with their reason; a stale key is "no Plex film"', async () => {
+      const lib = build({
+        map: { 'plex:5': m('12 Strong', 15) },
+        unmatched: { 'plex:7': { title: 'Shaft', plexType: 'movie', year: 2000, reason: 'ambiguous', plexKeys: ['8', '9'], vidangel: { id: 17, tagCount: 3 } } },
+        edls: { 5: e('12 Strong', 2018, 15), 7: e('Shaft', 2000, 17) },
+        items: [{ ratingKey: '7', title: 'Shaft', year: 2000 }],
+      });
+      const by = Object.fromEntries((await lib.list({})).films.map((f) => [f.ratingKey, f]));
+      expect(by['5'].unmatched).toEqual({ reason: 'not-in-plex', text: 'no Plex film' });
+      expect(by['7']).toMatchObject({ match: 'unmatched', unmatched: { text: 'several Plex films' }, title: 'Shaft' });
+    });
+    it('an override key whose film another entry holds is a duplicate', async () => {
+      const lib = build({ map: { 'plex:1': m('Back to the Future', 11) }, overrides: ['2'],
+        edls: { 1: e('Back to the Future', 1985, 11), 2: e('Back to the Future', 1985, 11) },
+        items: [{ ratingKey: '1', title: 'Back to the Future', year: 1985 }] });
+      const by = Object.fromEntries((await lib.list({})).films.map((f) => [f.ratingKey, f]));
+      expect(by['1'].match).toBe('verified');
+      expect(by['2'].unmatched).toEqual({ reason: 'duplicate', text: 'another entry has this film' });
+    });
+    it('matchOf answers for one film (the review page and the run guard)', async () => {
+      const lib = build({ map: { 'plex:2': m('Casino Royale', 12) }, edls: { 2: e('Casino Royale', 2006, 12) },
+        items: [{ ratingKey: '2', title: 'Casino Royale', year: 1954 }] });
+      expect(await lib.matchOf('2')).toMatchObject({ match: 'unmatched', title: 'Casino Royale', year: 2006, unmatched: { text: 'Plex has the 1954 film' } });
+      expect(await lib.matchOf('404')).toMatchObject({ match: 'unmatched', unmatched: { reason: 'not-in-plex' } });
+    });
+    it('a search lists both sections; each film carries its match', async () => {
+      const lib = build({ map: { 'plex:1': m('Robin Hood', 11), 'plex:2': m('Robin Hood', 12) },
+        edls: { 1: e('Robin Hood', 2010, 11), 2: e('Robin Hood', 1973, 12) }, items: [{ ratingKey: '1', title: 'Robin Hood', year: 2010 }, { ratingKey: '2', title: 'Robin Hood', year: 2010 }] });
+      const r = await lib.list({ q: 'robin' });
+      expect(r.films.map((f) => f.match)).toEqual(['verified', 'unmatched']);
     });
   });
 });
