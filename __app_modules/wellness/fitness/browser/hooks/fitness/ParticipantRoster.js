@@ -523,8 +523,14 @@ export class ParticipantRoster {
         const committed = this._zoneProfileStore.getZoneState(trackingId);
         if (committed) {
           const baseline = zoneLookup.get(trackingId);
-          const rawZoneId = baseline?.zoneId || null;
-          const rawZoneColor = baseline?.color || null;
+          // Raw zone: the store's own read of the current heart rate on the
+          // committed ladder (displayZoneId) — the same thresholds the
+          // committed zone will settle to — before the TreasureBox baseline.
+          // (The store reads a missing heart rate as Cool; only a real reading counts.)
+          const storeRead = committed.heartRate > 0 && committed.displayZoneId
+            ? String(committed.displayZoneId).toLowerCase() : null;
+          const rawZoneId = storeRead || baseline?.zoneId || null;
+          const rawZoneColor = (storeRead && committed.displayZoneColor) || baseline?.color || null;
           zoneLookup.set(trackingId, {
             zoneId: committed.zoneTrusted === false ? null : committed.zoneId?.toLowerCase() || null,
             color: committed.zoneTrusted === false ? null : committed.zoneColor || rawZoneColor || null,

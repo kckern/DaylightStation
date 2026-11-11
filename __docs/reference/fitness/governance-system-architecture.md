@@ -473,6 +473,14 @@ For each HR update:
   Either way the rider is untrusted for about a second, until a plausible
   reading on the same strap arrives, which is well inside governance grace.
   A strap now worn by another rider gets nothing from the old wearer's evidence.
+- **What the sidebar card shows while untrusted.** Trust gates *earned* state
+  only. The player sidebar's zone badge (and its grouping/sort) uses
+  `shownZoneId` (`lib/committedZone.js`): the committed zone when there is one,
+  otherwise — while a live reading is present — the zone that reading is in on
+  the same ladder (`ZoneProfileStore` `displayZoneId`, carried by the roster as
+  `rawZoneId`; the household base ladder as a last resort). A card never reads
+  "No Zone" beside a heart rate (2026-11-10). Governance, TreasureBox and the
+  roster's `zoneMap` still read `committedZoneId`.
 - **Reload restore without evidence (v1 snapshot).** `restoreTrust` re-admits
   the rider with no evidence and no smoothing state, so their first reading
   commits instantly with no upward confirmation. That first entry is marked

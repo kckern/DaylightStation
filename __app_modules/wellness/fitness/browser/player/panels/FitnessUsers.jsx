@@ -14,7 +14,8 @@ import HeartIcon from "../../shared/HeartIcon.jsx";
 import { measureRiderLayout, RIDER_GAP_PX, RIDER_MIN_PX, RIDER_SINGLE_CAP_PX } from "./riderListDensity.js";
 import { pickZoneSequence, trendVisible, trendsAvailable as trendsAvailableFor, zoneBarState, TREND_SINGLE_CAP_PX } from "./hrTrend.js";
 import RiderHrTrend from "./RiderHrTrend.jsx";
-import { committedZoneId } from "../../lib/committedZone.js";
+import { committedZoneId, shownZoneId } from "../../lib/committedZone.js";
+import { deriveZoneProgressSnapshot } from "../../hooks/fitness/types.js";
 import { ZONE_COLORS } from "../../shared/constants/fitness.js";
 import { lookupZoneProgress as lookupZoneProgressFromIndex } from "../../domain/zoneProgressIndex.js";
 import { genericGuestImageId, isGenericGuestProfileId } from "../../lib/guestPlaceholders.js";
@@ -482,7 +483,12 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     onRequestGuestAssignment?.({ deviceId, defaultName });
   }, [onRequestGuestAssignment, getDisplayName]);
 
-  const getCommittedZoneId = (device) => {
+  // The zone the card shows and the list groups by. Committed (earned) zone
+  // first; while the store has not yet trusted a rider with a live reading, the
+  // zone that reading sits in on the same ladder (ZoneProfileStore's raw
+  // displayZoneId, the roster's rawZoneId, or the household ladder read off
+  // the heart rate) — never "No Zone" beside a live BPM.
+  const getShownZoneId = (device, heartRate) => {
     if (device.type !== 'heart_rate') return null;
     const deviceKey = String(device.deviceId);
     const participant = participantByHrId.get(deviceKey) || participantsByDevice.get(deviceKey);
@@ -492,7 +498,14 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     // assignment. Only the current participant's profile may override its zone.
     const profile = resolveZoneProfile(participant?.profileId)
       || resolveZoneProfile(participant?.id) || resolveZoneProfile(name);
-    return committedZoneId(profile, participant, participant ? null : resolveZoneProfile(user?.id));
+    const committed = committedZoneId(profile, participant, participant ? null : resolveZoneProfile(user?.id));
+    if (committed) return committed;
+    const liveZoneId = profile?.displayZoneId
+      || participant?.rawZoneId
+      || (Number.isFinite(heartRate) && heartRate > 0
+        ? deriveZoneProgressSnapshot({ zoneConfig: zones, heartRate })?.currentZoneId
+        : null);
+    return shownZoneId({ committed, heartRate, liveZoneId });
   };
 
   const pickTextColor = (bg) => {
@@ -823,7 +836,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 ? Math.max(0, Math.min(1, progressInfo.progress))
                 : null;
               const shouldShowProgressBar = Boolean(progressInfo && (progressInfo.showBar || normalizedProgress !== null));
-              Number.isFinite(userVitalsEntry?.heartRate)
+              const liveHeartRate = Number.isFinite(userVitalsEntry?.heartRate)
                 ? userVitalsEntry.heartRate
                 : (Number.isFinite(participantEntry?.heartRate)
                   ? participantEntry.heartRate
@@ -860,7 +873,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                   hasGuestAssignment: !!guestAssignment
                 }, { maxPerMinute: 6, aggregate: true });
               }
-              const zoneIdForGrouping = isHeartRate ? getCommittedZoneId(device) : null;
+              const zoneIdForGrouping = isHeartRate ? getShownZoneId(device, liveHeartRate) : null;
               const zoneClass = zoneIdForGrouping ? `zone-${zoneIdForGrouping}` : 'no-zone';
               const zoneBadgeColor = zoneIdForGrouping
                 ? paletteZoneColor(zoneIdForGrouping, userVitalsEntry?.zoneColor || participantEntry?.zoneColor || progressInfo?.zoneColor || zoneColorMap[zoneIdForGrouping] || null)
