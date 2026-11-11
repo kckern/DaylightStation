@@ -49,6 +49,19 @@
   }
   &__title { font-size: 1.6em; font-weight: 700; letter-spacing: 0.01em; }
 
+  // What the two kinds of gem mean: whole = got it, cut = on the way.
+  &__legend {
+    display: flex;
+    gap: 1.2em;
+    margin-left: 1.5em;
+    font-size: 1em;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ds-text-mid, #94a3b8);
+    > span { display: inline-flex; align-items: center; gap: 0.35em; }
+    .gem-glyph { font-size: 0.5em; } // a 3.8em glyph box at about the header's line height
+  }
+
   &__weeks {
     margin-left: auto;
     display: inline-flex;
@@ -194,6 +207,8 @@
     justify-content: center;
     height: 100%;
   }
+  // A cell of the outline while the read is out: a solid dark dot, so the board reads as loading, not empty.
+  &__dot { width: 0.7em; height: 0.7em; border-radius: 50%; background: #2a3040; }
   // The glyph's wrapper: a button when the cell has detail to open, a plain span when not.
   &__open, &__still { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
   &__open {

@@ -6,11 +6,13 @@
  *
  * One line per child, in roster order — never ranked. The columns are the gem
  * rows the response names in `categories`, gathered under its `groups`
- * (Move, School, Games), each with its name leaning over it; the child's gem
- * count for the week closes the line. A cell is one glyph (GemGlyph.jsx) and carries no
- * numerals but a ×n badge. No failure marks: a gem not earned is a blank
- * cell, a gem still in reach is a full gem inside a ring of done days,
- * an unreadable source a blank cell too.
+ * (Move, School, Games), each column with its name leaning over it; the
+ * child's gem count for the week closes the line: the gems held, earned plus
+ * any contest they lead, which is what the line draws. A cell is one glyph
+ * (GemGlyph.jsx) and carries no numerals but a ×n badge. No failure marks: a
+ * gem not earned is a blank cell, a gem still in reach is a gem cut like the
+ * ring of done days around it, an unreadable source a blank cell too. A legend
+ * in the header says which is which (whole = got it, cut = on the way).
  *
  * A cell with something behind it opens a detail box (GemDetail.jsx): which
  * days counted, which milestones were paid, how a contest stands.
@@ -92,6 +94,11 @@ function Avatar({ id, name }) {
   return <img className="gem-board__avatar" src={`/api/v1/static/img/users/${id}`} alt="" onError={() => setFailed(true)} />;
 }
 
+// The header legend's two samples, drawn in a neutral grey: a gem got, and one on the way (2 of 4 days).
+const LEGEND_GREY = '#9aa4b2';
+const LEGEND_GOT = { state: 'earned', week: 1 };
+const LEGEND_ON_THE_WAY = { state: 'pending', week: 0, streak: { have: 2, need: 4, reach: 'on-track' } };
+
 /** A cell opens when its detail box would have something to say, however blank the cell looks. */
 const cellOpenable = (cell) => detailParts(cell).length > 0;
 
@@ -134,9 +141,10 @@ export const boardRowIds = (board) => boardSections(board).flatMap((g) => g.rows
  * @param {string|null} [props.cursorRowId] - with the focused child, the one cell under the cursor
  * @param {((rowId: string, learnerId: string) => void)|null} [props.onOpen] - makes cells with detail into buttons
  * @param {boolean} [props.pending] - `board` is only an outline (`boardShape`): the names and columns
- *   are drawn at full size, every cell is a placeholder and the totals are empty
+ *   are drawn at full size, every cell is a placeholder dot and the totals are empty
+ * @param {string} [props.weekLabel] - the totals' heading: the week the board shows
  */
-export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null, pending = false }) {
+export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null, onOpen = null, pending = false, weekLabel = 'This week' }) {
   const learners = board?.learners ?? [];
   const sections = useMemo(() => boardSections(board), [board]);
   // Tracks: names | gap, a section's columns | … | gap, totals. Lines: column names, section names, one per child.
@@ -176,12 +184,13 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
         {layout.placed.map((g) => (
           <div key={g.id} className="gem-board__group-label" role="columnheader" aria-colspan={g.rows.length} data-group={g.id} style={at(2, g.start, g.end)}><AreaIcon area={g.id} />{g.label}</div>
         ))}
-        <div className="gem-board__total-label" role="columnheader" style={at(2, layout.totalCol)}>This week</div>
+        <div className="gem-board__total-label" role="columnheader" style={at(2, layout.totalCol)}>{weekLabel}</div>
       </div>
 
       {learners.map((l, li) => {
         const focus = l.learnerId === focusLearnerId ? ' is-focus' : '';
-        const week = board.totals?.[l.learnerId]?.earned ?? 0;
+        // Gems held (earned + a contest being led), the same gems the line draws.
+        const week = board.totals?.[l.learnerId]?.week ?? 0;
         return (
           <div key={l.learnerId} className="gem-board__row" role="row">
             <div className={`gem-board__head${focus}`} role="rowheader" style={at(FIRST + li, 1)}>
@@ -190,7 +199,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
             </div>
             {layout.placed.map((g) => g.rows.map((row, i) => (
               <div key={row.id} className={`gem-board__col${focus}`} data-row={row.id} data-learner={l.learnerId} style={at(FIRST + li, g.start + i)}>
-                {pending ? <div className="gem-board__cell" role="cell" /> : <GemCell
+                {pending ? <div className="gem-board__cell" role="cell"><span className="gem-board__dot" /></div> : <GemCell
                   cell={board.cells?.[row.id]?.[l.learnerId]}
                   color={row.color}
                   area={row.area ?? row.group}
@@ -203,7 +212,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
             )))}
             {pending
               ? <div className="gem-board__total" role="cell" style={at(FIRST + li, layout.totalCol)} />
-              : <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} this week`} style={at(FIRST + li, layout.totalCol)}>{week}</div>}
+              : <div className={`gem-board__total${focus}`} role="cell" aria-label={`${l.name}: ${week} ${weekLabel.toLowerCase()}`} style={at(FIRST + li, layout.totalCol)}>{week}</div>}
           </div>
         );
       })}
@@ -408,6 +417,7 @@ export default function GemBoardOverlay({
 
   if (!open) return null;
   const { board, error, loading } = state;
+  const weekLabel = weekOffset === 0 ? 'This week' : 'Last week';
   const body = (
     <div className={`gem-board gem-board--${surface}`} role="dialog" aria-modal="true" aria-label="Gem board" onPointerDown={poke}>
       <div className="gem-board__backdrop" onClick={() => close('tap')} />
@@ -415,6 +425,10 @@ export default function GemBoardOverlay({
         <div className="gem-board__header">
           <GemIcon size="1.4em" />
           <span className="gem-board__title">Gems</span>
+          <div className="gem-board__legend" aria-hidden="true">
+            <span><GemGlyph cell={LEGEND_GOT} color={LEGEND_GREY} />Got it</span>
+            <span><GemGlyph cell={LEGEND_ON_THE_WAY} color={LEGEND_GREY} />On the way</span>
+          </div>
           <div className="gem-board__weeks" role="group" aria-label="Week">
             <button type="button" className={`gem-board__week${weekOffset === -1 ? ' is-on' : ''}`} disabled={!thisWeek.current} onClick={() => step(-1)}>Last week</button>
             <button type="button" className={`gem-board__week${weekOffset === 0 ? ' is-on' : ''}`} onClick={() => step(0)}>This week</button>
@@ -425,13 +439,13 @@ export default function GemBoardOverlay({
         {!board && !error && !shape && <div className="gem-board__empty">Loading…</div>}
         {!board && !error && shape && (
           <div className="gem-board__body" inert="">
-            <GemBoardGrid board={shape} focusLearnerId={focus} pending />
+            <GemBoardGrid board={shape} focusLearnerId={focus} weekLabel={weekLabel} pending />
           </div>
         )}
         {board && board.mode === 'off' && <div className="gem-board__empty">Gems are switched off.</div>}
         {board && board.mode !== 'off' && (
           <div className={`gem-board__body${loading ? ' is-loading' : ''}`} inert={detail ? '' : undefined}>
-            <GemBoardGrid board={board} focusLearnerId={focus} cursorRowId={rowCursor} onOpen={(rowId, learnerId) => openDetail(rowId, learnerId, 'tap')} />
+            <GemBoardGrid board={board} focusLearnerId={focus} weekLabel={weekLabel} cursorRowId={rowCursor} onOpen={(rowId, learnerId) => openDetail(rowId, learnerId, 'tap')} />
           </div>
         )}
         {detail && (
