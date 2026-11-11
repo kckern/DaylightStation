@@ -94,7 +94,7 @@ describe('StepMatCard', () => {
     [{ online: true, active: true, engaged: true }, 'stepping', 'Stepping'],
     [{ online: true, active: false, engaged: true }, 'dormant', 'Dormant'],
     [{ online: true, active: false, engaged: false }, 'ready', 'Ready'],
-    [{ online: false, active: false, engaged: true }, 'offline', 'Sensor unavailable'],
+    [{ online: false, active: false, engaged: true }, 'offline', 'Offline'],
   ])('labels state %o as %s', (overrides, state, label) => {
     const { container } = render(<StepMatCard equipment={{ name: 'Step Mat' }} snapshot={{ ...snapshot, ...overrides }} />);
     const pill = container.querySelector('.step-mat-card__state');
@@ -104,11 +104,11 @@ describe('StepMatCard', () => {
     expect(screen.getByRole('button', { name: new RegExp(`stomps\\. ${label}\\. Tap`) })).toBeTruthy();
   });
 
-  it('lays out SPM as the primary number with steps and stomps as labelled totals', () => {
+  it('lays out SPM, steps and stomps as one row of labelled numbers', () => {
     const { container } = render(<StepMatCard equipment={{ name: 'Step Mat' }} snapshot={{ ...snapshot, stepsPerMinute: 35.6 }} />);
-    expect(container.querySelector('.step-mat-card__rate').textContent).toBe('36SPM');
-    const stats = [...container.querySelectorAll('.step-mat-card__stat')].map((el) => el.textContent);
-    expect(stats).toEqual(['42steps', '5stomps']);
+    expect(container.querySelector('.step-mat-card__stat--rate').textContent).toBe('36SPM');
+    const stats = [...container.querySelectorAll('.step-mat-card__stats .step-mat-card__stat')].map((el) => el.textContent);
+    expect(stats).toEqual(['36SPM', '42Steps', '5Stomps']);
   });
 
   it('renders zeros rather than NaN when the snapshot has no numbers yet', () => {
@@ -118,7 +118,7 @@ describe('StepMatCard', () => {
         snapshot={{ ...snapshot, stepsPerMinute: undefined, sessionSteps: null, sessionStomps: undefined }}
       />
     );
-    expect(container.querySelector('.step-mat-card__rate strong').textContent).toBe('0');
+    expect(container.querySelector('.step-mat-card__stat--rate strong').textContent).toBe('0');
     expect(container.textContent).not.toContain('NaN');
   });
 });

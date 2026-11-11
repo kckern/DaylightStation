@@ -89,19 +89,25 @@
     /* Hover removed */
     }
 
+    // Under the poster: the show's name, centred in the card. It is what the
+    // card shows while the poster is still on its way, or if it never arrives.
     .show-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: white;
-      margin-bottom: 0;
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      box-sizing: border-box;
+      font-size: 22px;
+      font-weight: 700;
       line-height: 1.2;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      color: rgba(255, 255, 255, 0.85);
+      text-align: center;
+      overflow-wrap: anywhere;
+      pointer-events: none;
     }
+    .show-image { position: relative; z-index: 1; }
 
     .show-info {
       display: flex;

@@ -15,7 +15,7 @@ const avatarFor = (userId) => (userId
   : GENERIC_EQUIPMENT_FALLBACK_SRC);
 
 const STATES = {
-  offline: 'Sensor unavailable',
+  offline: 'Offline',
   stepping: 'Stepping',
   dormant: 'Dormant',
   ready: 'Ready',
@@ -179,13 +179,10 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
             <span className="step-mat-card__state-dot" aria-hidden="true" />
             {status}
           </div>
-          <div className="step-mat-card__rate">
-            <strong>{rate}</strong>
-            <span>SPM</span>
-          </div>
-          <div className="step-mat-card__totals">
-            <span className="step-mat-card__stat"><strong>{steps}</strong><em>steps</em></span>
-            <span className="step-mat-card__stat"><strong>{stomps}</strong><em>stomps</em></span>
+          <div className="step-mat-card__stats">
+            <span className="step-mat-card__stat step-mat-card__stat--rate"><strong>{rate}</strong><em>SPM</em></span>
+            <span className="step-mat-card__stat"><strong>{steps}</strong><em>Steps</em></span>
+            <span className="step-mat-card__stat"><strong>{stomps}</strong><em>Stomps</em></span>
           </div>
         </BaseRealtimeCard>
       </div>
