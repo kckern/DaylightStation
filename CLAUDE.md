@@ -265,6 +265,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `__docs/reference/school/reading-log.md` |
 | Living-room reading sessions (card → launch card → book → credit; cold-wake delivery, mid-story adoption) | `__docs/reference/school/reading-sessions.md` |
 | School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `__docs/reference/school/term-grid.md` |
+| School day-off tiers (holiday tiers normal/stay-home/enrichment/major-holiday/away, `dayOffTiers` keep-lists, date-bound `onDays` units + placeholders, weekend scripture, Green Week vs Scripture coin) | `__docs/reference/school/day-off-tiers.md` |
 | School status board coins (coin cell → bank screen, coin ceremony, coin.mp3) | `__docs/reference/school/agenda-and-completion.md` |
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `__docs/reference/school/media-lessons.md` |
 | School card ladder (two-sided card packages — target/anchor, any language or subject; Korean is the example: lexicon decks, per-card ladder, review run, printed quiz fold, weekly dictation from `dictation:` week tags; formerly "word ladder") | `__docs/reference/school/card-ladder.md` |

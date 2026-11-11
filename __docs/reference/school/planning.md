@@ -61,6 +61,12 @@ dormant, missed-target, or catch-up; it never changes a grade, prerequisite,
 issued worksheet, or historical record. An open session always remains
 resumable. See [timing and priority](./timing-and-priority.md).
 
+Two more date rules sit beside timing. A **date-bound** unit (`onDays`) is in the
+plan only on its own days and outside its course's sequence, which is how a
+holiday activity or an enrichment swap is authored. And the household calendar's
+breaks carry a **day-off tier** that decides which planned work is still asked
+that day. See [Day-off tiers](./day-off-tiers.md).
+
 ## From plan to agenda
 
 `planLearnerWork` combines the assignment, catalog, frozen enrollment, session

@@ -250,6 +250,7 @@ describe('AgendaStatusBoard model', () => {
         extraCount: 7,
       }],
       restDay: null,
+      dayOff: null,
     });
   });
 

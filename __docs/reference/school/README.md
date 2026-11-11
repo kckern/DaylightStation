@@ -52,6 +52,7 @@
 | What belongs in a learner's plan? | [Planning](./planning.md) |
 | How do syllabi and frozen enrollments work? | [Enrollment](./enrollment.md) |
 | How do dates, urgency, and catch-up work? | [Timing and priority](./timing-and-priority.md) |
+| What does a holiday or a day at home still ask for (tiers, holiday activities, weekend scripture)? | [Day-off tiers](./day-off-tiers.md) |
 | How does today's paper and completion gate work? | [Agenda and completion](./agenda-and-completion.md) |
 | How do children add books, finish, reread, and correct a finish? | [Reading shelf](./reading-shelf.md) |
 | How are attempts graded and notes delivered? | [Assessment and feedback](./assessment-and-feedback.md) |

@@ -51,6 +51,12 @@ reconcile (the previous week too, Monday to Wednesday), and writes nothing
 unless the economy catalog's `mode` is `live`; `dry-run` only logs what it would
 mint. See [economy.md § Payouts](../economy/economy.md#payouts).
 
+**Days off and weekends.** Green Week is the five weekday school days: weekends
+never count toward or against it, and a stay-home, enrichment, major-holiday or
+away weekday drops out of the count. The weekly Scripture coin counts all seven
+days for a learner with weekend scripture, so a missed Saturday or Sunday loses
+it. See [Day-off tiers](./day-off-tiers.md#coins-and-gems).
+
 **Reward labels.** School surfaces show what the next sheet is worth through
 the optional `rewardFor({learnerId, unit})` port, wired to the economy: the
 Portal bank screen's ways to earn ("+2 silver · Math 4-02"), the

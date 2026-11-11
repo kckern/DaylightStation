@@ -411,10 +411,18 @@ and that learner's card on that gate's events.
 
 ## A day off on the status board
 
-When every planned section is excused and at least one because the day is
-`not_a_school_day` (weekend, holiday, vacation), `summarize` returns
+When every planned section is excused and at least one because the day is off
+(`not_a_school_day`, `household_calendar` or `day_off`), `summarize` returns
 `restDay: {optionalCount}` and the card says **No school today** instead of
-"No plan to show". When `optionalCount > 0` it adds **Scan your card for
+"No plan to show".
+
+A household day off **names itself**. `summarize` also carries the preview's
+`dayOff: {tier, label}`, and `dayOffTitle` turns it into the card's line:
+`<label> — stay-home day` (stay-home, enrichment), `<label> — holiday`
+(major-holiday), `<label> — no school` (away); a `normal`-tier day adds nothing.
+On a day with nothing owed that line replaces "No school today"; on a stay-home
+day with kept work the discs show as usual and the name line sits under them,
+solid, so a child sees why the day is short. See [Day-off tiers](./day-off-tiers.md). When `optionalCount > 0` it adds **Scan your card for
 extra work**: a card scan prints the agenda, and a rest-day agenda still
 carries every optional lesson with its code (the obligation is excused, not
 forbidden).

@@ -74,7 +74,7 @@ import { schoolApi } from "../schoolApi.js";
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
+import { dayOffTitle, dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import GemIcon from "../../../../../frontend/src/lib/icons/GemIcon.jsx";
@@ -291,12 +291,16 @@ function DayCount({ summary }) {
   );
 }
 
-/** "No school today" (+ how to get optional work). See `restDayOf` in the model. */
-function RestDayStatus({ restDay, pinned }) {
+/**
+ * "No school today" (+ how to get optional work). See `restDayOf` in the
+ * model. A household day off names itself instead ("Christmas break — no
+ * school"), so a child is told why rather than shown a blank.
+ */
+function RestDayStatus({ restDay, pinned, title = null }) {
   const hint = !pinned && restDay.optionalCount > 0;
   return (
     <span className="school-status-board__status school-status-board__status--rest">
-      {pinned ? 'No school' : 'No school today'}
+      {title ?? (pinned ? 'No school' : 'No school today')}
       {hint && <span className="school-status-board__status-hint">Scan your card for extra work</span>}
     </span>
   );
@@ -639,9 +643,13 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
           if (!plan?.ok) return settleWithoutPlan();
           settle(kid.id, generation, {
             summary: withServerVerdict(
-              summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity),
+              summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity,
+                plan.data?.dayOff ?? null),
               learner?.dayCompletion),
           });
+          if (plan.data?.dayOff) {
+            schoolLog.selfServiceDebug('status-board.day-off', { learnerId: kid.id, tier: plan.data.dayOff.tier });
+          }
         } catch (error) {
           schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
           // A failed RE-read keeps the card as it was; only a card with nothing
@@ -850,14 +858,22 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                   </div>
                 </div>
               )}
-              {loading ? null : summary && summary.total > 0 ? null : summary?.restDay ? (
+              {loading ? null : summary && summary.total > 0 ? (
+                // A stay-home day with kept work: the discs above, and the
+                // day's name under them, so the child knows why it is short.
+                dayOffTitle(summary.dayOff) ? (
+                  <span className="school-status-board__status school-status-board__status--dayoff">
+                    {dayOffTitle(summary.dayOff)}
+                  </span>
+                ) : null
+              ) : summary?.restDay ? (
                 // A DAY OFF IS NOT AN EMPTY PLAN (2026-09-26). Every section
                 // is excused as not a school day, and the optional work is
                 // still on the agenda a card scan prints. "No plan to show"
                 // told a child with flashcards waiting that there was
                 // nothing to do. A pinned past day gets no hint: a scan
                 // prints TODAY's agenda, not that day's.
-                <RestDayStatus restDay={summary.restDay} pinned={Boolean(day)} />
+                <RestDayStatus restDay={summary.restDay} pinned={Boolean(day)} title={dayOffTitle(summary.dayOff)} />
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}

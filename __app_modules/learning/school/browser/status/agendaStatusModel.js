@@ -111,10 +111,14 @@ const better = (a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a);
  * one do not spoil the day. They are excused on every day. One OBLIGATED
  * section does: that is a school day with work owed.
  */
+// A household day off (an away day, or a stay-home day that kept nothing for
+// this section) is as much a day off as a weekend.
+const OFF_REASONS = new Set(['not_a_school_day', 'household_calendar', 'day_off']);
+
 function restDayOf(planned) {
   if (!planned.length) return null;
   if (!planned.every((section) => section.obligation?.state === 'excused')) return null;
-  const off = planned.filter((section) => section.obligation?.reason === 'not_a_school_day');
+  const off = planned.filter((section) => OFF_REASONS.has(section.obligation?.reason));
   if (!off.length) return null;
   // Every offered lesson counts, not only the not-a-school-day ones: a scan
   // prints the backlog and elective lessons too, so a holiday whose only
@@ -122,7 +126,26 @@ function restDayOf(planned) {
   return { optionalCount: planned.filter((section) => section.next?.unitId).length };
 }
 
-export function summarize(sections, sessions, entries = [], readingActivity = null, fitnessActivity = null) {
+const DAY_OFF_SUFFIX = Object.freeze({
+  'stay-home': 'stay-home day',
+  enrichment: 'stay-home day',
+  'major-holiday': 'holiday',
+  away: 'no school',
+});
+
+/**
+ * The line that NAMES a household day off ("Veterans Day — stay-home day"),
+ * from the agenda's `dayOff: {tier, label}`. Null for an ordinary day and for
+ * a `normal`-tier break, which is a school day.
+ */
+export function dayOffTitle(dayOff) {
+  const suffix = DAY_OFF_SUFFIX[dayOff?.tier];
+  if (!suffix) return null;
+  if (dayOff.label) return `${dayOff.label} — ${suffix}`;
+  return dayOff.tier === 'away' ? 'No school today' : `${suffix.charAt(0).toUpperCase()}${suffix.slice(1)}`;
+}
+
+export function summarize(sections, sessions, entries = [], readingActivity = null, fitnessActivity = null, dayOff = null) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
   const plannedSubjects = new Set(planned.map((s) => s.subject));
   const byUnit = new Map();
@@ -282,7 +305,7 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
       unitId: `fitness:activity:${fitnessActivity.studyDay}`,
     });
   }
-  return { total, done, segments, restDay: restDayOf(planned) };
+  return { total, done, segments, restDay: restDayOf(planned), dayOff: dayOff ?? null };
 }
 
 /**
