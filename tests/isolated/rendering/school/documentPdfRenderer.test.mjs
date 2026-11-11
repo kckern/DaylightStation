@@ -534,3 +534,20 @@ describe('determinism', () => {
     expect(raw.match(/\(D:\d{14}Z?\)/g)).toEqual(['(D:19700101000000Z)']);
   });
 });
+
+describe('the worth line (header.worth, priced at print time)', () => {
+  it('draws the worth line when the header carries one', async () => {
+    const priced = { ...worksheet, header: { worth: 'Worth 2 silver' } };
+    const { pdf } = await renderer.render(priced, { studentName: 'Test Learner' });
+    expect(pdfText(pdf)).toContain('Worth 2 silver');
+  });
+
+  it('a header with no worth draws exactly what it drew before', async () => {
+    const before = await renderer.render(worksheet, { studentName: 'Test Learner' });
+    const blankWorth = await renderer.render({ ...worksheet, header: { worth: null } }, { studentName: 'Test Learner' });
+    const emptyHeader = await renderer.render({ ...worksheet, header: {} }, { studentName: 'Test Learner' });
+    expect(blankWorth.pdf.equals(emptyHeader.pdf)).toBe(true);
+    expect(pdfText(before.pdf)).not.toContain('Worth');
+    expect(pdfText(blankWorth.pdf)).toBe(pdfText(before.pdf));
+  });
+});

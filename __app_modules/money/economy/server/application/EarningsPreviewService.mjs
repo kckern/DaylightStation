@@ -11,7 +11,7 @@
  * Reusable by any surface — teacher console, fitness, admin — through
  * `preview` (one learner) and `roster` (everyone, one standings read).
  */
-import { evaluateEarnings } from "../domain/earnings/index.mjs";
+import { evaluateEarnings, withSubjectDone } from "../domain/earnings/index.mjs";
 import { weekWindowFor } from "../../../../learning/school/server/study-calendar.mjs";
 import { studyDayForInstant, studyDayWindowForDate } from "../../../../learning/school/server/domain-study-day.mjs";
 import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
@@ -81,6 +81,47 @@ export class EarningsPreviewService {
     if (!learner) throw new EntityNotFoundError('learner', learnerId);
     const ctx = await this.#context(week, roster, { fresh });
     return this.#price(learner, ctx);
+  }
+
+  /** One learner's week (`week`: any study day in it; default the current week), under a name callers can depend on. */
+  async quote({ learnerId, week = null } = {}) {
+    return this.preview({ learnerId, week });
+  }
+
+  /**
+   * What finishing `subject` today would add to this learner's week, priced
+   * from ONE facts read: the subject alone (`silver`/`gems`), the green-day
+   * bonus when `finishesDay` (`dayBonus`), and the rules that moved (`lines`).
+   * Null when School's evidence is unavailable or outside the term — a price
+   * that could not be checked is no price.
+   */
+  async ifDone({ learnerId, subject, unitId = null, courseId = null, finishesDay = false } = {}) {
+    const roster = await this.#roster();
+    const learner = roster.find((l) => l.id === learnerId);
+    if (!learner) throw new EntityNotFoundError('learner', learnerId);
+    const ctx = await this.#context(null, roster);
+    const read = await this.#facts(learner, ctx);
+    if (!read.schoolOk || read.outsideTerm) return null;
+    const day = ctx.today;
+    const actual = this.#evaluate(learner, ctx, read, read.school);
+    const base = this.#evaluate(learner, ctx, read, withSubjectDone(read.school, { day, subject, unitId, courseId }));
+    const full = finishesDay
+      ? this.#evaluate(learner, ctx, read, withSubjectDone(read.school, { day, subject, unitId, courseId, finishesDay: true }))
+      : base;
+    const gain = (a, b, k) => Math.max(0, (a.totals?.[k] ?? 0) - (b.totals?.[k] ?? 0));
+    // Earned amounts only: a pending line's amount is not paid (yet).
+    const earned = (l) => (l.status === 'earned' ? (l.amount ?? { silver: 0, gems: 0 }) : { silver: 0, gems: 0 });
+    const byRule = new Map(actual.lines.map((l) => [l.ruleId, earned(l)]));
+    const lines = full.lines.map((l) => {
+      const was = byRule.get(l.ruleId) ?? { silver: 0, gems: 0 };
+      const now = earned(l);
+      return { ruleId: l.ruleId, label: l.label, silver: Math.max(0, (now.silver ?? 0) - was.silver), gems: Math.max(0, (now.gems ?? 0) - was.gems) };
+    }).filter((l) => l.silver > 0 || l.gems > 0);
+    return {
+      silver: gain(base, actual, 'silver'), gems: gain(base, actual, 'gems'),
+      dayBonus: { silver: gain(full, base, 'silver'), gems: gain(full, base, 'gems') },
+      lines,
+    };
   }
 
   /** Every learner's week, reading the rules and the ring standings once. */
@@ -187,6 +228,12 @@ export class EarningsPreviewService {
   }
 
   async #price(learner, ctx) {
+    const read = await this.#facts(learner, ctx);
+    return this.#evaluate(learner, ctx, read, read.school);
+  }
+
+  /** The school and ring reads for one learner — the evidence, unpriced. */
+  async #facts(learner, ctx) {
     let school = EMPTY_SCHOOL;
     let schoolOk = true;
     try {
@@ -200,6 +247,10 @@ export class EarningsPreviewService {
     const ringSessions = Array.isArray(standing?.sessions) ? standing.sessions : [];
     const ringDays = Array.isArray(ctx.standings) ? this.#ringDays(ringSessions) : null;
     const outsideTerm = schoolOk && school.coverage === 'outside-term';
+    return { school, schoolOk, outsideTerm, rings, ringSessions, ringDays };
+  }
+
+  #evaluate(learner, ctx, { schoolOk, outsideTerm, rings, ringSessions, ringDays }, school) {
     const result = evaluateEarnings({
       ruleset: ctx.ruleset,
       learnerId: learner.id,

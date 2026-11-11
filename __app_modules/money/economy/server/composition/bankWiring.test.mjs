@@ -196,4 +196,13 @@ describe('createEconomyApi + createEconomyEarningsRuntime', () => {
     // The real runtime bound one; mode off here, so it answers null.
     expect(await economyApi.rewardFor({ learnerId: 'kid', unit: { subject: 'language' } })).toBeNull();
   });
+  it('economyApi.earningsQuote is null until the runtime binds its (uncached) preview', async () => {
+    const fresh = createEconomyApi({ configService: { getHouseholdAppConfig: () => ({}), getUserProfile: () => null, getUserDir: () => '/nonexistent', getHouseholdPath: () => '/nonexistent' }, logger: quiet() });
+    expect(fresh.earningsQuote()).toBeNull();
+    fresh.useEarningsQuote({ notAService: true });
+    expect(fresh.earningsQuote()).toBeNull();
+    const { economyApi, runtime } = await build();
+    expect(economyApi.earningsQuote()).toBe(runtime.earningsPreview);
+    expect(typeof economyApi.earningsQuote().ifDone).toBe('function');
+  });
 });

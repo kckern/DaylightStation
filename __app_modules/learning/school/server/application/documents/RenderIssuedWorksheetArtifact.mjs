@@ -49,7 +49,14 @@ export class RenderIssuedWorksheetArtifact {
     this.#curriculum = curriculum;
   }
 
-  async execute({ artifactId, artifact: suppliedArtifact = null } = {}) {
+  /**
+   * @param {object} args
+   * @param {object|null} [args.context] - values a caller re-derives at
+   *   reprint time and lays over the recorded context (e.g. the worksheet's
+   *   `worth`, re-priced so paper never shows a stale promise). Never
+   *   allocation fields.
+   */
+  async execute({ artifactId, artifact: suppliedArtifact = null, context: overrides = null } = {}) {
     const artifact = suppliedArtifact ?? await this.#artifacts.get(artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', artifactId);
     const { manifest } = artifact;
@@ -75,7 +82,8 @@ export class RenderIssuedWorksheetArtifact {
       });
     }
 
-    const rendered = await this.#render.execute({ document, context: replayContext(manifest) });
+    const context = { ...replayContext(manifest), ...(overrides ?? {}) };
+    const rendered = await this.#render.execute({ document, context });
     return {
       ...rendered,
       sha256: sha256Bytes(rendered.bytes),
