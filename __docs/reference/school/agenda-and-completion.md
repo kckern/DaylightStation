@@ -87,8 +87,9 @@ obligation is excused, not forbidden.
 4. Any day: a **date-bound** entry for today displaces the other entries of its
    subject (the enrichment swap, or a holiday activity). It is always kept,
    except on an `away` day.
-5. A **placeholder** entry is offered by name, but a section whose only owed work
-   is a placeholder is `excused · placeholder`.
+5. A **placeholder** entry never displaces anything and is offered only when
+   nothing real is in its section; a section whose only owed work is a
+   placeholder is `excused · placeholder`.
 
 Work already done today survives every filter: a dropped subject a child worked
 on anyway still reads `served`. The agenda returns `dayOff: {tier, label}` beside

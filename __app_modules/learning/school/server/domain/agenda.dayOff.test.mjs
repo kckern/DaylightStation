@@ -72,6 +72,19 @@ describe('day-off tiers on the agenda', () => {
     expect(section(agenda, 'civilization').obligation).toEqual({ state: 'excused', reason: 'placeholder' });
   });
 
+  it('a placeholder holiday activity never displaces the scripture lesson it sits beside', () => {
+    const stub = {
+      ...hol(), unitId: 'holiday-thanksgiving', subject: 'scripture', courseId: null, placeholder: true,
+      dateBound: { onDays: [{ from: '2026-11-26', to: '2026-11-26' }] },
+    };
+    const agenda = build({
+      entries: [stub, ...all], day: '2026-11-26',
+      householdSchedule: cal({ from: '2026-11-26', to: '2026-11-26', label: 'Thanksgiving', tier: 'major-holiday', assignment: 'holiday-thanksgiving' }),
+    });
+    expect(section(agenda, 'scripture').next.unitId).toBe('cfm-1');
+    expect(section(agenda, 'scripture').obligation.state).toBe('obligated');
+  });
+
   it('a kept program whose own schedule excludes the day is still not owed', () => {
     const agenda = build({
       entries: all, day: '2026-12-26',

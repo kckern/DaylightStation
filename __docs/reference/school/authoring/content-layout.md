@@ -91,9 +91,10 @@ displaces the other entries of its subject on the agenda, which is how an
 enrichment day swaps a subject.
 
 `placeholder: true` is allowed only on a date-bound unit, and a placeholder needs
-no `bank`/`document`/`media`/`activity` yet. The agenda offers it by name but
-excuses its section (`excused / placeholder`), so a holiday works before its
-activity exists. Remove `placeholder` and add the content when it is written.
+no `bank`/`document`/`media`/`activity` yet. It never displaces the lesson beside
+it; the agenda offers it by name only when its section has nothing real to offer,
+and then excuses the section (`excused / placeholder`), so a holiday works before
+its activity exists. Remove `placeholder` and add the content when it is written.
 
 ## Compact course packages (v2)
 

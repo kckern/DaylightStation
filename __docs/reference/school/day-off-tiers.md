@@ -109,9 +109,12 @@ provenance: { source: Household, reviewState: approved }
   activity is the day's scripture item and the weekday lesson it displaced stays
   in the plan as backlog.
 - `placeholder: true` lets the unit stand with no bank, document or media yet.
-  The agenda names it, but its section is `excused · placeholder`, so a holiday
-  works before its activity is written. Add the content and drop the flag when it
-  is.
+  A placeholder never displaces the lesson beside it and is offered only when
+  its section has nothing real to offer, in which case the section is
+  `excused · placeholder`. So a holiday works before its activity is written: on
+  Thanksgiving the scripture lesson is still asked while its scripture-subject
+  activity is a stub. Add the content and drop the flag when it is written; from
+  then on it displaces as above.
 
 See [content layout](./authoring/content-layout.md#date-bound-and-placeholder-units).
 

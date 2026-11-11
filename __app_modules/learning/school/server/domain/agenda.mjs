@@ -347,9 +347,12 @@ export function planDailyAgenda({
       || (e.program && programStatusFor(programStatuses, e)?.doneToday === true);
     // THE SWAP. A date-bound entry is in the plan only on its own day, and on
     // that day it takes its subject's slot: the holiday lesson replaces the
-    // ordinary one rather than sitting beside it.
-    const swapped = scheduled.some((e) => e.dateBound)
-      ? scheduled.filter((e) => e.dateBound || doneToday(e))
+    // ordinary one rather than sitting beside it. A PLACEHOLDER never swaps:
+    // there is nothing in it to do yet, and it must not cost the day the
+    // lesson it would have replaced (a scripture-subject holiday stub would
+    // otherwise leave scripture unasked on the holiday).
+    const swapped = scheduled.some((e) => e.dateBound && !e.placeholder)
+      ? scheduled.filter((e) => (e.dateBound && !e.placeholder) || doneToday(e))
       : scheduled;
     // THE KEEP-LIST. On a keeping tier, only kept work is asked. When nothing
     // in the section is kept, the full list stays for the ladder (its
@@ -441,10 +444,12 @@ export function planDailyAgenda({
       ? weekendScripturePick(weekendTrack, today, latestPassAt)
       : null;
     const offerable = offerEligible.filter((e) => !isTeacherHeld(e) && !weekendTrack.includes(e));
+    // A placeholder is offered only when nothing real is.
     const candidate = weekendPick ?? [
       ...offerable.filter((e) => e.status === 'in_progress'),
       ...offerable.filter((e) => e.status === 'available'),
-    ].sort(byEntryPriority)[0]
+    ].sort((left, right) => Number(Boolean(left.placeholder)) - Number(Boolean(right.placeholder))
+      || byEntryPriority(left, right))[0]
       ?? offerEligible.filter((e) => isTeacherHeld(e) && e.status === 'in_progress').sort(byEntryPriority)[0]
       ?? null;
     const servedToday = (subjectPassedToday || programDone) && !candidate && !programUnavailable;
