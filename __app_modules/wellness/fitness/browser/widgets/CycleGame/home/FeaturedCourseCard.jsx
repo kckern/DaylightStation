@@ -17,7 +17,8 @@ const fmtTime = (s) => {
 /**
  * "This Week's Course" — the weekly time-trial ladder. Standings are the
  * household's best attempts this week on the featured course; Ride It starts
- * the course with a rival ghost pre-armed (handled by the container).
+ * the course with the week's leader as a ghost (handled by the container); with
+ * no rides yet the card says there is no ghost.
  */
 export default function FeaturedCourseCard({ ladder = null, onRide = null, resolveName = (id) => id, disabled = false }) {
   if (!ladder?.course) return null;
@@ -36,7 +37,7 @@ export default function FeaturedCourseCard({ ladder = null, onRide = null, resol
       </div>
 
       {standings.length === 0 ? (
-        <div className="cgh-empty">No rides yet this week — set the first time.</div>
+        <div className="cgh-empty">No rides yet this week, so no ghost to race. Set the first time.</div>
       ) : (
         <ol className="cgh-featured__rows">
           {/* Rail real estate is scarce: top 3 rungs only, one-line overflow. */}

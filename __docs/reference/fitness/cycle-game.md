@@ -387,9 +387,9 @@ when the lobby's **"Race my best"** switch (`data-testid="race-my-best"`,
 shown beside Start only with no hand-picked ghost and at most one rider, and
 pressing it again before Start removes the rival (`cycle_game.race_my_best_set`).
 Off, a lone rider's Start launches at once with no lookup and logs
-`cycle_game.pace_rival_skipped {reason: 'not_opted_in'}` (DEBUG); "Ride it"
-starts the course with no ladder rival and no fetch (§16). (2026-11-10: a rival
-was added to a plain Distance race with no way to opt out.)
+`cycle_game.pace_rival_skipped {reason: 'not_opted_in'}` (DEBUG). (2026-11-10: a
+rival was added to a plain Distance race with no way to opt out.) The switch does
+**not** gate "Ride it": the weekly course always races its leader's ghost (§16).
 
 `startRace` first works out the ghost that would race: an explicit override (the
 featured-course button passes its ladder rival, or `null` when it has none)
@@ -1202,8 +1202,8 @@ considered. Nothing is ranked on the server. The filter and mapping are
 
 A **featured course** rotates weekly: everyone on the household rides it
 asynchronously through the week, a live ladder ranks best attempts, and the lobby's
-**"This week's course"** card offers a one-tap **Ride It** that pre-arms a rival
-ghost. Results then call out ladder movement. Built on the same records and index
+**"This week's course"** card offers a one-tap **Ride It** that always races the
+week's leader as a ghost. Results then call out ladder movement. Built on the same records and index
 as the rest of persistence (§15) — there is no separate ladder datastore.
 
 ### Config (`cycle_game` app config)
@@ -1298,22 +1298,29 @@ resolves.
   failure hides the card and logs a `warn` — riders can still race the featured
   course manually, since matching is by `course_id`, not by entry point.
 - **Ride It** builds the race through the normal `buildRaceConfigFromCourse` path
-  (which sets `course_id` for free). With "Race my best" off (the default) the
-  course starts with just the riders on the bikes: no rival, no fetch,
-  `cycle_game.ride_featured {rivalKind: 'none', raceMyBest: false}`. With it on,
-  it **pre-arms a rival ghost**:
-  - the rival is the **week's high score**: for the rider directly assigned to
-    the first bike, ranked or not (or when no rider is assigned yet), the
-    ladder **leader's** best race this week becomes the ghost;
-  - if that rider **is** the leader → their own **all-time personal best**
-    (via the personal-bests endpoint) becomes the ghost;
-  - no ladder data at all → no ghost; the race proceeds plain.
+  (which sets `course_id` for free) and **always arms the weekly-course ghost**,
+  whatever the "Race my best" switch says (owner 2026-11-11: two riders on
+  Sprint 1500 raced only each other while a child held #1 — the ghost had been
+  put behind the switch). `pickRival({ standings, riderIds })` in
+  `lib/cycleGame/ladder.js` picks, from the riders claimed on every bike:
+  - the ladder **leader** is not riding → the leader's best race this week
+    (`rivalKind: 'leader'`);
+  - the leader **is** riding → the best run this week by the highest-ranked
+    rider who is not (`'best-not-riding'`);
+  - everyone on the ladder is riding → the leader's own week-best run, as a
+    ghost (`'leader-own-record'`);
+  - no runs this week → no ghost (`'none'`); the card reads "No rides yet this
+    week, so no ghost to race."
+  Only the rival's own line replays (`onlyParticipant`): a best run ridden
+  alongside others, or against a ghost, does not bring them along.
   The lookup never holds up or fails Ride It. The lobby freezes at the press
-  (§4), and the personal-best and race-record requests share one 1500 ms budget
-  and one abort signal. On a timeout, an HTTP or network error, or a record
+  (§4), and the race-record request has one 1500 ms budget and one abort
+  signal. On a timeout, an HTTP or network error, or a record
   with nothing to replay, the course starts without the ladder ghost and
-  `cycle_game.featured_rival_lookup_failed` is logged (§18); a lone rider then
-  gets the automatic pace rival from loaded history only (§5). If the game is
+  `cycle_game.featured_rival_lookup_failed` is logged (§18); a lone rider with
+  "Race my best" on then gets the automatic pace rival from loaded history only
+  (§5). `cycle_game.ride_featured` logs `{ courseId, rider, riders, rivalKind,
+  rivalUserId, rivalRaceId, ghostArmed, raceMyBest }`. If the game is
   closed while it waits, the request is aborted and nothing starts. The ghost is armed through the same
   record-to-candidate / candidate-to-ghost pipeline the Ghost Picker uses (§17),
   not a separate mechanism.
@@ -1518,8 +1525,7 @@ by `raceId` (+ `elapsedS` where relevant).
   path: `{ control, error }`. Nothing is left staged and the lobby is unfrozen.
 - **`cycle_game.featured_rival_lookup_failed`** (WARN) — "Ride it" could not arm
   its ladder rival and started the course without it:
-  `{ courseId, stage, reason, error, lookupMs }`. `stage` is `personal-best` or
-  `record` (which request it was in); `reason` is `timeout` or `error`
+  `{ courseId, stage, reason, error, lookupMs }`. `stage` is `record`; `reason` is `timeout` or `error`
   (`error` holds the message, else `null`).
 - **`cycle_game.immersive`** (DEBUG) — the container asked the shell to hide
   (`on: true`) or restore (`on: false`) the navigation rail (§3): `{ on }`.

@@ -10,6 +10,7 @@ import RaceMenu from '../../../__app_modules/wellness/fitness/browser/widgets/Cy
 import CycleEventToast from '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/CycleEventToast.jsx';
 import RaceResults from '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/RaceResults.jsx';
 import '../../../__app_modules/wellness/fitness/browser/widgets/CycleGame/CycleGameContainer.scss';
+import { FLOW_SCENES } from './flowWeeklyGhost.jsx';
 
 void W;
 
@@ -304,6 +305,7 @@ const SIX_RACE = {
 const lobbySix = () => lobbyModal({ ghostCandidates: [...GHOST_CANDIDATES, SIX_RACE] });
 
 export const SCENES = {
+  ...FLOW_SCENES,
   'lobby-ghost-picker-six': lobbySix(),
   'lobby-ghost-roster-six': lobbySix(),
   'lobby-rider-picker': lobbyModal(),

@@ -12,15 +12,37 @@ export function courseStartOverride(course = {}) {
 }
 
 /**
- * Which past race to arm as the rival ghost: the week's high score. Every rider
- * but the leader chases the top rung, ranked or not; the leader chases their own
- * PB (raceId resolved separately via the PB endpoint).
+ * The weekly-course ghost "Ride it" always arms (owner, 2026-11-11 — never
+ * behind the "Race my best" switch):
+ * - the week's leader, when the leader is not on a bike ('leader');
+ * - the leader is riding: the best run this week by anyone not riding
+ *   ('best-not-riding');
+ * - everyone on the ladder is riding: the leader's own week-best run, as a ghost
+ *   ('leader-own-record');
+ * - no runs this week: no ghost ('none').
+ * Rungs without a raceId cannot be replayed and are skipped.
  */
-export function pickRival({ standings = [], riderId = null } = {}) {
-  if (!standings.length) return { kind: 'none', raceId: null, rivalUserId: null };
-  const top = standings[0];
-  if (riderId && top.userId === riderId) return { kind: 'self-pb', raceId: null, rivalUserId: riderId };
-  return { kind: 'leader', raceId: top.raceId, rivalUserId: top.userId };
+export function pickRival({ standings = [], riderIds = [] } = {}) {
+  const riding = new Set((riderIds || []).filter(Boolean));
+  const rows = (standings || []).filter((r) => r?.userId && r.raceId);
+  if (!rows.length) return { kind: 'none', raceId: null, rivalUserId: null };
+  const idx = rows.findIndex((r) => !riding.has(r.userId));
+  if (idx < 0) return { kind: 'leader-own-record', raceId: rows[0].raceId, rivalUserId: rows[0].userId };
+  const pick = rows[idx];
+  const kind = pick === standings[0] ? 'leader' : 'best-not-riding';
+  return { kind, raceId: pick.raceId, rivalUserId: pick.userId };
+}
+
+/**
+ * The rival's own line from a race-record candidate: their best run may have
+ * been ridden alongside others (or against a ghost), and only they race on the
+ * weekly course. null when the record has no line for them.
+ */
+export function onlyParticipant(candidate, userId) {
+  if (!candidate || !userId) return null;
+  const mine = (candidate.participants || []).filter((p) => p.id === userId);
+  if (!mine.length) return null;
+  return { ...candidate, participants: mine, winnerName: mine[0].displayName || candidate.winnerName };
 }
 
 /** A rider's movement between two ladder snapshots. null if not on the new ladder. */
