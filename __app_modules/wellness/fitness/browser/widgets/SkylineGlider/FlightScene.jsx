@@ -249,7 +249,8 @@ function Shutter({ entity, assets, progress: { warning, closed } }) {
 }
 
 function Entity({ entity, assets, time, role, damage, flashKey }) {
-  const name = frameName(entity, time);
+  // A hit that did not destroy it switches to the damaged art, when the zone has some.
+  const name = frameName(damage > 0 && entity.states?.damaged ? entity.states.damaged : entity, time);
   const label = ROLE_LABEL[role];
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role={role} className={`skyline-glider__entity skyline-glider__entity--${entity.class} skyline-glider__entity--${role}`}>
     {entity.slices && hasFrame(assets, entity.slices.body)
@@ -321,7 +322,10 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
   const pitch = clamp((state.verticalRate || 0) * 50, -12, 12);
   const craftFront = SKYLINE_CRAFT_GEOMETRY.frontSeconds * projected.unitsPerSecond;
   const craftRear = SKYLINE_CRAFT_GEOMETRY.rearSeconds * projected.unitsPerSecond;
-  const craftFrame = frameName(zone.craft, time);
+  // Craft art by state: boosting, then hurt (a collision or its protection), else flying.
+  const craftStates = zone.craft?.states || {};
+  const craftSpec = (state.boostRemaining > 0 && craftStates.boost) || ((effects.collisionKey || state.invincibleRemaining > 0) && craftStates.hurt) || zone.craft;
+  const craftFrame = frameName(craftSpec, time);
   const collectibleFrame = frameName(zone.collectible, time);
   const collected = new Set(state.collectedIds || []);
   const destroyed = new Set(state.destroyedIds || []);

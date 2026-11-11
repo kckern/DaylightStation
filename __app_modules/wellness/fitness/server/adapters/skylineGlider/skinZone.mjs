@@ -7,9 +7,15 @@
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
+function frames(spec) {
+  return spec.frames.length === 1 ? { frame: spec.frames[0] } : { frames: [...spec.frames], fps: spec.fps ?? 8 };
+}
+
+/** A slot's art as the zone spells it: frame or frames + fps, plus any states. */
 function animation(slot) {
   if (!slot?.frames?.length) return null;
-  return slot.frames.length === 1 ? { frame: slot.frames[0] } : { frames: [...slot.frames], fps: slot.fps ?? 8 };
+  const states = slot.states ? Object.fromEntries(Object.entries(slot.states).map(([name, spec]) => [name, frames(spec)])) : null;
+  return { ...frames(slot), ...(states ? { states } : {}) };
 }
 
 const snap = (units, step) => Math.round(units / step) * step;
@@ -92,7 +98,7 @@ export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, ar
       continue;
     }
     const art = animation(slot);
-    if (art) { delete entities[entity].frame; delete entities[entity].frames; delete entities[entity].fps; Object.assign(entities[entity], art); }
+    if (art) { delete entities[entity].frame; delete entities[entity].frames; delete entities[entity].fps; delete entities[entity].states; Object.assign(entities[entity], art); }
   }
   if (unknown.length) throw new Error(`skin dresses entities the base zone does not define: ${unknown.join(', ')}`);
   if (oversized.length) throw new Error(`entity sprites larger than their collision boxes: ${oversized.join('; ')}`);

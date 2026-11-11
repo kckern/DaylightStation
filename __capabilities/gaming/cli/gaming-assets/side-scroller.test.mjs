@@ -84,7 +84,7 @@ async function catalogFixture(dir, { layerDistribution = 'private-only', hillsTi
       layers: { type: 'parallax-layers', max: 4 },
       'terrain.fill': { type: 'texture', repeat: ['x', 'y'], scale: 3 },
       'terrain.edge': { type: 'strip', repeat: ['x'] },
-      craft: { type: 'sprite', animated: true, required: true },
+      craft: { type: 'sprite', animated: true, required: true, states: ['boost', 'hurt'] },
       'entities.*': { type: 'sprite', stretch: 'vertical' },
     },
   };
@@ -298,6 +298,18 @@ describe('skins', () => {
     assert.deepEqual(exported.manifest.slots['entities.wall'].slices, { top: 'entities.wall.cap', body: 'entities.wall.body', bottom: 'entities.wall.foot' });
     assert.deepEqual(exported.manifest.slots['entities.gate'].pieces, { bottom: { top: 'entities.gate.cap', body: 'entities.gate.body' } });
     assert.deepEqual(exported.manifest.slots['entities.wall'].size, [16, 0]);
+  });
+
+  it('validates and exports sprite states the game names', async () => {
+    const dir = await root();
+    const { contractPath } = await catalogFixture(dir);
+    const bad = await validateSkin({ root: dir, contractPath, skinPath: await writeSkin(dir, { ...goodSlots, craft: { asset: 'actor.hero', clip: 'fly', states: { dizzy: { frame: 'fly.0' }, boost: { frame: 'nope' } } } }) });
+    assert.ok(bad.errors.includes('slot craft: state dizzy is not one the game draws (boost, hurt)'), bad.errors.join('\n'));
+    assert.ok(bad.errors.includes('slot craft state boost: frame nope not in asset'));
+    const outDir = path.join(dir, 'out');
+    const exported = await exportSkin({ root: dir, contractPath, outDir, skinPath: await writeSkin(dir, { ...goodSlots, craft: { asset: 'actor.hero', clip: 'fly', states: { hurt: { frame: 'fly.1' } } } }) });
+    assert.equal(exported.ok, true, exported.errors?.join('\n'));
+    assert.deepEqual(exported.manifest.slots.craft.states, { hurt: { frames: ['craft.fly.1'] } });
   });
 
   it('keeps private-only art out of a shippable skin', async () => {

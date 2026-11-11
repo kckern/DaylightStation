@@ -121,6 +121,7 @@ export function resolveAct(act, zones) {
       ...(definition.draw ? { draw: definition.draw } : {}),
       // Vertical 3-slice art (walls, posts); a gate can dress each piece differently.
       ...(definition.slices ? { slices: { ...definition.slices } } : {}),
+      ...(definition.states ? { states: structuredClone(definition.states) } : {}),
       ...(definition.piece_slices ? { piece_slices: structuredClone(definition.piece_slices) } : {}),
       ...((placement.role ?? definition.role) ? { role: String(placement.role ?? definition.role) } : {}),
       ...(Array.isArray(placement.vulnerable_to ?? definition.vulnerable_to) ? { vulnerable_to: [...(placement.vulnerable_to ?? definition.vulnerable_to)] } : {}),

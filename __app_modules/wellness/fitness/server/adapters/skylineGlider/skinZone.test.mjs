@@ -20,10 +20,10 @@ const manifest = {
     'terrain.fill': { file: 'images/terrain.fill.png', width: 48, height: 48, scale: 3 },
     'terrain.edge': { file: 'images/terrain.edge.png', width: 16, height: 8, scale: 1 },
     'terrain.lava_fill': { file: 'images/terrain.lava_fill.png', width: 32, height: 32, scale: 2 },
-    craft: { frames: ['craft.fly.0', 'craft.fly.1'], fps: 6, loop: 'loop' },
+    craft: { frames: ['craft.fly.0', 'craft.fly.1'], fps: 6, loop: 'loop', states: { hurt: { frames: ['craft.poof.0', 'craft.poof.1'], fps: 12 } } },
     collectible: { frames: ['collectible.spin.0', 'collectible.spin.1', 'collectible.spin.2'], fps: 10, loop: 'loop' },
     'weapons.bomb': { frames: ['weapons.bomb.default'] },
-    'entities.pine': { frames: ['entities.pine.tree'], size: [12, 28] },
+    'entities.pine': { frames: ['entities.pine.tree'], size: [12, 28], states: { damaged: { frames: ['entities.pine.bent'] } } },
   },
   provenance: {}, files: {},
 };
@@ -41,15 +41,16 @@ describe('zoneFromSkinExport', () => {
     expect(zone.terrain).toMatchObject({ fill: 'images/terrain.fill.png', edge: 'images/terrain.edge.png', lava_fill: 'images/terrain.lava_fill.png', edge_lip: alpine.terrain.edge_lip, edge_height: 0.0267 });
     expect(zone.pixel_scale).toBe(2);
     expect(zone.sprites).toEqual({ sheet: 'sprites/sheet.png', frames: 'sprites/sheet.json' });
-    expect(zone.craft).toEqual({ frames: ['craft.fly.0', 'craft.fly.1'], fps: 6 });
+    expect(zone.craft).toEqual({ frames: ['craft.fly.0', 'craft.fly.1'], fps: 6, states: { hurt: { frames: ['craft.poof.0', 'craft.poof.1'], fps: 12 } } });
     expect(zone.weapons.bomb).toEqual({ frame: 'weapons.bomb.default' });
     expect(zone.pixel_art).toBe(true);
     expect(zone.skin).toEqual({ id: 'test-skin', distribution: 'private-only' });
   });
 
   it('keeps gameplay from the base zone', () => {
-    const { frame, ...pinePlay } = zone.entities.pine;
+    const { frame, states, ...pinePlay } = zone.entities.pine;
     expect(frame).toBe('entities.pine.tree');
+    expect(states).toEqual({ damaged: { frame: 'entities.pine.bent' } });
     expect(pinePlay).toEqual(alpine.entities.pine);
     expect(zone.entities.boulder).toEqual(alpine.entities.boulder);
     expect(zone.sounds).toEqual(alpine.sounds);
@@ -62,7 +63,7 @@ describe('zoneFromSkinExport', () => {
     expect(resolved.zone.sprites.sheet).toBe('fitness/skyline-glider/test-zone/sprites/sheet.png');
     expect(resolved.zone.pixel_scale).toBe(2);
     expect(resolved.zone.terrain.lava_fill).toBe('fitness/skyline-glider/test-zone/images/terrain.lava_fill.png');
-    expect(resolved.entities[0]).toMatchObject({ id: 'p1', class: 'breakable', frame: 'entities.pine.tree', draw: 'pine' });
+    expect(resolved.entities[0]).toMatchObject({ id: 'p1', class: 'breakable', frame: 'entities.pine.tree', draw: 'pine', states: { damaged: { frame: 'entities.pine.bent' } } });
   });
 
   it('refuses an entity sprite larger than the entity collision box', () => {

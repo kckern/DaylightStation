@@ -521,8 +521,17 @@ export async function validateSkin({ root, contractPath, skinPath }) {
     } else if (slot.type === 'sprite') {
       if (!['sprite-sheet', 'effect-sheet', 'image', 'tile-sheet'].includes(asset.kind)) errors.push(`slot ${slotName}: asset ${value.asset} kind ${asset.kind} cannot fill a sprite slot`);
       if (slot.animated && !value.clip) errors.push(`slot ${slotName}: animated slot needs a clip`);
+      // Alternate art the game switches to (craft boost/hurt, entity damaged, ...).
+      const states = {};
+      for (const [stateName, spec] of Object.entries(value.states ?? {})) {
+        if (!Array.isArray(slot.states) || !slot.states.includes(stateName)) { errors.push(`slot ${slotName}: state ${stateName} is not one the game draws (${(slot.states ?? []).join(', ') || 'none'})`); continue; }
+        const stateRefs = frameRefs(asset, spec ?? {});
+        if (stateRefs.error) { errors.push(`slot ${slotName} state ${stateName}: ${stateRefs.error}`); continue; }
+        states[stateName] = stateRefs;
+      }
+      const allFrames = [...refs.frames, ...Object.values(states).flatMap((state) => state.frames)];
       const density = asset.pixel_density ?? 1;
-      const visible = refs.frames.map((name) => asset.frames[name]).filter(Boolean)
+      const visible = allFrames.map((name) => asset.frames[name]).filter(Boolean)
         .map((frame) => (frame.content_bounds ?? frame.rect ?? [0, 0, 0, 0]).slice(2).map((v) => Math.ceil(v / density)));
       const size = [Math.max(0, ...visible.map((v) => v[0])), Math.max(0, ...visible.map((v) => v[1]))];
       const artPixel = contract.units?.art_pixel;
@@ -533,7 +542,7 @@ export async function validateSkin({ root, contractPath, skinPath }) {
           (slot.fit === 'strict' ? errors : warnings).push(message);
         }
       }
-      resolved.sprites[slotName] = { asset: value.asset, ...refs, size };
+      resolved.sprites[slotName] = { asset: value.asset, ...refs, allFrames, size, states };
     }
   }
   for (const [name, slot] of Object.entries(contract.slots ?? {})) {
@@ -628,7 +637,7 @@ export async function exportSkin({ root, contractPath, skinPath, outDir }) {
   const tiles = [];
   for (const [slotName, ref] of Object.entries(resolved.sprites)) {
     const asset = catalog.assets[ref.asset];
-    for (const frameName of ref.frames) {
+    for (const frameName of new Set(ref.allFrames ?? ref.frames)) {
       const canvas = await cropToNative({ createCanvas, image: await imageFor(asset), rect: frameRect(asset, frameName), density: asset.pixel_density ?? 1 });
       tiles.push({ name: `${slotName}.${frameName}`, canvas, w: canvas.width, h: canvas.height });
     }
@@ -638,6 +647,7 @@ export async function exportSkin({ root, contractPath, skinPath, outDir }) {
       frames: [...new Set(ref.frames)].map((name) => `${slotName}.${name}`), size: ref.size,
       ...(ref.fps ? { fps: ref.fps, loop: ref.loop } : {}),
       ...(ref.slices ? { slices: named(ref.slices) } : {}),
+      ...(ref.states && Object.keys(ref.states).length ? { states: Object.fromEntries(Object.entries(ref.states).map(([stateName, state]) => [stateName, { frames: state.frames.map((name) => `${slotName}.${name}`), ...(state.fps ? { fps: state.fps, loop: state.loop } : {}) }])) } : {}),
       ...(ref.pieces && Object.keys(ref.pieces).length ? { pieces: Object.fromEntries(Object.entries(ref.pieces).map(([piece, set]) => [piece, named(set)])) } : {}),
     };
   }

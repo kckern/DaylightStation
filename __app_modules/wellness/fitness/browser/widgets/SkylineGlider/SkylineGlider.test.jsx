@@ -276,6 +276,19 @@ describe('FlightScene zones', () => {
     expect(container.querySelector('#glider-lava-fill image')).toHaveAttribute('href', '/m/lava.png');
   });
 
+  it('switches to state art: craft boost and hurt, entity damaged', () => {
+    const stated = { ...zoned, zone: { ...zoned.zone, craft: { ...zoned.zone.craft, states: { boost: { frame: 'coin' }, hurt: { frame: 'asteroid' } } } },
+      entities: [{ id: 'rock-1', class: 'solid', frame: 'asteroid', states: { damaged: { frame: 'coin' } }, at_s: 11, altitude: 0.7, width_s: 0.8, height: 0.12 }] };
+    const viewBox = () => screen.getByTestId('skyline-glider-craft').querySelector('svg').getAttribute('viewBox');
+    const { rerender } = render(<FlightScene state={{ ...flightState, collectedIds: [], boostRemaining: 1, invincibleRemaining: 0 }} course={stated} assets={assets}/>);
+    expect(viewBox()).toBe('64 0 16 16');
+    rerender(<FlightScene state={{ ...flightState, collectedIds: [], invincibleRemaining: 1 }} course={stated} assets={assets}/>);
+    expect(viewBox()).toBe('80 0 32 32');
+    rerender(<FlightScene state={{ ...flightState, collectedIds: [], invincibleRemaining: 0, entityDamage: { 'rock-1': 1 } }} course={stated} assets={assets}/>);
+    expect(viewBox()).toBe('0 0 32 16');
+    expect(screen.getByTestId('course-entity-rock-1').querySelector('svg')).toHaveAttribute('viewBox', '64 0 16 16');
+  });
+
   it('falls back to the alpine presets when nothing has loaded', () => {
     render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
     expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();
