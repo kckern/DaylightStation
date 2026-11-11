@@ -441,6 +441,51 @@ describe('layoutBadgeBands', () => {
     const out = layoutBadgeBands({ boxes: [box('x', 100, 100, null, 3), box('a', 100, 100, 1, 9)] });
     expect(yOf(out, 'a')).toBeLessThan(yOf(out, 'x'));
   });
+
+  // 2026-11-10, six riders near the finish: the far band (1st–4th) fit neither
+  // under its riders (a nearer rider's card below, panel bottom) nor above them
+  // (the pinned "LEADER +440 m" chip), so the lift clamped it onto the chip.
+  describe('a band with no room in its own column', () => {
+    const nb = (id, x, y, rank, dist) => ({ id, x, y, w: 100, h: 30, dist, rank });
+    const scene = () => ({
+      panel: { w: 600, h: 260 },
+      // Two far riders' cards at the top centre, a near rider's card below them.
+      cards: [{ x: 300, y: 40, w: 60, h: 60, ownerId: 'a' }, { x: 302, y: 42, w: 60, h: 60, ownerId: 'b' }, { x: 300, y: 120, w: 88, h: 88, ownerId: 'c' }],
+      fixed: [{ x: 300, y: 6, w: 130, h: 30 }], // horizon chip
+      boxes: [nb('a', 300, 110, 1, 40), nb('b', 302, 112, 2, 39)],
+    });
+    const chip = scene().fixed[0];
+    const onChip = (p) => Math.abs(p.x - chip.x) < (100 + chip.w) / 2 && p.y < chip.y + chip.h && p.y + 30 > chip.y;
+
+    it('steps beside what is in the way instead of covering the pinned chip', () => {
+      const out = layoutBadgeBands(scene());
+      expect(out.placed).toHaveLength(2);
+      out.placed.forEach((p) => expect(onChip(p)).toBe(false));
+      // Still one column in rank order, inside the panel, at its riders' height.
+      expect(yOf(out, 'a')).toBeLessThan(yOf(out, 'b'));
+      expect(out.placed.map((p) => p.x)).toEqual([out.placed[0].x, out.placed[0].x]);
+      out.placed.forEach((p) => { expect(p.x - 50).toBeGreaterThanOrEqual(0); expect(p.x + 50).toBeLessThanOrEqual(600); expect(p.y).toBeGreaterThanOrEqual(0); expect(p.y + 30).toBeLessThanOrEqual(260); });
+      expect(Math.abs(out.placed[0].x - 300)).toBeGreaterThan(0);
+      // Beside its riders (the far cards' band), not pushed to the panel's far corner.
+      expect(yOf(out, 'b') + 30).toBeLessThanOrEqual(120);
+    });
+
+    it('keeps the band clear of every card once beside them', () => {
+      const out = layoutBadgeBands(scene());
+      const cards = scene().cards;
+      out.placed.forEach((p) => cards.forEach((c) => {
+        const hit = Math.abs(p.x - c.x) < (100 + c.w) / 2 && p.y < c.y + c.h && p.y + 30 > c.y;
+        expect(hit).toBe(false);
+      }));
+    });
+
+    it('still stacks in its own column when that column has room', () => {
+      const s = scene(); s.panel = { w: 600, h: 900 };
+      const out = layoutBadgeBands(s);
+      expect(out.placed.every((p) => p.x === 301)).toBe(true); // the band's own centre
+      expect(yOf(out, 'a')).toBeGreaterThanOrEqual(120 + 88); // below the near card
+    });
+  });
 });
 
 describe('collapsedLabel', () => {

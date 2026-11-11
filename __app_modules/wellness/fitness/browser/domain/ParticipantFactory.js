@@ -15,7 +15,7 @@
  */
 
 import { createEmptyParticipant, validateParticipant } from "./Participant.js";
-import { committedZoneId } from "../lib/committedZone.js";
+import { committedZoneId, shownZoneId } from "../lib/committedZone.js";
 import { lookupZoneProgress } from "./zoneProgressIndex.js";
 
 /**
@@ -228,11 +228,21 @@ export const canonicalZoneId = (value) => {
   return Object.prototype.hasOwnProperty.call(ZONE_RANK_MAP, normalized) ? normalized : null;
 };
 
-/** Rank by the same earned committed zone used by cards and governance. */
+/**
+ * Rank by the zone the card SHOWS (shownZoneId): the earned committed zone, or
+ * — while the store has not yet trusted a rider with a live reading — the raw
+ * zone of that reading. The sidebar's zone headers are "first card of each
+ * zone in this order", so sorting by anything else than the badge's own zone
+ * would file a card under another zone's header.
+ */
 const rankOf = (participant, zoneRankMap) => {
-  const zoneId = committedZoneId(participant);
+  const zoneId = shownZoneId({
+    committed: committedZoneId(participant),
+    heartRate: participant?.heartRate,
+    liveZoneId: participant?.rawZoneId
+  });
   if (!zoneId) return -1;
-  return zoneRankMap[String(zoneId).toLowerCase()] ?? -1;
+  return zoneRankMap[zoneId] ?? -1;
 };
 
 /**

@@ -172,22 +172,53 @@ export function layoutBadgeBands({ boxes = [], cards = [], fixed = [], panel = n
   const obstacles = [...cards, ...fixed];
   const placedBlocks = [];
   const collides = (b, q) => Math.abs(b.x - q.x) < (b.w + q.w) / 2 && b.y < q.y + q.h + gapPx && b.y + b.h + gapPx > q.y;
+  const clampX = (x, w) => (panel && panel.w > 0 ? Math.min(panel.w - w / 2 - margin, Math.max(w / 2 + margin, x)) : x);
+  const fitsX = (x, w) => !(panel && panel.w > 0) || (x - w / 2 >= margin && x + w / 2 <= panel.w - margin);
   blocks.forEach((b) => {
-    if (panel && panel.w > 0) b.x = Math.min(panel.w - b.w / 2 - margin, Math.max(b.w / 2 + margin, b.x));
     const others = () => [...obstacles, ...placedBlocks];
-    for (let pass = 0, moved = true; moved && pass <= obstacles.length + placedBlocks.length + 1; pass++) {
-      moved = false;
-      others().forEach((q) => { if (collides(b, q)) { b.y = q.y + q.h + gapPx; moved = true; } });
-    }
-    if (panel && panel.h > 0 && b.y + b.h > panel.h - margin) {
-      // Off the bottom: lift the whole block into the panel, then settle it above whatever it hits.
-      b.y = panel.h - margin - b.h;
+    const naturalX = clampX(b.x, b.w);
+    const naturalY = b.y;
+    // Settle the block in column `x`: below whatever it hits; off the bottom,
+    // lifted into the panel and settled above what it hits instead. Reports
+    // whether it ended clean (touching nothing, inside the panel).
+    const settleAt = (x) => {
+      b.x = x; b.y = naturalY;
       for (let pass = 0, moved = true; moved && pass <= obstacles.length + placedBlocks.length + 1; pass++) {
         moved = false;
-        others().forEach((q) => { if (collides(b, q)) { b.y = q.y - b.h - gapPx; moved = true; } });
+        others().forEach((q) => { if (collides(b, q)) { b.y = q.y + q.h + gapPx; moved = true; } });
       }
-      b.y = Math.max(margin, b.y);
+      if (panel && panel.h > 0 && b.y + b.h > panel.h - margin) {
+        b.y = panel.h - margin - b.h;
+        for (let pass = 0, moved = true; moved && pass <= obstacles.length + placedBlocks.length + 1; pass++) {
+          moved = false;
+          others().forEach((q) => { if (collides(b, q)) { b.y = q.y - b.h - gapPx; moved = true; } });
+        }
+        b.y = Math.max(margin, b.y);
+      }
+      const inPanel = !(panel && panel.h > 0) || (b.y >= margin && b.y + b.h <= panel.h - margin);
+      return { x: b.x, y: b.y, clean: inPanel && !others().some((q) => collides(b, q)) };
+    };
+    let best = settleAt(naturalX);
+    if (!best.clean) {
+      // No room in its own column — neither under its riders nor above them
+      // without landing on the pinned horizon chip or a nearer rider's card
+      // (2026-11-10: a six-rider stack sat on "LEADER +440 m"). Step the
+      // column to the side of what is in the way, nearest side first; the
+      // leader lines tie it back to its riders. Nothing fits: keep the
+      // vertical result.
+      const candidates = [];
+      others().forEach((q) => {
+        candidates.push(q.x - (q.w + b.w) / 2 - gapPx, q.x + (q.w + b.w) / 2 + gapPx);
+      });
+      const tried = candidates.filter((x) => fitsX(x, b.w))
+        .sort((p, q) => Math.abs(p - naturalX) - Math.abs(q - naturalX));
+      for (const x of tried) {
+        const c = settleAt(x);
+        if (c.clean) { best = c; break; }
+      }
+      if (!best.clean) best = settleAt(naturalX);
     }
+    b.x = best.x; b.y = best.y;
     placedBlocks.push(b);
   });
 

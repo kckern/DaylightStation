@@ -357,21 +357,41 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         for (; li < majorLabelPool.length; li++) majorLabelPool[li].style.opacity = '0';
       };
 
+      // Gate label boxes, measured once per text (offsetWidth reflows).
+      const gateLabelSize = {};
       const updateGates = (gates, fogFar) => {
-        for (let i = 0; i < gatePool.length; i++) {
+        // Far gates compress toward the horizon until their labels print over
+        // each other ("LAP 2" across "FINISH"). FINISH is placed first, then the
+        // nearer gates; a label that would land on one already placed is held.
+        const order = gates.map((data, i) => ({ data, i }))
+          .filter((e) => e.data)
+          .sort((a, b) => (b.data.isFinish ? 1 : 0) - (a.data.isFinish ? 1 : 0) || Math.abs(a.data.z) - Math.abs(b.data.z));
+        const placed = [];
+        const shown = new Set();
+        order.forEach(({ data, i }) => {
           const g = gatePool[i];
-          const data = gates[i];
-          if (!data) { g.line.visible = false; g.labelEl.style.opacity = '0'; continue; }
           g.line.visible = true;
           g.line.position.set(0, 0, data.z);
           g.mat.color.setHex(data.isFinish ? GOLD : MAGENTA);
           g.mat.opacity = data.isFinish ? 0.95 : 0.8;
           const p = screenOf(0, ARCH_H * 0.62, data.z);
-          if (!p.inFront) { g.labelEl.style.opacity = '0'; continue; }
+          if (!p.inFront) return;
           g.labelEl.textContent = data.label;
+          if (!gateLabelSize[data.label]) gateLabelSize[data.label] = { w: g.labelEl.offsetWidth, h: g.labelEl.offsetHeight };
+          const { w, h } = gateLabelSize[data.label];
+          const box = { x: p.sx - w / 2, y: p.sy - h / 2, w, h };
+          if (placed.some((q) => box.x < q.x + q.w && box.x + box.w > q.x && box.y < q.y + q.h && box.y + box.h > q.y)) return;
+          placed.push(box);
+          shown.add(i);
           g.labelEl.style.color = data.isFinish ? '#ffd66e' : '#ff7ac4';
-          g.labelEl.style.opacity = clamp(0.2, 1, 1 - p.dist / fogFar).toFixed(3);
+          // Labels fade with distance; FINISH is what the race is riding at and
+          // is drawn over the avatars at the arch, so it keeps a readable floor.
+          g.labelEl.style.opacity = clamp(data.isFinish ? 0.7 : 0.2, 1, 1 - p.dist / fogFar).toFixed(3);
           g.labelEl.style.transform = `translate(-50%,-50%) translate(${p.sx.toFixed(1)}px,${p.sy.toFixed(1)}px)`;
+        });
+        for (let i = 0; i < gatePool.length; i++) {
+          if (!gates[i]) gatePool[i].line.visible = false;
+          if (!shown.has(i)) gatePool[i].labelEl.style.opacity = '0';
         }
       };
 

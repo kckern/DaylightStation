@@ -729,7 +729,14 @@ Climbing gradient lanes toward the goal, over a decimating, transform-aware
 
 - **Goal line** (distance races) is drawn at `yFor(goalM)` **inside the zoomable
   group**, so it tracks the live zoom window — a rider who reaches the goal visually
-  meets the dotted line.
+  meets the dotted line. Its label ("⚑ 1.50 km") rides the line near the right
+  end; a terminus tag that climbs onto the line at the right edge (the leader
+  closing on the finish) would be covered, so the label slides left along the
+  line to just clear of any tag it would touch and slides back when the tags
+  move on (`chartGoalLabel.goalLabelLeft`, pure; applied at the tick and per
+  frame from the same tag geometry the tags are drawn with; tag and label boxes
+  are measured only when their text changes). It never goes left of the y-axis
+  label that shares the line's left end.
 - **X axis.** A **time race shows the whole race** (`0 … timeCapS`) from the first
   frame, so the rider sees how much is left. A **distance race** has no fixed end
   time: its time window grows continuously (`chartZoom.continuousWindow`, data at
@@ -1751,9 +1758,22 @@ split ranks) with one lane-colour dot per rider (`collapsedLabel`). A single ext
 rider is never collapsed ("+1" is never shown): it gets its own badge, and the block
 is the same height. A band sits below its riders' cards, clear of every other card and of the
 pinned horizon chip, and inside the panel (lifted above the cards when it will
-not fit below them). The "LEADER +N m" chip is anchored to the panel's top edge
+not fit below them). When its own column has no clean spot at all — neither
+under its riders nor above them without landing on the chip or a nearer card
+(a six-rider stack near the finish) — the band steps sideways to the nearest
+side of what is in the way, still one column in rank order at its riders'
+height, and the leader lines tie it back; only if no side fits does it keep
+the vertical result. The "LEADER +N m" chip is anchored to the panel's top edge
 with an arrow and follows `horizonChipState` (shown once the true gap passes
 120 m, with hysteresis).
+
+Layer order, bottom to top: road (GL) → avatar cards → gate and metre labels →
+leader lines → badges → horizon chip. Gate labels sit above the cards, so a
+rider at the finish arch never hides "FINISH" behind their avatar; the labels
+carry the badges' dark plate for that. Gate labels fade with distance, FINISH
+to no less than 0.7. Far gates compress toward the horizon until their labels
+would print over each other: FINISH is placed first, then the nearer gates, and
+a label that would land on one already placed is held that frame.
 
 A band lifted away from its riders stays tied to them: `badgeLeaders` returns a thin
 line in the rider's lane colour from the card's nearer edge to the badge (or to the

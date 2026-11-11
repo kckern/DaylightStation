@@ -66,8 +66,16 @@ describe('sortByZoneRank', () => {
     expect(sortByZoneRank(input).map(p=>p.id)).toEqual(['e','b','c','a','d']);
     expect(sortByZoneRank(input.map(p=>p.id==='a'?{...p,zoneId:'warm'}:p)).map(p=>p.id)).toEqual(['e','a','b','c','d']);
   });
-  it('sinks explicitly null and untrusted zones despite raw high readings', () => {
+  it('sinks explicitly null and untrusted zones with no live reading, whatever the raw zone says', () => {
     expect(sortByZoneRank([p({id:'none',zoneId:null}),p({id:'untrusted',zoneTrusted:false,zoneId:'hot'}),p({id:'cool',zoneId:'cool'})]).map(p=>p.id)).toEqual(['cool','none','untrusted']);
+  });
+  // 2026-11-10: the card shows the live reading's zone before the store trusts
+  // the rider; the sort must file that card under the same zone header.
+  it('ranks an untrusted rider WITH a live reading by the zone that reading is in', () => {
+    const untrusted = p({ id: 'untrusted', zoneTrusted: false, zoneId: null, rawZoneId: 'warm', heartRate: 132 });
+    const active = p({ id: 'active', zoneId: 'active', rawZoneId: 'active', heartRate: 112 });
+    const hot = p({ id: 'hot', zoneId: 'hot', rawZoneId: 'hot', heartRate: 160 });
+    expect(sortByZoneRank([active, untrusted, hot]).map((x) => x.id)).toEqual(['hot', 'untrusted', 'active']);
   });
   it('breaks progress ties with active before inactive', () => {
     const inactive = p({ id: 'inactive', isActive: false, zoneProgress: 0.5 });

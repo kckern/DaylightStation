@@ -18,9 +18,11 @@ export function crashReason(flight,entity){
 }
 export default function SkylineMenus({state,riders,acts,onEvent,crashNote,summary}){
  const selected=acts.find(a=>a.id===state.actId),rider=riders.find(r=>r.id===state.riderId);
- const press=position=>onEvent({type:'PRESS',position,gesture:'single',source:'touch'});
  const person=r=><><SkylineAvatar src={r.avatarSrc} name={r.name}/><strong>{r.name}</strong></>;
- if(state.phase==='identity')return <section className="skyline-menus"><h1>Who’s flying?</h1><p>Press your rider button. Hold for other riders.</p><div className="skyline-menus__options">{riders.filter(r=>r.position).map(r=><button key={r.id} onClick={()=>press(r.position)}>{person(r)}<small>Button {r.position}</small></button>)}</div></section>;
+ // The riders are listed once: on the bike-button panel beside this, where each
+ // rider sits on the button that selects them (touch or physical). The 2×2 grid
+ // of the same four riders that used to sit here duplicated it (2026-11-10).
+ if(state.phase==='identity')return <section className="skyline-menus skyline-menus--identity" data-testid="skyline-identity"><h1>Who’s flying?</h1><p>Press your rider button on the pad. Hold for other riders.</p></section>;
  if(state.phase==='roster'){const r=riders[state.rosterIndex];return <section className="skyline-menus"><h1>Other riders</h1><p>Browse with the top buttons. Choose with bottom right.</p>{r&&<div className="skyline-menus__person">{person(r)}</div>}</section>}
  if(state.phase==='flights')return <section className="skyline-menus"><p>{rider?.name} is flying</p><h1>Pick a flight</h1><p>Top buttons browse. Bottom right starts.</p><div className="skyline-menus__options">{acts.map(a=><button key={a.id} aria-pressed={a.id===state.actId} onClick={()=>onEvent({type:'SELECT_ACT',actId:a.id})}><strong>{a.name}</strong><small>{a.status==='locked'?'🔒 Admin unlock required':a.status==='completed'?'✓ Completed':'Ready to explore'}</small></button>)}</div></section>;
  if(state.phase==='ready'||state.phase==='countdown')return <section className="skyline-menus"><p>{selected?.name}</p><h1>{state.phase==='ready'?'Pedal to take off':'Keep pedaling'}</h1><strong className="skyline-menus__count">{state.phase==='countdown'?Math.ceil(state.countdown):Math.round(state.cadence?.rpm||0)+' RPM'}</strong><p>Your flight waits until you’re pedaling steadily.</p></section>;
