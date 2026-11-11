@@ -113,6 +113,7 @@ describe('slice', () => {
     const keyed = await sliceSheet({ file, key: '#009e00,#ff00ff' });
     assert.deepEqual(keyed.frames.map((f) => f.rect), [[7, 7, 8, 7], [49, 9, 12, 14]]);
     assert.deepEqual(keyed.frames[0].content_bounds, [1, 1, 6, 5]);
+    assert.deepEqual(keyed.panels, [{ id: 'panel-000', rect: [4, 4, 20, 20], content_bounds: [4, 4, 6, 5] }], 'the panel is reported as a frame canvas');
     const out = path.join(dir, 'keyed.png');
     await writeKeyedSheet({ file, key: parseKey('#009e00,#ff00ff'), out });
     const ctx = (() => { const c = createCanvas(80, 40); return c.getContext('2d'); })();
@@ -142,6 +143,30 @@ describe('side-scroller catalog conventions', () => {
     const { catalogPath } = await catalogFixture(dir);
     const result = await validateManifest({ root: dir, manifestPath: catalogPath });
     assert.deepEqual(result.errors, []);
+  });
+
+  it('measures pixel density: rejects resampled art and under-declared density', async () => {
+    const dir = await root();
+    const { catalogPath } = await catalogFixture(dir);
+    const catalog = YAML.parse(await readFile(catalogPath, 'utf8'));
+    const smooth = await png(path.join(dir, 'assets/ss/smooth.png'), 32, 16, (ctx) => { for (let x = 0; x < 32; x += 1) { ctx.fillStyle = `rgb(${x * 7},0,0)`; ctx.fillRect(x, 0, 1, 16); } });
+    catalog.assets['backdrop.smooth'] = { ...catalog.assets['backdrop.hills'], source: 'assets/ss/smooth.png', source_sha256: smooth, frames: { default: { rect: [0, 0, 32, 16] , repeat: ['x'] } } };
+    catalog.assets['backdrop.hills'].pixel_density = 1;
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const result = await validateManifest({ root: dir, manifestPath: catalogPath });
+    assert.ok(result.errors.some((e) => e.includes('backdrop.smooth') && e.includes('not true 2x pixel art')), result.errors.join('\n'));
+    assert.ok(result.warnings.some((w) => w.includes('backdrop.hills') && w.includes('declare pixel_density 2')), result.warnings.join('\n'));
+    assert.ok(!result.errors.some((e) => e.includes('backdrop.hills')), 'under-declared density is a warning, not an error');
+  });
+
+  it('requires every frame of a clip to share one canvas size', async () => {
+    const dir = await root();
+    const { catalogPath } = await catalogFixture(dir);
+    const catalog = YAML.parse(await readFile(catalogPath, 'utf8'));
+    catalog.assets['actor.hero'].frames['fly.1'].rect = [16, 0, 14, 16];
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const result = await validateManifest({ root: dir, manifestPath: catalogPath });
+    assert.ok(result.errors.some((e) => e.includes('clip fly frames must share one canvas size (found 16x16, 14x16)')), result.errors.join('\n'));
   });
 
   it('rejects a layer that does not tile, a missing scroll block, and a bad distribution', async () => {

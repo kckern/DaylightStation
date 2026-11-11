@@ -1,0 +1,29 @@
+# Skyline Glider's slot contract for gaming-assets skins.
+#
+# Every art slot the flight renderer (browser/widgets/SkylineGlider/FlightScene.jsx)
+# can draw from a file. A skin fills any subset; an unfilled slot keeps the
+# built-in SVG art. `gaming-assets skin-validate` checks a skin against this
+# file; `cli/skyline-skin.cli.mjs` turns an exported skin into a zone.
+#
+# Boxes are scene units (the scene is 1000 x 600). A skinned zone draws every
+# sprite at art_pixel units per pixel, aligned in its box (zone.pixel_scale), so
+# a box / art_pixel is the largest frame that fits: craft 35 x 18, bell 10 x 10.
+schema: game-skin-contract/v1
+game: skyline-glider
+units: { width: 1000, height: 600, art_pixel: 3 }   # scene units per art pixel: the zone's one pixel grid
+slots:
+  layers:            { type: parallax-layers, max: 8 }   # back to front; front: true draws over the craft
+  # Terrain fill is drawn as a pattern at 1 file pixel = 1 scene unit, so it is
+  # enlarged 3x on export to sit on the same pixel grid as everything else.
+  terrain.fill:         { type: texture, repeat: [x, y], scale: 3 }
+  terrain.edge:         { type: strip, repeat: [x] }
+  terrain.ceiling_edge: { type: strip, repeat: [x] }
+  craft:             { type: sprite, animated: true, box: [105, 54] }
+  collectible:       { type: sprite, box: [32, 32] }
+  checkpoint:        { type: sprite, box: [80, 440] }
+  finish:            { type: sprite, box: [120, 430] }
+  weapons.laser:     { type: sprite, box: [52, 14] }    # right edge is the shot's tip
+  weapons.bomb:      { type: sprite, box: [24, 30] }
+  weapons.missile:   { type: sprite, box: [42, 16] }
+  weapons.blast:     { type: sprite }                   # frames step by blast progress, once
+  entities.*:        { type: sprite }                   # one per zone entity class (pine, bunker, ...)

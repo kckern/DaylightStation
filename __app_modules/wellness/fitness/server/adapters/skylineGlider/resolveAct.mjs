@@ -53,6 +53,8 @@ export function resolveZone(rawZone, overrides) {
     name: zone.name || zone.id,
     asset_root: root,
     pixel_art: !!zone.pixel_art,
+    // Scene units per art pixel; when set, sprites draw at that exact grain instead of stretching to their box.
+    pixel_scale: Number.isInteger(zone.pixel_scale) && zone.pixel_scale > 0 ? zone.pixel_scale : null,
     palette: isObject(zone.palette) ? { ...zone.palette } : {},
     layers: (Array.isArray(zone.layers) ? zone.layers : []).map((layer) => withAssets(root, layer)),
     terrain: withAssets(root, isObject(zone.terrain) ? zone.terrain : {}),

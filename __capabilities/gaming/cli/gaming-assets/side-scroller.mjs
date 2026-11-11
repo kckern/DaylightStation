@@ -143,7 +143,29 @@ export async function sliceSheet({ file, key: keyOverride = null, gap = 1, pad =
         pixels: box.pixels,
       };
     });
-  return { width: image.width, height: image.height, key, frames, dividers: dividers.length };
+  // Ripper sheets often draw a coloured panel behind each frame (the second key
+  // colour). A panel is the frame's real canvas: fixed size across an animation
+  // and enclosing particles that are not connected to each other.
+  const panels = [];
+  if (key.extra?.length) {
+    const extra = new Set(key.extra.map((c) => parseInt(c.slice(1), 16)));
+    const panelMask = new Uint8Array(image.width * image.height);
+    for (let p = 0; p < panelMask.length; p += 1) {
+      const i = p * 4;
+      if (image.pixels[i + 3] && extra.has((image.pixels[i] << 16) | (image.pixels[i + 1] << 8) | image.pixels[i + 2])) panelMask[p] = 1;
+    }
+    const boxes = components(panelMask, image.width, image.height).filter((box) => box.pixels >= 16);
+    boxes.sort((a, b) => (Math.abs(a.y0 - b.y0) <= 4 ? a.x0 - b.x0 : a.y0 - b.y0)).forEach((box, index) => {
+      const rect = [box.x0, box.y0, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1];
+      let x0 = Infinity; let y0 = Infinity; let x1 = -1; let y1 = -1;
+      for (let y = rect[1]; y < rect[1] + rect[3]; y += 1) for (let x = rect[0]; x < rect[0] + rect[2]; x += 1) {
+        if (mask[y * image.width + x]) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      }
+      if (x1 < 0) return;
+      panels.push({ id: `panel-${String(index).padStart(3, '0')}`, rect, content_bounds: [x0 - rect[0], y0 - rect[1], x1 - x0 + 1, y1 - y0 + 1] });
+    });
+  }
+  return { width: image.width, height: image.height, key, frames, panels, dividers: dividers.length };
 }
 
 /** Labelled preview: every candidate frame boxed and numbered, enlarged. */
@@ -155,6 +177,13 @@ export async function renderSliceReview({ file, slice, out, scale = 2 }) {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
   ctx.lineWidth = 1; ctx.font = `${Math.max(9, 5 * scale)}px sans-serif`;
+  for (const panel of slice.panels ?? []) {
+    const [x, y, w, h] = panel.rect.map((v) => v * scale);
+    ctx.strokeStyle = '#2050ff'; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    const label = `P${panel.id.replace('panel-', '')}`;
+    ctx.fillStyle = '#2050ff'; ctx.fillRect(x + w - ctx.measureText(label).width - 4, y + h - 5 * scale - 4, ctx.measureText(label).width + 4, 5 * scale + 4);
+    ctx.fillStyle = '#ffffff'; ctx.fillText(label, x + w - ctx.measureText(label).width - 2, y + h - 3);
+  }
   for (const frame of slice.frames) {
     const [x, y, w, h] = frame.rect.map((v) => v * scale);
     ctx.strokeStyle = '#ff2050'; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
@@ -216,8 +245,25 @@ export function seamScore({ pixels, width }, [sx, sy, sw, sh], axis = 'x') {
   return { seam: Math.round(seam * 10) / 10, limit: Math.round(limit * 10) / 10, pass: seam <= limit || echo <= 6, echoes_interior_edge: seam > limit && echo <= 6 };
 }
 
+/** Share of density x density blocks in a region that are one colour (frame origin at the region's top-left). */
+export function blockUniformity({ pixels, width }, [sx, sy, sw, sh], density) {
+  if (density <= 1) return 1;
+  let blocks = 0; let uniform = 0;
+  for (let by = 0; by + density <= sh; by += density) for (let bx = 0; bx + density <= sw; bx += density) {
+    const first = rgbaAt(pixels, width, sx + bx, sy + by);
+    let same = true;
+    for (let y = 0; y < density && same; y += 1) for (let x = 0; x < density && same; x += 1) {
+      const p = rgbaAt(pixels, width, sx + bx + x, sy + by + y);
+      if (p[3] === 0 && first[3] === 0) continue;
+      if (p[0] !== first[0] || p[1] !== first[1] || p[2] !== first[2] || p[3] !== first[3]) same = false;
+    }
+    blocks += 1; if (same) uniform += 1;
+  }
+  return blocks ? uniform / blocks : 1;
+}
+
 /** Side-scroller rules for one approved catalog asset. Returns error strings. */
-export async function validateSideScrollerAsset({ file, asset, prefix }) {
+export async function validateSideScrollerAsset({ file, asset, prefix, warnings = [] }) {
   const errors = [];
   if (asset.distribution !== undefined && !DISTRIBUTIONS.includes(asset.distribution)) errors.push(`${prefix}: distribution must be ${DISTRIBUTIONS.join(' or ')}`);
   const tags = asset.tags ?? [];
@@ -237,6 +283,12 @@ export async function validateSideScrollerAsset({ file, asset, prefix }) {
     if (!frames.default) errors.push(`${prefix}: parallax-layer needs a default frame`);
     else if (!frames.default.repeat?.includes('x')) errors.push(`${prefix}: parallax-layer default frame must repeat on x`);
   }
+  // A clip is drawn into one box by the game, so every frame must share one
+  // canvas size; otherwise the sprite pulses and its anchor drifts.
+  if (tags.includes('side-scroller')) for (const [clipName, clip] of Object.entries(asset.clips ?? {})) {
+    const sizes = new Set((clip?.frames ?? []).map((entry) => frames[typeof entry === 'string' ? entry : entry?.frame]).filter((frame) => Array.isArray(frame?.rect)).map((frame) => `${frame.rect[2]}x${frame.rect[3]}`));
+    if (sizes.size > 1) errors.push(`${prefix}: clip ${clipName} frames must share one canvas size (found ${[...sizes].join(', ')})`);
+  }
   if (tags.includes('terrain-strip')) {
     const present = TERRAIN_FRAMES.filter((name) => frames[name]);
     if (!present.length) errors.push(`${prefix}: terrain-strip needs at least one of ${TERRAIN_FRAMES.join(', ')}`);
@@ -244,8 +296,24 @@ export async function validateSideScrollerAsset({ file, asset, prefix }) {
     for (const name of ['edge', 'ceiling_edge']) if (frames[name] && !frames[name].repeat?.includes('x')) errors.push(`${prefix}: terrain ${name} must repeat on x`);
   }
   const checked = repeating.filter(([, frame]) => Array.isArray(frame.repeat) && Array.isArray(frame.rect ?? frame.cell));
+  const density = Number.isInteger(asset.pixel_density) ? asset.pixel_density : 1;
+  const measureDensity = tags.includes('side-scroller');
+  let image = null;
+  if (measureDensity) {
+    image = await decode(file);
+    for (const [name, frame] of Object.entries(frames)) {
+      const rect = frame?.rect ?? (frame?.cell && asset.geometry?.cell ? [frame.cell[0] * asset.geometry.cell[0], frame.cell[1] * asset.geometry.cell[1], ...asset.geometry.cell] : null);
+      if (!rect) continue;
+      if (rect[0] % density || rect[1] % density) errors.push(`${prefix}: frame ${name} origin must sit on the ${density}px grid`);
+      const declared = blockUniformity(image, rect, density);
+      if (declared < 0.999) errors.push(`${prefix}: frame ${name} is not true ${density}x pixel art (${(declared * 100).toFixed(1)}% uniform ${density}px blocks; resampled or off-grid art)`);
+      else if (rect[2] * rect[3] >= 64 * density * density && rect[2] % (density * 2) === 0 && rect[3] % (density * 2) === 0 && blockUniformity(image, rect, density * 2) >= 0.999) {
+        warnings.push(`${prefix}: frame ${name} is uniform at ${density * 2}px blocks; if that is its true grain, declare pixel_density ${density * 2}`);
+      }
+    }
+  }
   if (checked.length) {
-    const image = await decode(file);
+    image ??= await decode(file);
     for (const [name, frame] of checked) {
       const rect = frame.rect ?? [frame.cell[0] * asset.geometry.cell[0], frame.cell[1] * asset.geometry.cell[1], ...asset.geometry.cell];
       for (const axis of frame.repeat) {

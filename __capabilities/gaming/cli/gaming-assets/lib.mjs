@@ -1010,7 +1010,7 @@ export async function validateManifest({ root, manifestPath }) {
         if (stale.length) errors.push(`${prefix}: frame ${frameName} declares absent forbidden-color exception: ${stale.map((color) => `#${color}`).join(', ')}`);
       }
     }
-    errors.push(...await validateSideScrollerAsset({ file, asset, prefix }));
+    errors.push(...await validateSideScrollerAsset({ file, asset, prefix, warnings }));
     if (asset.animation?.mode === 'state-machine' && geometry.layout === 'grid') {
       const { createCanvas, loadImage } = await import('canvas');
       decodedImage ??= await loadImage(file);

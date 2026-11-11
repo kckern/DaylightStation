@@ -22,9 +22,24 @@ function frameName(spec, time) {
   return frames[Math.floor(Math.max(0, time) * fps) % frames.length];
 }
 
+// Scene units per art pixel for the act's zone (zone.pixel_scale). With it,
+// every sprite draws at exactly that grain, aligned inside its box, so sprites,
+// terrain and backdrops share one pixel grid; without it a frame is fitted to
+// its box. Collision boxes are unaffected either way.
+const PixelScale = React.createContext(null);
+const ALIGN = { xMin: 0, xMid: 0.5, xMax: 1, YMin: 0, YMid: 0.5, YMax: 1 };
+
 function SpriteFrame({ assets, name, x, y, width, height, align = 'xMidYMax' }) {
+  const pixel = React.useContext(PixelScale);
   const frame = assets.frames?.[name];
   if (!frame || !assets.sheet) return null;
+  if (pixel) {
+    const w = frame.w * pixel; const h = frame.h * pixel;
+    const left = x + (width - w) * ALIGN[align.slice(0, 4)]; const top = y + (height - h) * ALIGN[align.slice(4)];
+    return <svg x={left} y={top} width={w} height={h} viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`} preserveAspectRatio="none">
+      <image href={assets.sheet.url} width={assets.sheet.width} height={assets.sheet.height}/>
+    </svg>;
+  }
   return <svg x={x} y={y} width={width} height={height} viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`} preserveAspectRatio={`${align} meet`}>
     <image href={assets.sheet.url} width={assets.sheet.width} height={assets.sheet.height}/>
   </svg>;
@@ -237,7 +252,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
   const xAt = (atSeconds) => projected.playerX + (atSeconds - time) * projected.unitsPerSecond;
   const flashes = new Map((state.impacts || []).filter((impact) => impact.entityId && impact.effect === 'damage').map((impact) => [impact.entityId, impact.id]));
   const blastProgress = (blast) => (rules.blast_s > 0 ? clamp(1 - blast.remaining / rules.blast_s, 0, 1) : 1);
-  return <svg className={`skyline-glider__scene${zone.pixel_art ? ' skyline-glider__scene--pixel' : ''}`} data-zone={zone.id} data-theme={zone.palette?.theme || "alpine"} viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`} role="img" aria-label={`${zone.name || 'Alpine'} flight course`}>
+  return <PixelScale.Provider value={zone.pixel_scale || null}><svg className={`skyline-glider__scene${zone.pixel_art ? ' skyline-glider__scene--pixel' : ''}`} data-zone={zone.id} data-theme={zone.palette?.theme || "alpine"} viewBox={`0 0 ${SCENE_WIDTH} ${SCENE_HEIGHT}`} role="img" aria-label={`${zone.name || 'Alpine'} flight course`}>
     <SceneDefs palette={zone.palette}/>
     {fill && <defs>
       <pattern id="glider-terrain-fill" patternUnits="userSpaceOnUse" width={fill.width} height={fill.height} patternTransform={`translate(${-(scroll % fill.width)} 0)`}>
@@ -273,7 +288,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
       {(state.impacts || []).map((impact) => <Impact key={impact.id} impact={impact} x={xAt(impact.at_s)} y={impact.altitude * projected.height}/>)}
     </g>
     {layers.filter((layer) => layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}
-  </svg>;
+  </svg></PixelScale.Provider>;
 }
 
 export default FlightScene;

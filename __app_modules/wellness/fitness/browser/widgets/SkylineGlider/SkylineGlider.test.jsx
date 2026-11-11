@@ -221,6 +221,16 @@ describe('FlightScene zones', () => {
     expect(screen.getByTestId('course-entity-rock-1').querySelector('svg')).toHaveAttribute('viewBox', '80 0 32 32');
   });
 
+  it('draws sprites at the zone pixel scale, aligned in their box, when pixel_scale is set', () => {
+    const scaled = { ...zoned, zone: { ...zoned.zone, pixel_scale: 3 } };
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={scaled} assets={assets}/>);
+    const coin = screen.getByTestId('course-collectible-bell').querySelector('svg');
+    // a 16 px coin at 3 units per pixel is 48 units, centred on the 32-unit box at (-16, -16)
+    expect(coin).toHaveAttribute('width', '48');
+    expect(coin).toHaveAttribute('x', '-24');
+    expect(coin).toHaveAttribute('preserveAspectRatio', 'none');
+  });
+
   it('falls back to the alpine presets when nothing has loaded', () => {
     render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
     expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();
