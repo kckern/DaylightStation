@@ -75,13 +75,13 @@
   // Riders take the middle, centered. NEVER wrap — the field overlaps into
   // crescents instead (winner in front), so any count fits one row.
   &__riders {
-    flex: 1 1 auto; min-width: 0;
+    flex: 1 0 auto; min-width: max-content; // never narrower than its avatars + "+N"
     display: flex; flex-wrap: nowrap;
     justify-content: center; align-items: center;
   }
   &__rider {
     position: relative; display: inline-flex; flex-shrink: 0;
-    &:not(:first-child) { margin-left: -22px; }   // overlap → trailing riders are crescents
+    &:not(:first-child) { margin-left: -32px; }   // overlap → trailing riders are crescents
   }
   // 🥇 on the winner (first/front rider), top-left, allowed to peek outside the circle.
   &__crown {
@@ -107,7 +107,7 @@
     font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   }
   &__more {
-    align-self: center; flex-shrink: 0;
+    align-self: center; flex-shrink: 0; margin: 0 6px;
     font-family: t.$cg-display; font-weight: 700; font-size: 0.85rem; color: t.$cg-faint;
   }
 }
