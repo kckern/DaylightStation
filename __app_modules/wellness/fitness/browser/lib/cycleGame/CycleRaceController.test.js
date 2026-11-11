@@ -209,6 +209,37 @@ describe('CycleRaceController — ghost rider', () => {
     expect(s.overtime).not.toContain('g'); // ghost exempt from overtime too
     expect(s.phase).toBe('finished');
   });
+
+  it('ends a distance race the moment the live rider crosses the line; a slower ghost is not waited for', () => {
+    const c = new CycleRaceController({
+      winCondition: 'distance', goalM: 20, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+      startCountdownS: 0, raceIdleDnfS: 20, raceStartGraceS: 30,
+      riders: [
+        { userId: 'a', wheelCircumferenceM: 2.1 },
+        { userId: 'g', ghostSeries: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], ghostIntervalS: 1 }
+      ]
+    });
+    c.startCountdown();
+    let s = c.getState();
+    for (let i = 0; i < 10 && s.phase !== 'finished'; i += 1) s = c.tick({ a: { rpm: 600, zoneId: 'hot' } });
+    expect(s.phase).toBe('finished');
+    expect(s.engineState.riders.a.finishTimeS).not.toBeNull();
+    expect(s.engineState.riders.g.finishTimeS).toBeNull(); // the ghost lost: still short of the line
+    expect(s.overtime).not.toContain('g');
+    expect(s.dnf).not.toContain('g');
+  });
+
+  it('a field of ghosts alone still runs to the line', () => {
+    const c = new CycleRaceController({
+      winCondition: 'distance', goalM: 3, intervalMs: 1000, zones: HOT, hrlessMultiplier: 1,
+      startCountdownS: 0,
+      riders: [{ userId: 'g', ghostSeries: [1, 2, 3], ghostIntervalS: 1 }]
+    });
+    c.startCountdown();
+    expect(c.tick({}).phase).not.toBe('finished');
+    c.tick({});
+    expect(c.tick({}).phase).toBe('finished');
+  });
 });
 
 describe('CycleRaceController — time race', () => {

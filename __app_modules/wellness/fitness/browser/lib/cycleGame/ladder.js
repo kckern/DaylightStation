@@ -12,17 +12,15 @@ export function courseStartOverride(course = {}) {
 }
 
 /**
- * Which past race to arm as the rival ghost. Ranked rider → the rung above;
- * the leader chases their own PB (raceId resolved separately via the PB
- * endpoint); an unranked rider chases the bottom rung.
+ * Which past race to arm as the rival ghost: the week's high score. Every rider
+ * but the leader chases the top rung, ranked or not; the leader chases their own
+ * PB (raceId resolved separately via the PB endpoint).
  */
 export function pickRival({ standings = [], riderId = null } = {}) {
   if (!standings.length) return { kind: 'none', raceId: null, rivalUserId: null };
-  const idx = riderId ? standings.findIndex((r) => r.userId === riderId) : -1;
-  if (idx > 0) return { kind: 'above', raceId: standings[idx - 1].raceId, rivalUserId: standings[idx - 1].userId };
-  if (idx === 0) return { kind: 'self-pb', raceId: null, rivalUserId: riderId };
-  const tail = standings[standings.length - 1];
-  return { kind: 'tail', raceId: tail.raceId, rivalUserId: tail.userId };
+  const top = standings[0];
+  if (riderId && top.userId === riderId) return { kind: 'self-pb', raceId: null, rivalUserId: riderId };
+  return { kind: 'leader', raceId: top.raceId, rivalUserId: top.userId };
 }
 
 /** A rider's movement between two ladder snapshots. null if not on the new ladder. */

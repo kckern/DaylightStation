@@ -34,6 +34,8 @@ export function BaseRealtimeCard({
   imageSrc,
   imageAlt,
   imageFallback,
+  // A drawn avatar (e.g. an inline SVG tile) rendered in place of the image.
+  avatar,
   
   // Interaction
   onClick,
@@ -91,22 +93,24 @@ export function BaseRealtimeCard({
           </div>
         )}
         
-        {/* Profile image */}
-        <div className={`card-avatar ${zoneClass}`}>
-          <img
-            src={imageSrc}
-            alt={imageAlt || `${deviceName} profile`}
-            className={isClickable ? 'user-profile-img' : ''}
-            onError={(e) => {
-              if (e.currentTarget.dataset.fallback) {
-                e.currentTarget.style.display = 'none';
-                return;
-              }
-              e.currentTarget.dataset.fallback = '1';
-              e.currentTarget.src = imageFallback;
-            }}
-          />
-        </div>
+        {/* Profile image, or the caller's own drawn avatar */}
+        {avatar || (
+          <div className={`card-avatar ${zoneClass}`}>
+            <img
+              src={imageSrc}
+              alt={imageAlt || `${deviceName} profile`}
+              className={isClickable ? 'user-profile-img' : ''}
+              onError={(e) => {
+                if (e.currentTarget.dataset.fallback) {
+                  e.currentTarget.style.display = 'none';
+                  return;
+                }
+                e.currentTarget.dataset.fallback = '1';
+                e.currentTarget.src = imageFallback;
+              }}
+            />
+          </div>
+        )}
         
         {/* Info section */}
         <div className="device-info">

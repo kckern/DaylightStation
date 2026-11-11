@@ -1,30 +1,182 @@
-.step-mat-card {
-  &:focus-visible {
-    outline: 2px solid #6ab8ff;
-    outline-offset: -2px;
-  }
-  border-color: rgba(56, 189, 248, .65);
-  background: linear-gradient(135deg, rgba(14, 116, 144, .26), rgba(15, 23, 42, .9));
+@use '../../../shared/styles/zones' as zones;
+
+// Step-mat roster card. Same dark card as its siblings (FitnessSidebar.scss
+// .fitness-device.card-horizontal), laid out for what a mat reports:
+//
+//   [ mat ]  Step Mat            ● STEPPING
+//   [face ]  36 SPM            42      5
+//                             STEPS  STOMPS
+//
+// The face is a rounded SQUARE, matching the fullscreen tile
+// (StepMatVitalsTile): circles in this sidebar mean heart rate and RPM.
+// Scoped under the sidebar so these rules out-rank its generic card rules
+// regardless of stylesheet order.
+.fitness-sidebar-container .fitness-sidebar-devices .fitness-device.card-horizontal.step-mat-card {
+  --step-mat-state: var(--app-text-secondary, #aaaaaa);
+
+  box-sizing: border-box;
+  gap: 10px;
+  padding: 8px 10px;
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
+  // The card never dims as a whole: a dormant mat still has to be readable.
+  // (!important because the sidebar's own .inactive rule is !important.)
+  &.inactive { opacity: 1 !important; }
+
+  &:focus-visible {
+    outline: 2px solid zones.$zone-cool;
+    outline-offset: -2px;
+  }
+
+  &.step-mat-card--stepping {
+    --step-mat-state: #{zones.$zone-active};
+    border-color: rgba(zones.$zone-active, 0.45);
+  }
+  &.step-mat-card--ready { --step-mat-state: #{zones.$zone-cool}; }
+  &.step-mat-card--dormant { --step-mat-state: var(--app-text-secondary, #aaaaaa); }
+  &.step-mat-card--offline {
+    --step-mat-state: var(--app-action-warning, #{zones.$zone-warm});
+    border-color: rgba(zones.$zone-warm, 0.4);
+  }
+
+  .step-mat-card__face {
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    box-sizing: border-box;
+    border-radius: var(--app-radius-lg, 12px);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--app-bg-tertiary, #252525);
+    border: 2px solid var(--step-mat-state);
+    color: var(--step-mat-state);
+    transition: border-color var(--app-transition-normal, 250ms ease), color var(--app-transition-normal, 250ms ease);
+  }
+
+  .step-mat-card__glyph {
+    display: block;
+    width: 38px;
+    height: 38px;
+  }
+
+  .step-mat-card__photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 32%;
+    display: block;
+  }
+
+  .device-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 4px;
+  }
+
+  .device-info .device-name {
+    margin: 0;
+    font-size: 1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .step-mat-card__state {
+    display: inline-flex;
+    align-items: center;
+    justify-self: end;
+    gap: 5px;
+    color: var(--step-mat-state);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .step-mat-card__state-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--app-radius-full, 9999px);
+    background: currentColor;
+  }
+
+  &.step-mat-card--stepping .step-mat-card__state-dot {
+    animation: step-mat-pulse 1.2s ease-in-out infinite;
+  }
+
+  .step-mat-card__rate {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    line-height: 1;
+    color: var(--app-text-primary, #ffffff);
+
+    strong {
+      font-size: 1.9rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    span {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: rgba(255, 255, 255, 0.75);
+    }
+  }
+
+  // Nobody is stepping: the rate is a resting zero, so it recedes while the
+  // session totals stay at full strength.
+  &.inactive .step-mat-card__rate strong { color: var(--app-text-secondary, #aaaaaa); }
+
+  .step-mat-card__totals {
+    display: flex;
+    justify-self: end;
+    gap: 12px;
+  }
+
+  .step-mat-card__stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 2.4em;
+    line-height: 1;
+
+    strong {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--app-text-primary, #ffffff);
+      font-variant-numeric: tabular-nums;
+    }
+
+    em {
+      margin-top: 3px;
+      font-size: 0.62rem;
+      font-style: normal;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.62);
+    }
+  }
 }
 
-.step-mat-card__rate {
-  display: flex;
-  align-items: baseline;
-  gap: .3rem;
-  color: #e0f2fe;
+@keyframes step-mat-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
-.step-mat-card__rate strong { font-size: 1.35rem; }
-.step-mat-card__rate span { margin-left: auto; color: #7dd3fc; font-size: .72rem; text-transform: uppercase; }
-
-.step-mat-card__totals {
-  display: flex;
-  gap: .8rem;
-  color: #bae6fd;
-  font-size: .82rem;
+@media (prefers-reduced-motion: reduce) {
+  .fitness-sidebar-container .fitness-sidebar-devices .fitness-device.card-horizontal.step-mat-card .step-mat-card__state-dot {
+    animation: none;
+  }
 }
-
-.step-mat-card.inactive { opacity: .72; }

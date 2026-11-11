@@ -3,7 +3,8 @@
 `player/overlays/FullscreenVitalsOverlay.jsx` renders heart-rate avatars above
 a shared equipment grid containing RPM devices and active pressure mats. Heart
 rate avatars remain circular; pressure mats retain their distinct square face
-and session totals. Clicking the overlay, or using Enter/Space while focused,
+and session totals; an unclaimed mat with no declared photo draws the step-mat
+glyph (see "Step-mat lifecycle" in `governance-engine.md`). Clicking the overlay, or using Enter/Space while focused,
 switches between the bottom-right and bottom-left corners. The voice-memo
 button uses the top-right corner in fullscreen so it cannot cover a vitals
 tile; outside fullscreen it keeps its existing bottom-right position.

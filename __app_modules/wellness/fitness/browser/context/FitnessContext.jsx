@@ -12,6 +12,7 @@ import {
   resolveZoneThreshold
 } from "../hooks/useFitnessSession.js";
 import { DeviceAssignmentLedger } from "../hooks/fitness/DeviceAssignmentLedger.js";
+import { browserZoneTrustStorage } from "../hooks/fitness/zoneTrustLocalStore.js";
 import { GuestAssignmentService } from "../hooks/fitness/GuestAssignmentService.js";
 import { useZoneLedSync } from "../hooks/fitness/useZoneLedSync.js";
 import { useEquipmentFanSync } from "../hooks/fitness/useEquipmentFanSync.js";
@@ -357,7 +358,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // on EVERY render, so profiling logs reported a phase the live engine was not in.
   const fitnessSessionRef = useRef(null);
   if (fitnessSessionRef.current === null) {
-    fitnessSessionRef.current = new FitnessSession();
+    // The kiosk keeps riders' zone trust across a reload (zoneTrustLocalStore).
+    fitnessSessionRef.current = new FitnessSession(undefined, { zoneTrustStorage: browserZoneTrustStorage() });
   }
   const usersConfigRef = useRef({});
   

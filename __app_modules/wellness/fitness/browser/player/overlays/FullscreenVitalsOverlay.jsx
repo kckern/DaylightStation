@@ -6,6 +6,7 @@ import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
 import { resolveParticipantGovernanceStatuses } from "../../hooks/useGovernanceDisplay.js";
 import RpmDeviceAvatar from "../../components/RpmDeviceAvatar.jsx";
 import StepMatVitalsTile from "../../components/StepMatVitalsTile.jsx";
+import { GENERIC_EQUIPMENT_FALLBACK_SRC } from "../../shared/EquipmentGlyph.jsx";
 import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from "../../hooks/fitness/ParticipantRoster.js";
 import { resolveUserZone } from "./resolveUserZone.js";
 import { lookupZoneProgress } from "../../domain/zoneProgressIndex.js";
@@ -207,11 +208,14 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
         return {
           equipmentId: snapshot.equipmentId,
           name: equipmentEntry?.name || 'Step Mat',
-          // The mat belongs to whoever claimed it; with nobody claiming it, the
-          // equipment image is the honest picture.
+          // The mat belongs to whoever claimed it. With nobody claiming it, a
+          // photo is shown only when config declares one (`image:`); otherwise
+          // the tile draws its own step-mat glyph.
           avatarSrc: assignedUserId
             ? DaylightMediaPath(`/static/img/users/${assignedUserId}`)
-            : DaylightMediaPath(`/static/img/equipment/${snapshot.equipmentId}`),
+            : (equipmentEntry?.image
+              ? DaylightMediaPath(`/static/img/equipment/${snapshot.equipmentId}`)
+              : null),
           stepsPerMinute: Number(snapshot.stepsPerMinute) || 0,
           sessionSteps: Number(snapshot.sessionSteps) || 0,
           sessionStomps: Number(snapshot.sessionStomps) || 0,
@@ -311,7 +315,7 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
                 '--rpm-ring-color': item.ringColor,
                 '--rpm-overlay-bg': item.overlayBg
               }}
-              fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
+              fallbackSrc={GENERIC_EQUIPMENT_FALLBACK_SRC}
               renderValue={(value) => (Number.isFinite(value) ? value : 0)}
             />
           ))}
@@ -324,7 +328,6 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
               key={`mat-${item.equipmentId}`}
               name={item.name}
               avatarSrc={item.avatarSrc}
-              fallbackSrc={DaylightMediaPath('/static/img/equipment/equipment')}
               stepsPerMinute={item.stepsPerMinute}
               sessionSteps={item.sessionSteps}
               sessionStomps={item.sessionStomps}
