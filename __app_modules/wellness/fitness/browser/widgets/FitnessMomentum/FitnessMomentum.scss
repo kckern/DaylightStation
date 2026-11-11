@@ -1,11 +1,23 @@
-// FitnessMomentum.scss — one flat glass panel, sized for a TV, high-contrast.
+// FitnessMomentum.scss — one flat glass panel, sized for a TV read from across
+// the garage (a ~34-PPI screen at ~3 m). Density first: no empty band, tight
+// padding, and every figure that matters at a size readable from the room.
+//
+// Sizes scale with one person's column (`--col`: the cards row is the size
+// container, divided by `--cols`, which the widget sets to the head count) but
+// never fall below their floors. When five
+// columns cannot fit everything, the bars are what give up height: the hero,
+// the week counts and dates, the coin and the gems keep their floor.
+// The screen host paints this panel's chrome (`.screen-surface` gives ours up)
+// with the theme's padding; this card is dense by design and takes 10–12px.
+.screen-widget:has(> .fitness-momentum) { padding: 10px 12px; }
+
 .fitness-momentum {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 8px;
   height: 100%;
   width: 100%;
-  padding: 1rem 1.25rem;
+  padding: 10px 12px;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -15,64 +27,94 @@
   font-family: "Roboto Condensed", sans-serif;
 
   &__headline {
+    flex: none;
     display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    font-size: 1.5rem;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 0;
+    font-size: 1.4rem;
     font-weight: 700;
+    line-height: 1.2;
   }
-  &__flame { font-size: 1.6rem; }
-  &__house { letter-spacing: 0.01em; }
-  &__window { color: #ffb44c; font-weight: 700; font-size: 1.15rem; }
+  &__flame { font-size: 1.4rem; line-height: 1; }
+  &__house { letter-spacing: 0.01em; white-space: nowrap; }
+  &__window { color: #ffb44c; font-weight: 700; font-size: 1.2rem; white-space: nowrap; }
   &__house-rings {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.3rem;
     font-variant-numeric: tabular-nums;
-    opacity: 0.96;
-    font-size: 1.25rem;
+    font-size: 1.4rem;
   }
   // Right-sized placeholder matching the ring + total footprint, so the
   // headline doesn't reflow when the real total hydrates in.
-  &__house-rings--skel { align-self: center; width: 5rem; height: 1.35rem; border-radius: 5px; }
+  &__house-rings--skel { width: 5rem; height: 1.4rem; border-radius: 5px; }
+  // The Gems chip is the area legend (a gem in each area's colour, and its
+  // name) and the way into the Gem Board.
+  &__gems-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font: inherit;
+    font-size: 1.2rem;
+    line-height: 1.35;
+    cursor: pointer;
+  }
 
-  &__zero { opacity: 0.75; font-size: 1.1rem; }
+  &__legend { display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap; }
 
+  &__zero { flex: none; color: #a9a9ae; font-size: 1.1rem; }
+
+  // The cards share four rows (who, hero, bars, foot) through subgrid, so every
+  // card's hero, bars and foot line up across the panel: the tallest foot sets
+  // the row. A card without a purse spans only the first three rows, so it ends
+  // at its bars (no dead foot) and its bars keep the shared baseline; with no
+  // purse anywhere the foot row is empty and takes no height.
   &__cards {
     flex: 1 1 auto;
+    min-height: 0;
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    gap: 0.75rem;
-    min-height: 0;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    column-gap: 8px;
+    row-gap: 0;
+    // The row, not each card, is the size container: a container is laid out
+    // on its own, which would stop the card from being a subgrid.
+    container-type: inline-size;
+    --col: calc((100cqw - (var(--cols, 5) - 1) * 8px) / var(--cols, 5));
   }
 
   &__card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.8rem 0.4rem 0;
-    // The card is the size container: the week labels scale to its width (cqw)
-    // so four bars + dates always fit, however many people share the row.
-    container-type: inline-size;
+    grid-row: 1 / -1;
+    display: grid;
+    grid-template-rows: subgrid;
+    row-gap: 4px;
+    justify-items: center;
+    min-width: 0;
+    min-height: 0;
+    padding: 6px 4px 0;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.05);
-    overflow: hidden;
-    min-height: 0;
+    &.is-walletless { grid-row: 1 / 4; }
   }
 
   // Avatar with the name as a tag over its lower edge.
   &__who {
-    flex: none;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
   &__avatar {
-    width: 4.5rem;
-    height: 4.5rem;
+    width: clamp(60px, calc(var(--col) * 0.40), 84px);
+    height: clamp(60px, calc(var(--col) * 0.40), 84px);
     border-radius: 50%;
     object-fit: cover;
     display: inline-flex;
@@ -82,138 +124,125 @@
   }
   &__name {
     position: relative;
-    margin-top: -0.85rem;
-    padding: 0.1rem 0.7rem;
+    margin-top: -0.65em;
+    padding: 0 0.55em;
     border-radius: 999px;
     background: #23252d;
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
     font-weight: 700;
-    font-size: 1.1rem;
-    line-height: 1.3;
+    font-size: clamp(18px, calc(var(--col) * 0.13), 24px);
+    line-height: 1.25;
     white-space: nowrap;
   }
 
-  // The foot of the card: silver, then the Move gems there are to show, spread
-  // evenly across it. A button (it opens the Gem Board) as wide as the card,
-  // tall enough for a child's finger.
-  &__rail {
-    flex: none;
-    align-self: stretch;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.25rem;
-    min-width: 0;
-    height: 3.6rem;
-    margin: 0 -0.4rem;
-    padding: 0 0.5rem;
-    border: 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.04);
-    color: inherit;
-    font-family: inherit;
-    cursor: pointer;
-    // No purse: the rail is only the card's bottom padding, not dead space.
-    &--empty { cursor: default; background: transparent; border-top-color: transparent; height: 0.8rem; }
-  }
-  &__silver {
+  // This week's rings, at the name's size: the bars below carry the weeks.
+  &__hero {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.15em;
+    font-size: clamp(18px, calc(var(--col) * 0.13), 24px);
     font-weight: 700;
-    // Scales down with the card so silver + every gem always fit on the rail.
-    font-size: min(1.35rem, 9cqw);
+    line-height: 1;
     font-variant-numeric: tabular-nums;
-  }
-  // The board's glyph is sized in em: this sets how large it is drawn here.
-  &__gemslot {
-    display: inline-flex;
-    flex: none;
-    font-size: min(0.82rem, 4.6cqw);
-    .gem-glyph__times { background: #2a2c34; }
-  }
-  // When any card in the row has a rail, a card without one keeps the same
-  // foot height, so every card's bars and date labels share one baseline.
-  &__cards:has(button.fitness-momentum__rail) &__rail--empty { height: 3.6rem; }
-  &__rail:not(&__rail--empty):active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
-  &__gems-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    margin-left: 0.6rem;
-    padding: 0.3rem 0.75rem;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    color: inherit;
-    font: inherit;
-    font-size: 1.05rem;
-    cursor: pointer;
-    align-self: center;
+    color: #67e8f9;
+    white-space: nowrap;
+    &--skel { width: 60%; height: 1em; border-radius: 6px; }
   }
 
-  // Monday-aligned weekly ring chart: same-scale vertical bars, oldest →
-  // newest, each with a '19 Oct' x-axis label. The current week is highlighted.
+  // Four Monday weeks, oldest → newest, same scale. Each is a column: its ring
+  // count, the bar, its Monday's date. They take every pixel the other rows
+  // leave. The current week reads by its full-brightness fill and its cyan
+  // count and date; the bar gets no box of its own.
   &__weeks {
-    flex: 1 1 auto;
-    width: 100%;
-    min-height: 5.5rem;
+    justify-self: stretch;
+    min-height: 0;
     display: flex;
     align-items: stretch;
-    justify-content: center;
-    gap: 0.15rem;
+    gap: 4px;
+    padding: 0 2px;
   }
   &__weekcol {
-    // Four columns share the row equally; min-width 0 lets them shrink with the
-    // card instead of forcing the row wider than it (the date scales, below).
     flex: 1 1 0;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.2rem;
-    height: 100%;
+    align-items: stretch;
+    gap: 3px;
   }
-  // Ring-count top axis: one number above each bar, aligned along the top.
-  &__weektop {
-    font-size: min(0.8rem, 8.2cqw);
+  // Read from across the garage: never below 13px, solid colours only.
+  &__weektop, &__weeklabel {
+    flex: none;
+    text-align: center;
+    font-size: clamp(13px, calc(var(--col) * 0.085), 17px);
+    font-weight: 700;
     line-height: 1;
-    opacity: 0.5;
     font-variant-numeric: tabular-nums;
-    &.is-current { opacity: 1; color: #67e8f9; font-weight: 700; }
+    white-space: nowrap;
+    color: #8a93a0;
+    &.is-current { color: #67e8f9; }
   }
   &__weekbar {
-    width: 100%;
-    max-width: 2rem;
     flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    background: rgba(255, 255, 255, 0.07);
+    background: #1d2429; // solid: a past week is a dimmer bar, never a see-through one
     border-radius: 4px 4px 0 0;
-    opacity: 0.55;
-
-    &.is-current {
-      opacity: 1;
-      background: rgba(103, 232, 249, 0.12);
-    }
   }
   &__weekfill {
     width: 100%;
     display: flex;
     flex-direction: column; // fire (top) → active (bottom)
     border-radius: 4px 4px 0 0;
-    overflow: hidden;
+    overflow: hidden; // rounds the band stack's top corners; nothing to crop
     min-height: 2px;
+    filter: brightness(0.62); // past weeks: the same zone hues, darker and fully solid (static, never animated)
   }
+  &__weekcol.is-current &__weekfill { filter: none; }
   &__weekseg { width: 100%; display: block; }
-  &__weeklabel {
-    font-size: min(0.8rem, 8.2cqw);
-    line-height: 1;
-    opacity: 0.5;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    &.is-current { opacity: 0.95; color: #67e8f9; font-weight: 700; }
+
+  // The foot of the card: silver, then one plain gem per area with gems held
+  // this week. A button (it opens the Gem Board) as wide as the card. Every
+  // token is its picture over its count (the coin over the bank's silver, a gem
+  // over its number), the pictures one size and the counts one size, so every
+  // count sits on one line. The coin and three areas fit one line of the
+  // narrowest column at full size; the rare overflow wraps rather than shrinks.
+  &__rail {
+    justify-self: stretch;
+    align-self: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    align-content: flex-start;
+    gap: 2px 5px;
+    min-width: 0;
+    margin: 0 -4px;
+    padding: 4px 5px 5px;
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0 0 10px 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font-family: inherit;
+    cursor: pointer;
+    // The coin and every gem share one size; both counts share one size.
+    --momentum-icon: clamp(26px, calc(var(--col) * 0.2), 40px);
+    --momentum-count: clamp(20px, calc(var(--col) * 0.14), 28px);
   }
+  &__rail:active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
+  &__silver, &__chip {
+    flex: none;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: var(--momentum-icon);
+    font-weight: 700;
+    font-size: var(--momentum-count);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  &__coin, &__gem { width: var(--momentum-icon); height: var(--momentum-icon); flex: none; display: block; }
+  &__count { margin-top: 2px; }
 }

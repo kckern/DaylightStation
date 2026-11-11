@@ -26,7 +26,7 @@ import { useSelfService } from "./useSelfService.js";
 
 vi.mock("../../../../../frontend/src/lib/fkb.js", () => ({ screenOff: vi.fn() }));
 vi.mock("../schoolLog.js", () => ({
-  schoolLog: { selfService: vi.fn(), selfServiceError: vi.fn() },
+  schoolLog: { selfService: vi.fn(), selfServiceDebug: vi.fn(), selfServiceError: vi.fn() },
 }));
 
 const claim = vi.fn();

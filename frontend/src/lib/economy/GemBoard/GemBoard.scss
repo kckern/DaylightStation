@@ -1,6 +1,7 @@
 // GemBoard.scss — one dark panel over a dimmed screen. Everything inside the
-// panel is sized in em from one font size that follows the screen's width, so
-// the same board fills a TV (garage, 1920×1080) and fits a tablet (1280×800).
+// panel is sized in em from one font size, which useBoardFit.js sets inline
+// from the board's measured size, so the same board fills a TV (garage,
+// 1920×1080) and fits a tablet (1280×800) without scrolling.
 .gem-board {
   position: fixed;
   inset: 0;
@@ -26,8 +27,8 @@
     display: flex;
     flex-direction: column;
     gap: 0.4em;
-    // The font size that makes the board fill the screen: set from the board's own size in em.
-    font-size: clamp(12px, min(calc(95vw / var(--gem-w, 58)), calc(95vh / var(--gem-h, 34))), 40px);
+    // First-paint fallback only: useBoardFit.js sets the fitted size inline before paint.
+    font-size: clamp(12px, min(1.25vw, 2.3vh), 28px);
     max-width: 97vw;
     max-height: 97vh;
     padding: 0.8em 1em 1em;
@@ -43,8 +44,23 @@
     display: flex;
     align-items: center;
     gap: 0.6em;
+    // Never squeezed: useBoardFit.js measures these side by side to size the panel.
+    > * { flex: none; }
   }
   &__title { font-size: 1.6em; font-weight: 700; letter-spacing: 0.01em; }
+
+  // What the two kinds of gem mean: whole = got it, cut = on the way.
+  &__legend {
+    display: flex;
+    gap: 1.2em;
+    margin-left: 1.5em;
+    font-size: 1em;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ds-text-mid, #94a3b8);
+    > span { display: inline-flex; align-items: center; gap: 0.35em; }
+    .gem-glyph { font-size: 0.5em; } // a 3.8em glyph box at about the header's line height
+  }
 
   &__weeks {
     margin-left: auto;
@@ -62,6 +78,7 @@
     font: inherit;
     color: var(--ds-text-mid, #94a3b8);
     cursor: pointer;
+    white-space: nowrap;
     &.is-on { background: rgba(255, 255, 255, 0.16); color: var(--ds-text-high, #e8eef3); font-weight: 700; }
     &:disabled { color: #3a4452; cursor: default; }
   }
@@ -94,11 +111,14 @@
   &__empty { padding: 3em 4em; text-align: center; font-size: 1.25em; color: var(--ds-text-mid, #94a3b8); }
 
   // Lines: the leaning column names, the section names, then one per child.
+  // --gem-head (the name row, as tall as the tallest slanted name) and --gem-lean
+  // (room for the last names, which lean out past the last column) are measured
+  // by useBoardFit.js; the values here only hold until it has run.
   &__grid {
     display: grid;
-    grid-template-rows: 2.7em 2em;
+    grid-template-rows: var(--gem-head, 7.6em) 2em;
     grid-auto-rows: var(--gem-line);
-    padding-right: 0;
+    padding-right: var(--gem-lean, 3em);
   }
   &__row { display: contents; }
 
@@ -125,18 +145,22 @@
     &[data-group="games"] .area-icon { color: #ff9a5c; }
   }
 
-  // A column's name: level, centred over its column, wrapping to two lines.
+  // A column's name: starts over the column's middle and leans up to the right,
+  // on one line, so a long name is never cut or broken mid-word.
   &__cat {
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    padding: 0 0.1em 0.3em;
-    text-align: center;
-    font-size: 1em;
-    font-weight: 700;
-    line-height: 1.05;
-    overflow-wrap: anywhere;
-    color: var(--ds-text-high, #e8eef3);
+    position: relative;
+    > span {
+      position: absolute;
+      left: 50%;
+      bottom: 0.45em;
+      transform-origin: 0 100%;
+      transform: translateX(-0.2em) rotate(-40deg);
+      white-space: nowrap;
+      font-size: 1.05em;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--ds-text-high, #e8eef3);
+    }
   }
 
   // The highlighted child: one bar across the whole line, reaching past the grid on both
@@ -183,6 +207,8 @@
     justify-content: center;
     height: 100%;
   }
+  // A cell of the outline while the read is out: a solid dark dot, so the board reads as loading, not empty.
+  &__dot { width: 0.7em; height: 0.7em; border-radius: 50%; background: #2a3040; }
   // The glyph's wrapper: a button when the cell has detail to open, a plain span when not.
   &__open, &__still { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
   &__open {
@@ -219,8 +245,8 @@
 }
 
 // One cell's glyph: a full gem that fills the box, or a slightly smaller one
-// inside a day ring. Nothing here is ever partly transparent and nothing is a
-// status hue: a day is done (area colour) or still to go (plain outline).
+// inside a day ring. Nothing is a status hue: a day is done (area colour) or
+// still to go (plain outline on the ring, grey 30% wedge on the stone).
 .gem-glyph {
   position: relative;
   display: inline-flex;
@@ -233,21 +259,15 @@
   &__seg { stroke: var(--ds-text-low, #6b7785); stroke-width: 2.4; stroke-linecap: round; }
   &__seg.is-done { stroke-width: 3.8; }
 
-  // The gem with its area's icon on the face of the stone.
+  // A plain stone: the area is its colour, no icon on its face.
   &__stone { position: relative; display: inline-flex; }
-  &__area {
-    position: absolute;
-    left: 23%;
-    top: 13%;
-    width: 54%;
-    height: 54%;
-    color: #1a1226;
-    // A pale halo so the dark figure reads on every facet, light or deep.
-    filter: drop-shadow(0 0 0.06em rgba(255, 255, 255, 0.9));
-  }
+  // A running day-count: the stone cut like its ring, a grey stone under the
+  // colour one, which is clipped (inline clip-path) to the done days' wedge.
+  &__pie { position: relative; }
+  &__togo, &__done { position: absolute; inset: 0; display: inline-flex; }
+  // The days still to go: the one place on the board that is see-through (the user's spec).
+  &__togo { opacity: 0.3; }
 
-  // A contest lead: no gem, the word at the size of the row labels.
-  &__word { font-size: 1.05em; font-weight: 700; color: var(--ds-text-high, #e8eef3); white-space: nowrap; }
   &__muted { color: var(--ds-text-low, #6b7785); font-size: 1.5em; }
   &__times {
     position: absolute;

@@ -1666,6 +1666,10 @@ function headerFragment(document, {
   // like `subtitle`/`reading`, a precomputed string with no policy of its
   // own to apply.
   const manifest = headerConfig.manifest || null;
+  // Worth line ("Worth 2 silver"): like `manifest`, never authored — the
+  // caller prices the sheet at print time and `RenderPrintDocument` writes it
+  // onto `document.header.worth`. One caption line when present.
+  const worth = typeof headerConfig.worth === 'string' && headerConfig.worth ? headerConfig.worth : null;
   const showScoreBox = Boolean(headerConfig.scoreBox) && totalPoints !== undefined && totalPoints !== null;
   const showRule = headerConfig.rule !== false;
   const metaFirst = headerConfig.metaFirst === true;
@@ -1693,6 +1697,7 @@ function headerFragment(document, {
     + (subtitle ? theme.styles.body.leadingPt : 0)
     + (reading ? theme.styles.body.leadingPt : 0)
     + (manifest ? (theme.styles.caption ?? theme.styles.body).leadingPt : 0)
+    + (worth ? (theme.styles.caption ?? theme.styles.body).leadingPt : 0)
     + framePaddingPt * 2
     + metaRowHeightPt
     + (metaRowHeightPt && metaFirst ? header.metaTitleGapPt : 0)
@@ -1718,6 +1723,7 @@ function headerFragment(document, {
     subtitle,
     reading,
     manifest,
+    worth,
     showScoreBox,
     showRule,
     metaFirst,

@@ -20,7 +20,7 @@ const RULES = validateRuleset({
 const NOW = '2026-11-04T20:00:00.000Z';
 const at = (iso) => Date.parse(iso);
 
-function build({ sessions, mode = 'live' } = {}) {
+function build({ sessions = {}, mode = 'live', rules = RULES, logger = silent } = {}) {
   const preview = new EarningsPreviewService({
     rules: { get: async () => RULES },
     schoolEvidence: { async schoolWeek() { return {}; } },
@@ -42,10 +42,19 @@ function build({ sessions, mode = 'live' } = {}) {
     async getHistory() { return [{ kind: 'earn', source: 'payout', action: 'payout:moved', ref: 'r1:gems', ruleId: 'moved', delta: 1, currency: 'gems' }]; },
     async peekBalance() { return { silver: 3, gold: 0, gems: 4 }; },
   };
-  return new GemBoardService({ preview, rules: { get: async () => RULES }, economy, config: { catalog: () => ({ mode }) }, logger: silent });
+  return new GemBoardService({ preview, rules: { get: async () => rules }, economy, config: { catalog: () => ({ mode }) }, logger });
 }
 
 describe('GemBoardService', () => {
+  it('warns once per process when a custom gem.group is filed under school', async () => {
+    const warn = [];
+    const rules = { ...RULES, rules: [...RULES.rules, { id: 'odd', kind: 'unit', label: 'Odd', reward: { gems: 1 }, gem: { group: 'chores-xyz' } }] };
+    const svc = build({ rules, logger: { debug() {}, info() {}, warn: (e, d) => warn.push([e, d]), error() {} } });
+    await svc.board(); await svc.board();
+    expect(warn.filter(([e]) => e === 'economy.gems.group-filed-under-school')).toHaveLength(1);
+    expect(warn[0][1]).toMatchObject({ group: 'chores-xyz', area: 'school' });
+  });
+
   it('groups FINISHED workouts by study day (4 am boundary), so a late-night ride counts for its own day', async () => {
     const board = await build({
       sessions: {

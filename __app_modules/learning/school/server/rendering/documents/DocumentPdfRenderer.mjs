@@ -802,6 +802,16 @@ export function createDocumentPdfRenderer({
       cursorY += style.leadingPt;
     }
 
+    if (node.worth) {
+      // The print-time price, centred under the title/reading in the caption
+      // style. Advances by exactly the caption leading `headerFragment`
+      // reserved for it, so the measured header height and the drawn one agree.
+      const style = theme.styles.caption ?? theme.styles.instruction ?? theme.styles.body;
+      setFont(out, style.font, style.sizePt, style.ink);
+      out.text(node.worth, contentX, cursorY, { width: contentWidth, align: 'center', lineBreak: false });
+      cursorY += (theme.styles.caption ?? theme.styles.body).leadingPt;
+    }
+
     if (node.instructions) {
       // Same style-fallback chain drawLineNumbers already uses for a theme
       // that may not carry every optional style key.

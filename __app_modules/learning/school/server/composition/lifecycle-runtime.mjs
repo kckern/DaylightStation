@@ -72,6 +72,9 @@ try {
       // What "print my next sheet" is worth (`GET .../next`). A late-bound
       // thunk: the earnings runtime that answers it is built after School.
       rewardFor: economyApi.rewardFor ?? null,
+      // The printed papers' pricing (the worksheet's day bonus, the result
+      // receipt's coin lines). Late-bound the same way.
+      getEarningsPreview: () => economyApi.earningsQuote?.() ?? null,
       userService,
       eventBus,
       thermalPrinterRegistry: printerRegistry,

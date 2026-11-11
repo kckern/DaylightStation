@@ -1,7 +1,6 @@
 /**
  * GemCeremony — a gem just landed: one card per award, the child's face, the
- * gem in its colour, what it was for, and whether it is earned, won, or a lead
- * just taken. The shape of the coin ceremonies (WorkoutCoinCeremony, School's
+ * gem in its colour, what it was for, and whether it is earned or won (a contest lead is never staged). The shape of the coin ceremonies (WorkoutCoinCeremony, School's
  * CoinCeremony). Tap, Enter/Escape (the garage pads send those), or the clock
  * dismisses it — exactly once. `contained` draws it over its parent (School's
  * board pane, never the keypad) instead of the whole screen.
@@ -17,7 +16,7 @@ export function gemCeremonyDurationMs(cards) {
   return Math.min(10000, 5000 + 1500 * Math.max(0, (cards || 1) - 1));
 }
 
-const KIND_TEXT = { earned: 'Gem earned!', won: 'Won it!', leading: 'Took the lead!' };
+const KIND_TEXT = { earned: 'Gem earned!', won: 'Won it!' };
 
 function Face({ id, name }) {
   const [failed, setFailed] = useState(false);
@@ -68,7 +67,7 @@ export default function GemCeremony({ awards = [], surface, contained = false, o
             <span className="gem-ceremony__name">{a.name}</span>
             <span className="gem-ceremony__label">{a.label}</span>
             <span className="gem-ceremony__kind">
-              {KIND_TEXT[a.kind] ?? ''}{a.kind !== 'leading' && a.count > 1 ? ` ×${a.count}` : ''}
+              {KIND_TEXT[a.kind] ?? ''}{a.count > 1 ? ` ×${a.count}` : ''}
             </span>
           </div>
         ))}

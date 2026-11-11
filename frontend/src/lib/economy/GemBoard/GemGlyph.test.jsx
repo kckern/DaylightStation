@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { render, cleanup } from '@testing-library/react';
-import GemGlyph, { glyphLook, glyphWords, segmentPath } from './GemGlyph.jsx';
+import GemGlyph, { glyphLook, glyphWords, segmentPath, pieClip } from './GemGlyph.jsx';
+import { AREA_COLORS, AREA_WORDS } from './AreaIcon.jsx';
 
 afterEach(cleanup);
 const streak = (have, need, reach, left = 3) => ({ have, need, reach, left });
@@ -15,6 +16,7 @@ describe('GemGlyph', () => {
     expect(glyphLook({ state: 'pending', week: 0, streak: streak(0, 5, 'out') })).toBe('none');
     expect(glyphLook({ state: 'pending', week: 0, streak: streak(2, 5, 'out') })).toBe('none');
     expect(glyphLook({ state: 'leading', week: 0 })).toBe('holding');
+    expect(glyphLook({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('holding');
     expect(glyphLook({ state: 'pending', week: 0 })).toBe('none');
     expect(glyphLook({ state: 'unknown' })).toBe('unknown');
     expect(glyphLook({ state: 'disabled' })).toBe('off');
@@ -95,6 +97,11 @@ describe('GemGlyph', () => {
     cleanup();
     expect(render(<GemGlyph cell={{ state: 'earned', week: 3 }} color="#fff" />).container.textContent).toBe('×3');
     cleanup();
+    // A row that folds a contest with another rule: one earned, one held by a lead = two gems drawn.
+    expect(render(<GemGlyph cell={{ state: 'earned', week: 1, held: 2 }} color="#fff" />).container.textContent).toBe('×2');
+    expect(glyphWords({ state: 'earned', week: 1, held: 2 })).toBe('earned, 2 gems');
+    cleanup();
+    expect(render(<GemGlyph cell={{ state: 'leading', week: 0, held: 1 }} color="#fff" />).container.textContent).toBe('');
     cleanup();
     // Evidence that could not be read leaves the cell blank: no question mark.
     expect(render(<GemGlyph cell={{ state: 'unknown', week: 0 }} color="#fff" />).container.textContent).toBe('');
@@ -107,10 +114,10 @@ describe('GemGlyph', () => {
     expect(glyphWords({ state: 'earned', week: 2 })).toBe('earned, 2 gems');
     expect(glyphWords({ state: 'earned', week: 1, streak: streak(2, 4, 'on-track') })).toBe('earned, and 2 of 4 days, on track');
     expect(glyphWords({ state: 'leading', week: 0 })).toBe('leading');
-    // A row that folds a contest with a day-count: the ring is drawn, the lead is still said.
-    expect(glyphLook({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('streak');
+    // A row that folds a contest with a day-count: the lead is a whole gem, the days are still said.
+    expect(glyphLook({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('holding');
     expect(glyphWords({ state: 'leading', week: 0, streak: streak(2, 4, 'on-track') })).toBe('leading, and 2 of 4 days, on track');
-    expect(glyphWords({ state: 'pending', week: 0 })).toBe('still in reach');
+    expect(glyphWords({ state: 'pending', week: 0 })).toBe('not yet');
     expect(glyphWords({ state: 'none' })).toBe('not this week');
   });
 
@@ -133,34 +140,66 @@ describe('GemGlyph', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('a leading cell draws no gem; the board shows "leading"', () => {
-    const { container } = render(<GemGlyph cell={{ state: 'leading', week: 0 }} color="#fff" area="games" />);
-    expect(container.querySelector('.gem-icon')).toBeNull();
-    expect(container.querySelector('svg')).toBeNull();
-    expect(container.textContent).toBe('leading');
+  it('a leading cell is a whole solid gem, no words', () => {
+    const { container } = render(<GemGlyph cell={{ state: 'leading', week: 0 }} color="#ff7a2f" area="games" />);
+    expect(container.querySelectorAll('.gem-icon')).toHaveLength(1);
+    expect(container.querySelector('.gem-glyph__pie')).toBeNull();
+    expect(container.textContent).toBe('');
     expect(container.querySelector('.gem-glyph').dataset.look).toBe('holding');
   });
 
-  it('the glyph draws its area icon on the gem, and none when no area is known', () => {
-    for (const area of ['move', 'school', 'games']) {
-      const { container } = render(<GemGlyph cell={{ state: 'earned', week: 1 }} color="#fff" area={area} />);
-      expect(container.querySelector(`.gem-glyph__stone .area-icon[data-area="${area}"]`)).toBeTruthy();
+  it('no area icon is drawn on any gem', () => {
+    for (const cell of [{ state: 'earned', week: 1 }, { state: 'leading', week: 0 }, { state: 'pending', week: 0, streak: streak(2, 4, 'on-track') }]) {
+      expect(render(<GemGlyph cell={cell} color="#fff" area="move" />).container.querySelector('.area-icon')).toBeNull();
       cleanup();
     }
-    expect(render(<GemGlyph cell={{ state: 'earned', week: 1 }} color="#fff" />).container.querySelector('.area-icon')).toBeNull();
   });
 
-  it('nothing is drawn partly transparent: no opacity or amber in the glyph styles', () => {
+  it('a running day-count is a pie-cut gem: a grey stone under a colour stone clipped to the done days', () => {
+    const c = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 5, 'on-track') }} color="#8e5bd0" />).container;
+    const pie = c.querySelector('.gem-glyph__pie');
+    expect(pie).toBeTruthy();
+    expect(pie.querySelector('.gem-glyph__togo .gem-icon')).toBeTruthy();
+    const done = pie.querySelector('.gem-glyph__done');
+    expect(done.style.clipPath).toBe(pieClip(2 / 5));
+    expect(c.querySelectorAll('.gem-glyph__seg')).toHaveLength(5);
+  });
+
+  it('an earned gem with a ring is whole, not cut', () => {
+    const c = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 4, 'on-track') }} color="#2e9e5b" />).container;
+    expect(c.querySelector('.gem-glyph__pie')).toBeNull();
+    expect(c.querySelectorAll('.gem-icon')).toHaveLength(1);
+  });
+
+  describe('pieClip', () => {
+    it('starts at the centre and the top, and sweeps clockwise', () => {
+      const pts = pieClip(0.25).replace(/^polygon\(|\)$/g, '').split(', ');
+      expect(pts[0]).toBe('50% 50%');
+      expect(pts[1]).toBe('50% -25%'); // straight up, radius 75%
+      expect(pts.at(-1)).toBe('125% 50%'); // a quarter turn: straight right
+    });
+    it('a whole turn and nothing are both exact', () => {
+      expect(pieClip(1)).toBe('none');
+      expect(pieClip(0)).toBe('polygon(50% 50%, 50% 50%, 50% 50%)');
+    });
+  });
+
+  it('no amber or tag styles in the glyph styles', () => {
     const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8');
     const glyphCss = css.slice(css.indexOf('.gem-glyph {'), css.indexOf('// The box a cell opens'));
-    expect(glyphCss).not.toMatch(/opacity/);
     expect(glyphCss).not.toMatch(/every-day|__tag|data-tagged/);
     expect(glyphCss).not.toMatch(/255,\s*180,\s*76|#ffb44c|amber/i);
   });
 
-  it('the whole board stylesheet has no partial opacity and no animation', () => {
+  it('the only opacity on the board is the pending wedges at 0.3', () => {
     const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
-    expect(css).not.toMatch(/opacity\s*:/);
+    expect(css.match(/opacity\s*:[^;]+;/g)).toEqual(['opacity: 0.3;']);
+    expect(css).toMatch(/&__togo\s*\{[^}]*opacity: 0\.3;/);
     expect(css).not.toMatch(/@keyframes|animation\s*:|__ghost/);
+  });
+
+  it('area colours mirror the server GEM_AREAS', () => {
+    expect(AREA_COLORS).toEqual({ move: '#8e5bd0', school: '#2e9e5b', games: '#ff7a2f' });
+    expect(AREA_WORDS).toEqual({ move: 'Move', school: 'School', games: 'Games' });
   });
 });

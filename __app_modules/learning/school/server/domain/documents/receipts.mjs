@@ -994,6 +994,9 @@ export function agendaDocument({
  *   remediation cap, with how many retries are already behind it. No retry is
  *   coming, so the sheet must not say TRY AGAIN or "before you retry": it says
  *   a grown-up will help instead.
+ * @param {{lines: {label: string, silver: number, gems: number}[], weekSilver: number}|null} [args.earned]
+ *   the week's silver (a preview): what this grade added, rule by rule, then
+ *   the running total (`earnedLines`). Null prints nothing.
  * @returns {object}
  */
 export function resultDocument({
@@ -1004,7 +1007,7 @@ export function resultDocument({
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
-  dayComplete = false, companionGate = null, teacherHold = null,
+  dayComplete = false, companionGate = null, teacherHold = null, earned = null,
 } = {}) {
   const passed = result === 'passed';
   const held = !passed && Boolean(teacherHold);
@@ -1066,6 +1069,20 @@ export function resultDocument({
   // payout waits on a grown-up says so where the coins line would be.
   if (passed && rewardSkipReason === 'awaiting_signoff') {
     blocks.push(text('Coins: waiting for a grown-up\'s OK.'));
+  }
+  // THE WEEK'S SILVER (a preview): what this grade added, rule by rule, then
+  // the running total. A fail adds nothing, so it shows only the total.
+  if (earned && Number.isFinite(earned.weekSilver)) {
+    if (passed) {
+      (earned.lines ?? []).forEach((l) => {
+        const parts = [];
+        if (l.silver > 0) parts.push(`+${l.silver} silver`);
+        if (l.gems > 0) parts.push(`+${l.gems} ${l.gems === 1 ? 'gem' : 'gems'}`);
+        if (!parts.length) return;
+        blocks.push(text([...parts, l.label].filter(isNonEmptyString).join(' · ')));
+      });
+    }
+    blocks.push(text(`${earned.weekSilver} silver this week`));
   }
   (Array.isArray(actions) ? actions : []).forEach((action) => {
     if (!action || !isNonEmptyString(action.label)) return;

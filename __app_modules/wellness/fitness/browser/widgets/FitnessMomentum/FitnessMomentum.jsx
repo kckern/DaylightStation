@@ -1,10 +1,13 @@
 // FitnessMomentum.jsx — one flat glass panel: a household weekly-ring headline
-// plus one card per person. Bars are fixed Monday weeks, not rolling windows;
-// their height and labels are rings while their bands retain the familiar
-// green/yellow/orange/red contribution breakdown. Under the bars each card
-// carries a rail (bank silver and the week's Move gems) that opens the Gem
-// Board; it sits at the foot of the card so a child can reach it on the touch
-// screen.
+// (with the Gems chip, which is the area legend) plus one card per person.
+// Each card, top to bottom: the avatar with its name tag, this week's rings
+// (at name size), the four Monday weeks as bars (height = rings, bands = the
+// green/yellow/orange/red zone breakdown) with each week's ring count above and
+// its Monday ("19 Oct") below, the current week in cyan, and a rail with bank
+// silver and one plain gem per area the person HOLDS gems in this week. The
+// rail opens the Gem Board; it sits at the foot of the card so a child can
+// reach it on the touch screen. Someone without a wallet has no rail: the card
+// ends at its bars.
 import React, { useMemo, useRef, useState } from 'react';
 import { useScreenData } from "../../../../../../__capabilities/screen-host/browser/data.mjs";
 import { useFitnessScreen } from "../../useFitnessScreen.js";
@@ -12,7 +15,7 @@ import { resolveUserDisplayName } from "../../hooks/fitness/DisplayNameResolver.
 import RingIcon from '@/lib/icons/RingIcon.jsx';
 import CoinIcon from '@/lib/icons/CoinIcon.jsx';
 import GemIcon from '@/lib/icons/GemIcon.jsx';
-import GemGlyph, { glyphLook, glyphWords } from '@/lib/economy/GemBoard/GemGlyph.jsx';
+import { AREAS, AREA_COLORS, AREA_WORDS } from '@/lib/economy/GemBoard/AreaIcon.jsx';
 import getLogger from '@/lib/logging/Logger.js';
 import GemBoardOverlay from '@/lib/economy/GemBoard/GemBoard.jsx';
 import { useGamepadKeys } from "../../lib/useGamepadKeys.js";
@@ -31,15 +34,6 @@ const ZONE_VAR = {
   fire: 'var(--zone-fire)',
 };
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** '19 Oct' label from an epoch-ms window start (local date): no slash for a child to misread. */
-export function dayLabel(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
-}
-
 /**
  * Log-scaled segment heights within a bar. Active-zone rings usually dwarf the
  * higher zones; a ln(1+r) weighting compresses the big chunks so a little hot/
@@ -54,25 +48,34 @@ function zoneFractions(zones) {
   return weights.filter((x) => x.w > 0).map((x) => ({ z: x.z, frac: x.w / sum }));
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** '19 Oct' label from an epoch-ms window start (local date): no slash for a child to misread. */
+export function dayLabel(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
 // Stable per-bar skeleton heights (deterministic so it doesn't twitch each frame).
 const SKELETON_HEIGHTS = [42, 64, 38, 72, 50, 60, 46, 68];
 
-/** One vertical, log-stacked weekly bar with a '19 Oct' label. Height = rings vs max. */
+/**
+ * One week: its ring count above, a vertical log-stacked bar (height = rings vs
+ * the person's best week), and its Monday as '19 Oct' below. The current week
+ * is marked on the column: cyan count and date, and a full-brightness fill.
+ */
 function WeekBar({ week, maxRings, index, loading }) {
   const fillPct = loading
     ? SKELETON_HEIGHTS[index % SKELETON_HEIGHTS.length]
     : (maxRings > 0 ? (week.rings / maxRings) * 100 : 0);
   const fracs = loading ? [] : zoneFractions(week.zones);
+  const current = week.current && !loading ? ' is-current' : '';
   return (
-    <span className="fitness-momentum__weekcol">
-      {/* reserve the top-axis height during load so nothing reflows on hydrate */}
-      <span className={`fitness-momentum__weektop${week.current ? ' is-current' : ''}`}>
-        {loading ? ' ' : week.rings.toLocaleString()}
-      </span>
-      <span
-        className={`fitness-momentum__weekbar${week.current && !loading ? ' is-current' : ''}`}
-        title={loading ? '' : `${week.rings.toLocaleString()} rings`}
-      >
+    <span className={`fitness-momentum__weekcol${current}`}>
+      {/* A no-break space while loading keeps the count's line, so nothing reflows on hydrate. */}
+      <span className={`fitness-momentum__weektop${current}`}>{loading ? '\u00a0' : week.rings.toLocaleString()}</span>
+      <span className="fitness-momentum__weekbar" title={loading ? '' : `${week.rings.toLocaleString()} rings`}>
         <span
           className={`fitness-momentum__weekfill${loading ? ' skeleton shimmer' : ''}`}
           style={{ height: `${fillPct.toFixed(1)}%` }}
@@ -86,7 +89,7 @@ function WeekBar({ week, maxRings, index, loading }) {
           ))}
         </span>
       </span>
-      <span className={`fitness-momentum__weeklabel${week.current ? ' is-current' : ''}`}>{dayLabel(week.startMs)}</span>
+      <span className={`fitness-momentum__weeklabel${current}`}>{dayLabel(week.startMs) || '\u00a0'}</span>
     </span>
   );
 }
@@ -109,43 +112,54 @@ function Avatar({ id, name }) {
 }
 
 /**
- * Is there a gem to show on the rail? One earned or held, or a day-count
- * still in reach (the glyph draws it full while on track, faint when tight).
- * A count out of reach, or a contest not led, has nothing to show and takes
- * no room.
+ * The areas a person HOLDS gems in this week (`purse.gems`, rolled up by the
+ * server in Move · School · Games order). held = earned, plus a contest gem
+ * while leading: what the Gem Board draws solid. A running day-count or a zero
+ * never reaches this list; anything malformed is dropped rather than drawn.
  */
-export function hasGemToShow(cell) {
-  const look = glyphLook(cell);
-  // A day-count with no day done yet is an empty ring: nothing earned, nothing
-  // under way, so it takes no slot until its first day is made.
-  if (look === 'streak') return Number(cell.streak?.have) > 0;
-  return look === 'lit' || look === 'holding';
+export function heldChips(purse) {
+  return (Array.isArray(purse?.gems) ? purse.gems : [])
+    .filter((g) => AREAS.includes(g?.area) && Number.isInteger(g.held) && g.held > 0 && typeof g.color === 'string');
 }
 
 /**
- * The foot of a card: bank silver, then a glyph for each Move gem the person
- * has or is on the way to, as the Gem Board draws it (inside a day ring while a
- * count is running, filling the slot once earned or held). Silver and gems spread across
- * the rail, however many there are. One button, opening the board on this
- * person. Someone without a wallet gets an empty rail, so every card keeps
- * one height.
+ * The foot of a card: bank silver, then one token per area with gems held this
+ * week. Every token is its picture over its count (the coin over the silver, a
+ * plain gem in the area's colour over its number), so the counts sit on one
+ * line. Area identity is the colour; the headline's Gems chip is the legend.
+ * A child with nothing held shows silver alone. One button, opening the board
+ * on this person. Someone without a wallet gets no rail at all (see the card).
  */
 function Rail({ purse, name, onOpen }) {
-  if (!purse) return <span className="fitness-momentum__rail fitness-momentum__rail--empty" aria-hidden="true" />;
-  const gems = (purse.move ?? []).filter((g) => hasGemToShow(g.cell));
-  const words = [`${name}: ${purse.silver} silver`, ...gems.map((g) => `${g.label}: ${glyphWords(g.cell)}`)].join('. ');
+  const chips = heldChips(purse);
+  const words = [
+    `${name}: ${purse.silver} silver`,
+    ...chips.map((g) => `${AREA_WORDS[g.area]}: ${g.held} ${g.held === 1 ? 'gem' : 'gems'} this week`),
+  ].join('. ');
   return (
     <button type="button" className="fitness-momentum__rail" aria-label={`${words}. Open the gem board`} onClick={onOpen}>
       <span className="fitness-momentum__silver">
-        <CoinIcon metal="silver" size="1.25em" label="silver" />
-        <span>{purse.silver}</span>
+        <CoinIcon metal="silver" size="1em" className="fitness-momentum__coin" />
+        <span className="fitness-momentum__count">{purse.silver}</span>
       </span>
-      {gems.map((g) => (
-        <span key={g.id} className="fitness-momentum__gemslot" data-gem={g.id}>
-          <GemGlyph cell={g.cell} color={g.color} />
+      {chips.map((g) => (
+        <span key={g.area} className="fitness-momentum__chip" data-area={g.area}>
+          <GemIcon className="fitness-momentum__gem" color={g.color} solid size="1em" />
+          <span className="fitness-momentum__count">{g.held}</span>
         </span>
       ))}
     </button>
+  );
+}
+
+/** This week's rings for one person, at the size of the name above it. */
+function Hero({ rings, loading }) {
+  if (loading) return <span className="fitness-momentum__hero fitness-momentum__hero--skel skeleton shimmer" aria-hidden="true" />;
+  return (
+    <span className="fitness-momentum__hero" aria-label={`${rings.toLocaleString()} rings this week`}>
+      <RingIcon size="1em" />
+      <span>{rings.toLocaleString()}</span>
+    </span>
   );
 }
 
@@ -156,7 +170,7 @@ export default function FitnessMomentum() {
   // skeleton (same layout as loaded) so hydration doesn't reflow the cards.
   const rawSessions = useScreenData('sessions');
   const loading = rawSessions == null;
-  // Bank silver and the week's Move gems per learner (/api/v1/earnings/standings).
+  // Bank silver and the gems held this week per learner (/api/v1/earnings/standings).
   // Missing, failed or economy-off → empty rails; the ring bars stand alone.
   const rawStandings = useScreenData('standings');
   const purseById = useMemo(() => {
@@ -206,19 +220,23 @@ export default function FitnessMomentum() {
       <div className="fitness-momentum__headline">
         <span className="fitness-momentum__flame">🔥</span>
         <span className="fitness-momentum__house">{household.label}</span>
-        <span className="fitness-momentum__window">· Monday–today</span>
+        <span className="fitness-momentum__window">· this week</span>
         {loading
           ? <span className="fitness-momentum__house-rings fitness-momentum__house-rings--skel skeleton shimmer" aria-hidden="true" />
           : (
             <span className="fitness-momentum__house-rings" title="Household rings this week">
-              <RingIcon size="1.35em" spin="once" label={`${household.rings} household rings this week`} />
+              <RingIcon size="1.1em" spin="once" label={`${household.rings} household rings this week`} />
               <span>{household.rings.toLocaleString()}</span>
             </span>
           )}
         {economyOn && (
+          // The area legend, and the way into the Gem Board.
           <button type="button" className="fitness-momentum__gems-chip" onClick={() => setBoard({ focus: null })} aria-label="Open the gem board">
-            <GemIcon size="1.2em" />
-            <span>Gems</span>
+            {AREAS.map((a) => (
+              <span key={a} className="fitness-momentum__legend" data-area={a}>
+                <GemIcon size="1em" color={AREA_COLORS[a]} solid />{AREA_WORDS[a]}
+              </span>
+            ))}
           </button>
         )}
       </div>
@@ -228,16 +246,22 @@ export default function FitnessMomentum() {
         <div className="fitness-momentum__zero">Let’s get moving — no rings yet this week.</div>
       )}
 
-      <div className="fitness-momentum__cards">
+      {/* --cols lets the stylesheet size everything to one person's column. */}
+      <div className="fitness-momentum__cards" style={{ '--cols': Math.max(1, members.length) }}>
+        {/* A card without a wallet spans only the who/hero/bars rows (is-walletless),
+            so it ends at its bars, which stay on the shared baseline. */}
         {members.map((m) => (
-          <div key={m.id} className="fitness-momentum__card">
+          <div key={m.id} className={`fitness-momentum__card${purseById.has(m.id) ? '' : ' is-walletless'}`}>
             {/* The name is a tag over the avatar's lower edge. */}
             <span className="fitness-momentum__who">
               <Avatar id={m.avatarId} name={m.name} />
               <span className="fitness-momentum__name">{nameById.get(m.id) || m.name}</span>
             </span>
+            <Hero rings={m.rings} loading={loading} />
             <WeekBars weeks={m.weeks} loading={loading} />
-            <Rail purse={purseById.get(m.id)} name={nameById.get(m.id) || m.name} onOpen={() => setBoard({ focus: m.id })} />
+            {purseById.has(m.id) && (
+              <Rail purse={purseById.get(m.id)} name={nameById.get(m.id) || m.name} onOpen={() => setBoard({ focus: m.id })} />
+            )}
           </div>
         ))}
       </div>

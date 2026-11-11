@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
 import GemBoardOverlay, { GemBoardGrid, boardRowIds, boardShape, readBoardShape } from './GemBoard.jsx';
 
 const part = (ruleId, label, cadence, extra = {}) => ({ ruleId, label, cadence, state: 'none', week: 0, lifetime: 0, progress: null, left: null, reach: null, days: [], items: [], score: null, note: null, ...extra });
@@ -31,7 +32,7 @@ const BOARD = {
       b: { state: 'none', week: 0, streak: null, parts: [] },
     },
   },
-  totals: { a: { week: 3, lifetime: 9 }, b: { week: 0, lifetime: 4 } },
+  totals: { a: { week: 3, earned: 1, lifetime: 9 }, b: { week: 0, earned: 0, lifetime: 4 } },
 };
 
 afterEach(() => { cleanup(); vi.useRealTimers(); localStorage.clear(); });
@@ -51,7 +52,7 @@ describe('GemBoardGrid', () => {
     expect(container.textContent).not.toMatch(/\d\/\d/);
     expect(screen.getByLabelText('Ben, Moved 5 days: 3 of 5 days, on track')).toBeTruthy();
     expect(screen.getByLabelText('Ann, Reading: earned, and 1 of 4 days, on track')).toBeTruthy();
-    expect(screen.getByLabelText('Ann: 3 this week').textContent).toBe('3');
+    expect(screen.getByLabelText('Ann: 3 this week').textContent).toBe('3'); // gems held: earned + leads, as drawn
     expect(container.textContent).not.toContain('in all'); // the week on the board, no running totals
     expect(container.querySelectorAll('.gem-board__head.is-focus')).toHaveLength(1);
   });
@@ -129,16 +130,48 @@ describe('GemBoardGrid — areas', () => {
     expect(boardRowIds(AREAS)).toEqual(['exercise', 'reading', 'racing']);
   });
 
-  it('honest cells: a full gem with ×3 and its icon, a ringed tight gem with no tag, a blank 0-day cell, "leading" in words', () => {
+  it('column names lean (one nowrap span per column) and the stylesheet breaks no word', () => {
+    const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8');
+    expect(css).not.toMatch(/overflow-wrap:\s*anywhere/);
+    expect(css).toMatch(/rotate\(-40deg\)/);
+    // The head row and the room for the last name's lean come from the measured fit.
+    expect(css).toMatch(/grid-template-rows:\s*var\(--gem-head/);
+    expect(css).toMatch(/padding-right:\s*var\(--gem-lean/);
+    const { container } = render(<GemBoardGrid board={AREAS} />);
+    expect(container.querySelectorAll('.gem-board__cat > span')).toHaveLength(3);
+  });
+
+  it('cells: a solid gem with ×3, a pie-cut gem in a 1-day ring, a blank 0-day cell, a lead as a solid gem', () => {
     const { container } = render(<GemBoardGrid board={AREAS} />);
     const cell = (row, who) => container.querySelector(`.gem-board__col[data-row="${row}"][data-learner="${who}"] .gem-board__cell`);
-    expect(cell('exercise', 'a').querySelector('.area-icon[data-area="move"]')).toBeTruthy();
     expect(cell('exercise', 'a').textContent).toBe('×3');
+    expect(cell('exercise', 'a').querySelector('.area-icon')).toBeNull();
     expect(cell('exercise', 'b').textContent).toBe('');
+    expect(cell('exercise', 'b').querySelector('.gem-glyph__pie')).toBeTruthy();
     expect(cell('exercise', 'b').querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(1);
     expect(cell('reading', 'b').querySelector('svg')).toBeNull();
-    expect(cell('racing', 'a').textContent).toBe('leading');
-    expect(cell('racing', 'a').querySelector('.gem-icon')).toBeNull();
+    expect(cell('racing', 'a').textContent).toBe('');
+    expect(cell('racing', 'a').querySelector('.gem-icon')).toBeTruthy();
+    expect(cell('racing', 'a').querySelector('.gem-glyph__pie')).toBeNull();
+  });
+
+  it('the total is the gems held (earned + leads) and its heading names the week shown', () => {
+    const board = { ...AREAS, totals: { a: { week: 4, earned: 3 }, b: { week: 0, earned: 0 } } };
+    const { container, rerender } = render(<GemBoardGrid board={board} />);
+    expect([...container.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['4', '0']);
+    expect(screen.getByLabelText('Ann: 4 this week')).toBeTruthy();
+    expect(container.querySelector('.gem-board__total-label').textContent).toBe('This week');
+    rerender(<GemBoardGrid board={board} weekLabel="Last week" />);
+    expect(container.querySelector('.gem-board__total-label').textContent).toBe('Last week');
+    expect(screen.getByLabelText('Ann: 4 last week')).toBeTruthy();
+  });
+
+  it('a pending board draws a placeholder dot per cell, so it never reads as an empty week', () => {
+    const { container } = render(<GemBoardGrid board={AREAS} pending />);
+    const cols = container.querySelectorAll('.gem-board__col').length;
+    expect(cols).toBe(6);
+    expect(container.querySelectorAll('.gem-board__cell .gem-board__dot')).toHaveLength(cols);
+    expect(container.querySelector('.gem-glyph')).toBeNull();
   });
 });
 
@@ -255,7 +288,7 @@ describe('GemBoardOverlay', () => {
     rerender(<GemBoardOverlay open load={slow} {...props} />);
     // Only the outline is up: no gem of the last session's board.
     expect(document.querySelector('.gem-board__grid.is-pending')).toBeTruthy();
-    expect(document.querySelector('.gem-glyph')).toBeNull();
+    expect(document.querySelector('.gem-board__grid .gem-glyph')).toBeNull(); // the header legend's samples are not the board's
     expect(screen.queryByRole('dialog', { name: 'Ben, Moved 5 days' })).toBeNull();
     await act(async () => { release(); });
     expect(document.querySelector('.gem-board__grid.is-pending')).toBeNull();
@@ -318,6 +351,44 @@ describe('GemBoardOverlay', () => {
     expect(screen.queryByRole('dialog', { name: 'Ben, Reading' })).toBeNull();
   });
 
+  it('the header carries a legend: whole gem = got it, cut gem = on the way', async () => {
+    render(<GemBoardOverlay open surface="fitness" load={vi.fn(async () => BOARD)} onClose={() => {}} idleMs={0} />);
+    await flush();
+    const legend = document.querySelector('.gem-board__header .gem-board__legend');
+    expect(legend).toBeTruthy();
+    const items = [...legend.children];
+    expect(items.map((el) => el.textContent)).toEqual(['Got it', 'On the way']);
+    expect(items[0].querySelector('.gem-glyph').dataset.look).toBe('lit');
+    expect(items[0].querySelector('.gem-glyph__pie')).toBeNull();
+    expect(items[1].querySelector('.gem-glyph__pie')).toBeTruthy();
+  });
+
+  it('the totals heading follows the week tab', async () => {
+    const load = vi.fn(async (week) => ({ ...BOARD, week: week ? '2026-10-26' : '2026-11-02' }));
+    render(<GemBoardOverlay open surface="fitness" load={load} onClose={() => {}} idleMs={0} />);
+    await flush();
+    expect(document.querySelector('.gem-board__total-label').textContent).toBe('This week');
+    fireEvent.click(screen.getByText('Last week', { selector: 'button' }));
+    await flush();
+    expect(document.querySelector('.gem-board__total-label').textContent).toBe('Last week');
+  });
+
+  it('the totals heading names the week the board holds, not the tab still loading', async () => {
+    let release = null;
+    const load = vi.fn((week) => (week
+      ? new Promise((resolve) => { release = () => resolve({ ...BOARD, week: '2026-10-26' }); })
+      : Promise.resolve({ ...BOARD, week: '2026-11-02' })));
+    render(<GemBoardOverlay open surface="fitness" load={load} onClose={() => {}} idleMs={0} />);
+    await flush();
+    fireEvent.click(screen.getByText('Last week', { selector: 'button' }));
+    await flush();
+    // This week's cells are still on screen: so is its name.
+    expect(document.querySelector('.gem-board__total-label').textContent).toBe('This week');
+    await act(async () => { release(); });
+    await flush();
+    expect(document.querySelector('.gem-board__total-label').textContent).toBe('Last week');
+  });
+
   it('first opening on a screen says Loading; the board read leaves its outline behind', async () => {
     let release;
     const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
@@ -338,9 +409,9 @@ describe('GemBoardOverlay', () => {
     const grid = document.querySelector('.gem-board__grid');
     expect(grid.getAttribute('aria-busy')).toBe('true');
     const outline = { columns: grid.style.gridTemplateColumns, names: [...grid.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...grid.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) };
-    expect(grid.querySelectorAll('.gem-board__cell')).toHaveLength(8); // blank cells, nothing drawn in them
+    expect(grid.querySelectorAll('.gem-board__cell')).toHaveLength(8); // placeholder cells: a dot each, no gem
     expect(grid.querySelector('.gem-board__cell').textContent).toBe('');
-    expect(grid.querySelector('.gem-board__cell *')).toBeNull();
+    expect([...grid.querySelectorAll('.gem-board__cell > *')].every((el) => el.classList.contains('gem-board__dot'))).toBe(true);
     expect(grid.querySelector('.gem-glyph')).toBeNull();
     expect(grid.querySelector('button')).toBeNull();
     expect([...grid.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['', '']);

@@ -159,6 +159,9 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
     economyApi.useSheetRewards?.(cachedSheetRewards({
       weeks, config: economyApi.configProjection, logger: rootLogger.child({ module: 'economy-sheet-reward' }),
     }));
+    // School's printed papers price from the UNCACHED preview: a receipt's
+    // before/after quotes straddle one grade, which a 60 s cache would hide.
+    economyApi.useEarningsQuote?.(earningsPreview);
     // Payouts mint what this same preview says was earned (B3), so the board
     // and the ledger read one evaluator. Started by `startEconomyPayouts`.
     const payoutService = new PayoutService({

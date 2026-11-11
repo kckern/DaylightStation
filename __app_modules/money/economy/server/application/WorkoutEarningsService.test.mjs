@@ -114,8 +114,8 @@ describe('WorkoutEarningsService.standings', () => {
     const svc = make({ learners, balances: { 'learner-a': { silver: 9, gold: 0, gems: 1 }, 'learner-b': { silver: 2, gold: 0, gems: 0 } } });
     const res = await svc.standings();
     expect(res).toEqual({ mode: 'live', contestClosed: false, learners: [
-      { learnerId: 'learner-a', learnerName: 'Learner A', silver: 9, weekRings: 400, gem: 'leading', move: [] },
-      { learnerId: 'learner-b', learnerName: 'Learner B', silver: 2, weekRings: 100, gem: null, move: [] },
+      { learnerId: 'learner-a', learnerName: 'Learner A', silver: 9, weekRings: 400, gem: 'leading', gems: [] },
+      { learnerId: 'learner-b', learnerName: 'Learner B', silver: 2, weekRings: 100, gem: null, gems: [] },
     ] });
   });
 
@@ -125,33 +125,38 @@ describe('WorkoutEarningsService.standings', () => {
     expect(res.learners[0].gem).toBe('won');
   });
 
-  it('carries each learner\'s Move cells from the Gem Board, in board order', async () => {
-    const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }];
-    const streak = { have: 2, need: 5, left: 3, reach: 'on-track', ruleId: 'moved-days' };
+  it('purse.gems rolls up held gems (earned + leads) by area', async () => {
+    const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }, { learnerId: 'learner-b', learnerName: 'Learner B', lines: [] }];
     const gemBoard = { async board() { return {
       categories: [
-        { id: 'ring-contests', label: 'Ring contests', group: 'move', color: '#1e88e5' },
-        { id: 'piano', label: 'Piano', group: 'school', color: '#111111' },
-        { id: 'moved-days', label: 'Moved 5 days', group: 'move', color: '#ff8800' },
+        { id: 'games-row', label: 'Games', group: 'games', area: 'games', color: '#ff7a2f' },
+        { id: 'school-row', label: 'Worksheets', group: 'school', area: 'school', color: '#2e9e5b' },
+        { id: 'move-won', label: 'Ring contests', group: 'move', area: 'move', color: '#8e5bd0' },
+        { id: 'move-days', label: 'Moved 5 days', group: 'move', area: 'move', color: '#8e5bd0' },
       ],
       cells: {
-        'ring-contests': { 'learner-a': { state: 'leading', week: 0, held: 1, lifetime: 3, streak: null, parts: [{ ruleId: 'ring-contest', color: '#1e88e5', label: 'Most rings', score: { mine: 4 } }] } },
-        piano: { 'learner-a': { state: 'earned', week: 1, streak: null, parts: [] } },
-        'moved-days': { 'learner-a': { state: 'pending', week: 0, streak, parts: [{ ruleId: 'moved-days', color: '#ff8800', days: [] }] } },
+        'move-won': { 'learner-a': { state: 'won', week: 2, held: 2, streak: null, parts: [] } },
+        'move-days': {
+          'learner-a': { state: 'pending', week: 0, held: 0, streak: { have: 3, need: 5, left: 2, reach: 'on-track', ruleId: 'moved-days' }, parts: [] },
+          'learner-b': { state: 'pending', week: 0, held: 0, streak: { have: 1, need: 5, left: 4, reach: 'on-track', ruleId: 'moved-days' }, parts: [] },
+        },
+        'school-row': { 'learner-a': { state: 'earned', week: 1, held: 1, streak: null, parts: [] } },
+        // A lead holds a contest gem: held 1 though nothing is paid yet.
+        'games-row': { 'learner-a': { state: 'leading', week: 0, held: 1, streak: null, parts: [] }, 'learner-b': { state: 'none', week: 0, held: 0, streak: null, parts: [] } },
       },
     }; } };
-    const res = await make({ learners, balances: { 'learner-a': { silver: 1, gold: 0, gems: 0 } }, gemBoard }).standings();
-    expect(res.learners[0].move).toEqual([
-      { id: 'ring-contests', label: 'Ring contests', color: '#1e88e5', cell: { state: 'leading', week: 0, streak: null, parts: [{ ruleId: 'ring-contest', color: '#1e88e5' }] } },
-      { id: 'moved-days', label: 'Moved 5 days', color: '#ff8800', cell: { state: 'pending', week: 0, streak, parts: [{ ruleId: 'moved-days', color: '#ff8800' }] } },
-    ]);
+    const res = await make({ learners, balances: { 'learner-a': { silver: 1, gold: 0, gems: 0 }, 'learner-b': { silver: 0, gold: 0, gems: 0 } }, gemBoard }).standings();
+    expect(res.learners[0].gems).toEqual([{ area: 'move', held: 2, color: '#8e5bd0' }, { area: 'school', held: 1, color: '#2e9e5b' }, { area: 'games', held: 1, color: '#ff7a2f' }]);
+    expect(res.learners[0]).not.toHaveProperty('move');
+    // In progress and zero hold no gem: a child with none gets an empty list.
+    expect(res.learners[1].gems).toEqual([]);
   });
 
   it('still reports silver when the Gem Board cannot be read', async () => {
     const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }];
     const gemBoard = { async board() { throw new Error('boom'); } };
     const res = await make({ learners, balances: { 'learner-a': { silver: 4, gold: 0, gems: 0 } }, gemBoard }).standings();
-    expect(res.learners).toEqual([{ learnerId: 'learner-a', learnerName: 'Learner A', silver: 4, weekRings: 0, gem: null, move: [] }]);
+    expect(res.learners).toEqual([{ learnerId: 'learner-a', learnerName: 'Learner A', silver: 4, weekRings: 0, gem: null, gems: [] }]);
   });
 });
 

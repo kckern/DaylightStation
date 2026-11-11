@@ -254,6 +254,16 @@ function withHeaderManifest(document, { questionCount, passPercent }) {
 }
 
 /**
+ * Writes the print-time worth line onto `document.header.worth`. A no-op
+ * (same object back) when there is no worth, so a sheet priced at nothing — or
+ * a caller that never priced it — renders exactly as before.
+ */
+function withHeaderWorth(document, worth) {
+  if (typeof worth !== 'string' || !worth) return document;
+  return { ...document, header: { ...(document.header ?? {}), worth } };
+}
+
+/**
  * Merges the document's own derived bank (if any) with bank-select-resolved
  * items into ONE `{id, items}` bank, or null if there is nothing at all.
  * EXPORTED (Task 6) so `ResolveCardScan`'s scan-back resolution (spec §5.4)
@@ -988,6 +998,11 @@ export class RenderPrintDocument {
         questionCount: countQuestions(document.blocks),
         passPercent: context.passPercent,
       });
+      // The worth line ("Worth 2 silver"): priced by `IssueDocument` at print
+      // time and carried in the render context, so a reprint replays the SAME
+      // price. Written here, before either fit trial, for the same reason the
+      // manifest is — it costs the header a line.
+      document = withHeaderWorth(document, context.worth);
     }
 
 

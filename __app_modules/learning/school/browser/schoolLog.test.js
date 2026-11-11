@@ -98,3 +98,10 @@ describe('schoolLog.bookShelf', () => {
     expect(error).toHaveBeenCalledWith('school.book-shelf.shelf.failed', expect.objectContaining({ status: 503 }));
   });
 });
+
+describe('schoolLog.selfServiceDebug', () => {
+  it('emits school.selfservice.* at debug', () => {
+    schoolLog.selfServiceDebug('keypad.reject-complete', {});
+    expect(debugFn).toHaveBeenCalledWith('school.selfservice.keypad.reject-complete', { detail: 'keypad.reject-complete' });
+  });
+});

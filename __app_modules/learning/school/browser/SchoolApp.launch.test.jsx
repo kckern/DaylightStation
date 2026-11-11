@@ -42,7 +42,7 @@ vi.mock("./schoolLog.js", () => ({
     feedback: vi.fn(), feedbackError: vi.fn(), standing: vi.fn(), standingError: vi.fn(),
     scan: vi.fn(),
     bookShelf: (...a) => bookShelfLogMock(...a), bookShelfError: vi.fn(),
-    selfService: vi.fn(), selfServiceError: (...a) => selfServiceErrorMock(...a),
+    selfService: vi.fn(), selfServiceDebug: vi.fn(), selfServiceError: (...a) => selfServiceErrorMock(...a),
   },
 }));
 
@@ -843,7 +843,7 @@ describe('SchoolApp — card-ladder flashcards target', () => {
     expect(mounted).toBe(true);
     expect(await screen.findByTestId('card-ladder-stub')).toBeInTheDocument();
     const props = cardLadderProps.mock.calls.at(-1)[0];
-    expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1', test: false, scenario: null });
+    expect(props.descriptor).toEqual({ deckId: 'language/korean/week-01-classroom', userId: 'kid1', test: false, scenario: null, entry: null });
     expect(typeof props.onExit).toBe('function');
     expect(typeof props.resolveAssetUrl).toBe('function');
   });
@@ -872,7 +872,7 @@ describe('SchoolApp — the /test door', () => {
       // The reserved final segment is a flag, never an instance.
       expect(directLaunchMock).toHaveBeenCalledWith('test-learner', 'card-ladder', null);
       expect(cardLadderProps.mock.calls.at(-1)[0].descriptor).toEqual({
-        deckId: 'language/korean/week-01-classroom', userId: 'test-learner', test: true, scenario: 'round-end',
+        deckId: 'language/korean/week-01-classroom', userId: 'test-learner', test: true, scenario: 'round-end', entry: null,
       });
     } finally {
       window.history.replaceState({}, '', oldUrl);

@@ -8,6 +8,10 @@
  */
 export const AREAS = ['move', 'school', 'games'];
 
+/** Each area's gem colour. Mirrors GEM_AREAS in __app_modules/money/economy/server/domain/earnings/gemBoard.mjs; keep the two in step. */
+export const AREA_COLORS = Object.freeze({ move: '#8e5bd0', school: '#2e9e5b', games: '#ff7a2f' });
+export const AREA_WORDS = Object.freeze({ move: 'Move', school: 'School', games: 'Games' });
+
 const SHAPES = {
   // Head, then body, arms and legs as round-capped strokes: a stride.
   move: (

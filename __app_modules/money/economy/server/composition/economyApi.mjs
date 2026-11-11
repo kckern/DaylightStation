@@ -31,6 +31,8 @@ import { createEconomyRouter } from "../api/economy.mjs";
  *   useEvidenceLabels: (fn: (userId: string) => Promise<Map<string,string>|null>) => void,
  *   useSheetRewards: (fn: (args: {learnerId: string, unit: object}) => Promise<object|null>) => void,
  *   rewardFor: (args: {learnerId: string, unit: object}) => Promise<{silver: number, gems: number}|null>,
+ *   useEarningsQuote: (service: {quote: Function, ifDone: Function}|null) => void,
+ *   earningsQuote: () => ({quote: Function, ifDone: Function}|null),
  *   router: import('express').Router }}
  */
 export function createEconomyApi({ configService, logger = console, clock = () => new Date(), timezone = null, boundaryHour = 4,
@@ -74,11 +76,17 @@ export function createEconomyApi({ configService, logger = console, clock = () =
   // earnings runtime, so it gets this late-bound thunk: null until the runtime
   // binds the real source (`cachedSheetRewards`).
   let sheetRewards = null;
+  // School's printed-paper pricing port (the worksheet's day bonus, the result
+  // receipt's "+2 silver" lines): the uncached preview's `quote` / `ifDone`.
+  // Late-bound for the same reason as `rewardFor`: null until the runtime binds it.
+  let earningsQuote = null;
   return {
     economyService, earnRulesService, bankService, configProjection, studyCalendar,
     useEvidenceLabels(fn) { evidenceLabels = typeof fn === 'function' ? fn : null; },
     useSheetRewards(fn) { sheetRewards = typeof fn === 'function' ? fn : null; },
     rewardFor: async (args) => (sheetRewards ? sheetRewards(args) : null),
+    useEarningsQuote(service) { earningsQuote = service && typeof service.quote === 'function' ? service : null; },
+    earningsQuote: () => earningsQuote,
     router: createEconomyRouter({ economyService, bankService, logger }),
   };
 }
