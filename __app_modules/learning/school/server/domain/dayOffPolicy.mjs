@@ -100,3 +100,41 @@ export function keepsEntry(policy, tier, entry) {
     ? selector.subject === entry?.subject
     : selector.program === entry?.program));
 }
+
+const nextDay = (day) => new Date(Date.parse(`${day}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10);
+const spanCovers = (spans, day) => (spans ?? []).some((span) => {
+  const from = typeof span === 'string' ? span : span?.from;
+  const to = typeof span === 'string' ? span : span?.to;
+  return day >= from && day <= to;
+});
+
+/**
+ * What a grown-up should fix in the household calendar, found once at boot:
+ *
+ * - `untiered`: labels of breaks with no tier. They still work (as `away`),
+ *   but an untagged break is a decision nobody made.
+ * - `missingAssignments`: enrichment / major-holiday breaks whose `assignment`
+ *   is not a published unit whose `onDays` covers EVERY day of the break (and,
+ *   for enrichment, whose subject is the one `replaces` names). The day still
+ *   works as a stay-home day; the special just is not there.
+ *
+ * @param {{schedule: object|null, units?: Array<object>|null}} args
+ *   `schedule` already normalized by `validateSchedule`; `units` the
+ *   publishable catalog (omit to skip the assignment check).
+ */
+export function checkDayOffCalendar({ schedule, units = null } = {}) {
+  const spans = schedule?.except ?? [];
+  const untiered = spans.filter((span) => !span.tier).map((span) => span.label ?? `${span.from}..${span.to}`);
+  if (!Array.isArray(units)) return { untiered, missingAssignments: [] };
+  const byId = new Map(units.filter(Boolean).map((unit) => [unit.unitId, unit]));
+  const missingAssignments = spans.filter((span) => span.assignment).filter((span) => {
+    const unit = byId.get(span.assignment);
+    if (!unit || !Array.isArray(unit.onDays)) return true;
+    if (span.tier === 'enrichment' && span.replaces && unit.subject !== span.replaces) return true;
+    for (let day = span.from; day <= span.to; day = nextDay(day)) {
+      if (!spanCovers(unit.onDays, day)) return true;
+    }
+    return false;
+  }).map((span) => ({ label: span.label ?? `${span.from}..${span.to}`, assignment: span.assignment }));
+  return { untiered, missingAssignments };
+}

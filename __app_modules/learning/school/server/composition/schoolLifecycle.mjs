@@ -166,6 +166,7 @@ import { createSchoolSelfServiceRouter } from "../api/school.selfservice.mjs";
 import { IssueDirectLaunch } from "../application/usecases/IssueDirectLaunch.mjs";
 import { IssueSubjectCode } from "../application/usecases/IssueSubjectCode.mjs";
 import { validateSchedule } from "../domain/schoolCalendar.mjs";
+import { checkDayOffCalendar, readDayOffPolicy } from "../domain/dayOffPolicy.mjs";
 import { YamlTermVerdictCache } from "../adapters/persistence/YamlTermVerdictCache.mjs";
 import { TermVerdictService } from "../application/TermVerdictService.mjs";
 import { GetLearnerTerm } from "../application/usecases/GetLearnerTerm.mjs";
@@ -627,6 +628,13 @@ export async function createSchoolLifecycle({
   // and the agenda/grid read it further down.
   const { errors: calendarErrors, schedule: householdSchedule } = validateSchedule(cfg.calendar);
   if (calendarErrors.length) logger.warn?.('school.calendar.invalid', { errors: calendarErrors });
+  // `school.yml → dayOffTiers`: what a stay-home / enrichment / major-holiday
+  // day still asks for. A bad block falls back to the domain defaults (never
+  // to "keep everything") and says so.
+  const { errors: dayOffPolicyErrors, policy: dayOffPolicy } = readDayOffPolicy(cfg.dayOffTiers);
+  if (dayOffPolicyErrors.length) logger.warn?.('school.day-off-policy.invalid', { errors: dayOffPolicyErrors });
+  const { untiered: untieredBreaks } = checkDayOffCalendar({ schedule: householdSchedule });
+  if (untieredBreaks.length) logger.warn?.('school.calendar.untiered', { labels: untieredBreaks });
   // `donow` is INJECTED now (Task 13) — the real, household-level DoNowService
   // built once in `app.mjs`'s own `5_composition/modules/donow.mjs`, after the
   // seams every surface needs exist. This file used to stand up a minimal,
@@ -827,6 +835,15 @@ export async function createSchoolLifecycle({
     activityValidators: () => new Map([['fitness', validateFitnessActivityDescriptor]]),
     logger,
   });
+  // An enrichment / major-holiday break names a date-bound unit; check, once
+  // the catalog has loaded, that it exists and covers the break. A missing
+  // one degrades the day to stay-home, which works but loses the special.
+  if (householdSchedule?.except?.some((span) => span.assignment)) {
+    curriculum.listUnits().then((units) => {
+      checkDayOffCalendar({ schedule: householdSchedule, units }).missingAssignments
+        .forEach((missing) => logger.warn?.('school.calendar.assignment-missing', missing));
+    }).catch((error) => logger.warn?.('school.calendar.assignment-check-failed', { error: error?.message }));
+  }
   const receipts = new ReceiptPrinting({ renderer: receiptPrintRenderer, printer: receiptPrinter, logger });
   // Who may act for a child. Read through `userService` per call, never
   // snapshotted: a member added after boot is a member. With no user service at
@@ -895,7 +912,7 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
-    declaredEntryActions, householdSchedule, dayBypasses: programDayBypassStore, practiceAssessments,
+    declaredEntryActions, householdSchedule, dayOffPolicy, dayBypasses: programDayBypassStore, practiceAssessments,
     remediationMaxRounds: remediationRounds, remediationHoldAfterStudyDays: remediationHoldAfter,
   });
 
@@ -967,7 +984,7 @@ export async function createSchoolLifecycle({
   const previewPlanProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
-    launchers, timezone, clock, householdSchedule, dayBypasses: programDayBypassStore,
+    launchers, timezone, clock, householdSchedule, dayOffPolicy, dayBypasses: programDayBypassStore,
     practiceAssessments, remediationMaxRounds: remediationRounds,
     remediationHoldAfterStudyDays: remediationHoldAfter,
     // The live projection already logs a hold as it forms; a dry run must not
@@ -1592,7 +1609,7 @@ export async function createSchoolLifecycle({
       // the Fall semester starts 1 August on paper; the board shows from
       // 1 September. Never widens.
       window: lifecycleCfg.board?.term ?? null,
-      timezone, clock, logger,
+      timezone, clock, logger, householdSchedule,
     });
     // Any completion input makes today's cached row out of date at once, so a
     // payout settled seconds later reads the day as it now is.
