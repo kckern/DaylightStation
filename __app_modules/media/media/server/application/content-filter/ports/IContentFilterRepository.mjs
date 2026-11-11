@@ -8,6 +8,15 @@ export class IContentFilterRepository {
   }
 
   /**
+   * An EDL `contentfilter map` set aside (edl/_rekeyed/<rk>.edl.yml) because its key is another
+   * film in Plex, or null. Read only to keep a film that is not matched to Plex listed: the player
+   * never sees it.
+   */
+  async getParkedEdl(_ratingKey) {
+    return null;
+  }
+
+  /**
    * The shareable refined EDL for a VidAngel tag set (cues on VidAngel's clock), or null.
    * @param {{ workId: number|string, tagSetId: number|string }} _ref
    */

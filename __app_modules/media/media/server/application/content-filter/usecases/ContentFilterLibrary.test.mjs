@@ -126,8 +126,9 @@ describe('ContentFilterLibrary', () => {
       getLibrarySections: vi.fn(async () => ({ MediaContainer: { Directory: [{ key: '1', type: 'movie' }] } })),
       getContainer: vi.fn(async () => ({ MediaContainer: { Metadata: items } })),
     });
-    const build = ({ map, unmatched = {}, edls, items, overrides = [] }) => {
+    const build = ({ map, unmatched = {}, edls, items, overrides = [], parked = {} }) => {
       const repo = {
+        getParkedEdl: vi.fn(async (rk) => parked[rk] || null),
         getMatchIndex: vi.fn(async () => ({ map, unmatched })),
         listOverrides: vi.fn(async () => overrides),
         getEdl: vi.fn(async (rk) => edls[rk] || null),
@@ -184,6 +185,13 @@ describe('ContentFilterLibrary', () => {
       expect(films.map((f) => f.ratingKey)).toEqual(['1']);
       expect(meta).toMatchObject({ total: 1, verified: 1, unmatched: 0 });
       expect((await lib.list({ q: 'vivo' })).films).toEqual([]);
+    });
+    it('an unmatched film whose EDL was set aside stays listed from the parked EDL; a parked duplicate does not', async () => {
+      const lib = build({ map: { 'plex:6': m('X', 13) }, unmatched: { 'plex:5': { title: 'Casino Royale', plexType: 'movie', year: 2006, reason: 'year-mismatch', plexYears: [1954], vidangel: { id: 12 } } },
+        edls: {}, parked: { 5: e('Casino Royale', 2006, 12), 6: e('X', 2001, 13) },
+        items: [{ ratingKey: '5', title: 'Casino Royale', year: 1954 }, { ratingKey: '6', title: 'X', year: 2001 }] });
+      const { films } = await lib.list({});
+      expect(films.map((f) => [f.ratingKey, f.match, f.unmatched?.text])).toEqual([['5', 'unmatched', 'Plex has the 1954 film']]);
     });
     it('matchOf answers for one film (the review page and the run guard)', async () => {
       const lib = build({ map: { 'plex:2': m('Casino Royale', 12) }, edls: { 2: e('Casino Royale', 2006, 12) },

@@ -40,6 +40,11 @@ export class FilesystemContentFilterRepository extends IContentFilterRepository 
     return this.#readYaml(this.#mediaDir, `content-filter/edl/${ratingKey}.edl.yml`);
   }
 
+  async getParkedEdl(ratingKey) {
+    if (!/^\d+$/.test(String(ratingKey ?? ''))) return null;
+    return this.#readYaml(this.#mediaDir, `content-filter/edl/_rekeyed/${ratingKey}.edl.yml`);
+  }
+
   async getRefinedEdl({ workId, tagSetId } = {}) {
     const id = /^\d+$/;
     if (!id.test(String(workId ?? '')) || !id.test(String(tagSetId ?? ''))) return null;

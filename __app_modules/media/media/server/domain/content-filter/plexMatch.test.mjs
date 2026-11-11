@@ -16,8 +16,8 @@ describe('planMap: title AND year (±1) must agree', () => {
   it('constants', () => { expect(YEAR_TOLERANCE).toBe(1); expect(RUNTIME_WARN_SEC).toBe(300); });
 
   it('maps a work to the one Plex film with its title and year, storing Plex year and runtime', () => {
-    const p = planMap({ works: [work(1, 'Gladiator', 2000, ['10'])], plexMovies: [plex(10, 'Gladiator', 2000, 9300), plex(11, 'Gladiator', 1992)] });
-    expect(p.map['plex:10']).toMatchObject({ title: 'Gladiator', plexType: 'movie', year: 2000, runtimeSec: 9300, vidangel: { id: 1, slug: 's-1', year: 2000, runtimeSec: 6000 } });
+    const p = planMap({ works: [work(1, 'Gladiator', 2000, ['10'])], plexMovies: [plex(10, 'Gladiator', 2000, 6500), plex(11, 'Gladiator', 1992)] });
+    expect(p.map['plex:10']).toMatchObject({ title: 'Gladiator', plexType: 'movie', year: 2000, runtimeSec: 6500, vidangel: { id: 1, slug: 's-1', year: 2000, runtimeSec: 6000 } });
     expect(Object.keys(p.map)).toEqual(['plex:10']);
     expect(p.rekeys).toEqual([]);
   });
@@ -103,6 +103,46 @@ describe('planMap: title AND year (±1) must agree', () => {
   });
 });
 
+describe('planMap: runtime (more than 25% of the longer apart = another film)', () => {
+  it('a same-title, same-year Plex film of very different length is not the film', () => {
+    const p = planMap({ works: [work(1, 'Salt', 2010, ['659113'], { runtimeSec: 100 * 60 })], plexMovies: [plex(759709, 'Salt', 2009, 29 * 60)] });
+    expect(p.map).toEqual({});
+    expect(p.rekeys).toEqual([]);
+    expect(p.unmatched['plex:659113']).toMatchObject({ reason: 'runtime-mismatch', plexRuntimeMin: [29] });
+  });
+  it('an extended cut within 25% of the longer still matches; an unknown runtime never blocks', () => {
+    expect(planMap({ works: [work(1, 'Dances with Wolves', 1990, ['5'], { runtimeSec: 182 * 60 })], plexMovies: [plex(5, 'Dances with Wolves', 1990, 237 * 60)] }).map['plex:5']).toBeTruthy();
+    expect(planMap({ works: [work(1, 'X', 1990, ['5'], { runtimeSec: null })], plexMovies: [plex(5, 'X', 1990, 60)] }).map['plex:5']).toBeTruthy();
+  });
+  it('runtime picks the one film when the year alone leaves two', () => {
+    const p = planMap({ works: [work(1, 'Salt', 2010, [], { runtimeSec: 100 * 60 })], plexMovies: [plex(1, 'Salt', 2010, 100 * 60), plex(2, 'Salt', 2009, 29 * 60)] });
+    expect(Object.keys(p.map)).toEqual(['plex:1']);
+  });
+});
+
+describe('planMap: parking wrong-film EDLs', () => {
+  it('a duplicate EDL at another film\'s live key is parked; a stale duplicate (a crash leftover) too', () => {
+    const p = planMap({ works: [work(1, 'Robin Hood', 2010, ['646010', '646777', '760375'])], plexMovies: [plex(760375, 'Robin Hood', 2010), plex(646010, 'Robin Hood', 1973)] });
+    expect(p.park).toEqual([
+      { ratingKey: '646010', workId: 1, title: 'Robin Hood', why: 'wrong-film' },
+      { ratingKey: '646777', workId: 1, title: 'Robin Hood', why: 'stale-duplicate' },
+    ]);
+  });
+  it('an unmatched work\'s EDL at a live key of another year is parked (the player must not filter that film with it)', () => {
+    const p = planMap({ works: [work(1, 'Casino Royale', 2006, ['5'])], plexMovies: [plex(5, 'Casino Royale', 1954)] });
+    expect(p.unmatched['plex:5'].reason).toBe('year-mismatch');
+    expect(p.park).toEqual([{ ratingKey: '5', workId: 1, title: 'Casino Royale', why: 'wrong-film' }]);
+  });
+  it('never parks a key with household data, a stale unmatched key, or an ambiguous one', () => {
+    const p = planMap({
+      works: [work(1, 'Robin Hood', 2010, ['646010', '760375']), work(2, 'Lost', 2000, ['9']), work(3, 'Jaws 3-D', 1983, ['7'])],
+      plexMovies: [plex(760375, 'Robin Hood', 2010), plex(646010, 'Robin Hood', 1973), plex(7, 'Jaws 3-D', 1983), plex(8, 'Jaws 3-D', 1983)],
+      householdKeys: new Map([['646010', ['override']]]),
+    });
+    expect(p.park).toEqual([]);
+  });
+});
+
 describe('diffPlan', () => {
   it('reports kept, re-keyed, newly mapped and dropped movie entries', () => {
     const before = { map: { 'plex:1': { plexType: 'movie', title: 'A' }, 'plex:2': { plexType: 'movie', title: 'B' }, 'plex:9': { plexType: 'show', title: 'S' } } };
@@ -141,6 +181,9 @@ describe('filmMatch (the library)', () => {
   it('Plex unreachable: the year stored in the index decides; with none the film stays verified', () => {
     expect(filmMatch({ edl: { year: 2006 }, live: false, plexItem: null, indexEntry: { kind: 'map', year: 1954 } }).match).toBe('unmatched');
     expect(filmMatch({ edl: { year: 2006 }, live: false, plexItem: null, indexEntry: { kind: 'map' } }).match).toBe('verified');
+  });
+  it('a live film of very different length is unmatched: "Plex film is 29 min"', () => {
+    expect(filmMatch({ edl: { year: 2010, runtimeSec: 6000 }, live: true, plexItem: item(2009, 29 * 60) }).unmatched).toEqual({ reason: 'runtime-mismatch', text: 'Plex film is 29 min' });
   });
   it('an EDL without a year (override-only film) is verified when Plex has the key', () => {
     expect(filmMatch({ edl: null, live: true, plexItem: item(2000) }).match).toBe('verified');

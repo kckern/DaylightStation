@@ -92,13 +92,15 @@ export class ContentFilterLibrary {
     return gen === this.#gen ? this.#live : live;
   }
 
-  async #film(rk, indexTitle) {
+  async #film(rk, indexTitle, { parkedOk = false } = {}) {
     const cached = this.#facts.get(rk);
     // A run moves through its steps in another process: an active film is re-read every time.
     if (cached && !(cached.job && (cached.job.status === 'queued' || cached.job.status === 'running'))) return cached;
     if (cached) this.#facts.delete(rk);
-    const raw = await this.#repo.getEdl(rk);
-    const ref = raw?.sourceRef;
+    const live = await this.#repo.getEdl(rk);
+    // A film not matched to Plex whose EDL `map` set aside stays listed from the parked copy (facts only).
+    const raw = live ?? (parkedOk && typeof this.#repo.getParkedEdl === 'function' ? await this.#repo.getParkedEdl(rk) : null);
+    const ref = live?.sourceRef;
     const refined = ref?.workId != null && ref?.tagSetId != null ? await this.#repo.getRefinedEdl(ref) : null;
     const record = await this.#jobs.record(rk);
     const audit = record?.audit || null;
@@ -151,7 +153,7 @@ export class ContentFilterLibrary {
   }
 
   async #entry(rk, entry, live) {
-    const { edl, hasEdl, ...base } = await this.#film(rk, entry.title);
+    const { edl, hasEdl, ...base } = await this.#film(rk, entry.title, { parkedOk: entry.kind === 'unmatched' });
     const item = live?.get(rk) ?? null;
     const linked = live ? live.has(rk) : null;
     const held = edl?.workId != null ? this.#workAt.get(Number(edl.workId)) : null;

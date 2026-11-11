@@ -57,7 +57,9 @@ export function ReviewPage() {
   }, [rowId, data, ratingKey]);
   useEffect(() => { logger.info('review.mounted', { ratingKey }); }, [ratingKey]);
   // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
-  const station = useReviewStation({ ratingKey, data, reload, selected, select, runBusy: running });
+  // Not matched to Plex: a key that still holds household work shows its review; runs are refused.
+  const notMatched = data?.match === 'unmatched';
+  const station = useReviewStation({ ratingKey, data, reload, selected, select, runBusy: running || notMatched });
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
   useEffect(() => {
     if (!waiting) return undefined;
@@ -92,9 +94,10 @@ export function ReviewPage() {
 
   if (loading && !data) return <LoadingState label="review" rows={6} />;
   if (error) return <ErrorState error={error} onRetry={reload} label="Review" />;
-  if (data.match === 'unmatched') return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
+  if (notMatched && !Array.isArray(data.rows)) return <UnmatchedFilm ratingKey={ratingKey} data={data} />;
   const row =data.rows.find((r) => r.id === selected?.id) || null;
   const busyText = running ? `Running: ${data.job.step || 'starting'}` : null;
+  const runBlock = busyText || (notMatched ? 'Not matched to Plex' : null);
   return (
     <SectionCard title={data.title || `Film ${ratingKey}`}
       actions={<Anchor component={Link} to="/admin/content/filter" size="sm">All films</Anchor>}>
@@ -104,6 +107,9 @@ export function ReviewPage() {
           {data.job ? <Text size="sm" c={data.job.status === 'failed' ? 'red' : 'dimmed'}>{runText(data.job)}</Text> : null}
           {!data.audit ? <Text size="sm" c="dimmed">No audit yet. Run the film from the library to see its parts.</Text> : null}
         </Group>
+        {notMatched ? (
+          <Text size="sm" c="orange">{`Not matched to Plex: ${data.unmatched?.text || 'no Plex film'}. The review and override here are kept; runs are blocked.`}</Text>
+        ) : null}
         <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} />
         <ReviewKeyBar row={row} tally={station.tally} canUndo={station.canUndo} redoOpen={redoOpen}
           helpOpen={station.helpOpen} message={station.message} bleepLevel={station.bleepLevel} />
@@ -114,8 +120,8 @@ export function ReviewPage() {
               auditFresh={!!data.audit?.fresh} wordRulings={data.wordRulings || {}} />
               : <Text size="sm" c="dimmed">Pick a part in the list to change how it is handled.</Text>}
             {station.flagged ? (
-              <Button size="xs" color="orange" variant="light" disabled={Boolean(busyText)} onClick={station.rework}
-                title={busyText ? `${busyText}. Rework is available when it finishes.` : 'Send the rows marked redo back through the pipeline (Shift+D)'}>
+              <Button size="xs" color="orange" variant="light" disabled={Boolean(runBlock)} onClick={station.rework}
+                title={busyText ? `${busyText}. Rework is available when it finishes.` : runBlock ? `${runBlock}: runs are blocked.` : 'Send the rows marked redo back through the pipeline (Shift+D)'}>
                 Rework {station.flagged} flagged
               </Button>
             ) : null}
@@ -124,7 +130,7 @@ export function ReviewPage() {
           <Stack gap="xs">
             {picked.size ? (
               <Group gap="xs">
-                <Button size="compact-xs" disabled={Boolean(busyText)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
+                <Button size="compact-xs" disabled={Boolean(runBlock)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
                 <Button size="compact-xs" variant="subtle" onClick={() => setPicked(new Set())}>Clear selection</Button>
               </Group>
             ) : null}

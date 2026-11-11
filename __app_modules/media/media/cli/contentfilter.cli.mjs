@@ -1252,32 +1252,38 @@ async function main() {
   }
 
   if (command === 'map') {
-    // Title AND year (±1); repairs stale EDL keys. See ./contentfilter/mapCommand.mjs.
-    const { runMap, applyPlan, readEdlHeads, householdKeysIn, formatMapReport } = await import('./contentfilter/mapCommand.mjs');
+    // Title AND year (±1) and runtime; repairs stale EDL keys. See ./contentfilter/mapCommand.mjs.
+    const { runMap, applyPlan, readEdlHeads, householdKeysIn, formatMapReport, guardMap, politeResolver } = await import('./contentfilter/mapCommand.mjs');
     if (!existsSync(CATALOG_PATH())) {
       console.error('No catalog cache. Run:  node cli/contentfilter.cli.mjs catalog-sync');
       process.exit(1);
     }
+    // One section would look like every other film left Plex: the index is built from all movie sections.
+    if (args.includes('--section')) { console.error('map reads every Plex movie section; --section is not allowed here.'); process.exit(1); }
     const dryRun = args.includes('--dry-run');
     const catalog = JSON.parse(readFileSync(CATALOG_PATH(), 'utf8')).entries || [];
     const edlDir = path.join(filterMediaDir(), 'edl');
     const edlHeads = readEdlHeads(edlDir);
     const oldIndex = existsSync(MAP_PATH()) ? yaml.load(readFileSync(MAP_PATH(), 'utf8')) : null;
     console.error(`Catalog ${catalog.length} titles, ${edlHeads.length} EDLs. Loading Plex movies…`);
-    const plexMovies = await plexItems(flags.section, { types: ['movie'] });
-    console.error(`Plex movies: ${plexMovies.length}. Matching by title and year…`);
+    const plexMovies = await plexItems(null, { types: ['movie'] });
+    console.error(`Plex movies: ${plexMovies.length}. Matching by title, year and runtime…`);
     const va = args.includes('--offline') ? null : new VidAngel({ token: process.env.VIDANGEL_TOKEN || 'public', profile: '' });
-    const resolveYear = va ? async (slug) => { const y = await va.yearForSlug(slug, 'movie'); await new Promise((r) => setTimeout(r, 400)); return y; } : null;
+    const resolveYear = va ? politeResolver((slug) => va.yearForSlug(slug, 'movie')) : null;
     const result = await runMap({
-      catalog, edlHeads, oldIndex, plexMovies, householdKeys: householdKeysIn(filterCacheDir()), resolveYear,
+      catalog, edlHeads, oldIndex, plexMovies, householdKeys: householdKeysIn(filterCacheDir(), filterMediaDir()), resolveYear,
       onProgress: (m) => process.stderr.write(`${m}\n`),
     });
-    if (flags.json) console.log(JSON.stringify({ dryRun, counts: result.plan.counts, library: result.library, rekeys: result.plan.rekeys, blocked: result.plan.blocked, duplicates: result.plan.duplicates, unmatched: result.plan.unmatched, diff: result.diff }, null, 2));
-    else console.log(formatMapReport(result, { dryRun }));
+    const refusal = guardMap({ plexCount: plexMovies.length, oldIndex, plan: result.plan, force: args.includes('--force') });
+    if (flags.json) {
+      console.log(JSON.stringify({ dryRun, refusal, counts: result.plan.counts, library: result.library, rekeys: result.plan.rekeys, park: result.plan.park, blocked: result.plan.blocked, duplicates: result.plan.duplicates, unmatched: result.plan.unmatched, diff: result.diff, household: Object.fromEntries(result.household) }, null, 2));
+    } else console.log(formatMapReport(result, { dryRun }));
+    if (refusal) console.error(`\n${dryRun ? 'WARNING (an apply would refuse)' : 'REFUSED'}: ${refusal}`);
     if (dryRun) return;
+    if (refusal) process.exit(1);
     mkdirSync(filterMediaDir(), { recursive: true });
     const out = applyPlan({ ...result, edlDir, mapPath: MAP_PATH() });
-    console.error(`\n${out.wroteIndex ? `wrote ${MAP_PATH()}` : 'index unchanged'}; moved ${out.moved} EDL(s)`);
+    console.error(`\n${out.wroteIndex ? `wrote ${MAP_PATH()}` : 'index unchanged'}; moved ${out.moved} EDL(s); set aside ${out.parked} wrong-film/stale EDL(s) in edl/_rekeyed/`);
     return;
   }
 
@@ -1322,9 +1328,10 @@ Usage:
 
 Commands:
   catalog-sync          Page the FULL filterable catalog -> local cache (public, throttled; do once)
-  map [--dry-run]       Match catalog works to Plex movies by title AND year (±1) -> plex->VA map file,
-                        and move stale EDL keys to the matching film. --dry-run writes nothing;
-                        --offline asks VidAngel for no years.
+  map [--dry-run]       Match catalog works to Plex movies by title AND year (±1) and runtime -> plex->VA
+                        map file; move stale EDL keys to the matching film and set wrong-film EDLs aside.
+                        --dry-run writes nothing; --offline asks VidAngel for no years; --force passes
+                        the empty-Plex / verified-drop guard. No --section (reads every movie section).
   search <query>        Find filterable titles (slug, year, type, tag_count)
   works                 Popular filterable titles available on your services
   tags <slug>           Summarize a title's filter categories + tag counts

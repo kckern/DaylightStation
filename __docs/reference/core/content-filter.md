@@ -790,7 +790,8 @@ it), a `year`/`title` filled from Plex when the EDL lacks them, and the match ve
 - `match: 'unmatched'` with `unmatched: { reason, text }`: `not-in-plex` "no Plex film" (stale key,
   or no Plex film with the title), `year-mismatch` "Plex has the 1954 film", `ambiguous` "several
   Plex films", `contested` (several works claim one Plex film), `year-unknown`, or `duplicate`
-  "another entry has this film" (an override key whose work the index holds at another key).
+  "another entry has this film" (an override key whose work the index holds at another key), or
+  `runtime-mismatch` "Plex film is 29 min" (runtimes more than 25% of the longer apart).
   With Plex unreachable, the year stored in the index decides; with none stored the film stays
   verified.
 
@@ -808,9 +809,13 @@ note (Plex file / VidAngel). A title search flattens the verified films into one
 chips and filters the Not matched section alike; the "N of M films" count covers both.
 
 An unmatched film's page (`GET /:rk/review`) answers `200 { title, year, match: 'unmatched',
-unmatched }` instead of the review, and the page says why the film can't be reviewed against a
-file. `POST /:rk/jobs` refuses an unmatched film with `409` and the reason, so nothing is run
-against a file that is not the film. The stage vocabulary is `STAGES`/`STAGE_LABELS` from
+unmatched }` when there is nothing to review, and the page says why the film can't be reviewed
+against a file. A key that still holds household work (a refined filter, an override, review
+marks) returns its review as usual with `match: 'unmatched', unmatched` added: the page shows the
+review with an orange "Not matched to Plex ... runs are blocked" line, and Rework and Send back are
+disabled. `POST /:rk/jobs` refuses every unmatched film with `409` and the reason, so nothing is run
+against a file that is not the film. An unmatched film whose EDL `map` set aside stays listed from
+the parked copy (`getParkedEdl`, `edl/_rekeyed/<rk>.edl.yml`); the player never reads it. The stage vocabulary is `STAGES`/`STAGE_LABELS` from
 `filmStage.mjs`, re-exported to the browser by `adminWorkspace.mjs`.
 
 ### Matching EDLs to Plex
@@ -819,8 +824,11 @@ against a file that is not the film. The stage vocabulary is `STAGES`/`STAGE_LAB
 cached VidAngel catalog (`catalog-sync`), the exported EDLs and the live Plex movies
 (`cli/contentfilter/mapCommand.mjs`, rules in `domain/content-filter/plexMatch.mjs`):
 
-- **A Plex film matches a VidAngel work only when the normalized title AND the year (±1) agree.**
-  Title alone maps a shared title ("Cinderella", "Robin Hood") onto every film of that name.
+- **A Plex film matches a VidAngel work only when the normalized title AND the year (±1) agree,
+  and the runtimes are not more than 25% of the longer apart** (an unknown runtime never blocks).
+  Title alone maps a shared title ("Cinderella", "Robin Hood") onto every film of that name; the
+  runtime rule keeps a 29-minute documentary of the same title and year off a 100-minute feature
+  (`runtime-mismatch`), while an extended cut (182 vs 237 min) still matches.
 - The catalog dump has no year. A work's year comes from its EDL (`year`), else from the old
   index, else from the VidAngel API, asked only for works whose title Plex has (`--offline` asks
   nothing; such works stay unmatched as `year-unknown`).
@@ -829,16 +837,33 @@ cached VidAngel catalog (`catalog-sync`), the exported EDLs and the live Plex mo
 - Each verified entry stores the Plex `year` and `runtimeSec`, and the work's `vidangel.year` and
   `vidangel.runtimeSec`, with `confidence: title-year`. A work that has an EDL but no match is kept
   under `unmatched:` (one entry per work, keyed by one of its EDL keys, preferring a key with
-  household data) with its `reason` and `plexYears` or `plexKeys`. Show entries are carried over
+  household data) with its `reason` and `plexYears`, `plexKeys` or `plexRuntimeMin`. Show entries are carried over
   unchanged (they have no EDLs and nothing reads them).
 - **Re-key pass.** When a matched work's EDL sits at a key that is not its Plex film (a library
   rebuild re-keyed it, or the title-only matcher put it on another year's film), the EDL moves to
   the matched key with its `contentId` rewritten; the old file is kept in `edl/_rekeyed/`. A key
   that already holds the work stays; the work's other EDL keys are duplicates and are left out of
-  the index. A key with household data (override, review, review history, run record) is never
-  moved, and a key holding another work's EDL is never overwritten: both are reported as blocked.
-- `--dry-run` prints the plan (index counts and reasons, re-keys, blocked, dropped entries with
-  why, the library films' fate before and after, every unmatched film) and writes nothing.
+  the index. A key with household data is never moved or parked, and a key holding another work's
+  EDL is never overwritten: both are reported as blocked. Household data is every per-key store:
+  `overrides/<rk>.yml`, `jobs/<rk>.yml`, `review/<rk>.yml` and `<rk>.refine.yml`,
+  `review-history/<rk>.yml`, and media `refine/<rk>/` (transcripts); refined EDLs are keyed by work
+  and follow it. The report lists every household key that ends up a duplicate or not matched,
+  with what it holds ("has household data: override, job, review"); moving such data is a person's
+  call, never `map`'s.
+- The new file is written before the old one is moved aside, so an interrupted re-key leaves a
+  stale source next to its finished copy; the next run sets it aside as a stale duplicate. Nothing
+  in `edl/_rekeyed/` is ever overwritten (a second copy gets `.1`, `.2` ...).
+- **Wrong-film EDLs are set aside.** An EDL at a key that is a live Plex film but not the work's
+  film (title, year or runtime disagree: a duplicate, or an unmatched work's EDL on another year's
+  film such as a 2010 EDL at the 1973 film's key) would filter that film with another film's cues,
+  so `map` moves it to `edl/_rekeyed/` (unless the key has household data). Stale duplicates (key
+  gone from Plex) are set aside too. A not-matched work stays listed from its parked EDL.
+- **Guards.** `map` reads every Plex movie section and refuses `--section`. It writes nothing when
+  Plex returns 0 movies or when the verified count would drop by more than 20% from the current
+  index, unless `--force` (a dry-run prints the refusal as a warning). VidAngel year lookups pause
+  400 ms after each call and back off 1, 2, 4 s after a failure, giving up after three tries.
+- `--dry-run` prints the plan (index counts and reasons, re-keys, set-aside EDLs, blocked,
+  household keys left alone, dropped entries with why, the library films' fate before and after, every unmatched film) and writes nothing.
   `--json` prints the same as JSON. A second run on its own output changes nothing; the index file
   is not rewritten when it would be identical (its mtime is the library's "Index from" date).
 

@@ -271,11 +271,19 @@ export function createContentFilterRouter({ getContentFilter, contentFilterScene
     const key = (req) => String(req.params.ratingKey).replace(/[^0-9]/g, '');
     const ROW = /^(cue|scene|subject):[A-Za-z0-9_-]+$/;
     // GET /:rk/review -> { title, certification, audit, rows, reviewed, total, job, signOff }
-    // A film not matched to Plex: { title, year, match: 'unmatched', unmatched: { reason, text } } instead.
+    // A film not matched to Plex: its review (household work at that key stays readable) marked
+    // `match: 'unmatched', unmatched: { reason, text }`; with nothing to review, just
+    // { title, year, match, unmatched }. Runs stay refused (POST /:rk/jobs).
     router.get('/:ratingKey/review', asyncHandler(async (req, res) => {
       const verdict = contentFilterLibrary?.matchOf ? await contentFilterLibrary.matchOf(key(req)) : null;
-      if (verdict?.match === 'unmatched') return res.json({ title: verdict.title, year: verdict.year, match: 'unmatched', unmatched: verdict.unmatched });
-      try { res.json(await contentFilterReview.get({ ratingKey: key(req) })); } catch (e) { send(res, e); }
+      const notMatched = verdict?.match === 'unmatched' ? { match: 'unmatched', unmatched: verdict.unmatched } : null;
+      try {
+        const review = await contentFilterReview.get({ ratingKey: key(req) });
+        res.json(notMatched ? { ...review, ...notMatched } : review);
+      } catch (e) {
+        if (notMatched && e.status === 404) return res.json({ title: verdict.title, year: verdict.year, ...notMatched });
+        send(res, e);
+      }
     }));
     // PUT /:rk/review/:rowId { span, by, verdict?, reason?, change?, dwellMs?, replays? } -> { mark }
     // (no verdict = approve). A remove or an in-place change alters what the household gets, so it

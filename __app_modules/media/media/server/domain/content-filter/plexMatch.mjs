@@ -14,6 +14,8 @@
 export const YEAR_TOLERANCE = 1;
 /** A runtime further apart than this is noted, never hidden: VidAngel's figure can differ from the file. */
 export const RUNTIME_WARN_SEC = 300;
+/** Runtimes further apart than this share of the longer are different films (a 29-min documentary is not the 100-min feature). */
+export const RUNTIME_MISMATCH_RATIO = 0.25;
 
 /** Normalize a title for collision-tolerant matching. */
 export function normTitle(s) {
@@ -27,13 +29,20 @@ export function normTitle(s) {
 }
 
 const yearsAgree = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= YEAR_TOLERANCE;
+const known = (s) => Number.isFinite(s) && s > 0;
+/** Two runtimes too far apart to be one film; unknown runtimes never disagree. */
+const runtimesDisagree = (a, b) => known(a) && known(b) && Math.abs(a - b) / Math.max(a, b) > RUNTIME_MISMATCH_RATIO;
+const workTitles = (w) => new Set([w.title, ...(w.titles || [])].map(normTitle));
+/** Is this Plex item the work's film (title, year and runtime agree)? */
+const isFilm = (item, w) => workTitles(w).has(normTitle(item.title)) && yearsAgree(item.year, w.year) && !runtimesDisagree(item.runtimeSec, w.runtimeSec);
 const byKey = (a, b) => Number(a) - Number(b) || String(a).localeCompare(String(b));
 
 const listYears = (ys) => (ys.length < 2 ? String(ys[0]) : `${ys.slice(0, -1).join(', ')} and ${ys.at(-1)}`);
 
 /** One line for a person: why this film is not matched to Plex. */
-export function reasonText(reason, { plexYears = [] } = {}) {
+export function reasonText(reason, { plexYears = [], plexRuntimeMin = [] } = {}) {
   switch (reason) {
+    case 'runtime-mismatch': return plexRuntimeMin.length ? `Plex film is ${listYears(plexRuntimeMin)} min` : 'Plex film is a different length';
     case 'year-mismatch': return plexYears.length ? `Plex has the ${listYears(plexYears)} film${plexYears.length > 1 ? 's' : ''}` : 'Plex has a different year';
     case 'ambiguous': return 'several Plex films';
     case 'contested': return 'several VidAngel films claim one Plex film';
@@ -48,14 +57,16 @@ function vaRef(w) {
   return { id: w.workId, slug: w.slug ?? null, type: w.type ?? 'movie', tagCount: w.tagCount ?? 0, year: w.year ?? null, runtimeSec: w.runtimeSec ?? null };
 }
 
-/** Title + year match for one work against a title index of Plex movies. */
+/** Title + year (+ runtime) match for one work against a title index of Plex movies. */
 function matchOne(w, index) {
   const seen = new Map();
   for (const t of [w.title, ...(w.titles || [])]) for (const p of index.get(normTitle(t)) || []) seen.set(p.ratingKey, p);
   const cands = [...seen.values()];
   if (!cands.length) return { status: 'unmatched', reason: 'not-in-plex' };
   if (!Number.isFinite(w.year)) return { status: 'unmatched', reason: 'year-unknown', plexYears: [...new Set(cands.map((c) => c.year).filter(Number.isFinite))].sort() };
-  const fit = cands.filter((c) => yearsAgree(c.year, w.year));
+  const byYear = cands.filter((c) => yearsAgree(c.year, w.year));
+  const fit = byYear.filter((c) => !runtimesDisagree(c.runtimeSec, w.runtimeSec));
+  if (!fit.length && byYear.length) return { status: 'unmatched', reason: 'runtime-mismatch', plexRuntimeMin: [...new Set(byYear.map((c) => Math.round(c.runtimeSec / 60)))].sort((a, b) => a - b) };
   if (fit.length === 1) return { status: 'matched', plex: fit[0] };
   if (fit.length > 1) return { status: 'unmatched', reason: 'ambiguous', plexKeys: fit.map((c) => c.ratingKey).sort(byKey) };
   return { status: 'unmatched', reason: 'year-mismatch', plexYears: [...new Set(cands.map((c) => c.year).filter(Number.isFinite))].sort() };
@@ -68,11 +79,15 @@ function matchOne(w, index) {
  * @param {Array<{workId, slug, type, tagCount, title, titles?, year, runtimeSec, edlKeys: string[]}>} p.works
  *   VidAngel movie works with filter data; `edlKeys` are the ratingKeys whose EDL file is this work.
  * @param {Array<{ratingKey, title, year, runtimeSec}>} p.plexMovies  live Plex movies
- * @param {Set<string>} [p.householdKeys]  keys with household data (override, review, jobs): never moved
- * @returns {{ map, unmatched, rekeys, duplicates, blocked, skipped, counts }}
+ * @param {Set<string>|Map<string, string[]>} [p.householdKeys]  keys with household data (override,
+ *   review, review history, run record, transcripts): never moved or parked
+ * @returns {{ map, unmatched, rekeys, duplicates, blocked, skipped, park, counts }}
  *   `map`: 'plex:<rk>' -> verified entry; `unmatched`: 'plex:<rk>' -> one entry per EDL'd work that
  *   does not match (keyed by one of its EDL keys); `rekeys`: EDL files to move to the matched key;
- *   `skipped`: unmatched works with no EDL (not library films; reported only).
+ *   `skipped`: unmatched works with no EDL (not library films; reported only); `park`: EDL files to
+ *   move aside (edl/_rekeyed/) because the key is ANOTHER film in Plex ('wrong-film': the player
+ *   would filter that film with this one's cues) or is gone and only duplicates a kept key
+ *   ('stale-duplicate', e.g. a re-key interrupted after writing its new file).
  */
 export function planMap({ works = [], plexMovies = [], householdKeys = new Set() } = {}) {
   const index = new Map();
@@ -82,6 +97,7 @@ export function planMap({ works = [], plexMovies = [], householdKeys = new Set()
     if (!index.has(k)) index.set(k, []);
     index.get(k).push({ ...p, ratingKey: String(p.ratingKey) });
   }
+  const plexAt = new Map(plexMovies.map((p) => [String(p.ratingKey), p]));
   const edlOwner = new Map(); // ratingKey -> workId of the EDL file there
   for (const w of works) for (const k of w.edlKeys || []) edlOwner.set(String(k), w.workId);
 
@@ -93,7 +109,14 @@ export function planMap({ works = [], plexMovies = [], householdKeys = new Set()
     if (x.r.status === 'matched' && claims.get(x.r.plex.ratingKey) > 1) x.r = { status: 'unmatched', reason: 'contested', plexKeys: [x.r.plex.ratingKey] };
   }
 
-  const map = {}; const unmatched = {}; const rekeys = []; const duplicates = []; const blocked = []; const skipped = [];
+  const map = {}; const unmatched = {}; const rekeys = []; const duplicates = []; const blocked = []; const skipped = []; const park = [];
+  // An EDL left at a key that is not its film: move it aside unless the key has household data.
+  const parkIfWrong = (w, k, { stale = false } = {}) => {
+    if (householdKeys.has(k)) return;
+    const item = plexAt.get(k);
+    if (item && !isFilm(item, w)) park.push({ ratingKey: k, workId: w.workId, title: w.title, why: 'wrong-film' });
+    else if (!item && stale) park.push({ ratingKey: k, workId: w.workId, title: w.title, why: 'stale-duplicate' });
+  };
   for (const { w, r } of results) {
     const keys = [...new Set((w.edlKeys || []).map(String))].sort(byKey);
     if (r.status === 'matched') {
@@ -113,24 +136,37 @@ export function planMap({ works = [], plexMovies = [], householdKeys = new Set()
           holder = clean[0];
         }
       }
-      for (const k of keys) if (k !== holder && k !== t) duplicates.push({ workId: w.workId, title: w.title, ratingKey: k, of: t });
+      for (const k of keys) {
+        if (k === holder || k === t) continue;
+        duplicates.push({ workId: w.workId, title: w.title, ratingKey: k, of: t });
+        parkIfWrong(w, k, { stale: true });
+      }
       continue;
     }
-    if (!keys.length) { skipped.push({ workId: w.workId, title: w.title, reason: r.reason }); continue; } // never exported: not a library film
-    const shown = keys.find((k) => householdKeys.has(k)) ?? keys[0];
+    // An unmatched work whose EDLs were all set aside earlier stays listed from a parked one.
+    const listed = keys.length ? keys : [...new Set((w.parkedKeys || []).map(String))].sort(byKey);
+    if (!listed.length) { skipped.push({ workId: w.workId, title: w.title, reason: r.reason }); continue; } // never exported: not a library film
+    const shown = listed.find((k) => householdKeys.has(k)) ?? listed[0];
     unmatched[`plex:${shown}`] = {
       title: w.title, plexType: 'movie', year: w.year ?? null, reason: r.reason,
       ...(r.plexYears ? { plexYears: r.plexYears } : {}), ...(r.plexKeys ? { plexKeys: r.plexKeys } : {}),
+      ...(r.plexRuntimeMin ? { plexRuntimeMin: r.plexRuntimeMin } : {}),
       vidangel: vaRef(w),
     };
-    for (const k of keys) if (k !== shown) duplicates.push({ workId: w.workId, title: w.title, ratingKey: k, of: shown });
+    if (keys.length) parkIfWrong(w, shown);
+    for (const k of keys) {
+      if (k === shown) continue;
+      duplicates.push({ workId: w.workId, title: w.title, ratingKey: k, of: shown });
+      parkIfWrong(w, k, { stale: true });
+    }
   }
   const sortObj = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => byKey(a.slice(5), b.slice(5))));
   const reasons = {};
   for (const u of Object.values(unmatched)) reasons[u.reason] = (reasons[u.reason] || 0) + 1;
   return {
     map: sortObj(map), unmatched: sortObj(unmatched), rekeys, duplicates, blocked, skipped,
-    counts: { verified: Object.keys(map).length, unmatched: Object.keys(unmatched).length, rekeyed: rekeys.length, duplicates: duplicates.length, blocked: blocked.length, reasons },
+    park: park.sort((a, b) => byKey(a.ratingKey, b.ratingKey)),
+    counts: { verified: Object.keys(map).length, unmatched: Object.keys(unmatched).length, rekeyed: rekeys.length, duplicates: duplicates.length, blocked: blocked.length, parked: park.length, reasons },
   };
 }
 
@@ -173,6 +209,7 @@ export function filmMatch({ edl = null, live, plexItem = null, indexEntry = null
   if (!plexItem) return no('not-in-plex');
   if (edlYear != null && Number.isFinite(plexItem.year) && !yearsAgree(plexItem.year, edlYear)) return no('year-mismatch', { plexYears: [plexItem.year] });
   const a = edl?.runtimeSec; const b = plexItem.runtimeSec;
+  if (runtimesDisagree(a, b)) return no('runtime-mismatch', { plexRuntimeMin: [Math.round(b / 60)] });
   const runtimeWarning = Number.isFinite(a) && Number.isFinite(b) && a > 0 && b > 0 && Math.abs(a - b) > RUNTIME_WARN_SEC
     ? { edlMin: Math.round(a / 60), plexMin: Math.round(b / 60) } : null;
   return { match: 'verified', unmatched: null, runtimeWarning };
