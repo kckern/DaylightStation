@@ -73,6 +73,42 @@ downgrades a section that was already `served`, and the diagnostics below it
 keep firing on a day that is off. The section still offers a `next`: the
 obligation is excused, not forbidden.
 
+**Day-off tiers.** A household break carries a [tier](./day-off-tiers.md), and
+`planDailyAgenda` applies it per section, in this order:
+
+1. No break, or a `normal` break: unchanged — an ordinary school day.
+2. `away` (or a break with no tier): every section `excused · household_calendar`.
+3. `stay-home`, `enrichment`, `major-holiday`: entries the tier's keep-list does
+   not name are dropped. A section left with nothing kept is
+   `excused · day_off` (the full list still runs the ladder underneath, so its
+   diagnostics keep firing). Kept work obligates as on any day, still subject to
+   its own course schedule — piano that meets Mon–Fri is `not_a_school_day` on a
+   Saturday inside the Christmas break.
+4. Any day: a **date-bound** entry for today displaces the other entries of its
+   subject (the enrichment swap, or a holiday activity). It is always kept,
+   except on an `away` day.
+5. A **placeholder** entry is offered by name, but a section whose only owed work
+   is a placeholder is `excused · placeholder`.
+
+Work already done today survives every filter: a dropped subject a child worked
+on anyway still reads `served`. The agenda returns `dayOff: {tier, label}` beside
+its sections (null on an ordinary day), and the JSON preview
+(`GET .../agenda/preview?format=json`) carries it.
+
+**Weekend scripture.** A course enrollment with `weekend: backlog-then-review`
+(and Saturday/Sunday in its `schedule.daysOfWeek`) owes one item on each
+weekend day, chosen differently from a weekday:
+
+1. **Backlog first** — the oldest undone lesson of any module that has already
+   opened (oldest module, then lesson order).
+2. **Review** — with no backlog, a re-sit of the current week's least recently
+   passed lesson, flagged `review: true` (no new lesson is authored for it).
+3. **Never advance** — a lesson from a module that has not opened is never
+   offered on a weekend.
+
+One pass serves the day, as on any day. Weekday behaviour is unchanged. See
+[Day-off tiers](./day-off-tiers.md#weekend-scripture).
+
 ## Focus days and chaining
 
 Urgent timed work can request extra lesson blocks. Extra blocks may suppress

@@ -3,6 +3,9 @@
  * A course says what MAY shuffle; this module chooses once and persists the
  * result on the assignment/enrollment record.  It never reads a clock or RNG.
  */
+/** The weekend policies a course enrollment may declare (see agenda.mjs). */
+export const WEEKEND_POLICIES = Object.freeze(['backlog-then-review']);
+
 const shuffle = (items, rng) => {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i -= 1) {
@@ -14,9 +17,12 @@ const shuffle = (items, rng) => {
 
 export function createCourseEnrollment({
   enrollmentId = null, courseId, profile, units, modules = [], policy = {}, display = null,
-  schedule = null, today = null, rng = null,
+  schedule = null, weekend = null, today = null, rng = null,
 } = {}) {
   if (typeof courseId !== 'string' || !courseId) throw new Error('courseId is required');
+  if (weekend != null && !WEEKEND_POLICIES.includes(weekend)) {
+    throw new Error(`weekend must be one of ${WEEKEND_POLICIES.join(', ')}, got: ${weekend}`);
+  }
   if (enrollmentId !== null && (typeof enrollmentId !== 'string' || !enrollmentId)) {
     throw new Error('enrollmentId must be a non-empty string when provided');
   }
@@ -100,6 +106,9 @@ export function createCourseEnrollment({
     // is: a vacation added to the syllabus mid-year must be an explicit
     // re-materialize, not something that moves under a learner overnight.
     ...(schedule ? { schedule: structuredClone(schedule) } : {}),
+    // How Saturday and Sunday choose their one item when the schedule makes
+    // them school days: backlog first, then a review, never advancing.
+    ...(weekend ? { weekend } : {}),
     ...(dated ? {
       moduleSchedule: Object.fromEntries(
         windowed.map((module) => [module.module, { opensOn: module.opensOn, closesOn: module.closesOn }]),

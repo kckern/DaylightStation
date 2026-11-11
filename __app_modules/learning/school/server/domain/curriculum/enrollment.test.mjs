@@ -218,3 +218,45 @@ describe('dated module schedules', () => {
     expect(enrollment.moduleSchedule).toBeUndefined();
   });
 });
+
+describe('weekend policy', () => {
+  const modules = [
+    { module: 'w45', opensOn: '2026-11-02', closesOn: '2026-11-08' },
+    { module: 'w46', opensOn: '2026-11-09', closesOn: '2026-11-15' },
+  ];
+  const weekUnits = [
+    { unitId: 'w45.d1', courseId: 'cfm', module: 'w45', sequence: 1, title: 'A', subject: 'scripture' },
+    { unitId: 'w46.d1', courseId: 'cfm', module: 'w46', sequence: 2, title: 'B', subject: 'scripture' },
+  ];
+  const datedPolicy = { mode: 'dated_modules', lesson_order: 'sequence' };
+
+  it('snapshots weekend: backlog-then-review onto the enrollment', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: weekUnits, modules, policy: datedPolicy, today: '2026-11-01', weekend: 'backlog-then-review',
+    });
+    expect(enrollment.weekend).toBe('backlog-then-review');
+  });
+
+  it('refuses an unknown weekend policy and omits an absent one', () => {
+    expect(() => createCourseEnrollment({ courseId: 'cfm', units: weekUnits, modules, policy: datedPolicy, weekend: 'review' }))
+      .toThrow(/weekend/);
+    expect(createCourseEnrollment({ courseId: 'cfm', units: weekUnits, modules, policy: datedPolicy })).not.toHaveProperty('weekend');
+  });
+
+  it('the planner carries the policy and the module opening day onto each entry', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: weekUnits, modules, policy: datedPolicy, today: '2026-11-01', weekend: 'backlog-then-review',
+    });
+    const plan = planLearnerWork({
+      learnerId: 'kid', assignment: { courses: [{ courseId: 'cfm', enrollment }] }, units: weekUnits,
+      now: '2026-11-14T18:00:00.000Z',
+    });
+    const entry = plan.entries.find((e) => e.unitId === 'w46.d1');
+    expect(entry).toMatchObject({ weekendPolicy: 'backlog-then-review', moduleOpensOn: '2026-11-09' });
+    const plain = planLearnerWork({
+      learnerId: 'kid', assignment: { courses: [{ courseId: 'cfm', enrollment: { ...enrollment, weekend: undefined } }] },
+      units: weekUnits, now: '2026-11-14T18:00:00.000Z',
+    });
+    expect(plain.entries[0].weekendPolicy).toBeUndefined();
+  });
+});

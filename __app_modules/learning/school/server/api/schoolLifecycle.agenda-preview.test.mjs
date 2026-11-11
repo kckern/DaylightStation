@@ -31,5 +31,16 @@ describe('agenda preview study-day contract', () => {
     expect(response.body).toMatchObject({ learnerId: 'learner3', studyDay: '2026-08-25' });
     // The JSON answer drops the document, so it skips the bank line's re-plan.
     expect(previewAgenda.execute).toHaveBeenCalledWith({ learnerId: 'learner3', learnerName: null, studyDay: '2026-08-25', economy: false });
+    expect(response.body.dayOff).toBeNull();
+  });
+
+  it('carries the day off covering the study day', async () => {
+    const previewAgenda = { execute: vi.fn(async () => ({
+      document: { id: 'agenda-learner3' }, sections: [], dayOff: { tier: 'stay-home', label: 'Veterans Day' },
+      plan: { entries: [], errors: [] },
+    })) };
+    const response = await request(appWith(previewAgenda))
+      .get('/api/v1/school/lifecycle/learners/learner3/agenda/preview?format=json&studyDay=2026-11-11');
+    expect(response.body.dayOff).toEqual({ tier: 'stay-home', label: 'Veterans Day' });
   });
 });

@@ -72,6 +72,24 @@ describe('PlanProjection', () => {
     expect(entryFor(plan, WORKSHEET_UNIT).status).not.toBe('locked');
   });
 
+  it('names a household day off and applies the configured keep-list', async () => {
+    const day = '2026-07-27';
+    const { curriculum, assignments, sessions, clock } = build();
+    const householdSchedule = { except: [{ from: day, to: day, label: 'Summer day', tier: 'stay-home' }] };
+    const keepsMath = new PlanProjection({
+      curriculum, assignments, sessions, clock: clock.now, logger: silentLogger, householdSchedule,
+      dayOffPolicy: { 'stay-home': { keep: [{ subject: 'math' }] } },
+    });
+    const keepsNothing = new PlanProjection({
+      curriculum, assignments, sessions, clock: clock.now, logger: silentLogger, householdSchedule,
+    });
+    const kept = await keepsMath.project({ learnerId: LEARNER });
+    expect(kept.dayOff).toEqual({ tier: 'stay-home', label: 'Summer day' });
+    expect(kept.sections.find((s) => s.subject === 'math').obligation.state).not.toBe('excused');
+    const dropped = await keepsNothing.project({ learnerId: LEARNER });
+    expect(dropped.sections.find((s) => s.subject === 'math').obligation).toEqual({ state: 'excused', reason: 'day_off' });
+  });
+
   it('can be asked for the RAW view, without the attested overlay', async () => {
     const { projection } = build();
     const { plan } = await projection.project({ learnerId: LEARNER, attested: false });

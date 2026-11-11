@@ -277,7 +277,7 @@ export class BuildAgenda {
     // programs appended, `planDailyAgenda` fed the RAW history — because this
     // is the surface that prints the paper a child is holding, so it is the
     // one every other surface has to converge on.
-    const { plan, sections, activeExceptions, projection, programStatuses } = await this.#planProjection.project({
+    const { plan, sections, dayOff = null, activeExceptions, projection, programStatuses } = await this.#planProjection.project({
       learnerId,
       // A study-day preview plans against the midpoint of that day's window,
       // not the clock.
@@ -790,6 +790,7 @@ export class BuildAgenda {
       learnerId,
       plan,
       sections: enrichedSections,
+      dayOff,
       offers,
       createdSessions,
       mintedTokens,

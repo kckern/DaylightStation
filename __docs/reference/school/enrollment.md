@@ -79,6 +79,7 @@ courses:
 - dated module windows, when the course uses `dated_modules`.
 - learner-facing course/module titles, compact titles, and displayed numbers.
 - the school-day `schedule`, when the syllabus declares one.
+- the `weekend` policy, when the syllabus declares one.
 
 That snapshot prevents later catalog edits from reordering an active learner or
 moving their calendar or silently relabeling their existing course. A module
@@ -106,7 +107,17 @@ A syllabus may also carry a `timingTemplate` and a `schedule` — which days are
 school days, so a weekend or a vacation stops reading as unmet work. Both are
 described in [timing and priority](./timing-and-priority.md); `schedule` is
 snapshotted onto the enrollment, so adding a vacation mid-year is a
-re-materialize, not a syllabus edit. The current syllabus validator
+re-materialize, not a syllabus edit.
+
+A syllabus (and so its enrollment) may also declare `weekend: backlog-then-review`.
+It matters only when `schedule.daysOfWeek` includes Saturday and Sunday (6 and
+7): the weekday lessons keep their schedule, and each weekend day owes one
+item, the oldest undone lesson of an open module, else a review re-sit of the
+current week's least recently passed lesson, never a lesson from a week that
+has not opened. See [Day-off tiers](./day-off-tiers.md#weekend-scripture). Any
+other value is refused.
+
+The current syllabus validator
 does not accept a `modules` subset or a term that creates a separate grading
 scope. Those are future model changes, not hidden YAML features.
 

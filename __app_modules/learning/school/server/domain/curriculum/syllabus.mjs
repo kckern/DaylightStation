@@ -1,5 +1,6 @@
 import { normalizeTimingTemplate } from "../timing.mjs";
 import { validateSchedule } from "../schoolCalendar.mjs";
+import { WEEKEND_POLICIES } from "./enrollment.mjs";
 
 /**
  * Pure validation + normalisation of a syllabus (see
@@ -114,6 +115,14 @@ export function validateSyllabus(raw, sets = {}) {
   // that already names the block itself.
   errors.push(...scheduleErrors.map((m) => (m.startsWith('schedule ') ? m : `schedule.${m}`)));
 
+  // How a weekend chooses its one item when `schedule` makes it a school day.
+  let weekend = null;
+  if (isPresent(raw.weekend)) {
+    if (!WEEKEND_POLICIES.includes(raw.weekend)) {
+      errors.push(`weekend must be ${WEEKEND_POLICIES.join('|')}, got: ${raw.weekend}`);
+    } else weekend = raw.weekend;
+  }
+
   if (errors.length) return { errors };
   return {
     errors,
@@ -128,6 +137,7 @@ export function validateSyllabus(raw, sets = {}) {
       term,
       ...(timingTemplate ? { timingTemplate } : {}),
       ...(schedule ? { schedule } : {}),
+      ...(weekend ? { weekend } : {}),
     },
   };
 }

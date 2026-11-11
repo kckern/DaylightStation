@@ -18,7 +18,8 @@
  */
 import { SUBJECT_IDS } from "./curriculum/unitValidation.mjs";
 import { isSameStudyDay, studyDayForInstant } from "./studyDay.mjs";
-import { scheduleVerdict } from "./schoolCalendar.mjs";
+import { dayOffTier, isoWeekday, scheduleVerdict } from "./schoolCalendar.mjs";
+import { DEFAULT_DAY_OFF_POLICY, keepsEntry } from "./dayOffPolicy.mjs";
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -189,6 +190,34 @@ function blockerChainIsReachable(start, entryByUnit) {
   return false;
 }
 
+/**
+ * WEEKEND SCRIPTURE (`weekend: backlog-then-review` on a course enrollment).
+ * The five weekday lessons keep their schedule; Saturday and Sunday each owe
+ * ONE item, chosen differently from a weekday:
+ *   1. the oldest undone lesson of any module already open (oldest module,
+ *      then authored order) — the backlog;
+ *   2. with no backlog, a re-sit of the open week's least recently passed
+ *      lesson, flagged `review: true`;
+ *   3. never a lesson from a module that has not opened.
+ * A re-sit of a completed lesson can serve the day but cannot advance the
+ * course, because the lesson is already complete.
+ */
+export const WEEKEND_POLICY = 'backlog-then-review';
+
+function weekendScripturePick(track, today, latestPassAt) {
+  const opened = track.filter((e) => !e.moduleOpensOn || e.moduleOpensOn <= today);
+  const byAge = (left, right) => (left.moduleOpensOn ?? '').localeCompare(right.moduleOpensOn ?? '')
+    || track.indexOf(left) - track.indexOf(right);
+  const backlog = opened.filter((e) => e.status === 'in_progress' || e.status === 'available').sort(byAge)[0];
+  if (backlog) return backlog;
+  const currentWeek = opened.map((e) => e.moduleOpensOn).filter(Boolean).sort().at(-1) ?? null;
+  const review = opened
+    .filter((e) => e.status === 'completed' && (currentWeek == null || e.moduleOpensOn === currentWeek))
+    .sort((left, right) => (latestPassAt.get(left.unitId) ?? 0) - (latestPassAt.get(right.unitId) ?? 0)
+      || track.indexOf(left) - track.indexOf(right))[0];
+  return review ? { ...review, review: true } : null;
+}
+
 const timingScope = (entry) => entry?.courseId ? `course:${entry.courseId}` : `unit:${entry?.unitId ?? ''}`;
 /** True when the schedule's own `except` spans (not its weekdays) rule the day out; `also` still wins. */
 const programExceptedOn = (day, schedule) => {
@@ -239,15 +268,27 @@ export function programStatusFor(programStatuses, entry) {
  *   — a family vacation is not something a syllabus gets a vote on. Applied
  *   here, inside the agenda, so the paper a child is handed and the term grid
  *   drawn months later can never disagree about it.
- * @returns {{ sections: object[] }}
+ *   A break may carry a day-off `tier` (`schoolCalendar.mjs`): `away` (or no
+ *   tier) excuses every section as before; `stay-home`, `enrichment` and
+ *   `major-holiday` keep only the work their keep-list names; `normal` is an
+ *   ordinary school day that still carries its name.
+ * @param {object} [args.dayOffPolicy] keep-lists per tier (`dayOffPolicy.mjs`)
+ * @returns {{ sections: object[], dayOff: {tier: string, label: string|null}|null }}
  */
 export function planDailyAgenda({
   plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4,
-  householdSchedule = null,
+  householdSchedule = null, dayOffPolicy = DEFAULT_DAY_OFF_POLICY,
 } = {}) {
   const nowMs = Date.parse(now ?? '');
   const today = studyDayForInstant(nowMs, { timezone, boundaryHour });
-  const householdOff = householdSchedule != null && !scheduleVerdict(today, householdSchedule).schoolDay;
+  const tierSpan = householdSchedule != null ? dayOffTier(today, householdSchedule) : null;
+  const tier = tierSpan?.tier ?? null;
+  // A KEEPING tier is a day off that still asks for some work: only what its
+  // keep-list names stays on the agenda. `away` keeps nothing (the old,
+  // all-sections household day off) and `normal` is a school day.
+  const keepingTier = tier != null && tier !== 'normal' && tier !== 'away';
+  const householdOff = householdSchedule != null && !keepingTier
+    && !scheduleVerdict(today, householdSchedule).schoolDay;
   const entries = (plan?.entries ?? []).filter((e) => e && typeof e === 'object');
   const order = [...SUBJECT_IDS, 'other'];
 
@@ -266,6 +307,13 @@ export function planDailyAgenda({
     .filter((s) => s?.outcome?.result === 'passed'
       && isSameStudyDay(Date.parse(s.outcome?.at ?? s.updatedAt ?? ''), nowMs, { timezone, boundaryHour }));
   const passedTodayIds = new Set(passedToday.map((s) => s.unitId));
+  const isWeekend = typeof today === 'string' && isoWeekday(today) >= 6;
+  const latestPassAt = new Map();
+  sessions.forEach((s) => {
+    if (s?.outcome?.result !== 'passed' || !isNonEmptyString(s.unitId)) return;
+    const at = Date.parse(s.outcome?.at ?? s.updatedAt ?? '');
+    if (Number.isFinite(at) && at > (latestPassAt.get(s.unitId) ?? -Infinity)) latestPassAt.set(s.unitId, at);
+  });
   const entryByUnit = new Map(entries.map((entry) => [entry.unitId, entry]));
   const passedTodayByScope = new Map();
   passedToday.forEach((session) => {
@@ -292,7 +340,25 @@ export function planDailyAgenda({
     // runs and the `noSchoolToday` override excuses the day as before.
     const all = bySubject.get(subject);
     const live = all.filter((e) => !(e.program && programExceptedOn(today, e.schedule)));
-    const list = live.length ? live : all;
+    const scheduled = live.length ? live : all;
+    // Work already done today survives every filter below: a filter decides
+    // what is still ASKED, and must never erase what a child finished.
+    const doneToday = (e) => passedTodayIds.has(e.unitId)
+      || (e.program && programStatusFor(programStatuses, e)?.doneToday === true);
+    // THE SWAP. A date-bound entry is in the plan only on its own day, and on
+    // that day it takes its subject's slot: the holiday lesson replaces the
+    // ordinary one rather than sitting beside it.
+    const swapped = scheduled.some((e) => e.dateBound)
+      ? scheduled.filter((e) => e.dateBound || doneToday(e))
+      : scheduled;
+    // THE KEEP-LIST. On a keeping tier, only kept work is asked. When nothing
+    // in the section is kept, the full list stays for the ladder (its
+    // diagnostics still run) and the override below excuses it as `day_off`.
+    const kept = keepingTier
+      ? swapped.filter((e) => keepsEntry(dayOffPolicy, tier, e) || doneToday(e))
+      : swapped;
+    const tierDropsSection = keepingTier && kept.length === 0;
+    const list = kept.length ? kept : swapped;
     const programs = list.filter((e) => e.program);
     const statuses = programs
       .map((entry) => programStatusFor(programStatuses, entry))
@@ -366,8 +432,16 @@ export function planDailyAgenda({
     // A teacher hold is the LAST resort: any other open or available work in
     // the subject is offered first, and the hold is named only so the paper
     // still says why the subject has nothing for the child to do.
-    const offerable = offerEligible.filter((e) => !isTeacherHeld(e));
-    const candidate = [
+    // On a weekend, a weekend-policy course offers only its weekend pick, never
+    // its ordinary next lesson (which could advance the course).
+    const weekendTrack = isWeekend
+      ? list.filter((e) => !e.program && !e.elective && e.weekendPolicy === WEEKEND_POLICY)
+      : [];
+    const weekendPick = weekendTrack.length && !subjectPassedToday
+      ? weekendScripturePick(weekendTrack, today, latestPassAt)
+      : null;
+    const offerable = offerEligible.filter((e) => !isTeacherHeld(e) && !weekendTrack.includes(e));
+    const candidate = weekendPick ?? [
       ...offerable.filter((e) => e.status === 'in_progress'),
       ...offerable.filter((e) => e.status === 'available'),
     ].sort(byEntryPriority)[0]
@@ -419,8 +493,12 @@ export function planDailyAgenda({
         ? programStatusFor(programStatuses, entry)?.doneToday !== true
         : !nonElectivePassedToday
     ));
-    const actionable = obligationEligible.filter((e) => !e.elective && !isTeacherHeld(e)
+    const actionableAll = obligationEligible.filter((e) => !e.elective && !isTeacherHeld(e)
       && (e.status === 'in_progress' || e.status === 'available'));
+    // A placeholder (a holiday activity still to be written) is offered by
+    // name, never owed: a child cannot do work that does not exist yet.
+    const actionable = actionableAll.filter((e) => !e.placeholder);
+    const placeholderOnly = actionable.length === 0 && actionableAll.length > 0;
     const nonElectiveProgramDone = nonElectiveList.some((e) => (
       e.program && programStatusFor(programStatuses, e)?.error !== true
       && programStatusFor(programStatuses, e)?.doneToday === true
@@ -507,8 +585,17 @@ export function planDailyAgenda({
     // The household calendar names itself: a vacation the family declared and
     // a weekday a course does not meet are both "off", but the term grid
     // colours only the first as a day the house took off.
-    if (!obligationServed && noSchoolToday) {
+    // The weekend item is owed even when it is backlog (which a weekday
+    // excuses as `optional_backlog`) or a review of completed work.
+    if (weekendPick && !obligationServed && obligation.state !== 'faulted') {
+      obligation = { state: 'obligated', reason: null };
+    }
+    if (!obligationServed && tierDropsSection) {
+      obligation = { state: 'excused', reason: 'day_off' };
+    } else if (!obligationServed && noSchoolToday) {
       obligation = { state: 'excused', reason: householdOff ? 'household_calendar' : 'not_a_school_day' };
+    } else if (!obligationServed && placeholderOnly && obligation.state !== 'faulted') {
+      obligation = { state: 'excused', reason: 'placeholder' };
     }
 
     // WHERE A SERVED SUBJECT STILL OPENS. A program that is a place rather
@@ -596,7 +683,7 @@ export function planDailyAgenda({
       // Internal, like _subjectPosition: the focus pass below needs to know
       // which sections are off today. Deleted before the sections are
       // returned — nothing outside this function reads it yet.
-      _notASchoolDay: noSchoolToday,
+      _notASchoolDay: noSchoolToday || tierDropsSection,
     };
   });
 
@@ -639,7 +726,7 @@ export function planDailyAgenda({
     delete section._notASchoolDay;
   });
 
-  return { sections };
+  return { sections, dayOff: tierSpan ? { tier: tierSpan.tier, label: tierSpan.label } : null };
 }
 
 export default planDailyAgenda;

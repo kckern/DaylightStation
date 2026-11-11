@@ -112,6 +112,7 @@ export class EnrollLearner {
       policy,
       display: work ? { title: work.title, shortTitle: work.short_title } : null,
       schedule: syllabus.schedule ?? null,
+      weekend: syllabus.weekend ?? null,
       today,
       rng: this.#rng,
     });

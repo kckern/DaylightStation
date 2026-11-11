@@ -337,6 +337,9 @@ export function createSchoolLifecycleRouter({
           learnerId: req.params.learnerId,
           studyDay: req.query.studyDay ?? null,
           sections: presentPublicResources(result.sections ?? []),
+          // The household day off covering this study day ({tier, label}), so
+          // a board can name the day instead of reading an empty plan.
+          dayOff: result.dayOff ?? null,
           entries: presentPublicResources(result.plan?.entries ?? []),
           // Planner refusals (admin advocacy A4): a dead course id used to
           // surface only as a warn log — now the console can render it.

@@ -120,4 +120,10 @@ describe('validateSyllabus', () => {
     const { errors } = validateSyllabus({ ...VALID, courseId: 'anything' }, {});
     expect(errors).toEqual([]);
   });
+
+  it('carries a weekend policy and refuses an unknown one', () => {
+    expect(validateSyllabus({ ...VALID, weekend: 'backlog-then-review' }, SETS).syllabus.weekend).toBe('backlog-then-review');
+    expect(validateSyllabus({ ...VALID, weekend: 'review-only' }, SETS).errors.join()).toMatch(/weekend/);
+    expect(validateSyllabus(VALID, SETS).syllabus).not.toHaveProperty('weekend');
+  });
 });

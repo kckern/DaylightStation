@@ -105,7 +105,7 @@ export class PlanProjection {
   #practiceAssessments;
   #curriculum; #assignments; #sessions; #attestations; #curriculumExceptions;
   #launchers; #timezone; #clock; #logger; #planErrorEvent; #launcherFailedEvent;
-  #declaredEntryActions; #householdSchedule; #dayBypasses; #remediationMaxRounds;
+  #declaredEntryActions; #householdSchedule; #dayOffPolicy; #dayBypasses; #remediationMaxRounds;
   #remediationHoldAfterStudyDays; #logHolds;
   /** `${studyDay}|${sessionId}` of every stale hold already logged today. */
   #loggedHolds = { day: null, keys: new Set() };
@@ -155,6 +155,9 @@ export class PlanProjection {
     // `planDailyAgenda` over every course's schedule. Null: no house-wide
     // days off.
     householdSchedule = null,
+    // Keep-lists per day-off tier (`school.yml → dayOffTiers`, read by
+    // `readDayOffPolicy`). Omitted: the domain defaults.
+    dayOffPolicy = undefined,
     // The grown-up day-bypass ledger (`ManageProgramDayBypass`'s store). A
     // bypass on file settles that program's study day for EVERY launcher, not
     // only piano's. Null: bypasses are not consulted here.
@@ -167,6 +170,7 @@ export class PlanProjection {
     }
     this.#practiceAssessments = practiceAssessments;
     this.#householdSchedule = householdSchedule;
+    this.#dayOffPolicy = dayOffPolicy;
     this.#dayBypasses = dayBypasses;
     this.#curriculum = curriculum;
     this.#assignments = assignments;
@@ -430,10 +434,11 @@ export class PlanProjection {
     });
 
     // RAW history, never the overlaid one — see the class header, subtlety 1.
-    const { sections: rawSections } = planDailyAgenda({
+    const { sections: rawSections, dayOff } = planDailyAgenda({
       plan: agendaPlan, sessions: rawHistory, programStatuses: statuses, now: nowIso,
       timezone: this.#timezone, logger: this.#logger,
       householdSchedule: this.#householdSchedule,
+      ...(this.#dayOffPolicy ? { dayOffPolicy: this.#dayOffPolicy } : {}),
     });
     const sections = rawSections.map((section) => (section.next?.program
       ? { ...section, next: projectProgramEntry(section.next, programStatusFor(statuses, section.next)) }
@@ -442,6 +447,7 @@ export class PlanProjection {
     return {
       plan,
       sections,
+      dayOff: dayOff ?? null,
       programStatuses: statuses,
       activeExceptions,
       assessmentByUnit,

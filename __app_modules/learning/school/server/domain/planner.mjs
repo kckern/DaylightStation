@@ -355,6 +355,11 @@ export function planLearnerWork({
   });
 
   const today = studyDate(now, timezone) ?? (typeof now === 'string' ? now.slice(0, 10) : null);
+  const weekendPolicyFor = (unit) => {
+    if (!unit?.courseId || isNonEmptyString(unit.program) || isDateBound(unit)) return null;
+    const policy = enrollmentByCourse.get(unit.courseId)?.enrollment?.weekend;
+    return isNonEmptyString(policy) ? policy : null;
+  };
   const datedRankByModule = new Map();
   const datedStateByModule = new Map();
   if (today) {
@@ -472,6 +477,13 @@ export function planLearnerWork({
       remedy,
       unlocks: unlockedBy(unit),
       ...(dateBound ? { dateBound: { onDays: structuredClone(unit.onDays) } } : {}),
+      // Weekend scripture (agenda.mjs `WEEKEND_POLICY`): the enrollment's
+      // policy, and the day this lesson's module opened, so the agenda can
+      // pick backlog oldest-first and never reach into an unopened week.
+      ...(weekendPolicyFor(unit) ? {
+        weekendPolicy: weekendPolicyFor(unit),
+        moduleOpensOn: enrollmentByCourse.get(unit.courseId)?.enrollment?.moduleSchedule?.[unit.module]?.opensOn ?? null,
+      } : {}),
       ...(unit.placeholder === true ? { placeholder: true } : {}),
     };
   });
