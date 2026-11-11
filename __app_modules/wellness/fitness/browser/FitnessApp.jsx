@@ -31,7 +31,7 @@ import { rosterAudience } from "./fitnessAudience.js";
 import EmergencyLockdownOverlay from "./player/overlays/EmergencyLockdownOverlay.jsx";
 import { IdentityProvider } from "./identity/IdentityProvider.jsx";
 import { useFitnessContext } from "./context/FitnessContext.jsx";
-import { FitnessFrame } from "./player/frames/index.js";
+import ImmersiveFrame from "./nav/ImmersiveFrame.jsx";
 import { useFitnessUrlParams } from "./hooks/fitness/useFitnessUrlParams.js";
 import { useFitnessLaunch } from "./hooks/fitness/useFitnessLaunch.js";
 import { computeVideoFpsSample, deriveVideoState, pickProfiledVideo } from "./hooks/fitness/videoFpsSample.js";
@@ -1704,7 +1704,7 @@ const FitnessApp = () => {
               </div>
             )}
             {/* Base UI - Using FitnessFrame layout shell */}
-            <FitnessFrame
+            <ImmersiveFrame
               nav={
                 <FitnessNavbar 
                   navItems={navItems}
@@ -1790,7 +1790,7 @@ const FitnessApp = () => {
                   />
                 )}
               </div>
-            </FitnessFrame>
+            </ImmersiveFrame>
 
             {/* Fullscreen module overlay (e.g. the Game Boy emulator) — fills the
                 whole .fitness-app-viewport over the nav, mirroring the player. */}

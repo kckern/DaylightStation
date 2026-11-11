@@ -203,6 +203,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [emergencyPlaybackHold, setEmergencyPlaybackHold] = useState(false);
   const [sidebarSizeMode, setSidebarSizeMode] = useState('regular');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // A full-attention activity (the cycle game's race) asks the app shell to hide
+  // its navigation rail. Default false; the activity resets it when it unmounts.
+  const [immersive, setImmersive] = useState(false);
   const [voiceMemoOverlayState, setVoiceMemoOverlayState] = useState(VOICE_MEMO_OVERLAY_INITIAL);
   const voiceMemoOverlayStateRef = useRef(voiceMemoOverlayState);
   voiceMemoOverlayStateRef.current = voiceMemoOverlayState;
@@ -2969,6 +2972,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     sidebarSizeMode,
     sidebarCollapsed,
     setSidebarCollapsed,
+    immersive,
+    setImmersive,
     collapseSidebar,
     expandSidebar,
     toggleSidebarCollapsed,

@@ -591,6 +591,25 @@ export default function CycleGameContainer({ onMount } = {}) {
     });
   }, [phase, log]);
 
+  // The app's navigation rail is a distraction and an accidental-touch hazard
+  // while a race is under way, so it hides from staging until the game is back
+  // in the lobby (riders navigate from the lobby, so the lobby keeps it). The
+  // unmount cleanup restores it however the game ends, including a crash that
+  // an error boundary above catches.
+  const setImmersive = ctx?.setImmersive;
+  const immersiveOn = phase !== 'idle';
+  const immersiveLoggedRef = useRef(false);
+  useEffect(() => {
+    if (immersiveLoggedRef.current !== immersiveOn) {
+      immersiveLoggedRef.current = immersiveOn;
+      log.debug('cycle_game.immersive', { on: immersiveOn });
+    }
+    if (typeof setImmersive === 'function') setImmersive(immersiveOn);
+  }, [immersiveOn, setImmersive, log]);
+  useEffect(() => () => {
+    if (typeof setImmersive === 'function') setImmersive(false);
+  }, [setImmersive]);
+
   // Every toast goes through here: shown now when the slot is free, otherwise
   // queued. Entries a push or a take leaves out of the queue are logged as
   // dropped (`replaced` by a newer toast of the same kind, `stale` past
