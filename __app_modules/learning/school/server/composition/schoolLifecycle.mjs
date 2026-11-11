@@ -166,6 +166,7 @@ import { createSchoolSelfServiceRouter } from "../api/school.selfservice.mjs";
 import { IssueDirectLaunch } from "../application/usecases/IssueDirectLaunch.mjs";
 import { IssueSubjectCode } from "../application/usecases/IssueSubjectCode.mjs";
 import { validateSchedule } from "../domain/schoolCalendar.mjs";
+import { LiveHouseholdCalendar } from "../application/LiveHouseholdCalendar.mjs";
 import { checkDayOffCalendar, readDayOffPolicy } from "../domain/dayOffPolicy.mjs";
 import { YamlTermVerdictCache } from "../adapters/persistence/YamlTermVerdictCache.mjs";
 import { TermVerdictService } from "../application/TermVerdictService.mjs";
@@ -635,6 +636,10 @@ export async function createSchoolLifecycle({
   if (dayOffPolicyErrors.length) logger.warn?.('school.day-off-policy.invalid', { errors: dayOffPolicyErrors });
   const { untiered: untieredBreaks } = checkDayOffCalendar({ schedule: householdSchedule });
   if (untieredBreaks.length) logger.warn?.('school.calendar.untiered', { labels: untieredBreaks });
+  // The two as ONE swappable value: every consumer below takes the getters and
+  // reads per call, so the teacher console's calendar save (SetHouseholdCalendar)
+  // is live at once instead of after a restart.
+  const liveCalendar = new LiveHouseholdCalendar({ schedule: householdSchedule, policy: dayOffPolicy });
   // `donow` is INJECTED now (Task 13) — the real, household-level DoNowService
   // built once in `app.mjs`'s own `5_composition/modules/donow.mjs`, after the
   // seams every surface needs exist. This file used to stand up a minimal,
@@ -752,7 +757,7 @@ export async function createSchoolLifecycle({
 
   const debriefLauncher = new SchoolDebriefProgramLauncher({
     debriefs: stores.debriefs, assignments: stores.assignments, grants: debriefGrants,
-    householdSchedule, timezone, clock, logger, donow,
+    householdSchedule: liveCalendar.schedule, timezone, clock, logger, donow,
   });
   launchers.set(SCHOOL_DEBRIEF_PROGRAM_ID, debriefLauncher);
 
@@ -912,7 +917,8 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
     launchers, timezone, clock, logger,
-    declaredEntryActions, householdSchedule, dayOffPolicy, dayBypasses: programDayBypassStore, practiceAssessments,
+    declaredEntryActions, householdSchedule: liveCalendar.schedule, dayOffPolicy: liveCalendar.policy,
+    dayBypasses: programDayBypassStore, practiceAssessments,
     remediationMaxRounds: remediationRounds, remediationHoldAfterStudyDays: remediationHoldAfter,
   });
 
@@ -984,7 +990,8 @@ export async function createSchoolLifecycle({
   const previewPlanProjection = new PlanProjection({
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     attestations, curriculumExceptions: curriculumExceptionStore,
-    launchers, timezone, clock, householdSchedule, dayOffPolicy, dayBypasses: programDayBypassStore,
+    launchers, timezone, clock, householdSchedule: liveCalendar.schedule, dayOffPolicy: liveCalendar.policy,
+    dayBypasses: programDayBypassStore,
     practiceAssessments, remediationMaxRounds: remediationRounds,
     remediationHoldAfterStudyDays: remediationHoldAfter,
     // The live projection already logs a hold as it forms; a dry run must not
@@ -1609,7 +1616,7 @@ export async function createSchoolLifecycle({
       // the Fall semester starts 1 August on paper; the board shows from
       // 1 September. Never widens.
       window: lifecycleCfg.board?.term ?? null,
-      timezone, clock, logger, householdSchedule,
+      timezone, clock, logger, householdSchedule: liveCalendar.schedule,
     });
     // Any completion input makes today's cached row out of date at once, so a
     // payout settled seconds later reads the day as it now is.
@@ -1783,8 +1790,11 @@ export async function createSchoolLifecycle({
     // the agenda, the term grid, and now the reading wall — so a vacation
     // cannot be in force on one and absent from another. Exposed rather than
     // left to each caller to re-read `cfg.calendar` for itself, which is how
-    // two surfaces come to disagree about Christmas.
-    householdSchedule,
+    // two surfaces come to disagree about Christmas. `householdSchedule` is the
+    // value as of now (a getter); a consumer built once reads
+    // `liveCalendar.schedule` per call instead, so a console edit reaches it.
+    get householdSchedule() { return liveCalendar.schedule(); },
+    liveCalendar,
     realtime: schoolRealtime,
     bookLogLauncher,
     debriefLauncher,

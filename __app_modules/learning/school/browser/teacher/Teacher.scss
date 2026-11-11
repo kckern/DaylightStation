@@ -3370,3 +3370,114 @@
 .teacher-coins__scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .teacher-coins__grid td[data-state='open'] { color: #8a6a2a; }
 .teacher-roster__activity { color: #4a4335; font-size: 12.5px; }
+
+// --- Days off (household calendar editor) ----------------------------------
+// Tier colours are SOLID (owner rule: no faded in-between states). Blue is
+// away only, matching the term grid's exempt square; violet is a day at home.
+.teacher-daysoff {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+
+  button, input, select, textarea { font: inherit; }
+  button {
+    min-height: 44px;
+    border: 1px solid #d9bfae;
+    background: #fff;
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    color: #30291f;
+  }
+  button:disabled { cursor: default; color: #8a8272; background: #f3eee5; }
+  input, select, textarea {
+    min-height: 44px;
+    border: 1px solid #d4c6af;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #fff;
+    color: #30291f;
+    min-width: 0;
+  }
+  textarea { min-height: 88px; resize: vertical; }
+
+  &__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid #e8e1d2;
+    border-radius: 10px;
+    background: #fffdf8;
+  }
+  &__dates { font-weight: 700; min-width: 9em; }
+  &__label { flex: 1 1 10em; }
+  &__note { color: #5f584c; font-size: 13px; }
+  &__tier {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: #6b6255;
+  }
+  &__tier[data-tier='stay-home'] { background: #6f4fa8; }
+  &__tier[data-tier='enrichment'] { background: #2f7d6d; }
+  &__tier[data-tier='major-holiday'] { background: #a3472f; }
+  &__tier[data-tier='away'] { background: #2f62a8; }
+
+  &__fold, &__add { align-self: flex-start; }
+  &__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  &__primary { background: #6e4b20 !important; border-color: #6e4b20 !important; color: #fff !important; font-weight: 700; }
+  &__heading { margin: 0; font-size: 16px; }
+  &__help { margin: 0; color: #5f584c; font-size: 13px; }
+
+  &__card {
+    margin: 0;
+    padding: 12px;
+    border: 1px solid #d4c6af;
+    border-left-width: 6px;
+    border-radius: 12px;
+    background: #fffdf8;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  &__card[data-tier='stay-home'] { border-left-color: #6f4fa8; }
+  &__card[data-tier='enrichment'] { border-left-color: #2f7d6d; }
+  &__card[data-tier='major-holiday'] { border-left-color: #a3472f; }
+  &__card[data-tier='away'] { border-left-color: #2f62a8; }
+  &__legend { font-weight: 700; padding: 0 4px; }
+
+  &__fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #5f584c; flex: 0 1 11em; }
+    // Only a ROW of fields grows its wide member; in a column it would grow tall.
+    .teacher-daysoff__wide { flex: 1 1 16em; }
+  }
+  &__activity { display: flex; flex-direction: column; gap: 10px; label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #5f584c; } }
+
+  &__tiers, &__who { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  &__who > span { font-size: 13px; color: #5f584c; margin-right: 4px; }
+  &__tiers button[aria-pressed='true'] { color: #fff; border-color: transparent; background: #6b6255; font-weight: 700; }
+  &__tiers button[aria-pressed='true'][data-tier='stay-home'] { background: #6f4fa8; }
+  &__tiers button[aria-pressed='true'][data-tier='enrichment'] { background: #2f7d6d; }
+  &__tiers button[aria-pressed='true'][data-tier='major-holiday'] { background: #a3472f; }
+  &__tiers button[aria-pressed='true'][data-tier='away'] { background: #2f62a8; }
+  &__who button[aria-pressed='true'] { background: #6e4b20; border-color: #6e4b20; color: #fff; font-weight: 700; }
+
+  &__remove { align-self: flex-start; }
+  &__confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  &__keep { display: flex; flex-direction: column; gap: 10px; }
+  &__keeprow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  &__chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 16em; }
+  &__chip { padding: 6px 12px !important; }
+}

@@ -7,13 +7,13 @@ export class SchoolRecordsQueryService {
     enrichmentLog = null, academicPeriods = null, passOverrideStore = null,
     reviewQueue = null, curriculumQuery = null, schoolService = null,
     academicPeriodStore = null, milestoneStore = null, assignmentsStore = null,
-    reassignmentLog = null,
+    reassignmentLog = null, calendarStore = null,
   } = {}) {
     Object.assign(this, {
       attemptsStore, attestationLog, teacherNotesStore, enrichmentLog,
       academicPeriods, passOverrideStore, reviewQueue, curriculumQuery,
       schoolService, academicPeriodStore, milestoneStore, assignmentsStore,
-      reassignmentLog,
+      reassignmentLog, calendarStore,
     });
   }
 
@@ -57,6 +57,7 @@ export class SchoolRecordsQueryService {
     };
     try { (this.academicPeriodStore?.history?.() ?? []).forEach((h) => push('periods', h.at, { by: h.editedBy ?? null, count: h.count ?? null })); } catch {}
     try { (this.passOverrideStore?.history?.() ?? []).forEach((h) => push('pass-override', h.at, { by: h.editedBy ?? null, unitId: h.unitId ?? null, percent: h.percent ?? null })); } catch {}
+    try { (this.calendarStore?.history?.() ?? []).forEach((h) => push('calendar', h.at, { by: h.editedBy ?? null, count: h.breaks ?? null })); } catch {}
     try { (this.milestoneStore?.history?.() ?? []).forEach((h) => push('milestones', h.at, { by: h.editedBy ?? null, count: h.count ?? null })); } catch {}
     try {
       (this.reassignmentLog?.list?.() ?? []).forEach((h) => push('reassignment', h.at, {

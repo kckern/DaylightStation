@@ -88,7 +88,7 @@ export async function createSchoolReadingRuntime({ schoolLifecycle, rootLogger, 
       // Validated once, by the lifecycle, off the same block the agenda and
       // the term grid plan against — not a second, independent read of the raw
       // config that could reach a different verdict about the same day.
-      householdCalendar: schoolLifecycle.householdSchedule ?? null,
+      householdCalendar: schoolLifecycle.liveCalendar?.schedule ?? schoolLifecycle.householdSchedule ?? null,
       logger: readingLogger,
       observationStore: readingTimeline,
     });

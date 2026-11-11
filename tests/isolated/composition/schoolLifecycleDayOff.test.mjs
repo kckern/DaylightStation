@@ -53,6 +53,19 @@ describe('day-off tiers at composition', () => {
     ]);
   });
 
+  it('exposes the live calendar; householdSchedule follows it', async () => {
+    const { result } = wire({
+      lifecycle: { enabled: true }, printing: { host: 'printer.local' },
+      calendar: { except: [{ from: '2026-09-07', to: '2026-09-07', label: 'Labor Day', tier: 'stay-home' }] },
+    });
+    const lifecycle = await result;
+    expect(lifecycle.householdSchedule.except).toHaveLength(1);
+    const next = { except: [{ from: '2026-12-01', to: '2026-12-02', label: 'Trip', tier: 'away' }] };
+    lifecycle.liveCalendar.replace({ schedule: next });
+    expect(lifecycle.householdSchedule).toBe(next);
+    expect(lifecycle.liveCalendar.schedule()).toBe(next);
+  });
+
   it('warns about a bad dayOffTiers block', async () => {
     const { result, warns } = wire({
       lifecycle: { enabled: true }, printing: { host: 'printer.local' },

@@ -52,6 +52,7 @@ vi.mock("./TeacherProfileContext.jsx", () => ({
 vi.mock("./panels/ActiveOverrides.jsx", () => ({ default: () => null }));
 vi.mock("./panels/SystemHealthPanel.jsx", () => ({ default: () => null }));
 vi.mock("./panels/PeriodsTimeline.jsx", () => ({ default: () => null }));
+vi.mock("./panels/DaysOffPanel.jsx", () => ({ default: () => null }));
 vi.mock("./panels/CurriculumCatalog.jsx", () => ({ default: () => null }));
 vi.mock("./panels/CurriculumBrowser.jsx", () => ({ default: () => null }));
 vi.mock("./panels/SchoolMatrix.jsx", () => ({ default: () => null }));

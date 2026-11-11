@@ -970,6 +970,39 @@ PDF, the progress report where an enrichment-covered milestone reads
 certificate that **refuses a course with nothing graded** — no fabricated
 diplomas.
 
+### Days off
+
+**Operations → Days off** edits the household calendar (`school.yml →
+calendar.except`) and the keep-lists (`dayOffTiers`) that
+[day-off tiers](./day-off-tiers.md) describes. Upcoming breaks are listed with
+their dates, name and kind of day (*School day*, *Stay home*, *Enrichment*,
+*Holiday*, *Away*); past breaks sit under a fold and are read-only.
+
+- **Edit days off** opens every upcoming break as a card: name, dates, the kind
+  of day as five buttons, and for an enrichment day the subject it replaces. An
+  enrichment or holiday break carries its **activity** — a title and
+  instructions written into its date-bound unit (the placeholder file is
+  rewritten, the old text kept beside it as `.bak-<stamp>`). A new activity
+  asks **Who does it**; the ticked children get it in their standalone work.
+- **Add an away trip** is one step: dates and a name.
+- **What a day off keeps…** edits the keep-list per tier, from today on.
+
+**The past is locked.** A break that has ended is read-only; one under way can
+only move its end, never to before today. The server is the authority: a save
+that would change what any day before today meant — school day or not, its
+tier, its swapped subject, its activity — is refused (`PAST_DAYS_LOCKED`),
+because that day is already on the term grid (yesterday is replayed on every
+read). A keep-list change for a tier is held while yesterday was that tier
+(`KEEP_LIST_YESTERDAY`). A label may change on any break.
+
+**A save is live at once.** It is validated with the boot path's own
+validators, backed up to `household/school/backups/school.yml.<stamp>`, written
+atomically (only the `calendar` and `dayOffTiers` nodes change; every other
+line and comment of `school.yml` stays as it was), recorded in
+`school/plans/calendar-history.yml` (the audit trail's `calendar` rows), and
+installed in the running app — the agenda, the term grid, the reading wall,
+the debrief and Green Week read it on their next call. No restart.
+
 ---
 
 ## 12. What a child can ask for
@@ -1089,7 +1122,8 @@ write is attributed and auditable.
    re-freeze report cards.
 5. **A stale save is refused, never merged.** Assignments carry
    `baseUpdatedAt`; periods and milestones carry `baseHistoryLength`; grade
-   adjustments carry `baseSeq`.
+   adjustments carry `baseSeq`; the household calendar carries `baseRevision`
+   (a hash of `school.yml`, so a hand edit since load refuses the save too).
 6. **Panels fail alone.** Every panel fetches independently across five states
    — `loading | error | empty | unavailable | ok`. One dead endpoint never
    blanks a page, and a 404 maps per read: a missing lifecycle route is

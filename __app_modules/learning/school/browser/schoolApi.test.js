@@ -117,6 +117,14 @@ describe('schoolApi', () => {
     expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/review/learner/kid%201?limit=5', expect.any(Object));
   });
 
+  it('reads and writes the household calendar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.calendar();
+    expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/calendar', expect.any(Object));
+    await schoolApi.putCalendar({ except: [], baseRevision: 'r' });
+    expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/calendar', expect.objectContaining({ method: 'PUT' }));
+  });
+
   it('reads adult instructional insights and records a learner reflection through generic School routes', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
     await schoolApi.instructionalInsights({ scopeType: 'classroom', scopeId: 'math' });

@@ -22,7 +22,7 @@ export function createSchoolApiServices(legacy = {}) {
     attemptsStore = null, attestationLog = null, teacherNotesStore = null,
     enrichmentLog = null, academicPeriods = null, passOverrideStore = null,
     reviewQueue = null, academicPeriodStore = null, milestoneStore = null,
-    assignmentsStore = null, reassignmentLog = null,
+    assignmentsStore = null, reassignmentLog = null, calendarStore = null,
     reportCardsStore = null, renderReportCardPdf = null,
     renderProgressReportPdf = null, renderCertificatePdf = null,
     renderTranscriptPdf = null, renderSyllabusPdf = null,
@@ -59,7 +59,7 @@ export function createSchoolApiServices(legacy = {}) {
       attemptsStore, attestationLog, teacherNotesStore, enrichmentLog,
       academicPeriods, passOverrideStore, reviewQueue, curriculumQuery,
       schoolService: options.schoolService ?? null, academicPeriodStore,
-      milestoneStore, assignmentsStore, reassignmentLog,
+      milestoneStore, assignmentsStore, reassignmentLog, calendarStore,
     }),
     schoolReportDocuments: schoolReportDocuments ?? new SchoolReportDocumentService({
       reportCardsStore, learnerDirectory, curriculumQuery,

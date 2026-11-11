@@ -58,6 +58,17 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
     expect(out.week.excusedDays).toEqual(['2026-09-22', '2026-09-25']);
   });
 
+  it('reads a live calendar getter per call', async () => {
+    let current = null;
+    const evidence = new SchoolEarningEvidence({
+      termVerdicts: termVerdicts(TERM), sessions: sessions([]), logger: silent,
+      householdSchedule: () => current,
+    });
+    expect((await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK })).week.excusedDays).toEqual([]);
+    current = { except: [{ from: '2026-09-22', to: '2026-09-22', label: 'Stay-home day', tier: 'stay-home' }] };
+    expect((await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK })).week.excusedDays).toEqual(['2026-09-22']);
+  });
+
   it('names the subjects the learner\'s latest weekend asked for', async () => {
     const term = {
       ...TERM,

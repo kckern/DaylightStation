@@ -96,6 +96,10 @@ export function createSchoolRouter({
   // Wave-3 planning domains (teacher-console W3-1..W3-4): all writes are
   // TeacherGate-checked inside their use cases; reads are open like the rest.
   setAcademicPeriods = null,
+  // The household calendar (`school.yml → calendar` + `dayOffTiers`) and its
+  // holiday activities — the teacher console's Days off panel.
+  getHouseholdCalendar = null,
+  setHouseholdCalendar = null,
   getProgressReport = null,
   // Wave-5 repair (spec D1/D2/D3) — writes gated inside their use cases.
   recordAttestation = null,
@@ -1002,6 +1006,17 @@ export function createSchoolRouter({
     if (!setAcademicPeriods) throw new EntityNotFoundError('periods editing', 'not configured');
     const { periods, editedBy = null, pin = null, baseHistoryLength } = req.body || {};
     res.json(await setAcademicPeriods.execute({ periods, editedBy, pin, baseHistoryLength }));
+  }));
+  router.get('/calendar', wrap(async (req, res) => {
+    if (!getHouseholdCalendar) throw new EntityNotFoundError('household calendar', 'not configured');
+    res.set('Cache-Control', 'no-store').json(await getHouseholdCalendar.execute());
+  }));
+  router.put('/calendar', wrap(async (req, res) => {
+    if (!setHouseholdCalendar) throw new EntityNotFoundError('calendar editing', 'not configured');
+    const {
+      except, dayOffTiers = null, activities = [], assignTo = [], editedBy = null, pin = null, baseRevision,
+    } = req.body || {};
+    res.json(await setHouseholdCalendar.execute({ except, dayOffTiers, activities, assignTo, editedBy, pin, baseRevision }));
   }));
   router.get('/periods-meta', wrap((req, res) => {
     res.json({ historyLength: schoolRecordsQuery?.periodHistoryLength?.() ?? 0 });

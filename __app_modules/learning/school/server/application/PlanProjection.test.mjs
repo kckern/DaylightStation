@@ -9,6 +9,7 @@
  * A fixture invented here could agree with the implementation and still
  * disagree with the paper a child is holding.
  */
+import { LiveHouseholdCalendar } from "./LiveHouseholdCalendar.mjs";
 import { describe, it, expect, vi } from 'vitest';
 import { PlanProjection } from "./PlanProjection.mjs";
 import { CurriculumAccess } from "./CurriculumAccess.mjs";
@@ -88,6 +89,24 @@ describe('PlanProjection', () => {
     expect(kept.sections.find((s) => s.subject === 'math').obligation.state).not.toBe('excused');
     const dropped = await keepsNothing.project({ learnerId: LEARNER });
     expect(dropped.sections.find((s) => s.subject === 'math').obligation).toEqual({ state: 'excused', reason: 'day_off' });
+  });
+
+  it('a day off installed on the live calendar after construction reaches the next projection', async () => {
+    const day = '2026-07-27';
+    const { curriculum, assignments, sessions, clock } = build();
+    const live = new LiveHouseholdCalendar({ schedule: null });
+    const projection = new PlanProjection({
+      curriculum, assignments, sessions, clock: clock.now, logger: silentLogger,
+      householdSchedule: live.schedule, dayOffPolicy: live.policy,
+    });
+    expect((await projection.project({ learnerId: LEARNER })).dayOff ?? null).toBeNull();
+    live.replace({
+      schedule: { except: [{ from: day, to: day, label: 'Summer day', tier: 'stay-home' }] },
+      policy: { 'stay-home': { keep: [] } },
+    });
+    const after = await projection.project({ learnerId: LEARNER });
+    expect(after.dayOff).toEqual({ tier: 'stay-home', label: 'Summer day' });
+    expect(after.sections.find((s) => s.subject === 'math').obligation).toEqual({ state: 'excused', reason: 'day_off' });
   });
 
   it('can be asked for the RAW view, without the attested overlay', async () => {

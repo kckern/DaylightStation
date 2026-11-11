@@ -17,6 +17,7 @@ import SyllabiPanel from "./panels/SyllabiPanel.jsx";
 import ActiveOverrides from "./panels/ActiveOverrides.jsx";
 import SystemHealthPanel from "./panels/SystemHealthPanel.jsx";
 import PeriodsTimeline from "./panels/PeriodsTimeline.jsx";
+import DaysOffPanel from "./panels/DaysOffPanel.jsx";
 import EnrichmentPanel from "./panels/EnrichmentPanel.jsx";
 import ReviewQueueView from "./panels/ReviewQueueView.jsx";
 import AnswerSheetPairingQueue from "./panels/AnswerSheetPairingQueue.jsx";
@@ -678,6 +679,7 @@ export function OperationsView({ kids }) {
       <CurriculumExceptionPanel kids={kids} lessonId={unit} learnerId={chosen?.id ?? ''} />
       <StaleSessions kids={kids} />
       <ActiveOverrides kids={kids} />
+      <DaysOffPanel kids={kids} />
       <PeriodsTimeline />
       <BulkRegradePanel />
       <SystemHealthPanel kids={kids} />

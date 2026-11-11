@@ -47,13 +47,16 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
     this.#unitInfo = unitInfo;
     this.#debriefs = debriefs;
     this.#logger = logger;
-    this.#householdSchedule = householdSchedule;
+    // A getter (School's live calendar, editable from the teacher console) is
+    // read per call; a plain value is wrapped.
+    this.#householdSchedule = typeof householdSchedule === 'function' ? householdSchedule : () => householdSchedule;
   }
 
   /** A weekday no day-off tier excuses: a Green Week day. */
   #greenWeekDay(day) {
     if (isoWeekday(day) > 5) return false;
-    const off = this.#householdSchedule ? dayOffTier(day, this.#householdSchedule) : null;
+    const schedule = this.#householdSchedule();
+    const off = schedule ? dayOffTier(day, schedule) : null;
     return !(off && EXCUSING_TIERS.includes(off.tier));
   }
 

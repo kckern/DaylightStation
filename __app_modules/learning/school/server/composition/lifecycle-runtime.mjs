@@ -660,6 +660,35 @@ try {
       return ids;
     },
   });
+  // The household calendar editor (teacher console "Days off"). Writes
+  // `school.yml → calendar.except` / `dayOffTiers` and the holiday activity
+  // units, then swaps the lifecycle's live calendar — no restart.
+  const { SetHouseholdCalendar } = await import("../application/usecases/SetHouseholdCalendar.mjs");
+  const { GetHouseholdCalendar } = await import("../application/usecases/GetHouseholdCalendar.mjs");
+  const { YamlSchoolCalendarStore } = await import("../adapters/persistence/YamlSchoolCalendarStore.mjs");
+  const { YamlHolidayActivityStore } = await import("../adapters/persistence/YamlHolidayActivityStore.mjs");
+  const schoolConfigPath = configService.getHouseholdAppConfigPath?.(null, 'school') ?? null;
+  const schoolCalendarStore = schoolConfigPath ? new YamlSchoolCalendarStore({
+    filePath: schoolConfigPath,
+    backupDir: configService.getHouseholdPath('school/backups'),
+    historyPath: path.join(configService.getHouseholdPath('school/plans'), 'calendar-history.yml'),
+  }) : null;
+  const holidayActivities = new YamlHolidayActivityStore({ contentRoot: path.join(configService.getDataDir(), 'content', 'school') });
+  const liveSchoolCalendar = dependencies.schoolLifecycle.liveCalendar ?? null;
+  const schoolCurriculum = dependencies.schoolLifecycle.stores?.curriculum ?? null;
+  const getHouseholdCalendar = schoolCalendarStore ? new GetHouseholdCalendar({
+    store: schoolCalendarStore, activities: holidayActivities, curriculum: schoolCurriculum,
+    programIds: () => [...(dependencies.schoolLifecycle.launchers?.keys?.() ?? [])],
+    timezone: configService.getTimezone?.() || null,
+  }) : null;
+  const setHouseholdCalendar = schoolCalendarStore && liveSchoolCalendar ? new SetHouseholdCalendar({
+    store: schoolCalendarStore, activities: holidayActivities,
+    assignments: dependencies.schoolLifecycle.stores?.assignments ?? null,
+    teacherGate: schoolTeacherGate, liveCalendar: liveSchoolCalendar, curriculum: schoolCurriculum,
+    reloadConfig: () => configService.reloadHouseholdAppConfig?.(null, 'school'),
+    timezone: configService.getTimezone?.() || null,
+    logger: rootLogger.child({ module: 'school-calendar' }),
+  }) : null;
   const setPassOverride = dependencies.schoolLifecycle.passOverrides
     ? new SetPassOverride({ store: dependencies.schoolLifecycle.passOverrides, teacherGate: schoolTeacherGate, logger: rootLogger.child({ module: 'school-planning' }) })
     : null;
@@ -873,6 +902,9 @@ try {
     getTeacherToday,
     getTeachers,
     setAcademicPeriods,
+    getHouseholdCalendar,
+    setHouseholdCalendar,
+    calendarStore: schoolCalendarStore,
     passOverrideStore: dependencies.schoolLifecycle.passOverrides ?? null,
     setPassOverride,
     milestoneStatuses,

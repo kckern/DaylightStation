@@ -137,6 +137,40 @@ describe('stale-save baselines travel through the routes (M6 gate 3)', () => {
     expect(res.body).toMatchObject({ code: 'STALE_SAVE' });
   });
 
+  it('GET /calendar serves the editor model; PUT /calendar forwards the edit', async () => {
+    const getHouseholdCalendar = { execute: vi.fn(async () => ({ revision: 'r1', except: [] })) };
+    const setHouseholdCalendar = { execute: vi.fn(async (args) => ({ revision: 'r2', got: args })) };
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      getHouseholdCalendar, setHouseholdCalendar, logger: silent,
+    }));
+    const got = await request(app).get('/api/v1/school/calendar');
+    expect(got.status).toBe(200);
+    expect(got.body).toEqual({ revision: 'r1', except: [] });
+    const body = {
+      except: [{ from: '2026-12-01', to: '2026-12-01', label: 'Trip', tier: 'away' }],
+      dayOffTiers: null, activities: [], assignTo: ['kid'], editedBy: 'k', baseRevision: 'r1',
+    };
+    const put = await request(app).put('/api/v1/school/calendar').send(body);
+    expect(put.status).toBe(200);
+    expect(setHouseholdCalendar.execute).toHaveBeenCalledWith(expect.objectContaining({ ...body, pin: null }));
+  });
+
+  it('PUT /calendar: a stale or past-day refusal is 409 with its code', async () => {
+    const { StateConflictError } = await import('#apps/common/errors/SemanticErrors.mjs');
+    const setHouseholdCalendar = { execute: vi.fn(async () => { throw new StateConflictError('stale', { code: 'STALE_SAVE' }); }) };
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] }, setHouseholdCalendar, logger: silent,
+    }));
+    const res = await request(app).put('/api/v1/school/calendar').send({ except: [], baseRevision: 'x' });
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'STALE_SAVE' });
+  });
+
   it('PUT /milestones forwards baseHistoryLength', async () => {
     const setMilestones = { execute: vi.fn(async () => ({ milestones: [] })) };
     const app = express();

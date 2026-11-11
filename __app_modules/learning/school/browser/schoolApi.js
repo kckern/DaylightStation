@@ -320,6 +320,9 @@ export const schoolApi = {
     `/lifecycle/enrollments/${encodeURIComponent(learnerId)}/${encodeURIComponent(courseId)}`, body, 'DELETE',
   ),
   putPeriods: (body) => req('/periods', body, 'PUT'),
+  // The household calendar (Days off panel): breaks, tiers, holiday activities, keep-lists.
+  calendar: () => req('/calendar'),
+  putCalendar: (body) => req('/calendar', body, 'PUT'),
   passOverrides: () => req('/pass-overrides'),
   putPassOverride: (unitId, body) => req(`/pass-overrides/${encodeURIComponent(unitId)}`, body, 'PUT'),
   milestones: (learnerId) => req(`/milestones?learnerId=${encodeURIComponent(learnerId)}`),

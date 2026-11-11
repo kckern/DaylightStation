@@ -180,16 +180,40 @@ optional work is on the agenda. See
 
 ## Adding a holiday
 
-1. Add the break to `school.yml → calendar.except` with `label` and `tier`.
-2. For `enrichment` or `major-holiday`, author a date-bound unit (`onDays` = the
-   break's dates; for enrichment, `subject` = `replaces`), with
-   `placeholder: true` until the activity is written, and assign it to the
-   learners who should do it (`standaloneWork`, or inside a course they take).
-   Name it in the break's `assignment`.
-3. Write `school.yml` through the container (never `sed -i`) and restart the app;
-   the file is read at boot.
-4. Check the boot log for `school.calendar.untiered`,
-   `school.calendar.assignment-missing` and `school.day-off-policy.invalid`, then
-   preview a learner's agenda for the date
-   (`GET /api/v1/school/lifecycle/learners/<id>/agenda/preview?studyDay=<date>&format=json`)
-   and confirm `dayOff` and the kept sections.
+From the teacher console: **Operations → Days off** (see
+[the teacher reference](./teacher.md#days-off)).
+
+1. **Edit days off → Add a break**: name, dates, kind of day. For *Away* alone,
+   **Add an away trip** is one step.
+2. For *Enrichment* pick the subject it replaces; for *Enrichment* or
+   *Holiday* write the activity's title and instructions and tick who does it.
+   The panel writes the date-bound unit at
+   `content/school/<subject>/holiday-activities/units/holiday-<name>.yml`
+   (`onDays` = the break's dates, `placeholder: true`) and names it in the
+   break's `assignment`.
+3. **Save.** The change is live at once — no restart. A save is refused when
+   `school.yml` changed since the panel loaded it, when it would change what a
+   day before today meant, or when a keep-list change would re-judge yesterday.
+   Every save backs `school.yml` up to `household/school/backups/` first.
+
+By hand (still supported): add the break to `school.yml → calendar.except`
+with `label` and `tier`, author the date-bound unit as above, assign it, write
+`school.yml` through the container (never `sed -i`) and restart the app — a
+hand edit is read at boot (or on the next console save, which re-reads the
+file and refuses if it changed since the panel loaded).
+
+Either way, check the log for `school.calendar.untiered`,
+`school.calendar.assignment-missing` and `school.day-off-policy.invalid`
+(`school.calendar.updated` / `school.calendar.save-refused` for console saves),
+then preview a learner's agenda for the date
+(`GET /api/v1/school/lifecycle/learners/<id>/agenda/preview?studyDay=<date>&format=json`)
+and confirm `dayOff` and the kept sections.
+
+### What a written activity is
+
+The panel writes the activity's title and instructions (`description`) but
+keeps `placeholder: true`: an activity with no bank, document or media has
+nothing a child can complete, so the validator requires the flag, and the day
+works as described under *Date-bound units and placeholders* above. Giving it
+real content (a bank, a document) and dropping the flag is still an authoring
+step.

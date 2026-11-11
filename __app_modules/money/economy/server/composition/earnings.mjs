@@ -121,7 +121,7 @@ export async function createEconomyEarningsRuntime({schoolLifecycle,economyApi,f
           termVerdicts,
           sessions: learnerSessions,
           // The household calendar: a tier day off drops out of Green Week.
-          householdSchedule: schoolLifecycle?.householdSchedule ?? null,
+          householdSchedule: schoolLifecycle?.liveCalendar?.schedule ?? schoolLifecycle?.householdSchedule ?? null,
           unitInfo: curriculum?.getUnitSummary
             ? async (unitId) => {
               const unit = await curriculum.getUnitSummary(unitId);
