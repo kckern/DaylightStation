@@ -293,6 +293,16 @@ a child *why* a week is blank instead of leaving them to guess. A span without
 one is still a day off; it simply has no name to say. Everything else about the
 span is unchanged, and nothing in the school-day decision reads the label.
 
+An `except` span may also carry a **day-off `tier`**: `normal`, `stay-home`,
+`enrichment`, `major-holiday` or `away`. A span with no tier reads as `away`,
+which is how every break behaved before tiers existed. A `normal` span is named
+but excepts nothing: the day is a school day. `replaces: <subject>` is allowed
+only with `enrichment`, and `assignment: <unitId>` only with `enrichment` or
+`major-holiday`. A misspelled tier invalidates the whole block (and so fails
+open, below) with an error naming the value. `dayOffTier(day, schedule)` answers
+the covering span's tier with the same precedence as the verdict. What each tier
+keeps is described in [Day-off tiers](./day-off-tiers.md).
+
 **Precedence is fixed: `also` beats `except` beats `daysOfWeek`.** A makeup day
 named explicitly has to win over the vacation range containing it, or "we'll
 make it up on Saturday" is inexpressible. Naming one date in both `also` and

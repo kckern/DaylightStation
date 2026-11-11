@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSchoolDay, namedDayOff, validateSchedule } from "../../../../__app_modules/learning/school/server/domain/schoolCalendar.mjs";
+import { isSchoolDay, namedDayOff, validateSchedule, scheduleVerdict, dayOffTier, DAY_OFF_TIERS, EXCUSING_TIERS } from "../../../../__app_modules/learning/school/server/domain/schoolCalendar.mjs";
 
 describe('isSchoolDay', () => {
   it('is true for every day when there is no schedule', () => {
@@ -188,5 +188,53 @@ describe('namedDayOff', () => {
     ['no schedule', null], ['an empty schedule', {}], ['an invalid one', { daysOfWeek: 'weekdays' }],
   ])('answers null for %s rather than inventing an occasion', (_label, schedule) => {
     expect(namedDayOff('2026-11-26', schedule)).toBeNull();
+  });
+});
+
+describe('day-off tiers', () => {
+  const cal = { except: [
+    { from: '2026-11-11', to: '2026-11-11', label: 'Veterans Day', tier: 'enrichment', replaces: 'civilization', assignment: 'holiday-veterans-day' },
+    { from: '2026-11-25', to: '2026-11-25', label: 'Thanksgiving Eve', tier: 'normal' },
+    { from: '2026-11-26', to: '2026-11-26', label: 'Thanksgiving', tier: 'major-holiday' },
+    { from: '2026-12-21', to: '2026-12-31', label: 'Christmas break' },
+  ], also: ['2026-12-26'] };
+
+  it('exports the tier vocabulary', () => {
+    expect(DAY_OFF_TIERS).toEqual(['normal', 'stay-home', 'enrichment', 'major-holiday', 'away']);
+    expect(EXCUSING_TIERS).toEqual(['stay-home', 'enrichment', 'major-holiday', 'away']);
+  });
+  it('untagged span reads as away and is not a school day', () => {
+    expect(dayOffTier('2026-12-22', cal)).toMatchObject({ tier: 'away', label: 'Christmas break' });
+    expect(scheduleVerdict('2026-12-22', cal).schoolDay).toBe(false);
+  });
+  it('normal tier is a school day but still named', () => {
+    expect(scheduleVerdict('2026-11-25', cal).schoolDay).toBe(true);
+    expect(dayOffTier('2026-11-25', cal)).toMatchObject({ tier: 'normal', label: 'Thanksgiving Eve' });
+  });
+  it('stay-home family tiers are not school days', () => {
+    expect(scheduleVerdict('2026-11-26', cal).schoolDay).toBe(false);
+    expect(dayOffTier('2026-11-11', cal)).toMatchObject({ tier: 'enrichment', replaces: 'civilization', assignment: 'holiday-veterans-day' });
+  });
+  it('also wins: a makeup day inside a break has no tier', () => {
+    expect(dayOffTier('2026-12-26', cal)).toBeNull();
+  });
+  it('an ordinary day has no tier', () => {
+    expect(dayOffTier('2026-11-12', cal)).toBeNull();
+  });
+  it('an unlabelled span still reports its tier with a null label', () => {
+    expect(dayOffTier('2026-12-24', { except: ['2026-12-24'] })).toEqual({ from: '2026-12-24', to: '2026-12-24', label: null, tier: 'away' });
+  });
+  it('an unknown tier invalidates the block and names the value', () => {
+    const { errors } = validateSchedule({ except: [{ from: '2026-11-11', to: '2026-11-11', tier: 'stayhome' }] });
+    expect(errors.join()).toMatch(/stayhome/);
+  });
+  it('replaces is only accepted on enrichment; assignment only on enrichment/major-holiday', () => {
+    expect(validateSchedule({ except: [{ from: '2026-11-11', to: '2026-11-11', tier: 'stay-home', replaces: 'math' }] }).errors).toHaveLength(1);
+    expect(validateSchedule({ except: [{ from: '2026-11-11', to: '2026-11-11', tier: 'stay-home', assignment: 'x' }] }).errors).toHaveLength(1);
+    expect(validateSchedule({ except: [{ from: '2026-11-11', to: '2026-11-11', tier: 'enrichment', replaces: 'cooking' }] }).errors.join()).toMatch(/cooking/);
+    expect(validateSchedule({ except: [{ from: '2026-11-26', to: '2026-11-26', tier: 'major-holiday', assignment: 'holiday-x' }] }).errors).toEqual([]);
+  });
+  it('existing unlabelled, untiered spans normalize unchanged', () => {
+    expect(validateSchedule({ except: ['2026-12-24'] }).schedule).toEqual({ except: [{ from: '2026-12-24', to: '2026-12-24' }] });
   });
 });

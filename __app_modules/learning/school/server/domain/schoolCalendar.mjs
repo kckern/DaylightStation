@@ -13,6 +13,24 @@
  * to a Saturday anywhere west of Greenwich.
  */
 import { isStudyDay } from "./timing.mjs";
+import { SUBJECT_IDS } from "./curriculum/unitValidation.mjs";
+
+/**
+ * What a household break MEANS for the day's work. A break used to be
+ * all-or-nothing (every section excused, blue on the wall); a tier lets
+ * daily habits continue on a stay-home day and reserves full exemption for
+ * when the family is away. The keep-list per tier lives in `dayOffPolicy.mjs`.
+ *
+ * - `normal`        listed and named, but run as an ordinary school day
+ * - `stay-home`     only the tier's kept work is asked
+ * - `enrichment`    as stay-home, with one subject swapped for a date-bound unit
+ * - `major-holiday` scripture plus a date-bound holiday activity
+ * - `away`          nothing is asked (an untagged break reads as away)
+ */
+export const DAY_OFF_TIERS = Object.freeze(['normal', 'stay-home', 'enrichment', 'major-holiday', 'away']);
+/** The tiers that excuse the day from being a school day. */
+export const EXCUSING_TIERS = Object.freeze(['stay-home', 'enrichment', 'major-holiday', 'away']);
+const ASSIGNMENT_TIERS = ['enrichment', 'major-holiday'];
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -53,7 +71,41 @@ function readSpan(raw, field, errors) {
   // schedule's own `except` rarely has a name worth printing, and a nameless
   // span must keep working exactly as it always has.
   const label = typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : null;
-  return { from, to, ...(label ? { label } : {}) };
+  const tierFields = readTierFields(raw, field, errors);
+  if (!tierFields) return null;
+  return { from, to, ...(label ? { label } : {}), ...tierFields };
+}
+
+/**
+ * The optional day-off tier of a span, with the two fields only some tiers
+ * may carry: `replaces` (the subject an enrichment day swaps out) and
+ * `assignment` (the date-bound unit an enrichment or major-holiday day offers).
+ * A misspelled tier is an error naming the value, never a silent `away`.
+ */
+function readTierFields(raw, field, errors) {
+  const out = {};
+  const { tier, replaces, assignment } = raw;
+  if (tier !== undefined && tier !== null) {
+    if (!DAY_OFF_TIERS.includes(tier)) {
+      errors.push(`${field} has an unknown tier: ${tier} (expected one of ${DAY_OFF_TIERS.join(', ')})`);
+      return null;
+    }
+    out.tier = tier;
+  }
+  if (replaces !== undefined && replaces !== null) {
+    if (out.tier !== 'enrichment') { errors.push(`${field} replaces is only allowed on an enrichment tier`); return null; }
+    if (!SUBJECT_IDS.includes(replaces)) { errors.push(`${field} replaces an unknown subject: ${replaces}`); return null; }
+    out.replaces = replaces;
+  }
+  if (assignment !== undefined && assignment !== null) {
+    if (!ASSIGNMENT_TIERS.includes(out.tier)) {
+      errors.push(`${field} assignment is only allowed on an enrichment or major-holiday tier`);
+      return null;
+    }
+    if (typeof assignment !== 'string' || !assignment.trim()) { errors.push(`${field} assignment must be a unit id`); return null; }
+    out.assignment = assignment.trim();
+  }
+  return out;
 }
 
 function readSpanList(raw, field, errors) {
@@ -142,7 +194,10 @@ export function scheduleVerdict(day, schedule) {
   const { errors, schedule: normalized } = validateSchedule(schedule);
   if (errors.length || !normalized || !isStudyDay(day)) return { schoolDay: true, errors };
   if (covers(normalized.also ?? [], day)) return { schoolDay: true, errors };
-  if (covers(normalized.except ?? [], day)) return { schoolDay: false, errors };
+  // A `normal`-tier break is listed so the board can name it, but it is run as
+  // a school day: it excepts nothing.
+  const excepting = (normalized.except ?? []).filter((span) => span.tier !== 'normal');
+  if (covers(excepting, day)) return { schoolDay: false, errors };
   if (!normalized.daysOfWeek) return { schoolDay: true, errors };
   return { schoolDay: normalized.daysOfWeek.includes(isoWeekday(day)), errors };
 }
@@ -170,6 +225,33 @@ export function namedDayOff(day, schedule) {
   return (normalized.except ?? []).find(
     (span) => day >= span.from && day <= span.to && span.label,
   ) ?? null;
+}
+
+/**
+ * The day-off tier covering this day, or null.
+ *
+ * Same precedence as `namedDayOff` and `scheduleVerdict` (validate, then
+ * `also` wins, then the first covering `except` span), but a span need not be
+ * labelled to carry a tier. An untagged span reports `away`, which is exactly
+ * how every break behaved before tiers existed.
+ *
+ * @returns {{from: string, to: string, label: string|null, tier: string,
+ *   replaces?: string, assignment?: string}|null}
+ */
+export function dayOffTier(day, schedule) {
+  const { errors, schedule: normalized } = validateSchedule(schedule);
+  if (errors.length || !normalized || !isStudyDay(day)) return null;
+  if (covers(normalized.also ?? [], day)) return null;
+  const span = (normalized.except ?? []).find((s) => day >= s.from && day <= s.to);
+  if (!span) return null;
+  return {
+    from: span.from,
+    to: span.to,
+    label: span.label ?? null,
+    tier: span.tier ?? 'away',
+    ...(span.replaces ? { replaces: span.replaces } : {}),
+    ...(span.assignment ? { assignment: span.assignment } : {}),
+  };
 }
 
 /** `scheduleVerdict` without the diagnostics. */
