@@ -42,7 +42,7 @@ vi.mock("./schoolLog.js", () => ({
     feedback: vi.fn(), feedbackError: vi.fn(), standing: vi.fn(), standingError: vi.fn(),
     scan: vi.fn(),
     bookShelf: (...a) => bookShelfLogMock(...a), bookShelfError: vi.fn(),
-    selfService: vi.fn(), selfServiceError: (...a) => selfServiceErrorMock(...a),
+    selfService: vi.fn(), selfServiceDebug: vi.fn(), selfServiceError: (...a) => selfServiceErrorMock(...a),
   },
 }));
 
