@@ -365,8 +365,10 @@ export async function validateSideScrollerAsset({ file, asset, prefix, warnings 
       const [sx, sy, sw, sh] = frame.rect;
       let border = 0; let opaque = 0; const colours = new Map();
       const visit = (x, y) => { const p = rgbaAt(image.pixels, image.width, x, y); border += 1; if (p[3]) { opaque += 1; const k = hex(p[0], p[1], p[2]); colours.set(k, (colours.get(k) ?? 0) + 1); } };
-      for (let x = sx; x < sx + sw; x += 1) { visit(x, sy); visit(x, sy + sh - 1); }
-      for (let y = sy + 1; y < sy + sh - 1; y += 1) { visit(sx, y); visit(sx + sw - 1, y); }
+      // A frame that repeats on an axis continues through those edges; only its other edges can show a backdrop.
+      const repeatsY = frame.repeat?.includes('y'); const repeatsX = frame.repeat?.includes('x');
+      if (!repeatsY) for (let x = sx; x < sx + sw; x += 1) { visit(x, sy); visit(x, sy + sh - 1); }
+      if (!repeatsX) for (let y = sy + 1; y < sy + sh - 1; y += 1) { visit(sx, y); visit(sx + sw - 1, y); }
       if (border && opaque / border >= 0.6) {
         const [colour] = [...colours.entries()].sort((a, b) => b[1] - a[1])[0];
         errors.push(`${prefix}: frame ${name} has an opaque background (${Math.round((opaque / border) * 100)}% of its border, mostly ${colour}); key it out or set opaque_background: true`);

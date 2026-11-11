@@ -243,11 +243,17 @@ describe('FlightScene zones', () => {
     const scaled = { ...zoned, zone: { ...zoned.zone, pixel_scale: 2 }, entities: [wall] };
     render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={scaled} assets={assets}/>);
     const sliced = screen.getByTestId('course-entity-wall-1').querySelector('[data-sliced]');
-    // 300 units tall: a 32-unit cap, then 16 px x 2 = 32-unit body copies filling the remaining 268 units (9 copies, the last cut)
-    const parts = sliced.querySelectorAll('svg');
-    expect(parts).toHaveLength(10);
-    expect(parts[parts.length - 1]).toHaveAttribute('viewBox', '64 0 16 16');
-    expect(Number(parts[8].getAttribute('height'))).toBeCloseTo(12, 5);
+    // 300 units tall: a 16 px coin cap (32 units) on top, then one body rect patterned with the
+    // 32 x 16 ship frame at 2 units per pixel, filling the remaining 268 units without seams.
+    const body = sliced.querySelector('[data-slice="body"]');
+    expect(Number(body.getAttribute('height'))).toBeCloseTo(268, 5);
+    expect(body.getAttribute('fill')).toBe('url(#slice-wall-1)');
+    const pattern = sliced.querySelector('pattern#slice-wall-1');
+    expect(pattern).toHaveAttribute('height', '32');
+    expect(pattern.querySelector('svg')).toHaveAttribute('viewBox', '0 0 32 16');
+    const cap = [...sliced.querySelectorAll(':scope > svg')];
+    expect(cap).toHaveLength(1);
+    expect(cap[0]).toHaveAttribute('viewBox', '64 0 16 16');
   });
 
   it('falls back to the alpine presets when nothing has loaded', () => {

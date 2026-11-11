@@ -50,7 +50,7 @@ const hasFrame = (assets, name) => !!(name && assets.sheet && assets.frames?.[na
 // Vertical 3-slice for things whose height changes per placement (walls, posts,
 // shutters): top cap, a body repeated down the box, bottom cap. The body's last
 // copy is cut off by the box. Drawn at the zone's pixel scale, centred across.
-function SlicedSprite({ assets, slices, x, y, width, height }) {
+function SlicedSprite({ id, assets, slices, x, y, width, height }) {
   const pixel = React.useContext(PixelScale);
   const frame = (name) => (name ? assets.frames?.[name] : null);
   const body = frame(slices.body);
@@ -62,12 +62,22 @@ function SlicedSprite({ assets, slices, x, y, width, height }) {
   const part = (f, py, ph, key) => <svg key={key} x={left} y={py} width={w} height={ph} viewBox={`${f.x} ${f.y} ${f.w} ${ph / scale}`} preserveAspectRatio="none">
     <image href={assets.sheet.url} width={assets.sheet.width} height={assets.sheet.height}/>
   </svg>;
-  const parts = [];
-  const bodyH = body.h * scale; const end = y + height - bottomH;
-  for (let py = y + topH, index = 0; py < end - 0.01; py += bodyH, index += 1) parts.push(part(body, py, Math.min(bodyH, end - py), `body-${index}`));
-  if (top) parts.push(part(top, y, Math.min(topH, height), 'top'));
-  if (bottom) parts.push(part(bottom, y + height - bottomH, bottomH, 'bottom'));
-  return <g data-sliced="true">{parts}</g>;
+  // The body is one rect filled with a pattern of the tile: separate copies would
+  // leave antialiased seams wherever a join lands between screen pixels.
+  const bodyTop = y + topH; const bodyH = Math.max(0, y + height - bottomH - bodyTop);
+  const patternId = `slice-${id}`;
+  return <g data-sliced="true">
+    {bodyH > 0 && <>
+      <pattern id={patternId} patternUnits="userSpaceOnUse" x={left} y={bodyTop} width={w} height={body.h * scale}>
+        <svg width={w} height={body.h * scale} viewBox={`${body.x} ${body.y} ${body.w} ${body.h}`} preserveAspectRatio="none">
+          <image href={assets.sheet.url} width={assets.sheet.width} height={assets.sheet.height}/>
+        </svg>
+      </pattern>
+      <rect data-slice="body" x={left} y={bodyTop} width={w} height={bodyH} fill={`url(#${patternId})`}/>
+    </>}
+    {top && part(top, y, Math.min(topH, height), 'top')}
+    {bottom && part(bottom, y + height - bottomH, bottomH, 'bottom')}
+  </g>;
 }
 
 function ImageStrip({ layer, image, scroll }) {
@@ -186,7 +196,7 @@ function Shutter({ entity, assets, progress: { warning, closed } }) {
   const height = entity.height * closed;
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role="boost" data-progress={Math.round(closed * 100) / 100} data-warning={warning ? 'true' : 'false'} className="skyline-glider__entity skyline-glider__entity--shutter">
     {height > 0 && (entity.slices && hasFrame(assets, entity.slices.body)
-      ? <SlicedSprite assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={height}/>
+      ? <SlicedSprite id={entity.id} assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={height}/>
       : <EntityPreset entity={{ ...entity, height }}/>)}
     {warning && <>
       <path className="skyline-glider__shutter-warning" d={`M${entity.x - 6} ${entity.y} H${entity.x + entity.width + 6} M${entity.x - 6} ${entity.y + entity.height} H${entity.x + entity.width + 6}`}/>
@@ -201,7 +211,7 @@ function Entity({ entity, assets, time, role, damage, flashKey }) {
   const label = ROLE_LABEL[role];
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role={role} className={`skyline-glider__entity skyline-glider__entity--${entity.class} skyline-glider__entity--${role}`}>
     {entity.slices && hasFrame(assets, entity.slices.body)
-      ? <SlicedSprite assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
+      ? <SlicedSprite id={entity.id} assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
       : hasFrame(assets, name)
         ? <SpriteFrame assets={assets} name={name} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
         : <EntityPreset entity={entity}/>}
