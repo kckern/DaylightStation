@@ -1,6 +1,6 @@
 # Cycle Game (Cycle Race) — Reference
 
-**Status:** Current as of 2026-06-05.
+**Status:** Current as of 2026-11-10.
 
 Fitness remains the context owner for sensors, safety, governance, race language, scoring, and its native surface. Future protocol integration may expose Cycle Race through the thin Gaming `RuleModule`/coordinator contracts, but this delivery does not move Fitness code or policy into Gaming.
 
@@ -51,6 +51,10 @@ Lobby + lifecycle ────────────────────�
   widgets/CycleGame/RaceMenu.jsx               the one stop control (staging, countdown,
                                                racing): Keep racing / End race here /
                                                Discard race
+  widgets/CycleGame/raceMenuTestHelpers.js     test helper: open the menu, wait out the guard, tap
+  nav/ImmersiveFrame.jsx                       app shell frame that hides the navigation rail
+                                               while the context's `immersive` flag is set
+                                               (the container sets it from staging on, §3)
   widgets/CycleGame/RiderReadyStrip.jsx        staging/countdown compliance strip
   widgets/CycleGame/CountdownStoplight.jsx     ALL3·RED·YELLOW·GREEN stoplight (presentational)
 
@@ -64,6 +68,17 @@ Simulation ───────────────────────
   lib/cycleGame/lapModel.js                     lapCount / lapProgress (overlay)
   lib/cycleGame/cycleGameLobby.js               buildRaceConfigFromCourse, formatClock
   lib/cycleGame/formatDistance.js               m / km formatting
+  lib/cycleGame/raceValueStep.js                the lobby stepper's grid and limits
+  lib/cycleGame/autoStartCourse.js              the simulator's one-click course shape
+  lib/cycleGame/paceRival.js                    automatic pace rival: pick, merge with the
+                                                server pool, par record
+  lib/cycleGame/boostState.js                   heart-rate zone -> boost meter state and range
+  lib/cycleGame/raceBeats.js                    halfway / minute / last stretch / final seconds
+  lib/cycleGame/toastQueue.js                   one-at-a-time toast queue (stale, replaced, resolved)
+  lib/cycleGame/staleClaims.js                  which lobby bike claims have gone stale
+  lib/cycleGame/resultsComparison.js            results-board comparison lines against history
+  lib/cycleGame/deriveRaceSnapshot.js           per-tick snapshot + drama events
+  lib/cycleGame/dramaEventCopy.js               toast copy for drama events and beats
 
 Race screen + fixed layout ──────────────────────────────────────────────────────
   widgets/CycleGame/CycleRaceScreen.jsx         screen shell: builds panel factories
@@ -74,11 +89,13 @@ Race screen + fixed layout ─────────────────�
   widgets/CycleGame/panels/DistanceChart.jsx    climbing lanes + goal line + terminus tags
   widgets/CycleGame/panels/SplitsChart.jsx      per-lap splits (results board)
   widgets/CycleGame/panels/PovGrid.jsx          vertical Tron-style POV distance grid
-  widgets/CycleGame/panels/OvalTrack.jsx        avatars circling a whole-race oval
+  widgets/CycleGame/panels/OvalTrack.jsx        avatars circling a whole-race oval (kept in the
+                                                codebase, not in the live panel map)
   widgets/CycleGame/CycleSpeedometer.jsx        a single gauge
   lib/cycleGame/speedometerGeometry.js          gauge ticks/bands/needle geometry
                                                 (tickStepsFor, scaleBands)
   lib/cycleGame/chartZoom.js                    continuousWindow + evenTicks (chart axes)
+  lib/cycleGame/chartScale.js                   chart axis scale helpers
   lib/cycleGame/layoutSizing.js                 raceLayoutMode, gaugeRowSize
   lib/cycleGame/paceDelta.js                    rider vs the rival's recording (gap s / m)
   lib/cycleGame/rivalTrace.js                   the rival's whole recording as chart samples
@@ -100,22 +117,21 @@ Results / recap / events ──────────────────�
   lib/cycleGame/participantIdentity.js          resolve ghost:<id> → real face/name
   lib/cycleGame/playSound.js                    one-shot SFX helper
 
-Persistence (backend) ──────────────────────────────────────────────────────────
-  1_adapters/persistence/yaml/YamlCycleRaceDatastore.mjs   YAML read/write +
-                                                            _index/{YYYY-MM}.json shards
-  3_applications/fitness/services/CycleRaceService.mjs      save/get/list/ghosts/
-                                                            ladder/personal-bests/
-                                                            rival pool
-  4_api/v1/routers/fitness.mjs                              /cycle-races routes incl.
-                                                            ladder + personal-bests +
-                                                            rival-pool
-  __app_modules/wellness/fitness/server/domain/services/cycleRivalPool.mjs
-                                                            pure rival-pool domain:
-                                                            request parsing, index rows
-                                                            → pool entries
-  2_domains/fitness/services/cycleLadder.mjs                pure ladder domain: week
-                                                            window, ISO week, course
-                                                            rotation, matching, ranking
+Persistence (backend, all under __app_modules/wellness/fitness/server/) ────────
+  adapters/persistence/YamlCycleRaceDatastore.mjs   YAML read/write +
+                                                    _index/{YYYY-MM}.json shards
+  application/services/CycleRaceService.mjs         save/get/list/ghosts/ladder/
+                                                    personal-bests/rival pool
+  application/services/CycleRaceApiService.mjs      the API-facing projections:
+                                                    ladder, personal best, rival pool
+  application/activities/CycleGameProvider.mjs      gem (economy achievement) evidence
+  api/fitness.mjs                                   /cycle-races routes incl. ladder +
+                                                    personal-bests + rival-pool
+  domain/services/cycleRivalPool.mjs                pure rival-pool domain: request
+                                                    parsing, index rows -> pool entries
+  domain/services/cycleLadder.mjs                   pure ladder domain: week window,
+                                                    ISO week, course rotation, matching,
+                                                    ranking
 
 Weekly ladder (frontend) ────────────────────────────────────────────────────────
   widgets/CycleGame/home/FeaturedCourseCard.jsx  "This week's course" lobby card
@@ -124,11 +140,18 @@ Weekly ladder (frontend) ──────────────────�
   lib/cycleGame/ghostCandidate.js                mapRaceRecordToCandidate /
                                                   buildGhostFromCandidate — shared by
                                                   GhostPicker and Ride It
+
+Verification ─────────────────────────────────────────────────────────────────────
+  tests/_scratch/cycle-game-harness/            backend-free visual harness (see "Verifying a change")
+  tests/live/flow/fitness/cycle-game-*.runtime.test.mjs   live Playwright flows
+  tests/_lib/cycleGameLog.mjs                   reads the session log for the live flows
 ```
 
 **Entry / registration.** `index.jsx` exports `CycleGameContainer` and a manifest
-`{ id: 'cycle_game', name: 'Cycle Game', icon: '🚴' }`. It is reached at
-`/fitness/module/cycle_game`.
+`{ id: 'cycle_game', name: 'Cycle Game', icon: '🚴', description }`. It has neither
+`sidebar` nor `fullscreen`: the module renders inside the fitness frame, and the
+container asks the shell to hide the navigation rail while a race is under way
+(see §3). It is reached at `/fitness/module/cycle_game`.
 
 ---
 
@@ -143,8 +166,8 @@ React phases in `applySnapshot()`.
                  user presses Start (canStart)
    idle ───────────────────────────────────────► staging
    (lobby)                                        "Riders, to your bikes!"
-      ▲                                              │ buffer elapses AND all RPMs == 0
-      │ back to home                                 ▼
+      ▲                                              │ staging buffer elapses
+      │ Exit / Rematch                               ▼
    results ◄──────── racing ◄── go ◄── countdown ───┘
    (standings)   all done /  green   ALL3·RED·       │
                  time cap   (engine  YELLOW·GREEN     │
@@ -160,7 +183,7 @@ React phases in `applySnapshot()`.
 | `countdown` | `staged`→`countdown` | `CountdownStoplight` + `RiderReadyStrip` + `RaceMenu` (no End item) | staging buffer elapses (or Start if buffer 0) | countdown reaches the green light; or **Discard race** |
 | `go` | `racing` | `CountdownStoplight` (GREEN) — engine already live; no race menu | green light | brief hold (`GO_HOLD_MS` ≈ 800 ms) |
 | `racing` | `racing` | `CycleRaceScreen` + `CycleEventToast` + `RaceMenu` | go-hold ends | distance: every live rider finished or in overtime (parked and no-sensor riders stop holding it open once a live rider has finished); time: the cap; either: every live unfinished rider away for `allParkedEndS` (15 s); or the race menu's **End race here** (→ `results`) or **Discard race** (→ `idle`) |
-| `results` | `finished`→`results` | `RaceResults` | engine `finished` | manual **Exit** or auto-dwell countdown → `idle` |
+| `results` | `finished`→`results` | `RaceResults` | engine `finished` | **Exit** (`race-results-exit`), auto-dwell countdown (`results_dwell_s`), or **Rematch** (`race-results-rematch`: back to `idle`, then the same race starts again with a new race id) |
 
 ### A dead sensor is not a lazy child
 
@@ -241,6 +264,15 @@ identify a person, still are.
   ride is **saved as incomplete** (§15): it stays in history and counts for
   nothing. Emits `cycle_game.ended_early`.
 - **`canStart`** = a race type is chosen **and** ≥ 1 rider is claimed to a bike.
+- **The navigation rail hides during a race.** The container sets the fitness
+  context's `immersive` flag (`setImmersive`) while the React phase is anything
+  but `idle` (staging, countdown, `go`, racing, results), and clears it on
+  returning to `idle` and on unmount. `ImmersiveFrame` (the shell's frame) hides
+  the rail while the flag is set, and the module gets the rail's width. The lobby
+  keeps the rail: riders navigate from it. The unmount cleanup restores the rail
+  however the game ends, including a crash caught by an error boundary above it.
+  Logged as `cycle_game.immersive` (debug, `{ on }`) on each change. The flag
+  defaults to false, so no other module is affected.
 
 ---
 
@@ -463,7 +495,7 @@ into the engine config. Precedence highlights:
 - `mode` is always `'simultaneous'`; `intervalMs` is `1000`.
 
 **Effective lap length.** `effectiveLapLength({ lapLengthM, winCondition, goalM })`
-is the single source of truth for the lap unit used by the engine, splits, oval,
+is the single source of truth for the lap unit used by the engine, splits
 and results. It returns the configured lap, **except** for a distance race whose
 goal is shorter than the lap, where one lap = the whole race (so a 100/200/250 m
 race isn't sliced into sub-laps). `0` ⇒ laps off.
@@ -484,12 +516,13 @@ restart to take effect.
 | `race_idle_dnf_s` | 20 | The park window (the key keeps its old name; nobody is eliminated): seconds of zero RPM (after a rider has started) before they are parked. Parked riders resume on their next pedal stroke. Reaches the controller as `raceIdleDnfS`; the controller prefers `parkIdleS` when both are given |
 | `race_start_grace_s` | 30 | Seconds a rider may report zero RPM **before their first movement** before they are parked as a no-show. More generous than `race_idle_dnf_s` to cover magnetless cadence sensors (e.g. the tricycle's COOSPO BK467) that take ~20s to lock onto rotation from a dead stop |
 | `hot_start_penalty_s` | — | **Retired.** The start is rolling and there is no penalty box; nothing reads this key (the container, the lobby config builder and the controller all ignore it). Safe to delete from the YAML |
-| `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
+| `lap_length_m` | 0 | Lap unit for splits (0 = laps off, which is the code default when the key is absent; the household config usually sets 400; a distance race shorter than the lap is one whole-race lap) |
+| `race_mercy_after_winner_s` | 60 | Distance races: seconds after the first finisher before the race closes itself; anyone still riding goes to overtime with their real distance. 0 disables. Ignored by time races |
 | `results_dwell_s` | 45 | Results auto-return countdown before returning to the lobby (a touch on the board stops it) |
 | `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive, or the default is used; a positive value below 3 km/h is raised to 3 |
 | `default_background` | null | Ambient background Plex id for the race screen |
 | `music_volume` | 0.55 | Background music level (0–1) |
-| `sounds` | {} | SFX + music playlist URLs |
+| `sounds` | {} | One-shot cues `start`, `go`, `countdown`, `finish`; music `lobby`, `ready` (falls back to `lobby`), `end`; `racing` is `{ dir, ... }`, a folder of tracks picked at random. A cue that is not named plays nothing: the countdown and finish sounds are silent unless the household config names them |
 
 > **Distance/time *tiers* are frontend constants** in `CycleGameHome`, not config.
 > The *defaults* above are config.
@@ -1379,10 +1412,9 @@ by `raceId` (+ `elapsedS` where relevant).
   parked) when they pedal again; `cycle_game.rider_no_sensor` (WARN) `{ raceId,
   userId, equipmentId, elapsedS }` when a rider's sensor never reported, and
   `cycle_game.rider_sensor_recovered` (INFO) `{ raceId, userId, equipmentId,
-  elapsedS, distanceM }` when that rider starts moving. **Removed:**
-  `cycle_game.rider_dnf`, `penalty_entered`, `penalty_awaiting_stop`,
-  `penalty_cleared`, and the `falseStarters` field of `race_started`; the
-  `hotStartPenaltyS` field of `cycle_game.config` is gone too.
+  elapsedS, distanceM }` when that rider starts moving. No DNF, penalty or
+  false-start event exists, and `race_started` and `cycle_game.config` carry no
+  such fields.
 - **`cycle_game.boost_change`** (DEBUG) — a live rider's heart-rate zone
   changed, either direction: `{ raceId, userId, from, to, mult, elapsedS }`
   (`from`/`to` are zone ids, `null` for no strap; `mult` is the new
@@ -1408,7 +1440,6 @@ by `raceId` (+ `elapsedS` where relevant).
   nobody had pedalled for 30 minutes (§5): `{ equipmentId, userId, idleMs }`.
 - **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
   and will be saved as incomplete: `{ raceId, elapsedS, control: 'race-menu.end' }`.
-  It replaces `cycle_game.finish_forced`, which is no longer emitted.
   **`cycle_game.cancelled`** carries `control: 'race-menu.discard'` (the
   simulator seam's `cancel` logs the same).
 - **Race menu UI** (component `cycle-race-menu`) — `cycle_game.ui.race_menu_open`
@@ -1455,6 +1486,31 @@ by `raceId` (+ `elapsedS` where relevant).
   `{ courseId, stage, reason, error, lookupMs }`. `stage` is `personal-best` or
   `record` (which request it was in); `reason` is `timeout` or `error`
   (`error` holds the message, else `null`).
+- **`cycle_game.immersive`** (DEBUG) — the container asked the shell to hide
+  (`on: true`) or restore (`on: false`) the navigation rail (§3): `{ on }`.
+- **Lobby and results events** — `home` (lobby shown), `race_type_selected`,
+  `race_value_set`, `start_pressed`, `ride_featured`, `ghost_selected` /
+  `ghost_cleared` / `ghost_empty`, `history_loaded` / `history_error`,
+  `ladder_loaded` / `ladder_error`, `ladder_movement` /
+  `ladder_movement_error` (results-board ladder callouts), `race_save_retry`
+  (WARN, a transient save failure being retried), `back_to_home` (Exit pressed
+  on the board), and `checkpoint_discarded`. UI-only events carry the
+  `cycle_game.ui.` prefix: `sensor_warning` (WARN) and `sensor_warning_override`,
+  `rider_picker_open` / `rider_picker_close`, `ghost_picker_open` /
+  `ghost_picker_close`, `ghost_focus`, `ghost_skip_roster`, `picker_tab`,
+  `volume_open` / `volume_close`, `ride_featured`.
+- **Engine and screen diagnostics** — `race_telemetry` (rate-limited, per tick: tick
+  index, elapsed time and wall-clock drift), `sensor_lost` / `sensor_recovered` (the SENSOR chip), `countdown`
+  (DEBUG, per stoplight step), `sfx` (DEBUG, `{ cue, attempted }`: `attempted` is
+  false when the household `sounds` config names no such cue), `music` /
+  `music_deferred` / `music_unavailable`, `tick_catchup`, `render_pacing`,
+  `layout_overflow`, `chart_resize`, `event_toast.shown` / `event_toast.dismissed`,
+  and the POV scene's `pov.mount` / `pov.unmount` / `pov.camera` /
+  `pov.import_failed` / `pov.webgl_unavailable`; `recap_opened` / `recap_closed` /
+  `recap_play` / `recap_scrub` for the History recap.
+- Server side the cycle-race service logs `fitness.cycle_races.save.error`,
+  `fitness.cycle_races.ladder.computed`, `fitness.cycle_races.rival_pool.computed`
+  and the index events (§16).
 - **Firehose (DEBUG, off by default)** — `cycle_game.tick`: one event/second with a
   per-rider array `{ rpm, cadenceConnected, hr, zoneId, multiplier, distanceM,
   parked, finished }` (`parked` = parked or no sensor), read from post-resolution
@@ -1514,44 +1570,83 @@ cycle-game is under active tester debugging. Revert to `info` once stable.
 
 - **Pure logic (vitest):** `lapModel`, `distanceModel`, `CycleRaceEngine` (incl. lap
   splits), `effectiveLapLength`, `cycleGameLobby`, `raceRecord`, `formatDistance`,
-  `equipmentRpm` (gauge limits, abuse clamp, `rpmDuringGap` hold-vs-cooldown),
-  `chartTrim` (`plotStartIndex`), `chartZoom` (`continuousWindow`, `evenTicks`),
-  `paceDelta`, `rivalTrace`, `layoutSizing` (`raceLayoutMode`), `povWorld`/`povFollowCam`,
-  `ovalTrackModel`, `participantIdentity` (ghost→source), `recordRow`,
-  `lineColors` (no HR-zone/chrome clash), `speedometerGeometry` (`tickStepsFor`,
-  `scaleBands`), `CycleRaceController` (parking and resuming, no-sensor riders,
-  the mercy window, the all-away close, `finishNow` setting `endedEarly`),
-  `raceCheckpoint` (race state round-trip, `checkpointOutcome`).
-- **Components (vitest + @testing-library):** `CycleRaceScreen` (clock, speedometers,
-  lanes, a parked rider worded "Parked" with no DNF / False start anywhere,
-  `showSpeedos`, `zoneBox` forwarding),
-  `CycleRaceScreen.solo.test.jsx` (solo layout, hand-computed pace gap, no
-  rank/leader text, rival gauge absent, recap stays sidebar),
-  `RaceLayoutManager` (solo/sidebar/wide zones), `DistanceChart` (whole-race x
-  axis, even ticks, rival trace, solo linear),
-  `SplitsChart` (sticky/live-order/final), `PovGrid`, `OvalTrack`, `SpeedoRow`,
-  `CycleSpeedometer` (boost row outside the dial, every dial label present, rpm
-  hero), `CycleGameContainer.boost.test.jsx` (boost per gauge, the lobby rule
-  range, the ready strip's strap note, the boost toast up only and
-  `boost_change` both ways), `CountdownStoplight` (ALL3→RED→YELLOW→GREEN), `RaceResults`
-  (exit button, count-up under `animate={false}`, "Stopped at"), `RaceMenu`
-  (guard time, focus, Escape), `RiderReadyStrip` (READY / NO SIGNAL / AUTO),
-  `StandingsTower` (`parkedRows`), `CycleGameContainer.raceMenu.test.jsx` (the
-  menu in each phase, what each save records, the ended-early results line),
-  `CycleGameContainer.parked.test.jsx` (PARKED overlay, tower row, toast and
-  `rider_parked` / `rider_resumed`; NO SIGNAL for a no-sensor rider; a parked
-  rider ahead is never announced as leader; "Stopped at" on the board) and
-  `CycleGameContainer.lobbyBikes.test.jsx` (the lobby's `bikes[].sensorLive`).
-  The rolling start is covered in `CycleGameContainer.test.jsx` (staging reaches
-  the countdown while a rider pedals; NO SIGNAL on the ready strip).
+  `raceValueStep`, `equipmentRpm` (gauge limits, abuse clamp, `rpmDuringGap`
+  hold-vs-cooldown), `chartTrim`, `chartZoom`, `paceDelta`, `paceRival`,
+  `rivalTrace`, `boostState`, `raceBeats`, `toastQueue`, `staleClaims`,
+  `resultsComparison`, `layoutSizing` (`raceLayoutMode`), `povWorld`/`povFollowCam`,
+  `ovalTrackModel`, `participantIdentity`, `recordRow`, `lineColors`,
+  `speedometerGeometry`, `CycleRaceController` (parking and resuming, no-sensor
+  riders, the mercy window, the all-away close, `finishNow` setting `endedEarly`),
+  `raceCheckpoint` (round-trip, `checkpointOutcome`).
+- **Components (vitest + @testing-library):** `CycleRaceScreen` (+ `.solo`),
+  `RaceLayoutManager`, `DistanceChart`, `SplitsChart`, `PovGrid`, `OvalTrack`,
+  `SpeedoRow`, `PaceDeltaPanel`, `CycleSpeedometer`, `CountdownStoplight`,
+  `RaceResults`, `RaceMenu` (guard time, focus, Escape), `RiderReadyStrip`,
+  `StandingsTower`, `ImmersiveFrame`, and a set of `CycleGameContainer.*.test.jsx`
+  files, one per concern: smoke and rolling start, `raceMenu`, `parked`, `boost`,
+  `beats`, `toasts`, `dramaEvents`, `results` (comparison, rematch),
+  `staleClaims`, `lobbyBikes`, `checkpoint`, `wallclock`, `immersive`.
+- **Server (vitest):** the datastore index, `CycleRaceService`,
+  `CycleRaceApiService`, `cycleLadder`, `cycleRivalPool` and the router's ladder
+  tests live next to the code under `__app_modules/wellness/fitness/server/`,
+  with `tests/unit/api/cycleRaces.routes.test.mjs`.
 - **Live (Playwright):** `tests/live/flow/fitness/cycle-game-*.runtime.test.mjs`
-  drive the simulator through full lifecycles via `FitnessSimHelper`
-  (`launchCycleGame`, `setEquipmentRider`, `setRpm`).
-  `cycle-game-rolling-start` pedals through staging and the countdown and checks
-  that nothing holds the start and distance counts from green;
-  `cycle-game-lifecycle` checks an idle rider is parked (never `rider_dnf`) and
-  reads "Stopped at" on the board.
-- **Run unit tests:** `npx vitest run --config tests/_infrastructure/config/vitest.config.mjs <path>`.
+  drive the simulator through full lifecycles via `FitnessSimHelper` and the
+  `window.__cycleGameControl` seam (`startRace`, `cancel`, `getPhase`,
+  `getRaceState`), and assert logs through `tests/_lib/cycleGameLog.mjs`:
+  `lifecycle` (distance and time races, a parked rider), `rolling-start`,
+  `autostart-drive`, `layout-modes`, `flash-ui`, `piston-avatar`, `ladder`,
+  `park-resume` (the PARKED card, `rider_parked`, `rider_resumed`, no DNF),
+  `solo-rival` (a pace rival, the solo layout, the comparison, the rematch) and
+  `race-menu` (guarded End and Discard, the incomplete record, the unmoved
+  ladder, the rail hidden during a race). They need a machine where the backend
+  can run; see "Verifying a change". A lone rider's start waits up to 1500 ms on
+  the rival lookup, so flows poll the phase instead of expecting a synchronous
+  start.
 
-> Visual verification (kiosk 1280×720) is the only way to catch SCSS/layout
-> regressions — jsdom asserts structure, not pixels.
+> Visual verification (kiosk 1280x720 and 1920x1080) is the only way to catch
+> SCSS/layout regressions: jsdom asserts structure, not pixels.
+
+---
+
+## 21. Verifying a change
+
+Three levels, cheapest first.
+
+1. **Unit tests** (no services needed):
+   `npx vitest run --config tests/_infrastructure/config/vitest.config.mjs __app_modules/wellness/fitness/browser/lib/cycleGame __app_modules/wellness/fitness/browser/widgets/CycleGame`
+   Add the `nav/` and server folders when the change touches them.
+2. **The backend-free screenshot harness** (`tests/_scratch/cycle-game-harness/`).
+   It renders the presentational components (lobby, staging, countdown, race
+   screen, menu, toast, results, pace delta) in a real browser with stubbed data
+   and never starts the backend or calls `/api`. From the repo (or worktree) root:
+   - `node_modules/.bin/vite --config tests/_scratch/cycle-game-harness/vite.harness.config.mjs`
+     starts a loopback-only dev server (`HARNESS_PORT` overrides its port);
+   - in another shell, `BASE_URL=<that server> node tests/_scratch/shoot-cycle-game.mjs`
+     screenshots every scene (`SCENES=a,b` limits the run, `VIEWPORT=WxH` forces
+     one size) into `tests/_scratch/out/cycle-game/` with a `metrics.json` of
+     layout measurements;
+   - stop the server afterwards.
+   Its README has the details.
+3. **The live flows** (Playwright). They need the real backend, the simulator
+   and the fitness session log, so they run only on a machine where the backend
+   can run (the deployed host or a dev server there), never beside a running
+   household controller: a second backend instance makes real home-automation
+   calls. Run one flow with `npm run test:browser -- <flow file>`.
+
+---
+
+## 22. Deploying this version
+
+- **Backend and frontend deploy together.** A new frontend on an old backend
+  still races, but a lone rider's pace rival falls back to the lobby's loaded
+  history because the `rival-pool` route is missing (the request fails and is
+  logged as `pace_rival_lookup_failed`).
+- **The race index version changed.** The first index read after the deploy
+  rebuilds the index from all race files once (the backend warms it five seconds
+  after boot, §16), so that first read is slow on a large history.
+- **Two builds with different index versions must not share one data tree.**
+  Each rebuilds the other's shards on every alternation.
+- **Kiosks need a reload** to pick up the new frontend.
+- **Countdown and finish sounds play only if the household `sounds` config names
+  them** (`countdown`, `finish`; see §6). Nothing is wrong when they are silent.
