@@ -54,6 +54,7 @@
  * only: identical concurrent calls share one fan-out, and nothing survives the
  * settle.
  */
+import { resolveLive } from "./LiveHouseholdCalendar.mjs";
 import { planLearnerWork } from "../domain/planner.mjs";
 import { planDailyAgenda, programStatusFor } from "../domain/agenda.mjs";
 import { collectProgramStatuses } from "./programStatusCollection.mjs";
@@ -169,8 +170,8 @@ export class PlanProjection {
       throw new Error('PlanProjection requires curriculum, assignments and sessions');
     }
     this.#practiceAssessments = practiceAssessments;
-    this.#householdSchedule = householdSchedule;
-    this.#dayOffPolicy = dayOffPolicy;
+    this.#householdSchedule = resolveLive(householdSchedule);
+    this.#dayOffPolicy = resolveLive(dayOffPolicy);
     this.#dayBypasses = dayBypasses;
     this.#curriculum = curriculum;
     this.#assignments = assignments;
@@ -390,7 +391,7 @@ export class PlanProjection {
       learnerId, assignment, units, sessions: effectiveHistory, now: nowIso,
       timezone: this.#timezone, coursePolicies, remediationMaxRounds: this.#remediationMaxRounds,
       remediationHoldAfterStudyDays: this.#remediationHoldAfterStudyDays,
-      householdSchedule: this.#householdSchedule,
+      householdSchedule: this.#householdSchedule(),
     });
     if (untilMs == null) this.#logStaleHolds(plan, learnerId, studyDayForInstant(at.getTime(), { timezone: this.#timezone }));
     for (const [unitId, assessment] of assessmentByUnit) {
@@ -437,8 +438,8 @@ export class PlanProjection {
     const { sections: rawSections, dayOff } = planDailyAgenda({
       plan: agendaPlan, sessions: rawHistory, programStatuses: statuses, now: nowIso,
       timezone: this.#timezone, logger: this.#logger,
-      householdSchedule: this.#householdSchedule,
-      ...(this.#dayOffPolicy ? { dayOffPolicy: this.#dayOffPolicy } : {}),
+      householdSchedule: this.#householdSchedule(),
+      ...(this.#dayOffPolicy() ? { dayOffPolicy: this.#dayOffPolicy() } : {}),
     });
     const sections = rawSections.map((section) => (section.next?.program
       ? { ...section, next: projectProgramEntry(section.next, programStatusFor(statuses, section.next)) }

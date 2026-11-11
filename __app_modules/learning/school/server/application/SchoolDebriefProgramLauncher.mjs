@@ -4,6 +4,7 @@
  * Story-time shaped: the debrief store is the evidence; one debrief per study
  * day is the obligation; never terminal. Mounts on the Portal panel.
  */
+import { resolveLive } from "./LiveHouseholdCalendar.mjs";
 import { studyDayForInstant } from "../domain/studyDay.mjs";
 import { scheduleVerdict } from "../domain/schoolCalendar.mjs";
 import {
@@ -21,7 +22,7 @@ export class SchoolDebriefProgramLauncher {
     if (!debriefs) throw new Error('SchoolDebriefProgramLauncher requires a debriefs store');
     if (!assignments) throw new Error('SchoolDebriefProgramLauncher requires an assignments store');
     this.#debriefs = debriefs; this.#assignments = assignments; this.#grants = grants;
-    this.#householdSchedule = householdSchedule; this.#timezone = timezone; this.#clock = clock; this.#logger = logger; this.#donow = donow;
+    this.#householdSchedule = resolveLive(householdSchedule); this.#timezone = timezone; this.#clock = clock; this.#logger = logger; this.#donow = donow;
   }
   get id() { return SCHOOL_DEBRIEF_PROGRAM_ID; }
   get locationHint() { return 'on the school screen'; }
@@ -85,7 +86,8 @@ export class SchoolDebriefProgramLauncher {
   }
   #owed(day, enrollment) {
     if (!scheduleVerdict(day, enrollment.schedule ?? null).schoolDay) return false;
-    if (this.#householdSchedule && !scheduleVerdict(day, this.#householdSchedule).schoolDay) return false;
+    const household = this.#householdSchedule();
+    if (household && !scheduleVerdict(day, household).schoolDay) return false;
     return true;
   }
   async #state(userId, day) {

@@ -1,3 +1,4 @@
+import { resolveLive } from "./LiveHouseholdCalendar.mjs";
 import { dayOffTier, isSchoolDay, validateSchedule } from "../domain/schoolCalendar.mjs";
 
 const YESTERDAY_LIMIT = 4;
@@ -22,7 +23,7 @@ function dayBefore(studyDay) {
 
 export class ReadingApiService {
   #recordStoryRead; #sessions; #storyTime; #readingLog; #resolveLearner; #logger; #observations; #clock; #nowMs;
-  #householdSchedule;
+  #householdCalendar; #normalized = { source: undefined, schedule: null };
   constructor({ recordStoryRead, sessions, storyTime = null, readingLog = null, resolveLearner = null,
     // Named for the config block, not the field it lands in: the isolated
     // router tests wire it through under this key.
@@ -40,7 +41,16 @@ export class ReadingApiService {
     // validates this same block and logs `school.calendar.invalid` for it, and
     // an invalid calendar collapses to null here — which is the verdict
     // `namedDayOff` was already reaching for a schedule it refused.
-    this.#householdSchedule = validateSchedule(householdCalendar).schedule;
+    // A getter (the live calendar the teacher console can change) is read per
+    // call; the normalization is cached by reference, so it runs once per edit.
+    this.#householdCalendar = resolveLive(householdCalendar);
+  }
+  #householdSchedule() {
+    const source = this.#householdCalendar();
+    if (source !== this.#normalized.source) {
+      this.#normalized = { source, schedule: validateSchedule(source).schedule };
+    }
+    return this.#normalized.schedule;
   }
   session(location) { return this.#sessions.snapshot(location); }
   acknowledge(location, proof) {
@@ -313,6 +323,7 @@ export class ReadingApiService {
       // judge says so rather than guessing.
       const target = Number.isFinite(status?.target) ? status.target : null;
       const schedule = status?.schedule ?? null;
+      const householdSchedule = this.#householdSchedule();
       streak = days.map((day, index) => {
         const books = (batches[index] ?? []).length;
         // A DAY NOBODY ASKED ABOUT IS NOT A DAY THEY MISSED. Weekends and
@@ -345,7 +356,7 @@ export class ReadingApiService {
         // (named, so the child sees which day it was); an away day or a major
         // holiday does not ask for it, and only those draw the blue square.
         const asked = isSchoolDay(day, schedule);
-        const off = dayOffTier(day, this.#householdSchedule);
+        const off = dayOffTier(day, householdSchedule);
         const holiday = off?.label && off.tier !== 'normal' ? off : null;
         const readingExcused = holiday && (holiday.tier === 'away' || holiday.tier === 'major-holiday');
         let state;

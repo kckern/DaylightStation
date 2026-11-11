@@ -32,6 +32,7 @@
  * pattern) so a background backfill and a foreground read never clobber
  * each other's rows.
  */
+import { resolveLive } from "./LiveHouseholdCalendar.mjs";
 import {
   dayVerdict, weekVerdict, termDaysFor, resolveTermFor, weekIdFor, addDays, VERDICT_VERSION,
 } from "../domain/termVerdict.mjs";
@@ -85,7 +86,7 @@ export class TermVerdictService {
     this.#clock = clock;
     this.#freshMs = freshMs;
     this.#logger = logger;
-    this.#householdSchedule = householdSchedule;
+    this.#householdSchedule = resolveLive(householdSchedule);
   }
 
   today() {
@@ -121,7 +122,8 @@ export class TermVerdictService {
     const verdict = dayVerdict({
       studyDay, today, completion: result, sections: result.sections ?? [], computedAt,
     });
-    const off = this.#householdSchedule ? dayOffTier(studyDay, this.#householdSchedule) : null;
+    const schedule = this.#householdSchedule();
+    const off = schedule ? dayOffTier(studyDay, schedule) : null;
     return {
       ...verdict, computedAt,
       dayOff: off ? { tier: off.tier, label: off.label } : null,

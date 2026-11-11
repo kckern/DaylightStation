@@ -297,3 +297,17 @@ describe('TermVerdictService.dayRow', () => {
     expect(completion.asked).toEqual(['2026-09-03']);
   });
 });
+
+describe('TermVerdictService live household calendar', () => {
+  it('reads a getter per call', async () => {
+    let current = null;
+    const service = new TermVerdictService({
+      getLearnerDayCompletion: completionDouble({}), cache: new MemoryCache(), academicPeriods: periods,
+      timezone: 'America/Los_Angeles', clock: () => new Date(NOW), logger: silent,
+      householdSchedule: () => current,
+    });
+    expect((await service.computeDay('kid', '2026-09-07')).dayOff).toBeNull();
+    current = { except: [{ from: '2026-09-07', to: '2026-09-07', label: 'Labor Day', tier: 'stay-home' }] };
+    expect((await service.computeDay('kid', '2026-09-07')).dayOff).toEqual({ tier: 'stay-home', label: 'Labor Day' });
+  });
+});

@@ -113,3 +113,13 @@ describe('SchoolDebriefProgramLauncher', () => {
     expect(logger.warn).toHaveBeenCalledWith('school.debrief.launch-failed', { userId: 'test-learner', error: 'Debrief grants unavailable' });
   });
 });
+
+describe('SchoolDebriefProgramLauncher live household calendar', () => {
+  it('reads a getter per call, so a break added after construction is honoured', async () => {
+    let current = null;
+    const l = make({ household: () => current });
+    expect(await l.lateDayOffered('test-learner')).not.toBeNull();
+    current = { except: [{ from: '2026-10-20', to: '2026-10-20', tier: 'away' }] };
+    expect(await l.lateDayOffered('test-learner')).toBeNull();
+  });
+});
