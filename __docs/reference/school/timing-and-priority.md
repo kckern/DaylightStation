@@ -350,6 +350,12 @@ is not layered under it: a day the house declares off is off for every section,
 whatever a course's own schedule says, because only the house declares
 Christmas. See [the household calendar](./term-grid.md#the-household-calendar).
 
+A **date-bound** unit (`onDays`, see
+[content layout](./authoring/content-layout.md#date-bound-and-placeholder-units))
+is outside all of this: it has no timing window, no module window and no place
+in its course's sequence. It is in the plan on the days it names and nowhere
+else, so it can never become backlog.
+
 ### What a non-school day does to the agenda
 
 `planLearnerWork` carries the enrollment's schedule onto every entry of that

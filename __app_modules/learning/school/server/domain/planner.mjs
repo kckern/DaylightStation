@@ -63,6 +63,22 @@ function readAssignmentList(raw, key) {
     .filter(Boolean);
 }
 
+/**
+ * A date-bound unit (`onDays`) exists only on its own day(s): a holiday
+ * activity, or an enrichment lesson that swaps a subject out for one day. It
+ * sits OUTSIDE its course's sequence — it never locks the next lesson, is
+ * never locked by the previous one, and is absent (not dormant, not catch-up)
+ * on every other day.
+ */
+const isDateBound = (unit) => Array.isArray(unit?.onDays) && unit.onDays.length > 0;
+const onDaysCover = (unit, day) => Boolean(day) && unit.onDays.some((span) => {
+  const from = typeof span === 'string' ? span : span?.from;
+  const to = typeof span === 'string' ? span : span?.to;
+  return day >= from && day <= to;
+});
+/** Members of a course's authored order: everything but date-bound units. */
+const inSequence = (unit) => Boolean(unit) && !isDateBound(unit);
+
 /** Course order is the authored sequence; ties break on unitId so it is total. */
 function bySequence(a, b) {
   const sa = Number.isInteger(a.sequence) ? a.sequence : Number.MAX_SAFE_INTEGER;
@@ -132,8 +148,11 @@ export function planLearnerWork({
         .filter((unit) => enrollment.optionalModules.includes(unit.module))
         .forEach((unit) => frozenIds.add(unit.unitId));
     }
+    // A date-bound member joins whatever the frozen order says: it is never
+    // part of that order, and a re-materialize must not be needed to hand a
+    // child the holiday lesson authored into their course.
     const members = hasFrozenMembership
-      ? publishedMembers.filter((unit) => frozenIds.has(unit.unitId))
+      ? publishedMembers.filter((unit) => frozenIds.has(unit.unitId) || isDateBound(unit))
       : publishedMembers;
     const optionalLessonIds = new Set(enrollment?.optionalLessons ?? []);
     members.forEach((u) => {
@@ -217,7 +236,7 @@ export function planLearnerWork({
     if (!courseMembers.has(u.courseId)) courseMembers.set(u.courseId, []);
     courseMembers.get(u.courseId).push(u);
   });
-  courseMembers.forEach((list) => list.sort(bySequence));
+  courseMembers.forEach((list, courseId) => courseMembers.set(courseId, list.filter(inSequence).sort(bySequence)));
 
   const isOptionalLesson = (unit) => {
     if (!unit?.courseId) return false;
@@ -228,12 +247,13 @@ export function planLearnerWork({
 
   /** The nearest earlier unit in this unit's course that has not been passed. */
   const blockerFor = (unit) => {
+    if (isDateBound(unit)) return null;
     const siblings = courseMembers.get(unit.courseId) || [];
     const policy = policyFor(unit.courseId);
     const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
     if (policy?.mode === 'dated_modules' && unit.module) {
       const ordered = enrollment?.lessonOrder?.[unit.module]
-        ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(Boolean)
+        ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(inSequence)
         : siblings.filter((entry) => entry.module === unit.module).sort(bySequence);
       const at = ordered.findIndex((entry) => entry.unitId === unit.unitId);
       for (let i = at - 1; i >= 0; i -= 1) {
@@ -272,7 +292,7 @@ export function planLearnerWork({
         return siblings.find((u) => u.module === activeModule && !isOptionalLesson(u) && !passedUnits.has(u.unitId)) ?? null;
       }
       const ordered = enrollment?.lessonOrder?.[unit.module]
-        ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(Boolean)
+        ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(inSequence)
         : siblings.filter((u) => u.module === unit.module).sort(bySequence);
       const at = ordered.findIndex((u) => u.unitId === unit.unitId);
       for (let i = at - 1; i >= 0; i -= 1) {
@@ -290,18 +310,18 @@ export function planLearnerWork({
 
   /** The unit a pass here would open up — what the result receipt promises. */
   const unlockedBy = (unit) => {
-    if (isOptionalLesson(unit)) return null;
+    if (isOptionalLesson(unit) || isDateBound(unit)) return null;
     const siblings = courseMembers.get(unit.courseId) || [];
     const policy = policyFor(unit.courseId);
     const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
     if (policy?.mode === 'dated_modules' && unit.module && enrollment) {
-      const inModule = enrollment.lessonOrder?.[unit.module]?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
+      const inModule = enrollment.lessonOrder?.[unit.module]?.map((id) => byUnitId.get(id)).filter(inSequence) ?? [];
       const at = inModule.findIndex((entry) => entry.unitId === unit.unitId);
       return at >= 0 ? inModule.slice(at + 1).find((entry) => !isOptionalLesson(entry))?.unitId ?? null : null;
     }
     if (policy?.mode === 'module_blocks' && unit.module && enrollment) {
       const inModule = enrollment.lessonOrder?.[unit.module]
-        ?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
+        ?.map((id) => byUnitId.get(id)).filter(inSequence) ?? [];
       const lessonIndex = inModule.findIndex((entry) => entry.unitId === unit.unitId);
       if (lessonIndex >= 0) {
         const nextRequired = inModule.slice(lessonIndex + 1).find((entry) => !isOptionalLesson(entry));
@@ -311,7 +331,7 @@ export function planLearnerWork({
       if (moduleIndex >= 0) {
         for (let i = moduleIndex + 1; i < enrollment.moduleOrder.length; i += 1) {
           const nextId = enrollment.lessonOrder?.[enrollment.moduleOrder[i]]
-            ?.find((id) => byUnitId.has(id) && !isOptionalLesson(byUnitId.get(id)));
+            ?.find((id) => inSequence(byUnitId.get(id)) && !isOptionalLesson(byUnitId.get(id)));
           if (nextId) return nextId;
         }
       }
@@ -360,8 +380,12 @@ export function planLearnerWork({
         .forEach(({ moduleId }, index) => datedRankByModule.set(`${courseId}/${moduleId}`, index + 1));
     });
   }
-  const entries = ordering.map(({ unitId, elective }) => {
+  const entries = ordering.filter(({ unitId }) => {
     const unit = byUnitId.get(unitId);
+    return !isDateBound(unit) || onDaysCover(unit, today);
+  }).map(({ unitId, elective }) => {
+    const unit = byUnitId.get(unitId);
+    const dateBound = isDateBound(unit);
     // Program units may carry the bridge-created same-day session. They still
     // never become `completed`; recurrence is governed by the program status.
     const open = openByUnit.get(unitId) ?? null;
@@ -370,7 +394,9 @@ export function planLearnerWork({
     const rawTiming = unit.courseId
       ? enrollmentByCourse.get(unit.courseId)?.timing ?? null
       : timingByStandaloneUnit.get(unitId) ?? null;
-    const datedKey = unit.courseId && policyFor(unit.courseId)?.mode === 'dated_modules' && unit.module
+    // A date-bound unit is on its own day by construction: no module window or
+    // course timing can hold it back, and none can make it catch-up work.
+    const datedKey = !dateBound && unit.courseId && policyFor(unit.courseId)?.mode === 'dated_modules' && unit.module
       ? `${unit.courseId}/${unit.module}` : null;
     const datedState = datedKey ? datedStateByModule.get(datedKey) ?? null : null;
     let timingDecision = null;
@@ -396,12 +422,12 @@ export function planLearnerWork({
       };
     } else if (datedKey) {
       if (datedState === 'upcoming' || datedState === null) status = 'upcoming';
-    } else if (today) {
+    } else if (today && !dateBound) {
       timingDecision = evaluateTiming(rawTiming, { today });
       if (timingDecision.state === 'upcoming') status = 'upcoming';
       if (timingDecision.state === 'dormant') status = 'dormant';
     }
-    if (open && today && !datedKey) timingDecision = evaluateTiming(rawTiming, { today, inProgress: true });
+    if (open && today && !datedKey && !dateBound) timingDecision = evaluateTiming(rawTiming, { today, inProgress: true });
 
     return {
       unitId,
@@ -445,6 +471,8 @@ export function planLearnerWork({
       lockReason,
       remedy,
       unlocks: unlockedBy(unit),
+      ...(dateBound ? { dateBound: { onDays: structuredClone(unit.onDays) } } : {}),
+      ...(unit.placeholder === true ? { placeholder: true } : {}),
     };
   });
 

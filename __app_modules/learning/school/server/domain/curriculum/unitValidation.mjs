@@ -10,6 +10,7 @@ import { validatePracticeAssessment } from "../practiceAssessment.mjs";
  * standing at the printer.
  */
 import { GRADES } from "../grades.mjs";
+import { isStudyDay } from "../timing.mjs";
 import { validateCheckpoints } from "../mediaCheckpoints.mjs";
 import { validateStudyReferences } from "../studyReference.mjs";
 
@@ -647,9 +648,25 @@ export function validateUnit(raw, sets = {}) {
     }
   }
 
+  // DATE-BOUND: a unit that exists only on its own day(s) — a holiday activity,
+  // or an enrichment lesson that swaps out a subject on one day. Never part of
+  // a course's sequence (the planner keeps it out of every lock chain) and
+  // never owed on any other day. Same span grammar as a schedule's `except`.
+  const onDays = readOnDays(raw.onDays, errors);
+  // PLACEHOLDER: the holiday is on the calendar before its activity is
+  // written. The agenda names it but never owes it, so the day still works.
+  // Only a date-bound unit may be a stub: an undated stub would sit in the
+  // catalog forever with nothing to do.
+  let placeholder = false;
+  if (isPresent(raw.placeholder)) {
+    if (typeof raw.placeholder !== 'boolean') errors.push('placeholder must be a boolean');
+    else placeholder = raw.placeholder;
+  }
+  if (placeholder && !isPresent(raw.onDays)) errors.push('a placeholder unit must be date-bound (onDays)');
+
   // Presence, not resolvability: a dangling reference is already reported, and
   // reporting it twice would read as two separate authoring mistakes.
-  if (![...REFERENCE_FIELDS, 'program', 'launch', 'activity'].some((field) => isPresent(raw[field]))) {
+  if (!placeholder && ![...REFERENCE_FIELDS, 'program', 'launch', 'activity'].some((field) => isPresent(raw[field]))) {
     errors.push('unit must reference at least one of bank, document, media, review, program, launch, activity');
   }
 
@@ -708,10 +725,32 @@ export function validateUnit(raw, sets = {}) {
       ...(checkpoints ? { checkpoints } : {}),
       ...(schoolcalc ? { schoolcalc } : {}),
       ...(companion ? { companion } : {}),
+      ...(onDays ? { onDays } : {}),
+      ...(placeholder ? { placeholder: true } : {}),
       ...(practiceResult.practice ? { practice: practiceResult.practice, assessmentForms: practiceResult.assessmentForms } : {}),
       provenance: raw.provenance,
     },
   };
+}
+
+/** `onDays`: a non-empty list of `YYYY-MM-DD` or `{from, to}` (inclusive), normalized to spans. */
+function readOnDays(raw, errors) {
+  if (!isPresent(raw)) return undefined;
+  if (!Array.isArray(raw) || !raw.length) {
+    errors.push('onDays must be a non-empty list of dates or {from, to} ranges');
+    return undefined;
+  }
+  const spans = [];
+  for (const member of raw) {
+    const span = typeof member === 'string' ? { from: member, to: member }
+      : (isPlainObject(member) ? { from: member.from, to: member.to } : null);
+    if (!span || !isStudyDay(span.from) || !isStudyDay(span.to) || span.to < span.from) {
+      errors.push(`onDays has an invalid date or range: ${JSON.stringify(member)}`);
+      return undefined;
+    }
+    spans.push(span);
+  }
+  return spans;
 }
 
 /**

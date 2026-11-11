@@ -71,6 +71,30 @@ math/algebra/quizzes/functions/domain_and_range.yml
 A kind directory exists only where there is something to put in it. Most shelves
 are empty; that is the normal state, not a gap.
 
+### Date-bound and placeholder units
+
+Two optional unit fields serve holidays (see [Day-off tiers](../day-off-tiers.md)):
+
+```yaml
+onDays:                       # the unit exists only on these days
+  - '2026-11-26'
+  - { from: '2026-12-24', to: '2026-12-25' }
+placeholder: true             # named on the agenda, never owed; content still to be written
+```
+
+A unit with `onDays` is **date-bound**. It may be standalone or carry a
+`courseId`; either way it sits outside the course's sequence: it never locks the
+next lesson, is never locked by an earlier one, joins a course even when the
+enrollment's frozen `lessonOrder` does not list it, and on any day it does not
+cover it is absent from the plan (never `dormant`, never catch-up). On its day it
+displaces the other entries of its subject on the agenda, which is how an
+enrichment day swaps a subject.
+
+`placeholder: true` is allowed only on a date-bound unit, and a placeholder needs
+no `bank`/`document`/`media`/`activity` yet. The agenda offers it by name but
+excuses its section (`excused / placeholder`), so a holiday works before its
+activity exists. Remove `placeholder` and add the content when it is written.
+
 ## Compact course packages (v2)
 
 `school.course/v2` keeps the curriculum hierarchy but does not encode empty
