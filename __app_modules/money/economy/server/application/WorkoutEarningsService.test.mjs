@@ -125,7 +125,7 @@ describe('WorkoutEarningsService.standings', () => {
     expect(res.learners[0].gem).toBe('won');
   });
 
-  it('purse.gems rolls up earned gems by area', async () => {
+  it('purse.gems rolls up held gems (earned + leads) by area', async () => {
     const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }, { learnerId: 'learner-b', learnerName: 'Learner B', lines: [] }];
     const gemBoard = { async board() { return {
       categories: [
@@ -135,16 +135,20 @@ describe('WorkoutEarningsService.standings', () => {
         { id: 'move-days', label: 'Moved 5 days', group: 'move', area: 'move', color: '#8e5bd0' },
       ],
       cells: {
-        'move-won': { 'learner-a': { state: 'won', week: 2, streak: null, parts: [] } },
-        'move-days': { 'learner-a': { state: 'pending', week: 0, streak: { have: 3, need: 5, left: 2, reach: 'on-track', ruleId: 'moved-days' }, parts: [] } },
-        'school-row': { 'learner-a': { state: 'earned', week: 1, streak: null, parts: [] } },
-        'games-row': { 'learner-a': { state: 'leading', week: 0, streak: null, parts: [] }, 'learner-b': { state: 'leading', week: 0, streak: null, parts: [] } },
+        'move-won': { 'learner-a': { state: 'won', week: 2, held: 2, streak: null, parts: [] } },
+        'move-days': {
+          'learner-a': { state: 'pending', week: 0, held: 0, streak: { have: 3, need: 5, left: 2, reach: 'on-track', ruleId: 'moved-days' }, parts: [] },
+          'learner-b': { state: 'pending', week: 0, held: 0, streak: { have: 1, need: 5, left: 4, reach: 'on-track', ruleId: 'moved-days' }, parts: [] },
+        },
+        'school-row': { 'learner-a': { state: 'earned', week: 1, held: 1, streak: null, parts: [] } },
+        // A lead holds a contest gem: held 1 though nothing is paid yet.
+        'games-row': { 'learner-a': { state: 'leading', week: 0, held: 1, streak: null, parts: [] }, 'learner-b': { state: 'none', week: 0, held: 0, streak: null, parts: [] } },
       },
     }; } };
     const res = await make({ learners, balances: { 'learner-a': { silver: 1, gold: 0, gems: 0 }, 'learner-b': { silver: 0, gold: 0, gems: 0 } }, gemBoard }).standings();
-    expect(res.learners[0].gems).toEqual([{ area: 'move', earned: 2, color: '#8e5bd0' }, { area: 'school', earned: 1, color: '#2e9e5b' }]);
+    expect(res.learners[0].gems).toEqual([{ area: 'move', held: 2, color: '#8e5bd0' }, { area: 'school', held: 1, color: '#2e9e5b' }, { area: 'games', held: 1, color: '#ff7a2f' }]);
     expect(res.learners[0]).not.toHaveProperty('move');
-    // Leading, in progress and zero earn no chip: a child with none gets an empty list.
+    // In progress and zero hold no gem: a child with none gets an empty list.
     expect(res.learners[1].gems).toEqual([]);
   });
 

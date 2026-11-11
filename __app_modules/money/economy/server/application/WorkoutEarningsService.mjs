@@ -67,15 +67,16 @@ export class WorkoutEarningsService {
   }
 
   /**
-   * The gems each learner has EARNED this week, rolled up by area, as
-   * `(learnerId) => [{area, earned, color}]` in AREA_ORDER — `earned` is the sum of
-   * the area's cells' `week` (gems paid or owed this week). Only areas with
-   * something earned: a lead, a running day-count or a zero is not a gem.
+   * The gems each learner HOLDS this week, rolled up by area, as
+   * `(learnerId) => [{area, held, color}]` in AREA_ORDER. held = earned, plus a
+   * contest gem while leading: what the board draws solid, and what its total
+   * counts. A cell without `held` (an older board) falls back to its `week`.
+   * Only areas holding something: a running day-count or a zero is not a gem.
    * `color` is the area's own (GEM_AREAS), so no client keeps a copy of it.
    * Read off the board itself, so a home card and the board cannot disagree.
    * A board that cannot be read leaves every list empty.
    */
-  async #earnedGems() {
+  async #heldGems() {
     if (!this.#gemBoard?.board) return () => [];
     try {
       const board = await this.#gemBoard.board({ week: null });
@@ -84,10 +85,11 @@ export class WorkoutEarningsService {
         const by = new Map();
         for (const row of rows) {
           const area = row.area ?? row.group;
-          const week = Number(board.cells?.[row.id]?.[learnerId]?.week) || 0;
-          if (week > 0) by.set(area, (by.get(area) ?? 0) + week);
+          const cell = board.cells?.[row.id]?.[learnerId];
+          const n = Number(cell?.held ?? cell?.week) || 0;
+          if (n > 0) by.set(area, (by.get(area) ?? 0) + n);
         }
-        return AREA_ORDER.filter((area) => by.get(area) > 0).map((area) => ({ area, earned: by.get(area), color: GEM_AREAS[area].color }));
+        return AREA_ORDER.filter((area) => by.get(area) > 0).map((area) => ({ area, held: by.get(area), color: GEM_AREAS[area].color }));
       };
     } catch (err) {
       this.#logger.warn?.('economy.standings.gems-unavailable', { error: err?.message ?? String(err) });
@@ -200,7 +202,7 @@ export class WorkoutEarningsService {
   async standings() {
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { mode, contestClosed: false, learners: [] };
-    const [roster, gemsOf] = await Promise.all([this.#preview.roster({ week: null }), this.#earnedGems()]);
+    const [roster, gemsOf] = await Promise.all([this.#preview.roster({ week: null }), this.#heldGems()]);
     const learners = [];
     for (const learner of roster?.learners ?? []) {
       if (!this.#isUser(learner.learnerId)) continue;
