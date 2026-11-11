@@ -9,38 +9,6 @@
   align-items: stretch;
   justify-content: center;
   color: cg.$cg-text;
-
-  &__controls {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    padding: 16px;
-  }
-
-  &__start {
-    appearance: none;
-    font-family: cg.$cg-display;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease;
-    align-self: center;
-    min-width: 200px;
-    margin-top: 24px;
-    padding: 13px 32px;
-    font-size: 1rem;
-    color: #f8fafc;
-    background: linear-gradient(180deg, lighten(cg.$cg-accent, 4%), cg.$cg-accent);
-    border: 1px solid cg.$cg-accent;
-    // Legacy indigo (#7aa2ff) purged — the glow now matches the button's own
-    // cyan chrome instead of a leftover indigo accent (audit UX §6.2).
-    box-shadow: 0 10px 26px rgba(cg.$cg-accent, 0.3);
-
-    &:hover { transform: translateY(-1px); }
-    &:active { transform: translateY(0); }
-  }
 }
 
 // On-board rider compliance strip during the stoplight countdown — sits above

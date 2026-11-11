@@ -468,7 +468,7 @@ restart to take effect.
 | `race_start_grace_s` | 30 | Seconds a rider may report zero RPM **before their first movement** before they are parked as a no-show. More generous than `race_idle_dnf_s` to cover magnetless cadence sensors (e.g. the tricycle's COOSPO BK467) that take ~20s to lock onto rotation from a dead stop |
 | `hot_start_penalty_s` | — | **Retired.** The start is rolling and there is no penalty box; nothing reads this key (the container, the lobby config builder and the controller all ignore it). Safe to delete from the YAML |
 | `lap_length_m` | **400** | Lap unit for splits / oval (0 = laps off; whole-race when goal < lap) |
-| `results_dwell_s` | 20 | Results auto-return countdown before returning to the lobby |
+| `results_dwell_s` | 45 | Results auto-return countdown before returning to the lobby (a touch on the board stops it) |
 | `par_speed_kmh` | 18 | Speed of the "par" pace rival a lone rider races when nobody has a counting ride at this race type and length (§5). Must be positive, or the default is used; a positive value below 3 km/h is raised to 3 |
 | `default_background` | null | Ambient background Plex id for the race screen |
 | `music_volume` | 0.55 | Background music level (0–1) |
@@ -877,9 +877,36 @@ distance is never announced as taking the lead.
   had no sensor at the close (`stopped` = parked ∪ noSensor, passed by the
   container) reads **"Stopped at 412 m"**: their real distance, muted, no crown.
   An overtime rider keeps their distance with an **OT** tag, explained in the
-  legend. Nothing on the board says DNF. The board **auto-returns to the lobby** after
-  `results_dwell_s` with a visible countdown, and a manual **Exit** button leaves
-  immediately. Metric is finish-time (distance race) or distance covered (time race).
+  legend. Nothing on the board says DNF. Metric is finish-time (distance race)
+  or distance covered (time race).
+- **Hold and leave.** The board **auto-returns to the lobby** after
+  `results_dwell_s` (default 45 s) with a visible "Back to lobby in N". The
+  first touch or key press anywhere on the board stops that countdown for this
+  board (`cycle_game.results_held`); the board then stays until someone
+  leaves. The board's own **Exit** is the one way out (the container renders
+  no second button under it).
+- **Rematch** (primary button) starts the same race again: same type and
+  length, the riders on the bikes now, and the same hand-picked or ladder
+  ghost. An automatic pace rival is re-picked at the rematch, so a ride that
+  just set a new best is the one chased next. A featured-course ride rematches
+  the course (it keeps its course id and ladder callouts). It goes back to the
+  lobby and starts from there on the next render, through the normal start
+  path. Rematch is not offered when nobody is on a bike any more, or when the
+  featured course is no longer on the ladder (the post-save ladder refetch
+  replaces the lobby's ladder when the course rotated or the ladder is gone).
+- **Comparisons.** At launch the container records, for each live rider, their
+  best and most recent result at this exact type and length (the pace rival's
+  pool and filter: not incomplete, not a ghost, not stopped), taken from the
+  candidates that start already had: the server rival pool merged with loaded
+  history when the solo lookup answered, else loaded history. Nothing is
+  fetched for it. Under each live rider's row the board shows
+  `resultsComparison` as text: *New best · 12 s faster* (or *m further*),
+  *First ride at this length*, or *4 s off your best · 3 s faster than last
+  time*. No comparison for an ended-early ride, a rider stopped at the close,
+  a distance-race rider who did not finish, or a ghost.
+- **Versus line.** In a solo race (one live rider, one replayed rival) the
+  board names the rival: *your best*, *{name}'s best*, *par pace*, or the
+  hand-picked ghost's name, e.g. "You beat your best by 4 s".
 - **`RaceRecap`** — full-screen modal that replays a saved race by feeding
   synthesized rider state into `CycleRaceScreen` over ~12 s regardless of race
   length, with play/pause + scrub, then the final standings. **RPM is always 0 in
@@ -1355,6 +1382,11 @@ by `raceId` (+ `elapsedS` where relevant).
   `FINAL_SECONDS` is logged once, when the final ten seconds start.
 - **`cycle_game.finale_started`** (INFO) — once per race, on the beat that
   starts the finale: `{ raceId, beat, elapsedS }`.
+- **`cycle_game.results_held`** (INFO) — the board was touched and its
+  auto-return stopped: `{ raceId, secondsLeft }`.
+- **`cycle_game.rematch`** (INFO) — Rematch pressed: `{ fromRaceId,
+  winCondition, goalM, timeCapS, hasGhost }`. The new race then logs the usual
+  start events with `control: 'results.rematch'`.
 - **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
   and will be saved as incomplete: `{ raceId, elapsedS, control: 'race-menu.end' }`.
   It replaces `cycle_game.finish_forced`, which is no longer emitted.
@@ -1396,7 +1428,7 @@ by `raceId` (+ `elapsedS` where relevant).
   `{ reason, control }`. `reason` is `not_idle` (a race is already staged or
   running) or `start_pending` (another start is waiting on its rival lookup, or
   "Ride it" on its ladder rival);
-  `control` is `lobby.start-button`, `featured` or `sim.autostart`.
+  `control` is `lobby.start-button`, `featured`, `results.rematch` or `sim.autostart`.
 - **`cycle_game.start_failed`** (ERROR) — building the race threw, on any start
   path: `{ control, error }`. Nothing is left staged and the lobby is unfrozen.
 - **`cycle_game.featured_rival_lookup_failed`** (WARN) — "Ride it" could not arm

@@ -23,6 +23,7 @@ import { effectiveLapLength } from "../../lib/cycleGame/effectiveLapLength.js";
 import { deriveRaceSnapshot } from "../../lib/cycleGame/deriveRaceSnapshot.js";
 import { dramaEventToasts, beatToasts } from "../../lib/cycleGame/dramaEventCopy.js";
 import { raceBeats } from "../../lib/cycleGame/raceBeats.js";
+import { resultsComparison } from "../../lib/cycleGame/resultsComparison.js";
 import { paceDelta } from "../../lib/cycleGame/paceDelta.js";
 import { boostState, boostRange, formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
@@ -122,6 +123,49 @@ const plainName = (name) => String(name || '').replace(/\s*👻\s*$/u, '');
 // How much the racing music rises for the finale (last minute / last stretch),
 // as a share of the master volume.
 const FINALE_MUSIC_LIFT = 0.15;
+
+/**
+ * Each live rider's history at this exact race type and length, from the
+ * candidates the start already had (the same pool and filter as the pace
+ * rival: not incomplete, not a ghost, not stopped, a positive result).
+ * `previousBest` is the best result (lowest finish time in a distance race,
+ * furthest distance in a time race) and `last` the most recent ride's.
+ *
+ * @returns {Object<string, {previousBest: number|null, last: number|null}>}
+ */
+function riderHistoryAt({ candidates, userIds, winCondition, goalM, timeCapS }) {
+  const isDistance = winCondition === 'distance';
+  const out = {};
+  userIds.forEach((id) => { out[id] = { previousBest: null, last: null, lastRaceId: null }; });
+  paceRivalPool({ candidates, winCondition, goalM, timeCapS }).forEach((c) => {
+    (c.participants || []).forEach((pt) => {
+      if (!pt || pt.stopped || pt.isGhost) return;
+      const ident = resolveParticipantIdentity(pt.id);
+      if (ident.isGhost) return;
+      const h = out[ident.sourceId];
+      if (!h) return;
+      const value = isDistance ? pt.finalTimeS : pt.finalDistanceM;
+      if (!(Number.isFinite(value) && value > 0)) return;
+      const better = h.previousBest == null || (isDistance ? value < h.previousBest : value > h.previousBest);
+      if (better) h.previousBest = value;
+      if (h.lastRaceId == null || String(c.raceId) > String(h.lastRaceId)) {
+        h.last = value;
+        h.lastRaceId = c.raceId;
+      }
+    });
+  });
+  Object.values(out).forEach((h) => { delete h.lastRaceId; });
+  return out;
+}
+
+// How the results board names a solo rider's rival.
+function rivalLabelFor(rivalKind, rival) {
+  const name = plainName(rival?.displayName);
+  if (rivalKind === 'self') return 'your best';
+  if (rivalKind === 'household') return name ? `${name}'s best` : 'their best';
+  if (rivalKind === 'par') return 'par pace';
+  return name;
+}
 
 // The one line the results board shows for a ride ended from the race menu, in
 // place of any ladder-movement callout (it rides the same notes slot).
@@ -358,7 +402,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     ? cycleGameConfig.race_mercy_after_winner_s
     : 60;
   // How long the results board holds before auto-returning to the lobby.
-  const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 20;
+  const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 45;
   // Speed of the "par" pace rival a lone rider races when nobody has ridden
   // this race type and length before.
   const parSpeedKmh = Number.isFinite(cycleGameConfig?.par_speed_kmh) && cycleGameConfig.par_speed_kmh > 0
@@ -920,7 +964,7 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // Build and stage the race from a resolved plan (see startRace, which decides
   // the field). `paceRival` is the automatic rival for a lone rider, or null.
-  const stageRace = useCallback(({ ov, type, goalM, timeCapS, course, liveRiders, chosenGhost }, paceRival) => {
+  const stageRace = useCallback(({ ov, type, goalM, timeCapS, course, liveRiders, chosenGhost, historyCandidates = [] }, paceRival) => {
     const armedGhost = chosenGhost || paceRival?.ghost || null;
     // 'ghost' = hand-picked or ladder rival; null = nobody to chase.
     const rivalKind = chosenGhost ? 'ghost' : (paceRival?.ghost ? paceRival.kind : null);
@@ -963,7 +1007,18 @@ export default function CycleGameContainer({ onMount } = {}) {
       courseId: ov?.id ?? null,
       // Who the field is chasing: 'self' | 'household' | 'par' (automatic pace
       // rival), 'ghost' (hand-picked or ladder rival), null (no rival).
-      rivalKind
+      rivalKind,
+      // Each live rider's best and most recent ride at this type and length,
+      // as of this start (before this race is saved): the results comparison.
+      history: riderHistoryAt({
+        candidates: historyCandidates,
+        userIds: liveRiders.map((r) => r.userId),
+        winCondition: type, goalM, timeCapS
+      }),
+      // What a Rematch replays: the course override (a featured course keeps
+      // its id) and the hand-picked or ladder ghost, if any. An automatic pace
+      // rival is not kept: it is re-picked at the rematch.
+      rematch: { ov, chosenGhost: chosenGhost || null, winCondition: type, goalM, timeCapS }
     };
     if (paceRival) {
       log.info('cycle_game.pace_rival', {
@@ -1141,9 +1196,11 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Launch, reporting a failure instead of throwing it at the caller (a click
     // handler, the simulator, or a promise nobody awaits). `makeRival` builds
     // the automatic rival, or is null when the race has none.
-    const launch = (makeRival) => {
+    // `historyCandidates` is the pool the comparison on the results board is
+    // taken from: the one the rival lookup assembled, else loaded history.
+    const launch = (makeRival, historyCandidates = ghostCandidates) => {
       try {
-        launchRace(plan, makeRival ? makeRival() : null);
+        launchRace({ ...plan, historyCandidates }, makeRival ? makeRival() : null);
         return true;
       } catch (err) {
         log.error('cycle_game.start_failed', { control: controlName, error: err?.message || String(err) });
@@ -1241,7 +1298,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         return res.outcome === 'used'
           ? rivalFrom(res.candidates, true, 'used', lookupStats)
           : rivalFrom(ghostCandidates, false, res.outcome, lookupStats);
-      });
+      }, res.outcome === 'used' ? res.candidates : ghostCandidates);
     });
     return true;
   }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, ghost, buildRiders, ghostCandidates, parSpeedKmh, bikeById, getDisplayLabel, launchRace, log]);
@@ -1947,6 +2004,10 @@ export default function CycleGameContainer({ onMount } = {}) {
               setLadderNotes(notes);
               setFeaturedLadder(after);
               log.info('cycle_game.ladder_movement', { raceId: meta.raceId, notes: notes.length });
+            } else {
+              // The course rotated or the ladder is gone: the board must not
+              // offer a Rematch of a course that can no longer be ridden.
+              setFeaturedLadder(after);
             }
           } catch (err) {
             log.warn('cycle_game.ladder_movement_error', { error: err?.message || String(err) });
@@ -2264,18 +2325,66 @@ export default function CycleGameContainer({ onMount } = {}) {
   }, [log, returnToLobby]);
 
   // Results auto-exit: hold the board for resultsDwellS, ticking a countdown, then
-  // return to the lobby. The Back-to-home button still exits immediately.
+  // return to the lobby. The board's Exit still leaves immediately, and the
+  // first touch on the board (onResultsHold) stops the countdown for good.
+  const resultsTimerRef = useRef(null);
+  const resultsHeldRef = useRef(false);
+  const resultsLeftRef = useRef(null);
   useEffect(() => {
-    if (phase !== 'results') { setResultsSecondsLeft(null); return undefined; }
+    if (phase !== 'results') {
+      resultsHeldRef.current = false;
+      setResultsSecondsLeft(null);
+      return undefined;
+    }
+    if (resultsHeldRef.current) return undefined;
     let left = resultsDwellS;
+    resultsLeftRef.current = left;
     setResultsSecondsLeft(left);
     const id = setInterval(() => {
       left -= 1;
+      resultsLeftRef.current = left;
       setResultsSecondsLeft(left);
       if (left <= 0) { clearInterval(id); backToHome(); }
     }, 1000);
-    return () => clearInterval(id);
+    resultsTimerRef.current = id;
+    return () => { clearInterval(id); resultsTimerRef.current = null; };
   }, [phase, resultsDwellS, backToHome]);
+
+  const onResultsHold = useCallback(() => {
+    if (resultsHeldRef.current) return;
+    resultsHeldRef.current = true;
+    if (resultsTimerRef.current) { clearInterval(resultsTimerRef.current); resultsTimerRef.current = null; }
+    setResultsSecondsLeft(null);
+    log.info('cycle_game.results_held', {
+      raceId: raceMetaRef.current?.raceId ?? null, secondsLeft: resultsLeftRef.current
+    });
+  }, [log]);
+
+  // Rematch: back to the lobby, then (on the idle render, so phaseRef, the
+  // lobby effects and the start guards all see the lobby) the same race again.
+  const [rematchRequest, setRematchRequest] = useState(null);
+  const onRematch = useCallback(() => {
+    const meta = raceMetaRef.current;
+    const plan = meta?.rematch;
+    if (!plan) return;
+    // A featured course rides as it stands now on the ladder.
+    const featuredCourse = plan.ov?.id && featuredLadder?.course?.id === plan.ov.id ? featuredLadder.course : null;
+    const ov = featuredCourse
+      ? courseStartOverride(featuredCourse)
+      : { win_condition: plan.winCondition, goal_m: plan.goalM, time_cap_s: plan.timeCapS };
+    log.info('cycle_game.rematch', {
+      fromRaceId: meta.raceId, winCondition: plan.winCondition, goalM: plan.goalM ?? null,
+      timeCapS: plan.timeCapS ?? null, hasGhost: !!plan.chosenGhost
+    });
+    if (featuredCourse) ladderBeforeRef.current = featuredLadder;
+    setRematchRequest({ ov, ghost: plan.chosenGhost });
+    returnToLobby();
+  }, [featuredLadder, log, returnToLobby]);
+  useEffect(() => {
+    if (phase !== 'idle' || !rematchRequest) return;
+    setRematchRequest(null);
+    startRaceRef.current(rematchRequest.ov, rematchRequest.ghost, { control: 'results.rematch' });
+  }, [phase, rematchRequest]);
 
   // ── render ───────────────────────────────────────────────────────────────
   if (phase === 'idle') {
@@ -2466,13 +2575,39 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // results
   const engineState = snapshot?.engineState || {};
+  const resultsMeta = raceMetaRef.current;
+  const resultsWin = engineState.winCondition || resultsMeta?.winCondition || 'distance';
+  const stoppedIds = [...new Set([...(snapshot?.parked || []), ...(snapshot?.noSensor || [])])];
+  const resultRiders = engineState.riders || {};
+  const resultLiveIds = Object.keys(resultRiders).filter((id) => !resultRiders[id].isGhost);
+  const resultGhostIds = Object.keys(resultRiders).filter((id) => resultRiders[id].isGhost);
+  // Each live rider's ride against their own history at this type and length.
+  // None for an ended-early ride, a rider stopped at the close, or a distance
+  // race not finished.
+  const comparisons = {};
+  if (!snapshot?.endedEarly && resultsMeta?.history) {
+    (engineState.standings || []).forEach((s) => {
+      const h = resultsMeta.history[s.userId];
+      if (!h || stoppedIds.includes(s.userId)) return;
+      const value = resultsWin === 'distance' ? s.finishTimeS : s.distanceM;
+      const cmp = resultsComparison({ winCondition: resultsWin, value, previousBest: h.previousBest, last: h.last });
+      if (cmp) comparisons[s.userId] = cmp;
+    });
+  }
+  // A solo race: one live rider against one replayed rival.
+  const soloRivalId = resultLiveIds.length === 1 && resultGhostIds.length === 1 ? resultGhostIds[0] : null;
+  // Rematch needs someone on a bike, and a featured course that still exists.
+  const rematchPlan = resultsMeta?.rematch;
+  const courseGone = !!rematchPlan?.ov?.id && featuredLadder?.course?.id !== rematchPlan.ov.id;
+  const anyoneClaimed = bikes.some((b) => session?.getEquipmentRider?.(b.id));
+  const canRematch = !!rematchPlan && !courseGone && anyoneClaimed;
   return (
     <div className="cycle-game-container" data-testid="cycle-game-container">
       <RaceResults
         standings={engineState.standings || []}
-        riders={engineState.riders || {}}
-        winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
-        stopped={[...new Set([...(snapshot?.parked || []), ...(snapshot?.noSensor || [])])]}
+        riders={resultRiders}
+        winCondition={resultsWin}
+        stopped={stoppedIds}
         overtime={snapshot?.overtime || []}
         lapLengthM={effectiveLapLength({
           lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
@@ -2483,11 +2618,13 @@ export default function CycleGameContainer({ onMount } = {}) {
         secondsLeft={resultsSecondsLeft}
         saveFailed={saveFailed}
         onExit={backToHome}
+        onHold={onResultsHold}
+        onRematch={canRematch ? onRematch : null}
+        comparisons={comparisons}
+        rivalId={soloRivalId}
+        rivalLabel={soloRivalId ? rivalLabelFor(resultsMeta?.rivalKind, resultRiders[soloRivalId]) : ''}
         ladderNotes={ladderNotes}
       />
-      <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={backToHome}>
-        Back to home
-      </button>
     </div>
   );
 }
