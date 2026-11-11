@@ -11,7 +11,7 @@
 }
 
 // ── Ghost picker: day columns + two-stage cards ───────────────────────────
-.cgh-picker--ghost .cgh-picker__sheet { width: min(1040px, 95%); }
+.cgh-picker--ghost .cgh-picker__sheet { width: min(1280px, 95%); }
 
 .cgh-ghost-cols {
   display: flex;
@@ -81,7 +81,7 @@
   }
   &__rider {
     position: relative; display: inline-flex; flex-shrink: 0;
-    &:not(:first-child) { margin-left: -28px; }   // overlap → trailing riders are crescents
+    &:not(:first-child) { margin-left: -24px; }   // overlap → trailing riders are crescents
     // The winner is in front and whole (inline z-index); the metric is 20 px, so only the visible winner carries one
     // (a crescent's clipped number would read as garbage, and the roster lists everyone).
     &:not(:first-child) .cgh-ghost-card__metric { display: none; }
@@ -96,7 +96,7 @@
   // Each avatar is a circle with the rider's OWN metric shaded across its base.
   // The panel-colored border separates overlapping crescents.
   &__avatar-wrap {
-    position: relative; width: 64px; height: 64px; border-radius: 50%;
+    position: relative; width: 52px; height: 52px; border-radius: 50%;
     display: inline-flex; isolation: isolate;
     border: 2px solid t.$cg-panel; background: t.$cg-panel;
   }
@@ -111,7 +111,7 @@
     font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   }
   &__more {
-    align-self: center; flex-shrink: 0;
+    align-self: center; flex-shrink: 0; margin-left: 8px;
     font-family: t.$cg-display; font-weight: 700; font-size: t.cg-type(2); color: t.$cg-faint;
   }
 }

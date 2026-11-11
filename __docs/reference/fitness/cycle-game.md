@@ -317,7 +317,9 @@ The lobby is a pure presentational component; all state and handlers live in
    selected by default**, each tappable to toggle off, with **Select all** and
    **Start** (Start is disabled if you exclude everyone). Start commits the race
    with only the chosen ghosts — the picker pre-filters `candidate.participants`, so
-   the rest of the ghost pipeline is unchanged.
+   the rest of the ghost pipeline is unchanged. A card shows the winner plus up to
+   three more overlapping avatars (`GHOST_CARD_MAX_AVATARS` = 4); any further riders
+   collapse into a `+N` chip so the row never overruns the race-type pill.
 6. **History** — recent saved races as a compact columnar table (winner, goal-marked
    metric columns, when), most-recent-first; row model from
    `recordRow.buildRecordRow`. Each row **leads with the top-placed live rider**,

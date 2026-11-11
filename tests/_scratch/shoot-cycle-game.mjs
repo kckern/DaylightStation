@@ -20,7 +20,7 @@ const OUT = path.join(here, 'out/cycle-game');
 fs.mkdirSync(OUT, { recursive: true });
 
 const ALL = [
-  'lobby-default', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-roster', 'lobby-volume', 'staging', 'countdown',
+  'lobby-default', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-picker-six', 'lobby-ghost-roster', 'lobby-ghost-roster-six', 'lobby-volume', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
   'race-two-riders-one-parked', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
@@ -47,6 +47,19 @@ const ACTIONS = {
   'lobby-ghost-picker': async (page) => {
     await page.click('[data-testid="course-ghost"]');
     await page.waitForSelector('[data-testid="ghost-picker"]', { timeout: 5000 });
+    await page.waitForTimeout(400);
+  },
+  'lobby-ghost-picker-six': async (page) => {
+    await page.click('[data-testid="course-ghost"]');
+    await page.waitForSelector('[data-testid="ghost-R6"]', { timeout: 5000 });
+    await page.waitForTimeout(400);
+  },
+  'lobby-ghost-roster-six': async (page) => {
+    await page.click('[data-testid="course-ghost"]');
+    await page.waitForSelector('[data-testid="ghost-R6"]', { timeout: 5000 });
+    await page.click('[data-testid="ghost-R6"]');
+    await page.click('[data-testid="ghost-R6"]');
+    await page.waitForSelector('[data-testid="ghost-roster"]', { timeout: 5000 });
     await page.waitForTimeout(400);
   },
   'lobby-ghost-roster': async (page) => {
@@ -196,6 +209,35 @@ function measure() {
     out.lobbyRailClipped = [...lobbyEl.querySelectorAll('*')].filter((e) => e.offsetParent && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0 && (e.getBoundingClientRect().bottom > rb.bottom + 1 || e.getBoundingClientRect().right > rb.right + 1)).length;
     out.lobbyRailScrolls = lobbyEl.scrollHeight > lobbyEl.clientHeight + 1;
   }
+  // Ghost picker: nothing inside a card may stick out of it (avatars, metric pill, type pill).
+  out.ghostCardOverflow = [...document.querySelectorAll('.cgh-ghost-card')].map((c) => {
+    const cb = c.getBoundingClientRect();
+    const over = [...c.querySelectorAll('*')].filter((e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none').map((e) => {
+      const b = e.getBoundingClientRect();
+      return { cls: String(e.getAttribute('class') || e.tagName), r: r2(b.right - cb.right), l: r2(cb.left - b.left) };
+    }).filter((o) => o.r > 0.5 || o.l > 0.5);
+    // The avatar row must stay inside its own box and clear of the race-type pill and the time.
+    const rowEl = c.querySelector('.cgh-ghost-card__riders'); const rr = rowEl.getBoundingClientRect();
+    const kids = [...rowEl.children].map((k) => k.getBoundingClientRect());
+    const rowOut = kids.some((b) => b.left < rr.left - 0.5 || b.right > rr.right + 0.5);
+    const pill = c.querySelector('.cgh-ghost-card__type').getBoundingClientRect();
+    const timeB = c.querySelector('.cgh-ghost-card__time').getBoundingClientRect();
+    const hitsSibling = kids.some((b) => b.right > pill.left + 0.5 || b.left < timeB.right - 0.5);
+    if (rowOut) over.push({ cls: 'riders row spills out of its box' });
+    if (hitsSibling) over.push({ cls: 'riders overlap time or type pill' });
+    const w = [...c.querySelectorAll('.cgh-ghost-card__avatar-wrap')].map((a) => a.getBoundingClientRect().width);
+    if (w.length && Math.min(...w) < 39.95) over.push({ cls: `avatar ${Math.min(...w)}px < 40` });
+    return { id: c.dataset.testid, sw: c.scrollWidth, cw: c.clientWidth, over: over.slice(0, 4) };
+  }).filter((c) => c.sw > c.cw + 1 || c.over.length);
+  // Roster: every chip, the Select-all/Start controls and the card itself stay on screen, no scroll.
+  const rosterCard = document.querySelector('.cgh-roster__card');
+  if (rosterCard) {
+    const rb = rosterCard.getBoundingClientRect();
+    const items = [...rosterCard.querySelectorAll('.cgh-rider, .cgh-roster__cta, button')];
+    out.rosterOffscreen = items.filter((e) => { const b = e.getBoundingClientRect(); return b.left < -1 || b.top < -1 || b.right > vw + 1 || b.bottom > vh + 1 || b.right > rb.right + 1 || b.bottom > rb.bottom + 1; }).length;
+    out.rosterItems = rosterCard.querySelectorAll('.cgh-rider').length;
+    out.rosterScrolls = rosterCard.scrollHeight > rosterCard.clientHeight + 1;
+  }
   out.gaugeNumeralMinPx = out.gauges.length ? Math.min(...out.gauges.flatMap((g) => g.labels.map((l) => l.fs))) : null;
   const th = document.querySelector('[data-testid="tower-lap-header"]');
   if (th) {
@@ -305,6 +347,9 @@ for (const [label, m] of Object.entries(metrics)) {
   if (/^lobby-/.test(label) && m.lobbyTextMinPx != null && m.lobbyTextMinPx < 19.95) bad.push(`lobby text ${m.lobbyTextMinPx}px < 20 (${m.lobbyTextSmallest[0].t} / ${m.lobbyTextSmallest[0].cls})`);
   if (m.lobbyRailClipped > 0) bad.push(`${m.lobbyRailClipped} lobby rail element(s) clipped`);
   if (m.lobbyRailScrolls) bad.push('lobby rail scrolls');
+  if (m.ghostCardOverflow && m.ghostCardOverflow.length) bad.push(`ghost card content outside its card: ${JSON.stringify(m.ghostCardOverflow)}`);
+  if (m.rosterOffscreen > 0) bad.push(`${m.rosterOffscreen} roster control(s) off screen/outside card`);
+  if (m.rosterScrolls) bad.push('roster card scrolls');
   if (m.towerRankOverflow > 0) bad.push('tower rank overflow');
   if (m.toastCoversClock) bad.push('toast covers clock/menu/pace');
   const line = `${label}: clipped=${m.clippedLabels} minFont=${m.minFontPx} raceTextMin=${m.raceTextMinPx} numerals=${m.gaugeNumeralMinPx ?? '-'} towerHdr=${m.towerHeaderPx ?? '-'} lobbyMin=${m.lobbyTextMinPx ?? '-'} histRows=${m.historyRowsShown ?? '-'}/hid${m.historyRowsHidden ?? '-'} gauge=${m.gauges && m.gauges.length ? Math.min(...m.gauges.map((g) => g.gaugePx)) : '-'} oob=${m.outOfBounds}${m.toast ? ` toastCovers=${!!m.toastCoversClock}` : ''}`;
