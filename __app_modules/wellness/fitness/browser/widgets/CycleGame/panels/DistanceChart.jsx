@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
 import { RaceFlagIcon } from "../home/icons.jsx";
@@ -12,6 +12,7 @@ import { rivalTraceSamples } from "../../../lib/cycleGame/rivalTrace.js";
 import { formatClock } from "../../../lib/cycleGame/cycleGameLobby.js";
 import { formatDistance } from "../../../lib/cycleGame/formatDistance.js";
 import { gapFrac } from "../../../lib/cycleGame/chartScale.js";
+import { goalLabelLeft } from "../../../lib/cycleGame/chartGoalLabel.js";
 import resolveParticipantIdentity from "../../../lib/cycleGame/participantIdentity.js";
 import { createTickLerp } from "../../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./DistanceChart.scss";
@@ -26,6 +27,13 @@ const LOG_TWEEN_MS = 400;   // lin↔log flip crossfade duration (audit UX 2.7)
 const MAX_PLOT_POINTS = 600; // decimate longer series to bound per-tick geometry cost
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
 const PARKED_OPACITY = 0.4; // a parked rider's lane and tag recede, never vanish
+// Goal-line label: right edge at 95% of the plot unless a tag is in the way
+// (then it slides left along the line, see chartGoalLabel.js); never left of
+// the y-axis label that shares the line's left end.
+const GOAL_LABEL_ANCHOR = 0.95;
+const GOAL_LABEL_GAP_PX = 8;
+const GOAL_LABEL_MIN_LEFT_PX = 72;
+const GOAL_LABEL_DROP_PX = 2; // translateY(2px) in CycleRaceScreen.scss
 
 // ── SVG plot geometry (fixed viewBox) ──────────────────────────────────────
 const W = 600, H = 200;
@@ -140,17 +148,21 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const fitRef = useRef(null);
   const fitScaleVal = useFitGuard(fitRef, zoneBox, 'distanceChart');
   const [chartH, setChartH] = useState(220); // chart px height (for collision spacing)
+  const [chartW, setChartW] = useState(0);   // chart px width (goal-label placement); 0 until measured
   const lastHRef = useRef(220);
+  const lastWRef = useRef(0);
   const log = useMemo(() => getLogger().child({ component: 'cycle-distance-chart' }), []);
 
   useEffect(() => {
     const el = chartRef.current;
     if (!el) return undefined;
     const compute = () => {
+      const nextW = el.clientWidth || 0;
+      if (nextW !== lastWRef.current) { lastWRef.current = nextW; setChartW(nextW); }
       const next = el.clientHeight || 220;
       if (next === lastHRef.current) return;
       lastHRef.current = next;
-      log.debug('cycle_game.chart_resize', { h: next });
+      log.debug('cycle_game.chart_resize', { h: next, w: nextW });
       setChartH(next);
     };
     compute();
@@ -342,6 +354,30 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     text: useLog ? (d >= leaderM ? '0' : `−${formatDistance(Math.max(0, leaderM - d))}`) : formatDistance(d)
   }));
 
+  // ── Goal-line label placement (distance races) ─────────────────────────────
+  // The label rides the goal line at the right; a tag that climbs onto that
+  // line at the right edge (a rider closing on the finish) would be covered,
+  // so the label slides left of it (goalLabelLeft) — at the tick AND per frame,
+  // from the same tag geometry the tags themselves are drawn with. Tag and
+  // label boxes are measured only when their text changes (offsetWidth
+  // reflows), never per frame.
+  const goalLabelEl = useRef(null);
+  const goalLabelSize = useRef({ text: null, w: 0, h: 0 });
+  const tagSizes = useRef({}); // { id: { text, w, h } }
+  const goalTopPx = distanceGoal && chartH ? (yFor(goalM) / H) * chartH + GOAL_LABEL_DROP_PX : 0;
+  const goalLeftFor = (tags, plotW, plotH) => {
+    if (!distanceGoal || !plotW) return null;
+    const boxes = tags.map((t) => {
+      const s = tagSizes.current[t.id];
+      return s ? { x: (t.leftPct / 100) * plotW, y: (t.topPct / 100) * plotH, w: s.w, h: s.h } : null;
+    }).filter(Boolean);
+    return goalLabelLeft({
+      label: { w: goalLabelSize.current.w, h: goalLabelSize.current.h, top: goalTopPx },
+      tags: boxes, plotW, anchorRight: plotW * GOAL_LABEL_ANCHOR, gapPx: GOAL_LABEL_GAP_PX, minLeft: GOAL_LABEL_MIN_LEFT_PX,
+    });
+  };
+  const goalLeftPx = goalLeftFor(tagLayout, chartW, chartH);
+
   // ── One shared motion clock: eased window remap + tags / connectors ─
   const lineEls = useRef({});
   const areaEls = useRef({});
@@ -397,6 +433,9 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     prevWin: prevWinRef.current,
     curWin,
     minSepPct,
+    goalLeftFor: distanceGoal ? goalLeftFor : null,
+    plotW: chartW,
+    plotH: chartH,
     traceFor: rivalSeries ? traceSamplesFor : null,
     lanes: lanes.map((l) => ({
       id: l.id,
@@ -461,6 +500,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
       // stale snapshots. This is what keeps a tag glued to its own line tip
       // through an active zoom instead of "catching up" after the fact.
       const frameTags = layoutTags(frameTips, winF, m.minSepPct);
+      // The goal label follows the same frame geometry, sliding clear of any tag
+      // that reaches the goal line.
+      if (m.goalLeftFor && goalLabelEl.current) {
+        const left = m.goalLeftFor(frameTags, m.plotW, m.plotH);
+        if (left != null) { goalLabelEl.current.style.left = `${left.toFixed(1)}px`; goalLabelEl.current.style.right = 'auto'; }
+      }
       frameTags.forEach((t) => {
         const el = tagEls.current[t.id];
         if (el) { el.style.left = `${t.leftPct}%`; el.style.top = `${t.topPct}%`; }
@@ -482,6 +527,23 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     return () => { unsub(); clock.stop(); };
      
   }, []);
+
+  // Measure tag and goal-label boxes once their text changes (one reflow per
+  // tick at most), so the goal label can be kept clear of the tags.
+  useLayoutEffect(() => {
+    if (!distanceGoal) return;
+    tagLayout.forEach((t) => {
+      const el = tagEls.current[t.id];
+      if (!el) return;
+      const text = `${t.isLeader ? 'L' : ''}${t.gapText}`;
+      const cached = tagSizes.current[t.id];
+      if (!cached || cached.text !== text) tagSizes.current[t.id] = { text, w: el.offsetWidth, h: el.offsetHeight };
+    });
+    const g = goalLabelEl.current;
+    if (g && goalLabelSize.current.text !== g.textContent) {
+      goalLabelSize.current = { text: g.textContent, w: g.offsetWidth, h: g.offsetHeight };
+    }
+  });
 
   // Kick the clock on each new data tick so the lines/tags glide to the
   // new datum (and the window eases prev→cur).
@@ -615,12 +677,18 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         ))}
       </div>
 
-      {/* Goal line label — always present for a distance race, riding the top target line. */}
+      {/* Goal line label — always present for a distance race, riding the top
+          target line near its right end, sliding left of any tag that reaches
+          the line (goalLabelLeft; per frame on the motion clock). */}
       {distanceGoal && (
         <div
+          ref={goalLabelEl}
           className="cycle-race-screen__goal-label"
           data-testid="chart-goal-label"
-          style={{ top: `${(yFor(goalM) / H) * 100}%` }}
+          style={{
+            top: `${(yFor(goalM) / H) * 100}%`,
+            ...(goalLeftPx != null ? { left: `${goalLeftPx.toFixed(1)}px`, right: 'auto' } : {}),
+          }}
         >
           <span className="cycle-race-screen__goal-flag" aria-hidden="true"><RaceFlagIcon /></span> {formatDistance(goalM)}
         </div>

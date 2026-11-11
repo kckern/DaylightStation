@@ -9,6 +9,17 @@
   &__gl { position: absolute; inset: 0; }
   &__gl > canvas { display: block; width: 100%; height: 100%; }
 
+  // Stacking, bottom to top: road (GL) → avatar cards → gate / metre labels →
+  // leader lines → rank badges → horizon chip. Gate labels sit ABOVE the cards:
+  // a rider at the finish arch used to hide "FINISH" behind their avatar
+  // (2026-11-10). The badges stay above everything a rider reads.
+  &__gl { z-index: 0; }
+  &__cards { z-index: 1; }
+  &__labels { z-index: 2; }
+  &__leaders { z-index: 3; }
+  &__badges { z-index: 4; }
+  &__horizon-chip { z-index: 5; }
+
   // Off-road metre labels + gate labels — plain DOM nodes the renderer owns and
   // positions each frame by projecting their 3D world points to screen.
   &__labels { position: absolute; inset: 0; pointer-events: none; }
@@ -107,9 +118,13 @@
     color: cg.$cg-cyan; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }
+  // Drawn over the avatars (see the stacking order above), so it carries the
+  // same plate as the badges to stay readable on top of a card.
   &__gate-label {
     position: absolute; top: 0; left: 0;
     font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 800; font-size: cg.cg-type(2); letter-spacing: 0.06em;
+    padding: 0.18em 0.5em; border-radius: 6px;
+    background: rgba(10, 10, 20, 0.82);
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }
