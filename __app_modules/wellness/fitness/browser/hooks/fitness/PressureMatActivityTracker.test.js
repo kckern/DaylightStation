@@ -164,3 +164,46 @@ describe('PressureMatActivityTracker', () => {
     expect(tracker.snapshot(5000)).toMatchObject({ sessionSteps: 2, latest: { steps: 1 }, lastSeenAt: 4000 });
   });
 });
+
+describe('step-mat card visibility (in use = a step or stomp within the idle window)', async () => {
+  const { isStepMatInUse, STEP_MAT_CARD_IDLE_MS } = await import('./PressureMatActivityTracker.js');
+
+  it('uses a 90 second quiet window', () => {
+    expect(STEP_MAT_CARD_IDLE_MS).toBe(90_000);
+  });
+
+  it('exposes lastActivityAt as the latest step or stomp', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
+    expect(tracker.snapshot(500).lastActivityAt).toBeNull();
+    tracker.ingest(reading('pressed', 1, 0), { timestamp: 1000 });
+    expect(tracker.snapshot(1000).lastActivityAt).toBe(1000);
+    tracker.ingest(reading('stomped', 1, 1), { timestamp: 4000 });
+    expect(tracker.snapshot(4000).lastActivityAt).toBe(4000);
+    // A periodic reading with no new counts is not activity.
+    tracker.ingest(reading(null, 1, 1), { timestamp: 9000 });
+    expect(tracker.snapshot(9000).lastActivityAt).toBe(4000);
+  });
+
+  it('is in use from the first step, idle after 90s of quiet, and back on the next step', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
+    expect(isStepMatInUse(tracker.snapshot(0), 0)).toBe(false);
+    tracker.ingest(reading('pressed', 1, 0), { timestamp: 1000 });
+    expect(isStepMatInUse(tracker.snapshot(1000), 1000)).toBe(true);
+    expect(isStepMatInUse(tracker.snapshot(91_000), 91_000)).toBe(true);
+    expect(isStepMatInUse(tracker.snapshot(91_001), 91_001)).toBe(false);
+    // A stale snapshot judged against a later clock is idle too.
+    expect(isStepMatInUse(tracker.snapshot(1000), 200_000)).toBe(false);
+    tracker.ingest(reading('pressed', 2, 0), { timestamp: 300_000 });
+    expect(isStepMatInUse(tracker.snapshot(300_000), 300_000)).toBe(true);
+    // Totals are untouched by visibility.
+    expect(tracker.snapshot(500_000)).toMatchObject({ sessionSteps: 2, seenThisSession: true });
+  });
+
+  it('a restored session keeps its totals but does not put the card back by itself', () => {
+    const tracker = new PressureMatActivityTracker('step-mat', 'mat-1');
+    tracker.restore({ sessionSteps: 40, sessionStomps: 3, seenThisSession: true, engaged: true });
+    const snap = tracker.snapshot(10_000);
+    expect(snap).toMatchObject({ sessionSteps: 40, sessionStomps: 3, lastActivityAt: null });
+    expect(isStepMatInUse(snap, 10_000)).toBe(false);
+  });
+});

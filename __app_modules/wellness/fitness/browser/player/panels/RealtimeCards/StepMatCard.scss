@@ -56,6 +56,48 @@
     transition: border-color var(--app-transition-normal, 250ms ease), color var(--app-transition-normal, 250ms ease);
   }
 
+  // No rider picked: a solid full-width "Who's stepping?" strip wraps under
+  // the face and numbers so the picker is discoverable from the bike. Solid
+  // fill, no translucency; 48px tall to match the touch minimum (the whole
+  // card is the tap target, the strip names what a tap does).
+  &.step-mat-card--unpicked {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    // Basis 0 keeps the numbers beside the face; only the strip wraps.
+    .device-info { flex: 1 1 0; }
+  }
+
+  .step-mat-card__who {
+    flex: 0 0 100%;
+    box-sizing: border-box;
+    min-height: 48px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px 8px;
+    border-radius: var(--app-radius-md, 8px);
+    background: zones.$zone-cool;
+    color: #0b1a2a;
+  }
+
+  .step-mat-card__who-text {
+    font-size: 1.05rem;
+    font-weight: 800;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .step-mat-card__who-hint {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
   .step-mat-card__glyph {
     display: block;
     width: 38px;

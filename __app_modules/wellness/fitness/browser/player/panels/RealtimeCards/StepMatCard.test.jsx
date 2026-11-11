@@ -64,30 +64,54 @@ describe('StepMatCard', () => {
     expect(document.activeElement).toBe(card);
   });
 
-  it('draws the step-mat glyph, not an equipment photo, when nobody has claimed the mat', () => {
-    const { container } = render(<StepMatCard equipment={{ id: 'step_mat', name: 'Step Mat' }} snapshot={snapshot} />);
-    expect(container.querySelector('.step-mat-card__face [data-glyph="step-mat"]')).toBeTruthy();
-    expect(container.querySelector('.step-mat-card__face img')).toBeNull();
-    expect(container.innerHTML).not.toContain('/img/equipment/equipment');
-  });
-
-  it('shows the claiming rider, and falls back to the glyph if the photo fails', () => {
-    const { container } = render(
-      <StepMatCard equipment={{ id: 'step_mat', name: 'Step Mat' }} snapshot={snapshot} assignedUserId="user_2" />
-    );
-    const photo = container.querySelector('.step-mat-card__face img');
-    expect(photo.getAttribute('src')).toMatch(/\/static\/img\/users\/user_2$/);
-    fireEvent.error(photo);
-    expect(container.querySelector('.step-mat-card__face img')).toBeNull();
-    expect(container.querySelector('.step-mat-card__face [data-glyph="step-mat"]')).toBeTruthy();
-  });
-
-  it('uses a photo declared in config for an unclaimed mat', () => {
+  it('asks "Who\'s stepping?" with the mat glyph, never a photo, when nobody has been picked', () => {
     const { container } = render(
       <StepMatCard equipment={{ id: 'step_mat', name: 'Step Mat', image: 'mat.jpg' }} snapshot={snapshot} />
     );
-    expect(container.querySelector('.step-mat-card__face img').getAttribute('src'))
-      .toMatch(/\/static\/img\/equipment\/step_mat$/);
+    const prompt = container.querySelector('.step-mat-card__who');
+    expect(prompt).toBeTruthy();
+    expect(prompt.textContent).toMatch(/who.s stepping\?/i);
+    expect(container.querySelector('.step-mat-card__face [data-glyph="step-mat"]')).toBeTruthy();
+    expect(container.querySelector('.step-mat-card').className).toContain('step-mat-card--unpicked');
+    expect(container.querySelector('.step-mat-card__face img')).toBeNull();
+    expect(container.querySelector('.step-mat-card__who img')).toBeNull();
+    expect(screen.getByRole('button', { name: /who.s stepping\? Tap to pick/i })).toBeTruthy();
+  });
+
+  it('a plain tap on an unpicked card opens the picker', () => {
+    render(<StepMatCard equipment={{ name: 'Step Mat' }} snapshot={snapshot}
+      participants={[{ id: 'user_2', displayLabel: 'User_2' }]} />);
+    const card = screen.getByRole('button', { name: /who.s stepping/i });
+    fireEvent.pointerDown(card);
+    fireEvent.pointerUp(card);
+    fireEvent.click(card);
+    expect(screen.getByRole('dialog', { name: 'Choose who is stepping' })).toBeTruthy();
+  });
+
+  it('shows the picked rider; tapping the face opens the picker to change or release them', () => {
+    const onAssign = vi.fn();
+    const { container } = render(
+      <StepMatCard equipment={{ id: 'step_mat', name: 'Step Mat' }} snapshot={snapshot} assignedUserId="user_2"
+        participants={[{ id: 'user_2', displayLabel: 'User_2' }]} onAssign={onAssign} />
+    );
+    expect(container.querySelector('.step-mat-card__who')).toBeNull();
+    const photo = container.querySelector('.step-mat-card__face img');
+    expect(photo.getAttribute('src')).toMatch(/\/static\/img\/users\/user_2$/);
+    fireEvent.pointerDown(photo);
+    fireEvent.pointerUp(photo);
+    fireEvent.click(photo);
+    expect(screen.getByRole('dialog', { name: 'Choose who is stepping' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Unassign' }));
+    expect(onAssign).toHaveBeenCalledWith(null);
+  });
+
+  it('falls back to the glyph if the picked rider photo fails', () => {
+    const { container } = render(
+      <StepMatCard equipment={{ id: 'step_mat', name: 'Step Mat' }} snapshot={snapshot} assignedUserId="user_2" />
+    );
+    fireEvent.error(container.querySelector('.step-mat-card__face img'));
+    expect(container.querySelector('.step-mat-card__face img')).toBeNull();
+    expect(container.querySelector('.step-mat-card__face [data-glyph="step-mat"]')).toBeTruthy();
   });
 
   it.each([
@@ -101,7 +125,7 @@ describe('StepMatCard', () => {
     expect(pill.getAttribute('data-state')).toBe(state);
     expect(pill.textContent).toBe(label);
     expect(container.querySelector('.fitness-device').className).toContain(`step-mat-card--${state}`);
-    expect(screen.getByRole('button', { name: new RegExp(`stomps\\. ${label}\\. Tap`) })).toBeTruthy();
+    expect(screen.getByRole('button', { name: new RegExp(`stomps\\. ${label}\\. Who.s stepping\\? Tap`) })).toBeTruthy();
   });
 
   it('lays out SPM, steps and stomps as one row of labelled numbers', () => {

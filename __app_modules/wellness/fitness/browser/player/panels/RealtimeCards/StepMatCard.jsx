@@ -24,9 +24,9 @@ const STATES = {
 const count = (value) => (Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value))) : 0);
 
 /**
- * The card's face: the rider who claimed the mat, else a photo config declares
- * for the mat (`image:`), else the drawn step-mat glyph. A photo that fails to
- * load falls back to the glyph too.
+ * The card's face once a rider has been picked on the card: their photo, or
+ * the drawn step-mat glyph if it fails to load. With nobody picked it is the
+ * glyph — a mat cannot sense who is on it.
  */
 function MatFace({ src, state }) {
   const [failed, setFailed] = useState(false);
@@ -43,6 +43,20 @@ function MatFace({ src, state }) {
 }
 
 MatFace.propTypes = { src: PropTypes.string, state: PropTypes.string };
+
+/**
+ * With no rider picked the card carries a solid full-width "Who's stepping?"
+ * strip under its numbers, so the picker is discoverable from the bike. The
+ * whole card is the tap target; the strip says what a tap does.
+ */
+function WhoPrompt() {
+  return (
+    <div className="step-mat-card__who">
+      <span className="step-mat-card__who-text">Who's stepping?</span>
+      <span className="step-mat-card__who-hint">Tap to pick</span>
+    </div>
+  );
+}
 
 function UserPicker({ open, participants, currentUserId, onAssign, onClose, onRelease }) {
   const panelRef = useRef(null);
@@ -143,7 +157,7 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
   const openPicker = () => {
     clearHold();
     if (!held.current) {
-      logger.debug('assignment-picker-opened', { assignedUserId: assignedUserId || null });
+      logger.info('assignment-picker-opened', { assignedUserId: assignedUserId || null });
       setPickerOpen(true);
     }
     held.current = false;
@@ -157,10 +171,12 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
   const rate = count(snapshot.stepsPerMinute);
   const steps = count(snapshot.sessionSteps);
   const stomps = count(snapshot.sessionStomps);
-  const equipmentId = equipment?.id || snapshot.equipmentId;
-  const faceSrc = assignedUserId
-    ? DaylightMediaPath(`/static/img/users/${assignedUserId}`)
-    : (equipment?.image ? DaylightMediaPath(`/static/img/equipment/${equipmentId}`) : null);
+  // No config photo for an unpicked mat: the only face is a person someone
+  // explicitly picked on this card in this session.
+  const faceSrc = assignedUserId ? DaylightMediaPath(`/static/img/users/${assignedUserId}`) : null;
+  const tapHint = assignedUserId
+    ? `Stepping: ${assignedUserId}. Tap to change`
+    : "Who's stepping? Tap to pick";
 
   return (
     <>
@@ -168,12 +184,13 @@ export function StepMatCard({ equipment, snapshot, participants = [], assignedUs
         <BaseRealtimeCard
           device={device}
           deviceName={name}
-          className={`step-mat-card step-mat-card--${state}`}
+          className={`step-mat-card step-mat-card--${state}${assignedUserId ? '' : ' step-mat-card--unpicked'}`}
           isInactive={!snapshot.active}
           isClickable
           onClick={openPicker}
           avatar={<MatFace src={faceSrc} state={state} />}
-          ariaLabel={`${name}: ${rate} steps per minute, ${steps} steps, ${stomps} stomps. ${status}. Tap to assign; hold to release mat.`}
+          progressBar={assignedUserId ? null : <WhoPrompt />}
+          ariaLabel={`${name}: ${rate} steps per minute, ${steps} steps, ${stomps} stomps. ${status}. ${tapHint}; hold to release mat.`}
         >
           <div className="step-mat-card__state" data-state={state}>
             <span className="step-mat-card__state-dot" aria-hidden="true" />

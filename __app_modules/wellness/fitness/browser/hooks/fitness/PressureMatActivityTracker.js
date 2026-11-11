@@ -1,5 +1,29 @@
 export const PRESSURE_MAT_STARTUP_WINDOW_MS = 10_000;
 
+/**
+ * How long a step mat may sit quiet before its realtime card leaves the
+ * sidebar / fullscreen vitals. The card is a live instrument, not a record:
+ * session totals and attribution stay in the session record either way, and
+ * the next step brings the card back.
+ */
+export const STEP_MAT_CARD_IDLE_MS = 90_000;
+
+/**
+ * Whether a mat is in use right now: stepped on this session, with a step or
+ * stomp inside STEP_MAT_CARD_IDLE_MS of `now`. A restored session carries
+ * totals but no activity timestamps, so it cannot bring the card back alone.
+ */
+export const isStepMatInUse = (snapshot, now = Date.now()) => {
+  const at = Number(snapshot?.lastActivityAt);
+  if (!snapshot?.seenThisSession || !Number.isFinite(at) || snapshot.lastActivityAt == null) return false;
+  return now - at <= STEP_MAT_CARD_IDLE_MS;
+};
+
+/** Whether an equipment config entry describes a pressure (step) mat. */
+export const isPressureMatEntry = (entry) => entry?.type === 'pressure_mat'
+  || entry?.type === 'step_mat'
+  || entry?.sensor?.type === 'pressure_mat';
+
 const finiteNonNegative = (value) => {
   if (value == null || value === '') return null;
   const number = Number(value);
@@ -269,6 +293,8 @@ export class PressureMatActivityTracker {
       lastSeenAt: this.lastSeenAt,
       lastStepAt: this.lastStepAt,
       lastStompAt: this.lastStompAt,
+      lastActivityAt: (this.lastStepAt == null && this.lastStompAt == null)
+        ? null : Math.max(this.lastStepAt ?? -Infinity, this.lastStompAt ?? -Infinity),
       users,
       latest: this.latest ? { ...this.latest } : null,
     };

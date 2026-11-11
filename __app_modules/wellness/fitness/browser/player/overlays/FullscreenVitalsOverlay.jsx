@@ -12,6 +12,7 @@ import { resolveUserZone } from "./resolveUserZone.js";
 import { lookupZoneProgress } from "../../domain/zoneProgressIndex.js";
 import "./FullscreenVitalsOverlay.scss";
 import { fullscreenVitalsLayout } from "./fullscreenVitalsLayout.js";
+import { isStepMatInUse } from "../../hooks/fitness/PressureMatActivityTracker.js";
 
 const RPM_COLOR_MAP = {
   red: '#ff6b6b',
@@ -195,12 +196,15 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
     });
   }, [rpmDevices, equipmentMap, equipment, deviceConfiguration?.cadence]);
 
-  // Same admission rule as the panel card: a mat that has not been stepped on
-  // this session is clutter, not information.
+  // Same admission rule as the panel card: a mat is shown only while it is in
+  // use (a step or stomp within STEP_MAT_CARD_IDLE_MS). Re-judged on each
+  // timeline tick so a mat put away leaves without a new packet arriving.
+  const timelineTicks = Number(fitnessCtx?.timelineTimebase?.tickCount) || 0;
   const matItems = useMemo(() => {
     const session = fitnessCtx?.fitnessSessionInstance || null;
+    const now = Date.now();
     return Object.values(pressureMatActivities || {})
-      .filter((snapshot) => snapshot?.seenThisSession)
+      .filter((snapshot) => isStepMatInUse(snapshot, now))
       .map((snapshot) => {
         const equipmentEntry = (Array.isArray(equipment) ? equipment : [])
           .find((entry) => String(entry?.id) === String(snapshot.equipmentId)) || null;
@@ -208,21 +212,19 @@ const FullscreenVitalsOverlay = ({ visible = false, governanceStateOverride = un
         return {
           equipmentId: snapshot.equipmentId,
           name: equipmentEntry?.name || 'Step Mat',
-          // The mat belongs to whoever claimed it. With nobody claiming it, a
-          // photo is shown only when config declares one (`image:`); otherwise
-          // the tile draws its own step-mat glyph.
+          // A mat cannot sense who is on it: the face is a person only when
+          // someone picked them on the card this session; otherwise the tile
+          // draws its own step-mat glyph.
           avatarSrc: assignedUserId
             ? DaylightMediaPath(`/static/img/users/${assignedUserId}`)
-            : (equipmentEntry?.image
-              ? DaylightMediaPath(`/static/img/equipment/${snapshot.equipmentId}`)
-              : null),
+            : null,
           stepsPerMinute: Number(snapshot.stepsPerMinute) || 0,
           sessionSteps: Number(snapshot.sessionSteps) || 0,
           sessionStomps: Number(snapshot.sessionStomps) || 0,
           isInactive: !snapshot.active || !snapshot.online,
         };
       });
-  }, [pressureMatActivities, equipment, fitnessCtx?.fitnessSessionInstance]);
+  }, [pressureMatActivities, equipment, fitnessCtx?.fitnessSessionInstance, timelineTicks]);
 
   const hasItems = Boolean(hrItems.length || rpmItems.length || matItems.length);
   useLayoutEffect(() => {

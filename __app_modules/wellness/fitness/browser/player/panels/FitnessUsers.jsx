@@ -8,6 +8,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import RpmDeviceAvatar from "../../components/RpmDeviceAvatar.jsx";
 import { VibrationCard } from "./RealtimeCards/VibrationCard.jsx";
 import { StepMatCard } from "./RealtimeCards/StepMatCard.jsx";
+import { isStepMatInUse, STEP_MAT_CARD_IDLE_MS } from "../../hooks/fitness/PressureMatActivityTracker.js";
 import { useZoneProfiles } from "../../hooks/useZoneProfiles.js";
 import { cssColorForStrap, hashColorForDevice, strapLabel } from "../../lib/strapColors.js";
 import HeartIcon from "../../shared/HeartIcon.jsx";
@@ -542,6 +543,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return luminance > CONFIG.color.luminanceThreshold ? CONFIG.color.fallbackTextDark : CONFIG.color.fallbackTextLight;
   };
 
+  // The sidebar's own clock (the 5s timeline tick) re-judges step-mat idleness.
+  const stepMatClockTick = Number(timelineTimebase?.tickCount) || 0;
+  const stepMatShownRef = React.useRef(new Set());
   useEffect(() => {
     // Phase 1 SSOT: Use activeHeartRateParticipants directly from context
     // No more inline roster-to-device derivation - that logic now lives in FitnessContext
@@ -582,8 +586,32 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     if (rpmDevicesCopy.length > 0) {
       combined.push({ type: 'rpm-group', devices: rpmDevicesCopy });
     }
+    // A step mat is a live instrument: its card shows only while the mat is in
+    // use (a step or stomp within STEP_MAT_CARD_IDLE_MS) and leaves once it has
+    // been put away. Judged against the clock on every timeline tick, so it
+    // disappears without a new packet. Totals stay in the session record.
+    const now = Date.now();
+    const shownMats = stepMatShownRef.current;
+    const nextShown = new Set();
+    Object.values(pressureMatActivities).forEach((snapshot) => {
+      if (!snapshot?.equipmentId) return;
+      const id = String(snapshot.equipmentId);
+      const inUse = isStepMatInUse(snapshot, now);
+      if (inUse) nextShown.add(id);
+      if (inUse !== shownMats.has(id) && (inUse || snapshot.seenThisSession)) {
+        getLogger().child({ component: 'fitness-users' }).debug('fitness.stepmat.card', {
+          equipmentId: id,
+          state: inUse ? 'shown' : 'hidden',
+          lastActivityAt: snapshot.lastActivityAt ?? null,
+          idleMs: snapshot.lastActivityAt != null ? now - snapshot.lastActivityAt : null,
+          idleWindowMs: STEP_MAT_CARD_IDLE_MS,
+          sessionSteps: snapshot.sessionSteps,
+        });
+      }
+    });
+    stepMatShownRef.current = nextShown;
     Object.values(pressureMatActivities)
-      .filter((snapshot) => snapshot?.seenThisSession)
+      .filter((snapshot) => snapshot?.equipmentId && nextShown.has(String(snapshot.equipmentId)))
       .forEach((snapshot) => {
         const equipmentEntry = (Array.isArray(equipment) ? equipment : [])
           .find((entry) => String(entry?.id) === String(snapshot.equipmentId));
@@ -593,7 +621,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     setSortedDevices(combined);
     // resolveCanonicalUserName/lookupZoneProgress dropped from deps with the HR
     // comparator that used them. equipmentMap was already unused here.
-  }, [equipmentMap, equipment, activeHeartRateParticipants, contextRpmDevices, contextEquipmentDevices, pressureMatActivities]);
+  }, [equipmentMap, equipment, activeHeartRateParticipants, contextRpmDevices, contextEquipmentDevices, pressureMatActivities, stepMatClockTick]);
 
   // Card size by fit (riderListDensity.js). Re-picked when anything that moves
   // the list's height changes: the roster, the zone headers, the cards still in

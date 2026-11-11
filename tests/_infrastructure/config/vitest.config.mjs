@@ -71,6 +71,8 @@ export default {
       'vexflow': path.join(frontendNodeModules, 'vexflow'),
       // The root copy is CJS and require()s a `react` that only frontend has.
       '@tabler/icons-react': path.join(frontendNodeModules, '@tabler/icons-react'),
+      // Same CJS trap from a worktree: the root react-flip-move require()s `react`.
+      'react-flip-move': path.join(frontendNodeModules, 'react-flip-move'),
       // Same for the charts (money/finance widgets, pulled in via the widget registry).
       'highcharts-react-official': path.join(frontendNodeModules, 'highcharts-react-official'),
       'highcharts': path.join(frontendNodeModules, 'highcharts'),

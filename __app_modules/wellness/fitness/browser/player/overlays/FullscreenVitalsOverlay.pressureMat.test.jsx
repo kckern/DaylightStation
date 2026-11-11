@@ -25,6 +25,7 @@ const matSnapshot = (overrides = {}) => ({
   active: true,
   engaged: true,
   seenThisSession: true,
+  lastActivityAt: Date.now(),
   sessionSteps: 123,
   sessionStomps: 12,
   stepsPerMinute: 48,
@@ -84,7 +85,7 @@ describe('FullscreenVitalsOverlay — pressure mat group', () => {
     expect(container.querySelector('.step-mat-tile [data-glyph="step-mat"]')).toBeTruthy();
   });
 
-  it('shows a declared equipment photo for an unclaimed mat', () => {
+  it('draws the mat glyph, not a declared equipment photo, for an unpicked mat', () => {
     mockContext.mockReturnValue(contextWith(
       { step_mat: matSnapshot() },
       {
@@ -93,8 +94,8 @@ describe('FullscreenVitalsOverlay — pressure mat group', () => {
       }
     ));
     const { container } = render(<FullscreenVitalsOverlay visible />);
-    expect(container.querySelector('.step-mat-tile__avatar').getAttribute('src'))
-      .toBe('/static/img/equipment/step_mat');
+    expect(container.querySelector('.step-mat-tile__avatar')).toBeNull();
+    expect(container.querySelector('.step-mat-tile [data-glyph="step-mat"]')).toBeTruthy();
   });
 
   it('dims a mat whose sensor has gone offline', () => {
@@ -103,5 +104,14 @@ describe('FullscreenVitalsOverlay — pressure mat group', () => {
     }));
     const { container } = render(<FullscreenVitalsOverlay visible />);
     expect(container.querySelector('.step-mat-tile').className).toContain('inactive');
+  });
+
+  it('omits a mat that has been quiet past the idle window, or only restored', () => {
+    mockContext.mockReturnValue(contextWith({
+      step_mat: matSnapshot({ lastActivityAt: Date.now() - 91_000, stepsPerMinute: 0 }),
+      other_mat: matSnapshot({ equipmentId: 'other_mat', lastActivityAt: null, stepsPerMinute: 0 }),
+    }));
+    const { container } = render(<FullscreenVitalsOverlay visible />);
+    expect(container.querySelector('.step-mat-tile')).toBeNull();
   });
 });

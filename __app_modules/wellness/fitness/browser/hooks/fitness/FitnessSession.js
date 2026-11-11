@@ -15,7 +15,7 @@ import { moveStintSeries } from "./stintTransfer.js";
 import { toLiveSeries } from "./liveSeriesKeys.js";
 import { DeviceEventRouter } from "./DeviceEventRouter.js";
 import { VibrationActivityTracker } from "./VibrationActivityTracker.js";
-import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS } from "./PressureMatActivityTracker.js";
+import { PressureMatActivityTracker, PRESSURE_MAT_STARTUP_WINDOW_MS, isPressureMatEntry } from "./PressureMatActivityTracker.js";
 import { EndedDeviceHold } from "./EndedDeviceHold.js";
 import { findUnclosedMedia } from "./closeOpenMedia.js";
 import { findOpenChallenges } from "./closeOpenChallenges.js";
@@ -230,6 +230,10 @@ export class FitnessSession {
     this._pressureMatEquipmentByHardwareId = new Map(); // relay mat id -> equipment id
     this._sessionMetadata = {};
     this._equipmentRider = new Map(); // equipmentId -> userId (current claimed rider; null/absent = unclaimed)
+    // equipmentId -> { userId, sessionId } for a rider picked on an equipment
+    // card's touchscreen picker. A step mat cannot sense who is on it, so its
+    // rider counts only with a pick made in the CURRENT session.
+    this._riderPicks = new Map();
     this._equipmentById = new Map(); // equipmentId -> equipment config entry (cycle challenge reverse lookup)
     this._zoneReadingEligible = new Map(); // userId -> current accepted real sample
     this._deviceHrSampleCount = new Map(); // deviceId -> real readings since (re)connect, for startup discard
@@ -295,6 +299,12 @@ export class FitnessSession {
     this._deviceRouter = new DeviceEventRouter();
     this._deviceRouter.setDeviceManager(this.deviceManager);
     this._deviceRouter.register('rider_select', (payload) => {
+      // Physical rider selectors belong to bikes. A step mat's rider is only
+      // ever the card picker's (getEquipmentRider ignores anything else).
+      if (this._isPressureMatEquipment(payload.equipmentId)) {
+        getLogger().info('fitness.stepmat.rider', { action: 'ignored', source: 'rider_select', equipmentId: String(payload.equipmentId), userId: payload.userId || null });
+        return null;
+      }
       this.setEquipmentRider(payload.equipmentId, payload.userId);
       return null; // no device object; claim state lives on the session
     });
@@ -1240,6 +1250,12 @@ export class FitnessSession {
       const equipmentId = entry?.id == null ? null : String(entry.id).trim();
       const rider = typeof entry?.rider === 'string' ? entry.rider.trim() : '';
       if (!equipmentId || !rider) return;
+      // A step mat cannot know who is on it: a config default would put a face
+      // on its card and credit that person's steps without anyone choosing.
+      if (isPressureMatEntry(entry) || this._isPressureMatEquipment(equipmentId)) {
+        getLogger().info('fitness.stepmat.rider', { action: 'config-default-ignored', equipmentId, userId: rider });
+        return;
+      }
       if (this._equipmentRider.has(equipmentId)) return;
       this._equipmentRider.set(equipmentId, rider);
       getLogger().info('fitness.rider.seeded_from_config', { equipmentId, userId: rider });
@@ -1273,9 +1289,7 @@ export class FitnessSession {
     const configuredHardware = new Set();
     equipmentList.forEach((item) => {
       const matId = item?.pressure_mat || item?.pressureMat || item?.sensor?.pressure_mat;
-      const isPressureMat = item?.type === 'pressure_mat'
-        || item?.type === 'step_mat'
-        || item?.sensor?.type === 'pressure_mat';
+      const isPressureMat = isPressureMatEntry(item);
       if (!item?.id || !matId || !isPressureMat) return;
       const equipmentId = String(item.id).trim();
       const hardwareId = String(matId).trim();
@@ -1294,6 +1308,10 @@ export class FitnessSession {
         if (this._equipmentRider.has(previousId)) {
           if (!this._equipmentRider.has(equipmentId)) this._equipmentRider.set(equipmentId, this._equipmentRider.get(previousId));
           this._equipmentRider.delete(previousId);
+        }
+        if (this._riderPicks.has(previousId)) {
+          if (!this._riderPicks.has(equipmentId)) this._riderPicks.set(equipmentId, this._riderPicks.get(previousId));
+          this._riderPicks.delete(previousId);
         }
         this._renamePressureMatSeries(previousId, equipmentId);
         tracker.equipmentId = equipmentId;
@@ -1363,7 +1381,17 @@ export class FitnessSession {
         this._pressureMatEquipmentByHardwareId.set(matId, equipmentId);
       }
       tracker.restore(record, { preserveLive: true });
-      if (record.assignedUserId && !this._equipmentRider.has(equipmentId)) this._equipmentRider.set(equipmentId, String(record.assignedUserId));
+      // Only a pick made on the card in THIS session survives a restore; an
+      // assignee from a config default or an older record restores no rider.
+      const pickedHere = record.assignedUserId && this.sessionId
+        && String(record.riderPickedInSession || '') === String(this.sessionId);
+      if (pickedHere && !this._equipmentRider.has(equipmentId)) {
+        this._equipmentRider.set(equipmentId, String(record.assignedUserId));
+        this._riderPicks.set(equipmentId, { userId: String(record.assignedUserId), sessionId: this.sessionId });
+        getLogger().info('fitness.stepmat.rider', { action: 'picked', source: 'restore', equipmentId, userId: String(record.assignedUserId), sessionId: this.sessionId });
+      } else if (record.assignedUserId) {
+        getLogger().info('fitness.stepmat.rider', { action: 'restore-dropped', equipmentId, userId: String(record.assignedUserId), sessionId: this.sessionId, pickedIn: record.riderPickedInSession || null });
+      }
       if (equipmentId !== record.equipmentId) this._renamePressureMatSeries(record.equipmentId, equipmentId);
       getLogger().info('fitness.pressure_mat.restored', { equipmentId, matId, sessionId: this.sessionId, steps: tracker.sessionSteps, stomps: tracker.sessionStomps });
     });
@@ -1471,13 +1499,52 @@ export class FitnessSession {
    * @returns {string|null}
    */
   getEquipmentRider(equipmentId) {
-    return this._equipmentRider?.get(String(equipmentId)) || null;
+    const eid = String(equipmentId);
+    const rider = this._equipmentRider?.get(eid) || null;
+    if (!rider || !this._isPressureMatEquipment(eid)) return rider;
+    return this._isCurrentRiderPick(eid, rider) ? rider : null;
   }
 
-  // Activity-neutral aliases for touchscreen assignment. Existing rider APIs
-  // remain the compatibility contract for physical cycle selectors.
+  _isCurrentRiderPick(equipmentId, userId) {
+    const pick = this._riderPicks?.get(String(equipmentId));
+    return Boolean(pick && this.sessionId && pick.sessionId === this.sessionId && pick.userId === String(userId));
+  }
+
+  _isPressureMatEquipment(equipmentId) {
+    if (equipmentId == null) return false;
+    const eid = String(equipmentId);
+    if (this._pressureMatTrackers?.has(eid) || this._pressureMatEquipmentByHardwareId?.has(eid)) return true;
+    return this.getEquipmentCatalog().some((entry) => String(entry?.id) === eid && isPressureMatEntry(entry));
+  }
+
+  /** equipmentId -> effective rider (a mat's only with an in-session pick). */
+  _equipmentRiderMap() {
+    const map = {};
+    this._equipmentRider?.forEach((_, equipmentId) => {
+      const userId = this.getEquipmentRider(equipmentId);
+      if (userId) map[equipmentId] = userId;
+    });
+    return map;
+  }
+
+  // Activity-neutral aliases for touchscreen assignment (the equipment card's
+  // picker). Existing rider APIs remain the compatibility contract for
+  // physical cycle selectors. A pick here is what lets a step mat have a rider.
   setEquipmentUser(equipmentId, userId) {
-    return this.setEquipmentRider(equipmentId, userId);
+    if (!equipmentId) return undefined;
+    const eid = String(equipmentId);
+    const isMat = this._isPressureMatEquipment(eid);
+    const previous = isMat ? this.getEquipmentRider(eid) : null;
+    const result = this.setEquipmentRider(eid, userId);
+    if (userId) this._riderPicks.set(eid, { userId: String(userId), sessionId: this.sessionId });
+    else this._riderPicks.delete(eid);
+    if (isMat) {
+      getLogger().info('fitness.stepmat.rider', {
+        action: userId ? 'picked' : 'cleared', source: 'card', equipmentId: eid,
+        userId: userId ? String(userId) : null, previousUserId: previous, sessionId: this.sessionId,
+      });
+    }
+    return result;
   }
 
   getEquipmentUser(equipmentId) {
@@ -2658,10 +2725,7 @@ export class FitnessSession {
     const equipmentCadenceMap = this.getEquipmentCadenceMap();
 
     // Build equipmentRiderMap: equipmentId -> claimed userId (or absent if unclaimed)
-    const equipmentRiderMap = {};
-    this._equipmentRider.forEach((userId, equipmentId) => {
-      if (userId) equipmentRiderMap[equipmentId] = userId;
-    });
+    const equipmentRiderMap = this._equipmentRiderMap();
     const activityMetricMap = this.getPressureMatSnapshots();
 
     this.governanceEngine.evaluate({
@@ -3210,6 +3274,13 @@ export class FitnessSession {
     this._vibrationTrackers.forEach(t => t.reset());
     this._pressureMatTrackers.forEach(t => t.reset());
     this._sessionMetadata = {};
+    // A step-mat pick belongs to the session that made it.
+    this._riderPicks?.forEach((pick, equipmentId) => {
+      if (this._isPressureMatEquipment(equipmentId)) {
+        getLogger().info('fitness.stepmat.rider', { action: 'cleared', source: 'session-end', equipmentId, userId: pick.userId });
+      }
+    });
+    this._riderPicks?.clear();
     this._equipmentRider?.clear();
     // Configured riders are per-session defaults. Seeding used to run only on
     // page load, so after the first session ended the tricycle had no rider and
@@ -3273,6 +3344,7 @@ export class FitnessSession {
     // Clear rider claims
     this._equipmentRider?.clear();
     this._equipmentRider = null;
+    this._riderPicks?.clear();
 
     // Clear zone profile store
     this.zoneProfileStore?.clear();
@@ -3887,7 +3959,11 @@ export class FitnessSession {
             ...this._sessionMetadata,
             pressure_mats: { version: 1, mats: [...this._pressureMatTrackers.values()]
               .filter(tracker => tracker.seenThisSession)
-              .map(tracker => ({ ...tracker.checkpoint(), assignedUserId: this.getEquipmentRider(tracker.equipmentId) })) },
+              .map(tracker => {
+                const assignedUserId = this.getEquipmentRider(tracker.equipmentId);
+                return { ...tracker.checkpoint(), assignedUserId,
+                  riderPickedInSession: assignedUserId ? this.sessionId : null };
+              }) },
             zone_trust: this._zoneTrustSnapshot(),
           },
           voiceMemos: this.voiceMemoManager.summary,

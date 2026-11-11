@@ -18,6 +18,9 @@ beforeAll(async () => {
       let root;window.renderOverlay=()=>{root=createRoot(document.getElementById('content'));root.render(React.createElement(React.Fragment,null,React.createElement('div',{className:'fitness-video-shell',style:{position:'relative',width:'100%',height:'100%'}},React.createElement(Overlay,{visible:true})),React.createElement('button',{type:'button',className:'fitness-player__voice-memo-fab','aria-label':'Record voice memo'}))); };window.unmountOverlay=()=>root.unmount();`, resolveDir: frontend, loader: 'jsx' },
     bundle: true, write: false, platform: 'browser', format: 'iife',
     alias: { '@': path.join(frontend, 'src') },
+    // From a worktree, files under __app_modules/ resolve bare imports upward
+    // to the ROOT node_modules, which has no react; frontend's tree does.
+    nodePaths: [path.join(frontend, 'node_modules')],
     define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env': '{"MODE":"test"}' },
     plugins: [{ name: 'vitals-test-boundaries', setup(b) {
       b.onResolve({ filter: /FitnessContext\.jsx$/ }, () => ({ path: 'context', namespace: 'mock' }));
@@ -46,7 +49,7 @@ async function mount(width, height, people = 6, equipment = 2) {
       heartRateDevices: Array.from({ length: people }, (_, i) => ({ deviceId: `sensor-${i}`, heartRate: 130, connectionState: 'connected' })),
       getUserByDevice: id => ({ id, name: id }),
       rpmDevices: Array.from({ length: Math.max(0, equipment - 1) }, (_, i) => ({ deviceId: `bike-${i}`, cadence: 80 })),
-      pressureMatActivities: equipment ? { mat: { equipmentId: 'mat', seenThisSession: true, active: true, online: true, stepsPerMinute: 50, sessionSteps: 125, sessionStomps: 10 } } : {},
+      pressureMatActivities: equipment ? { mat: { equipmentId: 'mat', seenThisSession: true, lastActivityAt: Date.now(), active: true, online: true, stepsPerMinute: 50, sessionSteps: 125, sessionStomps: 10 } } : {},
     };
   }, { people, equipment });
   await page.addScriptTag({ content: script });

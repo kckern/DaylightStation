@@ -282,14 +282,41 @@ the fastest live sensor supplies the reading.
 ### Step-mat lifecycle
 
 The pressure mat is dormant until the first classified session step. That first
-step latches the activity as engaged, makes the realtime card visible for the rest
-of the session, and activates any enabled `activity_rate` requirement. The card is
-placed beside the RPM equipment and shows rolling SPM, session steps, and session
-stomps. Assignment is optional: no tap is required for tracking or visibility.
-Tap (or Enter/Space) to assign an active HR participant. The picker also exposes
-“Release mat”; holding the card is a shortcut to the same confirmation. Release
-preserves all totals and temporarily disengages continuous mat governance. The
-next physical step re-engages it; this is not a whole-session opt-out.
+step latches the activity as engaged and activates any enabled `activity_rate`
+requirement. The realtime card is a live instrument, not a record: it shows only
+while the mat is **in use** — from the first step or stomp until there has been
+none for `STEP_MAT_CARD_IDLE_MS` (90 s, `PressureMatActivityTracker.js`), and it
+comes back on the next step. The rule is `isStepMatInUse(snapshot, now)` on the
+snapshot's `lastActivityAt` (latest step or stomp); the sidebar and the
+fullscreen vitals re-judge it on each 5 s timeline tick, so a mat that is put
+away leaves without a new packet arriving. A restored session (redeploy, browser
+restore) carries totals but no activity timestamps, so it never brings the card
+back by itself. Session totals and attribution are unaffected and stay in the
+session record. Visibility changes log `fitness.stepmat.card` (`shown`/`hidden`,
+debug). The card is placed beside the RPM equipment and shows rolling SPM,
+session steps, and session stomps.
+
+**Rider.** A step mat cannot sense who is on it, so it has a rider — a face on
+its card and per-person step credit — only when someone explicitly picks one on
+the card's picker in the current session (`FitnessSession.setEquipmentUser`,
+recorded in `_riderPicks` with the session id). Every other path is refused for
+mats: an equipment `rider:` config default (bikes keep theirs), a physical
+`rider_select` broadcast, and a restored assignee unless the checkpoint's
+`riderPickedInSession` equals the restored session id. `getEquipmentRider` is the
+single gate, so governance (`equipmentRiderMap`), attribution and both card
+surfaces see the same answer. The pick clears when the session ends. Picks,
+clears and refusals log `fitness.stepmat.rider` (`picked`, `cleared`,
+`ignored`, `config-default-ignored`, `restore-dropped`).
+
+With nobody picked, the face is the step-mat glyph and a solid full-width
+**"Who's stepping? — Tap to pick"** strip (48 px, the touch minimum) sits under
+the numbers, so the picker is discoverable from the bike. A plain tap anywhere on
+the card (or Enter/Space) opens the picker; with a rider picked, the face is
+their photo and the same tap opens the picker to change them or Unassign. The
+picker also exposes “Release mat”; holding the card is a shortcut to the same
+confirmation. Release preserves all totals and temporarily disengages continuous
+mat governance. The next physical step re-engages it; this is not a
+whole-session opt-out.
 
 Card layout (`player/panels/RealtimeCards/StepMatCard.jsx`): a rounded-square
 face on the left, then two rows. Row one is the equipment name and a state pill
@@ -300,11 +327,11 @@ the state colours the pill and the face border. The card does not dim as a
 whole when nobody is stepping: only the SPM number recedes, so totals and
 state stay readable.
 
-The face shows the rider who claimed the mat. Unclaimed, it shows the photo
-config declares for the mat (`image:` on the equipment entry) or, with none
-declared, the drawn step-mat glyph (`shared/EquipmentGlyph.jsx`, a mat with two
-footprints). A photo that fails to load falls back to the same glyph. The
-fullscreen tile (`StepMatVitalsTile`) follows the same rule. The face is square
+The face shows the rider picked on the card this session. Unpicked, it is the
+drawn step-mat glyph (`shared/EquipmentGlyph.jsx`, a mat with two footprints);
+a config `image:` is not used as a face. A photo that fails to load falls back
+to the same glyph. The fullscreen tile (`StepMatVitalsTile`) follows the same
+rule, and the same in-use window. The face is square
 on both surfaces because circles there mean heart rate and RPM.
 
 Equipment with no picture of its own falls back to a neutral dumbbell mark
