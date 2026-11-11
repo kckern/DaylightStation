@@ -114,14 +114,6 @@ const SeasonInfo = ({ item, type = 'episode', showSummary = null }) => {
  */
 const episodeKey = (ep) => (ep ? String(ep.plex || ep.id || '') || null : null);
 
-/** A season's display name: its title, else "Season N", else "Season". */
-const seasonNameOf = (parent = {}) => {
-  const raw = parent.title || parent.name;
-  if (raw && String(raw).trim()) return String(raw);
-  const n = Number.isFinite(parent.index) ? parent.index : (Number.isFinite(parent.number) ? parent.number : parseInt(parent.id, 10));
-  return Number.isFinite(n) ? `Season ${n}` : 'Season';
-};
-
 // Utility function to format duration from seconds to mm:ss
 const formatDuration = (seconds) => {
   if (!seconds || seconds <= 0) return null;
@@ -1084,15 +1076,6 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     setSelectedEpisode(episode);
     getLogger().child({ component: 'FitnessShow' }).debug('fitness.show.episode_focus', { showId: showIdRef.current, episode: episode.plex || episode.id });
   }, []);
-  // Household riders (never guests) for "who's done it" and season coverage.
-  const household = useMemo(() => {
-    const primary = fitnessContext.usersConfig?.primary;
-    return (Array.isArray(primary) ? primary : [])
-      .filter((u) => u && u.id)
-      .map((u) => ({ id: u.id, displayName: u.name || u.id }));
-  }, [fitnessContext.usersConfig]);
-  const activeRiderIds = (fitnessSessionInstance?.roster || []).map((e) => e?.id || e?.profileId).filter(Boolean);
-
   const filteredItems = useMemo(() => {
     const list = (seasons.length > 1 && activeSeasonId)
       ? items.filter(ep => String(gridGroupIdOf(ep)) === String(activeSeasonId))
@@ -1109,13 +1092,18 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
     });
   }, [items, seasons, activeSeasonId]);
 
-  // The mosaic shows the focused episode's season as the grid has it (a
-  // playlist's current page of 20 included).
-  const panelSeasonEpisodes = useMemo(() => {
-    if (!panelEpisode) return [];
-    const same = filteredItems.filter((ep) => String(gridGroupIdOf(ep)) === String(gridGroupIdOf(panelEpisode)));
-    return same.length ? same : filteredItems;
-  }, [filteredItems, panelEpisode]);
+  // Household riders, for the panel's history names (the session log keeps
+  // whatever name a rider had at the time).
+  const household = useMemo(() => {
+    const primary = fitnessContext.usersConfig?.primary;
+    return (Array.isArray(primary) ? primary : [])
+      .filter((u) => u && u.id)
+      .map((u) => ({ id: u.id, displayName: u.name || u.id }));
+  }, [fitnessContext.usersConfig]);
+  // The focused episode's season, for the panel's poster.
+  const panelSeason = panelEpisode
+    ? ((parentsMap && parentsMap[panelEpisode.parentId]) || seasons.find((x) => String(x.id) === String(panelEpisode.parentId)) || null)
+    : null;
   const playFromPanel = (episode, mode) => {
     // A locked (sequential) episode is only ever reached through its unlock prompt.
     if (lockedEpisodeIds.has(episode.plex || episode.id)) {
@@ -1364,14 +1352,10 @@ const FitnessShow = ({ showId: rawShowId, episodeId: preSelectEpisodeId, onBack:
               showTitle={panelEpisode.grandparentTitle && panelEpisode.groupId != null
                 ? panelEpisode.grandparentTitle
                 : info?.title}
-              seasonName={seasonNameOf((parentsMap && parentsMap[panelEpisode.parentId]) || seasons.find((x) => x.id === panelEpisode.parentId) || {})}
-              seasonEpisodes={panelSeasonEpisodes}
+              seasonImage={panelSeason?.thumbnail || panelSeason?.image || null}
               historyFor={historyFor}
               household={household}
-              activeIds={activeRiderIds}
               resumeSeconds={isResumable && !panelEpisode.isWatched ? deriveResumeMeta(panelEpisode).resolvedSeconds : 0}
-              formatDate={formatWatchedDate}
-              onFocus={focusEpisode}
               onPlay={playFromPanel}
               locked={lockedEpisodeIds.has(panelEpisode.plex || panelEpisode.id)}
               onUnlock={isLockActive('skip_content') ? (ep) => handleLockedEpisodeUnlockTap(ep) : null}

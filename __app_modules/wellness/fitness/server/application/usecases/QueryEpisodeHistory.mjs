@@ -106,11 +106,18 @@ export class QueryEpisodeHistory {
             hrAvg: Number.isFinite(p?.hrAvg) ? p.hrAvg : null,
           };
         });
+        // The circumstances: how long the whole session ran, what it was
+        // called, how many videos it played and the rings it earned — so the
+        // show screen can say "part of a 46-minute ride with two other videos".
         (episodes[contentId] ||= []).push({
           sessionId: String(session.sessionId),
           date: session.date || null,
           startTime: Number.isFinite(session.startTime) ? session.startTime : null,
           playedMs,
+          durationMs: Number.isFinite(session.durationMs) ? session.durationMs : null,
+          totalRings: Number.isFinite(session.totalRings) ? session.totalRings : null,
+          videoCount: playedEpisodes(session).length,
+          primaryTitle: session.media?.primary?.title || null,
           riders,
         });
       }
