@@ -30,6 +30,7 @@ import { useGovernanceAudioDuck } from "./hooks/useGovernanceAudioDuck.js";
 import { installCueAudioUnlock } from "./hooks/audioCuePlayer.js";
 import UnlockPrompt from "./overlays/UnlockPrompt.jsx";
 import PresenceGateNotice from "./overlays/PresenceGateNotice.jsx";
+import PlaybackBudgetNotice from "./overlays/PlaybackBudgetNotice.jsx";
 import usePresenceGate from "../hooks/usePresenceGate.js";
 import usePresenceGatePrompt from "./usePresenceGatePrompt.js";
 import { useIdentity } from "../identity/useIdentity.js";
@@ -144,6 +145,9 @@ const formatTime = (seconds) => {
   
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
+
+// Lock name for the playback-budget admin unlock (registerAdmin: any users.admin).
+const PLAYBACK_BUDGET_LOCK = 'playback_budget';
 
 const DEFAULT_SIDEBAR = 250;
 
@@ -328,7 +332,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // lock — it is cleared when the next item starts (see effect below), so one
   // unlock cannot silently disable governance for the rest of the session.
   const [bypassActive, setBypassActive] = useState(false);
-  const { registerUnlock, unlockState, unlockedUser, clearUnlock, phase: emergencyPhase } = useIdentity();
+  const { registerUnlock, registerAdmin, unlockState, unlockedUser, clearUnlock, phase: emergencyPhase } = useIdentity();
   const [unlockPromptOpen, setUnlockPromptOpen] = useState(false);
 
   // GovernanceEngine is the sole authority for lock decisions (SSoT). Governance
@@ -400,6 +404,30 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       // dismisses via cancel/close (closeGovernanceUnlock).
     });
   }, [unlockPromptOpen, registerUnlock, clearUnlock, currentItem, logger]);
+
+  // Playback-budget admin unlock: the cover over a budget hold ("checking",
+  // "unavailable", "exhausted") always offers it, so a child is never left on a
+  // waiting screen with no way forward. Same admin fingerprint as the presence
+  // gate (registerAdmin, any users.admin). A match lifts the budget for THIS
+  // item only (usePlaybackBudget.grantOverride); the next item is metered again.
+  const [budgetPromptOpen, setBudgetPromptOpen] = useState(false);
+  const openBudgetUnlock = useCallback(() => {
+    if (budgetPromptOpen || typeof registerAdmin !== 'function') return;
+    const reqItemId = currentItemIdRef.current;
+    logger.info('fitness.playback_budget.unlock_tap', { status: playbackBudget?.status ?? null, contentId: currentItem?.id || null });
+    setBudgetPromptOpen(true);
+    Promise.resolve(registerAdmin(PLAYBACK_BUDGET_LOCK)).then((verdict) => {
+      setBudgetPromptOpen(false);
+      if (currentItemIdRef.current !== reqItemId) { clearUnlock(); return; }
+      if (verdict?.matched) {
+        playbackBudget?.grantOverride?.({ userId: verdict.userId ?? null });
+        logger.info('fitness.playback_budget.unlocked', { userId: verdict.userId ?? null, contentId: currentItem?.id || null });
+        clearUnlock();
+        return;
+      }
+      logger.info('fitness.playback_budget.unlock_dismissed', { reason: verdict?.reason || null });
+    });
+  }, [budgetPromptOpen, registerAdmin, clearUnlock, playbackBudget, currentItem, logger]);
 
   const closeGovernanceUnlock = useCallback(() => {
     setUnlockPromptOpen(false);
@@ -2135,11 +2163,9 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   const videoContent = (
     <div className="fitness-video-shell">
       <div className="player-controls-blocker"></div>
-      {budgetBlocked && <div className="playback-budget-overlay" role="status" data-testid="playback-budget-overlay">
-        <strong>{playbackBudget?.status === 'exhausted' ? 'Unattended playback limit reached'
-          : playbackBudget?.status === 'unavailable' ? 'Playback allowance unavailable' : 'Checking playback allowance…'}</strong>
-        <p>{playbackBudget?.status === 'exhausted' ? 'An adult can join to continue.' : 'Waiting for playback allowance.'}</p>
-      </div>}
+      {budgetBlocked && !budgetPromptOpen && (
+        <PlaybackBudgetNotice status={playbackBudget?.status} onUnlock={openBudgetUnlock} onBack={handleClose} />
+      )}
       {playbackBudget?.status === 'ready' && <span className="playback-budget-remaining" aria-label="Unattended playback remaining">
         {Math.ceil(playbackBudget.remainingMs / 60000)} min remaining
       </span>}
@@ -2325,6 +2351,14 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         lockLabel="Grown-up needed"
         unlockedUser={presencePrompt.unlockedUser}
         onCancel={presencePrompt.cancel}
+        timeoutMs={30000}
+      />
+      <UnlockPrompt
+        open={budgetPromptOpen}
+        state={unlockState}
+        lockLabel="Grown-up needed"
+        unlockedUser={unlockedUser}
+        onCancel={clearUnlock}
         timeoutMs={30000}
       />
       <UnlockPrompt

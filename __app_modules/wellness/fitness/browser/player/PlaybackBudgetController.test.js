@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { PlaybackBudgetController } from './PlaybackBudgetController.js';
+import { describe, it, expect, vi } from 'vitest';
+import { PlaybackBudgetController, OBSERVE_TIMEOUT_MS } from './PlaybackBudgetController.js';
 function harness() {
  let now=0;const calls=[];let fail=false;let balance=900000;
  const media=new EventTarget();Object.assign(media,{paused:true,readyState:4,seeking:false,currentTime:0,playbackRate:1});
@@ -91,4 +91,59 @@ it('does not meter when no governed child is on the roster', async () => {
  await h.media.play();h.advance(6000);await h.flush();
  expect(h.media.paused).toBe(false);expect(h.spent()).toBe(0);
  expect(h.calls.every(c=>c.requestGrant===false)).toBe(true);
+});
+
+// 2026-11-10 (garage, Forza video): governance held the video (videoLocked, so
+// canPlay false) and the budget asked for no grant while held, so its status sat
+// on 'checking' and its cover said "Waiting for playback allowance" over the
+// governance lock, forever. Another hold owning the screen is now 'held', not blocked.
+describe('budget under another hold, timeouts and the admin override', () => {
+ it('a governance lock (canPlay false) is "held", not a blocking "checking" cover; the media stays held', async () => {
+  const h=harness();h.controller.update({...h.input,canPlay:false});await h.flush();
+  expect(h.calls.at(-1)).toMatchObject({requestGrant:false});
+  expect(h.state).toMatchObject({blocked:false,status:'held'});
+  await h.media.play();expect(h.media.paused).toBe(true); // the meter still refuses to run unpaid
+  h.controller.update({...h.input,canPlay:true});await h.flush();await h.flush();
+  expect(h.calls.at(-1)).toMatchObject({requestGrant:true});
+  expect(h.state).toMatchObject({blocked:false,status:'ready'});
+ });
+ it('an exhausted budget still shows while another hold is up', async () => {
+  const h=harness();h.controller.update(h.input);await h.flush();
+  const exhausted={generation:1,serverNow:0,policies:[{id:'unattended',remainingMs:0,expired:true,grant:null}]};
+  h.controller.observe=async()=>exhausted;
+  h.controller.update({...h.input,canPlay:false});await h.flush();
+  expect(h.state).toMatchObject({blocked:true,status:'exhausted'});
+ });
+ it('a budget read that never answers becomes "unavailable" (retried), not an endless "checking"', async () => {
+  vi.useFakeTimers();
+  try {
+   const h=harness();h.controller.observe=()=>new Promise(()=>{});
+   h.controller.update(h.input);
+   expect(h.state).toMatchObject({blocked:true,status:'checking'});
+   await vi.advanceTimersByTimeAsync(OBSERVE_TIMEOUT_MS+10);
+   expect(h.state).toMatchObject({blocked:true,status:'unavailable'});
+  } finally { vi.useRealTimers(); }
+ });
+ it('an admin override lifts the meter for the item: not blocked, no grant asked, playback resumes', async () => {
+  const h=harness();const exhausted={generation:1,serverNow:0,policies:[{id:'unattended',remainingMs:0,expired:true,grant:null}]};
+  h.controller.observe=async(body)=>{h.calls.push(body);return exhausted;};
+  h.controller.update(h.input);await h.flush();expect(h.state).toMatchObject({blocked:true,status:'exhausted'});
+  h.controller.resume=true;
+  h.controller.update({...h.input,override:true});await h.flush();
+  expect(h.state).toMatchObject({blocked:false,status:'overridden'});
+  expect(h.calls.at(-1)).toMatchObject({requestGrant:false});
+  h.controller.tryResume();expect(h.media.paused).toBe(false);
+ });
+ it('logs a status change at debug and a blocking change at info', async () => {
+  const logs=[];const h=harness();h.controller.logger={info:(e,d)=>logs.push(['info',e,d]),debug:(e,d)=>logs.push(['debug',e,d]),warn:()=>{}};
+  h.controller.update({...h.input,canPlay:false});await h.flush();
+  h.controller.update({...h.input,canPlay:true});await h.flush();await h.flush();
+  const status=logs.filter(([,e])=>e==='fitness.playback_budget.status').map(([l,,d])=>[l,d.to,d.blocked]);
+  expect(status).toContainEqual(['info','held',false]); // the cover came down: info
+  expect(status.at(-1).slice(1)).toEqual(['ready',false]);
+  // info exactly when the cover goes up or down, debug otherwise.
+  status.forEach((s,i)=>{ if(i>0) expect(s[0]).toBe(s[2]!==status[i-1][2]?'info':'debug'); });
+  // Each line is a change: never the same status twice in a row.
+  status.slice(1).forEach((s,i)=>expect(s[1]!==status[i][1]||s[2]!==status[i][2]).toBe(true));
+ });
 });

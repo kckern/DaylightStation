@@ -33,3 +33,23 @@ it('a roster of guests only has no governed child to meter',async()=>{
  expect(h.result.current.blocked).toBe(false);
  h.unmount();
 });
+it('an admin override lifts the budget for the current item only; the next item is metered again',async()=>{
+ const mediaRef={current:null};const props={deviceId:'tv',policies:[{id:'cap'}],supervisorIds:['parent'],participantRoster:[{id:'child',isActive:true}],currentMedia:{plex:'1'},governanceState:{isGoverned:true,videoLocked:false},mediaRef,externalHold:false};
+ const h=renderHook(p=>usePlaybackBudget(p),{initialProps:props});
+ await waitFor(()=>expect(h.result.current.status).toBe('exhausted'));
+ expect(h.result.current.blocked).toBe(true);
+ act(()=>{expect(h.result.current.grantOverride({userId:'parent'})).toBe(true);});
+ await waitFor(()=>expect(h.result.current).toMatchObject({blocked:false,status:'overridden'}));
+ await waitFor(()=>expect(fixture.bodies.at(-1)).toMatchObject({requestGrant:false}));
+ h.rerender({...props,currentMedia:{plex:'2'}});
+ await waitFor(()=>expect(h.result.current).toMatchObject({blocked:true,status:'exhausted'}));
+ h.unmount();
+});
+it('with no device id an admin override still opens the item',async()=>{
+ const mediaRef={current:null};const props={deviceId:null,policies:[{id:'cap'}],participantRoster:[{id:'child',isActive:true}],currentMedia:{plex:'1'},governanceState:{isGoverned:true,videoLocked:false},mediaRef,externalHold:false};
+ const h=renderHook(p=>usePlaybackBudget(p),{initialProps:props});
+ await waitFor(()=>expect(h.result.current).toMatchObject({blocked:true,status:'unavailable'}));
+ act(()=>{h.result.current.grantOverride({userId:'parent'});});
+ await waitFor(()=>expect(h.result.current).toMatchObject({blocked:false,status:'overridden'}));
+ h.unmount();
+});

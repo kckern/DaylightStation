@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useReducer } from 'react';
 import { resolveContentId } from '../../../../../__capabilities/playback/browser/contracts.mjs';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
@@ -12,6 +12,9 @@ export function usePlaybackBudget({ deviceId, policies, supervisorIds, exemptIds
   const controller = useRef(null);
   const resumeTask = useRef(null);
   const [resumeVersion, acknowledgeResume] = useReducer(n => n + 1, 0);
+  // Admin fingerprint override: lifts the meter for ONE item (by content id),
+  // like the presence gate's per-entry admission. A new item is metered again.
+  const [override, setOverride] = useState(null);
   useEffect(() => { const work = resumeTask.current; resumeTask.current = null; work?.(); }, [resumeVersion]);
   const enabled = policies != null && (!Array.isArray(policies) || policies.length > 0);
   const latest = useRef(null);
@@ -23,8 +26,10 @@ export function usePlaybackBudget({ deviceId, policies, supervisorIds, exemptIds
   const { supervised } = classifySupervision({ participantIds, supervisorIds, guestIds });
   // No governed child (only supervisors, guests or exempt riders): nothing to meter.
   const hasSubject = participantIds.some(id => isGovernedChildId(id, { supervisorIds, exemptIds, guestIds }));
+  const contentId = currentMedia ? resolveContentId(currentMedia) : null;
   latest.current = {
-    participantIds, guestIds, supervised, hasSubject, contentId: currentMedia ? resolveContentId(currentMedia) : null,
+    participantIds, guestIds, supervised, hasSubject, contentId,
+    override: Boolean(override && contentId != null && override.contentId === contentId),
     matching: Boolean(currentMedia && governanceState?.isGoverned),
     canPlay: !governanceState?.videoLocked && !externalHold,
   };
@@ -54,5 +59,18 @@ export function usePlaybackBudget({ deviceId, policies, supervisorIds, exemptIds
     const timer = setInterval(update, 50);
     return () => { clearInterval(timer); controller.current = null; void meter.dispose(); };
   }, [enabled, deviceId, mediaRef]);
-  return enabled ? state : INACTIVE;
+  const grantOverride = useCallback(({ userId = null } = {}) => {
+    const id = latest.current?.contentId ?? null;
+    if (id == null) return false;
+    getLogger()?.info?.('fitness.playback_budget.admin_override', { userId, contentId: id, deviceId });
+    setOverride({ contentId: id, userId });
+    return true;
+  }, [deviceId]);
+  // An override answers at once (also when there is no meter, e.g. no device id).
+  const overridden = latest.current.override;
+  return useMemo(() => {
+    const current = !enabled ? INACTIVE
+      : (overridden && (state.blocked || state.status !== 'overridden') ? { ...state, blocked: false, status: 'overridden' } : state);
+    return { ...current, grantOverride };
+  }, [enabled, overridden, state, grantOverride]);
 }

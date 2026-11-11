@@ -66,6 +66,9 @@ give a usable answer (`unavailable`, `unreadable`, `error`, `no_gateway`).
 - `FitnessShow` renders none of the show's contents while blocked.
 - `FitnessPlayer` treats a blocked item as a hold (`GATE_ID.PRESENCE` in the
   pause arbiter, no autoplay), alongside governance and the playback budget.
+- The playback-budget cover uses the same admin fingerprint unlock (lock name
+  `playback_budget`), lifting the budget for the current item; see
+  [playback-budgets.md](playback-budgets.md).
 - **Leaving mid-video never interrupts it.** Only the *next* show or item is
   gated.
 - `PresenceGateNotice` — the cover shown after a dismissed prompt: "Unlock"

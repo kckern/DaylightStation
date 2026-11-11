@@ -6,6 +6,10 @@ const RENEW_LEAD_MS = 2000;
 // Nothing to meter: poll only to keep the view (remaining time) fresh. Every
 // observation is a durable write server-side; policy changes still observe at once.
 const IDLE_POLL_MS = 60000;
+// A budget read that has not answered by now counts as failed (status
+// 'unavailable', retried every 2s), so the screen explains itself instead of
+// sitting on "Checking playback allowance…" behind a request that never returns.
+export const OBSERVE_TIMEOUT_MS = 8000;
 
 /** Native-media meter. Durable grants are the only source of unattended time. */
 export class PlaybackBudgetController {
@@ -17,22 +21,43 @@ export class PlaybackBudgetController {
     this.retry = null; this.view = null; this.disposed = false; this.holding = false;
     this.nextPoll = 0; this.expectedPauses = 0;
   }
-  eligible() { return !!this.input.matching && !this.input.supervised && this.input.hasSubject !== false; }
+  // An admin fingerprint override (input.override) lifts the meter for the
+  // current item, exactly like a supervisor joining.
+  eligible() { return !!this.input.matching && !this.input.supervised && this.input.hasSubject !== false && !this.input.override; }
   valid() { return this.grants.length > 0 && this.grants.length === (this.requiredGrants ?? this.grants.length) && this.grants.every(g => this.used < g.ms && this.now() < g.deadline); }
   state() {
     const eligible = this.eligible();
     const valid = this.valid();
     const expired = this.view?.policies?.some(p => p.expired) && !valid;
+    const status = !eligible ? (this.input.override ? 'overridden' : this.input.supervised ? 'supervised' : 'inactive')
+      : valid ? 'ready' : this.retry ? 'unavailable' : expired ? 'exhausted' : 'checking';
+    // Another hold owns the screen (exercise governance lock, voice memo): no
+    // grant is asked for while it holds, so "checking" would never end. The
+    // media stays held here; the budget cover stays down so that hold's own
+    // screen (and its unlock) is what the rider sees. 2026-11-10: the budget
+    // cover sat over a governance lock as "Checking playback allowance…".
+    const heldElsewhere = eligible && !this.input.canPlay && status === 'checking';
     return {
-      blocked: eligible && !valid && (!this.manualPause || expired || !!this.retry),
-      status: !eligible ? (this.input.supervised ? 'supervised' : 'inactive')
-        : valid ? 'ready' : this.retry ? 'unavailable' : expired ? 'exhausted' : 'checking',
+      blocked: eligible && !valid && !heldElsewhere && (!this.manualPause || expired || !!this.retry),
+      status: heldElsewhere ? 'held' : status,
       remainingMs: Math.min(...(this.view?.policies?.map(p => p.remainingMs) ?? [0]))
         + (valid ? Math.max(0, Math.min(...this.grants.map(g => g.ms)) - this.used) : 0),
       generation: this.view?.generation ?? 0,
     };
   }
-  emit() { if (!this.disposed) this.publish(this.state()); }
+  emit() {
+    if (this.disposed) return;
+    const next = this.state();
+    if (next.status !== this.lastStatus || next.blocked !== this.lastBlocked) {
+      const level = next.blocked !== this.lastBlocked ? 'info' : 'debug';
+      this.logger?.[level]?.('fitness.playback_budget.status', {
+        from: this.lastStatus ?? null, to: next.status, blocked: next.blocked,
+        canPlay: this.input.canPlay !== false, override: !!this.input.override,
+      });
+      this.lastStatus = next.status; this.lastBlocked = next.blocked;
+    }
+    this.publish(next);
+  }
   account() {
     const now = this.now();
     if (this.playing && this.eligible() && this.input.canPlay && this.grants.length) {
@@ -77,6 +102,7 @@ export class PlaybackBudgetController {
     this.account();
     const changed = this.input.contentId !== input.contentId || this.input.media !== input.media;
     const policyChanged = this.input.supervised !== input.supervised || this.input.hasSubject !== input.hasSubject || this.input.canPlay !== input.canPlay
+      || !!this.input.override !== !!input.override
       || this.input.matching !== input.matching || JSON.stringify(this.input.participantIds) !== JSON.stringify(input.participantIds)
       || JSON.stringify(this.input.guestIds ?? []) !== JSON.stringify(input.guestIds ?? []);
     const mediaChanged = this.input.media !== input.media;
@@ -121,7 +147,12 @@ export class PlaybackBudgetController {
     };
     if (!renew) { this.grants = []; this.used = 0; this.emit(); }
     const started = this.now();
-    this.pending = Promise.resolve().then(() => this.observe(body)).then(view => {
+    let timer = null;
+    const answer = Promise.race([
+      Promise.resolve().then(() => this.observe(body)),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('observe timed out')), OBSERVE_TIMEOUT_MS); }),
+    ]).finally(() => clearTimeout(timer));
+    this.pending = answer.then(view => {
       this.account();
       const carried = renew ? Math.max(0, this.used - usedAtRequest) : 0;
       this.retry = null; this.view = view; this.requiredGrants = view.policies.length;

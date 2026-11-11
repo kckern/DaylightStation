@@ -357,7 +357,8 @@ describe('unattended playback budget gate', () => {
     renderPlayer([KIDS_ITEM, NEXT_ITEM]);
     await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false'));
     expect(screen.getByText('Unattended playback limit reached')).toBeInTheDocument();
-    expect(screen.getByText('An adult can join to continue.')).toBeInTheDocument();
+    expect(screen.getByText(/A grown-up can join the workout to continue, or unlock this video/)).toBeInTheDocument();
+    expect(screen.getByTestId('playback-budget-unlock')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Advance playback'));
     await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-content-id', NEXT_ITEM.contentId));
     expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false');
