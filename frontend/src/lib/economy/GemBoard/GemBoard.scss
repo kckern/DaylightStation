@@ -219,8 +219,8 @@
 }
 
 // One cell's glyph: a full gem that fills the box, or a slightly smaller one
-// inside a day ring. Nothing here is ever partly transparent and nothing is a
-// status hue: a day is done (area colour) or still to go (plain outline).
+// inside a day ring. Nothing is a status hue: a day is done (area colour) or
+// still to go (plain outline on the ring, grey 30% wedge on the stone).
 .gem-glyph {
   position: relative;
   display: inline-flex;
@@ -233,21 +233,15 @@
   &__seg { stroke: var(--ds-text-low, #6b7785); stroke-width: 2.4; stroke-linecap: round; }
   &__seg.is-done { stroke-width: 3.8; }
 
-  // The gem with its area's icon on the face of the stone.
+  // A plain stone: the area is its colour, no icon on its face.
   &__stone { position: relative; display: inline-flex; }
-  &__area {
-    position: absolute;
-    left: 23%;
-    top: 13%;
-    width: 54%;
-    height: 54%;
-    color: #1a1226;
-    // A pale halo so the dark figure reads on every facet, light or deep.
-    filter: drop-shadow(0 0 0.06em rgba(255, 255, 255, 0.9));
-  }
+  // A running day-count: the stone cut like its ring, a grey stone under the
+  // colour one, which is clipped (inline clip-path) to the done days' wedge.
+  &__pie { position: relative; }
+  &__togo, &__done { position: absolute; inset: 0; display: inline-flex; }
+  // The days still to go: the one place on the board that is see-through (the user's spec).
+  &__togo { opacity: 0.3; }
 
-  // A contest lead: no gem, the word at the size of the row labels.
-  &__word { font-size: 1.05em; font-weight: 700; color: var(--ds-text-high, #e8eef3); white-space: nowrap; }
   &__muted { color: var(--ds-text-low, #6b7785); font-size: 1.5em; }
   &__times {
     position: absolute;
