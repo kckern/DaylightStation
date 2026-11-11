@@ -345,6 +345,10 @@ const FitnessMenu = ({ activeCollection, onContentSelect, setFitnessPlayQueue })
                 data-show-title={show.label}
                 onPointerDown={(e) => handleShowClick(e, show)}
               >
+                {/* The poster fades in over the title once it has loaded; until
+                    then (and if it never does) the card reads as its name, not a
+                    black box. */}
+                {show.label && <div className="show-title" aria-hidden="true">{show.label}</div>}
                 {show.image && (
                   <img
                     src={normalizeImageUrl(show.image)}
