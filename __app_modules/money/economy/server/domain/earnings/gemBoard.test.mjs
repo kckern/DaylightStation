@@ -68,13 +68,13 @@ describe('gem metadata', () => {
       { id: 'strong', kind: 'ring-days', days: 4, min: 100, reward: { gems: 1 }, gem: { category: 'exercise' } },
     ]);
     expect(gemCategories(rs)).toEqual([
-      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', area: 'school', color: '#2e9e5b', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly', area: 'school', color: '#2e9e5b' }] },
+      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', area: 'school', color: '#f2c94c', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly', area: 'school', color: '#f2c94c' }] },
       {
-        id: 'exercise', label: 'Exercise', cadence: 'weekly', group: 'move', area: 'move', color: '#8e5bd0', ruleIds: ['moved', 'strong'],
-        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly', area: 'move', color: '#8e5bd0' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly', area: 'move', color: '#8e5bd0' }],
+        id: 'exercise', label: 'Exercise', cadence: 'weekly', group: 'move', area: 'move', color: '#1e88e5', ruleIds: ['moved', 'strong'],
+        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly', area: 'move', color: '#1e88e5' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly', area: 'move', color: '#1e88e5' }],
       },
       // The ring contest's default row: it shares `ring-contests` with the most-improved contest.
-      { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', area: 'move', color: '#8e5bd0', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest', area: 'move', color: '#8e5bd0' }] },
+      { id: 'ring-contests', label: 'Most Rings', cadence: 'contest', group: 'move', area: 'move', color: '#1e88e5', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest', area: 'move', color: '#1e88e5' }] },
     ]);
   });
 });
@@ -166,12 +166,12 @@ describe('row defaults and groups', () => {
     expect(rows.map((r) => [r.id, r.label, r.group])).toEqual([
       ['reading', 'Reading', 'school'],
       ['moved-days', 'Moved 5 days', 'move'],
-      ['ring-contests', 'Ring contests', 'move'],
+      ['ring-contests', 'Most Rings', 'move'],
       ['board-game-level', 'Board game level', 'games'],
     ]);
     expect(rows[0].parts).toEqual([
-      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly', area: 'school', color: '#2e9e5b' },
-      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', area: 'school', color: '#2e9e5b' },
+      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly', area: 'school', color: '#f2c94c' },
+      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', area: 'school', color: '#f2c94c' },
     ]);
     expect(rows[0].cadence).toBe('weekly'); // the first rule's, as before
   });
@@ -221,26 +221,26 @@ describe('row defaults and groups', () => {
     const contests = (rules) => gemCategories(ruleset(rules)).find((r) => r.id === 'ring-contests');
 
     it('every row and part takes its area colour, whichever rule comes first', () => {
-      const move = { color: '#8e5bd0', area: 'move' };
+      const move = { color: '#1e88e5', area: 'move' };
       expect(contests([most, improved])).toMatchObject({ ...move, parts: [{ ruleId: 'ring-contest', ...move }, { ruleId: 'most-improved', ...move }] });
       expect(contests([improved, most])).toMatchObject({ ...move, parts: [{ ruleId: 'most-improved', ...move }, { ruleId: 'ring-contest', ...move }] });
     });
 
-    it('move, school and games rules take #8e5bd0, #2e9e5b and #ff7a2f', () => {
+    it('move, school and games rules take sapphire #1e88e5, citrine #f2c94c and emerald #2e9e5b', () => {
       const rows = gemCategories(ruleset([
         most, improved,
         { id: 'card-keeper', label: 'Cards', kind: 'activity-days', match: { activity: 'card-goal' }, days: 4, reward: { gems: 1 } },
         { id: 'race-pb', label: 'Race PB', kind: 'milestone', match: { activity: 'race-pb' }, reward: { gems: 1 } },
       ]));
       expect(rows.map((r) => [r.id, r.area, r.color])).toEqual([
-        ['ring-contests', 'move', '#8e5bd0'], ['flashcards', 'school', '#2e9e5b'], ['racing', 'games', '#ff7a2f'],
+        ['ring-contests', 'move', '#1e88e5'], ['flashcards', 'school', '#f2c94c'], ['racing', 'games', '#2e9e5b'],
       ]);
       for (const row of rows) for (const part of row.parts) expect([part.area, part.color]).toEqual([row.area, row.color]);
     });
 
     it('a custom group still takes a registry area (school)', () => {
       const [row] = gemCategories(ruleset([{ id: 'reader-week', kind: 'activity-days', match: { activity: 'story-read' }, days: 4, reward: { gems: 1 }, gem: { group: 'bed-time' } }]));
-      expect([row.group, row.area, row.color]).toEqual(['bed-time', 'school', '#2e9e5b']);
+      expect([row.group, row.area, row.color]).toEqual(['bed-time', 'school', '#f2c94c']);
     });
   });
 
@@ -359,5 +359,104 @@ describe('cell parts, streak and reach', () => {
     expect(blank.cells.reading.kid.parts.map((p) => p.state)).toEqual(['unknown', 'none']);
     expect(blank.cells.reading.kid).toMatchObject({ state: 'unknown', streak: null });
     expect(blank.cells['moved-days'].kid).toMatchObject({ state: 'unknown', streak: null });
+  });
+});
+
+describe('contest parts say what was compared, and against whom', () => {
+  const rs = ruleset([
+    { id: 'race-champion', label: 'Best race', kind: 'activity-contest', match: { activity: 'race' }, reward: { gems: 1 } },
+    { id: 'most-improved', label: 'Most improved rings', kind: 'activity-contest', match: { activity: 'ring-improved' }, reward: { gems: 1 } },
+    { id: 'ring-contest', label: 'Most rings', kind: 'ring-contest', reward: { gems: 1 } },
+  ]);
+  const contests = {
+    race: { closed: false, course: 'Sprint 1500', standings: [
+      { learnerId: 'ann', score: 1e6 / 314, value: 314, unit: 'seconds' }, { learnerId: 'ben', score: 1e6 / 457, value: 457, unit: 'seconds' },
+    ] },
+    'ring-improved': { closed: false, standings: [{ learnerId: 'ann', score: -120.4 }, { learnerId: 'ben', score: 35.6 }] },
+  };
+  const standings = [{ learnerId: 'ann', rings: 320 }, { learnerId: 'ben', rings: 410 }, { learnerId: 'cal', rings: 0 }];
+  const learner = (learnerId, name) => ({
+    ...evaluateEarnings({ ruleset: rs, learnerId, facts: { sectionDays: [], days: [], week: null, units: [], rings: 1, ringDays: [] },
+      standings, contests, windows: { school: WEEK, rings: RINGS_WEEK }, today: '2026-11-04' }),
+    learnerName: name,
+  });
+  const board = buildGemBoard({ ruleset: rs, week: { windows: { school: WEEK }, today: '2026-11-04', learners: [learner('ann', 'Ann'), learner('ben', 'Ben'), learner('cal', 'Cal')] } });
+  const part = (row, who, ruleId) => board.cells[row][who].parts.find((p) => p.ruleId === ruleId);
+
+  it('a race carries the time, its unit, the course and the standings best first', () => {
+    expect(part('racing', 'ben', 'race-champion').score).toMatchObject({
+      value: 457, unit: 'seconds', course: 'Sprint 1500',
+      standings: [{ learnerId: 'ann', name: 'Ann', value: 314, leader: true }, { learnerId: 'ben', name: 'Ben', value: 457, leader: false }],
+    });
+    expect(part('racing', 'ann', 'race-champion')).toMatchObject({ state: 'leading', score: { value: 314 } });
+  });
+  it('most improved reads in rings over or under their usual, rounded; nobody below zero leads', () => {
+    const s = part('ring-contests', 'ann', 'most-improved').score;
+    expect(s).toMatchObject({ value: -120, unit: 'rings-vs-usual' });
+    expect(s.standings.map((r) => [r.name, r.value, r.leader])).toEqual([['Ben', 36, true], ['Ann', -120, false]]);
+  });
+  it('the ring contest lists everyone with rings, in rings', () => {
+    const s = part('ring-contests', 'ann', 'ring-contest').score;
+    expect(s).toMatchObject({ mine: 320, best: 410, value: 320, unit: 'rings', course: null });
+    expect(s.standings.map((r) => [r.name, r.value, r.leader])).toEqual([['Ben', 410, true], ['Ann', 320, false], ['Cal', 0, false]]);
+  });
+});
+
+describe('green week and debrief week are day-counts on the board', () => {
+  const rs = ruleset([
+    { id: 'green-week', label: 'Green week', kind: 'week-met', reward: { silver: 5, gems: 1 } },
+    { id: 'debrief-week', label: 'Debrief week', kind: 'debrief-week', reward: { silver: 5, gems: 1 } },
+  ]);
+  const openWeek = { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true };
+  const days = (list) => list.map(([day, state]) => ({ day, state, reason: null, timeliness: 'on-time' }));
+  const debriefs = (list) => list.map(([day, state]) => ({ day, state, timeliness: 'on-time' }));
+  const boardOn = (today, facts) => buildGemBoard({
+    ruleset: rs,
+    week: { windows: { school: WEEK, rings: RINGS_WEEK }, today, learners: [{ ...evaluate(rs, facts, { today }), learnerName: 'Kid' }] },
+  });
+
+  it('green week at 2 of 5 is a running streak, its days marked', () => {
+    const b = boardOn('2026-11-04', { days: days([['2026-11-02', 'met'], ['2026-11-03', 'met'], ['2026-11-04', 'none']]), week: openWeek });
+    const cell = b.cells['green-week'].kid;
+    expect(cell).toMatchObject({ state: 'pending', streak: { have: 2, need: 5, left: 3, reach: 'on-track', ruleId: 'green-week' } });
+    // Today, not yet green, is still open: not marked short.
+    expect(cell.parts[0].days).toEqual([{ day: '2026-11-02', state: 'done' }, { day: '2026-11-03', state: 'done' }]);
+    expect(cell.parts[0].lastDay).toBe('2026-11-06');
+  });
+  it('green week at 0 of 5 is blank (no streak drawn), and a settled miss is blank too', () => {
+    const zero = boardOn('2026-11-02', { days: days([['2026-11-02', 'none']]), week: openWeek }).cells['green-week'].kid;
+    expect(zero).toMatchObject({ state: 'pending', streak: { have: 0, need: 5 } });
+    const miss = boardOn('2026-11-04', { days: days([['2026-11-02', 'met'], ['2026-11-03', 'partial'], ['2026-11-04', 'met']]), week: openWeek }).cells['green-week'].kid;
+    expect(miss).toMatchObject({ state: 'none', streak: null });
+    expect(miss.parts[0].days).toEqual([{ day: '2026-11-02', state: 'done' }, { day: '2026-11-03', state: 'short' }, { day: '2026-11-04', state: 'done' }]);
+  });
+  it('green week all met with the week row met is earned', () => {
+    const all = days([['2026-11-02', 'met'], ['2026-11-03', 'met'], ['2026-11-04', 'met'], ['2026-11-05', 'met'], ['2026-11-06', 'met']]);
+    const cell = buildGemBoard({ ruleset: rs, week: { windows: { school: WEEK }, today: '2026-11-07', learners: [{ ...evaluate(rs, { days: all, week: { weekId: WEEK.from, state: 'met', open: false } }, { today: '2026-11-07' }), learnerName: 'Kid' }] } }).cells['green-week'].kid;
+    expect(cell).toMatchObject({ state: 'earned', week: 1 });
+    expect(cell.parts[0].progress).toEqual({ have: 5, need: 5 });
+  });
+  it('debrief week at 2 of 5: completed days fill, open days (late still counts) are not short', () => {
+    const b = boardOn('2026-11-04', { debriefs: debriefs([['2026-11-02', 'completed'], ['2026-11-03', 'open'], ['2026-11-04', 'completed'], ['2026-11-05', 'open'], ['2026-11-06', 'open']]) });
+    const cell = b.cells['debrief-week'].kid;
+    expect(cell).toMatchObject({ state: 'pending', streak: { have: 2, need: 5, left: 3, reach: 'on-track' } });
+    expect(cell.parts[0].days).toEqual([{ day: '2026-11-02', state: 'done' }, { day: '2026-11-04', state: 'done' }]);
+  });
+  it('debrief week: an excused day drops out of the count; a missed day ends it', () => {
+    const ex = boardOn('2026-11-04', { debriefs: debriefs([['2026-11-02', 'completed'], ['2026-11-03', 'excused'], ['2026-11-04', 'open']]) }).cells['debrief-week'].kid;
+    expect(ex.streak).toMatchObject({ have: 1, need: 2 });
+    const missed = boardOn('2026-11-04', { debriefs: debriefs([['2026-11-02', 'missed'], ['2026-11-03', 'completed']]) }).cells['debrief-week'].kid;
+    expect(missed).toMatchObject({ state: 'none', streak: null });
+    expect(missed.parts[0].days[0]).toEqual({ day: '2026-11-02', state: 'short' });
+  });
+});
+
+describe('default row labels are gem names, in title case', () => {
+  it('racing reads Cycle Race and the ring contests Most Rings', () => {
+    const rows = gemCategories(ruleset([
+      { id: 'race-champion', kind: 'activity-contest', match: { activity: 'race' }, reward: { gems: 1 } },
+      { id: 'ring-contest', kind: 'ring-contest', reward: { gems: 1 } },
+    ]));
+    expect(rows.map((r) => [r.id, r.label])).toEqual([['racing', 'Cycle Race'], ['ring-contests', 'Most Rings']]);
   });
 });

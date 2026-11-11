@@ -129,10 +129,10 @@ describe('WorkoutEarningsService.standings', () => {
     const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }, { learnerId: 'learner-b', learnerName: 'Learner B', lines: [] }];
     const gemBoard = { async board() { return {
       categories: [
-        { id: 'games-row', label: 'Games', group: 'games', area: 'games', color: '#ff7a2f' },
-        { id: 'school-row', label: 'Worksheets', group: 'school', area: 'school', color: '#2e9e5b' },
-        { id: 'move-won', label: 'Ring contests', group: 'move', area: 'move', color: '#8e5bd0' },
-        { id: 'move-days', label: 'Moved 5 days', group: 'move', area: 'move', color: '#8e5bd0' },
+        { id: 'games-row', label: 'Games', group: 'games', area: 'games', color: '#2e9e5b' },
+        { id: 'school-row', label: 'Worksheets', group: 'school', area: 'school', color: '#f2c94c' },
+        { id: 'move-won', label: 'Most Rings', group: 'move', area: 'move', color: '#1e88e5' },
+        { id: 'move-days', label: '100+ rings on 5 days', group: 'move', area: 'move', color: '#1e88e5' },
       ],
       cells: {
         'move-won': { 'learner-a': { state: 'won', week: 2, held: 2, streak: null, parts: [] } },
@@ -146,7 +146,7 @@ describe('WorkoutEarningsService.standings', () => {
       },
     }; } };
     const res = await make({ learners, balances: { 'learner-a': { silver: 1, gold: 0, gems: 0 }, 'learner-b': { silver: 0, gold: 0, gems: 0 } }, gemBoard }).standings();
-    expect(res.learners[0].gems).toEqual([{ area: 'move', held: 2, color: '#8e5bd0' }, { area: 'school', held: 1, color: '#2e9e5b' }, { area: 'games', held: 1, color: '#ff7a2f' }]);
+    expect(res.learners[0].gems).toEqual([{ area: 'move', held: 2, color: '#1e88e5' }, { area: 'school', held: 1, color: '#f2c94c' }, { area: 'games', held: 1, color: '#2e9e5b' }]);
     expect(res.learners[0]).not.toHaveProperty('move');
     // In progress and zero hold no gem: a child with none gets an empty list.
     expect(res.learners[1].gems).toEqual([]);
@@ -157,6 +157,23 @@ describe('WorkoutEarningsService.standings', () => {
     const gemBoard = { async board() { throw new Error('boom'); } };
     const res = await make({ learners, balances: { 'learner-a': { silver: 4, gold: 0, gems: 0 } }, gemBoard }).standings();
     expect(res.learners).toEqual([{ learnerId: 'learner-a', learnerName: 'Learner A', silver: 4, weekRings: 0, gem: null, gems: [] }]);
+  });
+
+  it('prices the roster ONCE and hands it to the board (two rosters doubled every school read, 2026-11-10)', async () => {
+    const learners = [{ learnerId: 'learner-a', learnerName: 'Learner A', lines: [] }];
+    const roster = vi.fn(async () => ({ contestClosed: false, learners }));
+    const board = vi.fn(async () => ({ categories: [], cells: {} }));
+    const svc = new WorkoutEarningsService({
+      preview: { roster },
+      economy: { hasUser: () => true, async peekBalance() { return { silver: 0, gold: 0, gems: 0 }; }, async getHistory() { return []; } },
+      config: { catalog: () => ({ mode: 'live' }) },
+      gemBoard: { board },
+      logger: silent,
+    });
+    await svc.standings();
+    expect(roster).toHaveBeenCalledTimes(1);
+    expect(board).toHaveBeenCalledTimes(1);
+    expect(board.mock.calls[0][0].roster).toBe(await roster.mock.results[0].value);
   });
 });
 

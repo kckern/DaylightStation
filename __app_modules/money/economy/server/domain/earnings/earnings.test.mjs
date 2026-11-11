@@ -551,3 +551,36 @@ describe('debrief kinds', () => {
     expect(() => ruleset([{ id: 'x', kind: 'debrief-day', match: { criterion: 'vibes' }, reward: 1 }])).toThrow(/criterion/);
   });
 });
+
+describe('green week and debrief week count their days (a segmented gem)', () => {
+  const green = ruleset([{ id: 'green-week', kind: 'week-met', reward: { silver: 5, gems: 1 } }]);
+  const openWeek = { weekId: WEEK.from, state: 'exempt', reason: 'no_weekly_work', open: true };
+  it('green week: one segment per study day Monday to Friday; a met day fills one', () => {
+    const none = evaluate(green, { days: days([['2026-09-21', 'none']]), week: openWeek }, { today: '2026-09-21' });
+    expect(line(none, 'green-week')).toMatchObject({ status: 'pending', progress: { have: 0, need: 5 } });
+    const two = evaluate(green, { days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'none']]), week: openWeek }, { today: '2026-09-23' });
+    expect(line(two, 'green-week')).toMatchObject({ status: 'pending', progress: { have: 2, need: 5 } });
+  });
+  it('green week: an exempt day drops out; a Saturday that is a study day counts', () => {
+    const out = evaluate(green, { days: days([['2026-09-21', 'met'], ['2026-09-22', 'exempt', 'not_a_school_day'], ['2026-09-23', 'met']]), week: openWeek }, { today: '2026-09-23' });
+    expect(line(out, 'green-week').progress).toEqual({ have: 2, need: 4 });
+    const sat = evaluate(green, { days: days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'met'], ['2026-09-25', 'met'], ['2026-09-26', 'met']]), week: openWeek });
+    expect(line(sat, 'green-week')).toMatchObject({ status: 'earned', progress: { have: 6, need: 6 } });
+  });
+  it('green week: a settled miss ends it (none); all met with the week row met earns it', () => {
+    const miss = evaluate(green, { days: days([['2026-09-21', 'met'], ['2026-09-22', 'none'], ['2026-09-23', 'met']]), week: openWeek }, { today: '2026-09-23' });
+    expect(line(miss, 'green-week')).toMatchObject({ status: 'none', progress: { have: 2, need: 5 } });
+    const all = days([['2026-09-21', 'met'], ['2026-09-22', 'met'], ['2026-09-23', 'met'], ['2026-09-24', 'met'], ['2026-09-25', 'met']]);
+    expect(line(evaluate(green, { days: all, week: { weekId: WEEK.from, state: 'met', open: false } }), 'green-week'))
+      .toMatchObject({ status: 'earned', progress: { have: 5, need: 5 } });
+  });
+  it('debrief week: one segment per owed day (excused drop out); completed, late too, fills one', () => {
+    const rs = ruleset(DEBRIEF_RULES);
+    const rows = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed', 'late'], ['2026-09-23', 'excused'], ['2026-09-24', 'open'], ['2026-09-25', 'open']]);
+    expect(line(evaluate(rs, { debriefs: rows }, { today: '2026-09-24' }), 'debrief-week')).toMatchObject({ status: 'pending', progress: { have: 2, need: 4 } });
+    const missed = debriefs([['2026-09-21', 'missed'], ['2026-09-22', 'completed']]);
+    expect(line(evaluate(rs, { debriefs: missed }, { today: '2026-09-27' }), 'debrief-week')).toMatchObject({ status: 'none', progress: { have: 1, need: 2 } });
+    const full = debriefs([['2026-09-21', 'completed'], ['2026-09-22', 'completed'], ['2026-09-23', 'completed'], ['2026-09-24', 'completed'], ['2026-09-25', 'completed']]);
+    expect(line(evaluate(rs, { debriefs: full }, { today: '2026-09-27' }), 'debrief-week')).toMatchObject({ status: 'earned', progress: { have: 5, need: 5 } });
+  });
+});

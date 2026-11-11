@@ -421,8 +421,8 @@ the rule's own id. Rows keep the rules' order.
 
 | Default row | Label | Section | Rules folded in |
 |---|---|---|---|
-| `ring-contests` | Ring contests | move | kind `ring-contest`; activity `ring-improved` |
-| `racing` | Racing | games | `race`, `race-pb` |
+| `ring-contests` | Most Rings | move | kind `ring-contest`; activity `ring-improved` |
+| `racing` | Cycle Race | games | `race`, `race-pb` |
 | `skyline-glider` | Skyline Glider | games | `glider-act`, `glider-bells` |
 | `piano` | Piano | school | `piano-practice`, `piano-rung` |
 | `flashcards` | Flashcards | school | `card-goal`, `cards-mastered` |
@@ -437,6 +437,15 @@ Some rules keep a row of their own and take only a default section:
 | activity `board-game-level` | games |
 | anything else | school |
 
+**Labels.** A row's label is the gem's name and is written in Title Case
+("Green Week", "Most Rings", "Cycle Race"); a rule's own label is the line that
+says how it is earned and is written in sentence case, one pattern per kind:
+day-counts "<thing> on <N> days" (or "every school day" for green week and
+debrief week), contests "Most <thing>" / "Best race", milestones the
+achievement ("Book finished", "New personal best"). No ids, no parentheticals
+("(whole week)"). The detail box prints a rule's label under the row's name
+only when the two differ (ignoring case).
+
 The first rule of a row decides the row's label, section, cadence and area.
 The label is `gem.label`, else the default row's label (not when the rule named
 its own `gem.category`), else the rule's label. The section is `gem.group`,
@@ -445,9 +454,12 @@ else the default above.
 **Area and colour.** A row's `area` is its section when that is `move`,
 `school` or `games` (a custom section slug falls to `school`). A gem's colour
 comes ONLY from its area, `GEM_AREAS` in `earnings/gemBoard.mjs` (order
-`AREA_ORDER`: Move, School, Games): `move` amethyst `#8e5bd0`, `school`
-emerald `#2e9e5b`, `games` fire opal `#ff7a2f`, each with an `icon` key of the
-same name. Every row and every part carries that area and colour, so the look
+`AREA_ORDER`: Move, School, Games): `move` sapphire `#1e88e5`, `school`
+citrine `#f2c94c`, `games` emerald `#2e9e5b`, each with an `icon` key of the
+same name (`AreaIcon.jsx`: a running figure, an open book, a chess knight).
+Text or an icon drawn ON an area colour takes `inkOn(color)` (`AreaIcon.jsx`):
+dark or white, whichever has the higher WCAG contrast. All three area colours
+take dark ink (white on citrine is 1.6:1). Every row and every part carries that area and colour, so the look
 of a gem always means the same thing on an unlabeled overview.
 
 A rule whose own id equals a default row id (a rule called `reading` that sits
@@ -489,10 +501,24 @@ A cell can be `earned` and still carry a `streak` when its row folds two rules
 | `progress` | `{have, need}` or null |
 | `left`, `reach` | set only while the part is `pending` with a `progress`; see below |
 | `lastDay` | the last day a day-count rule can be worked on (the end `left` is counted to); null for other kinds and for a rule with no line this week |
-| `days[]` | `{day, state}` with `done` or `short` (did some, under the mark); `ring-days` and `activity-days` only |
+| `days[]` | `{day, state}` with `done` or `short`; day-count kinds only (`ring-days`, `activity-days`, `week-met`, `debrief-week`). For `ring-days` / `activity-days` `short` is a day with some, under the mark. For green week a day is `done` when its verdict is `met` and `short` only once it is settled (before today) and not met; for debrief week `done` is completed (late counts) and `short` is missed or rejected. Open and excused / exempt days are not listed |
 | `items[]` | `{day, label}`: the milestone achievements paid this week |
-| `score` | `{mine, best}` for a contest: the learner's score against the roster's best (rings for `ring-contest`), else null |
+| `score` | a contest's standing, else null: `mine` / `best` (raw scores; `best` only when someone leads), and for display `value` + `unit` (`rings`; `rings-vs-usual` — rings over (+) or under (−) the four-week average, whole rings; `seconds` — a race time on a distance course; `metres` — a distance on a timed course; else `points`), `course` (the race's course label, else null) and `standings[]` `{learnerId, name, value, leader}` for the whole roster, best first. A leader holds the top score and only a score above 0 leads. Race values come from the fitness achievement provider (`race` standings carry `value`/`unit` and the contest its `course`), passed through the evaluator's evidence; nothing on screen ever shows the raw score |
 | `note` | the line's note |
+
+**Green week and debrief week are day-counts.** `week-met` and `debrief-week`
+lines carry `progress` like the other day-counts, so the board draws them as a
+segmented gem in a ring. Green week: one segment per study day Monday to
+Friday inside the rule's dates, plus any other day the term grid has as a study
+day, less every day it marks `exempt` (a holiday drops out once the grid has
+reached it; a future holiday still counts until then); a segment fills when the
+day is `met`. Debrief week: one segment per owed day, less `excused` days; a
+segment fills when that day's debrief is `completed` (late counts). Both earn
+only as before (green week also needs the term grid's week row `met` or
+`exempt`), and both go `none` — a blank cell — as soon as a settled day is not
+green or a debrief is missed or rejected. While pending, `left` is the days
+still needed (`need − have`, all of them) and `reach` is `on-track`; these
+kinds' `lastDay` is Friday.
 
 **Reach.** `left` is the study days the rule can still be worked on. The count
 starts at today or the week's first day, whichever is later, and runs through
@@ -526,12 +552,15 @@ and the school agenda (the board header's **Gems** door and each card's gem
 door), with a This week / Last week switch in the header. It draws one line
 per child in roster order and one column per gem row. The columns are gathered
 into their sections, each a tinted block under its name, and every column's
-name leans over it at -40°, on one line, never wrapped or broken mid-word. The
+name leans over it at -40°, bold and a step larger than body text, on one
+line, never wrapped or broken mid-word; the name row's height and the room
+past the last column are measured, so no name is cropped. The
 child's gem count closes the line: `totals.week`, the gems held (earned plus a
 lead), which is exactly the whole gems drawn on that line. Its heading names
 the week whose cells are on screen ("This week" / "Last week"), taken from the
 board in hand, so it does not change until the other week's read lands. The
-header carries a legend: a whole gem "Got it", a cut gem "On the way".
+header carries a legend in the same two looks: a gem "Got it", a gem inside a
+ring of days "On the way".
 Everything on the board is about the week shown: the response's lifetime
 counts are not drawn anywhere.
 
@@ -559,7 +588,9 @@ whole. `--gem-lane-out` has to stay below the panel's side padding (1em), or
 the panel's own `overflow: hidden` cuts the bar instead.
 
 Each cell is one glyph (`GemGlyph.jsx`) and is exactly one of three things:
-a blank cell, a whole gem, or a gem cut like the ring around it. A gem is a
+a blank cell, a whole gem, or a whole gem inside a ring of days. A gem is
+blank or full — never cut, sliced, greyed or see-through (the owner's rule);
+the ring alone shows how far a day-count has got. A gem is a
 plain stone in its area's colour: no icon on its face (the area is its colour;
 the section headers carry the area icons, and the family card's Gems chip is
 the colour legend). The first matching look wins:
@@ -568,7 +599,7 @@ the colour legend). The first matching look wins:
 |---|---|---|
 | `lit` | `week > 0`, or `earned` / `won` | the whole gem, filling the cell; inside the ring too if a day-count is still in reach |
 | `holding` | `leading` | the whole gem, the same as earned: a lead is a gem while it lasts, and moves when the lead does. It outranks a running day-count in the same row (the ring is still drawn around it) |
-| `streak` | a day-count with at least one day done whose `reach` is not `out` | a ring of `need` segments (done days in the rule's colour, days to go a neutral outline) around the gem **cut like the ring**: from 12 o'clock clockwise, `have/need` of the stone in full colour, the rest a grey stone at 30% opacity. The wedge edges fall on the ring's gaps. No words and no hue for status |
+| `streak` | a day-count with at least one day done whose `reach` is not `out` | a ring of `need` segments (done days in the rule's colour, days to go a neutral outline) around the **whole, solid gem in the area's colour** (the same stone as an earned one, a step smaller). No words and no hue for status |
 | `unknown` | the evidence could not be read | a blank cell (the `aria-label` and the detail box still say `can’t tell yet`) |
 | `off` | `disabled` | a muted `–` |
 | `none` | anything else, including a day-count not begun, one out of reach, and a gem still open | a blank cell |
@@ -576,8 +607,8 @@ the colour legend). The first matching look wins:
 A `lit` or `holding` gem carries a `×n` badge when the cell holds more than one
 gem: `max(week, held)`, so a row that folds a won personal best with a held
 contest lead reads `×2`. A gem with a ring around it is drawn smaller, inside
-it; a gem without one fills the cell. The cut stone's grey 30% is the one
-see-through thing on the board (the stylesheet test pins it); nothing is
+it; a gem without one fills the cell. Nothing on the board is see-through or
+clipped (the stylesheet test pins it: no `opacity`, no `clip-path`); nothing is
 animated or amber, and status is never a hue. A cell carries no numerals but
 the `×n` badge; day counts and scores live in the detail box. Nothing marks
 failure: a gem not earned is a blank cell, never a cross. Each cell's
@@ -588,11 +619,33 @@ row that also counts days reads "leading, and 2 of 4 days, on track").
 in the browser (`localStorage` `daylight.gemBoard.shape.v1`: the learners, the
 sections and the gem columns, no cells or totals; `boardShape`). The next
 opening on that screen draws the outline at once, at the board's full size,
-with a small dark dot in every cell (so it never reads as an empty week) and empty totals (`aria-busy`, nothing to
-press), and the gems fill in when the read lands, so the panel does not change
-size. A screen's first opening has no outline and says "Loading…". If the read
-brings more children or columns than the outline had, the board grows to fit
-and the new outline is kept. An outline that cannot be read is ignored.
+with every cell blank and empty totals (`aria-busy`, nothing to press), and the
+gems fill in when the read lands. A screen's first opening has no outline and
+says "Loading…". If the read brings more children or columns than the outline
+had, the board grows to fit and the new outline is kept. An outline that
+cannot be read is ignored.
+
+Better than the outline: each read of this week's board is also kept whole
+(`kioskCache.js`, `localStorage` `daylight.cache.gemBoard.board:<surface>`,
+schema version 1, keyed by the board's week, capped at 256 KB). An opening in
+the same week paints that last good board at once — real gems, real totals —
+and the fresh read replaces it in place when it lands (stale-while-revalidate;
+a fresh payload always wins). A kept board from another week, or another
+schema version, is dropped and never drawn: a new week opens on the outline,
+so a gem from last week never shows as held this week. Cache hits, misses and
+stale drops log `kiosk-cache.*` at debug. Every storage read and write is
+guarded; blocked storage is a miss.
+
+**The panel never moves once shown.** The fit (`useBoardFit.js`) is locked
+for an opening per board shape (who, which columns, their names) and screen
+size: the first fit applied stays until the board closes, its shape changes or
+the screen is resized, so the outline, the cached board and the fresh board
+are one size, and late font loads or a slightly different measurement do not
+snap the panel. Each measurement is kept (`daylight.gemBoard.fit.v1`, by shape
+and screen size) and the next opening applies it before its first paint
+(`gem-board.fit-cached`; a measurement that differs from the held fit logs
+`gem-board.fit-held` and is used from the next opening). The detail box opens
+over the panel at its final size; it has no loading state.
 
 The ring takes the colour of the rule whose days it counts: the part named by
 `streak.ruleId`, else the row's colour. The detail box's day strip uses the
@@ -604,18 +657,31 @@ not `disabled` and is either in a state other than `none` or has days, items
 or a score (`detailParts`, the one rule the board and the box share). So a
 blank-looking cell still opens for a contest score that is not the lead or a
 day-count that fell short; a cell whose rules are all off, or with nothing
-this week, does not. The card sits over the board. Its head is tinted in the
-row's colour and carries the cell's own glyph, the row's name and the child's
-name; below it is one band per such part, the rule's label on the left and how
-it stands on the right. The label is left out when the card shows a single
-part named like the row.
+this week, does not.
+
+It is read across a garage by children, so every number goes out with its
+unit and every status is words: never a raw score, never a bare weekday, no
+translucency (the board behind is covered by a solid shade), no status hues.
+The head is the area's badge (a disc in the area colour with its icon in
+`inkOn` ink), the row's name large, then the child and what the cell holds
+("Ann · 2 gems this week", "Holding 1 gem while leading", "1 gem this week,
+and 1 more while leading", "No gem yet this week" — no `×n` here), and a large
+close button. Below, one band per part: the rule's label (left out when the
+card shows a single part named like the row), a status line, and its body.
+Two tall bodies (two contests with standings, two day strips) sit side by
+side on a wider card instead of stacking past the screen.
 
 | Part | Shows |
 |---|---|
-| day-count | the week Monday → Sunday as seven lettered days: counted days filled in the part's colour, short days outlined, today ringed, days ahead dimmed, days after the part's `lastDay` closed (fainter, no outline: Sunday for a `ring-days` rule), an empty past day plain. Then one line: `Earned`, `2 of 4 days · 3 days left`, `· needs every day left` (tight), `· out of reach this week` (out) |
-| milestone | this week's items, each with its weekday, or `None this week` |
-| contest | `Won`, `Leading so far` or `Not leading`; with a score, the child's number, `best 320` beside it when a best is known, and a bar showing the one against the other |
+| day-count | `2 of 5 days · 3 more to go` (`· 3 more to go, every day left` when tight, `· can’t make it this week` when out, `Earned!`), the week Monday → Sunday as seven named days (`Mon` … `Sun`): counted days filled in the part's colour with `inkOn` text, short days outlined, today ringed, days ahead dimmed, days after the part's `lastDay` closed (no outline), and a line in words: `Done on Monday and today` / `No days done yet` |
+| contest | one sentence saying who leads and with what: `Ann leads with 5:14 on Sprint 1500`, `Ann won with 410 rings`, `Ann and Ben are tied for first with 410 rings`, `Nobody is above their usual rings yet`; then the whole roster best first (rank, name, value — `5:14`, `1,260 rings`, `36 more` / `120 fewer` for most improved), the child's own row outlined in the area colour and each leader's rank filled. A child with no score this week reads `<name>: no score yet this week` |
+| milestone | this week's items, each with when in words (`New best on Sprint 1500` … `on Tuesday` / `yesterday` / `today`), or `None yet this week` |
+| other | `Earned!`, `Won!`, `Not finished yet`, `Not this week` |
 | `unknown` | `Can’t tell yet` |
+
+Formatting helpers (`formatMeasure`, `clockTime`, `contestHeadline`,
+`streakLine`, `doneLine`, `gemsLine`) are exported from `GemDetail.jsx` and
+tested there.
 
 | Input | Does |
 |---|---|
@@ -748,7 +814,9 @@ is the preview's current study day, `currentStudyDay()`).
     Move · School · Games order, only areas with `held > 0`; a running
     day-count or a zero is never in it. Empty,
     with `economy.standings.gems-unavailable` logged, when the board cannot be
-    read).
+    read). The standings price the roster once and hand it to the board
+    (`GemBoardService.board({roster})`), so one request reads each learner's
+    school week once.
   All read-only, `no-store`; with the catalog `off` they return no learners.
 - **The fitness coin ceremony** (`useWorkoutCoinCeremony`) reads only `/paid`.
   It looks when the screen loads (last 2 days, 5 sessions), when a workout closes,

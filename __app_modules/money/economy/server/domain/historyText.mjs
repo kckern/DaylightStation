@@ -2,7 +2,7 @@
  * The ledger in plain words, for a kid reading their bank:
  *
  *   +2 silver · Isaiah 50–51 passed      a payout, named by its evidence line
- *   +5 silver · Scripture (whole week)   …or by its rule label, then "schoolwork"
+ *   +5 silver · Scripture   …or by its rule label, then "schoolwork"
  *   +2 silver · Korean · Tuesday         a per-day payout: the day(s) it paid for
  *   +6 silver · Rings · Sonic & Sega All Stars Racing · 7:19 pm · 588 rings
  *                                        a ring payout: the workout it paid for

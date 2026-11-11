@@ -140,7 +140,10 @@ widens them.
 `household/school/records/verdicts/<learnerId>/<termId>.yml` holds the
 ladder's output per day with the ladder's version. It is a cache, not a
 record: delete it and the next read rebuilds. Today and yesterday are
-recomputed on read (held for a minute so the board can poll); older days are
+recomputed on read (held for a minute so the board can poll — and shared in
+memory from the moment one read starts them, so concurrent reads and the
+earnings roster's per-learner reads project each live day once rather than
+waiting for the queued cache write); older days are
 served from the file and recomputed in the background only when missing,
 stale-versioned or a fault whose retry is due — the read returns
 `unknown / pending` for those until they are written.

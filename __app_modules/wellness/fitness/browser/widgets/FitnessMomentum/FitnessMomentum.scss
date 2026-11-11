@@ -49,7 +49,7 @@
   }
   // Right-sized placeholder matching the ring + total footprint, so the
   // headline doesn't reflow when the real total hydrates in.
-  &__house-rings--skel { width: 5rem; height: 1.4rem; border-radius: 5px; }
+  &__house-rings--skel { width: 5rem; height: 1.4rem; border-radius: 5px; background: #2a2f38; }
   // The Gems chip is the area legend (a gem in each area's colour, and its
   // name) and the way into the Gem Board.
   &__gems-chip {
@@ -70,7 +70,8 @@
 
   &__legend { display: inline-flex; align-items: center; gap: 0.2rem; white-space: nowrap; }
 
-  &__zero { flex: none; color: #a9a9ae; font-size: 1.1rem; }
+  // In the headline line: one line, cut short rather than wrapped, so the headline never grows.
+  &__zero { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a9a9ae; font-size: 1.1rem; font-weight: 400; }
 
   // The cards share four rows (who, hero, bars, foot) through subgrid, so every
   // card's hero, bars and foot line up across the panel: the tallest foot sets
@@ -146,7 +147,7 @@
     font-variant-numeric: tabular-nums;
     color: #67e8f9;
     white-space: nowrap;
-    &--skel { width: 60%; height: 1em; border-radius: 6px; }
+    &--skel { width: 60%; height: 1em; border-radius: 6px; background: #2a2f38; }
   }
 
   // Four Monday weeks, oldest → newest, same scale. Each is a column: its ring
@@ -201,6 +202,9 @@
     filter: brightness(0.62); // past weeks: the same zone hues, darker and fully solid (static, never animated)
   }
   &__weekcol.is-current &__weekfill { filter: none; }
+  // Before the first read: a solid slot, no shimmer, nothing see-through.
+  &__weekfill.is-placeholder { background: #2a2f38; filter: none; }
+  &__rail.is-placeholder { cursor: default; }
   &__weekseg { width: 100%; display: block; }
 
   // The foot of the card: silver, then one plain gem per area with gems held

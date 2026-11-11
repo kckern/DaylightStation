@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
-import GemBoardOverlay, { GemBoardGrid, boardRowIds, boardShape, readBoardShape } from './GemBoard.jsx';
+import GemBoardOverlay, { GemBoardGrid, boardRowIds, boardShape, readBoardShape, shapeSignature } from './GemBoard.jsx';
+import { localMonday } from '@/lib/kioskCache.js';
 
 const part = (ruleId, label, cadence, extra = {}) => ({ ruleId, label, cadence, state: 'none', week: 0, lifetime: 0, progress: null, left: null, reach: null, days: [], items: [], score: null, note: null, ...extra });
 const BOARD = {
@@ -12,10 +13,10 @@ const BOARD = {
   learners: [{ learnerId: 'a', name: 'Ann' }, { learnerId: 'b', name: 'Ben' }],
   groups: [{ id: 'move', label: 'Move' }, { id: 'school', label: 'School' }],
   categories: [
-    { id: 'green-week', label: 'Green week', cadence: 'weekly', group: 'school', color: '#2e9e5b', parts: [{ ruleId: 'green-week', label: 'Green week', cadence: 'weekly' }] },
-    { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', color: '#8e5bd0', parts: [{ ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly' }] },
-    { id: 'ring-contests', label: 'Ring contests', cadence: 'contest', group: 'move', color: '#8e5bd0', parts: [{ ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest' }] },
-    { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', color: '#2e9e5b', parts: [{ ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' }, { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' }] },
+    { id: 'green-week', label: 'Green week', cadence: 'weekly', group: 'school', color: '#f2c94c', parts: [{ ruleId: 'green-week', label: 'Green week', cadence: 'weekly' }] },
+    { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', color: '#1e88e5', parts: [{ ruleId: 'moved-days', label: 'Moved 5 days', cadence: 'weekly' }] },
+    { id: 'ring-contests', label: 'Most Rings', cadence: 'contest', group: 'move', color: '#1e88e5', parts: [{ ruleId: 'ring-contest', label: 'Most rings this week', cadence: 'contest' }] },
+    { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', color: '#f2c94c', parts: [{ ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly' }, { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone' }] },
   ],
   cells: {
     'green-week': { a: { state: 'unknown', week: 0, streak: null, parts: [] }, b: { state: 'none', week: 0, streak: null, parts: [] } },
@@ -43,7 +44,7 @@ describe('GemBoardGrid', () => {
     expect(container.querySelectorAll('.gem-board__grid')).toHaveLength(1);
     expect([...container.querySelectorAll('.gem-board__name')].map((n) => n.textContent)).toEqual(['Ann', 'Ben']);
     expect([...container.querySelectorAll('.gem-board__group-label')].map((n) => n.textContent)).toEqual(['Move', 'School']);
-    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Ring contests', 'Green week', 'Reading']);
+    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Most Rings', 'Green week', 'Reading']);
     const looks = [...container.querySelectorAll('.gem-board__cell')].map((c) => c.dataset.look);
     expect(looks).toEqual(['lit', 'holding', 'unknown', 'lit', 'streak', 'none', 'none', 'none']);
     // The row label carries no gem; an empty cell is blank; fractions are gone.
@@ -79,11 +80,11 @@ describe('GemBoardGrid', () => {
     const onOpen = vi.fn();
     const { container } = render(<GemBoardGrid board={{ ...BOARD, cells }} onOpen={onOpen} />);
     const button = (label) => screen.getByLabelText(label).closest('button');
-    for (const label of ['Ben, Ring contests: not this week', 'Ann, Moved 5 days: not this week']) {
+    for (const label of ['Ben, Most Rings: not this week', 'Ann, Moved 5 days: not this week']) {
       expect(button(label)).toBeTruthy();
       expect(button(label).querySelector('.gem-glyph')).toBeTruthy(); // the same box as any other cell
     }
-    fireEvent.click(button('Ben, Ring contests: not this week'));
+    fireEvent.click(button('Ben, Most Rings: not this week'));
     expect(onOpen).toHaveBeenCalledWith('ring-contests', 'b');
     expect(button('Ben, Reading: not this week')).toBeNull(); // books from other weeks are not this week's news
     expect(button('Ann, Green week: off')).toBeNull();
@@ -110,9 +111,9 @@ describe('GemBoardGrid — areas', () => {
     ...BOARD,
     groups: [{ id: 'move', label: 'Move' }, { id: 'games', label: 'Games' }, { id: 'school', label: 'School' }],
     categories: [
-      { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', area: 'move', color: '#8e5bd0', parts: [] },
-      { id: 'racing', label: 'Racing', cadence: 'contest', group: 'games', area: 'games', color: '#ff7a2f', parts: [] },
-      { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', area: 'school', color: '#2e9e5b', parts: [] },
+      { id: 'exercise', label: 'Moved 5 days', cadence: 'weekly', group: 'move', area: 'move', color: '#1e88e5', parts: [] },
+      { id: 'racing', label: 'Cycle Race', cadence: 'contest', group: 'games', area: 'games', color: '#2e9e5b', parts: [] },
+      { id: 'reading', label: 'Reading', cadence: 'weekly', group: 'school', area: 'school', color: '#f2c94c', parts: [] },
     ],
     cells: {
       exercise: { a: { state: 'earned', week: 3, streak: null, parts: [] }, b: { state: 'pending', week: 0, streak: { have: 1, need: 5, left: 4, reach: 'tight', ruleId: 'moved-days' }, parts: [] } },
@@ -126,14 +127,18 @@ describe('GemBoardGrid — areas', () => {
     const heads = [...container.querySelectorAll('.gem-board__group-label')];
     expect(heads.map((n) => n.textContent)).toEqual(['Move', 'School', 'Games']);
     expect(heads.map((n) => n.querySelector('.area-icon')?.dataset.area)).toEqual(['move', 'school', 'games']);
-    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Reading', 'Racing']);
+    expect([...container.querySelectorAll('.gem-board__cat')].map((n) => n.textContent)).toEqual(['Moved 5 days', 'Reading', 'Cycle Race']);
     expect(boardRowIds(AREAS)).toEqual(['exercise', 'reading', 'racing']);
   });
 
-  it('column names lean (one nowrap span per column) and the stylesheet breaks no word', () => {
+  it('column names lean (one nowrap span per column, bold, a step larger) and the stylesheet breaks no word', () => {
     const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8');
     expect(css).not.toMatch(/overflow-wrap:\s*anywhere/);
     expect(css).toMatch(/rotate\(-40deg\)/);
+    const cat = css.slice(css.indexOf('&__cat {'), css.indexOf('// The highlighted child'));
+    expect(cat).toMatch(/white-space:\s*nowrap/);
+    expect(cat).toMatch(/font-weight:\s*700/);
+    expect(cat).toMatch(/font-size:\s*1\.2em/);
     // The head row and the room for the last name's lean come from the measured fit.
     expect(css).toMatch(/grid-template-rows:\s*var\(--gem-head/);
     expect(css).toMatch(/padding-right:\s*var\(--gem-lean/);
@@ -141,24 +146,28 @@ describe('GemBoardGrid — areas', () => {
     expect(container.querySelectorAll('.gem-board__cat > span')).toHaveLength(3);
   });
 
-  it('cells: a solid gem with ×3, a pie-cut gem in a 1-day ring, a blank 0-day cell, a lead as a solid gem', () => {
+  it('cells: a solid gem with ×3, a whole gem in a 1-day ring, a blank 0-day cell, a lead as a solid gem', () => {
     const { container } = render(<GemBoardGrid board={AREAS} />);
     const cell = (row, who) => container.querySelector(`.gem-board__col[data-row="${row}"][data-learner="${who}"] .gem-board__cell`);
     expect(cell('exercise', 'a').textContent).toBe('×3');
     expect(cell('exercise', 'a').querySelector('.area-icon')).toBeNull();
     expect(cell('exercise', 'b').textContent).toBe('');
-    expect(cell('exercise', 'b').querySelector('.gem-glyph__pie')).toBeTruthy();
+    expect(cell('exercise', 'b').querySelectorAll('.gem-icon')).toHaveLength(1);
+    expect(cell('exercise', 'b').querySelector('.gem-glyph').dataset.look).toBe('streak');
     expect(cell('exercise', 'b').querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(1);
     expect(cell('reading', 'b').querySelector('svg')).toBeNull();
     expect(cell('racing', 'a').textContent).toBe('');
     expect(cell('racing', 'a').querySelector('.gem-icon')).toBeTruthy();
-    expect(cell('racing', 'a').querySelector('.gem-glyph__pie')).toBeNull();
   });
 
   it('the total is the gems held (earned + leads) and its heading names the week shown', () => {
     const board = { ...AREAS, totals: { a: { week: 4, earned: 3 }, b: { week: 0, earned: 0 } } };
     const { container, rerender } = render(<GemBoardGrid board={board} />);
-    expect([...container.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['4', '0']);
+    // A zero week is a blank cell (no '0'), the same cell kept so nothing shifts; its words stay for a screen reader.
+    const totals = [...container.querySelectorAll('.gem-board__total')];
+    expect(totals.map((el) => el.textContent)).toEqual(['4', '']);
+    expect(totals[1].getAttribute('role')).toBe('cell');
+    expect(totals[1].className).toBe(totals[0].className.replace(' is-focus', ''));
     expect(screen.getByLabelText('Ann: 4 this week')).toBeTruthy();
     expect(container.querySelector('.gem-board__total-label').textContent).toBe('This week');
     rerender(<GemBoardGrid board={board} weekLabel="Last week" />);
@@ -166,11 +175,12 @@ describe('GemBoardGrid — areas', () => {
     expect(screen.getByLabelText('Ann: 4 last week')).toBeTruthy();
   });
 
-  it('a pending board draws a placeholder dot per cell, so it never reads as an empty week', () => {
+  it('a pending board draws every cell blank (nothing faded, no dots, no shimmer)', () => {
     const { container } = render(<GemBoardGrid board={AREAS} pending />);
     const cols = container.querySelectorAll('.gem-board__col').length;
     expect(cols).toBe(6);
-    expect(container.querySelectorAll('.gem-board__cell .gem-board__dot')).toHaveLength(cols);
+    expect(container.querySelectorAll('.gem-board__cell')).toHaveLength(cols);
+    expect([...container.querySelectorAll('.gem-board__cell')].every((c) => c.children.length === 0)).toBe(true);
     expect(container.querySelector('.gem-glyph')).toBeNull();
   });
 });
@@ -351,7 +361,7 @@ describe('GemBoardOverlay', () => {
     expect(screen.queryByRole('dialog', { name: 'Ben, Reading' })).toBeNull();
   });
 
-  it('the header carries a legend: whole gem = got it, cut gem = on the way', async () => {
+  it('the header carries a legend: a gem = got it, a whole gem in a ring = on the way', async () => {
     render(<GemBoardOverlay open surface="fitness" load={vi.fn(async () => BOARD)} onClose={() => {}} idleMs={0} />);
     await flush();
     const legend = document.querySelector('.gem-board__header .gem-board__legend');
@@ -359,8 +369,10 @@ describe('GemBoardOverlay', () => {
     const items = [...legend.children];
     expect(items.map((el) => el.textContent)).toEqual(['Got it', 'On the way']);
     expect(items[0].querySelector('.gem-glyph').dataset.look).toBe('lit');
-    expect(items[0].querySelector('.gem-glyph__pie')).toBeNull();
-    expect(items[1].querySelector('.gem-glyph__pie')).toBeTruthy();
+    expect(items[0].querySelector('.gem-glyph__ring')).toBeNull();
+    expect(items[1].querySelector('.gem-glyph').dataset.look).toBe('streak');
+    expect(items[1].querySelector('.gem-glyph__ring')).toBeTruthy();
+    expect(items[1].querySelectorAll('.gem-icon')).toHaveLength(1);
   });
 
   it('the totals heading follows the week tab', async () => {
@@ -409,9 +421,9 @@ describe('GemBoardOverlay', () => {
     const grid = document.querySelector('.gem-board__grid');
     expect(grid.getAttribute('aria-busy')).toBe('true');
     const outline = { columns: grid.style.gridTemplateColumns, names: [...grid.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...grid.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) };
-    expect(grid.querySelectorAll('.gem-board__cell')).toHaveLength(8); // placeholder cells: a dot each, no gem
+    expect(grid.querySelectorAll('.gem-board__cell')).toHaveLength(8); // placeholder cells: blank, no gem
     expect(grid.querySelector('.gem-board__cell').textContent).toBe('');
-    expect([...grid.querySelectorAll('.gem-board__cell > *')].every((el) => el.classList.contains('gem-board__dot'))).toBe(true);
+    expect(grid.querySelectorAll('.gem-board__cell > *')).toHaveLength(0);
     expect(grid.querySelector('.gem-glyph')).toBeNull();
     expect(grid.querySelector('button')).toBeNull();
     expect([...grid.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['', '']);
@@ -419,6 +431,51 @@ describe('GemBoardOverlay', () => {
     const loaded = document.querySelector('.gem-board__grid');
     expect(loaded.hasAttribute('aria-busy')).toBe(false);
     expect({ columns: loaded.style.gridTemplateColumns, names: [...loaded.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...loaded.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) }).toEqual(outline);
+  });
+
+  it('with a kept fit, the panel opens at that size and keeps it when the board lands (no jolt)', async () => {
+    localStorage.setItem('daylight.gemBoard.shape.v1', JSON.stringify(boardShape(BOARD)));
+    localStorage.setItem('daylight.gemBoard.fit.v1', JSON.stringify({
+      signature: shapeSignature(BOARD), vw: window.innerWidth, vh: window.innerHeight, fontPx: 23.5, headEm: 3.4, leanEm: 0.3,
+    }));
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    const panel = () => document.querySelector('.gem-board__panel');
+    const size = () => ({ font: panel().style.fontSize, head: panel().style.getPropertyValue('--gem-head'), lean: panel().style.getPropertyValue('--gem-lean') });
+    const loading = size();
+    expect(loading).toEqual({ font: '23.5px', head: '3.4em', lean: '0.3em' });
+    expect(document.querySelector('.gem-board__grid').getAttribute('aria-busy')).toBe('true');
+    await act(async () => { release(); });
+    expect(document.querySelector('.gem-board__grid').hasAttribute('aria-busy')).toBe(false);
+    expect(size()).toEqual(loading);
+  });
+
+  it('opens on the last good board of THIS week while the read is out, then the fresh one replaces it in place', async () => {
+    const monday = localMonday();
+    const stale = { ...BOARD, week: monday, totals: { a: { week: 9, earned: 9 }, b: { week: 0, earned: 0 } } };
+    localStorage.setItem('daylight.cache.gemBoard.board:fitness', JSON.stringify({ v: 1, week: monday, at: Date.now(), data: stale }));
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve({ ...BOARD, week: monday }); }));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    const grid = () => document.querySelector('.gem-board__grid');
+    expect(grid().hasAttribute('aria-busy')).toBe(false); // real content, not the outline
+    expect(screen.getByLabelText('Ann: 9 this week')).toBeTruthy();
+    const columns = grid().style.gridTemplateColumns;
+    await act(async () => { release(); });
+    expect(screen.queryByLabelText('Ann: 9 this week')).toBeNull();
+    expect(grid().style.gridTemplateColumns).toBe(columns);
+    expect(JSON.parse(localStorage.getItem('daylight.cache.gemBoard.board:fitness')).data.totals.a.week).not.toBe(9);
+  });
+
+  it('never opens on a cached board from another week: the outline (no gems) instead', async () => {
+    localStorage.setItem('daylight.gemBoard.shape.v1', JSON.stringify(boardShape(BOARD)));
+    localStorage.setItem('daylight.cache.gemBoard.board:fitness', JSON.stringify({ v: 1, week: '2020-01-06', at: 0, data: { ...BOARD, week: '2020-01-06' } }));
+    const slow = vi.fn(() => new Promise(() => {}));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    expect(document.querySelector('.gem-board__grid').getAttribute('aria-busy')).toBe('true');
+    expect(document.querySelector('.gem-board__grid .gem-glyph')).toBeNull();
+    expect(localStorage.getItem('daylight.cache.gemBoard.board:fitness')).toBeNull();
   });
 
   it('the highlighted child’s bar sits on that child’s line inside the scrolling body: in the outline, on the board, and when the highlight moves', async () => {
@@ -468,9 +525,9 @@ describe('GemBoardOverlay', () => {
       ...BOARD,
       groups: [{ id: 'move', label: 'Move' }, { id: 'games', label: 'Games' }, { id: 'school', label: 'School' }],
       categories: [
-        { id: 'exercise', label: 'Moved 5 days', group: 'move', area: 'move', color: '#8e5bd0', parts: [] },
-        { id: 'racing', label: 'Racing', group: 'games', area: 'games', color: '#ff7a2f', parts: [] },
-        { id: 'reading', label: 'Reading', group: 'school', area: 'school', color: '#2e9e5b', parts: [] },
+        { id: 'exercise', label: 'Moved 5 days', group: 'move', area: 'move', color: '#1e88e5', parts: [] },
+        { id: 'racing', label: 'Cycle Race', group: 'games', area: 'games', color: '#2e9e5b', parts: [] },
+        { id: 'reading', label: 'Reading', group: 'school', area: 'school', color: '#f2c94c', parts: [] },
       ],
       cells: {
         exercise: { a: { state: 'none', week: 0, streak: null, parts: [] } },

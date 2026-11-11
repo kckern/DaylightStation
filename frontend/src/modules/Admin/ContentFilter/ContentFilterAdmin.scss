@@ -14,6 +14,16 @@
 .cf-card__meta { display: flex; gap: var(--ds-space-2); align-items: center; font-size: 11px; color: var(--ds-text-secondary); height: 18px; }
 .cf-card__run { font-size: 11px; line-height: 1.2; height: 2.4em; overflow: hidden; color: var(--ds-text-secondary); }
 .cf-card__run.is-failed { color: var(--ds-danger); }
+.cf-card__note { flex: none; font-size: 11px; line-height: 1.25; max-height: 2.5em; overflow: hidden; color: var(--ds-warning, var(--ds-text-secondary)); }
+
+// Films not matched to Plex: one plain list below the stage groups, set apart and muted.
+.mantine-Accordion-item.cf-unmatched { margin-top: var(--ds-space-6); background: transparent; border: 1px dashed var(--ds-text-secondary); }
+.cf-unmatched__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0 var(--ds-space-4); }
+.cf-unmatched__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title year" "reason reason"; column-gap: var(--ds-space-2); padding: var(--ds-space-2) 0; border-bottom: 1px solid var(--ds-border); min-width: 0; }
+.cf-unmatched__title { grid-area: title; font-size: 13px; font-weight: 600; color: var(--ds-text-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-unmatched__title:hover { text-decoration: underline; }
+.cf-unmatched__year { grid-area: year; font-size: 12px; color: var(--ds-text-secondary); }
+.cf-unmatched__reason { grid-area: reason; font-size: 12px; color: var(--ds-text-secondary); }
 
 // Review page: player (and row tools) beside the list; stacked below 900 px.
 .cf-review { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--ds-space-4); align-items: start; }

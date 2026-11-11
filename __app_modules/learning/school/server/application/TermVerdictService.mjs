@@ -43,6 +43,13 @@ export class TermVerdictService {
   #completion; #cache; #periods; #window; #timezone; #clock; #logger; #freshMs;
   #queues = new Map();
   #changedAt = new Map(); // learnerId -> ms of the last completion input (see `invalidate`)
+  // `${learnerId}|${day}|${today}` -> {startedMs, promise}: today's/yesterday's
+  // live projections, shared while they are in flight and for `freshMs` after,
+  // by the same rule as a cached row. The cache only learns of a row when its
+  // queued merge lands, so without this every concurrent read (the earnings
+  // roster prices four learners per request, several surfaces poll) replayed
+  // the same day again — 2026-11-10, standings and the Gem Board took ~50 s.
+  #live = new Map();
 
   /**
    * @param {object} deps
@@ -115,6 +122,30 @@ export class TermVerdictService {
   }
 
   /**
+   * Today's or yesterday's live row for `read`: one already started within
+   * `freshMs` and after the learner's last completion input is shared (the
+   * cache's own `recent` rule, applied before the merge lands); otherwise it
+   * is computed now. `owner` is true for the caller that started it. A failed
+   * compute is dropped at once, so the next read tries again; a row is dropped
+   * once its merge has landed, from then on the cache's own row is the answer.
+   */
+  #liveDay(learnerId, day, today, { nowMs, changedAt }) {
+    for (const [k, v] of this.#live) if (nowMs - v.startedMs >= this.#freshMs) this.#live.delete(k);
+    const key = `${learnerId}|${day}|${today}`;
+    const hit = this.#live.get(key);
+    if (hit && hit.startedMs > changedAt && nowMs - hit.startedMs < this.#freshMs) return { promise: hit.promise, owner: false };
+    const entry = { startedMs: nowMs, promise: this.computeDay(learnerId, day, today) };
+    this.#live.set(key, entry);
+    const live = { key, entry, promise: entry.promise, owner: true };
+    entry.promise.catch(() => this.#forgetLive(live));
+    return live;
+  }
+
+  #forgetLive({ key, entry }) {
+    if (this.#live.get(key) === entry) this.#live.delete(key);
+  }
+
+  /**
    * One day's row by the READ RULE, for a caller that wants a single day
    * (the parent digest's look-back): today and yesterday are computed now;
    * an older day comes from the cache, and a missing, stale or retry-due row
@@ -157,13 +188,18 @@ export class TermVerdictService {
     const rows = {};
 
     const changedAt = this.#changedAt.get(learnerId) ?? -Infinity;
+    const owned = [];
     for (const day of termDaysFor(term.from, last)) {
       const row = valid[day] ?? null;
       const computedMs = row?.computedAt ? Date.parse(row.computedAt) : NaN;
       const recent = nowMs - computedMs < this.#freshMs && computedMs > changedAt;
       if ((day === today || day === yesterday) && !recent) {
+        const live = this.#liveDay(learnerId, day, today, { nowMs, changedAt });
         // eslint-disable-next-line no-await-in-loop
-        rows[day] = fresh[day] = await this.computeDay(learnerId, day, today);
+        const row = await live.promise;
+        rows[day] = row;
+        // Only the read that computed the row queues its merge.
+        if (live.owner) { fresh[day] = row; owned.push(live); }
         continue;
       }
       const retryDue = row?.state === 'unknown' && row.reason !== 'pending'
@@ -174,7 +210,9 @@ export class TermVerdictService {
     }
 
     if (Object.keys(fresh).length) {
-      this.#enqueue(learnerId, () => this.#merge(learnerId, term.termId, fresh)).catch(() => {});
+      // Once the merge lands the cache answers for these rows again.
+      const landed = () => owned.forEach((live) => this.#forgetLive(live));
+      this.#enqueue(learnerId, () => this.#merge(learnerId, term.termId, fresh)).then(landed, landed);
     }
     if (stale.length) {
       this.#logger.info?.('school.term-verdicts.backfill-queued', { learnerId, termId: term.termId, days: stale.length });

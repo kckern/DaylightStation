@@ -28,6 +28,9 @@ export const SECTIONS = [
   { id: 'running', label: STAGE_LABELS.running, stages: ['running'], open: true },
   { id: 'rough', label: STAGE_LABELS.rough, stages: ['rough'], open: false },
 ];
+/** Films the library cannot match to Plex (no key, stale key, another year, several Plex films). */
+export const UNMATCHED_SECTION = { id: 'unmatched', label: 'Not matched to Plex' };
+const isUnmatched = (f) => f.match === 'unmatched';
 const OPEN_KEY = 'cf-library-open';
 const defaultOpen = () => SECTIONS.filter((x) => x.open).map((x) => x.id);
 function loadOpen() {
@@ -59,6 +62,10 @@ export function FilterLibrary() {
   const anyActive = films.some((f) => active(f.job));
 
   useEffect(() => {
+    if (data?.meta) logger.debug('library.loaded', { total: data.meta.total, verified: data.meta.verified ?? null, unmatched: data.meta.unmatched ?? null });
+  }, [data]);
+
+  useEffect(() => {
     if (!anyActive) return undefined;
     const id = setInterval(() => reload(), POLL_MS);
     return () => clearInterval(id);
@@ -84,9 +91,12 @@ export function FilterLibrary() {
     () => films.filter((f) => (!stage || f.stage === stage) && (!needle || String(f.title || '').toLowerCase().includes(needle))),
     [films, stage, needle],
   );
+  // Stage groups hold verified films only; the rest wait apart until Plex has the right film.
+  const matched = useMemo(() => shown.filter((f) => !isUnmatched(f)), [shown]);
+  const unmatched = useMemo(() => shown.filter(isUnmatched), [shown]);
   const groups = useMemo(() => SECTIONS
-    .map((sec) => ({ ...sec, films: shown.filter((f) => sec.stages.includes(f.stage)) }))
-    .filter((sec) => sec.films.length), [shown]);
+    .map((sec) => ({ ...sec, films: matched.filter((f) => sec.stages.includes(f.stage)) }))
+    .filter((sec) => sec.films.length), [matched]);
 
   const card = (f, chip) => <FilmCard key={f.ratingKey} film={f} worker={data?.worker} chip={chip}
     busy={busy} onMake={make} />;
@@ -105,7 +115,7 @@ export function FilterLibrary() {
         </Group>
         {meta ? (
           <Text size="xs" c="dimmed">
-            {`${meta.indexedAt ? `Index from ${String(meta.indexedAt).slice(0, 10)}` : 'Index date unknown'} · ${meta.total} titles · ${meta.unlinked} unlinked`}
+            {`${meta.indexedAt ? `Index from ${String(meta.indexedAt).slice(0, 10)}` : 'Index date unknown'} · ${meta.total} titles · ${meta.verified ?? meta.total} matched to Plex · ${meta.unmatched ?? 0} not`}
           </Text>
         ) : null}
         {notice ? <Text size="sm" role="alert">{notice}</Text> : null}
@@ -113,13 +123,16 @@ export function FilterLibrary() {
           <Text size="sm" c="dimmed">No filter worker is running. Queued runs wait until one starts
             (<code>contentfilter worker</code> on a machine with the pipeline's Python tools).</Text>
         ) : null}
-        {!shown.length ? <EmptyState title="No films" hint="Nothing matches. Clear the search or the stage." /> : needle ? (
+        {!shown.length ? <EmptyState title="No films" hint="Nothing matches. Clear the search or the stage." /> : null}
+        {!matched.length && unmatched.length ? <Text size="sm" c="dimmed">No film matched to Plex fits. See below.</Text> : null}
+        {matched.length && needle ? (
           <SimpleGrid className="cf-grid" cols={{ base: 2, sm: 4, md: 6, lg: 8 }} spacing="sm">
-            {shown.map((f) => card(f, STAGE_LABELS[f.stage] ?? f.stage))}
+            {matched.map((f) => card(f, STAGE_LABELS[f.stage] ?? f.stage))}
           </SimpleGrid>
-        ) : (
+        ) : null}
+        {(groups.length && !needle) || unmatched.length ? (
           <Accordion multiple variant="separated" value={openSections} onChange={onToggle}>
-            {groups.map((sec) => (
+            {needle ? null : groups.map((sec) => (
               <Accordion.Item key={sec.id} value={sec.id}>
                 <Accordion.Control>
                   <Group gap="xs"><Text fw={600} size="sm">{sec.label}</Text><Badge size="sm" variant="light" color={STAGE_TONE[sec.stages[0]]}>{sec.films.length}</Badge></Group>
@@ -131,8 +144,27 @@ export function FilterLibrary() {
                 </Accordion.Panel>
               </Accordion.Item>
             ))}
+            {unmatched.length ? (
+              <Accordion.Item value={UNMATCHED_SECTION.id} className="cf-unmatched">
+                <Accordion.Control>
+                  <Group gap="xs"><Text fw={600} size="sm">{UNMATCHED_SECTION.label}</Text><Badge size="sm" variant="outline" color="gray">{unmatched.length}</Badge></Group>
+                  <Text size="xs" c="dimmed">Not usable until Plex has the right film. Nothing here can be filtered.</Text>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <ul className="cf-unmatched__list">
+                    {unmatched.map((f) => (
+                      <li key={f.ratingKey} className="cf-unmatched__row">
+                        <Link className="cf-unmatched__title" to={`/admin/content/filter/${f.ratingKey}`}>{f.title || `Film ${f.ratingKey}`}</Link>
+                        <span className="cf-unmatched__year">{f.year ?? ''}</span>
+                        <span className="cf-unmatched__reason">{f.unmatched?.text || 'no Plex film'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Accordion.Panel>
+              </Accordion.Item>
+            ) : null}
           </Accordion>
-        )}
+        ) : null}
       </Stack>
     </SectionCard>
   );
@@ -161,6 +193,11 @@ function FilmCard({ film: f, worker, chip, busy, onMake }) {
         <span className="cf-card__title">{f.title || `Film ${f.ratingKey}`}</span>
         <span className="cf-card__year">{f.year ?? ''}</span>
       </Link>
+      {f.runtimeWarning ? (
+        <span className="cf-card__note" title={`The Plex file runs ${f.runtimeWarning.plexMin} min; VidAngel's figure is ${f.runtimeWarning.edlMin} min. The sync step checks the cut.`}>
+          {`Runtime ${f.runtimeWarning.plexMin} min (VidAngel ${f.runtimeWarning.edlMin})`}
+        </span>
+      ) : null}
       <div className="cf-card__meta">
         {chip ? <Badge size="xs" variant="light" color={STAGE_TONE[f.stage]}>{chip}</Badge> : null}
         {f.reviewed ? <span>{`${f.reviewed.n} of ${f.reviewed.m}`}</span> : null}

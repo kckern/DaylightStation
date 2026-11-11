@@ -74,12 +74,13 @@ export class WorkoutEarningsService {
    * Only areas holding something: a running day-count or a zero is not a gem.
    * `color` is the area's own (GEM_AREAS), so no client keeps a copy of it.
    * Read off the board itself, so a home card and the board cannot disagree.
-   * A board that cannot be read leaves every list empty.
+   * A board that cannot be read leaves every list empty. `roster` is the
+   * standings' own priced week, folded by the board rather than priced twice.
    */
-  async #heldGems() {
+  async #heldGems(roster) {
     if (!this.#gemBoard?.board) return () => [];
     try {
-      const board = await this.#gemBoard.board({ week: null });
+      const board = await this.#gemBoard.board({ week: null, roster });
       const rows = board?.categories ?? [];
       return (learnerId) => {
         const by = new Map();
@@ -202,7 +203,11 @@ export class WorkoutEarningsService {
   async standings() {
     const mode = this.#config.catalog().mode;
     if (mode === 'off') return { mode, contestClosed: false, learners: [] };
-    const [roster, gemsOf] = await Promise.all([this.#preview.roster({ week: null }), this.#heldGems()]);
+    // One priced roster for the standings and the board's gem chips: the
+    // roster is every learner's school + ring read, so a second one doubled
+    // each request's term-verdict projections (2026-11-10: ~50 s under load).
+    const roster = await this.#preview.roster({ week: null });
+    const gemsOf = await this.#heldGems(roster);
     const learners = [];
     for (const learner of roster?.learners ?? []) {
       if (!this.#isUser(learner.learnerId)) continue;

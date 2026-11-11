@@ -67,14 +67,14 @@ export const DEFAULT_RULESET = Object.freeze({
   currency: 'silver',
   rules: [
     { id: 'korean-daily', label: 'Korean (each day done)', kind: 'section-day', match: { subject: 'language' }, reward: { silver: 2 } },
-    { id: 'scripture-week', label: 'Scripture (whole week)', kind: 'section-week', match: { subject: 'scripture' }, reward: { silver: 5 } },
+    { id: 'scripture-week', label: 'Scripture', kind: 'section-week', match: { subject: 'scripture' }, reward: { silver: 5 } },
     { id: 'piano-daily', label: 'Piano (each day done)', kind: 'section-day', match: { subject: 'arts' }, reward: { silver: 1 } },
     { id: 'reading-daily', label: 'Reading (each day done)', kind: 'section-day', match: { subject: 'english' }, reward: { silver: 1 } },
     { id: 'green-day', label: 'Green day', kind: 'day-met', reward: { silver: 1 } },
-    { id: 'green-week', label: 'Green week', kind: 'week-met', reward: { silver: 5, gems: 1 } },
+    { id: 'green-week', label: 'Green every school day', kind: 'week-met', reward: { silver: 5, gems: 1 }, gem: { label: 'Green Week' } },
     // Rings run large (hundreds a week), so the rate is a ratio.
     { id: 'rings', label: 'Rings', kind: 'ring-threshold', rate: { rings: 100, silver: 1 }, thresholds: [{ at: 250, reward: { silver: 2 } }, { at: 500, reward: { silver: 3 } }, { at: 1000, reward: { silver: 5 } }] },
-    { id: 'ring-contest', label: 'Most rings this week', kind: 'ring-contest', tie: 'all', reward: { silver: 5, gems: 1 } },
+    { id: 'ring-contest', label: 'Most rings', kind: 'ring-contest', tie: 'all', reward: { silver: 5, gems: 1 }, gem: { label: 'Most Rings' } },
   ],
   users: {},
 });

@@ -1033,7 +1033,7 @@ mis-bucketed home screen can be reconstructed from production logs.
 Each card's rail (bank silver + the gems held this week) is a button that opens
 the shared Gem Board focused on that person, and the headline carries a **Gems**
 chip that opens it with no focus (shown whenever the economy is not `off`). The
-chip is the area legend: a purple gem "Move", a green gem "School", an orange
+chip is the area legend: a blue gem "Move", a yellow gem "School", a green
 gem "Games" (`AREA_COLORS` / `AREA_WORDS` in `GemBoard/AreaIcon.jsx`, mirroring
 the server's `GEM_AREAS`).
 While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→
@@ -1044,6 +1044,22 @@ The widget computes from the home screen's `sessions` source, which FitnessApp
 persists in localStorage (see Screen Framework → Data Coordination), so the bars
 render from the last payload on mount and update when the fetch lands rather
 than showing skeletons on every return from the player.
+
+**Nothing moves after first paint.** The widget also keeps its own last good
+card for the current fitness week (`kioskCache.js`, `localStorage`
+`daylight.cache.fitnessMomentum.card:fitness`, schema version 1, keyed by the
+week's Monday 04:00, capped at 256 KB): the computed weeks per member and the
+standings (silver, gems held). Before the reads land it paints that card —
+real last-known numbers and gems — and the fresh reads replace it in place; a
+card kept from another week is dropped, so last week's gems never show in a new
+one. With nothing kept it paints a placeholder in the final layout: one card
+per roster member (or per kept member while the roster is still unknown) with
+avatar and name, a solid blank hero slot, four solid bar slots and a reserved
+foot (the coin over a blank count), and the headline keeps its Gems chip, until
+the standings say who has a wallet. No shimmer and no opacity: placeholders are
+solid `#2a2f38`. The "no rings yet" note sits in the headline's own line, so it
+never pushes the cards down when it appears. `momentum.render` logs `source`
+(`fresh` | `cache` | `placeholder`); cache hits and misses log `kiosk-cache.*`.
 
 A card reads top to bottom, with no slack between rows: the avatar with the
 name as a tag over its lower edge; **this week's rings** (ring icon + number,
