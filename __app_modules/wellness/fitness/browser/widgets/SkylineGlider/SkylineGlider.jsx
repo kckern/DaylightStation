@@ -11,7 +11,6 @@ import { weaponPower } from "../../lib/skylineGlider/weaponPower.js";
 import { cameraTime } from "../../lib/skylineGlider/liftBoost.js";
 import { scoresAsTarget, weaponRefusal, weaponRules } from "../../lib/skylineGlider/weapons.js";
 import { collectFlightTelemetry } from "../../lib/skylineGlider/flightTelemetry.js";
-import { altitudeToTrackPercent } from "../../lib/skylineGlider/flightGeometry.js";
 import { EMPTY_ZONE_ASSETS, loadZoneAssets } from "../../lib/skylineGlider/zoneAssets.js";
 import { createSkylineAudio } from "../../lib/skylineGlider/skylineAudio.js";
 import { clearFlightCheckpoint, readFlightCheckpoint, writeFlightCheckpoint } from "../../lib/skylineGlider/checkpointRepository.js";
@@ -25,6 +24,8 @@ import { FlightScene, entityRole } from "./FlightScene.jsx";
 import useSkylineAccess from "./useSkylineAccess.js";
 import useSkylineWeapons from "./useSkylineWeapons.js";
 import SkylineFlightHud from "./SkylineFlightHud.jsx";
+import RpmGauge from "./SkylineRpmGauge.jsx";
+import SkylineFlightOverlays from "./SkylineFlightOverlays.jsx";
 import { MomentBanner } from "../../../../../../__capabilities/gaming/browser/platform/ui/hud/index.js";
 import { createFrameDriver, createEffectDispatcher } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import "./SkylineGlider.scss";
@@ -84,7 +85,7 @@ function buildEffectTable({ setEffects, effectTimersRef, course }) {
 
 const ACTION_POSITION = Object.freeze({ laser: 1, bomb: 2, missile: 3, boost: 4 });
 
-export { FlightScene };
+export { FlightScene, RpmGauge };
 
 const mediaUrl = (path) => DaylightMediaPath(`/media/${path}`);
 // Text cues are timed to what is on screen, so they follow the camera, not a
@@ -103,28 +104,6 @@ function zonesFromCourses(courses) {
     zones.get(id).acts.push({ id: item.id, name: item.name, act: item.act ?? null, status: 'open' });
   }
   return [...zones.values()];
-}
-
-export function RpmGauge({ state }) {
-  const rpm = Math.max(0, Math.round(state.rawRpm || 0));
-  const altitude = altitudeToTrackPercent(state.altitude);
-  const target = altitudeToTrackPercent(state.targetAltitude);
-  return <aside
-    className="skyline-glider__rpm-gauge"
-    role="meter"
-    aria-label="Cadence altitude"
-    aria-valuemin={state.calibration.lowRpm}
-    aria-valuemax={state.calibration.highRpm}
-    aria-valuenow={rpm}
-  >
-    <span className="skyline-glider__rpm-high">{state.calibration.highRpm}</span>
-    <div className="skyline-glider__rpm-track">
-      <div className="skyline-glider__rpm-target" data-testid="rpm-target" style={{ top: `${target}%` }}/>
-      <div className="skyline-glider__rpm-chevron" data-testid="rpm-chevron" data-altitude={state.altitude} style={{ top: `${altitude}%` }}><span>{rpm}</span></div>
-    </div>
-    <span className="skyline-glider__rpm-low">{state.calibration.lowRpm}</span>
-    <strong>RPM</strong>
-  </aside>;
 }
 
 export default function SkylineGlider() {
@@ -692,10 +671,7 @@ export default function SkylineGlider() {
     <SkylineFlightHud flight={flight} course={course} armed={!!armory.enabled} press={pressFlash}
       targetsHit={countTargets(flight, course)}
       power={weaponPower(fitnessSessionInstance?.zoneProfileStore?.getProfile?.(riderId))}/>
-    {flight.phase === 'crashed' && <div className="skyline-glider__overlay"><h2>{flight.crashCause === 'stall' ? 'Stall!' : 'Wing down!'}</h2><p>Returning to the last windsock…</p></div>}
-    {!flight.inputReady && <div className="skyline-glider__overlay" data-testid="skyline-glider-waiting-input"><h2>Ready to fly</h2><p>Pedal once to start the course.</p></div>}
-    {flight.inputReady && flight.pausedForSensor && <div className="skyline-glider__overlay" data-testid="skyline-glider-reconnect"><h2>Cadence signal lost</h2><p>Reconnect the bike to continue safely.</p></div>}
+    <SkylineFlightOverlays flight={flight}/>
     <MomentBanner text={bannerText} momentKey={bannerText} className="skyline-glider__checkpoint-banner"/>
-    {flight.stalled && flight.phase === 'playing' && <div className="skyline-glider__stop-warning" role="status">Stalled! Returning to the checkpoint…</div>}
   </main>;
 }
