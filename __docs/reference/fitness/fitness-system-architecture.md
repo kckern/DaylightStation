@@ -1045,6 +1045,22 @@ persists in localStorage (see Screen Framework → Data Coordination), so the ba
 render from the last payload on mount and update when the fetch lands rather
 than showing skeletons on every return from the player.
 
+**Nothing moves after first paint.** The widget also keeps its own last good
+card for the current fitness week (`kioskCache.js`, `localStorage`
+`daylight.cache.fitnessMomentum.card:fitness`, schema version 1, keyed by the
+week's Monday 04:00, capped at 256 KB): the computed weeks per member and the
+standings (silver, gems held). Before the reads land it paints that card —
+real last-known numbers and gems — and the fresh reads replace it in place; a
+card kept from another week is dropped, so last week's gems never show in a new
+one. With nothing kept it paints a placeholder in the final layout: one card
+per roster member (or per kept member while the roster is still unknown) with
+avatar and name, a solid blank hero slot, four solid bar slots and a reserved
+foot (the coin over a blank count), and the headline keeps its Gems chip, until
+the standings say who has a wallet. No shimmer and no opacity: placeholders are
+solid `#2a2f38`. The "no rings yet" note sits in the headline's own line, so it
+never pushes the cards down when it appears. `momentum.render` logs `source`
+(`fresh` | `cache` | `placeholder`); cache hits and misses log `kiosk-cache.*`.
+
 A card reads top to bottom, with no slack between rows: the avatar with the
 name as a tag over its lower edge; **this week's rings** (ring icon + number,
 at the name's size); the four week bars with their counts and dates, which

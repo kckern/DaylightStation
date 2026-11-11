@@ -552,10 +552,9 @@ and the school agenda (the board header's **Gems** door and each card's gem
 door), with a This week / Last week switch in the header. It draws one line
 per child in roster order and one column per gem row. The columns are gathered
 into their sections, each a tinted block under its name, and every column's
-name sits level over it, bold and centred, wrapping to two lines between words
-and never inside one: a column is never narrower than its longest word
-(`minmax(--gem-col, min-content)`), so ten columns stay level on the garage
-TV. The
+name leans over it at -40°, bold and a step larger than body text, on one
+line, never wrapped or broken mid-word; the name row's height and the room
+past the last column are measured, so no name is cropped. The
 child's gem count closes the line: `totals.week`, the gems held (earned plus a
 lead), which is exactly the whole gems drawn on that line. Its heading names
 the week whose cells are on screen ("This week" / "Last week"), taken from the
@@ -567,10 +566,9 @@ counts are not drawn anywhere.
 
 Everything inside the panel is sized in `em` from one font size. `useBoardFit`
 (`useBoardFit.js`) measures the board once it is drawn: the grid's resolved
-column tracks, anything reaching past them (given back as the grid's right
-padding, `--gem-lean`; a level name stays inside its column), the tallest
-column name (the name row's height, `--gem-head`), the header and the panel's
-padding, all in `em`.
+column tracks, how far the last slanted name leans past them (given back as
+the grid's right padding, `--gem-lean`), the tallest slanted name (the name
+row's height, `--gem-head`), the header and the panel's padding, all in `em`.
 Because everything is in `em`, that size does not depend on the font size, so
 one measurement gives the font size that fills 95% of the tighter screen
 dimension (clamped 12–40px). It re-measures when the fonts load, on resize, and
@@ -621,11 +619,33 @@ row that also counts days reads "leading, and 2 of 4 days, on track").
 in the browser (`localStorage` `daylight.gemBoard.shape.v1`: the learners, the
 sections and the gem columns, no cells or totals; `boardShape`). The next
 opening on that screen draws the outline at once, at the board's full size,
-with a small dark dot in every cell (so it never reads as an empty week) and empty totals (`aria-busy`, nothing to
-press), and the gems fill in when the read lands, so the panel does not change
-size. A screen's first opening has no outline and says "Loading…". If the read
-brings more children or columns than the outline had, the board grows to fit
-and the new outline is kept. An outline that cannot be read is ignored.
+with every cell blank and empty totals (`aria-busy`, nothing to press), and the
+gems fill in when the read lands. A screen's first opening has no outline and
+says "Loading…". If the read brings more children or columns than the outline
+had, the board grows to fit and the new outline is kept. An outline that
+cannot be read is ignored.
+
+Better than the outline: each read of this week's board is also kept whole
+(`kioskCache.js`, `localStorage` `daylight.cache.gemBoard.board:<surface>`,
+schema version 1, keyed by the board's week, capped at 256 KB). An opening in
+the same week paints that last good board at once — real gems, real totals —
+and the fresh read replaces it in place when it lands (stale-while-revalidate;
+a fresh payload always wins). A kept board from another week, or another
+schema version, is dropped and never drawn: a new week opens on the outline,
+so a gem from last week never shows as held this week. Cache hits, misses and
+stale drops log `kiosk-cache.*` at debug. Every storage read and write is
+guarded; blocked storage is a miss.
+
+**The panel never moves once shown.** The fit (`useBoardFit.js`) is locked
+for an opening per board shape (who, which columns, their names) and screen
+size: the first fit applied stays until the board closes, its shape changes or
+the screen is resized, so the outline, the cached board and the fresh board
+are one size, and late font loads or a slightly different measurement do not
+snap the panel. Each measurement is kept (`daylight.gemBoard.fit.v1`, by shape
+and screen size) and the next opening applies it before its first paint
+(`gem-board.fit-cached`; a measurement that differs from the held fit logs
+`gem-board.fit-held` and is used from the next opening). The detail box opens
+over the panel at its final size; it has no loading state.
 
 The ring takes the colour of the rule whose days it counts: the part named by
 `streak.ruleId`, else the row's colour. The detail box's day strip uses the

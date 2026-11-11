@@ -20,8 +20,9 @@ const GEMS = [
 ];
 const STANDINGS = { mode: 'live', contestClosed: false, learners: [{ learnerId: 'user_1', learnerName: 'User_1', silver: 27, weekRings: 300, gem: 'leading', gems: GEMS }] };
 let standings = STANDINGS;
+let sessionsPayload = { sessions, total: 1 };
 vi.mock("../../../../../../__capabilities/screen-host/browser/data/useScreenData.js", () => ({
-  useScreenData: (key) => (key === 'standings' ? standings : { sessions, total: 1 }),
+  useScreenData: (key) => (key === 'standings' ? standings : sessionsPayload),
 }));
 vi.mock("../../useFitnessScreen.js", () => ({
   useFitnessScreen: () => ({
@@ -38,7 +39,7 @@ vi.mock("../../useFitnessScreen.js", () => ({
 import FitnessMomentum, { dayLabel } from "./FitnessMomentum.jsx";
 
 describe('FitnessMomentum', () => {
-  beforeEach(() => { standings = STANDINGS; });
+  beforeEach(() => { standings = STANDINGS; sessionsPayload = { sessions, total: 1 }; localStorage.clear(); });
 
   it('rail: a count under every token, plain gems in area colour, no area icons', () => {
     const { container } = render(<FitnessMomentum />);
@@ -142,6 +143,7 @@ describe('FitnessMomentum', () => {
   it('has no rail buttons when standings are missing or the economy is off', () => {
     standings = null;
     expect(render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail')).toBeNull();
+    localStorage.clear();
     standings = { mode: 'off', contestClosed: false, learners: [] };
     expect(render(<FitnessMomentum />).container.querySelector('button.fitness-momentum__rail')).toBeNull();
   });
@@ -196,5 +198,63 @@ describe('FitnessMomentum stylesheet', () => {
     const css = readFileSync(new URL('./FitnessMomentum.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
     expect(css).toMatch(/&__weekbar/);
     for (const m of css.matchAll(/opacity\s*:\s*([^;}]+)/g)) expect(Number(m[1])).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// The slots of every card, in order, with what fills them stripped away: what decides the layout.
+const slots = (container) => [...container.querySelectorAll('.fitness-momentum__card')].map((card) => ({
+  walletless: card.classList.contains('is-walletless'),
+  rows: [...card.children].map((el) => el.className.split(' ')[0]),
+  weeks: card.querySelectorAll('.fitness-momentum__weekcol').length,
+  foot: card.querySelector('.fitness-momentum__rail .fitness-momentum__silver') ? 'coin' : null,
+}));
+
+describe('FitnessMomentum — nothing moves when the reads land', () => {
+  beforeEach(() => { standings = STANDINGS; sessionsPayload = { sessions, total: 1 }; localStorage.clear(); });
+
+  it('before any read, the placeholder has the loaded layout: a card per member, hero, four bars and a foot each', () => {
+    sessionsPayload = null;
+    standings = null;
+    const loading = render(<FitnessMomentum />);
+    const before = slots(loading.container);
+    expect(before).toEqual([
+      { walletless: false, rows: ['fitness-momentum__who', 'fitness-momentum__hero', 'fitness-momentum__weeks', 'fitness-momentum__rail'], weeks: 4, foot: 'coin' },
+      { walletless: false, rows: ['fitness-momentum__who', 'fitness-momentum__hero', 'fitness-momentum__weeks', 'fitness-momentum__rail'], weeks: 4, foot: 'coin' },
+    ]);
+    // Solid placeholders: no shimmer, no skeleton pulse, no live button yet.
+    expect(loading.container.querySelector('.skeleton, .shimmer')).toBeNull();
+    expect(loading.container.querySelector('button.fitness-momentum__rail')).toBeNull();
+    expect(loading.container.querySelectorAll('.fitness-momentum__weekfill.is-placeholder')).toHaveLength(8);
+    loading.unmount();
+    localStorage.clear();
+    // Loaded, both members holding a wallet: the same slots.
+    sessionsPayload = { sessions, total: 1 };
+    standings = { ...STANDINGS, learners: [...STANDINGS.learners, { ...STANDINGS.learners[0], learnerId: 'user_2', learnerName: 'User_2' }] };
+    expect(slots(render(<FitnessMomentum />).container)).toEqual(before);
+  });
+
+  it('paints the last good card for this week from the cache, then the fresh reads replace it in place', () => {
+    // A first mount with fresh reads keeps them.
+    const first = render(<FitnessMomentum />);
+    const fresh = slots(first.container);
+    const rail = first.container.querySelector('.fitness-momentum__card .fitness-momentum__silver .fitness-momentum__count').textContent;
+    first.unmount();
+    // The next mount, before any read: the kept content, not a skeleton, in the same layout.
+    sessionsPayload = null;
+    standings = null;
+    const cachedRender = render(<FitnessMomentum />);
+    expect(slots(cachedRender.container)).toEqual(fresh);
+    expect(cachedRender.container.querySelector('.fitness-momentum__hero--skel')).toBeNull();
+    expect(cachedRender.container.querySelector('.fitness-momentum__card .fitness-momentum__silver .fitness-momentum__count').textContent).toBe(rail);
+    expect(cachedRender.container.querySelector('.fitness-momentum__hero').textContent).toBe('300');
+  });
+
+  it('never paints a card kept from another week: the placeholder instead', () => {
+    localStorage.setItem('daylight.cache.fitnessMomentum.card:fitness', JSON.stringify({ v: 1, week: 1, at: 0, data: { data: null, standings: STANDINGS } }));
+    sessionsPayload = null;
+    standings = null;
+    const { container } = render(<FitnessMomentum />);
+    expect(container.querySelectorAll('.fitness-momentum__hero--skel')).toHaveLength(2);
+    expect(container.querySelector('button.fitness-momentum__rail')).toBeNull();
   });
 });

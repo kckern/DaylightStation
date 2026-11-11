@@ -8,7 +8,15 @@
 // rail opens the Gem Board; it sits at the foot of the card so a child can
 // reach it on the touch screen. Someone without a wallet has no rail: the card
 // ends at its bars.
-import React, { useMemo, useRef, useState } from 'react';
+//
+// Nothing moves after first paint. The card paints from the last good payload
+// kept for this week (kioskCache.js: the computed weeks and the standings, by
+// the fitness week's Monday) and is replaced in place when the fresh reads land;
+// with nothing kept, it paints a placeholder in the final layout: one card per
+// roster member with its avatar and name, a solid blank hero slot, four solid
+// bar slots and a foot (coin, blank count) reserved until the standings say who
+// has a wallet. No shimmer, no opacity.
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useScreenData } from "../../../../../../__capabilities/screen-host/browser/data.mjs";
 import { useFitnessScreen } from "../../useFitnessScreen.js";
 import { resolveUserDisplayName } from "../../hooks/fitness/DisplayNameResolver.js";
@@ -19,10 +27,15 @@ import { AREAS, AREA_COLORS, AREA_WORDS } from '@/lib/economy/GemBoard/AreaIcon.
 import getLogger from '@/lib/logging/Logger.js';
 import GemBoardOverlay from '@/lib/economy/GemBoard/GemBoard.jsx';
 import { useGamepadKeys } from "../../lib/useGamepadKeys.js";
-import { computeMomentum } from "./momentum.js";
+import { computeMomentum, mondayWeekStart } from "./momentum.js";
+import { readCache, writeCache } from '@/lib/kioskCache.js';
 import "./FitnessMomentum.scss";
 
 const logger = getLogger().child({ component: 'fitness-momentum' });
+
+/** The last good card for this fitness week (kioskCache.js); bump on a payload change. */
+const CARD_CACHE_VERSION = 1;
+const CARD_CACHE_KEY = 'fitnessMomentum.card:fitness';
 
 // Low → high intensity, stacked bottom → top within a bar.
 const ZONE_STACK = ['fire', 'hot', 'warm', 'active']; // DOM order = top → bottom
@@ -77,7 +90,7 @@ function WeekBar({ week, maxRings, index, loading }) {
       <span className={`fitness-momentum__weektop${current}`}>{loading ? '\u00a0' : week.rings.toLocaleString()}</span>
       <span className="fitness-momentum__weekbar" title={loading ? '' : `${week.rings.toLocaleString()} rings`}>
         <span
-          className={`fitness-momentum__weekfill${loading ? ' skeleton shimmer' : ''}`}
+          className={`fitness-momentum__weekfill${loading ? ' is-placeholder' : ''}`}
           style={{ height: `${fillPct.toFixed(1)}%` }}
         >
           {fracs.map(({ z, frac }) => (
@@ -152,9 +165,24 @@ function Rail({ purse, name, onOpen }) {
   );
 }
 
+/**
+ * The foot before the standings are known: the same box as a rail (the coin over
+ * a blank count), so the row's height holds when the real rail lands.
+ */
+function RailPlaceholder() {
+  return (
+    <span className="fitness-momentum__rail is-placeholder" aria-hidden="true">
+      <span className="fitness-momentum__silver">
+        <CoinIcon metal="silver" size="1em" className="fitness-momentum__coin" />
+        <span className="fitness-momentum__count">{'\u00a0'}</span>
+      </span>
+    </span>
+  );
+}
+
 /** This week's rings for one person, at the size of the name above it. */
 function Hero({ rings, loading }) {
-  if (loading) return <span className="fitness-momentum__hero fitness-momentum__hero--skel skeleton shimmer" aria-hidden="true" />;
+  if (loading) return <span className="fitness-momentum__hero fitness-momentum__hero--skel" aria-hidden="true" />;
   return (
     <span className="fitness-momentum__hero" aria-label={`${rings.toLocaleString()} rings this week`}>
       <RingIcon size="1em" />
@@ -169,20 +197,28 @@ export default function FitnessMomentum() {
   // Before the first fetch resolves it is null/undefined → render a right-sized
   // skeleton (same layout as loaded) so hydration doesn't reflow the cards.
   const rawSessions = useScreenData('sessions');
-  const loading = rawSessions == null;
   // Bank silver and the gems held this week per learner (/api/v1/earnings/standings).
   // Missing, failed or economy-off → empty rails; the ring bars stand alone.
   const rawStandings = useScreenData('standings');
+  const sessionsKnown = rawSessions != null;
+  const standingsKnown = rawStandings != null;
+  // The last good card for THIS week, painted until the fresh reads land. Another week's is dropped.
+  const weekStart = mondayWeekStart();
+  const cached = useMemo(() => readCache(CARD_CACHE_KEY, { version: CARD_CACHE_VERSION, week: weekStart }), [weekStart]);
+  const standings = standingsKnown ? rawStandings : (cached?.standings ?? null);
   const purseById = useMemo(() => {
     const map = new Map();
-    if (!rawStandings || rawStandings.mode === 'off') return map;
-    for (const l of rawStandings.learners || []) map.set(l.learnerId, l);
+    if (!standings || standings.mode === 'off') return map;
+    for (const l of standings.learners || []) map.set(l.learnerId, l);
     return map;
-  }, [rawStandings]);
+  }, [standings]);
   const { roster, householdLabel, compareWeeks, zoneRingRates } = useFitnessScreen();
+  // Until the standings are known (fresh or kept), every card keeps its foot and the
+  // headline its Gems chip, so neither appears late and moves the bars.
+  const reserveRails = standings == null;
   // The Gem Board: opened from a card's rail (focused on that child) or the
   // headline's gem chip. The garage pads drive it while it is open.
-  const economyOn = Boolean(rawStandings) && rawStandings.mode !== 'off';
+  const economyOn = reserveRails || standings.mode !== 'off';
   const [board, setBoard] = useState(null); // null closed, else { focus }
   const boardKeys = useRef(null);
   useGamepadKeys(board != null, (key) => boardKeys.current?.(key));
@@ -196,7 +232,7 @@ export default function FitnessMomentum() {
     return map;
   }, [roster]);
 
-  const data = useMemo(
+  const fresh = useMemo(
     () => computeMomentum(
       Array.isArray(rawSessions) ? rawSessions : (rawSessions?.sessions || []),
       roster,
@@ -204,8 +240,23 @@ export default function FitnessMomentum() {
     ),
     [rawSessions, roster, householdLabel, compareWeeks, zoneRingRates],
   );
+  // Fresh sessions win; before them, the kept card; with neither, the placeholder (fresh, empty).
+  // A roster not known yet keeps the kept cards too, so the row never starts empty and fills late.
+  const fromCache = (!sessionsKnown || !fresh.members.length) && Boolean(cached?.data?.members?.length);
+  const data = fromCache ? cached.data : fresh;
+  const loading = !sessionsKnown && !fromCache;
+
+  // Keep the newest of each read for the next mount (a fresh payload replaces the kept one).
+  useEffect(() => {
+    if (!sessionsKnown && !standingsKnown) return;
+    writeCache(CARD_CACHE_KEY, {
+      data: sessionsKnown && fresh.members.length ? fresh : (cached?.data ?? null),
+      standings: standingsKnown ? rawStandings : (cached?.standings ?? null),
+    }, { version: CARD_CACHE_VERSION, week: weekStart });
+  }, [sessionsKnown, standingsKnown, fresh, rawStandings, cached, weekStart]);
 
   logger.sampled('momentum.render', {
+    source: sessionsKnown ? 'fresh' : (fromCache ? 'cache' : 'placeholder'),
     members: data.members.length,
     householdRings: data.household.rings,
     weekStartMs: data.household.weekStartMs,
@@ -221,8 +272,13 @@ export default function FitnessMomentum() {
         <span className="fitness-momentum__flame">🔥</span>
         <span className="fitness-momentum__house">{household.label}</span>
         <span className="fitness-momentum__window">· this week</span>
+        {/* The empty-state, once we KNOW there's no data (never during load). It sits in the
+            headline's own line, so it never pushes the cards down when the read lands. */}
+        {!loading && !anyActive && (
+          <span className="fitness-momentum__zero">Let’s get moving — no rings yet this week.</span>
+        )}
         {loading
-          ? <span className="fitness-momentum__house-rings fitness-momentum__house-rings--skel skeleton shimmer" aria-hidden="true" />
+          ? <span className="fitness-momentum__house-rings fitness-momentum__house-rings--skel" aria-hidden="true" />
           : (
             <span className="fitness-momentum__house-rings" title="Household rings this week">
               <RingIcon size="1.1em" spin="once" label={`${household.rings} household rings this week`} />
@@ -241,17 +297,13 @@ export default function FitnessMomentum() {
         )}
       </div>
 
-      {/* Only show the empty-state once we KNOW there's no data — never during load. */}
-      {!loading && !anyActive && (
-        <div className="fitness-momentum__zero">Let’s get moving — no rings yet this week.</div>
-      )}
 
       {/* --cols lets the stylesheet size everything to one person's column. */}
       <div className="fitness-momentum__cards" style={{ '--cols': Math.max(1, members.length) }}>
         {/* A card without a wallet spans only the who/hero/bars rows (is-walletless),
             so it ends at its bars, which stay on the shared baseline. */}
         {members.map((m) => (
-          <div key={m.id} className={`fitness-momentum__card${purseById.has(m.id) ? '' : ' is-walletless'}`}>
+          <div key={m.id} className={`fitness-momentum__card${purseById.has(m.id) || reserveRails ? '' : ' is-walletless'}`}>
             {/* The name is a tag over the avatar's lower edge. */}
             <span className="fitness-momentum__who">
               <Avatar id={m.avatarId} name={m.name} />
@@ -259,9 +311,9 @@ export default function FitnessMomentum() {
             </span>
             <Hero rings={m.rings} loading={loading} />
             <WeekBars weeks={m.weeks} loading={loading} />
-            {purseById.has(m.id) && (
-              <Rail purse={purseById.get(m.id)} name={nameById.get(m.id) || m.name} onOpen={() => setBoard({ focus: m.id })} />
-            )}
+            {purseById.has(m.id)
+              ? <Rail purse={purseById.get(m.id)} name={nameById.get(m.id) || m.name} onOpen={() => setBoard({ focus: m.id })} />
+              : reserveRails && <RailPlaceholder />}
           </div>
         ))}
       </div>

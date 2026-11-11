@@ -20,8 +20,19 @@
  *
  * In jsdom nothing has a size and the grid's tracks come back unresolved, so
  * the hook leaves everything null and the stylesheet's fallbacks apply.
+ *
+ * Never moves once shown. The board opens on the last board's outline while
+ * its read is out (seconds, sometimes tens), and a fit that changed when the
+ * answer landed — or when the fonts settled — snapped the whole panel: a
+ * "rug-pull jolt". So the fit is LOCKED for an opening: the first fit applied
+ * for a given board shape (`signature`: who and which columns, with their
+ * names) and screen size stays until the board closes, the shape changes or
+ * the screen is resized. Each measurement is still kept (`localStorage`
+ * `daylight.gemBoard.fit.v1`, by signature and screen size), and the next
+ * opening starts from it before its first paint, so the outline, the loaded
+ * board and the reopened board are one size.
  */
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import getLogger from '@/lib/logging/Logger.js';
 
 let _logger;
@@ -45,6 +56,28 @@ export const trackSumPx = (tracks) => {
 
 const px = (v) => parseFloat(v) || 0;
 const EMPTY = { fontPx: null, headEm: null, leanEm: null };
+const FIT_KEY = 'daylight.gemBoard.fit.v1';
+const screenOf = () => ({ vw: window.innerWidth, vh: window.innerHeight });
+
+/** The fit kept for this board shape on a screen this size, or null. */
+export function readCachedFit(signature, { vw, vh } = screenOf()) {
+  if (!signature) return null;
+  try {
+    const c = JSON.parse(localStorage.getItem(FIT_KEY) ?? 'null');
+    if (!c || c.signature !== signature || c.vw !== vw || c.vh !== vh || !(c.fontPx > 0)) return null;
+    return { fontPx: c.fontPx, headEm: c.headEm ?? null, leanEm: c.leanEm ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/** Keep a measured fit for the next opening. Storage off or full: the next opening measures afresh. */
+export function saveCachedFit(signature, fit, { vw, vh } = screenOf()) {
+  if (!signature || !(fit?.fontPx > 0)) return;
+  try {
+    localStorage.setItem(FIT_KEY, JSON.stringify({ signature, vw, vh, fontPx: fit.fontPx, headEm: fit.headEm, leanEm: fit.leanEm }));
+  } catch { /* nothing to do */ }
+}
 const close = (a, b, tol) => Math.abs((a ?? 0) - (b ?? 0)) < tol;
 
 function measure(panel) {
@@ -87,29 +120,56 @@ function measure(panel) {
 /**
  * @param {{current: HTMLElement|null}} panelRef - the `.gem-board__panel`
  * @param {unknown} key - re-measure when this changes (the board's shape, the week, outline vs board)
+ * @param {string|null} [signature] - the board's shape (who, which columns, their names); null while
+ *   closed or with nothing to draw. The fit is locked per signature and screen size for one opening.
  * @returns {{fontPx: number|null, headEm: number|null, leanEm: number|null}}
  */
-export default function useBoardFit(panelRef, key) {
+export default function useBoardFit(panelRef, key, signature = null) {
   const [fit, setFit] = useState(EMPTY);
+  // The fit this opening is locked to: {lockKey, fit}. Cleared when the board closes (no signature).
+  const lock = useRef(null);
   useLayoutEffect(() => {
     const panel = panelRef.current;
-    if (!panel) return undefined;
+    if (!panel || !signature) { lock.current = null; return undefined; }
     let live = true;
-    const run = () => {
+    const apply = (next) => setFit((f) => (
+      close(f.fontPx, next.fontPx, 0.01) && close(f.headEm, next.headEm, 0.01) && close(f.leanEm, next.leanEm, 0.01) ? f : next
+    ));
+    const run = (why) => {
       if (!live) return;
+      const screen = screenOf();
+      const lockKey = `${signature}|${screen.vw}x${screen.vh}`;
+      // First paint of this opening: the fit kept from the last one, before anything is measured.
+      if (lock.current?.lockKey !== lockKey) {
+        const cached = readCachedFit(signature, screen);
+        if (cached) {
+          lock.current = { lockKey, fit: cached };
+          apply(cached);
+          logger().debug('gem-board.fit-cached', { fontPx: Math.round(cached.fontPx * 10) / 10, why });
+        }
+      }
       const m = measure(panel);
       if (!m) return;
-      setFit((f) => {
-        if (close(f.fontPx, m.fontPx, 0.5) && close(f.headEm, m.headEm, 0.1) && close(f.leanEm, m.leanEm, 0.1)) return f;
-        logger().debug('gem-board.fit', { fontPx: Math.round(m.fontPx * 10) / 10, wEm: Math.round(m.wEm * 10) / 10, hEm: Math.round(m.hEm * 10) / 10, headEm: Math.round(m.headEm * 10) / 10, vw: window.innerWidth, vh: window.innerHeight });
-        return { fontPx: m.fontPx, headEm: m.headEm, leanEm: m.leanEm };
-      });
+      const measured = { fontPx: m.fontPx, headEm: m.headEm, leanEm: m.leanEm };
+      saveCachedFit(signature, measured, screen);
+      if (lock.current?.lockKey === lockKey) {
+        const held = lock.current.fit;
+        if (!(close(held.fontPx, m.fontPx, 0.5) && close(held.headEm, m.headEm, 0.1) && close(held.leanEm, m.leanEm, 0.1))) {
+          // Kept for this opening; the next one opens at the new size.
+          logger().debug('gem-board.fit-held', { why, heldPx: Math.round(held.fontPx * 10) / 10, measuredPx: Math.round(m.fontPx * 10) / 10 });
+        }
+        return;
+      }
+      lock.current = { lockKey, fit: measured };
+      logger().debug('gem-board.fit', { why, fontPx: Math.round(m.fontPx * 10) / 10, wEm: Math.round(m.wEm * 10) / 10, hEm: Math.round(m.hEm * 10) / 10, headEm: Math.round(m.headEm * 10) / 10, vw: screen.vw, vh: screen.vh });
+      apply(measured);
     };
-    run();
-    // Names are measured in the board's font; measure again once it has loaded.
-    document.fonts?.ready?.then(run).catch(() => {});
-    window.addEventListener('resize', run);
-    return () => { live = false; window.removeEventListener('resize', run); };
-  }, [panelRef, key]);
+    run('open');
+    // Names are measured in the board's font; measure again once it has loaded (kept for next time).
+    document.fonts?.ready?.then(() => run('fonts')).catch(() => {});
+    const onResize = () => run('resize');
+    window.addEventListener('resize', onResize);
+    return () => { live = false; window.removeEventListener('resize', onResize); };
+  }, [panelRef, key, signature]);
   return fit;
 }

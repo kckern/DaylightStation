@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
-import GemBoardOverlay, { GemBoardGrid, boardRowIds, boardShape, readBoardShape } from './GemBoard.jsx';
+import GemBoardOverlay, { GemBoardGrid, boardRowIds, boardShape, readBoardShape, shapeSignature } from './GemBoard.jsx';
+import { localMonday } from '@/lib/kioskCache.js';
 
 const part = (ruleId, label, cadence, extra = {}) => ({ ruleId, label, cadence, state: 'none', week: 0, lifetime: 0, progress: null, left: null, reach: null, days: [], items: [], score: null, note: null, ...extra });
 const BOARD = {
@@ -130,16 +131,14 @@ describe('GemBoardGrid — areas', () => {
     expect(boardRowIds(AREAS)).toEqual(['exercise', 'reading', 'racing']);
   });
 
-  it('column names sit level (bold, wrapping between words) and a column is never narrower than its longest word', () => {
+  it('column names lean (one nowrap span per column, bold, a step larger) and the stylesheet breaks no word', () => {
     const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8');
     expect(css).not.toMatch(/overflow-wrap:\s*anywhere/);
-    expect(css).not.toMatch(/rotate\(/);
+    expect(css).toMatch(/rotate\(-40deg\)/);
     const cat = css.slice(css.indexOf('&__cat {'), css.indexOf('// The highlighted child'));
-    expect(cat).not.toMatch(/nowrap|position:\s*absolute/);
+    expect(cat).toMatch(/white-space:\s*nowrap/);
     expect(cat).toMatch(/font-weight:\s*700/);
-    expect(render(<GemBoardGrid board={AREAS} />).container.querySelector('.gem-board__grid').style.gridTemplateColumns)
-      .toMatch(/repeat\(1, minmax\(var\(--gem-col\), min-content\)\)/);
-    cleanup();
+    expect(cat).toMatch(/font-size:\s*1\.2em/);
     // The head row and the room for the last name's lean come from the measured fit.
     expect(css).toMatch(/grid-template-rows:\s*var\(--gem-head/);
     expect(css).toMatch(/padding-right:\s*var\(--gem-lean/);
@@ -164,7 +163,11 @@ describe('GemBoardGrid — areas', () => {
   it('the total is the gems held (earned + leads) and its heading names the week shown', () => {
     const board = { ...AREAS, totals: { a: { week: 4, earned: 3 }, b: { week: 0, earned: 0 } } };
     const { container, rerender } = render(<GemBoardGrid board={board} />);
-    expect([...container.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['4', '0']);
+    // A zero week is a blank cell (no '0'), the same cell kept so nothing shifts; its words stay for a screen reader.
+    const totals = [...container.querySelectorAll('.gem-board__total')];
+    expect(totals.map((el) => el.textContent)).toEqual(['4', '']);
+    expect(totals[1].getAttribute('role')).toBe('cell');
+    expect(totals[1].className).toBe(totals[0].className.replace(' is-focus', ''));
     expect(screen.getByLabelText('Ann: 4 this week')).toBeTruthy();
     expect(container.querySelector('.gem-board__total-label').textContent).toBe('This week');
     rerender(<GemBoardGrid board={board} weekLabel="Last week" />);
@@ -172,11 +175,12 @@ describe('GemBoardGrid — areas', () => {
     expect(screen.getByLabelText('Ann: 4 last week')).toBeTruthy();
   });
 
-  it('a pending board draws a placeholder dot per cell, so it never reads as an empty week', () => {
+  it('a pending board draws every cell blank (nothing faded, no dots, no shimmer)', () => {
     const { container } = render(<GemBoardGrid board={AREAS} pending />);
     const cols = container.querySelectorAll('.gem-board__col').length;
     expect(cols).toBe(6);
-    expect(container.querySelectorAll('.gem-board__cell .gem-board__dot')).toHaveLength(cols);
+    expect(container.querySelectorAll('.gem-board__cell')).toHaveLength(cols);
+    expect([...container.querySelectorAll('.gem-board__cell')].every((c) => c.children.length === 0)).toBe(true);
     expect(container.querySelector('.gem-glyph')).toBeNull();
   });
 });
@@ -417,9 +421,9 @@ describe('GemBoardOverlay', () => {
     const grid = document.querySelector('.gem-board__grid');
     expect(grid.getAttribute('aria-busy')).toBe('true');
     const outline = { columns: grid.style.gridTemplateColumns, names: [...grid.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...grid.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) };
-    expect(grid.querySelectorAll('.gem-board__cell')).toHaveLength(8); // placeholder cells: a dot each, no gem
+    expect(grid.querySelectorAll('.gem-board__cell')).toHaveLength(8); // placeholder cells: blank, no gem
     expect(grid.querySelector('.gem-board__cell').textContent).toBe('');
-    expect([...grid.querySelectorAll('.gem-board__cell > *')].every((el) => el.classList.contains('gem-board__dot'))).toBe(true);
+    expect(grid.querySelectorAll('.gem-board__cell > *')).toHaveLength(0);
     expect(grid.querySelector('.gem-glyph')).toBeNull();
     expect(grid.querySelector('button')).toBeNull();
     expect([...grid.querySelectorAll('.gem-board__total')].map((el) => el.textContent)).toEqual(['', '']);
@@ -427,6 +431,51 @@ describe('GemBoardOverlay', () => {
     const loaded = document.querySelector('.gem-board__grid');
     expect(loaded.hasAttribute('aria-busy')).toBe(false);
     expect({ columns: loaded.style.gridTemplateColumns, names: [...loaded.querySelectorAll('.gem-board__name')].map((el) => el.textContent), cats: [...loaded.querySelectorAll('.gem-board__cat')].map((el) => el.textContent) }).toEqual(outline);
+  });
+
+  it('with a kept fit, the panel opens at that size and keeps it when the board lands (no jolt)', async () => {
+    localStorage.setItem('daylight.gemBoard.shape.v1', JSON.stringify(boardShape(BOARD)));
+    localStorage.setItem('daylight.gemBoard.fit.v1', JSON.stringify({
+      signature: shapeSignature(BOARD), vw: window.innerWidth, vh: window.innerHeight, fontPx: 23.5, headEm: 3.4, leanEm: 0.3,
+    }));
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    const panel = () => document.querySelector('.gem-board__panel');
+    const size = () => ({ font: panel().style.fontSize, head: panel().style.getPropertyValue('--gem-head'), lean: panel().style.getPropertyValue('--gem-lean') });
+    const loading = size();
+    expect(loading).toEqual({ font: '23.5px', head: '3.4em', lean: '0.3em' });
+    expect(document.querySelector('.gem-board__grid').getAttribute('aria-busy')).toBe('true');
+    await act(async () => { release(); });
+    expect(document.querySelector('.gem-board__grid').hasAttribute('aria-busy')).toBe(false);
+    expect(size()).toEqual(loading);
+  });
+
+  it('opens on the last good board of THIS week while the read is out, then the fresh one replaces it in place', async () => {
+    const monday = localMonday();
+    const stale = { ...BOARD, week: monday, totals: { a: { week: 9, earned: 9 }, b: { week: 0, earned: 0 } } };
+    localStorage.setItem('daylight.cache.gemBoard.board:fitness', JSON.stringify({ v: 1, week: monday, at: Date.now(), data: stale }));
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve({ ...BOARD, week: monday }); }));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    const grid = () => document.querySelector('.gem-board__grid');
+    expect(grid().hasAttribute('aria-busy')).toBe(false); // real content, not the outline
+    expect(screen.getByLabelText('Ann: 9 this week')).toBeTruthy();
+    const columns = grid().style.gridTemplateColumns;
+    await act(async () => { release(); });
+    expect(screen.queryByLabelText('Ann: 9 this week')).toBeNull();
+    expect(grid().style.gridTemplateColumns).toBe(columns);
+    expect(JSON.parse(localStorage.getItem('daylight.cache.gemBoard.board:fitness')).data.totals.a.week).not.toBe(9);
+  });
+
+  it('never opens on a cached board from another week: the outline (no gems) instead', async () => {
+    localStorage.setItem('daylight.gemBoard.shape.v1', JSON.stringify(boardShape(BOARD)));
+    localStorage.setItem('daylight.cache.gemBoard.board:fitness', JSON.stringify({ v: 1, week: '2020-01-06', at: 0, data: { ...BOARD, week: '2020-01-06' } }));
+    const slow = vi.fn(() => new Promise(() => {}));
+    render(<GemBoardOverlay open load={slow} onClose={() => {}} surface="fitness" idleMs={0} />);
+    expect(document.querySelector('.gem-board__grid').getAttribute('aria-busy')).toBe('true');
+    expect(document.querySelector('.gem-board__grid .gem-glyph')).toBeNull();
+    expect(localStorage.getItem('daylight.cache.gemBoard.board:fitness')).toBeNull();
   });
 
   it('the highlighted child’s bar sits on that child’s line inside the scrolling body: in the outline, on the board, and when the highlight moves', async () => {
