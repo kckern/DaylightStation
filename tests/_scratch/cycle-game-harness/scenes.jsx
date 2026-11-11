@@ -279,7 +279,27 @@ const toastScene = (fx, toast) => ({ render: () => (
     <CycleEventToast toast={toast} onDone={noop} durationMs={BIG} />
     <RaceMenu onEnd={noop} onDiscard={noop} /></Container>) });
 
+const GHOST_CANDIDATES = [
+  ['R1', '2026-06-06', '08:00', 'distance', ['user_1', 'user_2']],
+  ['R2', '2026-06-06', '09:30', 'time', ['user_1']],
+  ['R3', '2026-06-05', '18:10', 'distance', ['user_1', 'user_2', 'user_3']],
+  ['R4', '2026-06-04', '07:45', 'time', ['user_3', 'user_2']],
+].map(([raceId, day, timeOfDay, winCondition, ids]) => ({
+  raceId, day, timeOfDay, winCondition, goalLabel: 'Race',
+  participants: ids.map((id, i) => ({ id, displayName: NAMES[id], isGhost: false, avatarSrc: AV(id), finalDistanceM: 3000 - i * 240, finalTimeS: 600 + i * 40 })),
+}));
+const TWO_BIKES = [
+  { id: 'bike-1', name: 'Bike 1', rider: 'user_1', rpm: 62, sensorLive: true, iconSrc: BIKE('bike-1') },
+  { id: 'bike-2', name: 'Bike 2', rider: null, rpm: 0, iconSrc: BIKE('bike-2') },
+];
+const lobbyModal = (extra = {}) => ({ render: () => (
+  <Container><CycleGameHome {...homeBase} ghostCandidates={GHOST_CANDIDATES} bikes={TWO_BIKES} {...extra} /></Container>) });
+
 export const SCENES = {
+  'lobby-rider-picker': lobbyModal(),
+  'lobby-ghost-picker': lobbyModal(),
+  'lobby-ghost-roster': lobbyModal(),
+  'lobby-volume': lobbyModal(),
   'lobby-default': { render: () => (
     <Container>
       <CycleGameHome {...homeBase}

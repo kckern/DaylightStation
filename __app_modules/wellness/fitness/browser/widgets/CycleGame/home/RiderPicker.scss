@@ -7,7 +7,7 @@
   border-radius: 999px;
   padding: 7px 20px;
   color: t.$cg-muted;
-  font-size: t.cg-type(1);
+  font-size: t.cg-type(2);
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -73,7 +73,7 @@
   }
 
   &__name {
-    font-size: t.cg-type(1);
+    font-size: t.cg-type(2);
     font-weight: 600;
     text-align: center;
     line-height: 1.2;
@@ -88,7 +88,7 @@
     // z-index 4, and its root has no stacking context, so they'd otherwise cover
     // this pill in the top-right corner).
     z-index: 5;
-    font-size: t.cg-type(1);
+    font-size: t.cg-type(2);
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -113,3 +113,7 @@
     transition: none !important;
   }
 }
+
+// The avatar's own heart-rate readout follows the lobby floor (20 px).
+.cgh-person .avatar-core .hr-value-overlay { height: 34%; }
+.cgh-person .avatar-core .hr-value-overlay .hr-value { font-size: t.cg-type(2); }
