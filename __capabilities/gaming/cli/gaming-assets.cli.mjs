@@ -299,8 +299,8 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         if (parsed.flags.review) await renderSliceReview({ file, slice, out: parsed.flags.review, scale: integer(parsed.flags, 'scale', 2) });
         let keyed = null;
         if (parsed.flags['keyed-out']) keyed = { source: parsed.flags['keyed-out'], ...(await writeKeyedSheet({ file, key: slice.key, out: path.resolve(root, parsed.flags['keyed-out']) })) };
-        const frames = Object.fromEntries(slice.frames.map((frame) => [frame.id, { rect: frame.rect, content_bounds: frame.content_bounds }]));
-        const panels = Object.fromEntries(slice.panels.map((panel) => [panel.id, { rect: panel.rect, content_bounds: panel.content_bounds }]));
+        const frames = Object.fromEntries(slice.frames.map((frame) => [frame.id, { review: frame.index, rect: frame.rect, content_bounds: frame.content_bounds }]));
+        const panels = Object.fromEntries(slice.panels.map((panel) => [panel.id, { review: `P${panel.index}`, rect: panel.rect, content_bounds: panel.content_bounds }]));
         if (parsed.flags.out) await writeYaml(parsed.flags.out, { kind: 'slice-candidates', source, key: slice.key, size: [slice.width, slice.height], keyed, frames, panels });
         report = { source, key: slice.key, size: [slice.width, slice.height], frames: slice.frames.length, panels: slice.panels.length, dividers: slice.dividers, keyed, out: parsed.flags.out ?? null, review: parsed.flags.review ?? null };
         break;

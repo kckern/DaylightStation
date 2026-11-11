@@ -137,7 +137,9 @@ export async function sliceSheet({ file, key: keyOverride = null, gap = 1, pad =
       const x = Math.max(0, box.x0 - pad); const y = Math.max(0, box.y0 - pad);
       const right = Math.min(image.width, box.x1 + 1 + pad); const bottom = Math.min(image.height, box.y1 + 1 + pad);
       return {
-        id: `frame-${String(index).padStart(3, '0')}`,
+        // Positional ids stay stable when the key list changes how a sheet splits.
+        id: `f-${box.x0}-${box.y0}`,
+        index,
         rect: [x, y, right - x, bottom - y],
         content_bounds: [box.x0 - x, box.y0 - y, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1],
         pixels: box.pixels,
@@ -149,12 +151,21 @@ export async function sliceSheet({ file, key: keyOverride = null, gap = 1, pad =
   const panels = [];
   if (key.extra?.length) {
     const extra = new Set(key.extra.map((c) => parseInt(c.slice(1), 16)));
+    // Panel colour plus the sprite pixels on it: a sprite touching the panel's
+    // edge must not split the panel into strips.
+    const panelColour = new Uint8Array(image.width * image.height);
     const panelMask = new Uint8Array(image.width * image.height);
     for (let p = 0; p < panelMask.length; p += 1) {
       const i = p * 4;
-      if (image.pixels[i + 3] && extra.has((image.pixels[i] << 16) | (image.pixels[i + 1] << 8) | image.pixels[i + 2])) panelMask[p] = 1;
+      if (image.pixels[i + 3] && extra.has((image.pixels[i] << 16) | (image.pixels[i + 1] << 8) | image.pixels[i + 2])) { panelColour[p] = 1; panelMask[p] = 1; }
+      else if (mask[p]) panelMask[p] = 1;
     }
-    const boxes = components(panelMask, image.width, image.height).filter((box) => box.pixels >= 16);
+    const regions = components(panelMask, image.width, image.height);
+    const boxes = regions.filter((box) => {
+      let colour = 0;
+      for (let y = box.y0; y <= box.y1 && colour < 16; y += 1) for (let x = box.x0; x <= box.x1 && colour < 16; x += 1) colour += panelColour[y * image.width + x];
+      return colour >= 16;
+    });
     boxes.sort((a, b) => (Math.abs(a.y0 - b.y0) <= 4 ? a.x0 - b.x0 : a.y0 - b.y0)).forEach((box, index) => {
       const rect = [box.x0, box.y0, box.x1 - box.x0 + 1, box.y1 - box.y0 + 1];
       let x0 = Infinity; let y0 = Infinity; let x1 = -1; let y1 = -1;
@@ -162,7 +173,7 @@ export async function sliceSheet({ file, key: keyOverride = null, gap = 1, pad =
         if (mask[y * image.width + x]) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
       }
       if (x1 < 0) return;
-      panels.push({ id: `panel-${String(index).padStart(3, '0')}`, rect, content_bounds: [x0 - rect[0], y0 - rect[1], x1 - x0 + 1, y1 - y0 + 1] });
+      panels.push({ id: `p-${rect[0]}-${rect[1]}`, index, rect, content_bounds: [x0 - rect[0], y0 - rect[1], x1 - x0 + 1, y1 - y0 + 1] });
     });
   }
   return { width: image.width, height: image.height, key, frames, panels, dividers: dividers.length };
@@ -180,14 +191,14 @@ export async function renderSliceReview({ file, slice, out, scale = 2 }) {
   for (const panel of slice.panels ?? []) {
     const [x, y, w, h] = panel.rect.map((v) => v * scale);
     ctx.strokeStyle = '#2050ff'; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    const label = `P${panel.id.replace('panel-', '')}`;
+    const label = `P${panel.index}`;
     ctx.fillStyle = '#2050ff'; ctx.fillRect(x + w - ctx.measureText(label).width - 4, y + h - 5 * scale - 4, ctx.measureText(label).width + 4, 5 * scale + 4);
     ctx.fillStyle = '#ffffff'; ctx.fillText(label, x + w - ctx.measureText(label).width - 2, y + h - 3);
   }
   for (const frame of slice.frames) {
     const [x, y, w, h] = frame.rect.map((v) => v * scale);
     ctx.strokeStyle = '#ff2050'; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    const label = frame.id.replace('frame-', '');
+    const label = String(frame.index);
     ctx.fillStyle = '#000000'; ctx.fillRect(x, y, ctx.measureText(label).width + 4, 5 * scale + 4);
     ctx.fillStyle = '#ffffff'; ctx.fillText(label, x + 2, y + 5 * scale + 1);
   }
@@ -230,19 +241,28 @@ export function seamScore({ pixels, width }, [sx, sy, sw, sh], axis = 'x') {
   const at = (u, v) => (axis === 'x' ? rgbaAt(pixels, width, sx + u, sy + v) : rgbaAt(pixels, width, sx + v, sy + u));
   const [length, breadth] = axis === 'x' ? [sw, sh] : [sh, sw];
   const step = (a, b) => { let sum = 0; for (let v = 0; v < breadth; v += 1) { const p = at(a, v); const q = at(b, v); for (let c = 0; c < 4; c += 1) sum += Math.abs(p[c] - q[c]); } return sum / breadth; };
+  // Every column pair: sampling with a stride lands inside 2x2 art pixels and
+  // measures nothing but zeros.
   const inner = [];
-  const stride = Math.max(1, Math.floor(length / 128));
-  for (let u = 0; u < length - 1; u += stride) inner.push(step(u, u + 1));
+  for (let u = 0; u < length - 1; u += 1) inner.push(step(u, u + 1));
   inner.sort((a, b) => a - b);
   const p90 = inner[Math.floor(inner.length * 0.9)] ?? 0;
+  // Pixel-art outlines move in staircase jumps, so most neighbouring columns
+  // are identical; the typical size of a step that does happen is the yardstick.
+  const moving = inner.filter((value) => value > 0);
+  const typicalStep = moving.length ? moving[Math.floor(moving.length / 2)] : 0;
   const seam = step(length - 1, 0);
-  const limit = Math.max(6, 1.5 * p90);
+  const limit = Math.max(6, 1.5 * p90, 1.5 * typicalStep);
   // Pixel art is full of hard edges: a wrap is also clean when the same
   // transition (last→first column pair) already occurs inside the image.
   const pairGap = (a, b) => { let sum = 0; for (let v = 0; v < breadth; v += 1) { const p1 = at(length - 1, v); const p0 = at(0, v); const q1 = at(a, v); const q0 = at(b, v); for (let c = 0; c < 4; c += 1) sum += Math.abs(p1[c] - q1[c]) + Math.abs(p0[c] - q0[c]); } return sum / breadth; };
   let echo = Infinity;
   if (seam > limit) for (let u = 0; u < length - 1 && echo > 6; u += 1) echo = Math.min(echo, pairGap(u, u + 1), pairGap(u + 1, u));
-  return { seam: Math.round(seam * 10) / 10, limit: Math.round(limit * 10) / 10, pass: seam <= limit || echo <= 6, echoes_interior_edge: seam > limit && echo <= 6 };
+  // A continuation also looks like the column steps right beside it: diagonal
+  // outlines change every column, so the wrap is judged against its neighbours.
+  const near = length >= 6 ? Math.max(step(length - 3, length - 2), step(length - 2, length - 1), step(0, 1), step(1, 2)) : 0;
+  const local = seam <= Math.max(6, 2 * near);
+  return { seam: Math.round(seam * 10) / 10, limit: Math.round(limit * 10) / 10, pass: seam <= limit || echo <= 6 || local, echoes_interior_edge: seam > limit && echo <= 6, matches_neighbours: seam > limit && local };
 }
 
 /** Share of density x density blocks in a region that are one colour (frame origin at the region's top-left). */
@@ -309,6 +329,24 @@ export async function validateSideScrollerAsset({ file, asset, prefix, warnings 
       if (declared < 0.999) errors.push(`${prefix}: frame ${name} is not true ${density}x pixel art (${(declared * 100).toFixed(1)}% uniform ${density}px blocks; resampled or off-grid art)`);
       else if (rect[2] * rect[3] >= 64 * density * density && rect[2] % (density * 2) === 0 && rect[3] % (density * 2) === 0 && blockUniformity(image, rect, density * 2) >= 0.999) {
         warnings.push(`${prefix}: frame ${name} is uniform at ${density * 2}px blocks; if that is its true grain, declare pixel_density ${density * 2}`);
+      }
+    }
+  }
+  // A sprite's frame edge is mostly transparent. An opaque border means the
+  // ripper's backdrop or panel colour was never keyed out.
+  const isSprite = tags.includes('side-scroller') && !tags.includes('parallax-layer') && !tags.includes('terrain-strip');
+  if (isSprite) {
+    image ??= await decode(file);
+    for (const [name, frame] of Object.entries(frames)) {
+      if (!Array.isArray(frame?.rect) || frame.opaque_background === true) continue;
+      const [sx, sy, sw, sh] = frame.rect;
+      let border = 0; let opaque = 0; const colours = new Map();
+      const visit = (x, y) => { const p = rgbaAt(image.pixels, image.width, x, y); border += 1; if (p[3]) { opaque += 1; const k = hex(p[0], p[1], p[2]); colours.set(k, (colours.get(k) ?? 0) + 1); } };
+      for (let x = sx; x < sx + sw; x += 1) { visit(x, sy); visit(x, sy + sh - 1); }
+      for (let y = sy + 1; y < sy + sh - 1; y += 1) { visit(sx, y); visit(sx + sw - 1, y); }
+      if (border && opaque / border >= 0.6) {
+        const [colour] = [...colours.entries()].sort((a, b) => b[1] - a[1])[0];
+        errors.push(`${prefix}: frame ${name} has an opaque background (${Math.round((opaque / border) * 100)}% of its border, mostly ${colour}); key it out or set opaque_background: true`);
       }
     }
   }

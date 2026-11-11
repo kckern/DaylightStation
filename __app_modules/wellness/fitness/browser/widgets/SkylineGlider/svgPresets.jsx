@@ -39,7 +39,8 @@ export function TerrainPreset({ segment, fill }) {
   if (segment.profilePoints?.length) {
     const points = segment.profilePoints;
     const line = points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ');
-    return <><path data-slope d={`${line} L${points.at(-1).x} ${SCENE_HEIGHT} L${points[0].x} ${SCENE_HEIGHT} Z`} className="skyline-glider__terrain" fill={fill}/><path d={line} className="skyline-glider__slope-edge"/></>;
+    // A zone texture goes in style: the stylesheet's terrain fill would beat a fill attribute.
+    return <><path data-slope d={`${line} L${points.at(-1).x} ${SCENE_HEIGHT} L${points[0].x} ${SCENE_HEIGHT} Z`} className="skyline-glider__terrain" style={fill ? { fill } : undefined}/><path d={line} className="skyline-glider__slope-edge"/></>;
   }
   const width = Math.max(4, segment.width);
   if (segment.type === 'lower-terrain') {

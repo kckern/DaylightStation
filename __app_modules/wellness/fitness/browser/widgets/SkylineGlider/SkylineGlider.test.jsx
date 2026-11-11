@@ -231,6 +231,13 @@ describe('FlightScene zones', () => {
     expect(coin).toHaveAttribute('preserveAspectRatio', 'none');
   });
 
+  it('paints a zone texture on slopes, not just flat terrain', () => {
+    const slope = { id: 'slope', type: 'lower-terrain', start_s: 4, end_s: 12, top: .9, profile: [{ at_s: 4, altitude: .9 }, { at_s: 8, altitude: .5 }, { at_s: 12, altitude: .9 }] };
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={{ ...zoned, segments: [slope] }} assets={assets}/>);
+    // style, not a fill attribute: the stylesheet's terrain fill would win over an attribute
+    expect(screen.getByTestId('course-segment-slope').querySelector('path[data-slope]').style.fill).toBe('url(#glider-terrain-fill)');
+  });
+
   it('falls back to the alpine presets when nothing has loaded', () => {
     render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
     expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();

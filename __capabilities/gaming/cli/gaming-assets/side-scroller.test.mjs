@@ -113,7 +113,8 @@ describe('slice', () => {
     const keyed = await sliceSheet({ file, key: '#009e00,#ff00ff' });
     assert.deepEqual(keyed.frames.map((f) => f.rect), [[7, 7, 8, 7], [49, 9, 12, 14]]);
     assert.deepEqual(keyed.frames[0].content_bounds, [1, 1, 6, 5]);
-    assert.deepEqual(keyed.panels, [{ id: 'panel-000', rect: [4, 4, 20, 20], content_bounds: [4, 4, 6, 5] }], 'the panel is reported as a frame canvas');
+    assert.deepEqual(keyed.panels, [{ id: 'p-4-4', index: 0, rect: [4, 4, 20, 20], content_bounds: [4, 4, 6, 5] }], 'the panel is reported as a frame canvas');
+    assert.deepEqual(keyed.frames.map((f) => f.id), ['f-8-8', 'f-50-10'], 'ids are positional, stable across key changes');
     const out = path.join(dir, 'keyed.png');
     await writeKeyedSheet({ file, key: parseKey('#009e00,#ff00ff'), out });
     const ctx = (() => { const c = createCanvas(80, 40); return c.getContext('2d'); })();
@@ -135,7 +136,14 @@ describe('side-scroller catalog conventions', () => {
     for (let x = 0; x < wide; x += 1) for (let y = 0; y < height; y += 1) band.set([x < 16 ? 0 : 200, 0, 0, 255], (y * wide + x) * 4);
     const edge = seamScore({ pixels: band, width: wide }, [0, 0, wide, height]);
     assert.equal(edge.pass, true, 'a wrap onto an edge the image already has is clean');
-    assert.equal(edge.echoes_interior_edge, true);
+    // A diagonal outline crossing the wrap: every column steps a little, the wrap no more than its neighbours.
+    const dw = 40; const dh = 40; const diag = new Uint8ClampedArray(dw * dh * 4);
+    for (let x = 0; x < dw; x += 1) for (let y = 0; y < dh; y += 1) diag.set(y > dh - 1 - x ? [40, 120, 40, 255] : [120, 180, 240, 255], (y * dw + x) * 4);
+    const slope = seamScore({ pixels: diag, width: dw }, [0, 0, dw, dh]);
+    assert.equal(slope.pass, false, 'a diagonal that jumps back to sky at the wrap is a break');
+    const wrapped = new Uint8ClampedArray(dw * dh * 4);
+    for (let x = 0; x < dw; x += 1) for (let y = 0; y < dh; y += 1) wrapped.set(y > 10 + Math.round(8 * Math.sin((x / dw) * 2 * Math.PI)) ? [40, 120, 40, 255] : [120, 180, 240, 255], (y * dw + x) * 4);
+    assert.equal(seamScore({ pixels: wrapped, width: dw }, [0, 0, dw, dh]).pass, true, 'a periodic hill outline wraps cleanly');
   });
 
   it('accepts a tiling parallax layer and terrain strip', async () => {
@@ -157,6 +165,19 @@ describe('side-scroller catalog conventions', () => {
     assert.ok(result.errors.some((e) => e.includes('backdrop.smooth') && e.includes('not true 2x pixel art')), result.errors.join('\n'));
     assert.ok(result.warnings.some((w) => w.includes('backdrop.hills') && w.includes('declare pixel_density 2')), result.warnings.join('\n'));
     assert.ok(!result.errors.some((e) => e.includes('backdrop.hills')), 'under-declared density is a warning, not an error');
+  });
+
+  it('rejects sprite frames whose backdrop was never keyed out', async () => {
+    const dir = await root();
+    const { catalogPath } = await catalogFixture(dir);
+    const catalog = YAML.parse(await readFile(catalogPath, 'utf8'));
+    const boxed = await png(path.join(dir, 'assets/ss/boxed.png'), 16, 16, (ctx) => { ctx.fillStyle = '#f800f8'; ctx.fillRect(0, 0, 16, 16); ctx.fillStyle = '#ffd000'; ctx.fillRect(4, 4, 8, 8); });
+    catalog.assets['item.boxed'] = { ...catalog.assets['actor.hero'], source: 'assets/ss/boxed.png', source_sha256: boxed, frames: { default: { rect: [0, 0, 16, 16] } }, clips: undefined };
+    delete catalog.assets['item.boxed'].clips;
+    await writeFile(catalogPath, YAML.stringify(catalog));
+    const result = await validateManifest({ root: dir, manifestPath: catalogPath });
+    assert.ok(result.errors.some((e) => e.includes('item.boxed') && e.includes('opaque background') && e.includes('#f800f8')), result.errors.join('\n'));
+    assert.ok(!result.errors.some((e) => e.includes('actor.hero')), 'keyed sprites pass');
   });
 
   it('requires every frame of a clip to share one canvas size', async () => {
