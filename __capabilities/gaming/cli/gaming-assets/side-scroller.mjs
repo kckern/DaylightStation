@@ -474,6 +474,40 @@ export async function validateSkin({ root, contractPath, skinPath }) {
     }
     const asset = useAsset(slotName, value);
     if (!asset) continue;
+    // Vertical 3-slice: optional top cap, a body that repeats down, optional
+    // bottom cap, for things whose height changes per placement (walls, posts).
+    if (value.slices || value.pieces) {
+      if (slot.type !== 'sprite' || slot.stretch !== 'vertical') { errors.push(`slot ${slotName}: only a stretch: vertical sprite slot takes slices`); continue; }
+      const density = asset.pixel_density ?? 1;
+      const widthOf = (name) => { const frame = asset.frames[name]; const rect = frame.rect ?? [0, 0, ...(asset.geometry?.cell ?? [0, 0])]; return Math.ceil(rect[2] / density); };
+      const checkSlices = (label, slices) => {
+        if (!slices || typeof slices !== 'object' || !slices.body) { errors.push(`slot ${label}: slices need a body frame`); return null; }
+        const out = {};
+        for (const part of ['top', 'body', 'bottom']) {
+          if (slices[part] === undefined) continue;
+          if (!asset.frames?.[slices[part]]) { errors.push(`slot ${label}: slice ${part} frame ${slices[part]} not in asset`); continue; }
+          out[part] = slices[part];
+        }
+        if (out.body && !asset.frames[out.body].repeat?.includes('y')) errors.push(`slot ${label}: body frame ${out.body} must repeat on y`);
+        const widths = [...new Set(Object.values(out).map(widthOf))];
+        if (widths.length > 1) errors.push(`slot ${label}: slices must share one width (found ${widths.join(', ')} px)`);
+        return out;
+      };
+      const base = value.slices ? checkSlices(slotName, value.slices) : null;
+      const pieces = {};
+      for (const [piece, spec] of Object.entries(value.pieces ?? {})) {
+        const checked = checkSlices(`${slotName}.${piece}`, spec?.slices);
+        if (checked) pieces[piece] = checked;
+      }
+      const all = [base, ...Object.values(pieces)].filter(Boolean);
+      const width = Math.max(0, ...all.flatMap((set) => Object.values(set).map(widthOf)));
+      const artPixel = contract.units?.art_pixel;
+      if (Array.isArray(slot.box) && artPixel && width > Math.floor(slot.box[0] / artPixel)) {
+        (slot.fit === 'strict' ? errors : warnings).push(`slot ${slotName}: ${value.asset} slices are ${width} px wide; the box holds ${Math.floor(slot.box[0] / artPixel)}`);
+      }
+      resolved.sprites[slotName] = { asset: value.asset, frames: [...new Set(all.flatMap((set) => Object.values(set)))], size: [width, 0], slices: base, pieces };
+      continue;
+    }
     const refs = frameRefs(asset, value);
     if (refs.error) { errors.push(`slot ${slotName}: ${refs.error}`); continue; }
     if (slot.type === 'texture' || slot.type === 'strip') {
@@ -597,7 +631,13 @@ export async function exportSkin({ root, contractPath, skinPath, outDir }) {
       tiles.push({ name: `${slotName}.${frameName}`, canvas, w: canvas.width, h: canvas.height });
     }
     // size: the largest visible frame in native pixels, for the game's own fit checks
-    slots[slotName] = { frames: [...new Set(ref.frames)].map((name) => `${slotName}.${name}`), size: ref.size, ...(ref.fps ? { fps: ref.fps, loop: ref.loop } : {}) };
+    const named = (set) => Object.fromEntries(Object.entries(set).map(([part, frame]) => [part, `${slotName}.${frame}`]));
+    slots[slotName] = {
+      frames: [...new Set(ref.frames)].map((name) => `${slotName}.${name}`), size: ref.size,
+      ...(ref.fps ? { fps: ref.fps, loop: ref.loop } : {}),
+      ...(ref.slices ? { slices: named(ref.slices) } : {}),
+      ...(ref.pieces && Object.keys(ref.pieces).length ? { pieces: Object.fromEntries(Object.entries(ref.pieces).map(([piece, set]) => [piece, named(set)])) } : {}),
+    };
   }
   const unique = [...new Map(tiles.map((tile) => [tile.name, tile])).values()];
   if (unique.length) {

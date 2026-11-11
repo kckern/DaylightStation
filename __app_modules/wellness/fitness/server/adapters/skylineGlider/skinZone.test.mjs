@@ -69,6 +69,27 @@ describe('zoneFromSkinExport', () => {
     expect(() => zoneFromSkinExport(big, { baseZone: alpine, id: 'x' })).toThrow(/pine is 20x28 px, its box holds 17x42/);
   });
 
+  it('carries vertical slices onto walls and per-piece slices onto gates, through resolveAct', () => {
+    const sliced = { ...manifest, slots: { ...manifest.slots,
+      'entities.bombwall': { frames: ['entities.bombwall.body'], size: [32, 0], slices: { body: 'entities.bombwall.body' } },
+      'entities.gate': { frames: ['entities.gate.cap', 'entities.gate.body'], size: [16, 0], pieces: { top: { body: 'entities.gate.body' }, bottom: { top: 'entities.gate.cap', body: 'entities.gate.body' } } },
+    } };
+    const zoned = zoneFromSkinExport(sliced, { baseZone: alpine, id: 'z' });
+    expect(zoned.entities.bombwall).toMatchObject({ class: 'solid', slices: { body: 'entities.bombwall.body' } });
+    expect(zoned.entities.bombwall.frame).toBeUndefined();
+    const act = { id: 'a', zone: 'z', entities: [
+      { id: 'w1', entity: 'bombwall', at_s: 10, altitude: 1 },
+      { id: 'g1', entity: 'gate', at_s: 20, gap_altitude: 0.6, gap: 0.28, closes_at_s: 19 },
+    ] };
+    const resolved = resolveAct(act, new Map([['z', zoned]]));
+    const byId = Object.fromEntries(resolved.entities.map((e) => [e.id, e]));
+    expect(byId.w1.slices).toEqual({ body: 'entities.bombwall.body' });
+    expect(byId['g1-top'].slices).toEqual({ body: 'entities.gate.body' });
+    expect(byId['g1-bottom'].slices).toEqual({ top: 'entities.gate.cap', body: 'entities.gate.body' });
+    expect(byId['g1-shutter'].slices).toBeUndefined();
+    expect(byId['g1-top'].piece_slices).toBeUndefined();
+  });
+
   it('rejects exports for another game and entities the zone lacks', () => {
     expect(() => zoneFromSkinExport({ ...manifest, game: 'flyer' }, { baseZone: alpine, id: 'x' })).toThrow(/not skyline-glider/);
     const stray = { ...manifest, slots: { ...manifest.slots, 'entities.dragon': { frames: ['entities.dragon.a'] } } };

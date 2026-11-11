@@ -85,6 +85,12 @@ export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, ar
       const fits = [Math.floor((Number(def.width_s ?? 0.5) * UNITS_PER_SECOND) / artPixel), Math.floor((Number(def.height ?? 0.1) * sceneHeight) / artPixel)];
       if (slot.size[0] > fits[0] || slot.size[1] > fits[1]) oversized.push(`${entity} is ${slot.size[0]}x${slot.size[1]} px, its box holds ${fits[0]}x${fits[1]}`);
     }
+    if (slot.slices || slot.pieces) {
+      delete entities[entity].frame; delete entities[entity].frames; delete entities[entity].fps;
+      if (slot.slices) entities[entity].slices = { ...slot.slices };
+      if (slot.pieces) entities[entity].piece_slices = structuredClone(slot.pieces);
+      continue;
+    }
     const art = animation(slot);
     if (art) { delete entities[entity].frame; delete entities[entity].frames; delete entities[entity].fps; Object.assign(entities[entity], art); }
   }

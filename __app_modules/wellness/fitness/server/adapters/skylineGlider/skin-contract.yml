@@ -28,4 +28,5 @@ slots:
   weapons.bomb:      { type: sprite, box: [24, 30] }
   weapons.missile:   { type: sprite, box: [42, 16] }
   weapons.blast:     { type: sprite, box: [86, 96] }    # blast_width_s 1.2 x 71.43, blast_height 0.16 x 600; frames step by progress, once
-  entities.*:        { type: sprite, fit: strict }      # one per zone entity class; box from the base zone (checked by skinZone)
+  entities.*:        { type: sprite, fit: strict, stretch: vertical }   # one per entity class; box from the base zone (checked by skinZone).
+                                                                       # slices: { top, body, bottom } for walls/posts; gates take pieces: { top, bottom, shutter }

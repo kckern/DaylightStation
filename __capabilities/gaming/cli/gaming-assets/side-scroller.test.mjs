@@ -62,6 +62,19 @@ async function catalogFixture(dir, { layerDistribution = 'private-only', hillsTi
       },
     },
   };
+  // A post: 4-row cap, 8-row body (two 4-row bands: tiles vertically), 4-row foot; a wider stray cap.
+  const postSha = await png(path.join(dir, 'assets/ss/post.png'), 32, 16, (ctx) => {
+    ctx.fillStyle = '#c03030'; ctx.fillRect(0, 0, 16, 4);
+    ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, 4, 16, 2); ctx.fillStyle = '#404040'; ctx.fillRect(0, 6, 16, 2);
+    ctx.fillStyle = '#e0e0e0'; ctx.fillRect(0, 8, 16, 2); ctx.fillStyle = '#404040'; ctx.fillRect(0, 10, 16, 2);
+    ctx.fillStyle = '#303080'; ctx.fillRect(0, 12, 16, 4);
+    ctx.fillStyle = '#c03030'; ctx.fillRect(16, 0, 16, 4);
+  });
+  catalog.assets['prop.post'] = {
+    source: 'assets/ss/post.png', source_sha256: postSha, status: 'approved', license_scope: 'private-use', distribution: 'shippable',
+    kind: 'sprite-sheet', tags: ['side-scroller', 'prop'], pixel_density: 1, geometry: { layout: 'freeform' },
+    frames: { cap: { rect: [0, 0, 16, 4], opaque_background: true }, body: { rect: [0, 4, 16, 8], repeat: ['y'], opaque_background: true }, foot: { rect: [0, 12, 16, 4], opaque_background: true }, 'wide-cap': { rect: [16, 0, 16, 4], opaque_background: true } },
+  };
   const catalogPath = path.join(dir, 'catalog/ss.yml');
   await mkdir(path.dirname(catalogPath), { recursive: true });
   await writeFile(catalogPath, YAML.stringify(catalog));
@@ -72,7 +85,7 @@ async function catalogFixture(dir, { layerDistribution = 'private-only', hillsTi
       'terrain.fill': { type: 'texture', repeat: ['x', 'y'], scale: 3 },
       'terrain.edge': { type: 'strip', repeat: ['x'] },
       craft: { type: 'sprite', animated: true, required: true },
-      'entities.*': { type: 'sprite' },
+      'entities.*': { type: 'sprite', stretch: 'vertical' },
     },
   };
   const contractPath = path.join(dir, 'contract.yml');
@@ -257,6 +270,34 @@ describe('skins', () => {
     const result = await validateSkin({ root: dir, contractPath, skinPath: await writeSkin(dir, { ...goodSlots, 'weapons.bomb': { asset: 'actor.hero', frame: 'fly.0' } }) });
     assert.deepEqual(result.errors, ['slot craft: actor.hero is 16x16 px; the 20x20 box holds 10x10 at 2 units per pixel']);
     assert.ok(result.warnings.includes('slot weapons.bomb: actor.hero is 16x16 px; the 20x20 box holds 10x10 at 2 units per pixel'));
+  });
+
+  it('validates and exports vertical 3-slices, including per-piece slices', async () => {
+    const dir = await root();
+    const { contractPath } = await catalogFixture(dir);
+    const ok = await validateSkin({ root: dir, contractPath, skinPath: await writeSkin(dir, {
+      ...goodSlots,
+      'entities.wall': { asset: 'prop.post', slices: { top: 'cap', body: 'body', bottom: 'foot' } },
+      'entities.gate': { asset: 'prop.post', pieces: { top: { slices: { body: 'body', bottom: 'foot' } }, bottom: { slices: { top: 'cap', body: 'body' } } } },
+    }) });
+    assert.deepEqual(ok.errors, []);
+    const bad = await validateSkin({ root: dir, contractPath, skinPath: await writeSkin(dir, {
+      ...goodSlots,
+      'entities.wall': { asset: 'prop.post', slices: { top: 'cap', body: 'foot' } },
+      craft: { asset: 'prop.post', slices: { body: 'body' } },
+    }) });
+    assert.ok(bad.errors.includes('slot entities.wall: body frame foot must repeat on y'), bad.errors.join('\n'));
+    assert.ok(bad.errors.includes('slot craft: only a stretch: vertical sprite slot takes slices'));
+    const outDir = path.join(dir, 'out');
+    const exported = await exportSkin({ root: dir, contractPath, outDir, skinPath: await writeSkin(dir, {
+      ...goodSlots,
+      'entities.wall': { asset: 'prop.post', slices: { top: 'cap', body: 'body', bottom: 'foot' } },
+      'entities.gate': { asset: 'prop.post', pieces: { bottom: { slices: { top: 'cap', body: 'body' } } } },
+    }) });
+    assert.equal(exported.ok, true, exported.errors?.join('\n'));
+    assert.deepEqual(exported.manifest.slots['entities.wall'].slices, { top: 'entities.wall.cap', body: 'entities.wall.body', bottom: 'entities.wall.foot' });
+    assert.deepEqual(exported.manifest.slots['entities.gate'].pieces, { bottom: { top: 'entities.gate.cap', body: 'entities.gate.body' } });
+    assert.deepEqual(exported.manifest.slots['entities.wall'].size, [16, 0]);
   });
 
   it('keeps private-only art out of a shippable skin', async () => {

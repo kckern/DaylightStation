@@ -77,10 +77,14 @@ export function resolveZone(rawZone, overrides) {
  * reaches that time, so only a rider who boosts ahead gets through.
  */
 function expandGate(entity) {
-  if (entity.gap == null) return [entity];
-  const { gap, gap_altitude: centre, closes_at_s: closesAt, ...wall } = entity;
+  if (entity.gap == null) { const { piece_slices: _unused, ...plain } = entity; return [plain]; }
+  const { gap, gap_altitude: centre, closes_at_s: closesAt, piece_slices: pieceSlices, ...wall } = entity;
   const top = centre - gap / 2, bottom = centre + gap / 2;
-  const piece = (suffix, altitude, height, extra = {}) => ({ ...wall, id: `${entity.id}-${suffix}`, group: entity.id, piece: suffix, altitude, height, ...extra });
+  const piece = (suffix, altitude, height, extra = {}) => {
+    const slices = pieceSlices?.[suffix] ?? wall.slices;
+    const { slices: _drop, ...rest } = wall;
+    return { ...rest, ...(slices ? { slices: { ...slices } } : {}), id: `${entity.id}-${suffix}`, group: entity.id, piece: suffix, altitude, height, ...extra };
+  };
   return [
     piece('top', top, top, { gap_top: top, gap_bottom: bottom }),
     piece('bottom', 1, 1 - bottom, { gap_top: top, gap_bottom: bottom }),
@@ -115,6 +119,9 @@ export function resolveAct(act, zones) {
       ...(definition.frame ? { frame: definition.frame } : {}),
       ...(definition.frames ? { frames: definition.frames, fps: definition.fps } : {}),
       ...(definition.draw ? { draw: definition.draw } : {}),
+      // Vertical 3-slice art (walls, posts); a gate can dress each piece differently.
+      ...(definition.slices ? { slices: { ...definition.slices } } : {}),
+      ...(definition.piece_slices ? { piece_slices: structuredClone(definition.piece_slices) } : {}),
       ...((placement.role ?? definition.role) ? { role: String(placement.role ?? definition.role) } : {}),
       ...(Array.isArray(placement.vulnerable_to ?? definition.vulnerable_to) ? { vulnerable_to: [...(placement.vulnerable_to ?? definition.vulnerable_to)] } : {}),
       ...((placement.gap ?? definition.gap) != null ? { gap: Number(placement.gap ?? definition.gap), gap_altitude: Number(placement.gap_altitude) } : {}),

@@ -238,6 +238,18 @@ describe('FlightScene zones', () => {
     expect(screen.getByTestId('course-segment-slope').querySelector('path[data-slope]').style.fill).toBe('url(#glider-terrain-fill)');
   });
 
+  it('draws a sliced entity as caps plus a body repeated down its box', () => {
+    const wall = { id: 'wall-1', class: 'solid', draw: 'barrier', at_s: 11, altitude: 1, width_s: 0.8, height: 0.5, slices: { top: 'coin', body: 'ship-1' } };
+    const scaled = { ...zoned, zone: { ...zoned.zone, pixel_scale: 2 }, entities: [wall] };
+    render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={scaled} assets={assets}/>);
+    const sliced = screen.getByTestId('course-entity-wall-1').querySelector('[data-sliced]');
+    // 300 units tall: a 32-unit cap, then 16 px x 2 = 32-unit body copies filling the remaining 268 units (9 copies, the last cut)
+    const parts = sliced.querySelectorAll('svg');
+    expect(parts).toHaveLength(10);
+    expect(parts[parts.length - 1]).toHaveAttribute('viewBox', '64 0 16 16');
+    expect(Number(parts[8].getAttribute('height'))).toBeCloseTo(12, 5);
+  });
+
   it('falls back to the alpine presets when nothing has loaded', () => {
     render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
     expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();

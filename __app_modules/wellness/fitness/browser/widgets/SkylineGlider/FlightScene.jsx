@@ -47,6 +47,29 @@ function SpriteFrame({ assets, name, x, y, width, height, align = 'xMidYMax' }) 
 
 const hasFrame = (assets, name) => !!(name && assets.sheet && assets.frames?.[name]);
 
+// Vertical 3-slice for things whose height changes per placement (walls, posts,
+// shutters): top cap, a body repeated down the box, bottom cap. The body's last
+// copy is cut off by the box. Drawn at the zone's pixel scale, centred across.
+function SlicedSprite({ assets, slices, x, y, width, height }) {
+  const pixel = React.useContext(PixelScale);
+  const frame = (name) => (name ? assets.frames?.[name] : null);
+  const body = frame(slices.body);
+  if (!body || !assets.sheet || height <= 0) return null;
+  const scale = pixel || width / body.w;
+  const w = body.w * scale; const left = x + (width - w) / 2;
+  const top = frame(slices.top); const bottom = frame(slices.bottom);
+  const topH = top ? top.h * scale : 0; const bottomH = bottom ? bottom.h * scale : 0;
+  const part = (f, py, ph, key) => <svg key={key} x={left} y={py} width={w} height={ph} viewBox={`${f.x} ${f.y} ${f.w} ${ph / scale}`} preserveAspectRatio="none">
+    <image href={assets.sheet.url} width={assets.sheet.width} height={assets.sheet.height}/>
+  </svg>;
+  const parts = [];
+  const bodyH = body.h * scale; const end = y + height - bottomH;
+  for (let py = y + topH, index = 0; py < end - 0.01; py += bodyH, index += 1) parts.push(part(body, py, Math.min(bodyH, end - py), `body-${index}`));
+  if (top) parts.push(part(top, y, Math.min(topH, height), 'top'));
+  if (bottom) parts.push(part(bottom, y + height - bottomH, bottomH, 'bottom'));
+  return <g data-sliced="true">{parts}</g>;
+}
+
 function ImageStrip({ layer, image, scroll }) {
   const height = clamp(Number(layer.height ?? 1), 0.01, 1) * SCENE_HEIGHT;
   const y = Number(layer.y ?? 0) * SCENE_HEIGHT;
@@ -159,10 +182,12 @@ function TargetMarks({ entity, damage }) {
   </g>;
 }
 
-function Shutter({ entity, progress: { warning, closed } }) {
+function Shutter({ entity, assets, progress: { warning, closed } }) {
   const height = entity.height * closed;
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role="boost" data-progress={Math.round(closed * 100) / 100} data-warning={warning ? 'true' : 'false'} className="skyline-glider__entity skyline-glider__entity--shutter">
-    {height > 0 && <EntityPreset entity={{ ...entity, height }}/>}
+    {height > 0 && (entity.slices && hasFrame(assets, entity.slices.body)
+      ? <SlicedSprite assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={height}/>
+      : <EntityPreset entity={{ ...entity, height }}/>)}
     {warning && <>
       <path className="skyline-glider__shutter-warning" d={`M${entity.x - 6} ${entity.y} H${entity.x + entity.width + 6} M${entity.x - 6} ${entity.y + entity.height} H${entity.x + entity.width + 6}`}/>
       {/* Above the gap, clear of the glider flying through it. */}
@@ -175,9 +200,11 @@ function Entity({ entity, assets, time, role, damage, flashKey }) {
   const name = frameName(entity, time);
   const label = ROLE_LABEL[role];
   return <g data-testid={`course-entity-${entity.id}`} data-class={entity.class} data-role={role} className={`skyline-glider__entity skyline-glider__entity--${entity.class} skyline-glider__entity--${role}`}>
-    {hasFrame(assets, name)
-      ? <SpriteFrame assets={assets} name={name} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
-      : <EntityPreset entity={entity}/>}
+    {entity.slices && hasFrame(assets, entity.slices.body)
+      ? <SlicedSprite assets={assets} slices={entity.slices} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
+      : hasFrame(assets, name)
+        ? <SpriteFrame assets={assets} name={name} x={entity.x} y={entity.y} width={entity.width} height={entity.height}/>
+        : <EntityPreset entity={entity}/>}
     {flashKey && <rect key={flashKey} className="skyline-glider__entity-flash" x={entity.x} y={entity.y} width={entity.width} height={entity.height} rx={8}/>}
     {role === 'shoot' && <TargetMarks entity={entity} damage={damage}/>}
     {label && <g className={`skyline-glider__${role}-mark`}>
@@ -263,7 +290,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
     <g className="skyline-glider__course-geometry">
       {projected.segments.map((segment) => <CourseSegment key={segment.id} segment={segment} zone={zone} assets={assets} time={time}/>)}
       {projected.entities.filter((entity) => !destroyed.has(entity.id)).map((entity) => entity.closes_at_s != null
-        ? <Shutter key={entity.id} entity={entity} progress={shutterProgress(entity, time)}/>
+        ? <Shutter key={entity.id} entity={entity} assets={assets} progress={shutterProgress(entity, time)}/>
         : <Entity key={entity.id} entity={entity} assets={assets} time={time}
           role={entityRole(entity, !!rules.enabled)} damage={state.entityDamage?.[entity.id]} flashKey={flashes.get(entity.id)}/>)}
       {projected.collectibles.filter((item) => !collected.has(item.id)).map((item) => <g key={item.id} transform={`translate(${item.x} ${item.y})`} className="skyline-glider__bell" data-testid={`course-collectible-${item.id}`}>
