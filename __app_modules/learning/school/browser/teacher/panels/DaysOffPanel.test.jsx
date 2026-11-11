@@ -69,6 +69,20 @@ describe('DaysOffPanel', () => {
     expect(screen.getByLabelText('Starts Family trip')).toBeDisabled();
     expect(screen.getByLabelText('Ends Family trip')).not.toBeDisabled();
     expect(screen.getByLabelText('Starts Thanksgiving')).not.toBeDisabled();
+    // Its kind of day already shaped the judged days, so it cannot change; its
+    // end may come back as far as yesterday (home early, today is school).
+    const kinds = screen.getByRole('group', { name: 'Kind of day for Family trip' });
+    kinds.querySelectorAll('button').forEach((b) => expect(b).toBeDisabled());
+    expect(screen.getByLabelText('Ends Family trip')).toHaveAttribute('min', '2026-11-10');
+  });
+
+  it('says which children did not get a new activity', async () => {
+    schoolApi.putCalendar.mockResolvedValue(ok({ revision: 'rev-2', unassigned: ['kid1'] }));
+    render(<DaysOffPanel kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add an away trip' }));
+    fireEvent.change(screen.getByLabelText('Trip starts'), { target: { value: '2026-12-28' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save trip' }));
+    expect(await screen.findByText(/Saved, but the activity was not added for Kid One/)).toBeInTheDocument();
   });
 
   it('an enrichment day with no subject is caught before any write', async () => {

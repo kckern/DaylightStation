@@ -987,18 +987,26 @@ their dates, name and kind of day (*School day*, *Stay home*, *Enrichment*,
 - **Add an away trip** is one step: dates and a name.
 - **What a day off keeps…** edits the keep-list per tier, from today on.
 
-**The past is locked.** A break that has ended is read-only; one under way can
-only move its end, never to before today. The server is the authority: a save
+**The past is locked.** A break that has ended is read-only; one that began
+before today keeps its kind of day and can only move its end — as far back as
+yesterday, so a family home early can make today a school day. A break that
+starts today is still fully editable. The server is the authority: a save
 that would change what any day before today meant — school day or not, its
 tier, its swapped subject, its activity — is refused (`PAST_DAYS_LOCKED`),
 because that day is already on the term grid (yesterday is replayed on every
 read). A keep-list change for a tier is held while yesterday was that tier
 (`KEEP_LIST_YESTERDAY`). A label may change on any break.
 
+A new activity that could not be added to a child's plan is named after the
+save (the calendar itself is already saved and live).
+
 **A save is live at once.** It is validated with the boot path's own
 validators, backed up to `household/school/backups/school.yml.<stamp>`, written
-atomically (only the `calendar` and `dayOffTiers` nodes change; every other
-line and comment of `school.yml` stays as it was), recorded in
+atomically (only the `calendar` and `dayOffTiers` nodes change, every string
+double-quoted so a date never loads as a timestamp; every other line and
+comment of `school.yml` stays as it was; the result is re-read with the boot
+parser first and refused, `ROUNDTRIP_FAILED`, unless it reads back exactly as
+intended), recorded in
 `school/plans/calendar-history.yml` (the audit trail's `calendar` rows), and
 installed in the running app — the agenda, the term grid, the reading wall,
 the debrief and Green Week read it on their next call. No restart.

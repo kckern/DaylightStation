@@ -11,7 +11,8 @@
  * (never deleted) so one id never sits on two shelves.
  */
 import path from 'path';
-import YAML from 'yaml';
+import { isDeepStrictEqual } from 'node:util';
+import jsyaml from 'js-yaml';
 import { readTextFromPath, writeFileAtomic, fileExists, renameFile } from '#system/utils/FileIO.mjs';
 import { SUBJECT_IDS } from "../../domain/curriculum/unitValidation.mjs";
 
@@ -38,7 +39,8 @@ export class YamlHolidayActivityStore {
     for (const subject of SUBJECT_IDS) {
       const file = this.#fileFor(subject, unitId);
       if (!fileExists(file)) continue;
-      const raw = YAML.parse(readTextFromPath(file)) ?? {};
+      // js-yaml, as the curriculum loader reads it.
+      const raw = jsyaml.load(readTextFromPath(file)) ?? {};
       return { unitId, subject, file, raw };
     }
     return null;
@@ -74,7 +76,11 @@ export class YamlHolidayActivityStore {
     } else if (current) {
       writeFileAtomic(`${current.file}.bak-${stamp}`, readTextFromPath(current.file));
     }
-    writeFileAtomic(target, YAML.stringify(unit, { lineWidth: 0 }));
+    // js-yaml's dump quotes date-like strings, so `onDays` never reads back as a
+    // YAML 1.1 timestamp the unit validator would refuse.
+    const text = jsyaml.dump(unit, { lineWidth: -1, noRefs: true });
+    if (!isDeepStrictEqual(jsyaml.load(text), unit)) throw new Error(`unit ${unit.unitId} would not read back as written`);
+    writeFileAtomic(target, text);
     return target;
   }
 }

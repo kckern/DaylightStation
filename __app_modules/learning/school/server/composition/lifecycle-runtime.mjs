@@ -686,6 +686,10 @@ try {
     assignments: dependencies.schoolLifecycle.stores?.assignments ?? null,
     teacherGate: schoolTeacherGate, liveCalendar: liveSchoolCalendar, curriculum: schoolCurriculum,
     reloadConfig: () => configService.reloadHouseholdAppConfig?.(null, 'school'),
+    // Today's (and yesterday's) term-grid rows are recomputed within a minute
+    // anyway; telling the service makes the edit show on the next read.
+    onUpdated: () => (userService?.getHouseholdRoster?.() ?? [])
+      .forEach((member) => dependencies.schoolLifecycle.termVerdicts?.invalidate?.(member.id)),
     timezone: configService.getTimezone?.() || null,
     logger: rootLogger.child({ module: 'school-calendar' }),
   }) : null;

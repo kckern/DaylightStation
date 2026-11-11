@@ -28,18 +28,18 @@ const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
 export class SetHouseholdCalendar {
   #store; #activities; #assignments; #teacherGate; #liveCalendar; #curriculum; #reloadConfig;
-  #timezone; #clock; #logger;
+  #timezone; #clock; #logger; #onUpdated;
 
   constructor({
     store, activities, assignments = null, teacherGate, liveCalendar, curriculum = null,
-    reloadConfig = null, timezone = null, clock = () => new Date(), logger = console,
+    reloadConfig = null, timezone = null, clock = () => new Date(), logger = console, onUpdated = null,
   } = {}) {
     if (!store || !activities || !teacherGate || !liveCalendar) {
       throw new Error('SetHouseholdCalendar requires store, activities, teacherGate and liveCalendar');
     }
     this.#store = store; this.#activities = activities; this.#assignments = assignments;
     this.#teacherGate = teacherGate; this.#liveCalendar = liveCalendar; this.#curriculum = curriculum;
-    this.#reloadConfig = reloadConfig; this.#timezone = timezone; this.#clock = clock; this.#logger = logger;
+    this.#reloadConfig = reloadConfig; this.#onUpdated = onUpdated; this.#timezone = timezone; this.#clock = clock; this.#logger = logger;
   }
 
   #refuse(ErrorType, code, message, details = {}) {
@@ -120,15 +120,19 @@ export class SetHouseholdCalendar {
       if (error?.code !== 'STALE_SAVE') throw error;
       throw this.#refuse(StateConflictError, 'STALE_SAVE', 'Someone changed the calendar since you opened it — reload and try again.');
     });
-    const assigned = await this.#assign(units.map((u) => u.unitId), assignTo, editedBy);
-
+    // The file is written: install it live FIRST, so nothing after this point
+    // can leave disk and the running app disagreeing.
     this.#liveCalendar.replace({ schedule, policy });
+    try { this.#onUpdated?.(); } catch (error) {
+      this.#logger.warn?.('school.calendar.on-updated-failed', { error: error?.message });
+    }
     try { this.#reloadConfig?.(); } catch (error) {
       this.#logger.warn?.('school.calendar.config-reload-failed', { error: error?.message });
     }
     this.#curriculum?.invalidate?.();
+    const { assigned, unassigned } = await this.#assign(units.map((u) => u.unitId), assignTo, editedBy);
     this.#logger.info?.('school.calendar.updated', {
-      editedBy, breaks: except.length, activities: units.map((u) => u.unitId), assigned, keepListsChanged: changedTiers,
+      editedBy, breaks: except.length, activities: units.map((u) => u.unitId), assigned, unassigned, keepListsChanged: changedTiers,
     });
     if (this.#curriculum?.listUnits) {
       this.#curriculum.listUnits().then((all) => {
@@ -136,7 +140,10 @@ export class SetHouseholdCalendar {
           .forEach((missing) => this.#logger.warn?.('school.calendar.assignment-missing', missing));
       }).catch(() => {});
     }
-    return { revision: written.revision, calendar: rawBlock, dayOffTiers: dayOffTiers ?? null, activities: units.map((u) => u.unitId) };
+    return {
+      revision: written.revision, calendar: rawBlock, dayOffTiers: dayOffTiers ?? null,
+      activities: units.map((u) => u.unitId), assigned, unassigned,
+    };
   }
 
   async #composeActivities(activities, schedule) {
@@ -172,22 +179,30 @@ export class SetHouseholdCalendar {
   }
 
   async #assign(unitIds, learnerIds, editedBy) {
-    if (!this.#assignments || !unitIds.length || !Array.isArray(learnerIds) || !learnerIds.length) return [];
-    const assigned = [];
+    const assigned = []; const unassigned = [];
+    if (!this.#assignments || !unitIds.length || !Array.isArray(learnerIds) || !learnerIds.length) return { assigned, unassigned };
+    // Appends to each learner's standalone work through the assignment store
+    // (its own history row, stamped with this teacher). A failure for one
+    // learner is reported, never thrown: the calendar is already saved.
     for (const learnerId of learnerIds) {
-      // eslint-disable-next-line no-await-in-loop
-      const record = await this.#assignments.get(learnerId);
-      if (!record) continue;
-      const missing = unitIds.filter((id) => !(record.units ?? []).includes(id));
-      if (!missing.length) continue;
-      // eslint-disable-next-line no-await-in-loop
-      await this.#assignments.put({
-        ...record, units: [...(record.units ?? []), ...missing],
-        assignedBy: editedBy, updatedAt: this.#clock().toISOString(),
-      });
-      assigned.push(learnerId);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const record = await this.#assignments.get(learnerId);
+        if (!record) { unassigned.push(learnerId); continue; }
+        const missing = unitIds.filter((id) => !(record.units ?? []).includes(id));
+        if (!missing.length) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await this.#assignments.put({
+          ...record, units: [...(record.units ?? []), ...missing],
+          assignedBy: editedBy, updatedAt: this.#clock().toISOString(),
+        });
+        assigned.push(learnerId);
+      } catch (error) {
+        unassigned.push(learnerId);
+        this.#logger.warn?.('school.calendar.assign-failed', { learnerId, code: error?.code ?? null, error: error?.message });
+      }
     }
-    return assigned;
+    return { assigned, unassigned };
   }
 }
 

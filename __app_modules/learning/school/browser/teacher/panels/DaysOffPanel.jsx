@@ -17,7 +17,7 @@ import { schoolApi } from "../../schoolApi.js";
 import { usePanelFetch } from "../usePanelFetch.js";
 import PanelFrame from "./PanelFrame.jsx";
 import { useTeacherWrite } from "../useTeacherWrite.js";
-import { teacherDateRange } from "../teacherDates.js";
+import { teacherDateRange, shiftDay } from "../teacherDates.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import {
   TIERS, TIER_LABELS, ACTIVITY_TIERS, splitBreaks, draftFromServer, payloadFromDraft,
@@ -64,6 +64,7 @@ export default function DaysOffPanel({ kids = [] }) {
   const [showKeep, setShowKeep] = useState(false);
   const [localError, setLocalError] = useState(null);
   const [removeArm, setRemoveArm] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   useEffect(() => { logger.info('days-off.mounted', {}); }, [logger]);
 
@@ -100,7 +101,12 @@ export default function DaysOffPanel({ kids = [] }) {
     const body = payloadFromDraft(nextDraft);
     logger.info('days-off.save', { breaks: body.except.length, activities: body.activities.length, keepLists: Boolean(nextDraft.keepListsTouched) });
     run('save', ({ actorId, pin }) => schoolApi.putCalendar({ ...body, editedBy: actorId, pin }), {
-      onSuccess: () => { setMode(null); setDraft(null); calendar.retry(); logger.info('days-off.saved', {}); },
+      onSuccess: (result) => {
+        setMode(null); setDraft(null); calendar.retry();
+        const missed = (result?.unassigned ?? []).map((id) => kids.find((k) => k.id === id)?.name ?? id);
+        setNotice(missed.length ? `Saved, but the activity was not added for ${missed.join(', ')} — add it in their assignments.` : null);
+        logger.info('days-off.saved', { unassigned: missed.length });
+      },
     }).then((saved) => { if (saved === false) logger.warn('days-off.save-refused', {}); });
   };
 
@@ -132,6 +138,7 @@ export default function DaysOffPanel({ kids = [] }) {
       unavailableCopy="The household calendar can't be edited on this install.">
       {!mode && (
         <div className="teacher-daysoff">
+          {notice && <p className="teacher-panel__error" role="status">{notice}</p>}
           {upcoming.length ? (
             <ul className="teacher-daysoff__list">
               {upcoming.map((b) => <BreakRow key={`${b.from}-${b.label}`} brk={b} activity={data?.activities?.[b.assignment]} />)}
@@ -184,12 +191,12 @@ export default function DaysOffPanel({ kids = [] }) {
                 <div className="teacher-daysoff__fields">
                   <label className="teacher-daysoff__wide">Name <input aria-label={`Name of ${brk.label || 'new break'}`} value={brk.label} placeholder="e.g. Thanksgiving" onChange={(e) => patch(brk.key, { label: e.target.value })} /></label>
                   <label>From <input type="date" aria-label={`Starts ${brk.label || 'new break'}`} value={brk.from} disabled={started} min={started ? undefined : today} onChange={(e) => patch(brk.key, { from: e.target.value, to: brk.to < e.target.value ? e.target.value : brk.to })} /></label>
-                  <label>To <input type="date" aria-label={`Ends ${brk.label || 'new break'}`} value={brk.to} min={started ? today : brk.from || today} onChange={(e) => patch(brk.key, { to: e.target.value })} /></label>
+                  <label>To <input type="date" aria-label={`Ends ${brk.label || 'new break'}`} value={brk.to} min={started ? shiftDay(today, -1) : brk.from || today} onChange={(e) => patch(brk.key, { to: e.target.value })} /></label>
                 </div>
-                {started && <p className="teacher-daysoff__help">Already under way — only its end can move, and not before today.</p>}
+                {started && <p className="teacher-daysoff__help">Already under way — only its end can move, and not before yesterday.</p>}
                 <div className="teacher-daysoff__tiers" role="group" aria-label={`Kind of day for ${brk.label || 'new break'}`}>
                   {TIERS.map((tier) => (
-                    <button key={tier} type="button" data-tier={tier} aria-pressed={brk.tier === tier} onClick={() => setTier(brk, tier)}>{TIER_LABELS[tier]}</button>
+                    <button key={tier} type="button" data-tier={tier} aria-pressed={brk.tier === tier} disabled={started} onClick={() => setTier(brk, tier)}>{TIER_LABELS[tier]}</button>
                   ))}
                 </div>
                 {brk.tier === 'enrichment' && (

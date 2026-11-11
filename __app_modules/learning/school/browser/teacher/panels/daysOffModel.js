@@ -26,10 +26,13 @@ export function activityIdFor(label) {
   return `holiday-${slug || 'activity'}`;
 }
 
-/** 'past' (ended before today), 'started' (today is inside or after its start), or 'open'. */
+/**
+ * 'past' (ended before today), 'started' (began before today, so some of its
+ * days are already judged), or 'open' (nothing judged yet, today included).
+ */
 export function breakLock(brk, today) {
   if (brk.to && brk.to < today) return 'past';
-  if (brk.from && brk.from <= today) return 'started';
+  if (brk.from && brk.from < today) return 'started';
   return 'open';
 }
 

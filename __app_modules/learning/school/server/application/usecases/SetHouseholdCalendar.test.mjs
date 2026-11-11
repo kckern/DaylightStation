@@ -83,7 +83,7 @@ describe('SetHouseholdCalendar', () => {
     expect(written).toContain('# School policy');
     expect(written).toContain('  - a   # a learner');
     expect(written).toContain('  - grownup   # trailing comment survives');
-    expect(written).toMatch(/- \{ from: "?2026-11-20"?, to: "?2026-11-21"?, label: Trip, tier: away \}/);
+    expect(written).toContain('- { from: "2026-11-20", to: "2026-11-21", label: "Trip", tier: "away" }');
     expect(YAML.parse(written).calendar.except).toHaveLength(3);
     expect(backups()).toEqual(['school.yml.20261111T180000Z']);
     expect(fs.readFileSync(path.join(dir, 'school', 'backups', backups()[0]), 'utf8')).toBe(SCHOOL_YML);
@@ -184,6 +184,23 @@ describe('SetHouseholdCalendar', () => {
       except: [PAST, { ...THANKS, assignment: 'civ-lesson' }], activities: [{ unitId: 'civ-lesson', title: 'X' }],
       editedBy: 'grownup', baseRevision: rev(),
     })).rejects.toMatchObject({ code: 'ACTIVITY_NOT_EDITABLE' });
+  });
+
+  it('a failed assignment never leaves the saved calendar unapplied; the term rows are told', async () => {
+    const onUpdated = vi.fn();
+    uc = new SetHouseholdCalendar({
+      store, activities, assignments, teacherGate: gate, liveCalendar: live, curriculum,
+      timezone: 'America/Los_Angeles', clock: () => NOW, logger: silent, onUpdated,
+    });
+    assignments.put.mockRejectedValue(Object.assign(new Error('corrupt'), { code: 'ASSIGNMENTS_CORRUPT' }));
+    const science = { from: '2026-12-07', to: '2026-12-07', label: 'Science fair', tier: 'enrichment', replaces: 'science', assignment: 'holiday-science-fair' };
+    const out = await uc.execute({
+      except: [PAST, THANKS, science], activities: [{ unitId: 'holiday-science-fair', title: 'Volcano' }],
+      assignTo: ['kid'], editedBy: 'grownup', baseRevision: rev(),
+    });
+    expect(out.unassigned).toEqual(['kid']);
+    expect(live.schedule().except.map((s) => s.label)).toContain('Science fair');
+    expect(onUpdated).toHaveBeenCalledTimes(1);
   });
 
   it('holds a keep-list change while yesterday was that tier', async () => {

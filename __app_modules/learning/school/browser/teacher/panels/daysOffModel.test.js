@@ -25,7 +25,8 @@ describe('daysOffModel', () => {
   it('locks past breaks and the start of a started one', () => {
     expect(breakLock({ from: '2026-09-07', to: '2026-09-07' }, '2026-11-11')).toBe('past');
     expect(breakLock({ from: '2026-11-08', to: '2026-11-14' }, '2026-11-11')).toBe('started');
-    expect(breakLock({ from: '2026-11-11', to: '2026-11-11' }, '2026-11-11')).toBe('started');
+    // A break starting today has had nothing judged yet: fully editable.
+    expect(breakLock({ from: '2026-11-11', to: '2026-11-11' }, '2026-11-11')).toBe('open');
     expect(breakLock({ from: '2026-11-12', to: '2026-11-12' }, '2026-11-11')).toBe('open');
   });
 
