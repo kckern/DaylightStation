@@ -8,13 +8,18 @@ export function useSkylineController({ctx,courses=[],world,access,saved,saveStat
  const selector=(ctx?.riderSelectors||[]).find(s=>s.id===activeSelectorId.current)||(ctx?.riderSelectors||[])[0];
  const configured=[...(ctx?.users||[]),...(ctx?.userCollections?.all||[]),...Object.values(ctx?.usersConfig||{}).flatMap(g=>Array.isArray(g)?g:[])];
  const people=new Map();
- for(const p of configured){const id=typeof p==='string'?p:p?.id||p?.userId||p?.name;if(id)people.set(id,typeof p==='string'?{id}:p)}
+ // A bare id (the admin list is one) never replaces a fuller entry for the same person.
+ for(const p of configured){const id=typeof p==='string'?p:p?.id||p?.userId||p?.name;if(id&&!(typeof p==='string'&&people.has(id)))people.set(id,typeof p==='string'?{id}:p)}
  for(const id of Object.values(selector?.buttons||{}))if(!people.has(id))people.set(id,{id});
+ // A person's name as the rest of the fitness UI shows it (sidebar, home card):
+ // the household label ("Dad") over the full name, never the raw id. The
+ // context's resolver is device-centric and hands a user id straight back.
+ const nameOf=(id)=>{const p=people.get(id)||{};const d=ctx?.getDisplayName?.(id)?.displayName;return p.group_label||p.groupLabel||p.displayName||p.name||(d&&d!==id?d:null)||id};
  const riders=[...people].map(([id,p])=>{
   const position=Number(Object.keys(selector?.buttons||{}).find(k=>/_single$/.test(k)&&selector.buttons[k]===id)?.split('_')[0])||null;
-  return {id,name:ctx?.getDisplayName?.(id)?.displayName||p.displayName||p.name||id,position,
+  return {id,name:nameOf(id),position,
    avatarSrc:p.avatarSrc||DaylightImagePath('users/'+id),
-   gestureHint:Object.entries(selector?.buttons||{}).filter(([k])=>k.startsWith(position+'_')&&!k.endsWith('_single')).map(([k,who])=>(k.endsWith('_double')?'Double: ':'Hold: ')+(ctx?.getDisplayName?.(who)?.displayName||who)).join(' · ')||'Hold: other riders'};
+   gestureHint:Object.entries(selector?.buttons||{}).filter(([k])=>k.startsWith(position+'_')&&!k.endsWith('_single')).map(([k,who])=>(k.endsWith('_double')?'Double: ':'Hold: ')+nameOf(who)).join(' · ')||'Hold: other riders'};
  });
  const mapActs=new Map((world?.zones||[]).flatMap(z=>z.acts||[]).map(a=>[a.id,a]));
  const acts=courses.map(c=>({...c,...mapActs.get(c.id),status:mapActs.get(c.id)?.status||'open'}));
