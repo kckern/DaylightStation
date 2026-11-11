@@ -14,7 +14,7 @@ import { buildRecordRow } from "../../lib/cycleGame/recordRow.js";
 import { resolveParticipantIdentity } from "../../lib/cycleGame/participantIdentity.js";
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from "../../lib/cycleGame/ghostCandidate.js";
 import { pickPaceRival, paceRivalPool, mergeRaceCandidates, rivalPoolCandidates, buildParRecord, PAR_ID, DEFAULT_PAR_SPEED_KMH } from "../../lib/cycleGame/paceRival.js";
-import { courseStartOverride, pickRival, ladderDelta } from "../../lib/cycleGame/ladder.js";
+import { courseStartOverride, pickRival, onlyParticipant, ladderDelta } from "../../lib/cycleGame/ladder.js";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from "../../lib/cycleGame/equipmentRpm.js";
 import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint, checkpointRaceState, checkpointOutcome } from "../../lib/cycleGame/raceCheckpoint.js";
@@ -2232,12 +2232,14 @@ export default function CycleGameContainer({ onMount } = {}) {
     log.info('cycle_game.ghost_cleared', {});
   }, [log]);
 
-  // Ride It on the featured-course card: arm a rival ghost (ranked rider → the
-  // rung above; leader → their own PB; unranked → the tail rung) and start the
-  // course. The lobby is frozen from the press, exactly as for Start, and the
-  // rival's fetches share the one lookup budget: on a timeout or any failure
-  // the course starts without the ladder rival, and a lone rider then gets the
-  // automatic rival from loaded history only (no second wait). The ghost is
+  // Ride It on the featured-course card: ALWAYS arm the weekly-course ghost —
+  // the week's leader; the best run by anyone not riding when the leader is on a
+  // bike; the leader's own record when everyone on the ladder is riding (see
+  // pickRival). Only the rival's own line replays. "Race my best" does not gate
+  // it (owner 2026-11-11: two riders on Sprint 1500 raced only each other); the
+  // switch governs only the automatic pace rival a lone rider may get on top
+  // when this lookup fails. The lobby is frozen from the press, exactly as for
+  // Start, and the rival's fetch shares the one lookup budget. The ghost is
   // passed explicitly to startRace (never through `ghost` state) so a
   // previously-selected lobby ghost can't leak into a ladder ride.
   const onRideFeatured = useCallback(async () => {
@@ -2250,16 +2252,19 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.info('cycle_game.start_ignored', { reason: busyReason, control: 'featured' });
       return;
     }
-    // No rival unless the rider switched on "Race my best": the course starts
-    // with just the riders on the bikes.
-    if (!raceMyBest) {
+    const riderIds = bikes.map((b) => session?.getEquipmentRider?.(b.id)).filter(Boolean);
+    const firstRider = riderIds[0] || null;
+    const rival = pickRival({ standings: ladder.standings || [], riderIds });
+    const rideLog = (extra) => log.info('cycle_game.ride_featured', {
+      courseId: course.id, rider: firstRider, riders: riderIds, rivalKind: rival.kind,
+      rivalUserId: rival.rivalUserId, rivalRaceId: rival.raceId, raceMyBest, ...extra
+    });
+    if (!rival.raceId) {
+      // No runs this week: the riders race the course alone.
       const accepted = startRace(courseStartOverride(course), null, { control: 'featured' });
       if (!accepted) return;
       ladderBeforeRef.current = ladder;
-      log.info('cycle_game.ride_featured', {
-        courseId: course.id, rider: bikes.map((b) => session?.getEquipmentRider?.(b.id)).find(Boolean) || null,
-        rivalKind: 'none', rivalRaceId: null, ghostArmed: false, raceMyBest: false
-      });
+      rideLog({ ghostArmed: false });
       return;
     }
     const abort = typeof AbortController === 'function' ? new AbortController() : null;
@@ -2268,28 +2273,15 @@ export default function CycleGameContainer({ onMount } = {}) {
     startPendingRef.current = pending;
     setStartPending(true);
     const pressedAt = Date.now();
-    const firstRider = bikes.map((b) => session?.getEquipmentRider?.(b.id)).find(Boolean) || null;
-    const rival = pickRival({ standings: ladder.standings || [], riderId: firstRider });
-    const progress = { stage: null, rivalRaceId: rival.raceId };
+    const progress = { stage: 'record' };
     let timer = null;
     const deadline = new Promise((resolve) => {
       timer = setTimeout(() => resolve({ reason: 'timeout' }), PACE_RIVAL_LOOKUP_MS);
     });
     const lookup = (async () => {
-      if (rival.kind === 'self-pb' && firstRider) {
-        progress.stage = 'personal-best';
-        const url = `/api/v1/fitness/cycle-races/personal-bests?userId=${encodeURIComponent(firstRider)}&courseId=${encodeURIComponent(course.id)}`;
-        const resp = await (signal ? fetch(url, { signal }) : fetch(url));
-        if (!resp.ok) throw new Error(`personal-bests ${resp.status}`);
-        progress.rivalRaceId = (await resp.json())?.best?.raceId || null;
-        // Timed out or closed while that was on its way: fetch nothing more.
-        if (signal?.aborted) throw new Error('aborted');
-      }
-      if (!progress.rivalRaceId) return { ghost: null }; // nobody to chase on this ladder
-      progress.stage = 'record';
-      const race = await fetchRaceRecord(progress.rivalRaceId, { signal });
+      const race = await fetchRaceRecord(rival.raceId, { signal });
       const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
-      const candidate = mapRaceRecordToCandidate(race, { getDisplayLabel, resolveGaugeMaxRpm });
+      const candidate = onlyParticipant(mapRaceRecordToCandidate(race, { getDisplayLabel, resolveGaugeMaxRpm }), rival.rivalUserId);
       const built = candidate ? buildGhostFromCandidate(candidate) : null;
       if (!built) throw new Error('record not replayable');
       return { ghost: built.ghost };
@@ -2320,10 +2312,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     if (!accepted) return;
     if (ghostOverride) setGhost(ghostOverride);
     ladderBeforeRef.current = ladder;
-    log.info('cycle_game.ride_featured', {
-      courseId: course.id, rider: firstRider, rivalKind: rival.kind,
-      rivalRaceId: progress.rivalRaceId || null, ghostArmed: !!ghostOverride, raceMyBest: true
-    });
+    rideLog({ ghostArmed: !!ghostOverride });
   }, [featuredLadder, raceMyBest, bikes, session, bikeById, getDisplayLabel, startRace, log]);
 
   const onToggleRaceMyBest = useCallback(() => {

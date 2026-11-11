@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { courseStartOverride, pickRival, ladderDelta, daysLeft } from "./ladder.js";
+import { courseStartOverride, pickRival, onlyParticipant, ladderDelta, daysLeft } from "./ladder.js";
 
 const ROWS = [
   { userId: 'dad', bestValue: 150, raceId: 'r1', attempts: 2 },
@@ -16,17 +16,38 @@ describe('courseStartOverride', () => {
   });
 });
 
-describe('pickRival', () => {
-  it('the week\'s leader for everyone below them, ranked or not; self-pb for the leader; none when empty', () => {
-    expect(pickRival({ standings: ROWS, riderId: 'user_3' })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
-    expect(pickRival({ standings: ROWS, riderId: 'mom' })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
-    expect(pickRival({ standings: ROWS, riderId: 'dad' })).toEqual({ kind: 'self-pb', raceId: null, rivalUserId: 'dad' });
-    expect(pickRival({ standings: ROWS, riderId: 'newkid' })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
-    expect(pickRival({ standings: [], riderId: 'dad' })).toEqual({ kind: 'none', raceId: null, rivalUserId: null });
+describe('pickRival — the weekly-course ghost (2026-11-11: "Ride it" always races the leader)', () => {
+  it("the week's leader when the leader is not on a bike, whoever is riding", () => {
+    expect(pickRival({ standings: ROWS, riderIds: ['user_3'] })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
+    expect(pickRival({ standings: ROWS, riderIds: ['mom', 'newkid'] })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
+    expect(pickRival({ standings: ROWS, riderIds: [] })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
   });
 
-  it('with no rider assigned (riderId: null), arms the leader: startRace no-ops with a no_riders warn when no bike is claimed, so an armed-but-unused ghost is harmless', () => {
-    expect(pickRival({ standings: ROWS, riderId: null })).toEqual({ kind: 'leader', raceId: 'r1', rivalUserId: 'dad' });
+  it('leader on a bike: the best run by anyone not riding', () => {
+    expect(pickRival({ standings: ROWS, riderIds: ['dad', 'newkid'] })).toEqual({ kind: 'best-not-riding', raceId: 'r2', rivalUserId: 'mom' });
+    expect(pickRival({ standings: ROWS, riderIds: ['dad', 'mom'] })).toEqual({ kind: 'best-not-riding', raceId: 'r3', rivalUserId: 'user_3' });
+  });
+
+  it("everyone on the ladder is riding: the leader's own record, as a ghost", () => {
+    expect(pickRival({ standings: ROWS, riderIds: ['dad', 'mom', 'user_3'] })).toEqual({ kind: 'leader-own-record', raceId: 'r1', rivalUserId: 'dad' });
+  });
+
+  it('no runs this week: no ghost', () => {
+    expect(pickRival({ standings: [], riderIds: ['dad'] })).toEqual({ kind: 'none', raceId: null, rivalUserId: null });
+  });
+
+  it('a rung with no raceId is skipped', () => {
+    const rows = [{ userId: 'dad', bestValue: 150, raceId: null }, ROWS[1]];
+    expect(pickRival({ standings: rows, riderIds: [] })).toEqual({ kind: 'best-not-riding', raceId: 'r2', rivalUserId: 'mom' });
+  });
+});
+
+describe('onlyParticipant', () => {
+  it("keeps only the rival's own line from the record (no co-riders, no ghosts they raced)", () => {
+    const cand = { raceId: 'r1', participants: [{ id: 'user_3' }, { id: 'ghost:r0:user_4' }] };
+    expect(onlyParticipant(cand, 'user_3').participants).toEqual([{ id: 'user_3' }]);
+    expect(onlyParticipant(cand, 'nobody')).toBeNull();
+    expect(onlyParticipant(null, 'user_3')).toBeNull();
   });
 });
 

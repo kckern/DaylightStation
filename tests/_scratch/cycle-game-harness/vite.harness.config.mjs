@@ -57,6 +57,8 @@ export default async (env = {}) => {
   const appAlias = app.resolve?.alias || {};
   const aliasList = [
     { find: /^@\/lib\/logging\/Logger\.js$/, replacement: path.join(here, 'stubs/logger.js') },
+    // Flow scenes mount the real container; its context comes from the scene.
+    { find: /^(\.\.\/)+context\/FitnessContext\.jsx$/, replacement: path.join(here, 'stubs/FitnessContext.jsx') },
     ...Object.entries(appAlias).map(([find, replacement]) => ({ find, replacement })),
     // The race road imports these from __app_modules, whose nearest node_modules
     // (the repo root) may not carry them; the frontend's always does.

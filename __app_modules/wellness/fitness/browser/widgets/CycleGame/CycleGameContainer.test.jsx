@@ -299,6 +299,84 @@ const poolOf = (...records) => () => json({ entries: records.filter((r) => !r.ra
 // The record reads (/cycle-races/<raceId>) the server would answer for these records.
 const recordsById = (...records) => Object.fromEntries(records.map((r) => [r.race.id, r]));
 
+// Owner, garage 2026-11-11: "Ride it" on THIS WEEK'S COURSE (Sprint 1500, a
+// child #1) with two riders raced only each other — the leader's ghost had been
+// put behind "Race my best" (eff1b72b0d). The weekly course always races the
+// leader's ghost; the switch only governs the automatic pace rival.
+describe('CycleGameContainer — "Ride it" always races the weekly-course ghost', () => {
+  const LEAD_RACE = '20261110081048';
+  const OTHER_RACE = '20261110122811';
+  // The leader's best run also carried a ghost they raced: only the leader replays.
+  const leadRecord = raceRecord(LEAD_RACE, { user_3: { timeS: 250 }, 'ghost:20261109181504:user_4': { timeS: 260 } });
+  const otherRecord = raceRecord(OTHER_RACE, { user_4: { timeS: 270 } });
+  const byId = recordsById(leadRecord, otherRecord);
+  const twoRiders = () => soloCtx({ cycle_ace: 'user_1', tricycle: 'user_2' });
+
+  beforeEach(() => {
+    mockCtx = twoRiders();
+    Object.values(logSpy).forEach((fn) => fn.mockClear());
+  });
+
+  it("two riders, switch off: the week's leader races as a ghost, alone from their record", async () => {
+    const ladder = { course: COURSE, standings: [{ userId: 'user_3', raceId: LEAD_RACE, bestValue: 250 }] };
+    const view = await renderLobby([], { ladder, byId });
+    act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+    await flush();
+    const [cfg] = configLogs();
+    expect(cfg).toMatchObject({ winCondition: 'distance', goalM: GOAL_M });
+    expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1', 'user_2', `ghost:${LEAD_RACE}:user_3`]);
+    expect(rideFeaturedLogs()).toEqual([expect.objectContaining({
+      courseId: COURSE.id, rivalKind: 'leader', rivalUserId: 'user_3', rivalRaceId: LEAD_RACE, ghostArmed: true, raceMyBest: false
+    })]);
+    expect(poolCalls()).toEqual([]);
+    expect(view.getByTestId(`ready-rider-ghost:${LEAD_RACE}:user_3`)).toBeTruthy();
+  });
+
+  it('the leader on a bike: the best run by anyone not riding', async () => {
+    const ladder = { course: COURSE, standings: [
+      { userId: 'user_1', raceId: '20261109090000', bestValue: 240 },
+      { userId: 'user_4', raceId: OTHER_RACE, bestValue: 270 }
+    ] };
+    const view = await renderLobby([], { ladder, byId });
+    act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+    await flush();
+    expect(ghostIds(configLogs()[0])).toEqual([`ghost:${OTHER_RACE}:user_4`]);
+    expect(rideFeaturedLogs()[0]).toMatchObject({ rivalKind: 'best-not-riding', rivalUserId: 'user_4' });
+  });
+
+  it("everyone on the ladder is riding: the leader's own record as the ghost", async () => {
+    const own = raceRecord(LEAD_RACE, { user_1: { timeS: 240 } });
+    const ladder = { course: COURSE, standings: [{ userId: 'user_1', raceId: LEAD_RACE, bestValue: 240 }] };
+    const view = await renderLobby([], { ladder, byId: recordsById(own) });
+    act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+    await flush();
+    expect(ghostIds(configLogs()[0])).toEqual([`ghost:${LEAD_RACE}:user_1`]);
+    expect(rideFeaturedLogs()[0]).toMatchObject({ rivalKind: 'leader-own-record', rivalUserId: 'user_1' });
+  });
+
+  it('no runs this week: no ghost, nothing fetched, and the card says so', async () => {
+    const ladder = { course: COURSE, standings: [] };
+    const view = await renderLobby([], { ladder, byId });
+    expect(view.getByTestId('featured-course-card').textContent).toMatch(/no ghost/i);
+    act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+    await flush();
+    expect(ghostIds(configLogs()[0])).toEqual([]);
+    expect(recordCalls()).toEqual([]);
+    expect(rideFeaturedLogs()[0]).toMatchObject({ rivalKind: 'none', ghostArmed: false });
+  });
+
+  it("switch off and the leader's record cannot be had: the riders race, with no automatic rival", async () => {
+    mockCtx = soloCtx();
+    const ladder = { course: COURSE, standings: [{ userId: 'user_3', raceId: LEAD_RACE, bestValue: 250 }] };
+    const view = await renderLobby([raceRecord('20260101110000', { user_1: { timeS: 300 } })], { ladder, byId: {} });
+    act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+    await flush();
+    expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'record', reason: 'error' })]);
+    expect(ghostIds(configLogs()[0])).toEqual([]);
+    expect(paceRivalLogs()).toEqual([]);
+  });
+});
+
 describe('CycleGameContainer — a rival is opt-in ("Race my best", off by default)', () => {
   beforeEach(() => {
     mockCtx = soloCtx();
@@ -345,20 +423,6 @@ describe('CycleGameContainer — a rival is opt-in ("Race my best", off by defau
     expect(paceRivalLogs()).toHaveLength(1);
   });
 
-  it('"Ride it" without the switch starts the course with no ladder rival and fetches nothing', async () => {
-    const RIVAL_RACE = '20251201100000';
-    const ladder = { course: COURSE, standings: [{ userId: 'user_2', raceId: RIVAL_RACE, bestValue: 250 }] };
-    const byId = { [RIVAL_RACE]: raceRecord(RIVAL_RACE, { user_2: { timeS: 250 } }) };
-    const view = await renderLobby([], { ladder, byId });
-    act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
-    await flush();
-    const [cfg] = configLogs();
-    expect(cfg.riders.map((r) => r.userId)).toEqual(['user_1']);
-    expect(cfg.rivalKind).toBeNull();
-    expect(recordCalls()).toEqual([]);
-    expect(poolCalls()).toEqual([]);
-    expect(rideFeaturedLogs()).toEqual([expect.objectContaining({ rivalKind: 'none', ghostArmed: false, raceMyBest: false })]);
-  });
 });
 
 describe('CycleGameContainer — automatic pace rival', () => {
@@ -894,14 +958,15 @@ describe('CycleGameContainer — automatic pace rival', () => {
       expect(paceRivalLogs()[0]).toMatchObject({ serverLookup: 'skipped' });
     });
 
-    it("the ladder leader's personal best failing is a failed lookup at the personal-best stage", async () => {
+    it("the ladder leader riding alone races their own week-best record; no personal-best lookup", async () => {
+      const own = raceRecord(RIVAL_RACE, { user_1: { timeS: 250 } });
       const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
-      const view = await renderLobby([], { ladder: lead, byId, pb: () => Promise.resolve({ ok: false, status: 500 }) });
-      optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
+      const view = await renderLobby([], { ladder: lead, byId: recordsById(own) });
+      act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
       await flush();
-      expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'personal-best', reason: 'error', error: 'personal-bests 500' })]);
-      expect(recordCalls()).toEqual([]);
-      expect(configLogs()[0]).toMatchObject({ rivalKind: 'par' });
+      expect(callsTo((u) => u.includes('/personal-bests'))).toEqual([]);
+      expect(ghostIds(configLogs()[0])).toEqual([`ghost:${RIVAL_RACE}:user_1`]);
+      expect(rideFeaturedLogs()[0]).toMatchObject({ rivalKind: 'leader-own-record', ghostArmed: true });
     });
 
     it('never leaves the lobby frozen if launching the featured race throws: logs start_failed', async () => {
@@ -989,42 +1054,6 @@ describe('CycleGameContainer — automatic pace rival', () => {
         await flush();
         expect(configLogs()).toHaveLength(1);
         expect(view.queryByTestId(`ready-rider-ghost:${RIVAL_RACE}:user_2`)).toBeNull();
-      });
-
-      it("a hung personal-best fetch (the ladder leader's ride) is bounded the same way", async () => {
-        const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
-        const hung = deferred();
-        const view = await renderLobby([], { ladder: lead, byId, pb: () => hung.promise });
-        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
-        await act(async () => { vi.advanceTimersByTime(1500); });
-        await flush();
-        expect(configLogs()).toHaveLength(1);
-        expect(featuredFailLogs()).toEqual([expect.objectContaining({ stage: 'personal-best', reason: 'timeout', lookupMs: 1500 })]);
-        // The answer arriving late fetches no record and changes nothing.
-        hung.resolve({ ok: true, json: () => Promise.resolve({ best: { raceId: RIVAL_RACE } }) });
-        await flush();
-        expect(recordCalls()).toEqual([]);
-        expect(configLogs()).toHaveLength(1);
-      });
-
-      it('a featured ride with no ladder rival to arm shares the one 1500 ms budget with the pace-rival lookup', async () => {
-        // The leader has no personal best on record (answered after 1000 ms); the rival pool never answers.
-        const lead = { course: COURSE, standings: [{ userId: 'user_1', raceId: RIVAL_RACE, bestValue: 250 }] };
-        const view = await renderLobby([], { ladder: lead, byId, pb: after(1000, { ok: true, json: () => Promise.resolve({ best: null }) }), pool: never });
-        optInRival(view); act(() => { fireEvent.click(view.getByTestId('featured-ride')); });
-        await act(async () => { vi.advanceTimersByTime(1000); });
-        await flush();
-        expect(configLogs()).toEqual([]);
-        expect(isFrozen(view)).toBe(true); // the freeze carries over into the pace-rival lookup
-        expect(poolCalls()).toHaveLength(1);
-        await act(async () => { vi.advanceTimersByTime(499); });
-        await flush();
-        expect(configLogs()).toEqual([]);
-        await act(async () => { vi.advanceTimersByTime(1); });
-        await flush();
-        expect(configLogs()).toHaveLength(1); // 1500 ms after the press, not 2500
-        expect(paceRivalLogs()[0]).toMatchObject({ kind: 'par', serverLookup: 'timeout', lookupMs: 500 });
-        expect(featuredFailLogs()).toEqual([]); // nothing failed: there was no rival to fetch
       });
 
       it('a rival record that fails after 1000 ms starts the race then, with no pace-rival lookup', async () => {
