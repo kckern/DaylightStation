@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import SpeedoRow from "./SpeedoRow.jsx";
 
 describe('SpeedoRow panel', () => {
@@ -57,5 +57,17 @@ describe('SpeedoRow panel', () => {
         zoneBox={{ width: 0, height: 0 }} minGauge={320} maxGauge={520} />
     );
     expect(container.querySelector('.cycle-speedometer').style.width).toBe('320px');
+  });
+
+  it('falls back to the generic face when a rider has no avatar image (the par rival)', () => {
+    const { container } = render(
+      <SpeedoRow riderIds={['ghost:par:par']}
+        riders={{ 'ghost:par:par': { displayName: 'Par', cumulativeDistanceM: 0, isGhost: true } }}
+        riderLive={{ 'ghost:par:par': { rpm: 80, avatarSrc: '/api/v1/static/img/users/par' } }} cadenceBands={[]} />
+    );
+    const img = container.querySelector('.cycle-speedometer__avatar img');
+    fireEvent.error(img);
+    expect(img.getAttribute('src')).toBe('/api/v1/static/img/users/user');
+    expect(img.style.display).not.toBe('none');
   });
 });

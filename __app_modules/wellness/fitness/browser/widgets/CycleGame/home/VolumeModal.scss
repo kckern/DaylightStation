@@ -3,7 +3,7 @@
 .cgh-section-label--with-readout { justify-content: space-between; }
 .cgh-volume__readout {
   font-family: t.$cg-mono;
-  font-size: 0.78rem;
+  font-size: t.cg-type(1);
   letter-spacing: 0.04em;
   color: t.$cg-cyan;
   text-shadow: 0 0 8px rgba(33, 230, 255, 0.45);
@@ -58,5 +58,32 @@
   .touch-volume-button.active {
     border-color: t.$cg-cyan;
     box-shadow: 0 0 8px rgba(33, 230, 255, 0.5);
+  }
+}
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cgh-section-label--with-readout,
+  .cgh-section-label--with-readout *,
+  .cgh-section-label--with-readout *::before,
+  .cgh-section-label--with-readout *::after,
+  .cgh-volume__readout,
+  .cgh-volume__readout *,
+  .cgh-volume__readout *::before,
+  .cgh-volume__readout *::after,
+  .cgh-picker--volume .cgh-picker__sheet,
+  .cgh-picker--volume .cgh-picker__sheet *,
+  .cgh-picker--volume .cgh-picker__sheet *::before,
+  .cgh-picker--volume .cgh-picker__sheet *::after,
+  .cgh-volume-sheet,
+  .cgh-volume-sheet *,
+  .cgh-volume-sheet *::before,
+  .cgh-volume-sheet *::after,
+  .cgh-volume,
+  .cgh-volume *,
+  .cgh-volume *::before,
+  .cgh-volume *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

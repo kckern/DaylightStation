@@ -8,6 +8,21 @@ export const CYCLE_TOAST_DURATION_MS = 4000;
 // Fade/slide-out duration — keep in sync with CycleEventToast.scss.
 export const CYCLE_TOAST_EXIT_MS = 280;
 
+// Every toast variant the race screen raises. `parked` is calm (a rider idle
+// past the park window rejoins on their next stroke); `nosensor` blames the
+// equipment, not the rider. There is no DNF or penalty toast.
+export const CYCLE_TOAST_VARIANTS = Object.freeze([
+  'parked', 'nosensor', 'overtime', 'info',
+  // Drama events (audit C2) — LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/
+  // FINAL_LAP/LAPPING_IMMINENT, routed through deriveRaceSnapshot.
+  'lead-change', 'finished', 'photo-finish', 'final-lap', 'lapping',
+  // A rider's heart-rate zone went UP mid-race (more distance per stroke).
+  // Good news, never an alarm. Nothing is raised when it goes down.
+  'boost',
+  // Race beats (raceBeats.js): neutral pacing information.
+  'halfway', 'split', 'last-minute', 'last-stretch',
+]);
+
 let _logger;
 function logger() {
   if (!_logger) _logger = getLogger().child({ component: 'cycle-event-toast' });
@@ -16,7 +31,7 @@ function logger() {
 
 /**
  * Single-slot, self-dismissing officiating-event banner for the cycle race
- * screen — announces a DNF, false-start penalty, or a mercy-kill/forced-finish
+ * screen — announces a parked rider, a dead sensor, or a mercy-kill/forced-finish
  * race closure (overtime) in plain language so the acronyms on the chart and
  * results board are never unexplained. Non-blocking:
  * it never pauses the race. The parent feeds the current toast (or null) and a
@@ -97,12 +112,7 @@ export default function CycleEventToast({ toast, onDone, durationMs = CYCLE_TOAS
 CycleEventToast.propTypes = {
   toast: PropTypes.shape({
     id: PropTypes.number,
-    variant: PropTypes.oneOf([
-      'dnf', 'penalty', 'overtime', 'info',
-      // Drama events (audit C2) — LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/
-      // FINAL_LAP/LAPPING_IMMINENT, routed through deriveRaceSnapshot.
-      'lead-change', 'finished', 'photo-finish', 'final-lap', 'lapping',
-    ]),
+    variant: PropTypes.oneOf(CYCLE_TOAST_VARIANTS),
     icon: PropTypes.node,
     title: PropTypes.node,
     subtitle: PropTypes.node,

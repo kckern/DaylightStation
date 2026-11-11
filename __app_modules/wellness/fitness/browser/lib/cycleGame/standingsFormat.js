@@ -47,7 +47,7 @@ export function gapToAboveText({ winCondition, gapM, abovePaceKmh }) {
 }
 
 /**
- * A genuinely finished (non-DNF, non-overtime) rider's own metric. Distance
+ * A finished (non-parked, non-overtime) rider's own metric. Distance
  * races finish every rider at the SAME distance (the goal line), so distance
  * can't differentiate finishers — only finish time can. Time races finish
  * every rider at the SAME elapsed time (the goal clock), so the

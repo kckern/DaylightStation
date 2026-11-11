@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { uiLog } from "./home/uiLog.js";
-import { RaceFlagIcon, VolumeIcon } from "./home/icons.jsx";
+import { RaceFlagIcon, VolumeIcon, SensorWarnIcon } from "./home/icons.jsx";
 import RaceTypePicker from "./home/RaceTypePicker.jsx";
 import BikeSlot from "./home/BikeSlot.jsx";
 import GhostSlot from "./home/GhostSlot.jsx";
@@ -11,6 +11,7 @@ import VolumeModal from "./home/VolumeModal.jsx";
 import HighScores from "./home/HighScores.jsx";
 import HistoryTable from "./home/HistoryTable.jsx";
 import FeaturedCourseCard from "./home/FeaturedCourseCard.jsx";
+import { formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import "./CycleGameHome.scss";
 
 // How long the "recovered your interrupted race" banner stays up before it
@@ -24,6 +25,8 @@ const RECOVERED_NOTICE_DURATION_MS = 8000;
  * prop-driven; the container supplies data + handlers. The main panel is
  * center-aligned throughout.
  */
+// Multiplier text: at most one decimal, no trailing ".0" (0.8, 1.6, 2).
+
 export default function CycleGameHome({
   raceType = null,
   onSelectRaceType,
@@ -49,7 +52,9 @@ export default function CycleGameHome({
   featured = null,
   onRideFeatured = null,
   resolveName = (id) => id,
-  recoveredNotice = null
+  recoveredNotice = null,
+  boostRange = null,
+  busy = false
 }) {
   const [pickerBike, setPickerBike] = useState(null);
   const [showGhostPicker, setShowGhostPicker] = useState(false);
@@ -65,24 +70,67 @@ export default function CycleGameHome({
     return () => clearTimeout(id);
   }, [recoveredNotice]);
 
+  // Sensor check: pressing Start while a claimed bike reads silent warns first.
+  // The warning is derived from the live bike list, so it clears by itself the
+  // moment every claimed bike reports, the bike is unclaimed, or a start begins.
+  const [sensorWarningOpen, setSensorWarningOpen] = useState(false);
+  const silentBikes = useMemo(
+    () => bikes.filter((b) => b.rider && b.sensorLive === false),
+    [bikes]
+  );
+  const silentKey = silentBikes.map((b) => b.id).join('|');
+  const showSensorWarning = sensorWarningOpen && !busy && silentBikes.length > 0;
+  useEffect(() => {
+    if (sensorWarningOpen && (busy || silentBikes.length === 0)) setSensorWarningOpen(false);
+  }, [sensorWarningOpen, busy, silentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleStart = () => {
+    if (busy) return;
+    if (silentBikes.length > 0) {
+      setSensorWarningOpen(true);
+      uiLog().warn('cycle_game.ui.sensor_warning', { bikes: silentBikes.map((b) => b.id) });
+      return;
+    }
+    onStart?.();
+  };
+  const handleStartAnyway = () => {
+    if (busy) return;
+    uiLog().info('cycle_game.ui.sensor_warning_override', { bikes: silentBikes.map((b) => b.id) });
+    setSensorWarningOpen(false);
+    onStart?.();
+  };
+  const silentNames = silentBikes.map((b) => b.name || b.id);
+  const silentList = silentNames.length > 1
+    ? `${silentNames.slice(0, -1).join(', ')} and ${silentNames[silentNames.length - 1]}`
+    : silentNames[0];
+  const silentVerb = silentNames.length > 1 ? 'are' : 'is';
+
+  const showBoostRule = !!boostRange && Number.isFinite(boostRange.min) && Number.isFinite(boostRange.max)
+    && boostRange.max > boostRange.min;
+
   const peopleById = useMemo(() => {
     const map = new Map();
     people.forEach((p) => map.set(p.id, p));
     return map;
   }, [people]);
 
+  // busy = a start is pending (the container is choosing the rival). The lobby
+  // stays mounted but frozen: every control is disabled, and a picker that was
+  // already open can no longer commit anything.
   const handleAssign = (bikeId, userId) => {
+    if (busy) return;
     onAssign?.(bikeId, userId);
     setPickerBike(null);
   };
 
   const handleClear = (bikeId) => {
+    if (busy) return;
     onUnassign?.(bikeId);
     setPickerBike(null);
   };
 
   return (
-    <div className="cycle-game-home" data-testid="cycle-game-home">
+    <div className={`cycle-game-home${busy ? ' is-busy' : ''}`} data-testid="cycle-game-home" aria-busy={busy ? 'true' : 'false'}>
       {noticeVisible && recoveredNotice && (
         <div className="cgh-recovered-banner" data-testid="cycle-recovered-banner" role="status" aria-live="polite">
           {recoveredNotice}
@@ -92,6 +140,7 @@ export default function CycleGameHome({
         type="button"
         className={`cgh-volume-fab cgh-volume-fab--corner${masterMuted ? ' is-muted' : ''}`}
         data-testid="cycle-game-volume-open"
+        disabled={busy}
         aria-label={masterMuted ? 'Volume — muted' : `Volume — ${Math.round((masterVolume ?? 0) * 100)}%`}
         onClick={() => { uiLog().debug('cycle_game.ui.volume_open', {}); setShowVolume(true); }}
       >
@@ -112,6 +161,7 @@ export default function CycleGameHome({
           ghost={ghost}
           onPickGhost={() => { uiLog().info('cycle_game.ui.ghost_picker_open', {}); setShowGhostPicker(true); }}
           onClearGhost={onClearGhost}
+          disabled={busy}
         />
 
         <section className="cgh-grid-section">
@@ -125,6 +175,7 @@ export default function CycleGameHome({
                   key={bike.id}
                   bike={bike}
                   lane={i + 1}
+                  disabled={busy}
                   person={bike.rider ? peopleById.get(bike.rider) || { id: bike.rider, name: bike.rider } : null}
                   onPick={(b) => { uiLog().info('cycle_game.ui.rider_picker_open', { equipmentId: b.id, currentRider: b.rider || null }); setPickerBike(b); }}
                 />
@@ -137,18 +188,35 @@ export default function CycleGameHome({
               ))}
             </div>
           )}
+          {showBoostRule && (
+            <p className="cgh-boost-rule" data-testid="boost-rule">
+              {`Harder effort goes further: your heart-rate zone multiplies your distance (\u00d7${formatMultiplier(boostRange.min)} to \u00d7${formatMultiplier(boostRange.max)}).`}
+            </p>
+          )}
         </section>
 
         <div className="cycle-game-home__actions">
+          {showSensorWarning && (
+            <div className="cgh-sensor-warning" data-testid="sensor-warning" role="alert">
+              <SensorWarnIcon />
+              <span className="cgh-sensor-warning__text">
+                {silentList} {silentVerb} not reporting. Spin the pedals once, or check the sensor.
+              </span>
+              <button type="button" className="cgh-sensor-warning__btn" data-testid="sensor-warning-back"
+                onClick={() => setSensorWarningOpen(false)}>Back</button>
+              <button type="button" className="cgh-sensor-warning__btn cgh-sensor-warning__btn--go" data-testid="sensor-warning-start"
+                onClick={handleStartAnyway}>Start anyway</button>
+            </div>
+          )}
           <button
             type="button"
             className="cycle-game-home__start"
             data-testid="cycle-game-start"
-            disabled={!canStart}
-            onClick={() => onStart?.()}
+            disabled={!canStart || busy}
+            onClick={handleStart}
           >
             <RaceFlagIcon />
-            Start race
+            {busy ? 'Starting…' : 'Start race'}
           </button>
         </div>
       </div>
@@ -157,12 +225,12 @@ export default function CycleGameHome({
         {/* Weekly ladder lives in the records rail — NEVER in the main column,
             where its height displaced the picker/grid/start on the fixed-height
             (unscrollable) garage touchscreen and made the lobby unusable. */}
-        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} />
+        <FeaturedCourseCard ladder={featured} onRide={onRideFeatured} resolveName={resolveName} disabled={busy} />
 
-        <HighScores highScores={highScores} onSelectRecord={onSelectRecord} />
+        <HighScores highScores={highScores} onSelectRecord={onSelectRecord} disabled={busy} />
 
         <div className="cgh-section-label">History</div>
-        <HistoryTable records={records} onSelectRecord={onSelectRecord} />
+        <HistoryTable records={records} onSelectRecord={onSelectRecord} disabled={busy} />
       </aside>
 
       {pickerBike && (
@@ -180,8 +248,8 @@ export default function CycleGameHome({
         <GhostPicker
           candidates={ghostCandidates}
           currentGhost={ghost}
-          onSelect={(g) => { onSelectGhost?.(g); setShowGhostPicker(false); }}
-          onClear={() => { onClearGhost?.(); }}
+          onSelect={(g) => { if (busy) return; onSelectGhost?.(g); setShowGhostPicker(false); }}
+          onClear={() => { if (busy) return; onClearGhost?.(); }}
           onClose={() => { uiLog().debug('cycle_game.ui.ghost_picker_close', {}); setShowGhostPicker(false); }}
         />
       )}
@@ -190,7 +258,7 @@ export default function CycleGameHome({
         <VolumeModal
           volume={masterVolume}
           muted={masterMuted}
-          onSetVolume={onSetMasterVolume}
+          onSetVolume={busy ? undefined : onSetMasterVolume}
           onClose={() => { uiLog().debug('cycle_game.ui.volume_close', {}); setShowVolume(false); }}
         />
       )}
@@ -227,5 +295,9 @@ CycleGameHome.propTypes = {
   featured: PropTypes.object,
   onRideFeatured: PropTypes.func,
   resolveName: PropTypes.func,
-  recoveredNotice: PropTypes.string
+  recoveredNotice: PropTypes.string,
+  // Distance multiplier span from the heart-rate zones; shown as one rule line.
+  boostRange: PropTypes.shape({ min: PropTypes.number, max: PropTypes.number }),
+  // A start is pending: the lobby stays up but every control is inert.
+  busy: PropTypes.bool
 };

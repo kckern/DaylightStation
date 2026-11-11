@@ -120,7 +120,7 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
     expect(toast.textContent).toContain('User_2 takes the lead!');
   });
 
-  it('raises a RIDER_FINISHED ceremony toast the instant a rider crosses the goal — while the race is still live', () => {
+  it('raises a RIDER_FINISHED ceremony toast when a rider crosses the goal — while the race is still live', () => {
     // 100 m "Flash" tier: user_1 rides hard and crosses first; user_2 rides at
     // a real (non-zero, non-idle) pace the whole time, so the race is still
     // actively 'racing' — not yet at the results screen — when user_1's
@@ -139,11 +139,16 @@ describe('CycleGameContainer — drama events wired into the live tick (audit C2
     act(() => { vi.advanceTimersByTime(COUNTDOWN_TICK_MS * START_COUNTDOWN_S); });
 
     // ~15 ticks is enough for user_1 to cross 100 m at rpm 120 (mirrors the
-    // wallclock mercy-kill fixture's own timing note).
-    nowMs = 16000;
-    act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+    // wallclock mercy-kill fixture's own timing note). One tick per act, as on
+    // the kiosk: the race's own beats (halfway, last stretch) take the toast
+    // slot on the way, and the finish ceremony follows them.
+    let toast = null;
+    for (let t = 4; t <= 24 && toast?.dataset.variant !== 'finished'; t += 1) {
+      nowMs = t * 1000;
+      act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
+      toast = renderApi.queryByTestId('cycle-event-toast');
+    }
 
-    const toast = renderApi.getByTestId('cycle-event-toast');
     expect(toast.dataset.variant).toBe('finished');
     expect(toast.textContent).toContain('KC finishes 1st!');
     expect(toast.textContent).toContain('Crosses the line first');

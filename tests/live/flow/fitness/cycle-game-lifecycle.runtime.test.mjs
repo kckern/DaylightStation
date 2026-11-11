@@ -39,6 +39,15 @@ async function launchCycleGameSafe(page) {
   await waitForController(page);
 }
 
+// Press Start. A claimed bike whose sensor has not reported yet makes the
+// lobby's sensor check warn first; these flows start anyway (the sim sends
+// cadence once the race is on).
+async function pressStart(page) {
+  await page.getByTestId('cycle-game-start').click();
+  const anyway = page.getByTestId('sensor-warning-start');
+  if (await anyway.isVisible().catch(() => false)) await anyway.click();
+}
+
 test.describe('Cycle game lifecycle (simulator-driven)', () => {
   // A time race runs the full configured cap (120 s) at a true 1 Hz tick, plus
   // boot + navigation + countdown + the per-iteration polling overhead. 180 s is
@@ -60,7 +69,7 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     await setHR(page, eq.find((e) => e.equipmentId === BIKE).cadenceDeviceId, 0); // no-op safety
     // pick the first course (distance), stage, start
     await page.getByTestId(/^course-/).first().click();
-    await page.getByTestId('cycle-game-start').click();
+    await pressStart(page);
 
     // race screen appears (after countdown)
     await expect(page.getByTestId('cycle-race-screen')).toBeVisible({ timeout: 20000 });
@@ -84,7 +93,7 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     expect(saved?.data?.ok).toBe(true);
   });
 
-  test('DNF: an idle rider is DNFd and the race still completes', async ({ page }) => {
+  test('parked: an idle rider is parked (never eliminated) and the race still completes', async ({ page }) => {
     await boot(page);
     const eq = await getEquipment(page);
     const rider1 = eq.find((e) => e.equipmentId === BIKE).eligibleUsers[0];
@@ -94,10 +103,11 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     await setEquipmentRider(page, BIKE, rider1);
     await setEquipmentRider(page, BIKE2, rider2);
     await page.getByTestId(/^course-/).first().click();
-    await page.getByTestId('cycle-game-start').click();
+    await pressStart(page);
     await expect(page.getByTestId('cycle-race-screen')).toBeVisible({ timeout: 20000 });
 
-    // rider1 pedals; rider2 stays idle (rpm 0) → DNF; race still finishes
+    // rider1 pedals; rider2 stays idle (rpm 0) → parked after the start grace;
+    // the race still finishes and nobody is shown DNF.
     for (let i = 0; i < 90; i++) {
       await setRpm(page, BIKE, 100);
       await setRpm(page, BIKE2, 0);
@@ -107,8 +117,11 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     await expect(page.getByTestId('race-results')).toBeVisible({ timeout: 90000 });
     await page.waitForTimeout(1500);
     const events = readCycleGameEvents();
-    expect(hasEvent(events, 'cycle_game.rider_dnf')).toBe(true);
+    expect(hasEvent(events, 'cycle_game.rider_parked')).toBe(true);
+    expect(hasEvent(events, 'cycle_game.rider_dnf')).toBe(false);
     expect(hasEvent(events, 'cycle_game.race_finished')).toBe(true);
+    await expect(page.getByTestId('race-results')).not.toContainText('DNF');
+    await expect(page.getByTestId('race-results')).toContainText('Stopped at');
   });
 
   test('time race: clock counts down, finishes at cap, results show distance + saved', async ({ page }) => {
@@ -124,7 +137,7 @@ test.describe('Cycle game lifecycle (simulator-driven)', () => {
     // a time-cap course is exposed with a stable testid
     await expect(page.getByTestId('course-time')).toBeVisible({ timeout: 10000 });
     await page.getByTestId('course-time').click();
-    await page.getByTestId('cycle-game-start').click();
+    await pressStart(page);
 
     await expect(page.getByTestId('cycle-race-screen')).toBeVisible({ timeout: 20000 });
 

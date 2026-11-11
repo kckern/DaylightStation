@@ -45,7 +45,7 @@
   &__title {
     margin: 0;
     font-family: t.$cg-display;
-    font-size: 1.9rem;
+    font-size: t.cg-type(3);
     font-weight: 800;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -55,7 +55,7 @@
   &__subtitle {
     margin: 0;
     color: t.$cg-muted;
-    font-size: 0.95rem;
+    font-size: t.cg-type(1);
   }
 
   &__actions {
@@ -66,6 +66,8 @@
     // The one control that moves the lobby forward: it never shrinks and never
     // gets displaced by whatever the starting grid is doing above it.
     flex-shrink: 0;
+    // Anchor for the sensor warning, which overlays the row (see below).
+    position: relative;
   }
 
   &__start {
@@ -76,7 +78,7 @@
     border-radius: 12px;
     padding: 14px 34px;
     font-family: t.$cg-display;
-    font-size: 1.05rem;
+    font-size: t.cg-type(1);
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -103,7 +105,7 @@
   &__records {
     position: relative;
     z-index: 1;
-    width: 260px;
+    width: 30rem; // fits the 4-column history grid at the 16 px floor
     flex-shrink: 0;
     background: t.$cg-panel;
     border: 1px solid t.$cg-border;
@@ -137,12 +139,26 @@
 
 .cgh-empty {
   color: t.$cg-faint;
-  font-size: 0.92rem;
+  font-size: t.cg-type(1);
   padding: 6px 0;
 }
 
 // ── Starting grid ────────────────────────────────────────────────────────
 .cgh-grid-section { display: flex; flex-direction: column; min-height: 0; }
+
+// One plain-text rule line in the grid section's footer. It lives inside the
+// section (which may shrink, min-height 0) and is capped at two lines, so it
+// spends the grid column's slack rather than growing the lobby.
+.cgh-boost-rule {
+  flex: 0 0 auto;
+  margin: 10px 0 0;
+  max-height: 2.8em;
+  overflow: hidden;
+  color: t.$cg-muted;
+  font-family: t.$cg-display;
+  font-size: t.cg-type(1);
+  line-height: 1.35;
+}
 
 .cgh-grid {
   position: relative;
@@ -217,7 +233,7 @@
   background: t.$cg-panel-2;
   color: t.$cg-text;
   font-family: t.$cg-display;
-  font-size: 1.15rem;
+  font-size: t.cg-type(2);
   font-weight: 600;
   box-shadow: 0 0 14px rgba(33, 230, 255, 0.25);
   animation: cgh-notice-in 0.3s ease both;
@@ -226,4 +242,97 @@
 @keyframes cgh-notice-in {
   from { opacity: 0; transform: translate(-50%, -8px); }
   to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+// ── Sensor warning. Overlays the actions row, bottom-anchored just above the
+//    Start button, so it takes no layout space: the fixed-height lobby and the
+//    Start button never move when it appears.
+.cgh-sensor-warning {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: 100%;
+  padding: 10px 14px;
+  background: t.$cg-panel-2;
+  border: 1.5px solid t.$cg-warn;
+  border-radius: 12px;
+  color: t.$cg-text;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  > svg { width: 22px; height: 22px; flex-shrink: 0; color: t.$cg-warn; }
+  &__text { font-size: t.cg-type(1); font-weight: 600; }
+  &__btn {
+    appearance: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid t.$cg-border;
+    background: t.$cg-panel;
+    color: t.$cg-text;
+    font-size: t.cg-type(1);
+    font-weight: 700;
+    &--go { border-color: t.$cg-warn; color: t.$cg-warn; }
+    &:active { transform: scale(0.97); }
+  }
+}
+@include t.cg-reduced-motion {
+  .cgh-sensor-warning__btn:active { transform: none; }
+}
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cycle-game-home,
+  .cycle-game-home *,
+  .cycle-game-home *::before,
+  .cycle-game-home *::after,
+  .cgh-section-label,
+  .cgh-section-label *,
+  .cgh-section-label *::before,
+  .cgh-section-label *::after,
+  .cgh-empty,
+  .cgh-empty *,
+  .cgh-empty *::before,
+  .cgh-empty *::after,
+  .cgh-grid-section,
+  .cgh-grid-section *,
+  .cgh-grid-section *::before,
+  .cgh-grid-section *::after,
+  .cgh-boost-rule,
+  .cgh-boost-rule *,
+  .cgh-boost-rule *::before,
+  .cgh-boost-rule *::after,
+  .cgh-grid,
+  .cgh-grid *,
+  .cgh-grid *::before,
+  .cgh-grid *::after,
+  .cycle-game-home__start,
+  .cycle-game-home__start *,
+  .cycle-game-home__start *::before,
+  .cycle-game-home__start *::after,
+  .cgh-start-flag,
+  .cgh-start-flag *,
+  .cgh-start-flag *::before,
+  .cgh-start-flag *::after,
+  .cgh-volume-fab,
+  .cgh-volume-fab *,
+  .cgh-volume-fab *::before,
+  .cgh-volume-fab *::after,
+  .cgh-recovered-banner,
+  .cgh-recovered-banner *,
+  .cgh-recovered-banner *::before,
+  .cgh-recovered-banner *::after,
+  .cgh-sensor-warning,
+  .cgh-sensor-warning *,
+  .cgh-sensor-warning *::before,
+  .cgh-sensor-warning *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

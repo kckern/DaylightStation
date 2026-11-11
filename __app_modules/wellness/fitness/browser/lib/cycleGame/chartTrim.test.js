@@ -5,7 +5,7 @@ describe('plotStartIndex', () => {
   it('starts at the origin for a rider moving from the first tick', () => {
     expect(plotStartIndex([10, 20, 30])).toBe(0);
   });
-  it('starts just before first movement for a penalty-boxed late starter', () => {
+  it('starts just before first movement for a late starter', () => {
     // boxed for indices 0,1,2 (distance 0), first moves at index 3 → anchor at 2
     expect(plotStartIndex([0, 0, 0, 15, 40])).toBe(2);
   });

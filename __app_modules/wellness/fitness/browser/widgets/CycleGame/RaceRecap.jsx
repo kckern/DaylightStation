@@ -41,7 +41,9 @@ export default function RaceRecap({ candidate, onClose }) {
         rpm: SessionSerializerV3.decodeSeries(p.rpmSeries) || [],
         finalDistanceM: p.finalDistanceM ?? 0,
         finalTimeS: p.finalTimeS ?? null,
-        placement: p.placement ?? null
+        placement: p.placement ?? null,
+        // Parked or no-sensor when the race closed (the record's `stopped`).
+        stopped: !!p.stopped
       };
     });
     const maxLen = Math.max(1, ...parts.map((p) => p.dist.length));
@@ -98,7 +100,10 @@ export default function RaceRecap({ candidate, onClose }) {
       zoneId: null,
       zoneColor: p.color,
       zoneProgress: null,
-      multiplier: 1
+      multiplier: 1,
+      // Saved as stopped, and their recording has run out: the standings read
+      // "Stopped at 412 m". History, so never the live PARKED overlay.
+      stopped: p.stopped && t >= p.dist.length - 1
     };
   });
 
@@ -122,6 +127,9 @@ export default function RaceRecap({ candidate, onClose }) {
           riders={riders}
           riderLive={riderLive}
           showSpeedos
+          // A recap of one rider and their rival stays on the sidebar layout:
+          // a 12 s replay reads as standings, and every participant keeps a gauge.
+          soloLayout={false}
         />
       </div>
 

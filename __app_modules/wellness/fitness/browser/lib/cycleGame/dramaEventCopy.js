@@ -50,4 +50,50 @@ export function dramaEventToasts(event, snapshot, riders) {
   return toasts;
 }
 
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+function whoLabel(rivalKind, rivalName) {
+  if (rivalKind === 'self') return 'your best';
+  if (rivalKind === 'household') return rivalName ? `${rivalName}'s best` : 'their best';
+  if (rivalKind === 'par') return 'par';
+  return rivalName || 'the rival';
+}
+
+/** "4 s ahead of rider-a" / "level with par"; null when the delta carries no usable gap. */
+function deltaLine(delta, rivalName, rivalKind) {
+  if (!delta) return null;
+  const gapS = num(delta.gapS);
+  const gapM = num(delta.gapM);
+  if (gapS == null && gapM == null) return null;
+  const n = Math.abs(Math.round(gapS != null ? gapS : gapM));
+  const unit = gapS != null ? 's' : 'm';
+  const who = whoLabel(rivalKind, rivalName);
+  if (n === 0) return `level with ${who}`;
+  return `${n} ${unit} ${delta.ahead ? 'ahead of' : 'behind'} ${who}`;
+}
+
+/**
+ * Toast copy for raceBeats() beats. Pure; no JSX.
+ * HALFWAY/SPLIT carry a delta line against the rival when `delta` is present.
+ * SPLIT with no delta returns no toast; FINAL_SECONDS drives the clock, not a toast.
+ *
+ * @param {string} beat HALFWAY | SPLIT | LAST_MINUTE | LAST_STRETCH | FINAL_SECONDS
+ * @param {{delta?: ({gapM:number, gapS:(number|null), ahead:boolean}|null), rivalName?: string, rivalKind?: 'self'|'household'|'par'|string, elapsedS?: number, secondsLeft?: number}} [opts]
+ * @returns {Array<{variant:string, title:string, subtitle?:string}>}
+ */
+export function beatToasts(beat, { delta = null, rivalName, rivalKind, elapsedS } = {}) {
+  const line = deltaLine(delta, rivalName, rivalKind);
+  if (beat === 'HALFWAY') {
+    return [line ? { variant: 'halfway', title: 'Halfway', subtitle: line } : { variant: 'halfway', title: 'Halfway' }];
+  }
+  if (beat === 'SPLIT') {
+    if (!line) return [];
+    const minute = Math.floor((num(elapsedS) ?? 0) / 60);
+    return [{ variant: 'split', title: `${minute}:00`, subtitle: line }];
+  }
+  if (beat === 'LAST_MINUTE') return [{ variant: 'last-minute', title: 'One minute left' }];
+  if (beat === 'LAST_STRETCH') return [{ variant: 'last-stretch', title: 'Last stretch' }];
+  return [];
+}
+
 export default dramaEventToasts;

@@ -7,7 +7,7 @@
   border-radius: 999px;
   padding: 7px 20px;
   color: t.$cg-muted;
-  font-size: 0.85rem;
+  font-size: t.cg-type(1);
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -68,12 +68,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.6rem;
+    font-size: t.cg-type(3);
     line-height: 1;
   }
 
   &__name {
-    font-size: 0.85rem;
+    font-size: t.cg-type(1);
     font-weight: 600;
     text-align: center;
     line-height: 1.2;
@@ -88,7 +88,7 @@
     // z-index 4, and its root has no stacking context, so they'd otherwise cover
     // this pill in the top-right corner).
     z-index: 5;
-    font-size: 0.6rem;
+    font-size: t.cg-type(1);
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -96,5 +96,20 @@
     background: t.$cg-lane-1;
     border-radius: 999px;
     padding: 2px 7px;
+  }
+}
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cgh-tab,
+  .cgh-tab *,
+  .cgh-tab *::before,
+  .cgh-tab *::after,
+  .cgh-person,
+  .cgh-person *,
+  .cgh-person *::before,
+  .cgh-person *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

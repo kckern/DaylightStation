@@ -93,23 +93,121 @@ describe('DistanceChart panel', () => {
   });
 
   // ── Continuous window — no 2× snap between consecutive ticks ───────────────
-  it('grows the X window continuously (no 2× jump) across consecutive ticks in a time race', () => {
-    const rightmostGridX = (elapsedS) => {
-      const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 40, distanceSeries: [40] } };
+  // Distance races keep the continuous x zoom (time races show the whole race).
+  it('grows the X window continuously (no 2× jump) across consecutive ticks in a distance race', () => {
+    const tipX = (elapsedS) => {
+      const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 40, distanceSeries: [10, 40] } };
       const { container } = render(
         <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
-          winCondition="time" goalM={3000} elapsedS={elapsedS} />
+          winCondition="distance" goalM={3000} elapsedS={elapsedS} />
       );
-      const xs = [...container.querySelectorAll('.cycle-race-screen__gridline--x')]
-        .map((l) => parseFloat(l.getAttribute('x1')));
-      return Math.max(...xs);
+      return Math.max(...xsOf(container.querySelector('[data-testid="race-line"]')));
     };
     // Bracket the OLD stepped threshold (elapsed 18 = 0.9·20 doubled the window,
-    // halving every x-gridline position). Continuous growth barely moves them.
-    const a = rightmostGridX(17);
-    const b = rightmostGridX(18);
+    // halving every x position). Continuous growth barely moves them.
+    const a = tipX(17);
+    const b = tipX(18);
     expect(b / a).toBeGreaterThan(0.75); // old 2× step would put this near 0.5
     expect(b / a).toBeLessThan(1.3);
+  });
+
+  // ── A chart with a target (time races span the whole race) ────────────────
+  const labelsOf = (el) => [...el.querySelectorAll('.cg-chart__axis-label')];
+  const toMetres = (text) => {
+    const m = String(text).match(/([\d.]+)\s*(km|m)/);
+    return m ? parseFloat(m[1]) * (m[2] === 'km' ? 1000 : 1) : NaN;
+  };
+  it('a time race shows the whole race on the x axis from the first frame', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 300, distanceSeries: Array.from({ length: 60 }, (_, i) => (i + 1) * 5) } };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="time" timeCapS={300} elapsedS={60} />
+    );
+    const x = labelsOf(getByTestId('chart-axis-x')).map((l) => l.textContent);
+    expect(x[0]).toBe('0:00');
+    expect(x[x.length - 1]).toBe('5:00');
+    // The line covers the first fifth of the plot, not ~85% of it.
+    const tip = Math.max(...xsOf(getByTestId('distance-chart').querySelector('[data-testid="race-line"]')));
+    expect(tip).toBeLessThan(16 + 548 * 0.25);
+  });
+  it('axis labels are evenly spaced and include both ends', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 600, distanceSeries: [200, 400, 600] } };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="time" timeCapS={420} elapsedS={140} />
+    );
+    const xs = labelsOf(getByTestId('chart-axis-x'));
+    expect(xs.map((l) => l.textContent)).toEqual(['0:00', '3:30', '7:00']);
+    const lefts = xs.map((l) => parseFloat(l.style.left));
+    expect(lefts[1] - lefts[0]).toBeCloseTo(lefts[2] - lefts[1], 6);
+    const ys = labelsOf(getByTestId('chart-axis-y'));
+    const tops = ys.map((l) => parseFloat(l.style.top));
+    expect(ys.length).toBe(3);
+    expect(tops[0] - tops[1]).toBeCloseTo(tops[1] - tops[2], 6);
+    expect(ys[0].textContent).toBe('0 m');
+  });
+
+  // Solo: the rival's whole recording is drawn ahead of the rider.
+  const RIVAL = 'ghost:par:par';
+  const rivalRec = Array.from({ length: 60 }, (_, i) => (i + 1) * 25); // 5 m/s at 5 s, to 1500 m at 300 s
+  const soloRiders = (over = {}) => ({
+    a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 120, distanceSeries: Array.from({ length: 20 }, (_, i) => (i + 1) * 6) },
+    [RIVAL]: {
+      userId: RIVAL, displayName: 'Par', isGhost: true, cumulativeDistanceM: 100,
+      distanceSeries: Array.from({ length: 20 }, (_, i) => (i + 1) * 5),
+      ghostRecordedSeries: rivalRec, ghostIntervalS: 5, ...over
+    }
+  });
+  it('solo: draws the rival trace past the rider\'s last point; not drawn outside solo', () => {
+    const solo = render(
+      <DistanceChart riderIds={['a', RIVAL]} riders={soloRiders()} riderLive={{ a: {}, [RIVAL]: {} }}
+        winCondition="time" timeCapS={300} elapsedS={20} mode="solo" />
+    );
+    const trace = solo.getByTestId('rival-trace');
+    const riderTip = Math.max(...xsOf(solo.container.querySelectorAll('[data-testid="race-line"]')[0]));
+    expect(Math.max(...xsOf(trace))).toBeGreaterThan(riderTip + 300);
+    expect(trace.getAttribute('stroke-dasharray')).toBeTruthy();
+    // The rival's live marker (its replayed lane and tag) still shows.
+    expect(solo.container.querySelectorAll('[data-testid="race-line"]').length).toBe(2);
+    expect(solo.getAllByTestId('chart-tag').length).toBe(2);
+    solo.unmount();
+    const side = render(
+      <DistanceChart riderIds={['a', RIVAL]} riders={soloRiders()} riderLive={{ a: {}, [RIVAL]: {} }}
+        winCondition="time" timeCapS={300} elapsedS={20} mode="sidebar" />
+    );
+    expect(side.queryByTestId('rival-trace')).toBeNull();
+  });
+  it('solo time race: the y window reaches the rival\'s final distance from the start', () => {
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a', RIVAL]} riders={soloRiders()} riderLive={{ a: {}, [RIVAL]: {} }}
+        winCondition="time" timeCapS={300} elapsedS={20} mode="solo" />
+    );
+    const top = labelsOf(getByTestId('chart-axis-y')).map((l) => toMetres(l.textContent));
+    expect(Math.max(...top)).toBeGreaterThanOrEqual(1500);
+    // The trace's end sits inside the plot, not clamped against the top edge.
+    const ys = getByTestId('rival-trace').getAttribute('points').trim().split(' ').map((p) => parseFloat(p.split(',')[1]));
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(22 - 0.05);
+  });
+  it('solo distance race: the trace ends on the goal line at the rival\'s finish time', () => {
+    // Goal 600 m: the rival crosses at 120 s. Elapsed 110 s → window 129.4 s.
+    const riders = soloRiders();
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a', RIVAL]} riders={riders} riderLive={{ a: {}, [RIVAL]: {} }}
+        winCondition="distance" goalM={600} elapsedS={110} mode="solo" />
+    );
+    const pts = getByTestId('rival-trace').getAttribute('points').trim().split(' ').map((p) => p.split(',').map(Number));
+    const [lx, ly] = pts[pts.length - 1];
+    expect(ly).toBeCloseTo(22, 0); // the goal sits at the top of a distance race
+    const winT = 180; // niceCeilTime(110 / 0.85 = 129.4): the open time axis snaps to whole minutes
+    expect(lx).toBeCloseTo(16 + (120 / winT) * 548, 0);
+  });
+  it('solo never switches to the log scale, even with the rival bunched', () => {
+    const riders = soloRiders({ cumulativeDistanceM: 119, distanceSeries: Array.from({ length: 20 }, (_, i) => (i + 1) * 6 - 1) });
+    const { queryByTestId } = render(
+      <DistanceChart riderIds={['a', RIVAL]} riders={riders} riderLive={{ a: {}, [RIVAL]: {} }}
+        winCondition="time" timeCapS={300} elapsedS={20} mode="solo" />
+    );
+    expect(queryByTestId('chart-log-chip')).toBeNull();
   });
 
   // ── Log crowding mode (time races only) + chip ────────────────────────────
@@ -178,6 +276,76 @@ describe('DistanceChart panel', () => {
     expect(gaps).toContain('1.50 km');   // leader shows total distance
     expect(gaps).toContain('−600 m');    // trailer shows gap behind leader
   });
+  // ── Parked riders (idle past the park window) leave the framing ───────────
+  it('a parked rider ahead on distance is not the leader the gaps are measured from', () => {
+    const riders = {
+      a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 900, distanceSeries: [900] },
+      b: { userId: 'b', displayName: 'B', cumulativeDistanceM: 500, distanceSeries: [500] },
+      c: { userId: 'c', displayName: 'C', cumulativeDistanceM: 400, distanceSeries: [400] },
+    };
+    const { getAllByTestId } = render(
+      <DistanceChart riderIds={['a', 'b', 'c']} riders={riders}
+        riderLive={{ a: { parked: true }, b: {}, c: {} }}
+        winCondition="distance" goalM={3000} elapsedS={1} />
+    );
+    const tags = getAllByTestId('chart-tag');
+    const gaps = getAllByTestId('chart-tag-gap').map((g) => g.textContent);
+    expect(gaps).toContain('500 m');   // b leads the un-parked field
+    expect(gaps).toContain('−100 m');  // c is measured from b, not from parked a
+    expect(gaps).not.toContain('−500 m');
+    // The parked rider's tag keeps their own distance, dimmed.
+    const parkedTag = tags.find((t) => t.textContent.includes('900 m'));
+    expect(parkedTag.className).toContain('is-parked');
+    expect(tags.filter((t) => t.className.includes('is-leader'))).toHaveLength(1);
+    expect(tags.find((t) => t.className.includes('is-leader')).className).not.toContain('is-parked');
+  });
+
+  it('draws a parked lane at reduced opacity', () => {
+    const riders = {
+      a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 900, distanceSeries: [900] },
+      b: { userId: 'b', displayName: 'B', cumulativeDistanceM: 500, distanceSeries: [500] },
+    };
+    const { container } = render(
+      <DistanceChart riderIds={['a', 'b']} riders={riders} riderLive={{ a: { parked: true }, b: {} }}
+        winCondition="distance" goalM={3000} elapsedS={1} />
+    );
+    const [lineA, lineB] = container.querySelectorAll('[data-testid="race-line"]');
+    expect(Number(lineA.getAttribute('opacity'))).toBeCloseTo(0.4);
+    expect(Number(lineB.getAttribute('opacity'))).toBe(1);
+  });
+
+  it('a parked rider far ahead does not stretch a time race window or trip the log scale', () => {
+    const riders = {
+      far:  { displayName: 'F', cumulativeDistanceM: 2000, distanceSeries: [2000] },
+      lead: { displayName: 'L', cumulativeDistanceM: 100,  distanceSeries: [100] },
+      next: { displayName: 'N', cumulativeDistanceM: 60,   distanceSeries: [60] },
+    };
+    const { queryByTestId, getByTestId } = render(
+      <DistanceChart riderIds={['far', 'lead', 'next']} riders={riders}
+        riderLive={{ far: { parked: true }, lead: {}, next: {} }}
+        winCondition="time" goalM={3000} elapsedS={10} />
+    );
+    expect(queryByTestId('chart-log-chip')).toBeNull();
+    expect(getByTestId('chart-axis-y').textContent).not.toMatch(/km/);
+  });
+
+  it('a parked rider bunched with an active one does not trip the log scale', () => {
+    // Without the parked rider the two active riders are 80 m apart in a 150 m
+    // window: linear. Counting the parked rider 2 m off the leader would read
+    // as a crowded field and flip to the log scale.
+    const riders = {
+      lead:   { displayName: 'L', cumulativeDistanceM: 100, distanceSeries: [100] },
+      parked: { displayName: 'P', cumulativeDistanceM: 98,  distanceSeries: [98] },
+      next:   { displayName: 'N', cumulativeDistanceM: 20,  distanceSeries: [20] },
+    };
+    const { queryByTestId } = render(
+      <DistanceChart riderIds={['lead', 'parked', 'next']} riders={riders}
+        riderLive={{ lead: {}, parked: { parked: true }, next: {} }}
+        winCondition="time" goalM={3000} elapsedS={10} />
+    );
+    expect(queryByTestId('chart-log-chip')).toBeNull();
+  });
+
   it('ghost-treats the terminus avatar for a ghost rider', () => {
     const riders = {
       me:    { userId: 'me', displayName: 'Me', cumulativeDistanceM: 1200, distanceSeries: [1200] },
@@ -321,5 +489,75 @@ describe('DistanceChart panel', () => {
         nowSpy.mockRestore();
       }
     });
+  });
+});
+
+describe('DistanceChart reduced motion', () => {
+  let frames; let seq; let nowMs; let nowSpy;
+  const flush = () => { const p = [...frames.values()]; frames.clear(); p.forEach((cb) => cb(nowMs)); };
+  const pointsAt = (reduce) => {
+    frames = new Map(); seq = 0; nowMs = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb) => { seq += 1; frames.set(seq, cb); return seq; });
+    vi.stubGlobal('cancelAnimationFrame', (id) => { frames.delete(id); });
+    nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+    window.matchMedia = vi.fn(() => ({ matches: reduce }));
+    try {
+      const mk = (series, el) => (
+        <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: series[series.length - 1], distanceSeries: series } }}
+          riderLive={{ a: {} }} winCondition="distance" goalM={1000} elapsedS={el} />);
+      const { container, rerender } = render(mk([100], 1));
+      nowMs = 1000; flush();
+      rerender(mk([100, 900], 25));
+      nowMs = 1500; flush(); // half-way through the tick
+      return container.querySelector('[data-testid="race-line"]').getAttribute('points');
+    } finally {
+      vi.unstubAllGlobals(); nowSpy.mockRestore(); delete window.matchMedia;
+    }
+  };
+  it('jumps to the current tick mid-frame when reduced motion is on, and eases when it is off', () => {
+    const eased = pointsAt(false);
+    const jumped = pointsAt(true);
+    expect(jumped).not.toBe(eased);
+    // Reduced: the half-way frame already equals the end-of-tick frame.
+    frames = new Map(); // (fresh run for the end-of-tick reference)
+    const endOfTick = (() => {
+      seq = 0; nowMs = 0;
+      vi.stubGlobal('requestAnimationFrame', (cb) => { seq += 1; frames.set(seq, cb); return seq; });
+      vi.stubGlobal('cancelAnimationFrame', (id) => { frames.delete(id); });
+      nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+      window.matchMedia = vi.fn(() => ({ matches: false }));
+      try {
+        const mk = (series, el) => (
+          <DistanceChart riderIds={['a']} riders={{ a: { userId: 'a', displayName: 'A', cumulativeDistanceM: series[series.length - 1], distanceSeries: series } }}
+            riderLive={{ a: {} }} winCondition="distance" goalM={1000} elapsedS={el} />);
+        const { container, rerender } = render(mk([100], 1));
+        nowMs = 1000; flush();
+        rerender(mk([100, 900], 25));
+        nowMs = 2100; flush();
+        return container.querySelector('[data-testid="race-line"]').getAttribute('points');
+      } finally { vi.unstubAllGlobals(); nowSpy.mockRestore(); delete window.matchMedia; }
+    })();
+    expect(jumped).toBe(endOfTick);
+  });
+});
+
+describe('DistanceChart round axis labels', () => {
+  const labelTexts = (node) => [...node.querySelectorAll('.cg-chart__axis-label')].map((l) => l.textContent);
+  it('a time race snaps its y window so the labels are round (0 / 300 m / 600 m)', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 457, distanceSeries: [0, 200, 457] } };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="time" timeCapS={300} elapsedS={128} />
+    );
+    expect(labelTexts(getByTestId('chart-axis-y'))).toEqual(['0 m', '300 m', '600 m']);
+  });
+  it('a distance race with an open time axis snaps its x labels to whole minutes', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 800, distanceSeries: [0, 400, 800] } };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={1500} elapsedS={207} />
+    );
+    // 207 s / 0.85 = 243.5 s -> 300 s
+    expect(labelTexts(getByTestId('chart-axis-x'))).toEqual(['0:00', '2:30', '5:00']);
   });
 });

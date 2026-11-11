@@ -88,6 +88,9 @@ import { createFitnessServices } from "#composition/bootstrap.mjs";
  * @param {Object} [config.logger] - Logger instance
  * @returns {express.Router}
  */
+// How long after the fitness API is composed the cycle-race index is warmed.
+const CYCLE_RACE_INDEX_WARM_DELAY_MS = 5000;
+
 export function createFitnessApiRouter(config) {
   const {
     fitnessServices,
@@ -417,6 +420,13 @@ export function createFitnessApiRouter(config) {
     logger,
   });
   const cycleRaceApi = new CycleRaceApiService({ races: fitnessServices.cycleRaceService, config: fitnessConfigService });
+  // Build the race index shortly after boot, so a cold rebuild (every race file
+  // parsed) is not paid inside a rider's Start. Deferred and fire-and-forget:
+  // warmIndex never rejects, and the timer does not hold the process open.
+  const cycleRaceIndexWarmTimer = setTimeout(() => {
+    fitnessServices.cycleRaceService?.warmIndex?.(householdId);
+  }, CYCLE_RACE_INDEX_WARM_DELAY_MS);
+  cycleRaceIndexWarmTimer.unref?.();
 
   const garageSpeakerLogger = logger?.child?.({ app: 'fitness', module: 'garage-speaker' }) ?? logger;
   const fitnessRouter = createFitnessRouter({

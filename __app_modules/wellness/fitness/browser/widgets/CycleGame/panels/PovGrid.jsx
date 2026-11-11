@@ -2,8 +2,10 @@ import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../../components/CircularUserAvatar.jsx";
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
+import { FALLBACK_AVATAR } from "../home/constants.js";
 import { tickFraction } from "../../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
-import { povWorld, povBadges, resolveBadgeStack } from "../../../lib/cycleGame/povWorld.js";
+import { prefersReducedMotion } from "../../../lib/cycleGame/reducedMotion.js";
+import { povWorld, povBadges, resolveBadgeStack, markShadowedByGate } from "../../../lib/cycleGame/povWorld.js";
 import { povFollowCam, horizonChipState } from "../../../lib/cycleGame/povFollowCam.js";
 import getLogger from '@/lib/logging/Logger.js';
 import "./PovGrid.scss";
@@ -122,19 +124,22 @@ const clamp = (lo, hi, v) => Math.max(lo, Math.min(hi, v));
  * the pure povWorld / povFollowCam modules. three + camera-controls are
  * dynamic-imported so they only load when the POV mounts. See PovGrid.README.md.
  */
-export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM = 0, finishM = null, winCondition = 'distance' }) {
+export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM = 0, finishM = null, winCondition = 'distance', ranked = true }) {
   const distOf = (id) => Math.max(0, riders[id]?.cumulativeDistanceM || 0);
-  // Start-line lineup (audit C5): EVERY non-DNF rider (incl. ghosts and not-yet-
-  // moved riders parked at z=0) renders from mount, so the screen is never empty
-  // at GO. The distM>0 filter now applies ONLY to camera framing, and only after
-  // a start grace (see the rAF loop's framingMoved) — a stalled rider still can't
-  // crush the scale mid-race, but the start line is always framed. DNF riders are
-  // off the course entirely.
-  const lineupIds = riderIds.filter((id) => !riderLive[id]?.dnf);
+  // Start-line lineup (audit C5): EVERY rider (incl. ghosts and not-yet-moved
+  // riders waiting at z=0) renders from mount, so the screen is never empty at
+  // GO. The distM>0 filter applies ONLY to camera framing, and only after a start
+  // grace (see the rAF loop's framingMoved) — a stalled rider still can't crush
+  // the scale mid-race, but the start line is always framed. Nobody is removed:
+  // a parked rider stays on the road, dimmed, and is left out of the framing
+  // (povWorld reads `parked`).
+  const lineupIds = riderIds;
+  const isParked = (id) => !!riderLive[id]?.parked;
   const colorOf = (id) => LINE_COLORS[riderIds.indexOf(id) % LINE_COLORS.length];
   // Fixed-screen-size rank + gap-to-next badge per card, mirroring the standings
   // tower (T8) off the SAME live `standings()` placement the container forwards.
-  const badges = povBadges({ riderIds, riders, riderLive, winCondition });
+  // Solo (`ranked={false}`): each badge is the rider's own distance, no rank.
+  const badges = povBadges({ riderIds, riders, riderLive, winCondition, ranked });
 
   const rootRef = useRef(null);
   const glMountRef = useRef(null);
@@ -158,12 +163,14 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
   if (!logRef.current) logRef.current = getLogger().child({ component: 'pov-grid' });
 
   // Capture each new data tick (only on real change) for the rAF loop to interpolate.
-  // All non-DNF riders are captured — the unmoved ones sit at prev=cur=0 (z=0) on
-  // the start line until they roll.
+  // All riders are captured — the unmoved ones sit at prev=cur=0 (z=0) on the
+  // start line until they roll. `parked` rides along so framing can skip them.
   useEffect(() => {
     const prev = prevDistRef.current;
+    const prevParked = tickRef.current.riders || [];
     const changed = lineupIds.length !== Object.keys(prev).length
-      || lineupIds.some((id) => prev[id] !== distOf(id));
+      || lineupIds.some((id) => prev[id] !== distOf(id))
+      || lineupIds.some((id) => (prevParked.find((r) => r.id === id)?.parked || false) !== isParked(id));
     if (!changed) return;
     tickRef.current = {
       riders: lineupIds.map((id, idx) => ({
@@ -171,6 +178,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         prev: Number.isFinite(prev[id]) ? prev[id] : distOf(id),
         cur: distOf(id),
         isGhost: !!riders[id]?.isGhost,
+        parked: isParked(id),
       })),
       tickAt: performance.now(),
     };
@@ -316,11 +324,12 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         return { sx: (s._v.x * 0.5 + 0.5) * s.W, sy: (-s._v.y * 0.5 + 0.5) * s.H, inFront, dist };
       };
 
-      const updateMajorLabels = (marks, fogFar) => {
+      const updateMajorLabels = (marks, fogFar, gates = []) => {
         let li = 0;
         for (let i = 0; i < marks.length && li < majorLabelPool.length; i++) {
           if (!marks[i].major) continue;
           const m = marks[i];
+          if (markShadowedByGate(m, gates)) continue;
           const el = majorLabelPool[li++];
           const p = screenOf(-ROAD_HALF_W - 0.8, 0, m.z);
           if (!p.inFront) { el.style.opacity = '0'; continue; }
@@ -355,6 +364,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       const positionCards = (worldRiders, fogFar) => {
         // Pass 1 — project every card, and collect each badge's would-be box.
         const boxes = [];
+        const cardBoxes = [];
         worldRiders.forEach((r) => {
           const el = markerEls.current[r.id];
           const badgeEl = badgeEls.current[r.id];
@@ -366,6 +376,10 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           }
           const scale = clamp(CARD_MIN_SCALE, CARD_MAX_SCALE, CARD_FOCAL / Math.max(1, p.dist));
           const z = String(10000 - Math.round(p.dist)); // nearer on top
+          // The avatar card (88 px at scale 1, centred on the road point) is an
+          // obstacle for every FARTHER rider's badge: without it a near rider's
+          // card is drawn over the leader's rank readout.
+          cardBoxes.push({ x: p.sx, y: p.sy - 44 * scale, w: 88 * scale, h: 88 * scale, dist: p.dist, ownerId: r.id });
           if (el) {
             el.style.opacity = '1';
             el.style.transform = `translate(${p.sx.toFixed(1)}px,${p.sy.toFixed(1)}px) translate(-50%,-50%) scale(${scale.toFixed(3)})`;
@@ -381,12 +395,12 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
               badgeSize.current[r.id] = { text, w: badgeEl.offsetWidth, h: badgeEl.offsetHeight };
             }
             const { w, h } = badgeSize.current[r.id];
-            boxes.push({ el: badgeEl, x: p.sx, y: p.sy + belowPx, w, h, dist: p.dist });
+            boxes.push({ el: badgeEl, id: r.id, x: p.sx, y: p.sy + belowPx, w, h, dist: p.dist });
           }
         });
 
         // Pass 2 — de-collide in screen space (pure, unit-tested in povWorld).
-        resolveBadgeStack(boxes, BADGE_STACK_GAP_PX).forEach((b) => {
+        resolveBadgeStack(boxes, BADGE_STACK_GAP_PX, cardBoxes).forEach((b) => {
           b.el.style.transform = `translate(${b.x.toFixed(1)}px,${b.y.toFixed(1)}px) translate(-50%,0)`;
         });
       };
@@ -469,13 +483,14 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           const tgtZ = zFar + span * LOOK_AHEAD; // look high up the road
           const camZ = zNear + camDist * CAM_BEHIND;
           const camY = camDist * CAM_ELEV;
-          controls.setLookAt(0, camY, camZ, 0, 0, tgtZ, true);
+          // Reduced motion: jump the camera to its target instead of easing there.
+          controls.setLookAt(0, camY, camZ, 0, 0, tgtZ, !prefersReducedMotion());
         }
         controls.update(dt);
         gridMat.uniforms.uCamPos.value.copy(camera.position); // fog fade is camera-relative
         renderer.render(scene, camera);
 
-        updateMajorLabels(world.marks, fogFar);
+        updateMajorLabels(world.marks, fogFar, world.gates);
         positionCards(world.riders, fogFar);
         updateHorizonChip(world.leaderM, world.lastM);
 
@@ -541,9 +556,9 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           const isGhost = !!riders[id]?.isGhost;
           const live = riderLive[id] || {};
           return (
-            <div key={id} className={`cg-pov__marker${isGhost ? ' is-ghost cg-ghost' : ''}`} data-testid="pov-marker"
+            <div key={id} className={`cg-pov__marker${isGhost ? ' is-ghost cg-ghost' : ''}${isParked(id) ? ' is-parked' : ''}`} data-testid="pov-marker"
               ref={(el) => { markerEls.current[id] = el; }} style={{ '--cg-pov-color': color }}>
-              <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc}
+              <CircularUserAvatar name={riders[id]?.displayName} avatarSrc={live.avatarSrc} fallbackSrc={FALLBACK_AVATAR}
                 heartRate={live.heartRate} zoneId={live.zoneId} zoneColor={live.zoneColor || color}
                 size={88} showGauge={false} showIndicator={false} />
             </div>
@@ -554,10 +569,15 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           below each card by the rAF loop. Rank/gap mirror the standings tower. */}
       <div className="cg-pov__badges" aria-hidden="true">
         {lineupIds.map((id) => (
-          <div key={id} className={`cg-pov__badge${riders[id]?.isGhost ? ' is-ghost' : ''}`} data-testid="pov-badge"
+          <div key={id} className={`cg-pov__badge${riders[id]?.isGhost ? ' is-ghost' : ''}${isParked(id) ? ' is-parked' : ''}`} data-testid="pov-badge"
             data-rider={id} ref={(el) => { badgeEls.current[id] = el; }}
             style={{ '--cg-pov-color': colorOf(id), opacity: 0 }}>
-            {badges[id]?.text || ''}
+            {badges[id] ? (
+              <>
+                {badges[id].ordinal ? `${badges[id].ordinal} · ` : ''}{badges[id].prefix}
+                <span data-distance-readout={badges[id].ownDistance ? id : undefined}>{badges[id].metric}</span>
+              </>
+            ) : ''}
           </div>
         ))}
       </div>
@@ -576,4 +596,5 @@ PovGrid.propTypes = {
   lapLengthM: PropTypes.number,
   finishM: PropTypes.number,
   winCondition: PropTypes.string,
+  ranked: PropTypes.bool,
 };

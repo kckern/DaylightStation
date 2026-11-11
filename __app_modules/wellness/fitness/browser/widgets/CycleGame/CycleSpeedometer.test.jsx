@@ -47,19 +47,77 @@ describe('CycleSpeedometer', () => {
     rerender(<CycleSpeedometer {...baseProps} rpm={75} />);
     expect(getByTestId('cycle-speedometer-band-active').getAttribute('stroke')).toBe('#f1c40f'); // pushing
   });
-  it('shows a legible multiplier pill (with its number) only when multiplier > 1', () => {
-    // 2026-07-02 feedback: the prior circular badge shrank to an unreadable
-    // dot with the number moved to tiny inline text elsewhere. The pill must
-    // show the number directly, legibly (≥1.1rem via CSS, asserted in
-    // speedometerOverlayLayout.test.js's box-size math).
-    const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} multiplier={2} />);
-    const pill = queryByTestId('cycle-speedometer-multiplier');
-    expect(pill).not.toBeNull();
-    expect(pill.textContent).toContain('×2');
-    rerender(<CycleSpeedometer {...baseProps} multiplier={1.4} />);
-    expect(queryByTestId('cycle-speedometer-multiplier').textContent).toContain('×1.4');
-    rerender(<CycleSpeedometer {...baseProps} multiplier={1} />);
+  // ── Boost meter (replaces the multiplier badge) ──────────────────────────
+  // The heart-rate zone multiplies distance. The gauge says so in words under
+  // the readout, outside the dial, so it can never cover a tick label.
+  const WARM = { hasStrap: true, label: 'Warm', mult: 1.2, progress: 0.4, next: { label: 'Hot', mult: 1.4 } };
+  it('the boost row names the zone and its multiplier, fills a bar to the progress, and shows the next step', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} boost={WARM} />);
+    const row = getByTestId('cycle-speedometer-boost');
+    expect(getByTestId('cycle-speedometer-boost-chip').textContent).toBe('Warm ×1.2');
+    // The multiplier is its own flex item: a bare text node after the label span
+    // loses its leading space in an inline-flex chip ("Warm×1.2").
+    expect(getByTestId('cycle-speedometer-boost-mult').textContent).toBe('×1.2');
+    expect(getByTestId('cycle-speedometer-boost-fill').style.width).toBe('40%');
+    expect(getByTestId('cycle-speedometer-boost-next').textContent).toBe('Hot ×1.4');
+    expect(row.className).not.toContain('no-strap');
+  });
+  it('no strap: the handicap multiplier and no bar or next step', () => {
+    const { getByTestId, queryByTestId } = render(
+      <CycleSpeedometer {...baseProps} boost={{ hasStrap: false, label: 'No heart-rate strap', mult: 0.8, progress: null, next: null }} />
+    );
+    expect(getByTestId('cycle-speedometer-boost-chip').textContent).toBe('No heart-rate strap ×0.8');
+    expect(queryByTestId('cycle-speedometer-boost-bar')).toBeNull();
+    expect(queryByTestId('cycle-speedometer-boost-next')).toBeNull();
+  });
+  it('hides the bar when progress is unknown, and the next step at the top zone', () => {
+    const { queryByTestId } = render(
+      <CycleSpeedometer {...baseProps} boost={{ hasStrap: true, label: 'Fire', mult: 1.6, progress: null, next: null }} />
+    );
+    expect(queryByTestId('cycle-speedometer-boost-chip').textContent).toBe('Fire ×1.6');
+    expect(queryByTestId('cycle-speedometer-boost-bar')).toBeNull();
+    expect(queryByTestId('cycle-speedometer-boost-next')).toBeNull();
+  });
+  it('prints multipliers with at most one decimal and no trailing .0', () => {
+    const { getByTestId } = render(
+      <CycleSpeedometer {...baseProps} boost={{ hasStrap: true, label: 'Active', mult: 1, progress: 0.25, next: { label: 'Warm', mult: 1.25 } }} />
+    );
+    expect(getByTestId('cycle-speedometer-boost-chip').textContent).toBe('Active ×1');
+    expect(getByTestId('cycle-speedometer-boost-next').textContent).toBe('Warm ×1.3');
+  });
+  it('the old multiplier badge is gone, whatever the multiplier', () => {
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} multiplier={2} boost={WARM} />);
     expect(queryByTestId('cycle-speedometer-multiplier')).toBeNull();
+  });
+  it('every dial label renders, and the boost row sits outside the dial', () => {
+    // The default dial (120 max) labels 0 · 30 · 60 · 90 · 120; the old badge
+    // covered the 120.
+    const { container, getByTestId } = render(<CycleSpeedometer {...baseProps} boost={WARM} />);
+    const labels = [...container.querySelectorAll('.cycle-speedometer__tick-label')].map((t) => t.textContent);
+    expect(labels).toEqual(['0', '30', '60', '90', '120']);
+    const row = getByTestId('cycle-speedometer-boost');
+    expect(container.querySelector('svg.cycle-speedometer__svg').contains(row)).toBe(false);
+    expect(container.querySelector('.cycle-speedometer__gauge').contains(row)).toBe(false);
+  });
+  it('a 180 dial shows all its labels with the boost row on', () => {
+    const { container } = render(<CycleSpeedometer {...baseProps} maxRpm={180} boost={WARM} />);
+    const labels = [...container.querySelectorAll('.cycle-speedometer__tick-label')].map((t) => t.textContent);
+    expect(labels[0]).toBe('0');
+    expect(labels[labels.length - 1]).toBe('180');
+  });
+  it('no boost given (recap): no boost row', () => {
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
+    expect(queryByTestId('cycle-speedometer-boost')).toBeNull();
+  });
+  // The rider controls rpm, so rpm is the big number; km/h is the small one.
+  it('rpm is the large readout and speed the small one', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} speedKmh={20} />);
+    const rpm = getByTestId('cycle-speedometer-rpm');
+    const speed = getByTestId('cycle-speedometer-speed');
+    expect(rpm.className).toContain('cycle-speedometer__readout--hero');
+    expect(speed.className).toContain('cycle-speedometer__readout--sub');
+    // rpm reads first (on top).
+    expect(rpm.compareDocumentPosition(speed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
   it('renders the HR value via the embedded avatar', () => {
     const { container } = render(<CycleSpeedometer {...baseProps} />);
@@ -73,34 +131,48 @@ describe('CycleSpeedometer', () => {
     expect(badge.textContent).toContain('1st');
     expect(container.querySelector('.cycle-speedometer--finished')).not.toBeNull();
   });
+  // Solo layout: no placement is passed. The overlay says Finished once,
+  // with no ordinal.
+  it('a finish with no placement reads "Finished" once, with no ordinal', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} finished placement={null} />);
+    const badge = getByTestId('cycle-speedometer-finished');
+    expect(badge.textContent.match(/Finished/g)).toHaveLength(1);
+    expect(badge.textContent).not.toMatch(/\d(st|nd|rd|th)/);
+  });
   it('does not show the FINISHED badge while still racing', () => {
     const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
     expect(queryByTestId('cycle-speedometer-finished')).toBeNull();
   });
-  it('shows a FALSE START penalty overlay when penalized', () => {
-    const { getByTestId, container } = render(<CycleSpeedometer {...baseProps} penalized />);
-    expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('FALSE START');
-    expect(container.querySelector('.cycle-speedometer--penalized')).not.toBeNull();
+  // Parked: idle past the park window. Shown in the FINISHED overlay's slot,
+  // calm wording, gone the moment the prop clears (the tick they pedal).
+  it('shows a PARKED overlay with "Pedal to rejoin" when parked, and clears it when not', () => {
+    const { getByTestId, queryByTestId, container, rerender } = render(<CycleSpeedometer {...baseProps} parked />);
+    const overlay = getByTestId('cycle-speedometer-parked');
+    expect(overlay.textContent).toContain('PARKED');
+    expect(overlay.textContent).toContain('Pedal to rejoin');
+    expect(overlay.textContent).not.toMatch(/DNF/);
+    expect(container.querySelector('.cycle-speedometer--parked')).not.toBeNull();
+    rerender(<CycleSpeedometer {...baseProps} parked={false} />);
+    expect(queryByTestId('cycle-speedometer-parked')).toBeNull();
+    expect(container.querySelector('.cycle-speedometer--parked')).toBeNull();
   });
-  it('does not show the penalty overlay when not penalized', () => {
-    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} />);
-    expect(queryByTestId('cycle-speedometer-penalty')).toBeNull();
+  it('words a no-sensor rider as NO SIGNAL / Check the sensor, not parked', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} parked noSensor />);
+    const overlay = getByTestId('cycle-speedometer-parked');
+    expect(overlay.textContent).toContain('NO SIGNAL');
+    expect(overlay.textContent).toContain('Check the sensor');
+    expect(overlay.textContent).not.toContain('PARKED');
+    expect(overlay.textContent).not.toContain('Pedal to rejoin');
   });
-  it('shows a draining countdown bar with seconds remaining while serving the timer', () => {
-    const { getByTestId } = render(
-      <CycleSpeedometer {...baseProps} penalized penaltyRemainingS={6} penaltyTotalS={10} penaltyAwaitingStop={false} />
-    );
-    const bar = getByTestId('cycle-speedometer-penalty-bar');
-    // fill reflects remaining/total (6/10 = 60%)
-    expect(bar.querySelector('.cycle-speedometer__penalty-fill').style.width).toBe('60%');
-    expect(getByTestId('cycle-speedometer-penalty').textContent).toContain('6');
+  it('a parked rider whose sensor has dropped is told about the sensor, not told to pedal', () => {
+    const { getByTestId } = render(<CycleSpeedometer {...baseProps} parked sensorLost />);
+    const overlay = getByTestId('cycle-speedometer-parked');
+    expect(overlay.textContent).toContain('NO SIGNAL');
+    expect(overlay.textContent).not.toContain('Pedal to rejoin');
   });
-  it('swaps to a STOP PEDALING cue once the timer is served but the rider is still pedalling', () => {
-    const { getByTestId, queryByTestId } = render(
-      <CycleSpeedometer {...baseProps} penalized penaltyRemainingS={0} penaltyTotalS={10} penaltyAwaitingStop />
-    );
-    expect(queryByTestId('cycle-speedometer-penalty-bar')).toBeNull();
-    expect(getByTestId('cycle-speedometer-penalty').textContent.toUpperCase()).toContain('STOP PEDALING');
+  it('shows no parked overlay for a finished rider', () => {
+    const { queryByTestId } = render(<CycleSpeedometer {...baseProps} finished placement={1} parked />);
+    expect(queryByTestId('cycle-speedometer-parked')).toBeNull();
   });
   it('renders the leader medal in the odometer only when isLeader is true', () => {
     const { queryByTestId, rerender } = render(<CycleSpeedometer {...baseProps} isLeader={false} />);
@@ -130,5 +202,20 @@ describe('CycleSpeedometer', () => {
     expect(queryByTestId('cycle-speedometer-sensor-lost')).toBeNull();
     expect(getByTestId('cycle-speedometer-rpm').textContent).toContain('92');
     expect(container.querySelector('.cycle-speedometer--sensor-lost')).toBeNull();
+  });
+});
+
+describe('CycleSpeedometer parked recedes as a whole', () => {
+  it('a parked rider carries the --parked class on the root, so the boost row and odometer dim with the gauge', () => {
+    const { container, getByTestId } = render(<CycleSpeedometer {...baseProps} parked boost={{ hasStrap: true, label: 'Warm', mult: 1.2, progress: 0.4, next: null }} />);
+    expect(container.firstChild.className).toContain('cycle-speedometer--parked');
+    expect(getByTestId('cycle-speedometer-boost')).toBeInTheDocument();
+  });
+});
+
+describe('CycleSpeedometer compact gauge', () => {
+  it('marks a small gauge compact', () => {
+    const { container } = render(<CycleSpeedometer {...baseProps} size={180} />);
+    expect(container.firstChild.className).toContain('cycle-speedometer--compact');
   });
 });

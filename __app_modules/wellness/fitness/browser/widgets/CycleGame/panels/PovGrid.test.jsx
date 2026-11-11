@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/react';
+import { render, cleanup, waitFor, fireEvent } from '@testing-library/react';
 
 // jsdom has no WebGL: mock the three.js stack + camera-controls so the component
 // mounts and we can assert the React-owned avatar overlay (the contract tests cover).
@@ -11,12 +11,12 @@ vi.mock('@/lib/logging/Logger.js', () => ({
 // Captures the args every PlaneGeometry() call was constructed with, so a test
 // can assert the ground-plane width without hardcoding the module's internal
 // GRID_PLANE_HALF_W constant.
-const { planeGeomCalls } = vi.hoisted(() => ({ planeGeomCalls: [] }));
+const { planeGeomCalls, lookAtCalls } = vi.hoisted(() => ({ planeGeomCalls: [], lookAtCalls: [] }));
 
 vi.mock('camera-controls', () => {
   class CC {
     constructor() { this.mouseButtons = {}; this.touches = {}; this.distance = 10; }
-    setLookAt() {} update() {} getTarget(v) { return v || { x: 0, y: 0, z: 0 }; } dispose() {}
+    setLookAt(...args) { lookAtCalls.push(args); } update() {} getTarget(v) { return v || { x: 0, y: 0, z: 0 }; } dispose() {}
   }
   CC.install = () => {};
   CC.ACTION = { NONE: 0 };
@@ -68,7 +68,22 @@ const riders = {
 };
 
 describe('PovGrid (three.js shell)', () => {
-  beforeEach(() => { cleanup(); planeGeomCalls.length = 0; });
+  beforeEach(() => { cleanup(); planeGeomCalls.length = 0; lookAtCalls.length = 0; });
+
+  // Camera easing is JS-driven (camera-controls damping), so the CSS guard cannot
+  // reach it: under prefers-reduced-motion the follow camera jumps to its target.
+  it.each([[true, false], [false, true]])('reduced motion=%s -> follow camera enableTransition=%s', async (reduce, expectTransition) => {
+    window.matchMedia = vi.fn(() => ({ matches: reduce }));
+    try {
+      render(<PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{}} />);
+      // The first call is the un-eased initial framing; the rAF loop's follow calls come after.
+      await waitFor(() => expect(lookAtCalls.filter((a) => a[6] === expectTransition).length).toBeGreaterThan(0));
+      // Under reduced motion NO follow call eases (the initial framing is un-eased either way).
+      if (reduce) expect(lookAtCalls.every((a) => a[6] === false)).toBe(true);
+    } finally {
+      delete window.matchMedia;
+    }
+  });
 
   // 2026-07-02 fix: the ground plane used to be locked to the playable road's
   // own width (2*ROAD_HALF_W = 8 world units). At a big-gap zoom-out the
@@ -90,16 +105,25 @@ describe('PovGrid (three.js shell)', () => {
     expect(getByTestId('race-pov')).toBeTruthy();
   });
 
-  it('renders a card per non-DNF rider, INCLUDING not-yet-moved riders (start-line lineup)', () => {
+  it('renders a card per rider, INCLUDING not-yet-moved riders (start-line lineup)', () => {
     // audit C5: everyone lines up at z=0 from mount so the road is never empty at GO.
     const { getAllByTestId } = render(<PovGrid riderIds={['a', 'b', 'c']} riders={riders} riderLive={{}} />);
-    expect(getAllByTestId('pov-marker')).toHaveLength(3); // c (0 m) now parked on the line
+    expect(getAllByTestId('pov-marker')).toHaveLength(3); // c (0 m) waits on the line
   });
 
-  it('excludes DNF riders', () => {
+  // Nobody is eliminated: a parked rider stays on the road, dimmed, and their
+  // label reads Parked with their distance.
+  it('keeps a parked rider on the road with a dimmed (is-parked) label', () => {
     const { getAllByTestId } = render(
-      <PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{ b: { dnf: true } }} />);
-    expect(getAllByTestId('pov-marker')).toHaveLength(1);
+      <PovGrid riderIds={['a', 'b']} riders={riders} riderLive={{ b: { parked: true } }} />);
+    const markers = getAllByTestId('pov-marker');
+    expect(markers).toHaveLength(2);
+    const badges = getAllByTestId('pov-badge');
+    const parkedBadge = badges.find((el) => el.getAttribute('data-rider') === 'b');
+    expect(parkedBadge.className).toContain('is-parked');
+    expect(parkedBadge.textContent).toContain('Parked');
+    expect(markers[1].className).toContain('is-parked');
+    expect(markers[0].className).not.toContain('is-parked');
   });
 
   it('marks ghost riders', () => {
@@ -139,5 +163,17 @@ describe('PovGrid (three.js shell)', () => {
     const ghost = [...markers].find((m) => m.className.includes('is-ghost'));
     expect(ghost).toBeTruthy();
     expect(ghost.className).toContain('cg-ghost');
+  });
+
+  it('falls back to the generic face when a marker has no avatar image (the par rival)', () => {
+    cleanup();
+    const riders = { 'ghost:par:par': { displayName: 'Par', cumulativeDistanceM: 90, isGhost: true } };
+    const { container } = render(
+      <PovGrid riderIds={['ghost:par:par']} riders={riders}
+        riderLive={{ 'ghost:par:par': { avatarSrc: '/api/v1/static/img/users/par' } }} />
+    );
+    const img = container.querySelector('.cg-pov__marker img');
+    fireEvent.error(img);
+    expect(img.getAttribute('src')).toBe('/api/v1/static/img/users/user');
   });
 });

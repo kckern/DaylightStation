@@ -48,3 +48,34 @@ export function hasEvent(events, name) {
 export function lastEvent(events, name) {
   return [...events].reverse().find((e) => e.event === name) || null;
 }
+
+/** Epoch ms of an event (0 when it carries no usable timestamp). */
+export function eventTime(e) {
+  const t = e.ts ?? e.timestamp ?? e.time ?? 0;
+  const n = typeof t === 'number' ? t : Date.parse(t);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Poll the session log until an event named `name` (matching `predicate`, when
+ * given) has been written, and return it. The log reaches disk a moment after
+ * the page emits it, so a flow that reads right after an action must wait.
+ * Pass `since` (epoch ms, taken at the start of the flow) so an event left in
+ * the log by an earlier run is never mistaken for this run's.
+ * Fails loudly with the event name when it never shows up.
+ */
+export async function waitForCycleEvent(name, predicate = () => true, { timeoutMs = 10000, pollMs = 250, baseDir, since = 0 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const hit = [...readCycleGameEvents({ baseDir })].reverse()
+      .find((e) => e.event === name && eventTime(e) >= since && predicate(e));
+    if (hit) return hit;
+    if (Date.now() >= deadline) throw new Error(`log event ${name} not written within ${timeoutMs} ms`);
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
+/** True when no event named `name` (matching `predicate`) is in the log now. */
+export function lacksEvent(events, name, predicate = () => true) {
+  return !events.some((e) => e.event === name && predicate(e));
+}

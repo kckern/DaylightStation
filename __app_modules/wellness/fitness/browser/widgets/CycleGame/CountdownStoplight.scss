@@ -15,7 +15,7 @@
 
   &__eyebrow {
     @include cg.cg-eyebrow;
-    font-size: 1.1rem; // was 1rem — 10-foot floor (audit UX §7)
+    font-size: cg.cg-type(1); // was 1rem — 10-foot floor (audit UX §7)
     animation: cg-fade-up 0.4s ease both;
   }
   &.is-go &__eyebrow { color: cg.$cg-success; letter-spacing: 0.4em; }
@@ -62,7 +62,7 @@
   &__number {
     position: relative; z-index: 1;
     @include cg.cg-numeral(cg.$cg-magenta);
-    font-size: 9rem;
+    font-size: cg.cg-type(7);
     line-height: 1;
     color: cg.$cg-text;
     text-shadow:
@@ -72,7 +72,7 @@
     animation: cg-count-punch 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
   }
   &.is-go &__number {
-    font-size: 7rem; letter-spacing: 0.04em;
+    font-size: cg.cg-type(6); letter-spacing: 0.04em;
     color: cg.$cg-success;
     text-shadow:
       0 0 56px rgba(cg.$cg-success, 0.85),
@@ -114,4 +114,15 @@
 @keyframes cg-fade-up {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .countdown-stoplight,
+  .countdown-stoplight *,
+  .countdown-stoplight *::before,
+  .countdown-stoplight *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

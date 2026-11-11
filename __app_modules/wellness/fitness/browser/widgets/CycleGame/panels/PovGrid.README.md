@@ -93,12 +93,15 @@ screen and always has a labelled road:
 
 ## Start-line lineup
 
-ALL non-DNF riders (incl. ghosts and not-yet-moved riders parked at `z = 0`) render
+ALL riders (incl. ghosts and not-yet-moved riders waiting at `z = 0`) render
 from mount, so the road is never empty at GO. The `distM > 0` exclusion now applies
 **only to camera framing** and **only after a 5 s start grace** — before that the
 whole start line is framed. An initial `setLookAt` fires on mount so the first
-rendered frame is already framed (no unframed pop-in). A DNF rider is off the course
-entirely.
+rendered frame is already framed (no unframed pop-in). Nobody is removed: a parked
+rider (idle past the park window, or no sensor) stays on the road with a dimmed
+(`is-parked`) card and badge, and is left out of the framing — `povWorld` takes the
+leader, trailing rider and anchor from un-parked riders (everyone, if all are
+parked).
 
 ## Rank + gap badges
 
@@ -131,9 +134,9 @@ mounts — they are absent from the fitness main entry chunk.
   parking, `povBadges` rank/gap text) and `povFollowCam.test.js` (ahead headroom,
   min-span cap, single-rider, `horizonChipState` hysteresis).
 - **`PovGrid.test.jsx`** renders with three + camera-controls mocked (jsdom has no
-  WebGL) and asserts the React-owned overlay: a card per non-DNF rider (incl.
-  parked start-line riders), ghost class, DNF hidden, rank/gap badge text, horizon
-  chip element.
+  WebGL) and asserts the React-owned overlay: a card per rider (incl. not-yet-moved
+  start-line riders), ghost class, a parked rider kept and dimmed (`is-parked`),
+  rank/gap badge text, horizon chip element.
 - **WebGL motion + look** (smooth follow, zoom cap, fog, neon, gates) are verified on
   the **garage Firefox kiosk** via the `cycle_game.pov.camera` audit log + visual
   inspection — jsdom cannot rasterize WebGL.

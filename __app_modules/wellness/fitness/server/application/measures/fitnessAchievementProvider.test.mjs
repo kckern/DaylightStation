@@ -57,6 +57,22 @@ describe('helpers', () => {
     expect(pbs).toEqual([{ learnerId: 'kidA', courseId: 'sprint', raceId: '20261103100000', date: '2026-11-03' }]);
   });
 
+  it('an incomplete (ended-early) race is never a personal best and never sets the bar', () => {
+    const pbs = findPersonalBests([
+      entry('20261101100000', 'sprint', { kidA: 120 }),
+      entry('20261102100000', 'sprint', { kidA: 60 }, { incomplete: true }),
+      entry('20261103100000', 'sprint', { kidA: 110 }),
+    ], ['kidA']);
+    expect(pbs.map((p) => p.raceId)).toEqual(['20261103100000']);
+    // an incomplete first ride does not become the bar a later ride must beat
+    const first = findPersonalBests([
+      entry('20261101100000', 'sprint', { kidA: 60 }, { incomplete: true }),
+      entry('20261102100000', 'sprint', { kidA: 120 }),
+      entry('20261103100000', 'sprint', { kidA: 110 }),
+    ], ['kidA']);
+    expect(first.map((p) => p.raceId)).toEqual(['20261103100000']);
+  });
+
   it('keeps courses with the same id but a different goal apart', () => {
     const pbs = findPersonalBests([
       entry('20261101100000', 'sprint', { kidA: 120 }),

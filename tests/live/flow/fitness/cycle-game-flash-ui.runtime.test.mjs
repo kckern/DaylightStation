@@ -47,7 +47,7 @@ test.describe('Cycle Game Race (Flash) — UI verification', () => {
     const bikeIds = assigns.map((a) => a.equipmentId);
 
     // Start the Flash race via the bridge (time race, 60 s cap). Bikes stay at 0
-    // through staging+countdown (no cadence sent) → no false start.
+    // through staging+countdown (no cadence sent).
     await page.waitForFunction(() => window.__cycleGameControl?.ready === true, null, { timeout: 15000 });
     await page.evaluate(() => window.__cycleGameControl.startRace({ winCondition: 'time', value: 60 }));
 

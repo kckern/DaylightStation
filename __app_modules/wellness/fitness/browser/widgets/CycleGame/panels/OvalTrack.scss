@@ -66,7 +66,7 @@
   &__lap-label {
     font-family: t.$cg-display;
     font-weight: 800;
-    font-size: 17px;
+    font-size: t.cg-type(1);
     fill: t.$cg-text;
     paint-order: stroke;
     stroke: rgba(0, 0, 0, 0.55);
@@ -84,7 +84,7 @@
     margin: 0.4rem auto 0;
     border-collapse: collapse;
     table-layout: fixed;
-    font-family: t.$cg-mono;
+    font-family: t.$cg-display; font-variant-numeric: tabular-nums;
     color: t.$cg-text;
 
     th, td { text-align: center; padding: 2px 6px; }
@@ -96,7 +96,7 @@
     &-rider {
       font-family: t.$cg-display;
       font-weight: 700;
-      font-size: 1rem; // was 0.82rem — recap surface floor (audit UX §7 / T11)
+      font-size: t.cg-type(1); // was 0.82rem — recap surface floor (audit UX §7 / T11)
       color: t.$cg-text;
       padding-bottom: 4px;
       border-bottom: 1px solid t.$cg-border-soft;
@@ -117,7 +117,7 @@
     &-label {
       font-family: t.$cg-display;
       font-weight: 700;
-      font-size: 1rem;
+      font-size: t.cg-type(1);
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: t.$cg-faint;
@@ -127,7 +127,7 @@
 
     &-cell {
       font-weight: 700;
-      font-size: 1.05rem;
+      font-size: t.cg-type(1);
       font-variant-numeric: tabular-nums;
       color: t.$cg-muted;
 
@@ -136,5 +136,16 @@
         text-shadow: 0 0 8px rgba(t.$cg-cyan, 0.45);
       }
     }
+  }
+}
+
+// Reduced motion: every animation and transition in this file stops.
+@include t.cg-reduced-motion {
+  .cg-oval-track,
+  .cg-oval-track *,
+  .cg-oval-track *::before,
+  .cg-oval-track *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

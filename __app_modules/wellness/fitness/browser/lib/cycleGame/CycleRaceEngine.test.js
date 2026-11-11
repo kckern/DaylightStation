@@ -294,6 +294,28 @@ describe('CycleRaceEngine — ghost replay', () => {
     expect(e.getState().riders.g.isGhost).toBe(true);
     expect(e.getState().riders.a.isGhost).toBe(false);
   });
+
+  // The solo pace panel compares the rider with where the rival WAS at the
+  // same moment and when the rival REACHED the rider's distance, which can be
+  // later in the recording than the replay has got to. distanceSeries is only
+  // the replayed part, so the whole recording is exposed separately.
+  it('exposes the full recorded series and its interval on a ghost, from the first tick', () => {
+    const e = new CycleRaceEngine({
+      winCondition: 'time', timeCapS: 60, intervalMs: 1000,
+      riders: [{ userId: 'a', wheelCircumferenceM: 2 }, { userId: 'g', ghostSeries: [25, 50, 75, 100], ghostIntervalS: 5 }]
+    });
+    e.tick({});
+    const g = e.getState().riders.g;
+    expect(g.distanceSeries).toEqual([5]);
+    expect(g.ghostRecordedSeries).toEqual([25, 50, 75, 100]);
+    expect(g.ghostIntervalS).toBe(5);
+    // Stable across ticks (the same recording, not a fresh copy per tick).
+    e.tick({});
+    expect(e.getState().riders.g.ghostRecordedSeries).toBe(g.ghostRecordedSeries);
+    // Live riders carry neither.
+    expect(e.getState().riders.a.ghostRecordedSeries).toBeNull();
+    expect(e.getState().riders.a.ghostIntervalS).toBeNull();
+  });
 });
 
 describe('CycleRaceEngine — HR series', () => {

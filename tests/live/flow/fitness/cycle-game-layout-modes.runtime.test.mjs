@@ -53,7 +53,7 @@ async function bootToRacing(page, riderCount) {
     null, { timeout: 15000 }
   );
 
-  // HOLD bikes at 0 through staging+countdown to avoid a self-inflicted false start.
+  // HOLD bikes at 0 through staging+countdown so the start-line framing is clean.
   for (const id of bikeIds) await setRpm(page, id, 0);
   // Use 120s race so there's ample time for layout assertions + some driving.
   await page.evaluate(() => window.__cycleGameControl.startRace({ winCondition: 'time', value: 120 }));
@@ -72,7 +72,7 @@ async function bootToRacing(page, riderCount) {
   }
   expect(phase, 'reached the green light').toBe('racing');
 
-  // Hold 0 across the first engine tick to avoid a self-inflicted false start.
+  // Hold 0 across the first engine tick (mirrors the sim panel's settle).
   for (const id of bikeIds) await setRpm(page, id, 0);
   await page.waitForTimeout(1400);
 
@@ -99,15 +99,11 @@ test.describe('Cycle Game — layout modes', () => {
     console.log('LAYOUT_MODE_SIDEBAR', { mode: 'sidebar', screenshot: `${SHOT}/sidebar.png` });
 
     // Drive briefly to confirm the race stays live (not just asserting during staging).
-    const stopEquipment = (id) => page.evaluate((e) => window.__fitnessSimController.stopEquipment(e), id);
     for (let i = 0; i < 5; i++) {
       const phase = await phaseOf(page);
       if (!phase || phase === 'results' || phase === 'idle') break;
-      const rs = await raceState(page);
       for (let k = 0; k < bikeIds.length; k++) {
-        const id = bikeIds[k];
-        const r = (rs?.riders || []).find((x) => x.equipmentId === id);
-        if (r?.boxed) await stopEquipment(id); else await setRpm(page, id, 85 + k * 5);
+        await setRpm(page, bikeIds[k], 85 + k * 5);
       }
       await page.waitForTimeout(1000);
     }

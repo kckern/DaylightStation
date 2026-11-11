@@ -5,7 +5,9 @@ import resolveParticipantIdentity from "../../../lib/cycleGame/participantIdenti
 
 /**
  * Pure classification: split riders into pinned-finished / actively-racing /
- * overtime / dnf groups, each sorted for display. Exported so the ranking
+ * overtime / parked groups, each sorted for display. A parked rider (idle past
+ * the park window, or a sensor that never reported: `riderLive.parked`) is out
+ * of the chase but keeps their distance; they come back on their next stroke. Exported so the ranking
  * logic is directly unit-testable without rendering.
  *
  * `placement` prefers `riderLive[id].placement` (the container forwards the
@@ -18,15 +20,18 @@ export function buildStandingsGroups({ riderIds = [], riders = {}, riderLive = {
     const rider = riders[id] || {};
     const live = riderLive[id] || {};
     const distanceM = Math.round(rider.cumulativeDistanceM || 0);
-    const isDnf = !!live.dnf;
-    const isOvertime = !isDnf && !!live.overtime;
+    // `stopped` is the recap's after-the-fact flag (stopped when the race closed).
+    const stopped = !!live.stopped;
+    const isParked = !!live.parked || stopped;
+    const noSensor = isParked && !stopped && !!live.noSensor;
+    const isOvertime = !isParked && !!live.overtime;
     const finishTimeS = Number.isFinite(rider.finishTimeS) ? rider.finishTimeS : null;
-    const finished = !isDnf && !isOvertime && (!!live.finished || finishTimeS != null);
+    const finished = !isParked && !isOvertime && (!!live.finished || finishTimeS != null);
     const placement = Number.isFinite(live.placement) ? live.placement
       : (Number.isFinite(rider.placement) ? rider.placement : null);
     const ident = resolveParticipantIdentity(rider.userId || id, rider.displayName);
     return {
-      id, idx, distanceM, isDnf, isOvertime, finished, finishTimeS, placement,
+      id, idx, distanceM, isParked, noSensor, stopped, isOvertime, finished, finishTimeS, placement,
       isGhost: !!rider.isGhost || ident.isGhost,
       displayName: rider.displayName || ident.displayName,
       avatarSrc: live.avatarSrc || rider.avatarSrc || ident.avatarSrc,
@@ -37,9 +42,9 @@ export function buildStandingsGroups({ riderIds = [], riders = {}, riderLive = {
   const byPlacement = (a, b) => (a.placement ?? 999) - (b.placement ?? 999);
   const byDistanceDesc = (a, b) => b.distanceM - a.distanceM;
   const finishedRows = rows.filter((r) => r.finished).sort(byPlacement);
-  const activeRows = rows.filter((r) => !r.finished && !r.isDnf && !r.isOvertime)
+  const activeRows = rows.filter((r) => !r.finished && !r.isParked && !r.isOvertime)
     .sort((a, b) => byPlacement(a, b) || byDistanceDesc(a, b));
   const overtimeRows = rows.filter((r) => r.isOvertime).sort(byDistanceDesc);
-  const dnfRows = rows.filter((r) => r.isDnf).sort(byDistanceDesc);
-  return { finishedRows, activeRows, overtimeRows, dnfRows };
+  const parkedRows = rows.filter((r) => r.isParked).sort(byDistanceDesc);
+  return { finishedRows, activeRows, overtimeRows, parkedRows };
 }

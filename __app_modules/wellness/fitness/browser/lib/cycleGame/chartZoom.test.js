@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { continuousWindow, gridUnit, gridValues, pickAxisTicks } from "./chartZoom.js";
+import { continuousWindow, evenTicks } from "./chartZoom.js";
 
 describe('continuousWindow', () => {
   it('holds at the base window while the data is small', () => {
@@ -26,43 +26,74 @@ describe('continuousWindow', () => {
   });
 });
 
-describe('gridUnit', () => {
-  it('uses the base unit when its on-screen spacing clears the pixel floor', () => {
-    expect(gridUnit(500, 600, 250, 32)).toBe(250);
+describe('evenTicks', () => {
+  it('three evenly spaced labels including both ends', () => {
+    expect(evenTicks(0, 300, 3)).toEqual([0, 150, 300]);
+    expect(evenTicks(0, 450, 4)).toEqual([0, 150, 300, 450]);
   });
-  it('coarsens (doubles) the unit when lines would crowd below the floor', () => {
-    expect(gridUnit(8000, 600, 250, 32)).toBe(500);
+  it('count of 1 returns [min]', () => expect(evenTicks(5, 10, 1)).toEqual([5]));
+  it('count below 1 or non-finite returns []', () => {
+    for (const c of [0, -2, NaN, Infinity, undefined, null]) expect(evenTicks(0, 10, c)).toEqual([]);
+  });
+  it('max < min still spaces evenly in the given order', () => {
+    expect(evenTicks(300, 0, 3)).toEqual([300, 150, 0]);
+  });
+  it('has no float noise', () => {
+    const t = evenTicks(0, 1, 4);
+    [0, 1 / 3, 2 / 3, 1].forEach((v, i) => expect(Math.abs(t[i] - v)).toBeLessThan(1e-9));
+    expect(evenTicks(0, 0.3, 4)).toEqual([0, 0.1, 0.2, 0.3]);
+  });
+  it('non-finite bounds yield []', () => {
+    expect(evenTicks(NaN, 10, 3)).toEqual([]);
+    expect(evenTicks(0, Infinity, 3)).toEqual([]);
+  });
+  it('fractional counts are floored', () => expect(evenTicks(0, 10, 3.9)).toEqual([0, 5, 10]));
+});
+
+import { niceCeil, niceCeilTime } from './chartZoom.js';
+
+describe('niceCeil', () => {
+  it('snaps up to 1 / 2 / 2.5 / 5 times a power of ten', () => {
+    expect(niceCeil(512)).toBe(600);
+    expect(niceCeil(1020)).toBe(1200);
+    expect(niceCeil(1990)).toBe(2000);
+    expect(niceCeil(2100)).toBe(2500);
+    expect(niceCeil(2600)).toBe(3000);
+    expect(niceCeil(5001)).toBe(6000);
+    expect(niceCeil(180)).toBe(200);
+    expect(niceCeil(0.7)).toBe(0.8);
+  });
+  it('keeps an already-round value', () => {
+    expect(niceCeil(500)).toBe(500);
+    expect(niceCeil(1000)).toBe(1000);
+    expect(niceCeil(2500)).toBe(2500);
+  });
+  it('is monotonic and never below its input', () => {
+    let prev = 0;
+    for (let v = 1; v < 20000; v += 37) {
+      const n = niceCeil(v);
+      expect(n).toBeGreaterThanOrEqual(v);
+      expect(n).toBeGreaterThanOrEqual(prev);
+      prev = n;
+    }
+  });
+  it('returns 0 for unusable input', () => {
+    expect(niceCeil(0)).toBe(0);
+    expect(niceCeil(-4)).toBe(0);
+    expect(niceCeil(NaN)).toBe(0);
   });
 });
 
-describe('gridValues', () => {
-  it('returns ascending multiples of the unit up to the window span', () => {
-    expect(gridValues(500, 250, 600, 32)).toEqual([0, 250, 500]);
+describe('niceCeilTime', () => {
+  it('rounds up to whole minutes, then 5 and 30 minute steps', () => {
+    expect(niceCeilTime(247)).toBe(300);
+    expect(niceCeilTime(240)).toBe(240);
+    expect(niceCeilTime(121)).toBe(180);
+    expect(niceCeilTime(601)).toBe(900);
+    expect(niceCeilTime(3700)).toBe(5400);
   });
-  it('uses the coarsened unit so values never crowd below the floor', () => {
-    const v = gridValues(8000, 250, 600, 32);
-    expect(v[0]).toBe(0);
-    expect(v[1]).toBe(500);
-    expect(v[v.length - 1]).toBe(8000);
-  });
-});
-
-describe('pickAxisTicks', () => {
-  it('returns the whole array when it already fits under the cap', () => {
-    expect(pickAxisTicks([0, 250, 500], 3)).toEqual([0, 250, 500]);
-  });
-  it('down-samples to the cap, anchoring the first and last', () => {
-    const out = pickAxisTicks([0, 250, 500, 750, 1000], 3);
-    expect(out[0]).toBe(0);
-    expect(out[out.length - 1]).toBe(1000);
-    expect(out.length).toBeLessThanOrEqual(3);
-  });
-  it('dedupes rounding collisions on a short array', () => {
-    const out = pickAxisTicks([0, 0, 0], 3);
-    expect(out).toEqual([0]);
-  });
-  it('tolerates an empty or missing input', () => {
-    expect(pickAxisTicks([], 3)).toEqual([]);
-    expect(pickAxisTicks(undefined, 3)).toEqual([]);
+  it('returns 0 for unusable input', () => {
+    expect(niceCeilTime(0)).toBe(0);
+    expect(niceCeilTime(NaN)).toBe(0);
   });
 });

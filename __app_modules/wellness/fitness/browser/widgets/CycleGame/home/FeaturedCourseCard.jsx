@@ -19,7 +19,7 @@ const fmtTime = (s) => {
  * household's best attempts this week on the featured course; Ride It starts
  * the course with a rival ghost pre-armed (handled by the container).
  */
-export default function FeaturedCourseCard({ ladder = null, onRide = null, resolveName = (id) => id }) {
+export default function FeaturedCourseCard({ ladder = null, onRide = null, resolveName = (id) => id, disabled = false }) {
   if (!ladder?.course) return null;
   const { course, week, standings = [], allTimeRecord = null } = ladder;
   const fmtVal = course.win_condition === 'distance' ? fmtTime : formatDistance;
@@ -71,6 +71,7 @@ export default function FeaturedCourseCard({ ladder = null, onRide = null, resol
         type="button"
         className="cgh-featured__ride"
         data-testid="featured-ride"
+        disabled={disabled}
         onClick={() => { uiLog().info('cycle_game.ui.ride_featured', { courseId: course.id }); onRide?.(); }}
       >
         <RaceFlagIcon />
@@ -105,5 +106,6 @@ FeaturedCourseCard.propTypes = {
     })
   }),
   onRide: PropTypes.func,
+  disabled: PropTypes.bool,
   resolveName: PropTypes.func
 };

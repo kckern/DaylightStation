@@ -351,8 +351,6 @@
 
     // Closed-loop cycle-game race driver. Instead of firing RPM and praying, it
     // reads __cycleGameControl.getRaceState() each tick and self-corrects:
-    //   • a false-started (penalty-boxed) bike is dropped to RPM 0 — the box
-    //     releases ONLY at rest, so holding throttle would lock it for the whole race;
     //   • if the whole field makes no forward progress for several seconds it runs a
     //     recovery (release all throttle to drain any latent lock), then escalates;
     //   • live per-bike distance/state is shown in the banner so progress is visible.
@@ -368,8 +366,8 @@
       bikeIds.forEach((id) => { delete rpmOverride[id]; }); // clean slate — no stale manual holds
 
       // Hold the assigned bikes at 0 rpm from the outset (driveRpmArc stops any prior
-      // arc, then sends a steady 0 each second) so they can't trip the false-start
-      // rule during the countdown.
+      // arc, then sends a steady 0 each second). The start is rolling, so pedalling
+      // early would be harmless; holding keeps the start-line readout clean.
       bikeIds.forEach((id) => controller.driveRpmArc(id, { base: 0, amp: 0 }));
       setRaceStatus('<div class="rb-title">🚴 Launching race…</div>Holding bikes at 0 through the countdown.');
       opener.__fitnessLaunchModule('cycle_game');
@@ -386,11 +384,11 @@
 
       ctl.startRace({ winCondition: win, value });
 
-      // Wait for the green light. Bikes are still held at 0 → no false start.
+      // Wait for the green light. Bikes are still held at 0.
       // NOTE: the phase is a TRANSIENT 'idle' for the first frame after startRace
       // (React hasn't flushed setPhase('staging') yet), so 'idle' is only an abort
       // signal AFTER we've seen the race actually begin staging — otherwise we'd
-      // bail before the race even starts and leave the bikes to idle-DNF.
+      // bail before the race even starts and leave the bikes parked.
       const greenBy = Date.now() + 30000;
       let phase = phaseOf();
       let sawStart = false;
@@ -408,11 +406,8 @@
         return;
       }
 
-      // GREEN LIGHT — but the render phase flips to 'racing' up to one engine tick
-      // BEFORE the engine runs its first-tick green-light (false-start) check. If we
-      // drove now, our own RPM would trip that check and box our bikes. So keep the
-      // hold-at-0 arc running across that first tick, THEN take manual control — the
-      // first tick reads RPM 0, no self-inflicted false start.
+      // GREEN LIGHT — settle for a beat with the hold-at-0 arc still running, THEN
+      // take manual control.
       setRaceStatus('<div class="rb-title">🟢 Green — settling the start…</div>Holding 0 across the first tick.');
       await sleep(1400);
       bikeIds.forEach((id) => controller.stopRpmArc(id));
@@ -420,7 +415,7 @@
       // Per-bike INDEPENDENT wandering RPM. A shared sine made the bikes track each
       // other (fixed gap → same result every time); instead each bike random-walks on
       // its own, with occasional surges/fades, floored well above 0 so it never idles
-      // or DNFs. Different starts + independent noise make the field diverge and the
+      // or parks. Different starts + independent noise make the field diverge and the
       // outcome vary run to run.
       const RPM_MIN = 58, RPM_MAX = 118;
       const rpmState = {};
@@ -467,16 +462,9 @@
           const prev = last[id] ?? 0;
           if (dist > prev + 0.5) { fieldAdvanced = true; lastAdvanceAt[id] = nowMs; }
 
-          let rpm, cls = 'rb-ok', state, releaseBox = false;
+          let rpm, cls = 'rb-ok', state;
           if (r?.finished) {
             rpm = 0; state = 'FINISHED';
-          } else if (r?.boxed) {
-            // FALSE START — meter locked. The box opens only at a clean RPM 0, but a
-            // plain setRpm(0) can still read non-zero (cadence is derived from
-            // revolution deltas). So force the cadence STALE (stopEquipment) → it
-            // zeroes and the box reliably releases.
-            releaseBox = true; cls = 'rb-warn';
-            state = `⚠ FALSE START — clearing (${r.penaltyRemainingS | 0}s${r.awaitingStop ? ', at rest' : ''})`;
           } else if (rpmOverride[id] != null) {
             // MANUAL OVERRIDE — the RPM buttons/slider win. Re-send the user's value
             // (keeps the needle warm) instead of the auto random walk.
@@ -492,7 +480,7 @@
             if (idleMs > 3000) { cls = 'rb-warn'; state = `⚠ not advancing (${(idleMs / 1000) | 0}s) — driving ${rpm}`; }
             else state = `driving ${rpm} rpm`;
           }
-          if (releaseBox) controller.stopEquipment(id); else controller.setRpm(id, rpm);
+          controller.setRpm(id, rpm);
           last[id] = dist;
           const nm = r?.userId || id;
           return `<div class="rb-bike ${cls}">${escapeHtml(String(nm))}: ${dist | 0} m · ${state}</div>`;

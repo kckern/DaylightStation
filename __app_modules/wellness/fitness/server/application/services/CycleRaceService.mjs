@@ -2,12 +2,14 @@ import {
   currentWeekWindow, isoWeekOf, parseIsoWeekParam,
   resolveFeaturedCourse, computeLadder, computePersonalBest
 } from "../../domain/services/cycleLadder.mjs";
+import { parseRivalPoolQuery, rivalPoolEntries } from "../../domain/services/cycleRivalPool.mjs";
 
 /**
  * CycleRaceService - application service for cycle-game races.
  * Thin orchestration over YamlCycleRaceDatastore: save/get/list + ghost-candidate
  * lookup (filtered by course, or by win-condition+goal for custom races), plus
- * weekly-ladder and personal-best queries built on the pure cycleLadder domain module.
+ * weekly-ladder and personal-best queries built on the pure cycleLadder domain module,
+ * and the pace-rival pool (cycleRivalPool) read from the same index.
  */
 export class CycleRaceService {
   constructor({ datastore, logger = null } = {}) {
@@ -31,6 +33,22 @@ export class CycleRaceService {
   /** Every race's index row (id, local date, course, per-rider results) — the ladder's input. */
   listIndexEntries(householdId) { return this.datastore.listIndexEntries(householdId); }
 
+  /**
+   * Build the race index ahead of the first request that needs it (a cold
+   * rebuild parses every race file). Called once after boot by the fitness
+   * composition. Never rejects: a failure is logged and the index is built by
+   * the first reader instead.
+   */
+  async warmIndex(householdId) {
+    const t0 = Date.now();
+    try {
+      const entries = await this.datastore.listIndexEntries(householdId);
+      this.logger?.debug?.('fitness.cycle_races.index.warmed', { entries: entries.length, ms: Date.now() - t0 });
+    } catch (err) {
+      this.logger?.warn?.('fitness.cycle_races.index.warm_failed', { error: err?.message });
+    }
+  }
+
   async findGhostCandidates({ courseId = null, winCondition = null, goalM = null, timeCapS = null, householdId } = {}) {
     const dates = await this.datastore.listDates(householdId);
     const matches = [];
@@ -46,6 +64,28 @@ export class CycleRaceService {
       }
     }
     return matches;
+  }
+
+  /**
+   * The light listing a lone rider's pace rival is chosen from: index rows of
+   * one race type and exact length, not ended early. Reads the index only (no
+   * race file on a warm index), unlike findGhostCandidates. Throws
+   * BAD_RIVAL_POOL_QUERY for an unknown race type or an unusable length.
+   */
+  async getRivalPool({ winCondition = null, goalM = null, timeCapS = null, householdId } = {}) {
+    const query = parseRivalPoolQuery({ winCondition, goalM, timeCapS });
+    if (!query) {
+      const err = new Error('invalid rival pool query');
+      err.code = 'BAD_RIVAL_POOL_QUERY';
+      throw err;
+    }
+    const t0 = Date.now();
+    const entries = await this.datastore.listIndexEntries(householdId);
+    const pool = rivalPoolEntries({ entries, ...query });
+    this.logger?.debug?.('fitness.cycle_races.rival_pool.computed', {
+      winCondition: query.winCondition, length: query.length, entries: entries.length, pool: pool.length, ms: Date.now() - t0
+    });
+    return pool;
   }
 
   /** Weekly ladder for the featured course. null = no featured courses configured. */

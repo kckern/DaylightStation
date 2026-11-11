@@ -27,13 +27,20 @@ export function laneX(idx, n, halfW, inset) {
  *
  * @param {Array<{x:number,y:number,w:number,h:number,dist:number}>} boxes
  * @param {number} gapPx  vertical breathing room between stacked badges
+ * @param {Array<{x:number,y:number,w:number,h:number,dist:number,ownerId?:string}>} obstacles
+ *   fixed boxes (the rider avatar cards, same centre-x / top-y convention) a badge must not
+ *   sit on. An obstacle only moves a badge that is FARTHER than it (the card is drawn on top
+ *   of it); a badge never yields to its own rider's card (`ownerId` === badge `id`).
  * @returns {Array} same objects (new refs) ordered nearest-first, `y` resolved
  */
-export function resolveBadgeStack(boxes = [], gapPx = 3) {
+export function resolveBadgeStack(boxes = [], gapPx = 3, obstacles = []) {
   const sorted = [...boxes].sort((a, b) => a.dist - b.dist).map((b) => ({ ...b }));
-  const placed = [];
+  const fixed = obstacles.map((o) => ({ ...o, fixed: true }));
+  const placed = [...fixed];
+  const out = [];
   sorted.forEach((b) => {
-    const hits = (q) => Math.abs(b.x - q.x) < (b.w + q.w) / 2
+    const hits = (q) => !(q.fixed && ((q.ownerId != null && q.ownerId === b.id) || q.dist > b.dist))
+      && Math.abs(b.x - q.x) < (b.w + q.w) / 2
       && b.y < q.y + q.h + gapPx
       && b.y + b.h + gapPx > q.y;
     // Each push strictly increases b.y past the box it hit, so this terminates;
@@ -43,8 +50,18 @@ export function resolveBadgeStack(boxes = [], gapPx = 3) {
       placed.forEach((q) => { if (hits(q)) { b.y = q.y + q.h + gapPx; moved = true; } });
     }
     placed.push(b);
+    out.push(b);
   });
-  return placed;
+  return out;
+}
+
+/**
+ * True when a metre mark sits on a gate (a lap line lands on a 100 m multiple, so
+ * "800m" and "LAP 2" would be drawn at the same depth and print over each other):
+ * the gate's own label wins and the metre label is dropped.
+ */
+export function markShadowedByGate(mark, gates = [], toleranceM = 0.6) {
+  return gates.some((g) => Math.abs(g.z - mark.z) < toleranceM);
 }
 
 /**
@@ -76,14 +93,23 @@ export function displayDist(m, anchorM) {
  * panels can never disagree. Rank prefers the container-forwarded live
  * `standings()` placement, falling back to live distance order. The group
  * leader / an out-of-contention rider shows their own metric instead of a
- * gap; a genuinely finished (non-DNF, non-overtime) rider shows the
+ * gap. A parked rider (idle past the park window) or a no-sensor rider is out
+ * of the chase: they read "Parked · 120 m" / "No signal · 120 m" and nobody
+ * gaps to them. A finished (non-overtime) rider shows the
  * win-condition-appropriate metric via the shared `finishedMetricText` (a
  * distance race finishes everyone at the same distance, so only finish TIME
  * differentiates finishers — T9 review). Pure — unit-tested.
  *
- * @returns {{ [id]: { rank, ordinal, gapText, text } }}
+ * `ranked: false` (the solo layout) drops the rank: every badge is the
+ * rider's own distance.
+ *
+ * `prefix` + `metric` split `gapText` so the panel can print the metric as its
+ * own element; `ownDistance` is true when that metric is the rider's own
+ * distance (the shared `data-distance-readout` contract).
+ *
+ * @returns {{ [id]: { rank, ordinal, gapText, prefix, metric, ownDistance, text } }}
  */
-export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondition = 'distance' }) {
+export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondition = 'distance', ranked = true }) {
   const rows = riderIds.map((id) => {
     const rider = riders[id] || {};
     const live = riderLive[id] || {};
@@ -93,15 +119,30 @@ export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondi
       finishTimeS: Number.isFinite(rider.finishTimeS) ? rider.finishTimeS : null,
       placement: Number.isFinite(live.placement) ? live.placement : null,
       speedKmh: Number.isFinite(live.speedKmh) ? live.speedKmh : 0,
-      dnf: !!live.dnf,
+      parked: !!live.parked || !!live.stopped,
+      stopped: !!live.stopped,
+      noSensor: !!live.noSensor,
       overtime: !!live.overtime,
       finished: !!live.finished || Number.isFinite(rider.finishTimeS),
     };
   });
+  if (!ranked) {
+    // Solo layout: one live rider and a rival. Nobody is ranked; every badge
+    // is the rider's own distance (with the parked / no-signal word if away).
+    const out = {};
+    rows.forEach((r) => {
+      const prefix = r.stopped ? 'Stopped at ' : r.parked ? `${r.noSensor ? 'No signal' : 'Parked'} · ` : '';
+      const metric = formatDistance(r.distanceM);
+      out[r.id] = {
+        rank: null, ordinal: '', gapText: `${prefix}${metric}`, prefix, metric, ownDistance: true, text: `${prefix}${metric}`
+      };
+    });
+    return out;
+  }
   const byPlacement = (a, b) => (a.placement ?? 999) - (b.placement ?? 999);
   const byDistanceDesc = (a, b) => b.distanceM - a.distanceM;
   const active = rows
-    .filter((r) => !r.dnf && !r.overtime && !r.finished)
+    .filter((r) => !r.parked && !r.overtime && !r.finished)
     .sort((a, b) => byPlacement(a, b) || byDistanceDesc(a, b));
 
   const out = {};
@@ -113,17 +154,18 @@ export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondi
     const gapText = above
       ? gapToAboveText({ winCondition, gapM: above.distanceM - r.distanceM, abovePaceKmh: above.speedKmh })
       : formatDistance(r.distanceM);
-    out[r.id] = { rank: useRank, ordinal: ordinal(useRank), gapText, text: `${ordinal(useRank)} · ${gapText}` };
+    out[r.id] = { rank: useRank, ordinal: ordinal(useRank), gapText, prefix: '', metric: gapText, ownDistance: !above, text: `${ordinal(useRank)} · ${gapText}` };
   });
-  rows.filter((r) => r.finished || r.overtime || r.dnf).forEach((r) => {
+  rows.filter((r) => r.finished || r.overtime || r.parked).forEach((r) => {
     const useRank = r.placement ?? null;
     const ord = useRank ? ordinal(useRank) : '';
-    const gapText = r.dnf
-      ? 'DNF'
-      : r.overtime
-        ? formatDistance(r.distanceM)
-        : finishedMetricText({ winCondition, finishTimeS: r.finishTimeS, distanceM: r.distanceM });
-    out[r.id] = { rank: useRank, ordinal: ord, gapText, text: ord ? `${ord} · ${gapText}` : gapText };
+    const prefix = r.stopped ? 'Stopped at ' : r.parked ? `${r.noSensor ? 'No signal' : 'Parked'} · ` : '';
+    const metric = (r.parked || r.overtime)
+      ? formatDistance(r.distanceM)
+      : finishedMetricText({ winCondition, finishTimeS: r.finishTimeS, distanceM: r.distanceM });
+    const gapText = `${prefix}${metric}`;
+    const ownDistance = r.parked || r.overtime || winCondition !== 'distance';
+    out[r.id] = { rank: useRank, ordinal: ord, gapText, prefix, metric, ownDistance, text: ord ? `${ord} · ${gapText}` : gapText };
   });
   return out;
 }
@@ -136,7 +178,10 @@ export function povBadges({ riderIds = [], riders = {}, riderLive = {}, winCondi
  * parked at z = 0 for the start-line lineup); the `framingMoved` flag decides
  * whether the camera-framing anchor (leaderZ/lastZ) is computed from moved
  * riders only or the whole grid — the caller flips it on after a start grace so
- * the first frames frame the whole start line.
+ * the first frames frame the whole start line. A rider passed with `parked: true`
+ * (idle past the park window, or no sensor) stays on the road but never sets the
+ * framing: leader/last/anchor come from un-parked riders, or from everyone when
+ * the whole field is parked. Each world rider carries `parked`.
  *
  * Metre marks (1 m minor / 10 m major, majors labelled) and lap/finish gates are
  * emitted rider-anchored across [lastPlaceM − behindM, leaderM + aheadM] so the
@@ -155,25 +200,30 @@ export function povWorld({
   const n = laneCount || riders.length;
   const rawRiders = riders.map((r) => {
     const distM = Math.max(0, lerp(r.prev, r.cur, frac));
-    return { id: r.id, idx: r.idx, isGhost: !!r.isGhost, distM, x: laneX(r.idx, n, roadHalfW, laneInset) };
+    return {
+      id: r.id, idx: r.idx, isGhost: !!r.isGhost, parked: !!r.parked, distM, x: laneX(r.idx, n, roadHalfW, laneInset),
+    };
   });
 
   if (!rawRiders.length) {
     return { riders: [], leaderZ: 0, lastZ: 0, leaderM: 0, lastM: 0, anchorM: 0, marks: [], gates: [] };
   }
 
-  // Framing anchor: moved riders only (a stalled 0 m rider can't crush the scale)
-  // unless the caller wants the whole grid framed (start-line grace) or nobody
-  // has moved yet.
-  const movers = rawRiders.filter((r) => r.distM > 0);
-  const framePool = (framingMoved && movers.length) ? movers : rawRiders;
+  // Framing anchor: un-parked riders (a parked rider must not stretch the camera),
+  // falling back to everyone when the whole field is parked. Within those, moved
+  // riders only (a stalled 0 m rider can't crush the scale) unless the caller
+  // wants the whole grid framed (start-line grace) or nobody has moved yet.
+  const unparked = rawRiders.filter((r) => !r.parked);
+  const framingRiders = unparked.length ? unparked : rawRiders;
+  const movers = framingRiders.filter((r) => r.distM > 0);
+  const framePool = (framingMoved && movers.length) ? movers : framingRiders;
   const frameDists = framePool.map((r) => r.distM);
   const leaderM = Math.max(...frameDists);
   const lastM = Math.min(...frameDists);
   const anchorM = lastM; // the camera follows the trailing framed rider
 
   const worldRiders = rawRiders.map((r) => ({
-    id: r.id, idx: r.idx, isGhost: r.isGhost, x: r.x, distM: r.distM,
+    id: r.id, idx: r.idx, isGhost: r.isGhost, parked: r.parked, x: r.x, distM: r.distM,
     z: -displayDist(r.distM, anchorM),
   }));
   const leaderZ = -displayDist(leaderM, anchorM);

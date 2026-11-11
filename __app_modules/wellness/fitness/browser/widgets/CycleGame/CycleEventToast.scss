@@ -5,8 +5,11 @@
 // on the chip itself so a tap can dismiss it early).
 .cycle-event-toast {
   position: absolute;
-  top: 1.4rem;
-  left: 50%;
+  // Anchored over the chart body, left of centre: clear of the race clock and
+  // the race-menu button (top band), the tower/POV columns and the solo pace
+  // readout (lower band), in every layout.
+  top: 18%;
+  left: 25%;
   z-index: 30;
   min-width: 22rem;
   max-width: min(40rem, 86vw);
@@ -30,8 +33,10 @@
     background: var(--cycle-event-accent, #{cg.$cg-accent});
   }
 
-  &--dnf { --cycle-event-accent: #{cg.$cg-danger}; }
-  &--penalty { --cycle-event-accent: #{cg.$cg-gold}; }
+  // Parked is a pause, not an error: a calm, muted accent.
+  &--parked { --cycle-event-accent: #{cg.$cg-muted}; }
+  // No sensor is equipment trouble: amber, like the ready strip's NO SIGNAL.
+  &--nosensor { --cycle-event-accent: #{cg.$cg-warn}; }
   &--overtime { --cycle-event-accent: #{cg.$cg-warn}; }
   &--info { --cycle-event-accent: #{cg.$cg-accent}; }
 
@@ -43,6 +48,11 @@
   &--photo-finish { --cycle-event-accent: #{cg.$cg-magenta}; }
   &--final-lap { --cycle-event-accent: #{cg.$cg-warn}; }
   &--lapping { --cycle-event-accent: #{cg.$cg-danger}; }
+  // Boost: a zone going up is good news — the success green, never an alarm.
+  &--boost { --cycle-event-accent: #{cg.$cg-success}; }
+  // Race beats (halfway, a minute split, last minute, last stretch): pacing
+  // information, neutral — neither good news nor an alarm.
+  &--halfway, &--split, &--last-minute, &--last-stretch { --cycle-event-accent: #{cg.$cg-muted}; }
 
   &--entered {
     animation: cycle-event-toast-in 240ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
@@ -84,7 +94,7 @@
 
 .cycle-event-toast__title {
   font-family: cg.$cg-display;
-  font-size: 1.15rem;
+  font-size: cg.cg-type(2);
   font-weight: 700;
   letter-spacing: 0.01em;
   color: cg.$cg-text;
@@ -96,7 +106,7 @@
 .cycle-event-toast__subtitle {
   margin-top: 0.1rem;
   font-family: cg.$cg-display;
-  font-size: 1.1rem; // was 0.92rem — 10-foot floor (audit UX §7)
+  font-size: cg.cg-type(1); // was 0.92rem — 10-foot floor (audit UX §7)
   font-weight: 500;
   color: cg.$cg-muted;
 }
@@ -119,7 +129,46 @@
 }
 
 // Respect reduced-motion: skip the slide/scale, keep the fade.
-@media (prefers-reduced-motion: reduce) {
+@include cg.cg-reduced-motion {
   .cycle-event-toast--entered { animation: none; }
   .cycle-event-toast__countdown-bar { animation: none; }
+}
+
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cycle-event-toast,
+  .cycle-event-toast *,
+  .cycle-event-toast *::before,
+  .cycle-event-toast *::after,
+  .cycle-event-toast__body,
+  .cycle-event-toast__body *,
+  .cycle-event-toast__body *::before,
+  .cycle-event-toast__body *::after,
+  .cycle-event-toast__icon,
+  .cycle-event-toast__icon *,
+  .cycle-event-toast__icon *::before,
+  .cycle-event-toast__icon *::after,
+  .cycle-event-toast__text,
+  .cycle-event-toast__text *,
+  .cycle-event-toast__text *::before,
+  .cycle-event-toast__text *::after,
+  .cycle-event-toast__title,
+  .cycle-event-toast__title *,
+  .cycle-event-toast__title *::before,
+  .cycle-event-toast__title *::after,
+  .cycle-event-toast__subtitle,
+  .cycle-event-toast__subtitle *,
+  .cycle-event-toast__subtitle *::before,
+  .cycle-event-toast__subtitle *::after,
+  .cycle-event-toast__countdown,
+  .cycle-event-toast__countdown *,
+  .cycle-event-toast__countdown *::before,
+  .cycle-event-toast__countdown *::after,
+  .cycle-event-toast__countdown-bar,
+  .cycle-event-toast__countdown-bar *,
+  .cycle-event-toast__countdown-bar *::before,
+  .cycle-event-toast__countdown-bar *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

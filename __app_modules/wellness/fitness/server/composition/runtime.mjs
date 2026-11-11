@@ -42,7 +42,7 @@ export function createFitnessServices(config) {
     logger
   });
 
-  const cycleRaceStore = new YamlCycleRaceDatastore({ configService });
+  const cycleRaceStore = new YamlCycleRaceDatastore({ configService, logger });
   const cycleRaceService = new CycleRaceService({ datastore: cycleRaceStore, logger });
   const skylineGliderRunStore = new YamlSkylineGliderRunDatastore({ configService });
   const skylineGliderProgressService = new SkylineGliderProgressService({

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  columnTemplateFor, fitScale, gaugeRowSize, CHROME_BELOW_GAUGE_PX,
+  columnTemplateFor, fitScale, gaugeRowSize, raceLayoutMode, CHROME_BELOW_GAUGE_PX,
+  ODOMETER_CHROME_PX, BOOST_ROW_PX, SPEEDO_STACK_GAP_PX,
   SPEEDO_MIN_GAUGE_SIDEBAR, SPEEDO_MAX_GAUGE_SIDEBAR, SPEEDO_MIN_GAUGE_WIDE, SPEEDO_MAX_GAUGE_WIDE
 } from "./layoutSizing.js";
 
@@ -38,8 +39,8 @@ describe('gaugeRowSize', () => {
     expect(gaugeRowSize({ zoneW: 900, zoneH: 400, count: 3, gap: 28 })).toBe(280);
   });
   it('is limited by height when the band is short', () => {
-    // height path: 180-68 (honest chrome budget, audit UX §3.3) = 112; width path large → min = 112
-    expect(gaugeRowSize({ zoneW: 1200, zoneH: 180, count: 2, gap: 28 })).toBe(112);
+    // height path: 230-118 (odometer + boost row, the honest chrome budget) = 112; width path large → min = 112
+    expect(gaugeRowSize({ zoneW: 1200, zoneH: 230, count: 2, gap: 28 })).toBe(112);
   });
   it('clamps to the floor for a tiny zone', () => {
     expect(gaugeRowSize({ zoneW: 50, zoneH: 50, count: 6, gap: 28 })).toBe(96);
@@ -73,8 +74,8 @@ describe('gaugeRowSize — band-height invariant (audit UX §3.3)', () => {
     }
   });
 
-  it('wide mode (≥4 riders, up to 6): gauge + chrome never exceeds the band (floor: minmax(200px, …))', () => {
-    for (const zoneH of ZONE_HEIGHTS) {
+  it('wide mode (≥4 riders, up to 6): gauge + chrome never exceeds the band (floor: minmax(220px, …))', () => {
+    for (const zoneH of ZONE_HEIGHTS.filter((h) => h >= 220)) {
       for (let count = 4; count <= 6; count++) {
         const gauge = gaugeRowSize({
           zoneW: ZONE_WIDTH, zoneH, count, gap: 28,
@@ -83,5 +84,45 @@ describe('gaugeRowSize — band-height invariant (audit UX §3.3)', () => {
         expect(gauge + CHROME_BELOW_GAUGE_PX).toBeLessThanOrEqual(zoneH);
       }
     }
+  });
+});
+
+// The boost meter sits under every gauge (above the odometer), so the chrome
+// below the dial is the odometer pill, the boost row and the gap between them.
+describe('CHROME_BELOW_GAUGE_PX budget', () => {
+  it('covers the odometer pill, the boost row and the gap between them', () => {
+    expect(BOOST_ROW_PX).toBe(40); // CycleSpeedometer.scss .cycle-speedometer__boost height
+    expect(CHROME_BELOW_GAUGE_PX).toBe(ODOMETER_CHROME_PX + BOOST_ROW_PX + SPEEDO_STACK_GAP_PX);
+  });
+  it('solo band (floor minmax(260px, …), one gauge in a 2fr column): gauge + chrome fits', () => {
+    for (const zoneH of [260, 300, 400, 500]) {
+      for (const zoneW of [200, 300, 540]) {
+        const gauge = gaugeRowSize({
+          zoneW, zoneH, count: 1, gap: 28, min: SPEEDO_MIN_GAUGE_SIDEBAR, max: SPEEDO_MAX_GAUGE_SIDEBAR
+        });
+        expect(gauge + CHROME_BELOW_GAUGE_PX).toBeLessThanOrEqual(zoneH);
+      }
+    }
+  });
+});
+
+describe('raceLayoutMode', () => {
+  it.each([
+    [{ liveCount: 1, fieldSize: 1 }, 'solo'], [{ liveCount: 1, fieldSize: 2 }, 'solo'],
+    [{ liveCount: 1, fieldSize: 3 }, 'sidebar'], [{ liveCount: 2, fieldSize: 2 }, 'sidebar'],
+    [{ liveCount: 2, fieldSize: 4 }, 'wide'], [{ liveCount: 0, fieldSize: 2 }, 'sidebar']
+  ])('raceLayoutMode(%o) → %s', (input, mode) => expect(raceLayoutMode(input)).toBe(mode));
+
+  it('missing input is zero riders: sidebar', () => {
+    expect(raceLayoutMode()).toBe('sidebar');
+    expect(raceLayoutMode({})).toBe('sidebar');
+  });
+  it('negative or NaN counts are treated as 0', () => {
+    expect(raceLayoutMode({ liveCount: -1, fieldSize: -5 })).toBe('sidebar');
+    expect(raceLayoutMode({ liveCount: NaN, fieldSize: NaN })).toBe('sidebar');
+    expect(raceLayoutMode({ liveCount: NaN, fieldSize: 4 })).toBe('wide');
+    expect(raceLayoutMode({ liveCount: 1, fieldSize: NaN })).toBe('solo');
+    expect(raceLayoutMode({ liveCount: 1, fieldSize: -2 })).toBe('solo');
+    expect(raceLayoutMode({ liveCount: undefined, fieldSize: undefined })).toBe('sidebar');
   });
 });

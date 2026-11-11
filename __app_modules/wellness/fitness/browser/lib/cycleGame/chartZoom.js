@@ -5,8 +5,8 @@
 // half height once per threshold crossing (audit UX 2.6/2.7). The window now
 // grows CONTINUOUSLY with the data via `continuousWindow`, so past points drift
 // smoothly instead of snapping. (Distance races don't zoom Y at all — the Y
-// window is pinned to the goal; only the time axis, and a time race's distance
-// axis, use this.)
+// window is pinned to the goal — and time races show the whole race on X; only
+// a distance race's time axis and a time race's distance axis use this.)
 
 // continuousWindow: the visible span that keeps `dataMax` at `fillFrac` of the
 // window, never smaller than `base`. Because data (elapsed time / leader
@@ -19,38 +19,53 @@ export function continuousWindow(dataMax, { base = 150, fillFrac = 0.85 } = {}) 
   return Math.max(b, d / frac);
 }
 
-// gridUnit: gridline spacing in data units = baseUnit·2^k, the smallest k whose
-// on-screen spacing (pxSpan · unit/windowSpan) >= minPx. Coarsens as the window
-// grows so lines never crowd below minPx (a "bottom cap" — drops the dense level).
-export function gridUnit(windowSpan, pxSpan, baseUnit = 250, minPx = 32) {
-  const span = Number(windowSpan) > 0 ? Number(windowSpan) : baseUnit;
-  let k = 0, guard = 0;
-  while (((baseUnit * 2 ** k) / span) * pxSpan < minPx && guard < 32) { k += 1; guard += 1; }
-  return baseUnit * 2 ** k;
+/**
+ * Evenly spaced chart gridlines and axis labels, including both ends
+ * (DistanceChart: 5 gridlines, a label on every other one) (no float noise past ~1e-12).
+ * @param {number} min first tick
+ * @param {number} max last tick (may be below min; order is kept)
+ * @param {number} count number of ticks, floored; 1 gives [min]
+ * @returns {number[]} ticks; [] when count < 1 or any input is non-finite
+ */
+export function evenTicks(min, max, count) {
+  const n = Math.floor(count);
+  if (!Number.isFinite(n) || n < 1 || !Number.isFinite(min) || !Number.isFinite(max)) return [];
+  if (n === 1) return [min];
+  const step = (max - min) / (n - 1);
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? max : Math.round((min + i * step) * 1e9) / 1e9));
 }
 
-// gridValues: ascending data values [0, unit, 2·unit, … <= windowSpan] at the
-// decimated unit — used for both the X (time) and Y (distance) gridlines.
-export function gridValues(windowSpan, baseUnit, pxSpan, minPx = 32) {
-  const span = Number(windowSpan) > 0 ? Number(windowSpan) : baseUnit;
-  const unit = gridUnit(span, pxSpan, baseUnit, minPx);
-  const out = [];
-  for (let v = 0; v <= span + 1e-6 && out.length < 256; v += unit) out.push(Math.round(v));
-  return out;
+/**
+ * Smallest "round" value >= v: 1, 2, 2.5 or 5 times a power of ten. Snapping a
+ * chart window's ceiling to this makes its end and midpoint labels round
+ * (512 m -> 1000 m labelled 0 / 500 m / 1.0 km).
+ * @param {number} v
+ * @returns {number} 0 for a non-finite or non-positive input
+ */
+export function niceCeil(v) {
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  const exp = Math.floor(Math.log10(v));
+  const base = 10 ** exp;
+  // Compare in units of `base` with a small tolerance so 1000 stays 1000.
+  const m = v / base;
+  // Fine enough that the data fills most of the axis: a 1.02 km ride gets a
+  // 1.2 km ceiling, not 2 km with half the chart empty.
+  const step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((k) => m <= k + 1e-9);
+  return Math.round(step * base * 1e9) / 1e9;
 }
 
-// pickAxisTicks: down-sample a sorted gridline-value array to at most `maxCount`
-// LABELS, always keeping the first and last so the axis is anchored at both ends.
-// Used to place 2-3 readable HTML axis labels on the gridlines (audit UX 2.1).
-export function pickAxisTicks(values, maxCount = 3) {
-  const vals = Array.isArray(values) ? values.filter((v) => Number.isFinite(v)) : [];
-  const dedupe = (arr) => arr.filter((v, i) => arr.indexOf(v) === i);
-  if (vals.length <= maxCount) return dedupe(vals);
-  const n = Math.max(2, maxCount);
-  const step = (vals.length - 1) / (n - 1);
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(vals[Math.round(i * step)]);
-  return dedupe(out);
+/**
+ * Smallest round time window (seconds) >= s, for an x axis labelled at 0, s/2, s:
+ * whole minutes up to 10 min, then 5-minute steps up to an hour, then 30-minute
+ * steps. A distance race's open-ended time axis uses this so its labels read
+ * 0:00 / 2:00 / 4:00 rather than 0:00 / 2:04 / 4:07.
+ * @param {number} s
+ * @returns {number} 0 for a non-finite or non-positive input
+ */
+export function niceCeilTime(s) {
+  if (!Number.isFinite(s) || s <= 0) return 0;
+  const unit = s <= 600 ? 60 : (s <= 3600 ? 300 : 1800);
+  return Math.ceil(s / unit - 1e-9) * unit;
 }
 
-export default { continuousWindow, gridUnit, gridValues, pickAxisTicks };
+export default { continuousWindow, evenTicks, niceCeil, niceCeilTime };

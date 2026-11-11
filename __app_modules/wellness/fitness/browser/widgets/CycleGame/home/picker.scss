@@ -39,7 +39,7 @@
   &__heading { text-align: left; }
 
   &__bike {
-    font-size: 1.15rem;
+    font-size: t.cg-type(2);
     font-weight: 700;
   }
 
@@ -58,7 +58,7 @@
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    font-size: 1.3rem;
+    font-size: t.cg-type(2);
     line-height: 1;
     cursor: pointer;
 

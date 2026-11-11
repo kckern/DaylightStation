@@ -42,7 +42,7 @@
   // `em` ties it to the gauge's own ambient font-size (inherited from
   // `.cycle-speedometer__gauge`'s inline fontSize) so it scales 96px→360px like
   // the rest of the overlay; `max()` guarantees the floor at the small end.
-  &__tick-label { fill: cg.$cg-muted; font-size: max(0.6em, 1.1rem); font-weight: 600; font-family: inherit; }
+  &__tick-label { fill: cg.$cg-muted; font-weight: 600; font-family: inherit; }
   // Cyan telemetry needle with a neon glow.
   &__needle { stroke: cg.$cg-cyan; stroke-width: 2.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(33, 230, 255, 0.8)); }
   // Needle rotation is driven imperatively by the shared motion clock (linear lerp
@@ -55,30 +55,15 @@
   // needle's per-frame repaint (it carries a drop-shadow filter, which repaints its
   // region each animation frame) does not flush/flicker the avatar image overlaid on
   // the same SVG — the avatar DOM is otherwise fully stable.
+  // The shared avatar's heart-rate number is 0.95rem (15.2 px). Bring it to the
+  // game's floor and give its band the height to hold it.
+  &__avatar .avatar-core .hr-value-overlay { height: 34%; }
+  &__avatar .avatar-core .hr-value-overlay .hr-value { font-size: cg.cg-type(1); }
   &__avatar {
     position: relative; display: flex; align-items: center; justify-content: center;
     transform: translateZ(0); will-change: transform; backface-visibility: hidden;
   }
-  // Multiplier PILL (2026-07-02 legibility fix) — anchored top-right of the
-  // GAUGE itself (position/size come straight from JS's multiplierChipBox, in
-  // px relative to this &__gauge's own top-left corner — the same origin
-  // computeOverlayBoxes uses), not glued to the avatar. A pill's width is
-  // independent of its height, so "×1.4" stays legible at a floor size (see
-  // MULTIPLIER_CHIP_MIN_WIDTH/HEIGHT_PX) at any gauge size — the old circular
-  // badge, capped at 30% of the avatar's diameter, shrank to an unreadable
-  // ~11px dot at the wide-mode floor and lost its text entirely.
-  &__multiplier {
-    position: absolute;
-    z-index: 10; // above the avatar (its ring/gauge use z-index up to ~6)
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 999px; border: 2px solid cg.$cg-bg;
-    color: #1a1205; font-weight: 800; line-height: 1; text-align: center;
-    font-size: 1.1rem; // race-screen floor — this must stay readable at a glance
-    white-space: nowrap;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-  }
-
-  // Speed (hero) + rpm (sub-line) share the free LOWER hemisphere (audit UX
+  // Rpm (hero) + speed (sub-line) share the free LOWER hemisphere (audit UX
   // §3.1) — the dial's ticks/labels only ever occupy the top half (see
   // speedometerOverlayLayout.js), so this block can never collide with them.
   // Positioned as a percentage of the gauge box (== speedometerOverlayLayout's
@@ -96,30 +81,66 @@
   // 15.36px, so even the 1em hero drops under the 17.6px 10-foot floor before
   // the clamp. Above roughly a 110px gauge the em term already wins and these
   // clamps are no-ops — the em cascade is otherwise untouched.
-  &__speed {
+  // Rpm is the hero (the rider controls it); km/h is the muted sub-line.
+  // Heights match speedometerOverlayLayout (RPM_HEIGHT_EM / SPEED_HEIGHT_EM).
+  &__rpm {
     @include cg.cg-numeral(cg.$cg-cyan);
-    font-size: max(1em, 1.1rem); line-height: 1; color: cg.$cg-text;
+    font-size: max(1em, cg.cg-type(1)); line-height: 1; color: cg.$cg-text;
     text-shadow: 0 0 10px rgba(33, 230, 255, 0.35);
   }
-  &__speed-unit { color: cg.$cg-muted; font-weight: 500; font-size: max(0.5em, 1.1rem); font-style: normal; }
-  &__rpm {
+  &__rpm-unit { color: cg.$cg-muted; font-weight: 500; font-size: max(0.5em, cg.cg-type(1)); font-style: normal; }
+  &__speed {
     @include cg.cg-numeral(cg.$cg-muted);
-    // T10 carried this MUST forward: the rpm sub-line lost its explicit
-    // 1.1rem floor when it moved into the em-scaled overlay. Restored here.
-    font-size: max(0.55em, 1.1rem); line-height: 1; color: cg.$cg-muted;
+    font-size: max(0.55em, cg.cg-type(1)); line-height: 1; color: cg.$cg-muted;
   }
-  &__rpm-unit { color: cg.$cg-faint; font-weight: 500; font-size: max(0.75em, 1.1rem); font-style: normal; }
+  &__speed-unit { color: cg.$cg-faint; font-weight: 500; font-size: max(0.75em, cg.cg-type(1)); font-style: normal; }
   // SENSOR chip — replaces the rpm digits in the same slot when the sensor gap
   // has run past the hold+decay window (gapTicksRef ≥ SENSOR_LOST_GAP_TICKS).
-  // Warm/danger red, matching the penalty overlay's palette, so it reads as
-  // "something's wrong" the same way a false-start does. Same T10-carried MUST
+  // Warm/danger red so it reads as "something's wrong". Same T10-carried MUST
   // as __rpm above — explicit floor so "SENSOR" never renders below 17.6px
   // even though it inherits __rpm's (also-floored) computed size.
   &__sensor-lost-chip {
     display: inline-block;
-    font-size: max(1em, 1.1rem);
+    font-size: max(1em, cg.cg-type(1));
     color: cg.$cg-danger; font-weight: 800; letter-spacing: 0.12em;
     text-transform: uppercase; text-shadow: 0 0 8px rgba(cg.$cg-danger, 0.6);
+  }
+
+  // Boost meter — BELOW the gauge, outside the dial (it can never cover a tick
+  // label). Fixed height (layoutSizing.BOOST_ROW_PX) so the band budget is
+  // honest: chip line + 6px bar. The chip carries the zone colour; the label
+  // ellipsises before the multiplier does, and the muted next step gives way
+  // first on a narrow gauge.
+  &__boost {
+    box-sizing: border-box; height: 40px; min-width: 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  }
+  &__boost-line {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-width: 0; font-size: cg.cg-type(1); line-height: 1.2; font-weight: 800;
+  }
+  &__boost-chip {
+    display: inline-flex; gap: 0.3em; min-width: 0; flex: 0 1 auto; white-space: nowrap;
+    padding: 1px 10px; border-radius: 999px;
+    color: cg.$cg-text;
+    background: color-mix(in srgb, var(--cg-boost-color, #{cg.$cg-cyan}) 55%, #0a0a14);
+    border: 1px solid color-mix(in srgb, var(--cg-boost-color, #{cg.$cg-cyan}) 80%, #{cg.$cg-border});
+  }
+  &__boost-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  &__boost--no-strap &__boost-chip {
+    background: cg.$cg-panel; border-color: cg.$cg-border; color: cg.$cg-muted;
+  }
+  &__boost-next {
+    flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: cg.$cg-faint; font-weight: 600;
+  }
+  &__boost-bar {
+    height: 6px; border-radius: 3px; overflow: hidden;
+    background: rgba(255, 255, 255, 0.12);
+  }
+  &__boost-fill {
+    display: block; height: 100%; border-radius: 3px;
+    background: var(--cg-boost-color, #{cg.$cg-cyan});
   }
 
   // Odometer sits BELOW the gauge (lower) — a pill tinted to the rider's lane colour
@@ -127,8 +148,8 @@
   // colour-coded to its rider. Bolder than the dial wash since it's a small flat chip.
   &__odometer {
     position: relative;
-    font-family: cg.$cg-mono;
-    color: cg.$cg-text; font-size: 1.5rem; font-weight: 800;
+    font-family: cg.$cg-display; font-variant-numeric: tabular-nums;
+    color: cg.$cg-text; font-size: cg.cg-type(3); font-weight: 800;
     background: color-mix(in srgb, var(--cg-rider-tint, transparent) 45%, #0a0a14);
     border: 1px solid color-mix(in srgb, var(--cg-rider-tint, transparent) 60%, cg.$cg-border);
     border-radius: 8px;
@@ -159,50 +180,49 @@
     display: flex; line-height: 1; color: cg.$cg-gold;
     svg { width: 1.8rem; height: 1.8rem; display: block; }
   }
-  &__finished-place { color: cg.$cg-gold; font-weight: 900; font-size: 2rem; line-height: 1; text-shadow: 0 0 12px rgba(255, 213, 74, 0.6), 0 2px 8px rgba(0,0,0,0.8); }
+  &__finished-place { color: cg.$cg-gold; font-weight: 900; font-size: cg.cg-type(4); line-height: 1; text-shadow: 0 0 12px rgba(255, 213, 74, 0.6), 0 2px 8px rgba(0,0,0,0.8); }
   &__finished-label {
-    color: cg.$cg-text; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.18em; text-transform: uppercase; // was 0.7rem
+    color: cg.$cg-text; font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.18em; text-transform: uppercase; // was 0.7rem
   }
 
-  // FALSE START — a rider pedalling at the green light. Their meter is locked
-  // (no distance) for the penalty window; the gauge still shows real RPM so they
-  // can see pedalling isn't counting. Red is the danger semantic — kept.
-  &--penalized &__needle { stroke: cg.$cg-danger; filter: drop-shadow(0 0 4px rgba(cg.$cg-danger, 0.8)); }
-  &__penalty {
-    position: absolute; inset: 0; z-index: 21;
+  // PARKED / NO SIGNAL — a rider away from the pedals, in the FINISHED overlay's
+  // slot. Calm, not an alarm: a parked child rejoins on their next stroke. The
+  // gauge recedes; the needle still shows any live rpm underneath.
+  &--parked &__gauge { opacity: 0.6; }
+  // A small gauge cannot hold the overlay words inside the dial numerals: the
+  // numerals step aside while the overlay is up.
+  &--compact#{&}--parked &__tick-label { visibility: hidden; }
+  // ...and the muted next step gives way before it can truncate.
+  &--compact &__boost-next { display: none; }
+  // The secondary readouts recede with the gauge: nothing stays bright under a
+  // dimmed dial.
+  &--parked &__boost, &--parked &__odometer { opacity: 0.55; }
+  &__parked {
+    position: absolute; inset: 0; z-index: 20;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 1px; pointer-events: none;
-    background: radial-gradient(circle at center, rgba(60, 6, 6, 0.78) 0%, rgba(40, 4, 4, 0.32) 70%, transparent 100%);
-    animation: cg-penalty-pulse 0.6s ease-in-out infinite;
+    gap: 4px; pointer-events: none; padding: 0 26%; text-align: center; box-sizing: border-box;
+    background: radial-gradient(circle at center, rgba(5, 6, 10, 0.82) 0%, rgba(5, 6, 10, 0.4) 70%, transparent 100%);
   }
-  // SVG glyph (audit UX §6.3 — ⛔ emoji → the shared NoEntryIcon).
-  &__penalty-icon {
-    display: flex; line-height: 1; color: cg.$cg-danger;
-    svg { width: 1.7rem; height: 1.7rem; display: block; }
+  &__parked-title {
+    color: cg.$cg-text; font-weight: 900; font-size: max(0.42em, cg.cg-type(1)); line-height: 1;
+    letter-spacing: 0.08em; white-space: nowrap; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
   }
-  &__penalty-title { color: cg.$cg-danger; font-weight: 900; font-size: 1.15rem; line-height: 1; text-transform: uppercase; letter-spacing: 0.04em; }
-  &__penalty-sub { color: #ffd0d0; font-weight: 700; font-size: 1.1rem; letter-spacing: 0.14em; text-transform: uppercase; } // was 0.66rem
-  // Draining countdown bar — fill width = remaining/total, so it empties as the
-  // mandatory window runs down.
-  &__penalty-bar {
-    margin-top: 5px; width: 64%; height: 6px; border-radius: 999px;
-    background: rgba(cg.$cg-danger, 0.22); overflow: hidden;
+  &__parked-sub {
+    white-space: normal; line-height: 1.1;
+    color: cg.$cg-muted; font-weight: 700; font-size: cg.cg-type(1); letter-spacing: 0.04em;
   }
-  &__penalty-fill {
-    display: block; height: 100%; border-radius: 999px;
-    background: cg.$cg-danger; box-shadow: 0 0 8px rgba(cg.$cg-danger, 0.8);
-    transition: width 0.25s linear;
-  }
-  // Timer served, still pedalling — the gate is now "return to RPM 0".
-  &__penalty-stop {
-    color: #fff; font-weight: 900; font-size: 1.1rem; letter-spacing: 0.1em; text-transform: uppercase; // was 0.78rem
-    margin-top: 3px; padding: 2px 8px; border-radius: 6px;
-    background: rgba(255, 60, 60, 0.32); border: 1px solid rgba(255, 120, 120, 0.7);
-    animation: cg-penalty-pulse 0.5s ease-in-out infinite;
-  }
+  // A sensor problem is equipment, not the rider: amber, the same family as
+  // the ready strip's NO SIGNAL chip.
+  &__parked--no-signal &__parked-title { color: cg.$cg-warn; }
 }
 
-@keyframes cg-penalty-pulse {
-  0%, 100% { opacity: 0.92; }
-  50% { opacity: 1; }
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cycle-speedometer,
+  .cycle-speedometer *,
+  .cycle-speedometer *::before,
+  .cycle-speedometer *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

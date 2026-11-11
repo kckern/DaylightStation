@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, within } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, within, act } from '@testing-library/react';
 import CycleRaceScreen from "./CycleRaceScreen.jsx";
 
 const BANDS = [{ id: 'warmup', min: 0, color: '#5b6470' }, { id: 'cruising', min: 40, color: '#2ecc71' }];
@@ -34,6 +34,7 @@ const base4RiderProps = {
 };
 
 describe('CycleRaceScreen', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
   it('renders sidebar mode for ≤3 riders with chart, pov, standings tower', () => {
     const { getByTestId } = render(<CycleRaceScreen {...props} />);
     expect(getByTestId('race-layout').dataset.mode).toBe('sidebar');
@@ -55,9 +56,9 @@ describe('CycleRaceScreen', () => {
     const { container } = render(<CycleRaceScreen {...props} />);
     expect(container.querySelectorAll('[data-testid="race-line"]').length).toBe(2);
   });
-  it('starts a penalty-boxed late starter\'s line to the right of the origin (no flat zero line)', () => {
+  it('starts a late starter\'s line to the right of the origin (no flat zero line)', () => {
     const riders = {
-      // boxed for the first 2 ticks (distance 0), then accelerates away
+      // still for the first 2 ticks (distance 0), then accelerates away
       boxed: { userId: 'boxed', displayName: 'Boxed', cumulativeDistanceM: 300, distanceSeries: [0, 0, 150, 300], isGhost: false }
     };
     const { container } = render(
@@ -70,7 +71,7 @@ describe('CycleRaceScreen', () => {
     // line must NOT begin at the origin (x=0).
     expect(firstX).toBeGreaterThan(0);
   });
-  it('draws no line for a rider who never left the penalty box (all-zero series)', () => {
+  it('draws no line for a rider who never moved (all-zero series)', () => {
     const riders = {
       stuck: { userId: 'stuck', displayName: 'Stuck', cumulativeDistanceM: 0, distanceSeries: [0, 0, 0], isGhost: false }
     };
@@ -87,38 +88,23 @@ describe('CycleRaceScreen', () => {
     expect(vid.tagName.toLowerCase()).toBe('video');
     expect(vid.getAttribute('src')).toContain('plex/123456');
   });
-  it('renders an officiating-event marker per event on the chart', () => {
-    const events = [
-      { id: 1, type: 'dnf', riderId: 'user_2', seriesIndex: 2, distanceM: 900 },
-      { id: 2, type: 'penalty', riderId: 'user_3', seriesIndex: 0, distanceM: 0 }
-    ];
-    const { getAllByTestId, getByTestId } = render(<CycleRaceScreen {...props} events={events} />);
-    expect(getByTestId('race-event-markers')).toBeTruthy();
-    expect(getAllByTestId(/^race-event-marker-/)).toHaveLength(2);
-    expect(getByTestId('race-event-marker-dnf')).toBeTruthy();
-    expect(getByTestId('race-event-marker-penalty')).toBeTruthy();
-  });
-  it('ignores events for riders not on the chart', () => {
-    const events = [{ id: 1, type: 'dnf', riderId: 'ghost-nobody', seriesIndex: 1, distanceM: 100 }];
-    const { queryByTestId } = render(<CycleRaceScreen {...props} events={events} />);
-    expect(queryByTestId('race-event-markers')).toBeNull();
-  });
-  it('shows a false-start banner naming penalized riders', () => {
-    const penalized = {
+  // Nobody is eliminated and nobody is penalised: a parked rider shows as
+  // Parked on every surface, and no surface ever says DNF or False start.
+  it('shows a parked rider as Parked with their distance, and never shows DNF or False start', () => {
+    const parked = {
       ...props,
       riderLive: {
-        user_3: { ...props.riderLive.user_3 },
-        user_2: { ...props.riderLive.user_2, penalized: true }
+        user_3: { ...props.riderLive.user_3, placement: 1 },
+        user_2: { ...props.riderLive.user_2, placement: 2, parked: true, rpm: 0 }
       }
     };
-    const { getByTestId, queryByTestId, rerender } = render(<CycleRaceScreen {...penalized} />);
-    const banner = getByTestId('cycle-race-penalty-banner');
-    expect(banner.textContent.toUpperCase()).toContain('FALSE START');
-    expect(banner.textContent).toContain('User_2');
-    expect(banner.textContent).not.toContain('User_3');
-    // clears once nobody is penalized
-    rerender(<CycleRaceScreen {...props} />);
-    expect(queryByTestId('cycle-race-penalty-banner')).toBeNull();
+    const { getByTestId, queryByTestId } = render(<CycleRaceScreen {...parked} />);
+    const screenText = getByTestId('cycle-race-screen').textContent;
+    expect(screenText).toContain('Parked · 900 m');
+    expect(screenText).toContain('PARKED');
+    expect(screenText).not.toMatch(/DNF/);
+    expect(screenText).not.toMatch(/False start/i);
+    expect(queryByTestId('race-event-markers')).toBeNull();
   });
   it('hides the speedometer row when showSpeedos is false', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [10, 20], cumulativeDistanceM: 20, finishTimeS: null, isGhost: false } };
@@ -127,6 +113,38 @@ describe('CycleRaceScreen', () => {
     );
     // No speedometer gauges rendered when showSpeedos=false (zone slot is empty)
     expect(container.querySelector('.cycle-speedometer')).toBeNull();
+  });
+  // One distance per rider per frame: the odometer, chart tag, chart header,
+  // tower and POV badge all print the SAME engine value through the same
+  // formatter. A rider at a fractional distance used to show a counted-up
+  // odometer that lagged the other readouts by up to a tick.
+  it('prints the same distance on every readout for a rider', () => {
+    const queue = [];
+    vi.stubGlobal('requestAnimationFrame', (cb) => { queue.push(cb); return queue.length; });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const flushFrames = () => {
+      const now = performance.now() + 100; // 10% into a 1 s tick
+      queue.splice(0).forEach((cb) => cb(now));
+    };
+    const riders = {
+      rider_a: { userId: 'rider_a', displayName: 'Rider A', cumulativeDistanceM: 457.4, distanceSeries: [150, 300, 454.1, 457.4] },
+      rider_b: { userId: 'rider_b', displayName: 'Rider B', cumulativeDistanceM: 300.6, distanceSeries: [100, 200, 300.6] }
+    };
+    const first = render(
+      <CycleRaceScreen winCondition="time" timeCapS={300} elapsedS={3} riders={{ rider_a: { ...riders.rider_a, cumulativeDistanceM: 454.1 }, rider_b: riders.rider_b }}
+        riderLive={{ rider_a: { placement: 1 }, rider_b: { placement: 2 } }} />
+    );
+    first.rerender(
+      <CycleRaceScreen winCondition="time" timeCapS={300} elapsedS={4} riders={riders}
+        riderLive={{ rider_a: { placement: 1 }, rider_b: { placement: 2 } }} />
+    );
+    // A frame shortly after the tick: every motion clock writes its glide now.
+    act(() => flushFrames());
+    const readouts = [...first.container.querySelectorAll('[data-distance-readout="rider_a"]')];
+    // odometer, chart tag (leader shows total), chart header (Leader …), tower, POV badge
+    expect(readouts.length).toBeGreaterThanOrEqual(5);
+    const texts = new Set(readouts.map((el) => el.textContent.trim()));
+    expect([...texts]).toEqual(['457 m']);
   });
   it('scales each speedometer to the rider\'s per-equipment max RPM', () => {
     const riders = { a: { userId: 'a', displayName: 'A', distanceSeries: [0], cumulativeDistanceM: 0, finishTimeS: null, isGhost: false } };

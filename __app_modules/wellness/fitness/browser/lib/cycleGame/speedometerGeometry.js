@@ -48,7 +48,33 @@ export function scaleBands(bands, maxRpm, referenceRpm = BAND_REFERENCE_RPM) {
   return list.map((b) => ({ ...b, min: Math.round((Number.isFinite(b.min) ? b.min : 0) * factor) }));
 }
 
-export function buildTicks({ maxRpm = 120, tickStep = 10, labelStep = 30, center = 100, gaugeRadius = 80 } = {}) {
+// Dial labels sit INSIDE the tick ring so they can never leave the gauge's own
+// box (the old labels sat outside the ring and were clipped at the top and right).
+// The label box is a rough text box: width = chars * CHAR_W * fontSize, height =
+// LINE_H * fontSize. The box centre is pushed in from the ring until the box's
+// farthest corner along the radial direction touches `labelOuterRadius`.
+export const LABEL_CHAR_W = 0.62;
+export const LABEL_LINE_H = 1.2;
+export const LABEL_RING_GAP = 4;
+
+/** Font size (SVG user units) that renders at `screenPx` on a gauge `gaugePx` wide with a 200-unit viewBox. */
+export function labelFontUnits(gaugePx, viewBox = 200, minScreenPx = 16, ratio = 0.075) {
+  const px = Number.isFinite(gaugePx) && gaugePx > 0 ? gaugePx : viewBox;
+  const screen = Math.max(minScreenPx, px * ratio);
+  return (screen * viewBox) / px;
+}
+
+export function placeLabel({ text, angle, fontSize, center = 100, outerRadius }) {
+  const w = String(text).length * LABEL_CHAR_W * fontSize;
+  const h = LABEL_LINE_H * fontSize;
+  const u = polarToCartesian(0, 0, 1, angle);
+  const r = outerRadius - (Math.abs(u.x) * w / 2 + Math.abs(u.y) * h / 2);
+  const cx = center + u.x * r;
+  const cy = center + u.y * r;
+  return { x: cx, y: cy + fontSize * 0.36, box: { x: cx - w / 2, y: cy - h / 2, width: w, height: h } };
+}
+
+export function buildTicks({ maxRpm = 120, tickStep = 10, labelStep = 30, center = 100, gaugeRadius = 80, labelFontSize = 16 } = {}) {
   const ticks = [];
   for (let rpm = 0; rpm <= maxRpm; rpm += tickStep) {
     const angle = rpmToAngle(rpm, maxRpm);
@@ -57,6 +83,7 @@ export function buildTicks({ maxRpm = 120, tickStep = 10, labelStep = 30, center
       rpm,
       major,
       label: major ? rpm : null,
+      labelPos: major ? placeLabel({ text: rpm, angle, fontSize: labelFontSize, center, outerRadius: gaugeRadius - TICK_INNER_OFFSET - LABEL_RING_GAP }) : null,
       inner: polarToCartesian(center, center, gaugeRadius - TICK_INNER_OFFSET, angle),
       outer: polarToCartesian(center, center, gaugeRadius + TICK_OUTER_OFFSET, angle)
     });

@@ -1,4 +1,5 @@
-// Pre-race compliance strip (staging + stoplight). Status reads via word + icon
+@use "./cgTokens" as cg;
+// Pre-race rider strip (staging + stoplight). Status reads via word + icon
 // + color so it's legible on TV and not color-only.
 .cg-ready-strip {
   display: flex;
@@ -23,29 +24,34 @@
   // Race-adjacent surface (audit UX §7 / T11): staged riders read this strip
   // from the bikes just like the race screen, so it carries the same 1.1rem
   // floor as the racing panels.
-  &__name { font-weight: 700; font-size: 1.1rem; color: #eef2f8; } // was 1rem
-  &__rpm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 1.25rem; color: #eef2f8; line-height: 1; }
-  &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: 1.1rem; } // was 0.7rem
+  &__avatar .avatar-core .hr-value-overlay { height: 32%; }
+  &__avatar .avatar-core .hr-value-overlay .hr-value { font-size: cg.cg-type(1); }
+  &__name { font-weight: 700; font-size: cg.cg-type(1); color: #eef2f8; } // was 1rem
+  // Strapless handicap ("No strap · ×0.8"): a fact to know, not an alarm.
+  &__strap { font-weight: 600; font-size: cg.cg-type(1); color: #d6d0ee; white-space: nowrap; } // brighter than $cg-muted: the lowest-contrast line on the chip
+  &__rpm { font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 800; font-size: cg.cg-type(2); color: #eef2f8; line-height: 1; }
+  &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: cg.cg-type(1); } // was 0.7rem
 
   &__status {
     display: inline-flex; align-items: center; gap: 5px;
     margin-top: 2px; padding: 3px 12px;
     border-radius: 999px;
-    font-weight: 800; font-size: 1.1rem; letter-spacing: 0.08em; // was 0.82rem
+    font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.08em; // was 0.82rem
   }
-  &__status-icon { font-size: 1.1rem; } // was 0.95rem
+  &__status-icon { font-size: cg.cg-type(1); } // was 0.95rem
 
-  // Compliant — calm green, low alarm.
-  &.is-compliant {
+  // Sensor reporting — calm green, low alarm. Pedalling before green is
+  // allowed (rolling start), so cadence never changes this state.
+  &.is-ready {
     border-color: rgba(61, 220, 132, 0.5);
     .cg-ready-rider__status { background: rgba(61, 220, 132, 0.16); color: #3ddc84; }
   }
 
-  // Violating — amber, pulsing to draw the eye.
-  &.is-violating {
+  // Sensor not reporting — amber, static. The bike needs a look before green;
+  // the word and the icon carry it, not the colour alone.
+  &.is-no-signal {
     border-color: #f1a33c;
     background: rgba(241, 163, 60, 0.1);
-    animation: cg-ready-pulse 0.7s ease-in-out infinite;
     .cg-ready-rider__status { background: rgba(241, 163, 60, 0.22); color: #ffb84d; }
   }
 
@@ -62,11 +68,21 @@
     border-radius: 999px;
     border: 1px dashed #21e6ff;
     color: #21e6ff;
-    font-weight: 800; font-size: 1.1rem; letter-spacing: 0.08em;
+    font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.08em;
   }
 }
 
-@keyframes cg-ready-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(241, 163, 60, 0); }
-  50% { box-shadow: 0 0 18px 2px rgba(241, 163, 60, 0.55); }
+// Reduced motion: every animation and transition in this file stops.
+@include cg.cg-reduced-motion {
+  .cg-ready-strip,
+  .cg-ready-strip *,
+  .cg-ready-strip *::before,
+  .cg-ready-strip *::after,
+  .cg-ready-rider,
+  .cg-ready-rider *,
+  .cg-ready-rider *::before,
+  .cg-ready-rider *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

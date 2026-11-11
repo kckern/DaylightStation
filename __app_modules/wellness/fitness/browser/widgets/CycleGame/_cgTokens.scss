@@ -1,3 +1,5 @@
+@use "sass:map";
+
 // Shared cycle-game design tokens — "Arcade Synthwave Race-Day".
 // Deep indigo-black surfaces, neon magenta/cyan chrome, neon-shifted rider lanes,
 // horizon-glow + scanline atmosphere. Roboto Condensed is canon (no new font).
@@ -43,7 +45,19 @@ $cg-bronze:      #d08a52;
 $cg-display: 'Roboto Condensed', system-ui, sans-serif;
 $cg-mono: ui-monospace, SFMono-Regular, Menlo, monospace; // JetBrains Mono is never loaded — don't claim it
 
-// ── 10-foot type scale (audit UX §7) ────────────────────────────────────────
+// ── THE type scale (one scale; no literal font-size anywhere else) ──────────
+// Seven steps. Every `font-size` in the cycle-game SCSS is `cg-type(N)` (or an
+// `em` size with a `max(..., cg-type(1))` floor). typeScale.test.js enforces it.
+// Step 1 (1rem = 16 px) is the floor for ALL text, lobby included.
+$cg-type: (1: 1rem, 2: 1.25rem, 3: 1.6rem, 4: 2.2rem, 5: 3.4rem, 6: 6rem, 7: 9rem);
+@function cg-type($step) { @return map.get($cg-type, $step); }
+
+// Reduced motion: wrap a block's animation/transition kill in this mixin.
+@mixin cg-reduced-motion {
+  @media (prefers-reduced-motion: reduce) { @content; }
+}
+
+// ── 10-foot type notes (audit UX §7) ────────────────────────────────────────
 // The race screen is watched from bikes 2-3 m away on a 720p garage TV — the
 // same "10-foot UI" distance a couch is from a living-room TV. At that
 // distance a 16 px browser default reads like ~6-7 pt print; anything smaller
@@ -54,9 +68,9 @@ $cg-mono: ui-monospace, SFMono-Regular, Menlo, monospace; // JetBrains Mono is n
 // marquee numerals (race clock, countdown) that need to be readable at a
 // glance mid-pedal. Anything that cannot earn the floor in its available
 // space is REMOVED, not shrunk below it.
-$tv-num-hero: 3rem;
-$tv-label:    1.4rem;
-$tv-micro:    1.1rem; // hard floor — nothing during `racing` renders smaller
+$tv-num-hero: cg-type(5);
+$tv-label:    cg-type(2);
+$tv-micro:    cg-type(1); // hard floor (16 px): nothing renders smaller, racing or not
 
 // Synthwave atmosphere — horizon glow + scanlines. Used behind every screen.
 @mixin cg-backdrop {
@@ -97,7 +111,7 @@ $tv-micro:    1.1rem; // hard floor — nothing during `racing` renders smaller
 // Condensed uppercase eyebrow.
 @mixin cg-eyebrow {
   font-family: $cg-display;
-  font-size: 0.8rem;
+  font-size: cg-type(1);
   font-weight: 700;
   letter-spacing: 0.28em;
   text-transform: uppercase;

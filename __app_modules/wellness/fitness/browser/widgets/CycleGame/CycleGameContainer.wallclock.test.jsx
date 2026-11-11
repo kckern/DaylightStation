@@ -69,9 +69,12 @@ function makeCtx(overrides = {}) {
 // render helpers. Caller controls performance.now() beforehand via the
 // nowRef so the anchor effect captures a known value.
 function driveToGo(renderApi) {
-  const { getByTestId } = renderApi;
+  const { getByTestId, queryByTestId } = renderApi;
   act(() => { fireEvent.click(getByTestId('course-distance')); });
   act(() => { fireEvent.click(getByTestId('cycle-game-start')); });
+  // A bike whose sensor reads silent makes the lobby warn first: start anyway.
+  const startAnyway = queryByTestId('sensor-warning-start');
+  if (startAnyway) act(() => { fireEvent.click(startAnyway); });
   // 3 countdown ticks (start_countdown_s = 3) flips controller phase to
   // 'racing' on the last one, which the container renders as 'go'.
   act(() => { vi.advanceTimersByTime(COUNTDOWN_TICK_MS * START_COUNTDOWN_S); });
@@ -211,12 +214,12 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     expect(renderApi.getByTestId('race-results')).toBeTruthy();
   });
 
-  it('a permanently dead sensor rides through the capped hold, gets flagged sensor_lost, then idle-DNFs (audit game-design #6)', () => {
+  it('a permanently dead sensor rides through the capped hold, gets flagged sensor_lost, then is parked (audit game-design #6)', () => {
     // user_2's sensor connects for the first two ticks (so he "starts" — registers
     // movement — before it dies), then never reconnects. With the pre-fix
     // unbounded hold, rpmDuringGap would keep returning his last rpm forever:
-    // infinite counted distance, and the idle-DNF clock (fed a real 0) could
-    // never fire. race_idle_dnf_s is lowered to 5 purely to keep the fixture's
+    // infinite counted distance, and the idle clock (fed a real 0) could never
+    // park him. race_idle_dnf_s (the park window) is lowered to 5 purely to keep the fixture's
     // tick count small — the mechanism under test is the CAP, not the threshold.
     let learnerTwoConnected = true;
     mockCtx = makeCtx({
@@ -248,7 +251,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
 
     learnerTwoConnected = false;
     // 13 more ticks: gap ticks 1-5 hold, 6-8 decay, 9-13 are true zeros — the
-    // 5th consecutive zero (race_idle_dnf_s: 5) trips the idle-DNF at gap tick 13.
+    // 5th consecutive zero (race_idle_dnf_s: 5) parks him at gap tick 13.
     nowMs = 2000 + 13000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
@@ -260,10 +263,13 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     expect(sensorLostCalls.some(([, p]) => p.userId === 'user_1')).toBe(false);
 
     // The consequence the audit demanded: the hold now expires to a real 0,
-    // so the controller's existing idle-DNF clock (previously starved by the
-    // infinite hold) finally fires for user_2.
-    const dnfCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_dnf');
-    expect(dnfCalls.map(([, p]) => p.userId)).toContain('user_2');
+    // so the controller's idle clock (previously starved by the infinite hold)
+    // finally parks user_2. He had a connected reading before the sensor died,
+    // so he is parked, not "no sensor".
+    const parkedCalls = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.rider_parked');
+    expect(parkedCalls.map(([, p]) => p.userId)).toEqual(['user_2']);
+    const noSensorCalls = logSpy.warn.mock.calls.filter(([event]) => event === 'cycle_game.rider_no_sensor');
+    expect(noSensorCalls).toHaveLength(0);
   });
 
   it('clears the sensor_lost flag and logs sensor_recovered once the sensor reconnects', () => {
@@ -295,7 +301,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
     learnerTwoConnected = false;
-    // Cross SENSOR_LOST_GAP_TICKS (9) but stop short of the idle-DNF window.
+    // Cross SENSOR_LOST_GAP_TICKS (9) but stop short of the park window.
     nowMs = 2000 + 9000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
     expect(logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.sensor_lost')).toHaveLength(1);
@@ -342,14 +348,14 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
 
     // Well past SENSOR_LOST_GAP_TICKS (9) — the exact live-garage repro was
     // a false SENSOR chip at elapsedS:9 for a rider who simply hadn't
-    // started pedaling. Stop short of the 30s start-grace DNF window.
+    // started pedaling. Stop short of the 30s start-grace window.
     nowMs = 20000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
     expect(logSpy.info.mock.calls.some(([event]) => event === 'cycle_game.sensor_lost')).toBe(false);
   });
 
-  it('DOES flag a sensor that never reports at all, before the race forfeits the rider for it', () => {
+  it('DOES flag a sensor that never reports at all, before the race sets the rider aside for it', () => {
     /**
      * The chip used to require a rider to have been connected once, so a sensor
      * that never appeared produced no warning ever — and the race then forfeited
@@ -390,7 +396,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
     expect(logSpy.info.mock.calls.some(([event]) => event === 'cycle_game.sensor_lost')).toBe(false);
 
-    // Past it, and still short of the 30s start-grace that ends their race.
+    // Past it, and still short of the 30s start-grace that sets them aside.
     nowMs = 20000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
     expect(logSpy.info.mock.calls.some(([event]) => event === 'cycle_game.sensor_lost')).toBe(true);

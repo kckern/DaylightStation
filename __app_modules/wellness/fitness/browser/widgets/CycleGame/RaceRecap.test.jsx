@@ -87,6 +87,25 @@ describe('RaceRecap', () => {
     expect(srcs.some((s) => s.endsWith('/users/ghost'))).toBe(false);
   });
 
+  // A recap of a rider against their rival stays on the sidebar layout: a
+  // 12 s replay reads as standings, and every participant keeps a gauge.
+  it('a one-rider-plus-ghost recap stays on the sidebar layout with a gauge each', () => {
+    const ghostCand = {
+      ...candidate,
+      participants: [
+        candidate.participants[0],
+        { id: 'ghost:20260601090000:rider-b', displayName: 'Rider B 👻',
+          distanceSeries: JSON.stringify([10, 50, 90]), hrSeries: JSON.stringify([]),
+          finalDistanceM: 90, finalTimeS: null, placement: 2 }
+      ]
+    };
+    const { getByTestId, queryByTestId, container } = render(<RaceRecap candidate={ghostCand} onClose={() => {}} />);
+    expect(getByTestId('race-layout').dataset.mode).toBe('sidebar');
+    expect(getByTestId('standings-tower')).toBeInTheDocument();
+    expect(queryByTestId('pace-delta')).toBeNull();
+    expect(container.querySelectorAll('.cycle-speedometer').length).toBe(2);
+  });
+
   it('parks a rider whose series ended: 0 km/h and 0 rpm while others ride on', () => {
     const mixed = {
       ...candidate,
@@ -107,6 +126,27 @@ describe('RaceRecap', () => {
     expect(rpms[1]).toContain('0 rpm');
     expect(rpms[0]).toContain('95');
     expect(speeds[0]).not.toBe('0 km/h');
+  });
+
+  it('shows a participant saved as stopped as "Stopped at …" on the final standings, never DNF', () => {
+    const cand = {
+      ...candidate,
+      winCondition: 'time', goalM: null, timeCapS: 3,
+      participants: [
+        candidate.participants[0],
+        { id: 'dad', displayName: 'Dad', avatarSrc: '/api/v1/static/img/users/dad',
+          distanceSeries: JSON.stringify([30, 41]), hrSeries: JSON.stringify([]),
+          finalDistanceM: 41, finalTimeS: null, placement: 2, stopped: true }
+      ]
+    };
+    const { getByTestId, getAllByTestId } = render(<RaceRecap candidate={cand} onClose={() => {}} />);
+    fireEvent.click(getByTestId('race-recap-play'));
+    act(() => { vi.advanceTimersByTime(12000); }); // to the final frame
+    const row = getAllByTestId('tower-row').find((r) => r.dataset.rider === 'dad');
+    expect(row.querySelector('[data-testid="tower-metric"]').textContent).toBe('Stopped at 41 m');
+    expect(getByTestId('race-recap').textContent).not.toMatch(/DNF/);
+    // Replay is history: nobody is told to pedal.
+    expect(getByTestId('race-recap').textContent).not.toContain('Pedal to rejoin');
   });
 
   it('threads the per-equipment gauge max into the recap speedometers', () => {

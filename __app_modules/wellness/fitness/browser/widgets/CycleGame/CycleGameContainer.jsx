@@ -4,7 +4,7 @@ import { useFitnessContext } from "../../context/FitnessContext.jsx";
 import getLogger from '@/lib/logging/Logger.js';
 import { CycleRaceController } from "../../lib/cycleGame/CycleRaceController.js";
 import { buildRaceConfigFromCourse, formatClock as fmtClock } from "../../lib/cycleGame/cycleGameLobby.js";
-import { buildRaceRecord } from "../../lib/cycleGame/raceRecord.js";
+import { buildRaceRecord, raceOutcomeMeta } from "../../lib/cycleGame/raceRecord.js";
 import { zoneMultiplierFor, zoneColorFor, computeDistanceDelta, resolveWheelCircumferenceM } from "../../lib/cycleGame/distanceModel.js";
 import { playSound } from "../../lib/cycleGame/playSound.js";
 import { saveRaceRecord } from "../../lib/cycleGame/saveRaceRecord.js";
@@ -13,23 +13,31 @@ import { buildHighScores } from "../../lib/cycleGame/highScores.js";
 import { buildRecordRow } from "../../lib/cycleGame/recordRow.js";
 import { resolveParticipantIdentity } from "../../lib/cycleGame/participantIdentity.js";
 import { mapRaceRecordToCandidate, buildGhostFromCandidate } from "../../lib/cycleGame/ghostCandidate.js";
+import { pickPaceRival, paceRivalPool, mergeRaceCandidates, rivalPoolCandidates, buildParRecord, PAR_ID, DEFAULT_PAR_SPEED_KMH } from "../../lib/cycleGame/paceRival.js";
 import { courseStartOverride, pickRival, ladderDelta } from "../../lib/cycleGame/ladder.js";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
 import { resolveRpmLimits, clampCountedRpm, rpmDuringGap } from "../../lib/cycleGame/equipmentRpm.js";
-import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint } from "../../lib/cycleGame/raceCheckpoint.js";
+import { writeCheckpoint, readFreshCheckpoint, clearCheckpoint, checkpointRaceState, checkpointOutcome } from "../../lib/cycleGame/raceCheckpoint.js";
 import { buildAutoStartCourse } from "../../lib/cycleGame/autoStartCourse.js";
 import { effectiveLapLength } from "../../lib/cycleGame/effectiveLapLength.js";
 import { deriveRaceSnapshot } from "../../lib/cycleGame/deriveRaceSnapshot.js";
-import { dramaEventToasts } from "../../lib/cycleGame/dramaEventCopy.js";
+import { dramaEventToasts, beatToasts } from "../../lib/cycleGame/dramaEventCopy.js";
+import { raceBeats } from "../../lib/cycleGame/raceBeats.js";
+import { resultsComparison } from "../../lib/cycleGame/resultsComparison.js";
+import { staleClaims } from "../../lib/cycleGame/staleClaims.js";
+import { paceDelta } from "../../lib/cycleGame/paceDelta.js";
+import { boostState, boostRange, formatMultiplier } from "../../lib/cycleGame/boostState.js";
+import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
 import { usePersistentVolume } from "../../nav/usePersistentVolume.js";
 import CycleGameHome from "./CycleGameHome.jsx";
 import CountdownStoplight from "./CountdownStoplight.jsx";
+import RaceMenu from "./RaceMenu.jsx";
 import RiderReadyStrip from "./RiderReadyStrip.jsx";
 import CycleRaceScreen from "./CycleRaceScreen.jsx";
 import CycleEventToast from "./CycleEventToast.jsx";
 import RaceResults from "./RaceResults.jsx";
 import RaceRecap from "./RaceRecap.jsx";
-import { StopSignIcon, TimeIcon, RaceFlagIcon, MedalIcon, SpeedIcon, GhostIcon } from "./home/icons.jsx";
+import { StopSignIcon, RaceFlagIcon, MedalIcon, SpeedIcon, GhostIcon } from "./home/icons.jsx";
 import { dueAnchoredSteps } from "../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import "./CycleGameContainer.scss";
 
@@ -42,6 +50,159 @@ const DRAMA_ICON = {
   'final-lap': <RaceFlagIcon />,
   lapping: <GhostIcon />,
 };
+
+// The competitors a ghost adds to a race: its whole recorded field.
+function ghostFieldRiders(g) {
+  if (!g || !Array.isArray(g.riders)) return [];
+  return g.riders.map((r) => ({
+    userId: r.userId,
+    displayName: r.displayName,
+    // The recording equipment — drives the gauge's maxRpm and the synth-rpm
+    // wheel size. Distance still replays from the recorded series (the ghost
+    // branch in the engine), so this never double-applies wheel physics.
+    equipmentId: r.equipmentId || null,
+    wheelCircumferenceM: 0,
+    ghostSeries: r.ghostSeries,
+    ghostHrSeries: r.ghostHrSeries,
+    ghostRpmSeries: r.ghostRpmSeries,
+    ghostZoneSeries: r.ghostZoneSeries,
+    ghostIntervalS: r.ghostIntervalS
+  }));
+}
+
+// A ghost's riders as the pre-race surfaces show them (name + real avatar).
+function ghostRosterOf(g) {
+  return (g?.riders || []).map((r) => ({
+    userId: r.userId,
+    displayName: r.displayName,
+    avatarSrc: resolveParticipantIdentity(r.userId, r.displayName).avatarSrc
+  }));
+}
+
+// A one-rider ghost replaying just `pt` out of a past race, named after them.
+function ghostOfParticipant(candidate, pt) {
+  return buildGhostFromCandidate({ ...candidate, participants: [pt], winnerName: pt.displayName });
+}
+
+/**
+ * Arm the automatic pace rival from a list of candidates: the rider's own best
+ * at this race type and length, else the household's best, else par. Only
+ * the picked rider is replayed (not the whole field of that race), and the
+ * rival is named after them. A pick that cannot be replayed falls back to par;
+ * if par cannot be built either the race runs without a rival (kind 'none').
+ * `source` is 'history' for a replayed ride and 'par' for par (also when par
+ * failed); the caller renames 'history' when the list came from the server.
+ *
+ * @returns {{ ghost: object|null, kind: 'self'|'household'|'par'|'none',
+ *   requestedKind: 'self'|'household'|'par', sourceRaceId: string|null,
+ *   participantId: string|null, source: 'history'|'par' }}
+ */
+function armPaceRival({ candidates, riderId, winCondition, goalM, timeCapS, parSpeedKmh }) {
+  const pick = pickPaceRival({ candidates, riderId, winCondition, goalM, timeCapS });
+  if (pick.kind !== 'par') {
+    const source = candidates.find((c) => c.raceId === pick.raceId);
+    const pt = (source?.participants || []).find((x) => x.id === pick.participantId);
+    const built = pt ? ghostOfParticipant(source, pt) : null;
+    if (built) {
+      return {
+        ghost: built.ghost, kind: pick.kind, requestedKind: pick.kind,
+        sourceRaceId: pick.raceId, participantId: pick.participantId, source: 'history'
+      };
+    }
+  }
+  const parRecord = buildParRecord({ winCondition, goalM, timeCapS, speedKmh: parSpeedKmh });
+  const built = parRecord ? buildGhostFromCandidate(mapRaceRecordToCandidate(parRecord)) : null;
+  return built
+    ? { ghost: built.ghost, kind: 'par', requestedKind: pick.kind, sourceRaceId: null, participantId: PAR_ID, source: 'par' }
+    : { ghost: null, kind: 'none', requestedKind: pick.kind, sourceRaceId: null, participantId: null, source: 'par' };
+}
+
+// A recorded rider's display name carries a ghost glyph ("Rider B 👻"); beat
+// toasts word the rival in a sentence, so it is dropped there.
+const plainName = (name) => String(name || '').replace(/\s*👻\s*$/u, '');
+
+// How much the racing music rises for the finale (last minute / last stretch),
+// as a share of the master volume.
+const FINALE_MUSIC_LIFT = 0.15;
+
+/**
+ * Each live rider's history at this exact race type and length, from the
+ * candidates the start already had (the same pool and filter as the pace
+ * rival: not incomplete, not a ghost, not stopped, a positive result).
+ * `previousBest` is the best result (lowest finish time in a distance race,
+ * furthest distance in a time race) and `last` the most recent ride's.
+ *
+ * @returns {Object<string, {previousBest: number|null, last: number|null}>}
+ */
+function riderHistoryAt({ candidates, userIds, winCondition, goalM, timeCapS }) {
+  const isDistance = winCondition === 'distance';
+  const out = {};
+  userIds.forEach((id) => { out[id] = { previousBest: null, last: null, lastRaceId: null }; });
+  paceRivalPool({ candidates, winCondition, goalM, timeCapS }).forEach((c) => {
+    (c.participants || []).forEach((pt) => {
+      if (!pt || pt.stopped || pt.isGhost) return;
+      const ident = resolveParticipantIdentity(pt.id);
+      if (ident.isGhost) return;
+      const h = out[ident.sourceId];
+      if (!h) return;
+      const value = isDistance ? pt.finalTimeS : pt.finalDistanceM;
+      if (!(Number.isFinite(value) && value > 0)) return;
+      const better = h.previousBest == null || (isDistance ? value < h.previousBest : value > h.previousBest);
+      if (better) h.previousBest = value;
+      if (h.lastRaceId == null || String(c.raceId) > String(h.lastRaceId)) {
+        h.last = value;
+        h.lastRaceId = c.raceId;
+      }
+    });
+  });
+  Object.values(out).forEach((h) => { delete h.lastRaceId; });
+  return out;
+}
+
+// How the results board names a solo rider's rival.
+function rivalLabelFor(rivalKind, rival) {
+  const name = plainName(rival?.displayName);
+  if (rivalKind === 'self') return 'your best';
+  if (rivalKind === 'household') return name ? `${name}'s best` : 'their best';
+  if (rivalKind === 'par') return 'par pace';
+  return name;
+}
+
+// The one line the results board shows for a ride ended from the race menu, in
+// place of any ladder-movement callout (it rides the same notes slot).
+const ENDED_EARLY_NOTE = 'Ended early: saved to history, not counted for records or the ladder.';
+
+// The whole budget for finding a rival on the server, per Start press. Past
+// it the race starts with whatever the lobby has loaded.
+const PACE_RIVAL_LOOKUP_MS = 1500;
+
+/**
+ * Every saved race of one win condition and exact length, as candidates made
+ * from the server's light index rows: results only, no series. The lobby loads
+ * only the most recent race days; this is the full history, so a best ride
+ * from long ago is still found. Rejects on a network/HTTP failure. What counts
+ * is decided by pickPaceRival alone; a pick from these rows needs its record
+ * (fetchRaceRecord) before it can be replayed.
+ */
+async function fetchRivalPool({ winCondition, goalM, timeCapS, signal }) {
+  const length = winCondition === 'time' ? `timeCapS=${encodeURIComponent(timeCapS)}` : `goalM=${encodeURIComponent(goalM)}`;
+  const resp = await fetch(`/api/v1/fitness/cycle-races/rival-pool?winCondition=${encodeURIComponent(winCondition)}&${length}`, { signal });
+  if (!resp.ok) throw new Error(`rival-pool ${resp.status}`);
+  const body = await resp.json();
+  return rivalPoolCandidates(body?.entries);
+}
+
+/**
+ * One saved race record (`{ race, participants }`), or null when the answer
+ * holds none. Rejects on a network/HTTP failure.
+ */
+async function fetchRaceRecord(raceId, { signal = null } = {}) {
+  const url = `/api/v1/fitness/cycle-races/${encodeURIComponent(raceId)}`;
+  const resp = await (signal ? fetch(url, { signal }) : fetch(url));
+  if (!resp.ok) throw new Error(`cycle-races/${raceId} ${resp.status}`);
+  const body = await resp.json();
+  return body?.race ?? null;
+}
 
 const RACE_TICK_MS = 1000;
 const COUNTDOWN_TICK_MS = 1000;
@@ -63,6 +224,11 @@ const SENSOR_LOST_GAP_TICKS = 9;
  * arrives while it can still be acted on.
  */
 const SENSOR_ABSENT_GAP_TICKS = 15;
+// A rider claim with no pedalling for this long is cleared by the lobby, so
+// the next session does not start by clearing a stranger off a bike. Checked
+// when the lobby appears and once a minute while it is up.
+const STALE_CLAIM_MS = 30 * 60 * 1000;
+const STALE_CLAIM_CHECK_MS = 60 * 1000;
 
 /**
  * Live cycle-game lifecycle container. Composes the prop-driven screens
@@ -129,6 +295,11 @@ export default function CycleGameContainer({ onMount } = {}) {
   const soundsRef = useRef(sounds);
   soundsRef.current = sounds;
   const musicVolume = Number.isFinite(cycleGameConfig?.music_volume) ? cycleGameConfig.music_volume : 0.55;
+  const musicVolumeRef = useRef(musicVolume);
+  musicVolumeRef.current = musicVolume;
+  // The finale lift (FINALE_MUSIC_LIFT while a race is in its finale, else 0),
+  // added to the music level before the master scales it.
+  const musicLiftRef = useRef(0);
 
   // Master volume — the OFFICIAL fitness volume store (the same level the rest
   // of the app's video uses). Scales all cycle-game music + SFX; the lobby
@@ -142,6 +313,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Separate from the one-shot SFX channel (playSound). Null/absent = silent.
   const musicRef = useRef(null);
   const musicKeyRef = useRef(null);
+  // The level every music track plays at: (music_volume + finale lift) × master.
+  const musicLevel = useCallback((master = masterRef.current) => Math.max(0, Math.min(1,
+    (musicVolumeRef.current + musicLiftRef.current) * (Number.isFinite(master) ? master : 1))), []);
   const stopMusic = useCallback(() => {
     if (musicRef.current) {
       try { musicRef.current.pause(); musicRef.current.src = ''; } catch { /* ignore */ }
@@ -156,7 +330,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     try {
       const a = new Audio(url);
       a.loop = loop;
-      a.volume = Math.max(0, Math.min(1, musicVolume * masterRef.current));
+      a.volume = musicLevel();
       // Autoplay can defer until a user gesture — benign, logged at debug so a
       // "no music" report can be told apart from a genuine load failure.
       a.play().catch((err) => { log.debug('cycle_game.music_deferred', { key, error: err?.message || String(err) }); });
@@ -166,7 +340,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     } catch (err) {
       log.warn('cycle_game.music_unavailable', { key, error: err?.message || String(err) });
     }
-  }, [musicVolume, stopMusic, log]);
+  }, [musicLevel, stopMusic, log]);
   // Pick a random track from the racing playlist folder.
   const pickRacingTrack = useCallback(() => {
     const r = soundsRef.current?.racing;
@@ -187,6 +361,28 @@ export default function CycleGameContainer({ onMount } = {}) {
   // Race history + ghost selection (declared early — buildRiders/startRace read them).
   const [pastRaces, setPastRaces] = useState([]); // recent saved race records
   const [ghost, setGhost] = useState(null); // selected ghost competitor (locks config)
+  // The ghost actually racing THIS race: the hand-picked/ladder ghost, or the
+  // automatic pace rival, or null. Set by startRace for the staging/countdown
+  // rider strip only. The lobby never reads it, so an automatic rival neither
+  // locks the race type/value nor carries into the next race.
+  const [raceGhost, setRaceGhost] = useState(null);
+  // The live riders staged for THIS race (`{ userId, equipmentId }`), fixed when
+  // the race is built. The staging/countdown strip shows these, not whoever
+  // holds a bike right now: a claim that changed while Start was waiting on its
+  // rival lookup must not show a rider who is not in the race.
+  const [raceRiders, setRaceRiders] = useState([]);
+  // True once a lobby history load has completed (the pace-rival log reports it,
+  // so "par because nobody has ridden this" is told apart from "par because the
+  // history had not arrived yet").
+  const historyLoadedRef = useRef(false);
+  // A start waiting on the server: a Start press on its rival lookup, or "Ride
+  // it" on its ladder rival. The ref is the
+  // synchronous guard (a second press in the same tick is dropped, and unmount
+  // clears it so a late answer starts nothing); the state freezes the lobby and
+  // turns the Start button into "Starting…".
+  const startPendingRef = useRef(null);
+  const [startPending, setStartPending] = useState(false);
+  const mountedRef = useRef(true);
 
   // Use the canonical relational name resolver: getDisplayLabel applies the
   // household nickname ("Dad"/"Mom") when 2+ HR riders are present, else the
@@ -197,23 +393,27 @@ export default function CycleGameContainer({ onMount } = {}) {
     return getDisplayLabel?.(name, { userId }) || name;
   }, [getUserVitals, getUserByName, getDisplayName, getDisplayLabel]);
 
-  // Officiating thresholds (shared by the race config and the event toasts so
-  // the on-screen copy always matches the rule that fired).
+  // Officiating thresholds. `race_idle_dnf_s` is the park window (legacy key name).
   const raceIdleDnfS = Number.isFinite(cycleGameConfig?.race_idle_dnf_s) ? cycleGameConfig.race_idle_dnf_s : 20;
   // Grace before a rider's FIRST movement is required (vs the idle clock that
   // runs after they've started). Covers magnetless cadence sensors that take
   // ~20s to lock onto rotation from a dead stop (e.g. the tricycle's BK467).
   const raceStartGraceS = Number.isFinite(cycleGameConfig?.race_start_grace_s) ? cycleGameConfig.race_start_grace_s : 30;
-  const hotStartPenaltyS = Number.isFinite(cycleGameConfig?.hot_start_penalty_s) ? cycleGameConfig.hot_start_penalty_s : 0;
   // Distance-race mercy-kill (issue 2): seconds after the FIRST rider crosses the
-  // line before the race auto-ends, forfeiting (DNF) anyone still going — a
+  // line before the race auto-ends; anyone still going is put in overtime with
+  // their real distance — a
   // distance race otherwise waits forever for the slowest rider. Defaults ON at
   // 60s; set race_mercy_after_winner_s: 0 to disable. Ignored by time races.
   const raceMercyAfterWinnerS = Number.isFinite(cycleGameConfig?.race_mercy_after_winner_s)
     ? cycleGameConfig.race_mercy_after_winner_s
     : 60;
   // How long the results board holds before auto-returning to the lobby.
-  const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 20;
+  const resultsDwellS = Number.isFinite(cycleGameConfig?.results_dwell_s) ? cycleGameConfig.results_dwell_s : 45;
+  // Speed of the "par" pace rival a lone rider races when nobody has ridden
+  // this race type and length before.
+  const parSpeedKmh = Number.isFinite(cycleGameConfig?.par_speed_kmh) && cycleGameConfig.par_speed_kmh > 0
+    ? cycleGameConfig.par_speed_kmh
+    : DEFAULT_PAR_SPEED_KMH;
 
   // Resolve the currently-claimed riders (bikes with a getEquipmentRider claim).
   // ghostOverride lets a caller (e.g. onRideFeatured) supply an explicit ghost
@@ -245,25 +445,7 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
     });
     // A selected ghost replays its whole recorded field as competitors.
-    if (g && Array.isArray(g.riders)) {
-      g.riders.forEach((r) => {
-        riders.push({
-          userId: r.userId,
-          displayName: r.displayName,
-          // The recording equipment — drives the gauge's maxRpm and the synth-rpm
-          // wheel size. Distance still replays from the recorded series (the ghost
-          // branch in the engine), so this never double-applies wheel physics.
-          equipmentId: r.equipmentId || null,
-          wheelCircumferenceM: 0,
-          ghostSeries: r.ghostSeries,
-          ghostHrSeries: r.ghostHrSeries,
-          ghostRpmSeries: r.ghostRpmSeries,
-          ghostZoneSeries: r.ghostZoneSeries,
-          ghostIntervalS: r.ghostIntervalS
-        });
-      });
-    }
-    return riders;
+    return riders.concat(ghostFieldRiders(g));
   }, [bikes, session, resolveDisplayName, ghost, log]);
 
   // ── lifecycle state ──────────────────────────────────────────────────────
@@ -276,7 +458,6 @@ export default function CycleGameContainer({ onMount } = {}) {
   // timeout below OR when a new race starts (whichever comes first).
   const [recoveredNotice, setRecoveredNotice] = useState(null);
   const stagingDeadlineRef = useRef(0); // earliest wall-time staging may advance to countdown
-  const preGreenPedalersRef = useRef(new Set()); // riders who pedalled BEFORE the green light
   const goHoldTimerRef = useRef(null); // green-light hold before the race screen appears
   const [raceType, setRaceType] = useState(null); // 'distance' | 'time' | null
   const [raceValueM, setRaceValueM] = useState(null); // chosen distance goal (m)
@@ -293,17 +474,21 @@ export default function CycleGameContainer({ onMount } = {}) {
   // exactly once — on the FIRST time the container reaches idle after mount
   // (not every return-to-idle, e.g. after backToHome/onCancel).
   const recoveryCheckedRef = useRef(false);
-  const prevDnfRef = useRef(new Set());
+  // Parked riders (idle past the park window) → the race time they parked at,
+  // so the resume log can say how long they were away. Edge-detected per tick.
+  const prevParkedRef = useRef(new Map());
   const prevNoSensorRef = useRef(new Set());
   // Riders whose race was cut short by the clock/operator (mercy-kill window
-  // closing, or a forced finish) while still honestly riding — see
-  // CycleRaceController's `overtime` set. Distinct from prevDnfRef (idle-quit).
+  // closing, or a forced finish) while still riding — see CycleRaceController's
+  // `overtime` set. Never a parked or no-sensor rider.
   const prevOvertimeRef = useRef(new Set());
-  const prevPenalizedRef = useRef(new Set());
+  // Last seen heart-rate zone + multiplier per live rider, for the boost
+  // toast (up only) and the boost_change log (both directions). Seeded by the
+  // first reading of a race, which raises nothing.
+  const prevBoostRef = useRef(new Map());
   // Telemetry: track prior tick state so transitions (not steady state) are what
-  // gets logged — penalty awaiting-stop edges, cadence connect/drop, phase, and
-  // a monotonic tick index for the per-tick firehose.
-  const prevAwaitingRef = useRef(new Set());
+  // gets logged — cadence connect/drop, phase, and a monotonic tick index for
+  // the per-tick firehose.
   const prevCadenceRef = useRef(new Map());
   const prevPhaseRef = useRef('idle');
   const tickCountRef = useRef(0);
@@ -319,20 +504,28 @@ export default function CycleGameContainer({ onMount } = {}) {
   // because it's mutated synchronously inside the same tick effect that drives
   // the setSnapshot commit each tick, so it's always current by render.
   const gapTicksRef = useRef(new Map());
-  // Edge-detection for the sensor-lost telemetry (mirrors prevDnfRef/prevCadenceRef).
+  // Edge-detection for the sensor-lost telemetry (mirrors prevCadenceRef).
   const prevSensorLostRef = useRef(new Set());
-  // Officiating events (DNF / hot-start penalty) accumulated over the race —
-  // drives the persistent chart markers and the results legend.
-  const [raceEvents, setRaceEvents] = useState([]);
   const eventIdRef = useRef(0);
-  // Single-slot, self-dismissing event toast + a queue for events that pile up.
+  // Single-slot, self-dismissing event toast + a queue for events that pile up
+  // (toastQueue.js: entries `{ toast, atMs }`; stale news is dropped, a newer
+  // toast of the same kind replaces a queued one). The ref mirrors the slot so
+  // showToast decides synchronously, outside a state updater.
   const [eventToast, setEventToast] = useState(null);
+  const eventToastRef = useRef(null);
   const toastQueueRef = useRef([]);
   // Edge-triggered drama events (audit C2 — deriveRaceSnapshot was fully built
   // + tested but never called from the live tick). Chained snapshot-to-
   // snapshot so LEAD_CHANGE/RIDER_FINISHED/PHOTO_FINISH/FINAL_LAP/
   // LAPPING_IMMINENT fire exactly once, on the tick they actually happen.
   const prevRaceSnapshotRef = useRef(null);
+  // Race beats (raceBeats.js): its state between ticks, whether the clock is in
+  // the final ten seconds (read at render, like gapTicksRef), and whether the
+  // race has reached its finale (last minute / last stretch).
+  const raceBeatsRef = useRef(null);
+  const finalSecondsRef = useRef(false);
+  const finalSecondsLoggedRef = useRef(false);
+  const finaleRef = useRef(false);
 
   // Live-data refs so the race-tick interval can read the freshest
   // session/vitals without re-subscribing. The fitness context value changes
@@ -344,6 +537,28 @@ export default function CycleGameContainer({ onMount } = {}) {
   const getUserVitalsRef = useRef(getUserVitals);
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { getUserVitalsRef.current = getUserVitals; }, [getUserVitals]);
+
+  // When each claimed bike last moved: equipmentId → { userId, lastActiveMs }.
+  // The session keeps no claim time and no last-pedalled time (its cadence
+  // reading's `ts` moves on every packet, a still bike included), so the
+  // container records it: seeded when it first sees a claim (or a claim
+  // changes hands), moved on every reading above 0 rpm. Sampled by the lobby
+  // and pre-race polls and every race tick.
+  const bikeActivityRef = useRef(new Map());
+  const noteBikeActivity = useCallback((nowMs = Date.now()) => {
+    const live = sessionRef.current;
+    bikes.forEach((bike) => {
+      const userId = live?.getEquipmentRider?.(bike.id) || null;
+      if (!userId) { bikeActivityRef.current.delete(bike.id); return; }
+      const entry = bikeActivityRef.current.get(bike.id);
+      if (!entry || entry.userId !== userId) {
+        bikeActivityRef.current.set(bike.id, { userId, lastActiveMs: nowMs });
+        return;
+      }
+      const cadence = live?.getEquipmentCadence?.(bike.id);
+      if (cadence && cadence.connected && Number(cadence.rpm) > 0) entry.lastActiveMs = nowMs;
+    });
+  }, [bikes]);
   // Same ref pattern for the zone config the per-tick firehose reads to compute
   // the multiplier — constant during a race, but kept in a ref so the interval
   // (which depends only on `phase`) isn't torn down by config identity churn.
@@ -376,56 +591,103 @@ export default function CycleGameContainer({ onMount } = {}) {
     });
   }, [phase, log]);
 
-  // Pop the finished toast and immediately show the next queued one (if any).
-  const onEventToastDone = useCallback(() => {
-    setEventToast(toastQueueRef.current.shift() || null);
-  }, []);
+  // The app's navigation rail is a distraction and an accidental-touch hazard
+  // while a race is under way, so it hides from staging until the game is back
+  // in the lobby (riders navigate from the lobby, so the lobby keeps it). The
+  // unmount cleanup restores it however the game ends, including a crash that
+  // an error boundary above catches.
+  const setImmersive = ctx?.setImmersive;
+  const immersiveOn = phase !== 'idle';
+  const immersiveLoggedRef = useRef(false);
+  useEffect(() => {
+    if (immersiveLoggedRef.current !== immersiveOn) {
+      immersiveLoggedRef.current = immersiveOn;
+      log.debug('cycle_game.immersive', { on: immersiveOn });
+    }
+    if (typeof setImmersive === 'function') setImmersive(immersiveOn);
+  }, [immersiveOn, setImmersive, log]);
+  useEffect(() => () => {
+    if (typeof setImmersive === 'function') setImmersive(false);
+  }, [setImmersive]);
 
-  // Record an officiating event: append it for the chart markers + results
-  // legend, and enqueue a self-explaining toast (single-slot; queue overflow).
-  const recordRaceEvent = useCallback((type, userId, state) => {
-    const rider = state.engineState?.riders?.[userId] || {};
-    const seriesIndex = Math.max(0, (rider.distanceSeries?.length || 1) - 1);
-    const distanceM = rider.cumulativeDistanceM || 0;
-    const displayName = rider.displayName || userId;
+  // Every toast goes through here: shown now when the slot is free, otherwise
+  // queued. Entries a push or a take leaves out of the queue are logged as
+  // dropped (`replaced` by a newer toast of the same kind, `stale` past
+  // TOAST_MAX_AGE_MS, `resolved` when what it announced is over).
+  const logDropped = useCallback((entries, reason, nowMs) => {
+    entries.forEach((e) => log.debug('cycle_game.event_toast.dropped', {
+      variant: e.toast?.variant ?? null, ageMs: nowMs - e.atMs, reason
+    }));
+  }, [log]);
+  const setSlot = useCallback((toast) => {
+    eventToastRef.current = toast;
+    setEventToast(toast);
+  }, []);
+  const showToast = useCallback((toast) => {
     const id = (eventIdRef.current += 1);
-    setRaceEvents((list) => [...list, { id, type, riderId: userId, displayName, seriesIndex, distanceM }]);
-    // A rider whose sensor never reported is NOT told they stopped pedalling.
-    // That sentence was printed to a child who was pedalling the whole time,
-    // because his cadence sensor had been silent for four minutes — and the
-    // race cannot tell the difference from rpm alone. The blame goes to the
-    // equipment, which is where it belongs.
-    const toast = type === 'nosensor'
-      ? { id, variant: 'nosensor', icon: <StopSignIcon />, title: `${displayName} — no sensor`, subtitle: 'Their bike never reported. Check the sensor.' }
-      : type === 'dnf'
-        ? { id, variant: 'dnf', icon: <StopSignIcon />, title: `${displayName} — Did Not Finish`, subtitle: `Stopped pedaling for ${raceIdleDnfS}s` }
-        : { id, variant: 'penalty', icon: <TimeIcon />, title: `${displayName} — False Start`, subtitle: `Pedaling before the green · ${hotStartPenaltyS}s penalty` };
-    // Show now if the slot is free, otherwise queue behind the current toast.
-    setEventToast((cur) => {
-      if (cur) { toastQueueRef.current.push(toast); return cur; }
-      return toast;
-    });
-  }, [raceIdleDnfS, hotStartPenaltyS]);
+    const t = { ...toast, id };
+    if (!eventToastRef.current) { setSlot(t); return; }
+    const nowMs = Date.now();
+    const before = toastQueueRef.current;
+    const after = pushToast(before, t, nowMs);
+    logDropped(before.filter((e) => !after.includes(e)), 'replaced', nowMs);
+    toastQueueRef.current = after;
+  }, [setSlot, logDropped]);
+  // Withdraw queued toasts that no longer hold (e.g. a park notice for a rider
+  // who has already resumed). The toast on screen is left to run out.
+  const dropQueuedToasts = useCallback((match) => {
+    const nowMs = Date.now();
+    const gone = toastQueueRef.current.filter((e) => match(e.toast));
+    if (!gone.length) return;
+    toastQueueRef.current = toastQueueRef.current.filter((e) => !gone.includes(e));
+    logDropped(gone, 'resolved', nowMs);
+  }, [logDropped]);
+  // The toast on screen ran out: show the next one that is still fresh.
+  const onEventToastDone = useCallback(() => {
+    const nowMs = Date.now();
+    const before = toastQueueRef.current;
+    const { toast, queue } = nextToast(before, nowMs);
+    logDropped(before.filter((e) => e.toast !== toast && !queue.includes(e)), 'stale', nowMs);
+    toastQueueRef.current = queue;
+    setSlot(toast);
+  }, [setSlot, logDropped]);
+
+  // A rider's away toast (single-slot; queue overflow). Parked is calm: they
+  // stopped pedalling and come back on their next stroke, so it says how to
+  // rejoin. A rider whose sensor never reported is NOT told they stopped
+  // pedalling: that sentence was once printed to a child who was pedalling the
+  // whole time, because his cadence sensor had been silent for four minutes,
+  // and the race cannot tell the difference from rpm alone. The blame goes to
+  // the equipment, which is where it belongs.
+  const recordRiderToast = useCallback((type, userId, state) => {
+    const rider = state.engineState?.riders?.[userId] || {};
+    const displayName = rider.displayName || userId;
+    // `userId` lets a resume withdraw a park notice that has not been shown yet.
+    showToast(type === 'nosensor'
+      ? { variant: 'nosensor', userId, icon: <StopSignIcon />, title: `${displayName} — no sensor`, subtitle: 'Their bike never reported. Check the sensor.' }
+      : { variant: 'parked', userId, icon: null, title: `${displayName} is parked`, subtitle: 'Pedal to rejoin' });
+  }, [showToast]);
 
   // Race-closed toast: the mercy-kill window (or a forced finish) can cut several
   // stragglers in the SAME tick — one summary toast, not a stack of per-rider
-  // "DNF" toasts, so the moment reads as "the race ended" rather than "you all
+  // toasts, so the moment reads as "the race ended" rather than "you all
   // failed" (audit game-design #7 — the riders it names are still credited their
-  // real distance in the results, not branded DNF).
+  // real distance in the results).
   const recordOvertimeEvent = useCallback((userIds) => {
-    const id = (eventIdRef.current += 1);
     const n = userIds.length;
-    const toast = {
-      id,
+    showToast({
       variant: 'overtime',
       icon: <RaceFlagIcon />,
       title: `Race closed — ${n} rider${n === 1 ? '' : 's'} still riding`
-    };
-    setEventToast((cur) => {
-      if (cur) { toastQueueRef.current.push(toast); return cur; }
-      return toast;
     });
-  }, []);
+  }, [showToast]);
+
+  // Boost toast: a live rider's heart-rate zone went UP, so each stroke now
+  // counts for more. One positive toast; a downward change raises nothing.
+  const recordBoostToast = useCallback((displayName, zoneId) => {
+    const b = boostState({ zoneId, zones: zonesRef.current, hrlessMultiplier: hrlessMultiplierRef.current });
+    showToast({ variant: 'boost', icon: <SpeedIcon />, title: `${displayName}: ${b.label} ×${formatMultiplier(b.mult)}` });
+  }, [showToast]);
 
   // Drama-event ceremony copy (audit C2 — "the highest fun-per-line fix in
   // the codebase"): the event→copy mapping is pure (dramaEventCopy.js,
@@ -435,15 +697,16 @@ export default function CycleGameContainer({ onMount } = {}) {
   // moment the instant it happens, not just a row on the end-of-race results
   // screen.
   const recordDramaEvent = useCallback((event, snapshot, riders) => {
-    dramaEventToasts(event, snapshot, riders).forEach((t) => {
-      const id = (eventIdRef.current += 1);
-      const toast = { id, icon: DRAMA_ICON[t.variant] || null, ...t };
-      setEventToast((cur) => {
-        if (cur) { toastQueueRef.current.push(toast); return cur; }
-        return toast;
-      });
+    log.debug('cycle_game.drama_event', {
+      raceId: raceMetaRef.current?.raceId ?? null,
+      type: event.type,
+      riderIds: event.riderIds || [],
+      elapsedS: event.firedAtClock ?? null
     });
-  }, []);
+    dramaEventToasts(event, snapshot, riders).forEach((t) => {
+      showToast({ icon: DRAMA_ICON[t.variant] || null, ...t });
+    });
+  }, [log, showToast]);
 
   // People to choose from on the home screen: the registered users, mapped to
   // the avatar/HR shape the lobby renders. Users with an active heart rate are
@@ -531,7 +794,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         iconSrc: DaylightMediaPath(`/static/img/equipment/${bike.id}`),
         rider: session?.getEquipmentRider?.(bike.id) || null,
         rpm,
-        connected
+        connected,
+        // The bike's cadence sensor is reporting right now (the lobby's sensor
+        // check reads this; a bike that is reporting but still reads rpm 0).
+        sensorLive: connected
       };
     }),
     // assignVersion forces a re-read after assign/unassign AND on the idle poll,
@@ -551,62 +817,60 @@ export default function CycleGameContainer({ onMount } = {}) {
   // the race screen mounted. Shared by the starting grid (GhostSlot) and the
   // ready strip below, so both surfaces show the SAME ghost roster the race
   // will actually run with.
-  const ghostRosterRiders = useMemo(
-    () => (ghost?.riders || []).map((r) => ({
-      userId: r.userId,
-      displayName: r.displayName,
-      avatarSrc: resolveParticipantIdentity(r.userId, r.displayName).avatarSrc,
-    })),
-    [ghost]
-  );
+  const ghostRosterRiders = useMemo(() => ghostRosterOf(ghost), [ghost]);
+  // The same, for the ghost racing THIS race (staging + countdown strip). Unlike
+  // the lobby roster above it includes the automatic pace rival.
+  const raceGhostRosterRiders = useMemo(() => ghostRosterOf(raceGhost), [raceGhost]);
 
-  // On-board riders for the pre-race compliance strip (staging + countdown): the
-  // claimed bikes with their LIVE rpm, PLUS any selected ghost riders (always
-  // "READY" — a ghost never earns a hot-start penalty, it just runs on its own
-  // recorded clock). `compliant = !(rpm > 0)` mirrors exactly the controller's
-  // green-light test, so the strip predicts the penalty. assignVersion drives
-  // the refresh (bumped by the staging/countdown poll).
+  // On-board riders for the pre-race strip (staging + countdown): the riders
+  // staged for this race with the LIVE rpm of the bike each was staged on and
+  // whether that bike's sensor is reporting (READY / NO SIGNAL), PLUS the ghost
+  // riders in this race (always AUTO: a ghost runs on its own recorded clock).
+  // The start is rolling, so cadence before green never changes a chip's state.
+  // assignVersion drives the refresh (bumped by the staging/countdown poll).
   const stagingRiders = useMemo(
-    () => bikes.map((bike) => {
-      const userId = session?.getEquipmentRider?.(bike.id);
-      if (!userId) return null;
-      const cadence = session?.getEquipmentCadence?.(bike.id);
-      const rpm = cadence && cadence.connected && Number.isFinite(cadence.rpm) ? cadence.rpm : 0;
+    () => raceRiders.map(({ userId, equipmentId }) => {
+      const cadence = session?.getEquipmentCadence?.(equipmentId);
+      const sensorLive = !!(cadence && cadence.connected);
+      const rpm = sensorLive && Number.isFinite(cadence.rpm) ? cadence.rpm : 0;
       const vitals = getUserVitals?.(userId) || {};
       return {
         id: userId,
-        equipmentId: bike.id,
+        equipmentId,
         name: resolveDisplayName(userId),
         avatarSrc: `/api/v1/static/img/users/${userId}`,
         rpm,
         heartRate: Number.isFinite(vitals.heartRate) ? vitals.heartRate : null,
         zoneColor: vitals.zoneColor || null,
-        compliant: !(rpm > 0)
+        sensorLive,
+        // No heart rate: they ride at the strapless multiplier; the strip
+        // says so before the race.
+        noStrapMultiplier: Number.isFinite(vitals.heartRate) && vitals.heartRate > 0 ? null : hrlessMultiplier
       };
-    }).filter(Boolean).concat(ghostRosterRiders.map((r) => ({
+    }).concat(raceGhostRosterRiders.map((r) => ({
       id: r.userId,
       name: r.displayName,
       avatarSrc: r.avatarSrc,
       rpm: 0,
       heartRate: null,
       zoneColor: null,
-      compliant: true,
       isGhost: true
     }))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bikes, session, getUserVitals, resolveDisplayName, assignVersion, ghostRosterRiders]
+    [raceRiders, session, getUserVitals, resolveDisplayName, assignVersion, raceGhostRosterRiders, hrlessMultiplier]
   );
 
-  // True when no on-board rider is pedalling — the gate for leaving staging.
-  const stagingAllStopped = !stagingRiders.some((r) => r.rpm > 0);
+  // The lobby's one-line boost rule: the lowest to highest multiplier a rider
+  // can have, the strapless one included.
+  const lobbyBoostRange = useMemo(() => boostRange(zones, hrlessMultiplier), [zones, hrlessMultiplier]);
 
-  // Keep on-board RPM live during staging + countdown so the compliance strip
-  // reacts quickly when someone starts pedalling early.
+  // Keep on-board RPM and sensor state live during staging + countdown so the
+  // strip reacts quickly when a bike starts (or stops) reporting.
   useEffect(() => {
     if (phase !== 'staging' && phase !== 'countdown') return undefined;
-    const id = setInterval(() => setAssignVersion((v) => v + 1), 300);
+    const id = setInterval(() => { noteBikeActivity(); setAssignVersion((v) => v + 1); }, 300);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, noteBikeActivity]);
 
   // While on the lobby, riders can be claimed OUTSIDE the React tree — by the
   // physical rider-select button or the dev simulator, both of which mutate the
@@ -614,9 +878,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   // (and the Start button's enabled state) reflects those external claims.
   useEffect(() => {
     if (phase !== 'idle') return undefined;
-    const id = setInterval(() => setAssignVersion((v) => v + 1), 750);
+    const id = setInterval(() => { noteBikeActivity(); setAssignVersion((v) => v + 1); }, 750);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, noteBikeActivity]);
 
   // Load recent race history (records rail + ghost candidates) on entering idle.
   useEffect(() => {
@@ -639,6 +903,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         const all = perDay.flat();
         if (!cancelled) {
           setPastRaces(all);
+          historyLoadedRef.current = true;
           log.info('cycle_game.history_loaded', { dates: recent.length, races: all.length });
         }
       } catch (err) {
@@ -741,36 +1006,18 @@ export default function CycleGameContainer({ onMount } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  const startRace = useCallback((override = null, ghostOverride = undefined) => {
-    setRecoveredNotice(null); // a fresh race supersedes any "recovered your last race" notice
-    const ov = override && override.win_condition ? override : null;
-    log.info('cycle_game.start_pressed', {
-      raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
-      hasGhost: !!ghost,
-      control: ov ? 'sim.autostart' : 'lobby.start-button'
-    });
-    // The race "course" is derived from the chosen type + value. Default the
-    // value from config when none was picked (so the E2E — which only clicks a
-    // race type then Start — still works).
-    // A selected ghost is authoritative for the win condition + goal.
-    const type = ov ? ov.win_condition : (ghost ? ghost.winCondition : (raceType || 'distance'));
-    const goalM = type === 'distance'
-      ? (ov ? ov.goal_m : (ghost ? ghost.goalM : (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM)))
-      : null;
-    const timeCapS = type === 'time'
-      ? (ov ? ov.time_cap_s : (ghost ? ghost.timeCapS : (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS)))
-      : null;
-    const course = {
-      id: ghost ? 'ghost' : 'custom',
-      win_condition: type,
-      goal_m: goalM,
-      time_cap_s: timeCapS
-    };
-    const riders = buildRiders(ghostOverride);
-    if (riders.length === 0) {
-      log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
-      return;
-    }
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+
+  // Build and stage the race from a resolved plan (see startRace, which decides
+  // the field). `paceRival` is the automatic rival for a lone rider, or null.
+  const stageRace = useCallback(({ ov, type, goalM, timeCapS, course, liveRiders, chosenGhost, historyCandidates = [] }, paceRival) => {
+    const armedGhost = chosenGhost || paceRival?.ghost || null;
+    // 'ghost' = hand-picked or ladder rival; null = nobody to chase.
+    const rivalKind = chosenGhost ? 'ghost' : (paceRival?.ghost ? paceRival.kind : null);
+    const riders = liveRiders.concat(ghostFieldRiders(armedGhost));
+    setRaceGhost(armedGhost);
+    setRaceRiders(liveRiders.map((r) => ({ userId: r.userId, equipmentId: r.equipmentId })));
     const cfgLap = Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0;
     const lapLengthM = effectiveLapLength({ lapLengthM: cfgLap, winCondition: type, goalM });
     const cfg = buildRaceConfigFromCourse(course, {
@@ -780,7 +1027,6 @@ export default function CycleGameContainer({ onMount } = {}) {
       startCountdownS: Number.isFinite(cycleGameConfig?.start_countdown_s) ? cycleGameConfig.start_countdown_s : 3,
       raceIdleDnfS,
       raceStartGraceS,
-      hotStartPenaltyS,
       raceMercyAfterWinnerS,
       backgroundPlexId: cycleGameConfig?.default_background ?? null,
       lapLengthM,
@@ -805,32 +1051,65 @@ export default function CycleGameContainer({ onMount } = {}) {
       backgroundPlexId: cfg.backgroundPlexId,
       lapLengthM,
       // Real course identity only — 'custom'/'ghost' lobby races persist null.
-      courseId: ov?.id ?? null
+      courseId: ov?.id ?? null,
+      // Who the field is chasing: 'self' | 'household' | 'par' (automatic pace
+      // rival), 'ghost' (hand-picked or ladder rival), null (no rival).
+      rivalKind,
+      // Each live rider's best and most recent ride at this type and length,
+      // as of this start (before this race is saved): the results comparison.
+      history: riderHistoryAt({
+        candidates: historyCandidates,
+        userIds: liveRiders.map((r) => r.userId),
+        winCondition: type, goalM, timeCapS
+      }),
+      // What a Rematch replays: the course override (a featured course keeps
+      // its id) and the hand-picked or ladder ghost, if any. An automatic pace
+      // rival is not kept: it is re-picked at the rematch.
+      rematch: { ov, chosenGhost: chosenGhost || null, winCondition: type, goalM, timeCapS }
     };
+    if (paceRival) {
+      log.info('cycle_game.pace_rival', {
+        raceId,
+        kind: paceRival.kind,
+        requestedKind: paceRival.requestedKind,
+        sourceRaceId: paceRival.sourceRaceId,
+        participantId: paceRival.participantId,
+        source: paceRival.source,
+        candidates: paceRival.candidates,
+        historyLoaded: paceRival.historyLoaded,
+        serverLookup: paceRival.serverLookup,
+        lookupMs: paceRival.lookupMs,
+        recordFetched: paceRival.recordFetched
+      });
+    }
     startCountdownRef.current = cfg.startCountdownS;
     savedRef.current = false;
-    prevDnfRef.current = new Set();
+    prevParkedRef.current = new Map();
+    prevNoSensorRef.current = new Set();
     prevOvertimeRef.current = new Set();
-    prevPenalizedRef.current = new Set();
-    prevAwaitingRef.current = new Set();
+    prevBoostRef.current = new Map();
     prevCadenceRef.current = new Map();
     rpmHistoryRef.current = new Map();
     gapTicksRef.current = new Map();
     prevSensorLostRef.current = new Set();
     prevRaceSnapshotRef.current = null;
+    raceBeatsRef.current = null;
+    finalSecondsRef.current = false;
+    finalSecondsLoggedRef.current = false;
+    finaleRef.current = false;
+    musicLiftRef.current = 0;
     tickCountRef.current = 0;
-    setRaceEvents([]);
     setSaveFailed(false);
     setLadderNotes([]);
-    setEventToast(null);
+    setSlot(null);
     toastQueueRef.current = [];
 
     const controller = new CycleRaceController(cfg);
     controllerRef.current = controller;
 
     // Telemetry: full effective config, once. Per-tick logs stay dynamic-only;
-    // this is where the static facts (zone multipliers, penalty, sounds) live so
-    // "the multiplier/penalty was wrong" complaints can be corroborated.
+    // this is where the static facts (zone multipliers, idle windows, sounds)
+    // live so "the multiplier was wrong" complaints can be corroborated.
     const sx = soundsRef.current || {};
     log.info('cycle_game.config', {
       raceId,
@@ -840,7 +1119,6 @@ export default function CycleGameContainer({ onMount } = {}) {
       startCountdownS: cfg.startCountdownS,
       raceIdleDnfS,
       raceStartGraceS,
-      hotStartPenaltyS,
       hrlessMultiplier,
       stagingBufferMs,
       intervalMs: RACE_TICK_MS,
@@ -851,6 +1129,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         countdown: !!sx.countdown, finish: !!sx.finish, end: !!sx.end, racing: !!sx.racing?.dir
       },
       backgroundPlexId: cfg.backgroundPlexId ?? null,
+      rivalKind,
       riders: riders.map((r) => ({
         userId: r.userId,
         isGhost: Array.isArray(r.ghostSeries) && r.ghostSeries.length > 0,
@@ -870,25 +1149,223 @@ export default function CycleGameContainer({ onMount } = {}) {
 
     // "Riders, to your bikes!" — hold before the stoplight so whoever pressed
     // Start can get on their bike. Lobby music keeps playing through it.
-    preGreenPedalersRef.current = new Set(); // clean slate for false-start tracking
     if (stagingBufferMs > 0) {
       setStagingSeconds(Math.ceil(stagingBufferMs / 1000));
       setPhase('staging');
       log.info('cycle_game.staging', { ms: stagingBufferMs });
-      // The advance to countdown is gated (buffer elapsed AND all bikes stopped) by
-      // a dedicated effect — record the earliest wall-time it may proceed.
+      // The advance to countdown happens when the buffer elapses (a dedicated
+      // effect) — record the wall-time it may proceed.
       stagingDeadlineRef.current = Date.now() + stagingBufferMs;
     } else {
       applySnapshot(controller.startCountdown());
     }
-  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, stagingBufferMs, ghost, buildRiders, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, hotStartPenaltyS, raceMercyAfterWinnerS, applySnapshot, log]);
+    // The phase changes above only reach phaseRef after a render. Mark the lobby
+    // as left right now, so a second start in this same tick is refused. (Last,
+    // so a throw above leaves the lobby startable.)
+    phaseRef.current = 'launching';
+  }, [stagingBufferMs, zones, cadenceBands, hrlessMultiplier, cycleGameConfig, raceIdleDnfS, raceStartGraceS, raceMercyAfterWinnerS, applySnapshot, setSlot, log]);
 
-  // Keep stable refs to the latest startRace + phase so the sim control hook
-  // (registered once) always reads current values.
+  // Back to the lobby with no race in hand. phaseRef is set here as well as by
+  // the [phase] effect: when a launch and this run in one batch the phase state
+  // never changes, the effect never runs, and Start would stay refused.
+  const returnToLobby = useCallback(() => {
+    controllerRef.current = null;
+    raceMetaRef.current = null;
+    setSnapshot(null);
+    setPhase('idle');
+    phaseRef.current = 'idle';
+  }, []);
+
+  // Stage the race, all or nothing: a throw partway through must not leave a
+  // controller or race meta behind for the next race to trip over.
+  const launchRace = useCallback((plan, paceRival) => {
+    try {
+      stageRace(plan, paceRival);
+    } catch (err) {
+      returnToLobby();
+      throw err;
+    }
+  }, [stageRace, returnToLobby]);
+
+  // Start pressed. Decides the field, then launches. Returns whether the start
+  // was accepted (false = dropped: a race is already under way, another start is
+  // pending, there is nobody to race, or launching failed). A lone rider with no ghost waits up to
+  // `lookupBudgetMs` for the server's rival pool (and the one record it picks)
+  // before launching; every other start launches synchronously. `control` names the caller in the logs.
+  const startRace = useCallback((override = null, ghostOverride = undefined, { lookupBudgetMs = PACE_RIVAL_LOOKUP_MS, control = null } = {}) => {
+    const ov = override && override.win_condition ? override : null;
+    const controlName = control || (ov ? 'sim.autostart' : 'lobby.start-button');
+    if (!mountedRef.current) return false; // a late async caller after the game closed
+    // One race per start: only the lobby starts a race, and only one at a time.
+    if (phaseRef.current !== 'idle') {
+      log.info('cycle_game.start_ignored', { reason: 'not_idle', control: controlName });
+      return false;
+    }
+    if (startPendingRef.current) {
+      log.info('cycle_game.start_ignored', { reason: 'start_pending', control: controlName });
+      return false;
+    }
+    setRecoveredNotice(null); // a fresh race supersedes any "recovered your last race" notice
+    log.info('cycle_game.start_pressed', {
+      raceType: ov ? ov.win_condition : (ghost ? 'ghost' : raceType),
+      hasGhost: !!ghost,
+      control: controlName
+    });
+    // The race "course" is derived from the chosen type + value. Default the
+    // value from config when none was picked (so the E2E — which only clicks a
+    // race type then Start — still works).
+    // A selected ghost is authoritative for the win condition + goal.
+    const type = ov ? ov.win_condition : (ghost ? ghost.winCondition : (raceType || 'distance'));
+    const goalM = type === 'distance'
+      ? (ov ? ov.goal_m : (ghost ? ghost.goalM : (Number.isFinite(raceValueM) ? raceValueM : distanceDefaultM)))
+      : null;
+    const timeCapS = type === 'time'
+      ? (ov ? ov.time_cap_s : (ghost ? ghost.timeCapS : (Number.isFinite(raceValueS) ? raceValueS : timeDefaultS)))
+      : null;
+    const course = {
+      id: ghost ? 'ghost' : 'custom',
+      win_condition: type,
+      goal_m: goalM,
+      time_cap_s: timeCapS
+    };
+    // The ghost that would race: an explicit override (the featured-course
+    // button passes its ladder rival, or null for "none") beats the lobby's
+    // hand-picked ghost.
+    const chosenGhost = (ghostOverride !== undefined ? ghostOverride : ghost) || null;
+    const liveRiders = buildRiders(null);
+    // The field is live riders plus the ghost's: a ghost-only race (a featured
+    // ride with nobody on a bike) is a race.
+    if (liveRiders.length + ghostFieldRiders(chosenGhost).length === 0) {
+      log.warn('cycle_game.staged', { courseId: course.id, error: 'no_riders' });
+      return false;
+    }
+    const plan = { ov, type, goalM, timeCapS, course, liveRiders, chosenGhost };
+    // Launch, reporting a failure instead of throwing it at the caller (a click
+    // handler, the simulator, or a promise nobody awaits). `makeRival` builds
+    // the automatic rival, or is null when the race has none.
+    // `historyCandidates` is the pool the comparison on the results board is
+    // taken from: the one the rival lookup assembled, else loaded history.
+    const launch = (makeRival, historyCandidates = ghostCandidates) => {
+      try {
+        launchRace({ ...plan, historyCandidates }, makeRival ? makeRival() : null);
+        return true;
+      } catch (err) {
+        log.error('cycle_game.start_failed', { control: controlName, error: err?.message || String(err) });
+        return false;
+      }
+    };
+    // A lone rider with no ghost always gets someone to chase: their own best at
+    // this race type and length, else the household's best, else par. It is armed
+    // for this race only (never through `ghost` state), so it does not lock the
+    // lobby or persist. Two or more riders race each other: no rival, no event.
+    if (chosenGhost || liveRiders.length !== 1) return launch(null);
+    const riderId = liveRiders[0].userId;
+    const race = { winCondition: type, goalM, timeCapS };
+    const historyLoaded = historyLoadedRef.current; // as of this press
+    // One selection rule (pickPaceRival) over whichever list we end up with.
+    // `candidates` reports how many races of this type + length it chose from;
+    // `lookupMs` how long the server lookup took and `recordFetched` whether it
+    // had to fetch a record (the pick was not in the loaded history).
+    const rivalFrom = (candidates, fromServer, serverLookup, { lookupMs = 0, recordFetched = false } = {}) => {
+      const rival = armPaceRival({ candidates, riderId, ...race, parSpeedKmh });
+      return {
+        ...rival,
+        source: rival.source === 'history' && fromServer ? 'server-history' : rival.source,
+        candidates: paceRivalPool({ candidates, ...race }).length,
+        historyLoaded,
+        serverLookup,
+        lookupMs,
+        recordFetched
+      };
+    };
+    // The caller already spent the budget (a featured ride whose own rival
+    // lookup ate it): pick from what the lobby has, now.
+    if (!(lookupBudgetMs > 0)) return launch(() => rivalFrom(ghostCandidates, false, 'skipped'));
+    // Search the full history: the server's light rows of every race of this
+    // type and length, merged with what the lobby loaded. If the pick is a race
+    // the lobby has not loaded, its one record is fetched so it can be replayed.
+    // None of it may delay the start past the budget or fail it: an error, a
+    // timeout or a record that cannot be replayed falls back to the loaded history.
+    const abort = typeof AbortController === 'function' ? new AbortController() : null;
+    const pending = { abort };
+    startPendingRef.current = pending;
+    setStartPending(true);
+    log.debug('cycle_game.pace_rival_lookup', { riderId, ...race, budgetMs: lookupBudgetMs });
+    let timer = null;
+    const deadline = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ outcome: 'timeout' }), lookupBudgetMs);
+    });
+    const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
+    const startedAt = Date.now();
+    // How far the lookup got, readable by the timeout path too.
+    const progress = { stage: 'pool', sourceRaceId: null, recordFetched: false };
+    const signal = abort?.signal ?? null;
+    const lookup = (async () => {
+      const rows = await fetchRivalPool({ ...race, signal });
+      // Timed out or unmounted while the pool was on its way: fetch nothing more.
+      if (signal?.aborted) throw new Error('aborted');
+      const merged = mergeRaceCandidates(ghostCandidates, rows);
+      const pick = pickPaceRival({ candidates: merged, riderId, ...race });
+      const isLoaded = ghostCandidates.some((c) => c && String(c.raceId) === String(pick.raceId));
+      if (pick.kind === 'par' || isLoaded) return { outcome: 'used', candidates: merged };
+      // The pick is a row with no series: fetch that one race so it can be replayed.
+      progress.stage = 'record';
+      progress.sourceRaceId = pick.raceId;
+      progress.recordFetched = true;
+      const record = await fetchRaceRecord(pick.raceId, { signal });
+      const fetched = mapRaceRecordToCandidate(record, { getDisplayLabel, resolveGaugeMaxRpm });
+      const candidates = mergeRaceCandidates(ghostCandidates.concat(fetched ? [fetched] : []), rows);
+      // Usable only if the same rule, run over the record, arms that same ride.
+      const armed = armPaceRival({ candidates, riderId, ...race, parSpeedKmh });
+      if (String(armed.sourceRaceId) !== String(pick.raceId) || armed.participantId !== pick.participantId) {
+        throw new Error('record not replayable');
+      }
+      return { outcome: 'used', candidates };
+    })().catch((err) => ({ outcome: 'error', error: err?.message || String(err) }));
+    const settle = () => {
+      if (startPendingRef.current !== pending) return false; // unmounted while waiting
+      startPendingRef.current = null;
+      setStartPending(false);
+      return true;
+    };
+    // Nothing else can leave the lobby while this start is pending (every other
+    // start is refused and the lobby is frozen), so the answer launches as is.
+    Promise.race([lookup, deadline]).then((res) => {
+      clearTimeout(timer);
+      if (res.outcome === 'timeout') abort?.abort();
+      if (!settle()) return;
+      launch(() => {
+        const lookupStats = { lookupMs: Date.now() - startedAt, recordFetched: progress.recordFetched };
+        if (res.outcome !== 'used') {
+          log.warn('cycle_game.pace_rival_lookup_failed', {
+            riderId, ...race, outcome: res.outcome, stage: progress.stage, sourceRaceId: progress.sourceRaceId,
+            error: res.error ?? null, lookupMs: lookupStats.lookupMs
+          });
+        }
+        return res.outcome === 'used'
+          ? rivalFrom(res.candidates, true, 'used', lookupStats)
+          : rivalFrom(ghostCandidates, false, res.outcome, lookupStats);
+      }, res.outcome === 'used' ? res.candidates : ghostCandidates);
+    });
+    return true;
+  }, [raceType, raceValueM, raceValueS, distanceDefaultM, timeDefaultS, ghost, buildRiders, ghostCandidates, parSpeedKmh, bikeById, getDisplayLabel, launchRace, log]);
+
+  // A Start still waiting on the rival lookup dies with the component.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      startPendingRef.current?.abort?.abort();
+      startPendingRef.current = null;
+    };
+  }, []);
+
+  // Keep a stable ref to the latest startRace so the sim control hook
+  // (registered once) always reads current values. (phaseRef is above.)
   const startRaceRef = useRef(startRace);
   useEffect(() => { startRaceRef.current = startRace; }, [startRace]);
-  const phaseRef = useRef(phase);
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  // The same for Cancel (assigned where onCancel is defined, below).
+  const onCancelRef = useRef(null);
 
   // Sim-panel seam: expose a programmatic race start so the simulation popup's
   // "Cycle Game Race" preset can launch a real race. Riders are assigned
@@ -899,15 +1376,17 @@ export default function CycleGameContainer({ onMount } = {}) {
     const api = {
       ready: true,
       startRace: ({ winCondition, value } = {}) => {
-        // Guard: a programmatic start mid-race would replace the controller and
-        // orphan the running race. Only the lobby may start one.
-        if (phaseRef.current !== 'idle') return null;
+        // A programmatic start mid-race would replace the controller and orphan
+        // the running race. startRace itself refuses unless the lobby is idle;
+        // returns whether the start was accepted.
         return startRaceRef.current(buildAutoStartCourse({ winCondition, value }));
       },
+      // Cancel the race in hand, exactly as the on-screen Cancel button does.
+      cancel: () => { onCancelRef.current?.(); },
       getPhase: () => phaseRef.current,
       // Per-rider race readback so a driver (sim panel / tests) can close the loop:
-      // see who is penalty-boxed (false start) and whether distance is advancing,
-      // instead of blindly holding RPM down a course that may be wedged. Keyed by
+      // see whether distance is advancing, instead of blindly holding RPM down a
+      // course that may be wedged. Keyed by
       // equipmentId so the caller can map a bike → its rider's live state. Note a
       // ghost can carry the SAME equipmentId as a live rider (gauge scaling only),
       // so callers mapping bike → rider should filter out `isGhost` entries.
@@ -915,20 +1394,15 @@ export default function CycleGameContainer({ onMount } = {}) {
         const st = controllerRef.current?.getState?.();
         if (!st) return null;
         const riders = st.engineState?.riders || {};
-        const penaltyInfo = st.penaltyInfo || {};
         return {
           phase: st.phase,
-          penaltyInfo,
           riders: Object.values(riders).map((r) => ({
             userId: r.userId,
             equipmentId: r.equipmentId,
             distanceM: r.cumulativeDistanceM,
             rpm: r.rpm,
             finished: r.finishTimeS != null,
-            isGhost: !!r.isGhost,
-            boxed: !!penaltyInfo[r.userId],            // false-started, meter locked
-            penaltyRemainingS: penaltyInfo[r.userId]?.remainingS ?? 0,
-            awaitingStop: penaltyInfo[r.userId]?.awaitingStop ?? false // served; needs RPM 0 to clear
+            isGhost: !!r.isGhost
           }))
         };
       }
@@ -947,26 +1421,15 @@ export default function CycleGameContainer({ onMount } = {}) {
     return () => clearInterval(id);
   }, [phase]);
 
-  // Staging → countdown gate: advance only once the buffer has elapsed AND no bike
-  // is pedalling (re-checked on every staging tick and whenever a bike stops, since
-  // the RPM poll bumps assignVersion → stagingAllStopped). Until then we hold on the
-  // "to your bikes" screen with the indeterminate "waiting for bikes to stop" bar.
+  // Staging → countdown: advance once the buffer has elapsed (re-checked on every
+  // staging second). The start is rolling, so cadence does not hold it.
   useEffect(() => {
     if (phase !== 'staging') return undefined;
-    if (Date.now() >= stagingDeadlineRef.current && stagingAllStopped) {
+    if (Date.now() >= stagingDeadlineRef.current) {
       applySnapshot(controllerRef.current?.startCountdown());
     }
     return undefined;
-  }, [phase, stagingSeconds, stagingAllStopped, applySnapshot]);
-
-  // Track who pedals BEFORE the green light (during the red/yellow countdown) — only
-  // those riders false-start. Green pedalling is the GO signal and is allowed, so we
-  // stop accumulating once the countdown ends (phase leaves 'countdown').
-  useEffect(() => {
-    if (phase !== 'countdown') return undefined;
-    stagingRiders.forEach((r) => { if (r.rpm > 0) preGreenPedalersRef.current.add(r.id); });
-    return undefined;
-  }, [phase, stagingRiders]);
+  }, [phase, stagingSeconds, applySnapshot]);
 
   // ── countdown interval ───────────────────────────────────────────────────
   useEffect(() => {
@@ -980,17 +1443,14 @@ export default function CycleGameContainer({ onMount } = {}) {
       const state = c.countdownTick();
       log.debug('cycle_game.countdown', { remaining: state.countdownRemaining });
       if (state.phase === 'racing') {
-        // GREEN LIGHT. Lock in the false starters (anyone who pedalled before green),
-        // then HOLD the green light while the engine is already live — the race
-        // interval ticks in the 'go' phase, so RPMs count from green — and switch to
-        // the race screen after GO_HOLD_MS.
-        c.markFalseStarters?.([...preGreenPedalersRef.current]);
+        // GREEN LIGHT. HOLD the green light while the engine is already live — the
+        // race interval ticks in the 'go' phase, so RPMs count from green — and
+        // switch to the race screen after GO_HOLD_MS.
         log.debug('cycle_game.sfx', { cue: 'go', attempted: playSound(soundsRef.current?.go, { volume: masterRef.current }) }); // null = silent
         log.info('cycle_game.race_started', {
           raceId: raceMetaRef.current?.raceId,
           riders: Object.keys(state.engineState?.riders || {}),
-          winCondition: raceMetaRef.current?.winCondition,
-          falseStarters: [...preGreenPedalersRef.current]
+          winCondition: raceMetaRef.current?.winCondition
         });
         setSnapshot(state);
         setPhase('go');
@@ -1003,6 +1463,75 @@ export default function CycleGameContainer({ onMount } = {}) {
     }, COUNTDOWN_TICK_MS);
     return () => clearInterval(id);
   }, [phase, applySnapshot, log]);
+
+  // One tick's race beats (see the tick). A solo rider (one live rider and one
+  // replayed rival) hears the gap to the rival at halfway and each minute; a
+  // group race has no rival and gets the beats without a gap.
+  const runBeats = useCallback((state) => {
+    const meta = raceMetaRef.current;
+    const engineRiders = state.engineState?.riders || {};
+    const elapsedS = state.engineState?.elapsedS ?? 0;
+    const away = new Set([...(state.parked || []), ...(state.noSensor || [])]);
+    const liveIds = Object.keys(engineRiders).filter((id) => !engineRiders[id].isGhost);
+    const ghostIds = Object.keys(engineRiders).filter((id) => engineRiders[id].isGhost);
+    const presentIds = liveIds.filter((id) => !away.has(id));
+    const leaderM = presentIds.length
+      ? Math.max(...presentIds.map((id) => Number(engineRiders[id].cumulativeDistanceM) || 0))
+      : 0;
+    const { beats, state: next } = raceBeats({
+      winCondition: meta?.winCondition, goalM: meta?.goalM, timeCapS: meta?.timeCapS, elapsedS, leaderM
+    }, raceBeatsRef.current);
+    raceBeatsRef.current = next;
+    const finalNow = presentIds.length > 0 && beats.includes('FINAL_SECONDS');
+    finalSecondsRef.current = finalNow;
+    if (!presentIds.length || !beats.length) return;
+
+    let delta = null;
+    let rivalName;
+    const rival = ghostIds.length === 1 ? engineRiders[ghostIds[0]] : null;
+    if (liveIds.length === 1 && rival) {
+      rivalName = plainName(rival.displayName);
+      if (Array.isArray(rival.ghostRecordedSeries) && rival.ghostRecordedSeries.length) {
+        delta = paceDelta({
+          riderDistanceM: Number(engineRiders[liveIds[0]].cumulativeDistanceM) || 0,
+          elapsedS,
+          rivalSeries: rival.ghostRecordedSeries,
+          intervalS: rival.ghostIntervalS
+        });
+      }
+    }
+    beats.forEach((beat) => {
+      const isFinal = beat === 'FINAL_SECONDS';
+      if (isFinal) {
+        playSound(soundsRef.current?.countdown, { volume: masterRef.current }); // null = silent
+        if (finalSecondsLoggedRef.current) return; // logged once, when it starts
+        finalSecondsLoggedRef.current = true;
+      }
+      log.info('cycle_game.beat', {
+        raceId: meta?.raceId ?? null, beat, elapsedS, gapS: delta?.gapS ?? null, gapM: delta?.gapM ?? null
+      });
+      if ((beat === 'LAST_MINUTE' || beat === 'LAST_STRETCH') && !finaleRef.current) {
+        finaleRef.current = true;
+        musicLiftRef.current = FINALE_MUSIC_LIFT;
+        if (musicRef.current) musicRef.current.volume = musicLevel();
+        log.info('cycle_game.finale_started', { raceId: meta?.raceId ?? null, beat, elapsedS });
+      }
+      beatToasts(beat, { delta, rivalName, rivalKind: meta?.rivalKind ?? null, elapsedS })
+        .forEach((t) => showToast({ icon: null, ...t }));
+    });
+  }, [log, musicLevel, showToast]);
+
+  // The finale ends with the race (results, discard): the music lift and the
+  // final-seconds clock are dropped.
+  useEffect(() => {
+    if (phase === 'go' || phase === 'racing') return;
+    finaleRef.current = false;
+    finalSecondsRef.current = false;
+    if (musicLiftRef.current) {
+      musicLiftRef.current = 0;
+      if (musicRef.current) musicRef.current.volume = musicLevel();
+    }
+  }, [phase, musicLevel]);
 
   // ── engine-live span (wall clock) ────────────────────────────────────────
   // True for the ENTIRE go+racing span — the exact window the race-tick effect
@@ -1073,7 +1602,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         // real cooldown-to-stop is honored — but ONLY for a bounded number of
         // ticks: rpmDuringGap caps the hold (decay, then 0) so a sensor that
         // never comes back can't ride forever at a frozen RPM and can still
-        // idle-DNF (audit game-design #6). gapTicks is tracked only for riders
+        // be parked by the idle clock (audit game-design #6). gapTicks is tracked only for riders
         // with real equipment — a rider with none never had a "connected"
         // reading to begin with, so it isn't a sensor loss.
         let rawRpm;
@@ -1095,7 +1624,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         // A rider who has NEVER had a single connected reading since the race
         // started hasn't lost a sensor — they simply haven't started pedaling
         // yet (mounting the bike, clipping in), which raceStartGraceS already
-        // covers gracefully at the DNF layer. The SENSOR chip must only fire
+        // covers gracefully at the park layer. The SENSOR chip must only fire
         // for a genuine mid-race disconnect: was connected, then dropped.
         // Otherwise every race opened with an alarming false "SENSOR" warning
         // for the first ~9s, before the rider's first pedal stroke landed.
@@ -1119,18 +1648,31 @@ export default function CycleGameContainer({ onMount } = {}) {
         };
       });
       const state = controller.tick(inputs);
+      noteBikeActivity();
 
       // ── Drama events (audit C2) — LEAD_CHANGE / RIDER_FINISHED / PHOTO_FINISH /
       // FINAL_LAP / LAPPING_IMMINENT, edge-triggered against the previous tick's
       // snapshot. Runs every tick (not gated on phase==='racing' vs 'finished')
       // so the race-ending tick's own finisher still gets its ceremony toast.
+      // Away riders (parked or no sensor at this tick) are never announced as
+      // taking the lead, even when they are ahead on distance.
       const raceSnapshot = deriveRaceSnapshot(
         state.engineState,
-        { lapLengthM: raceMetaRef.current?.lapLengthM || 0 },
+        {
+          lapLengthM: raceMetaRef.current?.lapLengthM || 0,
+          awayIds: [...(state.parked || []), ...(state.noSensor || [])]
+        },
         prevRaceSnapshotRef.current
       );
       raceSnapshot.events.forEach((evt) => recordDramaEvent(evt, raceSnapshot, state.engineState?.riders || {}));
       prevRaceSnapshotRef.current = raceSnapshot;
+
+      // ── Race beats — halfway, a split each minute, the last minute / last
+      // stretch, the final ten seconds. The leader is the furthest live rider
+      // who is not away; with every live rider away the beats still advance
+      // (so none fires late on their return) but nothing is shown or played.
+      // The race-ending tick has none: the results board replaces the screen.
+      if (state.phase !== 'finished') runBeats(state);
 
       // ── Cadence connectivity transitions (info) — connect/drop only, not steady
       // state. The first read seeds the map without logging. Answers "my pedaling
@@ -1175,20 +1717,40 @@ export default function CycleGameContainer({ onMount } = {}) {
       });
       prevSensorLostRef.current = sensorLostNow;
 
-      // DNF detection — diff the controller dnf set; a new entry logs + raises
-      // an on-screen event (toast + persistent chart marker).
-      const dnfSet = new Set(state.dnf || []);
-      dnfSet.forEach((userId) => {
-        if (!prevDnfRef.current.has(userId)) {
-          log.info('cycle_game.rider_dnf', {
-            raceId: raceMetaRef.current?.raceId,
-            userId,
-            elapsedS: state.engineState?.elapsedS ?? null
-          });
-          recordRaceEvent('dnf', userId, state);
-        }
+      // Parked / resumed — diff the controller's parked set. Nobody is
+      // eliminated: a rider idle past the park window is parked (one calm
+      // toast) and rejoins on their next pedal stroke (logged, no toast).
+      const tickElapsedS = state.engineState?.elapsedS ?? null;
+      const distanceOf = (userId) => {
+        const d = state.engineState?.riders?.[userId]?.cumulativeDistanceM;
+        return Number.isFinite(d) ? Math.round(d) : 0;
+      };
+      const parkedSet = new Set(state.parked || []);
+      parkedSet.forEach((userId) => {
+        if (prevParkedRef.current.has(userId)) return;
+        prevParkedRef.current.set(userId, tickElapsedS);
+        log.info('cycle_game.rider_parked', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          elapsedS: tickElapsedS,
+          distanceM: distanceOf(userId)
+        });
+        recordRiderToast('parked', userId, state);
       });
-      prevDnfRef.current = dnfSet;
+      [...prevParkedRef.current.keys()].forEach((userId) => {
+        if (parkedSet.has(userId)) return;
+        const parkedAtS = prevParkedRef.current.get(userId);
+        prevParkedRef.current.delete(userId);
+        // Back before their park notice reached the screen: it no longer holds.
+        dropQueuedToasts((t) => t.variant === 'parked' && t.userId === userId);
+        log.info('cycle_game.rider_resumed', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          elapsedS: tickElapsedS,
+          distanceM: distanceOf(userId),
+          awayS: Number.isFinite(parkedAtS) && Number.isFinite(tickElapsedS) ? tickElapsedS - parkedAtS : null
+        });
+      });
 
       // A rider whose sensor never reported. Logged under its own name so the
       // store can answer "was this a kid not pedalling, or a dead sensor?" —
@@ -1203,14 +1765,25 @@ export default function CycleGameContainer({ onMount } = {}) {
             equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
             elapsedS: state.engineState?.elapsedS ?? null
           });
-          recordRaceEvent('nosensor', userId, state);
+          recordRiderToast('nosensor', userId, state);
         }
+      });
+      // Their sensor woke and they are moving: back in the race.
+      prevNoSensorRef.current.forEach((userId) => {
+        if (noSensorSet.has(userId)) return;
+        log.info('cycle_game.rider_sensor_recovered', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          equipmentId: before.engineState.riders[userId]?.equipmentId ?? null,
+          elapsedS: tickElapsedS,
+          distanceM: distanceOf(userId)
+        });
       });
       prevNoSensorRef.current = noSensorSet;
 
       // Overtime detection — diff the controller overtime set (mercy-kill window
       // closing / forced finish). Log each rider's edge individually (mirrors the
-      // DNF edge log above) but raise ONE summary toast for the whole batch —
+      // parked edge log above) but raise ONE summary toast for the whole batch —
       // several stragglers can land in `overtime` on the same tick.
       const overtimeSet = new Set(state.overtime || []);
       const newOvertime = [...overtimeSet].filter((userId) => !prevOvertimeRef.current.has(userId));
@@ -1224,42 +1797,32 @@ export default function CycleGameContainer({ onMount } = {}) {
       if (newOvertime.length > 0) recordOvertimeEvent(newOvertime);
       prevOvertimeRef.current = overtimeSet;
 
-      // ── Penalty box lifecycle (info) — entry, awaiting-stop edge, and clear.
-      // Every entry is paired with its exit so a tester's "stuck in penalty" is
-      // fully reconstructable. recordRaceEvent (toast + chart marker) fires once,
-      // on entry.
-      const penaltyInfo = state.penaltyInfo || {};
-      const penalizedSet = new Set(state.penalized || []);
+      // Boost: a live rider's heart-rate zone changed. Logged both ways
+      // (debug); a change that raises the multiplier gets one toast. The
+      // first reading of the race only seeds the map. A finisher in a
+      // distance race is parked at the line with no zone and is left out.
+      Object.entries(state.engineState?.riders || {}).forEach(([userId, r]) => {
+        if (r.isGhost || r.finishTimeS != null) return;
+        const zoneId = r.zoneId ?? null;
+        const mult = zoneMultiplierFor(zoneId, zonesRef.current, hrlessMultiplierRef.current);
+        const prev = prevBoostRef.current.get(userId);
+        prevBoostRef.current.set(userId, { zoneId, mult });
+        if (!prev || prev.zoneId === zoneId) return;
+        log.debug('cycle_game.boost_change', {
+          raceId: raceMetaRef.current?.raceId,
+          userId,
+          from: prev.zoneId,
+          to: zoneId,
+          mult,
+          elapsedS: tickElapsedS
+        });
+        if (mult > prev.mult) recordBoostToast(r.displayName || userId, zoneId);
+      });
+
       const elapsedS = state.engineState?.elapsedS ?? null;
-      penalizedSet.forEach((userId) => {
-        const info = penaltyInfo[userId] || {};
-        if (!prevPenalizedRef.current.has(userId)) {
-          log.info('cycle_game.penalty_entered', {
-            raceId: raceMetaRef.current?.raceId, userId, reason: 'hot-start',
-            totalS: info.totalS ?? null, remainingS: info.remainingS ?? null, elapsedS
-          });
-          recordRaceEvent('penalty', userId, state);
-        }
-        // Awaiting-stop edge: timer served but still pedalling (gate is now RPM 0).
-        if (info.awaitingStop && !prevAwaitingRef.current.has(userId)) {
-          log.info('cycle_game.penalty_awaiting_stop', {
-            raceId: raceMetaRef.current?.raceId, userId, elapsedS
-          });
-        }
-      });
-      // Cleared: anyone who was boxed last tick but is no longer in the set.
-      prevPenalizedRef.current.forEach((userId) => {
-        if (!penalizedSet.has(userId)) {
-          log.info('cycle_game.penalty_cleared', {
-            raceId: raceMetaRef.current?.raceId, userId, elapsedS
-          });
-        }
-      });
-      prevPenalizedRef.current = penalizedSet;
-      prevAwaitingRef.current = new Set(Object.keys(penaltyInfo).filter((id) => penaltyInfo[id]?.awaitingStop));
 
       // ── Per-tick firehose (debug) — one event per second, riders as an array,
-      // read from post-resolution engine state (correct for ghosts/penalty/finish).
+      // read from post-resolution engine state (correct for ghosts/finish).
       // Off by default in console; captured to the per-session JSONL for forensics.
       tickCountRef.current += 1;
 
@@ -1271,6 +1834,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         writeCheckpoint(window.sessionStorage, {
           raceMeta: raceMetaRef.current,
           engineState: state.engineState,
+          raceState: checkpointRaceState(state),
           savedAt: Date.now()
         });
       }
@@ -1290,7 +1854,7 @@ export default function CycleGameContainer({ onMount } = {}) {
             zoneId: r.zoneId ?? null,
             multiplier: zoneMultiplierFor(r.zoneId ?? null, zonesRef.current, hrlessMultiplierRef.current),
             distanceM: Math.round(Number.isFinite(r.cumulativeDistanceM) ? r.cumulativeDistanceM : 0),
-            penalized: penalizedSet.has(userId),
+            parked: parkedSet.has(userId) || noSensorSet.has(userId),
             finished: r.finishTimeS != null
           };
         })
@@ -1322,6 +1886,15 @@ export default function CycleGameContainer({ onMount } = {}) {
 
       if (state.phase === 'finished') {
         const finalState = controller.showResults();
+        // The race is over: checkpoint its FINAL state, marked finished. If the
+        // save below never lands, recovery saves this as the complete race it
+        // was instead of an older mid-race snapshot.
+        writeCheckpoint(window.sessionStorage, {
+          raceMeta: raceMetaRef.current,
+          engineState: finalState.engineState,
+          raceState: checkpointRaceState(finalState),
+          savedAt: Date.now()
+        });
         const standings = finalState.engineState?.standings || [];
         log.debug('cycle_game.sfx', { cue: 'finish', attempted: playSound(soundsRef.current?.finish, { volume: masterRef.current }) }); // null = silent
         log.info('cycle_game.race_finished', {
@@ -1373,7 +1946,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
     // interval is set up ONCE for the whole go→racing span and never starved by
     // context churn or torn down by the go→racing phase edge.
-  }, [isEngineLive, applySnapshot, recordRaceEvent, recordOvertimeEvent, log, recordDramaEvent]);
+  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent, dropQueuedToasts, runBeats, noteBikeActivity]);
 
   // ── pagehide best-effort save (audit C1) ─────────────────────────────────
   // A reload/crash may not give the periodic checkpoint a chance to run again
@@ -1388,7 +1961,8 @@ export default function CycleGameContainer({ onMount } = {}) {
       if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
       const controller = controllerRef.current;
       const meta = raceMetaRef.current;
-      const engineState = controller?.getState?.()?.engineState;
+      const controllerState = controller?.getState?.();
+      const engineState = controllerState?.engineState;
       if (!controller || !meta || !engineState) return;
       // Same zero-distance rule as the save effect and recovery path — never
       // beacon a junk "0 m" record from a pagehide during the go hold.
@@ -1396,7 +1970,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         .reduce((sum, r) => sum + (Number(r?.cumulativeDistanceM) || 0), 0);
       if (totalDistanceM <= 0) return;
       try {
-        const record = buildRaceRecord(engineState, meta);
+        // This listener only exists while the engine is live, so the ride is
+        // being cut off mid-race: saved as ended early, whatever the controller
+        // says, with whoever is stopped right now.
+        const record = buildRaceRecord(engineState, { ...meta, ...raceOutcomeMeta(controllerState, { interrupted: true }) });
         const blob = new Blob([JSON.stringify({ record })], { type: 'application/json' });
         navigator.sendBeacon('/api/v1/fitness/cycle-races', blob);
       } catch {
@@ -1414,7 +1991,8 @@ export default function CycleGameContainer({ onMount } = {}) {
     savedRef.current = true;
     const controller = controllerRef.current;
     const meta = raceMetaRef.current;
-    const engineState = controller?.getState()?.engineState;
+    const controllerState = controller?.getState();
+    const engineState = controllerState?.engineState;
     if (!engineState || !meta) {
       log.warn('cycle_game.race_saved', { raceId: meta?.raceId || null, ok: false, error: 'no_state' });
       return;
@@ -1427,7 +2005,10 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.info('cycle_game.race_saved', { raceId: meta.raceId, ok: false, skipped: 'zero_distance' });
       return;
     }
-    const record = buildRaceRecord(engineState, meta);
+    // Outcome flags from the controller: who was stopped at the close (every
+    // save), and whether the race was ended from the race menu.
+    const record = buildRaceRecord(engineState, { ...meta, ...raceOutcomeMeta(controllerState) });
+    const incomplete = record.race.incomplete === true;
     (async () => {
       try {
         // Retry transient failures (flaky kiosk WiFi) with backoff; a dropped
@@ -1447,7 +2028,10 @@ export default function CycleGameContainer({ onMount } = {}) {
         // The race just saved may have shuffled this week's featured-course
         // ladder — refetch and diff against the pre-race snapshot to surface
         // "2nd this week — 0:04 behind Dad"-style callouts on the results board.
-        if (ok && meta.courseId && meta.courseId === ladderBeforeRef.current?.course?.id) {
+        // An ended-early ride counts for nothing, so there is no ladder movement
+        // to congratulate: say plainly what happened to it instead.
+        if (ok && incomplete) setLadderNotes([ENDED_EARLY_NOTE]);
+        if (ok && !incomplete && meta.courseId && meta.courseId === ladderBeforeRef.current?.course?.id) {
           try {
             const after = await fetchLadder();
             if (after?.course?.id === meta.courseId) {
@@ -1468,6 +2052,10 @@ export default function CycleGameContainer({ onMount } = {}) {
               setLadderNotes(notes);
               setFeaturedLadder(after);
               log.info('cycle_game.ladder_movement', { raceId: meta.raceId, notes: notes.length });
+            } else {
+              // The course rotated or the ladder is gone: the board must not
+              // offer a Rematch of a course that can no longer be ridden.
+              setFeaturedLadder(after);
             }
           } catch (err) {
             log.warn('cycle_game.ladder_movement_error', { error: err?.message || String(err) });
@@ -1517,13 +2105,17 @@ export default function CycleGameContainer({ onMount } = {}) {
       log.info('cycle_game.race_recovered', { raceId: raceMeta.raceId, ok: false, skipped: 'zero_distance' });
       return;
     }
-    const record = buildRaceRecord(engineState, raceMeta);
+    // A recovered race is an interrupted ride and is saved as ended early —
+    // unless the checkpoint says it had finished on its own and only the save
+    // was lost (see checkpointOutcome).
+    const record = buildRaceRecord(engineState, { ...raceMeta, ...checkpointOutcome(checkpoint) });
     (async () => {
       try {
         const result = await saveRaceRecord({ record });
         log.info('cycle_game.race_recovered', {
           raceId: raceMeta.raceId,
           ok: result.ok,
+          incomplete: record.race.incomplete === true,
           ...(result.ok ? {} : { error: result.error })
         });
         if (result.ok) {
@@ -1580,10 +2172,8 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // Keep the currently-playing track in sync with live master-volume changes.
   useEffect(() => {
-    if (musicRef.current) {
-      musicRef.current.volume = Math.max(0, Math.min(1, musicVolume * (Number.isFinite(effectiveMaster) ? effectiveMaster : 1)));
-    }
-  }, [effectiveMaster, musicVolume]);
+    if (musicRef.current) musicRef.current.volume = musicLevel(effectiveMaster);
+  }, [effectiveMaster, musicVolume, musicLevel]);
 
   // Silence everything (and cancel any pending staging) when the game unmounts.
   useEffect(() => () => {
@@ -1636,42 +2226,84 @@ export default function CycleGameContainer({ onMount } = {}) {
 
   // Ride It on the featured-course card: arm a rival ghost (ranked rider → the
   // rung above; leader → their own PB; unranked → the tail rung) and start the
-  // course. Ghost lookups are best-effort — a fetch failure never blocks the
-  // race, it just starts without a ghost. The ghost is passed explicitly to
-  // startRace (never through `ghost` state) so a previously-selected lobby
-  // ghost can't leak into a ladder ride.
+  // course. The lobby is frozen from the press, exactly as for Start, and the
+  // rival's fetches share the one lookup budget: on a timeout or any failure
+  // the course starts without the ladder rival, and a lone rider then gets the
+  // automatic rival from loaded history only (no second wait). The ghost is
+  // passed explicitly to startRace (never through `ghost` state) so a
+  // previously-selected lobby ghost can't leak into a ladder ride.
   const onRideFeatured = useCallback(async () => {
     const ladder = featuredLadder;
     const course = ladder?.course;
     if (!course) return;
+    // One start at a time: a repeat tap, or a tap in the same tick as a Start.
+    const busyReason = phaseRef.current !== 'idle' ? 'not_idle' : (startPendingRef.current ? 'start_pending' : null);
+    if (busyReason) {
+      log.info('cycle_game.start_ignored', { reason: busyReason, control: 'featured' });
+      return;
+    }
+    const abort = typeof AbortController === 'function' ? new AbortController() : null;
+    const signal = abort?.signal ?? null;
+    const pending = { abort };
+    startPendingRef.current = pending;
+    setStartPending(true);
+    const pressedAt = Date.now();
     const firstRider = bikes.map((b) => session?.getEquipmentRider?.(b.id)).find(Boolean) || null;
     const rival = pickRival({ standings: ladder.standings || [], riderId: firstRider });
-    let rivalRaceId = rival.raceId;
-    if (rival.kind === 'self-pb' && firstRider) {
-      try {
-        const resp = await fetch(`/api/v1/fitness/cycle-races/personal-bests?userId=${encodeURIComponent(firstRider)}&courseId=${encodeURIComponent(course.id)}`);
-        if (resp.ok) rivalRaceId = (await resp.json())?.best?.raceId || null;
-      } catch { /* PB lookup is best-effort; race proceeds plain */ }
+    const progress = { stage: null, rivalRaceId: rival.raceId };
+    let timer = null;
+    const deadline = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ reason: 'timeout' }), PACE_RIVAL_LOOKUP_MS);
+    });
+    const lookup = (async () => {
+      if (rival.kind === 'self-pb' && firstRider) {
+        progress.stage = 'personal-best';
+        const url = `/api/v1/fitness/cycle-races/personal-bests?userId=${encodeURIComponent(firstRider)}&courseId=${encodeURIComponent(course.id)}`;
+        const resp = await (signal ? fetch(url, { signal }) : fetch(url));
+        if (!resp.ok) throw new Error(`personal-bests ${resp.status}`);
+        progress.rivalRaceId = (await resp.json())?.best?.raceId || null;
+        // Timed out or closed while that was on its way: fetch nothing more.
+        if (signal?.aborted) throw new Error('aborted');
+      }
+      if (!progress.rivalRaceId) return { ghost: null }; // nobody to chase on this ladder
+      progress.stage = 'record';
+      const race = await fetchRaceRecord(progress.rivalRaceId, { signal });
+      const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
+      const candidate = mapRaceRecordToCandidate(race, { getDisplayLabel, resolveGaugeMaxRpm });
+      const built = candidate ? buildGhostFromCandidate(candidate) : null;
+      if (!built) throw new Error('record not replayable');
+      return { ghost: built.ghost };
+    })().catch((err) => ({ reason: 'error', error: err?.message || String(err) }));
+    const res = await Promise.race([lookup, deadline]);
+    clearTimeout(timer);
+    if (res.reason === 'timeout') abort?.abort();
+    if (startPendingRef.current !== pending) return; // the game was closed while waiting
+    const lookupMs = Date.now() - pressedAt;
+    if (res.reason) {
+      log.warn('cycle_game.featured_rival_lookup_failed', {
+        courseId: course.id, stage: progress.stage, reason: res.reason, error: res.error ?? null, lookupMs
+      });
     }
-    let ghostOverride = null;
-    if (rivalRaceId) {
-      try {
-        const resp = await fetch(`/api/v1/fitness/cycle-races/${encodeURIComponent(rivalRaceId)}`);
-        if (resp.ok) {
-          const { race } = await resp.json();
-          const resolveGaugeMaxRpm = (equipmentId) => resolveRpmLimits(bikeById.get(equipmentId) || {}).gaugeMaxRpm;
-          const candidate = mapRaceRecordToCandidate(race, { getDisplayLabel, resolveGaugeMaxRpm });
-          const built = candidate ? buildGhostFromCandidate(candidate) : null;
-          if (built) { ghostOverride = built.ghost; setGhost(built.ghost); }
-        }
-      } catch { /* ghost is optional — never block the start */ }
-    }
+    const ghostOverride = res.ghost || null;
+    // Hand the freeze to startRace: it takes a pending slot of its own if it has
+    // to look up an automatic rival, and the lobby unfreezes here if it does not.
+    startPendingRef.current = null;
+    const accepted = startRace(courseStartOverride(course), ghostOverride, {
+      control: 'featured',
+      // One lookup budget per start: time spent on the ladder rival comes out of
+      // what the automatic rival's lookup may use, and a failed one leaves none.
+      lookupBudgetMs: res.reason ? 0 : Math.max(0, PACE_RIVAL_LOOKUP_MS - lookupMs)
+    });
+    if (!startPendingRef.current) setStartPending(false);
+    // Lobby state is written only for a start that was accepted, so a dropped
+    // one cannot leave the lobby locked to a ghost that is not racing.
+    if (!accepted) return;
+    if (ghostOverride) setGhost(ghostOverride);
+    ladderBeforeRef.current = ladder;
     log.info('cycle_game.ride_featured', {
       courseId: course.id, rider: firstRider, rivalKind: rival.kind,
-      rivalRaceId: rivalRaceId || null, ghostArmed: !!ghostOverride
+      rivalRaceId: progress.rivalRaceId || null, ghostArmed: !!ghostOverride
     });
-    ladderBeforeRef.current = ladder;
-    startRace(courseStartOverride(course), ghostOverride ?? null);
   }, [featuredLadder, bikes, session, bikeById, getDisplayLabel, startRace, log]);
 
   const onSetRaceValue = useCallback((value) => {
@@ -1687,31 +2319,69 @@ export default function CycleGameContainer({ onMount } = {}) {
   const onAssign = useCallback((bikeId, userId) => {
     log.info('cycle_game.rider_assigned', { equipmentId: bikeId, userId, control: 'lobby.rider-picker' });
     session?.setEquipmentRider?.(bikeId, userId);
+    bikeActivityRef.current.set(bikeId, { userId, lastActiveMs: Date.now() });
     setAssignVersion((v) => v + 1);
   }, [session, log]);
 
-  const onUnassign = useCallback((bikeId) => {
-    log.info('cycle_game.rider_unassigned', { equipmentId: bikeId, control: 'lobby.rider-picker.clear' });
+  const unassignBike = useCallback((bikeId, control) => {
+    log.info('cycle_game.rider_unassigned', { equipmentId: bikeId, control });
     session?.setEquipmentRider?.(bikeId, null);
+    bikeActivityRef.current.delete(bikeId);
     setAssignVersion((v) => v + 1);
   }, [session, log]);
+  const onUnassign = useCallback((bikeId) => unassignBike(bikeId, 'lobby.rider-picker.clear'), [unassignBike]);
+
+  // Stale claims: on reaching the lobby (mount, or back from a race) and once
+  // a minute while it is up, unclaim every bike nobody has pedalled for
+  // STALE_CLAIM_MS. Never while a start is pending or anywhere but the lobby.
+  useEffect(() => {
+    if (phase !== 'idle') return undefined;
+    const sweep = () => {
+      if (phaseRef.current !== 'idle' || startPendingRef.current) return;
+      const nowMs = Date.now();
+      noteBikeActivity(nowMs);
+      const rows = bikes.map((b) => ({
+        id: b.id,
+        rider: session?.getEquipmentRider?.(b.id) || null,
+        lastActiveMs: bikeActivityRef.current.get(b.id)?.lastActiveMs ?? null
+      }));
+      staleClaims(rows, nowMs, STALE_CLAIM_MS).forEach((equipmentId) => {
+        const row = rows.find((r) => r.id === equipmentId);
+        log.info('cycle_game.rider_auto_cleared', { equipmentId, userId: row.rider, idleMs: nowMs - row.lastActiveMs });
+        unassignBike(equipmentId, 'lobby.auto-clear');
+      });
+    };
+    sweep();
+    const id = setInterval(sweep, STALE_CLAIM_CHECK_MS);
+    return () => clearInterval(id);
+  }, [phase, bikes, session, noteBikeActivity, unassignBike, log]);
 
   const onSetMasterVolume = useCallback((v) => {
     log.info('cycle_game.volume_set', { volume: v, control: 'lobby.volume' });
     masterVol.setVolume?.(v);
   }, [masterVol, log]);
 
-  // Operator-driven finish: forfeit any unfinished riders, finalize standings,
-  // and roll to results so the race saves (unlike cancel, which discards it).
+  // "End race here" (race menu): close the race where it stands and roll to
+  // results so it saves — as an incomplete ride (the controller marks it
+  // endedEarly), unlike discard, which saves nothing.
   const onFinishRace = useCallback(() => {
     const controller = controllerRef.current;
     if (!controller) return;
-    log.info('cycle_game.finish_forced', {
+    log.info('cycle_game.ended_early', {
       raceId: raceMetaRef.current?.raceId,
-      elapsedS: controller.getState()?.engineState?.elapsedS ?? null
+      elapsedS: controller.getState()?.engineState?.elapsedS ?? null,
+      control: 'race-menu.end'
     });
     controller.finishNow();
-    applySnapshot(controller.showResults());
+    const finalState = controller.showResults();
+    // Checkpoint the ended race until its save lands (the save clears it).
+    writeCheckpoint(window.sessionStorage, {
+      raceMeta: raceMetaRef.current,
+      engineState: finalState.engineState,
+      raceState: checkpointRaceState(finalState),
+      savedAt: Date.now()
+    });
+    applySnapshot(finalState);
   }, [applySnapshot, log]);
 
   const onCancel = useCallback(() => {
@@ -1719,35 +2389,78 @@ export default function CycleGameContainer({ onMount } = {}) {
     const raceId = raceMetaRef.current?.raceId || null;
     if (goHoldTimerRef.current) { clearTimeout(goHoldTimerRef.current); goHoldTimerRef.current = null; }
     if (controller) controller.cancel();
-    log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'cancel-button' });
-    controllerRef.current = null;
-    raceMetaRef.current = null;
+    log.info('cycle_game.cancelled', { raceId, fromPhase: phase, control: 'race-menu.discard' });
     clearCheckpoint(window.sessionStorage); // an intentionally-cancelled race is not "crashed" — nothing to recover
-    setSnapshot(null);
-    setPhase('idle');
-  }, [log, phase]);
+    returnToLobby();
+  }, [log, phase, returnToLobby]);
+  useEffect(() => { onCancelRef.current = onCancel; }, [onCancel]);
 
   const backToHome = useCallback(() => {
     log.info('cycle_game.back_to_home', { from: 'results' });
-    controllerRef.current = null;
-    raceMetaRef.current = null;
-    setSnapshot(null);
-    setPhase('idle');
-  }, [log]);
+    returnToLobby();
+  }, [log, returnToLobby]);
 
   // Results auto-exit: hold the board for resultsDwellS, ticking a countdown, then
-  // return to the lobby. The Back-to-home button still exits immediately.
+  // return to the lobby. The board's Exit still leaves immediately, and the
+  // first touch on the board (onResultsHold) stops the countdown for good.
+  const resultsTimerRef = useRef(null);
+  const resultsHeldRef = useRef(false);
+  const resultsLeftRef = useRef(null);
   useEffect(() => {
-    if (phase !== 'results') { setResultsSecondsLeft(null); return undefined; }
+    if (phase !== 'results') {
+      resultsHeldRef.current = false;
+      setResultsSecondsLeft(null);
+      return undefined;
+    }
+    if (resultsHeldRef.current) return undefined;
     let left = resultsDwellS;
+    resultsLeftRef.current = left;
     setResultsSecondsLeft(left);
     const id = setInterval(() => {
       left -= 1;
+      resultsLeftRef.current = left;
       setResultsSecondsLeft(left);
       if (left <= 0) { clearInterval(id); backToHome(); }
     }, 1000);
-    return () => clearInterval(id);
+    resultsTimerRef.current = id;
+    return () => { clearInterval(id); resultsTimerRef.current = null; };
   }, [phase, resultsDwellS, backToHome]);
+
+  const onResultsHold = useCallback(() => {
+    if (resultsHeldRef.current) return;
+    resultsHeldRef.current = true;
+    if (resultsTimerRef.current) { clearInterval(resultsTimerRef.current); resultsTimerRef.current = null; }
+    setResultsSecondsLeft(null);
+    log.info('cycle_game.results_held', {
+      raceId: raceMetaRef.current?.raceId ?? null, secondsLeft: resultsLeftRef.current
+    });
+  }, [log]);
+
+  // Rematch: back to the lobby, then (on the idle render, so phaseRef, the
+  // lobby effects and the start guards all see the lobby) the same race again.
+  const [rematchRequest, setRematchRequest] = useState(null);
+  const onRematch = useCallback(() => {
+    const meta = raceMetaRef.current;
+    const plan = meta?.rematch;
+    if (!plan) return;
+    // A featured course rides as it stands now on the ladder.
+    const featuredCourse = plan.ov?.id && featuredLadder?.course?.id === plan.ov.id ? featuredLadder.course : null;
+    const ov = featuredCourse
+      ? courseStartOverride(featuredCourse)
+      : { win_condition: plan.winCondition, goal_m: plan.goalM, time_cap_s: plan.timeCapS };
+    log.info('cycle_game.rematch', {
+      fromRaceId: meta.raceId, winCondition: plan.winCondition, goalM: plan.goalM ?? null,
+      timeCapS: plan.timeCapS ?? null, hasGhost: !!plan.chosenGhost
+    });
+    if (featuredCourse) ladderBeforeRef.current = featuredLadder;
+    setRematchRequest({ ov, ghost: plan.chosenGhost });
+    returnToLobby();
+  }, [featuredLadder, log, returnToLobby]);
+  useEffect(() => {
+    if (phase !== 'idle' || !rematchRequest) return;
+    setRematchRequest(null);
+    startRaceRef.current(rematchRequest.ov, rematchRequest.ghost, { control: 'results.rematch' });
+  }, [phase, rematchRequest]);
 
   // ── render ───────────────────────────────────────────────────────────────
   if (phase === 'idle') {
@@ -1779,6 +2492,8 @@ export default function CycleGameContainer({ onMount } = {}) {
           onRideFeatured={onRideFeatured}
           resolveName={resolveDisplayName}
           recoveredNotice={recoveredNotice}
+          busy={startPending}
+          boostRange={lobbyBoostRange}
         />
         {recapCandidate && (
           <RaceRecap candidate={recapCandidate} onClose={closeRecap} />
@@ -1788,29 +2503,18 @@ export default function CycleGameContainer({ onMount } = {}) {
   }
 
   if (phase === 'staging') {
-    // Once the buffer elapses we may still be holding for a bike to stop — swap the
-    // countdown bar for an indeterminate striped "waiting" bar until all are at 0.
-    const waitingForStop = stagingSeconds <= 0 && !stagingAllStopped;
     return (
       <div className="cycle-game-container" data-testid="cycle-game-container">
         <div className="cycle-game-staging" data-testid="cycle-game-staging">
           <div className="cycle-game-staging__eyebrow">Riders, to your bikes!</div>
-          {waitingForStop ? (
-            <div className="cycle-game-staging__count cycle-game-staging__count--wait" data-testid="staging-waiting">Stop pedalling</div>
-          ) : (
-            <div className="cycle-game-staging__count">{stagingSeconds}</div>
-          )}
-          <div className={`cycle-game-staging__bar${waitingForStop ? ' cycle-game-staging__bar--waiting' : ''}`} data-testid="staging-bar">
-            {!waitingForStop && <span style={{ animationDuration: `${stagingBufferMs}ms` }} />}
+          <div className="cycle-game-staging__count">{stagingSeconds}</div>
+          <div className="cycle-game-staging__bar" data-testid="staging-bar">
+            <span style={{ animationDuration: `${stagingBufferMs}ms` }} />
           </div>
           <RiderReadyStrip riders={stagingRiders} />
-          <div className="cycle-game-staging__hint">
-            {waitingForStop ? 'Waiting for all bikes to stop…' : 'Don’t pedal until the light turns green.'}
-          </div>
+          <div className="cycle-game-staging__hint">Pedal when you see green.</div>
         </div>
-        <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
-          Cancel
-        </button>
+        <RaceMenu canEnd={false} onDiscard={onCancel} />
       </div>
     );
   }
@@ -1825,11 +2529,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         <div className="cycle-game-countdown-riders">
           <RiderReadyStrip riders={stagingRiders} />
         </div>
-        {phase === 'countdown' && (
-          <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
-            Cancel
-          </button>
-        )}
+        {phase === 'countdown' && <RaceMenu canEnd={false} onDiscard={onCancel} />}
       </div>
     );
   }
@@ -1840,15 +2540,14 @@ export default function CycleGameContainer({ onMount } = {}) {
     const winConditionNow = engineState.winCondition || raceMetaRef.current?.winCondition || 'distance';
     const placementByUser = {};
     (engineState.standings || []).forEach((s) => { placementByUser[s.userId] = s.placement; });
-    // Riders currently in the penalty box (pedalled at the green light). The
-    // controller exposes per-rider detail for the countdown bar / awaiting-stop cue.
-    const penalizedNow = new Set(snapshot?.penalized || []);
-    const dnfNow = new Set(snapshot?.dnf || []);
-    // Overtime = the mercy-kill/forced-finish window closed around an honest
-    // rider (T3) — distinct from dnfNow (idle-quit). The standings tower needs
-    // it live to dim/tag that row, same as RaceResults does after the race.
+    // Away from the pedals: parked (idle past the park window) or no sensor (the
+    // bike never reported). Both dim, leave the framing and come back on movement.
+    const parkedNow = new Set(snapshot?.parked || []);
+    const noSensorNow = new Set(snapshot?.noSensor || []);
+    // Overtime = the mercy-kill/forced-finish window closed around a rider who
+    // was still riding (T3). The standings tower needs it live to dim/tag that
+    // row, same as RaceResults does after the race.
     const overtimeNow = new Set(snapshot?.overtime || []);
-    const penaltyInfo = snapshot?.penaltyInfo || {};
     const riderLive = {};
     Object.keys(riders).forEach((userId) => {
       const rider = riders[userId];
@@ -1893,6 +2592,12 @@ export default function CycleGameContainer({ onMount } = {}) {
           : ((Number.isFinite(vitals.heartRate) && vitals.heartRate > 0) ? (vitals.zoneColor || null) : null),
         zoneProgress: isGhostRider ? null : (vitals.progress ?? null),
         multiplier: mult,
+        // The boost meter under the gauge (zone, multiplier, progress to the
+        // next zone). A ghost replays its zone, with no progress.
+        boost: boostState({
+          zoneId, zones, hrlessMultiplier,
+          progress: isGhostRider ? null : (vitals.progress ?? null)
+        }),
         finished: isFinished,
         // Live rank for EVERY rider (not gated on isFinished) — engine.standings()
         // ranks unfinished riders by distance every tick too, and the standings
@@ -1904,14 +2609,11 @@ export default function CycleGameContainer({ onMount } = {}) {
         // change and lands on the eventual winner.
         isLeader: engineState.elapsedS > 0 && placementByUser[userId] === 1,
         maxRpm: resolveRpmLimits(bikeById.get(rider.equipmentId) || {}).gaugeMaxRpm,
-        // Penalty box: flag + countdown detail. Needle keeps showing real RPM
-        // (riderLive.rpm above) so the rider can see they must pedal down to 0.
-        penalized: penalizedNow.has(userId),
-        dnf: dnfNow.has(userId),
+        // `parked` covers both away states; `noSensor` lets a surface word it as
+        // a sensor problem ("NO SIGNAL") rather than a stop ("PARKED").
+        parked: parkedNow.has(userId) || noSensorNow.has(userId),
+        noSensor: noSensorNow.has(userId),
         overtime: overtimeNow.has(userId),
-        penaltyRemainingS: penaltyInfo[userId]?.remainingS ?? null,
-        penaltyTotalS: penaltyInfo[userId]?.totalS ?? null,
-        penaltyAwaitingStop: !!penaltyInfo[userId]?.awaitingStop,
         // Sensor presumed genuinely disconnected (not a broadcast blip, and not
         // simply "hasn't started pedaling yet" — see the everConnected gate in
         // the tick effect above). Ghosts replay a recording and never carry a
@@ -1931,36 +2633,58 @@ export default function CycleGameContainer({ onMount } = {}) {
           riders={riders}
           riderLive={riderLive}
           cadenceBands={cadenceBands}
+          rivalKind={raceMetaRef.current?.rivalKind ?? null}
+          finalSeconds={finalSecondsRef.current}
+          finale={finaleRef.current}
           backgroundPlexId={raceMetaRef.current?.backgroundPlexId || null}
           lapLengthM={effectiveLapLength({
             lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
             winCondition: engineState.winCondition || raceMetaRef.current?.winCondition || 'distance',
             goalM: engineState.goalM ?? raceMetaRef.current?.goalM ?? null
           })}
-          events={raceEvents}
         />
-        <CycleEventToast toast={eventToast} onDone={onEventToastDone} />
-        <button type="button" data-testid="cycle-game-finish" className="cycle-game-container__finish" onClick={onFinishRace}>
-          Finish race
-        </button>
-        <button type="button" data-testid="cycle-game-cancel" className="cycle-game-container__cancel" onClick={onCancel}>
-          Cancel
-        </button>
+        <CycleEventToast toast={eventToast} onDone={onEventToastDone} durationMs={toastDurationMs(eventToast?.variant)} />
+        <RaceMenu onEnd={onFinishRace} onDiscard={onCancel} />
       </div>
     );
   }
 
   // results
   const engineState = snapshot?.engineState || {};
+  const resultsMeta = raceMetaRef.current;
+  const resultsWin = engineState.winCondition || resultsMeta?.winCondition || 'distance';
+  const stoppedIds = [...new Set([...(snapshot?.parked || []), ...(snapshot?.noSensor || [])])];
+  const resultRiders = engineState.riders || {};
+  const resultLiveIds = Object.keys(resultRiders).filter((id) => !resultRiders[id].isGhost);
+  const resultGhostIds = Object.keys(resultRiders).filter((id) => resultRiders[id].isGhost);
+  // Each live rider's ride against their own history at this type and length.
+  // None for an ended-early ride, a rider stopped at the close, or a distance
+  // race not finished.
+  const comparisons = {};
+  if (!snapshot?.endedEarly && resultsMeta?.history) {
+    (engineState.standings || []).forEach((s) => {
+      const h = resultsMeta.history[s.userId];
+      if (!h || stoppedIds.includes(s.userId)) return;
+      const value = resultsWin === 'distance' ? s.finishTimeS : s.distanceM;
+      const cmp = resultsComparison({ winCondition: resultsWin, value, previousBest: h.previousBest, last: h.last });
+      if (cmp) comparisons[s.userId] = cmp;
+    });
+  }
+  // A solo race: one live rider against one replayed rival.
+  const soloRivalId = resultLiveIds.length === 1 && resultGhostIds.length === 1 ? resultGhostIds[0] : null;
+  // Rematch needs someone on a bike, and a featured course that still exists.
+  const rematchPlan = resultsMeta?.rematch;
+  const courseGone = !!rematchPlan?.ov?.id && featuredLadder?.course?.id !== rematchPlan.ov.id;
+  const anyoneClaimed = bikes.some((b) => session?.getEquipmentRider?.(b.id));
+  const canRematch = !!rematchPlan && !courseGone && anyoneClaimed;
   return (
     <div className="cycle-game-container" data-testid="cycle-game-container">
       <RaceResults
         standings={engineState.standings || []}
-        riders={engineState.riders || {}}
-        winCondition={engineState.winCondition || raceMetaRef.current?.winCondition || 'distance'}
-        dnf={snapshot?.dnf || []}
+        riders={resultRiders}
+        winCondition={resultsWin}
+        stopped={stoppedIds}
         overtime={snapshot?.overtime || []}
-        penalized={raceEvents.filter((e) => e.type === 'penalty').map((e) => e.riderId)}
         lapLengthM={effectiveLapLength({
           lapLengthM: Number.isFinite(cycleGameConfig?.lap_length_m) ? cycleGameConfig.lap_length_m : 0,
           winCondition: engineState.winCondition || raceMetaRef.current?.winCondition || 'distance',
@@ -1970,11 +2694,13 @@ export default function CycleGameContainer({ onMount } = {}) {
         secondsLeft={resultsSecondsLeft}
         saveFailed={saveFailed}
         onExit={backToHome}
+        onHold={onResultsHold}
+        onRematch={canRematch ? onRematch : null}
+        comparisons={comparisons}
+        rivalId={soloRivalId}
+        rivalLabel={soloRivalId ? rivalLabelFor(resultsMeta?.rivalKind, resultRiders[soloRivalId]) : ''}
         ladderNotes={ladderNotes}
       />
-      <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={backToHome}>
-        Back to home
-      </button>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import "./HighScores.scss";
  * High scores — clickable personal-best cards above History. Same tap-into-recap
  * affordance as a History row; the metric value is the hero figure.
  */
-export function HighScores({ highScores = [], onSelectRecord }) {
+export function HighScores({ highScores = [], onSelectRecord, disabled = false }) {
   if (highScores.length === 0) return null;
   return (
     <section className="cgh-hs-section" data-testid="cycle-game-highscores">
@@ -19,6 +19,7 @@ export function HighScores({ highScores = [], onSelectRecord }) {
             type="button"
             className="cgh-hs"
             data-testid={`highscore-${hs.key}`}
+            disabled={disabled}
             onClick={() => onSelectRecord?.(hs.raceId)}
             aria-label={`${hs.label}: ${hs.valueLabel} by ${hs.holderName}. View race.`}
           >
@@ -54,7 +55,8 @@ export function HighScores({ highScores = [], onSelectRecord }) {
 
 HighScores.propTypes = {
   highScores: PropTypes.array,
-  onSelectRecord: PropTypes.func
+  onSelectRecord: PropTypes.func,
+  disabled: PropTypes.bool
 };
 
 export default HighScores;

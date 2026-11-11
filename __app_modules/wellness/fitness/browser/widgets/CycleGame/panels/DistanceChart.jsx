@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
-import { StopSignIcon, TimeIcon, RaceFlagIcon } from "../home/icons.jsx";
+import { RaceFlagIcon } from "../home/icons.jsx";
 import { plotStartIndex } from "../../../lib/cycleGame/chartTrim.js";
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from "./useFitGuard.js";
-import { continuousWindow, gridValues, pickAxisTicks } from "../../../lib/cycleGame/chartZoom.js";
+import { continuousWindow, evenTicks, niceCeil, niceCeilTime } from "../../../lib/cycleGame/chartZoom.js";
+import { prefersReducedMotion } from "../../../lib/cycleGame/reducedMotion.js";
+import { distanceAtTime } from "../../../lib/cycleGame/paceDelta.js";
+import { rivalTraceSamples } from "../../../lib/cycleGame/rivalTrace.js";
 import { formatClock } from "../../../lib/cycleGame/cycleGameLobby.js";
 import { formatDistance } from "../../../lib/cycleGame/formatDistance.js";
 import { gapFrac } from "../../../lib/cycleGame/chartScale.js";
@@ -16,14 +19,13 @@ import "./DistanceChart.scss";
 const X_BASE_S = 20;        // smallest time window (seconds; 1 sample = 1s at the 1Hz tick)
 const Y_BASE_M = 150;       // smallest distance window (metres) for a TIME race's auto-zoom
 const FILL_FRAC = 0.85;     // keep the leading data at ~85% of the window (the rest is headroom)
-const GRID_MIN_PX = 32;     // never draw gridlines closer than this (bottom cap)
+const GRID_LINES = 5;       // gridlines per axis, evenly spaced, both ends included
+const AXIS_LABELS = 3;      // labels per axis: every other gridline (0, middle, end)
 const TICK_INTERP_MS = 1000; // glide the leading edge over one 1Hz tick interval
 const LOG_TWEEN_MS = 400;   // lin↔log flip crossfade duration (audit UX 2.7)
 const MAX_PLOT_POINTS = 600; // decimate longer series to bound per-tick geometry cost
 const FALLBACK_AVATAR = '/api/v1/static/img/users/user';
-
-// Officiating-event marker icons (audit UX §6.3 — 🛑/⏱️ emoji → icon set).
-const EVENT_GLYPH = { dnf: StopSignIcon, penalty: TimeIcon };
+const PARKED_OPACITY = 0.4; // a parked rider's lane and tag recede, never vanish
 
 // ── SVG plot geometry (fixed viewBox) ──────────────────────────────────────
 const W = 600, H = 200;
@@ -97,22 +99,43 @@ function layoutTags(tips, win, minSepPct) {
  *
  * DISTANCE races: the Y domain is FIXED at [0..goalM] from the very first tick, so
  * the goal line sits at the top and every lane visibly climbs toward the finish
- * the whole race (no Y zoom, ever). TIME races keep an auto-zoom, but CONTINUOUS —
- * the window grows smoothly with the data (no 2× rug-pulls) and the lin↔log
- * crowding flip crossfades over ~400 ms with a "zoomed on leaders" chip.
+ * the whole race (no Y zoom, ever); the time axis grows continuously. TIME races
+ * show the whole race on X (0..timeCapS) from the first frame and auto-zoom Y
+ * CONTINUOUSLY (no 2× rug-pulls); the lin↔log crowding flip crossfades over
+ * ~400 ms with a "zoomed on leaders" chip. Axis gridlines and labels are evenly
+ * spaced with both ends included (evenTicks).
+ *
+ * SOLO (`mode="solo"`): no "Leader" header, tags show own distance, linear only,
+ * and the rival's whole recording is drawn as a dotted trace (rivalTrace).
  *
  * Motion (T6 architecture): the engine ticks at 1 Hz. Geometry is computed ONCE
- * per tick during render; the lane lines/areas, terminus tags, connectors and
- * event markers then GLIDE on a single shared linear rAF clock (tickLerp),
+ * per tick during render; the lane lines/areas, terminus tags and connectors
+ * then GLIDE on a single shared linear rAF clock (tickLerp),
  * written imperatively. React never re-renders per animation frame. The line
  * remap eases the WINDOW bounds prev→cur across the tick, so a continuous zoom
  * reads as a smooth drift rather than a per-tick snap.
  *
  * Terminus tags carry a 28px rider avatar (ghost-treated) + gap-behind-leader
- * text; the leader's tag shows total distance. Axis labels are an HTML overlay
+ * text; the leader's tag shows total distance.
+ *
+ * Parked riders (`riderLive[id].parked`: idle past the park window, or no
+ * sensor) never set the framing: the leader the gaps are measured from, the
+ * time-race distance window and the log-scale crowding test all use the
+ * un-parked riders (everyone, if the whole field is parked). A parked lane and
+ * its tag draw at reduced opacity; the tag shows the rider's own distance. Axis labels are an HTML overlay
  * (≥1.1rem): distance up the Y axis (gap-behind-leader in log mode), m:ss across X.
  */
-export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, events = [], zoneBox, elapsedS = 0, clockSeconds = 0, maxDistanceM = 0 }) {
+export default function DistanceChart({ riderIds, riders, riderLive, winCondition, goalM, zoneBox, elapsedS = 0, clockSeconds = 0, maxDistanceM = 0, mode = 'sidebar', timeCapS = null, finalSeconds = false }) {
+  // Solo: one live rider and a rival. Nobody leads: no "Leader" in the header,
+  // and each tag shows the rider's own distance rather than a gap to a leader.
+  // The rival's WHOLE recording is drawn as a dashed trace, so the rider sees
+  // where the rival will be; the scale stays linear (see useLog below).
+  const solo = mode === 'solo';
+  const rivalId = solo
+    ? riderIds.find((id) => riders[id].isGhost && Array.isArray(riders[id].ghostRecordedSeries) && riders[id].ghostRecordedSeries.length) ?? null
+    : null;
+  const rivalSeries = rivalId ? riders[rivalId].ghostRecordedSeries : null;
+  const rivalIntervalS = rivalId ? riders[rivalId].ghostIntervalS : null;
   const chartRef = useRef(null);
   const fitRef = useRef(null);
   const fitScaleVal = useFitGuard(fitRef, zoneBox, 'distanceChart');
@@ -136,27 +159,40 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     return () => { if (ro) ro.disconnect(); };
   }, [log]);
 
-  const leaderDistanceM = Math.max(0, ...riderIds.map((id) => riders[id].cumulativeDistanceM || 0));
+  const isParked = (id) => !!(riderLive && riderLive[id] && riderLive[id].parked);
+  const unparkedIds = riderIds.filter((id) => !isParked(id));
+  const framingIds = unparkedIds.length ? unparkedIds : riderIds;
+  const leaderDistanceM = Math.max(0, ...framingIds.map((id) => riders[id].cumulativeDistanceM || 0));
   const maxSeriesLen = Math.max(1, ...riderIds.map((id) => (riders[id].distanceSeries || []).length));
 
   // Distance races have a fixed finish: pin the Y window to the goal so the goal
   // line sits at the TOP and lanes climb toward it the whole race.
   const distanceGoal = winCondition === 'distance' && Number.isFinite(goalM) && goalM > 0;
 
-  // ── Continuous windows (no stepped 2× zoom) ────────────────────────────────
-  // Time axis grows continuously to hold elapsed at ~85% of the window (both race
-  // types). Distance axis: FIXED to the goal for a distance race; continuous
-  // auto-zoom to fit the leader for a time race. Enforce monotonic (only zoom out)
+  // ── Windows ────────────────────────────────────────────────────────────────
+  // Time axis: a TIME race shows the whole race (0 … timeCapS) from the first
+  // frame, so the rider sees how much is left. A distance race has no fixed end
+  // time, so its time axis grows continuously to hold elapsed at ~85% of the
+  // window. Distance axis: FIXED to the goal for a distance race; continuous
+  // auto-zoom to fit the leader for a time race, never below the solo rival's
+  // final distance (so its whole trace is on screen). Monotonic (only zoom out)
   // against sensor jitter via refs.
+  const fixedTime = winCondition === 'time' && Number.isFinite(timeCapS) && timeCapS > 0;
   const timeWinRef = useRef(X_BASE_S);
   const distWinRef = useRef(Y_BASE_M);
-  const winT = Math.max(timeWinRef.current, continuousWindow(elapsedS, { base: X_BASE_S, fillFrac: FILL_FRAC }));
+  const winT = fixedTime
+    ? timeCapS
+    // Snapped to a round time so the labels read 2:00 / 4:00, not 2:04 / 4:07.
+    : niceCeilTime(Math.max(timeWinRef.current, continuousWindow(elapsedS, { base: X_BASE_S, fillFrac: FILL_FRAC })));
   timeWinRef.current = winT;
   let winD;
   if (distanceGoal) {
     winD = goalM;
   } else {
-    winD = Math.max(distWinRef.current, continuousWindow(leaderDistanceM, { base: Y_BASE_M, fillFrac: FILL_FRAC }));
+    const rivalFinalM = rivalSeries && fixedTime ? distanceAtTime(rivalSeries, timeCapS, rivalIntervalS) : 0;
+    // Snapped to a round ceiling (1/2/2.5/5 x 10^n) so the three y labels are
+    // round; still never below the rival's final distance.
+    winD = niceCeil(Math.max(distWinRef.current, rivalFinalM, continuousWindow(leaderDistanceM, { base: Y_BASE_M, fillFrac: FILL_FRAC })));
     distWinRef.current = winD;
   }
 
@@ -164,12 +200,14 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   // A distance race keeps its truthful fixed-linear scale (goal at top). A time
   // race switches to a leader-anchored gap-log when adjacent leaders bunch, with
   // hysteresis so it doesn't flap; the flip crossfades (logMix) over LOG_TWEEN_MS.
-  const lastDists = riderIds.map((id) => (riders[id].distanceSeries || []).slice(-1)[0] || 0);
+  const lastDists = framingIds.map((id) => (riders[id].distanceSeries || []).slice(-1)[0] || 0);
   const leaderM = lastDists.length ? Math.max(...lastDists) : 0;
   const K_GAP = 4;
   const K_GAP_FRAC = 0.5;
   const logRef = useRef(false);
-  if (!distanceGoal && riderIds.length >= 2) {
+  // Solo stays linear: the log scale is anchored on the leader, which would
+  // bend the rival's whole-race trace out of shape ahead of the rider.
+  if (!distanceGoal && !solo && framingIds.length >= 2) {
     const sorted = [...lastDists].sort((a, b) => a - b);
     let minGap = Infinity;
     for (let i = 1; i < sorted.length; i++) minGap = Math.min(minGap, sorted[i] - sorted[i - 1]);
@@ -217,6 +255,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
       id, idx,
       color: LINE_COLORS[idx % LINE_COLORS.length],
       isGhost: !!riders[id].isGhost,
+      parked: isParked(id),
       samples,
       coords,
       tip: coords[coords.length - 1],
@@ -227,14 +266,32 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     // Recompute whenever data advances or the scale/height changes — all per-tick
     // / per-resize events, never per animation frame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [riderIds, riders, maxSeriesLen, elapsedS, winT, winD, useLog, goalM, winCondition, chartH]).filter(Boolean);
+  }), [riderIds, riders, riderLive, maxSeriesLen, elapsedS, winT, winD, useLog, goalM, winCondition, chartH]).filter(Boolean);
 
-  // leader (for emphasis / gap) — furthest along
-  const leaderId = riderIds.reduce(
+  // ── Solo rival trace: the rival's whole recording inside the window ────────
+  // (time race: the whole race; distance race: up to the window edge, ending on
+  // the goal line at the rival's finish time). Re-sampled per frame under the
+  // eased window below, so it drifts with the lanes during a zoom.
+  const traceGoalM = distanceGoal ? goalM : null;
+  const traceSamplesFor = (windowS) => (rivalSeries
+    ? rivalTraceSamples(rivalSeries, rivalIntervalS, { windowS, goalM: traceGoalM, maxPoints: MAX_PLOT_POINTS })
+    : []);
+  const traceSamples = traceSamplesFor(winT);
+  const traceColor = rivalId ? LINE_COLORS[riderIds.indexOf(rivalId) % LINE_COLORS.length] : null;
+  const tracePoints = ptsStr(traceSamples.map((p) => mapPoint(p.t, p.d, curWin)));
+
+  // leader (for emphasis / gap) — furthest along among the un-parked riders
+  const leaderId = framingIds.reduce(
     (best, id) => (best == null || (riders[id].cumulativeDistanceM || 0) > (riders[best].cumulativeDistanceM || 0) ? id : best),
     null
   );
   const leaderDistM = leaderId != null ? (riders[leaderId].cumulativeDistanceM || 0) : 0;
+  // The header's "Leader …" is the furthest rider overall (parked or not) —
+  // printed from that rider's own engine distance so it matches their other readouts.
+  const headerLeaderId = riderIds.reduce(
+    (best, id) => (best == null || (riders[id].cumulativeDistanceM || 0) > (riders[best].cumulativeDistanceM || 0) ? id : best),
+    null
+  );
 
   // ── Terminus tags: avatar + gap-behind-leader (leader shows total) ──────────
   // Position comes from layoutTags (shared with the per-frame remap below);
@@ -255,61 +312,43 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     const idx = riderIds.indexOf(id);
     const distanceM = riders[id].cumulativeDistanceM || 0;
     const isLeader = id === leaderId;
+    const parked = isParked(id);
     const ident = resolveParticipantIdentity(riders[id].userId || id, riders[id].displayName);
     const avatarSrc = (riderLive[id] || {}).avatarSrc || riders[id].avatarSrc || ident.avatarSrc || FALLBACK_AVATAR;
-    const gapText = isLeader
+    const showsOwnDistance = solo || isLeader || parked;
+    const gapText = showsOwnDistance
       ? formatDistance(distanceM)
       : `−${formatDistance(Math.max(0, leaderDistM - distanceM))}`;
     return {
       id, idx, leftPct: p.leftPct, rawTopPct: p.rawTopPct, topPct: p.topPct,
       color: LINE_COLORS[idx % LINE_COLORS.length],
       isGhost: !!riders[id].isGhost,
-      avatarSrc, distanceM, displayName: riders[id].displayName, gapText, isLeader
+      parked,
+      avatarSrc, distanceM, displayName: riders[id].displayName, gapText, isLeader, showsOwnDistance
     };
   });
 
-  // Officiating-event markers (DNF / penalty), re-projected onto their lane point.
-  // t/d are the FIXED historical datum (a past event never moves); only the
-  // window is eased, so the per-frame writer re-derives position from these
-  // via mapPoint(t, d, winF) directly — no prev/cur lerp needed on the datum.
-  const eventMarkers = events.map((e) => {
-    const idx = riderIds.indexOf(e.riderId);
-    if (idx < 0) return null;
-    const t = e.seriesIndex * stepS;
-    const d = e.distanceM;
-    return {
-      id: e.id,
-      type: e.type,
-      Glyph: EVENT_GLYPH[e.type] || null,
-      t, d,
-      leftPct: (xForTime(t) / W) * 100,
-      topPct: (yFor(d) / H) * 100,
-      color: LINE_COLORS[idx % LINE_COLORS.length]
-    };
-  }).filter(Boolean);
-
   // Gridlines + HTML axis labels (≥1.1rem). Y: distance values (gap-behind-leader
-  // in log mode); X: m:ss. Both anchored to the gridlines, ≤3 labels per axis.
-  const xGridVals = gridValues(winT, X_BASE_S, W, GRID_MIN_PX);
-  const yGridVals = gridValues(winD, Y_BASE_M, H, GRID_MIN_PX);
-  const xGrid = xGridVals.map((t) => ({ t, x: xForTime(t) }));
-  const yGrid = yGridVals.map((d) => ({ d, y: yFor(d) }));
-  const xLabels = pickAxisTicks(xGridVals, 3).map((t) => ({
+  // in log mode); X: m:ss. Evenly spaced over the window with both ends
+  // included (evenTicks); the labels sit on every other gridline.
+  const xGrid = evenTicks(0, winT, GRID_LINES).map((t) => ({ t, x: xForTime(t) }));
+  const yGrid = evenTicks(0, winD, GRID_LINES).map((d) => ({ d, y: yFor(d) }));
+  const xLabels = evenTicks(0, winT, AXIS_LABELS).map((t) => ({
     key: `xl-${t}`, leftPct: (xForTime(t) / W) * 100, text: formatClock(t)
   }));
-  const yLabels = pickAxisTicks(yGridVals, 3).map((d) => ({
+  const yLabels = evenTicks(0, winD, AXIS_LABELS).map((d) => ({
     key: `yl-${d}`,
     topPct: (yFor(d) / H) * 100,
     text: useLog ? (d >= leaderM ? '0' : `−${formatDistance(Math.max(0, leaderM - d))}`) : formatDistance(d)
   }));
 
-  // ── One shared motion clock: eased window remap + tags / connectors / markers ─
+  // ── One shared motion clock: eased window remap + tags / connectors ─
   const lineEls = useRef({});
   const areaEls = useRef({});
   const tagEls = useRef({});
   const connEls = useRef({});
-  const markerEls = useRef({});
-  const motionRef = useRef({ lanes: [], tags: [], conns: [], markers: [], prevWin: curWin, curWin });
+  const traceEl = useRef(null);
+  const motionRef = useRef({ lanes: [], tags: [], conns: [], prevWin: curWin, curWin });
   const clockRef = useRef(null);
   if (!clockRef.current) clockRef.current = createTickLerp({ intervalMs: TICK_INTERP_MS });
 
@@ -348,34 +387,38 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   lastWinRef.current = curWin;
 
   // Imperative motion payload (read fresh each frame from the ref → a mid-tick
-  // resize/rescale re-render is picked up without a stale closure). Tags and
-  // markers carry only IDENTITY + raw tip data here — their SCREEN POSITION is
+  // resize/rescale re-render is picked up without a stale closure). Tags carry
+  // only IDENTITY + raw tip data here — their SCREEN POSITION is
   // recomputed fresh every frame in the subscriber below (via layoutTags /
   // mapPoint under the live eased window), not lerped between two stale
-  // per-tick percentages, so a tag/marker can never trace a different path
+  // per-tick percentages, so a tag can never trace a different path
   // than the line/data point it's attached to (2026-07-02 desync fix).
   motionRef.current = {
     prevWin: prevWinRef.current,
     curWin,
     minSepPct,
+    traceFor: rivalSeries ? traceSamplesFor : null,
     lanes: lanes.map((l) => ({
       id: l.id,
       samples: l.samples,
       prevTipData: prevTipData.current[l.id] || l.curTipData,
       curTipData: l.curTipData,
     })),
-    markers: eventMarkers.map((mk) => ({ id: mk.id, t: mk.t, d: mk.d })),
   };
 
   // Subscribe the imperative writer once; tear the clock down on unmount.
   useEffect(() => {
     const clock = clockRef.current;
-    const unsub = clock.subscribe((f) => {
+    const unsub = clock.subscribe((fRaw) => {
+      // Reduced motion: no easing. Jump straight to the current tick's window,
+      // tips and log/linear mix (the data still updates every tick).
+      const reduced = prefersReducedMotion();
+      const f = reduced ? 1 : fRaw;
       const m = motionRef.current;
       const pw = m.prevWin; const cw = m.curWin;
       // lin↔log crossfade from the absolute flip timestamp (LOG_TWEEN_MS).
       const target = logTargetRef.current;
-      const tw = clamp01((perfNow() - logFlipAtRef.current) / LOG_TWEEN_MS);
+      const tw = reduced ? 1 : clamp01((perfNow() - logFlipAtRef.current) / LOG_TWEEN_MS);
       logMixRef.current = logMixAtFlipRef.current + (target - logMixAtFlipRef.current) * tw;
       const winF = {
         T: lerp(pw.T, cw.T, f),
@@ -384,6 +427,10 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         kGap: lerp(pw.kGap, cw.kGap, f),
         mix: logMixRef.current,
       };
+      if (traceEl.current && m.traceFor) {
+        const pts = m.traceFor(winF.T).map((p) => mapPoint(p.t, p.d, winF));
+        traceEl.current.setAttribute('points', ptsStr(pts));
+      }
       const frameTips = [];
       m.lanes.forEach((l) => {
         const lineEl = lineEls.current[l.id];
@@ -431,20 +478,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
         }
       });
 
-      // Markers pin to a FIXED historical (t,d) — only the window moves them.
-      m.markers.forEach((mk) => {
-        const el = markerEls.current[mk.id];
-        if (!el) return;
-        const p = mapPoint(mk.t, mk.d, winF);
-        el.style.left = `${(p.x / W) * 100}%`;
-        el.style.top = `${(p.y / H) * 100}%`;
-      });
     });
     return () => { unsub(); clock.stop(); };
      
   }, []);
 
-  // Kick the clock on each new data tick so the lines/tags/markers glide to the
+  // Kick the clock on each new data tick so the lines/tags glide to the
   // new datum (and the window eases prev→cur).
   useEffect(() => {
     clockRef.current.onTick(null);
@@ -460,9 +499,13 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
     <div className="cg-chart" data-testid="distance-chart">
       <div className="cg-chart__header" data-testid="chart-header">
         <span className="cg-chart__clock-label">{winCondition === 'time' ? 'Time left' : 'Elapsed'}</span>
-        <span className="cg-chart__clock" data-testid="race-clock">{formatClock(clockSeconds)}</span>
+        <span className={`cg-chart__clock${finalSeconds ? ' is-final' : ''}`} data-testid="race-clock">{formatClock(clockSeconds)}</span>
         <span className="cg-chart__goal">
-          {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : `Leader ${formatDistance(maxDistanceM)}`}
+          {winCondition === 'distance' ? `to ${formatDistance(goalM)}` : solo ? null : (
+            <>Leader <span data-distance-readout={headerLeaderId ?? undefined}>
+              {formatDistance(headerLeaderId != null ? riders[headerLeaderId].cumulativeDistanceM : maxDistanceM)}
+            </span></>
+          )}
         </span>
         {/* Lives in the header, not the plot overlay — the plot's top-right corner
             is exactly where a leader's terminus tag sits in log mode (leader gap=0
@@ -500,6 +543,24 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           ))}
         </g>
 
+        {/* Solo: the rival's whole recording, dotted, under every lane. Its
+            replayed lane and tag still mark where the rival is now. */}
+        {rivalId && traceSamples.length > 1 && (
+          <polyline
+            ref={traceEl}
+            data-testid="rival-trace"
+            className="cycle-race-screen__rival-trace"
+            points={tracePoints}
+            fill="none"
+            stroke={traceColor}
+            strokeWidth={2}
+            strokeDasharray="2 7"
+            opacity={0.55}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+
         {/* area fills (under each lane) — the tip point glides imperatively. */}
         {lanes.map((l) => {
           const area = `${l.startX.toFixed(1)},${H} ${l.pointsStr} ${l.tip.x.toFixed(1)},${H}`;
@@ -509,12 +570,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
               ref={(el) => { areaEls.current[l.id] = el; }}
               points={area}
               fill={`url(#cg-fill-${l.idx})`}
-              opacity={l.isGhost ? 0.4 : 1}
+              opacity={(l.isGhost ? 0.4 : 1) * (l.parked ? PARKED_OPACITY : 1)}
             />
           );
         })}
 
-        {/* lane lines — a rider boxed at the start emerges from the axis; the whole
+        {/* lane lines — a late starter emerges from the axis; the whole
             line eases under the continuous window on the motion clock. */}
         {lanes.map((l) => (
           <polyline
@@ -526,7 +587,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
             stroke={l.color}
             strokeWidth={l.isGhost ? 2 : 3}
             strokeDasharray={l.isGhost ? '5 6' : undefined}
-            opacity={l.isGhost ? 0.8 : 1}
+            opacity={l.parked ? PARKED_OPACITY : (l.isGhost ? 0.8 : 1)}
             strokeLinejoin="round"
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
@@ -589,7 +650,7 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
           <div
             key={`tag-${t.id}`}
             ref={(el) => { tagEls.current[t.id] = el; }}
-            className={`cycle-race-screen__tag${t.isGhost ? ' is-ghost' : ''}${t.isLeader ? ' is-leader' : ''}`}
+            className={`cycle-race-screen__tag${t.isGhost ? ' is-ghost' : ''}${t.isLeader ? ' is-leader' : ''}${t.parked ? ' is-parked' : ''}`}
             data-testid="chart-tag"
             style={{ left: `${t.leftPct}%`, top: `${t.topPct}%`, '--lane': t.color }}
           >
@@ -601,29 +662,12 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
                 onError={(e) => { if (e.currentTarget.src !== FALLBACK_AVATAR) e.currentTarget.src = FALLBACK_AVATAR; }}
               />
             </span>
-            <span className="cycle-race-screen__tag-gap" data-testid="chart-tag-gap">{t.gapText}</span>
+            <span className="cycle-race-screen__tag-gap" data-testid="chart-tag-gap"
+              data-distance-readout={t.showsOwnDistance ? t.id : undefined}>{t.gapText}</span>
           </div>
         ))}
       </div>
 
-      {/* Officiating-event markers pinned to the lane where each fired. */}
-      {eventMarkers.length > 0 && (
-        <div className="cycle-race-screen__markers" data-testid="race-event-markers">
-          {eventMarkers.map((m) => (
-            <div
-              key={`evt-${m.id}`}
-              ref={(el) => { markerEls.current[m.id] = el; }}
-              className={`cycle-race-screen__marker cycle-race-screen__marker--${m.type}`}
-              data-testid={`race-event-marker-${m.type}`}
-              style={{ left: `${m.leftPct}%`, top: `${m.topPct}%`, '--marker-color': m.color }}
-            >
-              <span className="cycle-race-screen__marker-glyph" aria-hidden="true">
-                {m.Glyph ? <m.Glyph /> : null}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
       </div>
       </div>
     </div>
@@ -636,15 +680,13 @@ DistanceChart.propTypes = {
   riderLive: PropTypes.object.isRequired,
   winCondition: PropTypes.string,
   goalM: PropTypes.number,
-  events: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.number,
-    type: PropTypes.oneOf(['dnf', 'penalty']),
-    riderId: PropTypes.string,
-    seriesIndex: PropTypes.number,
-    distanceM: PropTypes.number
-  })),
   zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number }),
   elapsedS: PropTypes.number,
   clockSeconds: PropTypes.number,
   maxDistanceM: PropTypes.number,
+  mode: PropTypes.oneOf(['solo', 'sidebar', 'wide']),
+  /** Time races: the race length; the x axis spans 0 … timeCapS from the first frame. */
+  timeCapS: PropTypes.number,
+  /** The last ten seconds of a time race: the clock grows and pulses. */
+  finalSeconds: PropTypes.bool,
 };

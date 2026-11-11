@@ -17,6 +17,7 @@ vi.mock("../../nav/usePersistentVolume.js", () => ({
 }));
 
 import CycleGameContainer from "./CycleGameContainer.jsx";
+import { discardRace } from "./raceMenuTestHelpers.js";
 
 const CHECKPOINT_KEY = 'cycleGame.checkpoint';
 const RACE_TICK_MS = 1000;
@@ -142,7 +143,7 @@ describe('CycleGameContainer — mid-race checkpoint write (audit C1)', () => {
     expect(window.sessionStorage.getItem(CHECKPOINT_KEY)).toBeTruthy(); // sanity: a checkpoint exists
 
     act(() => { vi.advanceTimersByTime(GO_HOLD_MS); }); // ensure we're past the go-hold, on the race screen
-    act(() => { fireEvent.click(renderApi.getByTestId('cycle-game-cancel')); });
+    discardRace(renderApi);
 
     expect(window.sessionStorage.getItem(CHECKPOINT_KEY)).toBeNull();
   });
@@ -197,7 +198,7 @@ describe('CycleGameContainer — mount-time crash recovery (audit C1)', () => {
     vi.restoreAllMocks();
   });
 
-  function seedCheckpoint({ savedAt = Date.now(), distanceM = 500 } = {}) {
+  function seedCheckpoint({ savedAt = Date.now(), distanceM = 500, raceState } = {}) {
     const raceMeta = {
       raceId: '20260701120000',
       date: new Date(0).toISOString(),
@@ -237,9 +238,56 @@ describe('CycleGameContainer — mount-time crash recovery (audit C1)', () => {
       },
       standings: []
     };
-    window.sessionStorage.setItem(CHECKPOINT_KEY, JSON.stringify({ raceMeta, engineState, savedAt }));
+    window.sessionStorage.setItem(CHECKPOINT_KEY, JSON.stringify({ raceMeta, engineState, raceState, savedAt }));
     return { raceMeta, engineState };
   }
+
+  // Mount with the seeded checkpoint and return the record the recovery saved.
+  async function recoveredRecord() {
+    render(<CycleGameContainer />);
+    await waitFor(() => {
+      expect(logSpy.info).toHaveBeenCalledWith('cycle_game.race_recovered', expect.objectContaining({ ok: true }));
+    });
+    const posts = global.fetch.mock.calls.filter(([, opts]) => opts && opts.method === 'POST');
+    expect(posts).toHaveLength(1);
+    return JSON.parse(posts[0][1].body).record;
+  }
+  const recoveredLog = () => logSpy.info.mock.calls.find(([e]) => e === 'cycle_game.race_recovered')[1];
+
+  describe('what a recovered race is saved as', () => {
+    it('a race that was still running is an interrupted ride: incomplete, its parked rider stopped', async () => {
+      seedCheckpoint({ raceState: { parked: ['user_1'], noSensor: [], endedEarly: false, finished: false } });
+      const record = await recoveredRecord();
+      expect(record.race.incomplete).toBe(true);
+      expect(record.participants.user_1.stopped).toBe(true);
+      expect(recoveredLog()).toMatchObject({ incomplete: true });
+    });
+
+    it('a no-sensor rider is saved as stopped too', async () => {
+      seedCheckpoint({ raceState: { parked: [], noSensor: ['user_1'], endedEarly: false, finished: false } });
+      expect((await recoveredRecord()).participants.user_1.stopped).toBe(true);
+    });
+
+    it('a checkpoint with no race state (older build) is incomplete, nobody stopped', async () => {
+      seedCheckpoint();
+      const record = await recoveredRecord();
+      expect(record.race.incomplete).toBe(true);
+      expect(record.participants.user_1.stopped).toBeUndefined();
+    });
+
+    it('a race that had finished on its own (only the save was lost) is saved complete', async () => {
+      seedCheckpoint({ raceState: { parked: [], noSensor: [], endedEarly: false, finished: true } });
+      const record = await recoveredRecord();
+      expect(record.race).not.toHaveProperty('incomplete');
+      expect(record.participants.user_1.stopped).toBeUndefined();
+      expect(recoveredLog()).toMatchObject({ incomplete: false });
+    });
+
+    it('a race ended from the menu whose save was lost stays incomplete', async () => {
+      seedCheckpoint({ raceState: { parked: [], noSensor: [], endedEarly: true, finished: true } });
+      expect((await recoveredRecord()).race.incomplete).toBe(true);
+    });
+  });
 
   it('finalizes a fresh checkpoint on mount: saves it, clears it, and logs race_recovered', async () => {
     const { raceMeta } = seedCheckpoint();
@@ -321,7 +369,7 @@ describe('CycleGameContainer — mount-time crash recovery (audit C1)', () => {
     seedCheckpoint({ raceId: 'should-not-recover' });
     act(() => { fireEvent.click(renderApi.getByTestId('course-distance')); });
     act(() => { fireEvent.click(renderApi.getByTestId('cycle-game-start')); });
-    act(() => { fireEvent.click(renderApi.getByTestId('cycle-game-cancel')); });
+    discardRace(renderApi);
 
     const recoveredCallsAfterSecond = logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.race_recovered').length;
     expect(recoveredCallsAfterSecond).toBe(recoveredCallsAfterFirst);

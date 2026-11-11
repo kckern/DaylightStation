@@ -38,6 +38,7 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
  * - GET  /api/fitness/cycle-races - List cycle-game races (by date, course/win-condition, or dates)
  * - GET  /api/fitness/cycle-races/ladder - Get the current week's cycle-game ladder
  * - GET  /api/fitness/cycle-races/personal-bests - Get a user's personal best for a course
+ * - GET  /api/fitness/cycle-races/rival-pool - List light index rows of one race type and length
  * - GET  /api/fitness/workouts - List household workout summaries
  * - GET  /api/fitness/workouts/:id - Get one full workout
  * - POST /api/fitness/workouts - Create or update a workout (400 names unknown slugs)
@@ -532,7 +533,7 @@ export function createFitnessRouter(config) {
     }
   });
 
-  // NOTE: /ladder and /personal-bests MUST precede /cycle-races/:raceId or
+  // NOTE: /ladder, /personal-bests and /rival-pool MUST precede /cycle-races/:raceId or
   // Express matches them as raceIds.
   router.get('/cycle-races/ladder', asyncHandler(async (req, res) => {
     if (!cycleRaceService) return res.status(503).json({ error: 'cycle races unavailable' });
@@ -555,6 +556,28 @@ export function createFitnessRouter(config) {
     if (!userId || !courseId) return res.status(400).json({ error: 'userId and courseId required' });
     const householdId = req.query.household || defaultHouseholdId;
     return res.json(await cycleRaceApi.personalBest({ userId, courseId, householdId }));
+  }));
+
+  // The light listing a lone rider's pace rival is picked from: index rows only,
+  // never race files or series (the ?winCondition listing below sends both).
+  router.get('/cycle-races/rival-pool', asyncHandler(async (req, res) => {
+    // Needs both the race service and its projections; its own message, so a
+    // 503 from here is told apart from the /cycle-races/:raceId one below.
+    if (!cycleRaceService || !cycleRaceApi) return res.status(503).json({ error: 'cycle race rival pool unavailable' });
+    const { winCondition, goalM, timeCapS } = req.query;
+    const householdId = req.query.household || defaultHouseholdId;
+    try {
+      const entries = await cycleRaceApi.rivalPool({
+        winCondition: winCondition ?? null, goalM: goalM ?? null, timeCapS: timeCapS ?? null, householdId
+      });
+      return res.json({ entries });
+    } catch (err) {
+      // A request that names no usable race is a client error, not a 500.
+      if (err?.code === 'BAD_RIVAL_POOL_QUERY') {
+        return res.status(400).json({ error: 'winCondition (distance|time) and a positive goalM or timeCapS required' });
+      }
+      throw err;
+    }
   }));
 
   router.get('/cycle-races/:raceId', asyncHandler(async (req, res) => {

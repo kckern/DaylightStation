@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent, act } from '@testing-library/react';
+import { render, fireEvent, act, cleanup } from '@testing-library/react';
 import CycleGameHome from "./CycleGameHome.jsx";
+import * as uiLogMod from "./home/uiLog.js";
 
 const bikes = [
   { id: 'cycle_ace', name: 'CycleAce', rider: 'user_3' },
@@ -88,14 +89,15 @@ describe('CycleGameHome', () => {
     expect(getByTestId('bike-cycle_ace')).toBeTruthy();
     expect(getByTestId('bike-tricycle')).toBeTruthy();
     // a filled slot keeps the equipment hero AND shows the rider's avatar
-    // (no name label on the slot — names live in the picker)
+    // the rider's name sits under the filled slot (guests share an avatar)
     const filled = getByTestId('bike-cycle_ace');
     expect(filled.querySelector('.cgh-slot__device')).toBeTruthy();
     expect(filled.querySelector('.cgh-slot__rider-avatar')).toBeTruthy();
-    expect(filled.querySelector('.cgh-slot__rider-name')).toBeNull();
+    expect(filled.querySelector('.cgh-slot__name').textContent).toBe('User_3');
     // an empty slot has no rider avatar, still has the equipment hero
     const empty = getByTestId('bike-tricycle');
     expect(empty.querySelector('.cgh-slot__rider-avatar')).toBeNull();
+    expect(empty.querySelector('.cgh-slot__name')).toBeNull();
     expect(empty.querySelector('.cgh-slot__device')).toBeTruthy();
   });
 
@@ -299,11 +301,11 @@ describe('CycleGameHome', () => {
     expect(onStart).toHaveBeenCalled();
   });
 
-  it('does NOT render a cancel control on the home screen', () => {
+  it('does NOT render a race menu (the stop control) on the home screen', () => {
     const { queryByTestId } = render(
       <CycleGameHome bikes={bikes} people={people} records={[]} />
     );
-    expect(queryByTestId('cycle-game-cancel')).toBeNull();
+    expect(queryByTestId('race-menu-open')).toBeNull();
   });
 
   it('shows "No races yet" when records are empty, and a History row when present', () => {
@@ -564,3 +566,435 @@ describe('CycleGameHome', () => {
     expect(queryByTestId('cycle-recovered-banner')).toBeNull();
   });
 });
+
+describe('CycleGameHome — busy (a start is pending)', () => {
+  const record = { raceId: '20260101100000', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a', others: [],
+    speedLabel: '30 km/h', raceLabel: '1.00 km', raceKind: 'distance', whenDay: 'Today', whenTime: '6:12p' };
+  const highScore = { key: 'furthest', raceId: '20260101100000', label: 'Furthest', valueLabel: '1.00 km', holderName: 'User_3' };
+  const ladder = { course: { id: 'course-3k', name: 'Course', win_condition: 'distance', goal_m: 3000 }, standings: [] };
+  const handlers = () => ({
+    onSelectRaceType: vi.fn(), onSetRaceValue: vi.fn(), onAssign: vi.fn(), onUnassign: vi.fn(),
+    onSelectRecord: vi.fn(), onSelectGhost: vi.fn(), onClearGhost: vi.fn(), onSetMasterVolume: vi.fn(),
+    onStart: vi.fn(), onRideFeatured: vi.fn()
+  });
+  const renderHome = (props = {}) => {
+    const h = handlers();
+    const view = render(
+      <CycleGameHome bikes={bikes} people={people} records={[record]} highScores={[highScore]} featured={ladder}
+        raceType="distance" raceValue={1000} canStart {...h} {...props} />
+    );
+    return { ...view, h };
+  };
+
+  it('is not busy by default: Start reads "Start race" and works', () => {
+    const { getByTestId, h } = renderHome();
+    expect(getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('false');
+    expect(getByTestId('cycle-game-start').textContent).toContain('Start race');
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(h.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the lobby aria-busy and the Start button reads "Starting…" and is disabled', () => {
+    const { getByTestId, h } = renderHome({ busy: true });
+    expect(getByTestId('cycle-game-home').getAttribute('aria-busy')).toBe('true');
+    const start = getByTestId('cycle-game-start');
+    expect(start.textContent).toContain('Starting…');
+    expect(start.disabled).toBe(true);
+    fireEvent.click(start);
+    expect(h.onStart).not.toHaveBeenCalled();
+  });
+
+  it('race-type tiles, presets and the stepper are inert', () => {
+    const { getByTestId, container, queryByTestId, h } = renderHome({ busy: true });
+    ['course-distance', 'course-time', 'course-ghost', 'tier-sprint', 'tier-long'].forEach((id) => {
+      expect(getByTestId(id).disabled).toBe(true);
+      fireEvent.click(getByTestId(id));
+    });
+    container.querySelectorAll('[data-testid="cgh-value"] button').forEach((b) => {
+      expect(b.disabled).toBe(true);
+      fireEvent.click(b);
+    });
+    expect(h.onSelectRaceType).not.toHaveBeenCalled();
+    expect(h.onSetRaceValue).not.toHaveBeenCalled();
+    expect(queryByTestId('ghost-picker')).toBeNull();
+  });
+
+  it('a selected ghost cannot be changed or removed', () => {
+    const ghost = { sourceRaceId: 'r1', winCondition: 'distance', goalM: 1000, displayName: 'User_3', riders: [] };
+    const { getByTestId, queryByTestId, h } = renderHome({ busy: true, ghost });
+    getByTestId('cgh-ghost-summary').querySelectorAll('button').forEach((b) => {
+      expect(b.disabled).toBe(true);
+      fireEvent.click(b);
+    });
+    expect(h.onClearGhost).not.toHaveBeenCalled();
+    expect(queryByTestId('ghost-picker')).toBeNull();
+  });
+
+  it('bike slots do not open the rider picker', () => {
+    const { getByTestId, queryByTestId } = renderHome({ busy: true });
+    ['bike-cycle_ace', 'bike-tricycle'].forEach((id) => {
+      const btn = getByTestId(id).querySelector('button');
+      expect(btn.disabled).toBe(true);
+      fireEvent.click(btn);
+    });
+    expect(queryByTestId('rider-picker')).toBeNull();
+  });
+
+  it('the featured "Ride it" button is inert', () => {
+    const { getByTestId, h } = renderHome({ busy: true });
+    expect(getByTestId('featured-ride').disabled).toBe(true);
+    fireEvent.click(getByTestId('featured-ride'));
+    expect(h.onRideFeatured).not.toHaveBeenCalled();
+  });
+
+  it('history rows and high-score cards do not open a recap', () => {
+    const { getByTestId, h } = renderHome({ busy: true });
+    ['record-20260101100000', 'highscore-furthest'].forEach((id) => {
+      expect(getByTestId(id).disabled).toBe(true);
+      fireEvent.click(getByTestId(id));
+    });
+    expect(h.onSelectRecord).not.toHaveBeenCalled();
+  });
+
+  it('the volume button does not open the volume modal', () => {
+    const { getByTestId, queryByTestId } = renderHome({ busy: true });
+    expect(getByTestId('cycle-game-volume-open').disabled).toBe(true);
+    fireEvent.click(getByTestId('cycle-game-volume-open'));
+    expect(queryByTestId('cycle-game-volume-modal')).toBeNull();
+  });
+
+  it('a picker that was already open stays mounted but cannot commit a change', () => {
+    const { getByTestId, rerender, h } = renderHome();
+    fireEvent.click(getByTestId('bike-tricycle').querySelector('button'));
+    const picker = document.querySelector('.cgh-picker');
+    expect(picker).toBeTruthy();
+    rerender(
+      <CycleGameHome bikes={bikes} people={people} records={[record]} highScores={[highScore]} featured={ladder}
+        raceType="distance" raceValue={1000} canStart {...h} busy />
+    );
+    expect(document.querySelector('.cgh-picker')).toBeTruthy();
+    document.querySelectorAll('.cgh-picker button').forEach((b) => fireEvent.click(b));
+    expect(h.onAssign).not.toHaveBeenCalled();
+    expect(h.onUnassign).not.toHaveBeenCalled();
+  });
+
+  // Each picker is opened first, then the lobby turns busy: the open picker
+  // stays on screen and every way it could commit a change does nothing.
+  describe('pickers that were already open when the lobby turned busy', () => {
+    const candidate = {
+      raceId: '20260605110000', day: '2026-06-05', timeOfDay: '11:00 am',
+      participants: [{ id: 'user_3', displayName: 'User_3', avatarSrc: '/x', isGhost: false }],
+      winnerName: 'User_3', goalKind: 'distance', goalLabel: '1 km', scoreKind: 'time', scoreLabel: '2:00'
+    };
+    const currentGhost = { sourceRaceId: 'r1', winCondition: 'distance', goalM: 1000, displayName: 'User_3', riders: [] };
+    const home = (h, extra = {}) => (
+      <CycleGameHome bikes={bikes} people={people} records={[record]} highScores={[highScore]} featured={ladder}
+        raceType="distance" raceValue={1000} canStart ghostCandidates={[candidate]} {...h} {...extra} />
+    );
+
+    it('an open rider picker cannot assign a rider', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('bike-tricycle').querySelector('button'));
+      rerender(home(h, { busy: true }));
+      fireEvent.click(getByTestId('assign-user_2'));
+      expect(h.onAssign).not.toHaveBeenCalled();
+      expect(getByTestId('rider-picker')).toBeTruthy(); // still open: nothing was committed
+    });
+
+    it('an open rider picker cannot clear the rider', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('bike-cycle_ace').querySelector('button'));
+      rerender(home(h, { busy: true }));
+      fireEvent.click(getByTestId('rider-clear'));
+      expect(h.onUnassign).not.toHaveBeenCalled();
+      expect(getByTestId('rider-picker')).toBeTruthy();
+    });
+
+    it('an open ghost picker cannot select a ghost', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('course-ghost'));
+      fireEvent.click(getByTestId('ghost-20260605110000')); // focus
+      rerender(home(h, { busy: true }));
+      fireEvent.click(getByTestId('ghost-20260605110000')); // would commit
+      expect(h.onSelectGhost).not.toHaveBeenCalled();
+      expect(getByTestId('ghost-picker')).toBeTruthy();
+    });
+
+    it('an open ghost picker cannot remove the ghost', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h, { ghost: currentGhost }));
+      fireEvent.click(getByTestId('cgh-ghost-summary').querySelector('button')); // "change" opens the picker
+      expect(getByTestId('ghost-picker')).toBeTruthy();
+      rerender(home(h, { ghost: currentGhost, busy: true }));
+      fireEvent.click(getByTestId('ghost-clear'));
+      expect(h.onClearGhost).not.toHaveBeenCalled();
+    });
+
+    it('an open volume modal cannot set the volume', () => {
+      const h = handlers();
+      const { getByTestId, rerender } = render(home(h));
+      fireEvent.click(getByTestId('cycle-game-volume-open'));
+      const press = () => getByTestId('cycle-game-volume').querySelectorAll('button').forEach((b) => fireEvent.click(b));
+      press();
+      expect(h.onSetMasterVolume).toHaveBeenCalled(); // the buttons do work when the lobby is live
+      h.onSetMasterVolume.mockClear();
+      rerender(home(h, { busy: true }));
+      press();
+      expect(h.onSetMasterVolume).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('CycleGameHome — history row labels', () => {
+  const row = (over = {}) => ({ raceId: '20260101100000', winnerId: 'user_3', winnerName: 'User_3', winnerAvatar: '/a', others: [],
+    speedLabel: '30 km/h', speedKind: 'speed', raceLabel: '1.00 km', raceKind: 'distance', whenDay: 'Today', whenTime: '6:12p', ...over });
+  const renderRow = (over) => render(<CycleGameHome bikes={bikes} people={people} records={[row(over)]} />)
+    .getByTestId('record-20260101100000');
+
+  it('names the row after its lead rider, or "Lead rider" when the record has no name', () => {
+    expect(renderRow().getAttribute('aria-label')).toBe('User_3 — 30 km/h, 1.00 km, Today 6:12p');
+    cleanup();
+    expect(renderRow({ winnerName: undefined }).getAttribute('aria-label')).toBe('Lead rider — 30 km/h, 1.00 km, Today 6:12p');
+  });
+
+  it('a pace is shown as a plain speed', () => {
+    const cell = renderRow().querySelector('[data-col="speed"]');
+    expect(cell.textContent).toBe('30 km/h');
+    expect(cell.getAttribute('data-kind')).toBe('speed');
+    expect(cell.getAttribute('aria-label')).toBeNull();
+    expect(cell.getAttribute('title')).toBeNull();
+  });
+
+  it('a distance in the Speed column says it is the distance ridden, not a speed', () => {
+    const btn = renderRow({ speedLabel: '640 m', speedKind: 'distance' });
+    const cell = btn.querySelector('[data-col="speed"]');
+    expect(cell.textContent).toBe('640 m'); // the value keeps its unit
+    expect(cell.getAttribute('data-kind')).toBe('distance');
+    expect(cell.getAttribute('aria-label')).toBe('640 m ridden, did not finish');
+    expect(cell.getAttribute('title')).toBe('Distance ridden (did not finish)');
+    expect(btn.getAttribute('aria-label')).toBe('User_3 — 640 m ridden, did not finish, 1.00 km, Today 6:12p');
+  });
+});
+
+describe('CycleGameHome — sensor check', () => {
+  const mk = (a, b) => ([
+    { id: 'bike_a', name: 'Bike A', rider: 'user_3', sensorLive: a },
+    { id: 'bike_b', name: 'Bike B', rider: 'user_2', sensorLive: b },
+    { id: 'bike_c', name: 'Bike C', rider: null, sensorLive: false }
+  ]);
+  const view = (bikesProp, props = {}) => {
+    const onStart = vi.fn();
+    const ui = (b, p = {}) => (
+      <CycleGameHome bikes={b} people={people} records={[]} canStart onStart={onStart} {...props} {...p} />
+    );
+    const r = render(ui(bikesProp));
+    return { ...r, onStart, again: (b, p) => r.rerender(ui(b, p)) };
+  };
+
+  it('a claimed bike with no signal shows the No signal label and class; unclaimed shows nothing', () => {
+    const { getByTestId } = view(mk(false, true));
+    const a = getByTestId('bike-bike_a');
+    expect(a.className).toContain('is-no-signal');
+    expect(a.textContent).toContain('No signal');
+    expect(a.textContent).not.toContain('Ready');
+    const c = getByTestId('bike-bike_c');
+    expect(c.className).not.toContain('is-no-signal');
+    expect(c.textContent).not.toContain('No signal');
+    expect(c.textContent).not.toContain('Ready');
+  });
+
+  it('a claimed live bike shows Ready; unknown sensor state shows neither', () => {
+    const { getByTestId } = view(mk(true, undefined));
+    expect(getByTestId('bike-bike_a').textContent).toContain('Ready');
+    const b = getByTestId('bike-bike_b');
+    expect(b.textContent).not.toContain('Ready');
+    expect(b.textContent).not.toContain('No signal');
+    expect(b.className).not.toContain('is-no-signal');
+  });
+
+  it('Start with a silent claimed bike does not start and shows the warning', () => {
+    const { getByTestId, onStart } = view(mk(false, true));
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(onStart).not.toHaveBeenCalled();
+    const w = getByTestId('sensor-warning');
+    expect(w.getAttribute('role')).toBe('alert');
+    expect(w.textContent).toContain('Bike A is not reporting. Spin the pedals once, or check the sensor.');
+  });
+
+  it('names two silent bikes with "and"', () => {
+    const { getByTestId } = view(mk(false, false));
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(getByTestId('sensor-warning').textContent).toContain('Bike A and Bike B are not reporting.');
+  });
+
+  it('names three or more silent bikes with commas and "and"', () => {
+    const three = [
+      { id: 'bike_a', name: 'Bike A', rider: 'user_3', sensorLive: false },
+      { id: 'bike_b', name: 'Bike B', rider: 'user_2', sensorLive: false },
+      { id: 'bike_c', name: 'Bike C', rider: 'user_2', sensorLive: false }
+    ];
+    const { getByTestId } = view(three);
+    fireEvent.click(getByTestId('cycle-game-start'));
+    expect(getByTestId('sensor-warning').textContent).toContain('Bike A, Bike B and Bike C are not reporting.');
+  });
+
+  it('Start anyway starts; Back dismisses without starting', () => {
+    const { getByTestId, queryByTestId, onStart } = view(mk(false, true));
+    fireEvent.click(getByTestId('cycle-game-start'));
+    fireEvent.click(getByTestId('sensor-warning-back'));
+    expect(queryByTestId('sensor-warning')).toBeNull();
+    expect(onStart).not.toHaveBeenCalled();
+    fireEvent.click(getByTestId('cycle-game-start'));
+    fireEvent.click(getByTestId('sensor-warning-start'));
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('all claimed bikes live, or sensor state unknown, starts at once', () => {
+    const a = view(mk(true, true));
+    fireEvent.click(a.getByTestId('cycle-game-start'));
+    expect(a.onStart).toHaveBeenCalledTimes(1);
+    expect(a.queryByTestId('sensor-warning')).toBeNull();
+    cleanup();
+    const b = view(mk(undefined, undefined));
+    fireEvent.click(b.getByTestId('cycle-game-start'));
+    expect(b.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('the warning clears when every claimed bike reports', () => {
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    expect(v.queryByTestId('sensor-warning')).toBeTruthy();
+    v.again(mk(true, true));
+    expect(v.queryByTestId('sensor-warning')).toBeNull();
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    expect(v.onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('the warning clears when the offending bike is unclaimed', () => {
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    v.again([{ id: 'bike_a', name: 'Bike A', rider: null, sensorLive: false }, mk(false, true)[1]]);
+    expect(v.queryByTestId('sensor-warning')).toBeNull();
+  });
+
+  it('the warning clears when busy turns true, and its buttons are inert while busy', () => {
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    v.again(mk(false, true), { busy: true });
+    expect(v.queryByTestId('sensor-warning')).toBeNull();
+    expect(v.onStart).not.toHaveBeenCalled();
+  });
+
+  it('logs the warning and the override', () => {
+    const calls = [];
+    const spy = vi.spyOn(uiLogMod, 'uiLog').mockReturnValue({
+      debug: () => {}, info: (e, d) => calls.push(['info', e, d]), warn: (e, d) => calls.push(['warn', e, d]), error: () => {}
+    });
+    const v = view(mk(false, true));
+    fireEvent.click(v.getByTestId('cycle-game-start'));
+    expect(calls).toContainEqual(['warn', 'cycle_game.ui.sensor_warning', { bikes: ['bike_a'] }]);
+    fireEvent.click(v.getByTestId('sensor-warning-start'));
+    expect(calls.some((c) => c[0] === 'info' && c[1] === 'cycle_game.ui.sensor_warning_override')).toBe(true);
+    spy.mockRestore();
+  });
+});
+
+describe('CycleGameHome — race value stepper', () => {
+  const view = (raceType, raceValue, props = {}) => {
+    const onSetRaceValue = vi.fn();
+    const r = render(
+      <CycleGameHome bikes={[]} people={[]} records={[]} raceType={raceType} raceValue={raceValue}
+        onSetRaceValue={onSetRaceValue} {...props} />
+    );
+    return { ...r, onSetRaceValue, inc: () => r.getByLabelText('increase'), dec: () => r.getByLabelText('decrease') };
+  };
+  const press = (v, which, from) => {
+    fireEvent.click(which === '+' ? v.inc() : v.dec());
+    return v.onSetRaceValue.mock.calls.at(-1)[0];
+  };
+
+  it('+ and - walk the distance grid and reach 100 m and 300 m', () => {
+    expect(press(view('distance', 100), '+')).toBe(200); cleanup();
+    expect(press(view('distance', 900), '+')).toBe(1000); cleanup();
+    expect(press(view('distance', 1000), '+')).toBe(1500); cleanup();
+    expect(press(view('distance', 1500), '-')).toBe(1000); cleanup();
+    expect(press(view('distance', 1000), '-')).toBe(900); cleanup();
+    expect(press(view('time', 300), '+')).toBe(360);
+  });
+
+  it('- is disabled at the minimum, + at the maximum, and neither steps', () => {
+    let v = view('distance', 100);
+    expect(v.dec().disabled).toBe(true);
+    fireEvent.click(v.dec());
+    expect(v.onSetRaceValue).not.toHaveBeenCalled();
+    cleanup();
+    v = view('time', 60);
+    expect(v.dec().disabled).toBe(true);
+    cleanup();
+    v = view('distance', 10000);
+    expect(v.inc().disabled).toBe(true);
+    fireEvent.click(v.inc());
+    expect(v.onSetRaceValue).not.toHaveBeenCalled();
+    expect(v.getByTestId('cgh-value').textContent).toContain('10 km');
+    cleanup();
+    v = view('time', 1800);
+    expect(v.inc().disabled).toBe(true);
+    expect(v.getByTestId('cgh-value').textContent).toContain('30 min');
+  });
+
+  it('an off-grid or out-of-range value shows as is and the first press snaps it in', () => {
+    let v = view('distance', 20000);
+    expect(v.getByTestId('cgh-value').textContent).toContain('20 km');
+    expect(press(v, '-')).toBe(10000);
+    cleanup();
+    v = view('time', 3060);
+    expect(press(v, '-')).toBe(1800);
+    cleanup();
+    v = view('distance', 250);
+    expect(press(v, '+')).toBe(300);
+  });
+
+  it('the selected preset has aria-pressed true, the others false', () => {
+    const v = view('distance', 1000);
+    expect(v.getByTestId('tier-short').getAttribute('aria-pressed')).toBe('true');
+    expect(v.getByTestId('tier-sprint').getAttribute('aria-pressed')).toBe('false');
+    expect(v.getByTestId('tier-long').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('the stepper buttons are inert when disabled', () => {
+    const v = view('distance', 1000, { busy: true });
+    expect(v.inc().disabled).toBe(true);
+    expect(v.dec().disabled).toBe(true);
+  });
+});
+
+describe('CycleGameHome boost rule line', () => {
+  const rule = (props) => render(<CycleGameHome bikes={bikes} people={people} records={[]} {...props} />).queryByTestId('boost-rule');
+
+  it('shows the rule with formatted multipliers', () => {
+    const el = rule({ boostRange: { min: 0.8, max: 1.6 } });
+    expect(el.textContent).toBe('Harder effort goes further: your heart-rate zone multiplies your distance (\u00d70.8 to \u00d71.6).');
+    cleanup();
+    expect(rule({ boostRange: { min: 1, max: 2 } }).textContent).toContain('(\u00d71 to \u00d72)');
+    cleanup();
+    expect(rule({ boostRange: { min: 0.75, max: 1.25 } }).textContent).toContain('(\u00d70.8 to \u00d71.3)');
+  });
+
+  it('is hidden for null, missing, or equal min and max', () => {
+    expect(rule({ boostRange: null })).toBeNull();
+    cleanup();
+    expect(rule({})).toBeNull();
+    cleanup();
+    expect(rule({ boostRange: { min: 1, max: 1 } })).toBeNull();
+    cleanup();
+    expect(rule({ boostRange: { min: 2, max: 1 } })).toBeNull();
+  });
+
+  it('is unaffected by busy', () => {
+    expect(rule({ boostRange: { min: 1, max: 2 }, busy: true })).toBeTruthy();
+  });
+});
+

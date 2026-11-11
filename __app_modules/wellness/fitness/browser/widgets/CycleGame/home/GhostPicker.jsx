@@ -4,7 +4,7 @@ import { RaceFlagIcon } from "./icons.jsx";
 import { FALLBACK_AVATAR } from "./constants.js";
 import { formatDayHeader, formatDistance } from "./formatters.js";
 
-// mm:ss clock (per-rider finish time). '—' for a missing/DNF time.
+// mm:ss clock (per-rider finish time). '—' for a rider with no finish time.
 function fmtClock(s) {
   if (!Number.isFinite(s)) return '—';
   const total = Math.round(s); // round total first — else 119.6 → "1:60"

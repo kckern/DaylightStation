@@ -7,7 +7,7 @@ import "./HistoryTable.scss";
  * so each calendar day is printed once as a sticky group header and each row
  * shows only its clock time.
  */
-export function HistoryTable({ records = [], onSelectRecord }) {
+export function HistoryTable({ records = [], onSelectRecord, disabled = false }) {
   if (records.length === 0) {
     return <div className="cgh-empty">No races yet</div>;
   }
@@ -21,6 +21,10 @@ export function HistoryTable({ records = [], onSelectRecord }) {
         // print it once as a sticky group header and let each row show only
         // the clock time — frees vertical space and kills the redundancy.
         const showDay = i === 0 || records[i - 1].whenDay !== rec.whenDay;
+        // The cell sits under "Speed", but a lead rider who did not finish has
+        // no pace: it then holds how far they got, and says so.
+        const isDistance = rec.speedKind === 'distance';
+        const resultText = isDistance ? `${rec.speedLabel} ridden, did not finish` : (rec.speedLabel || '—');
         return (
         <Fragment key={`${rec.raceId || i}`}>
           {showDay && rec.whenDay && (
@@ -31,8 +35,9 @@ export function HistoryTable({ records = [], onSelectRecord }) {
             type="button"
             className="cgh-record__btn"
             data-testid={`record-${rec.raceId}`}
+            disabled={disabled}
             onClick={() => onSelectRecord?.(rec.raceId)}
-            aria-label={`${rec.winnerName || 'Winner'} — ${rec.speedLabel || '—'}, ${rec.raceLabel || 'race'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
+            aria-label={`${rec.winnerName || 'Lead rider'} — ${resultText}, ${rec.raceLabel || 'race'}, ${rec.whenDay || ''} ${rec.whenTime || ''}`}
           >
             <span className="cgh-record__riders">
               <span className="cgh-record__avatars">
@@ -52,7 +57,13 @@ export function HistoryTable({ records = [], onSelectRecord }) {
               <span className="cgh-record__winner-name">{rec.winnerName}</span>
             </span>
 
-            <span className="cgh-record__cell" data-col="speed">
+            <span
+              className="cgh-record__cell"
+              data-col="speed"
+              data-kind={rec.speedLabel ? (isDistance ? 'distance' : 'speed') : undefined}
+              aria-label={isDistance ? resultText : undefined}
+              title={isDistance ? 'Distance ridden (did not finish)' : undefined}
+            >
               {rec.speedLabel ? rec.speedLabel : (
                 <span className="cgh-record__cell-empty" title="No result recorded" aria-label="No result recorded">—</span>
               )}
@@ -75,7 +86,8 @@ export function HistoryTable({ records = [], onSelectRecord }) {
 
 HistoryTable.propTypes = {
   records: PropTypes.array,
-  onSelectRecord: PropTypes.func
+  onSelectRecord: PropTypes.func,
+  disabled: PropTypes.bool
 };
 
 export default HistoryTable;
