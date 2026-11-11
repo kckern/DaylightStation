@@ -153,12 +153,18 @@ distribution-tracked), the gameplay from a base zone. Skyline's slots are in
 `install` copies it into the household zones folder (private-only placeholder
 skins are refused unless `--private-dev true`).
 
-A generated zone sets `pixel_scale` (scene units per art pixel, 3): every
+A generated zone sets `pixel_scale` (scene units per art pixel, 2): every
 sprite then draws at exactly that grain, aligned in its box, rather than
 stretching to the box, and layer and terrain-edge heights come from their pixel
 sizes, so the whole scene sits on one pixel grid. Hand-written zones may set
 `pixel_scale` too. Frame names in a sheet may contain dots (`craft.fly.0`);
 only an image extension (`.png`, `.gif`, ...) is dropped from a name.
+
+Skinned zones can also dress lava (`terrain.lava_fill`, `terrain.lava_edge`),
+slopes (the edge strip follows the profile), tall entities and gate pieces
+(vertical slices), and states (craft `boost` / `hurt`, entity `damaged`).
+`skyline-skin.cli.mjs brief` writes the commissioning brief: every slot's pixel
+limit, generated from the contract.
 
 See `__docs/reference/gaming/side-scroller-skins.md`.
 

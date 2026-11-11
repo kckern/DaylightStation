@@ -81,17 +81,25 @@ A game publishes a **slot contract** (`schema: game-skin-contract/v1`):
 ```yaml
 schema: game-skin-contract/v1
 game: skyline-glider
-units: { width: 1000, height: 600, art_pixel: 3 }
+units: { width: 1000, height: 600, art_pixel: 2 }   # scene units per art pixel
 slots:
   layers:       { type: parallax-layers, max: 8 }
-  terrain.fill: { type: texture, repeat: [x, y], scale: 3 }
+  terrain.fill: { type: texture, repeat: [x, y], scale: 2 }
   terrain.edge: { type: strip, repeat: [x] }
-  craft:        { type: sprite, animated: true }
-  entities.*:   { type: sprite }        # one level of wildcard
+  craft:        { type: sprite, animated: true, box: [105, 54], fit: strict, states: [boost, hurt] }
+  entities.*:   { type: sprite, fit: strict, stretch: vertical, states: [damaged] }   # one level of wildcard
 ```
 
-Slot types: `parallax-layers` (a list), `texture`, `strip`, `sprite`. `animated`
-requires a clip, `required` makes a slot mandatory, `scale` enlarges on export.
+Slot types: `parallax-layers` (a list), `texture`, `strip`, `sprite`. Options:
+
+| Option | Meaning |
+|---|---|
+| `animated` | the skin must give a clip |
+| `required` | the skin must fill the slot |
+| `scale` | enlarge on export (for textures the game draws at 1 file pixel = 1 unit) |
+| `box` + `art_pixel` | the sprite must fit `box / art_pixel` pixels; `fit: strict` (what collides) makes an oversized sprite an error, otherwise a warning |
+| `states: [names]` | alternate art the game switches to; a skin gives `states: { hurt: { clip: poof } }` |
+| `stretch: vertical` | the slot takes a vertical 3-slice instead of a frame: `slices: { top, body, bottom }` (body must repeat on y, all one width), or per piece: `pieces: { top: { slices }, bottom: { slices } }` |
 
 A **skin** (`schema: game-skin/v1`) fills any subset of the slots; the rest stay
 the game's built-in art:
@@ -123,9 +131,18 @@ in a `shippable` skin** is an error.
 | `images/layers.<id>.png` | each parallax layer |
 | `images/<slot>.png` | each texture and strip (with the contract's `scale`) |
 | `sprites/sheet.png`, `sprites/sheet.json` | every sprite frame, shelf-packed, TexturePacker hash JSON; names `<slot>.<frame>` |
-| `export.json` | `game-skin-export/v1`: each slot's files or frames (+ fps, loop), the skin's distribution, and every used asset's source, hash, licence and provenance |
+| `export.json` | `game-skin-export/v1`: each slot's files or frames (+ fps, loop, visible `size`, `states`, `slices`, `pieces`), the skin's distribution, and every used asset's source, hash, licence and provenance |
 
 `skin-preview` draws an export without any game code, as a quick check.
+
+### The commissioning brief
+
+`buildSkinBrief(contract)` (public in `skins.mjs`) turns a contract into the spec
+an artist works to: every slot's pixel limit on the grid, whether it must fit,
+tiling, scale, animation, states and stretch, plus the rules the catalog enforces.
+Because it is generated, it cannot drift from what the game accepts. Skyline's
+version adds each entity's box from the base zone:
+`node __app_modules/wellness/fitness/cli/skyline-skin.cli.mjs brief --out brief.yml`.
 
 ## Skyline Glider
 
@@ -133,10 +150,19 @@ in a `shippable` skin** is an error.
 - Adapter: `skinZone.mjs` turns `export.json` into a zone. Art comes from the
   skin; gameplay (entity classes, roles, sizes, vulnerabilities, sounds, palette)
   comes from the base zone, so a skin cannot change how a course plays.
-- One pixel grid: the adapter sets `pixel_scale: art_pixel` (3 units), derives
+- One pixel grid: the adapter sets `pixel_scale: art_pixel` (2 units, where the
+  game's own boxes match SNES proportions: a 16 × 16 coin), derives
   every layer's height and the terrain `edge_height` from their pixel sizes, and
   `FlightScene` draws every sprite at exactly that grain, aligned in its box,
-  instead of stretching it. Collision boxes do not change.
+  instead of stretching it. Collision boxes do not change; `skinZone` refuses an
+  entity sprite larger than its collision box.
+- Terrain slots: `terrain.fill`, `terrain.edge`, `terrain.ceiling_edge`,
+  `terrain.lava_fill`, `terrain.lava_edge`. Slopes draw the edge strip along each
+  straight piece of their profile, sheared so pixel columns stay upright.
+- Tall entities (walls, tower, gate posts, the closing shutter) take vertical
+  slices; the body is one rect filled with a pattern, so no seams show.
+- States: the craft draws `boost` while boosting and `hurt` during a collision and
+  its protection; an entity draws `damaged` after a hit that did not destroy it.
 
 ```bash
 # build media/fitness/skyline-glider/<zone-id>/ (export + zone.yml)
@@ -161,18 +187,19 @@ act and zone, with the server's own `resolveAct` and the game's own
 ```bash
 MEDIA_DIR=$DAYLIGHT_BASE_PATH/media node_modules/.bin/vite \
   --config tests/_scratch/skyline-skin-harness/vite.harness.config.mjs      # 127.0.0.1:5198
-SHOTS='mountain-pass:alpine:12,mountain-pass:<zone-id>:12,cloud-ridge:<zone-id>:65' \
-  node tests/_scratch/shoot-skyline-skin.mjs                                # → tests/_scratch/out/skyline-skin/
+SHOTS='mountain-pass:alpine:12,mountain-pass:<zone-id>:12,cloud-ridge:<zone-id>:22:0.4:hurt=1&damage=target-01' \
+  BROWSER=firefox node tests/_scratch/shoot-skyline-skin.mjs                # → tests/_scratch/out/skyline-skin/
 ```
 
-The shooter fails on a page error, console error, failed request or missing
-zone file. The server runs with file watching off: restart it after a code change.
+A shot is `act:zone:time[:altitude[:state]]`; state can set `boost=1`, `hurt=1`
+and `damage=<entity-id>`. `BROWSER=firefox` matches the garage kiosk. The
+shooter fails on a page error, console error, failed request or missing zone
+file. The server runs with file watching off: restart it after a code change.
 
 ### Known gaps
 
-- Slopes (`profile` terrain) take the fill texture but still draw their top edge
-  as the SVG line; lava has no image slot.
-- Gate posts and shutters change height per placement and stay SVG until the
-  renderer can 3-slice a sprite (cap + repeating body).
-- Frames change by time only: no damage-state, boost or hurt frames, and kill
-  bursts, bell pops and the boost streak have no sprite slot.
+- Kill bursts, bell pops, the collision burst and the boost streak are drawn as
+  UI, not art, and have no sprite slot.
+- One damaged state per entity (no per-hit-point levels).
+- Ceilings and corridors take `terrain.ceiling_edge`, but no bundled act has a
+  ceiling, so the placeholder skin leaves it to the built-in art.
