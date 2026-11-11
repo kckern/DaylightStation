@@ -152,7 +152,8 @@ function SlopeEdge({ segment, image, lip, height }) {
 function SkinnedLava({ segment, terrain, fill, edge }) {
   const y = segment.top * SCENE_HEIGHT;
   const edgeHeight = Number(terrain.edge_height ?? 0.06) * SCENE_HEIGHT;
-  return <g className="skyline-glider__lava skyline-glider__lava--skinned">
+  // Not the preset's .skyline-glider__lava class: its stylesheet fill would paint over the textures.
+  return <g className="skyline-glider__lava-skinned">
     <rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_HEIGHT - y} fill={fill ? 'url(#glider-lava-fill)' : undefined}/>
     {edge && <EdgeStrip id={`glider-lava-edge-${segment.id}`} image={edge} x={segment.x} width={segment.width} top={y - edgeHeight / 2} height={edgeHeight}/>}
   </g>;

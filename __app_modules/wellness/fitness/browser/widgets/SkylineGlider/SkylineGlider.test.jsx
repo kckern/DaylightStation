@@ -270,6 +270,8 @@ describe('FlightScene zones', () => {
     expect(pieces[1].getAttribute('transform')).toMatch(/skewY\((?!-)/);
     const lavaEl = screen.getByTestId('course-segment-lava');
     expect(lavaEl.querySelector('[data-lava-surface]')).toHaveAttribute('fill', 'url(#glider-lava-fill)');
+    // the preset class carries a stylesheet fill that would paint over the textures
+    expect(lavaEl.querySelector('.skyline-glider__lava')).toBeNull();
     expect(lavaEl.querySelector('#glider-lava-edge-lava image')).toHaveAttribute('href', '/m/lava-top.png');
     expect(container.querySelector('#glider-lava-fill image')).toHaveAttribute('href', '/m/lava.png');
   });
