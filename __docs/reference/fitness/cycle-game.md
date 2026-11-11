@@ -274,6 +274,8 @@ The lobby is a pure presentational component; all state and handlers live in
    range as `boostRange` (`boostState.boostRange(zones, hrless_multiplier)`: the
    lowest to highest multiplier, the strapless one included); the line is hidden
    when every multiplier is the same.
+   A claim nobody has pedalled for 30 minutes is cleared by the lobby itself
+   (§5, "Stale claims clear themselves").
 4. **Rider picker** (modal) — people grouped into **Household / Family / Guests**
    tabs; each tile shows avatar, name, and a "live" badge for an active HR strap.
    Built-in **Guest (Adult)** / **Guest (Kid)** lead the Guests tab. `Escape` closes.
@@ -423,6 +425,21 @@ one** live rider is claimed, a pace rival is armed for that race:
 - **Claiming a rider to a bike** is external to React: `session.setEquipmentRider`
   (mirrors the hardware rider-select button). Emits `cycle_game.rider_assigned` /
   `rider_unassigned`.
+- **Stale claims clear themselves.** Claims live on the session and outlast a
+  race, so a bike can still carry yesterday's rider. The session keeps no
+  claim time and no last-pedalled time (the cadence reading's `ts` moves on
+  every packet, a still bike included), so the container records one per bike
+  in a ref: seeded when it first sees a claim or the claim changes hands (or
+  at once for a picker claim), moved on every reading above 0 rpm. The lobby
+  and pre-race polls and every race tick sample it. When the lobby appears
+  (mount, or back from a race) and once a minute while it is up, every bike in
+  `staleClaims(bikes, now, 30 min)` is unclaimed through the normal unassign
+  path (`rider_unassigned` with `control: 'lobby.auto-clear'`) and logged as
+  `cycle_game.rider_auto_cleared`. Never during staging, countdown, a race or
+  the results board, never while a start is pending, and never a claim the
+  container first saw less than 30 minutes ago, cadence or not. The record is
+  lost when the game unmounts, so a claim older than the game is timed from
+  when the lobby first saw it.
 - **Eligible people** come from the household users config plus the two built-in
   anonymous guests. Sorted HR-active-first, then alphabetically.
 - **Display names** use the relational resolver (e.g. "Dad"/"Mom") when ≥ 2 HR
@@ -1352,7 +1369,7 @@ by `raceId` (+ `elapsedS` where relevant).
 - **Spine (INFO, always on)** — `phase_transition` (`{from,to}`), `config` (full
   effective config + zone multipliers, once at start), `ghost_rider` (per-ghost
   series point-counts), `staged` / `staging` / `race_started` / `race_finished` /
-  `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_parked` /
+  `race_saved`, `rider_assigned` / `rider_unassigned`, `rider_auto_cleared`, `rider_parked` /
   `rider_resumed`, `rider_sensor_recovered`, `rider_overtime`, `cadence_change`,
   `ended_early`, `cancelled`, `recap_*`, `volume_set`, `history_loaded`,
   `pace_rival`.
@@ -1387,6 +1404,8 @@ by `raceId` (+ `elapsedS` where relevant).
 - **`cycle_game.rematch`** (INFO) — Rematch pressed: `{ fromRaceId,
   winCondition, goalM, timeCapS, hasGhost }`. The new race then logs the usual
   start events with `control: 'results.rematch'`.
+- **`cycle_game.rider_auto_cleared`** (INFO) — the lobby unclaimed a bike
+  nobody had pedalled for 30 minutes (§5): `{ equipmentId, userId, idleMs }`.
 - **`cycle_game.ended_early`** (INFO) — the race was ended from the race menu
   and will be saved as incomplete: `{ raceId, elapsedS, control: 'race-menu.end' }`.
   It replaces `cycle_game.finish_forced`, which is no longer emitted.

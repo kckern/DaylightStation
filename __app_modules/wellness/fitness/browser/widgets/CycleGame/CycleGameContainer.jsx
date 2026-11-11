@@ -24,6 +24,7 @@ import { deriveRaceSnapshot } from "../../lib/cycleGame/deriveRaceSnapshot.js";
 import { dramaEventToasts, beatToasts } from "../../lib/cycleGame/dramaEventCopy.js";
 import { raceBeats } from "../../lib/cycleGame/raceBeats.js";
 import { resultsComparison } from "../../lib/cycleGame/resultsComparison.js";
+import { staleClaims } from "../../lib/cycleGame/staleClaims.js";
 import { paceDelta } from "../../lib/cycleGame/paceDelta.js";
 import { boostState, boostRange, formatMultiplier } from "../../lib/cycleGame/boostState.js";
 import { pushToast, nextToast, toastDurationMs } from "../../lib/cycleGame/toastQueue.js";
@@ -223,6 +224,11 @@ const SENSOR_LOST_GAP_TICKS = 9;
  * arrives while it can still be acted on.
  */
 const SENSOR_ABSENT_GAP_TICKS = 15;
+// A rider claim with no pedalling for this long is cleared by the lobby, so
+// the next session does not start by clearing a stranger off a bike. Checked
+// when the lobby appears and once a minute while it is up.
+const STALE_CLAIM_MS = 30 * 60 * 1000;
+const STALE_CLAIM_CHECK_MS = 60 * 1000;
 
 /**
  * Live cycle-game lifecycle container. Composes the prop-driven screens
@@ -531,6 +537,28 @@ export default function CycleGameContainer({ onMount } = {}) {
   const getUserVitalsRef = useRef(getUserVitals);
   useEffect(() => { sessionRef.current = session; }, [session]);
   useEffect(() => { getUserVitalsRef.current = getUserVitals; }, [getUserVitals]);
+
+  // When each claimed bike last moved: equipmentId → { userId, lastActiveMs }.
+  // The session keeps no claim time and no last-pedalled time (its cadence
+  // reading's `ts` moves on every packet, a still bike included), so the
+  // container records it: seeded when it first sees a claim (or a claim
+  // changes hands), moved on every reading above 0 rpm. Sampled by the lobby
+  // and pre-race polls and every race tick.
+  const bikeActivityRef = useRef(new Map());
+  const noteBikeActivity = useCallback((nowMs = Date.now()) => {
+    const live = sessionRef.current;
+    bikes.forEach((bike) => {
+      const userId = live?.getEquipmentRider?.(bike.id) || null;
+      if (!userId) { bikeActivityRef.current.delete(bike.id); return; }
+      const entry = bikeActivityRef.current.get(bike.id);
+      if (!entry || entry.userId !== userId) {
+        bikeActivityRef.current.set(bike.id, { userId, lastActiveMs: nowMs });
+        return;
+      }
+      const cadence = live?.getEquipmentCadence?.(bike.id);
+      if (cadence && cadence.connected && Number(cadence.rpm) > 0) entry.lastActiveMs = nowMs;
+    });
+  }, [bikes]);
   // Same ref pattern for the zone config the per-tick firehose reads to compute
   // the multiplier — constant during a race, but kept in a ref so the interval
   // (which depends only on `phase`) isn't torn down by config identity churn.
@@ -821,9 +849,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   // strip reacts quickly when a bike starts (or stops) reporting.
   useEffect(() => {
     if (phase !== 'staging' && phase !== 'countdown') return undefined;
-    const id = setInterval(() => setAssignVersion((v) => v + 1), 300);
+    const id = setInterval(() => { noteBikeActivity(); setAssignVersion((v) => v + 1); }, 300);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, noteBikeActivity]);
 
   // While on the lobby, riders can be claimed OUTSIDE the React tree — by the
   // physical rider-select button or the dev simulator, both of which mutate the
@@ -831,9 +859,9 @@ export default function CycleGameContainer({ onMount } = {}) {
   // (and the Start button's enabled state) reflects those external claims.
   useEffect(() => {
     if (phase !== 'idle') return undefined;
-    const id = setInterval(() => setAssignVersion((v) => v + 1), 750);
+    const id = setInterval(() => { noteBikeActivity(); setAssignVersion((v) => v + 1); }, 750);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, noteBikeActivity]);
 
   // Load recent race history (records rail + ghost candidates) on entering idle.
   useEffect(() => {
@@ -1601,6 +1629,7 @@ export default function CycleGameContainer({ onMount } = {}) {
         };
       });
       const state = controller.tick(inputs);
+      noteBikeActivity();
 
       // ── Drama events (audit C2) — LEAD_CHANGE / RIDER_FINISHED / PHOTO_FINISH /
       // FINAL_LAP / LAPPING_IMMINENT, edge-triggered against the previous tick's
@@ -1898,7 +1927,7 @@ export default function CycleGameContainer({ onMount } = {}) {
     // Live data is read from refs (sessionRef/getUserVitalsRef/phaseRef) so the
     // interval is set up ONCE for the whole go→racing span and never starved by
     // context churn or torn down by the go→racing phase edge.
-  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent, dropQueuedToasts, runBeats]);
+  }, [isEngineLive, applySnapshot, recordRiderToast, recordOvertimeEvent, log, recordDramaEvent, dropQueuedToasts, runBeats, noteBikeActivity]);
 
   // ── pagehide best-effort save (audit C1) ─────────────────────────────────
   // A reload/crash may not give the periodic checkpoint a chance to run again
@@ -2271,14 +2300,42 @@ export default function CycleGameContainer({ onMount } = {}) {
   const onAssign = useCallback((bikeId, userId) => {
     log.info('cycle_game.rider_assigned', { equipmentId: bikeId, userId, control: 'lobby.rider-picker' });
     session?.setEquipmentRider?.(bikeId, userId);
+    bikeActivityRef.current.set(bikeId, { userId, lastActiveMs: Date.now() });
     setAssignVersion((v) => v + 1);
   }, [session, log]);
 
-  const onUnassign = useCallback((bikeId) => {
-    log.info('cycle_game.rider_unassigned', { equipmentId: bikeId, control: 'lobby.rider-picker.clear' });
+  const unassignBike = useCallback((bikeId, control) => {
+    log.info('cycle_game.rider_unassigned', { equipmentId: bikeId, control });
     session?.setEquipmentRider?.(bikeId, null);
+    bikeActivityRef.current.delete(bikeId);
     setAssignVersion((v) => v + 1);
   }, [session, log]);
+  const onUnassign = useCallback((bikeId) => unassignBike(bikeId, 'lobby.rider-picker.clear'), [unassignBike]);
+
+  // Stale claims: on reaching the lobby (mount, or back from a race) and once
+  // a minute while it is up, unclaim every bike nobody has pedalled for
+  // STALE_CLAIM_MS. Never while a start is pending or anywhere but the lobby.
+  useEffect(() => {
+    if (phase !== 'idle') return undefined;
+    const sweep = () => {
+      if (phaseRef.current !== 'idle' || startPendingRef.current) return;
+      const nowMs = Date.now();
+      noteBikeActivity(nowMs);
+      const rows = bikes.map((b) => ({
+        id: b.id,
+        rider: session?.getEquipmentRider?.(b.id) || null,
+        lastActiveMs: bikeActivityRef.current.get(b.id)?.lastActiveMs ?? null
+      }));
+      staleClaims(rows, nowMs, STALE_CLAIM_MS).forEach((equipmentId) => {
+        const row = rows.find((r) => r.id === equipmentId);
+        log.info('cycle_game.rider_auto_cleared', { equipmentId, userId: row.rider, idleMs: nowMs - row.lastActiveMs });
+        unassignBike(equipmentId, 'lobby.auto-clear');
+      });
+    };
+    sweep();
+    const id = setInterval(sweep, STALE_CLAIM_CHECK_MS);
+    return () => clearInterval(id);
+  }, [phase, bikes, session, noteBikeActivity, unassignBike, log]);
 
   const onSetMasterVolume = useCallback((v) => {
     log.info('cycle_game.volume_set', { volume: v, control: 'lobby.volume' });
