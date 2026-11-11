@@ -2,7 +2,7 @@
 //   BASE_URL=http://127.0.0.1:5198 SHOTS='mountain-pass:smw-placeholder:40' node tests/_scratch/shoot-skyline-skin.mjs
 // Fails (exit 1) on a page error, a console error, a failed request, missing zone
 // files, or a page that never renders.
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const OUT = process.env.OUT_DIR || path.join(here, 'out/skyline-skin');
 fs.mkdirSync(OUT, { recursive: true });
 const shots = (process.env.SHOTS || 'mountain-pass:alpine:40,mountain-pass:smw-placeholder:40').split(',').map((s) => { const [act, zone, t, alt] = s.split(':'); return { act, zone, t, alt: alt || '0.5' }; });
-const browser = await chromium.launch();
+// BROWSER=firefox matches the garage kiosk (Firefox); default chromium.
+const engine = process.env.BROWSER === 'firefox' ? firefox : chromium;
+const browser = await engine.launch();
 let failed = false;
 for (const shot of shots) {
   const page = await browser.newPage({ viewport: { width: 1810, height: 1086 } });
@@ -26,7 +28,7 @@ for (const shot of shots) {
   await page.waitForTimeout(400);
   const info = await page.evaluate(() => window.__harness || null);
   if (info?.missing?.length) problems.push(`missing zone files: ${JSON.stringify(info.missing)}`);
-  const file = path.join(OUT, `${shot.act}--${shot.zone}--t${shot.t}.png`);
+  const file = path.join(OUT, `${shot.act}--${shot.zone}--t${shot.t}${process.env.BROWSER === 'firefox' ? '--firefox' : ''}.png`);
   await page.screenshot({ path: file });
   console.log(JSON.stringify({ shot: `${shot.act}:${shot.zone}:${shot.t}`, file, info, problems }));
   if (problems.length) failed = true;
