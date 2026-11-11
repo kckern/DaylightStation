@@ -3,12 +3,13 @@
  *   blank    nothing begun, out of reach, not readable, or still open
  *   a gem    whole and in the area's colour when earned or led (×n past one)
  *   a ring   a day-count with at least one day done and still winnable: the
- *            gem inside it is cut like the ring around it: done days' wedges
- *            in colour, days to go in grey at 30%
- * No icon on the stone; the area is its colour (legend on the board and the
- * family card). Status is never a hue: nothing is amber, and a day-count
- * carries no words: its ring and its cut stone are all it says. The grey
- * wedges are the one see-through thing on the board (the user's spec).
+ *            whole gem in the area's colour, a step smaller, inside a ring
+ *            whose done days are in colour and days to go a plain outline
+ * A gem is blank or full, never cut, sliced, greyed or see-through (the
+ * owner's rule): the ring alone says how far a day-count has got. No icon on
+ * the stone; the area is its colour (legend on the board and the family
+ * card). Status is never a hue: nothing is amber, and a day-count carries no
+ * words.
  *
  * The ring is drawn in the colour of the rule whose days it counts (the
  * streak's own part), which in a merged row is still the row's area colour.
@@ -78,39 +79,9 @@ function Ring({ streak, color }) {
   );
 }
 
-/**
- * A pie wedge as a CSS clip-path: from the centre, straight up, clockwise
- * through `frac` of a turn. The arc runs at radius 75% so it clears the box's
- * corners; points every 6° make it round enough at gem size. Its edges fall on
- * segment boundaries (i × 360/need), the middle of each ring gap.
- */
-export function pieClip(frac) {
-  if (frac >= 1) return 'none';
-  const f = Math.max(0, Number(frac) || 0);
-  if (f === 0) return 'polygon(50% 50%, 50% 50%, 50% 50%)';
-  const fmt = (v) => `${Number((50 + 75 * v).toFixed(2))}%`;
-  const pts = ['50% 50%'];
-  const steps = Math.max(2, Math.ceil((f * 360) / 6));
-  for (let i = 0; i <= steps; i += 1) {
-    const a = ((f * 360 * i) / steps - 90) * (Math.PI / 180);
-    pts.push(`${fmt(Math.cos(a))} ${fmt(Math.sin(a))}`);
-  }
-  return `polygon(${pts.join(', ')})`;
-}
-
-const PENDING_GREY = '#8a93a0';
-
-/** A whole stone, or a stone cut into done (colour) and to-go (grey, 30%) wedges. */
-function Stone({ color, size, done = null }) {
-  if (done == null) {
-    return <span className="gem-glyph__stone" style={{ width: size, height: size }}><GemIcon color={color} size={size} solid /></span>;
-  }
-  return (
-    <span className="gem-glyph__stone gem-glyph__pie" style={{ width: size, height: size }}>
-      <span className="gem-glyph__togo"><GemIcon color={PENDING_GREY} size={size} solid /></span>
-      <span className="gem-glyph__done" style={{ clipPath: pieClip(done) }}><GemIcon color={color} size={size} solid /></span>
-    </span>
-  );
+/** A whole stone in its area's colour. */
+function Stone({ color, size }) {
+  return <span className="gem-glyph__stone" style={{ width: size, height: size }}><GemIcon color={color} size={size} solid /></span>;
 }
 
 /**
@@ -128,7 +99,7 @@ export default function GemGlyph({ cell, color, area = null }) {
   const ringed = Boolean(ring);
   let inner = null;
   if (look === 'lit' || look === 'holding') inner = <Stone color={color} size={ringed ? '2.6em' : '3.2em'} />;
-  else if (look === 'streak') inner = <Stone color={color} size="2.6em" done={streak.have / Math.max(1, streak.need)} />;
+  else if (look === 'streak') inner = <Stone color={color} size="2.6em" />;
   else if (look === 'off') inner = <span className="gem-glyph__muted">–</span>;
   return (
     <span className="gem-glyph" data-look={look} data-area={area ?? undefined} data-ringed={ringed ? '' : undefined} data-reach={streak?.reach ?? undefined}>

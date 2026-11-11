@@ -49,7 +49,7 @@
   }
   &__title { font-size: 1.6em; font-weight: 700; letter-spacing: 0.01em; }
 
-  // What the two kinds of gem mean: whole = got it, cut = on the way.
+  // What the two looks mean: a gem = got it, a gem in a ring of days = on the way.
   &__legend {
     display: flex;
     gap: 1.2em;
@@ -110,15 +110,15 @@
   }
   &__empty { padding: 3em 4em; text-align: center; font-size: 1.25em; color: var(--ds-text-mid, #94a3b8); }
 
-  // Lines: the leaning column names, the section names, then one per child.
-  // --gem-head (the name row, as tall as the tallest slanted name) and --gem-lean
-  // (room for the last names, which lean out past the last column) are measured
+  // Lines: the column names, the section names, then one per child.
+  // --gem-head (the name row, as tall as the tallest name, one or two lines) and --gem-lean
+  // (room past the last column; a level name stays inside its column) are measured
   // by useBoardFit.js; the values here only hold until it has run.
   &__grid {
     display: grid;
-    grid-template-rows: var(--gem-head, 7.6em) 2em;
+    grid-template-rows: var(--gem-head, 3.2em) 2em;
     grid-auto-rows: var(--gem-line);
-    padding-right: var(--gem-lean, 3em);
+    padding-right: var(--gem-lean, 0.3em);
   }
   &__row { display: contents; }
 
@@ -147,20 +147,19 @@
     &[data-group="games"] .area-icon { color: #3fc27a; }
   }
 
-  // A column's name: starts over the column's middle and leans up to the right,
-  // on one line, so a long name is never cut or broken mid-word.
   &__cat {
-    position: relative;
+    // Level, centred over its column, bold, wrapping to two lines between words (never
+    // inside one: the column widens to its longest word instead, see GemBoardGrid).
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 0.15em 0.35em;
     > span {
-      position: absolute;
-      left: 50%;
-      bottom: 0.45em;
-      transform-origin: 0 100%;
-      transform: translateX(-0.2em) rotate(-40deg);
-      white-space: nowrap;
+      display: block;
+      text-align: center;
       font-size: 1.05em;
       font-weight: 700;
-      line-height: 1;
+      line-height: 1.05;
       color: var(--ds-text-high, #e8eef3);
     }
   }
@@ -248,7 +247,7 @@
 
 // One cell's glyph: a full gem that fills the box, or a slightly smaller one
 // inside a day ring. Nothing is a status hue: a day is done (area colour) or
-// still to go (plain outline on the ring, grey 30% wedge on the stone).
+// still to go (a plain outline on the ring). The gem is always whole and solid.
 .gem-glyph {
   position: relative;
   display: inline-flex;
@@ -263,12 +262,6 @@
 
   // A plain stone: the area is its colour, no icon on its face.
   &__stone { position: relative; display: inline-flex; }
-  // A running day-count: the stone cut like its ring, a grey stone under the
-  // colour one, which is clipped (inline clip-path) to the done days' wedge.
-  &__pie { position: relative; }
-  &__togo, &__done { position: absolute; inset: 0; display: inline-flex; }
-  // The days still to go: the one place on the board that is see-through (the user's spec).
-  &__togo { opacity: 0.3; }
 
   &__muted { color: var(--ds-text-low, #6b7785); font-size: 1.5em; }
   &__times {

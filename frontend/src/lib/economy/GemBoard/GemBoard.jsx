@@ -6,7 +6,7 @@
  *
  * One line per child, in roster order — never ranked. The columns are the gem
  * rows the response names in `categories`, gathered under its `groups`
- * (Move, School, Games), each column with its name leaning over it; the
+ * (Move, School, Games), each column with its name level over it (bold, up to two lines); the
  * child's gem count for the week closes the line: the gems held, earned plus
  * any contest they lead, which is what the line draws. A cell is one glyph
  * (GemGlyph.jsx) and carries no numerals but a ×n badge. No failure marks: a
@@ -134,7 +134,8 @@ export const boardRowIds = (board) => boardSections(board).flatMap((g) => g.rows
 /**
  * The board itself, from a `/earnings/gems` response. Pure display: no fetch.
  * One line per child, one column per gem row, columns gathered into their
- * sections; the column names lean over the columns so thirteen of them fit.
+ * sections; each column name sits level over its column, wrapping between words, and a column
+ * is never narrower than its longest word (`minmax(--gem-col, min-content)`).
  * @param {object} props
  * @param {object} props.board
  * @param {string|null} [props.focusLearnerId] - the highlighted child (a line)
@@ -152,7 +153,7 @@ export function GemBoardGrid({ board, focusLearnerId = null, cursorRowId = null,
     const tracks = ['max-content'];
     let col = 2;
     const placed = sections.map((g) => {
-      tracks.push('var(--gem-gap)', `repeat(${g.rows.length}, var(--gem-col))`);
+      tracks.push('var(--gem-gap)', `repeat(${g.rows.length}, minmax(var(--gem-col), min-content))`);
       const start = col + 1;
       col = start + g.rows.length;
       return { ...g, start, end: col };

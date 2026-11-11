@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { render, cleanup } from '@testing-library/react';
-import GemGlyph, { glyphLook, glyphWords, segmentPath, pieClip } from './GemGlyph.jsx';
+import GemGlyph, { glyphLook, glyphWords, segmentPath } from './GemGlyph.jsx';
 import { AREA_COLORS, AREA_WORDS } from './AreaIcon.jsx';
 
 afterEach(cleanup);
@@ -155,33 +155,27 @@ describe('GemGlyph', () => {
     }
   });
 
-  it('a running day-count is a pie-cut gem: a grey stone under a colour stone clipped to the done days', () => {
+  it('a running day-count is the whole solid gem in the area colour inside its ring: never cut, greyed or see-through', () => {
     const c = render(<GemGlyph cell={{ state: 'pending', week: 0, streak: streak(2, 5, 'on-track') }} color="#1e88e5" />).container;
-    const pie = c.querySelector('.gem-glyph__pie');
-    expect(pie).toBeTruthy();
-    expect(pie.querySelector('.gem-glyph__togo .gem-icon')).toBeTruthy();
-    const done = pie.querySelector('.gem-glyph__done');
-    expect(done.style.clipPath).toBe(pieClip(2 / 5));
+    const gems = c.querySelectorAll('.gem-icon');
+    expect(gems).toHaveLength(1);
     expect(c.querySelectorAll('.gem-glyph__seg')).toHaveLength(5);
+    expect(c.querySelectorAll('.gem-glyph__seg.is-done')).toHaveLength(2);
+    expect(c.querySelector('[style*="clip-path"], [style*="opacity"]')).toBeNull();
+    // The same stone, facet for facet, as an earned gem of that area at the same size.
+    expect(c.querySelector('.gem-glyph__stone .gem-icon')).toBe(gems[0]);
+    const inRing = gems[0].innerHTML;
+    cleanup();
+    const earned = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 5, 'on-track') }} color="#1e88e5" />).container;
+    expect(earned.querySelector('.gem-icon').innerHTML).toBe(inRing);
+    // And in the area colour: a sapphire stone has no grey facet.
+    expect(inRing).not.toMatch(/#8a93a0/i);
   });
 
   it('an earned gem with a ring is whole, not cut', () => {
     const c = render(<GemGlyph cell={{ state: 'earned', week: 1, streak: streak(2, 4, 'on-track') }} color="#f2c94c" />).container;
     expect(c.querySelector('.gem-glyph__pie')).toBeNull();
     expect(c.querySelectorAll('.gem-icon')).toHaveLength(1);
-  });
-
-  describe('pieClip', () => {
-    it('starts at the centre and the top, and sweeps clockwise', () => {
-      const pts = pieClip(0.25).replace(/^polygon\(|\)$/g, '').split(', ');
-      expect(pts[0]).toBe('50% 50%');
-      expect(pts[1]).toBe('50% -25%'); // straight up, radius 75%
-      expect(pts.at(-1)).toBe('125% 50%'); // a quarter turn: straight right
-    });
-    it('a whole turn and nothing are both exact', () => {
-      expect(pieClip(1)).toBe('none');
-      expect(pieClip(0)).toBe('polygon(50% 50%, 50% 50%, 50% 50%)');
-    });
   });
 
   it('no amber or tag styles in the glyph styles', () => {
@@ -191,10 +185,10 @@ describe('GemGlyph', () => {
     expect(glyphCss).not.toMatch(/255,\s*180,\s*76|#ffb44c|amber/i);
   });
 
-  it('the only opacity on the board is the pending wedges at 0.3', () => {
+  it('nothing on the board is see-through or cut: no opacity, no clip-path', () => {
     const css = readFileSync(new URL('./GemBoard.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
-    expect(css.match(/opacity\s*:[^;]+;/g)).toEqual(['opacity: 0.3;']);
-    expect(css).toMatch(/&__togo\s*\{[^}]*opacity: 0\.3;/);
+    expect(css.match(/opacity\s*:[^;]+;/g)).toBeNull();
+    expect(css).not.toMatch(/clip-path|__togo|__pie/);
     expect(css).not.toMatch(/@keyframes|animation\s*:|__ghost/);
   });
 

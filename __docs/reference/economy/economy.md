@@ -552,20 +552,25 @@ and the school agenda (the board header's **Gems** door and each card's gem
 door), with a This week / Last week switch in the header. It draws one line
 per child in roster order and one column per gem row. The columns are gathered
 into their sections, each a tinted block under its name, and every column's
-name leans over it at -40°, on one line, never wrapped or broken mid-word. The
+name sits level over it, bold and centred, wrapping to two lines between words
+and never inside one: a column is never narrower than its longest word
+(`minmax(--gem-col, min-content)`), so ten columns stay level on the garage
+TV. The
 child's gem count closes the line: `totals.week`, the gems held (earned plus a
 lead), which is exactly the whole gems drawn on that line. Its heading names
 the week whose cells are on screen ("This week" / "Last week"), taken from the
 board in hand, so it does not change until the other week's read lands. The
-header carries a legend: a whole gem "Got it", a cut gem "On the way".
+header carries a legend in the same two looks: a gem "Got it", a gem inside a
+ring of days "On the way".
 Everything on the board is about the week shown: the response's lifetime
 counts are not drawn anywhere.
 
 Everything inside the panel is sized in `em` from one font size. `useBoardFit`
 (`useBoardFit.js`) measures the board once it is drawn: the grid's resolved
-column tracks, how far the last slanted name leans past them (given back as
-the grid's right padding, `--gem-lean`), the tallest slanted name (the name
-row's height, `--gem-head`), the header and the panel's padding, all in `em`.
+column tracks, anything reaching past them (given back as the grid's right
+padding, `--gem-lean`; a level name stays inside its column), the tallest
+column name (the name row's height, `--gem-head`), the header and the panel's
+padding, all in `em`.
 Because everything is in `em`, that size does not depend on the font size, so
 one measurement gives the font size that fills 95% of the tighter screen
 dimension (clamped 12–40px). It re-measures when the fonts load, on resize, and
@@ -585,7 +590,9 @@ whole. `--gem-lane-out` has to stay below the panel's side padding (1em), or
 the panel's own `overflow: hidden` cuts the bar instead.
 
 Each cell is one glyph (`GemGlyph.jsx`) and is exactly one of three things:
-a blank cell, a whole gem, or a gem cut like the ring around it. A gem is a
+a blank cell, a whole gem, or a whole gem inside a ring of days. A gem is
+blank or full — never cut, sliced, greyed or see-through (the owner's rule);
+the ring alone shows how far a day-count has got. A gem is a
 plain stone in its area's colour: no icon on its face (the area is its colour;
 the section headers carry the area icons, and the family card's Gems chip is
 the colour legend). The first matching look wins:
@@ -594,7 +601,7 @@ the colour legend). The first matching look wins:
 |---|---|---|
 | `lit` | `week > 0`, or `earned` / `won` | the whole gem, filling the cell; inside the ring too if a day-count is still in reach |
 | `holding` | `leading` | the whole gem, the same as earned: a lead is a gem while it lasts, and moves when the lead does. It outranks a running day-count in the same row (the ring is still drawn around it) |
-| `streak` | a day-count with at least one day done whose `reach` is not `out` | a ring of `need` segments (done days in the rule's colour, days to go a neutral outline) around the gem **cut like the ring**: from 12 o'clock clockwise, `have/need` of the stone in full colour, the rest a grey stone at 30% opacity. The wedge edges fall on the ring's gaps. No words and no hue for status |
+| `streak` | a day-count with at least one day done whose `reach` is not `out` | a ring of `need` segments (done days in the rule's colour, days to go a neutral outline) around the **whole, solid gem in the area's colour** (the same stone as an earned one, a step smaller). No words and no hue for status |
 | `unknown` | the evidence could not be read | a blank cell (the `aria-label` and the detail box still say `can’t tell yet`) |
 | `off` | `disabled` | a muted `–` |
 | `none` | anything else, including a day-count not begun, one out of reach, and a gem still open | a blank cell |
@@ -602,8 +609,8 @@ the colour legend). The first matching look wins:
 A `lit` or `holding` gem carries a `×n` badge when the cell holds more than one
 gem: `max(week, held)`, so a row that folds a won personal best with a held
 contest lead reads `×2`. A gem with a ring around it is drawn smaller, inside
-it; a gem without one fills the cell. The cut stone's grey 30% is the one
-see-through thing on the board (the stylesheet test pins it); nothing is
+it; a gem without one fills the cell. Nothing on the board is see-through or
+clipped (the stylesheet test pins it: no `opacity`, no `clip-path`); nothing is
 animated or amber, and status is never a hue. A cell carries no numerals but
 the `×n` badge; day counts and scores live in the detail box. Nothing marks
 failure: a gem not earned is a blank cell, never a cross. Each cell's
