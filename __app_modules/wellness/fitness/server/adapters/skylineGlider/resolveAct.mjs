@@ -4,7 +4,7 @@
 // leading slash when it is already rooted at the media tree.
 
 export const ENTITY_CLASSES = new Set(['breakable', 'solid', 'scenery']);
-const ASSET_FIELDS = ['src', 'fill', 'edge', 'ceiling_edge'];
+const ASSET_FIELDS = ['src', 'fill', 'edge', 'ceiling_edge', 'lava_fill', 'lava_edge'];
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 

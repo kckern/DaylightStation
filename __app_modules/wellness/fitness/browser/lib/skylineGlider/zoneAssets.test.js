@@ -12,6 +12,10 @@ describe('zone assets', () => {
     expect(zoneImagePaths(zone)).toEqual(['z/far.png', 'z/rock.png', 'z/grass.png', 'z/sprites.png']);
   });
 
+  it('includes the lava fill and surface', () => {
+    expect(zoneImagePaths({ terrain: { lava_fill: 'z/lava.png', lava_edge: 'z/lava-top.png' } })).toEqual(['z/lava.png', 'z/lava-top.png']);
+  });
+
   it('reads hash and array sprite exports and drops file extensions', () => {
     expect(parseSpriteFrames({ frames: { 'glider-1.png': { frame: { x: 0, y: 0, w: 32, h: 16 } }, bad: {} } }))
       .toEqual({ 'glider-1': { x: 0, y: 0, w: 32, h: 16 } });

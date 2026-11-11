@@ -20,6 +20,8 @@ slots:
   terrain.fill:         { type: texture, repeat: [x, y], scale: 2 }
   terrain.edge:         { type: strip, repeat: [x] }
   terrain.ceiling_edge: { type: strip, repeat: [x] }
+  terrain.lava_fill:    { type: texture, repeat: [x, y], scale: 2 }
+  terrain.lava_edge:    { type: strip, repeat: [x] }   # the lava surface
   craft:             { type: sprite, animated: true, box: [105, 54], fit: strict }
   collectible:       { type: sprite, box: [32, 32], fit: strict }
   checkpoint:        { type: sprite, box: [80, 440] }

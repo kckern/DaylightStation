@@ -128,6 +128,36 @@ function SkinnedTerrain({ segment, terrain, fill, edge, ceilingEdge }) {
   </>;
 }
 
+// A slope's edge strip follows each straight piece of its profile. The strip is
+// sheared, not rotated, so pixel columns stay upright and step with the slope.
+function SlopeEdge({ segment, image, lip, height }) {
+  const points = segment.profilePoints;
+  const tileWidth = image.width * (height / image.height);
+  return <g data-slope-edge="true">{points.slice(1).map((end, index) => {
+    const start = points[index]; const dx = end.x - start.x;
+    if (dx <= 0) return null;
+    const angle = (Math.atan2(end.y - start.y, dx) * 180) / Math.PI;
+    const id = `glider-slope-edge-${segment.id}-${index}`;
+    return <g key={id} transform={`translate(${start.x} ${start.y - lip}) skewY(${angle})`}>
+      <pattern id={id} patternUnits="userSpaceOnUse" width={tileWidth} height={height} patternTransform={`translate(${(segment.x - start.x) % tileWidth} 0)`}>
+        <image href={image.url} width={tileWidth} height={height} preserveAspectRatio="none"/>
+      </pattern>
+      <rect x="0" y="0" width={dx} height={height} fill={`url(#${id})`} className="skyline-glider__terrain-edge"/>
+    </g>;
+  })}</g>;
+}
+
+// Lava drawn from the zone's files: a fill texture below the surface, the
+// surface strip on top. Same collision surface as the preset.
+function SkinnedLava({ segment, terrain, fill, edge }) {
+  const y = segment.top * SCENE_HEIGHT;
+  const edgeHeight = Number(terrain.edge_height ?? 0.06) * SCENE_HEIGHT;
+  return <g className="skyline-glider__lava skyline-glider__lava--skinned">
+    <rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_HEIGHT - y} fill={fill ? 'url(#glider-lava-fill)' : undefined}/>
+    {edge && <EdgeStrip id={`glider-lava-edge-${segment.id}`} image={edge} x={segment.x} width={segment.width} top={y - edgeHeight / 2} height={edgeHeight}/>}
+  </g>;
+}
+
 function CourseSegment({ segment, zone, assets, time }) {
   const testProps = { 'data-testid': `course-segment-${segment.id}`, 'data-type': segment.type };
   if (segment.type === 'checkpoint') {
@@ -146,6 +176,17 @@ function CourseSegment({ segment, zone, assets, time }) {
   const fill = assets.images.get(terrain.fill);
   const edge = assets.images.get(terrain.edge);
   const ceilingEdge = assets.images.get(terrain.ceiling_edge);
+  const lavaFill = assets.images.get(terrain.lava_fill);
+  const lavaEdge = assets.images.get(terrain.lava_edge);
+  if (segment.type === 'lava' && (lavaFill || lavaEdge)) return <g {...testProps}><SkinnedLava segment={segment} terrain={terrain} fill={lavaFill} edge={lavaEdge}/></g>;
+  if (segment.profilePoints?.length && edge) {
+    const lip = Number(terrain.edge_lip ?? 0.02) * SCENE_HEIGHT;
+    const edgeHeight = Number(terrain.edge_height ?? 0.06) * SCENE_HEIGHT;
+    return <g {...testProps}>
+      <TerrainPreset segment={segment} fill={fill ? 'url(#glider-terrain-fill)' : undefined} edge={false}/>
+      <SlopeEdge segment={segment} image={edge} lip={lip} height={edgeHeight}/>
+    </g>;
+  }
   return <g {...testProps}>
     {segment.profilePoints?.length || segment.type === 'lava' ? <TerrainPreset segment={segment} fill={fill ? 'url(#glider-terrain-fill)' : undefined}/> : fill || edge || ceilingEdge
       ? <SkinnedTerrain segment={segment} terrain={terrain} fill={fill} edge={edge} ceilingEdge={ceilingEdge}/>
@@ -285,6 +326,7 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
   const destroyed = new Set(state.destroyedIds || []);
   const layers = zone.layers || [];
   const fill = assets.images.get(zone.terrain?.fill);
+  const lavaFill = assets.images.get(zone.terrain?.lava_fill);
   const rules = weaponRules(course);
   const xAt = (atSeconds) => projected.playerX + (atSeconds - time) * projected.unitsPerSecond;
   const flashes = new Map((state.impacts || []).filter((impact) => impact.entityId && impact.effect === 'damage').map((impact) => [impact.entityId, impact.id]));
@@ -294,6 +336,11 @@ export function FlightScene({ state, course, effects = {}, assets = EMPTY_ZONE_A
     {fill && <defs>
       <pattern id="glider-terrain-fill" patternUnits="userSpaceOnUse" width={fill.width} height={fill.height} patternTransform={`translate(${-(scroll % fill.width)} 0)`}>
         <image href={fill.url} width={fill.width} height={fill.height}/>
+      </pattern>
+    </defs>}
+    {lavaFill && <defs>
+      <pattern id="glider-lava-fill" patternUnits="userSpaceOnUse" width={lavaFill.width} height={lavaFill.height} patternTransform={`translate(${-(scroll % lavaFill.width)} 0)`}>
+        <image href={lavaFill.url} width={lavaFill.width} height={lavaFill.height}/>
       </pattern>
     </defs>}
     {layers.filter((layer) => !layer.front).map((layer) => <Layer key={layer.id} layer={layer} assets={assets} scroll={scroll}/>)}

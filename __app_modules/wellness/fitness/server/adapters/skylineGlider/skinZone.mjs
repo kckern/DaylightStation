@@ -57,7 +57,7 @@ export function zoneFromSkinExport(manifest, { baseZone, id, name, assetRoot, ar
   }
 
   const terrain = { ...(baseZone.terrain ?? {}) };
-  for (const field of ['fill', 'edge', 'ceiling_edge']) if (slots[`terrain.${field}`]?.file) terrain[field] = slots[`terrain.${field}`].file;
+  for (const field of ['fill', 'edge', 'ceiling_edge', 'lava_fill', 'lava_edge']) if (slots[`terrain.${field}`]?.file) terrain[field] = slots[`terrain.${field}`].file;
   const strip = slots['terrain.edge'] ?? slots['terrain.ceiling_edge'];
   if (strip?.height) terrain.edge_height = Math.round(((strip.height * artPixel) / sceneHeight) * 10000) / 10000;
   zone.terrain = terrain;

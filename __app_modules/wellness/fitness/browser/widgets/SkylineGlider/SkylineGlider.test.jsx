@@ -256,6 +256,24 @@ describe('FlightScene zones', () => {
     expect(cap[0]).toHaveAttribute('viewBox', '64 0 16 16');
   });
 
+  it('draws lava from the zone files and slope edges along the profile', () => {
+    const slope = { id: 'slope', type: 'lower-terrain', start_s: 4, end_s: 12, top: .9, profile: [{ at_s: 4, altitude: .9 }, { at_s: 8, altitude: .5 }, { at_s: 12, altitude: .9 }] };
+    const lava = { id: 'lava', type: 'lava', start_s: 12, end_s: 20, top: .9 };
+    const skinned = { ...zoned, segments: [slope, lava], zone: { ...zoned.zone, terrain: { fill: 'z/rock.png', edge: 'z/grass.png', lava_fill: 'z/lava.png', lava_edge: 'z/lava-top.png' } } };
+    const images = new Map([...assets.images, ['z/grass.png', { url: '/m/grass.png', width: 16, height: 16 }], ['z/lava.png', { url: '/m/lava.png', width: 32, height: 32 }], ['z/lava-top.png', { url: '/m/lava-top.png', width: 16, height: 8 }]]);
+    const { container } = render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={skinned} assets={{ ...assets, images }}/>);
+    const slopeEl = screen.getByTestId('course-segment-slope');
+    expect(slopeEl.querySelector('.skyline-glider__slope-edge')).toBeNull();
+    const pieces = slopeEl.querySelectorAll('[data-slope-edge] > g');
+    expect(pieces).toHaveLength(2);
+    expect(pieces[0].getAttribute('transform')).toMatch(/skewY\(-/);
+    expect(pieces[1].getAttribute('transform')).toMatch(/skewY\((?!-)/);
+    const lavaEl = screen.getByTestId('course-segment-lava');
+    expect(lavaEl.querySelector('[data-lava-surface]')).toHaveAttribute('fill', 'url(#glider-lava-fill)');
+    expect(lavaEl.querySelector('#glider-lava-edge-lava image')).toHaveAttribute('href', '/m/lava-top.png');
+    expect(container.querySelector('#glider-lava-fill image')).toHaveAttribute('href', '/m/lava.png');
+  });
+
   it('falls back to the alpine presets when nothing has loaded', () => {
     render(<FlightScene state={{ ...flightState, collectedIds: [] }} course={zoned}/>);
     expect(screen.getByTestId('skyline-glider-craft').querySelector('.skyline-glider__wing')).toBeTruthy();

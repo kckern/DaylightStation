@@ -19,6 +19,7 @@ const manifest = {
     ] },
     'terrain.fill': { file: 'images/terrain.fill.png', width: 48, height: 48, scale: 3 },
     'terrain.edge': { file: 'images/terrain.edge.png', width: 16, height: 8, scale: 1 },
+    'terrain.lava_fill': { file: 'images/terrain.lava_fill.png', width: 32, height: 32, scale: 2 },
     craft: { frames: ['craft.fly.0', 'craft.fly.1'], fps: 6, loop: 'loop' },
     collectible: { frames: ['collectible.spin.0', 'collectible.spin.1', 'collectible.spin.2'], fps: 10, loop: 'loop' },
     'weapons.bomb': { frames: ['weapons.bomb.default'] },
@@ -37,7 +38,7 @@ describe('zoneFromSkinExport', () => {
       { id: 'far', kind: 'image', src: 'images/layers.far.png', parallax: 0.14, y: 0.3833, height: 0.4667, fallback: 'alpine-far' },
       { id: 'dust', kind: 'image', src: 'images/layers.dust.png', parallax: 1.4, y: 0.9333, height: 0.0667, front: true },
     ]);
-    expect(zone.terrain).toMatchObject({ fill: 'images/terrain.fill.png', edge: 'images/terrain.edge.png', edge_lip: alpine.terrain.edge_lip, edge_height: 0.0267 });
+    expect(zone.terrain).toMatchObject({ fill: 'images/terrain.fill.png', edge: 'images/terrain.edge.png', lava_fill: 'images/terrain.lava_fill.png', edge_lip: alpine.terrain.edge_lip, edge_height: 0.0267 });
     expect(zone.pixel_scale).toBe(2);
     expect(zone.sprites).toEqual({ sheet: 'sprites/sheet.png', frames: 'sprites/sheet.json' });
     expect(zone.craft).toEqual({ frames: ['craft.fly.0', 'craft.fly.1'], fps: 6 });
@@ -60,6 +61,7 @@ describe('zoneFromSkinExport', () => {
     expect(resolved.zone.layers[1].src).toBe('fitness/skyline-glider/test-zone/images/layers.far.png');
     expect(resolved.zone.sprites.sheet).toBe('fitness/skyline-glider/test-zone/sprites/sheet.png');
     expect(resolved.zone.pixel_scale).toBe(2);
+    expect(resolved.zone.terrain.lava_fill).toBe('fitness/skyline-glider/test-zone/images/terrain.lava_fill.png');
     expect(resolved.entities[0]).toMatchObject({ id: 'p1', class: 'breakable', frame: 'entities.pine.tree', draw: 'pine' });
   });
 

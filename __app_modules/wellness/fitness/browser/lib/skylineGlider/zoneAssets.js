@@ -24,7 +24,7 @@ async function browserJson(url) {
 export function zoneImagePaths(zone) {
   const paths = new Set();
   for (const layer of zone?.layers || []) if (layer.kind === 'image' && layer.src) paths.add(layer.src);
-  for (const field of ['fill', 'edge', 'ceiling_edge']) if (zone?.terrain?.[field]) paths.add(zone.terrain[field]);
+  for (const field of ['fill', 'edge', 'ceiling_edge', 'lava_fill', 'lava_edge']) if (zone?.terrain?.[field]) paths.add(zone.terrain[field]);
   if (zone?.sprites?.sheet) paths.add(zone.sprites.sheet);
   return [...paths];
 }

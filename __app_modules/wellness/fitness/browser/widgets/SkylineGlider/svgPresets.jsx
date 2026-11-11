@@ -31,7 +31,7 @@ export function BackdropPreset({ draw, offset = 0 }) {
 
 export const hasBackdropPreset = (draw) => draw === 'alpine-sky' || draw in BACKDROP_PATHS;
 
-export function TerrainPreset({ segment, fill }) {
+export function TerrainPreset({ segment, fill, edge = true }) {
   if (segment.type === 'lava') {
     const y = segment.top * SCENE_HEIGHT;
     return <g className="skyline-glider__lava"><rect data-lava-surface x={segment.x} y={y} width={segment.width} height={SCENE_HEIGHT - y}/><path d={`M${segment.x} ${y} H${segment.x + segment.width}`} /></g>;
@@ -40,7 +40,7 @@ export function TerrainPreset({ segment, fill }) {
     const points = segment.profilePoints;
     const line = points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ');
     // A zone texture goes in style: the stylesheet's terrain fill would beat a fill attribute.
-    return <><path data-slope d={`${line} L${points.at(-1).x} ${SCENE_HEIGHT} L${points[0].x} ${SCENE_HEIGHT} Z`} className="skyline-glider__terrain" style={fill ? { fill } : undefined}/><path d={line} className="skyline-glider__slope-edge"/></>;
+    return <><path data-slope d={`${line} L${points.at(-1).x} ${SCENE_HEIGHT} L${points[0].x} ${SCENE_HEIGHT} Z`} className="skyline-glider__terrain" style={fill ? { fill } : undefined}/>{edge && <path d={line} className="skyline-glider__slope-edge"/>}</>;
   }
   const width = Math.max(4, segment.width);
   if (segment.type === 'lower-terrain') {
