@@ -51,7 +51,7 @@
     // axis in the tall POV column, and a narrower badge collides less often, so
     // the de-collide pass in positionCards has to restack less. 1.1rem is the
     // floor for anything that renders during `racing` — do not go below it.
-    font-size: cg.cg-type(1); line-height: 1; letter-spacing: -0.01em;
+    font-size: cg.cg-type(2); line-height: 1; letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
     color: cg.$cg-text;
     padding: 0.18em 0.4em; border-radius: 6px;
@@ -61,13 +61,16 @@
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
     will-change: transform, opacity;
     &.is-ghost { filter: saturate(0.4) brightness(0.9); }
+    // "+N": the riders of a crowded band that do not fit in its three rows.
+    &--more { font-style: normal; padding: 0.18em 0.6em; border-color: cg.$cg-muted; box-shadow: none; }
     // Parked label — dimmed (the loop owns inline opacity, so use filter).
     &.is-parked { filter: saturate(0.3) brightness(0.55); }
   }
 
   // Horizon leader chip — pinned high-centre, fixed size, plate-styled.
   &__horizon-chip {
-    position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
+    // Anchored to the panel's top edge (the horizon), with an arrow up the road to the leader.
+    position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
     font-family: cg.$cg-display; font-weight: 800; font-style: italic;
     font-size: cg.cg-type(2); line-height: 1; letter-spacing: 0.02em;
     font-variant-numeric: tabular-nums;
@@ -80,6 +83,7 @@
     white-space: nowrap; pointer-events: none;
     will-change: opacity;
     transition: opacity 0.25s ease;
+    &::before { content: '\25B2'; margin-right: 0.5em; }
   }
 
   // 10-foot floor (audit UX §7): was 0.55rem, illegible from the bikes. Bumped
@@ -88,13 +92,13 @@
   // (the audit's "consider keeping only every 100m label" candidate).
   &__mark-label {
     position: absolute; top: 0; left: 0;
-    font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 700; font-size: cg.cg-type(1);
+    font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 700; font-size: cg.cg-type(2);
     color: cg.$cg-cyan; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }
   &__gate-label {
     position: absolute; top: 0; left: 0;
-    font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.06em;
+    font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 800; font-size: cg.cg-type(2); letter-spacing: 0.06em;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }

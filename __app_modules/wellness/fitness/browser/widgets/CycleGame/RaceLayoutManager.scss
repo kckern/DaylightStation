@@ -22,16 +22,18 @@
   .race-layout__main-top { display: grid; grid-template-columns: 1fr; gap: 8px; min-height: 0; }
   .race-layout__sidebar { display: grid; min-height: 0; grid-template-rows: 7fr 3fr; gap: 8px; }
 
-  // Wide mode: main column (chart/tower row + speedo band) beside the POV grid
-  // docked as a right-edge column spanning the full height.
-  // 33% (not the old 26%): the POV's rank badges are fixed screen size and don't
-  // scale with the column, so a narrow POV bunches mid-pack riders near the
-  // centreline until their badges overlap. 33% ≈ 410px at 1080p, the width the
-  // POV had in the top row before it and the tower traded places.
-  &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) minmax(220px, 33%); grid-template-rows: 1fr; gap: 8px; }
-  .race-layout__wide-main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(220px, 42%); gap: 8px; }
-  .race-layout__wide-main--no-speedo { grid-template-rows: 1fr; }
-  .race-layout__top3 { display: grid; min-height: 0; grid-template-columns: 2fr 1fr; gap: 8px; }
+  // Wide mode (4+ riders): a top row (chart + tower | POV road) over a speedo band
+  // that spans the FULL width. With six riders the old layout gave the gauges only
+  // the main column (about 1200 px, so ~175 px gauges) and left the road column
+  // beside empty band space; full width gives ~270 px gauges. The band is
+  // minmax(350px, 38%): 350 - CHROME_BELOW_GAUGE_PX (118) leaves 232 >= the
+  // 220 px SPEEDO_MIN_GAUGE_WIDE floor. The POV column is 33% (the rank badges are
+  // fixed screen size and don't scale with the column, so a narrow road bunches
+  // badges).
+  &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(350px, 38%); gap: 8px; }
+  &--wide.race-layout--no-speedo { grid-template-rows: minmax(0, 1fr); }
+  .race-layout__wide-top { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(220px, 33%); gap: 8px; }
+  .race-layout__top3 { display: grid; min-height: 0; min-width: 0; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 8px; }
 
   // Solo mode: main column (chart over the gauge + pace band) beside the POV
   // road as a right column at 28% of the width. Every track has an explicit

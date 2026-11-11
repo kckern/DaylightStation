@@ -15,7 +15,7 @@
 
   &__eyebrow {
     @include cg.cg-eyebrow;
-    font-size: cg.cg-type(1); // was 1rem — 10-foot floor (audit UX §7)
+    font-size: cg.cg-type(2);
     animation: cg-fade-up 0.4s ease both;
   }
   &.is-go &__eyebrow { color: cg.$cg-success; letter-spacing: 0.4em; }

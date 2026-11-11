@@ -5,7 +5,7 @@ import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
 import { FALLBACK_AVATAR } from "../home/constants.js";
 import { tickFraction } from "../../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
 import { prefersReducedMotion } from "../../../lib/cycleGame/reducedMotion.js";
-import { povWorld, povBadges, resolveBadgeStack, markShadowedByGate } from "../../../lib/cycleGame/povWorld.js";
+import { povWorld, povBadges, layoutBadgeBands, markShadowedByGate } from "../../../lib/cycleGame/povWorld.js";
 import { povFollowCam, horizonChipState } from "../../../lib/cycleGame/povFollowCam.js";
 import getLogger from '@/lib/logging/Logger.js';
 import "./PovGrid.scss";
@@ -150,6 +150,8 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
                                           // offsetWidth forces a reflow, so the badge box
                                           // is measured only when its text actually changes
                                           // (once per race tick), never per frame.
+  const moreEls = useRef([]);             // pooled "+N" collapse badges
+  const moreSize = useRef(null);          // measured once
   const horizonChipRef = useRef(null);    // pinned "LEADER +N m" plate
   const chipShownRef = useRef(false);     // horizon-chip hysteresis state
   const sceneRef = useRef(null);          // built three.js scene + pools
@@ -374,6 +376,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
             if (badgeEl) badgeEl.style.opacity = '0';
             return;
           }
+          const rankNum = Number(badges[r.id]?.rank);
           const scale = clamp(CARD_MIN_SCALE, CARD_MAX_SCALE, CARD_FOCAL / Math.max(1, p.dist));
           const z = String(10000 - Math.round(p.dist)); // nearer on top
           // The avatar card (88 px at scale 1, centred on the road point) is an
@@ -395,13 +398,44 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
               badgeSize.current[r.id] = { text, w: badgeEl.offsetWidth, h: badgeEl.offsetHeight };
             }
             const { w, h } = badgeSize.current[r.id];
-            boxes.push({ el: badgeEl, id: r.id, x: p.sx, y: p.sy + belowPx, w, h, dist: p.dist });
+            boxes.push({ el: badgeEl, id: r.id, x: p.sx, y: p.sy + belowPx, w, h, dist: p.dist, rank: Number.isFinite(rankNum) ? rankNum : null });
           }
         });
 
-        // Pass 2 — de-collide in screen space (pure, unit-tested in povWorld).
-        resolveBadgeStack(boxes, BADGE_STACK_GAP_PX, cardBoxes).forEach((b) => {
-          b.el.style.transform = `translate(${b.x.toFixed(1)}px,${b.y.toFixed(1)}px) translate(-50%,0)`;
+        // Pass 2 — lay the badges out by screen band: rank order, leader on top, at most
+        // three per band with a "+N" for the rest, clear of every card and the horizon
+        // chip, inside the panel (pure, unit-tested in povWorld).
+        const root = rootRef.current;
+        const panel = root ? { w: root.clientWidth, h: root.clientHeight } : null;
+        if (!moreSize.current && moreEls.current[0]) {
+          const m = moreEls.current[0]; m.textContent = '+9';
+          moreSize.current = { w: m.offsetWidth, h: m.offsetHeight };
+        }
+        const chip = horizonChipRef.current;
+        const fixed = [];
+        if (chip && chip.style.opacity === '1') {
+          fixed.push({ x: chip.offsetLeft, // left: 50% with translateX(-50%), so offsetLeft is the centre
+             y: chip.offsetTop, w: chip.offsetWidth, h: chip.offsetHeight });
+        }
+        const out = layoutBadgeBands({
+          boxes: boxes.map(({ el, ...b }) => b), cards: cardBoxes, fixed, panel,
+          gapPx: BADGE_STACK_GAP_PX, moreSize: moreSize.current || undefined,
+        });
+        const byId = {};
+        boxes.forEach((b) => { byId[b.id] = b.el; });
+        out.placed.forEach((b) => {
+          const el = byId[b.id];
+          el.style.visibility = 'visible';
+          el.style.transform = `translate(${b.x.toFixed(1)}px,${b.y.toFixed(1)}px) translate(-50%,0)`;
+        });
+        out.hidden.forEach((id) => { if (byId[id]) byId[id].style.visibility = 'hidden'; });
+        moreEls.current.forEach((m, i) => {
+          const d = out.mores[i];
+          if (!m) return;
+          if (!d) { m.style.visibility = 'hidden'; return; }
+          m.textContent = `+${d.count}`;
+          m.style.visibility = 'visible';
+          m.style.transform = `translate(${d.x.toFixed(1)}px,${d.y.toFixed(1)}px) translate(-50%,0)`;
         });
       };
 
@@ -579,6 +613,12 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
               </>
             ) : ''}
           </div>
+        ))}
+      </div>
+      <div className="cg-pov__badges" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="cg-pov__badge cg-pov__badge--more" data-testid="pov-badge-more"
+            ref={(el) => { moreEls.current[i] = el; }} style={{ visibility: 'hidden' }}>+9</div>
         ))}
       </div>
       {/* Horizon leader chip — pinned high-centre, shown only when the true gap

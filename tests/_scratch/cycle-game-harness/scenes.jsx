@@ -220,15 +220,30 @@ function fourRiders() {
     },
   };
 }
-function sixRiders() {
+function sixRiders() { return manyRiders(6); }
+function fiveRiders() { return manyRiders(5); }
+// Four riders bunched within 15 m of each other: the road panel's worst case for badges.
+function fourBunched() {
   const t = 200;
-  const ids = [1, 2, 3, 4, 5, 6];
-  const dist = [960, 900, 840, 780, 520, 120];
+  const dist = [960, 955, 950, 946];
+  const riders = {}; const riderLive = {};
+  dist.forEach((d, i) => {
+    const n = i + 1; const id = `user_${n}`;
+    riders[id] = rider(id, `Rider ${String.fromCharCode(64 + n)}`, series(t, d, { wobble: 0.1 + i * 0.02 }));
+    riderLive[id] = withAvatar(id, live({ rpm: 90 - i, speedKmh: 28 - i * 0.2, placement: n, isLeader: i === 0, ...zoneLive(['hot', 'warm', 'warm', 'active'][i], 0.5) }));
+  });
+  return { winCondition: 'distance', goalM: 1500, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS, riders, riderLive };
+}
+function manyRiders(count) {
+  const t = 200;
+  const ids = Array.from({ length: count }, (_, i) => i + 1);
+  const dist = [960, 900, 840, 780, 520, 120].slice(0, count);
+  const lastParked = count === 6;
   const riders = {}; const riderLive = {};
   ids.forEach((n, i) => {
     const id = `user_${n}`;
-    riders[id] = rider(id, `Rider ${String.fromCharCode(64 + n)}`, series(t, dist[i], i === 5 ? { stopAfter: 28 } : { wobble: 0.1 + i * 0.02 }));
-    riderLive[id] = withAvatar(`user_${n}`, i === 5
+    riders[id] = rider(id, `Rider ${String.fromCharCode(64 + n)}`, series(t, dist[i], lastParked && i === 5 ? { stopAfter: 28 } : { wobble: 0.1 + i * 0.02 }));
+    riderLive[id] = withAvatar(`user_${n}`, lastParked && i === 5
       ? live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 6, parked: true, noSensor: true })
       : live({ rpm: 90 - i * 3, speedKmh: 28 - i, placement: i + 1, isLeader: i === 0, ...zoneLive(['hot', 'warm', 'warm', 'active', 'active'][i], 0.5) }));
   });
@@ -311,7 +326,9 @@ export const SCENES = {
   'race-solo-parked': raceScene(soloParked),
   'race-two-riders-one-parked': raceScene(twoOneParked),
   'race-four-riders': raceScene(fourRiders),
+  'race-five-riders': raceScene(fiveRiders),
   'race-six-riders': raceScene(sixRiders),
+  'race-four-bunched': raceScene(fourBunched),
   'race-menu-open': raceScene(soloTime),
   'race-toast-parked': toastScene(twoOneParked, { id: 1, variant: 'parked', icon: null, title: 'Rider B is parked', subtitle: 'Pedal to rejoin' }),
   'race-toast-boost': toastScene(soloTime, { id: 2, variant: 'boost', icon: null, title: 'Rider A: Hot \u00d71.4' }),

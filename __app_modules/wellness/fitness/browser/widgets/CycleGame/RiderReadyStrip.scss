@@ -25,20 +25,20 @@
   // from the bikes just like the race screen, so it carries the same 1.1rem
   // floor as the racing panels.
   &__avatar .avatar-core .hr-value-overlay { height: 32%; }
-  &__avatar .avatar-core .hr-value-overlay .hr-value { font-size: cg.cg-type(1); }
-  &__name { font-weight: 700; font-size: cg.cg-type(1); color: #eef2f8; } // was 1rem
+  &__avatar .avatar-core .hr-value-overlay .hr-value { font-size: cg.cg-type(2); }
+  &__name { font-weight: 700; font-size: cg.cg-type(2); color: #eef2f8; }
   // Strapless handicap ("No strap · ×0.8"): a fact to know, not an alarm.
-  &__strap { font-weight: 600; font-size: cg.cg-type(1); color: #d6d0ee; white-space: nowrap; } // brighter than $cg-muted: the lowest-contrast line on the chip
+  &__strap { font-weight: 600; font-size: cg.cg-type(2); color: #d6d0ee; white-space: nowrap; } // brighter than $cg-muted: the lowest-contrast line on the chip
   &__rpm { font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 800; font-size: cg.cg-type(2); color: #eef2f8; line-height: 1; }
-  &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: cg.cg-type(1); } // was 0.7rem
+  &__rpm-unit { color: #8b93a1; font-weight: 500; font-size: cg.cg-type(2); }
 
   &__status {
     display: inline-flex; align-items: center; gap: 5px;
     margin-top: 2px; padding: 3px 12px;
     border-radius: 999px;
-    font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.08em; // was 0.82rem
+    font-weight: 800; font-size: cg.cg-type(2); letter-spacing: 0.08em;
   }
-  &__status-icon { font-size: cg.cg-type(1); } // was 0.95rem
+  &__status-icon { font-size: cg.cg-type(2); }
 
   // Sensor reporting — calm green, low alarm. Pedalling before green is
   // allowed (rolling start), so cadence never changes this state.
@@ -68,7 +68,7 @@
     border-radius: 999px;
     border: 1px dashed #21e6ff;
     color: #21e6ff;
-    font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.08em;
+    font-weight: 800; font-size: cg.cg-type(2); letter-spacing: 0.08em;
   }
 }
 

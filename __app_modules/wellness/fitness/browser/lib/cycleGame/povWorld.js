@@ -55,6 +55,100 @@ export function resolveBadgeStack(boxes = [], gapPx = 3, obstacles = []) {
   return out;
 }
 
+/** Most badges one screen band shows; the rest collapse into a single "+N" badge. */
+export const MAX_BADGES_PER_BAND = 3;
+
+/**
+ * Lay out the rank/gap badges of the POV panel by screen band.
+ *
+ * Riders whose badges would land on top of each other (they overlap sideways and sit
+ * within a few badge-heights of each other) form one BAND. A band is shown as one
+ * column in RANK order, leader on top, so the order a viewer reads is the order of the
+ * race rather than the order the push-down happened to produce. A band of more than
+ * `maxStack` badges shows the first `maxStack` by rank and one "+N" badge for the rest.
+ * Each band is placed as one block below its riders' cards, pushed below any other
+ * card or already-placed block (nearest first), kept inside the panel, and never on the
+ * pinned `fixed` boxes (the horizon chip). Pure: no DOM, mutates nothing.
+ *
+ * @param {object} args
+ * @param {Array<{id:string,x:number,y:number,w:number,h:number,dist:number,rank:(number|null)}>} args.boxes
+ *   one per visible badge; x is the centre, y the top; `rank` null for riders without one (sorted after ranked riders)
+ * @param {Array<{x:number,y:number,w:number,h:number}>} [args.cards] avatar cards (centre-x, top-y): no badge may sit on any of them
+ * @param {Array<{x:number,y:number,w:number,h:number}>} [args.fixed] other pinned boxes (centre-x, top-y)
+ * @param {{w:number,h:number}} [args.panel] panel size; omitted means no clamping
+ * @param {number} [args.gapPx]
+ * @param {number} [args.maxStack]
+ * @param {{w:number,h:number}} [args.moreSize] box size of a "+N" badge
+ * @returns {{ placed:Array<{id:string,x:number,y:number}>, hidden:string[], mores:Array<{x:number,y:number,w:number,h:number,count:number}> }}
+ */
+export function layoutBadgeBands({ boxes = [], cards = [], fixed = [], panel = null, gapPx = 3, maxStack = MAX_BADGES_PER_BAND, moreSize = { w: 56, h: 30 } } = {}) {
+  const list = boxes.map((b) => ({ ...b }));
+  // Union-find over "these two badges would collide".
+  const parent = list.map((_, i) => i);
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i]; const b = list[j];
+      const sideways = Math.abs(a.x - b.x) < (a.w + b.w) / 2;
+      const inBand = Math.abs(a.y - b.y) < 3 * Math.max(a.h, b.h);
+      if (sideways && inBand) parent[find(i)] = find(j);
+    }
+  }
+  const groups = new Map();
+  list.forEach((b, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(b); });
+
+  const rankOf = (b) => (Number.isFinite(b.rank) ? b.rank : Infinity);
+  const blocks = [...groups.values()].map((members) => {
+    // Leader on top: rank order, ties (and unranked riders) by depth, farthest first.
+    const ordered = [...members].sort((a, b) => (rankOf(a) - rankOf(b)) || (b.dist - a.dist));
+    const shown = ordered.slice(0, maxStack);
+    const rest = ordered.slice(maxStack);
+    const rows = shown.map((b) => ({ id: b.id, w: b.w, h: b.h }));
+    if (rest.length) rows.push({ id: null, more: rest.length, w: moreSize.w, h: moreSize.h });
+    const w = Math.max(...rows.map((r) => r.w));
+    const h = rows.reduce((n, r) => n + r.h, 0) + gapPx * (rows.length - 1);
+    const x = members.reduce((n, b) => n + b.x, 0) / members.length;
+    // Below the lowest of the band's own natural spots (each is just under its rider's card).
+    const y = Math.max(...members.map((b) => b.y));
+    return { rows, hidden: rest.map((b) => b.id), x, y, w, h, dist: Math.min(...members.map((b) => b.dist)) };
+  }).sort((a, b) => a.dist - b.dist);
+
+  const margin = 2;
+  const obstacles = [...cards, ...fixed];
+  const placedBlocks = [];
+  const collides = (b, q) => Math.abs(b.x - q.x) < (b.w + q.w) / 2 && b.y < q.y + q.h + gapPx && b.y + b.h + gapPx > q.y;
+  blocks.forEach((b) => {
+    if (panel && panel.w > 0) b.x = Math.min(panel.w - b.w / 2 - margin, Math.max(b.w / 2 + margin, b.x));
+    const others = () => [...obstacles, ...placedBlocks];
+    for (let pass = 0, moved = true; moved && pass <= obstacles.length + placedBlocks.length + 1; pass++) {
+      moved = false;
+      others().forEach((q) => { if (collides(b, q)) { b.y = q.y + q.h + gapPx; moved = true; } });
+    }
+    if (panel && panel.h > 0 && b.y + b.h > panel.h - margin) {
+      // Off the bottom: lift the whole block into the panel, then settle it above whatever it hits.
+      b.y = panel.h - margin - b.h;
+      for (let pass = 0, moved = true; moved && pass <= obstacles.length + placedBlocks.length + 1; pass++) {
+        moved = false;
+        others().forEach((q) => { if (collides(b, q)) { b.y = q.y - b.h - gapPx; moved = true; } });
+      }
+      b.y = Math.max(margin, b.y);
+    }
+    placedBlocks.push(b);
+  });
+
+  const placed = []; const hidden = []; const mores = [];
+  blocks.forEach((b) => {
+    let y = b.y;
+    b.rows.forEach((r) => {
+      if (r.id != null) placed.push({ id: r.id, x: b.x, y });
+      else mores.push({ x: b.x, y, w: r.w, h: r.h, count: r.more });
+      y += r.h + gapPx;
+    });
+    hidden.push(...b.hidden);
+  });
+  return { placed, hidden, mores };
+}
+
 /**
  * True when a metre mark sits on a gate (a lap line lands on a 100 m multiple, so
  * "800m" and "LAP 2" would be drawn at the same depth and print over each other):

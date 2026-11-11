@@ -62,7 +62,6 @@ describe('RaceLayoutManager', () => {
     const { getByTestId, queryByTestId } = render(<RaceLayoutManager panels={noSpeedo} mode="wide" />);
     expect(queryByTestId('zone-speedo')).toBeNull();
     expect(getByTestId('race-layout').className).toContain('race-layout--no-speedo');
-    expect(getByTestId('race-layout').querySelector('.race-layout__wide-main--no-speedo')).toBeTruthy();
   });
 
   // Solo: one live rider and their rival. Chart across the top, a band of the

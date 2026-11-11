@@ -59,9 +59,10 @@ export function gaugeRowSize({ zoneW = 0, zoneH = 0, count = 1, gap = 28, min = 
 // `minmax(260px, …)`. floor = 260 - 118 = 142; keep a small margin → 140.
 export const SPEEDO_MIN_GAUGE_SIDEBAR = 140;
 export const SPEEDO_MAX_GAUGE_SIDEBAR = 360;
-// Wide mode (≥4 riders): `.race-layout__wide-main` row is `minmax(220px, 42%)`.
-//   floor = 220 - 118 = 102; 96 clears it.
-export const SPEEDO_MIN_GAUGE_WIDE = 96;
+// Wide mode (≥4 riders): the full-width speedo band row is `minmax(350px, 38%)`
+// (RaceLayoutManager.scss). floor = 350 - 118 = 232; 220 clears it, and it is the
+// smallest gauge the away overlay and the boost chip are designed for.
+export const SPEEDO_MIN_GAUGE_WIDE = 220;
 export const SPEEDO_MAX_GAUGE_WIDE = 280;
 
 export default {

@@ -74,8 +74,8 @@ describe('gaugeRowSize — band-height invariant (audit UX §3.3)', () => {
     }
   });
 
-  it('wide mode (≥4 riders, up to 6): gauge + chrome never exceeds the band (floor: minmax(220px, …))', () => {
-    for (const zoneH of ZONE_HEIGHTS.filter((h) => h >= 220)) {
+  it('wide mode (≥4 riders, up to 6): gauge + chrome never exceeds the band (floor: minmax(350px, …))', () => {
+    for (const zoneH of [350, 400, 500]) {
       for (let count = 4; count <= 6; count++) {
         const gauge = gaugeRowSize({
           zoneW: ZONE_WIDTH, zoneH, count, gap: 28,
@@ -124,5 +124,29 @@ describe('raceLayoutMode', () => {
     expect(raceLayoutMode({ liveCount: 1, fieldSize: NaN })).toBe('solo');
     expect(raceLayoutMode({ liveCount: 1, fieldSize: -2 })).toBe('solo');
     expect(raceLayoutMode({ liveCount: undefined, fieldSize: undefined })).toBe('sidebar');
+  });
+});
+
+// Five and six riders: the speedo band spans the full width in wide mode, so the
+// gauges stay readable from the bike (they were ~175 px when the band shared the
+// main column with the road). Zone boxes are what RaceLayoutManager measures for
+// the band at the two garage sizes: width minus the zone's 8 px side padding,
+// height = max(350, 38% of the layout) minus the 6 + 10 px zone padding.
+describe('wide mode gauges with five and six riders', () => {
+  const BOXES = {
+    '1810x1040': { zoneW: 1810 - 16, zoneH: Math.max(350, Math.round((1040 - 8) * 0.38)) - 16 },
+    '1920x1080': { zoneW: 1920 - 16, zoneH: Math.max(350, Math.round((1080 - 8) * 0.38)) - 16 }
+  };
+  for (const [name, box] of Object.entries(BOXES)) {
+    for (const count of [5, 6]) {
+      it(`${count} riders at ${name} get at least 220 px`, () => {
+        const gauge = gaugeRowSize({ ...box, count, gap: 28, min: SPEEDO_MIN_GAUGE_WIDE, max: SPEEDO_MAX_GAUGE_WIDE });
+        expect(gauge).toBeGreaterThanOrEqual(220);
+        expect(gauge + CHROME_BELOW_GAUGE_PX).toBeLessThanOrEqual(box.zoneH + 16);
+      });
+    }
+  }
+  it('the wide floor is itself at least 220 px', () => {
+    expect(SPEEDO_MIN_GAUGE_WIDE).toBeGreaterThanOrEqual(220);
   });
 });

@@ -58,7 +58,7 @@
   // The shared avatar's heart-rate number is 0.95rem (15.2 px). Bring it to the
   // game's floor and give its band the height to hold it.
   &__avatar .avatar-core .hr-value-overlay { height: 34%; }
-  &__avatar .avatar-core .hr-value-overlay .hr-value { font-size: cg.cg-type(1); }
+  &__avatar .avatar-core .hr-value-overlay .hr-value { font-size: cg.cg-type(2); }
   &__avatar {
     position: relative; display: flex; align-items: center; justify-content: center;
     transform: translateZ(0); will-change: transform; backface-visibility: hidden;
@@ -85,15 +85,15 @@
   // Heights match speedometerOverlayLayout (RPM_HEIGHT_EM / SPEED_HEIGHT_EM).
   &__rpm {
     @include cg.cg-numeral(cg.$cg-cyan);
-    font-size: max(1em, cg.cg-type(1)); line-height: 1; color: cg.$cg-text;
+    font-size: max(1em, cg.cg-type(2)); line-height: 1; color: cg.$cg-text;
     text-shadow: 0 0 10px rgba(33, 230, 255, 0.35);
   }
-  &__rpm-unit { color: cg.$cg-muted; font-weight: 500; font-size: max(0.5em, cg.cg-type(1)); font-style: normal; }
+  &__rpm-unit { color: cg.$cg-muted; font-weight: 500; font-size: max(0.5em, cg.cg-type(2)); font-style: normal; }
   &__speed {
     @include cg.cg-numeral(cg.$cg-muted);
-    font-size: max(0.55em, cg.cg-type(1)); line-height: 1; color: cg.$cg-muted;
+    font-size: max(0.55em, cg.cg-type(2)); line-height: 1; color: cg.$cg-muted;
   }
-  &__speed-unit { color: cg.$cg-faint; font-weight: 500; font-size: max(0.75em, cg.cg-type(1)); font-style: normal; }
+  &__speed-unit { color: cg.$cg-faint; font-weight: 500; font-size: max(0.75em, cg.cg-type(2)); font-style: normal; }
   // SENSOR chip — replaces the rpm digits in the same slot when the sensor gap
   // has run past the hold+decay window (gapTicksRef ≥ SENSOR_LOST_GAP_TICKS).
   // Warm/danger red so it reads as "something's wrong". Same T10-carried MUST
@@ -101,7 +101,7 @@
   // even though it inherits __rpm's (also-floored) computed size.
   &__sensor-lost-chip {
     display: inline-block;
-    font-size: max(1em, cg.cg-type(1));
+    font-size: max(1em, cg.cg-type(2));
     color: cg.$cg-danger; font-weight: 800; letter-spacing: 0.12em;
     text-transform: uppercase; text-shadow: 0 0 8px rgba(cg.$cg-danger, 0.6);
   }
@@ -117,7 +117,7 @@
   }
   &__boost-line {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    min-width: 0; font-size: cg.cg-type(1); line-height: 1.2; font-weight: 800;
+    min-width: 0; font-size: cg.cg-type(2); line-height: 1.2; font-weight: 800;
   }
   &__boost-chip {
     display: inline-flex; gap: 0.3em; min-width: 0; flex: 0 1 auto; white-space: nowrap;
@@ -182,7 +182,7 @@
   }
   &__finished-place { color: cg.$cg-gold; font-weight: 900; font-size: cg.cg-type(4); line-height: 1; text-shadow: 0 0 12px rgba(255, 213, 74, 0.6), 0 2px 8px rgba(0,0,0,0.8); }
   &__finished-label {
-    color: cg.$cg-text; font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.18em; text-transform: uppercase; // was 0.7rem
+    color: cg.$cg-text; font-weight: 800; font-size: cg.cg-type(2); letter-spacing: 0.18em; text-transform: uppercase; // was 0.7rem
   }
 
   // PARKED / NO SIGNAL — a rider away from the pedals, in the FINISHED overlay's
@@ -191,7 +191,7 @@
   &--parked &__gauge { opacity: 0.6; }
   // A small gauge cannot hold the overlay words inside the dial numerals: the
   // numerals step aside while the overlay is up.
-  &--compact#{&}--parked &__tick-label { visibility: hidden; }
+  &--parked &__tick-label { visibility: hidden; }
   // ...and the muted next step gives way before it can truncate.
   &--compact &__boost-next { display: none; }
   // The secondary readouts recede with the gauge: nothing stays bright under a
@@ -200,16 +200,16 @@
   &__parked {
     position: absolute; inset: 0; z-index: 20;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 4px; pointer-events: none; padding: 0 26%; text-align: center; box-sizing: border-box;
+    gap: 4px; pointer-events: none; padding: 0 8%; text-align: center; box-sizing: border-box;
     background: radial-gradient(circle at center, rgba(5, 6, 10, 0.82) 0%, rgba(5, 6, 10, 0.4) 70%, transparent 100%);
   }
   &__parked-title {
-    color: cg.$cg-text; font-weight: 900; font-size: max(0.42em, cg.cg-type(1)); line-height: 1;
+    color: cg.$cg-text; font-weight: 900; font-size: max(0.42em, cg.cg-type(2)); line-height: 1;
     letter-spacing: 0.08em; white-space: nowrap; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
   }
   &__parked-sub {
-    white-space: normal; line-height: 1.1;
-    color: cg.$cg-muted; font-weight: 700; font-size: cg.cg-type(1); letter-spacing: 0.04em;
+    white-space: nowrap; line-height: 1.1;
+    color: cg.$cg-muted; font-weight: 700; font-size: cg.cg-type(2); letter-spacing: 0.04em;
   }
   // A sensor problem is equipment, not the rider: amber, the same family as
   // the ready strip's NO SIGNAL chip.
