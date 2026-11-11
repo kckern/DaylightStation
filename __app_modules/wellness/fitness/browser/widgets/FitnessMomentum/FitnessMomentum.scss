@@ -6,7 +6,7 @@
 // container, divided by `--cols`, which the widget sets to the head count) but
 // never fall below their floors. When five
 // columns cannot fit everything, the bars are what give up height: the hero,
-// the coin and the gem chips keep their floor.
+// the week counts and dates, the coin and the gems keep their floor.
 // The screen host paints this panel's chrome (`.screen-surface` gives ours up)
 // with the theme's padding; this card is dense by design and takes 10–12px.
 .screen-widget:has(> .fitness-momentum) { padding: 10px 12px; }
@@ -74,7 +74,9 @@
 
   // The cards share four rows (who, hero, bars, foot) through subgrid, so every
   // card's hero, bars and foot line up across the panel: the tallest foot sets
-  // the row, and a card without a purse keeps the same baseline.
+  // the row. A card without a purse spans only the first three rows, so it ends
+  // at its bars (no dead foot) and its bars keep the shared baseline; with no
+  // purse anywhere the foot row is empty and takes no height.
   &__cards {
     flex: 1 1 auto;
     min-height: 0;
@@ -101,6 +103,7 @@
     padding: 6px 4px 0;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.05);
+    &.is-walletless { grid-row: 1 / 4; }
   }
 
   // Avatar with the name as a tag over its lower edge.
@@ -132,12 +135,12 @@
     white-space: nowrap;
   }
 
-  // This week's rings: the most readable thing in the column.
+  // This week's rings, at the name's size: the bars below carry the weeks.
   &__hero {
     display: inline-flex;
     align-items: center;
     gap: 0.15em;
-    font-size: clamp(26px, calc(var(--col) * 0.21), 40px);
+    font-size: clamp(18px, calc(var(--col) * 0.13), 24px);
     font-weight: 700;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -146,8 +149,10 @@
     &--skel { width: 60%; height: 1em; border-radius: 6px; }
   }
 
-  // Four Monday weeks, oldest → newest, same scale, current week highlighted.
-  // They take every pixel the other rows leave.
+  // Four Monday weeks, oldest → newest, same scale. Each is a column: its ring
+  // count, the bar, its Monday's date. They take every pixel the other rows
+  // leave. The current week reads by its full-brightness fill and its cyan
+  // count and date; the bar gets no box of its own.
   &__weeks {
     justify-self: stretch;
     min-height: 0;
@@ -156,19 +161,35 @@
     gap: 4px;
     padding: 0 2px;
   }
-  &__weekbar {
+  &__weekcol {
     flex: 1 1 0;
     min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+  }
+  // Read from across the garage: never below 13px, solid colours only.
+  &__weektop, &__weeklabel {
+    flex: none;
+    text-align: center;
+    font-size: clamp(13px, calc(var(--col) * 0.085), 17px);
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: #8a93a0;
+    &.is-current { color: #67e8f9; }
+  }
+  &__weekbar {
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
     background: #1d2429; // solid: a past week is a dimmer bar, never a see-through one
     border-radius: 4px 4px 0 0;
-
-    &.is-current {
-      background: rgba(103, 232, 249, 0.14);
-      box-shadow: inset 0 0 0 2px rgba(103, 232, 249, 0.55);
-    }
   }
   &__weekfill {
     width: 100%;
@@ -179,7 +200,7 @@
     min-height: 2px;
     filter: brightness(0.62); // past weeks: the same zone hues, darker and fully solid (static, never animated)
   }
-  &__weekbar.is-current &__weekfill { filter: none; }
+  &__weekcol.is-current &__weekfill { filter: none; }
   &__weekseg { width: 100%; display: block; }
 
   // The foot of the card: silver, then one plain gem per area with gems held
@@ -209,10 +230,8 @@
     // The coin and every gem share one size; both counts share one size.
     --momentum-icon: clamp(26px, calc(var(--col) * 0.2), 40px);
     --momentum-count: clamp(20px, calc(var(--col) * 0.14), 28px);
-    // No purse: the rail is only the card's bottom padding, not dead space.
-    &--empty { cursor: default; background: transparent; border-top-color: transparent; padding: 3px 0; }
   }
-  &__rail:not(&__rail--empty):active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
+  &__rail:active, &__gems-chip:active { background: rgba(255, 255, 255, 0.12); }
   &__silver, &__chip {
     flex: none;
     display: inline-flex;

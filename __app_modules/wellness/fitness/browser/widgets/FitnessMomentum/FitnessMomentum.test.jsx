@@ -35,7 +35,7 @@ vi.mock("../../useFitnessScreen.js", () => ({
   }),
 }));
 
-import FitnessMomentum from "./FitnessMomentum.jsx";
+import FitnessMomentum, { dayLabel } from "./FitnessMomentum.jsx";
 
 describe('FitnessMomentum', () => {
   beforeEach(() => { standings = STANDINGS; });
@@ -83,11 +83,17 @@ describe('FitnessMomentum', () => {
     expect(container.querySelector('.fitness-momentum__card .gem-glyph__ring')).toBeNull();
   });
 
-  it('leaves someone without a wallet an empty rail, so the cards keep one height', () => {
-    const { container } = render(<FitnessMomentum />);
-    const card = container.querySelectorAll('.fitness-momentum__card')[1];
-    expect(card.querySelector('button')).toBeNull();
-    expect(card.querySelector('.fitness-momentum__rail--empty')).toBeTruthy();
+  it('a card without a wallet has no empty rail; its panel ends at the bars', () => {
+    standings = { mode: 'live', learners: [STANDINGS.learners[0]] };
+    const [dad, other] = render(<FitnessMomentum />).container.querySelectorAll('.fitness-momentum__card');
+    expect(dad.classList.contains('is-walletless')).toBe(false);
+    expect(other.classList.contains('is-walletless')).toBe(true);
+    expect(other.querySelector('.fitness-momentum__rail')).toBeNull();
+    expect([...other.children].map((el) => el.className.split(' ')[0])).toEqual(['fitness-momentum__who', 'fitness-momentum__hero', 'fitness-momentum__weeks']);
+    // The walletless card spans only the who/hero/bars rows of the shared grid,
+    // so its bars stay on the row's baseline and nothing is drawn under them.
+    const css = readFileSync(new URL('./FitnessMomentum.scss', import.meta.url), 'utf8');
+    expect(css).toMatch(/&\.is-walletless \{[^}]*grid-row: 1 \/ 4;/);
   });
 
   it('opens the Gem Board from the rail', () => {
@@ -104,14 +110,33 @@ describe('FitnessMomentum', () => {
     expect([...card.children].map((el) => el.className.split(' ')[0])).toEqual(['fitness-momentum__who', 'fitness-momentum__hero', 'fitness-momentum__weeks', 'fitness-momentum__rail']);
   });
 
-  it('heads each card with this week\'s rings, and draws no per-bar numbers or dates', () => {
+  it('heads each card with this week\'s rings', () => {
     const { container } = render(<FitnessMomentum />);
     const [dad, other] = container.querySelectorAll('.fitness-momentum__card');
     expect(dad.querySelector('.fitness-momentum__hero .ring-icon')).toBeTruthy();
     expect(dad.querySelector('.fitness-momentum__hero').textContent).toBe('300');
     expect(other.querySelector('.fitness-momentum__hero').textContent).toBe('0');
-    expect(container.querySelector('.fitness-momentum__weektop')).toBeNull();
-    expect(container.querySelector('.fitness-momentum__weeklabel')).toBeNull();
+  });
+
+  it('each bar has its ring count above and its Monday as "19 Oct" below; the current week is marked', () => {
+    const { container } = render(<FitnessMomentum />);
+    const dad = container.querySelectorAll('.fitness-momentum__card')[0];
+    const tops = [...dad.querySelectorAll('.fitness-momentum__weektop')];
+    const labels = [...dad.querySelectorAll('.fitness-momentum__weeklabel')];
+    expect(tops).toHaveLength(4);
+    expect(labels).toHaveLength(4);
+    expect(tops.at(-1).textContent).toBe('300');
+    expect(tops.at(-1).classList.contains('is-current')).toBe(true);
+    expect(labels.at(-1).classList.contains('is-current')).toBe(true);
+    expect(tops.slice(0, -1).some((t) => t.classList.contains('is-current'))).toBe(false);
+    expect(labels.every((l) => /^\d{1,2} [A-Z][a-z]{2}$/.test(l.textContent))).toBe(true);
+    // No outlined box: the bar itself carries no current-week mark.
+    expect(container.querySelector('.fitness-momentum__weekbar.is-current')).toBeNull();
+  });
+
+  it('dayLabel writes day then month, no slash', () => {
+    expect(dayLabel(new Date(2026, 9, 19).getTime())).toBe('19 Oct');
+    expect(dayLabel(0)).toBe('');
   });
 
   it('has no rail buttons when standings are missing or the economy is off', () => {
@@ -138,7 +163,7 @@ describe('FitnessMomentum', () => {
   it('draws four weekly bars per person with the current week highlighted', () => {
     const { container } = render(<FitnessMomentum />);
     expect(container.querySelectorAll('.fitness-momentum__weekbar')).toHaveLength(8);
-    expect(container.querySelectorAll('.fitness-momentum__weekbar.is-current')).toHaveLength(2);
+    expect(container.querySelectorAll('.fitness-momentum__weekcol.is-current')).toHaveLength(2);
   });
 
   it('shows rings as the primary metric with the canonical icon', () => {
@@ -151,6 +176,22 @@ describe('FitnessMomentum', () => {
 });
 
 describe('FitnessMomentum stylesheet', () => {
+  const css = () => readFileSync(new URL('./FitnessMomentum.scss', import.meta.url), 'utf8');
+  const clampOf = (sel) => css().match(new RegExp(`&__${sel} \\{[^}]*font-size: clamp\\((\\d+)px,[^,]+, (\\d+)px\\)`));
+
+  it('the hero is no bigger than the name', () => {
+    expect(Number(clampOf('hero')[2])).toBeLessThanOrEqual(Number(clampOf('name')[2]));
+  });
+
+  it('week counts and dates stay readable from across the garage (13px floor)', () => {
+    const m = css().match(/&__weektop, &__weeklabel \{[^}]*font-size: clamp\((\d+)px,/);
+    expect(Number(m[1])).toBeGreaterThanOrEqual(13);
+  });
+
+  it('the current week has no outlined box', () => {
+    expect(css()).not.toMatch(/inset 0 0 0 2px/);
+  });
+
   it('the week bars and chips are never partly transparent', () => {
     const css = readFileSync(new URL('./FitnessMomentum.scss', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
     expect(css).toMatch(/&__weekbar/);
