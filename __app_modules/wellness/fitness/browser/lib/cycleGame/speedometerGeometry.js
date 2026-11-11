@@ -57,10 +57,17 @@ export const LABEL_CHAR_W = 0.58;
 export const LABEL_LINE_H = 1.2;
 export const LABEL_RING_GAP = 1;
 
+// Largest numeral (as a share of the gauge) whose 3-digit right-hand label still
+// clears the avatar disc (AVATAR_RATIO 0.36). Below ~220 px the 24 px floor would
+// push "120" under the avatar (read "20-" on the kiosk's 181 px six-rider gauges,
+// 2026-11-10), so the floor yields to this.
+export const LABEL_AVATAR_CLEAR_RATIO = 0.1; // a 250-RPM dial needs <= 0.1025
+
 /** Font size (SVG user units) that renders at `screenPx` on a gauge `gaugePx` wide with a 200-unit viewBox. */
 export function labelFontUnits(gaugePx, viewBox = 200, minScreenPx = 24, ratio = 0.098) {
   const px = Number.isFinite(gaugePx) && gaugePx > 0 ? gaugePx : viewBox;
-  const screen = Math.max(minScreenPx, px * ratio);
+  const floor = Math.min(minScreenPx, px * LABEL_AVATAR_CLEAR_RATIO);
+  const screen = Math.max(floor, px * ratio);
   return (screen * viewBox) / px;
 }
 

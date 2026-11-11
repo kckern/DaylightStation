@@ -150,7 +150,7 @@ export default function CycleRaceScreen({
       )}
       <div className="cycle-race-screen__vignette" aria-hidden="true" />
 
-      <RaceLayoutManager panels={panels} mode={mode} />
+      <RaceLayoutManager panels={panels} mode={mode} speedoCount={riderIds.length} />
     </div>
   );
 }

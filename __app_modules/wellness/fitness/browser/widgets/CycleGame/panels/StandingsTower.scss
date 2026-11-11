@@ -56,7 +56,7 @@
 
   &__row {
     display: grid;
-    grid-template-columns: 4.5rem 6px 32px minmax(3rem, 1fr) auto;
+    grid-template-columns: 4.5rem 6px 32px minmax(1.5rem, 1fr) auto; // fits "No signal · 120 m" in the kiosk's six-rider tower
     align-items: center;
     gap: 0.35rem;
     padding: 0.3rem 0.25rem;

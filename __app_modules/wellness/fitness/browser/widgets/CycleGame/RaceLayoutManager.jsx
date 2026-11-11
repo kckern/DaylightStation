@@ -24,10 +24,12 @@ Slot.propTypes = { id: PropTypes.string, panels: PropTypes.object, testid: PropT
  *    (POV grid top ~70%, standings tower bottom ~30% — the tower REPLACES the
  *    oval's slot; the oval's lap strip folds into the tower's own header row).
  *  - wide (4+ on the road): top row of chart (2x) | standings tower | POV road,
- *    and the speedometers across the FULL width below all three, in a band tall
- *    enough that six gauges stay at least 220 px (layoutSizing.SPEEDO_MIN_GAUGE_WIDE).
+ *    and the speedometers across the FULL width below all three. Each gauge is
+ *    the band width / `speedoCount` (layoutSizing.wideGaugeSize) and the band is
+ *    exactly that tall plus its chrome, so N gauges always fit across and the
+ *    top row (tower, road) keeps the rest of the height.
  */
-export default function RaceLayoutManager({ panels = {}, mode = 'sidebar' }) {
+export default function RaceLayoutManager({ panels = {}, mode = 'sidebar', speedoCount = 0 }) {
   // The speedometer band is only present in a live race; recap/playback omits it
   // (showSpeedos=false → no speedoRow panel). When it's absent we must NOT reserve
   // its grid track, or the chart/splits row gets starved by the speedo row's
@@ -53,7 +55,10 @@ export default function RaceLayoutManager({ panels = {}, mode = 'sidebar' }) {
   }
 
   if (mode === 'wide') {
+    // The host is the size container the band's height is computed against
+    // (container units resolve against an ANCESTOR, never the element itself).
     return (
+      <div className="race-layout-host" style={{ '--cg-speedo-n': Math.max(1, speedoCount || 1) }}>
       <div className={`race-layout race-layout--wide${noSpeedo}`} data-testid="race-layout" data-mode="wide">
         <div className="race-layout__wide-top">
           <div className="race-layout__top3">
@@ -63,6 +68,7 @@ export default function RaceLayoutManager({ panels = {}, mode = 'sidebar' }) {
           {p('povGrid', 'zone-pov', 'race-layout__zone--pov')}
         </div>
         {hasSpeedo && p('speedoRow', 'zone-speedo', 'race-layout__zone--speedo')}
+      </div>
       </div>
     );
   }

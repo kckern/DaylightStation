@@ -693,10 +693,15 @@ collapses and no zone is left empty.
   a right **sidebar**: the **POV grid** (top ~70%) over the **standings tower**
   (bottom ~30%; the tower's header carries the lap strip).
 - **Wide (four or more):** a top row of **chart (2×) │ standings tower │ POV grid**
-  over a **speedometer** band that spans the full width (`minmax(350px, 38%)`),
-  so five and six gauges stay at least 220 px (about 245 to 260 px at the garage
-  content size) instead of the ~175 px they got when the band shared a column
-  with the road.
+  over a **speedometer** band that spans the full width. Each gauge is sized
+  from the band's **width ÷ rider count** (`layoutSizing.wideGaugeSize`: clamp
+  150-280 px) and the band is exactly that tall plus its chrome (gauge + 118 +
+  16 px, at most 46% of the height). CSS does the same sum with container units
+  against `.race-layout-host` and `--cg-speedo-n` (set from `speedoCount`), so
+  there is no measure-resize loop. On the garage kiosk (1301x745 content) that is
+  ~190 px gauges for six riders and ~187 px for four or five, every gauge on
+  screen and every tower row visible. (2026-11-10: a fixed 220 px floor put six
+  gauges past both edges and cut the tower's 6th row.)
 
 `showSpeedos={false}` omits the speedo factory and its grid track; in solo the
 band then holds the pace panel alone. The recap passes `soloLayout={false}`, so a
@@ -1018,7 +1023,7 @@ with the `cg-ghost` treatment.
   row. The row has a fixed 40 px height and is counted in
   `layoutSizing.CHROME_BELOW_GAUGE_PX` (odometer 68 + boost row 40 + gap 10 =
   118), which sets the gauge floors (sidebar/solo band `minmax(260px, …)` →
-  min gauge 140; wide band `minmax(350px, …)` → min gauge 220).
+  min gauge 140; wide band sized from the width → min gauge 150).
 - **Overlay states** (one at a time, in the same slot):
   - **FINISHED** — 🏁 + placement for a rider over the line in a distance race.
   - **PARKED · Pedal to rejoin** — `parked` (idle past the park window). Calm,
@@ -1720,9 +1725,12 @@ Minimums above the step-2 floor, each gated per scene by the harness:
 
 - Dial numerals render at no less than 24 px on screen and about 9.8% of the gauge
   diameter on larger dials (`labelFontUnits`; about 30 px on a 310 px gauge).
-  Labels sit inside the tick ring, so the avatar is 36% of the gauge
-  (`AVATAR_RATIO`) to keep the right-hand "120" clear of its ring. Gate:
-  `gaugeNumeralMinPx` at least 24.
+  Labels sit inside the tick ring, and the avatar is 36% of the gauge
+  (`AVATAR_RATIO`). Below ~240 px the 24 px floor would run the right-hand "120"
+  under the avatar, so the floor yields to 10% of the gauge
+  (`LABEL_AVATAR_CLEAR_RATIO`; a 250-RPM dial needs at most 10.25%): ~18 px on
+  the kiosk's 181-190 px gauges. Gate: `gaugeNumeralMinPx` at least
+  min(24, 10% of the smallest gauge).
 - The standings tower header ("Lap 3 · Last 1:55 · Now 0:13") is step 3 (25.6 px)
   and must fit on one line. In the wide layout the tower takes two fifths of the
   chart/tower pair so "No signal · 120 m" fits on one line beside a name. Gate:

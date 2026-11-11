@@ -22,7 +22,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const ALL = [
   'lobby-default', 'lobby-garage-five', 'lobby-garage-six', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'lobby-rider-picker', 'lobby-ghost-picker', 'lobby-ghost-picker-six', 'lobby-ghost-roster', 'lobby-ghost-roster-six', 'lobby-volume', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
-  'race-two-riders-one-parked', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
+  'race-two-riders-one-parked', 'race-three-riders', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
 ];
 // Real garage content size: the app's navigation rail and margins take the rest of 1920x1080.
@@ -183,7 +183,8 @@ function measure() {
   out.minFontPx = fonts.length ? fonts[0].px : null;
   // Smallest text a rider must read from the bike: everything on screen except elements
   // tagged data-secondary (or inside one) and the allow-listed secondary classes.
-  const SECONDARY = ['.cg-chart__legend', '.cg-race-menu__sub', '.cg-tower__legend', '.race-results__legend'];
+  // Dial numerals have their own gate (gaugeNumeralMinPx: min(24, 10% of the gauge)).
+  const SECONDARY = ['.cg-chart__legend', '.cg-race-menu__sub', '.cg-tower__legend', '.race-results__legend', '.cycle-speedometer__tick-label'];
   const raceFonts = textEls.filter((el) => !el.closest('[data-secondary]') && !SECONDARY.some((sel) => el.closest(sel)))
     .map((el) => ({ t: el.textContent.trim().slice(0, 28), px: r2(screenPx(el)), cls: String(el.getAttribute('class') || el.tagName).slice(0, 48) }))
     .sort((a, b) => a.px - b.px);
@@ -360,7 +361,9 @@ for (const [label, m] of Object.entries(metrics)) {
   if (RACE_TEXT_SCENE.test(label) && m.minFontPx != null && m.minFontPx < 15.95) bad.push(`smallest text ${m.minFontPx}px < 16`);
   if (m.outsideViewport.length) bad.push(`${m.outsideViewport.length} element(s) outside the viewport`);
   if (m.clippedByZone.length) bad.push(`${m.clippedByZone.length} element(s) outside their zone`);
-  if (m.gaugeNumeralMinPx != null && m.gaugeNumeralMinPx < 23.95) bad.push(`gauge numerals ${m.gaugeNumeralMinPx}px < 24`);
+  // 24 px, or 10% of the gauge where 24 px would run "120" under the avatar (speedometerGeometry.LABEL_AVATAR_CLEAR_RATIO).
+  const numeralFloor = m.gauges && m.gauges.length ? Math.min(24, 0.1 * Math.min(...m.gauges.map((g) => g.gaugePx))) : 24;
+  if (m.gaugeNumeralMinPx != null && m.gaugeNumeralMinPx < numeralFloor - 0.05) bad.push(`gauge numerals ${m.gaugeNumeralMinPx}px < ${numeralFloor.toFixed(1)}`);
   if (m.towerHeaderPx != null && m.towerHeaderPx < 25.5) bad.push(`tower header ${m.towerHeaderPx}px < 25.6`);
   if (m.towerHeaderClipped) bad.push(`tower header wraps/clips: ${m.towerHeaderText}`);
   if (m.towerMetricWraps && m.towerMetricWraps.length) bad.push(`tower metric wraps: ${m.towerMetricWraps.join(' | ')}`);
