@@ -105,7 +105,7 @@
   &__records {
     position: relative;
     z-index: 1;
-    width: 30rem; // fits the 4-column history grid at the 16 px floor
+    width: 36rem; // fits the 4-column history grid at the 20 px step-2 size
     flex-shrink: 0;
     background: t.$cg-panel;
     border: 1px solid t.$cg-border;
@@ -139,7 +139,7 @@
 
 .cgh-empty {
   color: t.$cg-faint;
-  font-size: t.cg-type(1);
+  font-size: t.cg-type(2);
   padding: 6px 0;
 }
 

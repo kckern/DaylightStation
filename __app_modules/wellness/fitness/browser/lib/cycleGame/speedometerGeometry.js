@@ -53,12 +53,12 @@ export function scaleBands(bands, maxRpm, referenceRpm = BAND_REFERENCE_RPM) {
 // The label box is a rough text box: width = chars * CHAR_W * fontSize, height =
 // LINE_H * fontSize. The box centre is pushed in from the ring until the box's
 // farthest corner along the radial direction touches `labelOuterRadius`.
-export const LABEL_CHAR_W = 0.62;
+export const LABEL_CHAR_W = 0.58;
 export const LABEL_LINE_H = 1.2;
-export const LABEL_RING_GAP = 4;
+export const LABEL_RING_GAP = 1;
 
 /** Font size (SVG user units) that renders at `screenPx` on a gauge `gaugePx` wide with a 200-unit viewBox. */
-export function labelFontUnits(gaugePx, viewBox = 200, minScreenPx = 20, ratio = 0.075) {
+export function labelFontUnits(gaugePx, viewBox = 200, minScreenPx = 24, ratio = 0.098) {
   const px = Number.isFinite(gaugePx) && gaugePx > 0 ? gaugePx : viewBox;
   const screen = Math.max(minScreenPx, px * ratio);
   return (screen * viewBox) / px;

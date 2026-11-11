@@ -1672,6 +1672,25 @@ sub-copy. The screenshot harness fails a race, staging, countdown or results
 scene whose smallest visible text (`raceTextMinPx`, skipping `data-secondary`
 elements and the allow-listed secondary classes) is under 20 px.
 
+Minimums above the step-2 floor, each gated per scene by the harness:
+
+- Dial numerals render at no less than 24 px on screen and about 9.8% of the gauge
+  diameter on larger dials (`labelFontUnits`; about 30 px on a 310 px gauge).
+  Labels sit inside the tick ring, so the avatar is 36% of the gauge
+  (`AVATAR_RATIO`) to keep the right-hand "120" clear of its ring. Gate:
+  `gaugeNumeralMinPx` at least 24.
+- The standings tower header ("Lap 3 · Last 1:55 · Now 0:13") is step 3 (25.6 px)
+  and must fit on one line. In the wide layout the tower takes two fifths of the
+  chart/tower pair so "No signal · 120 m" fits on one line beside a name. Gate:
+  `towerHeaderPx` at least 25.6, no wrap or clip of the header or any metric.
+- The lobby records rail (this week's course, high scores, history) is step 2 for
+  everything read as content; the title and record values are step 3. Only the
+  all-caps eyebrows (section labels, column headers, day headers) stay at step 1,
+  marked `data-secondary`. The rail is 36 rem wide. History shows only the rows
+  that fit whole, most recent first (`fitHistoryRows` hides the rest and any day
+  header left without a row); it never scrolls and never clips a row. Gate:
+  `lobbyTextMinPx` at least 20 for the rail, no clipped rail element.
+
 The away overlay ("NO SIGNAL / Check the sensor", "PARKED / Pedal to rejoin")
 sits on two lines and hides the dial numerals while it is up, at every gauge size.
 
@@ -1679,9 +1698,17 @@ sits on two lines and hides the dial numerals while it is up, at every gauge siz
 
 The POV panel lays out rank badges by screen band (`povWorld.layoutBadgeBands`).
 Riders whose badges would collide form a band shown as one column in rank order,
-leader on top. A band shows at most three badges; the rest collapse into one `+N`
-badge. A band sits below its riders' cards, clear of every other card and of the
+leader on top. A band shows at most three badges; the rest collapse into one badge
+that names what it holds: the ordinals as a range (`4th–6th`, or `4th & 6th` for two
+split ranks) with one lane-colour dot per rider (`collapsedLabel`). A single extra
+rider is never collapsed ("+1" is never shown): it gets its own badge, and the block
+is the same height. A band sits below its riders' cards, clear of every other card and of the
 pinned horizon chip, and inside the panel (lifted above the cards when it will
 not fit below them). The "LEADER +N m" chip is anchored to the panel's top edge
 with an arrow and follows `horizonChipState` (shown once the true gap passes
 120 m, with hysteresis).
+
+A band lifted away from its riders stays tied to them: `badgeLeaders` returns a thin
+line in the rider's lane colour from the card's nearer edge to the badge (or to the
+collapsed badge), drawn in an SVG layer under the badges. A badge still directly
+under its card has no line.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { povWorld, laneX, displayGap, displayDist, povBadges, resolveBadgeStack, markShadowedByGate, layoutBadgeBands } from "./povWorld.js";
+import { collapsedLabel, badgeLeaders, povWorld, laneX, displayGap, displayDist, povBadges, resolveBadgeStack, markShadowedByGate, layoutBadgeBands } from "./povWorld.js";
 
 const mk = (id, idx, prev, cur, isGhost = false) => ({ id, idx, prev, cur, isGhost });
 
@@ -386,11 +386,11 @@ describe('layoutBadgeBands', () => {
     const boxes = [box('d', 200, 100, 4, 5), box('c', 205, 103, 3, 6), box('b', 210, 106, 2, 7), box('a', 215, 109, 1, 8)];
     const out = layoutBadgeBands({ boxes, panel: { w: 400, h: 600 } });
     const rows = out.placed.map((p) => ({ ...p })).sort((p, q) => p.y - q.y).map((p) => p.id);
-    expect(out.hidden).toEqual(['d']);
-    expect(rows).toEqual(['a', 'b', 'c']);
-    expect(out.mores).toHaveLength(1);
-    expect(out.mores[0].count).toBe(1);
-    const all = [...out.placed.map((p) => ({ x: p.x, y: p.y })), { x: out.mores[0].x, y: out.mores[0].y }];
+    // one extra rider never collapses to "+1": it gets its own badge
+    expect(out.hidden).toEqual([]);
+    expect(out.mores).toHaveLength(0);
+    expect(rows).toEqual(['a', 'b', 'c', 'd']);
+    const all = out.placed.map((p) => ({ x: p.x, y: p.y }));
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(overlaps(all[i], all[j])).toBe(false);
   });
   it('shows up to three badges with no +N', () => {
@@ -405,7 +405,13 @@ describe('layoutBadgeBands', () => {
     const out = layoutBadgeBands({ boxes });
     expect(out.placed).toHaveLength(3);
     expect(out.hidden).toEqual(['r4', 'r5', 'r6']);
-    expect(out.mores).toEqual([expect.objectContaining({ count: 3 })]);
+    expect(out.mores).toEqual([expect.objectContaining({ count: 3, label: '4th\u20136th', ids: ['r4', 'r5', 'r6'] })]);
+  });
+  it('never emits a +1: a lone overflow rider is shown, two or more are named', () => {
+    for (let n = 1; n <= 9; n++) {
+      const out = layoutBadgeBands({ boxes: Array.from({ length: n }, (_, i) => box(`r${i + 1}`, 100 + i, 100, i + 1)) });
+      out.mores.forEach((m) => { expect(m.count).toBeGreaterThanOrEqual(2); expect(m.label).not.toMatch(/^\+1$/); });
+    }
   });
   it('leaves badges that do not collide where they are', () => {
     const out = layoutBadgeBands({ boxes: [box('a', 50, 100, 1), box('b', 300, 100, 2)] });
@@ -434,5 +440,35 @@ describe('layoutBadgeBands', () => {
   it('sorts riders without a rank after ranked ones', () => {
     const out = layoutBadgeBands({ boxes: [box('x', 100, 100, null, 3), box('a', 100, 100, 1, 9)] });
     expect(yOf(out, 'a')).toBeLessThan(yOf(out, 'x'));
+  });
+});
+
+describe('collapsedLabel', () => {
+  it('names a contiguous run as a range', () => { expect(collapsedLabel([4, 5, 6])).toBe('4th\u20136th'); });
+  it('names one rank by its ordinal, never +1', () => { expect(collapsedLabel([4])).toBe('4th'); });
+  it('names two split ranks with an ampersand', () => { expect(collapsedLabel([4, 6])).toBe('4th & 6th'); });
+  it('uses the span for a longer ragged set', () => { expect(collapsedLabel([4, 5, 7])).toBe('4th\u20137th'); });
+  it('falls back to +N when no rider has a rank', () => { expect(collapsedLabel([null, null, null], 3)).toBe('+3'); });
+  it('handles teen ordinals', () => { expect(collapsedLabel([11, 12, 13])).toBe('11th\u201313th'); });
+});
+
+describe('badgeLeaders', () => {
+  const nat = (id, x, y) => ({ id, x, y, w: 150, h: 30 });
+  const card = (id, x, y) => ({ ownerId: id, x, y, w: 40, h: 40 });
+  it('draws no line for a badge still under its card', () => {
+    expect(badgeLeaders({ natural: [nat('a', 100, 140)], placed: [{ id: 'a', x: 102, y: 142 }], cards: [card('a', 100, 100)] })).toEqual([]);
+  });
+  it('ties a lifted badge back to its card, ending on the badge', () => {
+    const [l] = badgeLeaders({ natural: [nat('a', 100, 140)], placed: [{ id: 'a', x: 100, y: 300 }], cards: [card('a', 100, 100)] });
+    expect(l).toMatchObject({ id: 'a', x1: 100, y1: 140, y2: 300 });
+  });
+  it('joins a band lifted above the card at the card top and badge bottom', () => {
+    const [l] = badgeLeaders({ natural: [nat('a', 100, 140)], placed: [{ id: 'a', x: 100, y: 20 }], cards: [card('a', 100, 100)] });
+    expect(l).toMatchObject({ y1: 100, y2: 50 });
+  });
+  it('gives every rider folded into a +N badge a line to it', () => {
+    const lines = badgeLeaders({ natural: [], placed: [], mores: [{ x: 120, y: 200, w: 100, h: 30, ids: ['d', 'e'] }], cards: [card('d', 90, 100), card('e', 300, 100)] });
+    expect(lines.map((l) => l.id)).toEqual(['d', 'e']);
+    lines.forEach((l) => { expect(l.x2).toBeGreaterThanOrEqual(120 - 50); expect(l.x2).toBeLessThanOrEqual(120 + 50); expect(l.y2).toBe(200); });
   });
 });

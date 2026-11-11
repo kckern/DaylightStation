@@ -20,14 +20,14 @@ const OUT = path.join(here, 'out/cycle-game');
 fs.mkdirSync(OUT, { recursive: true });
 
 const ALL = [
-  'lobby-default', 'lobby-no-signal', 'lobby-busy', 'staging', 'countdown',
+  'lobby-default', 'lobby-history-full', 'lobby-no-signal', 'lobby-busy', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
-  'race-two-riders-one-parked', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
+  'race-two-riders-one-parked', 'race-four-riders', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
 ];
 // Real garage content size: the app's navigation rail and margins take the rest of 1920x1080.
 const KIOSK = { w: 1810, h: 1040 };
-const KIOSK_SCENES = ['race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'results-six-riders'];
+const KIOSK_SCENES = ['race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked', 'race-five-riders', 'race-six-riders', 'race-four-bunched', 'race-six-bunched', 'results-six-riders'];
 const scenes = process.env.SCENES ? process.env.SCENES.split(',').map((s) => s.trim()) : ALL;
 const forced = /^(\d+)x(\d+)$/.exec(process.env.VIEWPORT || '');
 const jobs = [];
@@ -154,6 +154,36 @@ function measure() {
   out.raceTextMinPx = raceFonts.length ? raceFonts[0].px : null;
   out.raceTextSmallest = raceFonts.slice(0, 6);
   out.raceTextBelow20 = raceFonts.filter((f) => f.px < 19.95).slice(0, 40);
+  // Lobby: content text a person reads standing at the touchscreen must be >= 20 px; the
+  // eyebrow labels and column headers are allow-listed at 16 px via data-secondary.
+  const lobbyEl = document.querySelector('[data-testid="cycle-game-records"]');
+  if (lobbyEl) {
+    const lf = textEls.filter((el) => lobbyEl.contains(el) && !el.closest('[data-secondary]'))
+      .map((el) => ({ t: el.textContent.trim().slice(0, 28), px: r2(screenPx(el)), cls: String(el.getAttribute('class') || el.tagName).slice(0, 48) }))
+      .sort((a, b) => a.px - b.px);
+    out.lobbyTextMinPx = lf.length ? lf[0].px : null;
+    out.lobbyTextSmallest = lf.slice(0, 6);
+    const hb = document.querySelector('[data-testid="history-box"]');
+    out.historyRowsShown = [...document.querySelectorAll('.cgh-record')].filter((e) => e.style.display !== 'none').length;
+    out.historyRowsHidden = hb ? Number(hb.dataset.hiddenRows || 0) : null;
+    // Content must sit inside the rail and clear of its bottom edge (no half-clipped row).
+    const rb = lobbyEl.getBoundingClientRect();
+    out.lobbyRailClipped = [...lobbyEl.querySelectorAll('*')].filter((e) => e.offsetParent && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0 && (e.getBoundingClientRect().bottom > rb.bottom + 1 || e.getBoundingClientRect().right > rb.right + 1)).length;
+    out.lobbyRailScrolls = lobbyEl.scrollHeight > lobbyEl.clientHeight + 1;
+  }
+  out.gaugeNumeralMinPx = out.gauges.length ? Math.min(...out.gauges.flatMap((g) => g.labels.map((l) => l.fs))) : null;
+  const th = document.querySelector('[data-testid="tower-lap-header"]');
+  if (th) {
+    const tb = th.getBoundingClientRect();
+    out.towerHeaderPx = r2(parseFloat(getComputedStyle(th).fontSize));
+    out.towerHeaderClipped = th.scrollWidth > th.clientWidth + 1 || th.getBoundingClientRect().height > out.towerHeaderPx * 1.6;
+    out.towerHeaderText = th.textContent.trim();
+  }
+  out.towerMetricWraps = [...document.querySelectorAll('[data-testid="tower-metric"]')].filter((el) => {
+    const t = el.querySelector('.cg-tower__metric-text') || el;
+    const cs = getComputedStyle(t); const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+    return t.getBoundingClientRect().height > lh * 1.5 || el.scrollWidth > el.clientWidth + 1;
+  }).map((el) => el.textContent.trim());
   out.outOfBounds = out.outsideViewport.length + out.clippedByZone.length;
   out.towerRanks = [...document.querySelectorAll('[data-testid="tower-rank"]')].map((el) => ({
     t: el.textContent, sw: el.scrollWidth, cw: el.clientWidth,
@@ -243,9 +273,16 @@ for (const [label, m] of Object.entries(metrics)) {
   if (m.minFontPx != null && m.minFontPx < 15.95) bad.push(`smallest text ${m.minFontPx}px < 16`);
   if (m.outsideViewport.length) bad.push(`${m.outsideViewport.length} element(s) outside the viewport`);
   if (m.clippedByZone.length) bad.push(`${m.clippedByZone.length} element(s) outside their zone`);
+  if (m.gaugeNumeralMinPx != null && m.gaugeNumeralMinPx < 23.95) bad.push(`gauge numerals ${m.gaugeNumeralMinPx}px < 24`);
+  if (m.towerHeaderPx != null && m.towerHeaderPx < 25.5) bad.push(`tower header ${m.towerHeaderPx}px < 25.6`);
+  if (m.towerHeaderClipped) bad.push(`tower header wraps/clips: ${m.towerHeaderText}`);
+  if (m.towerMetricWraps && m.towerMetricWraps.length) bad.push(`tower metric wraps: ${m.towerMetricWraps.join(' | ')}`);
+  if (/^lobby-/.test(label) && m.lobbyTextMinPx != null && m.lobbyTextMinPx < 19.95) bad.push(`lobby text ${m.lobbyTextMinPx}px < 20 (${m.lobbyTextSmallest[0].t} / ${m.lobbyTextSmallest[0].cls})`);
+  if (m.lobbyRailClipped > 0) bad.push(`${m.lobbyRailClipped} lobby rail element(s) clipped`);
+  if (m.lobbyRailScrolls) bad.push('lobby rail scrolls');
   if (m.towerRankOverflow > 0) bad.push('tower rank overflow');
   if (m.toastCoversClock) bad.push('toast covers clock/menu/pace');
-  const line = `${label}: clipped=${m.clippedLabels} minFont=${m.minFontPx} raceTextMin=${m.raceTextMinPx} gauge=${m.gauges && m.gauges.length ? Math.min(...m.gauges.map((g) => g.gaugePx)) : '-'} oob=${m.outOfBounds}${m.toast ? ` toastCovers=${!!m.toastCoversClock}` : ''}`;
+  const line = `${label}: clipped=${m.clippedLabels} minFont=${m.minFontPx} raceTextMin=${m.raceTextMinPx} numerals=${m.gaugeNumeralMinPx ?? '-'} towerHdr=${m.towerHeaderPx ?? '-'} lobbyMin=${m.lobbyTextMinPx ?? '-'} histRows=${m.historyRowsShown ?? '-'}/hid${m.historyRowsHidden ?? '-'} gauge=${m.gauges && m.gauges.length ? Math.min(...m.gauges.map((g) => g.gaugePx)) : '-'} oob=${m.outOfBounds}${m.toast ? ` toastCovers=${!!m.toastCoversClock}` : ''}`;
   console.log(line);
   if (bad.length) failures.push({ scene: label, problems: bad });
 }
