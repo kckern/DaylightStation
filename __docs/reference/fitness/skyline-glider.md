@@ -142,6 +142,26 @@ sounds: { bell: ring.mp3, checkpoint: post.mp3, breakable: smash.mp3, crash: cra
 - Sounds: `bell`, `checkpoint`, `breakable`, `crash`, `restart` and `finish` are cues. `wind` and `music` loop during flight. A missing, empty or undecodable file falls back to the synthesized tone, so the alpine zone ships with empty placeholders under `media/fitness/skyline-glider/alpine/sounds/`.
 - On each act change the lobby preloads the zone and logs `skyline_glider.assets.loaded` with `{ zoneId, images, spriteFrames, sounds, missing }`. The level is `warn` when anything other than an empty placeholder failed.
 
+### Skins (zones built from the shared art library)
+
+A zone can also be generated from a gaming-assets **skin**: the art comes from
+the shared library at `media/games/_common` (catalogued, validated, licence- and
+distribution-tracked), the gameplay from a base zone. Skyline's slots are in
+`server/adapters/skylineGlider/skin-contract.yml`;
+`cli/skyline-skin.cli.mjs build` exports a skin into
+`media/fitness/skyline-glider/<zone>/` with a generated `zone.yml`, and
+`install` copies it into the household zones folder (private-only placeholder
+skins are refused unless `--private-dev true`).
+
+A generated zone sets `pixel_scale` (scene units per art pixel, 3): every
+sprite then draws at exactly that grain, aligned in its box, rather than
+stretching to the box, and layer and terrain-edge heights come from their pixel
+sizes, so the whole scene sits on one pixel grid. Hand-written zones may set
+`pixel_scale` too. Frame names in a sheet may contain dots (`craft.fly.0`);
+only an image extension (`.png`, `.gif`, ...) is dropped from a name.
+
+See `__docs/reference/gaming/side-scroller-skins.md`.
+
 ### Act file
 
 An act is a course file with three additions:
