@@ -5,7 +5,7 @@ import { RaceFlagIcon } from "../home/icons.jsx";
 import { plotStartIndex } from "../../../lib/cycleGame/chartTrim.js";
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitGuard } from "./useFitGuard.js";
-import { continuousWindow, evenTicks } from "../../../lib/cycleGame/chartZoom.js";
+import { continuousWindow, evenTicks, niceCeil, niceCeilTime } from "../../../lib/cycleGame/chartZoom.js";
 import { distanceAtTime } from "../../../lib/cycleGame/paceDelta.js";
 import { rivalTraceSamples } from "../../../lib/cycleGame/rivalTrace.js";
 import { formatClock } from "../../../lib/cycleGame/cycleGameLobby.js";
@@ -181,14 +181,17 @@ export default function DistanceChart({ riderIds, riders, riderLive, winConditio
   const distWinRef = useRef(Y_BASE_M);
   const winT = fixedTime
     ? timeCapS
-    : Math.max(timeWinRef.current, continuousWindow(elapsedS, { base: X_BASE_S, fillFrac: FILL_FRAC }));
+    // Snapped to a round time so the labels read 2:00 / 4:00, not 2:04 / 4:07.
+    : niceCeilTime(Math.max(timeWinRef.current, continuousWindow(elapsedS, { base: X_BASE_S, fillFrac: FILL_FRAC })));
   timeWinRef.current = winT;
   let winD;
   if (distanceGoal) {
     winD = goalM;
   } else {
     const rivalFinalM = rivalSeries && fixedTime ? distanceAtTime(rivalSeries, timeCapS, rivalIntervalS) : 0;
-    winD = Math.max(distWinRef.current, rivalFinalM, continuousWindow(leaderDistanceM, { base: Y_BASE_M, fillFrac: FILL_FRAC }));
+    // Snapped to a round ceiling (1/2/2.5/5 x 10^n) so the three y labels are
+    // round; still never below the rival's final distance.
+    winD = niceCeil(Math.max(distWinRef.current, rivalFinalM, continuousWindow(leaderDistanceM, { base: Y_BASE_M, fillFrac: FILL_FRAC })));
     distWinRef.current = winD;
   }
 

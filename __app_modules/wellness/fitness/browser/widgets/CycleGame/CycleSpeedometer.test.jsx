@@ -55,6 +55,9 @@ describe('CycleSpeedometer', () => {
     const { getByTestId } = render(<CycleSpeedometer {...baseProps} boost={WARM} />);
     const row = getByTestId('cycle-speedometer-boost');
     expect(getByTestId('cycle-speedometer-boost-chip').textContent).toBe('Warm ×1.2');
+    // The multiplier is its own flex item: a bare text node after the label span
+    // loses its leading space in an inline-flex chip ("Warm×1.2").
+    expect(getByTestId('cycle-speedometer-boost-mult').textContent).toBe('×1.2');
     expect(getByTestId('cycle-speedometer-boost-fill').style.width).toBe('40%');
     expect(getByTestId('cycle-speedometer-boost-next').textContent).toBe('Hot ×1.4');
     expect(row.className).not.toContain('no-strap');
@@ -199,5 +202,20 @@ describe('CycleSpeedometer', () => {
     expect(queryByTestId('cycle-speedometer-sensor-lost')).toBeNull();
     expect(getByTestId('cycle-speedometer-rpm').textContent).toContain('92');
     expect(container.querySelector('.cycle-speedometer--sensor-lost')).toBeNull();
+  });
+});
+
+describe('CycleSpeedometer parked recedes as a whole', () => {
+  it('a parked rider carries the --parked class on the root, so the boost row and odometer dim with the gauge', () => {
+    const { container, getByTestId } = render(<CycleSpeedometer {...baseProps} parked boost={{ hasStrap: true, label: 'Warm', mult: 1.2, progress: 0.4, next: null }} />);
+    expect(container.firstChild.className).toContain('cycle-speedometer--parked');
+    expect(getByTestId('cycle-speedometer-boost')).toBeInTheDocument();
+  });
+});
+
+describe('CycleSpeedometer compact gauge', () => {
+  it('marks a small gauge compact', () => {
+    const { container } = render(<CycleSpeedometer {...baseProps} size={180} />);
+    expect(container.firstChild.className).toContain('cycle-speedometer--compact');
   });
 });

@@ -46,7 +46,7 @@ export default function RiderReadyStrip({ riders = [] }) {
                 fallbackSrc={FALLBACK_AVATAR}
                 heartRate={Number.isFinite(r.heartRate) ? r.heartRate : undefined}
                 zoneColor={r.zoneColor || undefined}
-                size={64}
+                size={88}
                 showGauge={Number.isFinite(r.heartRate) && r.heartRate > 0}
                 showIndicator={false}
               />

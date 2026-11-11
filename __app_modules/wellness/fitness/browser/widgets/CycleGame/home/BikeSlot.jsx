@@ -50,7 +50,7 @@ export function BikeSlot({ bike, person, onPick, lane, disabled = false }) {
                 zoneId={person.zoneId || undefined}
                 zoneColor={person.zoneColor || undefined}
                 progress={Number.isFinite(person.progress) ? person.progress : undefined}
-                size={48}
+                size={56}
                 showGauge={person.hasHR}
                 showIndicator={false}
               />

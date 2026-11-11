@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTicks, buildBandArcs, needleAngleDeg, bandForRpm, tickStepsFor, scaleBands, DEFAULT_CADENCE_BANDS } from "./speedometerGeometry.js";
+import { buildTicks, labelFontUnits, buildBandArcs, needleAngleDeg, bandForRpm, tickStepsFor, scaleBands, DEFAULT_CADENCE_BANDS } from "./speedometerGeometry.js";
 
 const BANDS = [
   { id: 'warmup',   min: 0,  color: '#5b6470' },
@@ -114,4 +114,27 @@ describe('bandForRpm', () => {
   it('returns null for empty bands', () => {
     expect(bandForRpm(50, [])).toBeNull();
   });
+});
+
+describe('dial labels stay inside the gauge box', () => {
+  for (const maxRpm of [120, 180, 250]) {
+    for (const gaugePx of [96, 140, 220, 360]) {
+      it(`max ${maxRpm} at ${gaugePx}px`, () => {
+        const fs = labelFontUnits(gaugePx);
+        const { tickStep, labelStep } = tickStepsFor(maxRpm);
+        const ticks = buildTicks({ maxRpm, tickStep, labelStep, labelFontSize: fs });
+        const labelled = ticks.filter((t) => t.major);
+        expect(labelled.length).toBeGreaterThan(1);
+        for (const t of labelled) {
+          const b = t.labelPos.box;
+          expect(b.x).toBeGreaterThanOrEqual(0);
+          expect(b.y).toBeGreaterThanOrEqual(0);
+          expect(b.x + b.width).toBeLessThanOrEqual(200);
+          expect(b.y + b.height).toBeLessThanOrEqual(200);
+        }
+        // renders at no less than 16 screen px
+        expect((fs * gaugePx) / 200).toBeGreaterThanOrEqual(16 - 1e-9);
+      });
+    }
+  }
 });

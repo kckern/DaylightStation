@@ -4,7 +4,7 @@ import CircularUserAvatar from "../../../components/CircularUserAvatar.jsx";
 import { LINE_COLORS } from "../../../lib/cycleGame/lineColors.js";
 import { FALLBACK_AVATAR } from "../home/constants.js";
 import { tickFraction } from "../../../../../../../__capabilities/gaming/portable/realtime/index.mjs";
-import { povWorld, povBadges, resolveBadgeStack } from "../../../lib/cycleGame/povWorld.js";
+import { povWorld, povBadges, resolveBadgeStack, markShadowedByGate } from "../../../lib/cycleGame/povWorld.js";
 import { povFollowCam, horizonChipState } from "../../../lib/cycleGame/povFollowCam.js";
 import getLogger from '@/lib/logging/Logger.js';
 import "./PovGrid.scss";
@@ -323,11 +323,12 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         return { sx: (s._v.x * 0.5 + 0.5) * s.W, sy: (-s._v.y * 0.5 + 0.5) * s.H, inFront, dist };
       };
 
-      const updateMajorLabels = (marks, fogFar) => {
+      const updateMajorLabels = (marks, fogFar, gates = []) => {
         let li = 0;
         for (let i = 0; i < marks.length && li < majorLabelPool.length; i++) {
           if (!marks[i].major) continue;
           const m = marks[i];
+          if (markShadowedByGate(m, gates)) continue;
           const el = majorLabelPool[li++];
           const p = screenOf(-ROAD_HALF_W - 0.8, 0, m.z);
           if (!p.inFront) { el.style.opacity = '0'; continue; }
@@ -362,6 +363,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       const positionCards = (worldRiders, fogFar) => {
         // Pass 1 — project every card, and collect each badge's would-be box.
         const boxes = [];
+        const cardBoxes = [];
         worldRiders.forEach((r) => {
           const el = markerEls.current[r.id];
           const badgeEl = badgeEls.current[r.id];
@@ -373,6 +375,10 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           }
           const scale = clamp(CARD_MIN_SCALE, CARD_MAX_SCALE, CARD_FOCAL / Math.max(1, p.dist));
           const z = String(10000 - Math.round(p.dist)); // nearer on top
+          // The avatar card (88 px at scale 1, centred on the road point) is an
+          // obstacle for every FARTHER rider's badge: without it a near rider's
+          // card is drawn over the leader's rank readout.
+          cardBoxes.push({ x: p.sx, y: p.sy - 44 * scale, w: 88 * scale, h: 88 * scale, dist: p.dist, ownerId: r.id });
           if (el) {
             el.style.opacity = '1';
             el.style.transform = `translate(${p.sx.toFixed(1)}px,${p.sy.toFixed(1)}px) translate(-50%,-50%) scale(${scale.toFixed(3)})`;
@@ -388,12 +394,12 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
               badgeSize.current[r.id] = { text, w: badgeEl.offsetWidth, h: badgeEl.offsetHeight };
             }
             const { w, h } = badgeSize.current[r.id];
-            boxes.push({ el: badgeEl, x: p.sx, y: p.sy + belowPx, w, h, dist: p.dist });
+            boxes.push({ el: badgeEl, id: r.id, x: p.sx, y: p.sy + belowPx, w, h, dist: p.dist });
           }
         });
 
         // Pass 2 — de-collide in screen space (pure, unit-tested in povWorld).
-        resolveBadgeStack(boxes, BADGE_STACK_GAP_PX).forEach((b) => {
+        resolveBadgeStack(boxes, BADGE_STACK_GAP_PX, cardBoxes).forEach((b) => {
           b.el.style.transform = `translate(${b.x.toFixed(1)}px,${b.y.toFixed(1)}px) translate(-50%,0)`;
         });
       };
@@ -482,7 +488,7 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
         gridMat.uniforms.uCamPos.value.copy(camera.position); // fog fade is camera-relative
         renderer.render(scene, camera);
 
-        updateMajorLabels(world.marks, fogFar);
+        updateMajorLabels(world.marks, fogFar, world.gates);
         positionCards(world.riders, fogFar);
         updateHorizonChip(world.leaderM, world.lastM);
 

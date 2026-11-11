@@ -220,19 +220,31 @@ function fourRiders() {
     },
   };
 }
+function sixRiders() {
+  const t = 200;
+  const ids = [1, 2, 3, 4, 5, 6];
+  const dist = [960, 900, 840, 780, 520, 120];
+  const riders = {}; const riderLive = {};
+  ids.forEach((n, i) => {
+    const id = `user_${n}`;
+    riders[id] = rider(id, `Rider ${String.fromCharCode(64 + n)}`, series(t, dist[i], i === 5 ? { stopAfter: 28 } : { wobble: 0.1 + i * 0.02 }));
+    riderLive[id] = withAvatar(`user_${n}`, i === 5
+      ? live({ rpm: 0, speedKmh: 0, heartRate: null, zoneId: null, zoneColor: null, zoneProgress: null, boost: NO_STRAP, placement: 6, parked: true, noSensor: true })
+      : live({ rpm: 90 - i * 3, speedKmh: 28 - i, placement: i + 1, isLeader: i === 0, ...zoneLive(['hot', 'warm', 'warm', 'active', 'active'][i], 0.5) }));
+  });
+  return { winCondition: 'distance', goalM: 1500, timeCapS: 300, elapsedS: t, lapLengthM: 400, cadenceBands: BANDS, riders, riderLive };
+}
 const RaceScreen = (p) => <CycleRaceScreen {...p} />;
 
 // ── results fixtures ────────────────────────────────────────────────────────
 const ENDED_EARLY_NOTE = 'Ended early: saved to history, not counted for records or the ladder.';
 const NAME = (n) => ({ displayName: `Rider ${n}` });
 // Mounted exactly as CycleGameContainer's results branch does (the last `return`
-// in render): RaceResults followed by its own "Back to home" button.
+// in render): the container wrapper around RaceResults and nothing else. The
+// board owns its own Rematch / Back to home buttons.
 const ResultsPhase = (props) => (
   <Container>
     <RaceResults onExit={noop} {...props} />
-    <button type="button" data-testid="cycle-game-start" className="cycle-game-container__start" onClick={noop}>
-      Back to home
-    </button>
   </Container>
 );
 
@@ -299,9 +311,12 @@ export const SCENES = {
   'race-solo-parked': raceScene(soloParked),
   'race-two-riders-one-parked': raceScene(twoOneParked),
   'race-four-riders': raceScene(fourRiders),
+  'race-six-riders': raceScene(sixRiders),
   'race-menu-open': raceScene(soloTime),
   'race-toast-parked': toastScene(twoOneParked, { id: 1, variant: 'parked', icon: null, title: 'Rider B is parked', subtitle: 'Pedal to rejoin' }),
   'race-toast-boost': toastScene(soloTime, { id: 2, variant: 'boost', icon: null, title: 'Rider A: Hot \u00d71.4' }),
+  'race-toast-solo': toastScene(soloTime, { id: 3, variant: 'parked', icon: null, title: 'Rider A is parked', subtitle: 'Pedal to rejoin' }),
+  'race-toast-four': toastScene(fourRiders, { id: 4, variant: 'lead-change', icon: null, title: 'Rider B takes the lead', subtitle: 'by 12 m' }),
   'results-solo-new-best': { render: () => (
     <ResultsPhase winCondition="time" lapLengthM={400} elapsedS={300} secondsLeft={38} onRematch={noop}
       rivalId="ghost:race-1:user_1" rivalLabel="your best"

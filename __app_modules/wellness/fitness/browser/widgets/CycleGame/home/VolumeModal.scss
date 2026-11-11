@@ -3,7 +3,7 @@
 .cgh-section-label--with-readout { justify-content: space-between; }
 .cgh-volume__readout {
   font-family: t.$cg-mono;
-  font-size: 0.78rem;
+  font-size: t.cg-type(1);
   letter-spacing: 0.04em;
   color: t.$cg-cyan;
   text-shadow: 0 0 8px rgba(33, 230, 255, 0.45);

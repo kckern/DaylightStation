@@ -198,7 +198,7 @@ describe('DistanceChart panel', () => {
     const pts = getByTestId('rival-trace').getAttribute('points').trim().split(' ').map((p) => p.split(',').map(Number));
     const [lx, ly] = pts[pts.length - 1];
     expect(ly).toBeCloseTo(22, 0); // the goal sits at the top of a distance race
-    const winT = 110 / 0.85;
+    const winT = 180; // niceCeilTime(110 / 0.85 = 129.4): the open time axis snaps to whole minutes
     expect(lx).toBeCloseTo(16 + (120 / winT) * 548, 0);
   });
   it('solo never switches to the log scale, even with the rival bunched', () => {
@@ -489,5 +489,26 @@ describe('DistanceChart panel', () => {
         nowSpy.mockRestore();
       }
     });
+  });
+});
+
+describe('DistanceChart round axis labels', () => {
+  const labelTexts = (node) => [...node.querySelectorAll('.cg-chart__axis-label')].map((l) => l.textContent);
+  it('a time race snaps its y window so the labels are round (0 / 500 m / 1 km)', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 457, distanceSeries: [0, 200, 457] } };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="time" timeCapS={300} elapsedS={128} />
+    );
+    expect(labelTexts(getByTestId('chart-axis-y'))).toEqual(['0 m', '500 m', '1.00 km']);
+  });
+  it('a distance race with an open time axis snaps its x labels to whole minutes', () => {
+    const riders = { a: { userId: 'a', displayName: 'A', cumulativeDistanceM: 800, distanceSeries: [0, 400, 800] } };
+    const { getByTestId } = render(
+      <DistanceChart riderIds={['a']} riders={riders} riderLive={{ a: {} }}
+        winCondition="distance" goalM={1500} elapsedS={207} />
+    );
+    // 207 s / 0.85 = 243.5 s -> 300 s
+    expect(labelTexts(getByTestId('chart-axis-x'))).toEqual(['0:00', '2:30', '5:00']);
   });
 });

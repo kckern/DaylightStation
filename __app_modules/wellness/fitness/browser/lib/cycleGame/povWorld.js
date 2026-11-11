@@ -27,13 +27,20 @@ export function laneX(idx, n, halfW, inset) {
  *
  * @param {Array<{x:number,y:number,w:number,h:number,dist:number}>} boxes
  * @param {number} gapPx  vertical breathing room between stacked badges
+ * @param {Array<{x:number,y:number,w:number,h:number,dist:number,ownerId?:string}>} obstacles
+ *   fixed boxes (the rider avatar cards, same centre-x / top-y convention) a badge must not
+ *   sit on. An obstacle only moves a badge that is FARTHER than it (the card is drawn on top
+ *   of it); a badge never yields to its own rider's card (`ownerId` === badge `id`).
  * @returns {Array} same objects (new refs) ordered nearest-first, `y` resolved
  */
-export function resolveBadgeStack(boxes = [], gapPx = 3) {
+export function resolveBadgeStack(boxes = [], gapPx = 3, obstacles = []) {
   const sorted = [...boxes].sort((a, b) => a.dist - b.dist).map((b) => ({ ...b }));
-  const placed = [];
+  const fixed = obstacles.map((o) => ({ ...o, fixed: true }));
+  const placed = [...fixed];
+  const out = [];
   sorted.forEach((b) => {
-    const hits = (q) => Math.abs(b.x - q.x) < (b.w + q.w) / 2
+    const hits = (q) => !(q.fixed && ((q.ownerId != null && q.ownerId === b.id) || q.dist > b.dist))
+      && Math.abs(b.x - q.x) < (b.w + q.w) / 2
       && b.y < q.y + q.h + gapPx
       && b.y + b.h + gapPx > q.y;
     // Each push strictly increases b.y past the box it hit, so this terminates;
@@ -43,8 +50,18 @@ export function resolveBadgeStack(boxes = [], gapPx = 3) {
       placed.forEach((q) => { if (hits(q)) { b.y = q.y + q.h + gapPx; moved = true; } });
     }
     placed.push(b);
+    out.push(b);
   });
-  return placed;
+  return out;
+}
+
+/**
+ * True when a metre mark sits on a gate (a lap line lands on a 100 m multiple, so
+ * "800m" and "LAP 2" would be drawn at the same depth and print over each other):
+ * the gate's own label wins and the metre label is dropped.
+ */
+export function markShadowedByGate(mark, gates = [], toleranceM = 0.6) {
+  return gates.some((g) => Math.abs(g.z - mark.z) < toleranceM);
 }
 
 /**

@@ -22,7 +22,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const ALL = [
   'lobby-default', 'lobby-no-signal', 'lobby-busy', 'staging', 'countdown',
   'race-solo-time', 'race-solo-distance-behind', 'race-solo-par-no-strap', 'race-solo-parked',
-  'race-two-riders-one-parked', 'race-four-riders', 'race-menu-open', 'race-toast-parked', 'race-toast-boost',
+  'race-two-riders-one-parked', 'race-four-riders', 'race-six-riders', 'race-menu-open', 'race-toast-parked', 'race-toast-boost', 'race-toast-solo', 'race-toast-four',
   'results-solo-new-best', 'results-three-riders', 'results-six-riders', 'results-stopped-and-ended-early',
 ];
 // Real garage content size: the app's navigation rail and margins take the rest of 1920x1080.
@@ -66,16 +66,27 @@ function measure() {
     if (el.closest('svg') && el.tagName !== 'text' && el.tagName !== 'tspan') return false;
     return [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
   });
-  const fonts = textEls.map((el) => ({ t: el.textContent.trim().slice(0, 28), px: r2(parseFloat(getComputedStyle(el).fontSize)), cls: String(el.getAttribute('class') || el.tagName).slice(0, 48) }));
+  // SVG text sizes are in user units: scale by the CTM so the figure is real screen px.
+  const screenPx = (el) => {
+    const fs = parseFloat(getComputedStyle(el).fontSize);
+    if (el.closest('svg') && el.getScreenCTM) { const m = el.getScreenCTM(); if (m) return fs * Math.hypot(m.a, m.b); }
+    // A depth-scaled/transformed HTML box renders smaller than its computed size.
+    if (el.offsetHeight > 20) { const k = el.getBoundingClientRect().height / el.offsetHeight; if (k > 0 && k < 0.95) return fs * k; }
+    return fs;
+  };
+  const fonts = textEls.map((el) => ({ t: el.textContent.trim().slice(0, 28), px: r2(screenPx(el)), cls: String(el.getAttribute('class') || el.tagName).slice(0, 48) }));
   fonts.sort((a, b) => a.px - b.px);
   out.smallestText = fonts.slice(0, 4);
-  out.outsideViewport = textEls.filter((el) => { const b = el.getBoundingClientRect(); return b.right > vw + 1 || b.bottom > vh + 1 || b.left < -1 || b.top < -1; })
+  // Only text that is partly visible counts: an element wholly outside the viewport/zone
+  // (a POV marker far off the road, clipped by its zone) is not on screen at all.
+  out.outsideViewport = textEls.filter((el) => { const b = el.getBoundingClientRect(); if (b.right <= 0 || b.left >= vw || b.bottom <= 0 || b.top >= vh) return false; return b.right > vw + 1 || b.bottom > vh + 1 || b.left < -1 || b.top < -1; })
     .map((el) => ({ t: el.textContent.trim().slice(0, 28), ...box(el) })).slice(0, 8);
   const zones = [...document.querySelectorAll('.race-layout__zone')];
   out.clippedByZone = [];
   for (const el of textEls) {
     const z = el.closest('.race-layout__zone'); if (!z) continue;
     const zb = z.getBoundingClientRect(); const b = el.getBoundingClientRect();
+    if (b.right <= zb.left || b.left >= zb.right || b.bottom <= zb.top || b.top >= zb.bottom) continue;
     if (b.right > zb.right + 1 || b.bottom > zb.bottom + 1 || b.left < zb.left - 1 || b.top < zb.top - 1) {
       out.clippedByZone.push({ t: el.textContent.trim().slice(0, 24), zone: z.dataset.testid, over: { r: r2(b.right - zb.right), b: r2(b.bottom - zb.bottom), l: r2(zb.left - b.left), t: r2(zb.top - b.top) } });
     }
@@ -94,7 +105,7 @@ function measure() {
         t: l.textContent,
         outSvg: r2(Math.max(b.right - sb.right, b.bottom - sb.bottom, sb.left - b.left, sb.top - b.top)),
         outZone: zb ? r2(Math.max(b.right - zb.right, b.bottom - zb.bottom, zb.left - b.left, zb.top - b.top)) : null,
-        fs: r2(parseFloat(getComputedStyle(l).fontSize))
+        fs: r2(screenPx(l))
       };
     });
     const bo = g.querySelector('.cycle-speedometer__boost');
@@ -132,10 +143,14 @@ function measure() {
     out.chartLines = [...chart.querySelectorAll('polyline,path')].filter((p) => p.getAttribute('stroke-dasharray') || p.dataset.testid === 'race-line')
       .map((p) => ({ tid: p.dataset.testid || null, dash: p.getAttribute('stroke-dasharray'), w: p.getAttribute('stroke-width'), op: p.getAttribute('opacity') })).slice(0, 8);
   }
+  out.clippedLabels = out.gauges.reduce((n, g) => n + g.labels.filter((l) => l.outSvg > 0.5 || (l.outZone != null && l.outZone > 0.5)).length, 0);
+  out.minFontPx = fonts.length ? fonts[0].px : null;
+  out.outOfBounds = out.outsideViewport.length + out.clippedByZone.length;
   out.towerRanks = [...document.querySelectorAll('[data-testid="tower-rank"]')].map((el) => ({
     t: el.textContent, sw: el.scrollWidth, cw: el.clientWidth,
     overLane: (() => { const lane = el.parentElement.querySelector('.cg-tower__lane'); return lane ? r2(el.getBoundingClientRect().right - lane.getBoundingClientRect().left) : null; })()
   }));
+  out.towerRankOverflow = out.towerRanks.filter((r) => r.sw > r.cw + 1 || (r.overLane != null && r.overLane > 0.5)).length;
   const ex = document.querySelector('[data-testid="cycle-game-start"]');
   const res = document.querySelector('[data-testid="race-results"]');
   if (res) {
@@ -167,6 +182,12 @@ function measure() {
       coversHeader: hd ? (Math.min(tb.right, hb.right) - Math.max(tb.left, hb.left) > 0 && Math.min(tb.bottom, hb.bottom) - Math.max(tb.top, hb.top) > 0) : null,
       fontPx: r2(parseFloat(getComputedStyle(toast.querySelector('.cycle-event-toast__title')).fontSize))
     };
+    const hit = (sel) => { const e = document.querySelector(sel); if (!e) return false; const b = e.getBoundingClientRect();
+      return Math.min(tb.right, b.right) - Math.max(tb.left, b.left) > 0 && Math.min(tb.bottom, b.bottom) - Math.max(tb.top, b.top) > 0; };
+    out.toast.coversClock = hit('[data-testid="race-clock"]') || hit('[data-testid="chart-header"]');
+    out.toast.coversMenu = hit('[data-testid="race-menu-open"]');
+    out.toast.coversPace = hit('[data-testid="pace-delta"]');
+    out.toastCoversClock = out.toast.coversClock || out.toast.coversMenu || out.toast.coversPace;
   }
   return out;
 }
@@ -204,6 +225,19 @@ for (const { scene, w, h, suffix } of jobs) {
 fs.writeFileSync(path.join(OUT, 'metrics.json'), JSON.stringify(metrics, null, 1));
 await browser.close();
 
+// Regression gate: clipped dial labels, text under 16 px, anything outside the viewport/zone.
+for (const [label, m] of Object.entries(metrics)) {
+  const bad = [];
+  if (m.clippedLabels > 0) bad.push(`${m.clippedLabels} clipped dial label(s)`);
+  if (m.minFontPx != null && m.minFontPx < 15.95) bad.push(`smallest text ${m.minFontPx}px < 16`);
+  if (m.outsideViewport.length) bad.push(`${m.outsideViewport.length} element(s) outside the viewport`);
+  if (m.clippedByZone.length) bad.push(`${m.clippedByZone.length} element(s) outside their zone`);
+  if (m.towerRankOverflow > 0) bad.push('tower rank overflow');
+  if (m.toastCoversClock) bad.push('toast covers clock/menu/pace');
+  const line = `${label}: clipped=${m.clippedLabels} minFont=${m.minFontPx} oob=${m.outOfBounds}${m.toast ? ` toastCovers=${!!m.toastCoversClock}` : ''}`;
+  console.log(line);
+  if (bad.length) failures.push({ scene: label, problems: bad });
+}
 report.forEach((l) => console.log(l));
 if (failures.length) {
   for (const f of failures) {

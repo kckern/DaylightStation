@@ -57,6 +57,7 @@ export default function CycleRaceScreen({
   // recording (not the part replayed so far) at the recording's own interval.
   // A finished rider's gap freezes at their finish time.
   const soloId = solo ? liveIds[0] : null;
+  const soloLive = soloId ? riderLive[soloId] : null;
   const rivalId = solo && ghostIds.length === 1 ? ghostIds[0] : null;
   const rival = rivalId ? riders[rivalId] : null;
   let delta = null;
@@ -103,7 +104,8 @@ export default function CycleRaceScreen({
     ),
     ...(solo ? {
       paceDelta: (slot) => (
-        <PaceDeltaPanel delta={delta} rivalName={rivalName} rivalKind={rivalKind} zoneBox={slot?.zoneBox} />
+        <PaceDeltaPanel delta={delta} rivalName={rivalName} rivalKind={rivalKind} zoneBox={slot?.zoneBox}
+          paused={!!(soloLive && (soloLive.parked || soloLive.noSensor || soloLive.sensorLost))} />
       )
     } : {
       standingsTower: () => (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { povWorld, laneX, displayGap, displayDist, povBadges, resolveBadgeStack } from "./povWorld.js";
+import { povWorld, laneX, displayGap, displayDist, povBadges, resolveBadgeStack, markShadowedByGate } from "./povWorld.js";
 
 const mk = (id, idx, prev, cur, isGhost = false) => ({ id, idx, prev, cur, isGhost });
 
@@ -340,5 +340,38 @@ describe('resolveBadgeStack (POV badge de-collision)', () => {
 
   it('handles an empty field', () => {
     expect(resolveBadgeStack([])).toEqual([]);
+  });
+});
+
+describe('resolveBadgeStack with avatar-card obstacles', () => {
+  const box = (id, x, y, dist, w = 100, h = 26) => ({ id, x, y, w, h, dist });
+  it('pushes a far rider\'s badge below a nearer rider\'s avatar card', () => {
+    // The near card (88 px, owner "near") covers y 100..188 around x=0.
+    const card = { x: 0, y: 100, w: 88, h: 88, dist: 10, ownerId: 'near' };
+    const out = resolveBadgeStack([box('far', 20, 120, 30)], 3, [card]);
+    expect(out[0].y).toBe(191); // 100 + 88 + 3
+  });
+  it('never moves a badge for its own rider\'s card', () => {
+    const card = { x: 0, y: 100, w: 88, h: 88, dist: 10, ownerId: 'a' };
+    const out = resolveBadgeStack([box('a', 0, 120, 10)], 3, [card]);
+    expect(out[0].y).toBe(120);
+  });
+  it('ignores a card that is farther than the badge (the badge is drawn on top of it)', () => {
+    const card = { x: 0, y: 100, w: 88, h: 88, dist: 50, ownerId: 'far' };
+    const out = resolveBadgeStack([box('near', 0, 120, 10)], 3, [card]);
+    expect(out[0].y).toBe(120);
+  });
+  it('returns only badges, not obstacles', () => {
+    const card = { x: 500, y: 0, w: 88, h: 88, dist: 1, ownerId: 'z' };
+    expect(resolveBadgeStack([box('a', 0, 0, 10)], 3, [card]).length).toBe(1);
+  });
+});
+
+describe('markShadowedByGate', () => {
+  it('hides a metre mark that sits on a gate, keeps one that does not', () => {
+    const gates = [{ z: -800 }];
+    expect(markShadowedByGate({ z: -800.2 }, gates)).toBe(true);
+    expect(markShadowedByGate({ z: -790 }, gates)).toBe(false);
+    expect(markShadowedByGate({ z: -800 }, [])).toBe(false);
   });
 });

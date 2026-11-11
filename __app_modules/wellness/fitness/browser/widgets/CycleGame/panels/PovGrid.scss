@@ -17,6 +17,10 @@
   // by projecting each rider's world point to screen (transform written imperatively).
   &__cards { position: absolute; inset: 0; pointer-events: none; }
 
+  // The markers are depth-scaled cards: a heart-rate number inside them would
+  // shrink below the 16 px floor with distance. HR is on the gauge and the tower.
+  &__marker .hr-value-overlay { display: none; }
+
   &__marker {
     position: absolute; top: 0; left: 0;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -47,7 +51,7 @@
     // axis in the tall POV column, and a narrower badge collides less often, so
     // the de-collide pass in positionCards has to restack less. 1.1rem is the
     // floor for anything that renders during `racing` — do not go below it.
-    font-size: 1.1rem; line-height: 1; letter-spacing: -0.01em;
+    font-size: cg.cg-type(1); line-height: 1; letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
     color: cg.$cg-text;
     padding: 0.18em 0.4em; border-radius: 6px;
@@ -65,7 +69,7 @@
   &__horizon-chip {
     position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
     font-family: cg.$cg-display; font-weight: 800; font-style: italic;
-    font-size: 1.4rem; line-height: 1; letter-spacing: 0.02em;
+    font-size: cg.cg-type(2); line-height: 1; letter-spacing: 0.02em;
     font-variant-numeric: tabular-nums;
     color: cg.$cg-gold;
     padding: 0.3em 0.7em; border-radius: 8px;
@@ -84,13 +88,13 @@
   // (the audit's "consider keeping only every 100m label" candidate).
   &__mark-label {
     position: absolute; top: 0; left: 0;
-    font-family: cg.$cg-mono; font-weight: 700; font-size: 1.1rem;
+    font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 700; font-size: cg.cg-type(1);
     color: cg.$cg-cyan; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }
   &__gate-label {
     position: absolute; top: 0; left: 0;
-    font-family: cg.$cg-mono; font-weight: 800; font-size: 1.1rem; letter-spacing: 0.06em;
+    font-family: cg.$cg-display; font-variant-numeric: tabular-nums; font-weight: 800; font-size: cg.cg-type(1); letter-spacing: 0.06em;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); white-space: nowrap;
     will-change: transform, opacity;
   }

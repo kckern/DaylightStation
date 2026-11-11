@@ -45,7 +45,7 @@
   &__title {
     margin: 0;
     font-family: t.$cg-display;
-    font-size: 1.9rem;
+    font-size: t.cg-type(3);
     font-weight: 800;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -55,7 +55,7 @@
   &__subtitle {
     margin: 0;
     color: t.$cg-muted;
-    font-size: 0.95rem;
+    font-size: t.cg-type(1);
   }
 
   &__actions {
@@ -78,7 +78,7 @@
     border-radius: 12px;
     padding: 14px 34px;
     font-family: t.$cg-display;
-    font-size: 1.05rem;
+    font-size: t.cg-type(1);
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -105,7 +105,7 @@
   &__records {
     position: relative;
     z-index: 1;
-    width: 260px;
+    width: 30rem; // fits the 4-column history grid at the 16 px floor
     flex-shrink: 0;
     background: t.$cg-panel;
     border: 1px solid t.$cg-border;
@@ -139,7 +139,7 @@
 
 .cgh-empty {
   color: t.$cg-faint;
-  font-size: 0.92rem;
+  font-size: t.cg-type(1);
   padding: 6px 0;
 }
 
@@ -156,7 +156,7 @@
   overflow: hidden;
   color: t.$cg-muted;
   font-family: t.$cg-display;
-  font-size: 1rem;
+  font-size: t.cg-type(1);
   line-height: 1.35;
 }
 
@@ -233,7 +233,7 @@
   background: t.$cg-panel-2;
   color: t.$cg-text;
   font-family: t.$cg-display;
-  font-size: 1.15rem;
+  font-size: t.cg-type(2);
   font-weight: 600;
   box-shadow: 0 0 14px rgba(33, 230, 255, 0.25);
   animation: cgh-notice-in 0.3s ease both;
@@ -266,7 +266,7 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 
   > svg { width: 22px; height: 22px; flex-shrink: 0; color: t.$cg-warn; }
-  &__text { font-size: 0.95rem; font-weight: 600; }
+  &__text { font-size: t.cg-type(1); font-weight: 600; }
   &__btn {
     appearance: none;
     cursor: pointer;
@@ -276,12 +276,12 @@
     border: 1px solid t.$cg-border;
     background: t.$cg-panel;
     color: t.$cg-text;
-    font-size: 0.9rem;
+    font-size: t.cg-type(1);
     font-weight: 700;
     &--go { border-color: t.$cg-warn; color: t.$cg-warn; }
     &:active { transform: scale(0.97); }
   }
 }
-@media (prefers-reduced-motion: reduce) {
+@include t.cg-reduced-motion {
   .cgh-sensor-warning__btn:active { transform: none; }
 }

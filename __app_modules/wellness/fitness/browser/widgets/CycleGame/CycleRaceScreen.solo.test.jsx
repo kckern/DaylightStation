@@ -116,3 +116,16 @@ describe('CycleRaceScreen — solo layout', () => {
     expect(getByTestId('standings-tower')).toBeInTheDocument();
   });
 });
+
+describe('CycleRaceScreen — solo parked rider', () => {
+  it.each([['parked'], ['noSensor'], ['sensorLost']])('pauses the pace panel when the rider is %s', (flag) => {
+    const p = soloProps();
+    p.riderLive.rider_a = { ...p.riderLive.rider_a, [flag]: true };
+    const { getByTestId } = render(<CycleRaceScreen {...p} />);
+    expect(getByTestId('pace-delta-paused')).toBeInTheDocument();
+  });
+  it('does not pause while the rider is pedalling', () => {
+    const { queryByTestId } = render(<CycleRaceScreen {...soloProps()} />);
+    expect(queryByTestId('pace-delta-paused')).toBeNull();
+  });
+});

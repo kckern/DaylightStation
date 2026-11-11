@@ -35,4 +35,35 @@ export function evenTicks(min, max, count) {
   return Array.from({ length: n }, (_, i) => (i === n - 1 ? max : Math.round((min + i * step) * 1e9) / 1e9));
 }
 
-export default { continuousWindow, evenTicks };
+/**
+ * Smallest "round" value >= v: 1, 2, 2.5 or 5 times a power of ten. Snapping a
+ * chart window's ceiling to this makes its end and midpoint labels round
+ * (512 m -> 1000 m labelled 0 / 500 m / 1.0 km).
+ * @param {number} v
+ * @returns {number} 0 for a non-finite or non-positive input
+ */
+export function niceCeil(v) {
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  const exp = Math.floor(Math.log10(v));
+  const base = 10 ** exp;
+  // Compare in units of `base` with a small tolerance so 1000 stays 1000.
+  const m = v / base;
+  const step = [1, 2, 2.5, 5, 10].find((k) => m <= k + 1e-9);
+  return Math.round(step * base * 1e9) / 1e9;
+}
+
+/**
+ * Smallest round time window (seconds) >= s, for an x axis labelled at 0, s/2, s:
+ * whole minutes up to 10 min, then 5-minute steps up to an hour, then 30-minute
+ * steps. A distance race's open-ended time axis uses this so its labels read
+ * 0:00 / 2:00 / 4:00 rather than 0:00 / 2:04 / 4:07.
+ * @param {number} s
+ * @returns {number} 0 for a non-finite or non-positive input
+ */
+export function niceCeilTime(s) {
+  if (!Number.isFinite(s) || s <= 0) return 0;
+  const unit = s <= 600 ? 60 : (s <= 3600 ? 300 : 1800);
+  return Math.ceil(s / unit - 1e-9) * unit;
+}
+
+export default { continuousWindow, evenTicks, niceCeil, niceCeilTime };

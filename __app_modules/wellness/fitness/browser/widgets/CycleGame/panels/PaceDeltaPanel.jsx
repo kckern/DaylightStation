@@ -9,6 +9,8 @@ const sizeClass = (zoneBox) => {
   if (h == null) return 'cg-pace--md';
   if (h < 160) return 'cg-pace--sm';
   if (h < 260) return 'cg-pace--md';
+  const w = zoneBox && Number.isFinite(zoneBox.width) ? zoneBox.width : 0;
+  if (h >= 380 && w >= 640) return 'cg-pace--xl';
   return 'cg-pace--lg';
 };
 
@@ -28,9 +30,12 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  * presentational; the layout slot reserves the space, so a null delta still
  * renders a placeholder.
  */
-export default function PaceDeltaPanel({ delta = null, rivalName = '', rivalKind = 'self', zoneBox = null }) {
+export default function PaceDeltaPanel({ delta = null, rivalName = '', rivalKind = 'self', zoneBox = null, paused = false }) {
   const phrase = rivalPhrase(rivalKind, rivalName);
-  const size = sizeClass(zoneBox);
+  const size = `${sizeClass(zoneBox)}${paused ? ' is-paused' : ''}`;
+  // The rider is off the pedals or has no signal: the gap is not moving, so say
+  // so in words (not only by dimming) and mute the ahead/behind colour.
+  const pausedTag = paused ? <div className="cg-pace__paused" data-testid="pace-delta-paused">paused</div> : null;
 
   if (!delta) {
     return (
@@ -38,6 +43,7 @@ export default function PaceDeltaPanel({ delta = null, rivalName = '', rivalKind
         aria-label={`No pace comparison yet against ${phrase}`}>
         <div className="cg-pace__main"><span className="cg-pace__headline">—</span></div>
         <div className="cg-pace__rival">{`vs ${phrase}`}</div>
+        {pausedTag}
       </div>
     );
   }
@@ -65,6 +71,7 @@ export default function PaceDeltaPanel({ delta = null, rivalName = '', rivalKind
         )}
       </div>
       <div className="cg-pace__rival">{`vs ${phrase}`}</div>
+      {pausedTag}
     </div>
   );
 }
@@ -77,5 +84,7 @@ PaceDeltaPanel.propTypes = {
   }),
   rivalName: PropTypes.string,
   rivalKind: PropTypes.string,
-  zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number })
+  zoneBox: PropTypes.shape({ width: PropTypes.number, height: PropTypes.number }),
+  /** The live rider is parked or has no signal: dim, mute the direction colour, say "paused". */
+  paused: PropTypes.bool
 };

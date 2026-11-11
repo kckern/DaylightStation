@@ -101,3 +101,21 @@ describe('PaceDeltaPanel', () => {
     expect(root(view({ delta: d, zoneBox: { width: 300, height: 400 } })).className).toContain('cg-pace--lg');
   });
 });
+
+describe('PaceDeltaPanel paused', () => {
+  it('says "paused", mutes the direction colour and keeps the headline', () => {
+    const v = view({ delta: { gapM: 20, gapS: 4.4, ahead: true }, paused: true });
+    expect(v.getByTestId('pace-delta-paused').textContent).toBe('paused');
+    expect(root(v).className).toContain('is-paused');
+    expect(headline(v).textContent).toBe('4 s');
+  });
+  it('shows no paused word while the rider is live', () => {
+    const v = view({ delta: { gapM: 20, gapS: 4.4, ahead: true } });
+    expect(v.queryByTestId('pace-delta-paused')).toBeNull();
+    expect(root(v).className).not.toContain('is-paused');
+  });
+  it('also pauses the placeholder (no delta yet)', () => {
+    const v = view({ delta: null, paused: true });
+    expect(v.getByTestId('pace-delta-paused')).toBeTruthy();
+  });
+});

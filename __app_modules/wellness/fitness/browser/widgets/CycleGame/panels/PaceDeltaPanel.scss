@@ -13,9 +13,10 @@
   gap: 0.4rem;
   box-sizing: border-box;
   padding: 0.6rem 0.8rem;
-  background: t.$cg-panel;
-  border: 1px solid t.$cg-border;
-  border-radius: 8px;
+  // No box: the readout sits straight on the backdrop so the pace zone and the
+  // gauge zone read as two halves of one band, not a panel beside a gauge.
+  background: none;
+  border: 0;
   overflow: hidden;
   font-family: t.$cg-display;
   font-variant-numeric: tabular-nums;
@@ -60,13 +61,22 @@
   &__rival {
     color: t.$cg-muted;
     font-weight: 600;
-    font-size: 1.1rem;
+    font-size: t.cg-type(1);
     text-align: center;
   }
 
-  &--sm { .cg-pace__headline { font-size: 2.6rem; } .cg-pace__direction { font-size: 1.1rem; } }
-  &--md { .cg-pace__headline { font-size: 4rem; } .cg-pace__direction { font-size: 1.4rem; } }
-  &--lg { .cg-pace__headline { font-size: 6rem; } .cg-pace__direction { font-size: 2rem; } .cg-pace__rival { font-size: 1.4rem; } }
+  // Paused: the rider is off the pedals / has no signal, so the gap is frozen.
+  // Dimmed, direction colour muted, and the word says so (not colour alone).
+  &.is-paused { --cg-pace-color: #{t.$cg-muted}; .cg-pace__main { opacity: 0.55; } }
+  &__paused {
+    color: t.$cg-warn; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+    font-size: t.cg-type(2);
+  }
+
+  &--sm { .cg-pace__headline { font-size: t.cg-type(4); } .cg-pace__direction { font-size: t.cg-type(1); } }
+  &--md { .cg-pace__headline { font-size: t.cg-type(5); } .cg-pace__direction { font-size: t.cg-type(2); } }
+  &--xl { .cg-pace__headline { font-size: t.cg-type(7); } .cg-pace__direction { font-size: t.cg-type(4); } .cg-pace__rival { font-size: t.cg-type(3); } }
+  &--lg { .cg-pace__headline { font-size: t.cg-type(6); } .cg-pace__direction { font-size: t.cg-type(4); } .cg-pace__rival { font-size: t.cg-type(2); } }
 
   // One brief pulse when the state flips; not on every tick.
   // Distinct keyframe names so a flip between states restarts the animation.
@@ -86,6 +96,6 @@
   100% { transform: scale(1); }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include t.cg-reduced-motion {
   .cg-pace { animation: none !important; }
 }

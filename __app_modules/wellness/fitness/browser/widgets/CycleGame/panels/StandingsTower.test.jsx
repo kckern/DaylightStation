@@ -173,3 +173,22 @@ describe('StandingsTower — time win condition', () => {
     expect(metrics[1]).toContain('0:04'); // 40 m / 10 m/s
   });
 });
+
+describe('tower rank column', () => {
+  it('renders every ordinal 1st..6th in full', () => {
+    const riderIds = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const riders = {}; const riderLive = {};
+    riderIds.forEach((id, i) => {
+      riders[id] = { userId: id, displayName: `Rider ${id}`, cumulativeDistanceM: 600 - i * 50, distanceSeries: [0, 1] };
+      riderLive[id] = { rpm: 80, placement: i + 1 };
+    });
+    render(<StandingsTower riderIds={riderIds} riders={riders} riderLive={riderLive} winCondition="distance" elapsedS={10} />);
+    expect(screen.getAllByTestId('tower-rank').map((e) => e.textContent)).toEqual(['1st', '2nd', '3rd', '4th', '5th', '6th']);
+  });
+  it('the rank grid column is wide enough for "2nd" at the 2.2rem step (>= 4.4rem)', async () => {
+    const fs = await import('node:fs');
+    const scss = fs.readFileSync(new URL('./StandingsTower.scss', import.meta.url), 'utf8');
+    const m = /grid-template-columns:\s*([\d.]+)rem/.exec(scss);
+    expect(Number(m[1])).toBeGreaterThanOrEqual(4.4);
+  });
+});

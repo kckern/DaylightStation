@@ -5,8 +5,11 @@
 // on the chip itself so a tap can dismiss it early).
 .cycle-event-toast {
   position: absolute;
-  top: 1.4rem;
-  left: 50%;
+  // Anchored over the chart body, left of centre: clear of the race clock and
+  // the race-menu button (top band), the tower/POV columns and the solo pace
+  // readout (lower band), in every layout.
+  top: 18%;
+  left: 25%;
   z-index: 30;
   min-width: 22rem;
   max-width: min(40rem, 86vw);
@@ -91,7 +94,7 @@
 
 .cycle-event-toast__title {
   font-family: cg.$cg-display;
-  font-size: 1.15rem;
+  font-size: cg.cg-type(2);
   font-weight: 700;
   letter-spacing: 0.01em;
   color: cg.$cg-text;
@@ -103,7 +106,7 @@
 .cycle-event-toast__subtitle {
   margin-top: 0.1rem;
   font-family: cg.$cg-display;
-  font-size: 1.1rem; // was 0.92rem — 10-foot floor (audit UX §7)
+  font-size: cg.cg-type(1); // was 0.92rem — 10-foot floor (audit UX §7)
   font-weight: 500;
   color: cg.$cg-muted;
 }
@@ -126,7 +129,7 @@
 }
 
 // Respect reduced-motion: skip the slide/scale, keep the fade.
-@media (prefers-reduced-motion: reduce) {
+@include cg.cg-reduced-motion {
   .cycle-event-toast--entered { animation: none; }
   .cycle-event-toast__countdown-bar { animation: none; }
 }

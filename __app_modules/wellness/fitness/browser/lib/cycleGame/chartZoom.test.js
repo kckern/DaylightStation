@@ -49,3 +49,51 @@ describe('evenTicks', () => {
   });
   it('fractional counts are floored', () => expect(evenTicks(0, 10, 3.9)).toEqual([0, 5, 10]));
 });
+
+import { niceCeil, niceCeilTime } from './chartZoom.js';
+
+describe('niceCeil', () => {
+  it('snaps up to 1 / 2 / 2.5 / 5 times a power of ten', () => {
+    expect(niceCeil(512)).toBe(1000);
+    expect(niceCeil(1020)).toBe(2000);
+    expect(niceCeil(1990)).toBe(2000);
+    expect(niceCeil(2100)).toBe(2500);
+    expect(niceCeil(2600)).toBe(5000);
+    expect(niceCeil(5001)).toBe(10000);
+    expect(niceCeil(180)).toBe(200);
+    expect(niceCeil(0.7)).toBe(1);
+  });
+  it('keeps an already-round value', () => {
+    expect(niceCeil(500)).toBe(500);
+    expect(niceCeil(1000)).toBe(1000);
+    expect(niceCeil(2500)).toBe(2500);
+  });
+  it('is monotonic and never below its input', () => {
+    let prev = 0;
+    for (let v = 1; v < 20000; v += 37) {
+      const n = niceCeil(v);
+      expect(n).toBeGreaterThanOrEqual(v);
+      expect(n).toBeGreaterThanOrEqual(prev);
+      prev = n;
+    }
+  });
+  it('returns 0 for unusable input', () => {
+    expect(niceCeil(0)).toBe(0);
+    expect(niceCeil(-4)).toBe(0);
+    expect(niceCeil(NaN)).toBe(0);
+  });
+});
+
+describe('niceCeilTime', () => {
+  it('rounds up to whole minutes, then 5 and 30 minute steps', () => {
+    expect(niceCeilTime(247)).toBe(300);
+    expect(niceCeilTime(240)).toBe(240);
+    expect(niceCeilTime(121)).toBe(180);
+    expect(niceCeilTime(601)).toBe(900);
+    expect(niceCeilTime(3700)).toBe(5400);
+  });
+  it('returns 0 for unusable input', () => {
+    expect(niceCeilTime(0)).toBe(0);
+    expect(niceCeilTime(NaN)).toBe(0);
+  });
+});

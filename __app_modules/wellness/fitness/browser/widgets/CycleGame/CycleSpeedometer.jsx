@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import CircularUserAvatar from "../../components/CircularUserAvatar.jsx";
 import { formatDistance } from "../../lib/cycleGame/formatDistance.js";
-import { buildTicks, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from "../../lib/cycleGame/speedometerGeometry.js";
+import { buildTicks, labelFontUnits, buildBandArcs, needleAngleDeg, tickStepsFor, scaleBands, bandForRpm, DEFAULT_CADENCE_BANDS } from "../../lib/cycleGame/speedometerGeometry.js";
 import { createTickLerp } from "../../../../../../__capabilities/gaming/browser/platform/realtime/index.js";
 import { AVATAR_RATIO, OVERLAY_FONT_RATIO } from "../../lib/cycleGame/speedometerOverlayLayout.js";
 import { formatMultiplier } from "../../lib/cycleGame/boostState.js";
@@ -12,6 +12,9 @@ import "./CycleSpeedometer.scss";
 const VIEWBOX = 200;
 const CENTER = 100;
 const GAUGE_RADIUS = 80;
+// Below this gauge width the overlay words and the boost row's next step no
+// longer fit beside the dial numerals.
+const COMPACT_PX = 220;
 
 /** 1 → "1st", 2 → "2nd", 3 → "3rd", 4 → "4th", … */
 function ordinal(n) {
@@ -32,9 +35,11 @@ export default function CycleSpeedometer({
   const steps = useMemo(() => tickStepsFor(maxRpm), [maxRpm]);
   const effTickStep = Number.isFinite(tickStep) ? tickStep : steps.tickStep;
   const effLabelStep = Number.isFinite(labelStep) ? labelStep : steps.labelStep;
+  const pxForLabels = typeof size === 'number' ? size : 220;
+  const labelFontSize = labelFontUnits(pxForLabels, VIEWBOX);
   const ticks = useMemo(
-    () => buildTicks({ maxRpm, tickStep: effTickStep, labelStep: effLabelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS }),
-    [maxRpm, effTickStep, effLabelStep]
+    () => buildTicks({ maxRpm, tickStep: effTickStep, labelStep: effLabelStep, center: CENTER, gaugeRadius: GAUGE_RADIUS, labelFontSize }),
+    [maxRpm, effTickStep, effLabelStep, labelFontSize]
   );
   // Fall back to the system-default colour bands when config supplies none, so the
   // gauge always shows its green→red zones instead of a bare arc.
@@ -108,7 +113,7 @@ export default function CycleSpeedometer({
   const signalProblem = noSensor || sensorLost;
 
   return (
-    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${away ? ' cycle-speedometer--parked' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
+    <div className={`cycle-speedometer${finished ? ' cycle-speedometer--finished' : ''}${away ? ' cycle-speedometer--parked' : ''}${px < COMPACT_PX ? ' cycle-speedometer--compact' : ''}${sensorLost ? ' cycle-speedometer--sensor-lost' : ''} ${className}`.trim()} style={{ width: px, '--cg-rider-tint': riderColor || 'transparent' }}>
       <div className="cycle-speedometer__gauge" style={{ width: px, height: px, fontSize: overlayFontPx }}>
         {away && (
           <div className={`cycle-speedometer__parked${signalProblem ? ' cycle-speedometer__parked--no-signal' : ''}`}
@@ -156,7 +161,8 @@ export default function CycleSpeedometer({
             <text
               key={`l-${t.rpm}`}
               className="cycle-speedometer__tick-label"
-              x={t.outer.x} y={t.outer.y - 4}
+              x={t.labelPos.x} y={t.labelPos.y}
+              style={{ fontSize: labelFontSize }}
               textAnchor="middle"
             >{t.label}</text>
           ))}
@@ -216,7 +222,8 @@ export default function CycleSpeedometer({
           <div className="cycle-speedometer__boost-line">
             <span className="cycle-speedometer__boost-chip" data-testid="cycle-speedometer-boost-chip">
               <span className="cycle-speedometer__boost-label">{boost.label}</span>
-              {` ×${formatMultiplier(boost.mult)}`}
+              {' '}
+              <span className="cycle-speedometer__boost-mult" data-testid="cycle-speedometer-boost-mult">{`×${formatMultiplier(boost.mult)}`}</span>
             </span>
             {boost.hasStrap && boost.next && (
               <span className="cycle-speedometer__boost-next" data-testid="cycle-speedometer-boost-next">

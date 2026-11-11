@@ -148,7 +148,7 @@ $race-menu-item-min: 84px;    // touch target (floor 72px)
   }
 
   &__label {
-    font-size: 1.6rem;
+    font-size: cg.cg-type(3);
     font-weight: 800;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -182,7 +182,7 @@ $race-menu-item-min: 84px;    // touch target (floor 72px)
   to { opacity: 1; transform: translateY(0); }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include cg.cg-reduced-motion {
   .cg-race-menu__scrim,
   .cg-race-menu__sheet { animation: none; }
   .cg-race-menu__open,

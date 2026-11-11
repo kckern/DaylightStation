@@ -25,7 +25,7 @@
 .cgh-ghost-col__date {
   position: sticky; top: 0; z-index: 1;
   text-align: center;
-  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  font-size: t.cg-type(1); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
   color: t.$cg-cyan;
   padding: 6px 0 8px;
   background: linear-gradient(180deg, t.$cg-panel 70%, transparent);
@@ -56,7 +56,7 @@
   }
   &.is-current { border-color: t.$cg-lane-3; }
 
-  &__time { flex-shrink: 0; min-width: 52px; font-size: 0.74rem; color: t.$cg-faint; }
+  &__time { flex-shrink: 0; min-width: 52px; font-size: t.cg-type(1); color: t.$cg-faint; }
 
   // Race-type pill — the format + goal. The metric on each avatar is in the OTHER
   // dimension (time race → distances; distance race → finish times), so the pill
@@ -65,12 +65,12 @@
     flex-shrink: 0;
     display: inline-flex; align-items: center; gap: 4px;
     padding: 3px 9px; border-radius: 999px;
-    font-family: t.$cg-display; font-weight: 800; font-size: 0.72rem;
+    font-family: t.$cg-display; font-weight: 800; font-size: t.cg-type(1);
     letter-spacing: 0.03em; font-variant-numeric: tabular-nums; white-space: nowrap;
     &--dist { color: t.$cg-cyan; background: rgba(33, 230, 255, 0.12); border: 1px solid rgba(33, 230, 255, 0.4); }
     &--time { color: t.$cg-magenta; background: rgba(255, 45, 149, 0.12); border: 1px solid rgba(255, 45, 149, 0.4); }
   }
-  &__type-icon { font-size: 0.82rem; line-height: 1; }
+  &__type-icon { font-size: t.cg-type(1); line-height: 1; }
 
   // Riders take the middle, centered. NEVER wrap — the field overlaps into
   // crescents instead (winner in front), so any count fits one row.
@@ -86,7 +86,7 @@
   // 🥇 on the winner (first/front rider), top-left, allowed to peek outside the circle.
   &__crown {
     position: absolute; top: -4px; left: -4px; z-index: 9;
-    font-size: 1rem; line-height: 1;
+    font-size: t.cg-type(1); line-height: 1;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
   }
 
@@ -103,12 +103,12 @@
     padding: 6px 1px 3px;
     background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85) 58%);
     color: #fff; font-family: t.$cg-display; font-weight: 800;
-    font-size: 0.6rem; line-height: 1; text-align: center;
+    font-size: t.cg-type(1); line-height: 1; text-align: center;
     font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   }
   &__more {
     align-self: center; flex-shrink: 0;
-    font-family: t.$cg-display; font-weight: 700; font-size: 0.85rem; color: t.$cg-faint;
+    font-family: t.$cg-display; font-weight: 700; font-size: t.cg-type(1); color: t.$cg-faint;
   }
 }
 
@@ -148,16 +148,16 @@
   position: absolute; top: 14px; right: 14px;
   appearance: none; width: 34px; height: 34px; border-radius: 50%;
   border: 1px solid t.$cg-border; background: t.$cg-panel; color: t.$cg-muted;
-  font-size: 1.3rem; line-height: 1; cursor: pointer;
+  font-size: t.cg-type(2); line-height: 1; cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
   &:hover { color: t.$cg-text; border-color: t.$cg-border-soft; background: t.$cg-panel-2; }
 }
 .cgh-roster__eyebrow { @include t.cg-eyebrow; color: t.$cg-magenta; }
 .cgh-roster__title {
-  margin: 0; font-family: t.$cg-display; font-weight: 800; font-size: 1.5rem;
+  margin: 0; font-family: t.$cg-display; font-weight: 800; font-size: t.cg-type(3);
   letter-spacing: 0.01em; color: t.$cg-text;
 }
-.cgh-roster__hint { margin: -6px 0 2px; font-size: 0.86rem; color: t.$cg-faint; }
+.cgh-roster__hint { margin: -6px 0 2px; font-size: t.cg-type(1); color: t.$cg-faint; }
 
 .cgh-roster__grid {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
@@ -185,12 +185,12 @@
   &__check {
     position: absolute; right: -2px; bottom: -2px;
     width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
-    background: t.$cg-magenta; color: #fff; font-size: 0.8rem; font-weight: 900;
+    background: t.$cg-magenta; color: #fff; font-size: t.cg-type(1); font-weight: 900;
     box-shadow: 0 0 0 2px t.$cg-panel-2, 0 0 10px rgba(255, 45, 149, 0.6);
     transform: scale(0); transition: transform 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.5);
   }
   &__name {
-    font-family: t.$cg-display; font-weight: 700; font-size: 0.9rem; color: t.$cg-muted;
+    font-family: t.$cg-display; font-weight: 700; font-size: t.cg-type(1); color: t.$cg-muted;
     max-width: 88px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     transition: color 0.15s ease;
   }
@@ -210,7 +210,7 @@
   }
   &__tag {
     @include t.cg-eyebrow;
-    font-size: 0.56rem; letter-spacing: 0.2em; color: t.$cg-faint; margin-top: -2px;
+    font-size: t.cg-type(1); letter-spacing: 0.2em; color: t.$cg-faint; margin-top: -2px;
   }
 }
 
@@ -219,7 +219,7 @@
   appearance: none; cursor: pointer; width: 100%;
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
   padding: 15px 20px; border-radius: 14px; border: 0;
-  font-family: t.$cg-display; font-weight: 800; font-size: 1.15rem; letter-spacing: 0.02em;
+  font-family: t.$cg-display; font-weight: 800; font-size: t.cg-type(2); letter-spacing: 0.02em;
   color: #04121a;
   background: linear-gradient(180deg, lighten(t.$cg-cyan, 6%), t.$cg-cyan);
   box-shadow: 0 0 22px rgba(33, 230, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);

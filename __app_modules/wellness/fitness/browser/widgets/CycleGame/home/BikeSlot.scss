@@ -29,7 +29,7 @@
     position: absolute;
     top: 6px;
     left: 10px;
-    font-size: 0.8rem;
+    font-size: t.cg-type(1);
     color: t.$cg-faint;
     text-shadow: none;
     z-index: 2;
@@ -41,7 +41,7 @@
     color: t.$cg-cyan;
     border-radius: 999px;
     padding: 2px 10px;
-    font-size: 0.7rem;
+    font-size: t.cg-type(1);
     text-align: center;
   }
 
@@ -94,7 +94,7 @@
       // soften the hard top edge of the shade
       background: linear-gradient(180deg, transparent, var(--rpm-overlay-bg) 38%);
     }
-    .rpm-value { font-size: 1.2rem; transition: transform 0.18s ease; }
+    .rpm-value-overlay .rpm-value { font-size: t.cg-type(1); transition: transform 0.18s ease; }
   }
   &__main:hover &__device {
     border-color: t.$cg-cyan;
@@ -111,10 +111,12 @@
     position: absolute;
     right: -4px;
     bottom: -4px;
-    width: 48px;
-    height: 48px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
     background: t.$cg-panel;
+    .avatar-core .hr-value-overlay { height: 34%; }
+    .avatar-core .hr-value-overlay .hr-value { font-size: t.cg-type(1); }
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   }
 
@@ -123,7 +125,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.82rem;
+    font-size: t.cg-type(1);
     font-weight: 600;
     color: t.$cg-cyan;
     text-align: center;
@@ -134,7 +136,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 0.78rem;
+    font-size: t.cg-type(1);
     font-weight: 700;
     svg { width: 14px; height: 14px; flex-shrink: 0; }
     &--none { color: t.$cg-warn; }
@@ -147,7 +149,7 @@
 
   &__rider-name {
     min-height: 16px;
-    font-size: 0.82rem;
+    font-size: t.cg-type(1);
     font-weight: 600;
     color: t.$cg-cyan;
     text-align: center;

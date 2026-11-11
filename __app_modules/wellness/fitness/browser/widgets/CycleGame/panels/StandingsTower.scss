@@ -24,7 +24,7 @@
     display: flex;
     align-items: baseline;
     gap: 0.4rem;
-    font-size: 1.1rem;
+    font-size: t.cg-type(1);
     font-weight: 700;
     color: t.$cg-muted;
     padding-bottom: 0.4rem;
@@ -56,7 +56,7 @@
 
   &__row {
     display: grid;
-    grid-template-columns: 2.6rem 6px 32px 1fr auto;
+    grid-template-columns: 4.8rem 6px 32px minmax(5.2rem, 1fr) auto;
     align-items: center;
     gap: 0.5rem;
     padding: 0.3rem 0.35rem;
@@ -73,7 +73,7 @@
   }
 
   &__rank {
-    font-size: 2rem;
+    font-size: t.cg-type(4);
     font-weight: 800;
     font-style: italic;
     font-variant-numeric: tabular-nums;
@@ -96,7 +96,7 @@
   }
 
   &__name {
-    font-size: 1.3rem;
+    font-size: t.cg-type(2);
     font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
@@ -109,7 +109,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: 0.3rem;
-    font-size: 1.2rem;
+    font-size: t.cg-type(2);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: t.$cg-cyan;
@@ -123,7 +123,7 @@
   }
 
   &__ot-tag {
-    font-size: 1.1rem;
+    font-size: t.cg-type(1);
     font-weight: 800;
     color: t.$cg-warn;
     letter-spacing: 0.04em;
@@ -131,5 +131,5 @@
 
   // Overtime and parked both dim to a neutral muted tone: parked is a pause,
   // not an error, so it never takes the danger red.
-  &__row--dim &__metric { color: t.$cg-muted; }
+  &__row--dim &__metric { color: t.$cg-muted; white-space: normal; text-align: right; line-height: 1.1; max-width: 9rem; }
 }
