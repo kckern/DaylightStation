@@ -41,6 +41,12 @@ describe('checkDayOffCalendar', () => {
     expect(checkDayOffCalendar({ schedule, units }).missingAssignments).toEqual([]);
   });
 
+  it('names an enrichment or major-holiday break that names no assignment at all', () => {
+    const bare = { except: [{ from: '2026-11-26', to: '2026-11-26', label: 'Thanksgiving', tier: 'major-holiday' }] };
+    expect(checkDayOffCalendar({ schedule: bare, units: [] }).missingAssignments)
+      .toEqual([{ label: 'Thanksgiving', assignment: null }]);
+  });
+
   it('answers empty for no calendar', () => {
     expect(checkDayOffCalendar({ schedule: null })).toEqual({ untiered: [], missingAssignments: [] });
   });

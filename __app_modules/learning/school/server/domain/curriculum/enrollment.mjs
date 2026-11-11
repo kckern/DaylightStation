@@ -17,11 +17,20 @@ const shuffle = (items, rng) => {
 
 export function createCourseEnrollment({
   enrollmentId = null, courseId, profile, units, modules = [], policy = {}, display = null,
-  schedule = null, weekend = null, today = null, rng = null,
+  schedule = null, weekend = null, weekendFrom = null, today = null, rng = null,
 } = {}) {
   if (typeof courseId !== 'string' || !courseId) throw new Error('courseId is required');
   if (weekend != null && !WEEKEND_POLICIES.includes(weekend)) {
     throw new Error(`weekend must be one of ${WEEKEND_POLICIES.join(', ')}, got: ${weekend}`);
+  }
+  if (weekendFrom != null && !/^\d{4}-\d{2}-\d{2}$/.test(weekendFrom)) {
+    throw new Error(`weekendFrom must be a YYYY-MM-DD day, got: ${weekendFrom}`);
+  }
+  // Weekend picks read each lesson's module window; without dated modules
+  // there is no "week already open", and the backlog pick would advance the
+  // course on a weekend.
+  if (weekend != null && policy.mode !== 'dated_modules') {
+    throw new Error('weekend needs a course with dated modules (progression.mode: dated_modules)');
   }
   if (enrollmentId !== null && (typeof enrollmentId !== 'string' || !enrollmentId)) {
     throw new Error('enrollmentId must be a non-empty string when provided');
@@ -109,6 +118,9 @@ export function createCourseEnrollment({
     // How Saturday and Sunday choose their one item when the schedule makes
     // them school days: backlog first, then a review, never advancing.
     ...(weekend ? { weekend } : {}),
+    // The first day the weekend policy applies. Before it a weekend is judged
+    // as it always was, so a replayed past Saturday is not re-coloured.
+    ...(weekend && weekendFrom ? { weekendFrom } : {}),
     ...(dated ? {
       moduleSchedule: Object.fromEntries(
         windowed.map((module) => [module.module, { opensOn: module.opensOn, closesOn: module.closesOn }]),

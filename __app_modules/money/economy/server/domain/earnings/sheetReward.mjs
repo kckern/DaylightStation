@@ -90,8 +90,11 @@ function sectionWeek(line, week) {
   const todays = evidence.filter((e) => e.day === week.today);
   if (todays.length !== 1 || todays[0].state !== 'obligated') return null;
   // A subject owed on Saturday is owed on Sunday too (weekend scripture), and
-  // the weekly coin counts all seven days: a Saturday sheet never finishes it.
+  // the weekly coin counts all seven days: a Saturday sheet never finishes it,
+  // and neither does a weekday sheet for a subject that meets on weekends.
   if (week.today === addDays(monday, 5)) return null;
+  const weekendSubjects = week.work?.week?.weekendSubjects ?? [];
+  if (week.today < addDays(monday, 5) && weekendSubjects.includes(line.match?.subject)) return null;
   return oneMore(line);
 }
 

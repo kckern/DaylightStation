@@ -208,7 +208,9 @@ function weekendScripturePick(track, today, latestPassAt) {
   const opened = track.filter((e) => !e.moduleOpensOn || e.moduleOpensOn <= today);
   const byAge = (left, right) => (left.moduleOpensOn ?? '').localeCompare(right.moduleOpensOn ?? '')
     || track.indexOf(left) - track.indexOf(right);
-  const backlog = opened.filter((e) => e.status === 'in_progress' || e.status === 'available').sort(byAge)[0];
+  // A lesson on teacher hold needs a grown-up: it is never the weekend's owed item.
+  const backlog = opened.filter((e) => (e.status === 'in_progress' || e.status === 'available') && !isTeacherHeld(e))
+    .sort(byAge)[0];
   if (backlog) return backlog;
   const currentWeek = opened.map((e) => e.moduleOpensOn).filter(Boolean).sort().at(-1) ?? null;
   const review = opened

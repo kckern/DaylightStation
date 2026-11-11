@@ -357,7 +357,10 @@ export function planLearnerWork({
   const today = studyDate(now, timezone) ?? (typeof now === 'string' ? now.slice(0, 10) : null);
   const weekendPolicyFor = (unit) => {
     if (!unit?.courseId || isNonEmptyString(unit.program) || isDateBound(unit)) return null;
-    const policy = enrollmentByCourse.get(unit.courseId)?.enrollment?.weekend;
+    const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
+    const policy = enrollment?.weekend;
+    // Before `weekendFrom` a weekend is judged as it always was.
+    if (isNonEmptyString(enrollment?.weekendFrom) && (!today || today < enrollment.weekendFrom)) return null;
     return isNonEmptyString(policy) ? policy : null;
   };
   const datedRankByModule = new Map();

@@ -125,5 +125,7 @@ describe('validateSyllabus', () => {
     expect(validateSyllabus({ ...VALID, weekend: 'backlog-then-review' }, SETS).syllabus.weekend).toBe('backlog-then-review');
     expect(validateSyllabus({ ...VALID, weekend: 'review-only' }, SETS).errors.join()).toMatch(/weekend/);
     expect(validateSyllabus(VALID, SETS).syllabus).not.toHaveProperty('weekend');
+    expect(validateSyllabus({ ...VALID, weekend: 'backlog-then-review', weekendFrom: '2026-11-14' }, SETS).syllabus.weekendFrom).toBe('2026-11-14');
+    expect(validateSyllabus({ ...VALID, weekendFrom: 'soon' }, SETS).errors.join()).toMatch(/weekendFrom/);
   });
 });

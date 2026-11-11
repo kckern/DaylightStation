@@ -873,7 +873,8 @@ export default function AgendaStatusBoard({ kids = [], day, onOpenSegment = null
                 // told a child with flashcards waiting that there was
                 // nothing to do. A pinned past day gets no hint: a scan
                 // prints TODAY's agenda, not that day's.
-                <RestDayStatus restDay={summary.restDay} pinned={Boolean(day)} title={dayOffTitle(summary.dayOff)} />
+                <RestDayStatus restDay={summary.restDay} pinned={Boolean(day)}
+                  title={summary.dayOff?.label ? dayOffTitle(summary.dayOff) : null} />
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}

@@ -91,7 +91,7 @@ function sectionWeek(rule, facts, ctx) {
     const sunday = addDays(weekId, 6);
     const weekendAsks = matched.some((f) => (f.day === saturday || f.day === sunday) && f.state !== 'excused');
     const sundayFact = matched.find((f) => f.day === sunday) ?? null;
-    if (weekendAsks && ctx.isOpen(sunday) && (!sundayFact || sundayFact.state !== 'served')) {
+    if (weekendAsks && ctx.isOpen(sunday) && (!sundayFact || !['served', 'excused'].includes(sundayFact.state))) {
       return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to do: Sunday' };
     }
   }

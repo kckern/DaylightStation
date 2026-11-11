@@ -242,7 +242,10 @@ export function dayOffTier(day, schedule) {
   const { errors, schedule: normalized } = validateSchedule(schedule);
   if (errors.length || !normalized || !isStudyDay(day)) return null;
   if (covers(normalized.also ?? [], day)) return null;
-  const span = (normalized.except ?? []).find((s) => day >= s.from && day <= s.to);
+  // A `normal` span excepts nothing, so a day off overlapping it wins: the
+  // name must agree with `scheduleVerdict` about whether anyone was asked.
+  const covering = (normalized.except ?? []).filter((s) => day >= s.from && day <= s.to);
+  const span = covering.find((s) => s.tier !== 'normal') ?? covering[0];
   if (!span) return null;
   return {
     from: span.from,

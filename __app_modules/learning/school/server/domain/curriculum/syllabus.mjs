@@ -122,6 +122,11 @@ export function validateSyllabus(raw, sets = {}) {
       errors.push(`weekend must be ${WEEKEND_POLICIES.join('|')}, got: ${raw.weekend}`);
     } else weekend = raw.weekend;
   }
+  let weekendFrom = null;
+  if (isPresent(raw.weekendFrom)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(raw.weekendFrom))) errors.push(`weekendFrom must be a YYYY-MM-DD day, got: ${raw.weekendFrom}`);
+    else weekendFrom = raw.weekendFrom;
+  }
 
   if (errors.length) return { errors };
   return {
@@ -138,6 +143,7 @@ export function validateSyllabus(raw, sets = {}) {
       ...(timingTemplate ? { timingTemplate } : {}),
       ...(schedule ? { schedule } : {}),
       ...(weekend ? { weekend } : {}),
+      ...(weekendFrom ? { weekendFrom } : {}),
     },
   };
 }

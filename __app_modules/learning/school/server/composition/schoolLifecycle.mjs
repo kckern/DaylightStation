@@ -838,7 +838,7 @@ export async function createSchoolLifecycle({
   // An enrichment / major-holiday break names a date-bound unit; check, once
   // the catalog has loaded, that it exists and covers the break. A missing
   // one degrades the day to stay-home, which works but loses the special.
-  if (householdSchedule?.except?.some((span) => span.assignment)) {
+  if (householdSchedule?.except?.some((span) => span.assignment || ['enrichment', 'major-holiday'].includes(span.tier))) {
     curriculum.listUnits().then((units) => {
       checkDayOffCalendar({ schedule: householdSchedule, units }).missingAssignments
         .forEach((missing) => logger.warn?.('school.calendar.assignment-missing', missing));

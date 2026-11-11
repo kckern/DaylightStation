@@ -259,4 +259,24 @@ describe('weekend policy', () => {
     });
     expect(plain.entries[0].weekendPolicy).toBeUndefined();
   });
+
+  it('weekendFrom keeps past weekends judged as they were', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: weekUnits, modules, policy: datedPolicy, today: '2026-11-01',
+      weekend: 'backlog-then-review', weekendFrom: '2026-11-14',
+    });
+    expect(enrollment.weekendFrom).toBe('2026-11-14');
+    const at = (day) => planLearnerWork({
+      learnerId: 'kid', assignment: { courses: [{ courseId: 'cfm', enrollment }] }, units: weekUnits, now: `${day}T18:00:00.000Z`,
+    }).entries.find((e) => e.unitId === 'w46.d1');
+    expect(at('2026-11-08').weekendPolicy).toBeUndefined();
+    expect(at('2026-11-14').weekendPolicy).toBe('backlog-then-review');
+    expect(() => createCourseEnrollment({ courseId: 'cfm', units: weekUnits, modules, policy: datedPolicy, weekendFrom: 'soon' }))
+      .toThrow(/weekendFrom/);
+  });
+
+  it('refuses a weekend policy on a course without dated modules (it could advance the course)', () => {
+    expect(() => createCourseEnrollment({ courseId: 'cfm', units: weekUnits, policy: { mode: 'module_blocks' }, weekend: 'backlog-then-review' }))
+      .toThrow(/dated/);
+  });
 });

@@ -47,7 +47,8 @@ calendar:
   unit that is the day's special. At boot the app checks it is a published unit
   whose `onDays` covers every day of the break (and, for enrichment, whose
   subject is the one `replaces` names), and logs
-  `school.calendar.assignment-missing` if not. The day still works without it, as
+  `school.calendar.assignment-missing` if not, or if an enrichment or
+  major-holiday break names no assignment at all. The day still works without it, as
   a stay-home day.
 - `also` still wins over `except`: a makeup day inside a break is a school day
   and has no tier.
@@ -123,7 +124,11 @@ See [content layout](./authoring/content-layout.md#date-bound-and-placeholder-un
 The older learners do scripture every day. Their scripture enrollment's
 `schedule.daysOfWeek` includes 6 and 7, and the enrollment carries
 `weekend: backlog-then-review` (also accepted on the syllabus and snapshotted on
-enrollment). On Saturday and Sunday the section owes **one** item:
+enrollment), with `weekendFrom: YYYY-MM-DD`, the first day it applies. Before
+that day a weekend is judged as it always was, so a replayed past Saturday is
+never re-coloured. The policy needs a course with dated modules (it reads each
+week's opening day); elsewhere it is refused. On Saturday and Sunday the section
+owes **one** item:
 
 1. **Backlog** — the oldest undone lesson of any week already open, oldest week
    first.
@@ -131,6 +136,9 @@ enrollment). On Saturday and Sunday the section owes **one** item:
    passed lesson (`review: true` on the agenda entry). No new lesson is authored
    for it.
 3. **Never advance** — a lesson from a week that has not opened is never offered.
+
+A lesson on teacher hold is never the weekend item: it needs a grown-up, so it
+excuses the section as on a weekday (`teacher_hold`).
 
 The weekday lessons keep their schedule. A weekend item is owed (`obligated`)
 even when it is backlog, which a weekday excuses as `optional_backlog`. An
@@ -145,8 +153,11 @@ even when it is backlog, which a weekday excuses as `optional_backlog`. An
   school evidence). A `normal`-tier break counts.
 - **Weekly Scripture coin** (`section-week` on scripture) counts all seven days.
   A missed, settled Saturday or Sunday loses it; on Saturday payday, with
-  Saturday scripture asked, the line waits for Sunday. A learner whose weekend is
-  not a scripture day is paid Saturday as before.
+  Saturday scripture asked, the line waits for Sunday (unless Sunday itself is
+  excused). A learner whose weekend is not a scripture day is paid Saturday as
+  before. A weekday sheet never promises this coin for a subject the learner's
+  latest weekend asked for (`week.weekendSubjects`), since the weekend still
+  counts.
 
 See [economy](../economy/economy.md).
 

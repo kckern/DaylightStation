@@ -66,6 +66,14 @@ describe('naming the day off', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-label', '0 of 1 done');
   });
 
+  it('a pinned past unlabelled away day says No school, not No school today', async () => {
+    schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: {
+      sections: [excused('math', 'household_calendar')], entries: [], dayOff: { tier: 'away', label: null },
+    } });
+    render(<AgendaStatusBoard kids={kids} day="2026-11-04" />);
+    expect(await screen.findByText('No school')).toBeInTheDocument();
+  });
+
   it('a plain weekend still says No school today', async () => {
     schoolApi.agendaPreview.mockResolvedValue({ ok: true, data: {
       sections: [excused('math', 'not_a_school_day')], entries: [], dayOff: null,

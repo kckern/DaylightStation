@@ -73,6 +73,11 @@ describe('Weekly Scripture coin — all seven days count', () => {
     expect(line(out, 'scripture').status).toBe('pending');
   });
 
+  it('a Sunday that is itself excused does not hold the coin', () => {
+    const out = evaluate(scriptureWeek, { sectionDays: [...weekdays, sec('2026-11-14', 'served'), sec('2026-11-15', 'excused', 'household_calendar')] }, '2026-11-15');
+    expect(line(out, 'scripture').status).toBe('earned');
+  });
+
   it('a learner whose weekend is not a scripture day is paid on Saturday as before', () => {
     const out = evaluate(scriptureWeek, { sectionDays: [...weekdays, sec('2026-11-14', 'excused', 'not_a_school_day')] }, '2026-11-14');
     expect(line(out, 'scripture').status).toBe('earned');

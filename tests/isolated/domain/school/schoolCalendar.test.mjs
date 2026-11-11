@@ -234,6 +234,15 @@ describe('day-off tiers', () => {
     expect(validateSchedule({ except: [{ from: '2026-11-11', to: '2026-11-11', tier: 'enrichment', replaces: 'cooking' }] }).errors.join()).toMatch(/cooking/);
     expect(validateSchedule({ except: [{ from: '2026-11-26', to: '2026-11-26', tier: 'major-holiday', assignment: 'holiday-x' }] }).errors).toEqual([]);
   });
+  it('a normal span overlapping a day off never hides the day off', () => {
+    const overlap = { except: [
+      { from: '2026-12-24', to: '2026-12-24', label: 'Named school day', tier: 'normal' },
+      { from: '2026-12-21', to: '2026-12-31', label: 'Trip', tier: 'away' },
+    ] };
+    expect(scheduleVerdict('2026-12-24', overlap).schoolDay).toBe(false);
+    expect(dayOffTier('2026-12-24', overlap)).toMatchObject({ tier: 'away', label: 'Trip' });
+  });
+
   it('existing unlabelled, untiered spans normalize unchanged', () => {
     expect(validateSchedule({ except: ['2026-12-24'] }).schedule).toEqual({ except: [{ from: '2026-12-24', to: '2026-12-24' }] });
   });

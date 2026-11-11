@@ -114,8 +114,10 @@ It matters only when `schedule.daysOfWeek` includes Saturday and Sunday (6 and
 7): the weekday lessons keep their schedule, and each weekend day owes one
 item, the oldest undone lesson of an open module, else a review re-sit of the
 current week's least recently passed lesson, never a lesson from a week that
-has not opened. See [Day-off tiers](./day-off-tiers.md#weekend-scripture). Any
-other value is refused.
+has not opened. `weekendFrom: YYYY-MM-DD` names the first day it applies, so past
+weekends keep their verdicts. It needs a `dated_modules` course. See
+[Day-off tiers](./day-off-tiers.md#weekend-scripture). Any other value is
+refused.
 
 The current syllabus validator
 does not accept a `modules` subset or a term that creates a separate grading

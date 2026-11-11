@@ -80,6 +80,31 @@ describe('weekend scripture: backlog, then review, never advance', () => {
     expect(withPolicy.obligation).toEqual(plain.obligation);
   });
 
+  it('never makes a lesson on teacher hold the weekend item', () => {
+    const entries = [
+      ...week('w1', ['completed', 'completed', 'completed', 'in_progress', 'locked']),
+      ...week('w2', Array(5).fill('completed')),
+    ].map((e) => (e.unitId === 'w1-d4' ? { ...e, remediation: { held: true } } : e));
+    const section = run(entries, SATURDAY, [pass('w2-d1', '2026-11-09T18:00:00.000Z')]);
+    expect(section.next.unitId).not.toBe('w1-d4');
+    expect(section.next.review).toBe(true);
+  });
+
+  it('with only held work and nothing to review, the weekend is not forced owed', () => {
+    const entries = week('w2', ['in_progress', 'locked', 'locked', 'locked', 'locked'])
+      .map((e) => (e.unitId === 'w2-d1' ? { ...e, remediation: { held: true } } : e));
+    expect(run(entries, SATURDAY).obligation).toEqual({ state: 'excused', reason: 'teacher_hold' });
+  });
+
+  it('does not apply before the enrollment\'s weekendFrom day', () => {
+    const entries = [
+      ...week('w1', ['completed', 'completed', 'completed', 'available', 'locked']),
+      ...week('w2', ['completed', 'available', 'locked', 'locked', 'locked']),
+    ].map(({ weekendPolicy: _p, ...rest }) => rest);
+    // The planner drops the policy before weekendFrom; the agenda then picks as before.
+    expect(run(entries, SATURDAY).next.unitId).toBe('w2-d2');
+  });
+
   it('a weekend without the policy behaves as before', () => {
     const entries = week('w2', ['completed', 'available', 'locked', 'locked', 'locked'])
       .map(({ weekendPolicy: _p, ...rest }) => ({ ...rest, schedule: { daysOfWeek: [1, 2, 3, 4, 5] } }));

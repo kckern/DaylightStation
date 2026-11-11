@@ -157,6 +157,10 @@ describe('sheetReward', () => {
     };
     // Friday, every earlier day served, today still to do: this sheet finishes it.
     expect(sheetReward({ week: through(FRIDAY, 'obligated'), unit, mode: 'live' })).toEqual({ silver: 5, gems: 0 });
+    // …unless the subject meets on the weekend too: Saturday and Sunday are still to come.
+    const weekendLearner = through(FRIDAY, 'obligated');
+    weekendLearner.work.week = { weekId: WEEK.from, open: true, weekendSubjects: ['scripture'] };
+    expect(sheetReward({ week: weekendLearner, unit, mode: 'live' })).toBeNull();
     // Midweek: later days are still to come, so it is unclear.
     expect(sheetReward({ week: through(WEDNESDAY, 'obligated'), unit, mode: 'live' })).toBeNull();
     // A day already missed: the week cannot be earned.

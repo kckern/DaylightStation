@@ -9,7 +9,8 @@
  *   sectionDays  each day's per-subject state (served | obligated | excused | faulted)
  *   week         the week row (Monday id), with `open` while the week is under way
  *                and `excusedDays`: the week's weekdays a day-off tier excuses,
- *                future ones included
+ *                future ones included; `weekendSubjects`: the subjects the
+ *                learner's latest weekend asked for (weekend scripture)
  *   units        the week's graded work sessions, with subject/course from the curriculum
  *
  * Reads only the application services School already has (term verdicts, the
@@ -77,8 +78,30 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
       day: d.studyDay, subject: s.subject, state: s.state, reason: s.reason ?? null, timeliness: ON_TIME,
     })));
     const row = (term?.weeks ?? []).find((w) => w.weekId === week.from) ?? null;
-    const weekFact = row ? { weekId: row.weekId, state: row.state, reason: row.reason ?? null, open: row.open === true, excusedDays } : null;
+    const weekFact = row ? {
+      weekId: row.weekId, state: row.state, reason: row.reason ?? null, open: row.open === true, excusedDays,
+      weekendSubjects: this.#weekendSubjects(term?.days ?? [], week.to),
+    } : null;
     return { sectionDays, days, week: weekFact, units: await this.#units(learnerId, inWeek), debriefs: await this.#debriefRows(learnerId, week), coverage: 'ok' };
+  }
+
+  /**
+   * The subjects the most recent judged weekend (up to `through`) asked for:
+   * a section there that was served or owed, not excused. A learner with
+   * weekend scripture has `scripture` here, so a Friday sheet cannot claim to
+   * finish a week whose Saturday and Sunday still count.
+   */
+  #weekendSubjects(days, through) {
+    const weekend = days.filter((d) => typeof d.studyDay === 'string' && d.studyDay <= through
+      && isoWeekday(d.studyDay) >= 6 && Array.isArray(d.sections) && d.sections.length);
+    const latest = weekend.map((d) => d.studyDay).sort().at(-1);
+    if (!latest) return [];
+    const saturday = isoWeekday(latest) === 7
+      ? new Date(Date.parse(`${latest}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10) : latest;
+    const subjects = new Set();
+    weekend.filter((d) => d.studyDay >= saturday && d.studyDay <= latest).forEach((d) => d.sections
+      .filter((s) => s.subject && s.state !== 'excused').forEach((s) => subjects.add(s.subject)));
+    return [...subjects].sort();
   }
 
   async #debriefRows(learnerId, week) {

@@ -127,7 +127,9 @@ export function checkDayOffCalendar({ schedule, units = null } = {}) {
   const untiered = spans.filter((span) => !span.tier).map((span) => span.label ?? `${span.from}..${span.to}`);
   if (!Array.isArray(units)) return { untiered, missingAssignments: [] };
   const byId = new Map(units.filter(Boolean).map((unit) => [unit.unitId, unit]));
-  const missingAssignments = spans.filter((span) => span.assignment).filter((span) => {
+  const needsAssignment = (span) => span.assignment || span.tier === 'enrichment' || span.tier === 'major-holiday';
+  const missingAssignments = spans.filter(needsAssignment).filter((span) => {
+    if (!span.assignment) return true;
     const unit = byId.get(span.assignment);
     if (!unit || !Array.isArray(unit.onDays)) return true;
     if (span.tier === 'enrichment' && span.replaces && unit.subject !== span.replaces) return true;
@@ -135,6 +137,6 @@ export function checkDayOffCalendar({ schedule, units = null } = {}) {
       if (!spanCovers(unit.onDays, day)) return true;
     }
     return false;
-  }).map((span) => ({ label: span.label ?? `${span.from}..${span.to}`, assignment: span.assignment }));
+  }).map((span) => ({ label: span.label ?? `${span.from}..${span.to}`, assignment: span.assignment ?? null }));
   return { untiered, missingAssignments };
 }
