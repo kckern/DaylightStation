@@ -417,7 +417,9 @@ export default function GemBoardOverlay({
 
   if (!open) return null;
   const { board, error, loading } = state;
-  const weekLabel = weekOffset === 0 ? 'This week' : 'Last week';
+  // The heading names the week whose cells are on screen: while the other tab's read is
+  // out, the board still shows the previous week, and so does its heading.
+  const weekLabel = board?.week && thisWeek.current && board.week !== thisWeek.current ? 'Last week' : 'This week';
   const body = (
     <div className={`gem-board gem-board--${surface}`} role="dialog" aria-modal="true" aria-label="Gem board" onPointerDown={poke}>
       <div className="gem-board__backdrop" onClick={() => close('tap')} />

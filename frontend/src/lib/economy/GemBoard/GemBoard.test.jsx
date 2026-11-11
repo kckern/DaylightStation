@@ -373,6 +373,22 @@ describe('GemBoardOverlay', () => {
     expect(document.querySelector('.gem-board__total-label').textContent).toBe('Last week');
   });
 
+  it('the totals heading names the week the board holds, not the tab still loading', async () => {
+    let release = null;
+    const load = vi.fn((week) => (week
+      ? new Promise((resolve) => { release = () => resolve({ ...BOARD, week: '2026-10-26' }); })
+      : Promise.resolve({ ...BOARD, week: '2026-11-02' })));
+    render(<GemBoardOverlay open surface="fitness" load={load} onClose={() => {}} idleMs={0} />);
+    await flush();
+    fireEvent.click(screen.getByText('Last week', { selector: 'button' }));
+    await flush();
+    // This week's cells are still on screen: so is its name.
+    expect(document.querySelector('.gem-board__total-label').textContent).toBe('This week');
+    await act(async () => { release(); });
+    await flush();
+    expect(document.querySelector('.gem-board__total-label').textContent).toBe('Last week');
+  });
+
   it('first opening on a screen says Loading; the board read leaves its outline behind', async () => {
     let release;
     const slow = vi.fn(() => new Promise((resolve) => { release = () => resolve(BOARD); }));
