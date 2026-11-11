@@ -3,9 +3,9 @@
 // Step-mat roster card. Same dark card as its siblings (FitnessSidebar.scss
 // .fitness-device.card-horizontal), laid out for what a mat reports:
 //
-//   [ mat ]  Step Mat            ● STEPPING
-//   [face ]  36 SPM            42      5
-//                             STEPS  STOMPS
+//   [ mat ]  Step Mat          ● STEPPING
+//   [face ]  36      1234      5
+//            SPM     STEPS     STOMPS
 //
 // The face is a rounded SQUARE, matching the fullscreen tile
 // (StepMatVitalsTile): circles in this sidebar mean heart rate and RPM.
@@ -70,19 +70,26 @@
     display: block;
   }
 
+  // Two rows: the name with its state word on the right, then the three
+  // numbers as one table (SPM · steps · stomps) so every value and every label
+  // sits on the same baseline whatever the digit count. Column widths are
+  // equal thirds of the row: a 3-digit rate and a 4-digit step count fit at
+  // the sidebar's 250px with the labels under their own numbers.
   .device-info {
     flex: 1 1 auto;
     min-width: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
     align-items: center;
-    column-gap: 10px;
-    row-gap: 4px;
+    column-gap: 8px;
+    row-gap: 5px;
   }
 
   .device-info .device-name {
     margin: 0;
-    font-size: 1rem;
+    font-size: 1.05rem;
+    line-height: 1.1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -94,15 +101,16 @@
     justify-self: end;
     gap: 5px;
     color: var(--step-mat-state);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    line-height: 1;
+    letter-spacing: 0.04em;
+    line-height: 1.1;
     text-transform: uppercase;
     white-space: nowrap;
   }
 
   .step-mat-card__state-dot {
+    flex: 0 0 auto;
     width: 7px;
     height: 7px;
     border-radius: var(--app-radius-full, 9999px);
@@ -113,46 +121,26 @@
     animation: step-mat-pulse 1.2s ease-in-out infinite;
   }
 
-  .step-mat-card__rate {
-    display: flex;
-    align-items: baseline;
-    gap: 5px;
-    line-height: 1;
-    color: var(--app-text-primary, #ffffff);
-
-    strong {
-      font-size: 1.9rem;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-    }
-
-    span {
-      font-size: 0.8rem;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      color: rgba(255, 255, 255, 0.75);
-    }
-  }
-
-  // Nobody is stepping: the rate is a resting zero, so it recedes while the
-  // session totals stay at full strength.
-  &.inactive .step-mat-card__rate strong { color: var(--app-text-secondary, #aaaaaa); }
-
-  .step-mat-card__totals {
-    display: flex;
-    justify-self: end;
-    gap: 12px;
+  .step-mat-card__stats {
+    grid-column: 1 / -1;
+    display: grid;
+    // Each column is as wide as its widest line (a 4-digit count, or the
+    // STOMPS label) and the three spread across the row.
+    grid-template-columns: repeat(3, minmax(0, auto));
+    justify-content: space-between;
+    column-gap: 10px;
+    align-items: start;
   }
 
   .step-mat-card__stat {
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    min-width: 2.4em;
+    align-items: flex-start;
     line-height: 1;
 
     strong {
-      font-size: 1.15rem;
+      font-size: 1.3rem;
       font-weight: 700;
       color: var(--app-text-primary, #ffffff);
       font-variant-numeric: tabular-nums;
@@ -160,14 +148,18 @@
 
     em {
       margin-top: 3px;
-      font-size: 0.62rem;
+      font-size: 0.75rem;
       font-style: normal;
       font-weight: 600;
-      letter-spacing: 0.07em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.62);
+      color: rgba(255, 255, 255, 0.72);
     }
   }
+
+  // Nobody is stepping: the rate is a resting zero, so it recedes while the
+  // session totals stay at full strength.
+  &.inactive .step-mat-card__stat--rate strong { color: var(--app-text-secondary, #aaaaaa); }
 }
 
 @keyframes step-mat-pulse {
