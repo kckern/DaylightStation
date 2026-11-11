@@ -3,8 +3,9 @@
 // Step-mat roster card. Same dark card as its siblings (FitnessSidebar.scss
 // .fitness-device.card-horizontal), laid out for what a mat reports:
 //
-//   [ mat ]  Step Mat          ● STEPPING
-//   [face ]  36      1234      5
+//   [ mat ]  Step Mat
+//   [face ]  ● STEPPING
+//            36      1234      5
 //            SPM     STEPS     STOMPS
 //
 // The face is a rounded SQUARE, matching the fullscreen tile
@@ -121,11 +122,13 @@
     flex: 1 1 auto;
     min-width: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
+    // One column: name, then its state word on its own row, then the numbers.
+    // Sharing a row with the state pill cropped "Step Mat" to "Step …" at the
+    // sidebar's 250px.
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
     align-items: center;
-    column-gap: 8px;
-    row-gap: 5px;
+    row-gap: 4px;
   }
 
   .device-info .device-name {
@@ -140,7 +143,7 @@
   .step-mat-card__state {
     display: inline-flex;
     align-items: center;
-    justify-self: end;
+    justify-self: start;
     gap: 5px;
     color: var(--step-mat-state);
     font-size: 0.75rem;

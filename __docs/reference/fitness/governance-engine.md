@@ -319,9 +319,9 @@ mat governance. The next physical step re-engages it; this is not a
 whole-session opt-out.
 
 Card layout (`player/panels/RealtimeCards/StepMatCard.jsx`): a rounded-square
-face on the left, then two rows. Row one is the equipment name and a state pill
-(dot plus label); row two is SPM as the large primary number with session steps
-and session stomps as labelled totals on the right. The four states are
+face on the left, then three rows: the equipment name in full (never cropped),
+the state pill (dot plus label) on its own row beneath it, then SPM as the large
+primary number with session steps and session stomps as labelled totals. The four states are
 Stepping (green), Dormant (grey), Ready (blue) and Sensor unavailable (yellow);
 the state colours the pill and the face border. The card does not dim as a
 whole when nobody is stepping: only the SPM number recedes, so totals and
