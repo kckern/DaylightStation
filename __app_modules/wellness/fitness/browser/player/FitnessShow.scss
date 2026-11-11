@@ -151,9 +151,10 @@
 
     /* Episode panel — what is inside the focused episode (EpisodePanel.jsx).
        Read from the bike: nothing under 16px; the title and the names larger.
-       Solid colours only — the one opacity here is the carousel crossfade
-       (motion between whole frames, never a resting state). Block flow inside
-       a scroll box, so nothing is ever flex-shrunk to nothing. */
+       Solid colours only — the one fade here is a grid cell's new still
+       coming in OVER the old one, which stays solid beneath (motion, never a
+       resting state). Block flow inside a scroll box, so nothing is ever
+       flex-shrunk to nothing. */
     .episode-panel {
       display: block;
       min-height: 0;
@@ -165,35 +166,54 @@
       line-height: 1.25;
 
       > * + * { margin-top: 0.6rem; }
-      > .episode-panel__title { margin-top: 0.75rem; }
-      > .episode-panel__meta { margin-top: 0.3rem; }
-      > .episode-panel__description { margin-top: 0.5rem; }
+      > .episode-panel__description { margin-top: 0.6rem; }
       > .episode-panel__actions { margin-top: 0.9rem; }
       > .episode-history { margin-top: 1rem; }
     }
 
+    /* Show › Episode: one breadcrumb that wraps as text, the show's badges
+       (governed lock, voice memo) at its end. */
     .episode-panel__header {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 0.5rem;
       min-height: 28px;
+    }
+    .episode-panel__crumb {
+      flex: 1 1 auto;
+      min-width: 0;
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.2;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      overflow-wrap: anywhere;
     }
     .episode-panel__show {
       font-size: 1.125rem;
       font-weight: 600;
       color: var(--ds-text-mid, #bbb);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
+    .episode-panel__crumb-sep {
+      display: inline-block;
+      margin: 0 0.3rem;
+      color: var(--ds-text-mid, #bbb);
+      vertical-align: 0.05em;
+      svg { display: inline-block; vertical-align: middle; }
+    }
+    .episode-panel__title { color: var(--ds-text-high, #fff); }
     .episode-panel__header-extras {
+      flex-shrink: 0;
       margin-left: auto;
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
     }
 
-    /* The rail: a 2:3 poster beside a 16:9 carousel of the same height
+    /* The rail: a 2:3 poster beside a 16:9 thumbnail of the same height
        (3 : 8 widths), both sized by aspect ratio from first paint. */
     .episode-rail {
       display: grid;
@@ -215,46 +235,57 @@
       overflow: hidden;
       background: #000;
     }
-    .episode-rail__art,
-    .episode-rail__frame {
+    .episode-rail__art {
       position: absolute;
       inset: 0;
       img { width: 100%; height: 100%; object-fit: contain; display: block; }
     }
-    .episode-rail__frame {
-      opacity: 0;
-      transition: opacity 320ms ease;
-      &.is-current { opacity: 1; }
-    }
-    /* The episode's own art stands in until all nine stills are in hand. */
+    /* The episode's own art stands in until all nine first stills are in hand. */
     .episode-rail__carousel.is-live .episode-rail__art { visibility: hidden; }
     .episode-rail__mosaic {
+      position: absolute;
+      inset: 0;
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       grid-template-rows: repeat(3, 1fr);
       gap: 2px;
+      background: #000;
+    }
+    .episode-rail__cell {
+      position: relative;
+      overflow: hidden;
+      background: #000;
+    }
+    .episode-rail__still {
+      position: absolute;
+      inset: 0;
+      width: 100%;
       height: 100%;
-      img { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+      object-fit: contain;
+      display: block;
+      &.is-fresh { animation: episode-still-in 300ms ease-out both; }
+    }
+    /* Loading, out of sight: a still is only put in a cell once it is here. */
+    .episode-rail__preload { display: none; }
+    /* The runtime, on a solid chip in the thumbnail's corner. */
+    .episode-rail__badge {
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+      z-index: 1;
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+      background: #000;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
     }
     @media (prefers-reduced-motion: reduce) {
-      .episode-rail__frame { transition: none; }
+      .episode-rail__still.is-fresh { animation: none; }
     }
 
-    .episode-panel__title {
-      margin: 0;
-      font-size: 1.625rem;
-      font-weight: 700;
-      line-height: 1.15;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    .episode-panel__meta {
-      font-size: 1.0625rem;
-      font-weight: 600;
-      color: var(--ds-text-mid, #bbb);
-    }
     .episode-panel__description {
       margin: 0;
       font-size: 1rem;
@@ -313,12 +344,6 @@
        circumstances underneath. Nobody is listed for not having done it. */
     .episode-history {
       ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
-    }
-    .episode-history__empty {
-      margin: 0;
-      font-size: 1.0625rem;
-      font-weight: 600;
-      color: var(--ds-text-mid, #bbb);
     }
     .episode-history__row {
       display: grid;
@@ -1076,6 +1101,12 @@
       }
     }
   }
+}
+
+/* A grid cell's new still arriving over the old one (which stays solid). */
+@keyframes episode-still-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes fitness-show-skeleton {

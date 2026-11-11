@@ -6,11 +6,13 @@ import { RiderAvatar } from './EpisodeHistory.jsx';
 import EpisodeStillsRail from './EpisodeStillsRail.jsx';
 
 // The show screen's left column: what is inside the focused episode.
-// Top to bottom — the rail (season poster + a carousel of stills from inside
-// the episode), the title, the blurb, Play / Resume + Start over, and the
-// history: each time it was actually done (who, when in words, and the
-// circumstances). Nobody is listed for not having done it. Read at bike
-// distance: nothing under 16px; everything solid — no dimming, no crop.
+// Top to bottom — Show › Episode (a breadcrumb, with the show's badges at its
+// end), the rail (season poster + a 3×3 grid of stills from inside the
+// episode, its runtime on a chip in the corner), the blurb, Play / Resume +
+// Start over, and — only when there is any — the history: each time it was
+// actually done (who, when in words, and the circumstances). Nobody is listed
+// for not having done it. Read at bike distance: nothing under 16px;
+// everything solid — no dimming, no crop.
 
 // Kiosk icons are SVG, never glyphs (fonts render them inconsistently).
 const PlayIcon = () => (
@@ -19,6 +21,11 @@ const PlayIcon = () => (
 const RestartIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v5h5" />
+  </svg>
+);
+const CrumbChevron = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 5l7 7-7 7" />
   </svg>
 );
 const LockGlyph = () => (
@@ -83,15 +90,19 @@ export default function EpisodePanel({
   const resumable = resumeSeconds > 0;
   const description = episode.episodeDescription || episode.summary || '';
   const title = episode.label || episode.title || `Episode ${episode.itemIndex ?? ''}`.trim();
-  const meta = [
-    episode.itemIndex != null ? `Episode ${episode.itemIndex}` : null,
-    duration > 0 ? minutesLabel(duration) : null,
-  ].filter(Boolean).join(' · ');
 
   return (
     <div className="episode-panel" data-testid="episode-panel" ref={panelRef}>
       <header className="episode-panel__header">
-        {showTitle && <span className="episode-panel__show">{showTitle}</span>}
+        <h3 className="episode-panel__crumb">
+          {showTitle && (
+            <>
+              <span className="episode-panel__show">{showTitle}</span>
+              <span className="episode-panel__crumb-sep"><CrumbChevron /></span>
+            </>
+          )}
+          <span className="episode-panel__title">{title}</span>
+        </h3>
         {headerExtras && <span className="episode-panel__header-extras">{headerExtras}</span>}
       </header>
 
@@ -99,10 +110,8 @@ export default function EpisodePanel({
         episode={episode}
         seasonImage={normalizeImageUrl(seasonImage) || null}
         episodeImage={normalizeImageUrl(episode.image) || null}
+        badge={duration > 0 ? minutesLabel(duration) : null}
       />
-
-      <h3 className="episode-panel__title">{title}</h3>
-      {meta && <div className="episode-panel__meta">{meta}</div>}
       {description && <p className="episode-panel__description">{description}</p>}
 
       <div className="episode-panel__actions">
@@ -136,15 +145,13 @@ export default function EpisodePanel({
         )}
       </div>
 
-      <section className="episode-history" data-testid="episode-history">
-        {rows.length === 0
-          ? <p className="episode-history__empty">Nobody has done this one yet</p>
-          : (
-            <ul>
-              {rows.map((row) => <HistoryRow key={row.sessionId} row={row} now={now} />)}
-            </ul>
-          )}
-      </section>
+      {rows.length > 0 && (
+        <section className="episode-history" data-testid="episode-history">
+          <ul>
+            {rows.map((row) => <HistoryRow key={row.sessionId} row={row} now={now} />)}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

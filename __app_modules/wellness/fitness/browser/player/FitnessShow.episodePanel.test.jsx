@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// The always-on episode panel: the rail (season poster + carousel of stills
-// from inside the episode), title, blurb, Resume / Start over, and the history
-// of actual completions.
+// The always-on episode panel: Show › Episode, the rail (season poster + a 3×3
+// grid of stills from inside the episode that refreshes one cell a second,
+// runtime chip in its corner), blurb, Resume / Start over, and the history of
+// actual completions (only when there is some).
 
 beforeAll(() => {
   if (!global.ResizeObserver) {
@@ -14,7 +15,7 @@ beforeAll(() => {
   }
 });
 
-const logSpy = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+const logSpy = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() };
 vi.mock('@/lib/logging/Logger.js', () => ({ default: () => ({ child: () => logSpy }) }));
 vi.mock('@mantine/core', () => ({ LoadingOverlay: () => null, Alert: ({ children }) => <div>{children}</div> }));
 const mockCtx = {
@@ -97,28 +98,47 @@ const historyRows = (container) => [...container.querySelectorAll('[data-testid=
 const waitForMosaic = (container) => waitFor(() => {
   const el = container.querySelector('[data-testid="episode-mosaic"]');
   expect(el).toBeTruthy();
-  expect(el.querySelectorAll('img')).toHaveLength(9);
+  expect(el.querySelectorAll('.episode-rail__cell')).toHaveLength(9);
   return el;
 }, { timeout: 3000 });
-const loadAll = (mosaic) => act(() => { mosaic.querySelectorAll('img').forEach((img) => fireEvent.load(img)); });
+const carouselOf = (container) => container.querySelector('.episode-rail__carousel');
+const cellSrcs = (container) => [...container.querySelectorAll('.episode-rail__cell')]
+  .map((cell) => cell.querySelector('.episode-rail__still.is-over')?.getAttribute('src') ?? null);
+const preloads = (container) => [...container.querySelectorAll('.episode-rail__preload')];
+// Every hidden preload in the DOM finishes loading (or fails).
+const settlePreloads = (container, event = 'load') => act(() => {
+  preloads(container).forEach((img) => (event === 'load' ? fireEvent.load(img) : fireEvent.error(img)));
+});
+const still = (offsetMs) => `/api/v1/proxy/plex/library/parts/777/indexes/sd/${offsetMs}?w=240&h=135`;
+// 81 stills through 5 %…95 % of a 30-minute part: cell c, frame f is still c*9+f.
+const offsetOf = (cell, frame) => Math.round(1800000 * (0.05 + (0.9 * (cell * 9 + frame + 0.5)) / 81));
 
 describe('FitnessShow episode panel', () => {
   beforeEach(() => { DaylightAPI.mockReset(); });
 
-  it('describes the next-up episode without a tap: rail, title, blurb, Play, then history', async () => {
+  it('reads Show › Episode above the rail, then the blurb, Play, and history', async () => {
     mockApi(show());
     const { container } = renderShow();
-    await waitFor(() => expect(panel(container)?.textContent).toContain('Ep 1'));
+    await waitFor(() => expect(historyRows(container)).toHaveLength(2));
     const el = panel(container);
+    const crumb = el.querySelector('.episode-panel__crumb');
+    expect(crumb.querySelector('.episode-panel__show').textContent).toBe('Panel Show');
+    expect(crumb.querySelector('.episode-panel__title').textContent).toBe('Ep 1');
+    expect(crumb.querySelector('.episode-panel__crumb-sep svg')).toBeTruthy();
+    // No episode number line; the runtime is a chip on the thumbnail.
+    expect(el.querySelector('.episode-panel__meta')).toBeNull();
+    expect(el.textContent).not.toMatch(/Episode 1/);
+    expect(el.querySelector('.episode-rail__carousel .episode-rail__badge').textContent).toBe('30 min');
     expect(el.querySelector('.episode-panel__description').textContent).toBe('First one.');
-    expect(el.querySelector('.episode-panel__meta').textContent).toBe('Episode 1 · 30 min');
     const order = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     const rail = el.querySelector('[data-testid="episode-rail"]');
-    const title = el.querySelector('.episode-panel__title');
+    const description = el.querySelector('.episode-panel__description');
     const play = el.querySelector('[data-testid="play-episode-button"]');
-    expect(order(rail, title)).toBe(true);
-    expect(order(title, el.querySelector('.episode-panel__description'))).toBe(true);
-    expect(order(el.querySelector('.episode-panel__description'), play)).toBe(true);
+    expect(order(crumb, rail)).toBe(true);
+    expect(order(rail, description)).toBe(true);
+    // The blurb sits directly under the rail.
+    expect(rail.nextElementSibling).toBe(description);
+    expect(order(description, play)).toBe(true);
     expect(order(play, el.querySelector('[data-testid="episode-history"]'))).toBe(true);
   });
 
@@ -130,54 +150,141 @@ describe('FitnessShow episode panel', () => {
       const rail = container.querySelector('[data-testid="episode-rail"]');
       expect(rail.querySelector('.episode-rail__poster img').getAttribute('src')).toBe('season1.jpg');
       expect(rail.querySelector('.episode-rail__art img').getAttribute('src')).toBe('e1.jpg');
-      expect(rail.querySelector('.episode-rail__carousel').getAttribute('data-frame')).toBe('art');
+      expect(carouselOf(container).getAttribute('data-state')).toBe('art');
     });
 
-    it('asks the media server once for the part, then shows a 3×3 mosaic of nine stills spaced through the runtime', async () => {
+    it('asks the media server once, then shows a 3×3 grid — each cell the first still of its own slice — once all nine have loaded', async () => {
       mockApi(show());
       const { container } = renderShow();
-      const mosaic = await waitForMosaic(container);
+      await waitFor(() => expect(preloads(container)).toHaveLength(9), { timeout: 3000 });
       expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('/api/v1/proxy/plex/library/metadata/401'))).toHaveLength(1);
-      const srcs = [...mosaic.querySelectorAll('img')].map((i) => i.getAttribute('src'));
-      expect(srcs[0]).toBe('/api/v1/proxy/plex/library/parts/777/indexes/sd/180000?w=400&h=225');
-      expect(srcs[8]).toBe('/api/v1/proxy/plex/library/parts/777/indexes/sd/1620000?w=400&h=225');
-      // Not live until every tile has loaded: the art stays, no blank tile ever shows.
-      const carousel = container.querySelector('.episode-rail__carousel');
-      expect(carousel.getAttribute('data-frame')).toBe('art');
-      loadAll(mosaic);
-      expect(carousel.getAttribute('data-frame')).toBe('0');
-      expect(carousel.className).toContain('is-live');
-      // Ten frames: the mosaic, then each still whole.
-      const frames = carousel.querySelectorAll('.episode-rail__frame');
-      expect(frames).toHaveLength(10);
-      expect(frames[0].className).toContain('is-current');
-      expect(frames[3].querySelector('img').getAttribute('src')).toBe(srcs[2]);
+      expect(preloads(container).map((i) => i.getAttribute('src'))).toEqual(
+        Array.from({ length: 9 }, (_, c) => still(offsetOf(c, 0))),
+      );
+      // Nothing shown until every cell has a loaded still: the art stays, no blank cell.
+      expect(container.querySelector('[data-testid="episode-mosaic"]')).toBeNull();
+      expect(carouselOf(container).getAttribute('data-state')).toBe('art');
+      act(() => { preloads(container).slice(0, 8).forEach((img) => fireEvent.load(img)); });
+      expect(container.querySelector('[data-testid="episode-mosaic"]')).toBeNull();
+      expect(preloads(container)).toHaveLength(1);
+      act(() => { fireEvent.load(preloads(container)[0]); });
+      await waitForMosaic(container);
+      expect(carouselOf(container).getAttribute('data-state')).toBe('live');
+      expect(cellSrcs(container)).toEqual(Array.from({ length: 9 }, (_, c) => still(offsetOf(c, 0))));
     });
 
-    it('advances every 1.5 s and loops back to the mosaic', async () => {
+    it('refreshes one cell a second, in reading order, each to the next still of its own slice', async () => {
       mockApi(show());
       const { container } = renderShow();
-      const mosaic = await waitForMosaic(container);
+      await waitFor(() => expect(preloads(container)).toHaveLength(9), { timeout: 3000 });
       vi.useFakeTimers();
-      loadAll(mosaic);
-      const carousel = container.querySelector('.episode-rail__carousel');
-      expect(carousel.getAttribute('data-frame')).toBe('0');
-      act(() => { vi.advanceTimersByTime(1500); });
-      expect(carousel.getAttribute('data-frame')).toBe('1');
-      act(() => { vi.advanceTimersByTime(1500 * 9); });
-      expect(carousel.getAttribute('data-frame')).toBe('0');
+      settlePreloads(container);
+      expect(container.querySelectorAll('.episode-rail__cell')).toHaveLength(9);
+      const before = cellSrcs(container);
+      for (let cell = 0; cell < 9; cell += 1) {
+        // The next frame is preloaded before its turn.
+        expect(preloads(container).map((i) => i.getAttribute('src'))).toEqual([still(offsetOf(cell, 1))]);
+        settlePreloads(container);
+        act(() => { vi.advanceTimersByTime(999); });
+        expect(cellSrcs(container)[cell]).toBe(before[cell]);
+        act(() => { vi.advanceTimersByTime(1); });
+        const now = cellSrcs(container);
+        expect(now[cell]).toBe(still(offsetOf(cell, 1)));
+        // Only that cell changed.
+        now.forEach((src, i) => { if (i > cell) expect(src).toBe(before[i]); });
+      }
+      // Round two starts back at the top-left with each cell's third still.
+      expect(preloads(container).map((i) => i.getAttribute('src'))).toEqual([still(offsetOf(0, 2))]);
     });
 
-    it('stands still on the mosaic under prefers-reduced-motion', async () => {
+    it('crossfades over the still it replaces, which stays solid underneath', async () => {
+      mockApi(show());
+      const { container } = renderShow();
+      await waitFor(() => expect(preloads(container)).toHaveLength(9), { timeout: 3000 });
+      vi.useFakeTimers();
+      settlePreloads(container);
+      settlePreloads(container);
+      act(() => { vi.advanceTimersByTime(1000); });
+      const cell = container.querySelectorAll('.episode-rail__cell')[0];
+      expect(cell.querySelector('.episode-rail__still.is-under').getAttribute('src')).toBe(still(offsetOf(0, 0)));
+      const over = cell.querySelector('.episode-rail__still.is-over');
+      expect(over.getAttribute('src')).toBe(still(offsetOf(0, 1)));
+      expect(over.className).toContain('is-fresh');
+    });
+
+    it('never swaps to a still that has not loaded: the cell keeps its picture and the next cell takes its turn', async () => {
+      mockApi(show());
+      const { container } = renderShow();
+      await waitFor(() => expect(preloads(container)).toHaveLength(9), { timeout: 3000 });
+      vi.useFakeTimers();
+      settlePreloads(container);
+      const before = cellSrcs(container);
+      // Cell 0's next still is still loading when its second comes.
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(cellSrcs(container)[0]).toBe(before[0]);
+      expect(preloads(container).map((i) => i.getAttribute('src'))).toEqual([still(offsetOf(1, 1))]);
+      // A still that fails is stepped over for good.
+      settlePreloads(container, 'error');
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(cellSrcs(container)[1]).toBe(before[1]);
+      expect(logSpy.sampled).toHaveBeenCalledWith('fitness.show.still_failed', expect.objectContaining({ episode: '401' }), expect.anything());
+    });
+
+    it('passes over a still of one flat colour (a fade to black) as if it had failed', async () => {
+      // The grid samples each still on a tiny canvas once it loads.
+      const flatSrc = still(offsetOf(2, 0));
+      let drawn = null;
+      const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
+        drawImage: (img) => { drawn = img.getAttribute('src'); },
+        getImageData: (x, y, w, h) => {
+          const data = new Uint8ClampedArray(w * h * 4);
+          if (drawn !== flatSrc) for (let i = 0; i < data.length; i += 1) data[i] = (i * 53) % 256;
+          return { data };
+        },
+      }));
+      mockApi(show());
+      const { container } = renderShow();
+      await waitFor(() => expect(preloads(container)).toHaveLength(9), { timeout: 3000 });
+      settlePreloads(container);
+      // Cell 2 tries its next still instead; the grid waits for it.
+      expect(container.querySelector('[data-testid="episode-mosaic"]')).toBeNull();
+      expect(preloads(container).map((i) => i.getAttribute('src'))).toEqual([still(offsetOf(2, 1))]);
+      settlePreloads(container);
+      expect(cellSrcs(container)[2]).toBe(still(offsetOf(2, 1)));
+      expect(logSpy.sampled).toHaveBeenCalledWith('fitness.show.still_flat', expect.objectContaining({ episode: '401' }), expect.anything());
+      getContext.mockRestore();
+    });
+
+    it('stands still under prefers-reduced-motion', async () => {
       vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })));
       mockApi(show());
       const { container } = renderShow();
-      const mosaic = await waitForMosaic(container);
+      await waitFor(() => expect(preloads(container)).toHaveLength(9), { timeout: 3000 });
       vi.useFakeTimers();
-      loadAll(mosaic);
-      const carousel = container.querySelector('.episode-rail__carousel');
-      act(() => { vi.advanceTimersByTime(1500 * 4); });
-      expect(carousel.getAttribute('data-frame')).toBe('0');
+      settlePreloads(container);
+      const before = cellSrcs(container);
+      expect(preloads(container)).toHaveLength(0);
+      act(() => { vi.advanceTimersByTime(1000 * 12); });
+      expect(cellSrcs(container)).toEqual(before);
+    });
+
+    it('pauses while the page is hidden', async () => {
+      mockApi(show());
+      const { container } = renderShow();
+      await waitFor(() => expect(preloads(container)).toHaveLength(9), { timeout: 3000 });
+      vi.useFakeTimers();
+      settlePreloads(container);
+      settlePreloads(container);
+      const before = cellSrcs(container);
+      const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+      act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(cellSrcs(container)).toEqual(before);
+      hidden.mockReturnValue('visible');
+      act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(cellSrcs(container)[0]).toBe(still(offsetOf(0, 1)));
+      hidden.mockRestore();
     });
 
     it('keeps the episode art, static, when the part has no preview index', async () => {
@@ -188,7 +295,7 @@ describe('FitnessShow episode panel', () => {
       await waitFor(() => expect(logSpy.info).toHaveBeenCalledWith('fitness.show.stills_unavailable', expect.objectContaining({ episode: '401' })));
       expect(container.querySelector('[data-testid="episode-mosaic"]')).toBeNull();
       expect(container.querySelector('.episode-rail__art img').getAttribute('src')).toBe('e1.jpg');
-      expect(container.querySelector('.episode-rail__carousel').getAttribute('data-frame')).toBe('art');
+      expect(carouselOf(container).getAttribute('data-state')).toBe('art');
     });
   });
 
@@ -209,15 +316,15 @@ describe('FitnessShow episode panel', () => {
       expect(panel(container).textContent).not.toContain('Rider Z');
     });
 
-    it('says so, in one line, when nobody has done it', async () => {
+    it('shows no history section at all when nobody has done it', async () => {
       mockApi(show());
       const { container } = renderShow();
-      await waitFor(() => expect(panel(container)?.textContent).toContain('Ep 1'));
+      await waitFor(() => expect(historyRows(container)).toHaveLength(2));
       fireEvent.keyDown(window, { key: 'ArrowRight' });
       fireEvent.keyDown(window, { key: 'ArrowRight' });
       await waitFor(() => expect(panel(container).querySelector('.episode-panel__title').textContent).toContain('Ep 3'));
-      expect(historyRows(container)).toHaveLength(0);
-      expect(panel(container).querySelector('.episode-history__empty').textContent).toBe('Nobody has done this one yet');
+      expect(container.querySelector('[data-testid="episode-history"]')).toBeNull();
+      expect(panel(container).textContent).not.toMatch(/Nobody/);
     });
   });
 
@@ -331,7 +438,7 @@ describe('FitnessShow episode panel — kiosk display standard (FitnessShow.scss
     expect(small).toEqual([]);
   });
   it('shows stills whole (contain, never cover) and respects reduced motion', () => {
-    const rail = block.slice(block.indexOf('.episode-rail {'), block.indexOf('.episode-panel__title {\n'));
+    const rail = block.slice(block.indexOf('.episode-rail {'), block.indexOf('\n    .episode-panel__description {'));
     expect(rail).not.toMatch(/object-fit:\s*cover/);
     expect(rail).toMatch(/prefers-reduced-motion/);
   });
