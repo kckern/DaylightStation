@@ -526,13 +526,26 @@ and the school agenda (the board header's **Gems** door and each card's gem
 door), with a This week / Last week switch in the header. It draws one line
 per child in roster order and one column per gem row. The columns are gathered
 into their sections, each a tinted block under its name, and every column's
-name leans over it so all of them fit. The child's gem count for the week
-closes the line. Everything on the board is about the week shown: the
-response's lifetime counts are not drawn anywhere.
+name leans over it at -40°, on one line, never wrapped or broken mid-word. The
+child's gem count closes the line: `totals.week`, the gems held (earned plus a
+lead), which is exactly the whole gems drawn on that line. Its heading names
+the week whose cells are on screen ("This week" / "Last week"), taken from the
+board in hand, so it does not change until the other week's read lands. The
+header carries a legend: a whole gem "Got it", a cut gem "On the way".
+Everything on the board is about the week shown: the response's lifetime
+counts are not drawn anywhere.
 
-Everything inside the panel is sized in `em` from one font size that follows
-the screen (derived by `boardUnits` from `95vw / --gem-w` and `95vh / --gem-h`), so the same board fills the garage
-TV and fits a 1280×800 tablet with no separate layout.
+Everything inside the panel is sized in `em` from one font size. `useBoardFit`
+(`useBoardFit.js`) measures the board once it is drawn: the grid's resolved
+column tracks, how far the last slanted name leans past them (given back as
+the grid's right padding, `--gem-lean`), the tallest slanted name (the name
+row's height, `--gem-head`), the header and the panel's padding, all in `em`.
+Because everything is in `em`, that size does not depend on the font size, so
+one measurement gives the font size that fills 95% of the tighter screen
+dimension (clamped 12–40px). It re-measures when the fonts load, on resize, and
+when the board's columns or week change. The board never scrolls on the garage
+TV or a 1280×800 tablet. Until the first measurement the stylesheet's
+`clamp(12px, min(1.25vw, 2.3vh), 28px)` applies.
 
 **The highlighted child** (the child the board was opened for, or the one ↑/↓
 moved to) has one bar behind the whole line (`.gem-board__lane`), drawn the
@@ -545,32 +558,37 @@ own side padding). The grid does not move and the bar's rounded ends are drawn
 whole. `--gem-lane-out` has to stay below the panel's side padding (1em), or
 the panel's own `overflow: hidden` cuts the bar instead.
 
-Each cell is one glyph (`GemGlyph.jsx`) and is exactly one of four things:
-a blank cell, a full gem, a full gem inside a ring of done days, or the word
-"leading". The first matching look wins:
+Each cell is one glyph (`GemGlyph.jsx`) and is exactly one of three things:
+a blank cell, a whole gem, or a gem cut like the ring around it. A gem is a
+plain stone in its area's colour: no icon on its face (the area is its colour;
+the section headers carry the area icons, and the family card's Gems chip is
+the colour legend). The first matching look wins:
 
 | Look | When | Draws |
 |---|---|---|
-| `lit` | `week > 0`, or `earned` / `won` | the full gem in the row's area colour with the area's icon on its face, filling the cell; a `×n` badge when `week > 1`; inside the ring too if a day-count is still in reach |
-| `streak` | a day-count with at least one day done whose `reach` is not `out` | the same full gem inside a ring of `need` segments: done days filled in the area colour, days to go a plain neutral outline. A day-count carries no words and no hue for status |
-| `holding` | `leading` | the word "leading": a contest lead draws no gem; it sits with whoever leads and moves when the lead does |
+| `lit` | `week > 0`, or `earned` / `won` | the whole gem, filling the cell; inside the ring too if a day-count is still in reach |
+| `holding` | `leading` | the whole gem, the same as earned: a lead is a gem while it lasts, and moves when the lead does. It outranks a running day-count in the same row (the ring is still drawn around it) |
+| `streak` | a day-count with at least one day done whose `reach` is not `out` | a ring of `need` segments (done days in the rule's colour, days to go a neutral outline) around the gem **cut like the ring**: from 12 o'clock clockwise, `have/need` of the stone in full colour, the rest a grey stone at 30% opacity. The wedge edges fall on the ring's gaps. No words and no hue for status |
 | `unknown` | the evidence could not be read | a blank cell (the `aria-label` and the detail box still say `can’t tell yet`) |
 | `off` | `disabled` | a muted `–` |
 | `none` | anything else, including a day-count not begun, one out of reach, and a gem still open | a blank cell |
 
-A gem with a ring around it is drawn smaller, inside it; a gem without one
-fills the cell. Nothing on the board is partly transparent, animated or amber:
-a gem is never dimmed and status is never a hue. A cell carries no numerals but
+A `lit` or `holding` gem carries a `×n` badge when the cell holds more than one
+gem: `max(week, held)`, so a row that folds a won personal best with a held
+contest lead reads `×2`. A gem with a ring around it is drawn smaller, inside
+it; a gem without one fills the cell. The cut stone's grey 30% is the one
+see-through thing on the board (the stylesheet test pins it); nothing is
+animated or amber, and status is never a hue. A cell carries no numerals but
 the `×n` badge; day counts and scores live in the detail box. Nothing marks
-failure: a gem not earned is a blank cell, never a cross. Each cell's `aria-label` says
-the same in words ("3 of 5 days, on track"; a lead held in a row that also
-counts days reads "leading, and 2 of 4 days, on track").
+failure: a gem not earned is a blank cell, never a cross. Each cell's
+`aria-label` says the same in words ("3 of 5 days, on track"; a lead held in a
+row that also counts days reads "leading, and 2 of 4 days, on track").
 
 **Opening without a jump.** Each read of this week's board leaves its outline
 in the browser (`localStorage` `daylight.gemBoard.shape.v1`: the learners, the
 sections and the gem columns, no cells or totals; `boardShape`). The next
 opening on that screen draws the outline at once, at the board's full size,
-with a blank cell in every position and empty totals (`aria-busy`, nothing to
+with a small dark dot in every cell (so it never reads as an empty week) and empty totals (`aria-busy`, nothing to
 press), and the gems fill in when the read lands, so the panel does not change
 size. A screen's first opening has no outline and says "Loading…". If the read
 brings more children or columns than the outline had, the board grows to fit
@@ -723,11 +741,12 @@ is the preview's current study day, `currentStudyDay()`).
     Logged `economy.workout-earnings.query`.
   - `GET /api/v1/earnings/standings` (per learner: wallet silver, week rings,
     `gem: 'leading' | 'won' | null` from the `ring-contest` line, and `gems`:
-    the gems that learner has EARNED this week, rolled up by area from every
-    Gem Board row as `[{area, earned, color}]` — `earned` is the sum of the
-    area's cells' `week` (paid or owed this week), `color` the area's own
-    (`GEM_AREAS`), in Move · School · Games order, only areas with
-    `earned > 0`; a lead, a running day-count or a zero is never in it. Empty,
+    the gems that learner HOLDS this week, rolled up by area from every
+    Gem Board row as `[{area, held, color}]` — `held` is the sum of the
+    area's cells' `held` (earned, plus a contest gem while leading: the gems
+    the board draws whole), `color` the area's own (`GEM_AREAS`), in
+    Move · School · Games order, only areas with `held > 0`; a running
+    day-count or a zero is never in it. Empty,
     with `economy.standings.gems-unavailable` logged, when the board cannot be
     read).
   All read-only, `no-store`; with the catalog `off` they return no learners.

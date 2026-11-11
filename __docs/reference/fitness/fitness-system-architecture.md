@@ -1018,17 +1018,24 @@ Monday 04:00 local through the next Monday 04:00, matching
 `weeklyWindow.mjs` and the State Gates producer. Monday therefore resets the
 current bar even though Sunday is less than seven days old.
 
-Bar height is rings (the bars carry no numbers or dates: at four to a column
-they cannot be read from the room). Green, yellow, orange, and red
+Bar height is rings against that person's best of the four weeks. Each bar has
+its ring count above it and its Monday below it as a day-month date ("19 Oct",
+`dayLabel`; no slash for a child to misread), both bold at 13–17px in a solid
+grey, and cyan for the current week. The current week is marked by that cyan
+text and its full-brightness fill (past weeks' fills are darkened with
+`brightness(0.62)`), never by an outlined box. Green, yellow, orange, and red
 remain as the composition bands: session zone minutes are weighted by the
 configured per-zone ring rates and normalized back to the exact stored ring
 total. The top-right household total uses the canonical `RingIcon`. The sampled
 `momentum.render` event includes `householdRings` and `weekStartMs` so a stale or
 mis-bucketed home screen can be reconstructed from production logs.
 
-Each card's rail (bank silver + the gems earned this week) is a button that opens
+Each card's rail (bank silver + the gems held this week) is a button that opens
 the shared Gem Board focused on that person, and the headline carries a **Gems**
-chip that opens it with no focus (shown whenever the economy is not `off`).
+chip that opens it with no focus (shown whenever the economy is not `off`). The
+chip is the area legend: a purple gem "Move", a green gem "School", an orange
+gem "Games" (`AREA_COLORS` / `AREA_WORDS` in `GemBoard/AreaIcon.jsx`, mirroring
+the server's `GEM_AREAS`).
 While it is open the garage gamepads drive it (`useGamepadKeys`: D-pad ←/→
 moves the column and ↑/↓ a row cursor, A opens the cell under the cursor or,
 with no row picked, toggles the week, B closes the detail box, then the board). See the economy reference, "Gem Board".
@@ -1040,26 +1047,30 @@ than showing skeletons on every return from the player.
 
 A card reads top to bottom, with no slack between rows: the avatar with the
 name as a tag over its lower edge; **this week's rings** (ring icon + number,
-the largest figure on the card); the four week bars, which take all remaining
-height; then the **rail** at the foot. The home layout puts this panel under the
-suggestions, so the rail is the lowest thing on the touch screen and a child can
-reach it. The rail holds **bank silver** (the coin over the count) and one chip
-per area the person has EARNED gems in this week: the board's own gem
-(`GemGlyph`: solid area colour, area icon) over `×N` when N > 1, in Move ·
-School · Games order. Nothing in progress, leading or zero is ever drawn; a
-child with nothing earned shows the coin alone. The data is the `standings`
-screen source, `GET /api/v1/earnings/standings` (`silver`, and `gems` rolled up
-by area from the Gem Board itself), injected by FitnessApp when the layout uses
-`fitness:momentum`, persisted like `sessions` and refetched after a workout.
-People without a wallet get an empty rail; with the economy off, or the call
-failing, every rail is empty and the ring bars stand alone.
+at the name's size); the four week bars with their counts and dates, which
+take all remaining height; then the **rail** at the foot. The home layout puts
+this panel under the suggestions, so the rail is the lowest thing on the touch
+screen and a child can reach it. The rail holds **bank silver** and one chip per
+area the person holds gems in this week, in Move · School · Games order. Every
+token is its picture over its count on one line: the silver coin over the
+balance, a plain gem in the area's colour (`GemIcon`, no icon on its face) over
+the number held. Held is earned plus a contest gem while leading, the same
+gems the board draws whole. Nothing in progress or zero is drawn; a child with
+nothing held shows the coin alone. The data is the `standings` screen source,
+`GET /api/v1/earnings/standings` (`silver`, and `gems: [{area, held, color}]`
+rolled up from the Gem Board itself), injected by FitnessApp when the layout
+uses `fitness:momentum`, persisted like `sessions` and refetched after a
+workout. A person without a wallet gets no rail at all: the card
+(`is-walletless`) spans only the first three rows, so its panel ends at its
+bars, and the bars and dates stay on the shared baseline. With the economy off,
+or the call failing, there are no rails and the ring bars stand alone.
 
 The cards share four grid rows (`subgrid`), so every card's hero, bars and foot
 line up across the panel and the tallest foot sets the row. Sizes follow one
 person's column (`--col`: the cards row is the size container, divided by the
-head count the widget passes as `--cols`) with floors — hero 26px, coin and gem
-26px, counts 20–28px CSS — and when five columns cannot fit everything, the bars
-give up height first. The widget pads its own panel 10–12px
+head count the widget passes as `--cols`) with floors: name and hero 18–24px,
+week counts and dates 13–17px, coin and gem 26–40px, counts 20–28px. When five
+columns cannot fit everything, the bars give up height first. The widget pads its own panel 10–12px
 (`.screen-widget:has(> .fitness-momentum)`), not the theme's 16px.
 
 ### Leaving the player → the session just finished
