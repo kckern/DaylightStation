@@ -11,7 +11,8 @@ const setup = () => {
   const repo = {
     getMatchIndex: vi.fn(async () => index),
     listOverrides: vi.fn(async () => ['1', '9']),
-    getEdl: vi.fn(async (rk) => (rk === '1' || rk === '9' ? { title: rk === '9' ? 'Zed' : 'Back to the Future', sourceRef: { workId: Number(rk), tagSetId: 1 } } : null)),
+    getEdl: vi.fn(async (rk) => (rk === '1' || rk === '9' ? { title: rk === '9' ? 'Zed' : 'Back to the Future', sourceRef: { workId: Number(rk), tagSetId: 1 } }
+      : rk === '2' ? { title: 'Annie' } : null)),
     getRefinedEdl: vi.fn(async ({ workId }) => (workId === 1 ? { year: 1985, scenes: [], certification: { level: 'machine' } } : { certification: { level: 'none' } })),
     getOverride: vi.fn(async (rk) => (rk === '1' ? { review: { 'cue:a': { span: [1, 2] } } } : null)),
   };
@@ -174,6 +175,15 @@ describe('ContentFilterLibrary', () => {
       const by = Object.fromEntries((await lib.list({})).films.map((f) => [f.ratingKey, f]));
       expect(by['1'].match).toBe('verified');
       expect(by['2'].unmatched).toEqual({ reason: 'duplicate', text: 'another entry has this film' });
+    });
+    it('lists only films with an EDL: a mapped Plex film with none yet is absent, and not counted', async () => {
+      const lib = build({ map: { 'plex:1': m('Gladiator', 11), 'plex:3': m('Vivo', 13) }, overrides: ['4'],
+        edls: { 1: e('Gladiator', 2000, 11) },
+        items: [{ ratingKey: '1', title: 'Gladiator', year: 2000 }, { ratingKey: '3', title: 'Vivo', year: 2021 }, { ratingKey: '4', title: 'X', year: 2001 }] });
+      const { films, meta } = await lib.list({});
+      expect(films.map((f) => f.ratingKey)).toEqual(['1']);
+      expect(meta).toMatchObject({ total: 1, verified: 1, unmatched: 0 });
+      expect((await lib.list({ q: 'vivo' })).films).toEqual([]);
     });
     it('matchOf answers for one film (the review page and the run guard)', async () => {
       const lib = build({ map: { 'plex:2': m('Casino Royale', 12) }, edls: { 2: e('Casino Royale', 2006, 12) },

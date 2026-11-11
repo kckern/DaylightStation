@@ -762,8 +762,12 @@ preview store and effect words, `browser/playback.mjs` for the Player). Two jobs
 
 ### Library and stages
 
-`GET /api/v1/content-filter/library?stage=&q=` lists every matched movie with VidAngel tags
-(`media/content-filter/plex-vidangel-map.yml`) plus every title with an override, each with a
+`GET /api/v1/content-filter/library?stage=&q=` lists the films that have an EDL: every matched
+movie with VidAngel tags (`media/content-filter/plex-vidangel-map.yml`) plus every title with an
+override, kept only when a rough VidAngel EDL (`edl/<rk>.edl.yml`) or a refined one exists. Rough
+EDLs come from VidAngel and cannot be made here; the household only refines them, so a mapped
+film with no EDL yet is not listed (in no section, not counted, not found by search). It stays in
+the map, and its EDL comes from an export. Each listed film has a
 stage (`filmStage.mjs`): Rough → Running → Refined → Scenes built → Audited → Machine-certified →
 Parent-certified. Machine and parent need a passing audit that is current (its digest matches the
 refined EDL and the override, review marks excluded). A failed or interrupted run is a flag on the

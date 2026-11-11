@@ -128,7 +128,10 @@ export async function runMap({ catalog, edlHeads, oldIndex, plexMovies, househol
     else if (dup.has(k)) fate.duplicate++;
     else fate.dropped++;
   }
-  const afterKeys = libraryKeys(doc, householdKeys);
+  // The library lists only films with an EDL (after the re-keys move them).
+  const withEdl = new Set(edlHeads.map((h) => h.ratingKey));
+  for (const r of plan.rekeys) { withEdl.delete(r.from); withEdl.add(r.to); }
+  const afterKeys = new Set([...libraryKeys(doc, householdKeys)].filter((k) => withEdl.has(k)));
   const verifiedAfter = [...afterKeys].filter((k) => plan.map[`plex:${k}`]).length;
   return { plan, doc, diff, library: { before: before.size, fate, after: { total: afterKeys.size, verified: verifiedAfter, unmatched: afterKeys.size - verifiedAfter } } };
 }

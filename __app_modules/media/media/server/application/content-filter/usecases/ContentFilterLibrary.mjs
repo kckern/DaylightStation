@@ -1,6 +1,7 @@
 /**
  * The Admin library (spec "Build it"): every matched movie with VidAngel tags, plus every title
- * with a household override, each with its stage. Per-film facts are cached in memory and
+ * with a household override, that HAS an EDL (rough VidAngel export or refined; a mapped film with
+ * none yet is not listed), each with its stage. Per-film facts are cached in memory and
  * invalidated when a run settles, an audit lands or the film is written. Plex is asked only which
  * movie keys are live (movie sections, never shows), once per INDEX_TTL_MS: the match index is a
  * snapshot, and a media reorg re-keys titles, so a film can be in the index and gone from Plex
@@ -117,6 +118,7 @@ export class ContentFilterLibrary {
       job: run ? { status: run.status, step: run.step ?? null, error: failedStep?.error ?? null } : null,
       reviewed: counts ? { n: counts.reviewed, m: (audit.rows || []).length } : null,
       // The exported EDL's VidAngel facts, for the Plex match (not shown as such).
+      hasEdl: !!raw || !!refined,
       edl: raw ? { year: Number.isFinite(raw.year) ? raw.year : null, runtimeSec: Number.isFinite(raw.runtimeUnalteredSec) ? raw.runtimeUnalteredSec : null, workId: raw.sourceRef?.workId ?? null } : null,
     };
     this.#facts.set(rk, facts);
@@ -128,9 +130,12 @@ export class ContentFilterLibrary {
     const live = await this.#liveMovies();
     const titles = await this.#titles();
     const films = [];
-    let unlinked = 0; let verified = 0;
+    let unlinked = 0; let verified = 0; let total = 0;
     for (const [rk, entry] of titles) {
       const f = await this.#entry(rk, entry, live);
+      // Only films with a rough (VidAngel) or refined EDL: the rest have nothing to refine yet.
+      if (!f.hasEdl) continue;
+      total += 1;
       if (f.linked === false) unlinked += 1;
       if (f.match === 'verified') verified += 1;
       if (stage && f.stage !== stage) continue;
@@ -141,19 +146,19 @@ export class ContentFilterLibrary {
     const indexedAt = typeof this.#repo.getMatchIndexWrittenAt === 'function' ? await this.#repo.getMatchIndexWrittenAt() : null;
     return {
       films, worker: typeof this.#jobs.workerStatus === 'function' ? this.#jobs.workerStatus() : null,
-      meta: { indexedAt: indexedAt ?? null, total: titles.size, unlinked, verified, unmatched: titles.size - verified },
+      meta: { indexedAt: indexedAt ?? null, total, unlinked, verified, unmatched: total - verified },
     };
   }
 
   async #entry(rk, entry, live) {
-    const { edl, ...base } = await this.#film(rk, entry.title);
+    const { edl, hasEdl, ...base } = await this.#film(rk, entry.title);
     const item = live?.get(rk) ?? null;
     const linked = live ? live.has(rk) : null;
     const held = edl?.workId != null ? this.#workAt.get(Number(edl.workId)) : null;
     const verdict = filmMatch({ edl, live: !!live, plexItem: item, indexEntry: entry, duplicateOf: entry.kind !== 'map' && held && held !== rk ? held : null });
     // A poster only when the key is the film: a year-off key would show another film's poster.
     const thumb = linked && verdict.match === 'verified' ? `/api/v1/proxy/plex/library/metadata/${rk}/thumb?w=120&h=180` : null;
-    return { ...base, title: base.title ?? item?.title ?? null, year: base.year ?? item?.year ?? null, linked, thumb, ...verdict };
+    return { ...base, title: base.title ?? item?.title ?? null, year: base.year ?? item?.year ?? null, linked, thumb, ...verdict, hasEdl };
   }
 
   /** One film's match verdict, for the review page and the run guard. Unknown keys are "no Plex film". */

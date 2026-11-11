@@ -83,7 +83,7 @@ describe('runMap --dry-run', () => {
     expect(r.doc.unmatched['plex:55301']).toMatchObject({ reason: 'year-mismatch', plexYears: [1950] });
     expect(r.library.before).toBe(4);
     expect(r.library.fate).toMatchObject({ verified: 1, rekeyed: 1, duplicate: 1, unmatched: 1 });
-    expect(r.library.after).toMatchObject({ verified: 3, unmatched: 1 });
+    expect(r.library.after).toMatchObject({ total: 3, verified: 2, unmatched: 1 }); // Vivo is mapped but has no EDL: not a library film
     const text = formatMapReport(r);
     expect(text).toMatch(/re-key 658287 -> 702772  12 Strong/);
     expect(text).toMatch(/55301 Cinderella \(2021\): Plex has the 1950 film/);
